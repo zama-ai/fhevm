@@ -52,6 +52,13 @@ pub enum ReadinessCheckError {
     /// (`source: coprocessor_attestations`).
     #[error("no attestation consensus: {round}")]
     NoAttestationConsensus { round: Round },
+    /// No probe was attempted: too few bucket URLs are registered to ever reach the threshold.
+    #[error("attestation consensus unreachable: {registered} of {threshold} required Coprocessors have a registered bucket URL")]
+    ConsensusUnreachable { registered: usize, threshold: usize },
+    /// No probe was attempted: the registry's last refresh failed critically, so the snapshot a
+    /// probe would be judged against is known to be out of date.
+    #[error("Coprocessor registry snapshot is stale")]
+    RegistryStale,
     /// Retries were exhausted while attestation consensus was still short of threshold. Carries
     /// `last_round` — unlike [`Self::GwTimeout`] — so the caller can explain why. Reachable only
     /// under the off-chain Coprocessor attestation check

@@ -174,7 +174,11 @@ impl UserDecryptReadinessProcessor {
                 .await;
             }
 
-            Err(e @ ReadinessCheckError::NoAttestationConsensus { .. }) => {
+            Err(
+                e @ (ReadinessCheckError::NoAttestationConsensus { .. }
+                | ReadinessCheckError::ConsensusUnreachable { .. }
+                | ReadinessCheckError::RegistryStale),
+            ) => {
                 // Operator log: a digest value may legitimately appear here. What a caller sees —
                 // the stored reason and the HTTP response — is decided solely by the `From` impl
                 // below.

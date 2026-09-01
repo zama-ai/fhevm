@@ -17,7 +17,10 @@ use fhevm_gateway_bindings::gateway_config::GatewayConfig::{self, GatewayConfigI
 use futures::future::try_join_all;
 use std::{
     num::NonZeroUsize,
-    sync::{Arc, RwLock},
+    sync::{
+        Arc, RwLock,
+        atomic::{AtomicBool, Ordering},
+    },
     time::Duration,
 };
 use tokio_util::sync::CancellationToken;
@@ -30,6 +33,7 @@ use tracing::{error, warn};
 pub struct CoprocessorRegistry<P: Provider<N>, N: Network = Ethereum> {
     gateway_config_contract: GatewayConfigInstance<P, N>,
     snapshot: Arc<RwLock<Arc<CoprocessorRegistrySnapshot>>>,
+    refresh_failed_critically: Arc<AtomicBool>,
 }
 
 /// An immutable snapshot of the Coprocessor registry at one point in time.
@@ -43,14 +47,18 @@ pub struct CoprocessorRegistrySnapshot {
 }
 
 /// Why loading or refreshing the Coprocessor registry failed.
+///
+/// Reporting only — the registry acts on neither variant. What a failure means is the embedding
+/// service's call: whether to refuse requests, serve on from the previous snapshot, or stop.
 #[derive(Debug, thiserror::Error)]
 pub enum RegistryError {
-    /// A condition that can never arise from a healthy protocol: an invalid on-chain threshold
-    /// or a poisoned snapshot lock. The caller should treat this as fatal.
+    /// No retry will fix this: an on-chain majority threshold that is not a `NonZeroUsize`, or a
+    /// poisoned snapshot lock. An operator has to intervene.
     #[error("critical Coprocessor registry error: {0}")]
     Critical(String),
 
-    /// A recoverable failure, e.g. a transient RPC error. The previous snapshot is kept.
+    /// A retry may well fix this, e.g. the gateway RPC was unreachable. The previous snapshot
+    /// stays in place until one does.
     #[error(transparent)]
     Transient(#[from] anyhow::Error),
 }
@@ -61,6 +69,12 @@ impl CoprocessorRegistrySnapshot {
             coprocessors,
             threshold,
         }
+    }
+
+    /// Coprocessors without a bucket URL are dropped at load, but the on-chain threshold counts
+    /// every registered one — so an accurate snapshot can still put consensus out of reach.
+    pub fn consensus_reachable(&self) -> bool {
+        self.coprocessors.len() >= self.threshold.get()
     }
 
     /// Loads a fresh snapshot from the `GatewayConfig` contract.
@@ -109,17 +123,6 @@ impl CoprocessorRegistrySnapshot {
             )));
         }
 
-        // Not `Critical`: crash-looping the caller over persistent on-chain state would be worse.
-        if coprocessors.len() < threshold.get() {
-            error!(
-                reachable = coprocessors.len(),
-                threshold = threshold.get(),
-                "Fewer Coprocessors have a registered S3 bucket URL than the on-chain majority \
-                 threshold requires: attestation consensus is unreachable and every decryption \
-                 request will be refused until the missing bucket URLs are registered"
-            );
-        }
-
         Ok(Self::new(coprocessors, threshold))
     }
 }
@@ -161,24 +164,45 @@ where
     P: Provider<N> + Clone + 'static,
     N: Network,
 {
-    /// Loads the initial snapshot and spawns the background refresh task. `cancel_token` is the
-    /// caller-wide shutdown token: the refresh task cancels it on a critical failure.
+    /// Loads the initial snapshot and spawns the background refresh task, which runs until
+    /// `cancel_token` is cancelled.
     pub async fn connect(
         provider: P,
         gateway_config_address: Address,
         refresh_interval: Duration,
         cancel_token: CancellationToken,
     ) -> anyhow::Result<Self> {
+        // Without this, a codeless address reaches `load` as a decode failure and classifies as
+        // `Transient` — a permanent fault dressed as a retryable one.
+        if provider
+            .get_code_at(gateway_config_address)
+            .await
+            .map_err(|e| anyhow::anyhow!("{}", redact_rpc_url(e)))?
+            .is_empty()
+        {
+            return Err(RegistryError::Critical(format!(
+                "no contract deployed at the configured GatewayConfig address \
+                 {gateway_config_address}"
+            ))
+            .into());
+        }
+
         let gateway_config_contract = GatewayConfig::new(gateway_config_address, provider);
 
         let snapshot = CoprocessorRegistrySnapshot::load(&gateway_config_contract).await?;
         let registry = Self {
             gateway_config_contract,
             snapshot: Arc::new(RwLock::new(Arc::new(snapshot))),
+            refresh_failed_critically: Arc::new(AtomicBool::new(false)),
         };
         registry.spawn_refresh_task(refresh_interval, cancel_token);
 
         Ok(registry)
+    }
+
+    /// True while the served snapshot is the last good one and the registry could not replace it.
+    pub fn last_refresh_failed_critically(&self) -> bool {
+        self.refresh_failed_critically.load(Ordering::Relaxed)
     }
 
     /// Clones the inner `Arc` of the current snapshot and drops the guard, so no lock is held.
@@ -208,14 +232,18 @@ where
                     .await
                     .and_then(|s| this.store_snapshot(s))
                 {
-                    Ok(()) => (),
+                    Ok(()) => this
+                        .refresh_failed_critically
+                        .store(false, Ordering::Relaxed),
                     Err(RegistryError::Transient(e)) => warn!(
                         "Failed to refresh Coprocessor registry, keeping previous snapshot: {e}"
                     ),
                     Err(RegistryError::Critical(critical)) => {
-                        error!("Shutting down on critical registry failure: {critical}");
-                        cancel_token.cancel();
-                        break;
+                        this.refresh_failed_critically
+                            .store(true, Ordering::Relaxed);
+                        error!(
+                            "Coprocessor registry unusable, keeping previous snapshot: {critical}"
+                        );
                     }
                 };
             }
@@ -235,7 +263,7 @@ where
 mod tests {
     use super::*;
     use alloy::{
-        primitives::U256,
+        primitives::{Bytes, U256},
         providers::{ProviderBuilder, mock::Asserter},
         sol_types::SolValue,
     };
@@ -317,6 +345,100 @@ mod tests {
         CoprocessorRegistrySnapshot::load(&mocked_contract(&asserter))
             .await
             .unwrap_err();
+    }
+
+    #[test]
+    fn consensus_is_reachable_exactly_at_the_threshold() {
+        let entry = |byte| CoprocessorEntry {
+            tx_sender: addr(byte),
+            signer: signer(byte),
+            bucket: "http://bucket".to_string(),
+        };
+        let snapshot = |count: u8| {
+            CoprocessorRegistrySnapshot::new(
+                (0..count).map(entry).collect(),
+                NonZeroUsize::new(2).unwrap(),
+            )
+        };
+
+        assert!(!snapshot(1).consensus_reachable());
+        assert!(snapshot(2).consensus_reachable());
+        assert!(snapshot(3).consensus_reachable());
+    }
+
+    /// Pushes the `eth_getCode` response `connect` probes with before its first load.
+    fn mock_deployed_code(asserter: &Asserter) {
+        asserter.push_success(&Bytes::from_static(&[0x60]));
+    }
+
+    /// Pushes a `load` that fails with [`RegistryError::Critical`] (zero on-chain threshold).
+    fn mock_critical_load(asserter: &Asserter) {
+        asserter.push_success(&vec![addr(0x07)].abi_encode());
+        asserter.push_success(&U256::ZERO.abi_encode());
+    }
+
+    /// Polls until `cond` holds — the refresh task runs on its own timer.
+    async fn eventually(what: &str, mut cond: impl FnMut() -> bool) {
+        for _ in 0..300 {
+            if cond() {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        panic!("{what} did not happen within three seconds");
+    }
+
+    #[tokio::test]
+    async fn refresh_flag_follows_the_latest_outcome() {
+        let asserter = Asserter::new();
+        mock_deployed_code(&asserter);
+        mock_registry_load(&asserter, &[addr(0x07)], &["http://bucket"]);
+        // Twice, so the flag stays observably set for longer than one refresh interval.
+        mock_critical_load(&asserter);
+        mock_critical_load(&asserter);
+        mock_registry_load(&asserter, &[addr(0x07)], &["http://bucket"]);
+
+        let provider = ProviderBuilder::new()
+            .disable_recommended_fillers()
+            .connect_mocked_client(asserter.clone());
+        let registry = CoprocessorRegistry::connect(
+            provider,
+            Address::ZERO,
+            Duration::from_millis(100),
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+
+        assert!(!registry.last_refresh_failed_critically());
+        eventually("a critical refresh", || {
+            registry.last_refresh_failed_critically()
+        })
+        .await;
+        eventually("a recovered refresh", || {
+            !registry.last_refresh_failed_critically()
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn connect_rejects_an_address_with_no_contract_code() {
+        let asserter = Asserter::new();
+        asserter.push_success(&Bytes::new());
+
+        let Err(err) = CoprocessorRegistry::connect(
+            ProviderBuilder::new()
+                .disable_recommended_fillers()
+                .connect_mocked_client(asserter.clone()),
+            Address::ZERO,
+            Duration::from_secs(60),
+            CancellationToken::new(),
+        )
+        .await
+        else {
+            panic!("connect accepted an address with no contract code");
+        };
+        assert!(err.to_string().contains("no contract deployed"));
     }
 
     #[tokio::test]

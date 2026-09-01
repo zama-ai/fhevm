@@ -323,6 +323,10 @@ const ERROR_MATRIX: &[MatrixEntry] = &[
                 "insufficient_allowance",
                 "Insufficient allowance for transaction",
             ),
+            (
+                "gateway_not_reachable",
+                "Coprocessor registry on the gateway chain is not usable",
+            ),
         ],
     ),
 ];

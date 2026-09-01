@@ -326,9 +326,8 @@ pub struct CoprocessorAttestationCheck {
 impl CoprocessorAttestationCheck {
     /// Mirrors the Coprocessor registry from `GatewayConfig` and starts its refresh task.
     ///
-    /// `cancel_token` is the relayer-wide shutdown token: the registry cancels it if a refresh
-    /// hits a condition no healthy protocol can produce (e.g. an invalid on-chain threshold),
-    /// since continuing would mean gating decryptions on a registry known to be wrong.
+    /// `cancel_token` stops the refresh task and nothing else — a critically failed refresh is
+    /// answered per request, see [`Self::check_handles_with_retry`].
     #[allow(clippy::too_many_arguments)]
     async fn new(
         gateway_config: &GatewayConfig,
@@ -459,6 +458,19 @@ impl CoprocessorAttestationCheck {
         job_id: &JobId,
         handles: &[FixedBytes<32>],
     ) -> Result<(), ReadinessCheckError> {
+        // Before `consensus_reachable`: a snapshot that failed to refresh can still report `true`.
+        if self.registry.last_refresh_failed_critically() {
+            return Err(ReadinessCheckError::RegistryStale);
+        }
+
+        let snapshot = self.registry.snapshot();
+        if !snapshot.consensus_reachable() {
+            return Err(ReadinessCheckError::ConsensusUnreachable {
+                registered: snapshot.coprocessors.len(),
+                threshold: snapshot.threshold.get(),
+            });
+        }
+
         match tokio::time::timeout(
             self.request_timeout,
             self.retry_while_missing(job_id, handles),

@@ -20,6 +20,12 @@ pub const READINESS_CHECK_TIMEOUT_MSG: &str =
 pub const NO_ATTESTATION_CONSENSUS_PREFIX: &str =
     "Coprocessors did not reach consensus on the ciphertext material:";
 
+/// The registry could not support consensus, so nothing was probed. Retryable — the fault is on
+/// the gateway chain and clears without a redeploy — unlike [`NO_ATTESTATION_CONSENSUS_PREFIX`],
+/// where the Coprocessors answered and disagreed.
+pub const GATEWAY_NOT_REACHABLE_PREFIX: &str =
+    "Coprocessor registry on the gateway chain is not usable:";
+
 /// Prefix for host ACL not-allowed errors, used for error classification.
 pub const NOT_ALLOWED_ON_HOST_ACL_PREFIX: &str = "Not allowed on host ACL:";
 /// Prefix for host ACL infra errors (RPC / unsupported chain), used for error classification.
@@ -81,6 +87,9 @@ pub enum EventProcessingError {
     #[error("{prefix} {reason}", prefix = crate::core::errors::NO_ATTESTATION_CONSENSUS_PREFIX)]
     NoAttestationConsensus { reason: String },
 
+    #[error("{prefix} {reason}", prefix = crate::core::errors::GATEWAY_NOT_REACHABLE_PREFIX)]
+    GatewayNotReachable { reason: String },
+
     #[error("Relayer internal queue is full")]
     QueueFull,
 
@@ -130,6 +139,18 @@ impl From<ReadinessCheckError> for EventProcessingError {
                     reason: round.to_string(),
                 }
             }
+            ReadinessCheckError::ConsensusUnreachable {
+                registered,
+                threshold,
+            } => EventProcessingError::GatewayNotReachable {
+                reason: format!(
+                    "only {registered} of the {threshold} Coprocessors required for a majority \
+                     have a registered bucket URL"
+                ),
+            },
+            ReadinessCheckError::RegistryStale => EventProcessingError::GatewayNotReachable {
+                reason: "the registry snapshot no longer tracks the gateway chain".to_string(),
+            },
             ReadinessCheckError::AttestationsNotReady { last_round, .. } => {
                 EventProcessingError::AttestationsNotReady {
                     round: last_round.to_string(),

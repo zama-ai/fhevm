@@ -6,8 +6,8 @@ use super::super::types::user_decrypt::{
     UserDecryptRequestJson, UserDecryptResponseJson, UserDecryptStatusResponseJson,
 };
 use crate::core::errors::{
-    HOST_ACL_FAILED_PREFIX, NOT_ALLOWED_ON_HOST_ACL_PREFIX, NO_ATTESTATION_CONSENSUS_PREFIX,
-    READINESS_CHECK_TIMEOUT_MSG, TIMEOUT_REASON_MISSING_MSG,
+    GATEWAY_NOT_REACHABLE_PREFIX, HOST_ACL_FAILED_PREFIX, NOT_ALLOWED_ON_HOST_ACL_PREFIX,
+    NO_ATTESTATION_CONSENSUS_PREFIX, READINESS_CHECK_TIMEOUT_MSG, TIMEOUT_REASON_MISSING_MSG,
 };
 use crate::core::event::{
     ApiVersion, RelayerEvent, RelayerEventData, UserDecryptEventData, UserDecryptRequest,
@@ -809,6 +809,11 @@ impl UserDecryptHandler {
                                 (
                                     StatusCode::INTERNAL_SERVER_ERROR,
                                     V2ErrorResponseBody::no_attestation_consensus(&error_msg),
+                                )
+                            } else if error_msg.starts_with(GATEWAY_NOT_REACHABLE_PREFIX) {
+                                (
+                                    StatusCode::SERVICE_UNAVAILABLE,
+                                    V2ErrorResponseBody::gateway_not_reachable(&error_msg),
                                 )
                             } else {
                                 classify_revert_error(&error_msg)

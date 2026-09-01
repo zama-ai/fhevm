@@ -269,6 +269,11 @@ impl FhevmMockWrapper {
             InputVerification::DEPLOYED_BYTECODE.clone(),
         );
 
+        json_rpc_server.set_code(
+            gateway_config_contract,
+            GatewayConfig::DEPLOYED_BYTECODE.clone(),
+        );
+
         Self {
             json_rpc_server,
             next_zk_proof_id: Arc::new(

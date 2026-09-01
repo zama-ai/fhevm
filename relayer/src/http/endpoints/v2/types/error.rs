@@ -54,7 +54,7 @@ pub enum V2ErrorLabel {
 /// Labels defined but not yet wired to any handler endpoint.
 ///
 /// These are exempt from the "every label must appear in the catalog" test.
-pub const UNWIRED_LABELS: &[&str] = &["gateway_not_reachable"];
+pub const UNWIRED_LABELS: &[&str] = &[];
 
 /// Derives the canonical label list from [`ERROR_LABEL_DEFS`].
 /// Walk a `validator::ValidationErrors` tree and emit one
@@ -307,7 +307,7 @@ impl V2ErrorResponseBody {
         })
     }
 
-    #[allow(dead_code)]
+    /// Retryable counterpart to [`Self::no_attestation_consensus`]: nothing was ever probed.
     pub fn gateway_not_reachable(message: &str) -> Self {
         Self::Simple(V2ApiError {
             label: "gateway_not_reachable".to_string(),

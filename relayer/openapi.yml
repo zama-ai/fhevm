@@ -569,12 +569,20 @@ paths:
                     requestId: 550e8400-e29b-41d4-a716-446655440000
                     status: failed
         '503':
-          description: 'Service unavailable. Error label is one of: `response_timed_out`, `readiness_check_timed_out`, `protocol_paused`, `insufficient_balance`, `insufficient_allowance`'
+          description: 'Service unavailable. Error label is one of: `response_timed_out`, `readiness_check_timed_out`, `protocol_paused`, `insufficient_balance`, `insufficient_allowance`, `gateway_not_reachable`'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/V2StatusFailed'
               examples:
+                GatewayNotReachable:
+                  summary: Coprocessor registry on the gateway chain is not usable
+                  value:
+                    error:
+                      label: gateway_not_reachable
+                      message: Coprocessor registry on the gateway chain is not usable
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
                 InsufficientAllowance:
                   summary: Insufficient allowance for transaction
                   value:
@@ -824,12 +832,20 @@ paths:
                     requestId: 550e8400-e29b-41d4-a716-446655440000
                     status: failed
         '503':
-          description: 'Service unavailable. Error label is one of: `response_timed_out`, `readiness_check_timed_out`, `protocol_paused`, `insufficient_balance`, `insufficient_allowance`'
+          description: 'Service unavailable. Error label is one of: `response_timed_out`, `readiness_check_timed_out`, `protocol_paused`, `insufficient_balance`, `insufficient_allowance`, `gateway_not_reachable`'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/V2StatusFailed'
               examples:
+                GatewayNotReachable:
+                  summary: Coprocessor registry on the gateway chain is not usable
+                  value:
+                    error:
+                      label: gateway_not_reachable
+                      message: Coprocessor registry on the gateway chain is not usable
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
                 InsufficientAllowance:
                   summary: Insufficient allowance for transaction
                   value:
@@ -1074,12 +1090,20 @@ paths:
                     requestId: 550e8400-e29b-41d4-a716-446655440000
                     status: failed
         '503':
-          description: 'Service unavailable. Error label is one of: `response_timed_out`, `readiness_check_timed_out`, `protocol_paused`, `insufficient_balance`, `insufficient_allowance`'
+          description: 'Service unavailable. Error label is one of: `response_timed_out`, `readiness_check_timed_out`, `protocol_paused`, `insufficient_balance`, `insufficient_allowance`, `gateway_not_reachable`'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/V2StatusFailed'
               examples:
+                GatewayNotReachable:
+                  summary: Coprocessor registry on the gateway chain is not usable
+                  value:
+                    error:
+                      label: gateway_not_reachable
+                      message: Coprocessor registry on the gateway chain is not usable
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
                 InsufficientAllowance:
                   summary: Insufficient allowance for transaction
                   value:

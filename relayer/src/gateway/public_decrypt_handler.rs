@@ -603,7 +603,8 @@ impl GatewayHandler {
             // the HTTP response — so the reason must be stored verbatim, unprefixed.
             EventProcessingError::NotAllowedOnHostAcl(_)
             | EventProcessingError::HostAclFailed(_)
-            | EventProcessingError::NoAttestationConsensus { .. } => {
+            | EventProcessingError::NoAttestationConsensus { .. }
+            | EventProcessingError::GatewayNotReachable { .. } => {
                 let err_reason = error.to_string();
                 error!(
                     job_id = %event.job_id,
