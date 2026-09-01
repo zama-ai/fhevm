@@ -8,7 +8,7 @@ on:
         required: true
         type: string
       rfc029_blue_tag:
-        description: "Exact 0.15 coprocessor image tag required by the RFC 029 rollout"
+        description: "Exact 0.15.0 source tag or full commit SHA built by the RFC 029 rollout"
         required: false
         type: string
 
