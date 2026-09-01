@@ -35,10 +35,11 @@ export function runUpgradeE2e(): void {
   }
 
   // Generation is a separate flow (`make generate`), never a step of a test: it rewrites tracked files
-  // that are build inputs, which leaves every build stamp stale. Build output only, from here.
-  run('npm', ['run', 'build']);
+  // that are build inputs, which leaves every build stamp stale. Compiled output only, from here —
+  // `compile`, not `build`, which is the fmt+lint sweep.
+  run('npm', ['run', 'compile']);
 
-  const TEST_TS = join(PACKAGE_ROOT_ABS_PATH, 'test', 'ts');
-  run('tsc', ['--project', join(TEST_TS, 'tsconfig.e2e.json'), '--noEmit']);
-  run('vitest', ['run', '--config', join(TEST_TS, 'vitest.e2e.config.ts')]);
+  const UPGRADE_E2E = join(PACKAGE_ROOT_ABS_PATH, 'test', 'ts', 'upgrade-e2e');
+  run('tsc', ['--project', join(UPGRADE_E2E, 'tsconfig.json'), '--noEmit']);
+  run('vitest', ['run', '--config', join(UPGRADE_E2E, 'vitest.config.ts')]);
 }

@@ -17,7 +17,7 @@ import {
   precomputeAddresses as precomputeV12,
   type BootstrapConfig as BootstrapConfigV12,
 } from '@fhevm/host-contracts-cleartext-v12-dev/pkg/ts/index.ts';
-import { updateV12ToV13 } from '../../pkg/ts/index.ts';
+import { updateV12ToV13 } from '../../../pkg/ts/index.ts';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -34,7 +34,7 @@ import {
   ERC_1967_IMPL_SLOT,
 } from '@fhevm/sdk-common-dev';
 import { privateKeyFromMnemonic, privateKeyToAddress } from '@fhevm/sdk-common-dev';
-import { expectedHcuLimit } from './utils/expectedBootstrap.ts';
+import { expectedHcuLimit } from '../utils/expectedBootstrap.ts';
 import { createViemEthereumAdapters } from '@fhevm/sdk-vendored-dev/viemEthereumLib.ts';
 
 const IMPL_SLOT = ERC_1967_IMPL_SLOT;
@@ -454,7 +454,7 @@ test('e2e: deploy a v12 cleartext stack, then upgrade it to v13 — cleartext su
         abi: CLEARTEXT_DB_ABI,
         functionName: 'get',
         args: [handle],
-      })) as bigint;
+      }));
 
     // --- 2. Pre-upgrade round-trip: fill the DB under the v12 executor. ---
     //
@@ -472,7 +472,7 @@ test('e2e: deploy a v12 cleartext stack, then upgrade it to v13 — cleartext su
 
     // Snapshot every readable property of the live v12 stack, so the upgrade can be held to preserving
     // all of it rather than only the handful this test thought to name.
-    const surveyed = surveyTargets(v12 as never);
+    const surveyed = surveyTargets(v12);
     const before = await surveyStack(publicClient, surveyed);
     // Guard against a vacuous survey: if the ABIs could not be read this would silently compare nothing.
     expect(before.size).toBeGreaterThan(30);
@@ -489,7 +489,7 @@ test('e2e: deploy a v12 cleartext stack, then upgrade it to v13 — cleartext su
         abi: PAUSER_SET_ABI,
         functionName: 'isPauser',
         args: [account as Address],
-      }) as Promise<boolean>;
+      });
 
     // The standing ACLOwner is a registered pauser after setupACLOwner; that is the state to preserve.
     expect(await isPauser(aclOwner)).toBe(true);
