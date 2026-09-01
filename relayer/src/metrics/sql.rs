@@ -47,7 +47,7 @@ pub enum Table {
     UserDecryptShares,
     PublicDecryptReq,
     InputProofReq,
-    GatewayBlockNumberStore,
+    GatewayChainCursor,
 }
 
 impl Table {
@@ -57,7 +57,7 @@ impl Table {
             Table::UserDecryptShares => "user_decrypt_shares",
             Table::PublicDecryptReq => "public_decrypt_req",
             Table::InputProofReq => "input_proof_req",
-            Table::GatewayBlockNumberStore => "gateway_block_number_store",
+            Table::GatewayChainCursor => "gateway_chain_cursor",
         }
     }
 }
