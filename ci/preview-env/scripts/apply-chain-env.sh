@@ -92,6 +92,12 @@ for f in "${root}/coprocessor/values-coprocessor-e2e.yaml" \
     (.chains[] | select(.name == "host") | .wsUrl) = strenv(HOST_WS)
   ' "${f}"
 done
+for f in "${root}/coprocessor/values-coprocessor-bcs-e2e.yaml" \
+         "${root}/coprocessor/values-coprocessor-gcs-e2e.yaml"; do
+  HOST_CHAIN_ID="${HOST_CHAIN_ID}" yq -i \
+    '.commonConfig.canonicalProtocolConfigChainId = strenv(HOST_CHAIN_ID)' \
+    "${f}"
+done
 GATEWAY_WS="${GATEWAY_WS}" yq -i '.commonConfig.gatewayUrl.value = strenv(GATEWAY_WS)' \
   "${root}/coprocessor/values-coprocessor-e2e.yaml"
 
