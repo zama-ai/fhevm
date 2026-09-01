@@ -1,7 +1,7 @@
 use alloy::network::EthereumWallet;
 use alloy::node_bindings::Anvil;
 use alloy::node_bindings::AnvilInstance;
-use alloy::primitives::{keccak256, Address, FixedBytes, U256};
+use alloy::primitives::{Address, FixedBytes, U256};
 use alloy::providers::ext::AnvilApi;
 use alloy::providers::fillers::{
     BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill,
@@ -39,7 +39,8 @@ use host_listener::database::tfhe_event_propagate::{Database, ToType};
 mod common;
 use common::{
     allowed_request, delegate_for_user_decryption_request, fhe_add_request,
-    trivial_encrypt_request, RawLog, RawLogInstance,
+    mock_fhe_add_result, mock_trivial_encrypt_result, trivial_encrypt_request,
+    RawLog, RawLogInstance,
 };
 
 const NB_EVENTS_PER_WALLET: i64 = 50;
@@ -334,34 +335,6 @@ async fn test_mark_block_as_valid_repairs_missing_parent_hash(
     Ok(())
 }
 
-fn trivial_encrypt_handle(val: U256, to_type: u8) -> FixedBytes<32> {
-    let mut payload = Vec::with_capacity(
-        "trivialEncrypt".len() + std::mem::size_of::<[u8; 32]>() + 1,
-    );
-    payload.extend_from_slice("trivialEncrypt".as_bytes());
-    payload.extend_from_slice(&val.to_be_bytes::<32>());
-    payload.push(to_type);
-    keccak256(payload)
-}
-
-fn fhe_add_handle(
-    lhs: FixedBytes<32>,
-    rhs: FixedBytes<32>,
-    scalar_byte: u8,
-) -> FixedBytes<32> {
-    let mut payload = Vec::with_capacity(
-        "fheAdd".len()
-            + std::mem::size_of::<[u8; 32]>()
-            + std::mem::size_of::<[u8; 32]>()
-            + 1,
-    );
-    payload.extend_from_slice("fheAdd".as_bytes());
-    payload.extend_from_slice(lhs.as_slice());
-    payload.extend_from_slice(rhs.as_slice());
-    payload.push(scalar_byte);
-    keccak256(payload)
-}
-
 async fn ingest_blocks_for_receipts(
     db: &mut Database,
     setup: &Setup,
@@ -468,7 +441,7 @@ async fn emit_dependent_burst_seeded(
 
     let mut pending = Vec::new();
     let mut current = input_handle
-        .unwrap_or_else(|| trivial_encrypt_handle(U256::from(seed), 4_u8));
+        .unwrap_or_else(|| mock_trivial_encrypt_result(U256::from(seed), 4_u8));
 
     if input_handle.is_none() {
         let trivial_tx = trivial_encrypt_request(
@@ -488,7 +461,11 @@ async fn emit_dependent_burst_seeded(
     }
 
     for _ in 0..depth {
-        let next = fhe_add_handle(current, current, 0_u8);
+        let next = mock_fhe_add_result(
+            current,
+            current,
+            FixedBytes::<1>::from([0_u8]),
+        );
         let add_tx = fhe_add_request(
             &setup.tfhe_contract,
             signer_address,

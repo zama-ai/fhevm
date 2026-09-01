@@ -34,16 +34,16 @@ use tracing::{info, Level};
 use tracing_subscriber::fmt::{writer::MakeWriterExt, MakeWriter};
 
 mod common;
-use common::{activate_crs_request, activate_key_request, RawLog};
+use common::{
+    activate_crs_request, activate_key_request, RawLog, KEY_BYTES, TEST_KEY_ID,
+};
 
 static TEST_LOGS: OnceLock<Arc<RwLock<String>>> = OnceLock::new();
 
 const TEST_CHAIN_ID: u64 = 12345;
-const TEST_KEY_ID: u64 = 16;
 const RETRY_EVENT_TO_DB: u64 = 3;
 const RETRY_DELAY: Duration = Duration::from_millis(100);
 const MATERIALIZER_ACTIVATION_STEPS: usize = 2;
-const MATERIALIZED_KEY_BYTES: &[u8] = b"key_bytes";
 
 #[derive(Clone)]
 struct TestLogs {
@@ -226,11 +226,11 @@ async fn has_public_key_gen(
             .await?;
         if !rows.is_empty() {
             let pks_key: Vec<u8> = rows[0].try_get("pks_key")?;
-            if pks_key == MATERIALIZED_KEY_BYTES {
+            if pks_key == KEY_BYTES {
                 return Ok(true);
             } else {
                 info!(
-                    "Found public key for key_id {}, but it does not match materialized key bytes {} vs {MATERIALIZED_KEY_BYTES:?}",
+                    "Found public key for key_id {}, but it does not match materialized key bytes {} vs {KEY_BYTES:?}",
                     key_id,
                     String::from_utf8_lossy(&pks_key)
                 );
@@ -270,7 +270,7 @@ async fn has_server_key_gen(
             .await?;
         if !rows.is_empty() {
             let sks_key: Vec<u8> = rows[0].try_get("sks_key")?;
-            if sks_key == MATERIALIZED_KEY_BYTES {
+            if sks_key == KEY_BYTES {
                 return Ok(true);
             }
         }
@@ -308,7 +308,7 @@ async fn has_crs_gen(
             .await?;
         if !rows.is_empty() {
             let crs: Vec<u8> = rows[0].try_get("crs")?;
-            if crs == MATERIALIZED_KEY_BYTES {
+            if crs == KEY_BYTES {
                 return Ok(true);
             }
         }
@@ -337,7 +337,7 @@ impl AwsS3ClientMocked {
         let key_bytes = if bad_content {
             Bytes::from_static(b"bad_key_bytes")
         } else {
-            Bytes::from_static(MATERIALIZED_KEY_BYTES)
+            Bytes::from_static(KEY_BYTES)
         };
 
         for (index, bucket) in buckets.iter().enumerate() {
@@ -365,7 +365,7 @@ impl AwsS3ClientMocked {
 
             let crs_key = format!("PUB/CRS/{}", key_id_to_aws_key(key_id));
             bucket_objects_for_bucket
-                .insert(crs_key, Bytes::from_static(MATERIALIZED_KEY_BYTES));
+                .insert(crs_key, Bytes::from_static(KEY_BYTES));
         }
 
         Self {
