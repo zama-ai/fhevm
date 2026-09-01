@@ -129,8 +129,7 @@ pub enum ThresholdStatus {
     /// Every Coprocessor answered or failed; no group reached the threshold. Retriable.
     NotReachedThisRound(Round),
     /// The Coprocessors that answered disagree, and even the best possible outcome would still
-    /// fall short of threshold. Terminal for this round's registered signer set: cast
-    /// attestations are immutable.
+    /// fall short of threshold. Terminal for this round.
     Unreachable(Round),
 }
 
@@ -160,9 +159,10 @@ impl ConsensusTracker {
         }
     }
 
-    /// Fills `signer`'s slot and returns the freshly recomputed verdict. First write wins: a
-    /// later reply for the same signer is dropped, which makes a single Coprocessor structurally
-    /// unable to occupy two groups at once. An unknown signer is ignored (`debug_assert!`).
+    /// Fills `signer`'s slot and returns the freshly recomputed verdict. First write wins: a later
+    /// reply for the same signer is dropped even when it carries different material, which makes a
+    /// single Coprocessor structurally unable to occupy two groups at once. An unknown signer is
+    /// ignored (`debug_assert!`).
     pub fn record(&mut self, signer: Address, reply: Reply) -> ThresholdStatus {
         match self
             .round

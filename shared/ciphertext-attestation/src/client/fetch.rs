@@ -23,7 +23,7 @@ pub enum ConsensusCheckError {
     #[error("no attestation consensus yet: {0}")]
     NotReachedThisRound(Round),
 
-    /// The Coprocessors that answered disagree. Terminal: cast votes do not change.
+    /// The Coprocessors that answered disagree. Terminal for this round.
     #[error("attestation consensus unreachable: {0}")]
     Unreachable(Round),
 }
