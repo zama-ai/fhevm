@@ -658,7 +658,7 @@ impl UserDecryptionExtraData {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::event_processor::ProcessingErrorClass;
+    use crate::core::event_processor::ProcessingErrorKind;
     use alloy::{
         providers::{ProviderBuilder, mock::Asserter},
         rpc::types::Transaction as RpcTransaction,
@@ -684,19 +684,19 @@ mod tests {
         Irrecoverable,
     }
 
-    fn assert_class(result: &Result<(), ProcessingError>, expected: &ExpectedOutcome) {
+    fn assert_kind(result: &Result<(), ProcessingError>, expected: &ExpectedOutcome) {
         match expected {
             ExpectedOutcome::Ok => unreachable!(),
             ExpectedOutcome::Recoverable => {
                 assert_eq!(
-                    result.as_ref().unwrap_err().class,
-                    ProcessingErrorClass::Recoverable
+                    result.as_ref().unwrap_err().kind,
+                    ProcessingErrorKind::Recoverable
                 )
             }
             ExpectedOutcome::Irrecoverable => {
                 assert_eq!(
-                    result.as_ref().unwrap_err().class,
-                    ProcessingErrorClass::Irrecoverable
+                    result.as_ref().unwrap_err().kind,
+                    ProcessingErrorKind::Irrecoverable
                 )
             }
         }
@@ -782,7 +782,7 @@ mod tests {
             ExpectedOutcome::Ok => {
                 result.unwrap();
             }
-            _ => assert_class(&result, &expected),
+            _ => assert_kind(&result, &expected),
         }
     }
 
@@ -879,7 +879,7 @@ mod tests {
             ExpectedOutcome::Ok => {
                 result.unwrap();
             }
-            _ => assert_class(&result, &expected),
+            _ => assert_kind(&result, &expected),
         }
     }
 
@@ -941,9 +941,9 @@ mod tests {
             ExpectedOutcome::Ok => {
                 result.unwrap();
             }
-            ExpectedOutcome::Recoverable => assert_class(&result, &expected),
+            ExpectedOutcome::Recoverable => assert_kind(&result, &expected),
             ExpectedOutcome::Irrecoverable => {
-                assert_class(&result, &expected);
+                assert_kind(&result, &expected);
                 let expected_msg = expected_error_msg.unwrap();
                 let msg = result.unwrap_err().details();
                 assert!(
@@ -1037,7 +1037,7 @@ mod tests {
             ExpectedOutcome::Ok => {
                 result.unwrap();
             }
-            _ => assert_class(&result, &expected),
+            _ => assert_kind(&result, &expected),
         }
     }
 
@@ -1062,7 +1062,7 @@ mod tests {
             .check_user_decryption_request_v2(&request)
             .await
             .map_err(RequestCheckError::record);
-        assert_class(&result, &ExpectedOutcome::Irrecoverable);
+        assert_kind(&result, &ExpectedOutcome::Irrecoverable);
     }
 
     // -------------------------------------------------------------------------
@@ -1134,7 +1134,7 @@ mod tests {
             ExpectedOutcome::Ok => {
                 result.unwrap();
             }
-            _ => assert_class(&result, &expected),
+            _ => assert_kind(&result, &expected),
         }
     }
 
@@ -1201,7 +1201,7 @@ mod tests {
             ExpectedOutcome::Ok => {
                 result.unwrap();
             }
-            _ => assert_class(&result, &expected),
+            _ => assert_kind(&result, &expected),
         }
     }
 
@@ -1251,7 +1251,7 @@ mod tests {
             ExpectedOutcome::Ok => {
                 result.unwrap();
             }
-            _ => assert_class(&result, &expected),
+            _ => assert_kind(&result, &expected),
         }
     }
 
@@ -1291,7 +1291,7 @@ mod tests {
             .check_user_decryption_request_v2(&request)
             .await
             .map_err(RequestCheckError::record);
-        assert_class(&result, &ExpectedOutcome::Irrecoverable);
+        assert_kind(&result, &ExpectedOutcome::Irrecoverable);
     }
 
     /// A smart-account user (Safe-style) whose contract returns the ERC-1271 magic value
@@ -1377,7 +1377,7 @@ mod tests {
             assert_eq!(result.unwrap(), calldata);
         } else {
             let err = result.unwrap_err();
-            assert_eq!(err.class, ProcessingErrorClass::Irrecoverable);
+            assert_eq!(err.kind, ProcessingErrorKind::Irrecoverable);
         }
     }
 

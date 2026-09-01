@@ -343,7 +343,7 @@ impl BoundedClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::event_processor::ProcessingErrorClass;
+    use crate::core::event_processor::ProcessingErrorKind;
     use alloy::primitives::U256;
     use connector_utils::tests::net::black_hole_server;
     use tokio::{io::AsyncWriteExt, task::JoinHandle};
@@ -429,7 +429,7 @@ mod tests {
         )
         .await
         .expect("retrieval should have resumed");
-        assert!(matches!(result, Err(ref e) if e.class == ProcessingErrorClass::Recoverable));
+        assert!(matches!(result, Err(ref e) if e.kind == ProcessingErrorKind::Recoverable));
     }
 
     /// Every request the client issues carries a deadline — the `HEAD` its own, the `GET` the
@@ -460,7 +460,7 @@ mod tests {
         )
         .await
         .expect("the GET should have ended on its own deadline");
-        assert!(matches!(get, Err(ref e) if e.class == ProcessingErrorClass::Recoverable));
+        assert!(matches!(get, Err(ref e) if e.kind == ProcessingErrorKind::Recoverable));
 
         accept_loop.abort();
     }

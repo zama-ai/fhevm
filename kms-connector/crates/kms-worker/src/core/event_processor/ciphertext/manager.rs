@@ -282,7 +282,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::event_processor::ProcessingErrorClass;
+    use crate::core::event_processor::ProcessingErrorKind;
     use alloy::providers::{ProviderBuilder, mock::Asserter};
     use std::{
         collections::{HashMap, HashSet},
@@ -324,14 +324,14 @@ mod tests {
             resolved(U256::from(2u64), 2),
         ]);
 
-        assert!(matches!(result, Err(ref e) if e.class == ProcessingErrorClass::Irrecoverable));
+        assert!(matches!(result, Err(ref e) if e.kind == ProcessingErrorKind::Irrecoverable));
     }
 
     /// An empty resolution set (no handles) is rejected as recoverable.
     #[test]
     fn aggregate_rejects_empty() {
         let result = aggregate_resolved_handles(vec![]);
-        assert!(matches!(result, Err(ref e) if e.class == ProcessingErrorClass::Recoverable));
+        assert!(matches!(result, Err(ref e) if e.kind == ProcessingErrorKind::Recoverable));
     }
 
     // Checks that the CiphertextManager waits for a permit before sending a `HEAD` request.
@@ -378,6 +378,6 @@ mod tests {
         )
         .await
         .expect("resolution should have resumed");
-        assert!(matches!(result, Err(ref e) if e.class == ProcessingErrorClass::Recoverable));
+        assert!(matches!(result, Err(ref e) if e.kind == ProcessingErrorKind::Recoverable));
     }
 }

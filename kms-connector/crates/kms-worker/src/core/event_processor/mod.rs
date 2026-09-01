@@ -11,7 +11,7 @@ mod rpc;
 pub use ciphertext::CiphertextManager;
 pub use context::{ContextManager, DbContextManager};
 pub use decryption::DecryptionProcessor;
-pub use error::{ProcessingError, ProcessingErrorClass, RequestCheckError, RequestCheckKind};
+pub use error::{ProcessingError, ProcessingErrorKind, RequestCheckError, RequestCheckKind};
 pub use kms::KMSGenerationProcessor;
 pub use kms_client::{KmsClient, KmsPollTarget};
 pub use processor::{DbEventProcessor, EventProcessor};

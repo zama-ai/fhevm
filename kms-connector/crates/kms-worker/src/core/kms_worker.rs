@@ -6,7 +6,7 @@ use crate::{
         event_processor::{
             CiphertextManager, DbContextManager, DbEventProcessor, DecryptionProcessor,
             EventProcessor, HostRpcClient, KMSGenerationProcessor, KmsClient, ProcessingError,
-            ProcessingErrorClass, ProtocolConfigProcessor,
+            ProcessingErrorKind, ProtocolConfigProcessor,
         },
         kms_response_publisher::DbKmsResponsePublisher,
     },
@@ -147,14 +147,14 @@ where
         error: ProcessingError,
         max_decryption_attempts: u16,
     ) {
-        match (error.class, &event.kind) {
-            (ProcessingErrorClass::Irrecoverable, _) => {
+        match (error.kind, &event.kind) {
+            (ProcessingErrorKind::Irrecoverable, _) => {
                 error!("{error}");
                 if let Err(e) = response_publisher.mark_event_as_failed(event).await {
                     warn!("{e}");
                 }
             }
-            (ProcessingErrorClass::Aborted, _) => {
+            (ProcessingErrorKind::Aborted, _) => {
                 warn!("{error}");
                 if let Err(e) = response_publisher.mark_event_as_aborted(event).await {
                     warn!("{e}");
@@ -166,7 +166,7 @@ where
             // a manual cleanup of the DB in such case. We want to avoid to "accidentally" remove a
             // key management operation at all cost.
             (
-                ProcessingErrorClass::Recoverable,
+                ProcessingErrorKind::Recoverable,
                 ProtocolEventKind::PublicDecryption(_)
                 | ProtocolEventKind::UserDecryption(_)
                 | ProtocolEventKind::UserDecryptionV2(_),
@@ -180,7 +180,7 @@ where
                     warn!("{e}");
                 }
             }
-            (ProcessingErrorClass::Recoverable, _) => {
+            (ProcessingErrorKind::Recoverable, _) => {
                 error!("{error}");
                 if let Err(e) = response_publisher.mark_event_as_pending(event).await {
                     warn!("{e}");

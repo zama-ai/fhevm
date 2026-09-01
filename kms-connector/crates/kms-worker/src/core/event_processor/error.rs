@@ -7,7 +7,7 @@ use user_decryption_signature::Erc1271Error;
 
 #[derive(Debug)]
 pub struct ProcessingError {
-    pub class: ProcessingErrorClass,
+    pub kind: ProcessingErrorKind,
     /// Caller-facing error code, stored in the error response row for HTTP-sourced decryption.
     /// Unused for non-decryption events and gateway-sourced decryption.
     pub code: ErrorCode,
@@ -16,7 +16,7 @@ pub struct ProcessingError {
 
 /// Recoverability classification of a [`ProcessingError`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ProcessingErrorClass {
+pub enum ProcessingErrorKind {
     Recoverable,
     Irrecoverable,
     Aborted,
@@ -25,7 +25,7 @@ pub enum ProcessingErrorClass {
 impl ProcessingError {
     pub fn recoverable(code: ErrorCode, source: impl Into<anyhow::Error>) -> Self {
         Self {
-            class: ProcessingErrorClass::Recoverable,
+            kind: ProcessingErrorKind::Recoverable,
             code,
             source: source.into(),
         }
@@ -33,7 +33,7 @@ impl ProcessingError {
 
     pub fn irrecoverable(code: ErrorCode, source: impl Into<anyhow::Error>) -> Self {
         Self {
-            class: ProcessingErrorClass::Irrecoverable,
+            kind: ProcessingErrorKind::Irrecoverable,
             code,
             source: source.into(),
         }
@@ -42,7 +42,7 @@ impl ProcessingError {
     /// The KMS Core aborted the operation.
     pub fn aborted() -> Self {
         Self {
-            class: ProcessingErrorClass::Aborted,
+            kind: ProcessingErrorKind::Aborted,
             code: ErrorCode::Unprocessable,
             source: anyhow!("the KMS Core aborted the operation"),
         }
@@ -83,10 +83,10 @@ impl ProcessingError {
 
 impl std::fmt::Display for ProcessingError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let prefix = match self.class {
-            ProcessingErrorClass::Irrecoverable => "Processing failed with irrecoverable error",
-            ProcessingErrorClass::Recoverable => "Processing failed",
-            ProcessingErrorClass::Aborted => "Processing aborted",
+        let prefix = match self.kind {
+            ProcessingErrorKind::Irrecoverable => "Processing failed with irrecoverable error",
+            ProcessingErrorKind::Recoverable => "Processing failed",
+            ProcessingErrorKind::Aborted => "Processing aborted",
         };
         write!(f, "{prefix}: {:#}", self.source)
     }
