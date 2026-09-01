@@ -30,7 +30,7 @@ new push re-deploys it fresh (an in-flight run is cancelled).
 | --- | --- |
 | `preview-env-e2e` | Deploy the stack, **building fresh images from the PR branch** first (only changed components; the rest resolve to the base commit's images). In-repo charts (`charts/*`) install straight from the checkout. |
 | `preview-env-e2e-tests` | Same, **and** auto-run the e2e test DAG, posting a pass/fail report back to the PR. Deploys the env on its own. |
-| `preview-env-blue-green` | Layer [RFC-021](https://github.com/zama-ai/tech-spec/pull/443) BCS+GCS on each party (forces `nb_coprocessor=2`). Not a deploy request by itself — add `preview-env-e2e` or `preview-env-e2e-tests` too. Incompatible with `deploy_polygon`. |
+| `preview-env-blue-green` | Deploy [RFC-021](https://github.com/zama-ai/tech-spec/pull/443) BCS+GCS on each party (forces `nb_coprocessor=2`). Enough on its own; add `preview-env-e2e-tests` if you also want the e2e DAG. Incompatible with `deploy_polygon`. |
 
 On PRs, images are **always** built fresh from the branch - there is no
 pinned-only PR path (use a `workflow_dispatch` run with `build_images=false`
