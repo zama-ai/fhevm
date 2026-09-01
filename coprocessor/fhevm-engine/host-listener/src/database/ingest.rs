@@ -47,6 +47,7 @@ pub struct IngestOptions {
     /// configured `--canonical-protocol-config-chain-id`. When false, the listener silently
     /// skips `ProtocolConfig.CoprocessorUpgradeProposed` events.
     pub is_protocol_config_listener: bool,
+    pub disable_synthetic_ops: bool,
 }
 
 /// Converts a block timestamp to a UTC `PrimitiveDateTime`.
@@ -365,7 +366,7 @@ pub async fn ingest_block_logs(
     // logs go through the normal decode below, so `fhe_event_count`, `is_allowed`, the
     // dependence chain and `schedule_order` are all derived by the production path. Blue
     // never injects, so `public` stays untouched. See `database::synthetic_ops`.
-    let synthetic = if db.gcs_mode() {
+    let synthetic = if db.gcs_mode() && !options.disable_synthetic_ops {
         synthetic_logs_for_block(
             &mut tx,
             chain_id,
