@@ -46,7 +46,7 @@ const ENTRIES: u8 = 6;
 ///
 /// 404 (rather than a real attestation) means the round can never reach consensus, which matters
 /// here: with a `threshold` of 1 (see the test below), the consensus tracker only reaches
-/// `MissedThisRound` once every slot is filled, so every entry's `HEAD` actually gets issued instead
+/// `NotReachedThisRound` once every slot is filled, so every entry's `HEAD` actually gets issued instead
 /// of the round exiting early and aborting whichever ones have not started yet.
 async fn concurrency_tracking_bucket(hold: Duration) -> (String, Arc<AtomicUsize>, JoinHandle<()>) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -94,7 +94,7 @@ async fn per_bucket_head_ceiling_is_never_exceeded() {
             bucket: bucket.clone(),
         })
         .collect();
-    // Threshold 1: every entry fails (404), so the round only turns `MissedThisRound` once every
+    // Threshold 1: every entry fails (404), so the round only turns `NotReachedThisRound` once every
     // entry has been accounted for. A higher threshold could make it unwinnable — and therefore
     // terminal — after the very first failure, aborting the rest before they even start.
     let registry = CoprocessorRegistrySnapshot::new(coprocessors, NonZeroUsize::new(1).unwrap());
@@ -110,7 +110,7 @@ async fn per_bucket_head_ceiling_is_never_exceeded() {
         .expect_err("every bucket answers 404, so consensus is never reached");
     assert!(matches!(
         err,
-        ConsensusCheckError::MissedThisRound(ref round) if round.attested().is_empty()
+        ConsensusCheckError::NotReachedThisRound(ref round) if round.attested().is_empty()
     ));
 
     let observed = peak.load(Ordering::SeqCst);

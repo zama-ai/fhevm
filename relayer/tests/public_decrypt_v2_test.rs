@@ -850,7 +850,7 @@ async fn test_readiness_timeout_message_has_no_digest_values() {
 ///
 /// Every bucket 404s its first probe and serves from the second on, so the first readiness attempt
 /// misses and the second reaches consensus. This is the only test that proves the retry loop
-/// converts a late attestation into a success: treating `MissedThisRound` as terminal would fail
+/// converts a late attestation into a success: treating `NotReachedThisRound` as terminal would fail
 /// the request on the first miss with `no_attestation_consensus`.
 #[tokio::test]
 async fn test_missed_round_retries_then_passes() {

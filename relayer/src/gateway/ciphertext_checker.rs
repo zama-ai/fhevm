@@ -520,7 +520,7 @@ impl CoprocessorAttestationCheck {
                     );
                     return Err(ReadinessCheckError::NoAttestationConsensus { round });
                 }
-                Err(ConsensusCheckError::MissedThisRound(round)) => {
+                Err(ConsensusCheckError::NotReachedThisRound(round)) => {
                     attempts += 1;
                     if attempts >= max_attempts {
                         let elapsed = started.elapsed();
@@ -558,7 +558,7 @@ impl CoprocessorAttestationCheck {
     /// handle, so any handle without consensus fails the whole request.
     ///
     /// An `Unreachable` verdict has to win wherever it sits in the set, and short-circuits the
-    /// round. The reported `MissedThisRound` is the one belonging to the lowest-indexed failing
+    /// round. The reported `NotReachedThisRound` is the one belonging to the lowest-indexed failing
     /// handle, so the message does not vary with the order replies happen to arrive in.
     async fn require_consensus_once(
         &self,
@@ -590,7 +590,7 @@ impl CoprocessorAttestationCheck {
             match outcome {
                 Ok(_) => (),
                 Err(e @ ConsensusCheckError::Unreachable { .. }) => return Err(e),
-                Err(e @ ConsensusCheckError::MissedThisRound { .. }) => {
+                Err(e @ ConsensusCheckError::NotReachedThisRound { .. }) => {
                     if first_missed.as_ref().is_none_or(|(at, _)| index < *at) {
                         first_missed = Some((index, e));
                     }

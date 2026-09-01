@@ -21,7 +21,7 @@ pub enum ConsensusCheckError {
     /// No group reached the threshold. Retriable: attestations are published asynchronously, so
     /// this is the normal early state.
     #[error("no attestation consensus yet: {0}")]
-    MissedThisRound(Round),
+    NotReachedThisRound(Round),
 
     /// The Coprocessors that answered disagree. Terminal: cast votes do not change.
     #[error("attestation consensus unreachable: {0}")]
@@ -149,8 +149,8 @@ fn resolve(verdict: ThresholdStatus) -> Option<Result<ResolvedConsensus, Consens
             signers: winners.iter().map(|entry| entry.signer).collect(),
             winning_buckets: winners.into_iter().map(|entry| entry.bucket).collect(),
         })),
-        ThresholdStatus::MissedThisRound(round) => {
-            Some(Err(ConsensusCheckError::MissedThisRound(round)))
+        ThresholdStatus::NotReachedThisRound(round) => {
+            Some(Err(ConsensusCheckError::NotReachedThisRound(round)))
         }
         ThresholdStatus::Unreachable(round) => Some(Err(ConsensusCheckError::Unreachable(round))),
     }
@@ -216,7 +216,7 @@ mod tests {
         // alone — it has to wait for s2. s2's task then panics instead of ever producing a reply,
         // so without the post-drain sweep the function would have nothing left to await and no
         // verdict to return. The sweep must turn that permanently-open slot into `NoReply` and
-        // recompute, landing on `MissedThisRound` (s1's lone attestation is not a proven
+        // recompute, landing on `NotReachedThisRound` (s1's lone attestation is not a proven
         // disagreement, just a shortfall).
         let s1 = PrivateKeySigner::random();
         let s2 = PrivateKeySigner::random();
@@ -234,14 +234,14 @@ mod tests {
         let result = resolve_round(tasks, HANDLE, CONTEXT_ID, &registry, tracker).await;
 
         match result {
-            Err(ConsensusCheckError::MissedThisRound(round)) => {
+            Err(ConsensusCheckError::NotReachedThisRound(round)) => {
                 assert_eq!(round.attested(), vec![s1.address()]);
                 assert!(
                     round.outstanding().is_empty(),
                     "the swept slot must not still read as Outstanding"
                 );
             }
-            other => panic!("expected MissedThisRound, got {other:?}"),
+            other => panic!("expected NotReachedThisRound, got {other:?}"),
         }
     }
 }

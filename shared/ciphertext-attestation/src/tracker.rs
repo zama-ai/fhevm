@@ -127,7 +127,7 @@ pub enum ThresholdStatus {
         winners: Vec<CoprocessorEntry>,
     },
     /// Every Coprocessor answered or failed; no group reached the threshold. Retriable.
-    MissedThisRound(Round),
+    NotReachedThisRound(Round),
     /// The Coprocessors that answered disagree, and even the best possible outcome would still
     /// fall short of threshold. Terminal for this round's registered signer set: cast
     /// attestations are immutable.
@@ -204,7 +204,7 @@ impl ConsensusTracker {
         if disagreed && largest + missing < threshold {
             return ThresholdStatus::Unreachable(round.clone());
         }
-        ThresholdStatus::MissedThisRound(round.clone())
+        ThresholdStatus::NotReachedThisRound(round.clone())
     }
 }
 
@@ -378,7 +378,7 @@ mod tests {
 
     #[tokio::test]
     async fn missed_this_round_when_failures_make_round_unwinnable() {
-        // Nobody disagreed, so an unwinnable round is MissedThisRound, never Unreachable.
+        // Nobody disagreed, so an unwinnable round is NotReachedThisRound, never Unreachable.
         let s1 = PrivateKeySigner::random();
         let s2 = PrivateKeySigner::random().address();
         let s3 = PrivateKeySigner::random().address();
@@ -390,11 +390,11 @@ mod tests {
         let status = tracker.record(s3, Reply::NoReply);
 
         match &status {
-            ThresholdStatus::MissedThisRound(round) => {
+            ThresholdStatus::NotReachedThisRound(round) => {
                 assert_eq!(round.attested().len(), 1);
                 assert_eq!(round.threshold.get(), 2);
             }
-            other => panic!("expected MissedThisRound, got {other:?}"),
+            other => panic!("expected NotReachedThisRound, got {other:?}"),
         }
         assert!(!matches!(status, ThresholdStatus::Unreachable(_)));
     }
@@ -437,11 +437,11 @@ mod tests {
         let status = tracker.record(signer, reply);
 
         match status {
-            ThresholdStatus::MissedThisRound(round) => {
+            ThresholdStatus::NotReachedThisRound(round) => {
                 assert_eq!(round.attested().len(), 2);
                 assert_eq!(round.threshold.get(), 3);
             }
-            other => panic!("expected MissedThisRound, got {other:?}"),
+            other => panic!("expected NotReachedThisRound, got {other:?}"),
         }
     }
 
@@ -511,11 +511,11 @@ mod tests {
         let status = tracker.record(s3, Reply::NoReply);
 
         match status {
-            ThresholdStatus::MissedThisRound(round) => {
+            ThresholdStatus::NotReachedThisRound(round) => {
                 assert_eq!(round.attested().len(), 2);
                 assert_eq!(round.threshold.get(), 2);
             }
-            other => panic!("expected MissedThisRound, got {other:?}"),
+            other => panic!("expected NotReachedThisRound, got {other:?}"),
         }
     }
 
@@ -526,11 +526,11 @@ mod tests {
         let tracker = ConsensusTracker::new(HANDLE, entries(std::iter::empty()), nz(1));
 
         match tracker.verdict() {
-            ThresholdStatus::MissedThisRound(round) => {
+            ThresholdStatus::NotReachedThisRound(round) => {
                 assert_eq!(round.attested().len(), 0);
                 assert_eq!(round.threshold.get(), 1);
             }
-            other => panic!("expected MissedThisRound, got {other:?}"),
+            other => panic!("expected NotReachedThisRound, got {other:?}"),
         }
     }
 
@@ -545,11 +545,11 @@ mod tests {
         let status = tracker.record(signer, reply);
 
         match status {
-            ThresholdStatus::MissedThisRound(round) => {
+            ThresholdStatus::NotReachedThisRound(round) => {
                 assert_eq!(round.attested().len(), 1);
                 assert_eq!(round.threshold.get(), 2);
             }
-            other => panic!("expected MissedThisRound, got {other:?}"),
+            other => panic!("expected NotReachedThisRound, got {other:?}"),
         }
     }
 

@@ -3,7 +3,7 @@
 //!
 //! These tests check what happens around those rules. The attestations are read from the
 //! Coprocessor buckets over HTTP, and when too few of them agree, the caller must get an error
-//! back. They also check which error it is, since `MissedThisRound` is retried and `Unreachable`
+//! back. They also check which error it is, since `NotReachedThisRound` is retried and `Unreachable`
 //! is not, and which buckets are named when the check does succeed.
 //!
 //! Each Coprocessor gets its own `wiremock` server, so every bucket is a real, separate URL. The
@@ -189,9 +189,9 @@ async fn under_threshold_is_missed_this_round() {
     assert!(
         matches!(
             err,
-            ConsensusCheckError::MissedThisRound(ref round) if round.threshold.get() == 2
+            ConsensusCheckError::NotReachedThisRound(ref round) if round.threshold.get() == 2
         ),
-        "expected MissedThisRound with threshold 2, got {err:?}"
+        "expected NotReachedThisRound with threshold 2, got {err:?}"
     );
 }
 
@@ -241,10 +241,10 @@ async fn unregistered_signers_are_missed_this_round() {
     assert!(
         matches!(
             err,
-            ConsensusCheckError::MissedThisRound(ref round)
+            ConsensusCheckError::NotReachedThisRound(ref round)
                 if round.attested().is_empty() && round.threshold.get() == 2
         ),
-        "expected MissedThisRound with 0 attested and threshold 2, got {err:?}"
+        "expected NotReachedThisRound with 0 attested and threshold 2, got {err:?}"
     );
 }
 
@@ -266,10 +266,10 @@ async fn head_timeout_is_missed_this_round() {
     assert!(
         matches!(
             err,
-            ConsensusCheckError::MissedThisRound(ref round)
+            ConsensusCheckError::NotReachedThisRound(ref round)
                 if round.attested().is_empty() && round.threshold.get() == 2
         ),
-        "expected MissedThisRound with 0 attested and threshold 2, got {err:?}"
+        "expected NotReachedThisRound with 0 attested and threshold 2, got {err:?}"
     );
 }
 
@@ -294,10 +294,10 @@ async fn attestation_for_another_handle_is_rejected() {
     assert!(
         matches!(
             err,
-            ConsensusCheckError::MissedThisRound(ref round)
+            ConsensusCheckError::NotReachedThisRound(ref round)
                 if round.attested().is_empty() && round.threshold.get() == 2
         ),
-        "expected MissedThisRound with 0 attested and threshold 2, got {err:?}"
+        "expected NotReachedThisRound with 0 attested and threshold 2, got {err:?}"
     );
 }
 
@@ -320,10 +320,10 @@ async fn cross_served_attestation_is_missed_this_round() {
     assert!(
         matches!(
             err,
-            ConsensusCheckError::MissedThisRound(ref round)
+            ConsensusCheckError::NotReachedThisRound(ref round)
                 if round.attested().is_empty() && round.threshold.get() == 2
         ),
-        "expected MissedThisRound with 0 attested and threshold 2, got {err:?}"
+        "expected NotReachedThisRound with 0 attested and threshold 2, got {err:?}"
     );
 }
 
