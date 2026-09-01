@@ -34,6 +34,7 @@ export const coprocessorVersionKeys = [
 export type MigrationVersions = {
   baseline: Record<string, string>;
   baselineTag: string;
+  blueRef: string;
   blueTag: string;
 };
 
@@ -77,16 +78,17 @@ export const migrationVersions = (env: Env = process.env): MigrationVersions => 
   const releaseTag = env.RFC029_BASELINE_FHEVM_TAG?.trim() || "v0.14.0-10";
   // v0.14.0-10 did not publish a host-contracts image; that component remained on v0.14.0-9.
   const hostTag = env.RFC029_BASELINE_HOST_TAG?.trim() || "v0.14.0-9";
-  const requestedBlueTag = required(env, "RFC029_BLUE_TAG");
-  if (!/^(?:v0\.15\.0-\d+|[0-9a-f]{7}|[0-9a-f]{40})$/i.test(requestedBlueTag)) {
-    throw new Error("RFC029_BLUE_TAG must be a v0.15.0-N release tag or an exact commit SHA");
+  const blueRef = required(env, "RFC029_BLUE_TAG");
+  if (!/^(?:v0\.15\.0-\d+|[0-9a-f]{40})$/i.test(blueRef)) {
+    throw new Error("RFC029_BLUE_TAG must be a v0.15.0-N release tag or a full commit SHA");
   }
-  const blueTag = /^[0-9a-f]{40}$/i.test(requestedBlueTag) ? requestedBlueTag.slice(0, 7) : requestedBlueTag;
+  const blueTag = /^[0-9a-f]{40}$/i.test(blueRef) ? blueRef.slice(0, 7) : blueRef;
   const kmsCoreTag = env.RFC029_KMS_CORE_TAG?.trim() || "v0.14.0-1";
   const relayerTag = env.RFC029_BASELINE_RELAYER_TAG?.trim() || "v0.14.0-4";
 
   return {
     baselineTag: releaseTag,
+    blueRef,
     blueTag,
     baseline: {
       GATEWAY_VERSION: releaseTag,

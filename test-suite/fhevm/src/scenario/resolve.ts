@@ -634,7 +634,8 @@ const parseSource = (
     if (!tag) {
       throw new Error(`${sourceLabel}.tag is required for registry mode`);
     }
-    return { mode, tag };
+    const compatTag = String((raw as Record<string, unknown>).compatTag ?? "");
+    return { mode, tag, ...(compatTag ? { compatTag } : {}) };
   }
   throw new Error(`${sourceLabel}.mode must be inherit, local, or registry`);
 };
