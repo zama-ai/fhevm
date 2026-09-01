@@ -1035,17 +1035,6 @@ const runBlueGreenProfile = async (
   // fires the timeout — true even with a single operator. [4/11] starts them again, and
   // the successful upgrade from [6/11] runs with injection active on every operator.
   console.log(`\n[2/11] failed upgrade: one operator cannot report (no unanimity → no cutover)`);
-  // Silence the operator before proposing: the window opens 15 blocks out and closes
-  // at 45, and stopping containers after the proposal would spend that window here.
-  const silencedListeners = await lastOperatorGcsListeners();
-  if (silencedListeners.length === 0) {
-    throw new Error("found no GCS host-listener containers to silence");
-  }
-  for (const container of silencedListeners) {
-    await dockerLifecycle("stop", container);
-  }
-  console.log(`OK:   stopped ${silencedListeners.join(", ")} — that operator ingests nothing`);
-
   const failGwBlock = Number((await run(
     ["cast", "block-number", "--rpc-url", gatewayRpcUrl],
   )).stdout.trim());
@@ -1063,6 +1052,29 @@ const runBlueGreenProfile = async (
   console.log(
     `OK:   activation emitted (windows=${failWindows} gw_start=${failGwStartBlock})`,
   );
+
+  // The GCS host-listener writes the upgrade_state row, so stop it only once every
+  // operator has one. DryRunStarted still follows, driven by blue's progress.
+  for (const db of operatorDatabases) {
+    await waitUntil({
+      label: `${db}  upgrade_state rows written`,
+      timeoutSecs: 60,
+      check: async () =>
+        (await psqlQuery(
+          db,
+          `SELECT CASE WHEN COUNT(*)=${hostChains.length} THEN 'ready' ELSE 'waiting' END
+             FROM upgrade_state WHERE stack_role='GCS';`,
+        )) === "ready",
+    });
+  }
+  const silencedListeners = await lastOperatorGcsListeners();
+  if (silencedListeners.length === 0) {
+    throw new Error("found no GCS host-listener containers to silence");
+  }
+  for (const container of silencedListeners) {
+    await dockerLifecycle("stop", container);
+  }
+  console.log(`OK:   stopped ${silencedListeners.join(", ")} — that operator ingests nothing`);
 
   console.log(`\n[3/11] failed upgrade: wait for GCS DryRunStarted, then submit a Gateway-only input proof`);
   for (const db of operatorDatabases) {
