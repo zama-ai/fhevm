@@ -1,5 +1,4 @@
 services:
-
   test-suite-e2e-debug:
     container_name: fhevm-test-suite-e2e-debug
     image: ghcr.io/zama-ai/fhevm/test-suite/e2e:${TEST_SUITE_VERSION}
@@ -11,5 +10,15 @@ services:
     network_mode: "container:fhevm-minio"
     env_file:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/test-suite.env
+    # Restart and fault tests act on explicitly named coprocessor containers.
+    # The socket is inert for ordinary E2E tests, but without it the consensus
+    # harness could only claim a restart happened rather than performing one.
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    # Docker sockets are normally root:docker mode 0660. Keep the runner
+    # unprivileged but add the host socket group explicitly; CI/local callers
+    # may override this default with `DOCKER_GID=$(stat -c %g /var/run/docker.sock)`.
+    group_add:
+      - '${DOCKER_GID:-999}'
     command:
       - tail -f /dev/null

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { waitForRpc } from "./flow/readiness";
+import { ensureOneMaterial, waitForRpc } from "./flow/readiness";
 
 describe("waitForRpc", () => {
   test("retries until eth_chainId returns a JSON-RPC result", async () => {
@@ -23,6 +23,28 @@ describe("waitForRpc", () => {
     try {
       await waitForRpc("http://localhost:8545");
       expect(calls).toBe(2);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
+
+describe("ensureOneMaterial", () => {
+  test("accepts a published compressed keyset without waiting for the legacy key path", async () => {
+    const originalFetch = globalThis.fetch;
+    const requested: string[] = [];
+    globalThis.fetch = (async (input: string | URL | Request) => {
+      const url = String(input);
+      requested.push(url);
+      return new Response(null, { status: url.includes("CompressedXofKeySet") ? 200 : 404 });
+    }) as unknown as typeof fetch;
+    try {
+      await ensureOneMaterial([
+        "http://minio:9000/kms-public/PUB/CompressedXofKeySet/key-id",
+        "http://minio:9000/kms-public/PUB/ServerKey/key-id",
+      ]);
+      expect(requested).toHaveLength(2);
+      expect(requested[0]).toContain("CompressedXofKeySet");
     } finally {
       globalThis.fetch = originalFetch;
     }
