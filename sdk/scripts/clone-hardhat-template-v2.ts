@@ -22,7 +22,7 @@
 //     install has to resolve from scratch; `setup:hardhat-template-v2` regenerates it.
 //
 // The clone's `.git` is never copied. The workspace copy is ordinary source owned by this repository;
-// `test:mirror` checks it against a fresh temporary clone.
+// `check:mirror` checks it against a fresh temporary clone.
 //
 // It does not install unless asked. `--install` hands off to `setup:hardhat-template-v2` rather than
 // running `npm install` itself, so there is one install path with npm's packed-directory semantics.
@@ -43,8 +43,11 @@ const UPSTREAM = 'https://github.com/zama-ai/fhevm-hardhat-template.git';
 /** The name upstream's manifest carries. A clone that does not have it is not the template. */
 const UPSTREAM_NAME = 'fhevm-hardhat-template';
 
-/** The template, relative to the workspace root. */
-const TEMPLATE_REL = join('hardhat', 'v2', 'fhevm-hardhat-template');
+/** The dev owner, relative to the workspace root. It holds the mirror and is never itself replaced. */
+const TEMPLATE_OWNER_REL = join('hardhat', 'v2', 'fhevm-hardhat-template');
+
+/** The mirrored template itself. Only this is wiped and re-cloned; the owner's package.json survives. */
+const TEMPLATE_REL = join(TEMPLATE_OWNER_REL, 'pkg');
 
 type Options = { force: boolean; install: boolean; ref: string | undefined };
 
@@ -176,7 +179,7 @@ function main(): void {
     }
 
     console.log('');
-    console.log(`   Check the mirror: (cd ${TEMPLATE_REL} && npm run test:mirror)`);
+    console.log(`   Check the mirror: (cd ${TEMPLATE_OWNER_REL} && npm run check:mirror)`);
   } finally {
     rmSync(tmpRoot, { recursive: true, force: true });
   }

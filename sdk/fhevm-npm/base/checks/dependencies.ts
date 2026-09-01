@@ -1,3 +1,5 @@
+import { resolve } from 'node:path';
+
 import type { NpmManifest } from '../../manifest.ts';
 import type { Violation } from '../diagnostics.ts';
 import { collectPackageImports } from '../imports.ts';
@@ -40,6 +42,7 @@ export function validateDependencies(
     ...validateDevDependencyPlacement(packages),
     ...validateWorkspaceMemberSpecs(packages),
     ...validatePrivateRootPins(packages, usesByPackage),
+    ...validatePublishedRootPinFloors(packages),
     ...validateScriptDependencyDeclarations(packages, scriptUsesByPackage),
     ...validateDependencyGroupPlacement(packages),
     ...validateSiblingRanges(packages),
@@ -172,6 +175,40 @@ export function validateWorkspaceMemberSpecs(packages: readonly LoadedPackage[])
   for (const source of packages) {
     if (!source.inventory.member) continue;
     for (const declaration of dependencyDeclarations(source.packageJson)) {
+      if (declaration.spec.startsWith('file:')) {
+        if (declaration.spec.endsWith('.tgz')) {
+          violations.push({
+            rule: '3.1.2',
+            packageKey: source.key,
+            message: `package '${declaration.name}' in '${declaration.field}' uses forbidden tarball spec "${declaration.spec}"`,
+          });
+          continue;
+        }
+
+        if (source.inventory.kind === 'published' && isNpmDistributed(source)) {
+          violations.push({
+            rule: '3.1.1',
+            packageKey: source.key,
+            message: `npm-distributed package must not use local file dependency '${declaration.name}' in '${declaration.field}'; replace "${declaration.spec}" with a publishable version`,
+          });
+          continue;
+        }
+
+        if (isMirrorOnly(source)) {
+          const linkedTarget = packages.find(
+            (candidate) => resolve(candidate.directory) === resolve(source.directory, declaration.spec.slice(5)),
+          );
+          if (linkedTarget?.packageJson.name !== declaration.name) {
+            violations.push({
+              rule: '3.1.1',
+              packageKey: source.key,
+              message: `mirror-only consumer link '${declaration.name}' in '${declaration.field}' does not resolve to the manifest package having that name`,
+            });
+          }
+          continue;
+        }
+      }
+
       const candidates = targets.get(declaration.name);
       if (candidates === undefined) continue;
       if (candidates.length !== 1) {
@@ -203,6 +240,15 @@ export function validateWorkspaceMemberSpecs(packages: readonly LoadedPackage[])
   }
 
   return violations;
+}
+
+function isNpmDistributed(pkg: LoadedPackage): boolean {
+  return (pkg.inventory.distribution ?? ['npm']).includes('npm');
+}
+
+function isMirrorOnly(source: LoadedPackage): boolean {
+  const distribution = source.inventory.distribution ?? ['npm'];
+  return source.inventory.kind === 'published' && distribution.length === 1 && distribution[0] === 'mirror';
 }
 
 export function validatePrivateRootPins(
@@ -263,6 +309,46 @@ export function validatePrivateRootPins(
   }
 
   return violations;
+}
+
+export function validatePublishedRootPinFloors(packages: readonly LoadedPackage[]): readonly Violation[] {
+  const root = packages.find((pkg) => pkg.key === '.');
+  if (root === undefined) throw new Error('The loaded inventory has no workspace root package');
+
+  const rootPins = new Map(
+    dependencyDeclarations(root.packageJson)
+      .filter((declaration) => isExactVersion(declaration.spec))
+      .map((declaration) => [declaration.name, declaration.spec] as const),
+  );
+  const violations: Violation[] = [];
+
+  for (const pkg of packages) {
+    if (pkg.inventory.kind !== 'published') continue;
+    for (const field of ['dependencies', 'peerDependencies'] as const) {
+      for (const [name, spec] of Object.entries(pkg.packageJson[field] ?? {})) {
+        const rootPin = rootPins.get(name);
+        if (rootPin === undefined) continue;
+        const floor = dependencyRangeFloor(spec);
+        if (floor === rootPin) continue;
+
+        violations.push({
+          rule: '4.3.1',
+          packageKey: pkg.key,
+          message:
+            floor === undefined
+              ? `'${name}' in '${field}' has unsupported range "${spec}"; use an exact, caret, or tilde range whose floor equals root pin "${rootPin}"`
+              : `'${name}' in '${field}' has range "${spec}" with floor "${floor}"; its floor must equal root pin "${rootPin}"`,
+        });
+      }
+    }
+  }
+
+  return violations;
+}
+
+function dependencyRangeFloor(spec: string): string | undefined {
+  const match = /^[~^]?(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)$/.exec(spec);
+  return match?.[1];
 }
 
 function requiredPrivateDependencyField(kind: string): DependencyField {

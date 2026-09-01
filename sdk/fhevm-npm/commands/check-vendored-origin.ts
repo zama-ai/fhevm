@@ -8,7 +8,7 @@ import {
 import type { CommandContext } from '../base/command.ts';
 import type { CommandReport, Timing } from '../base/diagnostics.ts';
 
-export function checkVendored(context: CommandContext, packageSelector?: string): CommandReport {
+export function checkVendoredOrigin(context: CommandContext, packageSelector?: string): CommandReport {
   const selectors =
     packageSelector === undefined ? vendoredPackageKeys(context.workspaceRoot, context.manifest) : [packageSelector];
   const results = selectors.map((selector) =>
@@ -16,7 +16,7 @@ export function checkVendored(context: CommandContext, packageSelector?: string)
   );
 
   return {
-    command: 'check-vendored',
+    command: 'check-vendored-origin',
     checkedPackageKeys: results.map((result) => result.packageKey),
     checkedItemLabel: 'package(s)',
     verboseSuccesses: results.flatMap((result) => result.successes),

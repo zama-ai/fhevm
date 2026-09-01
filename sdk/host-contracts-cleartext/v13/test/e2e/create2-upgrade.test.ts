@@ -180,7 +180,7 @@ function manifestAddresses(packageRoot: string): Readonly<Record<string, string>
  */
 function contractVersions(packageRoot: string): Readonly<Record<string, string>> {
   const path = join(packageRoot, 'pkg', 'ts', 'versions.ts');
-  assert.ok(existsSync(path), `no generated versions table at ${path} — run: npm run build:templates`);
+  assert.ok(existsSync(path), `no generated versions table at ${path} — run: make generate`);
   const src = readFileSync(path, 'utf8');
   const out: Record<string, string> = {};
   for (const [, key, value] of src.matchAll(/^\s{2}([a-zA-Z][a-zA-Z0-9]*): '([^']+)',$/gm)) {

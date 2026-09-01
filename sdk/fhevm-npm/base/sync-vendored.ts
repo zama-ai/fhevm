@@ -1,5 +1,5 @@
 // Writes the TypeScript that is shared verbatim between workspace members, from the one source of truth
-// to every destination that lists it. `check-vendored` reads the same mapping; this is the writer.
+// to every destination that lists it. `check-vendored-origin` reads the same mapping; this is the writer.
 //
 // A destination is normally byte-identical to its source: no header is prepended, because each file names
 // its own provenance on line 1, and no import is rewritten, because these files import only bare

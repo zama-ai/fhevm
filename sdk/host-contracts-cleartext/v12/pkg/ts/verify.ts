@@ -41,7 +41,7 @@ type Target = {
   readonly label: string;
   readonly address: string;
   readonly abi: readonly unknown[];
-  /** Absent for the two contracts that expose no `getVersion()`: `CleartextDB` and `ACLOwner`. */
+  /** Absent for `ACLOwner`, the one contract that exposes no `getVersion()`. */
   readonly versionKey?: keyof typeof CONTRACT_VERSIONS;
   /** False for `PauserSet` and `ACLOwner`, which are plain contracts rather than ERC-1967 proxies. */
   readonly isProxy: boolean;
@@ -91,7 +91,13 @@ function targetsOf(deployed: PartialStack): readonly Target[] {
       versionKey: 'cleartextArithmetic',
       isProxy: true,
     },
-    { label: 'CleartextDB', address: c.cleartextDbAddress, abi: cleartextDbAbi, isProxy: true },
+    {
+      label: 'CleartextDB',
+      address: c.cleartextDbAddress,
+      abi: cleartextDbAbi,
+      versionKey: 'cleartextDB',
+      isProxy: true,
+    },
     {
       label: 'PauserSet',
       address: deployed.pauserSetAddress,

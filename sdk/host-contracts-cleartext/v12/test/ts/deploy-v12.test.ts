@@ -13,14 +13,20 @@ import { createPublicClient, createWalletClient, http, parseEventLogs, type Addr
 import { mnemonicToAccount, privateKeyToAccount } from 'viem/accounts';
 import { foundry } from 'viem/chains';
 import { expect, test } from 'vitest';
-import { startAnvil, stopAnvil, waitForAnvil } from '@fhevm/sdk-common-dev';
+import {
+  startAnvil,
+  stopAnvil,
+  waitForAnvil,
+  MNEMONIC,
+  DEPLOYER_ADDRESS_INDEX,
+  ERC_1967_IMPL_SLOT,
+} from '@fhevm/sdk-common-dev';
 import { privateKeyFromMnemonic, privateKeyToAddress } from '@fhevm/sdk-common-dev';
 import { expectedHcuLimit } from './utils/expectedBootstrap.ts';
 import { createViemEthereumAdapters, createViemEthereumHistory } from '@fhevm/sdk-vendored-dev/viemEthereumLib.ts';
 
 // ERC-1967 implementation slot: keccak256("eip1967.proxy.implementation") - 1.
-const IMPL_SLOT = '0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc' as const;
-const MNEMONIC = 'adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer';
+const IMPL_SLOT = ERC_1967_IMPL_SLOT;
 const FHE_TYPE_UINT64 = 5; // FheType.Uint64
 
 // Executor: trivialEncrypt + its result event.
@@ -105,8 +111,7 @@ const GET_VERSION_ABI = [
  * Two things look wrong here and are not. The cleartext variants report their **base** contract's
  * name — `CONTRACT_NAME` is a `private constant` read by the base's `getVersion`, and the subclasses
  * override neither — so `CleartextFHEVMExecutor` identifies itself as `FHEVMExecutor`.
- * `CleartextArithmetic` is the lone exception, declaring its own. And `CleartextDB` is absent
- * because it exposes no `getVersion` at all.
+ * `CleartextArithmetic` and `CleartextDB` are the exceptions, declaring their own.
  *
  * These strings track upstream's `MINOR_VERSION` constants, so they move when a contract is bumped
  * during a generation sync — see README step 7, which is also where `reinitializeV<n>` is checked
@@ -224,7 +229,7 @@ function bootstrapConfig(deployerAddress: string, kmsSignerAddress: string): Boo
 }
 
 test('full deploy of a brand-new v13 stack: all proxies materialize and cleartext round-trips', async () => {
-  const deployerKey = privateKeyFromMnemonic({ mnemonic: MNEMONIC, addressIndex: 5 });
+  const deployerKey = privateKeyFromMnemonic({ mnemonic: MNEMONIC, addressIndex: DEPLOYER_ADDRESS_INDEX });
   const deployerAddress = privateKeyToAddress({ privateKey: deployerKey });
   const kmsSigner = privateKeyToAddress({
     privateKey: privateKeyFromMnemonic({ mnemonic: MNEMONIC, addressIndex: 8 }),
@@ -359,7 +364,7 @@ test('full deploy of a brand-new v13 stack: all proxies materialize and cleartex
 }, 120_000);
 
 test('deploy without precomputed derives addresses from the deployer live nonce', async () => {
-  const deployerKey = privateKeyFromMnemonic({ mnemonic: MNEMONIC, addressIndex: 5 });
+  const deployerKey = privateKeyFromMnemonic({ mnemonic: MNEMONIC, addressIndex: DEPLOYER_ADDRESS_INDEX });
   const deployerAddress = privateKeyToAddress({ privateKey: deployerKey });
 
   const anvil = startAnvil({ port: 8611, mnemonic: MNEMONIC });
@@ -420,7 +425,7 @@ test('deploy without precomputed derives addresses from the deployer live nonce'
 }, 120_000);
 
 test('every deployed contract reports its expected getVersion()', async () => {
-  const deployerKey = privateKeyFromMnemonic({ mnemonic: MNEMONIC, addressIndex: 5 });
+  const deployerKey = privateKeyFromMnemonic({ mnemonic: MNEMONIC, addressIndex: DEPLOYER_ADDRESS_INDEX });
 
   const anvil = startAnvil({ port: 8612, mnemonic: MNEMONIC });
   try {
@@ -444,6 +449,7 @@ test('every deployed contract reports its expected getVersion()', async () => {
       ['hcuLimit', deployed.fhevmAddresses.hcuLimitAddress],
       ['pauserSet', deployed.pauserSetAddress],
       ['cleartextArithmetic', deployed.cleartextAddresses.cleartextArithmeticAddress],
+      ['cleartextDB', deployed.cleartextAddresses.cleartextDbAddress],
     ];
 
     // Guard against a contract being added to the stack and silently escaping this check.
@@ -503,7 +509,7 @@ function derivedSigners(changeIndex: number): readonly string[] {
  * relayer only fails later when it is asked to sign as a signer it has no key for.
  */
 test('deploy with no config registers the signers the SDK derives', async () => {
-  const deployerKey = privateKeyFromMnemonic({ mnemonic: MNEMONIC, addressIndex: 5 });
+  const deployerKey = privateKeyFromMnemonic({ mnemonic: MNEMONIC, addressIndex: DEPLOYER_ADDRESS_INDEX });
 
   const anvil = startAnvil({ port: 8613, mnemonic: MNEMONIC });
   try {
@@ -566,7 +572,7 @@ test('deploy with no config registers the signers the SDK derives', async () => 
  * consumer copies, so if it is longer than a few lines the interface is wrong. It is not.
  */
 test('verify reports a freshly deployed stack as sound', async () => {
-  const deployerKey = privateKeyFromMnemonic({ mnemonic: MNEMONIC, addressIndex: 5 });
+  const deployerKey = privateKeyFromMnemonic({ mnemonic: MNEMONIC, addressIndex: DEPLOYER_ADDRESS_INDEX });
   const adminKey = privateKeyFromMnemonic({ mnemonic: MNEMONIC, addressIndex: 6 });
 
   const anvil = startAnvil({ port: 8616, mnemonic: MNEMONIC });
@@ -622,7 +628,7 @@ test('verify reports a freshly deployed stack as sound', async () => {
 test('verify catches a stack whose admin never accepted ownership', async () => {
   // The one failure mode that leaves everything else looking perfect: the deployer is still root over the
   // stack, every version and every wired address is correct, and only `ACLOwner.owner()` gives it away.
-  const deployerKey = privateKeyFromMnemonic({ mnemonic: MNEMONIC, addressIndex: 5 });
+  const deployerKey = privateKeyFromMnemonic({ mnemonic: MNEMONIC, addressIndex: DEPLOYER_ADDRESS_INDEX });
 
   const anvil = startAnvil({ port: 8617, mnemonic: MNEMONIC });
   try {
@@ -658,7 +664,7 @@ test('verify catches a stack whose admin never accepted ownership', async () => 
 }, 180_000);
 
 test('snapshotStack captures every readable value, and verify needs one for upgrade mode', async () => {
-  const deployerKey = privateKeyFromMnemonic({ mnemonic: MNEMONIC, addressIndex: 5 });
+  const deployerKey = privateKeyFromMnemonic({ mnemonic: MNEMONIC, addressIndex: DEPLOYER_ADDRESS_INDEX });
 
   const anvil = startAnvil({ port: 8618, mnemonic: MNEMONIC });
   try {

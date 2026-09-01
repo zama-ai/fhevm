@@ -136,7 +136,7 @@ copy (rule 6).
 On the 0.13 line there is nothing to leave out: upstream and vendored are both 21 files and byte-identical
 (confirmed against `release/0.13.x`, whose 4 commits since `v0.13.2` touch nothing under
 `host-contracts/contracts`). The first real judgement call arrives with 0.14 — `contracts/bridge/` exists
-on `main` and on no 0.11/0.12/0.13 tag, so that sync is where `npm run test:vendored -- --verbose` will start
+on `main` and on no 0.11/0.12/0.13 tag, so that sync is where `npm run check:vendored-origin -- --verbose` will start
 listing upstream-only files for you to accept or decline.
 
 ## 3. Update the cleartext variants
@@ -330,7 +330,7 @@ npm run test                 # includes the forge-vs-template equivalence test
 The rule 6 gate — vendored sources byte-identical to the declared commit:
 
 ```sh
-npm run test:vendored             # validate npm-manifest.json vendored sources
+npm run check:vendored-origin             # validate npm-manifest.json vendored sources
 #   🔎 rule 6: src/contracts must match host-contracts/contracts at v0.13.2 (07fb05fb75f0)
 #      ✅ 21 vendored files identical to upstream (21 upstream files scanned)
 ```

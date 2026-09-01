@@ -3,7 +3,7 @@
   "$id": "https://github.com/zama-ai/fhevm/blob/main/sdk/npm-manifest.schema.json",
   "title": "fhevm sdk npm manifest",
   "description": "Inventory of every source package.json in the sdk/ discovery universe defined by fhevm-npm/npm-rules.md, plus repository-wide npm and toolchain policy.",
-  "$comment": "This schema enforces manifest-local shape and kind invariants. A TypeScript validator must enforce filesystem, package.json and cross-entry invariants: complete discovery, key/path containment, member/workspaces equality, package names and privacy, required published package.json fields, private version 0.0.0, exports, dependency rules, dev/published ownership cardinality, and the conventional test:publint, test:consumer, conditional test:vendored and conditional test:mirror scripts.",
+  "$comment": "This schema enforces manifest-local shape and kind invariants. A TypeScript validator must enforce filesystem, package.json and cross-entry invariants: complete discovery, key/path containment, member/workspaces equality, package names and privacy, required published package.json fields, private version 0.0.0, exports, dependency rules, dev/published ownership cardinality, and the conventional check:publint, npm-distribution-conditional test:consumer, conditional test:vendored and conditional test:mirror scripts.",
   "type": "object",
   "required": ["packageJson", "packages"],
   "additionalProperties": false,
@@ -310,6 +310,24 @@
           "uniqueItems": true,
           "items": { "type": "string", "minLength": 1 }
         },
+        "consumerTests": {
+          "type": "object",
+          "description": "Optional overrides for the conventional sibling consumer fixtures of an npm-distributed package, keyed by module format.",
+          "$comment": "Each value is the key of another manifest package. The TypeScript validator checks that the consumer supports the requested format, directly file-links this package, has a runnable test script and carries a committed lockfile.",
+          "minProperties": 1,
+          "additionalProperties": false,
+          "properties": {
+            "cjs": { "$ref": "#/$defs/prefixedRelativePath" },
+            "esm": { "$ref": "#/$defs/prefixedRelativePath" }
+          }
+        },
+        "distribution": {
+          "type": "array",
+          "description": "Channels through which a published payload is distributed. Omitted means npm.",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "enum": ["npm", "mirror"] }
+        },
         "mirror": {
           "$ref": "#/$defs/mirror"
         },
@@ -379,6 +397,18 @@
             "required": ["kind"]
           },
           "then": { "not": { "required": ["publishedRelPath"] } }
+        },
+        {
+          "$comment": "Only a published package can override the locations of its consumer tests.",
+          "if": {
+            "properties": {
+              "kind": {
+                "enum": ["dev", "shared-helper", "internal-consumer", "standalone", "non-package", "workspace-root"]
+              }
+            },
+            "required": ["kind"]
+          },
+          "then": { "not": { "required": ["consumerTests"] } }
         },
         {
           "$comment": "A non-package manifest is never a member, has no package name and carries no ownership, dependency-group or content-distribution metadata.",

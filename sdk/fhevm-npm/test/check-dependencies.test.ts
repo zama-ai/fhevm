@@ -7,6 +7,7 @@ import {
   validateDevDependencyPlacement,
   validateForbiddenDependencies,
   validatePrivateRootPins,
+  validatePublishedRootPinFloors,
   validateScriptDependencyDeclarations,
   validateSiblingRanges,
   validateWorkspaceMemberSpecs,
@@ -152,6 +153,90 @@ test('rule 3.1.1 requires the exact plain workspace-member version', () => {
   assert.equal(violations[0]?.rule, '3.1.1');
 });
 
+test('rule 3.1.1 permits an exact file link from a mirror-only consumer project', () => {
+  const target = loadedPackage(
+    './plugin/pkg',
+    { kind: 'published', name: '@scope/plugin', member: true },
+    { name: '@scope/plugin', version: '1.2.3' },
+  );
+  const consumer = loadedPackage(
+    './template/pkg',
+    {
+      kind: 'published',
+      name: 'template',
+      member: true,
+      distribution: ['mirror'],
+      mirror: { repository: 'https://example.com/template' },
+    },
+    {
+      name: 'template',
+      version: '0.0.0',
+      devDependencies: { '@scope/plugin': 'file:../../plugin/pkg' },
+    },
+  );
+
+  assert.deepEqual(validateWorkspaceMemberSpecs([root, target, consumer]), []);
+
+  const wrongTarget = loadedPackage('./template/pkg', consumer.inventory, {
+    ...consumer.packageJson,
+    devDependencies: { '@scope/plugin': 'file:../../other/pkg' },
+  });
+  assert.equal(validateWorkspaceMemberSpecs([root, target, wrongTarget]).length, 1);
+});
+
+test('rule 3.1.1 forbids file dependencies in npm-distributed packages', () => {
+  const target = loadedPackage(
+    './library/pkg',
+    { kind: 'published', name: '@scope/library', member: true },
+    { name: '@scope/library', version: '1.2.3' },
+  );
+  const published = loadedPackage(
+    './application/pkg',
+    { kind: 'published', name: '@scope/application', member: true, distribution: ['npm'] },
+    {
+      name: '@scope/application',
+      version: '2.0.0',
+      dependencies: { '@scope/library': 'file:../../library/pkg' },
+    },
+  );
+
+  assert.deepEqual(validateWorkspaceMemberSpecs([root, target, published]), [
+    {
+      rule: '3.1.1',
+      packageKey: './application/pkg',
+      message:
+        "npm-distributed package must not use local file dependency '@scope/library' in 'dependencies'; replace \"file:../../library/pkg\" with a publishable version",
+    },
+  ]);
+});
+
+test('rule 3.1.2 rejects tarball dependencies even in mirror-only consumers', () => {
+  const consumer = loadedPackage(
+    './template/pkg',
+    {
+      kind: 'published',
+      name: 'template',
+      member: true,
+      distribution: ['mirror'],
+      mirror: { repository: 'https://example.com/template' },
+    },
+    {
+      name: 'template',
+      version: '0.0.0',
+      devDependencies: { '@scope/plugin': 'file:../../tarballs/plugin.tgz' },
+    },
+  );
+
+  assert.deepEqual(validateWorkspaceMemberSpecs([root, consumer]), [
+    {
+      rule: '3.1.2',
+      packageKey: './template/pkg',
+      message:
+        "package '@scope/plugin' in 'devDependencies' uses forbidden tarball spec \"file:../../tarballs/plugin.tgz\"",
+    },
+  ]);
+});
+
 test('rule 4.2.1 requires imported root pins exactly and rejects unused declarations', () => {
   const importedWrong = loadedPackage(
     './imported',
@@ -185,6 +270,48 @@ test('rule 4.2.1 requires imported root pins exactly and rejects unused declarat
     violations.find((violation) => violation.packageKey === './missing')?.message,
     `imports root-pinned package 'ethers' but does not declare it; add "ethers": "6.17.0" to 'dependencies' as required for kind 'shared-helper'`,
   );
+});
+
+test("rule 4.3.1 requires published dependency range floors to equal the workspace's exact root pins", () => {
+  const pinnedRoot = loadedPackage(
+    '.',
+    { kind: 'workspace-root', name: 'workspace', private: true, member: false },
+    { devDependencies: { ethers: '6.17.0', viem: '2.55.19' } },
+  );
+  const valid = loadedPackage(
+    './valid/pkg',
+    { kind: 'published', name: '@scope/valid', member: true },
+    {
+      dependencies: { ethers: '~6.17.0', unrelated: '1.0.0' },
+      peerDependencies: { viem: '^2.55.19' },
+    },
+  );
+  const invalid = loadedPackage(
+    './invalid/pkg',
+    { kind: 'published', name: '@scope/invalid', member: true },
+    {
+      dependencies: { ethers: '>=6.17.0 <7' },
+      peerDependencies: { viem: '^2.54.0' },
+    },
+  );
+  const privatePackage = loadedPackage(
+    './private',
+    { kind: 'shared-helper', name: '@scope/private-dev', private: true, member: true },
+    { dependencies: { ethers: '^6.16.0' } },
+  );
+
+  assert.deepEqual(validatePublishedRootPinFloors([pinnedRoot, valid, invalid, privatePackage]), [
+    {
+      rule: '4.3.1',
+      packageKey: './invalid/pkg',
+      message: `'ethers' in 'dependencies' has unsupported range ">=6.17.0 <7"; use an exact, caret, or tilde range whose floor equals root pin "6.17.0"`,
+    },
+    {
+      rule: '4.3.1',
+      packageKey: './invalid/pkg',
+      message: `'viem' in 'peerDependencies' has range "^2.54.0" with floor "2.54.0"; its floor must equal root pin "2.55.19"`,
+    },
+  ]);
 });
 
 test('npm-script executable detection resolves commands without matching ordinary arguments', () => {

@@ -31,8 +31,7 @@ function isValueFlag(token: string): token is ValueFlag {
 }
 
 /** The member this was invoked for: npm's own answer when there is one, the cwd otherwise. */
-const memberRoot =
-  process.env.npm_package_json === undefined ? process.cwd() : dirname(process.env.npm_package_json);
+const memberRoot = process.env.npm_package_json === undefined ? process.cwd() : dirname(process.env.npm_package_json);
 
 const values = new Map<ValueFlag, string>();
 let clean = false;

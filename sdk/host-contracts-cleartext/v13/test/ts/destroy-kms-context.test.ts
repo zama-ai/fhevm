@@ -2,11 +2,9 @@ import { defineNewKmsContext, deploy, destroyKmsContext, precomputeAddresses } f
 import { createPublicClient, http, type Address } from 'viem';
 import { foundry } from 'viem/chains';
 import { expect, test } from 'vitest';
-import { startAnvil, stopAnvil, waitForAnvil } from '@fhevm/sdk-common-dev';
+import { startAnvil, stopAnvil, waitForAnvil, MNEMONIC, DEPLOYER_ADDRESS_INDEX } from '@fhevm/sdk-common-dev';
 import { privateKeyFromMnemonic, privateKeyToAddress } from '@fhevm/sdk-common-dev';
 import { createViemEthereumAdapters } from '@fhevm/sdk-vendored-dev/viemEthereumLib.ts';
-
-const MNEMONIC = 'adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer';
 
 const PROTOCOL_CONFIG_ABI = [
   {
@@ -26,7 +24,7 @@ const PROTOCOL_CONFIG_ABI = [
 ] as const;
 
 test('destroyKmsContext retires a past KMS context through ACLOwner.execute', async () => {
-  const deployerKey = privateKeyFromMnemonic({ mnemonic: MNEMONIC, addressIndex: 5 });
+  const deployerKey = privateKeyFromMnemonic({ mnemonic: MNEMONIC, addressIndex: DEPLOYER_ADDRESS_INDEX });
   const deployerAddress = privateKeyToAddress({ privateKey: deployerKey });
 
   const anvil = startAnvil({ port: 8631, mnemonic: MNEMONIC });

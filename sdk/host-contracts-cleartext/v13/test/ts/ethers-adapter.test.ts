@@ -12,11 +12,10 @@
 import { deploy, precomputeAddresses } from '../../pkg/ts/index.ts';
 import { ethers as EthersT } from 'ethers';
 import { expect, test } from 'vitest';
-import { startAnvil, stopAnvil, waitForAnvil } from '@fhevm/sdk-common-dev';
+import { startAnvil, stopAnvil, waitForAnvil, MNEMONIC, DEPLOYER_ADDRESS_INDEX } from '@fhevm/sdk-common-dev';
 import { createEthersEthereumAdapters, createEthersEthereumSigner } from '@fhevm/sdk-vendored-dev/ethersEthereumLib.ts';
 
-const MNEMONIC = 'adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer';
-const DEPLOYER_INDEX = 5;
+const DEPLOYER_INDEX = DEPLOYER_ADDRESS_INDEX;
 
 ////////////////////////////////////////////////////////////////////////////////
 

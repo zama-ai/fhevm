@@ -7,7 +7,7 @@ pragma solidity ^0.8.24;
 // The string each contract's `getVersion()` returns, read from the CONTRACT_NAME + MAJOR/MINOR/PATCH
 // constants in the source that declares it. Note the cleartext variants inherit `getVersion` and so
 // report their BASE contract's name -- CleartextFHEVMExecutor identifies itself as FHEVMExecutor.
-// CleartextDB is absent because it exposes no `getVersion` at all.
+// ACLOwner is absent because it exposes no `getVersion` at all.
 
 library LocalHostVersions {
     /// @dev src/contracts/ACL.sol
@@ -15,6 +15,9 @@ library LocalHostVersions {
 
     /// @dev src/cleartext/CleartextArithmetic.sol
     string internal constant CLEARTEXT_ARITHMETIC = "CleartextArithmetic v0.3.0";
+
+    /// @dev src/cleartext/CleartextDB.sol
+    string internal constant CLEARTEXT_DB = "CleartextDB v0.1.0";
 
     /// @dev src/contracts/FHEVMExecutor.sol
     string internal constant FHEVM_EXECUTOR = "FHEVMExecutor v0.3.0";

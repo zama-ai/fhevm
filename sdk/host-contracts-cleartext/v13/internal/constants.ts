@@ -41,7 +41,7 @@ export const PREVIOUS_GENERATION_DIR_ABS_PATH = resolve(PACKAGE_ROOT_ABS_PATH, '
 
 // The local stack's deploy identity, defined in @fhevm/sdk-common-dev because every generation shares it.
 // Re-exported so all of internal/ keeps one import point for constants.
-export { DEPLOYER_ADDRESS_INDEX, MNEMONIC, ZAMA_LOCAL_CONFIG } from '@fhevm/sdk-common-dev';
+export { DEPLOYER_ADDRESS_INDEX, MNEMONIC, ZAMA_LOCAL_CONFIG, ERC_1967_IMPL_SLOT } from '@fhevm/sdk-common-dev';
 
 /**
  * The Solidity import prefix the contracts read their address set through — the left side of a Foundry

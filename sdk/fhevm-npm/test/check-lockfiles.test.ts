@@ -25,6 +25,46 @@ test('reports missing root and standalone lockfiles and a member lockfile', () =
   assert.ok(violations.every((violation) => violation.rule === '6.1.1'));
 });
 
+test('requires a local lockfile for a manifest-selected consumer even when it is a workspace member', () => {
+  const root = loadedPackage(
+    '.',
+    { kind: 'workspace-root', name: 'workspace', private: true, member: false },
+    { name: 'workspace', private: true },
+  );
+  const published = loadedPackage(
+    './plugin/pkg',
+    {
+      kind: 'published',
+      name: '@scope/plugin',
+      member: true,
+      consumerTests: { cjs: './template/pkg' },
+    },
+    { name: '@scope/plugin', version: '1.0.0' },
+  );
+  const consumer = loadedPackage(
+    './template/pkg',
+    { kind: 'published', name: 'template', member: true, distribution: ['mirror'] },
+    { name: 'template', version: '1.0.0', type: 'commonjs' },
+  );
+  const rootLock = join(root.directory, 'package-lock.json');
+  const consumerLock = join(consumer.directory, 'package-lock.json');
+
+  assert.deepEqual(
+    validateLockfiles([root, published, consumer], (file) => file === rootLock || file === consumerLock),
+    [],
+  );
+  assert.deepEqual(
+    validateLockfiles([root, published, consumer], (file) => file === rootLock),
+    [
+      {
+        rule: '6.1.1',
+        packageKey: './template/pkg',
+        message: 'manifest-selected consumer must have its own package-lock.json for isolated npm ci',
+      },
+    ],
+  );
+});
+
 function fixtures() {
   return [
     loadedPackage(

@@ -8,7 +8,7 @@ import type { NpmManifest } from '../manifest.ts';
  * Two sources, one command: the shared TypeScript comes from `common-vendored/manifest.json`, the
  * pinned Solidity from `npm-manifest.json` at a declared commit. They were separate before — the
  * TypeScript had a writer and the Solidity had only a checker — which is what made a tag bump a manual
- * edit that `check-vendored` graded afterwards.
+ * edit that `check-vendored-origin` graded afterwards.
  */
 export function syncVendoredCommand(options: {
   readonly workspaceRoot: string;

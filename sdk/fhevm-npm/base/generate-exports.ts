@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join, relative, resolve, sep } from 'node:path';
+import { dirname, relative, resolve, sep } from 'node:path';
 
 import {
   type ExportBlock,
@@ -20,7 +20,6 @@ export type GenerateExportsOptions = {
 };
 
 type RenderedOutput = { readonly path: string; readonly content: string };
-type ModuleSystem = 'esm' | 'cjs';
 
 /**
  * Which test framework the output is written for.
@@ -82,7 +81,7 @@ export function renderExportManifest(manifestFile: string): readonly RenderedOut
     const outputPath = resolveOutputPath(root, configuredPath);
     outputs.push({
       path: outputPath,
-      content: renderTest(manifest, moduleSystem, 'node', header(absoluteManifestFile, outputPath)),
+      content: renderTest(manifest, 'node', header(absoluteManifestFile, outputPath)),
     });
   }
 
@@ -90,7 +89,7 @@ export function renderExportManifest(manifestFile: string): readonly RenderedOut
     const outputPath = resolveOutputPath(root, manifest.outputs.test);
     outputs.push({
       path: outputPath,
-      content: renderTest(manifest, 'esm', 'vitest', header(absoluteManifestFile, outputPath)),
+      content: renderTest(manifest, 'vitest', header(absoluteManifestFile, outputPath)),
     });
   }
 
@@ -133,10 +132,6 @@ function valueExports(manifest: ExportManifest): readonly ExportEntry[] {
   return manifest.blocks.filter((block) => !block.typeOnly).flatMap((block) => block.exports);
 }
 
-function typeExports(manifest: ExportManifest): readonly ExportEntry[] {
-  return manifest.blocks.filter((block) => block.typeOnly).flatMap((block) => block.exports);
-}
-
 function renderExportStatement(block: ExportBlock, printWidth: number): string {
   const keyword = block.typeOnly ? 'export type' : 'export';
   const names = block.exports.map((entry) => entry.name);
@@ -161,42 +156,23 @@ function renderIndex(manifest: ExportManifest, generatedHeader: string): string 
   return `${generatedHeader}\n\n${body}\n`;
 }
 
-function renderImports(manifest: ExportManifest, moduleSystem: ModuleSystem, dialect: RunnerDialect): string {
-  const runner = dialect.imports;
-  if (moduleSystem === 'esm') {
-    const names = manifest.blocks.flatMap((block) =>
-      block.exports.map((entry) => `  ${block.typeOnly ? 'type ' : ''}${entry.name},`),
-    );
-    return `import {\n${names.join('\n')}\n} from '${manifest.packageSpecifier}';\n${runner}`;
-  }
-
-  const parts: string[] = [];
-  const types = typeExports(manifest);
-  const values = valueExports(manifest);
-  const mode = `{ 'resolution-mode': 'require' }`;
-  if (types.length > 0) {
-    parts.push(`import type {\n${renderNames(types)}\n} from '${manifest.packageSpecifier}' with ${mode};`);
-  }
-  parts.push(runner);
-  if (values.length > 0) {
-    parts.push(
-      `const {\n${renderNames(values)}\n} = require('${manifest.packageSpecifier}') as typeof import('${manifest.packageSpecifier}', {\n` +
-        `  with: ${mode},\n});`,
-    );
-  }
-  return parts.join('\n\n');
+/**
+ * How a fixture reaches the package — now identical whatever its module system.
+ *
+ * The CJS fixture used to need `require()` plus `with { 'resolution-mode': 'require' }`: the package
+ * served one unconditional `types` entry whose declarations read as ESM, so a CommonJS importer got
+ * TS1479 and even `import type` got TS1541. Per-condition `types` in the exports map fixed that at the
+ * source, and a CommonJS consumer now writes the same plain `import` an ESM one does. Keeping the
+ * workaround here would have hidden the packaging defect instead of surfacing it.
+ */
+function renderImports(manifest: ExportManifest, dialect: RunnerDialect): string {
+  const names = manifest.blocks.flatMap((block) =>
+    block.exports.map((entry) => `  ${block.typeOnly ? 'type ' : ''}${entry.name},`),
+  );
+  return `import {\n${names.join('\n')}\n} from '${manifest.packageSpecifier}';\n${dialect.imports}`;
 }
 
-function renderNames(entries: readonly ExportEntry[]): string {
-  return entries.map((entry) => `  ${entry.name},`).join('\n');
-}
-
-function renderTest(
-  manifest: ExportManifest,
-  moduleSystem: ModuleSystem,
-  runner: Runner,
-  generatedHeader: string,
-): string {
+function renderTest(manifest: ExportManifest, runner: Runner, generatedHeader: string): string {
   const dialect = dialects[runner];
   const preamble = manifest.dummies.preamble.flatMap((entry) =>
     renderBinding(`const ${entry.name}: ${entry.type}`, entry.expression),
@@ -207,7 +183,7 @@ function renderTest(
 
   return `${generatedHeader}
 
-${renderImports(manifest, moduleSystem, dialect)}
+${renderImports(manifest, dialect)}
 
 ${preamble.join('\n')}
 

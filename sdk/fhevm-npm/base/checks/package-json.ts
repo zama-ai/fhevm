@@ -63,6 +63,14 @@ export function validatePackageJson(
     }
 
     if (pkg.inventory.kind === 'published') {
+      if (isNpmDistributed(pkg) && Object.hasOwn(pkg.packageJson, 'devDependencies')) {
+        violations.push({
+          rule: '2.1.2',
+          packageKey: packageJsonKey,
+          message:
+            "npm-distributed published package must not contain 'devDependencies'; development dependencies belong on its dev owner",
+        });
+      }
       if (pkg.packageJson.license !== 'BSD-3-Clause-Clear') {
         const actualLicense =
           typeof pkg.packageJson.license === 'string' ? `"${pkg.packageJson.license}"` : '<missing>';
@@ -121,6 +129,10 @@ export function validatePackageJson(
   }
 
   return violations;
+}
+
+function isNpmDistributed(pkg: LoadedPackage): boolean {
+  return (pkg.inventory.distribution ?? ['npm']).includes('npm');
 }
 
 function validateNodeTypesVersion(packageJsonKey: string, pkg: LoadedPackage): readonly Violation[] {

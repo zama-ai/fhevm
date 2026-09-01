@@ -49,6 +49,67 @@ test('reports a version mismatch and package-local pins', () => {
   }
 });
 
+test('checks effective Forge fmt settings against foundry.base.toml', () => {
+  const workspace = mkdtempSync(join(tmpdir(), 'fhevm-npm-foundry-'));
+  try {
+    mkdirSync(join(workspace, 'member'), { recursive: true });
+    writeFileSync(join(workspace, 'foundry.base.toml'), '[fmt]\nline_length = 120\nignore = ["shared"]\n');
+    writeFileSync(join(workspace, 'member', 'foundry.toml'), '[profile.default]\nextends = "../foundry.base.toml"\n');
+
+    const inspection = inspectFoundry(
+      workspace,
+      manifest('1.5.1-stable'),
+      () => 'forge Version: 1.5.1-stable\n',
+      // configFile set = the shared base resolved through FOUNDRY_CONFIG; unset = the package itself.
+      (_directory, configFile) =>
+        configFile === undefined
+          ? { fmt: { line_length: 120, ignore: ['local'] } }
+          : { fmt: { line_length: 120, ignore: ['shared'] } },
+    );
+    assert.deepEqual(inspection.fmtPackageKeys, ['./member']);
+    assert.deepEqual(inspection.violations, []);
+
+    const drift = inspectFoundry(
+      workspace,
+      manifest('1.5.1-stable'),
+      () => 'forge Version: 1.5.1-stable\n',
+      (_directory, configFile) =>
+        configFile === undefined ? { fmt: { line_length: 100 } } : { fmt: { line_length: 120 } },
+    );
+    assert.deepEqual(drift.violations, [
+      {
+        rule: '4.1.3',
+        packageKey: './member',
+        message: "effective '[fmt].line_length' is 100; foundry.base.toml requires 120",
+      },
+    ]);
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test('ignores the per-package [fmt].ignore rather than demanding it match the shared file', () => {
+  const workspace = mkdtempSync(join(tmpdir(), 'fhevm-foundry-'));
+  try {
+    mkdirSync(join(workspace, 'member'), { recursive: true });
+    writeFileSync(join(workspace, 'foundry.base.toml'), '[fmt]\nline_length = 120\n');
+    writeFileSync(join(workspace, 'member', 'foundry.toml'), '[profile.default]\nextends = "../foundry.base.toml"\n');
+
+    const inspection = inspectFoundry(
+      workspace,
+      manifest('1.5.1-stable'),
+      () => 'forge Version: 1.5.1-stable\n',
+      (_directory, configFile) =>
+        configFile === undefined
+          ? { fmt: { line_length: 120, ignore: ['pkg/src/contracts'] } }
+          : { fmt: { line_length: 120, ignore: [] } },
+    );
+    assert.deepEqual(inspection.violations, []);
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
 function manifest(version: string) {
   return parseTestNpmManifest({
     foundry: { version },

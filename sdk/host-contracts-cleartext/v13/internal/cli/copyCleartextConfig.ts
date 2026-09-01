@@ -1,7 +1,7 @@
 // Run: npm run generate:cleartext-config   (copy)
 //      npm run check:cleartext-config      (verify, no writes)
 //
-// The copy runs as the first step of `build:templates`, which `scripts/install.sh` invokes — so a normal
+// The copy runs as an early step of `make generate` — so a normal
 // install refreshes the payload copy. The check runs inside `npm run build`, which is where a stale or
 // hand-edited copy has to be caught: `build` compiles pkg/ts, so from that point on the copy is what ships.
 

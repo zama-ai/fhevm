@@ -16,11 +16,7 @@ export type MirrorValidation = {
   readonly violations: readonly Violation[];
 };
 
-export function validateMirror(
-  workspaceRoot: string,
-  manifest: NpmManifest,
-  selector: string,
-): MirrorValidation {
+export function validateMirror(workspaceRoot: string, manifest: NpmManifest, selector: string): MirrorValidation {
   const pkg = selectMirrorPackage(workspaceRoot, manifest, selector);
   const repository = pkg.inventory.mirror!.repository;
   if (pkg.key !== hardhatTemplateV2PackageKey) {
@@ -69,10 +65,17 @@ function compareHardhatTemplate(
 
   for (const path of upstreamFiles.filter((path) => localFiles.includes(path))) {
     if (path === 'package.json') {
-      const upstreamManifest = JSON.parse(readFileSync(join(upstreamDirectory, path), 'utf8')) as Record<string, unknown>;
+      const upstreamManifest = JSON.parse(readFileSync(join(upstreamDirectory, path), 'utf8')) as Record<
+        string,
+        unknown
+      >;
       const expected = `${JSON.stringify(patchHardhatTemplateV2Manifest(upstreamManifest), null, 2)}\n`;
       if (readFileSync(join(localDirectory, path), 'utf8') !== expected) {
-        violations.push({ rule: '5.1.3', packageKey, message: `mirror file '${path}' differs from its expected workspace transformation` });
+        violations.push({
+          rule: '5.1.3',
+          packageKey,
+          message: `mirror file '${path}' differs from its expected workspace transformation`,
+        });
       }
       continue;
     }
@@ -92,14 +95,13 @@ function selectMirrorPackage(workspaceRoot: string, manifest: NpmManifest, selec
   const matches = packages.filter((pkg) => pkg.key === normalized || pkg.packageJson.name === selector);
   if (matches.length === 0) throw new Error(`No manifest mirror matches '${selector}'`);
   if (matches.length > 1) {
-    throw new Error(`Mirror selector '${selector}' is ambiguous; use a package path: ${matches.map((pkg) => pkg.key).join(', ')}`);
+    throw new Error(
+      `Mirror selector '${selector}' is ambiguous; use a package path: ${matches.map((pkg) => pkg.key).join(', ')}`,
+    );
   }
   return matches[0]!;
 }
 
 function gitFiles(directory: string): readonly string[] {
-  return execFileSync('git', ['-C', directory, 'ls-files'], { encoding: 'utf8' })
-    .split('\n')
-    .filter(Boolean)
-    .sort();
+  return execFileSync('git', ['-C', directory, 'ls-files'], { encoding: 'utf8' }).split('\n').filter(Boolean).sort();
 }

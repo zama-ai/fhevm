@@ -229,6 +229,9 @@
       "name": "@fhevm/hardhat-plugin",
       "member": true,
       "dependencyGroup": "hardhat/v2",
+      "consumerTests": {
+        "cjs": "./hardhat/v2/fhevm-hardhat-template/pkg"
+      },
       "vendored": [
         {
           "relPath": "./src/internal/vendored",
@@ -237,6 +240,31 @@
           "reason": "A published package cannot depend on the private @fhevm/sdk-vendored-dev; the copy's sibling type import is rewritten to @fhevm/host-contracts-cleartext."
         }
       ]
+    },
+    "./hardhat/v2/fhevm-hardhat-template": {
+      "kind": "dev",
+      "type": "esm",
+      "browser": false,
+      "name": "@fhevm/hardhat-template-v2-dev",
+      "private": true,
+      "member": true,
+      "dependencyGroup": "hardhat/v2",
+      "note": "Dev owner for the mirrored template. Holds nothing of its own: the mirror is ./pkg, byte-for-byte with the public repo, so anything this package added would be drift.",
+      "publishedRelPath": "./hardhat/v2/fhevm-hardhat-template/pkg"
+    },
+    "./hardhat/v2/fhevm-hardhat-template/pkg": {
+      "kind": "published",
+      "type": "cjs",
+      "browser": false,
+      "name": "fhevm-hardhat-template-v2",
+      "member": true,
+      "dependencyGroup": "hardhat/v2",
+      "dependencyExceptions": ["solhint"],
+      "distribution": ["mirror"],
+      "mirror": {
+        "repository": "https://github.com/zama-ai/fhevm-hardhat-template"
+      },
+      "note": "A tracked workspace copy, owned by the -dev package above it. Byte-for-byte copy of github.com/zama-ai/fhevm-hardhat-template, mirrored byte-for-byte except for its declared workspace package.json transformation, omitted upstream CI files, and regenerated lockfile."
     },
     "./hardhat/v2/e2e": {
       "kind": "internal-consumer",
@@ -247,19 +275,6 @@
       "member": true,
       "dependencyGroup": "hardhat/v2",
       "note": "Links the plugin as a member rather than installing a tarball; the packed-artifact check lives in the template instead."
-    },
-    "./hardhat/v2/fhevm-hardhat-template": {
-      "kind": "standalone",
-      "type": "cjs",
-      "browser": false,
-      "name": "fhevm-hardhat-template-v2",
-      "member": false,
-      "dependencyGroup": "hardhat/v2",
-      "dependencyExceptions": ["solhint"],
-      "mirror": {
-        "repository": "https://github.com/zama-ai/fhevm-hardhat-template"
-      },
-      "note": "A tracked workspace copy of github.com/zama-ai/fhevm-hardhat-template, mirrored byte-for-byte except for its declared workspace package.json transformation, omitted upstream CI files, and regenerated lockfile."
     }
   }
 }

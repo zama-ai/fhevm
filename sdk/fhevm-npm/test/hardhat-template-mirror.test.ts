@@ -24,7 +24,7 @@ test('applies the complete Hardhat v2 workspace mirror transformation', () => {
   assert.equal((patched.dependencies as Record<string, string>)['@fhevm/solidity'], '^0.13.3');
   assert.equal((patched.devDependencies as Record<string, string>)['@zama-fhe/relayer-sdk'], undefined);
   assert.equal(
-    (patched.scripts as Record<string, string>)['test:mirror'],
+    (patched.scripts as Record<string, string>)['check:mirror'],
     'node ../../../fhevm-npm/fhevm-npm.ts check-mirror ./hardhat/v2/fhevm-hardhat-template',
   );
 });

@@ -8,6 +8,9 @@
     "./package.json": "./package.json"
   },
   "scripts": {
+    "clean": "rm -rf *.tsbuildinfo src/*.tsbuildinfo test/*.tsbuildinfo",
+    "fmt": "npm run prettier:write",
+    "fmt:check": "npm run prettier:check",
     "lint": "eslint && tsc -p ./tsconfig.json --noEmit",
     "prettier:check": "prettier --check .",
     "prettier:write": "prettier --write ."

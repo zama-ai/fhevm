@@ -262,6 +262,43 @@ test("requires the published license value and an exact root 'LICENSE' file", ()
   );
 });
 
+test('forbids devDependencies in npm-distributed published packages but permits them in mirror-only projects', () => {
+  const npmPackage = loadedPackage(
+    './library/pkg',
+    { kind: 'published', name: '@scope/library', member: false },
+    {
+      name: '@scope/library',
+      version: '1.2.3',
+      license: 'BSD-3-Clause-Clear',
+      type: 'module',
+      devDependencies: { typescript: '^5.9.3' },
+    },
+  );
+  const mirrorPackage = loadedPackage(
+    './mirror/pkg',
+    { kind: 'published', name: 'mirror', member: false, distribution: ['mirror'] },
+    {
+      name: 'mirror',
+      version: '1.2.3',
+      license: 'BSD-3-Clause-Clear',
+      type: 'module',
+      devDependencies: { typescript: '^5.9.3' },
+    },
+  );
+
+  assert.deepEqual(
+    validatePackageJson([npmPackage, mirrorPackage], {}, () => true).filter((violation) => violation.rule === '2.1.2'),
+    [
+      {
+        rule: '2.1.2',
+        packageKey: './library/pkg/package.json',
+        message:
+          "npm-distributed published package must not contain 'devDependencies'; development dependencies belong on its dev owner",
+      },
+    ],
+  );
+});
+
 test("requires the '@types/node' major to match the minimum 'engines.node' major", () => {
   const matchingRange = loadedPackage('./matching-range', inventory, {
     type: 'module',

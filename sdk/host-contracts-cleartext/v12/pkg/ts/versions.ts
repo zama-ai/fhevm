@@ -4,11 +4,12 @@
 // The string each contract's `getVersion()` returns, read from the CONTRACT_NAME + MAJOR/MINOR/PATCH
 // constants in the source that declares it. Note the cleartext variants inherit `getVersion` and so
 // report their BASE contract's name -- CleartextFHEVMExecutor identifies itself as FHEVMExecutor.
-// CleartextDB is absent because it exposes no `getVersion` at all.
+// ACLOwner is absent because it exposes no `getVersion` at all.
 
 export const CONTRACT_VERSIONS = {
   acl: 'ACL v0.3.0',
   cleartextArithmetic: 'CleartextArithmetic v0.3.0',
+  cleartextDB: 'CleartextDB v0.1.0',
   fhevmExecutor: 'FHEVMExecutor v0.3.0',
   hcuLimit: 'HCULimit v0.2.0',
   inputVerifier: 'InputVerifier v0.2.0',

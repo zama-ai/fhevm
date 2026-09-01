@@ -2,6 +2,7 @@ import { Command, Option } from 'commander';
 import { resolve } from 'node:path';
 
 import { defaultWorkspaceRoot } from './base/paths.ts';
+import { type Verbosity, increaseVerbosity } from './base/verbosity.ts';
 
 export const commandNames = [
   'check-names',
@@ -14,7 +15,9 @@ export const commandNames = [
   'check-lockfiles',
   'check-manifest-coverage',
   'check-foundry',
+  'check-lint-policy',
   'check-tsconfig-paths',
+  'check-tsc-mode',
 ] as const;
 export type CommandName = (typeof commandNames)[number];
 
@@ -22,7 +25,8 @@ export type CliOptions = {
   readonly command:
     | CommandName
     | 'check-mirror'
-    | 'check-vendored'
+    | 'check-vendored-origin'
+    | 'clean-forge-dependencies'
     | 'generate-exports'
     | 'install-forge-dependencies'
     | 'list-packages'
@@ -31,14 +35,20 @@ export type CliOptions = {
     | 'test-consumer-regenerate-package-lock';
   readonly workspaceRoot: string;
   readonly manifestFile: string;
-  readonly verbose: boolean;
+  readonly verbosity: Verbosity;
   readonly sortPackageJson: boolean;
 } & (
   | { readonly command: CommandName }
   | { readonly command: 'check-mirror'; readonly packageSelector: string }
-  | { readonly command: 'check-vendored'; readonly packageSelector?: string }
+  | { readonly command: 'check-vendored-origin'; readonly packageSelector?: string }
   | { readonly command: 'generate-exports'; readonly exportManifestFile: string; readonly check: boolean }
   | { readonly command: 'install-forge-dependencies'; readonly packageSelector?: string }
+  | {
+      readonly command: 'clean-forge-dependencies';
+      readonly packageSelector?: string;
+      readonly dryRun: boolean;
+      readonly force: boolean;
+    }
   | { readonly command: 'list-packages' }
   | { readonly command: 'sync-vendored'; readonly check: boolean }
   | { readonly command: 'test-consumer-regenerate-package-lock'; readonly packageSelector?: string }
@@ -48,7 +58,7 @@ export type CliOptions = {
       readonly output?: string;
       readonly testFile?: string;
       readonly force: boolean;
-      readonly buildPackage: boolean;
+      readonly buildLinkedDependencies: boolean;
       readonly run: boolean;
       readonly list: boolean;
       readonly ci: boolean;
@@ -57,14 +67,14 @@ export type CliOptions = {
 
 type RawOptions = {
   readonly root: string;
-  readonly verbose: boolean;
+  readonly verbose: Verbosity;
 };
 
 type RawTestConsumerOptions = {
   readonly output?: string;
   readonly testFile?: string;
   readonly force: boolean;
-  readonly buildPackage: boolean;
+  readonly buildLinkedDependencies: boolean;
   readonly run: boolean;
   readonly list: boolean;
   readonly ci: boolean;
@@ -77,7 +87,12 @@ export function parseCliOptions(argv: readonly string[]): CliOptions {
     .showHelpAfterError()
     .showSuggestionAfterError()
     .addOption(new Option('-r, --root <path>', 'sdk workspace root').default(defaultWorkspaceRoot))
-    .option('-v, --verbose', 'print a success summary', false);
+    .option(
+      '-v, --verbose',
+      'increase verbosity; repeat up to -vvvv (-vv preserves the previous verbose behavior)',
+      increaseVerbosity,
+      0,
+    );
 
   let selected: CommandName | undefined;
   let generateExports: { readonly exportManifestFile: string; readonly check: boolean } | undefined;
@@ -87,6 +102,8 @@ export function parseCliOptions(argv: readonly string[]): CliOptions {
   let mirrorPackageSelector: string | undefined;
   let forgeDependencyPackageSelector: string | undefined;
   let installAllForgeDependencies = false;
+  let cleanForgeDependencies:
+    { readonly packageSelector?: string; readonly dryRun: boolean; readonly force: boolean } | undefined;
   let listPackagesSelected = false;
   let syncVendored: { readonly check: boolean } | undefined;
   let regenerateConsumerPackageLocks = false;
@@ -97,7 +114,7 @@ export function parseCliOptions(argv: readonly string[]): CliOptions {
         readonly output?: string;
         readonly testFile?: string;
         readonly force: boolean;
-        readonly buildPackage: boolean;
+        readonly buildLinkedDependencies: boolean;
         readonly run: boolean;
         readonly list: boolean;
         readonly ci: boolean;
@@ -129,7 +146,14 @@ export function parseCliOptions(argv: readonly string[]): CliOptions {
     });
   program
     .command('check-package-json-paths')
-    .description('Check that local paths exposed by package.json exist.')
+    .description('Check that local paths exposed by package.json exist; packages must be built first.')
+    .addHelpText(
+      'after',
+      `
+Prerequisite:
+  Build the project first because package.json entry points may reference generated files.
+`,
+    )
     .action(() => {
       selected = 'check-package-json-paths';
     });
@@ -152,20 +176,25 @@ export function parseCliOptions(argv: readonly string[]): CliOptions {
       'after',
       `
 Checked scripts:
-  build          Required on every dev owner of a published package.
+  compile        Required on every dev owner of a published package.
+  build          Optional everyday sweep; when present it must reach fmt:check, lint and compile.
   clean          Required on every dev owner of a published package.
-  forge:fmt      Required on every package owning Solidity; published payloads use their dev owner.
-  forge:fmt:check Required on every package owning Solidity; published payloads use their dev owner.
-  forge:lint     Required on every package owning Solidity; published payloads use their dev owner.
+  forge:fmt      Required on every package owning Solidity except mirror-only payloads; published payloads use their dev owner.
+  forge:fmt:check Required on every package owning Solidity except mirror-only payloads; published payloads use their dev owner.
+  forge:lint     Required on every package owning Solidity except mirror-only payloads; published payloads use their dev owner.
   lint           Required on every dev package, shared helper and internal consumer.
-  eslint.config.js Required beside every non-published package that owns a lint script; a "type": "commonjs" package uses eslint.config.mjs instead. Alternate names are forbidden.
+  pack:tarball   Required on every dev owner of an npm-distributed package.
+  eslint.config.js The only package-level ESLint config filename; required beside every non-published package that owns a lint script.
   prettier:check Required on every dev package, shared helper and internal consumer; must exclude Solidity.
   prettier:write Required on every dev package, shared helper and internal consumer; must exclude Solidity.
-  .prettierrc.mjs Required beside every non-published package that owns a Prettier script; re-exports prettier.base.mjs.
+  prettier.config.js The only package-level Prettier config filename; references the root prettier.base.mjs.
   test:publint   Required on every dev owner of a published package.
-  test:consumer  Required on every dev owner of a published package.
-  test:vendored  Required when the package declares vendored content.
-  test:mirror    Required when the package declares a mirror.
+  test:consumer  Required on every dev owner of an npm-distributed package; mirror-only consumer projects are exempt.
+  fmt            Required on every dev package, shared helper and internal consumer.
+  fmt:check      Required wherever fmt is.
+  check          Required on every dev owner of an npm-distributed package.
+  check:vendored-origin Required when the package declares vendored content.
+  check:mirror   Optional until the mirror spec lands.
   test           Required in each expected test-consumer/cjs or test-consumer/esm fixture.
 `,
     )
@@ -174,7 +203,7 @@ Checked scripts:
     });
   program
     .command('check-lockfiles')
-    .description('Check workspace and standalone lockfile placement.')
+    .description('Check workspace and isolated-consumer lockfile placement.')
     .action(() => {
       selected = 'check-lockfiles';
     });
@@ -183,6 +212,12 @@ Checked scripts:
     .description('Check the installed forge version against the central manifest pin.')
     .action(() => {
       selected = 'check-foundry';
+    });
+  program
+    .command('check-lint-policy')
+    .description('Check that Forge is the only Solidity linter outside declared mirror-only packages.')
+    .action(() => {
+      selected = 'check-lint-policy';
     });
   program
     .command('check-manifest-coverage')
@@ -197,10 +232,10 @@ Checked scripts:
       mirrorPackageSelector = packageSelector;
     });
   program
-    .command('check-vendored [package]')
+    .command('check-vendored-origin [package]')
     .description(
-      'Check vendored sources against their declared sources of truth for one package, or for every ' +
-        'package that declares vendored content when omitted.',
+      'Check that each local vendored folder matches its declared origin (git commit), for one ' +
+        'package or for every package that declares vendored content when omitted.',
     )
     .action((packageSelector: string | undefined) => {
       vendoredPackageSelector = packageSelector;
@@ -211,6 +246,21 @@ Checked scripts:
     .description('Check that literal paths named by owned tsconfigs exist.')
     .action(() => {
       selected = 'check-tsconfig-paths';
+    });
+  program
+    .command('check-tsc-mode')
+    .description("Check that no 'tsc -p' or bare 'tsc' script invocation targets a solution-style tsconfig.")
+    .addHelpText(
+      'after',
+      `
+Why:
+  A solution-style tsconfig (empty 'files' plus 'references') only orchestrates other projects. Project
+  mode loads it, checks zero files, and exits 0, so the script passes without type-checking anything.
+  Build mode ('tsc -b') is the only driver that walks the references.
+`,
+    )
+    .action(() => {
+      selected = 'check-tsc-mode';
     });
   program
     .command('generate-exports <manifest>')
@@ -237,6 +287,17 @@ Checked scripts:
       installAllForgeDependencies = packageSelector === undefined;
     });
   program
+    .command('clean-forge-dependencies [package]')
+    .description(
+      'Delete the Forge dependency directories `forge config --json` reports (libs minus node_modules), ' +
+        'after showing the list and asking for confirmation.',
+    )
+    .option('--dry-run', 'list what would go, delete nothing', false)
+    .option('-f, --force', 'skip the confirmation prompt; required when stdin is not a terminal', false)
+    .action((packageSelector: string | undefined, options: { readonly dryRun: boolean; readonly force: boolean }) => {
+      cleanForgeDependencies = { packageSelector, dryRun: options.dryRun, force: options.force };
+    });
+  program
     .command('list-packages')
     .description('List every manifest package relative path and its kind.')
     .action(() => {
@@ -244,11 +305,15 @@ Checked scripts:
     });
   program
     .command('test-consumer [package]')
-    .description('Install one checked-in consumer fixture for manual inspection and testing.')
-    .option('-l, --list', 'list available consumer fixtures', false)
+    .description('Install one checked-in consumer fixture or manifest-listed consumer project.')
+    .option('-l, --list', 'list available consumer fixtures and projects', false)
     .option('-o, --output <path>', 'persistent installation directory')
     .option('--test-file <path>', "select one fixture-relative file for the consumer's 'test:file' script")
-    .option('--build-package', "run the package owner's 'build' script before installation", false)
+    .option(
+      '--build-linked-dependencies',
+      'ask the SDK Makefile to build dev owners of direct and recursively discovered local candidates',
+      false,
+    )
     .option('--run', "run the consumer's 'test' script after installation", false)
     .option('--ci', 'install from the committed consumer lockfile with npm ci', false)
     .option('-f, --force', 'replace an existing output directory', false)
@@ -258,7 +323,7 @@ Checked scripts:
         output: options.output,
         testFile: options.testFile,
         force: options.force,
-        buildPackage: options.buildPackage,
+        buildLinkedDependencies: options.buildLinkedDependencies,
         run: options.run,
         list: options.list,
         ci: options.ci,
@@ -266,7 +331,7 @@ Checked scripts:
     });
   program
     .command('test-consumer-regenerate-package-lock [package]')
-    .description('Regenerate and validate consumer package-lock.json files; defaults to every fixture.')
+    .description('Regenerate and validate consumer package-lock.json files; defaults to every conventional fixture.')
     .action((packageSelector: string | undefined) => {
       regenerateConsumerPackageLocks = true;
       regenerateConsumerPackageLockSelector = packageSelector;
@@ -280,6 +345,7 @@ Checked scripts:
     vendoredPackageSelector === undefined &&
     !installAllForgeDependencies &&
     forgeDependencyPackageSelector === undefined &&
+    cleanForgeDependencies === undefined &&
     !listPackagesSelected &&
     !regenerateConsumerPackageLocks &&
     testConsumer === undefined &&
@@ -296,7 +362,7 @@ Checked scripts:
       command: 'sync-vendored',
       workspaceRoot,
       manifestFile: resolve(workspaceRoot, 'npm-manifest.json'),
-      verbose: options.verbose,
+      verbosity: options.verbose,
       sortPackageJson: false,
       ...syncVendored,
     };
@@ -306,7 +372,7 @@ Checked scripts:
       command: 'generate-exports',
       workspaceRoot,
       manifestFile: resolve(workspaceRoot, 'npm-manifest.json'),
-      verbose: options.verbose,
+      verbosity: options.verbose,
       sortPackageJson: false,
       ...generateExports,
     };
@@ -316,7 +382,7 @@ Checked scripts:
       command: 'test-consumer-regenerate-package-lock',
       workspaceRoot,
       manifestFile: resolve(workspaceRoot, 'npm-manifest.json'),
-      verbose: options.verbose,
+      verbosity: options.verbose,
       sortPackageJson: false,
       packageSelector: regenerateConsumerPackageLockSelector,
     };
@@ -326,19 +392,29 @@ Checked scripts:
       command: 'check-mirror',
       workspaceRoot,
       manifestFile: resolve(workspaceRoot, 'npm-manifest.json'),
-      verbose: options.verbose,
+      verbosity: options.verbose,
       sortPackageJson: false,
       packageSelector: mirrorPackageSelector,
     };
   }
   if (checkAllVendored || vendoredPackageSelector !== undefined) {
     return {
-      command: 'check-vendored',
+      command: 'check-vendored-origin',
       workspaceRoot,
       manifestFile: resolve(workspaceRoot, 'npm-manifest.json'),
-      verbose: options.verbose,
+      verbosity: options.verbose,
       sortPackageJson: false,
       packageSelector: vendoredPackageSelector,
+    };
+  }
+  if (cleanForgeDependencies !== undefined) {
+    return {
+      command: 'clean-forge-dependencies',
+      workspaceRoot,
+      manifestFile: resolve(workspaceRoot, 'npm-manifest.json'),
+      verbosity: options.verbose,
+      sortPackageJson: false,
+      ...cleanForgeDependencies,
     };
   }
   if (installAllForgeDependencies || forgeDependencyPackageSelector !== undefined) {
@@ -346,7 +422,7 @@ Checked scripts:
       command: 'install-forge-dependencies',
       workspaceRoot,
       manifestFile: resolve(workspaceRoot, 'npm-manifest.json'),
-      verbose: options.verbose,
+      verbosity: options.verbose,
       sortPackageJson: false,
       packageSelector: forgeDependencyPackageSelector,
     };
@@ -356,7 +432,7 @@ Checked scripts:
       command: 'test-consumer',
       workspaceRoot,
       manifestFile: resolve(workspaceRoot, 'npm-manifest.json'),
-      verbose: options.verbose,
+      verbosity: options.verbose,
       sortPackageJson: false,
       ...testConsumer,
     };
@@ -366,7 +442,7 @@ Checked scripts:
       command: 'list-packages',
       workspaceRoot,
       manifestFile: resolve(workspaceRoot, 'npm-manifest.json'),
-      verbose: options.verbose,
+      verbosity: options.verbose,
       sortPackageJson: false,
     };
   }
@@ -375,7 +451,7 @@ Checked scripts:
     command: selected,
     workspaceRoot,
     manifestFile: resolve(workspaceRoot, 'npm-manifest.json'),
-    verbose: options.verbose,
+    verbosity: options.verbose,
     sortPackageJson,
   };
 }

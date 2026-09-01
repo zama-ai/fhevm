@@ -62,6 +62,7 @@ import {
   NONCE_LABEL,
   PACKAGE_ROOT_ABS_PATH,
   PKG_DIR_ABS_PATH,
+  ERC_1967_IMPL_SLOT,
 } from './constants.ts';
 import { writeJson } from './utils.ts';
 import { rpc, waitForNode } from './utils.ts';
@@ -70,9 +71,6 @@ import { rpc, waitForNode } from './utils.ts';
 
 /** Port for the throwaway node. Deliberately not 8545, so a developer's own anvil is never touched. */
 const ANVIL_PORT = 8945;
-
-/** ERC-1967 implementation slot: keccak256("eip1967.proxy.implementation") - 1. */
-const ERC1967_IMPL_SLOT = '0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc';
 
 /** `owner()` — read to find the standing ACLOwner, whose address is not derivable from the config. */
 const OWNER_SELECTOR = '0x8da5cb5b';
@@ -242,7 +240,7 @@ export async function writeGenesis(): Promise<GenesisSummary> {
     for (const [name, address] of named) {
       entries.push({ name, address });
       const account = require_(address, name);
-      const slot = Object.entries(account.storage ?? {}).find(([key]) => _lower(key) === ERC1967_IMPL_SLOT);
+      const slot = Object.entries(account.storage ?? {}).find(([key]) => _lower(key) === ERC_1967_IMPL_SLOT);
       if (slot === undefined) {
         continue; // PauserSet is not a proxy.
       }

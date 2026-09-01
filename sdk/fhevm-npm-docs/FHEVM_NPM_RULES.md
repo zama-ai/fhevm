@@ -87,8 +87,7 @@ workspace, changing resolution for every package under it before anyone reviews 
 ```
 
 **2.1.2 A dev owner stores its published payload in `pkg/`.** The dev-owner root is private and holds scripts, config
-and tests; `pkg/` holds only what ships. Other member kinds do not acquire a `pkg/` merely because they are workspace
-members. Packing the dev-owner root publishes the development package by mistake.
+and tests; `pkg/` holds only what ships. Packing the dev-owner root publishes the development package by mistake.
 
 ```jsonc
 // ✅ The shared script defaults to <member>/pkg, so the published package is what gets packed.
@@ -98,10 +97,9 @@ members. Packing the dev-owner root publishes the development package by mistake
 "pack:tarball": "npm pack"
 ```
 
-**2.1.3 At most one workspace member has a given published package name.** When multiple generations publish under
-one name, their dev owners remain members but only the active generation's published payload sets `member: true`.
-Which generation is active is inventory data; the rule is the name-uniqueness invariant. The validator groups
-published entries by the `name` read from their real `package.json` and rejects a group with two member entries.
+**2.1.3 At most one workspace member has a given published package name.** When generations share a name, only the
+active generation's payload sets `member: true`; the validator groups published entries by the `name` read from their
+real `package.json` and rejects a group with two member entries. Which generation is active is inventory data.
 
 ```text
 ✅ Illustrative generations:
@@ -115,8 +113,9 @@ published entries by the `name` read from their real `package.json` and rejects 
    active published name    @scope/library  member: true
 ```
 
-**2.1.4 A standalone consumer is never a member.** A project that must keep its own `package-lock.json` — a mirrored
-template, anything running `npm ci` in its own CI — breaks the moment npm folds it into the root lockfile.
+**2.1.4 A standalone consumer is never a member.** A project deliberately installed in place with its own
+`package-lock.json` breaks the moment npm folds it into the root lockfile. A manifest-selected consumer copied outside
+the workspace is a separate case covered by 6.1.1; its source may remain a member.
 
 ```jsonc
 // ✅ Stable kind invariant; no concrete package path belongs in this rule.
@@ -127,9 +126,8 @@ template, anything running `npm ci` in its own CI — breaks the moment npm fold
 ```
 
 **2.1.5 Every literal local path named by an owned tsconfig exists.** `include`, `exclude`, `files`,
-`references[].path` and relative `extends` entries are checked in root, member and non-package tsconfigs. Globs are
-not literal claims. Conventional transient-output names such as `node_modules`, `artifacts`, `cache`, `typechain`,
-`typechain-types`, `out`, `dependencies` and `tarballs` may be absent.
+`references[].path` and relative `extends` entries are checked in root, member and non-package tsconfigs; globs are
+not literal claims, and conventional transient-output names (`node_modules`, `out`, `cache`, …) may be absent.
 
 ```jsonc
 // ✅ Existing source path and a glob that may currently match nothing.
@@ -152,8 +150,7 @@ not literal claims. Conventional transient-output names such as `node_modules`, 
 ```
 
 **2.1.7 Every package.json declares its module type explicitly.** Every manifest package sets `type` to either
-`module` or `commonjs`; Node's implicit CommonJS default is not accepted. A `test-consumer/cjs` package sets
-`"type": "commonjs"`, while a `test-consumer/esm` package sets `"type": "module"`.
+`module` or `commonjs`; Node's implicit CommonJS default is not accepted.
 
 ```jsonc
 // ✅ Explicit consumer runtime semantics.
@@ -165,10 +162,9 @@ not literal claims. Conventional transient-output names such as `node_modules`, 
 { "type": "commonjs" } // test-consumer/esm/package.json
 ```
 
-**2.1.8 Published package metadata follows the central field list.**
-`npm-manifest.json#packageJson` maps package kinds to `required` and `excluded` top-level fields. Adding or removing a
-field changes only the appropriate kind policy. The published policy excludes `private` entirely; `"private": false`
-is also forbidden so publishability has one canonical representation.
+**2.1.8 Published package metadata follows the central field list.** `npm-manifest.json#packageJson` maps package
+kinds to `required` and `excluded` top-level fields. The published policy excludes `private` entirely;
+`"private": false` is also forbidden so publishability has one canonical representation.
 
 ```jsonc
 // ✅ Central, editable policy.
@@ -188,8 +184,7 @@ is also forbidden so publishability has one canonical representation.
 ```
 
 **2.1.9 Every inventory entry declares runtime compatibility.** `type` is `cjs`, `esm` or `dual` and must agree with
-the real `package.json` type and entry points. `browser` is an explicit boolean capability claim. Packages are
-non-browser by default only as policy, never by omission; a browser SDK declares `"browser": true`.
+the real `package.json` type and entry points; `browser` is an explicit boolean capability claim, never an omission.
 
 ```jsonc
 // ✅ A Node-only package with both CommonJS and ESM entry points.
@@ -200,16 +195,27 @@ non-browser by default only as policy, never by omission; a browser SDK declares
 ```
 
 **2.1.10 Top-level package.json entries follow one canonical order.** The editable list in
-`fhevm-npm/package-json-order.ts` defines the order for known fields. Fields absent from that list remain allowed but
-sort alphabetically after known fields. Nested ordering rules, such as alphabetical scripts, remain separate checks.
+`fhevm-npm/package-json-order.ts` defines the order for known fields; unknown fields sort alphabetically after them.
+Nested ordering rules, such as alphabetical scripts, remain separate checks.
 
 **2.1.11 Every published package carries the repository license.** Its `package.json` sets
 `"license": "BSD-3-Clause-Clear"` exactly, and a regular file named exactly `LICENSE` sits beside that package.json.
 The field supports registry metadata; the file ensures the published payload carries the license text.
 
 **2.1.12 Node types match the supported Node runtime.** A package declaring `@types/node` also declares
-`engines.node` as a minimum version such as `>=22`. The `@types/node` major equals that minimum Node major; for
-example, `"@types/node": "^22.0.0"` matches `"node": ">=22"`.
+`engines.node` as a minimum version such as `>=22`, and the `@types/node` major equals that minimum Node major.
+
+**2.1.13 A `tsc` invocation matches its tsconfig's shape.** A solution-style tsconfig (empty `files` plus
+`references`) must be driven with `tsc -b`: project mode (`tsc -p`, or bare `tsc`) loads it, checks zero files and
+exits 0 — the silent failure TS18002 would catch, except `references` suppresses it. Leaves may use either mode.
+
+```jsonc
+// ✅ Build mode walks the references of the solution file.
+"lint": "tsc -b ./tsconfig.json --noEmit"
+
+// ❌ Project mode on { "files": [], "references": [...] } checks nothing and still passes.
+"lint": "tsc -p ./tsconfig.json --noEmit"
+```
 
 ## 3. Dependency specs
 
@@ -219,14 +225,28 @@ example, `"@types/node": "^22.0.0"` matches `"node": ">=22"`.
 member in preference to npmjs.com, even when the same version is published there. This holds in a published manifest
 too: 4.3.1's consumer-facing ranges are for root-pinned third-party packages, never for a member.
 
+A mirror-only consumer project is the narrow exception: it may use a relative `file:` directory link to the exact
+manifest-listed candidate, because `test-consumer` copies the project outside the workspace before installing it. A
+package whose distribution includes `npm` never uses `file:` — that local path would not exist for npm consumers.
+
 ```jsonc
 // ✅ In hardhat/v2/e2e: resolves to a symlink to hardhat/v2/plugin/pkg, even though this version
 //    exists on npmjs.com.
 "@fhevm/hardhat-plugin": "0.4.2"
 
+// ✅ In the mirror-only fhevm-hardhat-template consumer: resolves to the local candidate after the
+//    project is copied outside the workspace by test-consumer.
+"@fhevm/hardhat-plugin": "file:../../plugin/pkg"
+
 // ❌ The member is 0.4.2, so no local package satisfies this range and npm goes to npmjs.com.
 //    A range that drifts past the member's version is how a member stops testing the member.
 "@fhevm/hardhat-plugin": "^0.5.0"
+
+// ❌ A mirror-only consumer link must resolve to the manifest member having this package name.
+"@fhevm/hardhat-plugin": "file:../../another-package/pkg"
+
+// ❌ In an npm-distributed package: local filesystem paths cannot be consumed from npmjs.com.
+"@fhevm/host-contracts-cleartext": "file:../../../host-contracts-cleartext/v13/pkg"
 ```
 
 **3.1.2 Never use `file:*.tgz` for a name that is also a member.** npm links members by name before reading the spec,
@@ -244,12 +264,13 @@ so the tarball is ignored and the edge is marked `invalid` — after which the w
 
 ### 3.2 Depending from outside the workspace
 
-**3.2.1 A project outside the workspace links a directory on disk, not a version.** Rule 3.1.1 works only because npm
-finds a member with that name. Outside the workspace there is none, so the same spec goes to npmjs.com instead.
+**3.2.1 A consumer installed outside the workspace links a directory on disk, not a version.** Rule 3.1.1 works only
+while npm can find a workspace member with that name; in an isolated copy, a plain version goes to npmjs.com.
 
 ```jsonc
-// ✅ In fhevm-hardhat-template, which is not a member: a relative path npm can only satisfy from disk.
-"@fhevm/hardhat-plugin": "file:../plugin/pkg"
+// ✅ In fhevm-hardhat-template: test-consumer resolves this relative link to the local candidate before
+//    copying and installing the consumer outside the workspace.
+"@fhevm/hardhat-plugin": "file:../../plugin/pkg"
 
 // ❌ Identical to 3.1.1's ✅, but with no member to link. npm fetches npmjs.com's own 0.4.2, which peers
 //    on @zama-fhe/relayer-sdk and @fhevm/solidity ^0.11.1 — a different generation, installed silently.
@@ -259,9 +280,8 @@ finds a member with that name. Outside the workspace there is none, so the same 
 ### 3.3 Declaring what you use
 
 **3.3.1 Declare every package whose API or executable you use.** This includes packages imported by source files and
-tools invoked by npm scripts. A package resolved only because npm hoisted it for someone else is a phantom dependency:
-it disappears under a different install strategy, and non-node tools never find it at all. Script-only tools belong in
-`devDependencies`.
+tools invoked by npm scripts; script-only tools belong in `devDependencies`. A package resolved only through hoisting
+is a phantom dependency: it disappears under a different install strategy, and non-node tools never find it at all.
 
 ```jsonc
 // ✅ hardhat/v2/e2e imports chai in 45 test files and hardhat-ethers in 20, so it declares both.
@@ -291,9 +311,8 @@ libs = ["dependencies", "node_modules"]
 ```
 
 **3.3.3 Globally forbidden packages appear in no dependency section unless the exact package has an exception.** The
-manifest lists forbidden names in `dependencies.forbidden`. A package-specific `dependencyExceptions` entry permits
-only that package to declare the named dependency; it does not apply to siblings, children or packages in the same
-dependency group. An exception naming no declared dependency is stale and fails validation.
+manifest lists forbidden names in `dependencies.forbidden`; a `dependencyExceptions` entry permits only that one
+package, never siblings or children. An exception naming no declared dependency is stale and fails validation.
 
 ```jsonc
 // ✅ One narrowly scoped exception.
@@ -327,8 +346,8 @@ member actually compiles against, so a member declaring something else publishes
 ```
 
 **4.1.2 The manifest is the single source of truth for the Foundry version.** The repository declares one exact
-version in `npm-manifest.json#foundry.version`. `fhevm-npm check-foundry` compares it with `forge --version` before
-Foundry-dependent checks run. Packages must not duplicate the pin in `.foundry-version` files.
+version in `npm-manifest.json#foundry.version`, compared with `forge --version` by `check-foundry`. Packages must not
+duplicate the pin in `.foundry-version` files.
 
 ```jsonc
 // ✅ One repository-wide pin, checked automatically.
@@ -338,15 +357,26 @@ Foundry-dependent checks run. Packages must not duplicate the pin in `.foundry-v
 sdk/some-package/.foundry-version
 ```
 
+**4.1.3 Every Foundry project inherits the shared formatting policy.** Its `foundry.toml` declares `extends` for
+`sdk/foundry.base.toml`; `check-foundry` compares every project's effective `[fmt]` values with the shared file.
+Package-specific `[fmt].ignore` values are exempt.
+
+```toml
+# ✅ Package-local paths and compiler settings remain local; formatting policy is inherited.
+[profile.default]
+extends = "../../foundry.base.toml"
+
+# ❌ No extends: future changes to the shared formatting policy would not reach this project.
+[profile.default]
+src = "pkg/src"
+```
+
 ### 4.2 Private packages — dev package, shared helper, internal consumer
 
-**4.2.1 A private package declares every root-pinned package it directly uses, at the root's exact version.** The
-package's manifest stays truthful about its own imports, while the root remains the version source of truth. A range
-or a different version is forbidden: either would claim support for a version that the workspace did not test. A
-private package that does not use the dependency does not declare it. Published packages state a consumer-facing
-range instead; rule 4.3.1 requires that range's floor to equal the root pin. Shared helpers put these imports in
-`dependencies`, because importing the helper must install its runtime requirements. Dev owners and internal consumers
-put them in `devDependencies`, because neither ships as a runtime package.
+**4.2.1 A private package declares every root-pinned package it directly uses, at the root's exact version.** A range
+or a different version would claim support for a version the workspace did not test; a package that does not use the
+dependency does not declare it. Shared helpers use `dependencies` (importing them must install their runtime
+requirements); dev owners and internal consumers use `devDependencies`, because neither ships as a runtime package.
 
 ```jsonc
 // ✅ sdk/package.json is the version source of truth.
@@ -371,13 +401,9 @@ put them in `devDependencies`, because neither ships as a runtime package.
 "peerDependencies": { "ethers": "^6.17.0" }
 ```
 
-A future TypeScript validator will use `npm-manifest.json` as the package inventory instead of inventing scan roots.
-For every entry whose kind is `dev`, `shared-helper` or `internal-consumer`, it will read the actual `package.json`,
-collect bare package imports from its TypeScript and JavaScript sources, and compare any root-pinned import with the
-root's actual exact declaration. It will report the stable rule number `4.2.1` when a declaration is missing, is a
-range, or differs from the root. Published entries are excluded from this check and handled by 4.3.1; module markers
-and standalone projects follow 4.4.1. The manifest supplies scope and package kind, while the real package manifests
-remain the source of dependency data.
+A future import-scanning validator will compare each private package's bare imports with these declarations, keyed by
+the manifest inventory, and report `4.2.1` on a missing, ranged or divergent declaration. Published entries stay under
+4.3.1; standalone projects and non-packages under 4.4.1.
 
 **4.2.2 A dependency that differs per dependency group stays in its member.** `hardhat` is `^2.x` for one group and
 `^3.x` for the next, so it cannot be root-pinned; npm hoists the majority and nests the odd one out.
@@ -434,9 +460,8 @@ workspace ever built against.
 ### 4.4 Standalone projects and non-packages
 
 **4.4.1 A standalone project inherits nothing, and a non-package declares no dependencies.** The first sits outside
-`workspaces`, so no root pin reaches it and every version it needs is declared in its own manifest and frozen in its
-own lockfile. The second supplies directory-local metadata inside another package or project; installable behavior
-belongs in a real package.
+`workspaces`, so every version it needs is declared in its own manifest and frozen in its own lockfile. The second is
+directory-local metadata; installable behavior belongs in a real package.
 
 ```jsonc
 // ✅ fhevm-hardhat-template states every version itself, because no root pin reaches it.
@@ -457,16 +482,14 @@ what makes a leak visible at the import site, and machine-checkable without pack
 **5.1.2 Nothing under `pkg/` imports a `…-dev` package.** That import ships a specifier no consumer can resolve. This
 is the one guarantee a tarball install used to hold alone, and 5.1.1 is what makes it a grep.
 
-**5.1.3 Content-integrity capabilities have conventional test entry points.** A manifest entry declaring `vendored`
-requires `test:vendored`; one declaring `mirror` requires `test:mirror`. The test owner is the dev package for a
-published entry, found through the inverse of `publishedRelPath`; for any other entry, it is that package itself. Each
-script checks the whole capability declared by that entry, but its implementation is package-owned and unrestricted.
-CI invokes the conventions.
+**5.1.3 Content-integrity capabilities have conventional check entry points.** A manifest entry declaring `vendored`
+requires `check:vendored-origin`; one declaring `mirror` conventionally exposes `check:mirror`, OPTIONAL until the
+mirror spec is implemented — requiring an unpassable script would be enforcement theater. The owner is the dev
+package for a published entry (inverse of `publishedRelPath`), otherwise the entry itself; implementations are
+package-owned, and CI invokes the conventions.
 
-`mirror.repository` identifies an independent Git repository that must remain synchronized with the local entry.
-Mirroring is an optional capability, not a package kind: published and standalone entries keep their original kinds.
-The manifest does not prescribe direction, exclusions or transformations; `test:mirror` owns and verifies that
-package-specific contract.
+`mirror.repository` identifies an independent Git repository that must stay synchronized with the local entry.
+Mirroring is a capability, not a kind; `check:mirror` owns the package-specific contract.
 
 ```jsonc
 // ✅ The manifest describes the copies without prescribing how they are checked.
@@ -481,26 +504,28 @@ package-specific contract.
 // ✅ Mirroring is orthogonal to kind and records only the independent repository.
 "mirror": { "repository": "https://github.com/example/project" }
 
-// ✅ In the test owner's real package.json. Each conventional command owns its implementation.
+// ✅ In the owner's real package.json. Each conventional command owns its implementation.
 "scripts": {
-  "test:vendored": "node ./internal/check-vendored.ts",
-  "test:mirror": "node ./internal/check-mirror.ts"
+  "check:vendored-origin": "node ./internal/check-vendored-origin.ts",
+  "check:mirror": "node ./internal/check-mirror.ts"
 }
 
 // ❌ Per-element command paths couple inventory data to one check implementation.
-"checkedBy": "./sdk/scripts/check-vendored.ts"
+"checkedBy": "./sdk/scripts/check-vendored-origin.ts"
 
 // ❌ A declared capability exists, but CI has no conventional command to discover.
 "scripts": {}
 ```
 
 **5.1.4 Private source-owning workspace packages expose common hygiene scripts.** Every `dev`, `shared-helper` and
-`internal-consumer` package defines non-empty `lint`, `prettier:check` and `prettier:write` scripts. Their commands
-remain package-specific; the conventional names let the workspace and CI invoke them uniformly.
+`internal-consumer` package defines non-empty `fmt`, `fmt:check`, `lint`, `prettier:check` and `prettier:write`;
+`fmt`/`fmt:check` are the orchestrator's formatting verbs (prettier plus `forge fmt` where the package owns Solidity).
 
 ```jsonc
 // ✅ The package chooses what is covered while exposing the shared entry points.
 "scripts": {
+  "fmt": "npm run prettier:write && npm run forge:fmt",
+  "fmt:check": "npm run prettier:check && npm run forge:fmt:check",
   "lint": "eslint . && tsc --noEmit",
   "prettier:check": "prettier --check .",
   "prettier:write": "prettier --write ."
@@ -510,8 +535,76 @@ remain package-specific; the conventional names let the workspace and CI invoke 
 "scripts": { "test": "hardhat test" }
 ```
 
-**5.1.5 Prettier scripts do not target Solidity.** `forge fmt` is the sole Solidity formatter, so
-`prettier:check` and `prettier:write` must exclude `.sol` from explicit paths and extension globs.
+**5.1.4a The artifact verb is `compile`; `build` is the optional gated sweep.** Every dev owner of a published payload
+defines `compile` (writes only gitignored output, never tracked files). A `build` script on an in-contract package
+must reach `fmt:check`, `lint` and `compile` through same-package `npm run` references — nothing else.
+
+```jsonc
+// ✅ compile emits artifacts; build gates them behind formatting and lint, in lifecycle order.
+"scripts": {
+  "build": "npm run fmt:check && npm run lint && npm run compile",
+  "compile": "npm run compile:pkg:ts:cjs && npm run compile:pkg:ts:esm"
+}
+
+// ❌ A `build` that skips the gates silently redefines the sweep.
+"scripts": { "build": "npm run compile" }
+```
+
+**5.1.4b A package that generates exposes the full round trip.** Any package with `generate:*` scripts also defines a
+non-empty `generate` aggregate and a non-empty `clean:generated` deleting every file the generators write; the
+reverse holds too — `generate` or `clean:generated` with no `generate:*` leaf is dead wiring and is rejected.
+
+Wiring is checked by name: every `generate:*` leaf must be reachable from `generate` through same-package `npm run`
+references (exempt: `generate:genesis`, a stateful anvil deploy, and `generate:patch-sites`, a committed baseline a
+test compares against), and every `export.manifest.json` output must be deleted by `clean:generated`.
+
+This exists because a regenerate-and-diff gate cannot see a generator that silently _stops_ emitting a file: the
+committed copy sits untouched, so nothing looks dirty. Deleting first turns that into a visible deletion, and the
+delete list lives beside the generators — the only place it stands a chance of being kept current.
+
+```jsonc
+// ✅ Every path the generate:* scripts write is removable, and one verb rewrites everything.
+"scripts": {
+  "clean:generated": "rm -rf pkg/abi pkg/templates pkg/ts/index.ts",
+  "generate": "npm run generate:exports && npm run generate:templates",
+  "generate:exports": "node ./internal/cli/generateExports.ts",
+  "generate:templates": "node ./internal/cli/generateTemplates.ts"
+}
+```
+
+```jsonc
+// ❌ Generators with no way to prove they still emit everything.
+"scripts": { "generate:exports": "node ./internal/cli/generateExports.ts" }
+```
+
+**5.1.4c A private source-owning package can delete its own build output.** Every `dev`, `shared-helper` and
+`internal-consumer` package that is not a mirror owner defines a non-empty `clean`. Its content requirements are
+derived from what the package actually does, never listed centrally:
+
+- a package whose scripts invoke `tsc` must delete `*.tsbuildinfo`, because a surviving build-info file lets the
+  next typecheck resume from stale state;
+- a Forge project must delete the directories `forge config --json` reports (`cache_path`, `out`, `broadcast`).
+
+Those directory names are **asked of forge, never assumed** — `hardhat/v2/e2e` sets `cache_path = "cache-forge"`, so
+any rule hard-coding `cache` is already wrong for one project in three. Anywhere this repo needs a Foundry answer,
+`forge config --json` (which resolves `extends`, profiles and defaults) is the source, never a parsed `foundry.toml`.
+
+```jsonc
+// ✅ Derived from what the package does: it runs tsc, and forge reports cache/out/broadcast.
+"scripts": {
+  "clean": "rm -rf cache out broadcast *.tsbuildinfo pkg/ts/_esm pkg/ts/_cjs",
+  "compile:forge": "forge build --skip test"
+}
+```
+
+```jsonc
+// ❌ A rebuild resumes from stale incremental state.
+"scripts": { "clean": "rm -rf out", "lint": "eslint && tsc -p ./tsconfig.json --noEmit" }
+```
+
+**5.1.5 Prettier scripts do not target Solidity.** `forge fmt` is the sole Solidity formatter, so `prettier:check`
+and `prettier:write` must exclude `.sol`. A mirror-only payload preserves its upstream toolchain instead (Solidity
+Prettier plugin, Solhint) and does not require `forge:fmt`, `forge:fmt:check` or `forge:lint` on its dev owner.
 
 ```jsonc
 // ✅ Solidity is intentionally absent.
@@ -521,21 +614,26 @@ remain package-specific; the conventional names let the workspace and CI invoke 
 "prettier:write": "prettier --write \"**/*.{js,json,md,sol,ts,yml}\""
 ```
 
-**5.1.6 A non-published package running Prettier uses the workspace configuration.** Every non-published package that
-defines `prettier:check` or `prettier:write` contains `.prettierrc.mjs`. That file directly re-exports
-`sdk/prettier.base.mjs` using the correct relative path. Published payloads do not need development configuration.
+**5.1.6 A non-published package running Prettier uses the workspace configuration.** It contains `prettier.config.js`
+referencing `sdk/prettier.base.mjs` by relative path; the only accepted config filenames are those two. A dev owner
+containing only `package.json` and `pkg/` has no local source to format, so any local Prettier config is forbidden.
 
 ```js
-// ✅ In sdk/hardhat/v2/e2e/.prettierrc.mjs.
-export { default } from '../../../prettier.base.mjs';
+// ✅ In an ESM sdk/common/prettier.config.js.
+export { default } from '../prettier.base.mjs';
 
-// ❌ This package can silently drift from the workspace formatting policy.
-export { default } from './local-prettier.mjs';
+// ✅ In a CommonJS package's prettier.config.js.
+module.exports = import('../../../prettier.base.mjs').then((module) => module.default);
+```
+
+```text
+❌ Alternate configuration filename:
+.prettierrc.mjs
 ```
 
 **5.1.7 ESLint configuration uses one conventional filename.** Every non-published package defining `lint` contains
-`eslint.config.js`. Other ESLint configuration filenames, including `eslint.config.mjs`, `eslint.config.cjs` and
-legacy `.eslintrc*` files, are forbidden. A single exact name keeps both local commands and CI discovery deterministic.
+`eslint.config.js`; every other ESLint config filename is forbidden, and the workspace root holds the sole
+`eslint.base.mjs`. A dev owner containing only `package.json` and `pkg/` forbids any local ESLint config.
 
 ```text
 ✅ eslint.config.js
@@ -545,20 +643,23 @@ legacy `.eslintrc*` files, are forbidden. A single exact name keeps both local c
 
 ### 5.2 Packaging checks
 
-**5.2.1 Every dev package that wraps a published package defines `test:publint`.** The script runs `publint --strict`
-and `attw --pack` against its `pkg/`. `attw` packs the payload and resolves its types under node10, node16-cjs,
-node16-esm and bundler, so packing stays verified with no `.tgz` dependency. The published manifest itself does not
-carry this development script; the manifest gate follows `publishedRelPath` and requires it on the owning dev package.
+**5.2.1 Every dev owner of an npm-distributed payload defines `check:publint` and the `check` verb wrapping its
+deliverable validations.** `check:publint` runs `publint --strict` and `attw --pack` against `pkg/`; every `check:*`
+leaf must be reachable from `check`, except `check:mirror` (network-bound) and generator `--check` conveniences.
+
+`attw --pack` resolves the packed types under node10, node16-cjs, node16-esm and bundler, so packing stays verified
+with no `.tgz`. The manifest gate follows `publishedRelPath` and requires these scripts on the owning dev package;
+mirror-only payloads are exempt.
 
 ```jsonc
 // ✅ --strict fails on warnings, and attw packs the package to resolve its types for real.
-"test:publint": "publint --strict ./pkg && attw --pack ./pkg"
+"check:publint": "publint --strict ./pkg && attw --pack ./pkg"
 
 // ❌ The required script entry is absent, so no uniform gate can discover the check.
 "publint": "publint --strict ./pkg && attw --pack ./pkg"
 
 // ❌ Warnings pass silently and no types are resolved, so a broken `exports` can ship.
-"test:publint": "publint ./pkg"
+"check:publint": "publint ./pkg"
 ```
 
 **5.2.2 `exports` is the published package's whole public surface, and stays minimal.** What it omits is unreachable
@@ -630,19 +731,36 @@ The profile performs all of these checks against the isolated installation from 
 
 ### 5.3 Tarballs
 
-**5.3.1 Every dev package that wraps a published package defines `test:consumer`.** This is the stable public command
-for proving the installed payload. Optional implementation stages use the same stem, such as `prepare:consumer`,
-`test:consumer:run` and `clean:consumer`; callers invoke only `test:consumer`.
+**5.3.1 Every dev package that wraps an npm-distributed package defines `test:consumer`.** This is the stable public
+command for proving the installed payload; optional stages share the stem (`test:consumer:run`, …) but callers invoke
+only `test:consumer`. A mirror-only consumer project is already the consumer and is exempt.
 
-The checked-in fixtures are format-specific. `test-consumer/cjs` is required for a CommonJS entry point and
-`test-consumer/esm` for an ESM entry point; a dual package has both. The validator derives the required formats from
-the published `package.json` entry points rather than duplicating that information in the manifest.
+The checked-in fixtures are format-specific: `test-consumer/cjs` for a CommonJS entry point, `test-consumer/esm` for
+ESM, both for a dual package — derived from the published entry points, not duplicated in the manifest. When an
+existing manifest-listed project is the real consumer, `consumerTests` maps the format to it instead.
 
 ```text
 ✅ dual package: test-consumer/cjs/ and test-consumer/esm/
 ✅ ESM-only package: test-consumer/esm/
 ❌ dual package: test-consumer/esm/ only
 ```
+
+```jsonc
+// ✅ The Hardhat template is the plugin's real CJS consumer.
+{
+  "type": "cjs",
+  "consumerTests": {
+    "cjs": "./hardhat/v2/fhevm-hardhat-template/pkg"
+  }
+}
+
+// ❌ A boolean waiver would remove consumer coverage instead of locating it.
+{ "consumerTests": false }
+```
+
+An overridden consumer must support the selected module format, define a non-empty `test` script, contain a committed
+`package-lock.json`, and directly link the tested package through a directory `file:` dependency. The validator checks
+all four properties; `test-consumer --ci` performs the isolated installation and execution.
 
 ```jsonc
 // ✅ In the dev package that wraps ./pkg. One command owns the whole consumer test.
@@ -652,12 +770,9 @@ the published `package.json` entry points rather than duplicating that informati
 "scripts": { "test:hardhat-template": "node ./internal/test-consumer.ts" }
 ```
 
-**5.3.2 Every published package has exactly one dev owner carrying both conventional checks.** The central validator
-follows each dev entry's `publishedRelPath` and verifies that it identifies an existing published entry. It also checks
-the inverse: every published entry is referenced by exactly one dev entry. The validator then reads that dev package's
-actual `package.json` and requires non-empty `scripts.test:publint` and `scripts.test:consumer` entries. It does not
-prescribe their implementations or generate their tests; CI executes the package-owned scripts. Other package kinds
-do not declare these development scripts merely to satisfy the validator.
+**5.3.2 Every published package has exactly one dev owner carrying its applicable conventional checks.** The validator
+resolves each dev entry's `publishedRelPath`, checks the inverse (every published entry has exactly one dev owner),
+and requires `check`, `check:publint` and `test:consumer` on owners of npm-distributed payloads only.
 
 ```jsonc
 // ✅ In npm-manifest.json, the dev entry identifies the published payload it owns.
@@ -670,9 +785,10 @@ do not declare these development scripts merely to satisfy the validator.
 ```
 
 ```jsonc
-// ✅ In hardhat/v2/plugin/package.json, the owning dev package exposes both conventional checks.
+// ✅ In hardhat/v2/plugin/package.json, the owning dev package exposes the conventional checks.
 "scripts": {
-  "test:publint": "publint --strict ./pkg && attw --pack ./pkg",
+  "check": "npm run check:publint && npm run check:vendored-origin",
+  "check:publint": "publint --strict ./pkg && attw --pack ./pkg",
   "test:consumer": "node ./internal/test-consumer.ts"
 }
 
@@ -693,9 +809,8 @@ to `sdk/node_modules` and satisfy an undeclared dependency.
 ```
 
 **5.3.4 Candidate directories are installed with `--install-links`.** The temporary manifest replaces each candidate
-dependency with an absolute `file:` path to its `pkg/`, then runs `npm install --install-links`. Outside a workspace,
-npm packs such a directory and installs its packed contents instead of linking its source tree, exercising `files`,
-ignore rules and the packed manifest without putting a `.tgz` in the dependency graph.
+dependency with an absolute `file:` path to its `pkg/`; outside a workspace, npm packs such a directory and installs
+the packed contents, exercising `files` and ignore rules without putting a `.tgz` in the dependency graph.
 
 ```jsonc
 // ✅ Generated only in the temporary consumer; npm installs the packed directory contents.
@@ -744,27 +859,32 @@ metadata and type-resolution coverage, but neither replaces runtime execution of
 ```jsonc
 // ✅ Static packaging checks and the installed-artifact test cover different failures.
 "scripts": {
-  "test:publint": "publint --strict ./pkg && attw --pack ./pkg",
+  "check:publint": "publint --strict ./pkg && attw --pack ./pkg",
   "test:consumer": "node ./internal/test-consumer.ts"
 }
 
 // ❌ Type-resolution analysis alone does not execute the installed runtime artifact.
-"scripts": { "test:publint": "publint --strict ./pkg && attw --pack ./pkg" }
+"scripts": { "check:publint": "publint --strict ./pkg && attw --pack ./pkg" }
 ```
 
 **5.3.9 No test-consumer parallelism is allowed.** Consumer packages, CJS/ESM fixtures and test files execute one at
-a time. A fixture using Node's test runner sets `--test-concurrency=1`; other runners must use their equivalent serial
-mode. The next test starts only after the previous test has completed all cleanup. Distinct ports do not permit an
-exception to this rule.
+a time; a fixture using Node's test runner sets `--test-concurrency=1`, and other runners use their serial mode.
+Distinct ports do not permit an exception to this rule.
 
 ## 6. Lockfiles and recovery
 
 ### 6.1 Lockfiles
 
-**6.1.1 One lockfile per workspace root.** Members have none — the root lock covers them. A standalone consumer
-(2.1.4) keeps its own. Normal consumer tests treat that committed lockfile as immutable. The explicit
-`test-consumer-regenerate-package-lock` command regenerates it with `--install-links`; without a package selector it
-regenerates every consumer lock. The root install never does.
+**6.1.1 One authoritative lockfile per installation root.** Ordinary members have none (the root lock covers them); a
+standalone project keeps its own, and so does a `consumerTests`-referenced package, because its isolated copy is an
+independent installation root. Consumer lockfiles are immutable except through `test-consumer-regenerate-package-lock`.
+
+```text
+✅ ordinary workspace member                    sdk/package-lock.json only
+✅ standalone consumer                         <consumer>/package-lock.json
+✅ workspace member selected by consumerTests  <consumer>/package-lock.json for its isolated copy
+❌ ordinary workspace member                    nested package-lock.json
+```
 
 `test-consumer` normally removes the lock only from its temporary copy and runs `npm install --install-links`, testing
 fresh compatible resolution. With `--ci`, it requires the committed lock and runs `npm ci --install-links` instead.
@@ -792,19 +912,14 @@ npm config get install-strategy
 
 ### 7.1 The manifest
 
-**7.1.1 The inventory universe is every SDK source `package.json` at or below `sdk/`.** The autonomous validator's own
-package tree is tooling, not SDK inventory, and is excluded using the validator's resolved installation path rather
-than a hard-coded directory name. Repository-aware discovery includes tracked files and untracked files that are not
-ignored, honoring every applicable `.gitignore`; it never descends into version-control metadata. Ignore rules
-therefore exclude dependency installations, caches, tarball output and other generated trees without requiring this
-rule to enumerate every possible directory name. A standalone entry in
-`npm-manifest.json` additionally includes that entry's own `package.json`, even when its embedded project is ignored by
-the parent repository. `npm-manifest.json#inventory.exclude` lists SDK-relative directory trees that are explicitly
-outside this inventory's scope.
+**7.1.1 The inventory universe is every SDK source `package.json` at or below `sdk/`.** Discovery is
+repository-aware — tracked files plus untracked-unignored ones — so ignore rules exclude installed and generated
+trees without this rule enumerating names; `inventory.exclude` removes explicitly out-of-scope trees.
 
-Discovery does not derive its source set from `workspaces`, package names, `private` or package kind. Workspace
-members, non-members, standalone projects and non-packages can therefore all be in scope. A `package.json`
-outside `sdk/`, or inside an ignored generated tree without an explicit standalone entry, is out of scope.
+The validator's own package tree is tooling, excluded by its resolved installation path. A standalone entry
+additionally includes its own `package.json` even when the parent repository ignores it. Discovery never derives its
+set from `workspaces`, names, `private` or kind — members, non-members, standalone projects and non-packages are all
+in scope; a `package.json` outside `sdk/` or inside an ignored tree without a standalone entry is not.
 
 ```text
 # ✅ Both files are in scope; being outside workspaces does not hide the second one.
@@ -850,10 +965,8 @@ removes the trees listed by `inventory.exclude`, adds each non-excluded explicit
 compares that set with `npm-manifest.json#packages`. A missing or stale key is a `7.1.3` error.
 
 **7.1.4 A manifest path never contains `.` or `..` as a segment and never escapes its declared root.** The schema
-enforces safe lexical forms for package keys, `publishedRelPath`, vendored `relPath`, local `source`, external `from`
-and vendored filenames. The TypeScript validator will additionally resolve every local path against the root named by
-its field, follow existing symlinks with `realpath`, and reject a result outside that root. External `from` paths
-receive the lexical check before they are joined to a future checkout.
+enforces safe lexical forms for every path field; the validator additionally resolves each local path against its
+declared root, follows symlinks with `realpath`, and rejects a result outside that root.
 
 ```jsonc
 // ✅ Canonical paths stay below their documented roots.

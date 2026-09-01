@@ -4,5 +4,14 @@
     "ignoreDeprecations": "6.0"
   },
   "include": ["pkg/ts/**/*.ts"],
-  "exclude": ["pkg/ts/**/*.bench.ts", "pkg/ts/**/*.bench-d.ts", "pkg/ts/**/*.test.ts", "pkg/ts/**/*.test-d.ts"]
+  "exclude": [
+    "pkg/ts/**/*.bench.ts",
+    "pkg/ts/**/*.bench-d.ts",
+    "pkg/ts/**/*.test.ts",
+    "pkg/ts/**/*.test-d.ts",
+    "pkg/ts/_cjs/**",
+    "pkg/ts/_esm/**",
+    "pkg/ts/_types/**",
+    "pkg/ts/_types-cjs/**"
+  ]
 }

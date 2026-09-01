@@ -268,7 +268,6 @@ async function deployEmptyProxies(parameters: {
 
   // nonce +0: EmptyUUPSProxyACL — the ACL proxy's own initial implementation.
   const emptyUUPSProxyACLAddress = await deployEmptyUUPSProxyACL({ deployer: parameters.deployer });
-  console.log(`EmptyUUPSProxyACL = ${emptyUUPSProxyACLAddress.contractAddress}`);
 
   // nonce +1: the ACL proxy.
   const aclProxyAddress = await deployACLProxy({
@@ -276,7 +275,6 @@ async function deployEmptyProxies(parameters: {
     deployer: parameters.deployer,
     emptyUUPSProxyACLAddress: emptyUUPSProxyACLAddress.contractAddress,
   });
-  console.log(`ACL = ${aclProxyAddress.contractAddress}`);
   assertDeployedAddress({
     contractName: 'ACL',
     expectedAddress: addr.aclAddress,
@@ -289,7 +287,6 @@ async function deployEmptyProxies(parameters: {
     deployer: parameters.deployer,
     aclAddress: addr.aclAddress,
   });
-  console.log(`EmptyUUPSProxy = ${emptyUUPSProxyAddress.contractAddress}`);
 
   // nonce +3 onward: one ERC1967Proxy per table entry, in table order.
   for (const target of sharedImplProxies) {
@@ -301,7 +298,6 @@ async function deployEmptyProxies(parameters: {
       deployer: parameters.deployer,
       emptyUUPSProxyAddress: emptyUUPSProxyAddress.contractAddress,
     });
-    console.log(`${target.contractName} = ${proxy.contractAddress}`);
     assertDeployedAddress({
       contractName: target.contractName,
       expectedAddress: target.address,
@@ -342,7 +338,6 @@ async function deployCleartextEmptyProxies(parameters: {
     deployer: parameters.deployer,
     emptyUUPSProxyAddress: parameters.emptyUUPSProxyAddress,
   });
-  console.log(`CleartextArithmetic = ${cleartextArithmeticProxy.contractAddress}`);
   assertDeployedAddress({
     contractName: 'CleartextArithmetic',
     expectedAddress: parameters.precomputedCleartextAddresses.cleartextArithmeticAddress,
@@ -354,7 +349,6 @@ async function deployCleartextEmptyProxies(parameters: {
     deployer: parameters.deployer,
     emptyUUPSProxyAddress: parameters.emptyUUPSProxyAddress,
   });
-  console.log(`CleartextDB = ${cleartextDbProxy.contractAddress}`);
   assertDeployedAddress({
     contractName: 'CleartextDB',
     expectedAddress: parameters.precomputedCleartextAddresses.cleartextDbAddress,

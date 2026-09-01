@@ -3,11 +3,10 @@ import { createPublicClient, createWalletClient, http, parseEventLogs, type Addr
 import { privateKeyToAccount } from 'viem/accounts';
 import { foundry } from 'viem/chains';
 import { expect, test } from 'vitest';
-import { startAnvil, stopAnvil, waitForAnvil } from '@fhevm/sdk-common-dev';
+import { startAnvil, stopAnvil, waitForAnvil, MNEMONIC, DEPLOYER_ADDRESS_INDEX } from '@fhevm/sdk-common-dev';
 import { privateKeyFromMnemonic } from '@fhevm/sdk-common-dev';
 import { createViemEthereumAdapters } from '@fhevm/sdk-vendored-dev/viemEthereumLib.ts';
 
-const MNEMONIC = 'adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer';
 const FHE_TYPE_UINT64 = 5;
 
 /**
@@ -65,7 +64,7 @@ const CLEARTEXT_DB_ABI = [
  * assertion here is on the handles rather than on timing, so it does not depend on that.
  */
 test(`${String(DRAWS)} consecutive fheRand calls all produce distinct handles`, async () => {
-  const deployerKey = privateKeyFromMnemonic({ mnemonic: MNEMONIC, addressIndex: 5 });
+  const deployerKey = privateKeyFromMnemonic({ mnemonic: MNEMONIC, addressIndex: DEPLOYER_ADDRESS_INDEX });
 
   const anvil = startAnvil({ port: 8634, mnemonic: MNEMONIC });
   try {

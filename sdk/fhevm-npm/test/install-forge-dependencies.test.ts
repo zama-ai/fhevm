@@ -8,6 +8,7 @@ import {
   type ForgeCommandRunner,
   type ForgeDependencyProject,
   discoverForgeDependencyProjects,
+  forgeDependencyDirectories,
   selectForgeDependencyProjects,
 } from '../base/forge-dependencies.ts';
 import type { NpmManifest } from '../manifest.ts';
@@ -61,6 +62,25 @@ test('selects a Forge dependency project by manifest path or package name', () =
   assert.equal(selectForgeDependencyProjects(projects, 'second-dev')[0]?.packageKey, './second');
   assert.deepEqual(selectForgeDependencyProjects(projects), projects);
   assert.throws(() => selectForgeDependencyProjects(projects, './missing'), /No manifest package/);
+});
+
+test('derives Forge dependency directories from forge config libs, never by name', () => {
+  const workspace = mkdtempSync(join(tmpdir(), 'fhevm-npm-forge-libs-'));
+  try {
+    for (const dir of ['dependencies', 'vendor', 'node_modules']) mkdirSync(join(workspace, dir));
+
+    const directories = forgeDependencyDirectories(
+      { libs: ['dependencies', 'vendor', 'node_modules', '../../node_modules', '/etc', '..'] },
+      workspace,
+    );
+
+    // node_modules trees are npm's to restore; anything outside the package is shared territory.
+    assert.deepEqual(directories, [join(workspace, 'dependencies'), join(workspace, 'vendor')]);
+    assert.deepEqual(forgeDependencyDirectories({ libs: 'not-an-array' }, workspace), []);
+    assert.deepEqual(forgeDependencyDirectories(undefined, workspace), []);
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
 });
 
 function createPackage(workspaceRoot: string, key: string, name: string, foundry: boolean): void {

@@ -8,7 +8,7 @@ import { pathToFileURL } from 'node:url';
 
 const pluginDirectory = dirname(dirname(import.meta.filename));
 const workspaceRoot = resolve(pluginDirectory, '../../..');
-const templateDirectory = resolve(pluginDirectory, '../fhevm-hardhat-template');
+const templateDirectory = resolve(pluginDirectory, '../fhevm-hardhat-template/pkg');
 const hostOwnerDirectory = resolve(workspaceRoot, 'host-contracts-cleartext/v13');
 const candidates = {
   '@fhevm/hardhat-plugin': resolve(pluginDirectory, 'pkg'),
@@ -61,11 +61,11 @@ function buildCandidates(): void {
   ]) {
     rmSync(output, { recursive: true, force: true });
   }
-  runNpm(pluginDirectory, ['run', 'build:cjs']);
-  runNpm(pluginDirectory, ['run', 'build:types']);
-  runNpm(hostOwnerDirectory, ['run', 'build:cjs']);
-  runNpm(hostOwnerDirectory, ['run', 'build:esm']);
-  runNpm(hostOwnerDirectory, ['run', 'build:types']);
+  runNpm(pluginDirectory, ['run', 'compile:cjs']);
+  runNpm(pluginDirectory, ['run', 'compile:types']);
+  runNpm(hostOwnerDirectory, ['run', 'compile:pkg:ts:cjs']);
+  runNpm(hostOwnerDirectory, ['run', 'compile:pkg:ts:esm']);
+  runNpm(hostOwnerDirectory, ['run', 'compile:pkg:ts:types']);
 }
 
 function copyConsumer(destination: string): void {

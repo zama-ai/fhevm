@@ -7,19 +7,22 @@
     "node": ">=22.6"
   },
   "scripts": {
-    "build": "npm run clean && npm run test:vendored && npm run prettier:check && npm run lint && npm run build:cjs && npm run build:types && npm run test:publint",
-    "build:cjs": "tsc --project ./tsconfig.build.cjs.json && printf '{\"type\":\"commonjs\"}' > ./pkg/_cjs/package.json",
-    "build:types": "tsc --project ./tsconfig.build.types.json",
-    "check:lint-policy": "\"$(npm prefix)/scripts/check-lint-policy.sh\"",
+    "build": "npm run fmt:check && npm run lint && npm run compile",
+    "check": "npm run check:publint && npm run check:vendored-origin",
+    "check:publint": "publint --strict ./pkg && attw --pack ./pkg",
+    "check:vendored-origin": "node ../../../fhevm-npm/fhevm-npm.ts check-vendored-origin ./hardhat/v2/plugin",
     "clean": "rm -rf pkg/_cjs pkg/_types *.tsbuildinfo internal/*.tsbuildinfo test/*.tsbuildinfo pkg/*.tsbuildinfo",
-    "lint": "npm run check:lint-policy && eslint && tsc -b ./tsconfig.json --noEmit",
+    "compile": "npm run compile:cjs && npm run compile:types",
+    "compile:cjs": "tsc --project ./tsconfig.build.cjs.json && printf '{\"type\":\"commonjs\"}' > ./pkg/_cjs/package.json",
+    "compile:types": "tsc --project ./tsconfig.build.types.json",
+    "fmt": "npm run prettier:write",
+    "fmt:check": "npm run prettier:check",
+    "lint": "eslint && tsc -b ./tsconfig.json --noEmit",
     "pack:tarball": "\"$(npm prefix)/scripts/pack-tarball.ts\"",
     "prettier:check": "prettier --check \"**/*.{js,json,md,mjs,ts,yml}\"",
     "prettier:write": "prettier --write \"**/*.{js,json,md,mjs,ts,yml}\"",
     "test": "node --test test/*.test.ts",
-    "test:consumer": "node ./internal/test-consumer.ts",
-    "test:publint": "publint --strict ./pkg && attw --pack ./pkg",
-    "test:vendored": "node ../../../fhevm-npm/fhevm-npm.ts check-vendored ./hardhat/v2/plugin"
+    "test:consumer": "node ./internal/test-consumer.ts"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",

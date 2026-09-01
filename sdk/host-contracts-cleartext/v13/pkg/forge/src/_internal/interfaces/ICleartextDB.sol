@@ -29,6 +29,7 @@ interface ICleartextDB {
     function addWriter(address account) external;
     function get(bytes32 handle) external view returns (uint256);
     function getACLAddress() external view returns (address);
+    function getVersion() external pure returns (string memory);
     function initializeFromEmptyProxy(address initialWriter) external;
     function isWriter(address account) external view returns (bool);
     function proxiableUUID() external view returns (bytes32);

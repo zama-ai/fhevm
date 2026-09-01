@@ -230,5 +230,5 @@ shape has proven itself — not in parallel.
 - **Path assumptions.** The fixture is copied to a temp directory, so no moved spec may derive a path
   from its own location. `create2-precompute` and `node10-cjs-resolution` are the two known cases;
   re-grep for `import.meta.dirname`, `import.meta.url` and `__dirname` before each move.
-- **Build ordering.** `test:consumer` passes `--build-package`, which runs `npm run build` in v13 only. From
+- **Build ordering.** `test:consumer` passes `--build-linked-dependencies`, which runs `npm run build` in v13 only. From
   step 10 on, v12 must be built beforehand.

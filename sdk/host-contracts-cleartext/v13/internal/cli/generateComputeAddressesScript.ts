@@ -1,7 +1,7 @@
 // Run: npm run generate:compute-addresses
 //
 // Renders internal/templates/ComputeAddresses.s.sol.template into
-// pkg/forge/script/ComputeAddresses.s.sol. Runs as a step of `build:templates`; `test/templates.test.ts`
+// pkg/forge/script/ComputeAddresses.s.sol. Runs as a step of `make generate`; `test/templates.test.ts`
 // fails if the committed output has drifted from the template.
 
 import { relative } from 'node:path';

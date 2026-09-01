@@ -3,14 +3,20 @@ import { createPublicClient, createWalletClient, getAddress, http, type Address,
 import { privateKeyToAccount } from 'viem/accounts';
 import { foundry } from 'viem/chains';
 import { expect, test } from 'vitest';
-import { startAnvil, stopAnvil, waitForAnvil, type AnvilNode } from '@fhevm/sdk-common-dev';
+import {
+  startAnvil,
+  stopAnvil,
+  waitForAnvil,
+  type AnvilNode,
+  MNEMONIC,
+  DEPLOYER_ADDRESS_INDEX,
+  ERC_1967_IMPL_SLOT,
+} from '@fhevm/sdk-common-dev';
 import { privateKeyFromMnemonic, privateKeyToAddress } from '@fhevm/sdk-common-dev';
 import { expectedHcuLimit } from './utils/expectedBootstrap.ts';
 import { createViemEthereumAdapters } from '@fhevm/sdk-vendored-dev/viemEthereumLib.ts';
 
-// ERC-1967 implementation slot: keccak256("eip1967.proxy.implementation") - 1.
-const IMPL_SLOT = '0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc' as const;
-const MNEMONIC = 'adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer';
+const IMPL_SLOT = ERC_1967_IMPL_SLOT;
 
 // Minimal, fully-typed ABI fragments (avoids importing untyped JSON artifacts).
 // ACL real-implementation read surface (`getPauserSetAddress` only exists post-materialization).
@@ -102,7 +108,7 @@ type DeployedStack = {
 
 /** Starts anvil and deploys a fresh v13 stack via the public `deploy(...)` (deployer = admin). */
 async function deployStack(port: number): Promise<DeployedStack> {
-  const deployerKey = privateKeyFromMnemonic({ mnemonic: MNEMONIC, addressIndex: 5 });
+  const deployerKey = privateKeyFromMnemonic({ mnemonic: MNEMONIC, addressIndex: DEPLOYER_ADDRESS_INDEX });
   const deployerAddress = privateKeyToAddress({ privateKey: deployerKey });
   const kmsSigner = privateKeyToAddress({
     privateKey: privateKeyFromMnemonic({ mnemonic: MNEMONIC, addressIndex: 8 }),

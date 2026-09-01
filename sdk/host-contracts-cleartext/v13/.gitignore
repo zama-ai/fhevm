@@ -10,6 +10,7 @@ pkg/state
 pkg/ts/_cjs
 pkg/ts/_esm
 pkg/ts/_types
+pkg/ts/_types-cjs
 out
 tarball
 test/ts/.vitest-cache

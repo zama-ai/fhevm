@@ -36,7 +36,7 @@ try {
     console.error('ZamaConfig.sol is the source of truth, not this package: those literals are compiled into');
     console.error('every dApp inheriting its localhost config, so they are not ours to choose. Update');
     console.error('ZAMA_LOCAL_CONFIG in @fhevm/sdk-common-dev to match, then re-derive the stack with');
-    console.error('`npm run build:templates` — a moved address means the deploy order or the deployer no');
+    console.error('`make generate` — a moved address means the deploy order or the deployer no');
     console.error('longer produces the right set, which generateLocalHostBytecode.ts will tell you next.');
     process.exit(1);
   }

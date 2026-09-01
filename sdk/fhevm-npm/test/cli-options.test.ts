@@ -3,6 +3,16 @@ import test from 'node:test';
 
 import { parseCliOptions } from '../cli-options.ts';
 
+test('global verbosity counts -v through -vvvv and caps additional flags', () => {
+  assert.equal(parseCliOptions(['check-names']).verbosity, 0);
+  assert.equal(parseCliOptions(['check-names', '-v']).verbosity, 1);
+  assert.equal(parseCliOptions(['-vv', 'check-names']).verbosity, 2);
+  assert.equal(parseCliOptions(['check-names', '-vvv']).verbosity, 3);
+  assert.equal(parseCliOptions(['-vvvv', 'check-names']).verbosity, 4);
+  assert.equal(parseCliOptions(['-vvvvv', 'check-names']).verbosity, 4);
+  assert.equal(parseCliOptions(['check-names', '--verbose', '--verbose']).verbosity, 2);
+});
+
 test('consumer lock regeneration defaults to every fixture', () => {
   const options = parseCliOptions(['test-consumer-regenerate-package-lock']);
   assert.equal(options.command, 'test-consumer-regenerate-package-lock');
@@ -32,15 +42,15 @@ test("test-consumer uses fresh installation by default and accepts '--ci'", () =
   assert.equal(ci.ci, true);
 });
 
-test("test-consumer accepts '--build-package'", () => {
+test("test-consumer accepts '--build-linked-dependencies'", () => {
   const options = parseCliOptions([
     'test-consumer',
     './host-contracts-cleartext/v13/test-consumer/esm',
-    '--build-package',
+    '--build-linked-dependencies',
   ]);
   assert.equal(options.command, 'test-consumer');
   if (options.command !== 'test-consumer') throw new Error('unreachable');
-  assert.equal(options.buildPackage, true);
+  assert.equal(options.buildLinkedDependencies, true);
 });
 
 test("test-consumer accepts '--test-file' without implicitly enabling '--run'", () => {

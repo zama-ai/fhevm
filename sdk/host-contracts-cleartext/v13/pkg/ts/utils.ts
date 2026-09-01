@@ -234,7 +234,7 @@ export function assertNoPlaceholdersRemain(parameters: {
         `${parameters.template.contractName}.${parameters.field}: placeholder for ${referenceName} ` +
           `(0x${placeholder}) still present at byte ${String(survivingIndex / 2)} after patching. ` +
           `Deploying this would bake a marker address into the contract. Either the template's ` +
-          `offsets are stale (regenerate with \`npm run build:templates\`) or no replacement was ` +
+          `offsets are stale (regenerate with \`make generate\`) or no replacement was ` +
           `supplied for ${referenceName}.`,
       );
     }

@@ -1,0 +1,69 @@
+Re-review: sdk/ build orchestration
+Fix verification first (the doc said to verify, not trust): S1 (generate-exports recipe, Makefile:485–487), S2 (prune list + hidden-dir class, :88–91), S3 (make -n test runs zero generators), the S5 reversion (PHONY again, :326–330, and the order-only prereq on v12.build means every build path re-runs it), S7 (SHELL := bash -eu -o pipefail, :38), S9 (build:forge is now just forge build --skip test; typechain runs only via its stamp), the listless S4 gate (:525–535 — correctness rests on full-snapshot string equality; the grep is display-only), S12 exclusions in clean:generated, the clean-tree guard on clean-generated (:234–238), and the plugin's test:consumer wiring (:465, :471) — all verified in place. One claimed fix failed verification (F8 below).
+
+Findings, most severe first
+F1 — The generate verb is itself the hand-maintained list the listless gate was built to eliminate. Passes silently in real CI.
+Makefile:141–146, 490–498, 502–504; v12/v13 package.json generate:templates.
+check-generated keeps no output list — correct — but its regeneration step only runs the generators wired into the verb: five pre-phase scripts enumerated per package in generate-contracts, and whatever generate:templates happens to chain. A developer who adds generate:foo writing tracked files, runs it once, and commits, gets a green tree forever: when its input later changes, check-generated regenerates only the wired generators, the tree stays clean, and the gate is green — including in real CI. Rule 5.1.4b (npm-rules.md:545) closes the clean-list gap but nothing closes the wiring gap. The forgetting moved from GENERATED_PATHS into the verb; it did not die.
+
+Principle violated: corollary 2 (hand-maintained list, incompleteness not caught mechanically) and brief item 4.
+Verified: I enumerated all ten generate:* scripts against the verb. Today it is complete — generate:genesis writes gitignored pkg/state/ (verified via git check-ignore, not in files), generate:patch-sites is a deliberate test-guarded acceptance ratchet. The hole is structural, and currently latent.
+Fix shape: make the namespace the derivation. Rename the two deliberately-manual tools out of generate:* (refresh:genesis, accept:patch-sites), then have the verb (or a fhevm-npm subcommand — it already parses every package's scripts) enumerate generate:* mechanically, with phase encoded in the name (generate:pre:* / generate:post:*). Then wiring cannot be forgotten, and 5.1.4b's trigger stays aligned.
+F2 — Stamp input lists miss build-relevant files; a settings change silently skips the build.
+Makefile:88–101. The sources function matches only *.ts *.sol *.json *.mjs, and walks only the seven package dirs. Verified escapes: foundry.toml and remappings.txt in v12, v13, e2e (.toml/.txt unmatched); root tsconfig.base.json — which hardhat/v2/plugin/tsconfig.build.json extends (verified), so it is a genuine plugin-build input; root foundry.base.toml — which every package foundry.toml extends (verified); root package.json/package-lock.json (dependency graph). Also structural: deleting a source never stales a stamp (find re-evaluates; remaining files are older).
+
+Scenario: dev flips optimizer or solc_version in v13/foundry.toml; make build reports nothing to do; every downstream test runs against old-settings artifacts and passes. Real CI is immune (clean first) — this is a local silent skip, but it is the philosophy's canonical defect.
+Principle: corollary 1 (a skipped build is a defect) and corollary 3, inverted: the extension include list can only MISS (unsafe direction), while the prune list can only over-build (safe direction). The asymmetry is backwards.
+Verified (file existence, extends chains, Makefile pattern).
+Fix shape: match every file and rely on prune alone; add a SHARED_SRC := tsconfig.base.json foundry.base.toml package-lock.json package.json cleartext-config.json npm-manifest.json to every build stamp. Over-staling is the trade the philosophy explicitly accepts.
+F3 — make test has no build edges, justified by exactly the argument the philosophy rejects.
+Makefile:428–434. The comment says "re-running one test should never trigger a 90s rebuild" — that is speed traded against a skipped step, the same reasoning already overruled when the templates.test.ts mtime preservation was reverted ("staling a stamp is the correct outcome. The next build rebuilds").
+
+Scenario: dev edits plugin source, runs make test; plugin/e2e/template tests load the stale built plugin from pkg/_cjs and pass. Verified: on this tree all seven stamps are stale, and make -n test runs zero builds — only the five test scripts.
+Principle: corollary 1; brief item 3.
+Fix: each test-* depends on the stamps it consumes. Fresh tree costs stat calls; stale tree rebuilds. Yes, templates.test.ts staling stamps means back-to-back make test rebuilds between — that is the trade already chosen.
+F4 — check-generated-post has no build edge; it is correct inside ci by sub-make ordering, i.e. luck.
+Makefile:540–541, first prerequisite of check-post (:369). Verified via make -n check-post: the first executed line is the snapshot/generate-templates/compare, and the v12/v13 builds its siblings require run after it.
+
+Scenario: dev edits a .sol source, runs make check-post. generate:templates reads the stale out/ artifacts, reproduces the committed templates byte-for-byte, gate green. The build then runs; the check that would now fail already passed. Under -j the race exists even inside aggregates.
+Principle: brief item 3 (real edges, not ordering luck).
+Fix: check-generated-post: $(DIR_STAMPS)/v12.build $(DIR_STAMPS)/v13.build.
+F5 — Three surfaces no gate ever looks at (silent in real CI, by absence).
+Root-level files are outside every fmt-check: package.json, npm-manifest.json, tsconfig.base.json, prettier.base.mjs, eslint.base.mjs, cleartext-config.json. Each package checks its own dir; the extra glob (Makefile:171) is scripts/**/_.{js,mjs,ts} only. I ran prettier --check on them: green today, so latent — but this is S6's class of hole, one directory up, and S6 showed it bites.
+The scripts glob misses .json/.md — scripts/tsconfig.json is unchecked, the exact file class S6 was about.
+scripts/_.ts is never typechecked or linted by any target — including clone-hardhat-template-v2.ts, the one that wipes a directory and already harbored S8's wrong-parent bug. scripts/tsconfig.json exists; nothing runs tsc on it. A type error there passes ci green and detonates on manual use.
+Principle: brief item 4; corollary 2. Verified (globs read, prettier run, no lint/typecheck target exists).
+F6 — clean:generated completeness is unenforced, so the stopped-emitting proof silently narrows.
+Rule 5.1.4b checks presence and non-emptiness only. An output missing from the list is never deleted, so make clean-generated && make generate && git status proves reproducibility only for listed files — silently partial. Corollary 3 says the delete list stays explicit (right), but corollary 2 says its incompleteness must be caught mechanically (it isn't). Today's lists check out — I traced local-host-bytecode's interfaces/ under pkg/forge/src/_internal (covered) — so, again, structural. A generator already knows what it emits; an emitted-files manifest per generator would let clean:generated be derived rather than declared. Verified (lists compared against generator outputs).
+
+F7 — make ci starts from cleaned outputs, not from a verified install.
+Makefile:187–197. No install, no check that node_modules matches package-lock.json (nor forge dependencies/). Teammate bumps the lockfile; you pull and run make ci; it builds green against your old dependency tree — a different answer than real CI. Also: "from scratch" rests on per-package hand-maintained clean lists whose completeness nothing checks (a missed output dir survives clean and gets validated). Principle: brief item 4. Verified (ci recipe read; e.g. internal/.out-create2-precompute is pruned from sources but removed by no clean — inferring whether anything stale-reads it; I did not trace consumers). Cheap fix: ci begins with $(MAKE) install — npm install on an up-to-date tree costs seconds, which is the trade the philosophy asks for.
+
+F8 — An S11 claim fails verification: shipped code still points users at the deleted script.
+host-contracts-cleartext/v12/pkg/ts/utils.ts:237 and v13/pkg/ts/utils.ts:237 — payload code, in the published package — throw: "offsets are stale (regenerate with `npm run build:templates`)". That script no longer exists; the instruction dead-ends in Missing script. The review doc claimed all user-facing messages were repointed at make generate; these two were missed. Also comment rot: several files cite scripts/install.sh, which does not exist (verified). Loud, not silent — but it is a "fixed" item that isn't.
+
+F9 — make check promises more than it runs.
+Makefile:134: help text says "pre-build checks, build, then post-build checks", but it reaches only the npm-cli lifecycle — not check-generated, fmt-check, check-publint, check-payload, or check-generated-post. A dev running make check gets green with most gates unexercised. Either check: check-pre check-post (with check-generated decided explicitly) or an honest description. Verified (target graph traced).
+
+F10 — Residual non-atomic scripts (minor).
+e2e build = hardhat compile && tsc --noEmit: a check inside a build, and the same typecheck re-runs in e2e lint. (brief item 1)
+v12/v13 generate:templates chains three generators under an atom's name, while atomic generate:signers/generate:local-host-bytecode also exist — same-package sequencing, so within the declared carve-out, but the name lies and it is where F1's post-phase forgetting would happen.
+lint-npm-cli (Makefile:424–426) runs the CLI's test suite under the lint verb; make test omits fhevm-npm's tests entirely — they reach ci only via lint.
+Template pkg lint chains prettier:check — upstream-mirrored, exempt by the mirror constraint.
+Verdicts
+Atomic scripts: PARTIALLY SATISFIED. No clean+build+check chains survive on any orchestrated path; package-internal build/test/lint aggregates are the declared design. Residuals: e2e's build-embedded typecheck (run twice per ci), the generate:templates hidden chain, and tests running under lint-npm-cli.
+Makefile owns orchestration: SATISFIED, with two noted carve-outs: post-artifact generation order lives in the generate:templates npm chain (same-package, so consistent with the stated "packages own internal order" rule — but see F1/F10), and the template pkg's postcompile lifecycle hook is upstream-owned and unavoidable. Everything cross-package is in the Makefile with real stamps; the two-phase generate straddle is genuinely Makefile-owned now.
+Three verbs with real edges: PARTIALLY SATISFIED. The inter-package graph is real and, for what it lists, correct. Three edges are missing: check-generated-post → build (F4), test → build (F3), and the stamp-input escapes (F2). Each is a place where correct behavior currently depends on invocation order or on nothing having changed in an unlisted file.
+make ci from scratch: PARTIALLY SATISFIED. The gate sequence is complete and correctly ordered for everything it covers, and it genuinely starts from cleaned build outputs. But "scratch" excludes the installed dependency tree (F7), rests on unverified per-package clean lists (F7), and three surfaces are outside every gate: unwired-generator drift (F1), root-file formatting (F5), and scripts/ type-correctness (F5).
+The question you care about: where can a developer still forget and pass silently?
+Yes — four places, ranked by blast radius:
+
+Forget to wire a new generator into make generate (F1). The only remaining silent pass that survives real CI. The listless gate is exhaustive on outputs but its regeneration step is a hand-maintained list of generators; drift in an unwired generator's committed output is green everywhere, forever. This is the one to close next, and the namespace-as-derivation fix closes it mechanically.
+Forget that foundry.toml/remappings.txt/root-config edits need a rebuild (F2). make build no-ops; everything downstream validates stale artifacts. Local-only (ci cleans first), but it is precisely "missing a build".
+Forget to rebuild before make test (F3). Tests pass against stale output — and the Makefile documents this trade in the exact terms the philosophy rejects.
+Forget to extend clean:generated when a generator grows an output (F6). Nothing fails; the reproducibility proof just quietly stops covering that file.
+And two places where there is nothing to forget because nothing ever looks: root-level file formatting, and scripts/ type-correctness (F5).
+
+The graph between packages remains the strong part — every cross-package edge I traced is real, and the S1–S12 fixes are in place except the two shipped error messages in F8. The remaining weaknesses are all one shape: a list someone maintains by hand, whose incompleteness is invisible. The philosophy has been applied to the checks; it has not yet been fully applied to the stamps' inputs, the generate verb, and the verb coverage of new packages (fmt/lint/test/clean each enumerate the seven packages by hand — a new workspace member is silently uncovered by all of them; same corollary-2 shape, worth folding into the F1 fix via derivation from the workspace list).
+
+result: Re-review of sdk/ Makefile orchestration: prior fixes verified in place except two shipped error messages still citing the deleted build:templates script; four silent-pass paths remain, the worst being that a generator not wired into make generate drifts green even in real CI, plus stamp inputs missing foundry.toml/remappings/root configs, test targets with no build edges, and check-generated-post ordered by luck.

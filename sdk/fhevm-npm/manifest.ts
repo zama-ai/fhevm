@@ -17,6 +17,26 @@ export const packageKinds = [
   'workspace-root',
 ] as const;
 
+/**
+ * How a payload reaches the outside world. Orthogonal to `kind`, because the two do not correlate: a
+ * payload can be published to npm, mirrored to a public repository, or both — `host-contracts-cleartext`
+ * is npm-published and will also be mirrored, while `fhevm-hardhat-template` is only ever mirrored.
+ *
+ * Omitted means `["npm"]`, so every pre-existing entry keeps its meaning. The `pack:tarball` requirement
+ * reads this now; the remaining rules that should key off it (own lockfile, sibling deps by plain version,
+ * publint/consumer/build) still test `kind` and are deliberately unwired until each one's question is settled.
+ */
+export const distributionChannels = ['npm', 'mirror'] as const;
+
+const distributionSchema = z.array(z.enum(distributionChannels)).min(1).superRefine(uniqueStrings);
+const consumerTestsSchema = z
+  .object({
+    cjs: z.string().regex(PREFIXED_PATH, 'must be a safe path with a leading ./').optional(),
+    esm: z.string().regex(PREFIXED_PATH, 'must be a safe path with a leading ./').optional(),
+  })
+  .strict()
+  .refine((value) => value.cjs !== undefined || value.esm !== undefined, 'must select at least one consumer');
+
 const mirrorSchema = z
   .object({
     repository: z.string().regex(HTTPS_URL, 'must be a canonical HTTPS repository URL'),
@@ -114,6 +134,8 @@ const packageEntrySchema = z
     publishedRelPath: z.string().regex(PREFIXED_PATH, 'must be a safe path with a leading ./').optional(),
     dependencyGroup: z.string().regex(UNPREFIXED_PATH, 'must be a safe relative path').optional(),
     dependencyExceptions: z.array(z.string().min(1)).min(1).superRefine(uniqueStrings).optional(),
+    consumerTests: consumerTestsSchema.optional(),
+    distribution: distributionSchema.optional(),
     mirror: mirrorSchema.optional(),
     vendored: z.array(vendoredElementSchema).min(1).optional(),
     note: z.string().min(1).optional(),
@@ -130,6 +152,30 @@ const packageEntrySchema = z
     if (entry.kind === 'published') {
       requireName(entry, context);
       if (entry.private !== undefined) issue(context, ['private'], "a published package must omit 'private'");
+    } else if (entry.consumerTests !== undefined) {
+      issue(context, ['consumerTests'], 'only a published package can select its consumer tests');
+    }
+
+    if (entry.consumerTests !== undefined && entry.distribution?.includes('npm') === false) {
+      issue(context, ['consumerTests'], 'consumer test overrides apply only to npm-distributed packages');
+    }
+    if (entry.consumerTests?.cjs !== undefined && entry.type === 'esm') {
+      issue(context, ['consumerTests', 'cjs'], 'an ESM-only package does not require a CJS consumer');
+    }
+    if (entry.consumerTests?.esm !== undefined && entry.type === 'cjs') {
+      issue(context, ['consumerTests', 'esm'], 'a CJS-only package does not require an ESM consumer');
+    }
+
+    // `distribution` describes a payload, and the 'mirror' channel and the `mirror` block are two halves
+    // of one fact, so neither may appear without the other.
+    if (entry.distribution !== undefined && entry.kind !== 'published') {
+      issue(context, ['distribution'], 'only a published payload has distribution channels');
+    }
+    if (entry.distribution?.includes('mirror') === true && entry.mirror === undefined) {
+      issue(context, ['mirror'], "the 'mirror' channel requires a mirror repository");
+    }
+    if (entry.mirror !== undefined && entry.distribution?.includes('mirror') === false) {
+      issue(context, ['distribution'], "a mirrored package must list the 'mirror' channel");
     }
 
     if (entry.kind === 'dev' || entry.kind === 'shared-helper' || entry.kind === 'internal-consumer') {
@@ -161,6 +207,7 @@ const packageEntrySchema = z
       forbid(entry.name, context, 'name', 'a non-package has no package name');
       forbid(entry.dependencyGroup, context, 'dependencyGroup', 'a non-package has no dependency group');
       forbid(entry.dependencyExceptions, context, 'dependencyExceptions', 'a non-package has no dependencies');
+      forbid(entry.consumerTests, context, 'consumerTests', 'a non-package cannot select consumer tests');
       forbid(entry.mirror, context, 'mirror', 'a non-package cannot be mirrored');
       forbid(entry.vendored, context, 'vendored', 'a non-package cannot own vendored content');
     }
@@ -171,6 +218,7 @@ const packageEntrySchema = z
       if (entry.member) issue(context, ['member'], 'the workspace root cannot be its own member');
       forbid(entry.dependencyGroup, context, 'dependencyGroup', 'the workspace root has no dependency group');
       forbid(entry.dependencyExceptions, context, 'dependencyExceptions', 'the workspace root cannot carry exceptions');
+      forbid(entry.consumerTests, context, 'consumerTests', 'the workspace root cannot select consumer tests');
       forbid(entry.mirror, context, 'mirror', 'the workspace root cannot be mirrored');
       forbid(entry.vendored, context, 'vendored', 'the workspace root cannot own vendored content');
     }
@@ -208,6 +256,22 @@ const npmManifestSchema = z
             ['packages', key, 'dependencyExceptions'],
             `'${exception}' is not listed in dependencies.forbidden`,
           );
+        }
+      }
+      for (const [moduleKind, consumerKey] of Object.entries(entry.consumerTests ?? {})) {
+        const consumer = manifest.packages[consumerKey];
+        if (consumer === undefined) {
+          issue(context, ['packages', key, 'consumerTests', moduleKind], `'${consumerKey}' is not a manifest package`);
+          continue;
+        }
+        if (consumerKey === key) {
+          issue(context, ['packages', key, 'consumerTests', moduleKind], 'a package cannot consume itself');
+        }
+        if (moduleKind === 'cjs' && consumer.type === 'esm') {
+          issue(context, ['packages', key, 'consumerTests', moduleKind], `'${consumerKey}' does not support CJS`);
+        }
+        if (moduleKind === 'esm' && consumer.type === 'cjs') {
+          issue(context, ['packages', key, 'consumerTests', moduleKind], `'${consumerKey}' does not support ESM`);
         }
       }
     }

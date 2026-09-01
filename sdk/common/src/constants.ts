@@ -39,3 +39,8 @@ export const ZAMA_LOCAL_CONFIG = {
   fhevmExecutorAddress: '0xe3a9105a3a932253A70F126eb1E3b589C643dD24',
   kmsVerifierAddress: '0x901F8942346f7AB3a01F6D7613119Bca447Bb030',
 } as const;
+
+/**
+ * ERC-1967 implementation slot: keccak256("eip1967.proxy.implementation") - 1.
+ */
+export const ERC_1967_IMPL_SLOT = '0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc' as const;

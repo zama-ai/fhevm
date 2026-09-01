@@ -12,6 +12,7 @@ export const checkFoundry: CheckCommand = (context) => {
         ? [
             `forge ${inspection.actualVersion} matches npm-manifest.json#foundry.version`,
             "no package-local '.foundry-version' files",
+            `${String(inspection.fmtPackageKeys.length)} Foundry project(s) inherit the shared formatting policy`,
           ]
         : undefined,
     violations: inspection.violations,

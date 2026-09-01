@@ -1,4 +1,4 @@
-export const hardhatTemplateV2PackageKey = './hardhat/v2/fhevm-hardhat-template';
+export const hardhatTemplateV2PackageKey = './hardhat/v2/fhevm-hardhat-template/pkg';
 
 const identity: Readonly<Record<string, string>> = {
   name: 'fhevm-hardhat-template-v2',
@@ -13,8 +13,8 @@ const addedDependencies: Readonly<Record<string, string>> = {
 };
 
 const addedDevDependencies: Readonly<Record<string, string>> = {
-  '@fhevm/hardhat-plugin': 'file:../plugin/pkg',
-  '@fhevm/host-contracts-cleartext': 'file:../../../host-contracts-cleartext/v13/pkg',
+  '@fhevm/hardhat-plugin': 'file:../../plugin/pkg',
+  '@fhevm/host-contracts-cleartext': 'file:../../../../host-contracts-cleartext/v13/pkg',
   '@fhevm/sdk': '^0.13.3',
 };
 
@@ -50,8 +50,7 @@ export function patchHardhatTemplateV2Manifest(
   manifest.dependencies = sortKeys(dependencies);
   manifest.devDependencies = sortKeys(devDependencies);
   const scripts = dependencyMap(manifest, 'scripts');
-  scripts['test:mirror'] =
-    'node ../../../fhevm-npm/fhevm-npm.ts check-mirror ./hardhat/v2/fhevm-hardhat-template';
+  scripts['check:mirror'] = 'node ../../../fhevm-npm/fhevm-npm.ts check-mirror ./hardhat/v2/fhevm-hardhat-template';
   manifest.scripts = sortKeys(scripts);
   return manifest;
 }

@@ -6,8 +6,7 @@ export function consumerModuleKinds(packageJson: PackageJson): readonly ModuleKi
   const conditions = exportConditions(packageJson.exports);
   const hasEsmEntry = conditions.has('import') || packageJson.module !== undefined;
   const hasCjsEntry =
-    conditions.has('require') ||
-    (packageJson.main !== undefined && (hasEsmEntry || packageJson.type !== 'module'));
+    conditions.has('require') || (packageJson.main !== undefined && (hasEsmEntry || packageJson.type !== 'module'));
 
   const kinds: ModuleKind[] = [];
   if (hasCjsEntry) kinds.push('cjs');

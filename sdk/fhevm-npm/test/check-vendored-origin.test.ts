@@ -14,7 +14,7 @@ import type { NpmManifest } from '../manifest.ts';
 
 test('checks a manifest-selected local vendored copy with its declared rewrite', () => {
   const repositoryRoot = execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim();
-  const workspaceRoot = mkdtempSync(join(process.cwd(), '.tmp-check-vendored-'));
+  const workspaceRoot = mkdtempSync(join(process.cwd(), '.tmp-check-vendored-origin-'));
   try {
     const sourceDirectory = join(workspaceRoot, 'common-vendored', 'src');
     const destinationDirectory = join(workspaceRoot, 'library', 'pkg', 'vendored');

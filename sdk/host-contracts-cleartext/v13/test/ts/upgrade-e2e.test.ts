@@ -25,13 +25,19 @@ import { createPublicClient, createWalletClient, http, parseEventLogs, type Addr
 import { privateKeyToAccount } from 'viem/accounts';
 import { foundry } from 'viem/chains';
 import { expect, test } from 'vitest';
-import { startAnvil, stopAnvil, waitForAnvil } from '@fhevm/sdk-common-dev';
+import {
+  startAnvil,
+  stopAnvil,
+  waitForAnvil,
+  MNEMONIC,
+  DEPLOYER_ADDRESS_INDEX,
+  ERC_1967_IMPL_SLOT,
+} from '@fhevm/sdk-common-dev';
 import { privateKeyFromMnemonic, privateKeyToAddress } from '@fhevm/sdk-common-dev';
 import { expectedHcuLimit } from './utils/expectedBootstrap.ts';
 import { createViemEthereumAdapters } from '@fhevm/sdk-vendored-dev/viemEthereumLib.ts';
 
-const IMPL_SLOT = '0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc' as const;
-const MNEMONIC = 'adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer';
+const IMPL_SLOT = ERC_1967_IMPL_SLOT;
 const FHE_TYPE_UINT64 = 5;
 // KMS_CONTEXT_COUNTER_BASE + 1 = (0x07 << 248) + 1 — the minimum valid migrated KMS context id.
 const MIGRATED_CONTEXT_ID = (7n << 248n) + 1n;
@@ -352,7 +358,7 @@ function v12BootstrapConfig(deployerAddress: string): BootstrapConfigV12 {
 }
 
 test('e2e: deploy a v12 cleartext stack, then upgrade it to v13 — cleartext survives the migration', async () => {
-  const deployerKey = privateKeyFromMnemonic({ mnemonic: MNEMONIC, addressIndex: 5 });
+  const deployerKey = privateKeyFromMnemonic({ mnemonic: MNEMONIC, addressIndex: DEPLOYER_ADDRESS_INDEX });
   const deployerAddress = privateKeyToAddress({ privateKey: deployerKey });
   // No separate KMS signer: this stack is deployed with the deployer AS its KMS signer, and the migration
   // config below has to describe the stack it upgrades. A distinct signer here is what made the survey
@@ -638,7 +644,7 @@ test('e2e: deploy a v12 cleartext stack, then upgrade it to v13 — cleartext su
 }, 180_000);
 
 test('e2e: updateV12ToV13 with no migration config — defaults resolved from the live v12 KMSVerifier', async () => {
-  const deployerKey = privateKeyFromMnemonic({ mnemonic: MNEMONIC, addressIndex: 5 });
+  const deployerKey = privateKeyFromMnemonic({ mnemonic: MNEMONIC, addressIndex: DEPLOYER_ADDRESS_INDEX });
   const deployerAddress = privateKeyToAddress({ privateKey: deployerKey });
 
   const anvil = startAnvil({ port: 8621, mnemonic: MNEMONIC });

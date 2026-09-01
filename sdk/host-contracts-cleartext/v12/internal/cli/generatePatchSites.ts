@@ -2,7 +2,7 @@
 //
 // Run KNOWINGLY, not as part of a build. `test/templates.test.ts` compares the live counts against that
 // file, so refreshing it is how you accept a change; doing it automatically would mean the test could
-// never fail. That is why this is not wired into `build:templates` alongside its siblings
+// never fail. That is why this is not wired into `make generate` alongside its siblings
 // (generate:placeholders / generate:signers), which are build steps.
 //
 // Refresh only after understanding *why* the numbers moved. A count falling to 0 for an address the

@@ -4,7 +4,7 @@ export type Violation = {
   readonly message: string;
 };
 
-/** One measured cost, printed under `--verbose` so an expensive check can say where its time went. */
+/** One measured cost, printed at `-vv` or above so an expensive check can say where its time went. */
 export type Timing = { readonly label: string; readonly milliseconds: number };
 
 export type CommandReport = {
@@ -16,7 +16,7 @@ export type CommandReport = {
   readonly timings?: readonly Timing[];
 };
 
-export function printReport(report: CommandReport, verbose: boolean): void {
+export function printReport(report: CommandReport, verbosity: Verbosity): void {
   const violations = [...report.violations].sort(
     (left, right) =>
       left.packageKey.localeCompare(right.packageKey) ||
@@ -28,13 +28,13 @@ export function printReport(report: CommandReport, verbose: boolean): void {
     console.error(`❌ [${violation.rule}] ${violation.packageKey}: ${violation.message}`);
   }
 
-  if (verbose && report.timings !== undefined) {
+  if (hasDetailedOutput(verbosity) && report.timings !== undefined) {
     for (const timing of report.timings) {
       console.log(`⏱️  ${timing.label}: ${timing.milliseconds.toFixed(0)}ms`);
     }
   }
 
-  if (verbose) {
+  if (hasDetailedOutput(verbosity)) {
     if (report.verboseSuccesses !== undefined) {
       for (const success of report.verboseSuccesses) console.log(`✅ ${success}`);
     } else {
@@ -49,9 +49,10 @@ export function printReport(report: CommandReport, verbose: boolean): void {
     console.error(
       `❌ ${report.command}: ${violations.length} violation(s) across ${report.checkedPackageKeys.length} ${report.checkedItemLabel ?? 'package(s)'}.`,
     );
-  } else if (verbose) {
+  } else if (hasProgress(verbosity)) {
     console.log(
       `✅ ${report.command}: ${report.checkedPackageKeys.length} ${report.checkedItemLabel ?? 'package(s)'} checked.`,
     );
   }
 }
+import { hasDetailedOutput, hasProgress, type Verbosity } from './verbosity.ts';

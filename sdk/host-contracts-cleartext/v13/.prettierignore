@@ -10,3 +10,10 @@ pkg/forge
 
 # Solidity is formatted by `forge fmt`, never prettier (foundry.toml -> extends ../../foundry.base.toml).
 *.sol
+
+# tsc output: build:cjs, build:esm, build:types and build:types:cjs. Excluded explicitly rather than by
+# luck — the ESM declaration emit happens to be prettier-clean, the CommonJS one is not.
+pkg/ts/_cjs
+pkg/ts/_esm
+pkg/ts/_types
+pkg/ts/_types-cjs

@@ -34,7 +34,8 @@ export function runUpgradeE2e(): void {
     }
   }
 
-  run('npm', ['run', 'build:templates']);
+  // Generation is a separate flow (`make generate`), never a step of a test: it rewrites tracked files
+  // that are build inputs, which leaves every build stamp stale. Build output only, from here.
   run('npm', ['run', 'build']);
 
   const TEST_TS = join(PACKAGE_ROOT_ABS_PATH, 'test', 'ts');

@@ -194,7 +194,7 @@ describe('EncryptedErrors', function () {
     expect(await encryptedErrors.errorGetCounter()).to.be.eq(BigInt('1'));
   });
 
-  it('xxxx cannot deploy if totalNumberErrorCodes_ == 0', async function () {
+  it('cannot deploy if totalNumberErrorCodes_ == 0', async function () {
     const numberErrors = 0;
     const contractFactory = await hre.ethers.getContractFactory('TestEncryptedErrors');
     await expect(contractFactory.connect(signers.alice).deploy(numberErrors)).to.be.revertedWithCustomError(

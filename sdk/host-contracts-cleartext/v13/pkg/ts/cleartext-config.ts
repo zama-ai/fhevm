@@ -10,7 +10,7 @@
 //
 //   internal/cleartext-config.ts   the source of truth. Edit here, and only here.
 //   pkg/ts/cleartext-config.ts     a generated copy, written by `npm run generate:cleartext-config`
-//                                  (a step of `build:templates`, which `scripts/install.sh` runs).
+//                                  (a step of `make generate`).
 //
 // A copy rather than an import, because neither side can reach the other: `internal/tsconfig.json` sets
 // `rootDir: "."` so internal/ cannot import the payload, and the payload must not import the harness at

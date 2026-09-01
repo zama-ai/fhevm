@@ -32,14 +32,24 @@
   ],
   "exports": {
     ".": {
-      "types": "./ts/_types/index.d.ts",
-      "import": "./ts/_esm/index.js",
-      "default": "./ts/_cjs/index.js"
+      "import": {
+        "types": "./ts/_types/index.d.ts",
+        "default": "./ts/_esm/index.js"
+      },
+      "require": {
+        "types": "./ts/_types-cjs/index.d.ts",
+        "default": "./ts/_cjs/index.js"
+      }
     },
     "./ts": {
-      "types": "./ts/_types/index.d.ts",
-      "import": "./ts/_esm/index.js",
-      "default": "./ts/_cjs/index.js"
+      "import": {
+        "types": "./ts/_types/index.d.ts",
+        "default": "./ts/_esm/index.js"
+      },
+      "require": {
+        "types": "./ts/_types-cjs/index.d.ts",
+        "default": "./ts/_cjs/index.js"
+      }
     },
     "./abi/*.json": "./abi/*.json",
     "./templates/*.json": "./templates/*.json",

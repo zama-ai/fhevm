@@ -33,10 +33,7 @@ test('rejects a selected test file outside the consumer fixture', () => {
     mkdirSync(fixture, { recursive: true });
     writeFileSync(outside, 'export {};\n');
 
-    assert.throws(
-      () => resolveConsumerTestFile(outside, workspace, fixture),
-      /Consumer test file must be inside/,
-    );
+    assert.throws(() => resolveConsumerTestFile(outside, workspace, fixture), /Consumer test file must be inside/);
   } finally {
     rmSync(workspace, { recursive: true, force: true });
   }
