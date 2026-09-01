@@ -49,24 +49,56 @@ pub fn default_dependence_cache_size() -> u16 {
 }
 
 pub async fn setup_test_app() -> Result<TestInstance, Box<dyn std::error::Error>> {
+    setup_test_instance(true).await
+}
+
+/// A prepared database with no worker running against it.
+///
+/// A test that drives the database directly is not testing the worker, and a
+/// worker polling the same rows executes whatever fixture the test inserts: a
+/// chain seeded as having allowed work outstanding stops having any, and an
+/// assertion resting on that fails wherever the machine is fast enough to lose
+/// the race.
+pub async fn setup_test_db_without_worker() -> Result<TestInstance, Box<dyn std::error::Error>> {
+    setup_test_instance(false).await
+}
+
+async fn setup_test_instance(
+    start_worker: bool,
+) -> Result<TestInstance, Box<dyn std::error::Error>> {
     if std::env::var("COPROCESSOR_TEST_LOCAL_DB").is_ok() {
-        setup_test_app_existing_db().await
+        setup_test_app_existing_db(start_worker).await
     } else {
-        setup_test_app_custom_docker().await
+        setup_test_app_custom_docker(start_worker).await
     }
 }
 
 const LOCAL_DB_URL: &str = "postgresql://postgres:postgres@127.0.0.1:5432/coprocessor";
 
-async fn setup_test_app_existing_db() -> Result<TestInstance, Box<dyn std::error::Error>> {
-    let (app_close_channel, rx) = tokio::sync::watch::channel(false);
-    let health_check_port = start_coprocessor(rx, LOCAL_DB_URL).await;
+async fn setup_test_app_existing_db(
+    start_worker: bool,
+) -> Result<TestInstance, Box<dyn std::error::Error>> {
+    let (app_close_channel, health_check_port) =
+        maybe_start_worker(start_worker, LOCAL_DB_URL).await;
     Ok(TestInstance {
         _container: None,
-        app_close_channel: Some(app_close_channel),
+        app_close_channel,
         db_url: LOCAL_DB_URL.to_string(),
         health_check_port,
     })
+}
+
+/// Start the worker unless the caller wants the database to itself.
+async fn maybe_start_worker(
+    start_worker: bool,
+    db_url: &str,
+) -> (Option<tokio::sync::watch::Sender<bool>>, u16) {
+    if !start_worker {
+        return (None, 0);
+    }
+    let (app_close_channel, rx) = tokio::sync::watch::channel(false);
+    let health_check_port = start_coprocessor(rx, db_url).await;
+    (Some(app_close_channel), health_check_port)
 }
 
 async fn start_coprocessor(rx: Receiver<bool>, db_url: &str) -> u16 {
@@ -80,8 +112,19 @@ async fn start_coprocessor(rx: Receiver<bool>, db_url: &str) -> u16 {
         generate_fhe_keys: false,
         work_items_batch_size: 40,
         dependence_chains_per_batch: 10,
+        dcid_batch_execution: std::env::var("FHEVM_TEST_DCID_BATCH_EXECUTION")
+            .ok()
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(false),
+        dcid_adaptive_batch_execution: false,
         key_cache_size: 4,
         coprocessor_fhe_threads: 4,
+        gpu_memory_reservation_timeout_ms: 300_000,
+        // Byte gates vary this between app instances in one process.
+        gpu_streams_per_device: std::env::var("FHEVM_TEST_GPU_STREAMS")
+            .ok()
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(1),
         tokio_threads: 2,
         pg_pool_max_connections: 2,
         metrics_addr: None,
@@ -95,6 +138,7 @@ async fn start_coprocessor(rx: Receiver<bool>, db_url: &str) -> u16 {
         dcid_ttl_sec: 30,
         disable_dcid_locking: true,
         dcid_timeslice_sec: 90,
+        computation_retry_demote_threshold: 3,
         dcid_cleanup_interval_sec: 0,
         processed_dcid_ttl_sec: 0,
         dcid_max_no_progress_cycles: 2,
@@ -119,7 +163,9 @@ async fn start_coprocessor(rx: Receiver<bool>, db_url: &str) -> u16 {
     health_check_port
 }
 
-async fn setup_test_app_custom_docker() -> Result<TestInstance, Box<dyn std::error::Error>> {
+async fn setup_test_app_custom_docker(
+    start_worker: bool,
+) -> Result<TestInstance, Box<dyn std::error::Error>> {
     let container = GenericImage::new("postgres", "15.7")
         .with_wait_for(WaitFor::message_on_stderr(
             "database system is ready to accept connections",
@@ -154,11 +200,10 @@ async fn setup_test_app_custom_docker() -> Result<TestInstance, Box<dyn std::err
     setup_test_key(&pool, false).await?;
     println!("DB prepared");
 
-    let (app_close_channel, rx) = tokio::sync::watch::channel(false);
-    let health_check_port = start_coprocessor(rx, &db_url).await;
+    let (app_close_channel, health_check_port) = maybe_start_worker(start_worker, &db_url).await;
     Ok(TestInstance {
         _container: Some(container),
-        app_close_channel: Some(app_close_channel),
+        app_close_channel,
         db_url,
         health_check_port,
     })

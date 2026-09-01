@@ -31,6 +31,8 @@ pub enum FhevmError {
     CiphertextCompressionPanic {
         message: String,
     },
+    #[cfg(feature = "gpu")]
+    GpuMemoryReservationError(crate::gpu_memory::GpuMemoryReservationError),
     CannotCompressScalar,
     CiphertextExpansionUnsupportedCiphertextKind(tfhe::FheTypes),
     FheOperationOnlyOneOperandCanBeScalar {
@@ -173,6 +175,10 @@ impl std::fmt::Display for FhevmError {
             }
             Self::CiphertextCompressionPanic { message } => {
                 write!(f, "panic while compressing ciphertext: {}", message)
+            }
+            #[cfg(feature = "gpu")]
+            Self::GpuMemoryReservationError(error) => {
+                write!(f, "GPU memory reservation failed: {error}")
             }
             Self::CannotCompressScalar => {
                 write!(f, "cannot compress scalar input")
@@ -597,21 +603,33 @@ impl SupportedFheCiphertexts {
     }
 
     #[cfg(feature = "gpu")]
-    pub fn decompress(ct_type: i16, list: &[u8], gpu_idx: usize) -> Result<Self> {
-        use crate::gpu_memory::{release_memory_on_gpu, reserve_memory_on_gpu};
+    pub fn decompress(
+        ct_type: i16,
+        list: &[u8],
+        gpu_idx: usize,
+        cancellation: &tokio_util::sync::CancellationToken,
+        reservation_timeout: std::time::Duration,
+    ) -> Result<Self> {
+        use crate::gpu_memory::reserve_memory_on_gpu;
         let ctlist: CompressedCiphertextList = safe_deserialize(list)?;
         let mut reserved_mem = 0;
         if let Ok(Some(decomp_size)) = ctlist.get_decompression_size_on_gpu(gpu_idx) {
             reserved_mem = decomp_size;
         };
-        reserve_memory_on_gpu(reserved_mem, gpu_idx);
-        let res = Self::decompress_impl(ct_type, &ctlist);
-        release_memory_on_gpu(reserved_mem, gpu_idx);
-        res
+        let _reservation =
+            reserve_memory_on_gpu(reserved_mem, gpu_idx, cancellation, reservation_timeout)
+                .map_err(FhevmError::GpuMemoryReservationError)?;
+        Self::decompress_impl(ct_type, &ctlist)
     }
 
     #[cfg(not(feature = "gpu"))]
-    pub fn decompress(ct_type: i16, list: &[u8], _: usize) -> Result<Self> {
+    pub fn decompress(
+        ct_type: i16,
+        list: &[u8],
+        _: usize,
+        _: &tokio_util::sync::CancellationToken,
+        _: std::time::Duration,
+    ) -> Result<Self> {
         let ctlist: CompressedCiphertextList = safe_deserialize(list)?;
         Self::decompress_impl(ct_type, &ctlist)
     }
