@@ -2,8 +2,8 @@ use crate::{
     executor::{garbage_collect, query_sns_tasks, Order},
     keyset::fetch_client_key,
     squash_noise::safe_deserialize,
-    Config, DBConfig, S3Config, S3MigrationMode, S3RetryPolicy, SchedulePolicy,
-    DEFAULT_S3_MIGRATION_MAX_RETRIES,
+    BigCiphertext, Ciphertext128Format, Config, DBConfig, HandleItem, S3Config, S3MigrationMode,
+    S3RetryPolicy, SchedulePolicy, CURRENT_S3_FORMAT_VERSION, DEFAULT_S3_MIGRATION_MAX_RETRIES,
 };
 use alloy::signers::local::PrivateKeySigner;
 use alloy_primitives::{B256, U256};
@@ -15,6 +15,7 @@ use ciphertext_attestation::{
     CiphertextAttestation, CiphertextFormat, S3_CT128_KEY_PREFIX, S3_CT64_KEY_PREFIX,
     S3_METADATA_ATTESTATION_KEY,
 };
+use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::db_keys::DbKeyId;
 use fhevm_engine_common::utils::{to_hex, DatabaseURL};
 use serde::{Deserialize, Serialize};
@@ -373,11 +374,15 @@ async fn enqueue_upload_task_skips_after_reorg_cleanup() {
 
     // Acquire the task the same way the worker does, then release the lock.
     let mut trx = pool.begin().await.unwrap();
-    let task = query_sns_tasks(&mut trx, 1, Order::Asc, &key_id_gw)
+    let mut task = query_sns_tasks(&mut trx, 1, Order::Asc, &key_id_gw)
         .await
         .unwrap()
         .expect("one task")
         .remove(0);
+    task.ct128 = Arc::new(BigCiphertext::new(
+        vec![0xCD; 32],
+        Ciphertext128Format::CompressedOnCpu,
+    ));
     trx.rollback().await.unwrap();
 
     // Live provenance: the digest row is enqueued.
@@ -392,6 +397,38 @@ async fn enqueue_upload_task_skips_after_reorg_cleanup() {
             .unwrap()
     };
     assert_eq!(digest_rows().await, 1);
+    let stored_digests: (Option<Vec<u8>>, Option<Vec<u8>>, Option<i16>) = sqlx::query_as(
+        "SELECT ciphertext, ciphertext128, ciphertext128_format
+           FROM ciphertext_digest
+          WHERE handle = $1",
+    )
+    .bind(&handle)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        stored_digests,
+        (
+            Some(crate::compute_ciphertext_digest(&task.ct64_compressed)),
+            Some(crate::compute_ciphertext_digest(task.ct128.bytes())),
+            Some(i16::from(Ciphertext128Format::CompressedOnCpu)),
+        )
+    );
+
+    let mut conflicting_task = task.clone();
+    conflicting_task.ct128 = Arc::new(BigCiphertext::new(
+        vec![0xCE; 32],
+        Ciphertext128Format::CompressedOnCpu,
+    ));
+    let mut trx = pool.begin().await.unwrap();
+    let error = conflicting_task
+        .enqueue_upload_task(&mut trx)
+        .await
+        .expect_err("computed digest must be initial-only");
+    assert!(error
+        .to_string()
+        .contains("computed ciphertext digest mismatch"));
+    trx.rollback().await.unwrap();
 
     // Simulate the reorg cleanup for an orphan-only handle.
     for sql in [
@@ -438,6 +475,182 @@ async fn enqueue_upload_task_skips_after_reorg_cleanup() {
     clean_up(&pool).await.unwrap();
 }
 
+/// A digest/format mismatch after S3 put is not reorg cleanup. The witness
+/// must not be stamped, and the caller must get InternalError so the upload
+/// is retried instead of logged as a cancelled publication.
+#[tokio::test]
+#[serial(db)]
+#[cfg(not(feature = "gpu"))]
+async fn mark_ciphertexts_uploaded_errors_on_digest_mismatch() {
+    init_tracing();
+
+    let test_instance = setup_test_db(ImportMode::None)
+        .await
+        .expect("valid db instance");
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(3)
+        .connect(test_instance.db_url())
+        .await
+        .unwrap();
+    clean_up(&pool).await.unwrap();
+
+    let host_chain_id: i64 = 1;
+    let handle = vec![0x45u8; 32];
+    let key_id_gw: DbKeyId = vec![0u8; 32];
+
+    test_harness::db_utils::insert_ciphertext64(&pool, &handle, &vec![0xAB; 32])
+        .await
+        .unwrap();
+    test_harness::db_utils::insert_into_pbs_computations(&pool, host_chain_id, &handle)
+        .await
+        .unwrap();
+
+    let mut trx = pool.begin().await.unwrap();
+    let mut task = query_sns_tasks(&mut trx, 1, Order::Asc, &key_id_gw)
+        .await
+        .unwrap()
+        .expect("one task")
+        .remove(0);
+    task.ct128 = Arc::new(BigCiphertext::new(
+        vec![0xCD; 32],
+        Ciphertext128Format::CompressedOnCpu,
+    ));
+    trx.rollback().await.unwrap();
+
+    let mut trx = pool.begin().await.unwrap();
+    assert!(task.enqueue_upload_task(&mut trx).await.unwrap());
+    trx.commit().await.unwrap();
+
+    let ct64_digest = crate::compute_ciphertext_digest(&task.ct64_compressed);
+    let ct128_digest = crate::compute_ciphertext_digest(task.ct128.bytes());
+    let mut wrong_ct64 = ct64_digest.clone();
+    wrong_ct64[0] ^= 0xFF;
+
+    let mut trx = pool.begin().await.unwrap();
+    let error = task
+        .mark_ciphertexts_uploaded(&mut trx, wrong_ct64, ct128_digest.clone(), 1)
+        .await
+        .expect_err("digest mismatch must fail the witness stamp");
+    assert!(
+        error
+            .to_string()
+            .contains("computed ciphertext digest mismatch"),
+        "got {error}"
+    );
+    trx.rollback().await.unwrap();
+
+    let witnessed: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM ciphertext_digest
+         WHERE handle = $1 AND s3_publication_verified_at IS NOT NULL",
+    )
+    .bind(&handle)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(witnessed, 0, "mismatch must leave the row unwitnessed");
+
+    let mut trx = pool.begin().await.unwrap();
+    task.mark_ciphertexts_uploaded(&mut trx, ct64_digest, ct128_digest, 1)
+        .await
+        .expect("matching digest must stamp the witness");
+    trx.commit().await.unwrap();
+
+    let witnessed: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM ciphertext_digest
+         WHERE handle = $1 AND s3_publication_verified_at IS NOT NULL",
+    )
+    .bind(&handle)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(witnessed, 1, "matching digest must stamp the witness");
+
+    clean_up(&pool).await.unwrap();
+}
+
+/// A conversion failure leaves ct128 empty. Enqueue must skip that handle
+/// instead of failing the whole SNS batch transaction.
+#[tokio::test]
+#[serial(db)]
+#[cfg(not(feature = "gpu"))]
+async fn enqueue_upload_task_skips_empty_ciphertexts_without_failing_the_batch() {
+    init_tracing();
+
+    let test_instance = setup_test_db(ImportMode::None)
+        .await
+        .expect("valid db instance");
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(3)
+        .connect(test_instance.db_url())
+        .await
+        .unwrap();
+    clean_up(&pool).await.unwrap();
+
+    let host_chain_id: i64 = 1;
+    let empty_handle = vec![0x43u8; 32];
+    let ready_handle = vec![0x44u8; 32];
+    let key_id_gw: DbKeyId = vec![0u8; 32];
+
+    for handle in [&empty_handle, &ready_handle] {
+        test_harness::db_utils::insert_ciphertext64(&pool, handle, &vec![0xAB; 32])
+            .await
+            .unwrap();
+        test_harness::db_utils::insert_into_pbs_computations(&pool, host_chain_id, handle)
+            .await
+            .unwrap();
+    }
+
+    let mut trx = pool.begin().await.unwrap();
+    let mut tasks = query_sns_tasks(&mut trx, 2, Order::Asc, &key_id_gw)
+        .await
+        .unwrap()
+        .expect("two tasks");
+    trx.rollback().await.unwrap();
+    assert_eq!(tasks.len(), 2);
+
+    for task in &mut tasks {
+        if task.handle == empty_handle {
+            task.ct128 = Arc::new(BigCiphertext::default());
+        } else {
+            task.ct128 = Arc::new(BigCiphertext::new(
+                vec![0xCD; 32],
+                Ciphertext128Format::CompressedOnCpu,
+            ));
+        }
+    }
+
+    let mut trx = pool.begin().await.unwrap();
+    for task in &tasks {
+        let enqueued = task.enqueue_upload_task(&mut trx).await.unwrap();
+        if task.handle == empty_handle {
+            assert!(!enqueued, "unconverted handle must be skipped");
+        } else {
+            assert!(enqueued, "converted sibling must enqueue");
+        }
+    }
+    trx.commit().await.unwrap();
+
+    let empty_rows: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM ciphertext_digest WHERE handle = $1")
+            .bind(&empty_handle)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let ready_rows: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM ciphertext_digest WHERE handle = $1")
+            .bind(&ready_handle)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        empty_rows, 0,
+        "unconverted handle must not insert a digest row"
+    );
+    assert_eq!(ready_rows, 1, "converted sibling must still enqueue");
+
+    clean_up(&pool).await.unwrap();
+}
+
 #[tokio::test]
 #[serial(db)]
 #[cfg(not(feature = "gpu"))]
@@ -460,7 +673,9 @@ async fn test_garbage_collect() {
     clean_up(&pool).await.unwrap();
 
     let host_chain_id: i64 = 1;
+    let chain_id = ChainId::try_from(host_chain_id).unwrap();
     let key_id_gw: Vec<u8> = vec![0u8; 32];
+    let mut trx = pool.begin().await.unwrap();
     for i in 0..HANDLES_COUNT {
         // insert into ciphertexts
         let mut handle = [0u8; 32];
@@ -473,10 +688,11 @@ async fn test_garbage_collect() {
             &handle,
             &[i as u8; 32],
         )
-        .execute(&pool)
+        .execute(trx.as_mut())
         .await
         .expect("insert into ciphertexts");
 
+        let digest = vec![i as u8; 32];
         let _ = sqlx::query!(
             "INSERT INTO ciphertext_digest(host_chain_id, key_id_gw, handle, ciphertext, ciphertext128)
                 VALUES ($1, $2, $3, $4, $5)
@@ -484,13 +700,37 @@ async fn test_garbage_collect() {
             host_chain_id,
             &key_id_gw,
             &handle,
-            &[i as u8; 32],
-            &[i as u8; 32],
+            &digest,
+            &digest,
         )
-        .execute(&pool)
+        .execute(trx.as_mut())
         .await
         .expect("insert into ciphertext_digest");
+
+        // GC only drops ct128 after S3 postflight has stamped the witness and
+        // format. Stamp through mark_ciphertexts_uploaded so this test locks
+        // the same path as production. Leave the partial handle below
+        // unsigned so it is retained.
+        let task = HandleItem {
+            host_chain_id: chain_id,
+            key_id_gw: key_id_gw.clone(),
+            handle: handle.to_vec(),
+            ct64_compressed: Arc::new(Vec::new()),
+            ct128: Arc::new(BigCiphertext::new(
+                Vec::new(),
+                Ciphertext128Format::UncompressedOnCpu,
+            )),
+            ct64_digest: None,
+            ct128_digest: None,
+            s3_format_version: None,
+            span: tracing::Span::none(),
+            transaction_id: None,
+        };
+        task.mark_ciphertexts_uploaded(&mut trx, digest.clone(), digest, CURRENT_S3_FORMAT_VERSION)
+            .await
+            .expect("stamp S3 publication witness");
     }
+    trx.commit().await.unwrap();
 
     let count = sqlx::query_scalar!(
         "SELECT COUNT(*)::BIGINT FROM ciphertexts128 WHERE ciphertext IS NOT NULL"
@@ -575,7 +815,7 @@ async fn test_garbage_collect() {
     .unwrap_or(0);
     assert_eq!(
         partial_count, 1,
-        "garbage_collect should keep ct128 material until both upload digests are committed"
+        "garbage_collect should keep ct128 material until the S3 publication witness and format are stamped"
     );
 }
 

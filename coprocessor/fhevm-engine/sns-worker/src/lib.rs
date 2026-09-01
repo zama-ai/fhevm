@@ -39,6 +39,7 @@ use fhevm_engine_common::{
     utils::{to_hex, DatabaseURL},
     versioning::{run_stack_version_listener, StackMode},
 };
+use sha3::{Digest, Keccak256};
 use sqlx::{Postgres, Transaction};
 use thiserror::Error;
 use tokio::{
@@ -67,6 +68,10 @@ pub(crate) const S3_FORMAT_VERSION_V1: i16 = 1;
 pub(crate) const CURRENT_S3_FORMAT_VERSION: i16 = S3_FORMAT_VERSION_V1;
 pub(crate) const S3_FORMAT_VERSION_LEGACY: i16 = S3_FORMAT_VERSION_V0;
 pub type InternalEvents = Option<tokio::sync::mpsc::Sender<&'static str>>;
+
+pub(crate) fn compute_ciphertext_digest(ciphertext: &[u8]) -> Vec<u8> {
+    Keccak256::digest(ciphertext).to_vec()
+}
 
 #[cfg(feature = "gpu")]
 type ServerKey = tfhe::CudaServerKey;
@@ -310,8 +315,9 @@ impl std::fmt::Debug for HandleItem {
 impl HandleItem {
     /// Enqueues the upload task into the database
     ///
-    /// If inserted into the `ciphertext_digest` table means that the both (ct64 and ct128)
-    /// ciphertexts are ready to be uploaded to S3.
+    /// Persists both computed digests and enqueues the handle for upload.
+    /// Digest presence does not imply S3 availability; that is recorded by the
+    /// explicit verification witness after upload postflight succeeds.
     ///
     /// Returns `false` (and inserts nothing) when the handle's provenance is
     /// gone: reorg cleanup deletes the `pbs_computations` row of handles that
@@ -333,27 +339,29 @@ impl HandleItem {
         &self,
         db_txn: &mut Transaction<'_, Postgres>,
     ) -> Result<bool, ExecutionError> {
-        let provenance_alive = sqlx::query_scalar::<_, i32>(
-            "SELECT 1 FROM pbs_computations
-             WHERE handle = $1 AND host_chain_id = $2
-             FOR KEY SHARE",
+        let provenance_alive = sqlx::query_scalar!(
+            r#"SELECT EXISTS(
+                   SELECT 1 FROM pbs_computations
+                    WHERE handle = $1 AND host_chain_id = $2
+                    FOR KEY SHARE
+               ) AS "present!""#,
+            &self.handle,
+            self.host_chain_id.as_i64(),
         )
-        .bind(&self.handle)
-        .bind(self.host_chain_id.as_i64())
-        .fetch_optional(db_txn.as_mut())
-        .await?
-        .is_some();
+        .fetch_one(db_txn.as_mut())
+        .await?;
 
-        let ciphertext_alive = sqlx::query_scalar::<_, i32>(
-            "SELECT 1 FROM ciphertexts
-             WHERE handle = $1
-             LIMIT 1
-             FOR KEY SHARE",
+        let ciphertext_alive = sqlx::query_scalar!(
+            r#"SELECT EXISTS(
+                   SELECT 1 FROM ciphertexts
+                    WHERE handle = $1
+                    LIMIT 1
+                    FOR KEY SHARE
+               ) AS "present!""#,
+            &self.handle,
         )
-        .bind(&self.handle)
-        .fetch_optional(db_txn.as_mut())
-        .await?
-        .is_some();
+        .fetch_one(db_txn.as_mut())
+        .await?;
 
         if !provenance_alive || !ciphertext_alive {
             warn!(
@@ -366,47 +374,84 @@ impl HandleItem {
             return Ok(false);
         }
 
-        if self.ct128.is_empty() {
-            sqlx::query(
-                "INSERT INTO ciphertext_digest
-                    (host_chain_id, key_id_gw, handle, transaction_id)
-                VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
-            )
-            .bind(self.host_chain_id.as_i64())
-            .bind(&self.key_id_gw)
-            .bind(&self.handle)
-            .bind(&self.transaction_id)
-            .execute(db_txn.as_mut())
-            .await?;
-        } else if self.ct128.format() == Ciphertext128Format::Unknown {
+        if self.ct64_compressed.is_empty() || self.ct128.is_empty() {
+            warn!(
+                handle = %to_hex(&self.handle),
+                host_chain_id = self.host_chain_id.as_i64(),
+                ct64_empty = self.ct64_compressed.is_empty(),
+                ct128_empty = self.ct128.is_empty(),
+                "Skipping upload enqueue: SNS conversion did not produce ciphertext bytes"
+            );
+            return Ok(false);
+        }
+        if self.ct128.format() == Ciphertext128Format::Unknown {
             return Err(ExecutionError::InvalidCiphertext128Format(format!(
                 "non-empty ct128 has unknown format, host_chain_id: {}, handle: {}",
                 self.host_chain_id.as_i64(),
                 to_hex(&self.handle),
             )));
-        } else {
-            let ct128_format: i16 = self.ct128.format().into();
-            sqlx::query(
-                "INSERT INTO ciphertext_digest (
-                    host_chain_id, key_id_gw, handle, transaction_id, ciphertext128_format
-                )
-                VALUES ($1, $2, $3, $4, $5)
-                ON CONFLICT (handle) DO UPDATE
-                SET ciphertext128_format = EXCLUDED.ciphertext128_format
-                WHERE ciphertext_digest.ciphertext128 IS NULL",
+        }
+
+        let ct64_digest = compute_ciphertext_digest(&self.ct64_compressed);
+        let ct128_digest = compute_ciphertext_digest(self.ct128.bytes());
+        let ct128_format: i16 = self.ct128.format().into();
+        sqlx::query!(
+            "INSERT INTO ciphertext_digest (
+                host_chain_id, key_id_gw, handle, transaction_id,
+                ciphertext, ciphertext128, ciphertext128_format
             )
-            .bind(self.host_chain_id.as_i64())
-            .bind(&self.key_id_gw)
-            .bind(&self.handle)
-            .bind(&self.transaction_id)
-            .bind(ct128_format)
-            .execute(db_txn.as_mut())
-            .await?;
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            ON CONFLICT (handle) DO UPDATE
+            SET ciphertext = COALESCE(ciphertext_digest.ciphertext, EXCLUDED.ciphertext),
+                ciphertext128 = COALESCE(ciphertext_digest.ciphertext128, EXCLUDED.ciphertext128),
+                ciphertext128_format = COALESCE(
+                    ciphertext_digest.ciphertext128_format,
+                    EXCLUDED.ciphertext128_format
+                )
+            WHERE ciphertext_digest.ciphertext IS NULL
+               OR ciphertext_digest.ciphertext128 IS NULL
+               OR ciphertext_digest.ciphertext128_format IS NULL",
+            self.host_chain_id.as_i64(),
+            &self.key_id_gw,
+            &self.handle,
+            self.transaction_id.as_deref(),
+            &ct64_digest,
+            &ct128_digest,
+            ct128_format,
+        )
+        .execute(db_txn.as_mut())
+        .await?;
+
+        let stored = sqlx::query!(
+            "SELECT ciphertext, ciphertext128, ciphertext128_format
+               FROM ciphertext_digest
+              WHERE handle = $1",
+            &self.handle,
+        )
+        .fetch_one(db_txn.as_mut())
+        .await?;
+        if stored.ciphertext.as_deref() != Some(ct64_digest.as_slice())
+            || stored.ciphertext128.as_deref() != Some(ct128_digest.as_slice())
+            || stored.ciphertext128_format != ct128_format
+        {
+            return Err(ExecutionError::InternalError(format!(
+                "computed ciphertext digest mismatch for handle {}",
+                to_hex(&self.handle),
+            )));
         }
 
         Ok(true)
     }
 
+    /// Stamp that this handle's ct64/ct128 objects exist on S3.
+    ///
+    /// Callers that fetch those objects wait here (txn-sender, bridge, drift
+    /// detector, SNS GC). Manifest sealing reads the digest columns only.
+    ///
+    /// Zero updated rows is not enough to decide: the digest predicates also
+    /// reject a row whose stored digest/format does not match the upload. Lock
+    /// the row first. Missing is reorg cleanup (no-op). Present but rejected
+    /// is the same class of error as enqueue's digest-mismatch path.
     pub(crate) async fn mark_ciphertexts_uploaded(
         &self,
         trx: &mut Transaction<'_, Postgres>,
@@ -416,13 +461,39 @@ impl HandleItem {
     ) -> Result<(), ExecutionError> {
         let format: i16 = self.ct128.format().into();
 
+        let digest_row_present = sqlx::query_scalar!(
+            r#"SELECT EXISTS(
+                   SELECT 1 FROM ciphertext_digest WHERE handle = $1 FOR UPDATE
+               ) AS "present!""#,
+            &self.handle,
+        )
+        .fetch_one(trx.as_mut())
+        .await?;
+
+        if !digest_row_present {
+            // The digest row was deleted by reorg cleanup while the upload
+            // was in flight: the handle lived solely on an orphaned fork and
+            // its publication is cancelled. The uploaded S3 objects are
+            // unreferenced garbage, not a correctness problem.
+            warn!(
+                handle = %to_hex(&self.handle),
+                "ciphertext_digest row gone (reorg cleanup); publication cancelled"
+            );
+            return Ok(());
+        }
+
         let result = sqlx::query!(
             "UPDATE ciphertext_digest
-            SET ciphertext = $1,
-                ciphertext128 = $2,
-                ciphertext128_format = $3,
-                s3_format_version = $4
-            WHERE handle = $5",
+            SET ciphertext = COALESCE(ciphertext, $1),
+                ciphertext128 = COALESCE(ciphertext128, $2),
+                ciphertext128_format = COALESCE(ciphertext128_format, $3),
+                s3_format_version = $4,
+                s3_publication_verified_at = NOW(),
+                s3_publication_verified_digest = $1
+            WHERE handle = $5
+              AND (ciphertext IS NULL OR ciphertext = $1)
+              AND (ciphertext128 IS NULL OR ciphertext128 = $2)
+              AND (ciphertext128_format IS NULL OR ciphertext128_format = $3)",
             &ct64_digest,
             &ct128_digest,
             format,
@@ -433,15 +504,10 @@ impl HandleItem {
         .await?;
 
         if result.rows_affected() == 0 {
-            // The digest row was deleted by reorg cleanup while the upload
-            // was in flight: the handle lived solely on an orphaned fork and
-            // its publication is cancelled. The uploaded S3 objects are
-            // unreferenced garbage, not a correctness problem.
-            warn!(
-                handle = %to_hex(&self.handle),
-                "ciphertext_digest row gone (reorg cleanup); publication cancelled"
-            );
-            return Ok(());
+            return Err(ExecutionError::InternalError(format!(
+                "computed ciphertext digest mismatch for handle {}",
+                to_hex(&self.handle),
+            )));
         }
         if result.rows_affected() != 1 {
             return Err(ExecutionError::InternalError(format!(

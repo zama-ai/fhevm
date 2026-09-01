@@ -11,8 +11,8 @@ const DST_CHAIN: i64 = 200;
 const SAME_CHAIN: i64 = 300;
 
 const CT64: &[u8] = &[0x11; 8];
-const CT64_DIGEST: &[u8] = &[0xA1; 4];
-const CT128_DIGEST: &[u8] = &[0xB2; 4];
+const CT64_DIGEST: &[u8] = &[0xA1; 32];
+const CT128_DIGEST: &[u8] = &[0xB2; 32];
 const CT128_FORMAT: i16 = 11;
 const KEY_ID_GW: &[u8] = &[0xC3, 0xC4];
 const S3_FORMAT_VERSION: i16 = 1;
@@ -65,8 +65,11 @@ async fn insert_digest(
 ) {
     sqlx::query(
         "INSERT INTO ciphertext_digest
-             (host_chain_id, key_id_gw, handle, ciphertext, ciphertext128, ciphertext128_format, s3_format_version)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)",
+             (host_chain_id, key_id_gw, handle, ciphertext, ciphertext128,
+              ciphertext128_format, s3_format_version,
+              s3_publication_verified_at, s3_publication_verified_digest)
+         VALUES ($1, $2, $3, $4, $5, $6, $7,
+                 CASE WHEN $4::BYTEA IS NOT NULL THEN NOW() END, $4)",
     )
     .bind(host_chain_id)
     .bind(KEY_ID_GW)
@@ -207,7 +210,9 @@ async fn in_publish_queue(pool: &PgPool, handle: &[u8], host_chain_id: i64) -> b
                AND host_chain_id = $2
                AND txn_is_sent = false
                AND ciphertext IS NOT NULL
-               AND ciphertext128 IS NOT NULL)",
+               AND ciphertext128 IS NOT NULL
+               AND s3_publication_verified_at IS NOT NULL
+               AND s3_publication_verified_digest IS NOT DISTINCT FROM ciphertext)",
     )
     .bind(handle)
     .bind(host_chain_id)
@@ -550,6 +555,32 @@ async fn associates_only_once() {
         0
     );
     assert_eq!(digest_count(&pool, &dst).await, 1);
+}
+
+#[tokio::test]
+async fn source_without_s3_witness_does_not_associate() {
+    let (_db, pool) = fresh_db().await;
+    let src = handle(31);
+    let dst = handle(32);
+    insert_ready_pair(&pool, &src, &dst).await;
+    sqlx::query(
+        "UPDATE ciphertext_digest
+         SET s3_publication_verified_at = NULL,
+             s3_publication_verified_digest = NULL
+         WHERE handle = $1",
+    )
+    .bind(&src)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    assert_eq!(
+        drain_associations(&pool, 128, &CancellationToken::new(), false)
+            .await
+            .unwrap(),
+        0
+    );
+    assert!(!is_associated(&pool, &dst).await);
 }
 
 #[tokio::test]

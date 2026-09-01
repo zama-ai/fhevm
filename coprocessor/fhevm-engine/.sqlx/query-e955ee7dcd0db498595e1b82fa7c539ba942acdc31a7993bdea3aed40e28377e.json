@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE ciphertext_digest\n            SET ciphertext = COALESCE(ciphertext, $1),\n                ciphertext128 = COALESCE(ciphertext128, $2),\n                ciphertext128_format = COALESCE(ciphertext128_format, $3),\n                s3_format_version = $4,\n                s3_publication_verified_at = NOW(),\n                s3_publication_verified_digest = $1\n            WHERE handle = $5\n              AND (ciphertext IS NULL OR ciphertext = $1)\n              AND (ciphertext128 IS NULL OR ciphertext128 = $2)\n              AND (ciphertext128_format IS NULL OR ciphertext128_format = $3)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Bytea",
+        "Int2",
+        "Int2",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e955ee7dcd0db498595e1b82fa7c539ba942acdc31a7993bdea3aed40e28377e"
+}
