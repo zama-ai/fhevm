@@ -926,7 +926,20 @@ const runBlueGreenProfile = async (
     }
     const rows = await psqlQuery(db, "SELECT count(*) FROM upgrade_state;");
     if (rows !== "0") {
-      throw new Error(`${db}.upgrade_state has ${rows} rows, expected 0 (prior test residue?)`);
+      const reusable = options.blueGreenPredecessorVersion
+        ? await psqlQuery(
+            db,
+            `SELECT CASE
+               WHEN BOOL_AND(stack_role = 'GCS' AND state = 'LIVE' AND status = 'completed'
+                             AND version = (SELECT stack_version FROM versioning WHERE singleton = TRUE))
+               THEN 'yes' ELSE 'no'
+             END
+               FROM upgrade_state;`,
+          )
+        : "no";
+      if (reusable !== "yes") {
+        throw new Error(`${db}.upgrade_state has ${rows} non-reusable rows (prior test residue?)`);
+      }
     }
     const schema = await psqlQuery(
       db,
@@ -937,7 +950,7 @@ const runBlueGreenProfile = async (
     }
   }
   console.log(
-    `OK:   ${opCount} DB(s) at ${predecessorVersion}, empty upgrade_state, gcs-${gcsStackVersion} schema present`,
+    `OK:   ${opCount} DB(s) at ${predecessorVersion}, reusable upgrade_state, gcs-${gcsStackVersion} schema present`,
   );
 
   const defaultHostKey = defaultHostChainKey(state.scenario.hostChains);
