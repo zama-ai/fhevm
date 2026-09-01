@@ -22,6 +22,7 @@ spec:
   selector:
     app: {{ $appLabel }}
     app.kubernetes.io/name: {{ $deploymentName }}
+    {{- include "coprocessor.extraSelectorLabels" $ | nindent 4 }}
   type: ClusterIP
 {{- end }}
 {{- end }}
