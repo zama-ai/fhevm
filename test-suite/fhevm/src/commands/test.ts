@@ -274,6 +274,32 @@ const coprocessorGwListeners = async () => {
     .filter((line) => /^coprocessor(\d+)?-gw-listener$/.test(line));
 };
 
+/** Every GCS host-listener container of the highest-index operator: the listener, the
+ *  poller and the consumer, on every host chain, so nothing of that operator ingests.
+ *  Multi-chain scenarios suffix the extra chains (`…-host-listener-poller-chain-b`), so
+ *  this matches on prefix rather than anchoring the end. */
+const lastOperatorGcsListeners = async () => {
+  const result = await run(["docker", "ps", "--format", "{{.Names}}"], { allowFailure: true });
+  if (result.code !== 0) {
+    throw new PreflightError(result.stderr.trim() || "docker ps failed");
+  }
+  const listeners = result.stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => /^coprocessor(\d+)?-gcs-host-listener(-|$)/.test(line));
+  const prefixes = [...new Set(listeners.map((name) => name.split("-gcs-")[0]!))].sort();
+  const last = prefixes[prefixes.length - 1];
+  return listeners.filter((name) => name.startsWith(`${last}-gcs-`)).sort();
+};
+
+/** Starts or stops a container, failing loudly so a missed step cannot pass silently. */
+const dockerLifecycle = async (action: "stop" | "start", container: string) => {
+  const result = await run(["docker", action, container], { allowFailure: true });
+  if (result.code !== 0) {
+    throw new Error(`docker ${action} ${container} failed: ${result.stderr.trim()}`);
+  }
+};
+
 /** Finds the expected drift warning for a specific injected handle. */
 const findDriftWarning = (output: string, expectedHandleHex: string, needle: string = DRIFT_WARNING) => {
   for (const line of output.split(/\r?\n/)) {
@@ -997,11 +1023,13 @@ const runBlueGreenProfile = async (
     return `[${tuples.join(",")}]`;
   };
 
-  // Host chains stay quiet (no non-trivial FHE op) while [3/11] anchors the Gateway
-  // track with one input. Cutover needs at least one non-trivial host anchor, so the
-  // controller withholds the hosts and commitment_timeout rolls back every row — the
-  // rollback this asserts. A regression that notified quiet hosts would cut over.
-  console.log(`\n[2/11] failed upgrade: Gateway input, hosts quiet (no non-trivial host → no cutover)`);
+  // The GCS listeners inject synthetic ops, so a chain anchors on work of its own and
+  // an idle chain no longer withholds cutover. Unanimity now fails only when an operator
+  // cannot take part: stop one operator's host-listeners so it ingests nothing and never
+  // reports a matching hash. Its consensus-detector keeps running, so it still arms and
+  // fires the timeout — true even with a single operator. [4/11] starts them again, and
+  // the successful upgrade from [6/11] runs with injection active on every operator.
+  console.log(`\n[2/11] failed upgrade: one operator cannot report (no unanimity → no cutover)`);
   const failGwBlock = Number((await run(
     ["cast", "block-number", "--rpc-url", gatewayRpcUrl],
   )).stdout.trim());
@@ -1019,6 +1047,14 @@ const runBlueGreenProfile = async (
   console.log(
     `OK:   activation emitted (windows=${failWindows} gw_start=${failGwStartBlock})`,
   );
+  const silencedListeners = await lastOperatorGcsListeners();
+  if (silencedListeners.length === 0) {
+    throw new Error("found no GCS host-listener containers to silence");
+  }
+  for (const container of silencedListeners) {
+    await dockerLifecycle("stop", container);
+  }
+  console.log(`OK:   stopped ${silencedListeners.join(", ")} — that operator ingests nothing`);
 
   console.log(`\n[3/11] failed upgrade: wait for GCS DryRunStarted, then submit a Gateway-only input proof`);
   for (const db of operatorDatabases) {
@@ -1037,8 +1073,8 @@ const runBlueGreenProfile = async (
         )) === "ready",
     });
   }
-  // Verify one Gateway input inside the window. Host chains get no non-trivial FHE
-  // op, so cutover must be withheld and the window must time out (asserted in [4/11]).
+  // Verify one Gateway input inside the window. The silenced operator never reports,
+  // so unanimity cannot form and the window must time out (asserted in [4/11]).
   await run(gatewayInputProbeArgv);
   console.log(`OK:   Gateway input submitted (host chains remain quiet)`);
 
@@ -1093,6 +1129,10 @@ const runBlueGreenProfile = async (
     }
     console.log(`OK:   ${db}  PAUSED/failed, latches cleared, v0.14 kept, gcs schema recreated empty`);
   }
+  for (const container of silencedListeners) {
+    await dockerLifecycle("start", container);
+  }
+  console.log(`OK:   restarted ${silencedListeners.join(", ")} — every operator ingests again`);
 
   // Deploy ERC20 + mint before the proposal so the balance handle lands in
   // public.ciphertexts with block_number < start_block. Transfers during the
