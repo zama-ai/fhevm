@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -65,12 +65,14 @@ const predecessorImage = (image: string, tag: string) =>
 
 const buildPredecessorImages = async (ref: string, tag: string) => {
   const tempRoot = await mkdtemp(path.join(tmpdir(), "rfc029-v015-"));
-  const archive = path.join(tempRoot, "source.tar");
   const source = path.join(tempRoot, "source");
   try {
-    await mkdir(source);
-    await run(["git", "archive", "--format=tar", `--output=${archive}`, ref]);
-    await run(["tar", "-xf", archive, "-C", source]);
+    const expectedHead = (await run(["git", "rev-parse", `${ref}^{commit}`])).stdout.trim();
+    await run(["git", "worktree", "add", "--detach", source, expectedHead]);
+    const actualHead = (await run(["git", "-C", source, "rev-parse", "HEAD"])).stdout.trim();
+    if (actualHead !== expectedHead) {
+      throw new Error(`0.15 predecessor checkout resolved to ${actualHead}; expected ${expectedHead}`);
+    }
     const toolchain = await Bun.file(path.join(source, "coprocessor/fhevm-engine/rust-toolchain.toml")).text();
     const rustVersion = toolchain.match(/^\s*channel\s*=\s*"([^"]+)"/m)?.[1];
     if (!rustVersion) {
@@ -97,6 +99,7 @@ const buildPredecessorImages = async (ref: string, tag: string) => {
       ]);
     }
   } finally {
+    await run(["git", "worktree", "remove", "--force", source], { allowFailure: true });
     await rm(tempRoot, { force: true, recursive: true });
   }
 };
