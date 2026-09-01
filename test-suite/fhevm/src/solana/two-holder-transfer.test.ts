@@ -14,6 +14,7 @@ const alice = { owner: "1".repeat(32), keypairPath: "/alice.json", secretKey: he
 const bob = { owner: "2".repeat(32), keypairPath: "/bob.json", secretKey: hex32("2") };
 const scenario: TwoHolderScenario = {
   mint: "3".repeat(32),
+  underlyingMint: "9".repeat(32),
   computeSigner: "4".repeat(32),
   alice,
   bob,
