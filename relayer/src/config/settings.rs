@@ -170,7 +170,8 @@ where
 /// with shared deduplication and staggered connection recycling
 #[derive(Debug, Deserialize, Clone)]
 pub struct ListenerPoolConfig {
-    /// Optional starting block number for event subscriptions
+    /// Optional starting block number, overriding the stored cursor. Polling listeners only:
+    /// a WebSocket subscription cannot start from a past block.
     pub last_block_number: Option<u64>,
     /// Reconnection configuration for WebSocket connection failures
     pub reconnect_config: RetrySettings,
@@ -183,20 +184,25 @@ pub struct ListenerPoolConfig {
     pub recycle_interval_mins: u64,
     /// Polling interval in milliseconds (for polling type listeners)
     pub poll_interval_ms: u64,
-    /// TTL for event deduplication cache in seconds (1-10)
-    pub dedup_ttl_seconds: u64,
-    /// Maximum capacity for deduplication cache
+    /// Widest block span a single `eth_getLogs` may ask for (polling listeners only).
+    /// Catching up from far behind the head - after downtime, or after `last_block_number`
+    /// is rewound to force a replay - is chunked to this many blocks per query, so it never
+    /// asks for a range the provider rejects nor gets back one outsized response.
+    pub max_blocks_per_query: u64,
+    /// How long the event registry remembers an event, in seconds (1-10).
     ///
-    /// **Sizing guidance:**
-    /// The cache should accommodate all events received during the TTL window with a safety buffer.
+    /// It bounds two things: how long the same log observed by two listener instances is
+    /// recognized as one event, and how long an entry survives while its handlers run. The
+    /// window restarts when the handlers finish.
+    pub dedup_ttl_seconds: u64,
+    /// Maximum number of events the registry tracks at once.
     ///
     /// **Formula:** `events_per_second * num_listeners * dedup_ttl_seconds * safety_buffer`
     ///
     /// **Recommended values (with 3 listeners, 5s TTL, 1.2x buffer):**
-    /// - 100 events/sec → 1,800
-    /// - 300 events/sec → 5,400
-    /// - 1000 events/sec → 18,000
-    /// - 5000 events/sec → 90,000
+    /// - 100 events/sec -> 1,800
+    /// - 1000 events/sec -> 18,000
+    /// - 5000 events/sec -> 90,000
     pub dedup_max_capacity: usize,
     /// List of listeners in the pool
     /// Each listener has a type and URL; instance_id is assigned by position (0-indexed)
@@ -833,12 +839,35 @@ impl Settings {
             )));
         }
 
+        // A zero-wide chunk never reaches the head, so the catch-up loop would poll forever
+        // without advancing the cursor.
+        if pool_config.max_blocks_per_query == 0 {
+            return Err(AppConfigError::Config(
+                "listener_pool.max_blocks_per_query must be at least 1".to_string(),
+            ));
+        }
+
         // Validate dedup max capacity (should be reasonable)
         if pool_config.dedup_max_capacity < 1000 || pool_config.dedup_max_capacity > 10_000_000 {
             return Err(AppConfigError::Config(format!(
                 "dedup_max_capacity must be between 1000 and 10,000,000, got: {}",
                 pool_config.dedup_max_capacity
             )));
+        }
+
+        // Only the polling listener replays blocks missed while the relayer was not
+        // listening; `eth_subscribe` takes no fromBlock, so a WebSocket listener that starts
+        // late sees only new logs.
+        if !pool_config
+            .listeners
+            .iter()
+            .any(|listener| listener.listener_type == ListenerType::Polling)
+        {
+            tracing::warn!(
+                "listener_pool has no polling listener: events emitted while the relayer is \
+                 not listening will be missed, since a WebSocket subscription does not \
+                 replay them"
+            );
         }
 
         // Validate each listener's URL format based on type

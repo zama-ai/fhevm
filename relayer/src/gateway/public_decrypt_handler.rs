@@ -13,7 +13,7 @@ use crate::{
         arbitrum::{
             bindings::Decryption,
             transaction::{
-                helper::{TransactionHelper, TransactionType, TxResult},
+                helper::{TransactionHelper, TransactionType, TxClaimOutcome, TxResult},
                 tx_throttler::{DynTxHook, GatewayTxTask, TxThrottlingSender},
                 TxLifecycleHooks,
             },
@@ -22,6 +22,7 @@ use crate::{
         utils::{classify_revert_selector, extract_revert_selector},
     },
     logging::PublicDecryptStep,
+    metrics,
     orchestrator::{
         traits::{Event, EventHandler},
         ContentHasher, Orchestrator,
@@ -79,7 +80,7 @@ impl GatewayHandler {
                 PublicDecryptEventId::ReadinessCheckPassed.into(),
                 PublicDecryptEventId::ReadinessCheckTimedOut.into(),
                 PublicDecryptEventId::ReadinessCheckFailed.into(),
-                GatewayChainEventId::EventLogRcvd.into(),
+                GatewayChainEventId::PublicDecryptionResponse.into(),
             ],
             handler.clone() as Arc<dyn EventHandler<RelayerEvent>>,
         );
@@ -138,22 +139,12 @@ impl EventHandler<RelayerEvent> for GatewayHandler {
                 }
             },
 
-            RelayerEventData::GatewayChain(GatewayChainEventData::EventLogRcvd {
+            RelayerEventData::GatewayChain(GatewayChainEventData::PublicDecryptionResponse {
                 ref log,
                 tx_hash,
             }) => {
-                if let Some(topic0) = log.topic0() {
-                    if FixedBytes::<32>::from_slice(topic0.as_slice())
-                        == Decryption::PublicDecryptionResponse::SIGNATURE_HASH
-                    {
-                        debug!("Observed gateway public-decrypt response");
-                        self.process_decrypt_response(&event, log, tx_hash).await
-                    } else {
-                        return;
-                    }
-                } else {
-                    return;
-                }
+                debug!("Observed gateway public-decrypt response");
+                self.process_decrypt_response(&event, log, tx_hash).await
             }
             _ => return,
         };
@@ -407,11 +398,15 @@ impl GatewayHandler {
                         "Public decrypt already timed out (late response event), skipping"
                     );
                 }
+                // Not a warning: a second copy of the same response is expected. A listener
+                // that must attest to its block range re-dispatches an event another
+                // instance is still handling, and it lands here while the first copy is
+                // mid-flight.
                 other_status => {
-                    warn!(
+                    debug!(
                         int_job_id = %int_job_id,
                         current_status = ?other_status,
-                        "Public decrypt in unexpected state, skipping response event - possible race condition or late event"
+                        "Public decrypt not ready for a response event, skipping it"
                     );
                 }
             },
@@ -500,7 +495,10 @@ impl GatewayHandler {
                         }
                         PublicDecryptCompletionOutcome::NotFound => {
                             if attempt == retry_config.max_retries {
-                                debug!(
+                                metrics::increment_unmatched_gateway_event(
+                                    "public_decryption_response",
+                                );
+                                info!(
                                     step = %PublicDecryptStep::GwEventRetrying,
                                     gw_reference_id = %public_decryption_id,
                                     max_retries = retry_config.max_retries,
@@ -709,15 +707,28 @@ impl GatewayHandler {
 
 #[async_trait]
 impl TxLifecycleHooks for GatewayHandler {
-    async fn on_tx_in_flight(&self, job_id: &JobId) -> Result<(), EventProcessingError> {
-        self.public_decrypt_repo
+    async fn on_tx_in_flight(
+        &self,
+        job_id: &JobId,
+    ) -> Result<TxClaimOutcome, EventProcessingError> {
+        let rows_affected = self
+            .public_decrypt_repo
             .update_status_to_tx_in_flight(&job_id[..])
             .await
-            .map(|_| ())
             .map_err(|e| EventProcessingError::SqlOperationFailed {
                 operation: "public_decrypt.update_status_to_tx_in_flight".to_string(),
                 reason: e.to_string(),
-            })
+            })?;
+
+        if rows_affected == 0 {
+            info!(
+                int_job_id = %job_id,
+                "Tx-in-flight claim did not apply for public decrypt request, skipping send"
+            );
+            return Ok(TxClaimOutcome::ClaimLost);
+        }
+
+        Ok(TxClaimOutcome::Claimed)
     }
 
     async fn on_receipt_received(

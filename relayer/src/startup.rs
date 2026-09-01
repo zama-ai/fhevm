@@ -29,6 +29,7 @@ use anyhow::Context;
 use std::sync::Arc;
 use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
+use tokio_util::task::TaskTracker;
 use tracing::{info, span, Level};
 
 use crate::{
@@ -73,7 +74,11 @@ pub async fn run_fhevm_relayer(
 
     // === Orchestration Phase ===
     // Create orchestrator, repositories, and gateway components
-    let orchestrator = Orchestrator::new(Arc::new(TokioEventDispatcher::new()));
+    let detached_tasks = TaskTracker::new();
+    let orchestrator = Orchestrator::new(
+        Arc::new(TokioEventDispatcher::new(detached_tasks.clone())),
+        detached_tasks.clone(),
+    );
 
     // Initialize SQL repositories
     let repositories = Arc::new(
@@ -267,6 +272,7 @@ fn ensure_global_init(settings: &Settings) -> anyhow::Result<&'static Registry> 
         metrics::init_statuses_metrics(&registry, settings.metrics.clone());
         metrics::init_db_metrics(&registry, settings.metrics.clone());
         metrics::init_queue_metrics(&registry);
+        metrics::init_listener_metrics(&registry);
         metrics::init_signature_precheck_metrics(&registry);
         metrics::init_retry_after_metrics(
             &registry,
