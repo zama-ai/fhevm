@@ -1942,13 +1942,10 @@ async fn tfhe_worker_cycle(
         {
             warn!(target: "tfhe_worker", "Lost dcid lock during transaction execution; persisting deterministic results may be redundant");
         }
-        let (has_progressed, panicked_transactions) = upload_transaction_graph_results(
-            &mut tx_graph,
-            &mut trx,
-            &mut dcid_mngr,
-        )
-        .instrument(loop_span.clone())
-        .await?;
+        let (has_progressed, panicked_transactions) =
+            upload_transaction_graph_results(&mut tx_graph, &mut trx, &mut dcid_mngr)
+                .instrument(loop_span.clone())
+                .await?;
         if !dcid_mngr.enabled() {
             // Pace retryable panics in the lockless fallback: without this
             // the oldest-first window re-selects a still-failing panic
@@ -3088,8 +3085,9 @@ async fn build_transaction_graph_and_execute<'a>(
             match LIMITER.get() {
                 Some(limiter) => limiter.clone(),
                 None => {
-                    let limiter = GpuExecutionLimiter::new(keys.gpu_sks.len(), gpu_streams_per_device)
-                        .map_err(|e| CoprocessorError::Other(e.into()))?;
+                    let limiter =
+                        GpuExecutionLimiter::new(keys.gpu_sks.len(), gpu_streams_per_device)
+                            .map_err(|e| CoprocessorError::Other(e.into()))?;
                     // A racing initializer wins; take whichever is installed so
                     // every partition shares one limiter.
                     LIMITER.get_or_init(|| limiter).clone()

@@ -647,7 +647,10 @@ impl LockMngr {
                 .execute(&self.pool)
                 .await?
                 .rows_affected();
-                debug!(retired = r.retired.len(), pruned, "Pruned discharged dependents");
+                debug!(
+                    retired = r.retired.len(),
+                    pruned, "Pruned discharged dependents"
+                );
             }
             (r.released, r.dependents_updated, r.notified)
         };
@@ -689,7 +692,7 @@ impl LockMngr {
 
         // Two statements in ONE transaction, deliberately not one statement.
         //
-        // The decrement must be able to see a child row the listener INSERTed
+        // The decrement must be able to see a child row the listener inserted
         // after this release began: the listener arms a cross-block gate only
         // by inserting a brand-new chain row (its ON CONFLICT branch never
         // touches dependency_count), and a row created by a transaction that
@@ -702,7 +705,7 @@ impl LockMngr {
         // sees the child.
         //
         // Splitting also removes the same-statement collision when a released
-        // chain is itself a dependent of another released chain: two UPDATEs of
+        // chain is itself a dependent of another released chain: two updates of
         // one row within a single statement silently drop one of them.
         //
         // The pair is atomic: a failure in the decrement rolls the release back
@@ -1143,7 +1146,10 @@ impl LockMngr {
             // when the delete runs, so the two cannot race over it.
             let rearmed = rearm_demoted_chains(&self.pool, self.demote_threshold).await?;
             if rearmed > 0 {
-                info!(rearmed, "Re-armed demoted dependence chains into the slow lane");
+                info!(
+                    rearmed,
+                    "Re-armed demoted dependence chains into the slow lane"
+                );
             }
             info!("Performing cleanup of old processed dependence chains");
             deleted = delete_old_processed_dependence_chains(

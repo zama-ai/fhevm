@@ -669,7 +669,7 @@ enum MainBlockOneShotStaging {
     /// so the window underfills — and every uniform scenario hides it, because
     /// there every chain can fill its share. It is also the shape that shows
     /// what the adaptive window is FOR: without it the long chain holds the
-    /// oldest schedule_order rows and monopolises the whole window while the
+    /// oldest schedule_order rows and monopolizes the whole window while the
     /// short chains wait out the timeslice.
     SkewedOneLogicalBlock {
         long_chain_len: usize,
@@ -688,9 +688,7 @@ impl MainBlockOneShotScenario {
     fn chain_count(self) -> usize {
         match self.staging {
             MainBlockOneShotStaging::OneLogicalBlock => self.transfers.div_ceil(self.chain_len),
-            MainBlockOneShotStaging::SkewedOneLogicalBlock { short_chains, .. } => {
-                1 + short_chains
-            }
+            MainBlockOneShotStaging::SkewedOneLogicalBlock { short_chains, .. } => 1 + short_chains,
             MainBlockOneShotStaging::SequentialUnpacedTraffic { chain_count, .. } => chain_count,
         }
     }
