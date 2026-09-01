@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import { assertContractTaskStackRunning } from "./flow/contracts";
 import { validateDiscovery } from "./flow/discovery";
+import { ensureRuntimeArtifacts } from "./flow/artifacts";
 import {
   displayedBundle,
   multiChainCoprocessorUpgradeTargets,
@@ -412,6 +413,48 @@ describe("runtime helpers", () => {
 
   test("runtime artifacts include the generated kms-core config", () => {
     expect(runtimeArtifactPaths(completeState())).toContain(kmsCoreConfigPath);
+  });
+
+  test("a stale local KMS runtime BUILD_ID regenerates artifacts before a pending adoption resumes", async () => {
+    const calls: string[] = [];
+    const state = completeState();
+    state.overrides = [{ group: "kms-connector", services: ["kms-connector-gw-listener"] }];
+    await ensureRuntimeArtifacts(state, "pending KMS connector adoption", {
+      async ensureLockSnapshot() {
+        calls.push("lock");
+      },
+      async exists() {
+        return true;
+      },
+      async kmsConnectorBuildRevisionCurrent() {
+        return false;
+      },
+      async generateRuntime() {
+        calls.push("generate");
+      },
+    });
+    expect(calls).toEqual(["lock", "generate"]);
+  });
+
+  test("a current local KMS runtime BUILD_ID leaves existing artifacts untouched", async () => {
+    const calls: string[] = [];
+    const state = completeState();
+    state.overrides = [{ group: "kms-connector", services: ["kms-connector-gw-listener"] }];
+    await ensureRuntimeArtifacts(state, "pending KMS connector adoption", {
+      async ensureLockSnapshot() {
+        calls.push("lock");
+      },
+      async exists() {
+        return true;
+      },
+      async kmsConnectorBuildRevisionCurrent() {
+        return true;
+      },
+      async generateRuntime() {
+        calls.push("generate");
+      },
+    });
+    expect(calls).toEqual(["lock"]);
   });
 
   test("runtime artifacts use the first explicit chain key for default host addresses", () => {

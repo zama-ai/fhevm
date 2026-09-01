@@ -2,6 +2,7 @@
  * Orchestrates fhevm stack lifecycle commands such as up, down, resume, clean, upgrade, status, and logs.
  */
 
+import { createHash } from "node:crypto";
 import path from "node:path";
 
 import { ensureLockSnapshot, previewBundle, resolveBundle } from "../resolve/bundle-store";
@@ -54,6 +55,7 @@ import {
   ENV_DIR,
   GENERATED_CONFIG_DIR,
   GROUP_BUILD_COMPONENTS,
+  GROUP_BUILD_SERVICES,
   KEYGEN_ID_SELECTOR,
   KMS_CORE_CONTAINER,
   LOCK_DIR,
@@ -102,7 +104,7 @@ import {
   writeJson,
 } from "../utils/fs";
 import { ensureDiscovery, createDiscovery, defaultEndpoints, discoverContracts, minioIp, validateDiscovery } from "./discovery";
-import { kmsConnectorEnvName, kmsCoreName } from "../kms-party";
+import { kmsConnectorEnvName, kmsConnectorPrefix, kmsCoreName } from "../kms-party";
 import { defaultHostChain, extraHostChains, hostChainsForState } from "./topology";
 import {
   kmsConnectorHealthContainers,
@@ -306,7 +308,7 @@ const printBundle = (state: Pick<State, "versions" | "overrides">, options?: { d
 };
 
 /** Prints the resolved execution plan for `up` or `up --dry-run`. */
-const printPlan = (state: Pick<State, "target" | "overrides" | "scenario">, fromStep?: StepName) => {
+const printPlan = (state: Pick<State, "target" | "overrides" | "e2ePublicRuntime" | "scenario">, fromStep?: StepName) => {
   const topology = topologyForState(state);
   const overrides = visibleOverrides(state);
   const localTestSuite = overrides.some((item) => item.group === "test-suite");
@@ -324,6 +326,9 @@ const printPlan = (state: Pick<State, "target" | "overrides" | "scenario">, from
     console.log("[plan] local e2e test changes require --override test-suite or --build");
   }
   console.log(`[plan] topology=n${topology.count}/t${topology.threshold} (${topologyLabel})${isMultiChain ? " multi-chain" : ""}`);
+  if (state.e2ePublicRuntime) {
+    console.log("[plan] coprocessor and KMS connector runtimes=public Debian E2E override (non-production)");
+  }
   console.log(`[plan] steps=${STEP_NAMES.slice(stateStepIndex(fromStep ?? STEP_NAMES[0])).join(" -> ")}`);
 };
 
@@ -449,6 +454,99 @@ const assertSchemaCompatibility = async (
         `${item.group}: local DB migrations diverge from ${ref}. Use --override ${item.group} or pass --allow-schema-mismatch if you know this service remains compatible.`,
     );
   }
+};
+
+/**
+ * This is the sole schema-superset exception for the local, public-runtime
+ * KMS connector adoption below. The resolved 72af12a bundle has this one
+ * additive enum-value migration while this checkout intentionally predates
+ * it. An old connector can read a database containing an extra enum
+ * value; it neither writes nor relies on `CompressedKeySet` in the CPU gate.
+ *
+ * Do not broaden this list. The normal schema guard remains authoritative for
+ * every other local override and every other migration difference. In
+ * particular, this exception does not make a local migration run: it only
+ * permits the three long-lived connector processes to attach to a database
+ * that has already been migrated by the resolved image.
+ */
+const E2E_PUBLIC_KMS_CONNECTOR_SUPERSET = {
+  commit: "72af12a184c2304008a06e7ecdf97d2da2e0f532",
+  path: "kms-connector/connector-db/migrations/20260804000000_add_compressed_key_set.sql",
+  version: "20260804000000",
+  // SHA-384 of the exact approved baseline SQL blob. The SQL is only:
+  // `ALTER TYPE key_type ADD VALUE IF NOT EXISTS 'CompressedKeySet';`.
+  sha384: "e3c67db173c72841bb23f81937e1b0a1f49dc4a1ac0dd8711e77e2ced145c05909cd783f89642acefa4967578ed8611d",
+} as const;
+
+export type E2ePublicKmsConnectorSupersetOperations = {
+  run: typeof run;
+  postgresExec: typeof postgresExec;
+};
+
+const e2ePublicKmsConnectorSupersetOperations: E2ePublicKmsConnectorSupersetOperations = { run, postgresExec };
+
+/**
+ * Proves the only migration mismatch permitted by the E2E-only KMS runtime
+ * adoption. We pin all three sides: the resolved migration commit, the exact
+ * source-tree diff/blob, and the already-applied SQLx checksum in the live
+ * connector database. A false result is deliberately indistinguishable from
+ * any other schema mismatch so callers fail closed through the normal guard.
+ */
+export const isVerifiedE2ePublicKmsConnectorSchemaSuperset = async (
+  state: Pick<State, "versions" | "scenario">,
+  operations: E2ePublicKmsConnectorSupersetOperations = e2ePublicKmsConnectorSupersetOperations,
+) => {
+  const guard = SCHEMA_GUARDS["kms-connector"];
+  // Threshold connectors use separate databases. Do not claim this
+  // single-database proof covers them until each party is checked explicitly.
+  if (state.scenario.kms.mode !== "centralized" || state.scenario.kms.parties !== 1) {
+    return false;
+  }
+  const resolvedRef = state.versions.env[guard.versionKey];
+  if (!resolvedRef) {
+    return false;
+  }
+
+  const verified = await operations.run(
+    ["git", "rev-parse", "-q", "--verify", `${resolvedRef}^{commit}`],
+    { cwd: REPO_ROOT, allowFailure: true },
+  );
+  if (verified.code !== 0 || verified.stdout.trim() !== E2E_PUBLIC_KMS_CONNECTOR_SUPERSET.commit) {
+    return false;
+  }
+
+  const untracked = await operations.run(
+    ["git", "ls-files", "--others", "--exclude-standard", "--", guard.repoPath],
+    { cwd: REPO_ROOT, allowFailure: true },
+  );
+  if (untracked.code !== 0 || untracked.stdout.trim()) {
+    return false;
+  }
+
+  const diff = await operations.run(
+    ["git", "diff", "--no-ext-diff", "--exit-code", "--name-status", E2E_PUBLIC_KMS_CONNECTOR_SUPERSET.commit, "--", guard.repoPath],
+    { cwd: REPO_ROOT, allowFailure: true },
+  );
+  if (diff.code !== 1 || diff.stdout.trim() !== `D\t${E2E_PUBLIC_KMS_CONNECTOR_SUPERSET.path}`) {
+    return false;
+  }
+
+  const source = await operations.run(
+    ["git", "show", `${E2E_PUBLIC_KMS_CONNECTOR_SUPERSET.commit}:${E2E_PUBLIC_KMS_CONNECTOR_SUPERSET.path}`],
+    { cwd: REPO_ROOT, allowFailure: true },
+  );
+  if (
+    source.code !== 0 ||
+    createHash("sha384").update(source.stdout).digest("hex") !== E2E_PUBLIC_KMS_CONNECTOR_SUPERSET.sha384
+  ) {
+    return false;
+  }
+
+  const applied = await operations.postgresExec("kms-connector", [
+    "-tAc",
+    `SELECT encode(checksum, 'hex') || '|' || EXISTS (SELECT 1 FROM pg_type kt JOIN pg_enum ke ON ke.enumtypid = kt.oid WHERE kt.typname = 'key_type' AND ke.enumlabel = 'CompressedKeySet') FROM _sqlx_migrations WHERE version = ${E2E_PUBLIC_KMS_CONNECTOR_SUPERSET.version} AND success = TRUE`,
+  ]);
+  return applied.code === 0 && applied.stdout.trim() === `${E2E_PUBLIC_KMS_CONNECTOR_SUPERSET.sha384}|true`;
 };
 
 /** Checks whether the coprocessor database already contains seeded runtime data. */
@@ -868,17 +966,18 @@ export const runStep = async (state: State, step: StepName) => {
       break;
     case "coprocessor": {
       const skipMigration = await coprocessorDbsSeeded(state);
+      let runtimeServices: string[];
       if (skipMigration) {
-        await stepComposeUp("coprocessor", state, coprocessorHealthContainers(state), { noDeps: true });
+        runtimeServices = coprocessorHealthContainers(state);
       } else {
         // Migrations before workers, so a GCS fleet isn't started before the versioning baseline is seeded.
         const allServices = serviceNameList(state, "coprocessor");
         const migrationServices = allServices.filter((name) => name.endsWith("db-migration"));
-        const runtimeServices = allServices.filter((name) => !name.endsWith("db-migration"));
+        runtimeServices = allServices.filter((name) => !name.endsWith("db-migration"));
         await stepComposeUp("coprocessor", state, migrationServices);
         await waitForCoprocessorDbMigrations(state);
-        await stepComposeUp("coprocessor", state, runtimeServices, { noDeps: true });
       }
+      await stepComposeUp("coprocessor", state, runtimeServices, { noDeps: true });
       await waitForCoprocessorServices(state, true);
       if (requiresLegacyHostChainSeedShim(state)) {
         await applyLegacyHostChainSeedShim(state);
@@ -1037,7 +1136,7 @@ export const resumeOptionConflicts = (
   state: State,
   options: Pick<
     UpOptions,
-    "requestedTarget" | "sha" | "lockFile" | "scenarioPath" | "overrides" | "allowSchemaMismatch" | "reset"
+    "requestedTarget" | "sha" | "lockFile" | "scenarioPath" | "overrides" | "allowSchemaMismatch" | "e2ePublicRuntime" | "reset"
   >,
 ) => {
   const mismatches: string[] = [];
@@ -1047,6 +1146,7 @@ export const resumeOptionConflicts = (
   if (options.scenarioPath) mismatches.push(`scenario=${options.scenarioPath}`);
   if (options.overrides.length) mismatches.push(`overrides=${options.overrides.map(describeOverride).join(", ")}`);
   if (options.allowSchemaMismatch) mismatches.push("--allow-schema-mismatch");
+  if (options.e2ePublicRuntime) mismatches.push("--e2e-public-runtime");
   if (options.reset) mismatches.push("--reset");
   return mismatches;
 };
@@ -1056,7 +1156,7 @@ const ensureResumeOptions = (
   state: State,
   options: Pick<
     UpOptions,
-    "requestedTarget" | "sha" | "lockFile" | "scenarioPath" | "overrides" | "allowSchemaMismatch" | "reset"
+    "requestedTarget" | "sha" | "lockFile" | "scenarioPath" | "overrides" | "allowSchemaMismatch" | "e2ePublicRuntime" | "reset"
   >,
 ) => {
   const mismatches = resumeOptionConflicts(state, options);
@@ -1093,7 +1193,7 @@ const assertSupportedTargetScenario = (target: VersionTarget, scenario: State["s
 
 /** Builds a synthetic state object for dry-run previews. */
 export const previewStateFromBundle = (
-  options: Pick<UpOptions, "overrides" | "lockFile">,
+  options: Pick<UpOptions, "overrides" | "lockFile" | "e2ePublicRuntime">,
   bundle: VersionBundle,
   scenario: State["scenario"],
 ): State => {
@@ -1105,6 +1205,7 @@ export const previewStateFromBundle = (
     requiresGitHub: targetNeedsGitHub({ target: bundle.target, lockFile: options.lockFile }),
     versions: bundle,
     overrides: options.overrides,
+    e2ePublicRuntime: options.e2ePublicRuntime,
     scenario,
     scenarioSourcePath: scenario.sourcePath,
     completedSteps: [],
@@ -1129,6 +1230,7 @@ const bootstrapState = async (options: UpOptions) => {
     requiresGitHub: targetNeedsGitHub({ target: resolved.bundle.target, lockFile: options.lockFile }),
     versions: resolved.bundle,
     overrides: options.overrides,
+    e2ePublicRuntime: options.e2ePublicRuntime,
     scenario,
     scenarioSourcePath: scenario.sourcePath,
     completedSteps: [],
@@ -1154,7 +1256,11 @@ export const up = async (options: UpOptions) => {
     state = nextState;
     await saveState(state);
   }
-  if ((options.resume || options.fromStep) && state.scenario.kms.mode === "threshold") {
+  if (
+    (options.resume || options.fromStep) &&
+    state.scenario.kms.mode === "threshold" &&
+    !state.e2eKmsConnectorRuntimeAdoptionPending
+  ) {
     // The resume/from-step lifecycle map (COMPONENT_BY_STEP, resumeSteadyStateServices) models a
     // single `kms-core` + one connector tier. A threshold-mode cluster has kms-core-2..N, kms-core-init
     // and per-party connectors that the map does not know about, so a partial restart would leave
@@ -1167,7 +1273,19 @@ export const up = async (options: UpOptions) => {
     state.requiresGitHub = false;
     state.scenarioSourcePath ??= state.scenario?.sourcePath;
     ensureResumeOptions(state, options);
+    assertSupportedBundleScenario({ versions: state.versions, overrides: state.overrides, scenario: state.scenario });
     await ensureRuntimeArtifacts(state, "resume");
+    let resumedPendingKmsAdoption = false;
+    if (state.e2eKmsConnectorRuntimeAdoptionPending) {
+      resumedPendingKmsAdoption = await resumePendingE2eKmsConnectorRuntimeAdoption(state, fromStep);
+    }
+    if (resumedPendingKmsAdoption && state.scenario.kms.mode === "threshold") {
+      // Generic resume intentionally has no threshold-KMS lifecycle map. The
+      // exact pending-adoption helper above has completed the only safe work;
+      // do not fall through and accidentally attempt a broader partial resume.
+      console.log("[resume] KMS connector E2E runtime adoption complete");
+      return;
+    }
     const running = await projectContainers();
     if (!running.length) {
       console.log(
@@ -1213,7 +1331,7 @@ export const up = async (options: UpOptions) => {
   }
   const from = startStep(state, { ...options, fromStep });
   for (const step of STEP_NAMES.slice(stateStepIndex(from))) {
-    if (options.resume && state.completedSteps.includes(step) && !options.fromStep) {
+    if (options.resume && state.completedSteps.includes(step) && !fromStep) {
       continue;
     }
     await runStep(state, step);
@@ -1231,6 +1349,7 @@ export const upDryRun = async (options: Omit<UpOptions, "dryRun">) => {
     state.requiresGitHub = false;
     state.scenarioSourcePath ??= state.scenario?.sourcePath;
     ensureResumeOptions(state, options);
+    assertSupportedBundleScenario({ versions: state.versions, overrides: state.overrides, scenario: state.scenario });
     await preflight(state, false, state.requiresGitHub);
     printBundle(state, { detailed: true });
     printPlan(state, options.fromStep ?? startStep(state, options));
@@ -1469,6 +1588,99 @@ export const listScenarios = async () => {
 
 type UpgradeOptions = {
   lockFile?: string;
+  /**
+   * One-purpose recovery path for a persisted E2E stack whose source-matched
+   * connector must be built locally after the rest of the stack is already up.
+   * This is deliberately not inferred from `upgrade kms-connector`: callers
+   * must acknowledge the state transition on the command line.
+   */
+  adoptLocalOverride?: boolean;
+  /** Explicit acknowledgement that the adopted connector uses the non-certified public Debian runtime. */
+  e2ePublicRuntime?: boolean;
+};
+
+const KMS_CONNECTOR_RUNTIME_SERVICES = GROUP_BUILD_SERVICES["kms-connector"].filter(
+  (service) => !service.endsWith("-db-migration"),
+);
+
+/**
+ * Returns every long-lived connector service affected by the E2E-only
+ * replacement.  In a threshold topology the public image is built once from
+ * the party-1 compose service, then each party's runtime container is
+ * recreated against that same image; database migration containers are never
+ * selected here.
+ */
+export const kmsConnectorRuntimeReplacementServices = (state: Pick<State, "scenario">) =>
+  Array.from({ length: state.scenario.kms.parties }, (_, index) => {
+    const prefix = kmsConnectorPrefix(index + 1);
+    return KMS_CONNECTOR_RUNTIME_SERVICES.map((service) => service.replace(/^kms-connector/, prefix));
+  }).flat();
+
+/**
+ * Produces the only connector-service selection change allowed by `upgrade
+ * kms-connector --adopt-local-override --e2e-public-runtime`.
+ *
+ * The existing databases, MinIO buckets, generated KMS material, contract
+ * discovery and proof cache are deliberately copied through untouched.  This
+ * path changes image source for the three long-lived connector services only;
+ * it must never run a migration or replay the ordinary deployment pipeline.
+ */
+export const adoptE2ePublicKmsConnectorOverride = (state: State): State => {
+  if (state.scenario.kind !== "coprocessor-consensus") {
+    throw new PreflightError("KMS connector E2E override adoption requires a coprocessor-consensus E2E scenario");
+  }
+  const activeOverrides = effectiveOverrides(state.overrides, state.scenario);
+  if (!activeOverrides.some((override) => override.group === "coprocessor")) {
+    throw new PreflightError("KMS connector E2E override adoption requires an active local coprocessor override");
+  }
+  if (!state.overrides.some((override) => override.group === "test-suite")) {
+    throw new PreflightError("KMS connector E2E override adoption requires an active local test-suite override");
+  }
+  const existingKmsOverrides = state.overrides.filter((override) => override.group === "kms-connector");
+  if (existingKmsOverrides.length && !state.e2eKmsConnectorRuntimeAdoptionPending) {
+    throw new PreflightError("The KMS connector already has a local override; use `fhevm-cli upgrade kms-connector`");
+  }
+  if (!state.completedSteps.includes("kms-connector")) {
+    throw new PreflightError("KMS connector E2E override adoption requires a stack that has completed the kms-connector step");
+  }
+
+  if (existingKmsOverrides.length) {
+    const [existing] = existingKmsOverrides;
+    const isExactPendingAdoption =
+      existingKmsOverrides.length === 1 &&
+      state.e2ePublicRuntime === true &&
+      existing?.services?.length === KMS_CONNECTOR_RUNTIME_SERVICES.length &&
+      existing.services.every((service, index) => service === KMS_CONNECTOR_RUNTIME_SERVICES[index]);
+    if (!isExactPendingAdoption) {
+      throw new PreflightError(
+        "Pending KMS connector E2E adoption has an unexpected persisted override; refusing to select a broader recovery path",
+      );
+    }
+    // A prior build/recreate attempt may have failed after persisting its
+    // intent. Reuse precisely that state so a retry can only replay the same
+    // three runtime services; it can never fall through to db migration.
+    return state;
+  }
+
+  return {
+    ...state,
+    // Persist a runtime-only selection.  The normal full-group override would
+    // make maybeBuild include db-migration, which contradicts this recovery
+    // path's preservation guarantee and could mutate a live connector DB.
+    overrides: [...state.overrides, { group: "kms-connector", services: [...KMS_CONNECTOR_RUNTIME_SERVICES] }],
+    // This is the existing stack-wide E2E image-base policy, persisted rather
+    // than passed as an ambient build variable so a later resume or explicit
+    // local coprocessor/KMS upgrade renders the same reproducible public-base
+    // policy. It does not rebuild or recreate the currently running
+    // coprocessor services; that requires a separate explicit upgrade.
+    // It remains opt-in at the CLI boundary below.
+    e2ePublicRuntime: true,
+    // Persist intent before build/recreate. If the process dies or Docker
+    // fails below, `up --resume` recognizes this marker and executes this
+    // exact runtime-only recovery rather than the normal KMS connector step.
+    e2eKmsConnectorRuntimeAdoptionPending: true,
+    updatedAt: new Date().toISOString(),
+  };
 };
 
 export const changedVersionKeys = (current: VersionBundle, next: VersionBundle) =>
@@ -1650,8 +1862,147 @@ const waitForUpgrade = async (state: State, group: UpgradeGroup, runtimeServices
   await waitForTestSuite();
 };
 
+/**
+ * Replaces just the running KMS connector runtime on an already-bootstrapped
+ * local E2E stack.  Unlike `up` this never resets steps, and unlike a normal
+ * full-group upgrade it intentionally excludes `kms-connector-db-migration`.
+ *
+ * This is needed when a source-matched connector is required to read existing
+ * ciphertext object paths, but the current host cannot pull the certified
+ * Chainguard runtime.  Preserving the KMS DB, MinIO, keys and proof cache is
+ * correctness-critical: regenerating any of them would turn a connector
+ * compatibility check into a different E2E deployment.
+ */
+export type E2eKmsConnectorAdoptionOperations = {
+  assertSchemaCompatibility: typeof assertSchemaCompatibility;
+  isVerifiedE2ePublicKmsConnectorSchemaSuperset?: typeof isVerifiedE2ePublicKmsConnectorSchemaSuperset;
+  saveState: typeof saveState;
+  generateRuntime: typeof generateRuntime;
+  maybeBuild: typeof maybeBuild;
+  composeUp: typeof composeUp;
+  waitForKmsConnector: typeof waitForKmsConnector;
+  postBootHealthGate: typeof postBootHealthGate;
+};
+
+const e2eKmsConnectorAdoptionOperations: E2eKmsConnectorAdoptionOperations = {
+  assertSchemaCompatibility,
+  saveState,
+  generateRuntime,
+  maybeBuild,
+  composeUp,
+  waitForKmsConnector,
+  postBootHealthGate,
+};
+
+export const adoptRunningE2eKmsConnectorOverride = async (
+  state: State,
+  operations: E2eKmsConnectorAdoptionOperations = e2eKmsConnectorAdoptionOperations,
+) => {
+  const nextState = adoptE2ePublicKmsConnectorOverride(state);
+
+  // The persisted override is intentionally per-service so this adoption
+  // cannot start the migration container. Keep the normal schema guard in
+  // force. The only exception is the separately proven, exact one-migration
+  // DB-superset case above; no other mismatch can reach the live replacement.
+  // Network targets deliberately have no local migration-reference guard, so
+  // they cannot use this source-attaching recovery path at all. Likewise, a
+  // missing connector migration reference is not evidence of compatibility.
+  if (
+    !SCHEMA_GUARD_TARGETS.has(nextState.versions.target) ||
+    !nextState.versions.env.CONNECTOR_DB_MIGRATION_VERSION
+  ) {
+    throw new PreflightError(
+      "KMS connector E2E runtime adoption requires a schema-guarded bundle with CONNECTOR_DB_MIGRATION_VERSION",
+    );
+  }
+  try {
+    await operations.assertSchemaCompatibility(nextState.versions, nextState.overrides, nextState.scenario, false);
+  } catch (error) {
+    const permitted =
+      error instanceof SchemaGuardError &&
+      error.group === "kms-connector" &&
+      (await (operations.isVerifiedE2ePublicKmsConnectorSchemaSuperset ?? isVerifiedE2ePublicKmsConnectorSchemaSuperset)(
+        nextState,
+      ));
+    if (!permitted) {
+      throw error;
+    }
+    console.log("[e2e] accepting the verified additive KMS connector DB-superset migration");
+  }
+  await operations.saveState(nextState);
+  await operations.generateRuntime(nextState, stackSpecForState(nextState));
+
+  // `maybeBuild` sees only the three runtime services recorded above.  The
+  // explicit force/recreate pair makes Docker replace their containers even
+  // when a prior local image with the same tag exists, while `--no-deps`
+  // prevents Compose from touching Postgres, MinIO, KMS core, or any other
+  // persisted service.
+  await operations.maybeBuild("kms-connector", nextState, { force: true });
+  const runtimeServices = kmsConnectorRuntimeReplacementServices(nextState);
+  await operations.composeUp("kms-connector", runtimeServices, { noDeps: true, forceRecreate: true });
+  await operations.waitForKmsConnector(nextState);
+  await operations.postBootHealthGate(kmsConnectorHealthContainers(nextState));
+  // Clear intent only after the replacement has passed every live gate. A
+  // failure before this point leaves the marker durable so retry/resume takes
+  // this same no-deps runtime-only path instead of the migration-capable
+  // ordinary KMS connector pipeline step.
+  delete nextState.e2eKmsConnectorRuntimeAdoptionPending;
+  nextState.updatedAt = new Date().toISOString();
+  await operations.saveState(nextState);
+};
+
+/**
+ * Completes an interrupted adoption before generic resume inspects service
+ * health or chooses a pipeline step. Keeping this decision in one helper is
+ * important: the generic `kms-connector` step may run db-migration, whereas a
+ * pending adoption has already been authorized only for the exact runtime-only
+ * `--no-deps --force-recreate` replacement above.
+ */
+export async function resumePendingE2eKmsConnectorRuntimeAdoption(
+  state: State,
+  fromStep: StepName | undefined,
+  runAdoption: (state: State) => Promise<void> = adoptRunningE2eKmsConnectorOverride,
+) {
+  if (!state.e2eKmsConnectorRuntimeAdoptionPending) {
+    return false;
+  }
+  if (fromStep) {
+    throw new ResumeError(
+      "A pending KMS connector E2E adoption must resume its exact runtime-only replacement; retry `fhevm-cli up --resume` without --from-step",
+    );
+  }
+  console.log("[resume] completing pending KMS connector E2E runtime adoption");
+  await runAdoption(state);
+  return true;
+}
+
 /** Upgrades one runtime group in place, including allowed migrations and optional version-lock application. */
 export const upgradeRuntimeGroup = async (groupValue: string | undefined, options: UpgradeOptions = {}) => {
+  const requestsE2eKmsAdoption = options.adoptLocalOverride || options.e2ePublicRuntime;
+  if (requestsE2eKmsAdoption) {
+    // Do not make a missing flag permissive.  The normal upgrade command keeps
+    // its production-certified defaults; this exceptional recovery path is
+    // selected only by the complete, self-documenting flag pair below.
+    if (groupValue !== "kms-connector") {
+      throw new PreflightError("--adopt-local-override is supported only with `fhevm-cli upgrade kms-connector`");
+    }
+    if (!options.adoptLocalOverride || !options.e2ePublicRuntime) {
+      throw new PreflightError(
+        "KMS connector E2E adoption requires both --adopt-local-override and --e2e-public-runtime",
+      );
+    }
+    if (options.lockFile) {
+      throw new PreflightError("KMS connector E2E adoption cannot be combined with --lock-file");
+    }
+    const state = await loadState();
+    if (!state || !(await projectContainers()).length) {
+      throw new PreflightError("Stack is not running; KMS connector E2E adoption never creates or resets a stack");
+    }
+    await ensureRuntimeArtifacts(state, "KMS connector E2E override adoption");
+    await adoptRunningE2eKmsConnectorOverride(state);
+    return;
+  }
+
   const state = await loadState();
   if (!state || !(await projectContainers()).length) {
     throw new PreflightError(
