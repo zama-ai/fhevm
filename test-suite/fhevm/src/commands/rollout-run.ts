@@ -51,6 +51,7 @@ type RolloutVersionLockOptions = {
 };
 
 type RolloutTestOptions = {
+  blueGreenPredecessorVersion?: string;
   grep?: string;
   network?: string;
   noHardhatCompile?: boolean;
@@ -129,7 +130,12 @@ const refreshTestSuiteContainer = async () => {
 const runRolloutTest = async (receipt: RolloutReceipt, profile: string, options: RolloutTestOptions) => {
   await refreshTestSuiteContainer();
   await receipt.record("refresh-test-suite", "recreated test-suite container with current env", {
-    details: { profile },
+    details: {
+      profile,
+      ...(options.blueGreenPredecessorVersion
+        ? { blueGreenPredecessorVersion: options.blueGreenPredecessorVersion }
+        : {}),
+    },
   });
   await runTest(profile, {
     network: options.network ?? "staging",
@@ -137,6 +143,7 @@ const runRolloutTest = async (receipt: RolloutReceipt, profile: string, options:
     noHardhatCompile: options.noHardhatCompile ?? true,
     parallel: options.parallel,
     grep: options.grep,
+    blueGreenPredecessorVersion: options.blueGreenPredecessorVersion,
   });
 };
 
