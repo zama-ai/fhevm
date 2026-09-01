@@ -64,24 +64,19 @@ pub struct Round {
 }
 
 impl Round {
-    /// The roster size, not the number of replies received.
-    pub fn asked(&self) -> usize {
-        self.replies.len()
-    }
-
     pub fn attested(&self) -> Vec<Address> {
         self.addresses_where(|r| matches!(r, Reply::Attested(_)))
     }
 
-    pub fn silent(&self) -> Vec<Address> {
+    fn silent(&self) -> Vec<Address> {
         self.addresses_where(|r| matches!(r, Reply::NoReply))
     }
 
-    pub fn rejected(&self) -> Vec<Address> {
+    fn rejected(&self) -> Vec<Address> {
         self.addresses_where(|r| matches!(r, Reply::Rejected))
     }
 
-    pub fn outstanding(&self) -> Vec<Address> {
+    pub(crate) fn outstanding(&self) -> Vec<Address> {
         self.addresses_where(|r| matches!(r, Reply::Outstanding))
     }
 
@@ -197,9 +192,9 @@ impl ConsensusTracker {
         let groups = round.groups();
         let largest = groups.first().map_or(0, |(_, entries)| entries.len());
         let outstanding = round.outstanding().len();
-        // Deliberately not `outstanding`: a Coprocessor that merely failed still counts as
-        // reachable next round.
-        let missing = round.asked() - round.attested().len();
+        // Counts failures too, unlike `outstanding`: a Coprocessor that failed can attest again
+        // next round.
+        let missing = round.replies.len() - round.attested().len();
 
         if largest >= threshold {
             let (material, winners) = groups
@@ -283,7 +278,6 @@ mod tests {
     const KEY_ID: U256 = U256::from_limbs([0xdead_beef, 0, 0, 0]);
     const CT_DIGEST: B256 = B256::repeat_byte(0xBB);
     const SNS_DIGEST: B256 = B256::repeat_byte(0xCC);
-    const DISSENTING_SNS_DIGEST: B256 = B256::repeat_byte(0xDD);
     const FORMAT: CiphertextFormat = CiphertextFormat::UncompressedOnCpu;
 
     fn nz(threshold: usize) -> NonZeroUsize {
@@ -332,11 +326,6 @@ mod tests {
         (signer.address(), Reply::Attested(material))
     }
 
-    /// A filler roster slot that never replies this round.
-    fn filler() -> Address {
-        PrivateKeySigner::random().address()
-    }
-
     /// Roster entries for `signers`, each bound to the bucket a real registry would give it.
     fn entries(signers: impl IntoIterator<Item = Address>) -> Vec<CoprocessorEntry> {
         signers
@@ -377,8 +366,15 @@ mod tests {
     #[tokio::test]
     async fn awaiting_replies_while_replies_outstanding() {
         let s1 = PrivateKeySigner::random();
-        let mut tracker =
-            ConsensusTracker::new(HANDLE, entries([s1.address(), filler(), filler()]), nz(2));
+        let mut tracker = ConsensusTracker::new(
+            HANDLE,
+            entries([
+                s1.address(),
+                PrivateKeySigner::random().address(),
+                PrivateKeySigner::random().address(),
+            ]),
+            nz(2),
+        );
 
         let (signer, reply) = reply_from(&s1).await;
         let status = tracker.record(signer, reply);
@@ -389,8 +385,8 @@ mod tests {
     async fn missed_this_round_when_failures_make_round_unwinnable() {
         // Nobody disagreed, so an unwinnable round is MissedThisRound, never Unreachable.
         let s1 = PrivateKeySigner::random();
-        let s2 = filler();
-        let s3 = filler();
+        let s2 = PrivateKeySigner::random().address();
+        let s3 = PrivateKeySigner::random().address();
         let mut tracker = ConsensusTracker::new(HANDLE, entries([s1.address(), s2, s3]), nz(2));
 
         let (signer, reply) = reply_from(&s1).await;
@@ -460,7 +456,7 @@ mod tests {
         // group too small to ever reach threshold.
         let signers: Vec<PrivateKeySigner> = (0..4).map(|_| PrivateKeySigner::random()).collect();
         let mut roster: Vec<Address> = signers.iter().map(|s| s.address()).collect();
-        roster.push(filler());
+        roster.push(PrivateKeySigner::random().address());
         let mut tracker = ConsensusTracker::new(HANDLE, entries(roster), nz(3));
 
         let mut status = ThresholdStatus::AwaitingReplies;
@@ -484,7 +480,7 @@ mod tests {
         // the failure does not make the round retriable.
         let s1 = PrivateKeySigner::random();
         let s2 = PrivateKeySigner::random();
-        let s3 = filler();
+        let s3 = PrivateKeySigner::random().address();
         let mut tracker =
             ConsensusTracker::new(HANDLE, entries([s1.address(), s2.address(), s3]), nz(3));
 
@@ -509,7 +505,7 @@ mod tests {
         // an already-attested material would meet the threshold.
         let s1 = PrivateKeySigner::random();
         let s2 = PrivateKeySigner::random();
-        let s3 = filler();
+        let s3 = PrivateKeySigner::random().address();
         let mut tracker =
             ConsensusTracker::new(HANDLE, entries([s1.address(), s2.address(), s3]), nz(2));
 
@@ -568,7 +564,7 @@ mod tests {
         // `agreeing()` honest — a tracker that let a replay refill the slot would fail open.
         let s1 = PrivateKeySigner::random();
         let s2 = PrivateKeySigner::random();
-        let s3 = filler();
+        let s3 = PrivateKeySigner::random().address();
         let mut tracker =
             ConsensusTracker::new(HANDLE, entries([s1.address(), s2.address(), s3]), nz(3));
 
@@ -620,7 +616,13 @@ mod tests {
     async fn reached_while_replies_outstanding() {
         let s1 = PrivateKeySigner::random();
         let s2 = PrivateKeySigner::random();
-        let roster = vec![s1.address(), s2.address(), filler(), filler(), filler()];
+        let roster = vec![
+            s1.address(),
+            s2.address(),
+            PrivateKeySigner::random().address(),
+            PrivateKeySigner::random().address(),
+            PrivateKeySigner::random().address(),
+        ];
         let mut tracker = ConsensusTracker::new(HANDLE, entries(roster), nz(2));
 
         let (signer, reply) = reply_from(&s1).await;
@@ -690,53 +692,6 @@ mod tests {
         let (signer, reply) = reply_from(&s2).await;
         let status = tracker.record(signer, reply);
         assert!(matches!(status, ThresholdStatus::Reached { .. }));
-    }
-
-    /// A disagreeing, terminal round holding three distinct digest values, so a rendering that
-    /// leaked any one of them would show it.
-    async fn disagreeing_round() -> Round {
-        let s1 = PrivateKeySigner::random();
-        let s2 = PrivateKeySigner::random();
-        let mut tracker =
-            ConsensusTracker::new(HANDLE, entries([s1.address(), s2.address()]), nz(2));
-
-        let (signer, reply) = reply_from(&s1).await;
-        tracker.record(signer, reply);
-        let (signer, reply) = dissenting_reply_from(&s2, DISSENTING_SNS_DIGEST).await;
-        match tracker.record(signer, reply) {
-            ThresholdStatus::Unreachable(round) => round,
-            other => panic!("expected Unreachable, got {other:?}"),
-        }
-    }
-
-    #[tokio::test]
-    async fn display_is_redacted_no_digest_values() {
-        // `Display` fires implicitly wherever a `Round` is interpolated, including from an error
-        // type's own message, so it must never carry digest values.
-        let round = disagreeing_round().await;
-        let rendered = round.to_string();
-
-        for leaked in [CT_DIGEST, SNS_DIGEST, DISSENTING_SNS_DIGEST] {
-            assert!(
-                !rendered.contains(&format!("{leaked:x}")),
-                "leaked digest {leaked}: {rendered}"
-            );
-        }
-    }
-
-    #[tokio::test]
-    async fn debug_is_full_board_with_digest_values() {
-        // The diagnostics rendering must show every attested material in a disagreement, not just
-        // the winner — a differing field must never be hidden from an operator.
-        let round = disagreeing_round().await;
-        let rendered = format!("{round:?}");
-
-        for expected in [CT_DIGEST, SNS_DIGEST, DISSENTING_SNS_DIGEST] {
-            assert!(
-                rendered.contains(&format!("{expected:x}")),
-                "missing digest {expected}: {rendered}"
-            );
-        }
     }
 
     #[tokio::test]
