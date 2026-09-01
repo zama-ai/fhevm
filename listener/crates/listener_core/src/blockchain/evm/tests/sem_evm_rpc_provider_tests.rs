@@ -26,15 +26,10 @@ mod sem_evm_rpc_provider_tests {
                 name: "Ethereum Mainnet",
                 url: "https://ethereum-rpc.publicnode.com",
             },
-            // RpcTarget {
-            //     name: "Binance Smart Chain Mainnet",
-            //     url: "https://bsc-dataseed.bnbchain.org",
-            // },
-            // RpcTarget {
-            //     name: "Polygon PoS",
-            //     // url: "https://polygon-rpc.com",
-            //     url: "https://polygon.drpc.org",
-            // },
+            RpcTarget {
+                name: "Polygon PoS",
+                url: "https://polygon.drpc.org",
+            },
             // RpcTarget {
             //     name: "Avalanche",
             //     url: "https://api.avax.network/ext/bc/C/rpc",

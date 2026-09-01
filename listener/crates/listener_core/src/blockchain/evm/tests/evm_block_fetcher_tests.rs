@@ -26,16 +26,12 @@ fn get_test_chains() -> Vec<RpcTarget> {
     vec![
         // Using only chains with generous rate limits for free tiers
         RpcTarget {
-            name: "Zama Gateway Testnet",
-            url: "https://rpc-zama-testnet-0.t.conduit.xyz",
+            name: "Ethereum Mainnet",
+            url: "https://ethereum-rpc.publicnode.com",
         },
         RpcTarget {
-            name: "Optimism",
-            url: "https://mainnet.optimism.io",
-        },
-        RpcTarget {
-            name: "Base",
-            url: "https://mainnet.base.org",
+            name: "Polygon PoS",
+            url: "https://polygon-rpc.com",
         },
     ]
 }
