@@ -38,6 +38,7 @@ use solana_sdk::{
     program_pack::Pack,
     pubkey::Pubkey,
 };
+use std::cell::RefCell;
 use std::collections::HashMap;
 use zama_host as host;
 use zama_solana_test_kit::oracle::CleartextLedger;
@@ -214,6 +215,7 @@ struct TokenFixture {
     bob_balance_value: Pubkey,
     alice_initial: [u8; 32],
     bob_initial: [u8; 32],
+    extra_token_owners: RefCell<HashMap<Pubkey, Pubkey>>,
 }
 
 impl TokenFixture {
@@ -249,6 +251,7 @@ impl TokenFixture {
             bob_balance_value,
             alice_initial: handle_for_chain(1, BALANCE_FHE_TYPE),
             bob_initial: handle_for_chain(2, BALANCE_FHE_TYPE),
+            extra_token_owners: RefCell::new(HashMap::new()),
         }
     }
 
@@ -356,13 +359,26 @@ impl TokenFixture {
         )
     }
 
-    fn underlying_ata_for_token(&self, token: Pubkey) -> Pubkey {
-        let owner = if token == self.bob_token {
+    fn owner_of_token(&self, token: Pubkey) -> Pubkey {
+        if token == self.alice_token {
+            self.owner
+        } else if token == self.bob_token {
             self.bob_owner
         } else {
-            self.owner
-        };
-        self.owner_ata(owner)
+            self.extra_token_owners
+                .borrow()
+                .get(&token)
+                .copied()
+                .unwrap_or_else(|| panic!("unknown token account {token}"))
+        }
+    }
+
+    fn register_token_owner(&self, token: Pubkey, owner: Pubkey) {
+        self.extra_token_owners.borrow_mut().insert(token, owner);
+    }
+
+    fn underlying_ata_for_token(&self, token: Pubkey) -> Pubkey {
+        self.owner_ata(self.owner_of_token(token))
     }
 }
 
@@ -1372,28 +1388,11 @@ fn mollusk_confidential_transfer_to_second_recipient_rotates_transferred_value_a
     // per-sender transferred-amount encrypted value account rotates its audience to the new recipient, sealing
     // the first receipt's audience into historical leaves (previously reverted with PreviousStateMismatch).
     let fixture = TokenFixture::new();
-    let charlie_owner = Pubkey::new_unique();
-    let charlie_token = token::token_account_address(fixture.mint, charlie_owner).0;
-    let charlie_balance_value =
-        token::balance_encrypted_value_address(fixture.mint, charlie_token).0;
-    let charlie_initial = handle_for_chain(3, BALANCE_FHE_TYPE);
-
     let mut accounts = fixture.base_accounts();
-    accounts.insert(charlie_owner, system_account(5_000_000_000));
-    accounts.insert(
-        charlie_token,
-        fixture.confidential_token_account(charlie_owner, charlie_balance_value),
-    );
-    let (_, charlie_value) = new_encrypted_value(
-        fixture.mint,
-        charlie_token,
-        token::encrypted_balance_label(),
-        charlie_initial,
-        &[charlie_owner, fixture.compute_signer],
-    );
-    accounts.insert(
-        charlie_balance_value,
-        encrypted_value_account(&charlie_value),
+    let (charlie_owner, charlie_token, charlie_balance_value) = seed_third_account(
+        &fixture,
+        &mut accounts,
+        handle_for_chain(3, BALANCE_FHE_TYPE),
     );
     let context = mollusk().with_context(accounts);
 
@@ -1469,6 +1468,8 @@ fn seed_third_account(
         charlie_token,
         fixture.confidential_token_account(charlie_owner, charlie_balance_value),
     );
+    fixture.register_token_owner(charlie_token, charlie_owner);
+    accounts.insert(fixture.owner_ata(charlie_owner), system_account(0));
     let (_, charlie_value) = new_encrypted_value(
         fixture.mint,
         charlie_token,

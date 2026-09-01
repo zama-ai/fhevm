@@ -18,6 +18,7 @@ vi.mock('@solana/kit', async (importOriginal) => ({
   }),
 }));
 vi.mock('./vault/index.js', () => ({
+  TOKEN_PROGRAM_ADDRESS: 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
   deriveBatchAddresses: mocks.deriveBatchAddresses,
   deriveJoinRecordAddress: mocks.deriveJoinRecordAddress,
   getCurrentBatch: mocks.getCurrentBatch,

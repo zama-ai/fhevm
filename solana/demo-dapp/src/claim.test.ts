@@ -20,6 +20,7 @@ vi.mock('@solana/kit', async (importOriginal) => {
   };
 });
 vi.mock('./vault/index.js', () => ({
+  TOKEN_PROGRAM_ADDRESS: 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
   buildClaimInstruction: mocks.buildClaim,
   buildInitializeTokenAccountInstruction: mocks.buildInitialize,
   deriveJoinRecordAddress: vi.fn(async () => address('SysvarC1ock11111111111111111111111111111111')),
