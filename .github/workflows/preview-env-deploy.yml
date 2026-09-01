@@ -1094,42 +1094,51 @@ jobs:
           if [[ "${BLUE_GREEN}" == "true" ]]; then
             bcs_overlay=(-f ci/preview-env/coprocessor/values-coprocessor-bcs-e2e.yaml)
           fi
+          # Helm --set-string must be two argv (--set-string, key=value).
+          # mapfile + `echo --set-string k=v` collapses them into one and helm
+          # reports "unknown flag: --set-string <key>".
           party_common() {
             local i="$1" privkey="$2" suffix="${3:-}"
-            echo --set-string "commonConfig.databaseEndpoint.value=postgres-coprocessor-${i}:5432"
-            echo --set-string "hostListenerShared.serviceAccountName=coprocessor-${i}"
-            echo --set-string "hostListenerPollerShared.serviceAccountName=coprocessor-${i}"
-            echo --set-string "hostListenerCatchupOnlyShared.serviceAccountName=coprocessor-${i}"
-            echo --set-string "hostListenerConsumerShared.serviceAccountName=coprocessor-${i}"
-            echo --set-string "tfheWorker.serviceAccountName=coprocessor-${i}"
-            echo --set-string "zkProofWorker.serviceAccountName=coprocessor-${i}"
-            echo --set-string "snsWorker.serviceAccountName=coprocessor-${i}"
-            echo --set "snsWorker.config.s3BucketName.valueFrom.configMapKeyRef.name=coprocessor-${i}"
-            echo --set-string "hostListenerConsumerShared.config.brokerUrl.value=redis://coprocessor-redis-${i}-master:6379"
-            echo --set-string "txSender.wallet.secret.value=${privkey}"
-            echo --set-string "snsWorker.wallet.secret.value=${privkey}"
+            common_args=(
+              --set-string "commonConfig.databaseEndpoint.value=postgres-coprocessor-${i}:5432"
+              --set-string "hostListenerShared.serviceAccountName=coprocessor-${i}"
+              --set-string "hostListenerPollerShared.serviceAccountName=coprocessor-${i}"
+              --set-string "hostListenerCatchupOnlyShared.serviceAccountName=coprocessor-${i}"
+              --set-string "hostListenerConsumerShared.serviceAccountName=coprocessor-${i}"
+              --set-string "tfheWorker.serviceAccountName=coprocessor-${i}"
+              --set-string "zkProofWorker.serviceAccountName=coprocessor-${i}"
+              --set-string "snsWorker.serviceAccountName=coprocessor-${i}"
+              --set "snsWorker.config.s3BucketName.valueFrom.configMapKeyRef.name=coprocessor-${i}"
+              --set-string "hostListenerConsumerShared.config.brokerUrl.value=redis://coprocessor-redis-${i}-master:6379"
+              --set-string "txSender.wallet.secret.value=${privkey}"
+              --set-string "snsWorker.wallet.secret.value=${privkey}"
+            )
             if [[ "${OBSERVABILITY}" == "true" ]]; then
-              echo --set "commonConfig.tracing.enabled=true"
-              echo --set-string "commonConfig.tracing.endpoint=${OTLP_ENDPOINT}"
-              echo --set-string "gwListener.tracing.service=gw-listener-${i}${suffix}"
-              echo --set-string "tfheWorker.tracing.service=tfhe-worker-${i}${suffix}"
-              echo --set-string "zkProofWorker.tracing.service=zkproof-worker-${i}${suffix}"
-              echo --set-string "snsWorker.tracing.service=sns-worker-${i}${suffix}"
-              echo --set-string "txSender.tracing.service=tx-sender-${i}${suffix}"
-              echo --set-string "hostListenerConsumerShared.tracing.service=host-listener-consumer-${i}${suffix}"
+              common_args+=(
+                --set "commonConfig.tracing.enabled=true"
+                --set-string "commonConfig.tracing.endpoint=${OTLP_ENDPOINT}"
+                --set-string "gwListener.tracing.service=gw-listener-${i}${suffix}"
+                --set-string "tfheWorker.tracing.service=tfhe-worker-${i}${suffix}"
+                --set-string "zkProofWorker.tracing.service=zkproof-worker-${i}${suffix}"
+                --set-string "snsWorker.tracing.service=sns-worker-${i}${suffix}"
+                --set-string "txSender.tracing.service=tx-sender-${i}${suffix}"
+                --set-string "hostListenerConsumerShared.tracing.service=host-listener-consumer-${i}${suffix}"
+              )
             fi
           }
           image_tags() {
             local tag="$1"
-            echo --set-string "gwListener.image.tag=${tag}"
-            echo --set-string "hostListenerShared.image.tag=${tag}"
-            echo --set-string "hostListenerPollerShared.image.tag=${tag}"
-            echo --set-string "hostListenerCatchupOnlyShared.image.tag=${tag}"
-            echo --set-string "hostListenerConsumerShared.image.tag=${tag}"
-            echo --set-string "snsWorker.image.tag=${tag}"
-            echo --set-string "tfheWorker.image.tag=${tag}"
-            echo --set-string "txSender.image.tag=${tag}"
-            echo --set-string "zkProofWorker.image.tag=${tag}"
+            bcs_images=(
+              --set-string "gwListener.image.tag=${tag}"
+              --set-string "hostListenerShared.image.tag=${tag}"
+              --set-string "hostListenerPollerShared.image.tag=${tag}"
+              --set-string "hostListenerCatchupOnlyShared.image.tag=${tag}"
+              --set-string "hostListenerConsumerShared.image.tag=${tag}"
+              --set-string "snsWorker.image.tag=${tag}"
+              --set-string "tfheWorker.image.tag=${tag}"
+              --set-string "txSender.image.tag=${tag}"
+              --set-string "zkProofWorker.image.tag=${tag}"
+            )
           }
           for i in $(seq 1 "${NB_COPROCESSOR}"); do
             privkey=$(jq -r --argjson party "${i}" '.[] | select(.party == $party) | .privateKey' <<<"${COPROC_WALLETS_JSON}")
@@ -1137,10 +1146,9 @@ jobs:
               echo "::error::no derived coprocessor wallet for party ${i} in coproc_wallets_json=${COPROC_WALLETS_JSON}"; exit 1
             fi
             if [[ "${BLUE_GREEN}" == "true" ]]; then
-              mapfile -t bcs_images < <(image_tags "${BCS_IMAGE_TAG}")
+              image_tags "${BCS_IMAGE_TAG}"
             else
-              mapfile -t bcs_images < <(image_tags "$(jq -r .coprocessor_tfhe_worker <<<"${TAGS_JSON}")")
-              # Non-BG still uses per-component tags (they can differ).
+              # Per-component tags (they can differ when only some images rebuilt).
               bcs_images=(
                 --set-string "gwListener.image.tag=$(jq -r .coprocessor_gw_listener <<<"${TAGS_JSON}")"
                 --set-string "hostListenerShared.image.tag=$(jq -r .coprocessor_host_listener <<<"${TAGS_JSON}")"
@@ -1153,7 +1161,7 @@ jobs:
                 --set-string "zkProofWorker.image.tag=$(jq -r .coprocessor_zkproof_worker <<<"${TAGS_JSON}")"
               )
             fi
-            mapfile -t common_args < <(party_common "${i}" "${privkey}")
+            party_common "${i}" "${privkey}"
             fleet_json=()
             if [[ "${BLUE_GREEN}" == "true" ]]; then
               fleet_json=(--set-json "commonConfig.extraSelectorLabels={\"fhevm.zama.ai/fleet\":\"${i}-bcs\"}")
@@ -1178,7 +1186,7 @@ jobs:
             done
             for i in $(seq 1 "${NB_COPROCESSOR}"); do
               privkey=$(jq -r --argjson party "${i}" '.[] | select(.party == $party) | .privateKey' <<<"${COPROC_WALLETS_JSON}")
-              mapfile -t common_args < <(party_common "${i}" "${privkey}" "-gcs")
+              party_common "${i}" "${privkey}" "-gcs"
               # Same repos/tags as the regular coprocessor CI build (compiled 0.15.0).
               gcs_images=(
                 --set-string "gwListener.image.tag=$(jq -r .coprocessor_gw_listener <<<"${TAGS_JSON}")"
