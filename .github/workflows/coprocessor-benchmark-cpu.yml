@@ -15,6 +15,12 @@ on:
           - "dex"
           - "synthetics"
           - "all"
+          - "main_block_one_shot"
+      one_shot_scenarios:
+        description: "Reportable one-shot scenarios (space-separated, only used by the main_block_one_shot set; empty runs the canonical suite)"
+        required: false
+        type: string
+        default: ""
       batch_size:
         description: "Batch sizes (# FHE operations executed per batch)"
         required: true
@@ -38,6 +44,12 @@ on:
           - "THROUGHPUT"
           - "LATENCY"
         default: "ALL"
+
+# Queue dispatches rather than letting two runs compete for the single AWS bench
+# profile: one run's teardown would stop the instance the other is using.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
 
 env:
   CARGO_TERM_COLOR: always
@@ -88,13 +100,10 @@ jobs:
     steps:
       - name: Install git LFS
         run: |
-          # Wait for apt locks to be released (e.g., unattended-upgrades may hold the lock on fresh instances)
-          while sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do
-            echo "Waiting for apt lock to be released..."
-            sleep 5
-          done
-          sudo apt-get update
-          sudo apt-get install -y git-lfs
+          # A fresh instance is still running its apt-daily timers, so wait for
+          # the dpkg lock through apt itself rather than polling for it here.
+          sudo apt-get -o DPkg::Lock::Timeout=600 update
+          sudo apt-get -o DPkg::Lock::Timeout=600 install -y git-lfs
           git lfs install
 
       - name: Checkout fhevm-backend
@@ -123,11 +132,11 @@ jobs:
       - name: Install cargo dependencies
         run: |
           sudo systemctl stop docker
-          DEBIAN_FRONTEND=noninteractive sudo apt-get remove -y docker docker-engine docker.io containerd runc
-          DEBIAN_FRONTEND=noninteractive sudo apt-get purge -y docker-ce docker-ce-cli containerd.io docker-compose-plugin docker-compose
+          DEBIAN_FRONTEND=noninteractive sudo apt-get -o DPkg::Lock::Timeout=600 remove -y docker docker-engine docker.io containerd runc
+          DEBIAN_FRONTEND=noninteractive sudo apt-get -o DPkg::Lock::Timeout=600 purge -y docker-ce docker-ce-cli containerd.io docker-compose-plugin docker-compose
           sudo rm -rf /etc/bash_completion.d/docker /usr/local/bin/docker-compose /etc/bash_completion.d/docker-compose
-          DEBIAN_FRONTEND=noninteractive sudo apt-get update
-          DEBIAN_FRONTEND=noninteractive sudo apt-get install -y protobuf-compiler cmake \
+          DEBIAN_FRONTEND=noninteractive sudo apt-get -o DPkg::Lock::Timeout=600 update
+          DEBIAN_FRONTEND=noninteractive sudo apt-get -o DPkg::Lock::Timeout=600 install -y protobuf-compiler cmake \
                                                                  pkg-config libssl-dev \
                                                                  libclang-dev docker-compose-v2 \
                                                                  docker.io acl
@@ -164,9 +173,20 @@ jobs:
           username: ${{ secrets.CGR_USERNAME }}
           password: ${{ secrets.CGR_PASSWORD }}
 
+      # The one-shot suite needs a schema, not an image: bring up postgres and
+      # apply the migrations with the sqlx CLI installed above. Building the
+      # migration image here would compile the whole workspace a second time,
+      # under whole-machine load, for a binary this benchmark never runs.
       - name: Init database
-        run: make init_db
+        run: |
+          if [[ "${BENCHMARKS}" == "main_block_one_shot" ]]; then
+            make bench_db_up
+          else
+            make init_db
+          fi
         working-directory: coprocessor/fhevm-engine/tfhe-worker
+        env:
+          BENCHMARKS: ${{ inputs.benchmarks }}
 
       - name: Use Node.js
         uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2
@@ -178,6 +198,7 @@ jobs:
           docker run --rm -d -p 4566:4566 --name localstack localstack/localstack:4.14.0
 
       - name: Run benchmarks on CPU
+        if: ${{ inputs.benchmarks != 'main_block_one_shot' }}
         run: |
           DATABASE_URL=postgresql://postgres:postgres@localhost:5432/coprocessor TXN_SENDER_TEST_GLOBAL_LOCALSTACK=1 BENCHMARK_BATCH_SIZE="${BATCH_SIZE}" BENCHMARK_TYPE="${BENCHMARK_TYPE}" FHEVM_DF_SCHEDULE="${SCHEDULING_POLICY}" make -e "benchmark_${BENCHMARKS}_cpu"
         working-directory: coprocessor/fhevm-engine/tfhe-worker
@@ -187,7 +208,40 @@ jobs:
           SCHEDULING_POLICY: ${{ inputs.scheduling_policy }}
           BENCHMARKS: ${{ inputs.benchmarks }}
 
+      # The cargo cache restores "target", which holds CRITERION_HOME. Drop any
+      # artifact an earlier attempt on this commit left there: it would carry a
+      # matching revision, so the parse step would accept it and publish the
+      # earlier attempt's numbers. This runs even when an earlier step failed,
+      # because the parse step does too.
+      - name: Drop stale one-shot artifacts
+        if: ${{ !cancelled() && inputs.benchmarks == 'main_block_one_shot' }}
+        run: rm -rf "${CRITERION_HOME}/benchmark-runs"
+        env:
+          CRITERION_HOME: ${{ github.workspace }}/coprocessor/fhevm-engine/target/criterion
+
+      # The reportable one-shot suite measures each canonical workload once
+      # instead of sampling through Criterion, so it runs its own Make target and
+      # writes JSON artifacts under "${CRITERION_HOME}/benchmark-runs". The
+      # "batch_size" input does not apply: each scenario derives its own
+      # work-item batch, which the parser records in the reported parameters.
+      - name: Run reportable one-shot benchmarks on CPU
+        if: ${{ inputs.benchmarks == 'main_block_one_shot' }}
+        run: |
+          if [[ -n "${ONE_SHOT_SCENARIOS}" ]]; then
+            export BENCH_ONE_SHOT_SCENARIOS="${ONE_SHOT_SCENARIOS}"
+          fi
+          make print_bench_one_shot_scenarios
+          BENCH_ONE_SHOT_RECREATE_DB=1 FHEVM_DF_SCHEDULE="${SCHEDULING_POLICY}" \
+            make -e benchmark_erc20_main_block_one_shot_suite_cpu
+        working-directory: coprocessor/fhevm-engine/tfhe-worker
+        env:
+          ONE_SHOT_SCENARIOS: ${{ inputs.one_shot_scenarios }}
+          SCHEDULING_POLICY: ${{ inputs.scheduling_policy }}
+          FHEVM_BENCH_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/coprocessor
+          CRITERION_HOME: ${{ github.workspace }}/coprocessor/fhevm-engine/target/criterion
+
       - name: Parse results
+        if: ${{ inputs.benchmarks != 'main_block_one_shot' }}
         run: |
           python3 ./ci/benchmark_parser.py coprocessor/fhevm-engine/target/criterion "${RESULTS_FILENAME}" \
           --database coprocessor \
@@ -208,13 +262,49 @@ jobs:
           BATCH_SIZE: ${{ inputs.batch_size }}
           SCHEDULING_POLICY: ${{ inputs.scheduling_policy }}
 
+      # Runs even when a scenario failed, so the scenarios that did complete are
+      # still reported. Missing expected scenarios fail this step.
+      - name: Parse one-shot results
+        if: ${{ !cancelled() && inputs.benchmarks == 'main_block_one_shot' }}
+        run: |
+          if [[ -n "${ONE_SHOT_SCENARIOS}" ]]; then
+            export BENCH_ONE_SHOT_SCENARIOS="${ONE_SHOT_SCENARIOS}"
+          fi
+          expected_scenarios="$(make --no-print-directory -C coprocessor/fhevm-engine/tfhe-worker \
+            print_bench_one_shot_scenarios | tr ' ' ',')"
+          python3 ./ci/benchmark_one_shot_parser.py \
+          coprocessor/fhevm-engine/target/criterion/benchmark-runs "${RESULTS_FILENAME}" \
+          --database coprocessor \
+          --hardware "hpc7a.96xlarge" \
+          --backend cpu \
+          --project-version "${COMMIT_HASH}" \
+          --branch "${GH_REF_NAME}" \
+          --commit-date "${COMMIT_DATE}" \
+          --bench-date "${BENCH_DATE}" \
+          --expected-scenarios "${expected_scenarios}" \
+          --expected-revision "${BUILD_REVISION}" \
+          --name-suffix "schedule_${SCHEDULING_POLICY}"
+        env:
+          ONE_SHOT_SCENARIOS: ${{ inputs.one_shot_scenarios }}
+          RESULTS_FILENAME: ${{ env.RESULTS_FILENAME }}
+          COMMIT_HASH: ${{ env.COMMIT_HASH }}
+          BUILD_REVISION: ${{ github.sha }}
+          GH_REF_NAME: ${{ github.ref_name }}
+          COMMIT_DATE: ${{ env.COMMIT_DATE }}
+          BENCH_DATE: ${{ env.BENCH_DATE }}
+          SCHEDULING_POLICY: ${{ inputs.scheduling_policy }}
+
+      # A parser step writes its results file before reporting per-case failures,
+      # so publish whatever was parsed even when it flagged some of them.
       - name: Upload parsed results artifact
+        if: ${{ !cancelled() && hashFiles(env.RESULTS_FILENAME) != '' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: ${{ github.sha }}_${{ inputs.benchmarks }}_cpu
           path: ${{ env.RESULTS_FILENAME }}
 
       - name: Checkout Slab repo
+        if: ${{ !cancelled() && hashFiles(env.RESULTS_FILENAME) != '' }}
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           repository: zama-ai/slab
@@ -223,8 +313,20 @@ jobs:
           token: ${{ secrets.REPO_CHECKOUT_TOKEN }}
 
       - name: Send data to Slab
+        if: ${{ !cancelled() && hashFiles(env.RESULTS_FILENAME) != '' }}
         shell: bash
         run: |
+          # Name what is being stored. A rejection from Slab reports only that it
+          # could not store the content, so the series identity — above all the
+          # hardware, which has to be known on its side — is the first thing to
+          # check and the last thing the log otherwise shows.
+          python3 -c "
+          import json, sys
+          series = json.load(open(sys.argv[1]))
+          print(f\"Sending {len(series['points'])} points to Slab\")
+          for field in ('database', 'hardware', 'branch', 'project_version'):
+              print(f'  {field}: {series[field]}')
+          " "${RESULTS_FILENAME}"
           python3 slab/scripts/data_sender.py "${RESULTS_FILENAME}" "${JOB_SECRET}" \
           --slab-url "${SLAB_URL}"
         env:
