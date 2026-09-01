@@ -13,6 +13,10 @@ use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
 use crate::aws_upload::{check_is_ready, compute_digest, COPROCESSOR_CONTEXT_ID_1};
+use crate::metrics::{
+    S3_MIGRATION_FINAL_ERROR_COUNTER, S3_MIGRATION_INTERMEDIATE_ERROR_COUNTER,
+    S3_MIGRATION_SUCCESS_COUNTER,
+};
 use crate::{
     Ciphertext128Format, ExecutionError, S3Config, CLEAN_OLD_S3_FORMAT_VERSION,
     S3_FORMAT_VERSION_V1,
@@ -333,7 +337,7 @@ pub(crate) async fn count_failed_old_format_handles(pool: &PgPool) -> Result<i64
     Ok(count)
 }
 
-async fn fetch_old_format_handles(
+pub(crate) async fn fetch_old_format_handles(
     config: &S3MigrationConfig,
     pool: &PgPool,
     focus_on_retry: bool,
@@ -362,6 +366,7 @@ async fn fetch_old_format_handles(
            )
          ORDER BY s3_migration_failure_count, handle
          LIMIT $4
+         FOR UPDATE SKIP LOCKED
         "#,
         CLEAN_OLD_S3_FORMAT_VERSION,
         focus_on_retry,
@@ -404,8 +409,23 @@ async fn migrate_handle_batch(
                     error = %err,
                     "S3 migration, failed for handle"
                 );
-                if let Err(err) = record_migration_failure(pool, &handle, &err).await {
-                    error!(?err, "S3 migration, cannot record failure on DB");
+                match record_migration_failure(pool, &handle, &err).await {
+                    Ok(Some((host_chain_id, failure_count))) => {
+                        let labels = [&host_chain_id.to_string(), migration_error_type(&err)];
+                        if failure_count >= config.max_retries {
+                            S3_MIGRATION_FINAL_ERROR_COUNTER
+                                .with_label_values(&labels)
+                                .inc();
+                        } else {
+                            S3_MIGRATION_INTERMEDIATE_ERROR_COUNTER
+                                .with_label_values(&labels)
+                                .inc();
+                        }
+                    }
+                    Ok(None) => {}
+                    Err(err) => {
+                        error!(?err, "S3 migration, cannot record failure on DB");
+                    }
                 }
             }
         }
@@ -417,8 +437,8 @@ async fn record_migration_failure(
     pool: &PgPool,
     handle: &[u8],
     error: &ExecutionError,
-) -> Result<(), ExecutionError> {
-    sqlx::query!(
+) -> Result<Option<(i64, i32)>, ExecutionError> {
+    let recorded = sqlx::query!(
         r#"
         UPDATE ciphertext_digest
          SET s3_migration_failure_count = s3_migration_failure_count + 1,
@@ -426,26 +446,51 @@ async fn record_migration_failure(
              s3_migration_last_error_at = NOW()
          WHERE handle = $2
            AND s3_format_version = $3
+         RETURNING host_chain_id AS "host_chain_id!",
+                   s3_migration_failure_count AS "failure_count!"
         "#,
         error.to_string(),
         handle,
         CLEAN_OLD_S3_FORMAT_VERSION,
     )
-    .execute(pool)
+    .fetch_optional(pool)
     .await?;
 
-    Ok(())
+    Ok(recorded.map(|row| (row.host_chain_id, row.failure_count)))
 }
 
-async fn migrate_handle_0_to_1(
+fn migration_error_type(error: &ExecutionError) -> &'static str {
+    match error {
+        ExecutionError::ConversionError(_) => "ConversionError",
+        ExecutionError::DbError(_) => "DbError",
+        ExecutionError::CtType(_) => "CtType",
+        ExecutionError::MissingCiphertext128(_) => "MissingCiphertext128",
+        ExecutionError::MissingCiphertext64(_) => "MissingCiphertext64",
+        ExecutionError::RecvFailure => "RecvFailure",
+        ExecutionError::FailedUpload(_) => "FailedUpload",
+        ExecutionError::UploadTimeout => "UploadTimeout",
+        ExecutionError::SquashedNoiseError(_) => "SquashedNoiseError",
+        ExecutionError::SerializationError(_) => "SerializationError",
+        ExecutionError::DeserializationError(_) => "DeserializationError",
+        ExecutionError::InvalidCiphertext128Format(_) => "InvalidCiphertext128Format",
+        ExecutionError::BucketNotFound(_) => "BucketNotFound",
+        ExecutionError::S3TransientError(_) => "S3TransientError",
+        ExecutionError::InternalSendError(_) => "InternalSendError",
+        ExecutionError::InternalError(_) => "InternalError",
+    }
+}
+
+pub(crate) async fn migrate_handle_0_to_1(
     config: &S3MigrationConfig,
     pool: &PgPool,
     client: &Client,
     handle: &[u8],
 ) -> Result<bool, ExecutionError> {
+    let mut transaction = pool.begin().await?;
     let row = sqlx::query!(
         r#"
         SELECT handle,
+               host_chain_id,
                key_id_gw,
                transaction_id,
                ciphertext,
@@ -455,17 +500,20 @@ async fn migrate_handle_0_to_1(
          WHERE handle = $1
            AND s3_format_version = $2
            AND (ciphertext IS NOT NULL OR ciphertext128 IS NOT NULL)
+         FOR UPDATE SKIP LOCKED
         "#,
         handle,
         CLEAN_OLD_S3_FORMAT_VERSION,
     )
-    .fetch_optional(pool)
+    .fetch_optional(&mut *transaction)
     .await?;
 
     let Some(row) = row else {
+        transaction.commit().await?;
         return Ok(false);
     };
 
+    let host_chain_id = row.host_chain_id;
     let row = MigrationRow {
         handle: row.handle,
         key_id_gw: row.key_id_gw,
@@ -504,10 +552,11 @@ async fn migrate_handle_0_to_1(
         material.row_ct64_digest.as_deref(),
         material.row_ct128_digest.as_deref(),
     )
-    .execute(pool)
+    .execute(&mut *transaction)
     .await?;
 
     if update_result.rows_affected() == 0 {
+        transaction.commit().await?;
         info!(
             handle = to_hex(&material.handle),
             "Ciphertext handle was already migrated or changed while S3 migration was running"
@@ -522,6 +571,12 @@ async fn migrate_handle_0_to_1(
             update_result.rows_affected()
         )));
     }
+
+    transaction.commit().await?;
+
+    S3_MIGRATION_SUCCESS_COUNTER
+        .with_label_values(&[&host_chain_id.to_string()])
+        .inc();
 
     info!(
         handle = to_hex(&material.handle),
@@ -662,7 +717,7 @@ async fn migrate_ct64_object(
         .await?
         .ok_or_else(|| {
             ExecutionError::MissingCiphertext64(format!(
-                "missing ct64 object for handle {}",
+                "no valid ct64 source available for handle {}",
                 to_hex(&material.handle)
             ))
         })?
@@ -742,7 +797,7 @@ async fn migrate_ct128_object(
                     .await?
                     .ok_or_else(|| {
                         ExecutionError::MissingCiphertext128(format!(
-                            "missing ct128 object for handle {}",
+                            "no valid ct128 source available for handle {}",
                             to_hex(&material.handle)
                         ))
                     })?;
@@ -863,7 +918,24 @@ async fn try_copy_existing_object(
     expected_digest: &[u8],
     material: &MigrationMaterial,
 ) -> Result<bool, ExecutionError> {
-    if !object_body_matches_expected(client, bucket, &source.key, kind, expected_digest).await? {
+    let Some(object) = get_object_if_exists(client, bucket, &source.key).await? else {
+        warn!(
+            bucket,
+            source_key = source.key,
+            destination_key,
+            ?kind,
+            "Skipping direct S3 copy because source object is missing"
+        );
+        return Ok(false);
+    };
+
+    if !object_bytes_match_expected_digest(
+        &object.bytes,
+        bucket,
+        &source.key,
+        kind,
+        expected_digest,
+    ) {
         warn!(
             bucket,
             source_key = source.key,
