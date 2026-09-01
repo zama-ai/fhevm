@@ -175,8 +175,11 @@ jobs:
             echo "COMMIT_HASH=$(git rev-parse HEAD)";
           } >> "${GITHUB_ENV}"
 
-      - name: Install Rust nightly
-        run: rustup toolchain install nightly --profile minimal --no-self-update
+      - name: Install rust
+        # Hyperstack GPU runners do not ship rustup (run 33478145033: rustup: command not found).
+        uses: dtolnay/rust-toolchain@a54c7afa936fefeb4456b2dd8068152669aa8203 # zizmor: ignore[superfluous-actions] Hyperstack GPU runners do not ship rustup
+        with:
+          toolchain: nightly
 
       - name: Install cargo dependencies
         run: |
