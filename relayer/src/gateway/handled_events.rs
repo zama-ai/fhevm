@@ -76,6 +76,10 @@ enum Claim {
 /// One phase is not enough. Inserting on observation loses completions, because a dropped
 /// duplicate is not a handled event; inserting on completion alone lets two concurrent
 /// deliveries both dispatch.
+///
+/// The cache holds a marker, never the work: a dispatched event lives in its own detached
+/// task, which owns it to completion. Only a *present* entry causes a skip, so losing one to
+/// the TTL or to `max_capacity` costs at most a duplicate dispatch - never a dropped event.
 struct PhaseCache {
     entries: Cache<EventKey, Phase>,
 }
@@ -296,6 +300,7 @@ impl HandledEvents {
                 "Gateway event handled"
             ),
             Err(e) => error!(
+                alert = true,
                 instance_id,
                 block_number = key.block_number,
                 log_index = key.log_index,
