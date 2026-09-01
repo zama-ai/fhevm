@@ -30,7 +30,6 @@ use sqlx::postgres::PgListener;
 use sqlx::Pool;
 use sqlx::{PgPool, Postgres, Row, Transaction};
 use std::fmt;
-use std::num::NonZeroUsize;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -67,6 +66,7 @@ impl fmt::Display for Order {
 pub struct SwitchNSquashService {
     pool: PgPool,
     conf: Config,
+    keys_cache: Arc<RwLock<lru::LruCache<DbKeyId, KeySet>>>,
     // Timestamp of the last moment the service was active
     last_active_at: Arc<RwLock<SystemTime>>,
     s3_client: Arc<Client>,
@@ -148,11 +148,13 @@ impl SwitchNSquashService {
         events_tx: InternalEvents,
         mode: Arc<StackMode>,
         start_block_state: Arc<AtomicI64>,
+        keys_cache: Arc<RwLock<lru::LruCache<DbKeyId, KeySet>>>,
     ) -> Result<SwitchNSquashService, ExecutionError> {
         fhevm_engine_common::db_keys::reject_legacy_server_key_override()?;
         Ok(SwitchNSquashService {
             pool: pool_mngr.pool(),
             conf,
+            keys_cache,
             last_active_at: Arc::new(RwLock::new(SystemTime::now())),
             _token: token,
             s3_client,
@@ -164,9 +166,7 @@ impl SwitchNSquashService {
     }
 
     pub async fn run(&self, pool_mngr: &PostgresPoolManager) -> Result<(), ServiceError> {
-        let keys_cache: Arc<RwLock<lru::LruCache<DbKeyId, KeySet>>> = Arc::new(RwLock::new(
-            lru::LruCache::new(NonZeroUsize::new(10).unwrap()),
-        ));
+        let keys_cache = self.keys_cache.clone();
 
         let op = |pool: Pool<Postgres>, token: CancellationToken| {
             let conf = self.conf.clone();
