@@ -80,35 +80,31 @@ impl Round {
         self.addresses_where(|r| matches!(r, Reply::Outstanding))
     }
 
-    /// Size of the largest group in [`Self::groups`], or `0` if nobody has attested yet.
+    /// Size of the largest agreeing group, or `0` if nobody has attested yet.
     pub fn agreeing(&self) -> usize {
-        self.groups()
-            .first()
-            .map_or(0, |(_, entries)| entries.len())
+        self.winner().map_or(0, |(_, entries)| entries.len())
     }
 
-    /// Attested slots bucketed by agreed-on material, largest group first. Ties are broken by
-    /// material — the same tie-break `consensus::evaluate` uses.
-    pub fn groups(&self) -> Vec<(ConsensusMaterial, Vec<CoprocessorEntry>)> {
+    /// The largest group of Coprocessors that attested the same material, with that material.
+    /// Ties are broken by material — the same tie-break `consensus::evaluate` uses.
+    fn winner(&self) -> Option<(ConsensusMaterial, Vec<CoprocessorEntry>)> {
         let mut grouped: HashMap<&ConsensusMaterial, Vec<CoprocessorEntry>> = HashMap::new();
         for (entry, reply) in &self.replies {
             if let Reply::Attested(material) = reply {
                 grouped.entry(material).or_default().push(entry.clone());
             }
         }
-        let mut groups: Vec<(ConsensusMaterial, Vec<CoprocessorEntry>)> = grouped
+        grouped
             .into_iter()
+            .max_by(
+                |(left_material, left_entries), (right_material, right_entries)| {
+                    left_entries
+                        .len()
+                        .cmp(&right_entries.len())
+                        .then_with(|| right_material.cmp(left_material))
+                },
+            )
             .map(|(material, entries)| (material.clone(), entries))
-            .collect();
-        groups.sort_by(
-            |(left_material, left_entries), (right_material, right_entries)| {
-                right_entries
-                    .len()
-                    .cmp(&left_entries.len())
-                    .then_with(|| left_material.cmp(right_material))
-            },
-        );
-        groups
     }
 
     fn addresses_where(&self, pred: impl Fn(&Reply) -> bool) -> Vec<Address> {
@@ -189,24 +185,24 @@ impl ConsensusTracker {
     pub fn verdict(&self) -> ThresholdStatus {
         let round = &self.round;
         let threshold = round.threshold.get();
-        let groups = round.groups();
-        let largest = groups.first().map_or(0, |(_, entries)| entries.len());
+        let winner = round.winner();
+        let largest = winner.as_ref().map_or(0, |(_, entries)| entries.len());
+        let attested = round.attested().len();
+        let disagreed = attested > largest;
         let outstanding = round.outstanding().len();
         // Counts failures too, unlike `outstanding`: a Coprocessor that failed can attest again
         // next round.
-        let missing = round.replies.len() - round.attested().len();
+        let missing = round.replies.len() - attested;
 
         if largest >= threshold {
-            let (material, winners) = groups
-                .into_iter()
-                .next()
-                .expect("largest >= threshold > 0 implies a leading group exists");
+            let (material, winners) =
+                winner.expect("largest >= threshold > 0 implies a winning group exists");
             return ThresholdStatus::Reached { material, winners };
         }
         if largest + outstanding >= threshold {
             return ThresholdStatus::AwaitingReplies;
         }
-        if groups.len() > 1 && largest + missing < threshold {
+        if disagreed && largest + missing < threshold {
             return ThresholdStatus::Unreachable(round.clone());
         }
         ThresholdStatus::MissedThisRound(round.clone())
@@ -671,6 +667,10 @@ mod tests {
             ConsensusTracker::new(HANDLE, entries([s1.address(), s2.address()]), nz(2));
 
         let (signer, first_reply) = reply_from(&s1).await;
+        let first_material = match &first_reply {
+            Reply::Attested(material) => material.clone(),
+            other => panic!("expected Attested, got {other:?}"),
+        };
         tracker.record(signer, first_reply);
         let (_, second_reply) = dissenting_reply_from(&s1, B256::repeat_byte(0xDD)).await;
         let status = tracker.record(signer, second_reply);
@@ -679,14 +679,17 @@ mod tests {
             matches!(status, ThresholdStatus::AwaitingReplies),
             "expected AwaitingReplies, got {status:?}"
         );
-        // The board itself, not just the verdict: only one group exists, and it still holds the
-        // *first* material — the replayed reply was dropped, not merged into a second group.
-        assert_eq!(
-            tracker.round.groups().len(),
-            1,
-            "the replay must not open a second group"
-        );
+        // The board itself, not just the verdict: one slot is filled, so no second group can
+        // exist, and the winner still holds the *first* material.
         assert_eq!(tracker.round.attested(), vec![s1.address()]);
+        let (material, _) = tracker
+            .round
+            .winner()
+            .expect("the first reply opened a group");
+        assert_eq!(
+            material, first_material,
+            "the replay must not displace the first material"
+        );
 
         // A second, real signer now completes the group the first reply opened.
         let (signer, reply) = reply_from(&s2).await;
@@ -695,19 +698,52 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn groups_orders_by_material_matching_evaluates_tie_break() {
-        // Coverage gap flagged by an independent differential review: the only executable pin on
-        // tie-break direction lived in `consensus.rs`'s
-        // `equal_size_groups_use_deterministic_material_tie_break`, which exercises the frozen
-        // `evaluate`, not this crate's `Round::groups()`. If `groups()`'s comparator were ever
-        // flipped, every test in this file would still pass. This pins `groups()` directly: two
-        // equal-sized groups from two different materials, and `groups()[0]` must be the group
-        // whose material is the *smaller* of the two — the same choice `evaluate` makes on a
-        // tie — so the two orderings cannot silently drift apart.
+    async fn majority_group_wins_over_minority() {
+        // Length dominance on this crate's path. `consensus.rs`'s test of the same name pins it
+        // for the frozen `evaluate`, so inverting `winner`'s length comparison leaves every other
+        // test here passing: the multi-group tests all hold groups of equal size.
+        let s1 = PrivateKeySigner::random();
+        let s2 = PrivateKeySigner::random();
+        let s3 = PrivateKeySigner::random();
+        let mut tracker = ConsensusTracker::new(
+            HANDLE,
+            entries([s1.address(), s2.address(), s3.address()]),
+            nz(2),
+        );
+
+        let dissent = B256::repeat_byte(0xDD);
+        assert!(
+            SNS_DIGEST < dissent,
+            "the majority must hold the larger material, or a material-only comparator would pass"
+        );
+
+        // The minority group opens first, and the majority forms on the losing material.
+        let (signer, reply) = reply_from(&s3).await;
+        tracker.record(signer, reply);
+        let (signer, reply) = dissenting_reply_from(&s1, dissent).await;
+        tracker.record(signer, reply);
+        let (signer, reply) = dissenting_reply_from(&s2, dissent).await;
+        let status = tracker.record(signer, reply);
+
+        match status {
+            ThresholdStatus::Reached { material, winners } => {
+                assert_eq!(winners.len(), 2);
+                assert_eq!(material.sns_ciphertext_digest, dissent);
+            }
+            other => panic!("expected Reached, got {other:?}"),
+        }
+        assert_eq!(tracker.round.agreeing(), 2);
+    }
+
+    #[tokio::test]
+    async fn equal_size_groups_use_deterministic_material_tie_break() {
+        // `consensus.rs`'s test of the same name pins this for the frozen `evaluate`; nothing
+        // pinned it for `winner()`, so a flipped tie-break would leave every other test here
+        // passing.
         let s1 = PrivateKeySigner::random();
         let s2 = PrivateKeySigner::random();
         // Threshold 3 with only 2 Coprocessors keeps this off the `Reached` path: the test is
-        // about ordering, not about winning.
+        // about the tie-break, not about winning.
         let mut tracker =
             ConsensusTracker::new(HANDLE, entries([s1.address(), s2.address()]), nz(3));
 
@@ -733,26 +769,20 @@ mod tests {
             ThresholdStatus::Unreachable(round) => round,
             other => panic!("expected Unreachable (kept off the Reached path), got {other:?}"),
         };
-        let groups = round.groups();
+        let (winning_material, winners) = round.winner().expect("both replies attested");
+        assert_eq!(round.attested().len(), 2);
         assert_eq!(
-            groups.len(),
-            2,
-            "two distinct materials must yield two groups"
+            winners.len(),
+            1,
+            "the two groups must be equal-sized for a tie-break to decide"
         );
-        assert_eq!(groups[0].1.len(), 1);
-        assert_eq!(groups[1].1.len(), 1);
 
         // Derive the expected winner from the fixtures themselves, not a hardcoded pick, so this
         // test does not go vacuous if the fixtures' digests ever change.
-        let (smaller, larger) = if material1 < material2 {
-            (&material1, &material2)
-        } else {
-            (&material2, &material1)
-        };
         assert_eq!(
-            &groups[0].0, smaller,
-            "groups()[0] must be the smaller material on a tie, matching consensus::evaluate"
+            winning_material,
+            material1.min(material2),
+            "the winning group must hold the smaller material on a tie, matching consensus::evaluate"
         );
-        assert_eq!(&groups[1].0, larger);
     }
 }
