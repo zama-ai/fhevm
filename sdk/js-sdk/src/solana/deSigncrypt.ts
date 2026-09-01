@@ -20,6 +20,7 @@ import initSolanaTkms, {
 import { tkmsWasmBase64 } from '../wasm/tkms/kms_lib_bg.v0.15.0-0-solana.79de4926.wasm.base64.js';
 import { base58 } from '@scure/base';
 import type { FhevmSolanaKms } from '../core/types/fhevmSolanaChain.js';
+import { addressToChecksummedAddress, asAddress } from '../core/base/address.js';
 import { bytesToHexNo0x } from '../core/base/bytes.js';
 import { uint32ToBytes32 } from '../core/base/uint.js';
 import { remove0x } from '../core/base/string.js';
@@ -73,7 +74,11 @@ export async function deSigncryptSolanaUserDecrypt(params: {
   readonly kms: FhevmSolanaKms;
 }): Promise<ReadonlyArray<{ bytes: Uint8Array; fheType: number }>> {
   await ensureInit();
-  const serverAddrs = params.kms.signers.map((signer, index) => new_server_id_addr(index + 1, signer));
+  // The TKMS WASM demands exact EIP-55 input, while a trust anchor read from a gateway or a
+  // config file arrives in whatever casing that source uses — normalize the addresses here.
+  const serverAddrs = params.kms.signers.map((signer, index) =>
+    new_server_id_addr(index + 1, addressToChecksummedAddress(asAddress(signer))),
+  );
   const client = new_solana_client(serverAddrs, params.kms.fheParameter ?? 'default');
   // The de-signcryption only reads `enc_key`, `ciphertext_handles` and `extra_data`; the EVM-shaped
   // address fields exist solely because the WASM reuses the EVM-shaped request struct, and the
@@ -96,7 +101,7 @@ export async function deSigncryptSolanaUserDecrypt(params: {
     name: params.kms.responseDomain.name,
     version: params.kms.responseDomain.version,
     chain_id: uint32ToBytes32(params.kms.responseDomain.chainId),
-    verifying_contract: params.kms.responseDomain.verifyingContract,
+    verifying_contract: addressToChecksummedAddress(asAddress(params.kms.responseDomain.verifyingContract)),
     salt: null,
   };
   const aggResp = params.shares.map((s) => ({
