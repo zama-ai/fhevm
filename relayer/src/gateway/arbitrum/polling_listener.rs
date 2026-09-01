@@ -17,6 +17,11 @@ use alloy::{
 use async_trait::async_trait;
 use std::{str::FromStr, sync::Arc, time::Duration};
 
+/// The last block a single `eth_getLogs` should cover, `max_blocks` counted inclusively.
+fn catch_up_to_block(from_block: u64, head: u64, max_blocks: u64) -> u64 {
+    head.min(from_block.saturating_add(max_blocks.saturating_sub(1)))
+}
+
 /// HTTP polling listener that uses eth_getLogs at configurable intervals
 pub struct PollingListener {
     gateway_config: GatewayConfig,
@@ -89,11 +94,13 @@ impl PollingListener {
 
     pub async fn run(&self) -> anyhow::Result<()> {
         let poll_interval_ms = self.gateway_config.listener_pool.poll_interval_ms;
+        let max_blocks_per_query = self.gateway_config.listener_pool.max_blocks_per_query;
 
         info!(
             instance_id = self.pool_index,
             http_url = %self.http_url,
             poll_interval_ms = poll_interval_ms,
+            max_blocks_per_query = max_blocks_per_query,
             "Starting polling listener"
         );
 
@@ -137,6 +144,9 @@ impl PollingListener {
             "Polling listener initialized, starting poll loop"
         );
 
+        // Set while a chunk stopped short of the head, so the next one is fetched at once.
+        let mut backlog_pending = false;
+
         loop {
             // Log ERROR continuously when exceeding threshold (fatal state)
             if consecutive_failures >= max_attempts {
@@ -148,14 +158,16 @@ impl PollingListener {
                 );
             }
 
-            // Wait for poll interval
-            tokio::time::sleep(Duration::from_millis(poll_interval_ms)).await;
+            if !backlog_pending {
+                tokio::time::sleep(Duration::from_millis(poll_interval_ms)).await;
+            }
 
             // Get current block number
             let current_block = match provider.get_block_number().await {
                 Ok(block) => block,
                 Err(e) => {
                     consecutive_failures += 1;
+                    backlog_pending = false;
                     warn!(
                         instance_id = self.pool_index,
                         error = %e,
@@ -172,12 +184,15 @@ impl PollingListener {
 
             // Calculate block range to query
             let from_block = last_processed_block + 1;
-            let to_block = current_block;
 
-            if from_block > to_block {
+            if from_block > current_block {
                 // Already caught up, nothing to poll
+                backlog_pending = false;
                 continue;
             }
+
+            let to_block = catch_up_to_block(from_block, current_block, max_blocks_per_query);
+            backlog_pending = to_block < current_block;
 
             // Create filter for the block range
             let filter = Filter::new()
@@ -191,6 +206,7 @@ impl PollingListener {
                 Ok(logs) => logs,
                 Err(e) => {
                     consecutive_failures += 1;
+                    backlog_pending = false;
                     warn!(
                         instance_id = self.pool_index,
                         from_block = from_block,
@@ -228,8 +244,8 @@ impl PollingListener {
 
             last_processed_block = to_block;
 
-            // The query covered the whole range, so this listener can attest to it: the
-            // cursor may pass to_block once every event found in it has been handled.
+            // The query covered the whole range it asked for, so this listener can attest to
+            // it: the cursor may pass to_block once every event found in it has been handled.
             self.handled_events
                 .record_and_dispatch(events, Some(RangeObserved { to_block }), self.pool_index)
                 .await;
@@ -341,5 +357,33 @@ impl HealthCheck for PollingListener {
             )),
             Ok(Ok(_)) => Ok(()),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_chunk_never_reaches_past_the_head() {
+        assert_eq!(catch_up_to_block(101, 105, 1_000), 105);
+    }
+
+    #[test]
+    fn the_chunk_span_counts_blocks_inclusively() {
+        assert_eq!(catch_up_to_block(100, 1_000_000, 10), 109);
+    }
+
+    #[test]
+    fn a_large_gap_is_capped_to_one_chunk() {
+        assert_eq!(catch_up_to_block(1, 1_000_000, 1_000), 1_000);
+    }
+
+    #[test]
+    fn a_chunk_past_the_end_of_the_range_saturates() {
+        assert_eq!(
+            catch_up_to_block(u64::MAX - 1, u64::MAX, u64::MAX),
+            u64::MAX
+        );
     }
 }

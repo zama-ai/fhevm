@@ -184,6 +184,11 @@ pub struct ListenerPoolConfig {
     pub recycle_interval_mins: u64,
     /// Polling interval in milliseconds (for polling type listeners)
     pub poll_interval_ms: u64,
+    /// Widest block span a single `eth_getLogs` may ask for (polling listeners only).
+    /// Catching up from far behind the head - after downtime, or after `last_block_number`
+    /// is rewound to force a replay - is chunked to this many blocks per query, so it never
+    /// asks for a range the provider rejects nor gets back one outsized response.
+    pub max_blocks_per_query: u64,
     /// How long the event registry remembers an event, in seconds (1-10).
     ///
     /// It bounds two things: how long the same log observed by two listener instances is
@@ -832,6 +837,14 @@ impl Settings {
                 "dedup_ttl_seconds must be between {} and {}, got: {}",
                 MIN_DEDUP_TTL_SECONDS, MAX_DEDUP_TTL_SECONDS, pool_config.dedup_ttl_seconds
             )));
+        }
+
+        // A zero-wide chunk never reaches the head, so the catch-up loop would poll forever
+        // without advancing the cursor.
+        if pool_config.max_blocks_per_query == 0 {
+            return Err(AppConfigError::Config(
+                "listener_pool.max_blocks_per_query must be at least 1".to_string(),
+            ));
         }
 
         // Validate dedup max capacity (should be reasonable)
