@@ -48,18 +48,11 @@ use std::sync::OnceLock;
 // Global singleton registry for metrics
 static GLOBAL_REGISTRY: OnceLock<Registry> = OnceLock::new();
 
-// Shutdown exists to hand the dispatcher over, not to save in-flight work: a `queued` request
-// is recovered at the next start, an event whose handlers have not returned is re-read from
-// the chain (its cursor never advanced), and a send killed mid-flight costs at most one
-// duplicate send plus one orphaned response event - the gateway contracts mint a fresh id and
-// charge a fee per call with no dedup, so a repeat costs a fee and duplicate KMS work, never a
-// wrong result. Shutdown therefore drains only the named tasks it can order, abandons the
-// rest, and must finish inside the pod's `terminationGracePeriodSeconds` - unset in gitops, so
-// the Kubernetes default of 30s.
+// Shutdown hands the dispatcher over. Recovery, not shutdown, is what saves in-flight work,
+// so the sequence below drains the named tasks and abandons the rest - inside the pod's
+// `terminationGracePeriodSeconds`, unset in gitops and so Kubernetes' 30s.
 
-/// Bound on the HTTP server's graceful shutdown, the gateway listeners, the keyurl poller,
-/// the tx/readiness processors and the cron workers all observing cancellation and returning.
-/// Every one of them is cancel-safe, so this is a fallback, not an expected wait.
+/// Fallback - a named task reaching this stopped observing its token.
 const STOP_WORK_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Main library function for the FHE Event Relayer service.
@@ -88,11 +81,9 @@ pub async fn run_fhevm_relayer(
     // === Orchestration Phase ===
     // Create orchestrator, repositories, and gateway components.
     //
-    // The three tokens name subsystems, not phases - they are all cancelled at the same
-    // moment: `intake_shutdown` closes the sources of new work (the HTTP server, the gateway
-    // listeners, the keyurl poller), `dequeue_shutdown` stops the tx/readiness processors and
-    // cron workers and cancels the readiness checks already running, and `metrics_shutdown`
-    // stops the metrics server.
+    // Three tokens, all cancelled at the same moment - they name subsystems, not phases.
+    // intake: HTTP server, gateway listeners, keyurl poller. dequeue: tx/readiness
+    // processors, cron workers, and readiness checks already running. metrics: its server.
     let detached_tasks = TaskTracker::new();
     let intake_shutdown = CancellationToken::new();
     let dequeue_shutdown = CancellationToken::new();
@@ -285,21 +276,15 @@ pub async fn run_fhevm_relayer(
     // Step 1 - stop looking healthy, keep serving.
     orchestrator.mark_not_ready();
 
-    // Step 2 - let that reach the load balancer (see `shutdown.lb_propagation_wait`'s doc for
-    // what the wait covers). Serving nobody is pointless, so skip it when no HTTP endpoint is
-    // configured.
+    // Step 2 - let that reach the load balancer.
     if settings.http.endpoint.is_some() {
         let wait = settings.shutdown.lb_propagation_wait;
         info!(?wait, "Health check failing, waiting for traffic to drain");
         tokio::time::sleep(wait).await;
     }
 
-    // Step 3 - stop working. The HTTP server finishes requests it already accepted; the
-    // gateway listeners, keyurl poller, tx/readiness processors, cron workers and metrics
-    // server stop, and running readiness checks are cancelled where they wait. Nothing is
-    // ordered against anything else: a listener's last event only spawns a handler shutdown
-    // abandons, and a queued request is already durable in Postgres. One budget drains every
-    // task - all are cancel-safe.
+    // Step 3 - stop working. Order does not matter: what is in flight is either abandoned by
+    // design or already durable in Postgres.
     intake_shutdown.cancel();
     dequeue_shutdown.cancel();
     metrics_shutdown.cancel();
@@ -309,10 +294,8 @@ pub async fn run_fhevm_relayer(
         "Named task drain complete, abandoning remaining detached work"
     );
 
-    // Step 4 - exit. The pools are left to close with the process: closing them here would
-    // wait on the connections held by the tasks just abandoned, reinstating the wait this
-    // sequence removes. `finish_task_drain` is the guard for a task that no predicate above
-    // stopped, and warns when it finds one.
+    // Step 4 - exit. Pools close with the process; closing them here would wait on the
+    // connections the abandoned tasks still hold.
     orchestrator.finish_task_drain().await;
 
     info!("Relayer shutdown complete");

@@ -34,7 +34,6 @@ pub struct PollingListener {
     pool_index: usize,
     /// HTTP URL for this listener
     http_url: String,
-    /// Cancelled when shutdown closes the sources of new work.
     shutdown: CancellationToken,
 }
 
@@ -66,7 +65,6 @@ impl PollingListener {
         })
     }
 
-    /// Sleeps for `dur`, cut short if shutdown is requested meanwhile.
     async fn interruptible_sleep(&self, dur: Duration) {
         tokio::select! {
             _ = tokio::time::sleep(dur) => {}

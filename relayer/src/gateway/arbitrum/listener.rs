@@ -66,7 +66,6 @@ pub struct ArbitrumListener {
     ws_url: String,
     /// Recycle-stagger position, deliberately not an identity - see [`WsRecycleStagger`].
     ws_recycle_stagger: WsRecycleStagger,
-    /// Cancelled when shutdown closes the sources of new work.
     shutdown: CancellationToken,
 }
 
@@ -89,7 +88,6 @@ impl ArbitrumListener {
         })
     }
 
-    /// Sleeps for `dur`, cut short if shutdown is requested meanwhile.
     async fn interruptible_sleep(&self, dur: Duration) {
         tokio::select! {
             _ = tokio::time::sleep(dur) => {}

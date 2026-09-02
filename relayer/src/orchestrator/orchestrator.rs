@@ -18,18 +18,10 @@ pub struct Orchestrator {
     event_dispatcher: Arc<TokioEventDispatcher>,
     health_checker: Arc<RwLock<HealthChecker>>,
     task_manager: TaskManager,
-    /// Short-lived, unbounded-in-number detached work that has no place in the named-task
-    /// JoinSet, all of it resumable from what Postgres and the chain cursor already hold:
-    ///
-    /// - per-event dispatch
-    /// - `handled_events`' dispatch-then-complete follow-up
-    /// - per-readiness-check work
-    /// - transaction sends
-    ///
-    /// Shutdown abandons the lot rather than waiting - see the module-level note in `startup`.
+    /// Per-event dispatch, its follow-up, readiness checks and transaction sends. Unbounded
+    /// in number and resumable from Postgres and the chain cursor, so shutdown abandons it.
     detached_tasks: TaskTracker,
-    /// Sticky readiness flag for `/healthz`: once shutdown starts, the relayer must stop
-    /// looking healthy to the load balancer even if every dependency check still passes.
+    /// Sticky: shutdown must stop the pod looking healthy while its dependencies still pass.
     shutting_down: AtomicBool,
 }
 
@@ -47,13 +39,11 @@ impl Orchestrator {
         })
     }
 
-    /// Flip `/healthz` to unhealthy regardless of dependency status. Called once, at the very
-    /// start of the shutdown sequence, while the HTTP server keeps serving.
+    /// First step of shutdown, taken while the HTTP server keeps serving.
     pub fn mark_not_ready(&self) {
         self.shutting_down.store(true, Ordering::Release);
     }
 
-    /// Whether shutdown has started. Checked by the `/healthz` handler.
     pub fn is_shutting_down(&self) -> bool {
         self.shutting_down.load(Ordering::Acquire)
     }
@@ -108,23 +98,22 @@ impl Orchestrator {
             .await
     }
 
-    /// Stop accepting new named-task spawns. Call once, before the drain.
+    // The three below are called in this order, once each; `startup` is the only caller.
+
     pub async fn begin_task_drain(&self) {
         self.task_manager.begin_shutdown().await;
     }
 
-    /// Wait up to `budget` for the named tasks to exit on their own (the caller must already
-    /// have cancelled whatever drives them); abort any still running once the budget elapses.
+    /// Whatever drives the named tasks must already be cancelled.
     pub async fn drain_named_tasks(&self, budget: Duration) {
         self.task_manager.drain_tasks(budget).await;
     }
 
-    /// Final safety net after the drain: abort anything left tracked.
     pub async fn finish_task_drain(&self) {
         self.task_manager.finish_drain().await;
     }
 
-    /// Snapshot of the detached work not waited for at shutdown. Never drained, only reported.
+    /// Reported, never drained.
     pub fn abandoned_detached_tasks(&self) -> usize {
         self.detached_tasks.len()
     }

@@ -153,8 +153,7 @@ pub struct ReadinessWorker<T> {
     tracker: Arc<RwLock<IndexMap<String, ()>>>,
     // Replaces TPS: Limits how many tasks can run concurrently
     max_parallelism: usize,
-    // Tracks the per-readiness-check task spawned in `run_consumer`, holding its
-    // `OwnedSemaphorePermit`. Shutdown abandons these; see `run_consumer` for why.
+    // Per-check tasks, each holding its `OwnedSemaphorePermit`.
     detached_tasks: TaskTracker,
 }
 
@@ -282,13 +281,11 @@ impl<T> ReadinessWorker<T>
 where
     T: ReadinessItem + Send + Sync + 'static,
 {
-    /// Runs the dequeue loop until `shutdown` fires, cancelling the checks already running.
-    /// Driven from the token, not channel closure: the sender halves never drop on their own.
+    /// Driven from `shutdown`, not channel closure: the sender halves never drop on their own.
     ///
-    /// A readiness check is a pure external read holding only a drop-released permit, so
-    /// cancelling one costs a repeat at the next start and its row stays `queued` for
-    /// recovery; letting it run on could instead write a terminal status recovery cannot pick
-    /// up. An item still waiting for a permit races `shutdown` the same way: row untouched.
+    /// Checks in flight are cancelled, unlike transaction sends. A check is a pure external
+    /// read, so cancelling costs a repeat at the next start; running on could write a terminal
+    /// status recovery cannot pick up.
     pub async fn run_consumer<F, Fut>(mut self, shutdown: CancellationToken, processor: F)
     where
         F: Fn(T) -> Fut + Send + Sync + 'static,
@@ -325,9 +322,8 @@ where
             // This will Wait (Async) if we have reached max_parallelism active tasks.
             // We use acquire_owned to move the permit into the spawned task.
             //
-            // Raced against `shutdown`: these checks call providers with no request timeout, so
-            // a stalled endpoint can hold every permit indefinitely, and a bare `.await` here
-            // would ignore shutdown for that whole stretch.
+            // Raced against `shutdown` because the checks call providers with no request
+            // timeout, so a stalled endpoint can hold every permit indefinitely.
             let permit = tokio::select! {
                 acquired = semaphore.clone().acquire_owned() => match acquired {
                     Ok(p) => p,
@@ -356,7 +352,6 @@ where
             let check_shutdown = shutdown.clone();
 
             self.detached_tasks.spawn(async move {
-                // Do the work, unless shutdown cuts it short.
                 check_shutdown.run_until_cancelled(proc_clone(item)).await;
 
                 // CRITICAL: Permit is dropped here automatically.
@@ -590,10 +585,8 @@ mod tests {
     }
 
     // --- Test 6: Shutdown While Waiting For A Permit ---
-    // With every permit held by a check that never returns, a second item dequeued behind it
-    // must still observe shutdown rather than blocking on `acquire_owned().await` until the
-    // holder releases. Needs the default current-thread runtime: on a multi-threaded one the
-    // worker could be parked at the top of the loop, passing the test for free.
+    // Needs the default current-thread runtime: on a multi-threaded one the worker could be
+    // parked at the top of the loop, passing the test for free.
     #[tokio::test]
     async fn test_shutdown_while_waiting_for_permit() {
         init_metrics_once();
@@ -635,21 +628,19 @@ mod tests {
         sender.push(MockTask { id: "1".into() }).await.unwrap();
         sender.push(MockTask { id: "2".into() }).await.unwrap();
 
-        // Wait until item "1" has taken the only permit, so item "2" is now parked on
-        // `acquire_owned().await` behind a holder that will never release it voluntarily.
+        // Item "2" is now parked on `acquire_owned().await` behind a holder that never
+        // releases.
         first_holds_permit.notified().await;
 
         shutdown.cancel();
 
-        // Must return promptly: shutdown observed while waiting for the permit, not only at
-        // the top of the loop.
+        // Must return promptly: shutdown observed at the permit, not only at the loop top.
         tokio::time::timeout(Duration::from_secs(2), handle)
             .await
             .expect("run_consumer did not stop when shutdown fired while a permit was held")
             .unwrap();
 
-        // Item "2" was taken off the channel but never handed a permit, so its processor must
-        // never run -- its row is left exactly as `queued` as if it had never been dequeued.
+        // Never handed a permit, so its row is left `queued` as if never dequeued.
         assert_eq!(second_processed.load(Ordering::Relaxed), 0);
     }
 }

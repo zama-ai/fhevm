@@ -406,11 +406,9 @@ pub struct MetricsConfig {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct ShutdownConfig {
-    /// How long to keep serving HTTP after `/healthz` starts answering 503, so a request
-    /// routed during the window gets a clean 503 from a pod still listening rather than a
-    /// refused connection. Deleting a pod removes it from the service endpoints at the same
-    /// moment it delivers SIGTERM, so this covers the lag until that removal reaches the
-    /// ingress controller, not the readiness probe's own detection time. Tests set it to 0.
+    /// Covers the lag until the pod's removal from the service endpoints reaches the ingress
+    /// controller. Not the readiness probe's detection time - deletion drops the endpoint as
+    /// it sends SIGTERM, so the probe path never runs.
     #[serde(deserialize_with = "deserialize_human_duration")]
     pub lb_propagation_wait: Duration,
 }
