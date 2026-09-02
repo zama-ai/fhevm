@@ -98,10 +98,18 @@ pub struct Args {
     /// Maximum time a GPU operation may wait for memory capacity before it
     /// fails (and its batch retries) instead of spinning while holding
     /// resources. CPU builds ignore this setting.
+    ///
+    /// The effective value is capped at a fraction of `--dcid-ttl-sec`,
+    /// because the wait is a blocking loop inside batch execution and the
+    /// lease is only renewed between worker cycles: a wait longer than the
+    /// lease guarantees the lease lapses mid-batch and another worker
+    /// recomputes the chain. This default is chosen to sit UNDER that cap at
+    /// the default TTL, so the cap's warning means "this deployment is
+    /// misconfigured" rather than firing on every startup.
     #[arg(
         long,
         env = "FHEVM_GPU_MEMORY_RESERVATION_TIMEOUT_MS",
-        default_value_t = 300_000
+        default_value_t = 20_000
     )]
     pub gpu_memory_reservation_timeout_ms: u64,
 
@@ -290,6 +298,110 @@ mod tests {
         assert_eq!(
             default_of("dcid_batch_execution"),
             default_of("dcid_adaptive_batch_execution")
+        );
+    }
+
+    /// The chart is the infra team's only view of what a worker runs with, so
+    /// a flag or a default that exists only in this file is a hidden default.
+    /// Every argument must appear in the `tfheWorker.extraArgs` documentation
+    /// block of `charts/coprocessor/values.yaml`, spelled the way it would be
+    /// passed:
+    ///
+    ///   * an argument that takes a value appears as `--flag=<default>`, with
+    ///     the compiled default, or `--flag=<...>`/`<url>`/`<uuid>` when it has
+    ///     none;
+    ///   * a presence-only switch appears bare, because clap REJECTS
+    ///     `--switch=false` and the worker exits on the unknown value. Writing
+    ///     `--switch=<default>` in the chart would document a line that cannot
+    ///     be pasted into `extraArgs`.
+    ///
+    /// Skipped when the chart is not on disk, so the crate stays testable from
+    /// a source tarball or a build context that excludes `charts/`.
+    #[test]
+    fn chart_documents_every_cli_flag_and_default() {
+        let chart = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../charts/coprocessor/values.yaml");
+        let Ok(values) = std::fs::read_to_string(&chart) else {
+            eprintln!("skipping: {} not present", chart.display());
+            return;
+        };
+        // Only the tfhe_worker block: other components document flags of the
+        // same name (sns_worker also has --work-items-batch-size).
+        let block = values
+            .split_once("\ntfheWorker:")
+            .expect("chart has a tfheWorker section")
+            .1;
+        let block = block
+            .split_once("\n  extraArgs:")
+            .expect("tfheWorker documents extraArgs")
+            .0;
+
+        let command = Args::command();
+        let mut missing = Vec::new();
+        for argument in command.get_arguments() {
+            let id = argument.get_id().as_str();
+            if id == "help" || id == "version" {
+                continue;
+            }
+            let long = argument
+                .get_long()
+                .unwrap_or_else(|| panic!("{id} is a long argument"));
+            let presence_only = matches!(
+                argument.get_action(),
+                clap::ArgAction::SetTrue | clap::ArgAction::SetFalse
+            );
+            let defaults = argument.get_default_values();
+
+            if presence_only {
+                // Bare mention, and never an `=` form the CLI would reject.
+                let bare = format!("--{long}\n");
+                let padded = format!("--{long} ");
+                if !block.contains(&bare) && !block.contains(&padded) {
+                    missing.push(format!("--{long} (presence-only switch, not documented)"));
+                } else if block.contains(&format!("--{long}=")) {
+                    missing.push(format!(
+                        "--{long} is documented in `=value` form, which clap rejects"
+                    ));
+                }
+                continue;
+            }
+
+            let expected = match defaults.first() {
+                Some(default) => format!("--{long}={}", default.to_string_lossy()),
+                // No compiled default: any documented placeholder will do, as
+                // long as the flag is shown taking a value.
+                None => format!("--{long}=<"),
+            };
+            if !block.contains(&expected) {
+                missing.push(format!("{expected} (not documented with this default)"));
+            }
+        }
+
+        assert!(
+            missing.is_empty(),
+            "charts/coprocessor/values.yaml tfheWorker.extraArgs is out of sync \
+             with the tfhe_worker CLI; hidden defaults:\n  {}",
+            missing.join("\n  ")
+        );
+    }
+
+    /// The GPU reservation wait is capped at a fraction of the DCID lease at
+    /// startup. A default above that cap is unreachable: it would be rewritten
+    /// on every GPU worker boot, so the advertised default would describe a
+    /// configuration nothing ever runs and the cap's warning would carry no
+    /// signal. Keep the default inside the cap the shipped TTL implies.
+    #[test]
+    fn gpu_reservation_timeout_default_is_reachable_under_the_default_lease() {
+        let args = Args::parse_from(["tfhe_worker"]);
+        let cap_ms = (f64::from(args.dcid_ttl_sec)
+            * f64::from(crate::tfhe_worker::GPU_RESERVATION_LEASE_FRACTION)
+            * 1000.0) as u64;
+        assert!(
+            args.gpu_memory_reservation_timeout_ms <= cap_ms,
+            "default --gpu-memory-reservation-timeout-ms ({}) exceeds the \
+             {cap_ms} ms cap implied by --dcid-ttl-sec ({})",
+            args.gpu_memory_reservation_timeout_ms,
+            args.dcid_ttl_sec
         );
     }
 }

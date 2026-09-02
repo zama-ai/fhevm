@@ -85,7 +85,7 @@ const OPERAND_BOUNDARY_MASK_BYTES: usize = 32;
 /// Below 1.0 so a worker that exhausts the wait still gets back to its loop
 /// and extends the lease before it expires, rather than losing it by the
 /// width of the timeout itself.
-const GPU_RESERVATION_LEASE_FRACTION: f32 = 0.8;
+pub(crate) const GPU_RESERVATION_LEASE_FRACTION: f32 = 0.8;
 
 /// Marker that makes a stamp RETRYABLE rather than terminal.
 ///
@@ -1150,8 +1150,13 @@ mod operand_boundary_mask_tests {
         Ok(())
     }
 
+    /// The share is `ceil(work_items_batch_size / acquired_dcids)` when
+    /// adaptive batching is on, and the whole window when it is off. The
+    /// `false` arm is what `--dcid-adaptive-batch-execution=false` selects,
+    /// NOT a default: the flag ships enabled, paired with
+    /// `--dcid-batch-execution`.
     #[test]
-    fn adaptive_dcid_transaction_share_is_bounded_and_disabled_by_default() {
+    fn adaptive_dcid_transaction_share_is_bounded_when_enabled() {
         assert_eq!(dcid_transaction_share(100, 20, true), 5);
         assert_eq!(dcid_transaction_share(100, 3, true), 34);
         assert_eq!(dcid_transaction_share(100, 1, true), 100);
@@ -1583,6 +1588,29 @@ async fn tfhe_worker_cycle(
         Some(args.processed_dcid_ttl_sec),
         args.computation_retry_demote_threshold,
     );
+
+    // The adaptive work window gives each acquired chain
+    // ceil(--work-items-batch-size / acquired chains) transactions, and it
+    // switches itself OFF for a cycle that acquires more chains than the
+    // window admits. An inverted pair therefore removes the fairness
+    // mitigation for the head-of-line blocking that batching creates --
+    // silently, only under enough load to fill the batch, and only on the
+    // cycles where it matters. Say so once at startup rather than leaving it
+    // to be inferred from throughput.
+    if args.dcid_batch_execution
+        && args.dcid_adaptive_batch_execution
+        && args.dependence_chains_per_batch > args.work_items_batch_size
+    {
+        warn!(
+            target: "tfhe_worker",
+            work_items_batch_size = args.work_items_batch_size,
+            dependence_chains_per_batch = args.dependence_chains_per_batch,
+            "--dependence-chains-per-batch exceeds --work-items-batch-size: the adaptive \
+             work window will disable itself on any cycle that acquires more chains than \
+             the window admits, leaving batching without its fairness mitigation. Raise \
+             --work-items-batch-size above --dependence-chains-per-batch."
+        );
+    }
 
     // Bound the reservation wait by the lease it runs under. The wait is a
     // blocking loop inside batch execution, and the DCID lease is only renewed
