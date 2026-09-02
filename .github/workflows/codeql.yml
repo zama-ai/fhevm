@@ -13,6 +13,10 @@ name: codeql
 permissions: {} # No permissions needed at workflow level
 
 on:
+  push:
+    branches:
+      - main
+  pull_request:
   schedule:
     - cron: '30 5 * * 1-5'
 
