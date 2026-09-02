@@ -11,6 +11,7 @@ import { composeUp } from "../flow/runtime-compose";
 import {
   applyVersionLock as applyStackVersionLock,
   refreshDiscovery as refreshStackDiscovery,
+  restagePromotedGreen as restageStackPromotedGreen,
   up,
   startDeferredGreen as startStackDeferredGreen,
   upgradeThresholdKmsOperator,
@@ -51,6 +52,8 @@ type RolloutVersionLockOptions = {
 };
 
 type RolloutTestOptions = {
+  blueGreenProposalId?: string;
+  blueGreenPredecessorVersion?: string;
   grep?: string;
   network?: string;
   noHardhatCompile?: boolean;
@@ -91,6 +94,12 @@ export type RolloutRunContext = {
   upgradeRuntimeGroup(group: string, options?: RolloutRuntimeUpgradeOptions): Promise<void>;
   /** Starts a Green fleet after prerequisite material has converged on Blue. */
   startDeferredGreen(): Promise<void>;
+  /** Re-homes promoted Green as Blue and prepares a newer deferred Green fleet. */
+  restagePromotedGreen(options: {
+    stackVersion: string;
+    env?: Record<string, string>;
+    args?: Record<string, string[]>;
+  }): Promise<void>;
   resolveVersionLock(name: string, options: RolloutLockOptions): Promise<string>;
   writeVersionLock(name: string, options: RolloutLockOptions): Promise<string>;
 };
@@ -129,7 +138,13 @@ const refreshTestSuiteContainer = async () => {
 const runRolloutTest = async (receipt: RolloutReceipt, profile: string, options: RolloutTestOptions) => {
   await refreshTestSuiteContainer();
   await receipt.record("refresh-test-suite", "recreated test-suite container with current env", {
-    details: { profile },
+    details: {
+      profile,
+      ...(options.blueGreenProposalId ? { blueGreenProposalId: options.blueGreenProposalId } : {}),
+      ...(options.blueGreenPredecessorVersion
+        ? { blueGreenPredecessorVersion: options.blueGreenPredecessorVersion }
+        : {}),
+    },
   });
   await runTest(profile, {
     network: options.network ?? "staging",
@@ -137,6 +152,8 @@ const runRolloutTest = async (receipt: RolloutReceipt, profile: string, options:
     noHardhatCompile: options.noHardhatCompile ?? true,
     parallel: options.parallel,
     grep: options.grep,
+    blueGreenProposalId: options.blueGreenProposalId,
+    blueGreenPredecessorVersion: options.blueGreenPredecessorVersion,
   });
 };
 
@@ -424,6 +441,10 @@ export const createRolloutContext = (
     async startDeferredGreen() {
       await startStackDeferredGreen();
       await receipt.record("start-green", "started deferred Green fleet", { docker: true });
+    },
+    async restagePromotedGreen(options) {
+      await restageStackPromotedGreen(options);
+      await receipt.record("restage-green", `restaged promoted fleet before v${options.stackVersion}`, { docker: true });
     },
     async resolveVersionLock(name, options) {
       const target = options.target ?? ROLLOUT_TARGET;

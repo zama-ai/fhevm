@@ -692,4 +692,30 @@ gcs:
       expect(blue.command?.filter((arg) => arg.startsWith("--bucket-name-"))).toEqual([]);
     });
   });
+
+  test("blue-green lets Green disable Blue's legacy-key safeguard", async () => {
+    const scenario = resolveBlueGreenScenario(
+      path.join("/tmp", "blue-green-key-adoption.yaml"),
+      parseBlueGreenScenario(`
+version: 1
+kind: blue-green
+bcs:
+  source: { mode: registry, tag: v0.15.0 }
+  env: { FORCE_LEGACY_SERVER_KEY: "true" }
+gcs:
+  source: { mode: local }
+  stackVersion: "0.15.1"
+  env: { FORCE_LEGACY_SERVER_KEY: "false" }
+`),
+    );
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      await writeFile(envPath("coprocessor"), "FORCE_LEGACY_SERVER_KEY=true\n");
+      await generateComposeOverrides({ ...state, scenario }, stackSpecForState({ ...state, scenario }));
+      const doc = YAML.parse(await readFile(composePath("coprocessor"), "utf8")) as {
+        services: Record<string, { environment?: Record<string, string> }>;
+      };
+      expect(doc.services["coprocessor-gcs-zkproof-worker"]?.environment?.FORCE_LEGACY_SERVER_KEY).toBe("false");
+    });
+  });
 });
