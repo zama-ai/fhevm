@@ -129,17 +129,16 @@ function faultyEvidence(failures: number, error: Error) {
 
 /** Evidence that never changes. */
 function stableEvidence() {
-  const resolve = vi.fn(
-    (request: SolanaHandleRequest): Promise<SolanaAccessEvidence> =>
-      Promise.resolve({
-        handle: request.handle,
-        subject: request.subject,
-        encryptedValueId: identity(0xe1),
-        encryptedValueAccount: identity(0xea),
-        proofLeafCount: 0n,
-        accessProof: new Uint8Array(0),
-        peaks: [],
-      }),
+  const resolve = vi.fn((request: SolanaHandleRequest): Promise<SolanaAccessEvidence> =>
+    Promise.resolve({
+      handle: request.handle,
+      subject: request.subject,
+      encryptedValueId: identity(0xe1),
+      encryptedValueAccount: identity(0xea),
+      proofLeafCount: 0n,
+      accessProof: new Uint8Array(0),
+      peaks: [],
+    }),
   );
   return { resolve, source: { resolve } };
 }
@@ -494,17 +493,16 @@ describe('an evidence resolution that fails', () => {
   });
 
   it('does not retry a proof the request builder refuses', async () => {
-    const resolve = vi.fn(
-      (request: SolanaHandleRequest): Promise<SolanaAccessEvidence> =>
-        Promise.resolve({
-          handle: request.handle,
-          subject: request.subject,
-          encryptedValueId: request.encryptedValueId,
-          encryptedValueAccount: identity(0xea),
-          proofLeafCount: 1n,
-          accessProof: new Uint8Array([0xff]),
-          peaks: [],
-        }),
+    const resolve = vi.fn((request: SolanaHandleRequest): Promise<SolanaAccessEvidence> =>
+      Promise.resolve({
+        handle: request.handle,
+        subject: request.subject,
+        encryptedValueId: request.encryptedValueId,
+        encryptedValueAccount: identity(0xea),
+        proofLeafCount: 1n,
+        accessProof: new Uint8Array([0xff]),
+        peaks: [],
+      }),
     );
     const { submit, transport } = scriptedTransport([answered]);
     const { clock, delay } = recordingClock();
