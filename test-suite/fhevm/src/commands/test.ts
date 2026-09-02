@@ -6,15 +6,18 @@ import { type DecryptionRunner, runKmsGenerationProfile } from "./kms-generation
 import { runKmsGenerationAbortProfile } from "./kms-generation-abort";
 import { runKmsContextSwitchProfile } from "./kms-context-switch";
 import { DRIFT_CLEANUP_SQL, DRIFT_INSTALL_SQL, parseDriftInstanceIndex, parsePositiveInteger } from "../drift";
+
 import { PreflightError, formatCliError } from "../errors";
 import { dockerInspect } from "../flow/readiness";
 import { pause, shellEscape, unpause } from "../flow/up-flow";
 import { hostReachableRpcUrl, readEnvFile, withHexPrefix } from "../utils/fs";
-import { run, runWithHeartbeat } from "../utils/process";
+import { composeEnv, run, runWithHeartbeat } from "../utils/process";
 import { loadState } from "../state/state";
 import { topologyForState } from "../stack-spec/stack-spec";
 import {
   COPROCESSOR_DB_CONTAINER,
+  PROJECT,
+  composePath,
   DEFAULT_CHAIN_ID,
   DEFAULT_POSTGRES_DB,
   DEFAULT_POSTGRES_PASSWORD,
@@ -272,6 +275,89 @@ const coprocessorGwListeners = async () => {
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter((line) => /^coprocessor(\d+)?-gw-listener$/.test(line));
+};
+
+/** Turns off the synthetic work a GCS listener injects to anchor consensus. */
+const SYNTHETIC_OPS_OFF = "--disable-synthetic-ops";
+
+/** Every GCS host-listener container, on every operator and host chain. Multi-chain
+ *  scenarios suffix the extra chains, so this matches on prefix. */
+const gcsHostListeners = async () => {
+  const result = await run(["docker", "ps", "-a", "--format", "{{.Names}}"], { allowFailure: true });
+  if (result.code !== 0) {
+    throw new PreflightError(result.stderr.trim() || "docker ps failed");
+  }
+  return result.stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => /^coprocessor(\d+)?-gcs-host-listener(-|$)/.test(line))
+    .sort();
+};
+
+/** Recreates every GCS host-listener with synthetic-op injection on or off.
+ *
+ *  A container's command is fixed when it is created, so restarting cannot change it.
+ *  Each host chain has its own compose file, so the listeners are grouped by the file
+ *  set their own labels name and every group is brought up from that set. */
+const setSyntheticOps = async (enabled: boolean) => {
+  const containers = await gcsHostListeners();
+  if (containers.length === 0) {
+    throw new PreflightError("found no GCS host-listener containers");
+  }
+  const format = [
+    '{{index .Config.Labels "com.docker.compose.project.config_files"}}',
+    '{{index .Config.Labels "com.docker.compose.service"}}',
+    "{{json .Config.Cmd}}",
+  ].join("\t");
+  const meta = await run(["docker", "inspect", ...containers, "--format", format], { allowFailure: true });
+  if (meta.code !== 0) {
+    throw new PreflightError(`docker inspect failed: ${meta.stderr.trim()}`);
+  }
+
+  const groups = new Map<string, Record<string, { command: string[] }>>();
+  for (const line of meta.stdout.split(/\r?\n/).map((entry) => entry.trim()).filter(Boolean)) {
+    const [files, service, commandJson] = line.split("\t");
+    if (!files || !service || !commandJson || commandJson === "null") {
+      throw new PreflightError(`compose labels are missing on "${service || containers.join(", ")}"`);
+    }
+    const command = (JSON.parse(commandJson) as string[]).filter((entry) => entry !== SYNTHETIC_OPS_OFF);
+    if (!enabled) {
+      command.push(SYNTHETIC_OPS_OFF);
+    }
+    const group = groups.get(files) ?? {};
+    group[service] = { command };
+    groups.set(files, group);
+  }
+
+  const env = await composeEnv("coprocessor");
+  const recreated: string[] = [];
+  for (const [index, [files, services]] of [...groups].entries()) {
+    // Compose parses YAML, and JSON is valid YAML — no serializer needed.
+    const override = composePath(`synthetic-ops-${index}`);
+    await Bun.write(override, JSON.stringify({ services }));
+    const up = await run(
+      [
+        "docker",
+        "compose",
+        "-p",
+        PROJECT,
+        ...files.split(",").flatMap((file) => ["-f", file]),
+        "-f",
+        override,
+        "up",
+        "-d",
+        "--force-recreate",
+        "--no-deps",
+        ...Object.keys(services),
+      ],
+      { env, allowFailure: true },
+    );
+    if (up.code !== 0) {
+      throw new PreflightError(`recreating the GCS host-listeners failed: ${up.stderr.trim()}`);
+    }
+    recreated.push(...Object.keys(services));
+  }
+  return recreated.sort();
 };
 
 /** Finds the expected drift warning for a specific injected handle. */
@@ -998,10 +1084,12 @@ const runBlueGreenProfile = async (
   };
 
   // Host chains stay quiet (no non-trivial FHE op) while [3/11] anchors the Gateway
-  // track with one input. Cutover needs at least one non-trivial host anchor, so the
-  // controller withholds the hosts and commitment_timeout rolls back every row — the
-  // rollback this asserts. A regression that notified quiet hosts would cut over.
-  console.log(`\n[2/11] failed upgrade: Gateway input, hosts quiet (no non-trivial host → no cutover)`);
+  // track with one input. Recreate the GCS listeners with injection off first, so
+  // nothing manufactures work of its own and the window times out into the rollback
+  // this asserts. [4/11] turns it back on for the upgrade that succeeds.
+  console.log(`\n[2/11] failed upgrade: Gateway input, hosts quiet (no non-trivial host \u2192 no cutover)`);
+  const disabled = await setSyntheticOps(false);
+  console.log(`OK:   recreated ${disabled.length} GCS host-listener service(s) with synthetic ops disabled`);
   const failGwBlock = Number((await run(
     ["cast", "block-number", "--rpc-url", gatewayRpcUrl],
   )).stdout.trim());
@@ -1037,8 +1125,8 @@ const runBlueGreenProfile = async (
         )) === "ready",
     });
   }
-  // Verify one Gateway input inside the window. Host chains get no non-trivial FHE
-  // op, so cutover must be withheld and the window must time out (asserted in [4/11]).
+  // Verify one Gateway input inside the window. The silenced operator never reports,
+  // so unanimity cannot form and the window must time out (asserted in [4/11]).
   await run(gatewayInputProbeArgv);
   console.log(`OK:   Gateway input submitted (host chains remain quiet)`);
 
@@ -1093,6 +1181,8 @@ const runBlueGreenProfile = async (
     }
     console.log(`OK:   ${db}  PAUSED/failed, latches cleared, v0.14 kept, gcs schema recreated empty`);
   }
+  const reenabled = await setSyntheticOps(true);
+  console.log(`OK:   recreated ${reenabled.length} GCS host-listener service(s) with synthetic ops enabled`);
 
   // Deploy ERC20 + mint before the proposal so the balance handle lands in
   // public.ciphertexts with block_number < start_block. Transfers during the
