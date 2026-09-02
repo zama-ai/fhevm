@@ -189,10 +189,11 @@ impl fmt::Display for ListenerStep {
 /// Normal operations are DEBUG, problems are WARN.
 #[derive(Debug, Clone, Copy)]
 pub enum WorkerStep {
-    // Normal ops (DEBUG)
+    // Normal ops (DEBUG/INFO)
     WorkerStarted,
     TickCompleted,
     RowsProcessed,
+    WorkerStopped,
 
     // Problems (WARN)
     WorkerPanicked,
@@ -205,6 +206,7 @@ impl fmt::Display for WorkerStep {
             Self::WorkerStarted => "worker_started",
             Self::TickCompleted => "tick_completed",
             Self::RowsProcessed => "rows_processed",
+            Self::WorkerStopped => "worker_stopped",
             Self::WorkerPanicked => "worker_panicked",
             Self::WorkerRestarting => "worker_restarting",
         };
