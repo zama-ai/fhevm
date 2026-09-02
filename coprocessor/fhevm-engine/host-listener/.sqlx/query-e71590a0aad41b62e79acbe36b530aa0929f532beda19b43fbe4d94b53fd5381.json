@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                    WITH consumed AS (\n                        SELECT\n                            u.parent,\n                            u.handle\n                        FROM unnest($1::bytea[], $2::bytea[])\n                            AS u(parent, handle)\n                    ),\n                    -- A parent still owes this child only for the handles it\n                    -- has not materialized. `ciphertexts` is the table the\n                    -- worker reads boundary operands from, so its presence is\n                    -- the readiness condition, not an approximation of one.\n                    pending AS (\n                        SELECT DISTINCT consumed.parent\n                        FROM consumed\n                        WHERE NOT EXISTS (\n                            SELECT 1\n                            FROM ciphertexts ct\n                            WHERE ct.handle = consumed.handle\n                        )\n                    ),\n                    parents AS (\n                        SELECT dc.dependence_chain_id\n                        FROM dependence_chain dc\n                        JOIN pending ON pending.parent = dc.dependence_chain_id\n                        WHERE dc.status <> 'processed'\n                        ORDER BY dc.dependence_chain_id\n                        FOR UPDATE SKIP LOCKED\n                    ),\n                    updated AS (\n                        UPDATE dependence_chain dc\n                        SET dependents = (\n                            SELECT ARRAY(\n                                SELECT DISTINCT d\n                                FROM unnest(dc.dependents || $3::bytea[]) AS d\n                            )\n                        )\n                        FROM parents\n                        WHERE dc.dependence_chain_id = parents.dependence_chain_id\n                        RETURNING dc.dependence_chain_id\n                    )\n                    SELECT dependence_chain_id AS \"id!\" FROM updated\n                    ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "ByteaArray",
+        "ByteaArray",
+        "ByteaArray"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "e71590a0aad41b62e79acbe36b530aa0929f532beda19b43fbe4d94b53fd5381"
+}
