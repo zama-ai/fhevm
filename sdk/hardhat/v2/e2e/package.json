@@ -4,6 +4,9 @@
   "description": "e2e test suite for Hardhat plugin v2 (cjs only)",
   "private": true,
   "type": "commonjs",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "build": "npm run fmt:check && npm run lint && npm run compile",
     "clean": "rm -rf artifacts cache cache-forge typechain-types out broadcast *.tsbuildinfo",
@@ -39,6 +42,7 @@
     "@types/chai": "^4.3.20",
     "@types/chai-as-promised": "^7.1.8",
     "@types/mocha": "^10.0.10",
+    "@types/node": "^22.0.0",
     "chai": "^4.5.0",
     "cross-env": "^10.1.0",
     "eslint": "^10.0.2",
