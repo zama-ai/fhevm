@@ -65,7 +65,7 @@ export const migrationPhaseVersions = (
 };
 
 export const migrationVersions = (env: Env = process.env): MigrationVersions => {
-  const releaseTag = env.RFC029_BASELINE_FHEVM_TAG?.trim() || "v0.14.0-14";
+  const releaseTag = env.RFC029_BASELINE_FHEVM_TAG?.trim() || "v0.14.1";
   const hostTag = env.RFC029_BASELINE_HOST_TAG?.trim() || releaseTag;
   const kmsCoreTag = env.RFC029_KMS_CORE_TAG?.trim() || "v0.14.0-1";
   const relayerTag = env.RFC029_BASELINE_RELAYER_TAG?.trim() || releaseTag;

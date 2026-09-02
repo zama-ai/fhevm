@@ -39,14 +39,14 @@ const material = (overrides: Partial<OperatorMaterial> = {}): OperatorMaterial =
 });
 
 describe("RFC 029 rollout gates", () => {
-  test("uses the last published 0.14 images to create the legacy-key baseline", () => {
+  test("uses stable v0.14.1 images to create the legacy-key baseline", () => {
     const versions = migrationVersions({});
-    expect(versions.baselineTag).toBe("v0.14.0-14");
-    expect(versions.baseline.HOST_VERSION).toBe("v0.14.0-14");
-    expect(versions.baseline.GATEWAY_VERSION).toBe("v0.14.0-14");
-    expect(versions.baseline.RELAYER_VERSION).toBe("v0.14.0-14");
-    expect(versions.baseline.RELAYER_MIGRATE_VERSION).toBe("v0.14.0-14");
-    expect(versions.baseline.LISTENER_CORE_VERSION).toBe("v0.14.0-14");
+    expect(versions.baselineTag).toBe("v0.14.1");
+    expect(versions.baseline.HOST_VERSION).toBe("v0.14.1");
+    expect(versions.baseline.GATEWAY_VERSION).toBe("v0.14.1");
+    expect(versions.baseline.RELAYER_VERSION).toBe("v0.14.1");
+    expect(versions.baseline.RELAYER_MIGRATE_VERSION).toBe("v0.14.1");
+    expect(versions.baseline.LISTENER_CORE_VERSION).toBe("v0.14.1");
   });
 
   test("pins the reviewed 0.15 substrate and omits Green-only services from 0.14 Blue", () => {
@@ -60,10 +60,10 @@ describe("RFC 029 rollout gates", () => {
 
   test("boots 0.14 Blue and defers the locally built 0.15 Green with the legacy safeguard", () => {
     const scenario = parseBlueGreenScenario(
-      migrationScenario("v0.14.0-14"),
+      migrationScenario("v0.14.1"),
       "generated RFC 029 migration scenario",
     );
-    expect(scenario.bcs?.source).toEqual({ mode: "registry", tag: "v0.14.0-14" });
+    expect(scenario.bcs?.source).toEqual({ mode: "registry", tag: "v0.14.1" });
     expect(scenario.gcs.source).toEqual({ mode: "local" });
     expect(scenario.gcs.env?.FORCE_LEGACY_SERVER_KEY).toBe("true");
     expect(scenario.gcs.deferredStart).toBe(true);
