@@ -397,7 +397,8 @@ fn decryption_insert_status(source: RequestSource) -> OperationStatus {
     match source {
         // Onchain-sourced decryption are pending until the tx-sender publishes them on-chain.
         RequestSource::OnChain => OperationStatus::Pending,
-        // HTTP-sourced decryption have no on-chain step so they are terminal on insert.
+        // HTTP-sourced decryption have no on-chain step so they are marked as `completed` on
+        // immediately on insert.
         RequestSource::Http => OperationStatus::Completed,
     }
 }

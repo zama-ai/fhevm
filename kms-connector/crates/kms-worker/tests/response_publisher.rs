@@ -597,7 +597,7 @@ async fn test_public_payload_response_overrides_previous_error() -> anyhow::Resu
         row.try_get::<RequestSource, _>("source")?,
         RequestSource::Http
     );
-    // Terminal on insert: the tx-sender's `status = 'pending'` picking queries must never see it.
+    // HTTP-sourced decryption response are marked as `completed` on insert (no on-chain step).
     assert_eq!(
         row.try_get::<OperationStatus, _>("status")?,
         OperationStatus::Completed
@@ -760,7 +760,7 @@ async fn test_user_payload_response_overrides_previous_error() -> anyhow::Result
         row.try_get::<RequestSource, _>("source")?,
         RequestSource::Http
     );
-    // Terminal on insert: the tx-sender's `status = 'pending'` picking queries must never see it.
+    // HTTP-sourced decryption response are marked as `completed` on insert (no on-chain step).
     assert_eq!(
         row.try_get::<OperationStatus, _>("status")?,
         OperationStatus::Completed
