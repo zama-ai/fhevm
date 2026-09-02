@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT host_chain_id,\n               MIN(block_number) AS \"first_block!\",\n               MAX(block_number) AS \"last_block!\"\n          FROM block_manifest_state\n         WHERE consensus_epoch = $1\n         GROUP BY host_chain_id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "host_chain_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "first_block!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "last_block!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "d5fcadb075a807d33f3ab283373eaa5e4912eb4bb87e8c121777d41396ab4cb0"
+}

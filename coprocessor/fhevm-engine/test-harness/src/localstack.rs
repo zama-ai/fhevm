@@ -1,8 +1,9 @@
 use std::net::TcpListener;
 
 use alloy::signers::k256::pkcs8::EncodePrivateKey;
-use aws_config::BehaviorVersion;
+use aws_config::{BehaviorVersion, Region};
 use aws_sdk_kms::types::{KeySpec, KeyUsageType, OriginType};
+use aws_sdk_s3::config::Credentials;
 use base64::Engine;
 use k256::SecretKey;
 use testcontainers::{core::WaitFor, runners::AsyncRunner, ContainerAsync, GenericImage, ImageExt};
@@ -34,6 +35,20 @@ pub async fn start_localstack() -> anyhow::Result<LocalstackContainer> {
         container,
         host_port,
     })
+}
+
+pub async fn create_localstack_s3_client(host_port: u16) -> aws_sdk_s3::Client {
+    let endpoint_url = format!("http://127.0.0.1:{host_port}");
+    let sdk_config = aws_config::defaults(BehaviorVersion::latest())
+        .endpoint_url(&endpoint_url)
+        .region(Region::new("us-east-1"))
+        .credentials_provider(Credentials::new("test", "test", None, None, "localstack"))
+        .load()
+        .await;
+    let s3_config = aws_sdk_s3::config::Builder::from(&sdk_config)
+        .force_path_style(true)
+        .build();
+    aws_sdk_s3::Client::from_conf(s3_config)
 }
 
 // Note that this function sets the AWS environment variables to point to the LocalStack instance.

@@ -1,0 +1,38 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT upgrade.state,\n               selector.consensus_epoch,\n               history.stack_version AS \"stack_version?\",\n               history.outcome AS \"outcome?\"\n          FROM upgrade_state upgrade\n          CROSS JOIN blue_green_consensus_epoch selector\n          LEFT JOIN public.consensus_epoch_history history\n            ON history.consensus_epoch = selector.consensus_epoch\n         WHERE upgrade.stack_role = 'GCS'\n           AND selector.singleton = TRUE\n         ORDER BY upgrade.proposal_block DESC NULLS LAST,\n                  upgrade.host_chain_id\n         LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "state",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "consensus_epoch",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "stack_version?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "outcome?",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "7ff21cda4ef134e8e1b62de74dad791e6e9dd0fedf7e3a2296a2abceb3ff10fb"
+}
