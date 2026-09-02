@@ -226,4 +226,14 @@ impl DbKmsResponsePublisher {
     pub async fn mark_event_as_pending(&self, event: ProtocolEvent) -> anyhow::Result<()> {
         event.mark_as_pending(&self.db_pool).await
     }
+
+    /// Sets the `status` field of the event to `failed` in the database.
+    pub async fn mark_event_as_failed(&self, event: ProtocolEvent) -> anyhow::Result<()> {
+        event.mark_as_failed(&self.db_pool).await
+    }
+
+    /// Sets the `status` field of the event to `aborted` in the database.
+    pub async fn mark_event_as_aborted(&self, event: ProtocolEvent) -> anyhow::Result<()> {
+        event.mark_as_aborted(&self.db_pool).await
+    }
 }
