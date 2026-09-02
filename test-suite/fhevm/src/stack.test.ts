@@ -7,11 +7,26 @@ import {
   previewStateFromBundle,
   removeRuntimeUpgradeOverrides,
   resolveUpgradePlan,
+  startDeferredGreen,
 } from "./flow/up-flow";
 import { presetBundle } from "./resolve/target";
 import { testDefaultScenario } from "./test-fixtures";
 import type { State } from "./types";
 const defaultScenario: State["scenario"] = testDefaultScenario();
+const blueGreenScenario: State["scenario"] = {
+  version: 1,
+  kind: "blue-green",
+  origin: "default",
+  hostChains: defaultScenario.hostChains,
+  topology: { count: 2, threshold: 2 },
+  bcs: { source: { mode: "registry", tag: "v0.14.0-10" }, env: {}, args: {} },
+  gcs: { source: { mode: "local" }, env: {}, args: {}, stackVersion: "0.15.0", deferredStart: true },
+  kms: defaultScenario.kms,
+};
+const thresholdBlueGreenScenario: State["scenario"] = {
+  ...blueGreenScenario,
+  kms: { mode: "threshold", parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" },
+};
 
 describe("stack", () => {
   test("dry-run preview state uses the resolved lock target", () => {
@@ -201,5 +216,78 @@ describe("stack", () => {
     expect(plan.migrationServices).toContain("coprocessor-db-migration");
     expect(plan.runtimeServices).toContain("coprocessor-host-listener");
     expect(plan.runtimeServices).toContain("coprocessor1-host-listener");
+  });
+
+  test("Blue-Green coprocessor release upgrade restarts Blue only", () => {
+    const plan = resolveUpgradePlan(
+      { overrides: [{ group: "test-suite" }], scenario: blueGreenScenario },
+      "coprocessor",
+      { lockFile: true },
+    );
+    expect(plan.runtimeServices).toContain("coprocessor-host-listener");
+    expect(plan.runtimeServices).toContain("coprocessor1-host-listener");
+    expect(plan.runtimeServices.some((service) => service.includes("gcs-"))).toBe(false);
+    expect(plan.runtimeServices).not.toContain("coprocessor-consensus-detector");
+    expect(plan.runtimeServices).not.toContain("coprocessor-upgrade-controller");
+    expect(plan.runtimeServices).not.toContain("coprocessor1-consensus-detector");
+    expect(plan.runtimeServices).not.toContain("coprocessor1-upgrade-controller");
+    expect(plan.versionKeys).toContain("COPROCESSOR_CONSENSUS_DETECTOR_VERSION");
+    expect(plan.versionKeys).toContain("COPROCESSOR_UPGRADE_CONTROLLER_VERSION");
+  });
+
+  test("Blue-Green connector upgrades require the operator-paired threshold rollout", () => {
+    expect(() =>
+      resolveUpgradePlan(
+        { overrides: [{ group: "test-suite" }], scenario: thresholdBlueGreenScenario },
+        "kms-connector",
+        { lockFile: true },
+      ),
+    ).toThrow(/operator-paired rollout primitive/);
+  });
+
+  test("commits deferred Green state only after startup health succeeds", async () => {
+    const state: State = {
+      target: "latest-main",
+      lockPath: "/tmp/lock.json",
+      versions: presetBundle("latest-main", "abcdef0", "lock.json"),
+      overrides: [],
+      scenario: blueGreenScenario,
+      completedSteps: ["base", "coprocessor"],
+      updatedAt: "2026-07-14T00:00:00.000Z",
+    };
+    let saved: State | undefined;
+    let buildPersistedState = true;
+    const generatedDeferredStates: boolean[] = [];
+    let removedContainers: string[] = [];
+    const operations = {
+      async loadState() { return state; },
+      async generateRuntime(next: State) {
+        if (next.scenario.kind === "blue-green") {
+          generatedDeferredStates.push(next.scenario.gcs.deferredStart);
+        }
+      },
+      async maybeBuild(_component: string, _state: State, options?: { persistState?: boolean }) {
+        buildPersistedState = options?.persistState !== false;
+      },
+      async composeUp() {},
+      async waitForContainer() {},
+      async waitForCoprocessorServices() {},
+      async multiChainComposeUp() {},
+      async postBootHealthGate() { throw new Error("Green unhealthy"); },
+      async removeContainers(containers: string[]) { removedContainers = containers; },
+      async saveState(next: State) { saved = next; },
+    };
+
+    await expect(startDeferredGreen(operations)).rejects.toThrow("Green unhealthy");
+    expect(buildPersistedState).toBe(false);
+    expect(saved).toBeUndefined();
+    expect(generatedDeferredStates).toEqual([false, true]);
+    expect(removedContainers.length).toBeGreaterThan(0);
+
+    await startDeferredGreen({ ...operations, async postBootHealthGate() {} });
+    expect(saved?.scenario.kind).toBe("blue-green");
+    if (saved?.scenario.kind === "blue-green") {
+      expect(saved.scenario.gcs.deferredStart).toBe(false);
+    }
   });
 });

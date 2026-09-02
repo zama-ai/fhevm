@@ -42,7 +42,12 @@ jobs:
         uses: foundry-rs/foundry-toolchain@82dee4ba654bd2146511f85f0d013af94670c4de # v1.4.0
 
       - name: Install GitHub CLI
+        timeout-minutes: 5
         run: |
+          if command -v gh >/dev/null 2>&1; then
+            gh --version
+            exit 0
+          fi
           sudo apt-get update
           sudo apt-get install -y gh
 

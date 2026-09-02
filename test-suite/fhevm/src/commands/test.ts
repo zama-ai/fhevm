@@ -1083,6 +1083,9 @@ const runBlueGreenProfile = async (
     return `[${tuples.join(",")}]`;
   };
 
+  if (process.env.FHEVM_SKIP_BLUE_GREEN_ROLLBACK === "1") {
+    console.log(`\n[2-4/11] skipped: quiet-host rollback is tracked by fhevm-internal#1957`);
+  } else {
   // Host chains stay quiet (no non-trivial FHE op) while [3/11] anchors the Gateway
   // track with one input. Recreate the GCS listeners with injection off first, so
   // nothing manufactures work of its own and the window times out into the rollback
@@ -1183,6 +1186,7 @@ const runBlueGreenProfile = async (
   }
   const reenabled = await setSyntheticOps(true);
   console.log(`OK:   recreated ${reenabled.length} GCS host-listener service(s) with synthetic ops enabled`);
+  }
 
   // Deploy ERC20 + mint before the proposal so the balance handle lands in
   // public.ciphertexts with block_number < start_block. Transfers during the
