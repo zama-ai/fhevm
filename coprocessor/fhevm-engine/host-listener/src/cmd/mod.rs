@@ -188,6 +188,13 @@ pub struct Args {
     )]
     pub timeout_request_websocket: u64,
 
+    #[arg(
+        long,
+        default_value_t = false,
+        help = "Stop injecting the synthetic work a GCS listener uses to anchor consensus"
+    )]
+    pub disable_synthetic_ops: bool,
+
     /// Print the compiled-in coprocessor stack version and exit.
     #[arg(long)]
     pub stack_version: bool,
@@ -1002,6 +1009,7 @@ async fn db_insert_block(
                 dependence_cross_block: args.dependence_cross_block,
                 dependent_ops_max_per_chain: args.dependent_ops_max_per_chain,
                 is_protocol_config_listener,
+                disable_synthetic_ops: args.disable_synthetic_ops,
             },
         )
         .await;
