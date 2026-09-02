@@ -446,14 +446,16 @@ export function findTestConsumerTargets(
   workspaceRoot: string,
   packages: readonly LoadedPackage[],
 ): readonly TestConsumerTarget[] {
-  const fixtures = findFixtures(packages).map((fixture): TestConsumerTarget => ({
-    kind: 'fixture',
-    source: fixture.fixture,
-    owner: fixture.owner,
-    published: fixture.published,
-    moduleKind: fixture.moduleKind,
-    linkedDependencies: resolveLinkedDependencies(workspaceRoot, fixture.fixture, packages),
-  }));
+  const fixtures = findFixtures(packages).map(
+    (fixture): TestConsumerTarget => ({
+      kind: 'fixture',
+      source: fixture.fixture,
+      owner: fixture.owner,
+      published: fixture.published,
+      moduleKind: fixture.moduleKind,
+      linkedDependencies: resolveLinkedDependencies(workspaceRoot, fixture.fixture, packages),
+    }),
+  );
   const projects = packages
     .filter((pkg) => !/\/test-consumer\/(?:cjs|esm)$/.test(pkg.key))
     .filter((pkg) => pkg.packageJson.scripts?.test?.trim() !== '')
@@ -461,12 +463,14 @@ export function findTestConsumerTargets(
     .filter((pkg) =>
       dependencyDeclarations(pkg.packageJson).some((declaration) => declaration.spec.startsWith('file:')),
     )
-    .map((source): TestConsumerTarget => ({
-      kind: 'project',
-      source,
-      moduleKind: source.inventory.type,
-      linkedDependencies: resolveLinkedDependencies(workspaceRoot, source, packages),
-    }));
+    .map(
+      (source): TestConsumerTarget => ({
+        kind: 'project',
+        source,
+        moduleKind: source.inventory.type,
+        linkedDependencies: resolveLinkedDependencies(workspaceRoot, source, packages),
+      }),
+    );
   return [...fixtures, ...projects].sort((left, right) => left.source.key.localeCompare(right.source.key));
 }
 

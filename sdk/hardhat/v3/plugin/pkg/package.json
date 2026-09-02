@@ -1,0 +1,31 @@
+{
+  "name": "@fhevm/hardhat-plugin",
+  "version": "0.1.0",
+  "description": "FHEVM plugin for Hardhat 3 — hello-world skeleton; the real surface arrives with the v3 migration.",
+  "license": "BSD-3-Clause-Clear",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zama-ai/fhevm.git",
+    "directory": "sdk/hardhat/v3/plugin/pkg"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "types": "./_types/index.d.ts",
+  "files": [
+    "_esm",
+    "_types",
+    "src"
+  ],
+  "exports": {
+    ".": {
+      "types": "./_types/index.d.ts",
+      "import": "./_esm/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "peerDependencies": {
+    "hardhat": "^3.0.0"
+  }
+}

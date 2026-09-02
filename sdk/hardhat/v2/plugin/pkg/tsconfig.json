@@ -24,7 +24,7 @@
     "paths": {
       "@fhevm/sdk/chains": [
         "./node_modules/@fhevm/sdk/_types/core/chains/index.d.ts",
-        "../../../../node_modules/@fhevm/sdk/_types/core/chains/index.d.ts"
+        "../../node_modules/@fhevm/sdk/_types/core/chains/index.d.ts"
       ]
     }
   },

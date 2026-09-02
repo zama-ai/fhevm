@@ -19,8 +19,9 @@ make ci                     # every gate, from a clean tree
 make uninstall              # undo install+build: build outputs, node_modules, forge deps
                             # (shows each deletion list and asks first; explicit paths, never git clean;
                             # fhevm-npm/node_modules is kept so the CLI stays runnable)
-make purge                  # uninstall PLUS the workspace lockfile — the next install re-resolves every
-                            # dependency range; review and commit the lock diff (spotless worktree only)
+make purge                  # uninstall PLUS the install lockfiles (sdk root + each hardhat cluster) —
+                            # the next install re-resolves every range; review and commit the lock diffs
+                            # (spotless worktree only)
 make ci-from-scratch        # the strongest proof: uninstall everything, install, then every ci gate
 make graph TARGET=<t>       # show what <t> would run, without running anything
 make help                   # list every target
@@ -86,25 +87,36 @@ Inside one package (from its directory), the same verbs work without orchestrati
 (the sweep), `npm run fmt`, `npm run lint`, `npm run compile`, `npm run test`, `npm run check` — plus
 its own finer-grained leaves (`test:forge`, `lint:internal`, ...) — list them with `npm run`.
 
+# Installation roots (clusters)
+
+The sdk holds several npm INSTALLATION ROOTS, one per hardhat generation plus the sdk root and
+fhevm-npm: `hardhat/v2` and `hardhat/v3` are each their own npm workspace (own package.json
+`workspaces`, own lockfile, own node_modules). One root per hardhat major is what guarantees every
+member of a generation resolves the SAME hardhat instance — natively, with no symlinks: hardhat's
+environment is a per-module singleton, and a plugin and its consumer must share one copy. Cross-root
+dependencies are explicit `file:` links (plugin -> host-contracts v13/pkg, owners -> common); the
+future js-sdk joins the sdk ROOT and is consumed the same way. Cluster members are reached with
+`npm --prefix hardhat/v2 run -w <name> <script>` — the Makefile's run-hh-v2/run-hh-v3 macros.
+
 # Reinstalling after `make uninstall` or `make purge`
 
 After `make uninstall`, one command restores everything — the lockfile was kept, so npm REPLAYS the
 recorded versions and the tree comes back exactly as it was:
 
 ```sh
-make install      # npm install (workspace) + fhevm-npm install + forge dependencies
+make install      # one npm install per installation root (sdk, fhevm-npm, hardhat/v2, hardhat/v3) + forge deps
 ```
 
-After `make purge`, the same command does more than restore: the workspace lockfile is gone, so
-`npm install` RE-RESOLVES every dependency range to the newest in-range versions and writes a new
-`package-lock.json`. That is the point of purge — a deliberate dependency upgrade — and the lock diff
-is the deliverable:
+After `make purge`, the same command does more than restore: the install lockfiles are gone (the sdk
+root's and each hardhat cluster's), so `npm install` RE-RESOLVES every dependency range to the newest
+in-range versions and writes new lockfiles. That is the point of purge — a deliberate dependency
+upgrade — and the lock diffs are the deliverable:
 
 ```sh
-make install      # re-resolves and rewrites ./package-lock.json
-git diff -- package-lock.json      # review what actually moved
-make build && make test            # prove the new resolution before committing
-git add package-lock.json && git commit
+make install                              # re-resolves and rewrites every install lockfile
+git diff -- '**/package-lock.json'        # review what actually moved
+make build && make test                   # prove the new resolution before committing
+git add -A && git commit
 ```
 
 Purge does not touch fhevm-npm's lockfile (the autonomous orchestrator manages its own — delete

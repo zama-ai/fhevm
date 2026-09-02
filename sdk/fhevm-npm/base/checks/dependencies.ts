@@ -13,6 +13,7 @@ import {
 } from '../npm.ts';
 import { listOwnedSourceFiles } from '../paths.ts';
 import { type ScriptPackageUses, collectScriptPackageUses, rootDependencyBinaryIndex } from '../script-dependencies.ts';
+import { installationRootOf } from './workspaces.ts';
 
 const PRIVATE_PACKAGE_KINDS = new Set(['dev', 'shared-helper', 'internal-consumer']);
 
@@ -161,6 +162,11 @@ export function validateDependencyOrder(packages: readonly LoadedPackage[]): rea
   return violations;
 }
 
+// Per installation root. A member referencing a member of its OWN root uses the plain exact version —
+// npm resolves it by name inside that root. A member referencing ANOTHER root's member must use a
+// `file:` path (name resolution cannot cross installation roots): npm installs it as a link, and the
+// publish layer maps it to a registry range. An npm-distributed source may cross-root-link only to an
+// npm-published target — linking a private helper would ship an unresolvable specifier.
 export function validateWorkspaceMemberSpecs(packages: readonly LoadedPackage[]): readonly Violation[] {
   const violations: Violation[] = [];
   const targets = new Map<string, LoadedPackage[]>();
@@ -174,43 +180,27 @@ export function validateWorkspaceMemberSpecs(packages: readonly LoadedPackage[])
 
   for (const source of packages) {
     if (!source.inventory.member) continue;
+    const sourceRoot = installationRootOf(source);
     for (const declaration of dependencyDeclarations(source.packageJson)) {
       if (declaration.spec.startsWith('file:')) {
-        if (declaration.spec.endsWith('.tgz')) {
-          violations.push({
-            rule: '3.1.2',
-            packageKey: source.key,
-            message: `package '${declaration.name}' in '${declaration.field}' uses forbidden tarball spec "${declaration.spec}"`,
-          });
-          continue;
-        }
+        validateFileSpec(source, sourceRoot, declaration, packages, violations);
+        continue;
+      }
 
-        if (source.inventory.kind === 'published' && isNpmDistributed(source)) {
+      const allCandidates = targets.get(declaration.name) ?? [];
+      const candidates = allCandidates.filter((candidate) => installationRootOf(candidate) === sourceRoot);
+      if (candidates.length === 0) {
+        if (allCandidates.length > 0) {
           violations.push({
             rule: '3.1.1',
             packageKey: source.key,
-            message: `npm-distributed package must not use local file dependency '${declaration.name}' in '${declaration.field}'; replace "${declaration.spec}" with a publishable version`,
+            message:
+              `package '${declaration.name}' in '${declaration.field}' names a member of another installation ` +
+              `root (${allCandidates.map((pkg) => pkg.key).join(', ')}); a cross-root reference must use a file: path`,
           });
-          continue;
         }
-
-        if (isMirrorOnly(source)) {
-          const linkedTarget = packages.find(
-            (candidate) => resolve(candidate.directory) === resolve(source.directory, declaration.spec.slice(5)),
-          );
-          if (linkedTarget?.packageJson.name !== declaration.name) {
-            violations.push({
-              rule: '3.1.1',
-              packageKey: source.key,
-              message: `mirror-only consumer link '${declaration.name}' in '${declaration.field}' does not resolve to the manifest package having that name`,
-            });
-          }
-          continue;
-        }
+        continue;
       }
-
-      const candidates = targets.get(declaration.name);
-      if (candidates === undefined) continue;
       if (candidates.length !== 1) {
         violations.push({
           rule: '3.1.1',
@@ -240,6 +230,58 @@ export function validateWorkspaceMemberSpecs(packages: readonly LoadedPackage[])
   }
 
   return violations;
+}
+
+function validateFileSpec(
+  source: LoadedPackage,
+  sourceRoot: string | undefined,
+  declaration: { readonly name: string; readonly field: DependencyField; readonly spec: string },
+  packages: readonly LoadedPackage[],
+  violations: Violation[],
+): void {
+  if (declaration.spec.endsWith('.tgz')) {
+    violations.push({
+      rule: '3.1.2',
+      packageKey: source.key,
+      message: `package '${declaration.name}' in '${declaration.field}' uses forbidden tarball spec "${declaration.spec}"`,
+    });
+    return;
+  }
+
+  const linkedTarget = packages.find(
+    (candidate) => resolve(candidate.directory) === resolve(source.directory, declaration.spec.slice(5)),
+  );
+  if (linkedTarget === undefined || linkedTarget.packageJson.name !== declaration.name) {
+    violations.push({
+      rule: '3.1.1',
+      packageKey: source.key,
+      message: `file link '${declaration.name}' in '${declaration.field}' does not resolve to the manifest package having that name`,
+    });
+    return;
+  }
+
+  const targetRoot = installationRootOf(linkedTarget);
+  if (targetRoot !== undefined && targetRoot === sourceRoot && !isMirrorOnly(source)) {
+    violations.push({
+      rule: '3.1.1',
+      packageKey: source.key,
+      message:
+        `package '${declaration.name}' in '${declaration.field}' links a member of the SAME installation ` +
+        `root (${linkedTarget.key}); use the plain exact version instead`,
+    });
+    return;
+  }
+
+  const targetIsPublishable = linkedTarget.inventory.kind === 'published' && isNpmDistributed(linkedTarget);
+  if (source.inventory.kind === 'published' && isNpmDistributed(source) && !targetIsPublishable) {
+    violations.push({
+      rule: '3.1.1',
+      packageKey: source.key,
+      message:
+        `npm-distributed package must not link private '${declaration.name}' in '${declaration.field}'; ` +
+        `a published tarball cannot resolve "${declaration.spec}"`,
+    });
+  }
 }
 
 function isNpmDistributed(pkg: LoadedPackage): boolean {

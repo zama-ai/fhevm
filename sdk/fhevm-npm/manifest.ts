@@ -136,6 +136,7 @@ const packageEntrySchema = z
     browser: z.boolean(),
     name: z.string().min(1).optional(),
     member: z.boolean(),
+    memberOf: z.string().regex(PACKAGE_KEY, 'must be a canonical sdk-relative package key').optional(),
     private: z.boolean().optional(),
     publishedRelPath: z.string().regex(PREFIXED_PATH, 'must be a safe path with a leading ./').optional(),
     dependencyGroup: z.string().regex(UNPREFIXED_PATH, 'must be a safe relative path').optional(),
@@ -148,6 +149,15 @@ const packageEntrySchema = z
   })
   .strict()
   .superRefine((entry, context) => {
+    // `member` means "member of SOME installation root"; `memberOf` names which (default: '.', the sdk
+    // root workspace). A cluster root (a non-'.' workspace-root entry) is itself never a member.
+    if (entry.memberOf !== undefined && !entry.member) {
+      issue(context, ['memberOf'], 'only a workspace member can declare which installation root it belongs to');
+    }
+    if (entry.memberOf === '.') {
+      issue(context, ['memberOf'], "'.' is the default installation root — omit memberOf");
+    }
+
     if (entry.vendored !== undefined) {
       const serialized = entry.vendored.map((element) => JSON.stringify(element));
       if (new Set(serialized).size !== serialized.length) {
@@ -220,13 +230,13 @@ const packageEntrySchema = z
 
     if (entry.kind === 'workspace-root') {
       requireName(entry, context);
-      if (entry.private !== true) issue(context, ['private'], 'the workspace root must set private: true');
-      if (entry.member) issue(context, ['member'], 'the workspace root cannot be its own member');
-      forbid(entry.dependencyGroup, context, 'dependencyGroup', 'the workspace root has no dependency group');
-      forbid(entry.dependencyExceptions, context, 'dependencyExceptions', 'the workspace root cannot carry exceptions');
-      forbid(entry.consumerTests, context, 'consumerTests', 'the workspace root cannot select consumer tests');
-      forbid(entry.mirror, context, 'mirror', 'the workspace root cannot be mirrored');
-      forbid(entry.vendored, context, 'vendored', 'the workspace root cannot own vendored content');
+      if (entry.private !== true) issue(context, ['private'], 'a workspace root must set private: true');
+      if (entry.member) issue(context, ['member'], 'a workspace root is an installation root, never a member');
+      forbid(entry.dependencyGroup, context, 'dependencyGroup', 'a workspace root has no dependency group');
+      forbid(entry.dependencyExceptions, context, 'dependencyExceptions', 'a workspace root cannot carry exceptions');
+      forbid(entry.consumerTests, context, 'consumerTests', 'a workspace root cannot select consumer tests');
+      forbid(entry.mirror, context, 'mirror', 'a workspace root cannot be mirrored');
+      forbid(entry.vendored, context, 'vendored', 'a workspace root cannot own vendored content');
     }
   });
 
@@ -253,8 +263,15 @@ const npmManifestSchema = z
     }
 
     for (const [key, entry] of Object.entries(manifest.packages)) {
-      if (key !== '.' && entry.kind === 'workspace-root') {
-        issue(context, ['packages', key, 'kind'], 'workspace-root is reserved for the . entry');
+      // A non-'.' workspace-root is an installation-root CLUSTER (its own npm workspace: own lock, own
+      // hoisting — one hardhat major per root). Members point at it with memberOf.
+      if (entry.memberOf !== undefined && entry.memberOf !== '.') {
+        const root = manifest.packages[entry.memberOf];
+        if (root === undefined || root.kind !== 'workspace-root') {
+          issue(context, ['packages', key, 'memberOf'], `'${entry.memberOf}' is not a workspace-root entry`);
+        } else if (!key.startsWith(`${entry.memberOf}/`)) {
+          issue(context, ['packages', key, 'memberOf'], 'a member must live inside its installation root');
+        }
       }
       for (const exception of entry.dependencyExceptions ?? []) {
         if (!(manifest.dependencies?.forbidden ?? []).includes(exception)) {

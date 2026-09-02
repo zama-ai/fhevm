@@ -1,0 +1,52 @@
+{
+  "_readme": [
+    "The OUTBOUND render spec: how the workspace-native ./pkg becomes the public",
+    "github.com/zama-ai/fhevm-hardhat-template repository. The workspace copy is optimized for",
+    "developing in lockstep with the cluster (file: links, no solhint); the render is optimized for",
+    "being cloned. `publish-mirror` (planned) consumes this spec: clone -> branch -> render + version",
+    "gate -> PR. Until it lands, this file is the committed record of every deliberate divergence,",
+    "so nothing diverges silently.",
+    "",
+    "Every entry answers: what differs between ./pkg and the public repo, and why."
+  ],
+  "repository": "https://github.com/zama-ai/fhevm-hardhat-template",
+  "root": "./pkg",
+  "packageJson": {
+    "identity": {
+      "name": "fhevm-hardhat-template",
+      "reason": "The workspace copy is named fhevm-hardhat-template-v2 to say which generation it is; the public repo keeps the historical name."
+    },
+    "dependencies": {
+      "@fhevm/hardhat-plugin": {
+        "workspace": "file:../../plugin/pkg",
+        "public": "registry range of the released plugin",
+        "reason": "Live cluster link in the workspace; a clone installs from the registry."
+      },
+      "@fhevm/host-contracts-cleartext": {
+        "workspace": "(transitive via the plugin)",
+        "public": "registry range",
+        "reason": "Unpublished chain today; the render is blocked on the chain publishing."
+      },
+      "solhint": {
+        "workspace": "(absent)",
+        "public": "^6.2.1 devDependency, plus the lint:sol script re-chained into lint",
+        "reason": "solhint's import-path-check resolves only the package-local node_modules; under workspace hoisting it cannot pass without a symlink, and symlinks are banned. The check belongs to the clone-shaped layer: the rendered repo and test-consumer."
+      }
+    },
+    "scripts": {
+      "lint": {
+        "workspace": "npm run lint:ts && npm run prettier:check",
+        "public": "npm run lint:sol && npm run lint:ts && npm run prettier:check",
+        "reason": "See the solhint entry."
+      }
+    }
+  },
+  "extras": {
+    "note": "Files that exist ONLY in the public repo, to be stored under ./mirror-extras when publish-mirror lands.",
+    "files": [".solhint.json", ".solhintignore", ".github/", ".vscode/"]
+  },
+  "lockfile": {
+    "policy": "regenerate",
+    "reason": "The workspace form has no own lockfile (the cluster lock covers it); a clone needs one, produced by an isolated registry install at render time."
+  }
+}

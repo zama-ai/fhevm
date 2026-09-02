@@ -1,6 +1,6 @@
 [profile.default]
 extends = "../../../foundry.base.toml"
-libs = ["dependencies", "node_modules", "../../../node_modules"]
+libs = ["dependencies", "node_modules", "../node_modules"]
 solc_version = "0.8.24"
 optimizer = true
 optimizer_runs = 800

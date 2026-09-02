@@ -127,7 +127,8 @@ export function parseCliOptions(argv: readonly string[]): CliOptions {
   let forgeDependencyPackageSelector: string | undefined;
   let installAllForgeDependencies = false;
   let cleanForgeDependencies:
-    { readonly packageSelector?: string; readonly dryRun: boolean; readonly force: boolean } | undefined;
+    | { readonly packageSelector?: string; readonly dryRun: boolean; readonly force: boolean }
+    | undefined;
   let listPackagesSelected = false;
   let packTarball: { readonly packageSelector?: string; readonly outDir?: string; readonly clean: boolean } | undefined;
   let syncVendored: { readonly check: boolean } | undefined;

@@ -93,55 +93,6 @@ test('checks every banned lint surface while excluding mirror-only and vendored 
   }
 });
 
-test('tolerates the hoisted banned binary iff every declarer of the tool is mirror-only', () => {
-  const workspaceRoot = mkdtempSync(join(tmpdir(), 'fhevm-npm-lint-policy-'));
-  try {
-    // npm hoists the mirror-only member's devDependency to the ROOT tree: sanctioned.
-    write(workspaceRoot, 'node_modules/.bin/solhint', '');
-    write(workspaceRoot, 'package.json', '{}\n');
-    write(workspaceRoot, 'mirror/package.json', '{}\n');
-    write(workspaceRoot, 'mirror/pkg/package.json', '{ "devDependencies": { "solhint": "^6.2.1" } }\n');
-    write(workspaceRoot, 'project/package.json', '{}\n');
-
-    const packages = {
-      '.': { kind: 'workspace-root', name: 'workspace', private: true, member: false },
-      './project': { kind: 'shared-helper', name: '@scope/project-dev', private: true, member: true },
-      './mirror': {
-        kind: 'dev',
-        name: '@scope/mirror-dev',
-        private: true,
-        member: true,
-        publishedRelPath: './mirror/pkg',
-      },
-      './mirror/pkg': {
-        kind: 'published',
-        name: 'mirror-project',
-        member: true,
-        distribution: ['mirror'],
-        mirror: { repository: 'https://github.com/example/mirror' },
-      },
-    } as const;
-    const manifest = parseTestNpmManifest({
-      packageJson: { published: { required: [], excluded: [] } },
-      packages,
-    });
-    assert.deepEqual(inspectLintPolicy(workspaceRoot, manifest).violations, []);
-
-    // A NON-mirror package also declares it: the same binary goes back to being a violation.
-    write(workspaceRoot, 'project/package.json', '{ "devDependencies": { "solhint": "^6.2.1" } }\n');
-    const withNonMirrorDeclarer = inspectLintPolicy(workspaceRoot, manifest).violations;
-    assert.ok(
-      withNonMirrorDeclarer.some(
-        ({ packageKey, message }) =>
-          packageKey === './node_modules/.bin/solhint' && message.includes('binary is runnable'),
-      ),
-      'a non-mirror declarer must keep the installed binary a violation',
-    );
-  } finally {
-    rmSync(workspaceRoot, { recursive: true, force: true });
-  }
-});
-
 function write(root: string, relativePath: string, contents: string): void {
   const file = join(root, relativePath);
   mkdirSync(join(file, '..'), { recursive: true });

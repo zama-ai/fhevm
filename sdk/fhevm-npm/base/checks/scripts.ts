@@ -368,7 +368,9 @@ function validateConfiguredConsumer(
     });
   }
 
-  if (!isFile(join(consumer.directory, 'package-lock.json'))) {
+  // Only an ISOLATED consumer needs its own lock (test-consumer --ci replays it). A workspace-member
+  // consumer is installed by its installation root; its isolated rehearsal belongs to the publish layer.
+  if (!consumer.inventory.member && !isFile(join(consumer.directory, 'package-lock.json'))) {
     violations.push({
       rule: '5.3.1',
       packageKey: published.key,
@@ -525,12 +527,23 @@ export function validatePrettierConfigs(
     }
 
     if (pkg.inventory.kind === 'workspace-root') {
-      if (!configFiles.includes('prettier.base.mjs')) {
+      // Only the sdk root carries the shared base config; a cluster root is a pure installation root —
+      // its members reference the sdk root's base by relative path, so a second base would be a fork.
+      if (pkg.key === '.' && !configFiles.includes('prettier.base.mjs')) {
         violations.push({
           rule: '5.1.6',
           packageKey: pkg.key,
           message: "workspace root must contain 'prettier.base.mjs'",
         });
+      }
+      if (pkg.key !== '.') {
+        for (const configFile of configFiles) {
+          violations.push({
+            rule: '5.1.6',
+            packageKey: pkg.key,
+            message: `an installation root must not carry Prettier configuration '${configFile}'`,
+          });
+        }
       }
       continue;
     }
@@ -600,12 +613,22 @@ export function validateEslintConfigs(
     }
 
     if (pkg.inventory.kind === 'workspace-root') {
-      if (!configFiles.includes('eslint.base.mjs')) {
+      // Same asymmetry as 5.1.6: base configs live at the sdk root only.
+      if (pkg.key === '.' && !configFiles.includes('eslint.base.mjs')) {
         violations.push({
           rule: '5.1.7',
           packageKey: pkg.key,
           message: "workspace root must contain 'eslint.base.mjs'",
         });
+      }
+      if (pkg.key !== '.') {
+        for (const configFile of configFiles) {
+          violations.push({
+            rule: '5.1.7',
+            packageKey: pkg.key,
+            message: `an installation root must not carry ESLint configuration '${configFile}'`,
+          });
+        }
       }
       continue;
     }

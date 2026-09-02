@@ -200,14 +200,38 @@ test('rule 3.1.1 forbids file dependencies in npm-distributed packages', () => {
     },
   );
 
-  assert.deepEqual(validateWorkspaceMemberSpecs([root, target, published]), [
-    {
-      rule: '3.1.1',
-      packageKey: './application/pkg',
-      message:
-        "npm-distributed package must not use local file dependency '@scope/library' in 'dependencies'; replace \"file:../../library/pkg\" with a publishable version",
-    },
-  ]);
+  // Same installation root: the link must be a plain exact version instead.
+  const sameRoot = validateWorkspaceMemberSpecs([root, target, published]);
+  assert.equal(sameRoot.length, 1);
+  assert.match(sameRoot[0]?.message ?? '', /links a member of the SAME installation root/);
+
+  // Cross-root to an npm-published target: legal (the publish layer maps it to a registry range).
+  const clusterRoot = loadedPackage(
+    './cluster',
+    { kind: 'workspace-root', name: 'cluster', private: true, member: false },
+    { name: 'cluster', private: true },
+  );
+  const crossSource = loadedPackage(
+    './cluster/app/pkg',
+    { kind: 'published', name: '@scope/app', member: true, memberOf: './cluster', distribution: ['npm'] },
+    { name: '@scope/app', version: '1.0.0', dependencies: { '@scope/library': 'file:../../../library/pkg' } },
+  );
+  assert.deepEqual(validateWorkspaceMemberSpecs([root, clusterRoot, target, crossSource]), []);
+
+  // Cross-root to a PRIVATE helper: still forbidden for an npm-distributed source.
+  const privateTarget = loadedPackage(
+    './helper',
+    { kind: 'shared-helper', name: '@scope/helper-dev', private: true, member: true },
+    { name: '@scope/helper-dev', private: true, version: '0.0.0' },
+  );
+  const linksPrivate = loadedPackage(
+    './cluster/app/pkg',
+    { kind: 'published', name: '@scope/app', member: true, memberOf: './cluster', distribution: ['npm'] },
+    { name: '@scope/app', version: '1.0.0', dependencies: { '@scope/helper-dev': 'file:../../../helper' } },
+  );
+  const privateLink = validateWorkspaceMemberSpecs([root, clusterRoot, privateTarget, linksPrivate]);
+  assert.equal(privateLink.length, 1);
+  assert.match(privateLink[0]?.message ?? '', /must not link private/);
 });
 
 test('rule 3.1.2 rejects tarball dependencies even in mirror-only consumers', () => {

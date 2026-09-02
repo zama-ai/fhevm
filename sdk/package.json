@@ -10,12 +10,7 @@
     "common-vendored",
     "host-contracts-cleartext/v12",
     "host-contracts-cleartext/v13",
-    "host-contracts-cleartext/v13/pkg",
-    "hardhat/v2/plugin",
-    "hardhat/v2/plugin/pkg",
-    "hardhat/v2/fhevm-hardhat-template",
-    "hardhat/v2/fhevm-hardhat-template/pkg",
-    "hardhat/v2/e2e"
+    "host-contracts-cleartext/v13/pkg"
   ],
   "scripts": {
     "build": "make build",

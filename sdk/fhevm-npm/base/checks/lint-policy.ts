@@ -40,7 +40,7 @@ export function inspectLintPolicy(workspaceRoot: string, manifest: NpmManifest):
     return 'continue';
   });
 
-  inspectInstalledBinaries(workspaceRoot, manifest, mirrorOnlyRoots, checkedPaths, violations);
+  inspectInstalledBinaries(workspaceRoot, mirrorOnlyRoots, checkedPaths, violations);
 
   for (const projectRoot of foundryProjectRoots(workspaceRoot, manifest, mirrorOnlyRoots)) {
     walkDirectory(projectRoot, (path, entry) => {
@@ -59,14 +59,15 @@ export function inspectLintPolicy(workspaceRoot: string, manifest: NpmManifest):
   };
 }
 
+// Strict on purpose: since the template went workspace-native (its render, not its workspace form,
+// carries solhint), NO workspace package declares the banned tool — an installed binary anywhere is
+// therefore always a violation.
 function inspectInstalledBinaries(
   workspaceRoot: string,
-  manifest: NpmManifest,
   mirrorOnlyRoots: readonly string[],
   checkedPaths: string[],
   violations: Violation[],
 ): void {
-  const sanctioned = bannedToolSanctionedByMirrorOnly(workspaceRoot, manifest, mirrorOnlyRoots);
   walkDirectory(workspaceRoot, (path, entry) => {
     if (isInsideAny(path, mirrorOnlyRoots)) return 'skip';
     if (!entry.isDirectory()) return 'continue';
@@ -75,42 +76,11 @@ function inspectInstalledBinaries(
 
     const binary = join(path, '.bin', BANNED_TOOL);
     checkedPaths.push(pathKey(workspaceRoot, join(path, '.bin')));
-    if (existsSync(binary) && !sanctioned) {
+    if (existsSync(binary)) {
       violations.push(violation(workspaceRoot, binary, 'installed banned Solidity-linter binary is runnable'));
     }
     return 'continue';
   });
-}
-
-// npm hoists a workspace member's devDependencies into the ROOT tree, so a mirror-only package that
-// legitimately declares the banned tool makes its binary appear outside every mirror-only root. That
-// installation is tolerated iff at least one manifest package declares the tool AND every declarer sits
-// inside a mirror-only root — an unexplained binary, or any non-mirror declarer, stays a violation.
-function bannedToolSanctionedByMirrorOnly(
-  workspaceRoot: string,
-  manifest: NpmManifest,
-  mirrorOnlyRoots: readonly string[],
-): boolean {
-  const declarers = Object.keys(manifest.packages).filter((key) =>
-    declaresBannedTool(packageDirectory(workspaceRoot, key)),
-  );
-  return (
-    declarers.length > 0 && declarers.every((key) => isInsideAny(packageDirectory(workspaceRoot, key), mirrorOnlyRoots))
-  );
-}
-
-function declaresBannedTool(directory: string): boolean {
-  const file = join(directory, 'package.json');
-  if (!existsSync(file)) return false;
-  try {
-    const parsed = JSON.parse(readFileSync(file, 'utf8')) as {
-      dependencies?: Record<string, string>;
-      devDependencies?: Record<string, string>;
-    };
-    return BANNED_TOOL in (parsed.dependencies ?? {}) || BANNED_TOOL in (parsed.devDependencies ?? {});
-  } catch {
-    return false;
-  }
 }
 
 function inspectTextForBannedTool(workspaceRoot: string, file: string, message: string, violations: Violation[]): void {

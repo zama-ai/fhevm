@@ -14,7 +14,9 @@ export function validateLockfiles(
   for (const pkg of packages) {
     const lockfile = join(pkg.directory, 'package-lock.json');
     const exists = fileExists(lockfile);
-    const configuredConsumer = configuredConsumerKeys.has(pkg.key);
+    // A workspace-member consumer is covered by its installation root's lock; only an ISOLATED
+    // consumer fixture carries its own for `test-consumer --ci`.
+    const configuredConsumer = configuredConsumerKeys.has(pkg.key) && !pkg.inventory.member;
     const required =
       pkg.inventory.kind === 'workspace-root' || pkg.inventory.kind === 'standalone' || configuredConsumer;
 

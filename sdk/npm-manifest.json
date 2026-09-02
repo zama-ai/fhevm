@@ -1,7 +1,7 @@
 {
   "$schema": "./npm-manifest.schema.json",
   "inventory": {
-    "exclude": ["./js-sdk"]
+    "exclude": ["./js-sdk", "./cli-js-sdk"]
   },
   "dependencies": {
     "forbidden": ["solhint"]
@@ -218,6 +218,15 @@
       "dependencyGroup": "host-contracts-cleartext/v13",
       "note": "A standard external ESM TypeScript consumer copied to a temporary directory by the owning dev package's test:consumer script."
     },
+    "./hardhat/v2": {
+      "kind": "workspace-root",
+      "type": "esm",
+      "browser": false,
+      "name": "fhevm-hardhat-v2-workspace",
+      "private": true,
+      "member": false,
+      "note": "Installation root for the hardhat v2 generation (a CLUSTER): one npm workspace with its own lockfile and hoisting, so every member resolves the SAME hardhat@2 — the no-symlink singleton guarantee. One installation root per hardhat major; the sdk root workspace holds no hardhat at all."
+    },
     "./hardhat/v2/plugin": {
       "kind": "dev",
       "type": "esm",
@@ -225,6 +234,7 @@
       "name": "@fhevm/hardhat-plugin-v2-dev",
       "private": true,
       "member": true,
+      "memberOf": "./hardhat/v2",
       "publishedRelPath": "./hardhat/v2/plugin/pkg",
       "dependencyGroup": "hardhat/v2",
       "note": "Declares no `version`, which the version rule says should be 0.0.0."
@@ -235,6 +245,7 @@
       "browser": false,
       "name": "@fhevm/hardhat-plugin",
       "member": true,
+      "memberOf": "./hardhat/v2",
       "dependencyGroup": "hardhat/v2",
       "consumerTests": {
         "cjs": "./hardhat/v2/fhevm-hardhat-template/pkg"
@@ -255,8 +266,9 @@
       "name": "@fhevm/hardhat-template-v2-dev",
       "private": true,
       "member": true,
+      "memberOf": "./hardhat/v2",
       "dependencyGroup": "hardhat/v2",
-      "note": "Dev owner for the mirrored template. Holds nothing of its own: the mirror is ./pkg, byte-for-byte with the public repo, so anything this package added would be drift.",
+      "note": "Dev owner for the template. Owns the outbound render spec (mirror.manifest.json) that turns the workspace-native ./pkg into the public repository.",
       "publishedRelPath": "./hardhat/v2/fhevm-hardhat-template/pkg"
     },
     "./hardhat/v2/fhevm-hardhat-template/pkg": {
@@ -265,13 +277,13 @@
       "browser": false,
       "name": "fhevm-hardhat-template-v2",
       "member": true,
+      "memberOf": "./hardhat/v2",
       "dependencyGroup": "hardhat/v2",
-      "dependencyExceptions": ["solhint"],
       "distribution": ["mirror"],
       "mirror": {
         "repository": "https://github.com/zama-ai/fhevm-hardhat-template"
       },
-      "note": "A tracked workspace copy, owned by the -dev package above it. Byte-for-byte copy of github.com/zama-ai/fhevm-hardhat-template, mirrored byte-for-byte except for its declared workspace package.json transformation, omitted upstream CI files, and regenerated lockfile."
+      "note": "The WORKSPACE-NATIVE template: an ordinary cluster member, free to differ from the public repository — github.com/zama-ai/fhevm-hardhat-template is a RENDER of it (publish-mirror), produced from the owner's mirror.manifest.json: registry dependency ranges for the file: links, solhint and its configs re-added, CI extras, regenerated lockfile. The rendered artifact is the read-only thing, not this copy; consumer fidelity is proven by test-consumer against the render."
     },
     "./hardhat/v2/e2e": {
       "kind": "internal-consumer",
@@ -280,8 +292,52 @@
       "name": "@fhevm/hardhat-plugin-v2-e2e-dev",
       "private": true,
       "member": true,
+      "memberOf": "./hardhat/v2",
       "dependencyGroup": "hardhat/v2",
-      "note": "Links the plugin as a member rather than installing a tarball; the packed-artifact check lives in the template instead."
+      "note": "Links the plugin as a cluster member rather than installing a tarball; the packed-artifact check lives in the template instead."
+    },
+    "./hardhat/v3": {
+      "kind": "workspace-root",
+      "type": "esm",
+      "browser": false,
+      "name": "fhevm-hardhat-v3-workspace",
+      "private": true,
+      "member": false,
+      "note": "Installation root for the hardhat v3 generation (a CLUSTER): its own lockfile pins hardhat 3.x, hoisted once for every member — the same no-symlink singleton guarantee as ./hardhat/v2, one root per hardhat major. fhevm-hardhat-template and e2e siblings join its workspaces when they land."
+    },
+    "./hardhat/v3/plugin": {
+      "kind": "dev",
+      "type": "esm",
+      "browser": false,
+      "name": "@fhevm/hardhat-plugin-v3-dev",
+      "private": true,
+      "member": true,
+      "memberOf": "./hardhat/v3",
+      "publishedRelPath": "./hardhat/v3/plugin/pkg",
+      "dependencyGroup": "hardhat/v3",
+      "note": "Dev owner of the hardhat v3 plugin — hello-world skeleton until the migration lands. Declares no `version`, which the version rule says should be 0.0.0."
+    },
+    "./hardhat/v3/plugin/pkg": {
+      "kind": "published",
+      "type": "esm",
+      "browser": false,
+      "name": "@fhevm/hardhat-plugin",
+      "member": true,
+      "memberOf": "./hardhat/v3",
+      "dependencyGroup": "hardhat/v3",
+      "consumerTests": {
+        "esm": "./hardhat/v3/plugin/test-consumer/esm"
+      },
+      "note": "Same npm name as the v2 payload ON PURPOSE: one plugin, a new major line per hardhat generation. Legal because published-name uniqueness is scoped per installation root, and the two payloads never share one."
+    },
+    "./hardhat/v3/plugin/test-consumer/esm": {
+      "kind": "standalone",
+      "type": "esm",
+      "browser": false,
+      "name": "hardhat-plugin-v3-consumer-esm",
+      "member": false,
+      "dependencyGroup": "hardhat/v3",
+      "note": "Isolated ESM consumer fixture for the v3 plugin, copied to a temporary directory by test-consumer."
     }
   }
 }

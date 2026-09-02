@@ -298,8 +298,14 @@
         },
         "member": {
           "type": "boolean",
-          "description": "Whether the root package.json `workspaces` array lists this entry's key.",
+          "description": "Whether some installation root's package.json `workspaces` array lists this entry (`memberOf` names which root; default '.').",
           "$comment": "Duplicating `workspaces` deliberately: the gate that compares the two is what catches a member added in one place and forgotten in the other."
+        },
+        "memberOf": {
+          "type": "string",
+          "pattern": "^\\.(?:/(?!\\.{1,2}(?:/|$))[A-Za-z0-9._-]+)+$",
+          "description": "The installation root this member belongs to — a non-'.' workspace-root entry (a cluster with its own lockfile and hoisting). Omitted means the sdk root workspace.",
+          "$comment": "One npm installation root per hardhat major: hoisting inside a root is what guarantees a single hardhat instance without symlinks."
         },
         "private": {
           "type": "boolean",

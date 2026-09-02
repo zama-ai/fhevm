@@ -25,7 +25,7 @@ test('reports missing root and standalone lockfiles and a member lockfile', () =
   assert.ok(violations.every((violation) => violation.rule === '6.1.1'));
 });
 
-test('requires a local lockfile for a manifest-selected consumer even when it is a workspace member', () => {
+test('a member consumer needs no own lockfile; an isolated consumer still does', () => {
   const root = loadedPackage(
     '.',
     { kind: 'workspace-root', name: 'workspace', private: true, member: false },
@@ -41,28 +41,38 @@ test('requires a local lockfile for a manifest-selected consumer even when it is
     },
     { name: '@scope/plugin', version: '1.0.0' },
   );
-  const consumer = loadedPackage(
+  const memberConsumer = loadedPackage(
     './template/pkg',
     { kind: 'published', name: 'template', member: true, distribution: ['mirror'] },
     { name: 'template', version: '1.0.0', type: 'commonjs' },
   );
   const rootLock = join(root.directory, 'package-lock.json');
-  const consumerLock = join(consumer.directory, 'package-lock.json');
+  const consumerLock = join(memberConsumer.directory, 'package-lock.json');
 
+  // Covered by its installation root's lock: nothing required, and an OWN lock would be a violation.
   assert.deepEqual(
-    validateLockfiles([root, published, consumer], (file) => file === rootLock || file === consumerLock),
+    validateLockfiles([root, published, memberConsumer], (file) => file === rootLock),
     [],
   );
-  assert.deepEqual(
-    validateLockfiles([root, published, consumer], (file) => file === rootLock),
-    [
-      {
-        rule: '6.1.1',
-        packageKey: './template/pkg',
-        message: 'manifest-selected consumer must have its own package-lock.json for isolated npm ci',
-      },
-    ],
+  assert.equal(
+    validateLockfiles([root, published, memberConsumer], (file) => file === rootLock || file === consumerLock).length,
+    1,
   );
+
+  // An ISOLATED (non-member) consumer still carries its own lock for test-consumer --ci.
+  const isolatedConsumer = loadedPackage(
+    './plugin/test-consumer/cjs',
+    { kind: 'standalone', name: 'plugin-consumer-cjs', member: false },
+    { name: 'plugin-consumer-cjs', version: '1.0.0', type: 'commonjs' },
+  );
+  const isolatedPublished = loadedPackage(
+    './plugin/pkg',
+    { kind: 'published', name: '@scope/plugin', member: true, consumerTests: { cjs: './plugin/test-consumer/cjs' } },
+    { name: '@scope/plugin', version: '1.0.0' },
+  );
+  const missing = validateLockfiles([root, isolatedPublished, isolatedConsumer], (file) => file === rootLock);
+  assert.equal(missing.length, 1);
+  assert.match(missing[0]?.message ?? '', /isolated npm ci|own package-lock/);
 });
 
 function fixtures() {

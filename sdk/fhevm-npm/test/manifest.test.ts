@@ -159,3 +159,79 @@ test('rejects traversal in package keys', () => {
     ManifestValidationError,
   );
 });
+
+test('accepts a non-. workspace-root (an installation-root cluster) and its memberOf members', () => {
+  const manifest = parseNpmManifest({
+    packageJson: { published: { required: ['name'], excluded: ['private'] } },
+    packages: {
+      '.': { kind: 'workspace-root', type: 'esm', browser: false, name: 'workspace', private: true, member: false },
+      './hardhat/v2': {
+        kind: 'workspace-root',
+        type: 'esm',
+        browser: false,
+        name: '@scope/hh-v2-cluster',
+        private: true,
+        member: false,
+      },
+      './hardhat/v2/plugin/pkg': {
+        kind: 'published',
+        type: 'esm',
+        browser: false,
+        name: '@scope/plugin',
+        member: true,
+        memberOf: './hardhat/v2',
+      },
+    },
+  });
+  assert.equal(manifest.packages['./hardhat/v2/plugin/pkg']?.memberOf, './hardhat/v2');
+});
+
+test('rejects bad memberOf declarations', () => {
+  const base = {
+    packageJson: { published: { required: ['name'], excluded: ['private'] } },
+  };
+  const root = { kind: 'workspace-root', type: 'esm', browser: false, name: 'w', private: true, member: false };
+  const cases: readonly [Record<string, unknown>, RegExp][] = [
+    // memberOf on a non-member
+    [
+      { '.': root, './x': { kind: 'non-package', type: 'esm', browser: false, member: false, memberOf: './y' } },
+      /only a workspace member/,
+    ],
+    // explicit '.' is the default and must be omitted
+    [
+      {
+        '.': root,
+        './x/pkg': { kind: 'published', type: 'esm', browser: false, name: 'x', member: true, memberOf: '.' },
+      },
+      /omit memberOf/,
+    ],
+    // memberOf naming a non-root entry
+    [
+      {
+        '.': root,
+        './y': { kind: 'shared-helper', type: 'esm', browser: false, name: '@s/y-dev', private: true, member: true },
+        './y/pkg': { kind: 'published', type: 'esm', browser: false, name: 'y', member: true, memberOf: './y' },
+      },
+      /not a workspace-root entry/,
+    ],
+    // a member outside its declared root's subtree
+    [
+      {
+        '.': root,
+        './hardhat/v2': { ...root, name: '@s/cluster' },
+        './elsewhere/pkg': {
+          kind: 'published',
+          type: 'esm',
+          browser: false,
+          name: 'z',
+          member: true,
+          memberOf: './hardhat/v2',
+        },
+      },
+      /must live inside its installation root/,
+    ],
+  ];
+  for (const [packages, message] of cases) {
+    assert.throws(() => parseNpmManifest({ ...base, packages }), message);
+  }
+});
