@@ -22,9 +22,12 @@ void test('every connection carries a frozen fhevm object of its own', async () 
     assert.notEqual(second.fhevm, undefined);
     assert.notEqual(first.fhevm, second.fhevm, 'connections must not share fhevm state');
     assert.ok(Object.isFrozen(first.fhevm), 'the fhevm object is frozen');
-    // Placeholder semantics until network detection lands (plan step A5).
-    assert.equal(first.fhevm.isMock, true);
-    assert.equal(first.fhevm.isCleartext, false);
+    // The in-process EDR chain is a cleartext development node.
+    assert.equal(first.fhevm.network.kind, 'hardhat');
+    assert.equal(first.fhevm.isCleartext, true);
+    assert.equal(first.fhevm.isDevelopment, true);
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- the alias is the thing under test
+    assert.equal(first.fhevm.isMock, first.fhevm.isCleartext);
   } finally {
     await first.close();
     await second.close();

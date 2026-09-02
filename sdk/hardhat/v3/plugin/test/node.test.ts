@@ -39,7 +39,8 @@ void test('the chain is prepared before the node server accepts its first reques
     const connection = await remote.network.create('localhost');
     try {
       assert.equal(connection.networkConfig.type, 'http');
-      assert.notEqual(connection.fhevm, undefined, 'the remote connection still gets its fhevm object');
+      assert.equal(connection.fhevm.network.kind, 'localhost', 'a remote node on 31337 is a localhost dev node');
+      assert.equal(connection.fhevm.isDevelopment, true);
       assert.equal(await connection.provider.request({ method: 'eth_blockNumber' }), '0x1');
       assert.equal(await rpc(url, 'eth_blockNumber'), '0x1', 'an http connection must not prepare the chain again');
     } finally {

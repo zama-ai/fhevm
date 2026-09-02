@@ -5,7 +5,7 @@ import type { FHECounterPublicDecrypt, FHECounterPublicDecrypt__factory } from '
 
 // One connection per run, shared with every other test file (`getOrCreate`), as v2 had one network
 // per run; `--network` selects it.
-const { ethers } = await network.getOrCreate();
+const { ethers, fhevm } = await network.getOrCreate();
 
 async function deployFixture(): Promise<{
   readonly fheCounterContract: FHECounterPublicDecrypt;
@@ -22,7 +22,10 @@ describe('FHECounterPublicDecrypt', function () {
   let fheCounterContract: FHECounterPublicDecrypt;
 
   beforeEach(async () => {
-    // The `fhevm.isCleartext` guard of the v2 suite returns here once network detection lands.
+    // Check whether the tests are running against an FHEVM mock environment
+    if (!fhevm.isCleartext) {
+      throw new Error(`This hardhat test suite can only run on a cleartext node`);
+    }
     ({ fheCounterContract } = await deployFixture());
   });
 

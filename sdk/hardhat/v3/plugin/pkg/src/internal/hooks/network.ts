@@ -13,6 +13,7 @@ import type { HookContext, NetworkHooks } from 'hardhat/types/hooks';
 import type { ChainType, NetworkConnection } from 'hardhat/types/network';
 
 import { createFhevmConnection } from '../FhevmConnection.js';
+import { resolveFhevmNetwork } from '../network.js';
 import { prepareDevelopmentChain } from '../prepare.js';
 
 export default (): Promise<Partial<NetworkHooks>> => {
@@ -24,8 +25,9 @@ export default (): Promise<Partial<NetworkHooks>> => {
       next: (nextContext: HookContext) => Promise<NetworkConnection<ChainTypeT>>,
     ): Promise<NetworkConnection<ChainTypeT>> {
       const connection = await next(context);
+      const network = await resolveFhevmNetwork(connection);
       await prepareDevelopmentChain(connection);
-      connection.fhevm = createFhevmConnection(connection);
+      connection.fhevm = createFhevmConnection(connection, network);
       fhevmByConnection.set(connection, true);
       return connection;
     },

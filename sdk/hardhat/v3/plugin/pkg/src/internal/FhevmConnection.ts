@@ -1,21 +1,28 @@
 // The per-connection fhevm object — hardhat 3 scopes networks to CONNECTIONS, so fhevm state lives
 // on each one (v2 had a per-process singleton). This is the seed the public API grows on: the D-stage
-// port fills it method group by method group; until then it only says what kind of network it is on.
+// port fills it method group by method group; today it says what kind of network it is on.
 
 import type { NetworkConnection } from 'hardhat/types/network';
 
+import { type FhevmNetworkInfo, isCleartextNetwork, isDevelopmentNetwork } from './network.js';
+
 export interface HardhatFhevm {
-  /** True on an in-process or otherwise development-class network (stub until network detection lands). */
+  /** The detected network: name, live chain id, kind, remote URL. */
+  readonly network: FhevmNetworkInfo;
+  /** @deprecated Same as {@link isCleartext}; kept for v2 call sites. */
   readonly isMock: boolean;
-  /** True when the connection targets a cleartext stack (stub until network detection lands). */
+  /** True when the SDK talks to this node in cleartext mode (every development node). */
   readonly isCleartext: boolean;
+  /** True on a development node the plugin may deploy the cleartext stack onto. */
+  readonly isDevelopment: boolean;
 }
 
-// Takes the connection although the stub ignores it: the semantics become a function of the network
-// when detection lands, and the call site must not change then.
-export function createFhevmConnection(_connection: NetworkConnection<string>): HardhatFhevm {
+export function createFhevmConnection(_connection: NetworkConnection<string>, network: FhevmNetworkInfo): HardhatFhevm {
+  const isCleartext = isCleartextNetwork(network);
   return Object.freeze({
-    isMock: true,
-    isCleartext: false,
+    network,
+    isMock: isCleartext,
+    isCleartext,
+    isDevelopment: isDevelopmentNetwork(network),
   });
 }
