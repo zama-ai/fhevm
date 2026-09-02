@@ -208,7 +208,8 @@ jobs:
         DATABASE_URL: postgresql://postgres:postgres@localhost:5432/coprocessor
         SQLX_OFFLINE: 'true'
         TEST_PACKAGE: ${{ matrix.package }}
-        IS_MERGE_QUEUE: ${{ startsWith(github.head_ref, 'mergify/merge-queue/') && '1' || '0' }}
+        # TEMPORARY - measuring the full matrix on a PR, revert before merge
+        IS_MERGE_QUEUE: '1'
         SHARD: ${{ matrix.shard }}
         SHARDS: ${{ matrix.shards }}
         COPROCESSOR_TEST_PG_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
