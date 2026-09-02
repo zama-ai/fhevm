@@ -27,6 +27,7 @@ export type CommandName = (typeof commandNames)[number];
 export type CliOptions = {
   readonly command:
     | CommandName
+    | 'check-fhevm-chains-origin'
     | 'check-mirror'
     | 'check-vendored-origin'
     | 'clean-forge-dependencies'
@@ -36,6 +37,7 @@ export type CliOptions = {
     | 'install-forge-dependencies'
     | 'list-packages'
     | 'pack-tarball'
+    | 'sync-fhevm-chains'
     | 'sync-vendored'
     | 'test-consumer'
     | 'test-consumer-regenerate-package-lock';
@@ -68,6 +70,8 @@ export type CliOptions = {
       readonly outDir?: string;
       readonly clean: boolean;
     }
+  | { readonly command: 'check-fhevm-chains-origin' }
+  | { readonly command: 'sync-fhevm-chains'; readonly commit?: string; readonly latest: boolean }
   | { readonly command: 'sync-vendored'; readonly check: boolean }
   | { readonly command: 'test-consumer-regenerate-package-lock'; readonly packageSelector?: string }
   | {
@@ -127,6 +131,8 @@ export function parseCliOptions(argv: readonly string[]): CliOptions {
   let listPackagesSelected = false;
   let packTarball: { readonly packageSelector?: string; readonly outDir?: string; readonly clean: boolean } | undefined;
   let syncVendored: { readonly check: boolean } | undefined;
+  let syncFhevmChains: { readonly commit?: string; readonly latest: boolean } | undefined;
+  let checkFhevmChainsOrigin = false;
   let regenerateConsumerPackageLocks = false;
   let regenerateConsumerPackageLockSelector: string | undefined;
   let testConsumer:
@@ -349,6 +355,26 @@ Why:
       syncVendored = { check: options.check };
     });
   program
+    .command('sync-fhevm-chains')
+    .description(
+      'Write fhevm-chains.config.json — every fhevm host-contract and gateway address on mainnet and ' +
+        "testnet — from the protocol registry at a pinned commit (default: the file's recorded pin).",
+    )
+    .option('--latest', "pin to the registry's current HEAD", false)
+    .option('--commit <sha>', 'pin to an explicit registry commit (full 40-hex sha)')
+    .action((options: { readonly latest: boolean; readonly commit?: string }) => {
+      syncFhevmChains = { commit: options.commit, latest: options.latest };
+    });
+  program
+    .command('check-fhevm-chains-origin')
+    .description(
+      "Check that fhevm-chains.config.json is current with the head of the protocol registry's main " +
+        '(read-only; registry commits touching no fhevm address stay green).',
+    )
+    .action(() => {
+      checkFhevmChainsOrigin = true;
+    });
+  program
     .command('install-forge-dependencies [package]')
     .description('Install Soldeer dependencies for one package, or for all manifest packages when omitted.')
     .action((packageSelector: string | undefined) => {
@@ -433,7 +459,9 @@ Why:
     syncVendored === undefined &&
     generateExports === undefined &&
     generateCleartextConfig === undefined &&
-    completion === undefined
+    completion === undefined &&
+    syncFhevmChains === undefined &&
+    !checkFhevmChainsOrigin
   ) {
     program.help({ error: true });
     throw new Error('unreachable');
@@ -448,6 +476,25 @@ Why:
       verbosity: options.verbose,
       sortPackageJson: false,
       ...syncVendored,
+    };
+  }
+  if (syncFhevmChains !== undefined) {
+    return {
+      command: 'sync-fhevm-chains',
+      workspaceRoot,
+      manifestFile: resolve(workspaceRoot, 'npm-manifest.json'),
+      verbosity: options.verbose,
+      sortPackageJson: false,
+      ...syncFhevmChains,
+    };
+  }
+  if (checkFhevmChainsOrigin) {
+    return {
+      command: 'check-fhevm-chains-origin',
+      workspaceRoot,
+      manifestFile: resolve(workspaceRoot, 'npm-manifest.json'),
+      verbosity: options.verbose,
+      sortPackageJson: false,
     };
   }
   if (completion !== undefined) {

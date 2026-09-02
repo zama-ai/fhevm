@@ -19,7 +19,9 @@ import { checkCommitScope } from './commands/check-commit-scope.ts';
 import { checkScripts } from './commands/check-scripts.ts';
 import { checkTscMode } from './commands/check-tsc-mode.ts';
 import { checkTsconfigPaths } from './commands/check-tsconfig-paths.ts';
+import { checkFhevmChainsOrigin } from './commands/check-fhevm-chains-origin.ts';
 import { checkVendoredOrigin } from './commands/check-vendored-origin.ts';
+import { syncFhevmChains } from './commands/sync-fhevm-chains.ts';
 import { checkWorkspaces } from './commands/check-workspaces.ts';
 import { generateCleartextConfigCommand } from './commands/generate-cleartext-config.ts';
 import { generateExportsCommand } from './commands/generate-exports.ts';
@@ -61,6 +63,17 @@ async function main(): Promise<void> {
   // Also manifest-free: it reads sdk/cleartext-config.json and writes the faces generated from it.
   if (options.command === 'generate-cleartext-config') {
     generateCleartextConfigCommand({ workspaceRoot: options.workspaceRoot, check: options.check });
+    return;
+  }
+  // Both are manifest-free: they speak to the protocol registry and the workspace-root chains file.
+  if (options.command === 'sync-fhevm-chains') {
+    await syncFhevmChains({ workspaceRoot: options.workspaceRoot, commit: options.commit, latest: options.latest });
+    return;
+  }
+  if (options.command === 'check-fhevm-chains-origin') {
+    const report = await checkFhevmChainsOrigin({ workspaceRoot: options.workspaceRoot });
+    printReport(report, options.verbosity);
+    if (report.violations.length > 0) process.exitCode = 1;
     return;
   }
   if (options.command === 'sh-completion') {

@@ -555,7 +555,7 @@ check-generated: ## Delete every generated file, regenerate, and fail unless the
 # Vendored sources
 ########################################################################################################
 
-.PHONY: sync-common-vendored check-vendored-origin check-vendored check-cleartext-config
+.PHONY: sync-common-vendored check-vendored-origin check-vendored check-cleartext-config sync-fhevm-chains check-fhevm-chains
 
 sync-common-vendored: ## Write every vendored destination from its source of truth
 	$(call run-fhevm-npm,sync-vendored)
@@ -574,3 +574,11 @@ check-vendored-origin: ## Does each local vendored folder match its declared ori
 check-vendored: ## Audit vendored content: copies current AND matching their declared origins
 	$(call run-fhevm-npm,sync-vendored --check)
 	$(call run-fhevm-npm,check-vendored-origin)
+
+# Both need the network and an authenticated `gh` (the protocol registry is private), so neither is in
+# `check-pre` or `ci` — run them when touching chain addresses, or from a CI job that holds a token.
+sync-fhevm-chains: ## Write fhevm-chains.config.json from the protocol registry's main head
+	$(call run-fhevm-npm,sync-fhevm-chains --latest)
+
+check-fhevm-chains: ## Is fhevm-chains.config.json current with the protocol registry's main head
+	$(call run-fhevm-npm,check-fhevm-chains-origin)

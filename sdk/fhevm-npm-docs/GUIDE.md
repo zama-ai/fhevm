@@ -53,6 +53,13 @@ make check-vendored FHEVM_NPM_ARGS=-vv
 # sdk/cleartext-config.json in memory and fails if a committed one differs.
 make check-cleartext-config
 
+# Deployed chain addresses (sdk/fhevm-chains.config.json): every fhevm host-contract and gateway
+# address on mainnet and testnet, rendered from the private protocol registry (source.commit records
+# the revision of the last sync). Both need the network and an authenticated `gh`.
+./fhevm-npm-cli sync-fhevm-chains --latest          # catch up with the registry's main head
+make check-fhevm-chains                             # read-only: is the file current with that head?
+                                                    # (registry commits that touch no fhevm address stay green)
+
 # Finer-grained still, inside a package: one generator at a time, e.g.
 # `npm run generate:exports` after editing export.manifest.json — no forge compile needed for
 # pre-phase generators.
