@@ -942,30 +942,152 @@ tfheWorker:
   disabledArgs: []
 
   # Additional raw CLI flags, appended after template-injected args.
-  # Full tfhe_worker CLI for v0.11 / v0.12 images:
-  #   built-in via template: --database-url, --metrics-addr, --health-check-port
-  #   shared flags:
-  #     --run-bg-worker                          # run the background worker loop
+  #
+  # COMPLETE tfhe_worker CLI with every compiled-in default recorded, so a
+  # deployment never depends on a default it cannot see here. Keep in sync
+  # with `Args` in coprocessor/fhevm-engine/tfhe-worker/src/daemon_cli.rs;
+  # the `chart_documents_every_cli_flag_and_default` test in that file fails
+  # the build if a flag or default is added, changed or removed without a
+  # corresponding edit to this block.
+  #
+  # Two conventions in the list below:
+  #   `--flag=value`  takes a value; the value shown is the compiled default.
+  #   `--flag`        is PRESENCE-ONLY. clap rejects `--flag=false` and the
+  #                   worker exits on the unknown value, so a switch is turned
+  #                   ON by listing it and OFF by omitting it. A switch that
+  #                   defaults to ON can therefore only be turned off through
+  #                   its environment variable (noted inline), not extraArgs.
+  #
+  #   built-in via template (do not repeat in extraArgs; suppress with disabledArgs):
+  #     --database-url=<url>                     # from DATABASE_URL; no default
+  #     --metrics-addr=0.0.0.0:9100              # set from .ports.metrics
+  #     --health-check-port=8080                 # set from .ports.healthcheck
+  #     --stack-version                          # presence-only; used by the startupProbe
+  #
+  #   worker loop:
+  #     --run-bg-worker                          # presence-only; default OFF.
+  #                                              # Without it the process idles
+  #                                              # and never polls `computations`.
   #     --worker-polling-interval-ms=1000
-  #     --generate-fhe-keys                      # unsafe; testing only
-  #     --work-items-batch-size=100
-  #     --dependence-chains-per-batch=20
+  #     --work-items-batch-size=100              # unit depends on the adaptive
+  #                                              # window; see below
+  #     --dependence-chains-per-batch=20         # chains held concurrently per cycle
   #     --coprocessor-fhe-threads=32
   #     --tokio-threads=4
   #     --pg-pool-max-connections=10
-  #     --service-name=tfhe-worker
+  #     --key-cache-size=32                      # alias: --tenant-key-cache-size
+  #     --max-batch-ttl-secs=300                 # env: TFHE_WORKER_MAX_BATCH_TTL_SECS
+  #                                              # liveness budget for one in-flight
+  #                                              # batch; a batch older than this
+  #                                              # stops keeping the pod alive
+  #     --service-name=tfhe-worker               # env: OTEL_SERVICE_NAME
   #     --log-level=INFO
-  #     --worker-id=<uuid>                       # defaults to a random UUID at startup
+  #     --generate-fhe-keys                      # presence-only; unsafe, testing only
+  #
+  #   confidential bridge worker:
+  #     --bridge-polling-interval-ms=1000        # minimum 10
+  #     --bridge-associate-batch-size=128
+  #
+  #   dependence-chain (DCID) locking:
+  #     --worker-id=<uuid>                       # no default; a random UUID is
+  #                                              # generated per process. Set it to
+  #                                              # a stable value only if you want
+  #                                              # locks reclaimable across restarts.
   #     --dcid-ttl-sec=30                        # lock TTL in seconds
-  #     --disable-dcid-locking=false             # unsafe; may duplicate DCID work
   #     --dcid-timeslice-sec=90                  # release the lock after this slice
+  #     --processed-dcid-ttl-sec=172800          # delete processed chains older
+  #                                              # than this during idle time (48 h)
   #     --dcid-cleanup-interval-sec=3600         # expired lock cleanup interval
   #     --dcid-max-no-progress-cycles=2
   #     --dcid-ignore-dependency-count-threshold=100
+  #     --dcid-stale-gate-age-secs=300           # minimum age before the idle-time
+  #                                              # repair path may adopt an unowned,
+  #                                              # dependency-gated chain
+  #     --disable-dcid-locking                   # presence-only; default OFF.
+  #                                              # UNSAFE: multiple workers may then
+  #                                              # process the same chain and
+  #                                              # duplicate DCID work.
+  #
+  #   batched chain execution (post-v0.14 images only; absent from v0.14 and
+  #   earlier, where passing them makes the worker exit on an unknown argument):
+  #     --dcid-batch-execution                   # presence-only; default ON.
+  #                                              # env: FHEVM_DCID_BATCH_EXECUTION
+  #                                              # Set that env var to "false" to
+  #                                              # disable — extraArgs cannot.
+  #                                              # Acquires and executes up to
+  #                                              # --dependence-chains-per-batch
+  #                                              # independent chains per cycle so
+  #                                              # DB acquisition and boundary prep
+  #                                              # overlap FHE execution.
+  #     --dcid-adaptive-batch-execution          # presence-only; default ON.
+  #                                              # env: FHEVM_DCID_ADAPTIVE_BATCH_EXECUTION
+  #                                              # Shares each work window across the
+  #                                              # acquired chains so one large chain
+  #                                              # cannot monopolize the batch. It is
+  #                                              # the fairness mitigation for the
+  #                                              # head-of-line blocking that
+  #                                              # --dcid-batch-execution introduces:
+  #                                              # disable BOTH or NEITHER.
+  #                                              #
+  #                                              # NOTE this changes the unit of
+  #                                              # --work-items-batch-size. The
+  #                                              # adaptive window counts (chain,
+  #                                              # transaction) GROUPS; the
+  #                                              # non-adaptive one counts computation
+  #                                              # ROWS, with no residual row cap. A
+  #                                              # value tuned for rows admits roughly
+  #                                              # rows-per-transaction times as many
+  #                                              # rows here, so retune both together.
+  #                                              #
+  #                                              # Each acquired chain gets
+  #                                              # ceil(work-items-batch-size /
+  #                                              # acquired-chains) transactions, so
+  #                                              # keep --work-items-batch-size well
+  #                                              # ABOVE --dependence-chains-per-batch.
+  #                                              # Equal values yield one transaction
+  #                                              # per chain per cycle; a larger
+  #                                              # chains-per-batch disables the
+  #                                              # adaptive window at runtime, silently,
+  #                                              # leaving the blocking without its
+  #                                              # remedy.
+  #     --computation-retry-demote-threshold=3   # env: FHEVM_COMPUTATION_RETRY_DEMOTE_THRESHOLD
+  #                                              # RETRYABLE re-stamps on one
+  #                                              # computation before the row is
+  #                                              # DEMOTED to the slow lane. Demotion
+  #                                              # is not condemnation: the row keeps
+  #                                              # its stamp and stays pending, it just
+  #                                              # stops consuming fast-lane slots so
+  #                                              # its chain can retire and discharge
+  #                                              # dependents. An hourly sweep re-arms
+  #                                              # demoted chains at slow priority with
+  #                                              # the count reset.
+  #
+  #   GPU images only (CPU builds parse and ignore these):
+  #     --gpu-streams-per-device=16              # env: FHEVM_GPU_STREAMS_PER_DEVICE
+  #                                              # Concurrent CUDA streams per visible
+  #                                              # GPU, bounding partition dispatch.
+  #                                              # 16 is the measured plateau on H100;
+  #                                              # 1 serializes dispatch.
+  #     --gpu-memory-reservation-timeout-ms=20000 # env: FHEVM_GPU_MEMORY_RESERVATION_TIMEOUT_MS
+  #                                              # How long a GPU op waits for memory
+  #                                              # before failing so its batch retries.
+  #                                              # CAPPED at 0.8 * --dcid-ttl-sec
+  #                                              # (24 s at the default 30 s TTL): the
+  #                                              # wait blocks inside batch execution
+  #                                              # while the lease renews only between
+  #                                              # cycles, so a longer wait guarantees
+  #                                              # the lease lapses mid-batch and
+  #                                              # another worker recomputes the chain.
+  #                                              # Raising it past the cap only logs a
+  #                                              # startup warning — raise
+  #                                              # --dcid-ttl-sec as well.
+  #
+  #   metrics histogram buckets (min:max:width):
   #     --metric-rerand-batch-latency=0.1:5.0:0.01
   #     --metric-fhe-batch-latency=0.2:5.0:0.05
-  #   v0.11 only:
-  #     --tenant-key-cache-size=32
+  #
+  #   removed after v0.11 (listed so an older pinned image stays deployable):
+  #     --tenant-key-cache-size=32               # renamed to --key-cache-size
   #     --coprocessor-private-key=/path/to/key
   #     --run-server
   #     --server-addr=...
@@ -973,8 +1095,6 @@ tfheWorker:
   #     --server-maximum-ciphertexts-to-schedule=...
   #     --maximum-compact-inputs-upload=...
   #     --maximum-handles-per-input=...
-  #   v0.12 only:
-  #     --key-cache-size=32                      # alias: --tenant-key-cache-size
   extraArgs: []
 
   # Service ports configuration

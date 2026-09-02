@@ -132,8 +132,16 @@ tfheWorker:
   extraArgs:
     - --run-bg-worker
     - --worker-polling-interval-ms=10000
+    # Keep chains-per-batch WELL BELOW work-items-batch-size. The adaptive
+    # window gives each acquired chain ceil(work-items / chains) transactions,
+    # so equal values yield one transaction per chain per cycle and a larger
+    # chains-per-batch disables the adaptive window at runtime. 100/20 matches
+    # the shipped defaults (share of 5), which is what a preview env should be
+    # exercising. The previous 100 here was chosen while
+    # --dependence-chains-per-batch was inert; it now bounds how many chain
+    # locks a worker actually holds.
     - --work-items-batch-size=100
-    - --dependence-chains-per-batch=100
+    - --dependence-chains-per-batch=20
     - --key-cache-size=32
     - --coprocessor-fhe-threads=64
     - --tokio-threads=16

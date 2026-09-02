@@ -26,6 +26,7 @@ readonly BIN_DIR="${REPO_ROOT}/coprocessor/fhevm-engine/target/release"
 readonly DEVICE="${GPU_CONSENSUS_DEVICE:-0}"
 readonly STREAMS_PER_DEVICE="${GPU_CONSENSUS_STREAMS_PER_DEVICE:-16}"
 readonly COMPONENTS_PER_BATCH="${GPU_CONSENSUS_COMPONENTS_PER_BATCH:-20}"
+readonly WORK_ITEMS_BATCH_SIZE="${GPU_CONSENSUS_WORK_ITEMS_BATCH_SIZE:-100}"
 readonly FHE_THREADS="${GPU_CONSENSUS_FHE_THREADS:-8}"
 readonly TOKIO_THREADS="${GPU_CONSENSUS_TOKIO_THREADS:-4}"
 readonly BUILD_MANIFEST="${GPU_RUNTIME_DIR}/build-manifest.env"
@@ -45,6 +46,7 @@ Optional tuning variables:
   GPU_CONSENSUS_DEVICE=0
   GPU_CONSENSUS_STREAMS_PER_DEVICE=16
   GPU_CONSENSUS_COMPONENTS_PER_BATCH=20
+  GPU_CONSENSUS_WORK_ITEMS_BATCH_SIZE=100
   GPU_CONSENSUS_FHE_THREADS=8
   GPU_CONSENSUS_TOKIO_THREADS=4
 
@@ -129,6 +131,16 @@ require_positive_integer() {
 validate_tuning() {
   require_positive_integer GPU_CONSENSUS_STREAMS_PER_DEVICE "$STREAMS_PER_DEVICE"
   require_positive_integer GPU_CONSENSUS_COMPONENTS_PER_BATCH "$COMPONENTS_PER_BATCH"
+  require_positive_integer GPU_CONSENSUS_WORK_ITEMS_BATCH_SIZE "$WORK_ITEMS_BATCH_SIZE"
+  # The adaptive work window gives each acquired chain
+  # ceil(work-items-batch-size / acquired-chains) transactions and turns itself
+  # OFF at runtime once more chains are acquired than the window admits.  An
+  # inverted pair therefore measures non-adaptive scheduling while claiming to
+  # measure the shipped configuration -- silently, and only under enough load
+  # to fill the batch.  Refuse the pair rather than record a misleading run.
+  if (( WORK_ITEMS_BATCH_SIZE < COMPONENTS_PER_BATCH )); then
+    die "GPU_CONSENSUS_WORK_ITEMS_BATCH_SIZE ($WORK_ITEMS_BATCH_SIZE) must be >= GPU_CONSENSUS_COMPONENTS_PER_BATCH ($COMPONENTS_PER_BATCH); an inverted pair disables the adaptive work window at runtime"
+  fi
   require_positive_integer GPU_CONSENSUS_FHE_THREADS "$FHE_THREADS"
   require_positive_integer GPU_CONSENSUS_TOKIO_THREADS "$TOKIO_THREADS"
 }
@@ -155,6 +167,7 @@ write_manifest() {
     printf 'gpu_uuid=%q\n' "$(gpu_uuid)"
     printf 'gpu_streams_per_device=%q\n' "$STREAMS_PER_DEVICE"
     printf 'components_per_batch=%q\n' "$COMPONENTS_PER_BATCH"
+    printf 'work_items_batch_size=%q\n' "$WORK_ITEMS_BATCH_SIZE"
     printf 'coprocessor_fhe_threads=%q\n' "$FHE_THREADS"
     printf 'tokio_threads=%q\n' "$TOKIO_THREADS"
     printf 'pg_pool_max_connections=%q\n' 10
@@ -240,7 +253,7 @@ start_unit() {
         --database-url="$(grep '^DATABASE_URL=' "$env_file" | cut -d= -f2-)"
         --pg-pool-max-connections=10
         --worker-polling-interval-ms=1000
-        --work-items-batch-size=10
+        --work-items-batch-size="$WORK_ITEMS_BATCH_SIZE"
         --dependence-chains-per-batch="$COMPONENTS_PER_BATCH"
         --key-cache-size=32
         --coprocessor-fhe-threads="$FHE_THREADS"
