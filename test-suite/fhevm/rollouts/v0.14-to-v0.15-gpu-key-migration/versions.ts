@@ -19,6 +19,9 @@ export const coprocessorVersionKeys = [
   "COPROCESSOR_TFHE_WORKER_VERSION",
   "COPROCESSOR_ZKPROOF_WORKER_VERSION",
   "COPROCESSOR_SNS_WORKER_VERSION",
+] as const;
+
+export const optionalCoprocessorVersionKeys = [
   "COPROCESSOR_CONSENSUS_DETECTOR_VERSION",
   "COPROCESSOR_UPGRADE_CONTROLLER_VERSION",
 ] as const;
@@ -27,6 +30,8 @@ export type MigrationVersions = {
   baseline: Record<string, string>;
   baselineTag: string;
 };
+
+const DEFAULT_TARGET_FHEVM_SHA = "6430345d834d78af47b7bc625d21cee2031b07f7";
 
 const requiredVersion = (versions: Record<string, string>, key: string): string => {
   const value = versions[key]?.trim();
@@ -60,11 +65,10 @@ export const migrationPhaseVersions = (
 };
 
 export const migrationVersions = (env: Env = process.env): MigrationVersions => {
-  const releaseTag = env.RFC029_BASELINE_FHEVM_TAG?.trim() || "v0.14.0-10";
-  // v0.14.0-10 did not publish a host-contracts image; that component remained on v0.14.0-9.
-  const hostTag = env.RFC029_BASELINE_HOST_TAG?.trim() || "v0.14.0-9";
+  const releaseTag = env.RFC029_BASELINE_FHEVM_TAG?.trim() || "v0.14.0-14";
+  const hostTag = env.RFC029_BASELINE_HOST_TAG?.trim() || releaseTag;
   const kmsCoreTag = env.RFC029_KMS_CORE_TAG?.trim() || "v0.14.0-1";
-  const relayerTag = env.RFC029_BASELINE_RELAYER_TAG?.trim() || "v0.14.0-4";
+  const relayerTag = env.RFC029_BASELINE_RELAYER_TAG?.trim() || releaseTag;
   return {
     baselineTag: releaseTag,
     baseline: {
@@ -78,6 +82,18 @@ export const migrationVersions = (env: Env = process.env): MigrationVersions => 
       ...Object.fromEntries(coprocessorVersionKeys.map((key) => [key, releaseTag])),
     },
   };
+};
+
+export const migrationTargetSha = (env: Env = process.env) =>
+  env.RFC029_TARGET_FHEVM_SHA?.trim() || DEFAULT_TARGET_FHEVM_SHA;
+
+export const migrationBaselineVersions = (
+  target: Record<string, string>,
+  baseline: Record<string, string>,
+) => {
+  const versions = { ...target, ...baseline };
+  for (const key of optionalCoprocessorVersionKeys) delete versions[key];
+  return versions;
 };
 
 export const versionSources = [

@@ -26,7 +26,13 @@ import {
   assertLocalConnectorUpgrade,
   assertOperatorMaterialAgreement,
 } from "./checks";
-import { migrationPhaseVersions, migrationVersions, versionSources } from "./versions";
+import {
+  migrationBaselineVersions,
+  migrationPhaseVersions,
+  migrationTargetSha,
+  migrationVersions,
+  versionSources,
+} from "./versions";
 
 const CONNECTOR_PARTIES = 4;
 const OPERATOR_COUNT = 2;
@@ -391,32 +397,43 @@ const upgradeContracts = async (ctx: RolloutRunContext, targetLock: string) => {
 
 export default async function runMigration(ctx: RolloutRunContext) {
   const versions = migrationVersions();
-  const baselineLock = await ctx.resolveVersionLock("rfc029-00-baseline", {
-    versions: versions.baseline,
-    sources: versionSources,
-  });
+  const targetSha = migrationTargetSha();
   const targetSnapshotLock = await ctx.resolveVersionLock("rfc029-target-snapshot", {
+    target: "sha",
+    sha: targetSha,
     versions: {},
     sources: versionSources,
   });
+  const targetSnapshot = (await Bun.file(targetSnapshotLock).json()) as {
+    env: Record<string, string>;
+    sources: string[];
+  };
+  const baselineLock = await ctx.writeVersionLock("rfc029-00-baseline", {
+    target: "sha",
+    versions: migrationBaselineVersions(targetSnapshot.env, versions.baseline),
+    sources: targetSnapshot.sources,
+  });
   const baselineSnapshot = (await Bun.file(baselineLock).json()) as { env: Record<string, string> };
-  const targetSnapshot = (await Bun.file(targetSnapshotLock).json()) as { env: Record<string, string> };
   const phaseVersions = migrationPhaseVersions(baselineSnapshot.env, targetSnapshot.env);
   const contractLock = await ctx.writeVersionLock("rfc029-01-contract", {
+    target: "sha",
     versions: phaseVersions.contract,
-    sources: versionSources,
+    sources: targetSnapshot.sources,
   });
   const relayerLock = await ctx.writeVersionLock("rfc029-02-relayer", {
+    target: "sha",
     versions: phaseVersions.relayer,
-    sources: versionSources,
+    sources: targetSnapshot.sources,
   });
   const connectorLock = await ctx.writeVersionLock("rfc029-03-kms", {
+    target: "sha",
     versions: phaseVersions.connector,
-    sources: versionSources,
+    sources: targetSnapshot.sources,
   });
   const listenerCoreLock = await ctx.writeVersionLock("rfc029-04-listener-core", {
+    target: "sha",
     versions: phaseVersions.listenerCore,
-    sources: versionSources,
+    sources: targetSnapshot.sources,
   });
   const scenario = path.join(ctx.stateDir(), "rollout", "rfc029-v014-to-v015.yaml");
   await Bun.write(scenario, migrationScenario(versions.baselineTag));

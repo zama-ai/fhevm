@@ -177,6 +177,28 @@ describe("rollout runbook", () => {
     });
   });
 
+  test("resolves runbook locks from an exact sha", async () => {
+    await withTempStateDir(async () => {
+      const sha = "6430345d834d78af47b7bc625d21cee2031b07f7";
+      let requestedSha: string | undefined;
+      const context = createRolloutContext(undefined, {
+        async previewBundle(options) {
+          requestedSha = options.sha;
+          return presetBundle("sha", sha.slice(0, 7), `sha-${sha.slice(0, 7)}.json`);
+        },
+      });
+      const file = await context.resolveVersionLock("target", {
+        target: "sha",
+        sha,
+        versions: {},
+      });
+      const lock = await readJson<VersionBundle>(file);
+
+      expect(requestedSha).toBe(sha);
+      expect(lock.target).toBe("sha");
+    });
+  });
+
   test("derives extracted rollout locks from one resolved target snapshot", async () => {
     await withTempStateDir(async () => {
       const first = presetBundle("latest-main", "abcdef0", "latest-main-abcdef0.json");

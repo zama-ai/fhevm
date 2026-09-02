@@ -63,6 +63,7 @@ type RolloutContractTaskOptions = {
   env?: Record<string, string>;
 };
 type RolloutLockOptions = {
+  sha?: string;
   versions: Record<string, string>;
   sources?: string[];
   target?: VersionTarget;
@@ -106,7 +107,7 @@ type RolloutContextOperations = {
   waitForPartiesStopped: typeof waitForPartiesStopped;
 };
 
-/** Rollouts always resolve their surrounding stack from current main. */
+/** Rollouts resolve their surrounding stack from current main unless a runbook pins another target. */
 const ROLLOUT_TARGET: VersionTarget = "latest-main";
 
 const upOptions = (options: RolloutUpOptions): UpOptions => ({
@@ -165,7 +166,7 @@ export const createRolloutContext = (
   // `latest-main` is never cached on disk (see targetUsesCache), so resolving twice
   // could return two different main shas and silently make a runbook's baseline and
   // target locks differ in components the runbook never meant to change.
-  const resolvedBundles = new Map<VersionTarget, VersionBundle>();
+  const resolvedBundles = new Map<string, VersionBundle>();
 
   return {
     async applyVersionLock(label, options) {
@@ -427,13 +428,14 @@ export const createRolloutContext = (
     },
     async resolveVersionLock(name, options) {
       const target = options.target ?? ROLLOUT_TARGET;
-      let base = resolvedBundles.get(target);
+      const cacheKey = `${target}:${options.sha ?? ""}`;
+      let base = resolvedBundles.get(cacheKey);
       if (!base) {
         base = await (operationOverrides.previewBundle ?? previewBundle)(
-          { target, requestedTarget: target, reset: false },
+          { target, requestedTarget: target, sha: options.sha, reset: false },
           {},
         );
-        resolvedBundles.set(target, base);
+        resolvedBundles.set(cacheKey, base);
       }
       return writeRolloutVersionLock(name, {
         target,
