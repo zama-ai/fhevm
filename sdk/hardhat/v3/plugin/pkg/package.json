@@ -24,8 +24,12 @@
     },
     "./package.json": "./package.json"
   },
+  "dependencies": {
+    "@fhevm/host-contracts-cleartext": "file:../../../../host-contracts-cleartext/v13/pkg"
+  },
   "peerDependencies": {
     "@fhevm/sdk": "^0.13.3",
+    "ethers": "^6.17.0",
     "hardhat": "^3.0.0"
   }
 }
