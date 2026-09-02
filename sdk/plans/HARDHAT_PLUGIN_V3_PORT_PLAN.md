@@ -1,6 +1,6 @@
 # Porting the FHEVM hardhat plugin from hardhat v2 to hardhat v3
 
-Version: **1.5** (2026-09-02). Bump the minor for a content change to the plan, the major for a
+Version: **1.6** (2026-09-02). Bump the minor for a content change to the plan, the major for a
 change of charter or stage order; record each bump below.
 
 - 1.0 — initial plan, from the hardhat 3 docs.
@@ -10,8 +10,9 @@ change of charter or stage order; record each bump below.
   recorded as landed.
 - 1.4 — A5 recorded as landed (two commits: @fhevm/sdk peer, then detection); ledger A5 row done.
 - 1.5 — A6 recorded as landed; `cacheDir`/`dotEnvFile`/`solidityCoverageDir` confirmed delete-bucket.
+- 1.6 — A7 recorded as landed; Stage A complete.
 
-Status: **in progress — landed: A2, E2E-0a, A3, A4, A5, A6. Next: A7.** The landing zone exists: the
+Status: **in progress — Stage A complete (A2–A7) + E2E-0a. Next: B1a.** The landing zone exists: the
 `hardhat/v3` cluster (own installation root, hardhat 3.15 pinned), the plugin registered via
 `definePlugin` with its per-connection `fhevm` object and the pre-serve chain preparation proven,
 and the `hardhat/v3/e2e` member with the first counter test.
@@ -416,11 +417,12 @@ first review, per the cap rule.
   `solidityCoverageDir`. Test: temp consumer trees — npm flat, pnpm symlink, missing sibling (also
   proves the plugin's own tree cannot leak into consumer resolution).
   Commit: `feat(hh-v3-plugin): port consumer path resolution for sibling npm modules`
-- **A7. `onRequest` port.** The two surviving `FhevmProviderExtender` behaviours as an `onRequest`
-  handler: inflate `eth_estimateGas` results by 120%; on a failed `eth_sendTransaction`, decorate
-  `response.error` with the decoded FHEVM error (the decoder itself arrives in D4a — until then a
-  pass-through with the hook shape and the estimate inflation only). Test: fake `next` returning
-  fixed responses; inflation exact; error response passed through untouched pre-D4a.
+- **A7. `onRequest` port — LANDED.** `internal/requests.ts`: `handleRequest` routes only
+  `eth_estimateGas` and `eth_sendTransaction`; `inflateGasEstimate` ×1.2 in BigInt (no ethers where
+  v2 needed it); `decorateSendError` is the hook shape, pass-through until D4a. Test: fake
+  forwarder (exact arithmetic, pass-through, routing) + live: a plugin-less connection's estimate
+  ×1.2 equals the plugin connection's. Finding: EDR estimates a plain transfer at 21001, not
+  21000 — never hard-code estimates in tests.
   Commit: `feat(hh-v3-plugin): port gas inflation and send-error decoration to onRequest`
 
 ### Stage B — the essential job: pre-deploy per target
