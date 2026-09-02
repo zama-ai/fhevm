@@ -152,6 +152,7 @@ pub struct PollerConfig {
     pub dependence_cross_block: bool,
     pub dependent_ops_max_per_chain: u32,
     pub gcs_mode: bool,
+    pub disable_synthetic_ops: bool,
     pub canonical_protocol_config_chain_id: Option<u64>,
 }
 
@@ -423,6 +424,7 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
                 dependence_cross_block: config.dependence_cross_block,
                 dependent_ops_max_per_chain: config.dependent_ops_max_per_chain,
                 is_protocol_config_listener,
+                disable_synthetic_ops: config.disable_synthetic_ops,
             };
             match ingest_with_retry(
                 chain_id,
