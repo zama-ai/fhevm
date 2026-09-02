@@ -64,7 +64,8 @@ export interface SolanaSignedPermit {
  * other verifier will ever see them.
  */
 export type SolanaPermitChannelFailure =
-  { readonly reason: 'channel-unavailable'; readonly feature: string } | { readonly reason: 'signer-mismatch' };
+  | { readonly reason: 'channel-unavailable'; readonly feature: string }
+  | { readonly reason: 'signer-mismatch' };
 
 /** A permit that never reached a wallet. */
 export class SolanaPermitChannelError extends Error {

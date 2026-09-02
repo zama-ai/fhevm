@@ -168,11 +168,13 @@ export type RelayerSuccessStatus = 200 | 202;
 export type RelayerFailureStatus = 400 | 401 | 404 | 429 | 500 | 503;
 
 export type RelayerPostResponseStatus =
-  NonEmptyExtract<RelayerSuccessStatus, 202> | NonEmptyExtract<RelayerFailureStatus, 400 | 401 | 429 | 500 | 503>;
+  | NonEmptyExtract<RelayerSuccessStatus, 202>
+  | NonEmptyExtract<RelayerFailureStatus, 400 | 401 | 429 | 500 | 503>;
 
 // GET:  200 | 202 | 400 | 401 | 404 | 500 | 503
 export type RelayerGetResponseStatus =
-  NonEmptyExtract<RelayerSuccessStatus, 200 | 202> | NonEmptyExtract<RelayerFailureStatus, 400 | 401 | 404 | 500 | 503>;
+  | NonEmptyExtract<RelayerSuccessStatus, 200 | 202>
+  | NonEmptyExtract<RelayerFailureStatus, 400 | 401 | 404 | 500 | 503>;
 
 ////////////////////////////////////////////////////////////////////////////////
 // Succeeded: 200
