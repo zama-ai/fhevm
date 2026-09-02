@@ -1,18 +1,23 @@
 #!/usr/bin/env bash
 #
-# ⚠️  WARNING: keep this a dependency-free bash script — do NOT port it to fhevm-npm. It deletes
-# fhevm-npm's own node_modules and is the recovery tool for a broken tree (FHEVM_NPM_RULES 6.2.x),
-# so it must run when node tooling cannot. `make pristine` calls it (--dry-run, then --force).
+# ⚠️  WARNING: keep this a dependency-free bash script — do NOT port it to fhevm-npm. With
+# --include-fhevm-npm it deletes fhevm-npm's own node_modules — the recovery tool for a broken tree
+# (FHEVM_NPM_RULES 6.2.x) — so it must run when node tooling cannot. `make uninstall` calls it
+# (--dry-run, then --force).
 #
 # Deletes every node_modules under the sdk workspace, so the next `npm install` rebuilds the tree
-# from scratch.
+# from scratch. fhevm-npm/ is spared by default: it is the orchestrator the uninstall flow itself
+# runs (forge-dependency cleaning, and any fhevm-npm command afterwards), so it stays runnable.
 #
-# Usage: ./scripts/clean-node-modules.sh [--dry-run] [--force] [--include-package-lock] [--help]
+# Usage: ./scripts/clean-node-modules.sh [--dry-run] [--force] [--include-package-lock]
+#                                        [--include-fhevm-npm] [--help]
 #
 #   --dry-run                list what would go, delete nothing. Wins over --force.
 #   --force                  skip the confirmation prompt. Required when stdin is not a terminal.
 #   --include-package-lock   delete package-lock.json too, so npm re-resolves from the manifests
 #                            instead of replaying recorded versions. Lockfiles are tracked in git.
+#   --include-fhevm-npm      also delete fhevm-npm's node_modules (and, with the flag above, its
+#                            lockfile) — the FHEVM_NPM_RULES 6.2.x broken-tree recovery.
 #   -h, --help               print this header and exit.
 #
 # Example:
@@ -29,15 +34,16 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(dirname -- "$SCRIPT_DIR")"
 
-# Subtrees never touched, relative to $ROOT. js-sdk sits under sdk/ but belongs
-# to the OUTER fhevm workspace, so an install here would not bring its trees back.
-EXCLUDED_DIRS=("js-sdk")
+# Subtrees not touched, relative to $ROOT. js-sdk sits under sdk/ but belongs to the OUTER fhevm
+# workspace, so an install here would not bring its trees back. fhevm-npm is the orchestrator and
+# stays runnable; --include-fhevm-npm lifts that one (broken-tree recovery, rules 6.2.x).
+EXCLUDED_DIRS=("js-sdk" "fhevm-npm")
 
 # ------------------------------------------------------------------------------
 # Arguments.
 # ------------------------------------------------------------------------------
 
-USAGE="usage: ./scripts/clean-node-modules.sh [--dry-run] [--force] [--include-package-lock] [--help]"
+USAGE="usage: ./scripts/clean-node-modules.sh [--dry-run] [--force] [--include-package-lock] [--include-fhevm-npm] [--help]"
 
 DRY_RUN="false"
 FORCE="false"
@@ -48,6 +54,11 @@ for arg in "$@"; do
         --dry-run) DRY_RUN="true" ;;
         --force) FORCE="true" ;;
         --include-package-lock) INCLUDE_LOCK="true" ;;
+        --include-fhevm-npm)
+            for i in "${!EXCLUDED_DIRS[@]}"; do
+                [ "${EXCLUDED_DIRS[$i]}" = "fhevm-npm" ] && unset 'EXCLUDED_DIRS[i]'
+            done
+            ;;
         -h | --help)
             sed -n '2,/^set -euo/p' "${BASH_SOURCE[0]}" | sed 's|^# \{0,1\}||; $d'
             exit 0

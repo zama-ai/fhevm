@@ -88,12 +88,12 @@ run-fhevm-npm = $(FHEVM_NPM_CLI) $(FHEVM_NPM_ARGS) $(1)
 # Aggregates
 ########################################################################################################
 
-.PHONY: help graph build compile rebuild ci ci-from-scratch pristine lint test check check-pre generate fmt fmt-check clean clean-generated install
+.PHONY: help graph build compile rebuild ci ci-from-scratch uninstall purge lint test check check-pre generate fmt fmt-check clean clean-generated install
 
 help: ## List the targets
 	@grep -hE '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) \
 	  | awk -F':.*?## ' '{ \
-	      if ($$1 ~ /^(build|check|check-pre|ci|ci-from-scratch|clean|compile|graph|help|install|lint|pristine|rebuild|test)$$/) group = 0; \
+	      if ($$1 ~ /^(build|check|check-pre|ci|ci-from-scratch|clean|compile|graph|help|install|lint|purge|rebuild|test|uninstall)$$/) group = 0; \
 	      else if ($$1 ~ /^compile-/) group = 1; \
 	      else if ($$1 ~ /^check-/) group = 2; \
 	      else if ($$1 ~ /^fmt($$|-)/) group = 3; \
@@ -175,10 +175,11 @@ install: ## Install workspace, fhevm-npm, and forge dependencies
 # The FULL list is shown first and confirmed ONCE, before anything at all is deleted; only after the
 # yes do the sub-deleters run with --force (their own questions would be redundant — this gate IS
 # the question). A non-interactive stdin aborts unless FORCE=1 is passed explicitly.
-# Ordering matters twice: `clean` runs npm scripts, so it needs node_modules; the forge cleaner runs
-# through the fhevm-npm CLI, so it needs fhevm-npm's.
-pristine: ## Reset sdk/ to a fresh-clone state: shows everything first, asks once, then deletes
-	@echo "🧹 make pristine will remove ALL of the following:"
+# Ordering matters: `clean` runs npm scripts, so it needs node_modules. fhevm-npm's own tree is
+# deliberately KEPT — it is the orchestrator this flow runs (the forge cleaner) and the recovery
+# tool afterwards; broken-tree recovery is `./scripts/clean-node-modules.sh --include-fhevm-npm`.
+uninstall: ## Undo 'make install' and 'make build': shows everything first, asks once, then deletes
+	@echo "🧹 make uninstall will remove ALL of the following:"
 	@echo ""
 	@echo "── Forge dependency trees (from forge config --json) ─────────────────────────"
 	$(call run-fhevm-npm,clean-forge-dependencies --dry-run)
@@ -190,19 +191,40 @@ pristine: ## Reset sdk/ to a fresh-clone state: shows everything first, asks onc
 	@echo "   Everything 'make clean' removes: each package's emit dirs (pkg/ts/_*, pkg/_*),"
 	@echo "   forge cache/out/broadcast, hardhat artifacts, tsbuildinfo files, ./tarballs."
 	@echo ""
+	@echo "   Kept: fhevm-npm/node_modules — the CLI stays runnable (recovery: --include-fhevm-npm)."
+	@echo ""
 	@if [ "$(FORCE)" != "1" ]; then \
+	  if [ ! -t 0 ]; then echo "🛑 stdin is not a terminal — pass FORCE=1 to remove without asking."; exit 1; fi; \
 	  printf 'Remove ALL of the above? [Y/n] '; \
-	  read -r reply; \
+	  read -r reply || exit 1; \
 	  case "$$reply" in [nN]|[nN][oO]) echo "Aborted. Nothing was removed."; exit 1;; esac; \
 	fi
 	$(MAKE) clean
 	$(call run-fhevm-npm,clean-forge-dependencies --force)
 	./scripts/clean-node-modules.sh --force
 
+# apt's remove < purge: `uninstall` plus the WORKSPACE lockfile, so the next `make install` re-resolves
+# every dependency range from scratch — a deliberate dependency-upgrade event whose lock diff is the
+# reviewed commit. Excluded on purpose: consumer-fixture lockfiles (their lifecycle is
+# `test-consumer-regenerate-package-lock`) and fhevm-npm's (the autonomous orchestrator manages its
+# own; re-resolve it deliberately with `npm --prefix fhevm-npm install` after deleting its lock).
+# The lock is a TRACKED file, so unlike `uninstall` this requires a spotless worktree first: anything
+# deleted is then recoverable with `git checkout -- .`.
+# The single [Y/n] is uninstall's — the banner below adds the lock to what that question covers.
+purge: ## Everything 'uninstall' removes PLUS the workspace lockfile (next install re-resolves deps)
+	$(call require-spotless-worktree)
+	@echo "🧹 make purge = make uninstall PLUS this tracked lockfile:"
+	@echo ""
+	@echo "   ./package-lock.json"
+	@echo ""
+	$(MAKE) uninstall
+	rm -f ./package-lock.json
+	@echo "🗑  workspace lockfile removed — 'make install' will re-resolve and rewrite it; review and commit the diff."
+
 # The strongest proof this workspace has: a brand-new machine could clone, install, and pass every
 # gate. Sub-makes for the same `-j` ordering reason `ci` uses them.
-ci-from-scratch: ## Prove a fresh clone works: pristine wipe, install, then every ci gate
-	$(MAKE) pristine
+ci-from-scratch: ## Prove a fresh clone works: uninstall everything, install, then every ci gate
+	$(MAKE) uninstall
 	$(MAKE) install
 	$(MAKE) ci
 
