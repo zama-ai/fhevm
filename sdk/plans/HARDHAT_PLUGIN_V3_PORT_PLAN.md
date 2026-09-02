@@ -1,10 +1,31 @@
 # Porting the FHEVM hardhat plugin from hardhat v2 to hardhat v3
 
-Status: **plan for review — Stage A2 landed, nothing else implemented.** The landing zone exists: the
-`hardhat/v3` cluster (own installation root, hardhat 3.15 pinned, hello-world plugin proving the
-topology, tasks, and the single-instance guarantee end to end), plus A2's per-connection `fhevm`
-object attached via the `network` hooks. §2, §2b, §5 and Stage A were revised after reading the
-hardhat 3.15 SOURCE (`sdk/hardhat/v3/node_modules/hardhat/src`), not only the docs.
+Version: **1.3** (2026-09-02). Bump the minor for a content change to the plan, the major for a
+change of charter or stage order; record each bump below.
+
+- 1.0 — initial plan, from the hardhat 3 docs.
+- 1.1 — §2, §2b, §5, Stage A revised from the hardhat 3.15 SOURCE; A4 collapsed, A7 added.
+- 1.2 — E2E-0 added (e2e member born early, ledger after Stage F); E2E-0b deferred to on demand.
+- 1.3 — working rules preamble (incl. stop-after-each-step and plan-committed-alone); A3 and A4
+  recorded as landed.
+
+Status: **in progress — landed: A2, E2E-0a, A3, A4. Next: A5.** The landing zone exists: the
+`hardhat/v3` cluster (own installation root, hardhat 3.15 pinned), the plugin registered via
+`definePlugin` with its per-connection `fhevm` object and the pre-serve chain preparation proven,
+and the `hardhat/v3/e2e` member with the first counter test.
+
+## Working rules (binding for whoever executes this plan, human or agent)
+
+- No git command without confirmation — every commit is asked for, one title line, no body.
+- Read access is limited to the `fhevm/sdk` folder.
+- Write access is limited to `/Users/alex/src/me/zama-ai/fhevm/sdk/hardhat/v3`.
+- Any change outside that folder (Makefile, npm-manifest.json, plans, fhevm-npm, common-vendored, …)
+  requires explicit approval first.
+- Only tests written in the `fhevm/sdk` folder may be executed.
+- Running `fhevm-npm` (the check battery and its commands) is allowed.
+- Stop after each step: report, then wait for the go-ahead before starting the next one.
+- The plan is committed ALONE: every commit touching this file bumps the version below and contains
+  nothing else — never bundled with a code step.
 
 ## The goals (the charter — every decision below serves one of these)
 
