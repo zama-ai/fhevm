@@ -1,3 +1,4 @@
+use crate::http::endpoints::v2::types::keyurl::KeyData;
 use crate::http::utils::redact::redact;
 use config::{Config, Environment, File};
 use derivative::Derivative;
@@ -198,7 +199,8 @@ where
 /// with shared deduplication and staggered connection recycling
 #[derive(Debug, Deserialize, Clone)]
 pub struct ListenerPoolConfig {
-    /// Optional starting block number for event subscriptions
+    /// Optional starting block number, overriding the stored cursor. Polling listeners only:
+    /// a WebSocket subscription cannot start from a past block.
     pub last_block_number: Option<u64>,
     /// Reconnection configuration for WebSocket connection failures
     pub reconnect_config: RetrySettings,
@@ -211,20 +213,25 @@ pub struct ListenerPoolConfig {
     pub recycle_interval_mins: u64,
     /// Polling interval in milliseconds (for polling type listeners)
     pub poll_interval_ms: u64,
-    /// TTL for event deduplication cache in seconds (1-10)
-    pub dedup_ttl_seconds: u64,
-    /// Maximum capacity for deduplication cache
+    /// Widest block span a single `eth_getLogs` may ask for (polling listeners only).
+    /// Catching up from far behind the head - after downtime, or after `last_block_number`
+    /// is rewound to force a replay - is chunked to this many blocks per query, so it never
+    /// asks for a range the provider rejects nor gets back one outsized response.
+    pub max_blocks_per_query: u64,
+    /// How long the event registry remembers an event, in seconds (1-10).
     ///
-    /// **Sizing guidance:**
-    /// The cache should accommodate all events received during the TTL window with a safety buffer.
+    /// It bounds two things: how long the same log observed by two listener instances is
+    /// recognized as one event, and how long an entry survives while its handlers run. The
+    /// window restarts when the handlers finish.
+    pub dedup_ttl_seconds: u64,
+    /// Maximum number of events the registry tracks at once.
     ///
     /// **Formula:** `events_per_second * num_listeners * dedup_ttl_seconds * safety_buffer`
     ///
     /// **Recommended values (with 3 listeners, 5s TTL, 1.2x buffer):**
-    /// - 100 events/sec → 1,800
-    /// - 300 events/sec → 5,400
-    /// - 1000 events/sec → 18,000
-    /// - 5000 events/sec → 90,000
+    /// - 100 events/sec -> 1,800
+    /// - 1000 events/sec -> 18,000
+    /// - 5000 events/sec -> 90,000
     pub dedup_max_capacity: usize,
     /// List of listeners in the pool
     /// Each listener has a type and URL; instance_id is assigned by position (0-indexed)
@@ -631,13 +638,28 @@ pub struct ProtocolConfigSettings {
     pub retry: RetrySettings,
 }
 
-/// `/v2/keyurl` poller settings (KMSGeneration contract on the Ethereum host chain).
+/// `/v2/keyurl` settings, tagged by `source`. Required with no default, so a deployment
+/// cannot silently pick the wrong source.
 #[derive(Debug, Deserialize, Clone)]
-pub struct KeyUrlConfig {
-    /// KMSGeneration contract address on the Ethereum host chain (source for `/v2/keyurl`).
-    pub kms_generation_address: String,
-    /// How often the `/v2/keyurl` poller reads the active key/CRS/KMS context from the host chain.
-    pub poll_interval_ms: u64,
+#[serde(tag = "source", rename_all = "lowercase")]
+pub enum KeyUrlConfig {
+    /// Read the active key/CRS/KMS context from the Ethereum host chain (KMSGeneration +
+    /// ProtocolConfig contracts) and keep `/v2/keyurl` in sync by polling.
+    Chain {
+        /// KMSGeneration contract address on the Ethereum host chain.
+        kms_generation_address: String,
+        /// How often the poller reads the active key/CRS/KMS context from the host chain.
+        poll_interval_ms: u64,
+    },
+    /// Serve `/v2/keyurl` from static configuration; no host-chain poller runs. Required
+    /// against protocol deployments that do not implement
+    /// `ProtocolConfig.getCurrentKmsContextAndEpoch` (protocol v0.13 and earlier).
+    Config {
+        /// Served as `response.fheKeyInfo[0].fhePublicKey`.
+        fhe_public_key: KeyData,
+        /// Served as `response.crs["2048"]`.
+        crs: KeyData,
+    },
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -660,7 +682,7 @@ pub struct Settings {
     pub host_chains: Vec<HostChainConfig>,
     /// ProtocolConfig contract settings for dynamic threshold resolution
     pub protocol_config: ProtocolConfigSettings,
-    /// `/v2/keyurl` poller settings (KMSGeneration contract)
+    /// `/v2/keyurl` settings: host-chain poller or static config
     pub keyurl: KeyUrlConfig,
     /// User-decryption signature check configuration
     pub user_decrypt_signature_check: UserDecryptSignatureCheckConfig,
@@ -746,18 +768,21 @@ impl Settings {
         use alloy::primitives::Address;
         use std::str::FromStr;
 
-        let addresses = vec![
+        let mut addresses = vec![
             ("decryption", &self.gateway.contracts.decryption_address),
             (
                 "input_verification",
                 &self.gateway.contracts.input_verification_address,
             ),
             ("protocol_config", &self.protocol_config.address),
-            (
-                "keyurl.kms_generation_address",
-                &self.keyurl.kms_generation_address,
-            ),
         ];
+        if let KeyUrlConfig::Chain {
+            kms_generation_address,
+            ..
+        } = &self.keyurl
+        {
+            addresses.push(("keyurl.kms_generation_address", kms_generation_address));
+        }
 
         for (name, address) in addresses {
             if Address::from_str(address).is_err() {
@@ -831,10 +856,25 @@ impl Settings {
     }
 
     fn validate_keyurl(&self) -> Result<(), AppConfigError> {
-        if self.keyurl.poll_interval_ms < 1 {
-            return Err(AppConfigError::Config(
-                "keyurl.poll_interval_ms must be at least 1".to_string(),
-            ));
+        match &self.keyurl {
+            KeyUrlConfig::Chain {
+                poll_interval_ms, ..
+            } => {
+                if *poll_interval_ms < 1 {
+                    return Err(AppConfigError::Config(
+                        "keyurl.poll_interval_ms must be at least 1".to_string(),
+                    ));
+                }
+            }
+            KeyUrlConfig::Config {
+                fhe_public_key,
+                crs,
+            } => {
+                // Statically configured values are served verbatim to every SDK client, so a
+                // placeholder or typo has to fail here rather than at the client.
+                validate_keyurl_key_data("keyurl.fhe_public_key", fhe_public_key)?;
+                validate_keyurl_key_data("keyurl.crs", crs)?;
+            }
         }
         Ok(())
     }
@@ -864,12 +904,35 @@ impl Settings {
             )));
         }
 
+        // A zero-wide chunk never reaches the head, so the catch-up loop would poll forever
+        // without advancing the cursor.
+        if pool_config.max_blocks_per_query == 0 {
+            return Err(AppConfigError::Config(
+                "listener_pool.max_blocks_per_query must be at least 1".to_string(),
+            ));
+        }
+
         // Validate dedup max capacity (should be reasonable)
         if pool_config.dedup_max_capacity < 1000 || pool_config.dedup_max_capacity > 10_000_000 {
             return Err(AppConfigError::Config(format!(
                 "dedup_max_capacity must be between 1000 and 10,000,000, got: {}",
                 pool_config.dedup_max_capacity
             )));
+        }
+
+        // Only the polling listener replays blocks missed while the relayer was not
+        // listening; `eth_subscribe` takes no fromBlock, so a WebSocket listener that starts
+        // late sees only new logs.
+        if !pool_config
+            .listeners
+            .iter()
+            .any(|listener| listener.listener_type == ListenerType::Polling)
+        {
+            tracing::warn!(
+                "listener_pool has no polling listener: events emitted while the relayer is \
+                 not listening will be missed, since a WebSocket subscription does not \
+                 replay them"
+            );
         }
 
         // Validate each listener's URL format based on type
@@ -897,6 +960,39 @@ impl Settings {
 
         Ok(())
     }
+}
+
+/// Hex characters in a `data_id` after `0x` — the 32-byte id form `chain` mode serves.
+const KEYURL_DATA_ID_HEX_LEN: usize = 64;
+
+/// Validate one statically configured `/v2/keyurl` entry.
+///
+/// `key` is the full config key (`keyurl.fhe_public_key` / `keyurl.crs`) so an operator reading
+/// a failed startup can tell which of the two is wrong and fix it from the message alone.
+fn validate_keyurl_key_data(key: &str, key_data: &KeyData) -> Result<(), AppConfigError> {
+    // No `0x` prefix yields "", which then fails the length check.
+    let digits = key_data.data_id.strip_prefix("0x").unwrap_or("");
+    if digits.len() != KEYURL_DATA_ID_HEX_LEN || !digits.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(AppConfigError::Config(format!(
+            "{key}.data_id must be a 0x-prefixed hex string of {KEYURL_DATA_ID_HEX_LEN} digits, got: {}",
+            key_data.data_id
+        )));
+    }
+
+    if key_data.urls.is_empty() {
+        return Err(AppConfigError::Config(format!(
+            "{key}.urls must contain at least one URL"
+        )));
+    }
+    for (i, url) in key_data.urls.iter().enumerate() {
+        if let Err(e) = reqwest::Url::parse(url) {
+            return Err(AppConfigError::InvalidNetworkConfig(format!(
+                "{key}.urls[{i}] is not a valid URL ({e}): {url}"
+            )));
+        }
+    }
+
+    Ok(())
 }
 
 // Helper function to get a required environment variable
@@ -955,7 +1051,6 @@ mod tests {
         }
 
         /// Set a field value using dot notation
-        #[allow(dead_code)]
         fn set_field(mut self, path: &str, value: serde_yaml::Value) -> Self {
             let parts: Vec<&str> = path.split('.').collect();
             if let Some(parent) = self.get_parent_mut(&parts[..parts.len() - 1]) {
@@ -1224,6 +1319,241 @@ mod tests {
         );
     }
 
+    /// Deserialize `Settings` from a builder that is expected to be invalid, returning the
+    /// error message. Deserialization alone is enough: `keyurl.source` is enforced by serde.
+    fn settings_load_error(builder: ConfigBuilder) -> String {
+        let config_path = builder
+            .to_temp_file()
+            .expect("Failed to create temp config file");
+        let config = Config::builder()
+            .add_source(File::from(config_path.as_path()).format(FileFormat::Yaml))
+            .build()
+            .expect("Failed to build config");
+        let result: Result<Settings, _> = config.try_deserialize();
+        result
+            .expect_err("Configuration parsing should have failed")
+            .to_string()
+    }
+
+    /// A `keyurl` block for `source: config`, minus the top-level fields named in `omit`.
+    fn static_keyurl(omit: &[&str]) -> serde_yaml::Value {
+        let mut value: serde_yaml::Value = serde_yaml::from_str(
+            r#"
+            source: config
+            fhe_public_key:
+              data_id: "0x0400000000000000000000000000000000000000000000000000000000000003"
+              urls: ["http://minio:9000/kms-public/PUB/PublicKey/03"]
+            crs:
+              data_id: "0x0400000000000000000000000000000000000000000000000000000000000004"
+              urls: ["http://minio:9000/kms-public/PUB/CRS/04"]
+            "#,
+        )
+        .expect("Failed to parse static keyurl block");
+        let mapping = value.as_mapping_mut().expect("keyurl block is a mapping");
+        for field in omit {
+            mapping.remove(*field);
+        }
+        value
+    }
+
+    /// Run the whole `Settings::new` path — deserialize *and* the `validate_*` pass — on a
+    /// modified example config. Uses a `.yaml` path: the format is inferred from the file name.
+    fn settings_new(builder: ConfigBuilder) -> Result<Settings, AppConfigError> {
+        let content = serde_yaml::to_string(&builder.config).expect("Failed to serialize");
+        let dir = tempfile::tempdir().expect("Failed to create temp dir");
+        let config_path = dir.path().join("validate-keyurl.yaml");
+        std::fs::write(&config_path, content).expect("Failed to write config file");
+        Settings::new(Some(config_path.to_string_lossy().to_string()))
+    }
+
+    /// A `keyurl` builder seeded with the valid static block, for tests that then break one field.
+    fn config_keyurl_builder() -> ConfigBuilder {
+        ConfigBuilder::from_example()
+            .expect("Failed to load example config")
+            .set_field("keyurl", static_keyurl(&[]))
+    }
+
+    #[test]
+    fn test_keyurl_source_is_required() {
+        let err = settings_load_error(
+            ConfigBuilder::from_example()
+                .expect("Failed to load example config")
+                .remove_field("keyurl.source"),
+        );
+        assert!(
+            err.contains("missing configuration field \"keyurl.source\""),
+            "Error should name the missing `source` field, got: {err}"
+        );
+    }
+
+    #[test]
+    fn test_keyurl_source_rejects_unknown_value() {
+        let err = settings_load_error(
+            ConfigBuilder::from_example()
+                .expect("Failed to load example config")
+                .set_field("keyurl.source", serde_yaml::Value::String("bogus".into())),
+        );
+        assert!(
+            err.contains("unknown variant `bogus`")
+                && err.contains("`chain`")
+                && err.contains("`config`"),
+            "Error should reject `bogus` and name the valid variants, got: {err}"
+        );
+    }
+
+    #[test]
+    fn test_keyurl_chain_requires_kms_generation_address() {
+        let err = settings_load_error(
+            ConfigBuilder::from_example()
+                .expect("Failed to load example config")
+                .remove_field("keyurl.kms_generation_address"),
+        );
+        assert!(
+            err.contains("missing configuration field \"keyurl.kms_generation_address\""),
+            "Error should name the missing `kms_generation_address` field, got: {err}"
+        );
+    }
+
+    #[test]
+    fn test_keyurl_chain_requires_poll_interval_ms() {
+        let err = settings_load_error(
+            ConfigBuilder::from_example()
+                .expect("Failed to load example config")
+                .remove_field("keyurl.poll_interval_ms"),
+        );
+        assert!(
+            err.contains("missing configuration field \"keyurl.poll_interval_ms\""),
+            "Error should name the missing `poll_interval_ms` field, got: {err}"
+        );
+    }
+
+    #[test]
+    fn test_keyurl_config_requires_fhe_public_key() {
+        let err = settings_load_error(
+            ConfigBuilder::from_example()
+                .expect("Failed to load example config")
+                .set_field("keyurl", static_keyurl(&["fhe_public_key"])),
+        );
+        assert!(
+            err.contains("missing configuration field \"keyurl.fhe_public_key\""),
+            "Error should name the missing `fhe_public_key` field, got: {err}"
+        );
+    }
+
+    #[test]
+    fn test_keyurl_config_requires_crs() {
+        let err = settings_load_error(
+            ConfigBuilder::from_example()
+                .expect("Failed to load example config")
+                .set_field("keyurl", static_keyurl(&["crs"])),
+        );
+        assert!(
+            err.contains("missing configuration field \"keyurl.crs\""),
+            "Error should name the missing `crs` field, got: {err}"
+        );
+    }
+
+    #[test]
+    #[serial] // Settings::new reads the environment
+    fn test_keyurl_config_accepts_valid_static_values() {
+        let settings = settings_new(config_keyurl_builder())
+            .expect("A valid `keyurl.source: config` block should deserialize and validate");
+
+        match &settings.keyurl {
+            KeyUrlConfig::Config {
+                fhe_public_key,
+                crs,
+            } => {
+                assert_eq!(
+                    fhe_public_key.data_id,
+                    "0x0400000000000000000000000000000000000000000000000000000000000003"
+                );
+                assert_eq!(
+                    fhe_public_key.urls,
+                    vec!["http://minio:9000/kms-public/PUB/PublicKey/03"]
+                );
+                assert_eq!(
+                    crs.data_id,
+                    "0x0400000000000000000000000000000000000000000000000000000000000004"
+                );
+                assert_eq!(crs.urls, vec!["http://minio:9000/kms-public/PUB/CRS/04"]);
+            }
+            other => panic!("expected keyurl.source: config, got {other:?}"),
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn test_keyurl_config_rejects_empty_urls() {
+        let err = settings_new(config_keyurl_builder().set_field(
+            "keyurl.fhe_public_key.urls",
+            serde_yaml::to_value(Vec::<&str>::new()).unwrap(),
+        ))
+        .expect_err("Empty `urls` should fail validation")
+        .to_string();
+        assert!(
+            err.contains("keyurl.fhe_public_key.urls") && err.contains("at least one URL"),
+            "Error should name the offending key and the expected form, got: {err}"
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn test_keyurl_config_rejects_unparsable_url() {
+        let err = settings_new(config_keyurl_builder().set_field(
+            "keyurl.crs.urls",
+            serde_yaml::to_value(["not a url"]).unwrap(),
+        ))
+        .expect_err("An unparsable `urls` entry should fail validation")
+        .to_string();
+        assert!(
+            err.contains("keyurl.crs.urls[0]") && err.contains("not a valid URL"),
+            "Error should name the offending key and index, got: {err}"
+        );
+    }
+
+    /// The placeholder case: mainnet gitops values carry a literal `fhe-public-key-data-id`,
+    /// which would otherwise boot green and be served to every SDK client.
+    #[test]
+    #[serial]
+    fn test_keyurl_config_rejects_non_hex_data_id() {
+        let err = settings_new(config_keyurl_builder().set_field(
+            "keyurl.crs.data_id",
+            serde_yaml::Value::String("fhe-public-key-data-id".into()),
+        ))
+        .expect_err("A non-0x `data_id` should fail validation")
+        .to_string();
+        assert!(
+            err.contains("keyurl.crs.data_id") && err.contains("hex string of 64 digits"),
+            "Error should name the offending key and the expected form, got: {err}"
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn test_keyurl_config_rejects_data_id_of_wrong_length() {
+        let err = settings_new(config_keyurl_builder().set_field(
+            "keyurl.fhe_public_key.data_id",
+            serde_yaml::Value::String("0x0400000000000000000000000000000003".into()),
+        ))
+        .expect_err("A `0x` `data_id` of the wrong length should fail validation")
+        .to_string();
+        assert!(
+            err.contains("keyurl.fhe_public_key.data_id")
+                && err.contains("hex string of 64 digits"),
+            "Error should name the offending key and the expected form, got: {err}"
+        );
+    }
+
+    /// `Chain` mode must be untouched by the `Config`-mode content rules.
+    #[test]
+    #[serial]
+    fn test_keyurl_chain_mode_unaffected_by_config_validation() {
+        let settings = settings_new(ConfigBuilder::from_example().expect("example config"))
+            .expect("The unmodified example (`source: chain`) should still pass validation");
+        assert!(matches!(settings.keyurl, KeyUrlConfig::Chain { .. }));
+    }
+
     #[test]
     fn test_sql_database_url_is_redacted_in_debug_output() {
         // Create a test StorageConfig with a dummy database URL
@@ -1363,19 +1693,14 @@ mod tests {
     #[test]
     #[serial] // avoid env var leakage from parallel tests
     fn test_settings_new_rejects_invalid_address() {
-        let builder = ConfigBuilder::from_example()
-            .expect("Failed to load example config")
-            .set_field(
-                "gateway.contracts.decryption_address",
-                serde_yaml::Value::String("not-a-valid-address".into()),
-            );
-
-        let content = serde_yaml::to_string(&builder.config).expect("Failed to serialize");
-        let dir = tempfile::tempdir().expect("Failed to create temp dir");
-        let config_path = dir.path().join("test-config.yaml");
-        std::fs::write(&config_path, content).expect("Failed to write config file");
-
-        let result = Settings::new(Some(config_path.to_string_lossy().to_string()));
+        let result = settings_new(
+            ConfigBuilder::from_example()
+                .expect("Failed to load example config")
+                .set_field(
+                    "gateway.contracts.decryption_address",
+                    serde_yaml::Value::String("not-a-valid-address".into()),
+                ),
+        );
 
         assert!(
             result.is_err(),
@@ -1627,14 +1952,82 @@ mod tests {
             vec![0.01, 0.05, 0.1]
         );
 
-        // keyurl: env overrides
-        assert_eq!(
-            settings.keyurl.kms_generation_address,
-            "0x00000000000000000000000000000000000000ff"
-        );
-        assert_eq!(settings.keyurl.poll_interval_ms, 12000);
+        // keyurl: env overrides, `source` included (both YAML and env say `chain`)
+        match &settings.keyurl {
+            KeyUrlConfig::Chain {
+                kms_generation_address,
+                poll_interval_ms,
+            } => {
+                assert_eq!(
+                    kms_generation_address,
+                    "0x00000000000000000000000000000000000000ff"
+                );
+                assert_eq!(*poll_interval_ms, 12000);
+            }
+            other => panic!("expected keyurl.source: chain, got {other:?}"),
+        }
 
         // storage: env overrides
         assert!(settings.storage.sql_database_url.contains("env-override"));
+    }
+
+    /// `keyurl.source: config` from env vars alone, no `keyurl` block in any file — how the
+    /// gitops deployments that need this mode are wired. `urls` is the load-bearing part: config-rs
+    /// turns `URLS__0` / `URLS__1` into an index-keyed map, so without
+    /// `deserialize_vec_from_map_or_seq` on `KeyData::urls` this fails with "invalid type: map,
+    /// expected a sequence". Two URLs prove index order rather than collapse to one element.
+    #[test]
+    #[serial] // avoid env var leakage from parallel tests
+    fn test_keyurl_source_config_from_env_only() {
+        const KEY_DATA_ID: &str =
+            "0x0400000000000000000000000000000000000000000000000000000000000003";
+        const KEY_URL_0: &str = "http://minio-a:9000/kms-public/PUB-p1/PublicKey/03";
+        const KEY_URL_1: &str = "http://minio-b:9000/kms-public/PUB-p2/PublicKey/03";
+        const CRS_DATA_ID: &str =
+            "0x0400000000000000000000000000000000000000000000000000000000000004";
+        const CRS_URL_0: &str = "http://minio-a:9000/kms-public/PUB-p1/CRS/04";
+
+        // Base config with the whole `keyurl` block removed: every field comes from env.
+        let builder = ConfigBuilder::from_example()
+            .expect("Failed to load example config")
+            .remove_field("keyurl");
+
+        let vars = [
+            ("APP_KEYURL__SOURCE", "config"),
+            ("APP_KEYURL__FHE_PUBLIC_KEY__DATA_ID", KEY_DATA_ID),
+            ("APP_KEYURL__FHE_PUBLIC_KEY__URLS__0", KEY_URL_0),
+            ("APP_KEYURL__FHE_PUBLIC_KEY__URLS__1", KEY_URL_1),
+            ("APP_KEYURL__CRS__DATA_ID", CRS_DATA_ID),
+            ("APP_KEYURL__CRS__URLS__0", CRS_URL_0),
+        ];
+        for (key, value) in vars {
+            env::set_var(key, value);
+        }
+
+        // Settings::new — the same code path as the real app.
+        let result = settings_new(builder);
+
+        // Clean up before asserting so a failure cannot leak into other tests.
+        for (key, _) in vars {
+            env::remove_var(key);
+        }
+
+        let settings = result.expect(
+            "`keyurl.source: config` should load from env vars alone — \
+             `urls` may be missing its map-or-sequence deserializer",
+        );
+
+        match &settings.keyurl {
+            KeyUrlConfig::Config {
+                fhe_public_key,
+                crs,
+            } => {
+                assert_eq!(fhe_public_key.data_id, KEY_DATA_ID);
+                assert_eq!(fhe_public_key.urls, vec![KEY_URL_0, KEY_URL_1]);
+                assert_eq!(crs.data_id, CRS_DATA_ID);
+                assert_eq!(crs.urls, vec![CRS_URL_0]);
+            }
+            other => panic!("expected keyurl.source: config, got {other:?}"),
+        }
     }
 }

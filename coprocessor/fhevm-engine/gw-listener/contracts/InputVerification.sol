@@ -12,6 +12,8 @@ contract InputVerification {
         bytes ciphertextWithZKProof,
         bytes extraData
     );
+    event VerifyProofResponse(uint256 indexed zkProofId, bytes32[] ctHandles, bytes[] signatures);
+    event RejectProofResponse(uint256 indexed zkProofId);
 
     uint256 zkProofIdCounter = 0;
 
@@ -32,5 +34,13 @@ contract InputVerification {
             ciphertextWithZKProof,
             extraData
         );
+    }
+
+    function emitVerifyProofResponse(uint256 zkProofId, bytes32[] calldata ctHandles) public {
+        emit VerifyProofResponse(zkProofId, ctHandles, new bytes[](0));
+    }
+
+    function emitRejectProofResponse(uint256 zkProofId) public {
+        emit RejectProofResponse(zkProofId);
     }
 }

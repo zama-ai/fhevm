@@ -1,10 +1,11 @@
 use alloy_primitives::Address;
-use fhevm_engine_common::branch::BRANCHLESS_PRODUCER_BLOCK_HASH;
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::crs::{Crs, CrsCache};
 use fhevm_engine_common::db_keys::DbKey;
 use fhevm_engine_common::db_keys::DbKeyCache;
-use fhevm_engine_common::gcs_activation::{run_gcs_gw_activation_watcher, GCS_NOT_ACTIVATED};
+use fhevm_engine_common::gcs_activation::{
+    run_gcs_gw_activation_watcher, GCS_GATE_RECHECK, GCS_NOT_ACTIVATED,
+};
 use fhevm_engine_common::host_chains::HostChainsCache;
 use fhevm_engine_common::pg_pool::{PostgresPoolManager, ServiceError};
 use fhevm_engine_common::tfhe_ops::{current_ciphertext_version, extract_ct_list};
@@ -304,8 +305,11 @@ async fn execute_worker(
         // diverge across operators — exactly what the gw_start_block alignment
         // prevents.
         if conf.gcs_mode && gw_start_block_state.load(Ordering::SeqCst) == GCS_NOT_ACTIVATED {
-            debug!("GCS not yet activated; sleeping before re-check");
-            tokio::time::sleep(Duration::from_secs(conf.pg_polling_interval as u64)).await;
+            info!("GCS not yet activated; sleeping before re-check");
+            tokio::select! {
+                _ = token.cancelled() => return Ok(()),
+                _ = tokio::time::sleep(GCS_GATE_RECHECK) => {}
+            }
             continue;
         }
 
@@ -393,10 +397,27 @@ async fn execute_verify_proof_routine(
     };
 
     if let Ok(row) = sqlx::query!(
-        "SELECT zk_proof_id, input, chain_id, contract_address, user_address, transaction_id, block_number
+        "SELECT zk_proof_id, input, chain_id, contract_address, user_address, transaction_id,
+                block_number, handles, verified_at
             FROM verify_proofs
             WHERE verified IS NULL
               AND chain_id = ANY($1::bigint[])
+              AND (
+                  verified_at IS NULL
+                  OR (
+                      handles IS NOT NULL
+                      AND verified_at > NOW() - INTERVAL '7 days'
+                      AND (
+                          last_retry_at IS NULL
+                          OR last_retry_at + make_interval(
+                              secs => LEAST(
+                                  86400,
+                                  60 * (1 << LEAST(GREATEST(retry_count - 1, 0), 11))
+                              )
+                          ) <= NOW()
+                      )
+                  )
+              )
             ORDER BY zk_proof_id ASC
             LIMIT 1 FOR UPDATE SKIP LOCKED",
         known_chain_ids,
@@ -406,6 +427,8 @@ async fn execute_verify_proof_routine(
     {
         let started_at = SystemTime::now();
         let request_id: i64 = row.zk_proof_id;
+        let is_replay = row.verified_at.is_some();
+
         let Some(input) = row.input else {
             // A NULL input can never verify; mark it failed and commit so the
             // malformed row isn't re-picked and crash-loops the worker.
@@ -414,7 +437,9 @@ async fn execute_verify_proof_routine(
                 request_id
             );
             sqlx::query(
-                "UPDATE verify_proofs SET verified = false, verified_at = NOW() WHERE zk_proof_id = $1",
+                "UPDATE verify_proofs
+                 SET handles = ''::BYTEA, verified = false, verified_at = NOW()
+                 WHERE zk_proof_id = $1",
             )
             .bind(request_id)
             .execute(&mut *txn)
@@ -437,10 +462,12 @@ async fn execute_verify_proof_routine(
         let user_address = row.user_address;
         let transaction_id: Option<Vec<u8>> = row.transaction_id;
         let block_number: Option<i64> = row.block_number;
+        let expected_handles = row.handles.unwrap_or_default();
 
         info!(
             message = "Process zk-verify request",
             request_id,
+            is_replay,
             %host_chain_id,
             user_address,
             contract_address,
@@ -449,8 +476,12 @@ async fn execute_verify_proof_routine(
 
         let acl_contract_address = host_chain.acl_contract_address.clone();
 
-        let verify_span =
-            tracing::info_span!("verify_task", request_id, txn_id = tracing::field::Empty);
+        let verify_span = tracing::info_span!(
+            "verify_task",
+            request_id,
+            is_replay,
+            txn_id = tracing::field::Empty
+        );
         fhevm_engine_common::telemetry::record_short_hex_if_some(
             &verify_span,
             "txn_id",
@@ -472,6 +503,7 @@ async fn execute_verify_proof_routine(
         let db_insert_span = tracing::info_span!(
             "db_insert",
             request_id,
+            is_replay,
             txn_id = tracing::field::Empty,
             valid = tracing::field::Empty,
             count = tracing::field::Empty
@@ -482,9 +514,11 @@ async fn execute_verify_proof_routine(
             transaction_id.as_deref(),
         );
 
+        let mut replayed_ciphertext_count = None;
         async {
             let mut verified = false;
             let mut handles_bytes = vec![];
+            let mut verification_error = None;
             match res.as_ref() {
                 Ok((cts, blob_hash)) => {
                     info!(
@@ -497,52 +531,113 @@ async fn execute_verify_proof_routine(
                         acc.extend_from_slice(ct.handle.as_ref());
                         acc
                     });
-                    verified = true;
-                    let count = cts.len();
-                    insert_ciphertexts(&mut txn, cts, blob_hash).await?;
-                    if let Some(bn) = block_number {
-                        insert_input_handles(&mut txn, cts, bn).await?;
-                    }
-                    tracing::Span::current().record("count", count);
+                    if is_replay && handles_bytes != expected_handles {
+                        error!(
+                            request_id,
+                            expected_handles = expected_handles.len() / 32,
+                            computed_handles = handles_bytes.len() / 32,
+                            "Replayed proof produced handles that differ from Gateway consensus"
+                        );
+                        verification_error =
+                            Some("Replayed proof handles differ from Gateway consensus".to_owned());
+                    } else {
+                        verified = true;
+                        let count = cts.len();
+                        insert_ciphertexts(&mut txn, cts, blob_hash).await?;
+                        if let Some(bn) = block_number {
+                            insert_input_handles(&mut txn, cts, bn).await?;
+                        }
+                        tracing::Span::current().record("count", count);
+                        if is_replay {
+                            replayed_ciphertext_count = Some(count);
+                        }
 
-                    info!(message = "Ciphertexts inserted", request_id, count);
+                        info!(message = "Ciphertexts inserted", request_id, count);
+                    }
                 }
                 Err(err) => {
-                    error!(
-                        message = "Failed to verify proof",
-                        request_id,
-                        err = err.to_string()
-                    );
+                    if is_replay {
+                        warn!(
+                            message = "Gateway-accepted proof replay failed; retained for retry",
+                            request_id,
+                            err = err.to_string()
+                        );
+                    } else {
+                        error!(
+                            message = "Failed to verify proof",
+                            request_id,
+                            err = err.to_string()
+                        );
+                    }
+                    verification_error = Some(err.to_string());
                 }
             }
 
             tracing::Span::current().record("valid", verified);
 
-            // Mark as verified=true/false and set handles, if computed
-            sqlx::query!(
-                "UPDATE verify_proofs SET handles = $1, verified = $2, verified_at = NOW()
-                WHERE zk_proof_id = $3",
-                handles_bytes,
-                verified,
-                request_id
-            )
-            .execute(&mut *txn)
-            .await?;
+            if is_replay {
+                if verified {
+                    sqlx::query!(
+                        "DELETE FROM verify_proofs WHERE zk_proof_id = $1",
+                        request_id,
+                    )
+                    .execute(&mut *txn)
+                    .await?;
+                } else {
+                    sqlx::query!(
+                        "UPDATE verify_proofs
+                         SET verified = NULL,
+                             retry_count = retry_count + 1,
+                             last_error = $2,
+                             last_retry_at = NOW()
+                         WHERE zk_proof_id = $1",
+                        request_id,
+                        verification_error,
+                    )
+                    .execute(&mut *txn)
+                    .await?;
+                }
+            } else {
+                // For local failures this stores an empty handle list. After the
+                // rejection is sent, transaction-sender clears it while waiting
+                // for the Gateway's final outcome.
+                sqlx::query!(
+                    "UPDATE verify_proofs
+                     SET handles = $1,
+                         verified = $2,
+                         verified_at = NOW()
+                     WHERE zk_proof_id = $3",
+                    handles_bytes,
+                    verified,
+                    request_id,
+                )
+                .execute(&mut *txn)
+                .await?;
+            }
 
             Ok::<_, ExecutionError>(())
         }
         .instrument(db_insert_span)
         .await?;
 
-        // Notify
-        sqlx::query!(
-            "SELECT pg_notify($1, '')",
-            conf.notify_database_channel.clone()
-        )
-        .execute(&mut *txn)
-        .await?;
+        if !is_replay {
+            sqlx::query!(
+                "SELECT pg_notify($1, '')",
+                conf.notify_database_channel.clone()
+            )
+            .execute(&mut *txn)
+            .await?;
+        }
 
         txn.commit().await?;
+
+        if let Some(count) = replayed_ciphertext_count {
+            info!(
+                request_id,
+                ciphertext_count = count,
+                "Gateway-accepted proof replay restored local ciphertexts"
+            );
+        }
 
         if res.is_ok() {
             let elapsed = started_at.elapsed().unwrap_or_default().as_secs_f64();
@@ -551,7 +646,7 @@ async fn execute_verify_proof_routine(
             }
         }
 
-        info!(message = "Completed", request_id);
+        info!(message = "Completed", request_id, is_replay);
     }
 
     Ok(())
@@ -607,9 +702,11 @@ pub(crate) fn verify_proof(
 /// during the conformance check, i.e. *before* any ZK verification runs, which
 /// keeps the attack surface of the proof verifier down to what is strictly needed:
 ///
-/// * Hash config: only `V0_8_0` (tfhe-zk-pok 0.8.0+, produced by tfhe-rs 1.5.0+)
-///   is accepted; the legacy `V0_4_0` (tfhe-rs 0.11.x–1.2.x) and `V0_7_0`
-///   (tfhe-rs 1.3.0–1.4.x) configs are forbidden.
+/// * Hash config: `V0_8_0` (tfhe-zk-pok 0.8.0+, produced by tfhe-rs 1.5.0+)
+///   and `V0_7_0` (tfhe-rs 1.3.0–1.4.x, still emitted by the tfhe wasm pinned
+///   in relayer-sdk 0.4.x) are accepted; the legacy `V0_4_0` (tfhe-rs
+///   0.11.x–1.2.x) config is forbidden. `V0_7_0` must stay accepted until no
+///   deployed client encrypts with a pre-1.5.0 tfhe wasm.
 /// * Compute load: only [`ZkComputeLoad::Verify`] is accepted — the load the
 ///   clients emit — and `ZkComputeLoad::Proof` is forbidden.
 /// * Packing: `allow_unpacked` is left off, so only packed (and therefore
@@ -623,7 +720,6 @@ pub(crate) fn proven_list_conformance_params(
         &crs.crs,
     )
     .forbid_hash_config(ZkPkeV2SupportedHashConfig::V0_4_0)
-    .forbid_hash_config(ZkPkeV2SupportedHashConfig::V0_7_0)
     .forbid_compute_load(ZkComputeLoad::Proof)
 }
 
@@ -815,7 +911,22 @@ async fn get_remaining_tasks(
             FROM verify_proofs
             WHERE verified IS NULL
               AND chain_id = ANY($1::bigint[])
-            ORDER BY zk_proof_id ASC
+              AND (
+                  verified_at IS NULL
+                  OR (
+                      handles IS NOT NULL
+                      AND verified_at > NOW() - INTERVAL '7 days'
+                      AND (
+                          last_retry_at IS NULL
+                          OR last_retry_at + make_interval(
+                              secs => LEAST(
+                                  86400,
+                                  60 * (1 << LEAST(GREATEST(retry_count - 1, 0), 11))
+                              )
+                          ) <= NOW()
+                      )
+                  )
+              )
             FOR UPDATE SKIP LOCKED
         ) AS unlocked_rows;
         ",
@@ -849,30 +960,6 @@ pub(crate) async fn insert_ciphertexts(
             ct.ct_type,
             &blob_hash,
             i as i32,
-        )
-        .execute(db_txn.as_mut())
-        .await?;
-
-        // User inputs are not derived from any block: store them as branchless
-        // (empty producer_block_hash) so dependency resolution can fall back to
-        // them on every branch and reorg cleanup never deletes them. The branch
-        // row is required for wave-2 consumers, so failures abort the
-        // verification transaction and roll back the legacy insert above.
-        sqlx::query!(
-            r#"
-            INSERT INTO ciphertexts_branch (
-                handle, ciphertext, ciphertext_version, ciphertext_type,
-                input_blob_hash, input_blob_index, producer_block_hash, created_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
-            ON CONFLICT (handle, ciphertext_version, producer_block_hash) DO NOTHING;
-            "#,
-            &ct.handle,
-            &ct.compressed,
-            ct.ct_version,
-            ct.ct_type,
-            &blob_hash,
-            i as i32,
-            BRANCHLESS_PRODUCER_BLOCK_HASH,
         )
         .execute(db_txn.as_mut())
         .await?;

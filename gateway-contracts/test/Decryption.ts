@@ -234,7 +234,12 @@ describe('Decryption', function () {
       // Sign the message with all KMS signers
       const kmsSignatures = await getSignaturesPublicDecrypt(eip712Message, kmsSigners);
 
-      return { ...fixtureData, eip712Message, kmsSignatures, decryptionAddress };
+      return {
+        ...fixtureData,
+        eip712Message,
+        kmsSignatures,
+        decryptionAddress,
+      };
     }
 
     beforeEach(async function () {
@@ -2961,14 +2966,20 @@ describe('Decryption', function () {
     const opaqueSignature = hre.ethers.hexlify(hre.ethers.randomBytes(65));
 
     let decryption: Decryption;
+    let gatewayConfig: GatewayConfig;
     let snsCiphertextMaterials: SnsCiphertextMaterialStruct[];
     let tokenFundedTxSender: HardhatEthersSigner;
+    let mockedZamaOFT: ZamaOFT;
+    let mockedFeesSenderToBurnerAddress: string;
 
     beforeEach(async function () {
       const fixtureData = await loadFixture(prepareAddCiphertextFixture);
       decryption = fixtureData.decryption;
+      gatewayConfig = fixtureData.gatewayConfig;
       snsCiphertextMaterials = fixtureData.snsCiphertextMaterials;
       tokenFundedTxSender = fixtureData.tokenFundedTxSender;
+      mockedZamaOFT = fixtureData.mockedZamaOFT;
+      mockedFeesSenderToBurnerAddress = fixtureData.mockedFeesSenderToBurnerAddress;
     });
 
     it('Should request a unified user decryption with all direct handles', async function () {
@@ -3010,7 +3021,11 @@ describe('Decryption', function () {
       // regardless of whether delegation actually exists on the ACL.
       const mixedHandles = [
         { handle: ctHandles[0], contractAddress, ownerAddress: user.address }, // direct
-        { handle: ctHandles[1], contractAddress, ownerAddress: delegator.address }, // delegated
+        {
+          handle: ctHandles[1],
+          contractAddress,
+          ownerAddress: delegator.address,
+        }, // delegated
         { handle: ctHandles[2], contractAddress, ownerAddress: user.address }, // direct
       ];
       const allowedContracts = [contractAddress];
@@ -3191,7 +3206,11 @@ describe('Decryption', function () {
     it('Should revert when handles carry mismatched chain IDs', async function () {
       const mismatchedHandles = [
         { handle: ctHandles[0], contractAddress, ownerAddress: user.address },
-        { handle: fakeChainIdCtHandle, contractAddress, ownerAddress: user.address },
+        {
+          handle: fakeChainIdCtHandle,
+          contractAddress,
+          ownerAddress: user.address,
+        },
       ];
 
       await expect(
@@ -3292,6 +3311,29 @@ describe('Decryption', function () {
             UNIFIED_REQUEST_SIG
           ](directHandles, user.address, publicKey, [contractAddress], requestValidity, opaqueSignature, nullContextV2ExtraData),
       ).to.be.revertedWithCustomError(decryption, 'InvalidNullContextId');
+    });
+
+    it('Should revert when extraData pins an invalid (unregistered) contextId, without charging the fee', async function () {
+      // The unified path must reject a non-zero context that was never created or has been
+      // destroyed at request time, so a request that could never be answered is not opened and
+      // paid for. Matches the legacy and public request paths.
+      const invalidContextId = 999_999n;
+      const invalidContextExtraData = extraDataV1(invalidContextId);
+      const tokenFundedTxSenderBalance = await mockedZamaOFT.balanceOf(tokenFundedTxSender.address);
+      const feesSenderToBurnerBalance = await mockedZamaOFT.balanceOf(mockedFeesSenderToBurnerAddress);
+
+      await expect(
+        decryption
+          .connect(tokenFundedTxSender)
+          [
+            UNIFIED_REQUEST_SIG
+          ](directHandles, user.address, publicKey, [contractAddress], requestValidity, opaqueSignature, invalidContextExtraData),
+      )
+        .to.be.revertedWithCustomError(gatewayConfig, 'InvalidKmsContext')
+        .withArgs(invalidContextId);
+
+      expect(await mockedZamaOFT.balanceOf(tokenFundedTxSender.address)).to.equal(tokenFundedTxSenderBalance);
+      expect(await mockedZamaOFT.balanceOf(mockedFeesSenderToBurnerAddress)).to.equal(feesSenderToBurnerBalance);
     });
 
     it('Should revert when a response uses extraData v2 with a contextId that differs from the one pinned at request time', async function () {

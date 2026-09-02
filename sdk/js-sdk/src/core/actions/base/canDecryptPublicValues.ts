@@ -4,6 +4,7 @@ import type { FhevmChain } from '../../types/fhevmChain.js';
 import type { EncryptedValueLike } from '../../types/encryptedTypes.js';
 import { isAllowedForDecryption } from '../../host-contracts/isAllowedForDecryption.js';
 import { toFhevmHandle } from '../../handle/FhevmHandle.js';
+import { initPublicAction } from '../../runtime/CoreFhevm-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -20,6 +21,9 @@ export async function canDecryptPublicValues(
   parameters: CanDecryptPublicValuesParameters,
 ): Promise<CanDecryptPublicValuesReturnType> {
   const handles = parameters.encryptedValues.map(toFhevmHandle);
+
+  // context is not needed
+  await initPublicAction(fhevm);
 
   return isAllowedForDecryption(fhevm, {
     aclAddress: fhevm.chain.fhevm.contracts.acl.address as ChecksummedAddress,

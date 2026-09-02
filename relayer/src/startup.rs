@@ -29,10 +29,12 @@ use anyhow::Context;
 use std::sync::Arc;
 use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
+use tokio_util::task::TaskTracker;
 use tracing::{info, span, Level};
 
 use crate::{
-    config::settings::Settings,
+    config::settings::{KeyUrlConfig, Settings},
+    http::endpoints::v2::types::keyurl::KeyUrlResponseJson,
     http::server::run_http_server,
     metrics,
     orchestrator::{HealthCheck, Orchestrator, TokioEventDispatcher},
@@ -72,7 +74,11 @@ pub async fn run_fhevm_relayer(
 
     // === Orchestration Phase ===
     // Create orchestrator, repositories, and gateway components
-    let orchestrator = Orchestrator::new(Arc::new(TokioEventDispatcher::new()));
+    let detached_tasks = TaskTracker::new();
+    let orchestrator = Orchestrator::new(
+        Arc::new(TokioEventDispatcher::new(detached_tasks.clone())),
+        detached_tasks.clone(),
+    );
 
     // Initialize SQL repositories
     let repositories = Arc::new(
@@ -150,14 +156,39 @@ pub async fn run_fhevm_relayer(
     if settings.http.endpoint.is_some() {
         info!("Starting Relayer HTTP server");
 
-        // Gate startup on the first successful host-chain poll so `/v2/keyurl` always serves a
-        // chain-sourced value; if it keeps failing the relayer exits and is restarted.
-        let mut keyurl_poller = KeyUrlPoller::new(&settings.protocol_config, &settings.keyurl)
-            .context("Failed to build KeyUrl poller")?;
-        let initial_keyurl = keyurl_poller
-            .initialize()
-            .await
-            .context("Failed to initialize /v2/keyurl from host chain")?;
+        // `/v2/keyurl` is served from a watch channel in both modes; only `chain` runs a poller.
+        let (initial_keyurl, keyurl_poller) = match &settings.keyurl {
+            KeyUrlConfig::Chain {
+                kms_generation_address,
+                poll_interval_ms,
+            } => {
+                let mut poller = KeyUrlPoller::new(
+                    &settings.protocol_config,
+                    kms_generation_address,
+                    *poll_interval_ms,
+                )
+                .context("Failed to build KeyUrl poller")?;
+                // Gate startup on the first successful host-chain poll; if it keeps failing the
+                // relayer exits and is restarted.
+                let initial = poller
+                    .initialize()
+                    .await
+                    .context("Failed to initialize /v2/keyurl from host chain")?;
+                (initial, Some(poller))
+            }
+            KeyUrlConfig::Config {
+                fhe_public_key,
+                crs,
+            } => {
+                info!(
+                    "Serving /v2/keyurl from static config; no host-chain KeyUrl poller is started"
+                );
+                (
+                    KeyUrlResponseJson::new(fhe_public_key.clone(), crs.clone()),
+                    None,
+                )
+            }
+        };
         let (keyurl_tx, keyurl_rx) = tokio::sync::watch::channel(initial_keyurl);
 
         let addr = run_http_server(
@@ -177,14 +208,16 @@ pub async fn run_fhevm_relayer(
         // Spawn the single host-chain KeyUrl poller now the endpoint is serving. Startup is
         // already gated above, so the readiness future is trivially ready; the task is tracked
         // by the orchestrator for graceful shutdown.
-        orchestrator
-            .spawn_task_and_wait_ready(
-                "keyurl_poller",
-                async move { keyurl_poller.run(keyurl_tx).await },
-                async { anyhow::Ok(()) },
-            )
-            .await
-            .context("Failed to start KeyUrl poller")?;
+        if let Some(keyurl_poller) = keyurl_poller {
+            orchestrator
+                .spawn_task_and_wait_ready(
+                    "keyurl_poller",
+                    async move { keyurl_poller.run(keyurl_tx).await },
+                    async { anyhow::Ok(()) },
+                )
+                .await
+                .context("Failed to start KeyUrl poller")?;
+        }
     };
 
     // Run metrics server
@@ -239,6 +272,7 @@ fn ensure_global_init(settings: &Settings) -> anyhow::Result<&'static Registry> 
         metrics::init_statuses_metrics(&registry, settings.metrics.clone());
         metrics::init_db_metrics(&registry, settings.metrics.clone());
         metrics::init_queue_metrics(&registry);
+        metrics::init_listener_metrics(&registry);
         metrics::init_signature_precheck_metrics(&registry);
         metrics::init_retry_after_metrics(
             &registry,

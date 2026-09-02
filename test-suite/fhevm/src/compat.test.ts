@@ -6,21 +6,26 @@ import {
   MODERN_RELAYER_IMAGE_REPOSITORY,
   MODERN_RELAYER_MIGRATE_IMAGE_REPOSITORY,
   bootstrapUsesHostKmsGeneration,
+  canonicalProtocolConfigSeedingUsesEnv,
+  compatArgPolicyForPinnedTag,
   compatPolicyForState,
   coprocessorUsesHostKmsGeneration,
   kmsConnectorUsesHostKmsGeneration,
   requiresGatewayKmsGenerationAddress,
   requiresLegacyGatewayKmsGenerationAddress,
   requiresLegacyHostChainSeedShim,
+  requiresLegacyKmsBootstrapBudget,
   requiresLegacyKmsCoreConfig,
   requiresLegacyRelayerUrl,
   requiresModernHostAddressArtifacts,
+  supportsCanonicalProtocolConfigSeeding,
   supportsConsensusDetector,
   supportsHostListenerConsumer,
   supportsUpgradeController,
   validateBundleCompatibility,
 } from "./compat/compat";
 import { testDefaultScenario } from "./test-fixtures";
+import type { LocalOverride } from "./types";
 
 describe("compat", () => {
   test("flags relayer v1 vs test-suite v2 incompatibility", () => {
@@ -135,6 +140,58 @@ describe("compat", () => {
     });
     expect(policy.coprocessorDropFlags["sns-worker"] ?? []).not.toContain("--signer-type");
     expect(policy.coprocessorDropFlags["sns-worker"] ?? []).not.toContain("--private-key");
+  });
+
+  test("splits the unified bucket flag for legacy sns-worker images", () => {
+    const policy = compatPolicyForState({
+      versions: {
+        target: "latest-supported",
+        lockName: "latest-supported.json",
+        env: {
+          COPROCESSOR_SNS_WORKER_VERSION: "v0.14.0",
+        } as Record<string, string>,
+        sources: [],
+      },
+      overrides: [],
+      scenario: testDefaultScenario(),
+    });
+    expect(policy.coprocessorDropFlags["sns-worker"]).toContain("--bucket-name");
+    expect(policy.coprocessorArgs["sns-worker"]).toContainEqual(["--bucket-name-ct128", { env: "BUCKET_NAME" }]);
+    expect(policy.coprocessorArgs["sns-worker"]).toContainEqual(["--bucket-name-ct64", { env: "BUCKET_NAME" }]);
+  });
+
+  test("keeps the unified bucket flag for sns-worker images from v0.15.0 onward", () => {
+    const policy = compatPolicyForState({
+      versions: {
+        target: "latest-main",
+        lockName: "latest-main.json",
+        env: {
+          COPROCESSOR_SNS_WORKER_VERSION: "v0.15.0-0",
+        } as Record<string, string>,
+        sources: [],
+      },
+      overrides: [],
+      scenario: testDefaultScenario(),
+    });
+    expect(policy.coprocessorDropFlags["sns-worker"] ?? []).not.toContain("--bucket-name");
+    expect(policy.coprocessorArgs["sns-worker"] ?? []).toHaveLength(0);
+  });
+
+  test("shims a registry-pinned fleet from its tag, ignoring the resolved bundle", () => {
+    // Blue-green's BCS fleet pins the previous release while the bundle points at
+    // HEAD, so the tag is the only signal for which flag contract it speaks.
+    const policy = compatArgPolicyForPinnedTag("v0.14.0-7");
+    expect(policy.coprocessorDropFlags["sns-worker"]).toContain("--bucket-name");
+    expect(policy.coprocessorArgs["sns-worker"]).toContainEqual(["--bucket-name-ct128", { env: "BUCKET_NAME" }]);
+    expect(policy.coprocessorArgs["sns-worker"]).toContainEqual(["--bucket-name-ct64", { env: "BUCKET_NAME" }]);
+    // v0.14 already carries the signer flags, so the 0.14.0 shim must not fire.
+    expect(policy.coprocessorDropFlags["sns-worker"]).not.toContain("--signer-type");
+  });
+
+  test("leaves a registry-pinned fleet unshimmed once it reaches the current contract", () => {
+    const policy = compatArgPolicyForPinnedTag("v0.15.0");
+    expect(policy.coprocessorArgs).toEqual({});
+    expect(policy.coprocessorDropFlags).toEqual({});
   });
 
   test("drops kms-generation-address for old host listener images", () => {
@@ -373,7 +430,7 @@ describe("compat", () => {
     expect(policy.composeEnv.GATEWAY_ADD_PAUSERS_INTERNAL_FLAG).toBe("--use-internal-pauser-set-address");
   });
 
-  test("keeps legacy pauser flags for v0.12 contract tags", () => {
+  test("keeps legacy pauser flags before host contracts v0.12.1", () => {
     const policy = compatPolicyForState({
       versions: {
         target: "latest-supported",
@@ -389,6 +446,36 @@ describe("compat", () => {
     });
     expect(policy.composeEnv.HOST_ADD_PAUSERS_INTERNAL_FLAG).toBe("--use-internal-pauser-set-address");
     expect(policy.composeEnv.GATEWAY_ADD_PAUSERS_INTERNAL_FLAG).toBe("--use-internal-pauser-set-address");
+  });
+
+  // task:addHostPausers took useInternalProxyAddress from v0.12.1; the gateway task
+  // kept useInternalPauserSetAddress until v0.13.0, so the two flags diverge here.
+  test("uses the proxy pauser flag from host contracts v0.12.1", () => {
+    const policy = compatPolicyForState({
+      versions: {
+        target: "latest-supported",
+        lockName: "v0.12.1.json",
+        env: {
+          HOST_VERSION: "v0.12.1",
+          GATEWAY_VERSION: "v0.12.1",
+        } as Record<string, string>,
+        sources: [],
+      },
+      overrides: [],
+      scenario: testDefaultScenario(),
+    });
+    expect(policy.composeEnv.HOST_ADD_PAUSERS_INTERNAL_FLAG).toBe("--use-internal-proxy-address");
+    expect(policy.composeEnv.GATEWAY_ADD_PAUSERS_INTERNAL_FLAG).toBe("--use-internal-pauser-set-address");
+  });
+
+  test("grants the larger bootstrap budget only to pre-v0.13.20 KMS cores", () => {
+    expect(requiresLegacyKmsBootstrapBudget("v0.13.10")).toBe(true);
+    expect(requiresLegacyKmsBootstrapBudget("v0.13.20")).toBe(false);
+    expect(requiresLegacyKmsBootstrapBudget("v0.13.20-0")).toBe(false);
+    // The checked-in node-by-node runbook must stay on the standard budget.
+    expect(requiresLegacyKmsBootstrapBudget("v0.13.21")).toBe(false);
+    // Unparsed (sha-tagged) cores follow the modern budget, as elsewhere in compat.
+    expect(requiresLegacyKmsBootstrapBudget("abc1234")).toBe(false);
   });
 
   test("renders modern pauser flags for unparsed mainline versions", () => {
@@ -667,5 +754,44 @@ describe("compat", () => {
     });
     expect(policy.composeEnv.RELAYER_IMAGE_REPOSITORY).toBe(MODERN_RELAYER_IMAGE_REPOSITORY);
     expect(policy.composeEnv.RELAYER_MIGRATE_IMAGE_REPOSITORY).toBe(MODERN_RELAYER_MIGRATE_IMAGE_REPOSITORY);
+  });
+
+  test("keeps canonical ProtocolConfig seeding on flags until the CANONICAL_* env build", () => {
+    const stateFor = (hostVersion: string, overrides: LocalOverride[] = []) => ({
+      versions: {
+        target: "latest-main" as const,
+        lockName: "latest-main.json",
+        env: { HOST_VERSION: hostVersion } as Record<string, string>,
+        sources: [],
+      },
+      overrides,
+      scenario: testDefaultScenario(),
+    });
+
+    // Predates the seeding task entirely, so the harness keeps "fresh" seeding.
+    expect(supportsCanonicalProtocolConfigSeeding(stateFor("v0.13.0"))).toBe(false);
+
+    // Ships the task, but it takes its input as command-line flags.
+    for (const version of ["v0.13.1", "v0.13.3", "v0.14.0-0", "v0.14.0-8"]) {
+      expect(supportsCanonicalProtocolConfigSeeding(stateFor(version))).toBe(true);
+      expect(canonicalProtocolConfigSeedingUsesEnv(stateFor(version))).toBe(false);
+    }
+
+    // A non-numeric suffix is a real prerelease, so it stays below the floor.
+    expect(canonicalProtocolConfigSeedingUsesEnv(stateFor("v0.14.0-rc1"))).toBe(false);
+
+    // The final tag and newer families read the CANONICAL_* env variables.
+    for (const version of ["v0.14.0", "v0.14.1", "v0.15.0"]) {
+      expect(canonicalProtocolConfigSeedingUsesEnv(stateFor(version))).toBe(true);
+    }
+
+    // Builds at or above the build floor read the CANONICAL_* env variables.
+    for (const version of ["v0.14.0-9", "v0.14.0-10"]) {
+      expect(canonicalProtocolConfigSeedingUsesEnv(stateFor(version))).toBe(true);
+    }
+
+    // Sha refs and local host-contracts overrides track the workspace, which is env mode.
+    expect(canonicalProtocolConfigSeedingUsesEnv(stateFor("65cf86e"))).toBe(true);
+    expect(canonicalProtocolConfigSeedingUsesEnv(stateFor("v0.14.0-8", [{ group: "host-contracts" }]))).toBe(true);
   });
 });

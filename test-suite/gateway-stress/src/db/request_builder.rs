@@ -1,40 +1,53 @@
 use crate::{
-    config::CiphertextConfig,
-    decryption::types::{DecryptionRequest, DecryptionType},
+    config::{BlockchainConfig, CiphertextConfig},
+    decryption::{
+        types::{DecryptionRequest, DecryptionType},
+        user::{DURATION_SECONDS, EXTRA_DATA},
+    },
+    eip712::user_decrypt_v2_eip712_signature,
 };
-use alloy::primitives::{Address, Bytes, U256};
-use fhevm_gateway_bindings::decryption::Decryption::{
-    PublicDecryptionRequest, SnsCiphertextMaterial, UserDecryptionRequest,
+use alloy::{
+    primitives::{Address, Bytes, FixedBytes, U256},
+    signers::local::PrivateKeySigner,
 };
-use rand::Rng;
+use anyhow::anyhow;
+use fhevm_gateway_bindings::decryption::{
+    Decryption::{
+        HandleEntry, PublicDecryptionRequest_1 as PublicDecryptionRequest,
+        UserDecryptionRequest_2 as UserDecryptionRequest,
+        UserDecryptionRequest_3 as UserDecryptionRequestV2,
+    },
+    IDecryption::{RequestValiditySeconds, UserDecryptionRequestPayload},
+};
+use rand::RngExt;
+use std::{str::FromStr, time::SystemTime};
 
 pub struct RequestBuilder {
     id_counter: U256,
     user_ct: Vec<CiphertextConfig>,
     public_ct: Vec<CiphertextConfig>,
-    key_id: U256,
-    copro_tx_sender_addr: Address,
+    allowed_contract: Address,
+    blockchain: Option<BlockchainConfig>,
 }
 
 impl RequestBuilder {
     pub fn new(
+        id_counter_start: U256,
         user_ct: Vec<CiphertextConfig>,
         public_ct: Vec<CiphertextConfig>,
-        key_id: U256,
-        copro_tx_sender_addr: Address,
+        allowed_contract: Address,
+        blockchain: Option<BlockchainConfig>,
     ) -> Self {
         Self {
-            // Take a high value for the id_counter to avoid polluting id that could be used in
-            // the testing environment
-            id_counter: (U256::MAX / U256::from(4)) * U256::from(3),
+            id_counter: id_counter_start,
             user_ct,
             public_ct,
-            key_id,
-            copro_tx_sender_addr,
+            allowed_contract,
+            blockchain,
         }
     }
 
-    pub fn build_requests(
+    pub async fn build_requests(
         &mut self,
         decryption_type: DecryptionType,
         count: u32,
@@ -45,6 +58,9 @@ impl RequestBuilder {
             let request = match decryption_type {
                 DecryptionType::Public => DecryptionRequest::Public(self.build_public_request()?),
                 DecryptionType::User => DecryptionRequest::User(self.build_user_request()?),
+                DecryptionType::UserV2 => {
+                    DecryptionRequest::UserV2(self.build_user_v2_request().await?)
+                }
             };
             requests.push(request);
         }
@@ -54,29 +70,87 @@ impl RequestBuilder {
 
     fn build_public_request(&mut self) -> anyhow::Result<PublicDecryptionRequest> {
         let decryption_id = self.generate_unique_id();
-        let sns_ct_materials = self.generate_sns_materials(self.public_ct.clone());
+        let ct_handles = self.generate_ct_handles(&self.public_ct);
         let extra_data = self.generate_extra_data();
 
         Ok(PublicDecryptionRequest {
             decryptionId: decryption_id,
-            snsCtMaterials: sns_ct_materials,
+            ctHandles: ct_handles,
             extraData: extra_data,
         })
     }
 
     fn build_user_request(&mut self) -> anyhow::Result<UserDecryptionRequest> {
         let decryption_id = self.generate_unique_id();
-        let sns_ct_materials = self.generate_sns_materials(self.user_ct.clone());
+        let ct_handles = self.generate_ct_handles(&self.user_ct);
         let user_address = Address::from(rand::rng().random::<[u8; 20]>());
         let public_key = alloy::hex::decode(COMMON_PUBLIC_KEY).unwrap().into();
         let extra_data = self.generate_extra_data();
 
         Ok(UserDecryptionRequest {
             decryptionId: decryption_id,
-            snsCtMaterials: sns_ct_materials,
+            ctHandles: ct_handles,
             userAddress: user_address,
             publicKey: public_key,
             extraData: extra_data,
+        })
+    }
+
+    async fn build_user_v2_request(&mut self) -> anyhow::Result<UserDecryptionRequestV2> {
+        let blockchain = self.blockchain.clone().ok_or_else(|| {
+            anyhow!(
+                "`user-v2` decryption requires the [blockchain] section (private key, decryption \
+                address, host chain id) in the config file to sign the RFC-016 payload"
+            )
+        })?;
+
+        let signer = PrivateKeySigner::from_str(&blockchain.private_key)
+            .map_err(|e| anyhow!("Invalid private key: {e}"))?;
+        let user_address = signer.address();
+
+        let decryption_id = self.generate_unique_id();
+        let timestamp = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)?
+            .as_secs();
+        let allowed_contracts = vec![self.allowed_contract];
+
+        let signature = user_decrypt_v2_eip712_signature(
+            blockchain.decryption_address,
+            blockchain.host_chain_id,
+            user_address,
+            COMMON_PUBLIC_KEY,
+            allowed_contracts.clone(),
+            timestamp,
+            DURATION_SECONDS,
+            EXTRA_DATA.to_vec(),
+            &blockchain.private_key,
+        )
+        .await?;
+
+        let handles = self
+            .user_ct
+            .iter()
+            .map(|ct| HandleEntry {
+                handle: ct.handle,
+                contractAddress: self.allowed_contract,
+                ownerAddress: user_address,
+            })
+            .collect();
+
+        Ok(UserDecryptionRequestV2 {
+            decryptionId: decryption_id,
+            handles,
+            payload: UserDecryptionRequestPayload {
+                userAddress: user_address,
+                publicKey: alloy::hex::decode(COMMON_PUBLIC_KEY).unwrap().into(),
+                allowedContracts: allowed_contracts,
+                requestValidity: RequestValiditySeconds {
+                    startTimestamp: U256::from(timestamp),
+                    durationSeconds: U256::from(DURATION_SECONDS),
+                },
+                extraData: EXTRA_DATA.into(),
+                signature,
+            },
         })
     }
 
@@ -86,23 +160,12 @@ impl RequestBuilder {
         id
     }
 
-    fn generate_sns_materials(
-        &self,
-        ciphertexts: Vec<CiphertextConfig>,
-    ) -> Vec<SnsCiphertextMaterial> {
-        ciphertexts
-            .iter()
-            .map(|ct| SnsCiphertextMaterial {
-                ctHandle: ct.handle,
-                keyId: self.key_id,
-                snsCiphertextDigest: ct.digest,
-                coprocessorTxSenderAddresses: vec![self.copro_tx_sender_addr],
-            })
-            .collect()
+    fn generate_ct_handles(&self, ciphertexts: &[CiphertextConfig]) -> Vec<FixedBytes<32>> {
+        ciphertexts.iter().map(|ct| ct.handle).collect()
     }
 
     fn generate_extra_data(&self) -> Bytes {
-        vec![1].into()
+        EXTRA_DATA.into()
     }
 }
 

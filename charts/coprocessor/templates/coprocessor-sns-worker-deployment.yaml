@@ -73,11 +73,8 @@ spec:
             - --tenant-api-key=$(TENANT_API_KEY)
             {{- end }}
             {{- end }}
-            {{- if not (has "bucket-name-ct64" $disabled) }}
-            - --bucket-name-ct64=$(S3_BUCKET_NAME)
-            {{- end }}
-            {{- if not (has "bucket-name-ct128" $disabled) }}
-            - --bucket-name-ct128=$(S3_BUCKET_NAME)
+            {{- if not (has "bucket-name" $disabled) }}
+            - --bucket-name=$(S3_BUCKET_NAME)
             {{- end }}
             {{- if .Values.snsWorker.wallet.enabled }}
             {{- if not (has "signer-type" $disabled) }}

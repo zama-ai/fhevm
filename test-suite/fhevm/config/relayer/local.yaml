@@ -33,6 +33,9 @@ gateway:
     recycle_interval_mins: 30
     # Polling interval in milliseconds (for polling type listeners)
     poll_interval_ms: 2000
+    # Widest block span a single eth_getLogs may ask for. Chunks the catch-up after
+    # downtime so the listener never asks for a range the provider rejects.
+    max_blocks_per_query: 1000
     # TTL for event deduplication cache in seconds (1-10)
     dedup_ttl_seconds: 5
     # Maximum capacity for deduplication cache
@@ -114,8 +117,9 @@ log:
   show_timestamp: true
   show_target: true
 
-# /v2/keyurl host-chain poller settings.
+# /v2/keyurl host-chain poller settings. `source` is required.
 keyurl:
+  source: chain
   # KMSGeneration contract address on the host chain (source for /v2/keyurl).
   kms_generation_address: "0x3E0fBCcE61af7C01113027449eEFFF5DCd501419"
   # /v2/keyurl poll interval in ms; the poller reads at the finalized block.

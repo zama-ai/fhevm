@@ -25,9 +25,16 @@ const MSGLIB_ABI = ['function validatePacket(bytes packet)'];
 const BRIDGE_EVENTS_ABI = [
   'event HandleBridged(address indexed receiverDapp, bytes32 srcHandle, bytes32 dstHandle, bytes32 guid)',
 ];
+const ACL_ABI = [
+  'function isAllowedForDecryption(bytes32 handle) view returns (bool)',
+  'function isAllowed(bytes32 handle, address account) view returns (bool)',
+];
 
 const endpointIface = new ethers.Interface(ENDPOINT_ABI);
 const bridgeIface = new ethers.Interface(BRIDGE_EVENTS_ABI);
+
+/** ACL grant the app's bridge callback applies: public decrypt (empty payload) or allow(user). */
+export type ComposeGrant = { kind: 'public' } | { kind: 'account'; account: string };
 
 // Sends a tx and waits for the receipt, retrying on NONCE_EXPIRED
 export async function sendWithNonceRetry(
@@ -82,11 +89,20 @@ export interface PendingCompose {
 /** Verifies + delivers a packet on the destination: validatePacket -> lzReceive -> lzCompose unless `skipCompose`. */
 async function deliver(
   ctx: RelayContext,
-  packet: { encodedPacket: string; origin: { srcEid: number; sender: string; nonce: bigint }; guid: string; message: string },
+  packet: {
+    encodedPacket: string;
+    origin: { srcEid: number; sender: string; nonce: bigint };
+    guid: string;
+    message: string;
+  },
   skipCompose: boolean,
 ): Promise<{ dstHandles: string[]; compose: PendingCompose }> {
   const endpoint = new ethers.Contract(ctx.dstEndpoint, ENDPOINT_ABI, ctx.dstSigner);
-  const lib = new ethers.Contract(await endpoint.defaultReceiveLibrary(packet.origin.srcEid), MSGLIB_ABI, ctx.dstSigner);
+  const lib = new ethers.Contract(
+    await endpoint.defaultReceiveLibrary(packet.origin.srcEid),
+    MSGLIB_ABI,
+    ctx.dstSigner,
+  );
   await sendWithNonceRetry(ctx.dstSigner, () => lib.validatePacket(packet.encodedPacket));
 
   const recvReceipt = await sendWithNonceRetry(ctx.dstSigner, () =>
@@ -122,7 +138,11 @@ export async function relayBridgeMessage(
   const encodedPacket = packetSent.args[0] as string;
   const pkt = decodePacket(encodedPacket);
   const origin = { srcEid: pkt.srcEid, sender: pkt.sender, nonce: pkt.nonce };
-  const { dstHandles, compose } = await deliver(ctx, { encodedPacket, origin, guid: pkt.guid, message: pkt.message }, opts.skipCompose ?? false);
+  const { dstHandles, compose } = await deliver(
+    ctx,
+    { encodedPacket, origin, guid: pkt.guid, message: pkt.message },
+    opts.skipCompose ?? false,
+  );
   return { dstHandles, guid: pkt.guid, compose };
 }
 
@@ -178,7 +198,11 @@ export async function forgeDelivery(
     guid,
     message,
   });
-  const { dstHandles } = await deliver(ctx, { encodedPacket, origin: { srcEid: params.srcEid, sender, nonce }, guid, message }, false);
+  const { dstHandles } = await deliver(
+    ctx,
+    { encodedPacket, origin: { srcEid: params.srcEid, sender, nonce }, guid, message },
+    false,
+  );
   return dstHandles;
 }
 
@@ -209,4 +233,25 @@ export async function waitForBridgedHandles(
     await new Promise((resolve) => setTimeout(resolve, 3_000));
   }
   throw new Error(`real-LZ delivery: no HandleBridged for guid ${guid} within ${timeoutMs}ms`);
+}
+
+/** HandleBridged fires in _lzReceive; the app's ACL grant runs in the later lzCompose delivery.
+ *  Polls the dst ACL until every handle reflects that grant, so callers don't race the compose leg. */
+export async function waitForComposeApplied(
+  dstProvider: ethers.Provider,
+  aclAddress: string,
+  dstHandles: string[],
+  grant: ComposeGrant,
+  timeoutMs: number,
+): Promise<void> {
+  const acl = new ethers.Contract(aclAddress, ACL_ABI, dstProvider);
+  const isApplied = (handle: string): Promise<boolean> =>
+    grant.kind === 'public' ? acl.isAllowedForDecryption(handle) : acl.isAllowed(handle, grant.account);
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const applied = await Promise.all(dstHandles.map((handle) => isApplied(handle)));
+    if (applied.every(Boolean)) return;
+    await new Promise((resolve) => setTimeout(resolve, 3_000));
+  }
+  throw new Error(`real-LZ lzCompose: ACL grant (${grant.kind}) not applied within ${timeoutMs}ms`);
 }

@@ -20,7 +20,7 @@ use daggy::{
     },
     Dag, NodeIndex,
 };
-use fhevm_engine_common::types::{Handle, SupportedFheOperations};
+use fhevm_engine_common::types::{Handle, SupportedFheCiphertexts, SupportedFheOperations};
 
 pub struct ExecNode {
     df_nodes: Vec<NodeIndex>,
@@ -173,13 +173,19 @@ pub fn build_component_nodes(
     for (index, op) in operations.iter().enumerate() {
         for (pos, i) in op.inputs.iter().enumerate() {
             match i {
-                DFGTaskInput::Dependence(dh) => {
-                    let producer = produced_handles.get(dh);
-                    if let Some(producer) = producer {
-                        dependence_pairs.push((*producer, index, pos));
-                    }
+                DFGTaskInput::LocalDependence(dh) => {
+                    let producer = produced_handles
+                        .get(dh)
+                        .ok_or(SchedulerError::MissingLocalProducer)?;
+                    dependence_pairs.push((*producer, index, pos));
                 }
-                DFGTaskInput::Value(_) | DFGTaskInput::Compressed(_) => {}
+                // A boundary operand must not become local merely because a
+                // stale row with the same transaction id was loaded. It is
+                // intentionally left without an operation edge and exposed
+                // to the canonical ciphertext fetch below.
+                DFGTaskInput::BoundaryDependence(_)
+                | DFGTaskInput::Value(_)
+                | DFGTaskInput::Compressed(_) => {}
             }
         }
         let node_idx = graph.add_node((op.is_allowed, index)).index();
@@ -199,23 +205,27 @@ pub fn build_component_nodes(
         .into_iter()
         .map(|i| (operations[i].output_handle.clone(), transaction_id.clone()))
         .collect();
-    // Partition the graph and extract sequential components
-    let mut execution_graph: Dag<ExecNode, ()> = Dag::default();
-    partition_preserving_parallelism(&graph, &mut execution_graph)?;
-    for idx in 0..execution_graph.node_count() {
-        let index = NodeIndex::new(idx);
-        let node = execution_graph
-            .node_weight_mut(index)
-            .ok_or(SchedulerError::DataflowGraphError)?;
-        let mut component = ComponentNode::default();
-        let mut component_ops = vec![];
-        for i in node.df_nodes.iter() {
-            let op_node = graph
-                .node_weight(*i)
-                .ok_or(SchedulerError::DataflowGraphError)?;
-            component_ops.push(std::mem::take(&mut operations[op_node.1]));
+    // The transaction is the materialization boundary: all remaining
+    // operations execute as one unit so intra-transaction intermediates are
+    // forwarded in memory and never pay a compress/decompress round-trip.
+    // The consuming handle's boundary bit pins that choice on chain, so an
+    // operand minted in the consuming transaction is always read raw, while
+    // values crossing a transaction boundary are read in their canonical
+    // compressed form.
+    let mut kept: Vec<usize> = graph
+        .node_references()
+        .map(|(_, op_node)| op_node.1)
+        .collect();
+    // Deterministic op order (original list is sorted by output handle);
+    // execution order is derived from the dependence edges by toposort.
+    kept.sort_unstable();
+    if !kept.is_empty() {
+        let mut component_ops = Vec::with_capacity(kept.len());
+        for i in kept {
+            component_ops.push(std::mem::take(&mut operations[i]));
         }
-        component.build(component_ops, transaction_id, idx)?;
+        let mut component = ComponentNode::default();
+        component.build(component_ops, transaction_id, 0)?;
         components.push(component);
     }
     Ok((components, unneeded))
@@ -240,16 +250,17 @@ impl ComponentNode {
         for (index, op) in operations.iter_mut().enumerate() {
             for (pos, i) in op.inputs.iter().enumerate() {
                 match i {
-                    DFGTaskInput::Dependence(dh) => {
-                        // Check which dependences are satisfied internally,
-                        // all missing ones are exposed as required inputs at
-                        // transaction level.
-                        let producer = produced_handles.get(dh);
-                        if let Some(producer) = producer {
-                            dependence_pairs.push((*producer, index, pos));
-                        } else {
-                            self.inputs.entry(dh.clone()).or_insert(None);
-                        }
+                    DFGTaskInput::LocalDependence(dh) => {
+                        let producer = produced_handles
+                            .get(dh)
+                            .ok_or(SchedulerError::MissingLocalProducer)?;
+                        dependence_pairs.push((*producer, index, pos));
+                    }
+                    DFGTaskInput::BoundaryDependence(dh) => {
+                        // The listener derived this bit from executor logs,
+                        // so it is the sole authority for representation
+                        // choice. Always expose it for canonical sourcing.
+                        self.inputs.entry(dh.clone()).or_insert(None);
                     }
                     DFGTaskInput::Value(_) | DFGTaskInput::Compressed(_) => {}
                 }
@@ -326,66 +337,37 @@ impl DFComponentGraph {
                     .or_insert(vec![(producer, tx.transaction_id.clone())]);
             }
         }
-        // Identify all dependence pairs (producer, consumer)
-        let mut dependence_pairs = vec![];
+        // Every transaction-level input is an authoritative boundary input.
+        // Fetch its canonical persisted representation first. A concurrently
+        // scheduled foreign producer may supply the same *compressed* form if
+        // that fetch is not ready yet, but a same-transaction producer is
+        // deliberately ignored: it may be an orphan/stale row whose mere
+        // presence must never override the listener-derived boundary bit.
         for (consumer, tx) in self.graph.node_references() {
             for i in tx.inputs.keys() {
-                if let Some(producer) = self.produced.get(i) {
-                    // If this handle is produced within this same transaction
-                    if let Some((prod_idx, _)) =
-                        producer.iter().find(|(_, tid)| *tid == tx.transaction_id)
-                    {
-                        if *prod_idx == consumer {
-                            warn!(target: "scheduler", { },
-			       "Self-dependence on node");
-                        } else {
-                            dependence_pairs.push((*prod_idx, consumer));
-                        }
-                    } else if producer.len() > 1 {
-                        error!(target: "scheduler", { output_handle = ?hex::encode(i.clone()),
-							  count =  ?producer.len() },
-				   "Handle collision for computation output");
-                    } else if producer.is_empty() {
-                        error!(target: "scheduler", { output_handle = ?hex::encode(i.clone()) },
-				   "Missing producer for handle");
-                    } else {
-                        // Cross-transaction dependence: defer until
-                        // after DB fetch. If the handle is found in
-                        // DB, we use the fetched value and skip the
-                        // dependence edge.
-                        self.deferred_dependences
-                            .push((producer[0].0, consumer, i.clone()));
-                        self.needed_map
-                            .entry(i.clone())
-                            .and_modify(|uses| uses.push(consumer))
-                            .or_insert(vec![consumer]);
-                    }
-                } else {
-                    self.needed_map
-                        .entry(i.clone())
-                        .and_modify(|uses| uses.push(consumer))
-                        .or_insert(vec![consumer]);
-                }
-            }
-        }
+                self.needed_map
+                    .entry(i.clone())
+                    .and_modify(|uses| uses.push(consumer))
+                    .or_insert(vec![consumer]);
 
-        // Same-transaction dependences are always acyclic (they
-        // derive from the transaction's internal DAG). Add them
-        // directly; cycle detection runs once in
-        // resolve_dependences() over the full edge set.
-        for (producer, consumer) in dependence_pairs.iter() {
-            if self.graph.add_edge(*producer, *consumer, ()).is_err() {
-                let prod = self
-                    .graph
-                    .node_weight(*producer)
-                    .ok_or(SchedulerError::DataflowGraphError)?;
-                let cons = self
-                    .graph
-                    .node_weight(*consumer)
-                    .ok_or(SchedulerError::DataflowGraphError)?;
-                error!(target: "scheduler", { producer_id = ?hex::encode(prod.transaction_id.clone()), consumer_id = ?hex::encode(cons.transaction_id.clone()) },
-		       "Unexpected cycle in same-transaction dependence");
-                return Err(SchedulerError::CyclicDependence.into());
+                if let Some(producers) = self.produced.get(i) {
+                    let mut foreign_producers = producers
+                        .iter()
+                        .filter(|(_, tid)| *tid != tx.transaction_id);
+                    if let Some((producer, _)) = foreign_producers.next() {
+                        if foreign_producers.next().is_none() {
+                            self.deferred_dependences
+                                .push((*producer, consumer, i.clone()));
+                        } else {
+                            // Several in-batch candidates are not an excuse
+                            // to choose arbitrary raw bytes. Leave this as a
+                            // DB-only boundary; absent ciphertext defers the
+                            // consumer until canonical material is present.
+                            warn!(target: "scheduler", output_handle = ?hex::encode(i),
+                                  "multiple foreign producers for boundary handle; requiring canonical DB ciphertext");
+                        }
+                    }
+                }
             }
         }
         Ok(())
@@ -634,9 +616,26 @@ impl OpNode {
         for i in self.inputs.iter_mut() {
             match i {
                 DFGTaskInput::Value(_) | DFGTaskInput::Compressed(_) => continue,
-                DFGTaskInput::Dependence(d) => {
+                DFGTaskInput::LocalDependence(d) => {
+                    error!(target: "scheduler", handle = ?hex::encode(d),
+                           "transaction-local dependence reached execution without local producer");
+                    return false;
+                }
+                DFGTaskInput::BoundaryDependence(d) => {
                     let resolved = match ct_map.get(d) {
-                        Some(Some(DFGTxInput::Value((val, _)))) => DFGTaskInput::Value(val.clone()),
+                        Some(Some(DFGTxInput::Value((val, _)))) => {
+                            // A transaction-level input is a value that
+                            // crossed the transaction boundary, and the
+                            // canonical cross-transaction representation is
+                            // the persisted compressed form. A raw ciphertext
+                            // here would make the consumer's bytes depend on
+                            // which node/pass produced it.
+                            if !matches!(val, SupportedFheCiphertexts::Scalar(_)) {
+                                error!(target: "scheduler", { handle = ?hex::encode(&self.result_handle) },
+                                       "Consensus risk: non-scalar raw ciphertext crossing a transaction boundary");
+                            }
+                            DFGTaskInput::Value(val.clone())
+                        }
                         Some(Some(DFGTxInput::Compressed((cct, _)))) => {
                             DFGTaskInput::Compressed(cct.clone())
                         }
@@ -808,4 +807,135 @@ pub fn partition_components<TNode, TEdge>(
     // components within the DFG, there are no dependences (edges) to
     // add to the execution graph.
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn handle(byte: u8) -> Handle {
+        vec![byte; 32]
+    }
+
+    fn op(output: u8, input: DFGTaskInput, is_allowed: bool) -> DFGOp {
+        DFGOp {
+            output_handle: handle(output),
+            fhe_op: SupportedFheOperations::FheNot,
+            inputs: vec![input],
+            is_allowed,
+        }
+    }
+
+    /// The transaction is the materialization boundary: a fan-out graph that
+    /// partitioning would previously split into several execution segments
+    /// (with compressed hand-offs between them) must build as a single
+    /// ComponentNode so every intra-transaction edge stays an in-memory
+    /// forward of the raw working value.
+    #[test]
+    fn transaction_builds_as_a_single_execution_unit() {
+        let boundary = handle(0xA0);
+        let operations = vec![
+            // X = f(boundary); Y = f(X); Z = f(X) — a fan-out at X.
+            op(
+                0x01,
+                DFGTaskInput::BoundaryDependence(boundary.clone()),
+                false,
+            ),
+            op(0x02, DFGTaskInput::LocalDependence(handle(0x01)), true),
+            op(0x03, DFGTaskInput::LocalDependence(handle(0x01)), true),
+        ];
+        let (components, unneeded) =
+            build_component_nodes(operations, &handle(0x11)).expect("valid transaction graph");
+        assert!(unneeded.is_empty());
+        assert_eq!(
+            components.len(),
+            1,
+            "all of a transaction's operations must execute as one unit"
+        );
+        let component = &components[0];
+        assert_eq!(component.results.len(), 3);
+        assert_eq!(component.intermediate_handles, vec![handle(0x01)]);
+        // Only the true cross-transaction boundary is exposed as an input;
+        // the intra-transaction handles are resolved as graph edges.
+        assert_eq!(component.inputs.len(), 1);
+        assert!(component.inputs.contains_key(&boundary));
+        assert_eq!(component.graph.graph.edge_count(), 2);
+    }
+
+    /// Pruning of operations that no allowed output depends on is unchanged.
+    #[test]
+    fn unneeded_operations_are_still_pruned() {
+        let operations = vec![
+            op(0x01, DFGTaskInput::BoundaryDependence(handle(0xA0)), true),
+            // A dangling non-allowed op nothing depends on.
+            op(0x02, DFGTaskInput::BoundaryDependence(handle(0xA1)), false),
+        ];
+        let transaction_id = handle(0x11);
+        let (components, unneeded) =
+            build_component_nodes(operations, &transaction_id).expect("valid transaction graph");
+        assert_eq!(unneeded, vec![(handle(0x02), transaction_id)]);
+        assert_eq!(components.len(), 1);
+        assert_eq!(components[0].results, vec![handle(0x01)]);
+    }
+
+    /// A transaction whose operations are all pruned yields no execution unit.
+    #[test]
+    fn fully_pruned_transaction_yields_no_component() {
+        let operations = vec![op(
+            0x01,
+            DFGTaskInput::BoundaryDependence(handle(0xA0)),
+            false,
+        )];
+        let (components, unneeded) =
+            build_component_nodes(operations, &handle(0x11)).expect("valid transaction graph");
+        assert!(components.is_empty());
+        assert_eq!(unneeded.len(), 1);
+    }
+
+    #[test]
+    fn local_dependence_requires_a_producer_in_its_transaction() {
+        let operations = vec![op(0x01, DFGTaskInput::LocalDependence(handle(0xA0)), true)];
+
+        let err = build_component_nodes(operations, &handle(0x11))
+            .expect_err("a locally minted operand without its producer is unsafe");
+        assert!(matches!(
+            err.downcast_ref::<SchedulerError>(),
+            Some(SchedulerError::MissingLocalProducer)
+        ));
+    }
+
+    #[test]
+    fn boundary_dependence_ignores_same_transaction_stale_producer() {
+        let stale_handle = handle(0xA0);
+        let operations = vec![
+            // This can be an orphan row retained after a reorg. It shares a
+            // transaction id with the consumer but is NOT authority to turn
+            // the consumer's boundary-marked operand into a raw edge.
+            op(0x01, DFGTaskInput::BoundaryDependence(handle(0xB0)), false),
+            op(
+                0x02,
+                DFGTaskInput::BoundaryDependence(stale_handle.clone()),
+                true,
+            ),
+            DFGOp {
+                output_handle: stale_handle.clone(),
+                fhe_op: SupportedFheOperations::FheNot,
+                inputs: vec![DFGTaskInput::BoundaryDependence(handle(0xC0))],
+                is_allowed: false,
+            },
+        ];
+
+        let (components, _) = build_component_nodes(operations, &handle(0x11))
+            .expect("boundary source must not use the stale producer");
+        let component = components
+            .iter()
+            .find(|component| component.results.contains(&handle(0x02)))
+            .expect("consumer remains in the component");
+        assert!(component.inputs.contains_key(&stale_handle));
+        assert_eq!(
+            component.graph.graph.edge_count(),
+            0,
+            "boundary operand has no raw in-transaction edge"
+        );
+    }
 }

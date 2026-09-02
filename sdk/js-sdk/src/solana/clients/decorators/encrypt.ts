@@ -11,7 +11,14 @@ import type {
 import type { FhevmRuntime, WithEncrypt } from '../../../core/types/coreFhevmRuntime.js';
 import type { SolanaEncryptInputParameters, SolanaEncryptInputResult } from '../../actions/encryptInput.js';
 import type { SolanaSubmitInputProofParameters, SolanaSubmitInputProofResult } from '../../actions/submitInputProof.js';
-import { asFhevmWith, setResolvedTfheVersion } from '../../../core/runtime/CoreFhevm-p.js';
+import {
+  asFhevmWith,
+  getFrozenContext,
+  initPublicAction,
+  setFrozenContext,
+  setResolvedTfheVersion,
+} from '../../../core/runtime/CoreFhevm-p.js';
+import { createFhevmClientFrozenContext } from '../../../core/frozenContext/fhevmClientFrozenContext-p.js';
 import { encryptModule } from '../../../core/modules/encrypt/module/index.js';
 import { DEFAULT_TFHE_VERSION } from '../../../wasm/tfhe/loadTfheLib.js';
 import { encryptInput } from '../../actions/encryptInput.js';
@@ -41,7 +48,11 @@ async function _initEncrypt(fhevm: FhevmBase<undefined, FhevmRuntime, OptionalNa
 
   await f.runtime.encrypt.initTfheModule({ tfheVersion });
 
-  setResolvedTfheVersion(fhevm, tfheVersion);
+  if (getFrozenContext(fhevm) === undefined) {
+    setFrozenContext(fhevm, createFhevmClientFrozenContext({ tfheVersion }));
+  } else {
+    setResolvedTfheVersion(fhevm, tfheVersion);
+  }
 }
 
 /**
@@ -91,7 +102,10 @@ export function solanaEncryptActions(
           await (fhevm as Fhevm<undefined, FhevmRuntime, undefined>).ready;
           return encryptInput(encryptFhevm, parameters);
         },
-        submitInputProof: async (parameters) => submitInputProof({ runtime, solanaChain }, parameters),
+        submitInputProof: async (parameters) => {
+          const fhevmContext = await initPublicAction(fhevm);
+          return submitInputProof({ runtime, solanaChain, fhevmContext }, parameters);
+        },
       },
       runtime,
       init: _initEncrypt as (fhevm: FhevmBase) => Promise<void>,

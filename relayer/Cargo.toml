@@ -1,3 +1,10 @@
+[workspace]
+members = ["test-support/ethereum_rpc_mock"]
+# docker/relayer-migrate/Dockerfile builds this crate from its own directory
+# with --locked, so it keeps its own lockfile.
+exclude = ["relayer-migrate"]
+resolver = "2"
+
 [package]
 name = "fhevm-relayer"
 version = "0.14.0"
@@ -12,7 +19,7 @@ path = "src/lib.rs"
 default = []
 tracing-chrome = ["dep:tracing-chrome"]
 long-running-tests = []
-integration-tests = []
+integration-tests = ["dep:ethereum_rpc_mock"]
 
 [dependencies]
 alloy = { version = "2.2.0", features = [
@@ -37,7 +44,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0.149"
 sha2 = "0.10"
 tokio = { version = "1.49.0", features = ["rt-multi-thread", "signal"] }
-tokio-util = "0.7.18"
+tokio-util = { version = "0.7.18", features = ["rt"] }
 async-trait = "0.1.51"
 thiserror = "2.0.18"
 config = "0.15.19"
@@ -49,6 +56,7 @@ tower-http = { version = "0.6.6", features = ["cors"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.22", features = ["env-filter", "json"] }
 tracing-chrome = { version = "0.7.2", optional = true }
+ethereum_rpc_mock = { path = "test-support/ethereum_rpc_mock", optional = true }
 prometheus = "0.14"
 clap = { version = "4.5.60", features = ["derive"] }
 rustls = { version = "0.23.36", features = [
@@ -103,4 +111,3 @@ rand = "0.10.0"
 rstest = "0.26.1"
 serde_yaml = "0.9.34"
 serial_test = "3.4.0"
-ethereum_rpc_mock = { path = "test-support/ethereum_rpc_mock" }

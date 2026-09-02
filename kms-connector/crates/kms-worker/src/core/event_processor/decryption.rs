@@ -874,7 +874,6 @@ mod tests {
         rpc::types::Transaction as RpcTransaction,
         signers::{SignerSync, local::PrivateKeySigner},
         sol_types::SolValue,
-        transports::http::reqwest,
     };
     use connector_utils::{
         tests::rand::{rand_address, rand_digest, rand_handle, rand_public_key, rand_u256},
@@ -975,8 +974,7 @@ mod tests {
             )]),
             TestHostBackend::Missing => HashMap::new(),
         };
-        let ciphertext_manager =
-            CiphertextManager::for_test(mock_provider.clone(), reqwest::Client::new());
+        let ciphertext_manager = CiphertextManager::for_test(mock_provider.clone());
         DecryptionProcessor::new(
             &config,
             MockContextManager,

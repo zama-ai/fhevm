@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import {Test} from "forge-std/Test.sol";
 import {UnsafeUpgrades} from "@openzeppelin/foundry-upgrades/src/Upgrades.sol";
+import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
@@ -225,6 +226,13 @@ contract MockHCULimit {
     fallback() external payable {}
 }
 
+/// @dev Exposes internal choke points of FHEVMExecutor for direct unit tests.
+contract FHEVMExecutorHarness is FHEVMExecutor {
+    function consumeOperand(bytes32 ct, uint256 position) external view returns (uint256) {
+        return _consumeOperand(ct, position);
+    }
+}
+
 contract FHEVMExecutorTest is SupportedTypesConstants, Test {
     FHEVMExecutor internal fhevmExecutor;
 
@@ -319,6 +327,55 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         acl.allow(handle, account);
     }
 
+    /// @dev Handles the test minted through the executor in the current
+    ///      test, mirroring the executor's transaction-scoped minted record.
+    mapping(bytes32 handle => bool) internal testMinted;
+
+    /// @dev Mirrors FHEVMExecutor._oneOperandBoundaryBit.
+    function _boundaryBit(bytes32 handle) internal view returns (uint256 bit) {
+        return testMinted[handle] ? 0 : 1;
+    }
+
+    /// @dev Records an executor-returned handle in the testMinted mirror;
+    ///      wrap executor calls whose result is consumed later in the test.
+    function _mirrorMint(bytes32 handle) internal returns (bytes32) {
+        testMinted[handle] = true;
+        return handle;
+    }
+
+    uint256 private mintedHandleCounter;
+
+    /// @dev Mints a fresh handle through the executor inside this test's
+    ///      transaction (so its transient minted mark is set) and mirrors the
+    ///      mark in testMinted. Must be called under the consuming prank. The
+    ///      plaintext comes from a counter so every call yields a distinct
+    ///      handle (trivialEncrypt's preimage has no counter of its own).
+    function _mintedHandle(FheType fheType) internal returns (bytes32 handle) {
+        handle = _mirrorMint(fhevmExecutor.trivialEncrypt(mintedHandleCounter++, fheType));
+    }
+
+    /// @dev A never-minted handle approved for `account` — the persisted-
+    ///      boundary side of the discriminant.
+    function _persistedHandle(FheType fheType, address account) internal returns (bytes32 handle) {
+        handle = _generateMockHandle(fheType);
+        _approveHandleInACL(handle, account);
+    }
+
+    /// @dev Mirrors the nary boundary-bits accumulation in FHEVMExecutor._naryOp.
+    function _sumBoundaryBits(bytes32[] memory values) internal view returns (uint256 boundaryBits) {
+        for (uint256 i = 0; i < values.length; i++) {
+            boundaryBits |= _boundaryBit(values[i]) << i;
+        }
+    }
+
+    /// @dev Mirrors the value+set boundary-bits accumulation in FHEVMExecutor._naryOp.
+    function _isInBoundaryBits(bytes32 value, bytes32[] memory values) internal view returns (uint256 boundaryBits) {
+        boundaryBits = _boundaryBit(value);
+        for (uint256 i = 0; i < values.length; i++) {
+            boundaryBits |= _boundaryBit(values[i]) << (i + 1);
+        }
+    }
+
     function _isTypeSupported(FheType fheType, uint256 supportedTypes) internal pure returns (bool) {
         if ((1 << uint8(fheType)) & supportedTypes == 0) {
             return false;
@@ -337,6 +394,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
                 COMPUTATION_DOMAIN_SEPARATOR,
                 op,
                 handle,
+                _boundaryBit(handle),
                 acl,
                 block.chainid,
                 blockhash(block.number - 1),
@@ -361,30 +419,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
                 lhs,
                 rhs,
                 scalar,
-                acl,
-                block.chainid,
-                blockhash(block.number - 1),
-                block.timestamp
-            )
-        );
-        result = _appendMetadataToPrehandle(resultType, result, block.chainid, HANDLE_VERSION);
-    }
-
-    function _computeExpectedResultBinaryOpWithScalar(
-        FHEVMExecutor.Operators op,
-        bytes32 lhs,
-        bytes memory rhs,
-        bytes1 scalar,
-        FheType resultType
-    ) internal view returns (bytes32 result) {
-        scalar = scalar & 0x01;
-        result = keccak256(
-            abi.encodePacked(
-                COMPUTATION_DOMAIN_SEPARATOR,
-                op,
-                lhs,
-                rhs,
-                scalar,
+                _boundaryBit(lhs) | (scalar == 0x00 ? _boundaryBit(rhs) << 1 : 0),
                 acl,
                 block.chainid,
                 blockhash(block.number - 1),
@@ -408,6 +443,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
                 lhs,
                 middle,
                 rhs,
+                _boundaryBit(lhs) | (_boundaryBit(middle) << 1) | (_boundaryBit(rhs) << 2),
                 acl,
                 block.chainid,
                 blockhash(block.number - 1),
@@ -415,6 +451,39 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
             )
         );
         result = _appendMetadataToPrehandle(middleFheType, result, block.chainid, HANDLE_VERSION);
+    }
+
+    function _computeExpectedResultTrivialEncrypt(uint256 pt, FheType toType) internal view returns (bytes32 result) {
+        result = keccak256(
+            abi.encodePacked(
+                COMPUTATION_DOMAIN_SEPARATOR,
+                FHEVMExecutor.Operators.trivialEncrypt,
+                pt,
+                toType,
+                acl,
+                block.chainid,
+                blockhash(block.number - 1),
+                block.timestamp
+            )
+        );
+        result = _appendMetadataToPrehandle(toType, result, block.chainid, HANDLE_VERSION);
+    }
+
+    function _computeExpectedResultCast(bytes32 ct, FheType toType) internal view returns (bytes32 result) {
+        result = keccak256(
+            abi.encodePacked(
+                COMPUTATION_DOMAIN_SEPARATOR,
+                FHEVMExecutor.Operators.cast,
+                ct,
+                toType,
+                _boundaryBit(ct),
+                acl,
+                block.chainid,
+                blockhash(block.number - 1),
+                block.timestamp
+            )
+        );
+        result = _appendMetadataToPrehandle(toType, result, block.chainid, HANDLE_VERSION);
     }
 
     function _computeExpectedResultFheIsIn(bytes32 value, bytes32[] memory set) internal view returns (bytes32 result) {
@@ -425,6 +494,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
                 set.length,
                 value,
                 set,
+                _isInBoundaryBits(value, set),
                 acl,
                 block.chainid,
                 blockhash(block.number - 1),
@@ -444,6 +514,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
                 FHEVMExecutor.Operators.fheSum,
                 values.length,
                 values,
+                _sumBoundaryBits(values),
                 acl,
                 block.chainid,
                 blockhash(block.number - 1),
@@ -470,7 +541,38 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         assertEq(fhevmExecutor.getInputVerifierAddress(), inputVerifierAdd);
         assertEq(fhevmExecutor.getACLAddress(), aclAdd);
         assertEq(fhevmExecutor.getHCULimitAddress(), hcuLimitAdd);
-        assertEq(fhevmExecutor.getVersion(), string(abi.encodePacked("FHEVMExecutor v0.5.0")));
+        assertEq(fhevmExecutor.getVersion(), string(abi.encodePacked("FHEVMExecutor v0.6.0")));
+    }
+
+    /// @dev Exercises reinitializeV6() the way the production upgrade tooling
+    ///      calls it (inside upgradeToAndCall on a proxy pinned at the previous
+    ///      release's initialized version, 6), so an off-by-one in
+    ///      REINITIALIZER_VERSION fails here instead of in the governance tx.
+    function test_reinitializeV6SucceedsOnUpgradePath() public {
+        address proxyWithoutInitCall = UnsafeUpgrades.deployUUPSProxy(
+            address(new EmptyUUPSProxy()),
+            abi.encodeCall(EmptyUUPSProxy.initialize, ())
+        );
+        UnsafeUpgrades.upgradeProxy(proxyWithoutInitCall, address(new FHEVMExecutor()), "", owner);
+
+        /// @dev Pin the proxy to the initialized version the previous release
+        /// left behind on mainnet (6), as EmptyUUPSProxy.initialize leaves it at 1.
+        /// The pre-store assertion proves this hardcoded slot is where OZ's
+        /// Initializable actually writes; if the namespace ever moves, the test
+        /// fails here instead of passing vacuously against a dead slot.
+        bytes32 initializableStorage = 0xf0c57e16840df040f15088dc2f81fe391c3923bec73e23a9662efc9c229c6a00;
+        assertEq(uint256(vm.load(proxyWithoutInitCall, initializableStorage)), 1);
+        vm.store(proxyWithoutInitCall, initializableStorage, bytes32(uint256(6)));
+
+        FHEVMExecutor(proxyWithoutInitCall).reinitializeV6();
+
+        /// @dev The call must land exactly on version 7: a REINITIALIZER_VERSION
+        /// skip (8+) would succeed from 6 too, silently burning a version.
+        assertEq(uint256(vm.load(proxyWithoutInitCall, initializableStorage)), 7);
+
+        /// @dev A second call must revert: the proxy is now at REINITIALIZER_VERSION.
+        vm.expectRevert(Initializable.InvalidInitialization.selector);
+        FHEVMExecutor(proxyWithoutInitCall).reinitializeV6();
     }
 
     /// @dev This function exists for the test below to call it externally.
@@ -1235,24 +1337,326 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         }
     }
 
+    /// @dev A handle minted by the executor earlier in the SAME transaction
+    ///      folds a zero boundary bit into its consumers' preimages; a
+    ///      fabricated (never-minted) operand folds one. Pins the transient
+    ///      minted record end to end through a mint-then-consume chain.
+    function test_MintedOperandFoldsZeroBoundaryBit() public {
+        address sender = address(123);
+        vm.startPrank(sender);
+        bytes32 minted = _mintedHandle(FheType.Uint64);
+
+        bytes32 expectedResult = _computeExpectedResultCast(minted, FheType.Uint32);
+        assertEq(fhevmExecutor.cast(minted, FheType.Uint32), expectedResult);
+
+        // A never-minted operand of the same op folds a set bit instead.
+        bytes32 boundary = _persistedHandle(FheType.Uint64, sender);
+        bytes32 expectedBoundary = _computeExpectedResultCast(boundary, FheType.Uint32);
+        assertEq(fhevmExecutor.cast(boundary, FheType.Uint32), expectedBoundary);
+        assertTrue(expectedResult != expectedBoundary);
+        vm.stopPrank();
+    }
+
+    /// @dev Computes the mirror expectation (folding testMinted-derived
+    ///      boundary bits), runs fheAdd, asserts, and mirrors the result mint.
+    function _assertFheAddMatchesMirror(bytes32 lhs, bytes32 rhs) internal returns (bytes32 result) {
+        bytes32 expected = _computeExpectedResultBinaryOp(
+            FHEVMExecutor.Operators.fheAdd,
+            lhs,
+            rhs,
+            0x00,
+            FheType.Uint64
+        );
+        result = _mirrorMint(fhevmExecutor.fheAdd(lhs, rhs, 0x00));
+        assertEq(result, expected);
+    }
+
+    /// @dev Every minted/persisted sourcing combination of a binary op's two
+    ///      encrypted operands folds its own boundary-bit pattern (so a bit
+    ///      dropped or moved to the wrong operand position diverges from the
+    ///      mirror), and the op's result is itself marked minted.
+    function test_BinaryOpBoundaryBitsCoverEveryOperandPosition() public {
+        address sender = address(123);
+        vm.startPrank(sender);
+
+        bytes32 mintedA = _mintedHandle(FheType.Uint64);
+        bytes32 mintedB = _mintedHandle(FheType.Uint64);
+        bytes32 persistedA = _persistedHandle(FheType.Uint64, sender);
+        bytes32 persistedB = _persistedHandle(FheType.Uint64, sender);
+
+        bytes32 mintedLhsResult = _assertFheAddMatchesMirror(mintedA, persistedA); // bits 10
+        _assertFheAddMatchesMirror(persistedA, mintedA); // bits 01
+        _assertFheAddMatchesMirror(mintedA, mintedB); // bits 00
+        _assertFheAddMatchesMirror(persistedA, persistedB); // bits 11
+
+        /// @dev The result of _binaryOp is itself minted in this transaction.
+        _assertFheAddMatchesMirror(mintedLhsResult, persistedB);
+        vm.stopPrank();
+    }
+
+    /// @dev Exactly one minted operand rotates through each ternary position,
+    ///      pinning per-position bits, then the ternary result is consumed to
+    ///      pin that _ternaryOp marks it minted.
+    function test_TernaryOpBoundaryBitsCoverEveryOperandPosition() public {
+        address sender = address(123);
+        vm.startPrank(sender);
+
+        bytes32 lastResult;
+        bytes32 lastMiddle;
+        for (uint256 mintedPos = 0; mintedPos < 3; mintedPos++) {
+            bytes32 lhs = mintedPos == 0 ? _mintedHandle(FheType.Bool) : _persistedHandle(FheType.Bool, sender);
+            bytes32 middle = mintedPos == 1 ? _mintedHandle(FheType.Uint64) : _persistedHandle(FheType.Uint64, sender);
+            bytes32 rhs = mintedPos == 2 ? _mintedHandle(FheType.Uint64) : _persistedHandle(FheType.Uint64, sender);
+
+            bytes32 expected = _computeExpectedResultTernaryOp(
+                FHEVMExecutor.Operators.fheIfThenElse,
+                lhs,
+                middle,
+                rhs,
+                FheType.Uint64
+            );
+            bytes32 result = _mirrorMint(fhevmExecutor.fheIfThenElse(lhs, middle, rhs));
+            assertEq(result, expected);
+            (lastResult, lastMiddle) = (result, middle);
+        }
+
+        /// @dev The ternary result is minted: consuming it folds a zero bit.
+        bytes32 boolMinted = _mintedHandle(FheType.Bool);
+        bytes32 chained = _computeExpectedResultTernaryOp(
+            FHEVMExecutor.Operators.fheIfThenElse,
+            boolMinted,
+            lastResult,
+            lastMiddle,
+            FheType.Uint64
+        );
+        assertEq(fhevmExecutor.fheIfThenElse(boolMinted, lastResult, lastMiddle), chained);
+        vm.stopPrank();
+    }
+
+    /// @dev Minted/persisted combinations across both mulDiv factors, the
+    ///      scalar-factor2 shape, and the result fed back as a factor.
+    /// @dev Computes the mirror expectation for fheMulDiv (divisor fixed at 2),
+    ///      runs the op, asserts, and mirrors the result mint.
+    function _assertFheMulDivMatchesMirror(
+        bytes32 factor1,
+        bytes32 factor2,
+        bytes1 scalarByte
+    ) internal returns (bytes32 result) {
+        bytes32 divisor = bytes32(uint256(2));
+        bytes32 expected = _computeExpectedResultFheMulDiv(factor1, factor2, divisor, scalarByte, FheType.Uint64);
+        result = _mirrorMint(fhevmExecutor.fheMulDiv(factor1, factor2, divisor, scalarByte));
+        assertEq(result, expected);
+    }
+
+    function test_MulDivBoundaryBitsCoverBothFactors() public {
+        address sender = address(123);
+        vm.startPrank(sender);
+
+        bytes32 minted = _mintedHandle(FheType.Uint64);
+        bytes32 persisted = _persistedHandle(FheType.Uint64, sender);
+
+        bytes32 result = _assertFheMulDivMatchesMirror(minted, persisted, FHE_MUL_DIV_FACTOR2_ENCRYPTED);
+        _assertFheMulDivMatchesMirror(persisted, minted, FHE_MUL_DIV_FACTOR2_ENCRYPTED);
+        /// @dev Scalar factor2: only factor1 contributes a bit.
+        _assertFheMulDivMatchesMirror(minted, bytes32(uint256(300)), FHE_MUL_DIV_FACTOR2_SCALAR);
+        /// @dev The mulDiv result is minted: feed it back as factor1.
+        _assertFheMulDivMatchesMirror(result, persisted, FHE_MUL_DIV_FACTOR2_ENCRYPTED);
+        vm.stopPrank();
+    }
+
+    /// @dev One minted element rotates through each fheSum position, then a
+    ///      sum result is consumed by a follow-up sum.
+    function test_FheSumBoundaryBitsCoverEveryElementPosition() public {
+        address sender = address(123);
+        vm.startPrank(sender);
+
+        for (uint256 mintedPos = 0; mintedPos < 3; mintedPos++) {
+            bytes32[] memory values = new bytes32[](3);
+            for (uint256 i = 0; i < 3; i++) {
+                values[i] = i == mintedPos ? _mintedHandle(FheType.Uint64) : _persistedHandle(FheType.Uint64, sender);
+            }
+            bytes32 expected = _computeExpectedResultFheSum(values, FheType.Uint64);
+            bytes32 result = _mirrorMint(fhevmExecutor.fheSum(values, FheType.Uint64));
+            assertEq(result, expected);
+
+            /// @dev The sum result is minted: fold a zero bit for it downstream.
+            bytes32[] memory chained = new bytes32[](2);
+            chained[0] = result;
+            chained[1] = values[(mintedPos + 1) % 3];
+            assertEq(
+                fhevmExecutor.fheSum(chained, FheType.Uint64),
+                _computeExpectedResultFheSum(chained, FheType.Uint64)
+            );
+        }
+        vm.stopPrank();
+    }
+
+    /// @dev The minted operand rotates through the fheIsIn value slot and each
+    ///      set position, then the (minted) ebool result is consumed as a
+    ///      ternary condition.
+    function test_FheIsInBoundaryBitsCoverValueAndSetPositions() public {
+        address sender = address(123);
+        vm.startPrank(sender);
+
+        for (uint256 mintedPos = 0; mintedPos < 3; mintedPos++) {
+            bytes32 value = mintedPos == 0 ? _mintedHandle(FheType.Uint64) : _persistedHandle(FheType.Uint64, sender);
+            bytes32[] memory set = new bytes32[](2);
+            set[0] = mintedPos == 1 ? _mintedHandle(FheType.Uint64) : _persistedHandle(FheType.Uint64, sender);
+            set[1] = mintedPos == 2 ? _mintedHandle(FheType.Uint64) : _persistedHandle(FheType.Uint64, sender);
+
+            bytes32 expected = _computeExpectedResultFheIsIn(value, set);
+            bytes32 result = _mirrorMint(fhevmExecutor.fheIsIn(value, set, FheType.Uint64));
+            assertEq(result, expected);
+
+            /// @dev The fheIsIn result is minted: consume it as the ternary condition.
+            bytes32 chained = _computeExpectedResultTernaryOp(
+                FHEVMExecutor.Operators.fheIfThenElse,
+                result,
+                set[0],
+                set[1],
+                FheType.Uint64
+            );
+            assertEq(fhevmExecutor.fheIfThenElse(result, set[0], set[1]), chained);
+        }
+        vm.stopPrank();
+    }
+
+    /// @dev Unary, cast, rand and randBounded all mark their results minted,
+    ///      and unary/cast fold their operand's boundary bit.
+    function test_UnaryCastAndRandResultsFoldMintedBoundaryBits() public {
+        address sender = address(123);
+        vm.startPrank(sender);
+
+        bytes32 minted = _mintedHandle(FheType.Uint64);
+        bytes32 neg = _mirrorMint(fhevmExecutor.fheNeg(minted));
+        assertEq(neg, _computeExpectedResultUnaryOp(FHEVMExecutor.Operators.fheNeg, minted, FheType.Uint64));
+
+        /// @dev The unary result is minted: negating it folds a zero bit.
+        bytes32 negNeg = fhevmExecutor.fheNeg(neg);
+        assertEq(negNeg, _computeExpectedResultUnaryOp(FHEVMExecutor.Operators.fheNeg, neg, FheType.Uint64));
+
+        /// @dev The cast result is minted.
+        bytes32 castResult = _mirrorMint(fhevmExecutor.cast(neg, FheType.Uint32));
+        assertEq(castResult, _computeExpectedResultCast(neg, FheType.Uint32));
+        assertEq(
+            fhevmExecutor.fheNeg(castResult),
+            _computeExpectedResultUnaryOp(FHEVMExecutor.Operators.fheNeg, castResult, FheType.Uint32)
+        );
+
+        /// @dev Rand results are minted: consuming them folds a zero bit.
+        bytes32 persisted = _persistedHandle(FheType.Uint64, sender);
+        bytes32 rand = _mirrorMint(fhevmExecutor.fheRand(FheType.Uint64));
+        assertEq(
+            fhevmExecutor.fheAdd(rand, persisted, 0x00),
+            _computeExpectedResultBinaryOp(FHEVMExecutor.Operators.fheAdd, rand, persisted, 0x00, FheType.Uint64)
+        );
+        bytes32 randBounded = _mirrorMint(fhevmExecutor.fheRandBounded(8, FheType.Uint64));
+        assertEq(
+            fhevmExecutor.fheAdd(randBounded, persisted, 0x00),
+            _computeExpectedResultBinaryOp(FHEVMExecutor.Operators.fheAdd, randBounded, persisted, 0x00, FheType.Uint64)
+        );
+        vm.stopPrank();
+    }
+
+    /// @dev The set-element loop of the value+set _naryOp overload must ACL-check
+    ///      every element (the value slot alone passing is not enough): pins the
+    ///      _consumeOperand coupling for the fheIsIn path.
+    function test_RevertsIfACLNotAllowedForFheIsInSetElement() public {
+        address sender = address(123);
+        bytes32 value = _persistedHandle(FheType.Uint64, sender);
+        bytes32[] memory set = new bytes32[](2);
+        set[0] = _persistedHandle(FheType.Uint64, sender);
+        set[1] = _generateMockHandle(FheType.Uint64); // deliberately NOT approved
+
+        vm.prank(sender);
+        vm.expectRevert(abi.encodeWithSelector(FHEVMExecutor.ACLNotAllowed.selector, set[1], sender));
+        fhevmExecutor.fheIsIn(value, set, FheType.Uint64);
+    }
+
+    /// @dev _mintHandle grants the transient mint mark and ACL allowance BEFORE
+    ///      the self-charging ops' HCU check; pins that an HCU revert unwinds
+    ///      both atomically, so nothing minted survives an uncharged op.
+    function test_HCURevertUnwindsMintAndAllowance() public {
+        address sender = address(123);
+        bytes32 expected = _computeExpectedResultTrivialEncrypt(uint256(7), FheType.Uint64);
+
+        vm.mockCallRevert(
+            hcuLimitAdd,
+            abi.encodeWithSelector(bytes4(keccak256("checkHCUForTrivialEncrypt(uint8,bytes32,address)"))),
+            "HCU exceeded"
+        );
+        vm.prank(sender);
+        vm.expectRevert("HCU exceeded");
+        fhevmExecutor.trivialEncrypt(uint256(7), FheType.Uint64);
+        vm.clearMockedCalls();
+
+        /// @dev The transient allowance granted before the HCU check must be gone.
+        assertFalse(acl.isAllowed(expected, sender));
+
+        /// @dev The transient mint mark must be gone too: approve the failed
+        /// handle persistently and consume it — a leaked mark would fold a
+        /// zero boundary bit, but the mirror (never minted) expects one.
+        _approveHandleInACL(expected, sender);
+        vm.startPrank(sender);
+        bytes32 preMintCast = fhevmExecutor.cast(expected, FheType.Uint32);
+        assertEq(preMintCast, _computeExpectedResultCast(expected, FheType.Uint32));
+
+        /// @dev With HCU passing, the identical op mints and its mark is live:
+        /// the same cast now folds a zero bit and yields a different handle.
+        bytes32 minted = _mirrorMint(fhevmExecutor.trivialEncrypt(uint256(7), FheType.Uint64));
+        assertEq(minted, expected);
+        assertTrue(acl.isAllowed(minted, sender));
+        bytes32 postMintCast = fhevmExecutor.cast(minted, FheType.Uint32);
+        assertEq(postMintCast, _computeExpectedResultCast(minted, FheType.Uint32));
+        assertTrue(preMintCast != postMintCast);
+        vm.stopPrank();
+    }
+
+    /// @dev Pins the documented error precedence for the self-charging ops:
+    ///      _mintHandle's ACL.allowTransient (whenNotPaused on the real ACL)
+    ///      runs before the HCU check, so with the ACL paused AND the HCU
+    ///      budget exceeded, the pause error surfaces — matching every op
+    ///      whose HCU is charged by the external wrapper.
+    function test_PausedACLPrecedesHCUErrorOnSelfChargingOps() public {
+        address sender = address(123);
+        bytes4 enforcedPause = bytes4(keccak256("EnforcedPause()"));
+        vm.mockCallRevert(
+            aclAdd,
+            abi.encodeWithSelector(MockACL.allowTransient.selector),
+            abi.encodeWithSelector(enforcedPause)
+        );
+        vm.mockCallRevert(
+            hcuLimitAdd,
+            abi.encodeWithSelector(bytes4(keccak256("checkHCUForTrivialEncrypt(uint8,bytes32,address)"))),
+            "HCU exceeded"
+        );
+        vm.prank(sender);
+        vm.expectRevert(abi.encodeWithSelector(enforcedPause));
+        fhevmExecutor.trivialEncrypt(uint256(7), FheType.Uint64);
+        vm.clearMockedCalls();
+    }
+
+    /// @dev Direct pin of the _consumeOperand width backstop: position 255 is
+    ///      the last representable boundary bit; 256 must revert rather than
+    ///      silently dropping the bit (EVM SHL past the word yields 0).
+    function test_ConsumeOperandRevertsPastBoundaryBitWord() public {
+        FHEVMExecutorHarness harness = new FHEVMExecutorHarness();
+        address sender = address(123);
+        bytes32 handle = _persistedHandle(FheType.Uint64, sender);
+
+        vm.startPrank(sender);
+        assertEq(harness.consumeOperand(handle, 255), 1 << 255);
+        vm.expectRevert(abi.encodeWithSelector(FHEVMExecutor.BoundaryBitPositionOverflow.selector, 256));
+        harness.consumeOperand(handle, 256);
+        vm.stopPrank();
+    }
+
     function test_TrivialEncryptSupportedTypesWorkAsExpected(uint256 pt, uint8 fheType) public {
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(fheType), supportedTypesTrivialEncrypt));
         address sender = address(123);
 
-        bytes32 expectedResult = keccak256(
-            abi.encodePacked(
-                COMPUTATION_DOMAIN_SEPARATOR,
-                FHEVMExecutor.Operators.trivialEncrypt,
-                pt,
-                FheType(fheType),
-                acl,
-                block.chainid,
-                blockhash(block.number - 1),
-                block.timestamp
-            )
-        );
-        expectedResult = _appendMetadataToPrehandle(FheType(fheType), expectedResult, block.chainid, HANDLE_VERSION);
+        bytes32 expectedResult = _computeExpectedResultTrivialEncrypt(pt, FheType(fheType));
 
         vm.prank(sender);
 
@@ -1272,28 +1676,9 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         vm.assume(fheInputType != fheOutputType);
 
         address sender = address(123);
-        bytes32 handle = _generateMockHandle(FheType(fheInputType));
-        _approveHandleInACL(handle, sender);
+        bytes32 handle = _persistedHandle(FheType(fheInputType), sender);
 
-        bytes32 expectedResult = keccak256(
-            abi.encodePacked(
-                COMPUTATION_DOMAIN_SEPARATOR,
-                FHEVMExecutor.Operators.cast,
-                handle,
-                FheType(fheOutputType),
-                acl,
-                block.chainid,
-                blockhash(block.number - 1),
-                block.timestamp
-            )
-        );
-
-        expectedResult = _appendMetadataToPrehandle(
-            FheType(fheOutputType),
-            expectedResult,
-            block.chainid,
-            HANDLE_VERSION
-        );
+        bytes32 expectedResult = _computeExpectedResultCast(handle, FheType(fheOutputType));
 
         vm.prank(sender);
 
@@ -2229,6 +2614,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
                 factor2,
                 divisor,
                 scalarByte,
+                _boundaryBit(factor1) | (scalarByte == FHE_MUL_DIV_FACTOR2_ENCRYPTED ? _boundaryBit(factor2) << 1 : 0),
                 acl,
                 block.chainid,
                 blockhash(block.number - 1),

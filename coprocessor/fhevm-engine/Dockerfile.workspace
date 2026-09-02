@@ -42,28 +42,14 @@
 ARG RUST_IMAGE_VERSION=1.97.1
 
 # =============================================================================
-# Stage 0: Build Solidity contracts (required for host-listener, gw-listener)
+# Stage 0: Build Solidity contracts (required for gw-listener)
 # =============================================================================
 FROM ghcr.io/zama-ai/fhevm/gci/nodejs:22.14.0-alpine3.21 AS contract_builder
 
 USER root
 WORKDIR /app
 
-# Copy root lockfile for workspace resolution
-COPY package.json package-lock.json ./
-
-# Copy host-contracts for host-listener
-COPY host-contracts ./host-contracts
-
-# Compile host-contracts
-RUN cp host-contracts/.env.example host-contracts/.env && \
-    npm ci --workspace=host-contracts --include-workspace-root=false && \
-    cd host-contracts && \
-    HARDHAT_NETWORK=hardhat npm run deploy:emptyProxies && \
-    npx hardhat compile
-
 # Copy gateway-contracts for gw-listener
-WORKDIR /app
 COPY gateway-contracts ./gateway-contracts
 
 # Compile gateway-contracts
@@ -82,14 +68,28 @@ ARG BUILD_ID=unknown
 USER root
 WORKDIR /app
 
-COPY --from=contract_builder /app/host-contracts/artifacts/contracts /app/host-contracts/artifacts/contracts
+# TODO(sccache): temporary inline install for testing; remove once sccache
+# ships in the rust-glibc golden image and rely on that instead.
+RUN set -eux; \
+    arch="$(uname -m)"; \
+    case "$arch" in \
+        x86_64)  triple=x86_64-unknown-linux-musl ;; \
+        aarch64) triple=aarch64-unknown-linux-musl ;; \
+        *) echo "unsupported arch: $arch" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL "https://github.com/mozilla/sccache/releases/download/${SCCACHE_VERSION}/sccache-${SCCACHE_VERSION}-${triple}.tar.gz" \
+        | tar -xz --strip-components=1 -C /usr/local/bin "sccache-${SCCACHE_VERSION}-${triple}/sccache"; \
+    chmod +x /usr/local/bin/sccache; \
+    sccache --version
+
+# Copy contract artifacts from contract_builder stage
 COPY --from=contract_builder /app/gateway-contracts/artifacts/contracts /app/gateway-contracts/artifacts/contracts
 COPY listener ./listener
 COPY coprocessor/fhevm-engine ./coprocessor/fhevm-engine
 COPY coprocessor/proto ./coprocessor/proto
 COPY gateway-contracts/rust_bindings ./gateway-contracts/rust_bindings
+COPY host-contracts/rust_bindings ./host-contracts/rust_bindings
 COPY gateway-contracts/contracts ./gateway-contracts/contracts
-COPY host-contracts/contracts ./host-contracts/contracts
 COPY solana ./solana
 COPY shared/ciphertext-attestation ./shared/ciphertext-attestation
 

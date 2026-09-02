@@ -180,15 +180,16 @@ pub async fn run_stack_version_listener(
 /// finished) — the service defaults to non-GCS (blue) mode rather than failing
 /// startup, so it does not CrashLoop waiting on migration ordering.
 pub async fn resolve_gcs_mode(database_url: &str) -> anyhow::Result<bool> {
-    // Route through `resolve_runtime_database_url` so that when AWS IAM auth is
-    // enabled we connect with a freshly rendered IAM token instead of the raw,
+    // Route through `connect_options_for_database_url` so that when AWS IAM auth is
+    // enabled we connect with a freshly minted IAM token instead of the raw,
     // password-less URL (which would bypass IAM auth and fail to authenticate).
-    // With IAM auth disabled this returns the URL unchanged.
-    let runtime_url = crate::database::resolve_runtime_database_url(
+    // Never render the token into a URL (`render_database_url_with_auth_token`):
+    // the round-trip percent-decodes it and breaks the SigV4 signature.
+    let options = crate::database::connect_options_for_database_url(
         &crate::utils::DatabaseURL::from(database_url),
     )
     .await?;
-    let mut conn = PgConnection::connect(&runtime_url).await?;
+    let mut conn = PgConnection::connect_with(&options).await?;
     let live = live_stack_version(&mut conn).await?;
     let _ = conn.close().await;
 
@@ -293,7 +294,7 @@ async fn assert_not_retired(conn: &mut PgConnection) -> Result<(), sqlx::Error> 
 /// stale binary can neither read nor write through it.
 ///
 /// Cost: one extra round-trip per transaction (a single indexed singleton read).
-pub async fn begin_guarded_pool(
+pub(crate) async fn begin_guarded_pool(
     pool: &Pool<Postgres>,
 ) -> Result<Transaction<'static, Postgres>, sqlx::Error> {
     let mut tx = pool.begin().await?;
@@ -302,7 +303,7 @@ pub async fn begin_guarded_pool(
 }
 
 /// Like [`begin_guarded_pool`] but begins on an already-acquired connection.
-pub async fn begin_guarded_conn(
+pub(crate) async fn begin_guarded_conn(
     conn: &mut PgConnection,
 ) -> Result<Transaction<'_, Postgres>, sqlx::Error> {
     let mut tx = conn.begin().await?;

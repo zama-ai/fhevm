@@ -1,8 +1,8 @@
 mod common;
 
 use crate::common::{
-    create_mock_user_decryption_request_tx, init_kms_worker, mock_copro_registry_load,
-    testing_ct_attestation_config,
+    TEST_COPRO_REGISTRY_REFRESH, create_mock_user_decryption_request_tx, init_kms_worker,
+    mock_copro_registry_load,
 };
 use alloy::{
     hex::FromHex,
@@ -120,7 +120,7 @@ async fn test_request_processing(#[case] event_type: TestEventType) -> anyhow::R
         grpc_request_retries: GRPC_REQUEST_RETRIES,
         db_fast_event_polling: Duration::from_millis(500),
         db_long_event_polling: Duration::from_millis(500),
-        ct_attestation: testing_ct_attestation_config(),
+        copro_registry_refresh: TEST_COPRO_REGISTRY_REFRESH,
         ..Default::default()
     };
     let kms_worker = init_kms_worker(

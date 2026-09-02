@@ -100,6 +100,7 @@ zama-solana-transaction = { path = "../../../solana/crates/zama-solana-transacti
 
 # local dependencies
 fhevm-engine-common = { path = "../fhevm-engine-common" }
+fhevm_host_bindings = { path = "../../../host-contracts/rust_bindings", default-features = false }
 # TODO: integrate github or better path when available
 consumer = { path = "../../../listener/crates/consumer" }
 primitives = { path = "../../../listener/crates/shared/primitives" }
@@ -118,9 +119,6 @@ path = "."
 features = ["test_bypass_key_extraction"]
 
 [build-dependencies]
-foundry-compilers = { workspace = true }
-foundry-compilers-artifacts = "0.13"
-semver = { workspace = true }
 serde_json = { workspace = true }
 
 [lints]

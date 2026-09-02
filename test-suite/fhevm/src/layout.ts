@@ -329,8 +329,8 @@ export const TEST_GREP: Record<string, string> = {
   "paused-gateway-contracts":
     "test paused gateway user input|test paused gateway HTTP public decrypt",
   "input-proof": "test user input uint64",
+  "input-proof-gateway-only": "test gateway-only user input uint64",
   "input-proof-compute-decrypt": "test add 42 to uint64 input and decrypt",
-  "priority-coprocessor": "test priority coprocessor input flow",
   "user-decryption": "test user decrypt",
   "delegated-user-decryption": "test delegated user decrypt",
   "erc1271-user-decryption": "ERC-1271 user decryption",
@@ -533,6 +533,19 @@ export const hostChainRuntimes = (chains: HostChainScenario[]) => {
 };
 export const hostChainAddressesSolidityPath = (key: string) =>
   path.join(ADDRESS_DIR, key, "FHEVMHostAddresses.sol");
+
+/**
+ * Path to the e2e coprocessor-config Solidity file. Unlike the per-chain address files (which
+ * live in the runtime ADDRESS_DIR), this one is imported by the e2e contracts via a relative
+ * path, so `generate` overwrites it in place with per-chain (block.chainid) branches.
+ */
+export const e2eCoprocessorConfigSolidityPath = path.join(
+  CLI_DIR,
+  "..",
+  "e2e",
+  "contracts",
+  "E2ECoprocessorConfigLocal.sol",
+);
 
 /** Builds the docker compose argv prefix for one component. */
 export const dockerArgs = (component: string) => [

@@ -14,10 +14,10 @@ export const polygonAmoy: FhevmChain = /*#__PURE__*/ defineFhevmChain({
       kmsVerifier: {
         address: '0xCD1D89E311bce4C8DEa9a0857a0c9A4E153D4041',
       },
-      protocolConfig: undefined, // To be filled
+      protocolConfig: {
+        address: '0x4CcF009Aba90D04f52b31fc7aDdE240578aFe10F',
+      },
     },
-    // Polygon Amoy is a host chain on the same testnet protocol as Sepolia,
-    // so it shares the same relayer and gateway.
     relayerUrl: 'https://relayer.testnet.zama.org',
     gateway: {
       id: 10_901,

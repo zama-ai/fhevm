@@ -4,6 +4,7 @@ import type { FhevmChain } from '../../types/fhevmChain.js';
 import type { SignedDecryptionPermit } from '../../types/signedDecryptionPermit.js';
 import type { Eip712Like } from '../../types/kms.js';
 import { serializeSignedDecryptionPermitToJSON } from '../../kms/SignedDecryptionPermit-p.js';
+import { initPublicAction } from '../../runtime/CoreFhevm-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -24,9 +25,11 @@ export type SerializeSignedDecryptionPermitReturnType = {
  * The resulting object can be stringified with `JSON.stringify()` and
  * parsed back with `parseSignedDecryptionPermit`.
  */
-export function serializeSignedDecryptionPermit(
-  _fhevm: Fhevm<FhevmChain, FhevmRuntime, OptionalNativeClient>,
+export async function serializeSignedDecryptionPermit(
+  fhevm: Fhevm<FhevmChain, FhevmRuntime, OptionalNativeClient>,
   parameters: SerializeSignedDecryptionPermitParameters,
-): SerializeSignedDecryptionPermitReturnType {
+): Promise<SerializeSignedDecryptionPermitReturnType> {
+  // context is not needed
+  await initPublicAction(fhevm);
   return serializeSignedDecryptionPermitToJSON(parameters.signedPermit);
 }

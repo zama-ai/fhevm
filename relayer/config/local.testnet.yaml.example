@@ -15,12 +15,20 @@ protocol_config:
     max_attempts: 3
     retry_interval_ms: 200
 
-# /v2/keyurl host-chain poller settings.
+# /v2/keyurl source (required). `config` serves the static values below and starts no poller —
+# needed against deployments without ProtocolConfig.getCurrentKmsContextAndEpoch. For the
+# `chain` form see config/local.yaml.example. data_id must be 0x-prefixed (env vars coerce
+# all-digit ids to numbers).
 keyurl:
-  # KMSGeneration contract address on the host chain (source for /v2/keyurl).
-  kms_generation_address: "0x0000000000000000000000000000000000000000"
-  # /v2/keyurl poll interval in ms; the poller reads at the finalized block.
-  poll_interval_ms: 12000
+  source: config
+  fhe_public_key:
+    data_id: "0x0400000000000000000000000000000000000000000000000000000000000003"
+    urls:
+      - "https://kms-public.testnet.zama.org/PUB-p1/PublicKey/0400000000000000000000000000000000000000000000000000000000000003"
+  crs:
+    data_id: "0x0400000000000000000000000000000000000000000000000000000000000004"
+    urls:
+      - "https://kms-public.testnet.zama.org/PUB-p1/CRS/0400000000000000000000000000000000000000000000000000000000000004"
 
 # User-decryption signature check. Gas cap for the ERC-1271 isValidSignature static call.
 user_decrypt_signature_check:
@@ -52,17 +60,21 @@ gateway:
     recycle_interval_mins: 30
     # Polling interval in milliseconds (for polling type listeners)
     poll_interval_ms: 2000
-    # TTL for event deduplication cache in seconds (1-10)
+    # Widest block span a single eth_getLogs may ask for. Chunks the catch-up after
+    # downtime so the listener never asks for a range the provider rejects.
+    max_blocks_per_query: 1000
+    # How long the event registry remembers an event, in seconds (1-10). It bounds both how
+    # long the same log seen by two listener instances counts as one event, and how long an
+    # entry survives while its handlers run; the window restarts when they finish.
     dedup_ttl_seconds: 5
-    # Maximum capacity for deduplication cache
+    # Maximum number of events the registry tracks at once.
     #
     # Sizing formula: events_per_second * num_listeners * dedup_ttl_seconds * 1.2 (safety buffer)
     #
     # Recommended values (with 3 listeners, 5s TTL, 1.2x buffer):
-    #   100 events/sec → 1,800
-    #   300 events/sec → 5,400
-    #   1000 events/sec → 18,000
-    #   5000 events/sec → 90,000
+    #   100 events/sec -> 1,800
+    #   1000 events/sec -> 18,000
+    #   5000 events/sec -> 90,000
     #
     # Current setting: 100,000 (suitable for ~5500 events/sec)
     dedup_max_capacity: 100000

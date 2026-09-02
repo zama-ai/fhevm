@@ -2,30 +2,35 @@ use tracing::{debug, error, info, warn};
 
 use crate::{
     config::settings::GatewayConfig,
-    core::event::{ApiCategory, ApiVersion, GatewayChainEventData, RelayerEvent, RelayerEventData},
-    core::job_id::INTERNAL_EVENT_JOB_ID,
-    gateway::arbitrum::bindings::{Decryption, InputVerification},
-    gateway::arbitrum::event_deduplicator::{EventDeduplicator, EventKey},
-    orchestrator::{HealthCheck, Orchestrator},
-    store::sql::repositories::block_number_repo::BlockNumberRepository,
+    gateway::arbitrum::bindings::{gateway_chain_event_for_log, gateway_chain_event_signatures},
+    gateway::handled_events::{EventKey, HandledEvents, ObservedEvent, RangeObserved},
+    logging::ListenerStep,
+    orchestrator::HealthCheck,
+    store::sql::repositories::chain_cursor_repo::ChainCursorRepository,
 };
 use alloy::{
     network::AnyNetwork,
     primitives::Address,
     providers::{Provider, ProviderBuilder},
     rpc::types::{BlockNumberOrTag, Filter, Log},
-    sol_types::SolEvent,
 };
 use async_trait::async_trait;
 use std::{str::FromStr, sync::Arc, time::Duration};
 
+/// The last block a single `eth_getLogs` should cover, `max_blocks` counted inclusively.
+fn catch_up_to_block(from_block: u64, head: u64, max_blocks: u64) -> u64 {
+    head.min(from_block.saturating_add(max_blocks.saturating_sub(1)))
+}
+
 /// HTTP polling listener that uses eth_getLogs at configurable intervals
 pub struct PollingListener {
     gateway_config: GatewayConfig,
-    orchestrator: Arc<Orchestrator>,
-    block_number_repo: Arc<BlockNumberRepository>,
-    deduplicator: Arc<EventDeduplicator>,
-    instance_id: usize,
+    chain_cursor_repo: Arc<ChainCursorRepository>,
+    handled_events: Arc<HandledEvents>,
+    /// Position in the whole listener pool, counting polling and subscription listeners alike.
+    /// Keys `HandledEvents`' per-listener pending-range queues and labels this listener's logs
+    /// and metrics, so two listeners in one pool must never collide on it.
+    pool_index: usize,
     /// HTTP URL for this listener
     http_url: String,
 }
@@ -33,153 +38,69 @@ pub struct PollingListener {
 impl PollingListener {
     pub fn new(
         gateway_config: GatewayConfig,
-        orchestrator: Arc<Orchestrator>,
-        block_number_repo: Arc<BlockNumberRepository>,
-        deduplicator: Arc<EventDeduplicator>,
-        instance_id: usize,
+        chain_cursor_repo: Arc<ChainCursorRepository>,
+        handled_events: Arc<HandledEvents>,
+        pool_index: usize,
         http_url: String,
     ) -> anyhow::Result<Self> {
         // Enforce HTTP URL - polling listener requires HTTP, not WebSocket
         if !http_url.starts_with("http://") && !http_url.starts_with("https://") {
             return Err(anyhow::anyhow!(
                 "Polling listener {} requires HTTP URL (http:// or https://), got: {}",
-                instance_id,
+                pool_index,
                 http_url
             ));
         }
 
         Ok(Self {
             gateway_config,
-            orchestrator,
-            block_number_repo,
-            deduplicator,
-            instance_id,
+            chain_cursor_repo,
+            handled_events,
+            pool_index,
             http_url,
         })
     }
 
-    async fn fetch_block_hash_from_rpc(
-        &self,
-        block_number: u64,
-        provider: &Arc<dyn Provider<AnyNetwork> + Send + Sync>,
-    ) -> anyhow::Result<String> {
-        match provider
-            .get_block_by_number(BlockNumberOrTag::Number(block_number))
-            .await
-        {
-            Ok(Some(block)) => Ok(format!("{:#x}", block.header.hash)),
-            Ok(None) => Err(anyhow::anyhow!(
-                "Block {} not found - invalid config block number",
-                block_number
-            )),
-            Err(e) => Err(anyhow::anyhow!(
-                "Failed to fetch block {}: {}",
-                block_number,
-                e
-            )),
-        }
-    }
-
+    /// The block to resume polling after. Nothing is written here: the first range this
+    /// listener completes records the position, so a start that handles nothing leaves the
+    /// cursor where it was.
     async fn resolve_starting_block(
         &self,
         provider: &Arc<dyn Provider<AnyNetwork> + Send + Sync>,
     ) -> anyhow::Result<u64> {
-        let block_info_from_db = self
-            .block_number_repo
-            .get_last_block_info(self.instance_id)
-            .await?;
+        if let Some(from_config) = self.gateway_config.listener_pool.last_block_number {
+            info!(
+                instance_id = self.pool_index,
+                "Starting from config block {} (overriding any recorded cursor)", from_config
+            );
+            return Ok(from_config);
+        }
 
-        let block_number = match (
-            self.gateway_config.listener_pool.last_block_number,
-            block_info_from_db,
-        ) {
-            // Config takes precedence
-            (Some(block_number_from_cfg), Some(block_info_from_db)) => {
-                if block_info_from_db.block_number != block_number_from_cfg {
-                    info!(
-                        instance_id = self.instance_id,
-                        "Starting from config block {} (overriding database block {})",
-                        block_number_from_cfg,
-                        block_info_from_db.block_number
-                    );
-                    let block_hash_from_rpc = self
-                        .fetch_block_hash_from_rpc(block_number_from_cfg, provider)
-                        .await?;
-                    self.block_number_repo
-                        .update_block_info(
-                            block_number_from_cfg,
-                            block_hash_from_rpc,
-                            self.instance_id,
-                        )
-                        .await?;
-                } else {
-                    info!(
-                        instance_id = self.instance_id,
-                        "Starting from config block {} (matches database)", block_number_from_cfg
-                    );
-                }
-                block_number_from_cfg
-            }
+        if let Some(recorded) = self.chain_cursor_repo.get().await? {
+            info!(
+                instance_id = self.pool_index,
+                "Starting from recorded block {} (resuming)", recorded
+            );
+            return Ok(recorded);
+        }
 
-            // Config with no DB record
-            (Some(block_number_from_cfg), None) => {
-                info!(
-                    instance_id = self.instance_id,
-                    "Starting from config block {} (initializing database)", block_number_from_cfg
-                );
-                let block_hash_from_rpc = self
-                    .fetch_block_hash_from_rpc(block_number_from_cfg, provider)
-                    .await?;
-                self.block_number_repo
-                    .insert_initial_block_info(
-                        block_number_from_cfg,
-                        block_hash_from_rpc,
-                        self.instance_id,
-                    )
-                    .await?;
-                block_number_from_cfg
-            }
-
-            // No config, use existing DB
-            (None, Some(block_info_from_db)) => {
-                info!(
-                    instance_id = self.instance_id,
-                    "Starting from database block {} (resuming)", block_info_from_db.block_number
-                );
-                block_info_from_db.block_number
-            }
-
-            // Fresh start: no config, no DB
-            (None, None) => {
-                let current_block_from_rpc = provider.get_block_number().await?;
-                info!(
-                    instance_id = self.instance_id,
-                    "Starting from current chain block {} (first run)", current_block_from_rpc
-                );
-                let block_hash_from_rpc = self
-                    .fetch_block_hash_from_rpc(current_block_from_rpc, provider)
-                    .await?;
-                self.block_number_repo
-                    .insert_initial_block_info(
-                        current_block_from_rpc,
-                        block_hash_from_rpc,
-                        self.instance_id,
-                    )
-                    .await?;
-                current_block_from_rpc
-            }
-        };
-
-        Ok(block_number)
+        let head = provider.get_block_number().await?;
+        info!(
+            instance_id = self.pool_index,
+            "Starting from current chain block {} (first run)", head
+        );
+        Ok(head)
     }
 
     pub async fn run(&self) -> anyhow::Result<()> {
         let poll_interval_ms = self.gateway_config.listener_pool.poll_interval_ms;
+        let max_blocks_per_query = self.gateway_config.listener_pool.max_blocks_per_query;
 
         info!(
-            instance_id = self.instance_id,
+            instance_id = self.pool_index,
             http_url = %self.http_url,
             poll_interval_ms = poll_interval_ms,
+            max_blocks_per_query = max_blocks_per_query,
             "Starting polling listener"
         );
 
@@ -192,14 +113,7 @@ impl PollingListener {
                 .map_err(|_| anyhow::anyhow!("Invalid InputVerification address"))?;
         let contract_addresses = vec![decryption_address, input_verification_address];
 
-        // All gateway response events the relayer handles
-        let event_signatures = vec![
-            Decryption::UserDecryptionResponse::SIGNATURE_HASH,
-            Decryption::UserDecryptionResponseThresholdReached::SIGNATURE_HASH,
-            Decryption::PublicDecryptionResponse::SIGNATURE_HASH,
-            InputVerification::VerifyProofResponse::SIGNATURE_HASH,
-            InputVerification::RejectProofResponse::SIGNATURE_HASH,
-        ];
+        let event_signatures = gateway_chain_event_signatures();
 
         let mut consecutive_failures: u32 = 0;
         let max_attempts = self.gateway_config.listener_pool.polling_max_attempts;
@@ -218,39 +132,44 @@ impl PollingListener {
             Err(e) => {
                 return Err(anyhow::anyhow!(
                     "Polling listener {}: Failed to resolve starting block: {}",
-                    self.instance_id,
+                    self.pool_index,
                     e
                 ));
             }
         };
 
         info!(
-            instance_id = self.instance_id,
+            instance_id = self.pool_index,
             starting_block = last_processed_block,
             "Polling listener initialized, starting poll loop"
         );
+
+        // Set while a chunk stopped short of the head, so the next one is fetched at once.
+        let mut backlog_pending = false;
 
         loop {
             // Log ERROR continuously when exceeding threshold (fatal state)
             if consecutive_failures >= max_attempts {
                 error!(
-                    instance_id = self.instance_id,
+                    instance_id = self.pool_index,
                     consecutive_failures = consecutive_failures,
                     max_attempts = max_attempts,
                     "Polling listener exceeded max consecutive poll failures, will keep retrying"
                 );
             }
 
-            // Wait for poll interval
-            tokio::time::sleep(Duration::from_millis(poll_interval_ms)).await;
+            if !backlog_pending {
+                tokio::time::sleep(Duration::from_millis(poll_interval_ms)).await;
+            }
 
             // Get current block number
             let current_block = match provider.get_block_number().await {
                 Ok(block) => block,
                 Err(e) => {
                     consecutive_failures += 1;
+                    backlog_pending = false;
                     warn!(
-                        instance_id = self.instance_id,
+                        instance_id = self.pool_index,
                         error = %e,
                         attempt = consecutive_failures,
                         max_attempts = max_attempts,
@@ -265,12 +184,15 @@ impl PollingListener {
 
             // Calculate block range to query
             let from_block = last_processed_block + 1;
-            let to_block = current_block;
 
-            if from_block > to_block {
+            if from_block > current_block {
                 // Already caught up, nothing to poll
+                backlog_pending = false;
                 continue;
             }
+
+            let to_block = catch_up_to_block(from_block, current_block, max_blocks_per_query);
+            backlog_pending = to_block < current_block;
 
             // Create filter for the block range
             let filter = Filter::new()
@@ -284,8 +206,9 @@ impl PollingListener {
                 Ok(logs) => logs,
                 Err(e) => {
                     consecutive_failures += 1;
+                    backlog_pending = false;
                     warn!(
-                        instance_id = self.instance_id,
+                        instance_id = self.pool_index,
                         from_block = from_block,
                         to_block = to_block,
                         error = %e,
@@ -303,60 +226,59 @@ impl PollingListener {
             // Reset failure counter on successful poll
             consecutive_failures = 0;
 
+            let mut events = Vec::new();
             if !logs.is_empty() {
                 debug!(
-                    instance_id = self.instance_id,
+                    instance_id = self.pool_index,
                     from_block = from_block,
                     to_block = to_block,
                     event_count = logs.len(),
                     "Polling listener: Found events"
                 );
 
-                // Process each log through deduplication
-                for event_log in logs {
-                    self.process_log_event(&event_log).await;
-                }
+                events.extend(
+                    logs.iter()
+                        .filter_map(|log| self.observed_event_for_log(log)),
+                );
             }
 
-            // Update last_processed_block
             last_processed_block = to_block;
 
-            // Update block progress in DB
-            if let Ok(block_hash) = self.fetch_block_hash_from_rpc(to_block, &provider).await {
-                if let Err(e) = self
-                    .block_number_repo
-                    .update_block_info(to_block, block_hash, self.instance_id)
-                    .await
-                {
-                    error!(
-                        instance_id = self.instance_id,
-                        block_number = to_block,
-                        error = %e,
-                        "Polling listener: Failed to update block progress"
-                    );
-                }
-            }
+            // The query covered the whole range it asked for, so this listener can attest to
+            // it: the cursor may pass to_block once every event found in it has been handled.
+            self.handled_events
+                .record_and_dispatch(events, Some(RangeObserved { to_block }), self.pool_index)
+                .await;
         }
     }
 
-    async fn process_log_event(&self, event_log: &Log) {
+    /// Resolve one polled log into the event that gets tracked, or `None` if it is not an
+    /// event this relayer routes.
+    fn observed_event_for_log(&self, event_log: &Log) -> Option<ObservedEvent> {
         let tx_hash = match event_log.transaction_hash {
             Some(hash) => hash,
             None => {
                 warn!(
-                    instance_id = self.instance_id,
+                    instance_id = self.pool_index,
                     "Polling listener: Event log missing transaction hash, skipping"
                 );
-                return;
+                return None;
             }
         };
 
-        let block_number = event_log.block_number.unwrap_or(0);
-        let block_hash = event_log
-            .block_hash
-            .map(|h| format!("{:#x}", h))
-            .unwrap_or_else(|| "0x0".to_string());
-        let log_index = event_log.log_index.unwrap_or(0);
+        // Coordinates identify the event, so a log without them cannot be tracked: two
+        // such logs would share a key and the second would count as a duplicate.
+        let (Some(block_number), Some(block_hash), Some(log_index)) = (
+            event_log.block_number,
+            event_log.block_hash,
+            event_log.log_index,
+        ) else {
+            warn!(
+                instance_id = self.pool_index,
+                "Polling listener: Event log missing block coordinates, skipping"
+            );
+            return None;
+        };
 
         let topic0 = event_log
             .topics()
@@ -369,53 +291,36 @@ impl PollingListener {
             .map(|t| format!("{:#x}", t))
             .unwrap_or_else(|| "none".to_string());
 
-        // Create deduplication key
-        let dedup_key = EventKey {
-            block_number,
-            block_hash: event_log.block_hash.unwrap_or_default(),
-            log_index,
+        let gateway_event = match gateway_chain_event_for_log(event_log.clone(), tx_hash) {
+            Some(gateway_event) => gateway_event,
+            None => {
+                warn!(
+                    step = %ListenerStep::EventUnroutable,
+                    instance_id = self.pool_index,
+                    block_number = block_number,
+                    log_index = log_index,
+                    topic0 = %topic0,
+                    "Unroutable gateway event"
+                );
+                return None;
+            }
         };
 
-        // Check deduplication - skip if already processed
-        if !self.deduplicator.try_insert(dedup_key).await {
-            debug!(
-                instance_id = self.instance_id,
-                "Polling listener: Skipping duplicate event: block={}, log_index={}, topic0={}",
-                block_number,
-                log_index,
-                topic0
-            );
-            return;
-        }
-
-        info!(
-            instance_id = self.instance_id,
-            "Polling listener: Processing event: block={}, block_hash={}, log_index={}, topic0={}, topic1={}, tx_hash={:#x}",
+        debug!(
+            step = %ListenerStep::EventReceived,
+            instance_id = self.pool_index,
+            "Polling listener: Processing event: block={}, block_hash={:#x}, log_index={}, topic0={}, topic1={}, tx_hash={:#x}",
             block_number, block_hash, log_index, topic0, topic1, tx_hash
         );
 
-        let event = RelayerEvent::new(
-            INTERNAL_EVENT_JOB_ID,
-            ApiVersion {
-                category: ApiCategory::PRODUCTION,
-                number: 1,
+        Some(ObservedEvent {
+            key: EventKey {
+                block_number,
+                block_hash,
+                log_index,
             },
-            RelayerEventData::GatewayChain(GatewayChainEventData::EventLogRcvd {
-                log: event_log.clone(),
-                tx_hash,
-            }),
-        );
-
-        self.orchestrator
-            .dispatch_event(event)
-            .await
-            .unwrap_or_else(|e| {
-                error!(
-                    instance_id = self.instance_id,
-                    error = %e,
-                    "Polling listener: Failed to dispatch event"
-                );
-            });
+            event: gateway_event,
+        })
     }
 
     fn create_provider(&self) -> anyhow::Result<Arc<dyn Provider<AnyNetwork> + Send + Sync>> {
@@ -442,15 +347,43 @@ impl HealthCheck for PollingListener {
         match tokio::time::timeout(health_timeout, provider.get_block_number()).await {
             Err(_) => Err(anyhow::anyhow!(
                 "Polling listener {}: HTTP health check timed out after {:?}",
-                self.instance_id,
+                self.pool_index,
                 health_timeout
             )),
             Ok(Err(e)) => Err(anyhow::anyhow!(
                 "Polling listener {}: HTTP health check failed: {}",
-                self.instance_id,
+                self.pool_index,
                 e
             )),
             Ok(Ok(_)) => Ok(()),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_chunk_never_reaches_past_the_head() {
+        assert_eq!(catch_up_to_block(101, 105, 1_000), 105);
+    }
+
+    #[test]
+    fn the_chunk_span_counts_blocks_inclusively() {
+        assert_eq!(catch_up_to_block(100, 1_000_000, 10), 109);
+    }
+
+    #[test]
+    fn a_large_gap_is_capped_to_one_chunk() {
+        assert_eq!(catch_up_to_block(1, 1_000_000, 1_000), 1_000);
+    }
+
+    #[test]
+    fn a_chunk_past_the_end_of_the_range_saturates() {
+        assert_eq!(
+            catch_up_to_block(u64::MAX - 1, u64::MAX, u64::MAX),
+            u64::MAX
+        );
     }
 }
