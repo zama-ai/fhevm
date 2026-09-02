@@ -11,3 +11,5 @@ dependencies
 cache-forge
 out
 broadcast
+anvil.log
+anvil-test.log

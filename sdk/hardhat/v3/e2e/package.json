@@ -19,7 +19,9 @@
     "lint": "npm run compile && npm run forge:lint && eslint && tsc -p ./tsconfig.json --noEmit",
     "prettier:check": "prettier --check \"**/*.{js,json,md,mjs,ts,yml}\"",
     "prettier:write": "prettier --write \"**/*.{js,json,md,mjs,ts,yml}\"",
-    "test": "hardhat test"
+    "test": "hardhat test",
+    "test:anvil": "hardhat test --network anvil",
+    "test:anvil:simple": "hardhat test --network anvil --grep 'encrypted count should be uninitialized after deployment'"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
