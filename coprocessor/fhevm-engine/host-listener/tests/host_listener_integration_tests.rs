@@ -2139,6 +2139,79 @@ async fn test_host_listener_recovers_after_revert() -> Result<(), anyhow::Error>
     Ok(())
 }
 
+/// Restart regression: the producer seal must survive a process restart.
+///
+/// `sealed_chains` is process-local and catchup replays `--catchup-margin`
+/// blocks on every restart. That replay rebuilds the fork-detection state but
+/// NOT the seal, because ingest skips `update_dependence_chain` when every
+/// computation insert is a duplicate. Without reconstruction the parent would
+/// resume absorbing continuations while its gated child — whose
+/// `dependency_count` is durable — waits behind all of them.
+///
+/// The seal is derived from that same durable state, so a fresh `Database`
+/// over the same rows must come up with the parent sealed again.
+#[tokio::test]
+#[serial(db)]
+async fn test_sealed_chain_survives_restart(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let test_instance =
+        test_harness::instance::setup_test_db(ImportMode::WithKeysNoSns)
+            .await?;
+    let chain_id = ChainId::try_from(42_u64)?;
+    let db = Database::new(&test_instance.db_url, chain_id, 128).await?;
+    let pool = db.pool.read().await.clone();
+
+    let parent = FixedBytes::<32>::from([0xD1; 32]);
+    let gated_child = FixedBytes::<32>::from([0xD2; 32]);
+    let discharged_child = FixedBytes::<32>::from([0xD3; 32]);
+    let quiet_parent = FixedBytes::<32>::from([0xD4; 32]);
+
+    // parent -> gated_child, still gated: seals the parent.
+    // quiet_parent -> discharged_child, gate already discharged: seals nothing.
+    for (chain, status, count, dependents) in [
+        (parent, "updated", 0_i32, vec![gated_child]),
+        (quiet_parent, "updated", 0_i32, vec![discharged_child]),
+        (gated_child, "updated", 1_i32, vec![]),
+        (discharged_child, "updated", 0_i32, vec![]),
+    ] {
+        let dependents: Vec<Vec<u8>> =
+            dependents.iter().map(|d| d.as_slice().to_vec()).collect();
+        sqlx::query(
+            "INSERT INTO dependence_chain(
+                dependence_chain_id, status, last_updated_at,
+                dependency_count, dependents, block_hash, block_height,
+                schedule_priority
+             ) VALUES ($1, $2, NOW(), $3, $4, $5, 1, 1)",
+        )
+        .bind(chain.as_slice())
+        .bind(status)
+        .bind(count)
+        .bind(&dependents)
+        .bind([0x0B_u8; 32].as_slice())
+        .execute(&pool)
+        .await?;
+    }
+
+    // A fresh Database is the restart: new process state over the same rows.
+    let restarted = Database::new(&test_instance.db_url, chain_id, 128).await?;
+    let sealed = restarted.sealed_chains.read().await;
+    assert!(
+        sealed.peek(&parent).is_some(),
+        "a parent with a still-gated dependent must come back sealed, or \
+         catchup will let it grow while that dependent waits"
+    );
+    assert!(
+        sealed.peek(&quiet_parent).is_none(),
+        "a parent whose dependent has discharged owes nothing and must not \
+         be sealed: that would fragment a chain for no benefit"
+    );
+    assert!(
+        sealed.peek(&gated_child).is_none(),
+        "being gated does not seal a chain; only gating another one does"
+    );
+    Ok(())
+}
+
 /// F1 regression: a new chain joining cross-block parents must be gated on
 /// exactly the parents that can still deliver a release decrement, AND that
 /// still owe it something. A parent gates only when it is both incomplete and
