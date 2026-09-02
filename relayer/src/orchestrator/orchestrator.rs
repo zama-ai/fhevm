@@ -7,8 +7,9 @@ use crate::orchestrator::TokioEventDispatcher;
 use anyhow::Error;
 use std::collections::HashMap;
 use std::future::Future;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
-use tokio_util::sync::CancellationToken;
+use std::time::Duration;
 use tokio_util::task::TaskTracker;
 use tracing::{error, instrument};
 use uuid::Uuid;
@@ -17,12 +18,11 @@ pub struct Orchestrator {
     event_dispatcher: Arc<TokioEventDispatcher>,
     health_checker: Arc<RwLock<HealthChecker>>,
     task_manager: TaskManager,
-    /// Short-lived, unbounded-in-number detached work that has no place in the named-task
-    /// JoinSet, all of it resumable from what Postgres and the chain cursor already hold:
-    ///
-    /// - per-event dispatch
-    /// - `handled_events`' dispatch-then-complete follow-up
+    /// Per-event dispatch, its follow-up, readiness checks and transaction sends. Unbounded
+    /// in number and resumable from Postgres and the chain cursor, so shutdown abandons it.
     detached_tasks: TaskTracker,
+    /// Sticky: shutdown must stop the pod looking healthy while its dependencies still pass.
+    shutting_down: AtomicBool,
 }
 
 impl Orchestrator {
@@ -35,7 +35,17 @@ impl Orchestrator {
             health_checker: Arc::new(RwLock::new(HealthChecker::new())),
             task_manager: TaskManager::new(),
             detached_tasks,
+            shutting_down: AtomicBool::new(false),
         })
+    }
+
+    /// First step of shutdown, taken while the HTTP server keeps serving.
+    pub fn mark_not_ready(&self) {
+        self.shutting_down.store(true, Ordering::Release);
+    }
+
+    pub fn is_shutting_down(&self) -> bool {
+        self.shutting_down.load(Ordering::Acquire)
     }
 
     pub fn new_internal_request_id(&self) -> Uuid {
@@ -88,12 +98,24 @@ impl Orchestrator {
             .await
     }
 
-    /// Wait for shutdown signal and gracefully shutdown all tasks
-    pub async fn run_until_shutdown(
-        &self,
-        shutdown_token: CancellationToken,
-    ) -> anyhow::Result<()> {
-        self.task_manager.run_until_shutdown(shutdown_token).await
+    // The three below are called in this order, once each; `startup` is the only caller.
+
+    pub async fn begin_task_drain(&self) {
+        self.task_manager.begin_shutdown().await;
+    }
+
+    /// Whatever drives the named tasks must already be cancelled.
+    pub async fn drain_named_tasks(&self, budget: Duration) {
+        self.task_manager.drain_tasks(budget).await;
+    }
+
+    pub async fn finish_task_drain(&self) {
+        self.task_manager.finish_drain().await;
+    }
+
+    /// Reported, never drained.
+    pub fn abandoned_detached_tasks(&self) -> usize {
+        self.detached_tasks.len()
     }
 
     #[instrument(skip_all, fields(event_type=%(event.event_name()), job_id=?event.job_id()))]
