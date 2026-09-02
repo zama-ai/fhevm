@@ -1,6 +1,6 @@
 # Porting the FHEVM hardhat plugin from hardhat v2 to hardhat v3
 
-Version: **1.6** (2026-09-02). Bump the minor for a content change to the plan, the major for a
+Version: **1.7** (2026-09-02). Bump the minor for a content change to the plan, the major for a
 change of charter or stage order; record each bump below.
 
 - 1.0 — initial plan, from the hardhat 3 docs.
@@ -11,8 +11,9 @@ change of charter or stage order; record each bump below.
 - 1.4 — A5 recorded as landed (two commits: @fhevm/sdk peer, then detection); ledger A5 row done.
 - 1.5 — A6 recorded as landed; `cacheDir`/`dotEnvFile`/`solidityCoverageDir` confirmed delete-bucket.
 - 1.6 — A7 recorded as landed; Stage A complete.
+- 1.7 — B1a recorded as landed (two commits: cleartext package + ethers peer, then the ABI repository).
 
-Status: **in progress — Stage A complete (A2–A7) + E2E-0a. Next: B1a.** The landing zone exists: the
+Status: **in progress — Stage A complete (A2–A7) + E2E-0a + B1a. Next: B1b1.** The landing zone exists: the
 `hardhat/v3` cluster (own installation root, hardhat 3.15 pinned), the plugin registered via
 `definePlugin` with its per-connection `fhevm` object and the pre-serve chain preparation proven,
 and the `hardhat/v3/e2e` member with the first counter test.
@@ -428,9 +429,15 @@ first review, per the cap rule.
 ### Stage B — the essential job: pre-deploy per target
 
 - **B1. In-process deploy** (three blocks):
-  - **B1a.** Port the contracts repository: load the cleartext artifacts/bytecode from the sibling
-    `@fhevm/host-contracts-cleartext` package (stands on A6's paths).
-    Test: artifacts resolve and parse from a fixture consumer tree.
+  - **B1a — LANDED** (two commits: payload `dependencies` gets `@fhevm/host-contracts-cleartext`
+    as the same cross-root `file:` link v2 uses + `ethers` peer `^6.17.0`, consumer-fixture lock
+    regenerated; then the repository). `internal/contracts.ts` ports v2's `contractsRepository.ts`:
+    ABIs from the package's `abi/*.json` export via `createRequire` (the plugin's OWN dependency,
+    not a consumer sibling — A6's paths are not involved), ethers `Interface` + read-only
+    `Contract` per host contract, lookups by name and case-insensitive address, optional contracts
+    unregistered without an address, cleartext subclass + guard. Addresses are caller input: no
+    local address literal. Dropped v2's duplicate wrapper `properties` (one consumer, the error
+    decoder — D4a reads `name`/`address`/`readonlyContract`). Test: live provider, 3 tests.
     Commit: `feat(hh-v3-plugin): load cleartext artifacts from the sibling contracts package`
   - **B1b1.** The deploy transaction sequence itself (nonce-ordered CREATEs onto the ZamaConfig
     addresses), as a pure function of (provider, artifacts). Test: addresses hold code afterwards.
