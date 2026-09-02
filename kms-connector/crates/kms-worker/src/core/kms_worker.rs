@@ -324,11 +324,13 @@ mod tests {
 
     #[tokio::test]
     async fn registers_evm_and_solana_backends_once() {
-        let mut config = Config::default();
-        config.host_chains = vec![
-            host_chain(1, HostChainKind::Evm),
-            host_chain(2, HostChainKind::Solana),
-        ];
+        let config = Config {
+            host_chains: vec![
+                host_chain(1, HostChainKind::Evm),
+                host_chain(2, HostChainKind::Solana),
+            ],
+            ..Default::default()
+        };
         let backends = register_host_chain_backends(&config)
             .await
             .expect("valid host chains should register");
