@@ -10,7 +10,7 @@ name: js-sdk-dod
 # block merge (branch protection is not configured for it).
 #
 # Triggers:
-#   - pull_request to devex/js-sdk / main  -> runs the REAL jobs.
+#   - pull_request to devex/js-sdk / main / feature/solana  -> runs the REAL jobs.
 #   - workflow_dispatch                    -> `mode: dry-run` (default) runs a
 #     cheap sleep+trace matrix to validate the parallel fan-out (works with
 #     `act` locally); `mode: real` runs the real jobs.
@@ -23,6 +23,7 @@ on:
     branches:
       - devex/js-sdk
       - main
+      - feature/solana
     paths:
       - "sdk/js-sdk/**"
       - ".github/workflows/js-sdk-dod.yml"

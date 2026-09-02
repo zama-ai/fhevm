@@ -5,6 +5,7 @@ on:
     branches:
       - devex/js-sdk
       - main
+      - feature/solana
     paths:
       - ".github/workflows/js-sdk-*.yml"
       - "sdk/js-sdk/**"
