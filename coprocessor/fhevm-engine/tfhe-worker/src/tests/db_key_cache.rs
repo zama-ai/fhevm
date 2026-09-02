@@ -1,7 +1,7 @@
+use crate::tests::shared_db::cloned_test_db;
 use fhevm_engine_common::db_keys::DbKeyCache;
-use serial_test::serial;
 use sqlx::postgres::PgPoolOptions;
-use test_harness::instance::{setup_test_db, ImportMode};
+use test_harness::instance::ImportMode;
 
 fn db_url_for_role(base_url: &str, username: &str, password: &str) -> String {
     let (_, host_and_db) = base_url
@@ -15,10 +15,9 @@ fn random_key_id() -> Vec<u8> {
 }
 
 #[tokio::test]
-#[serial(db)]
 async fn test_fetch_latest_uses_cache_without_selecting_key_blobs(
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let db = setup_test_db(ImportMode::WithKeysNoSns).await?;
+    let db = cloned_test_db(ImportMode::WithKeysNoSns).await?;
     let admin_pool = PgPoolOptions::new()
         .max_connections(4)
         .connect(db.db_url())
@@ -32,9 +31,12 @@ async fn test_fetch_latest_uses_cache_without_selecting_key_blobs(
     sqlx::query(&format!("CREATE ROLE {role} LOGIN PASSWORD '{password}'"))
         .execute(&admin_pool)
         .await?;
-    sqlx::query(&format!("GRANT CONNECT ON DATABASE coprocessor TO {role}"))
-        .execute(&admin_pool)
-        .await?;
+    let db_name = db.db_name();
+    sqlx::query(&format!(
+        "GRANT CONNECT ON DATABASE \"{db_name}\" TO {role}"
+    ))
+    .execute(&admin_pool)
+    .await?;
     sqlx::query(&format!("GRANT USAGE ON SCHEMA public TO {role}"))
         .execute(&admin_pool)
         .await?;
@@ -57,10 +59,9 @@ async fn test_fetch_latest_uses_cache_without_selecting_key_blobs(
 }
 
 #[tokio::test]
-#[serial(db)]
 async fn test_fetch_latest_refreshes_cache_after_key_rotation(
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let db = setup_test_db(ImportMode::WithKeysNoSns).await?;
+    let db = cloned_test_db(ImportMode::WithKeysNoSns).await?;
     let pool = PgPoolOptions::new()
         .max_connections(4)
         .connect(db.db_url())

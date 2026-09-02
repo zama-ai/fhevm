@@ -6,10 +6,8 @@ use crate::tests::event_helpers::{
 };
 use host_listener::contracts::TfheContract;
 use host_listener::contracts::TfheContract::TfheContractEvents;
-use serial_test::serial;
 
 #[tokio::test]
-#[serial(db)]
 async fn test_coprocessor_input_errors() -> Result<(), Box<dyn std::error::Error>> {
     let EventHarness {
         app: _app,
@@ -73,7 +71,6 @@ async fn test_coprocessor_input_errors() -> Result<(), Box<dyn std::error::Error
 /// and GPU (unlike Cast-to-invalid-type which panics on the GPU path during
 /// memory reservation).
 #[tokio::test]
-#[serial(db)]
 async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error::Error>> {
     let EventHarness {
         app: _app,
@@ -126,7 +123,6 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
 /// FheAdd on mismatched types (uint8 + uint16) passes validation in
 /// `check_fhe_operand_types` but fails at execution time with `UnsupportedFheTypes`.
 #[tokio::test]
-#[serial(db)]
 async fn test_type_mismatch_error() -> Result<(), Box<dyn std::error::Error>> {
     let EventHarness {
         app: _app,
@@ -178,7 +174,6 @@ async fn test_type_mismatch_error() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[tokio::test]
-#[serial(db)]
 async fn test_binary_boolean_inputs_error() -> Result<(), Box<dyn std::error::Error>> {
     let EventHarness {
         app: _app,
@@ -230,7 +225,6 @@ async fn test_binary_boolean_inputs_error() -> Result<(), Box<dyn std::error::Er
 }
 
 #[tokio::test]
-#[serial(db)]
 async fn test_unary_boolean_inputs_error() -> Result<(), Box<dyn std::error::Error>> {
     let EventHarness {
         app: _app,
@@ -283,7 +277,6 @@ async fn test_unary_boolean_inputs_error() -> Result<(), Box<dyn std::error::Err
 /// fails identically), so retrying the consumer re-anchors its chain without
 /// ever making progress.
 #[tokio::test]
-#[serial(db)]
 async fn errored_producer_drains_cross_transaction_consumer(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let EventHarness {
@@ -374,7 +367,6 @@ async fn errored_producer_drains_cross_transaction_consumer(
 /// same transaction that inserts it, so the worker only ever sees the
 /// stamped state.
 #[tokio::test]
-#[serial(db)]
 async fn retryable_panic_stamp_is_retried_and_healed() -> Result<(), Box<dyn std::error::Error>> {
     let EventHarness {
         app: _app,

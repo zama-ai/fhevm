@@ -1,4 +1,5 @@
 use crate::daemon_cli::Args;
+use crate::tests::shared_db::{cloned_test_db, ClonedDb};
 use fhevm_engine_common::crs::{Crs, CrsCache};
 use fhevm_engine_common::db_keys::{DbKey, DbKeyCache};
 use fhevm_engine_common::drift_revert::WatcherTimeouts;
@@ -8,13 +9,25 @@ use fhevm_engine_common::types::SupportedFheCiphertexts;
 use std::collections::BTreeMap;
 use std::time::Duration;
 use test_harness::db_utils::setup_test_key;
+use test_harness::instance::ImportMode;
 use testcontainers::{core::WaitFor, runners::AsyncRunner, GenericImage, ImageExt};
 use tokio::sync::watch::Receiver;
 use tracing::Level;
 
+/// The test's database, held so it is cleaned up when the test ends.
+enum TestDb {
+    /// A copy of the shared template. The normal case.
+    Cloned { _db: ClonedDb },
+    /// A container this test alone owns; see `setup_test_app_dedicated_db`.
+    /// Boxed because it is much larger than the other variants.
+    Dedicated(Box<testcontainers::ContainerAsync<testcontainers::GenericImage>>),
+    /// A database the developer pointed us at.
+    External,
+}
+
 pub struct TestInstance {
-    // just to destroy container
-    _container: Option<testcontainers::ContainerAsync<testcontainers::GenericImage>>,
+    // held so the database (or container) is released when the test ends
+    _db: TestDb,
     // send message to this on destruction to stop the app
     app_close_channel: Option<tokio::sync::watch::Sender<bool>>,
     db_url: String,
@@ -35,8 +48,14 @@ impl TestInstance {
         self.db_url.as_str()
     }
 
+    /// Container id, for tests that stop or pause Postgres. `None` unless the test
+    /// owns its container, since doing that to a shared server would break the tests
+    /// running alongside it.
     pub fn db_docker_id(&self) -> Option<String> {
-        self._container.as_ref().map(|c| c.id().to_string())
+        match &self._db {
+            TestDb::Dedicated(container) => Some(container.id().to_string()),
+            TestDb::Cloned { .. } | TestDb::External => None,
+        }
     }
 
     pub fn health_check_url(&self) -> String {
@@ -52,6 +71,18 @@ pub async fn setup_test_app() -> Result<TestInstance, Box<dyn std::error::Error>
     if std::env::var("COPROCESSOR_TEST_LOCAL_DB").is_ok() {
         setup_test_app_existing_db().await
     } else {
+        setup_test_app_cloned_db().await
+    }
+}
+
+/// Like [`setup_test_app`], but with a Postgres container of this test's own.
+///
+/// Only for tests that pause or stop the database server, which would otherwise take
+/// down every test running at the same time. Costs about 26 seconds, so avoid it.
+pub async fn setup_test_app_dedicated_db() -> Result<TestInstance, Box<dyn std::error::Error>> {
+    if std::env::var("COPROCESSOR_TEST_LOCAL_DB").is_ok() {
+        setup_test_app_existing_db().await
+    } else {
         setup_test_app_custom_docker().await
     }
 }
@@ -62,9 +93,24 @@ async fn setup_test_app_existing_db() -> Result<TestInstance, Box<dyn std::error
     let (app_close_channel, rx) = tokio::sync::watch::channel(false);
     let health_check_port = start_coprocessor(rx, LOCAL_DB_URL).await;
     Ok(TestInstance {
-        _container: None,
+        _db: TestDb::External,
         app_close_channel: Some(app_close_channel),
         db_url: LOCAL_DB_URL.to_string(),
+        health_check_port,
+    })
+}
+
+/// The normal setup: a copy of the shared template, with a coprocessor against it.
+async fn setup_test_app_cloned_db() -> Result<TestInstance, Box<dyn std::error::Error>> {
+    let db = cloned_test_db(ImportMode::WithKeysNoSns).await?;
+    let db_url = db.db_url().to_string();
+
+    let (app_close_channel, rx) = tokio::sync::watch::channel(false);
+    let health_check_port = start_coprocessor(rx, &db_url).await;
+    Ok(TestInstance {
+        _db: TestDb::Cloned { _db: db },
+        app_close_channel: Some(app_close_channel),
+        db_url,
         health_check_port,
     })
 }
@@ -74,16 +120,20 @@ async fn start_coprocessor(rx: Receiver<bool>, db_url: &str) -> u16 {
     let args: Args = Args {
         max_batch_ttl_secs: 300,
         run_bg_worker: true,
-        worker_polling_interval_ms: 1000,
+        // Polling this slowly just leaves the machine idle between batches.
+        worker_polling_interval_ms: 100,
         bridge_polling_interval_ms: 1000,
         bridge_associate_batch_size: 128,
         generate_fhe_keys: false,
-        work_items_batch_size: 40,
+        work_items_batch_size: 100,
         dependence_chains_per_batch: 10,
         key_cache_size: 4,
-        coprocessor_fhe_threads: 4,
-        tokio_threads: 2,
-        pg_pool_max_connections: 2,
+        // How many operations the worker runs at once. Small types barely spread
+        // across cores on their own, so running more at a time is what keeps the
+        // machine busy; 4 left it about 69% idle. Production uses 32.
+        coprocessor_fhe_threads: 16,
+        tokio_threads: 4,
+        pg_pool_max_connections: 10,
         metrics_addr: None,
         database_url: Some(db_url.into()),
         service_name: "coprocessor".to_string(),
@@ -157,7 +207,7 @@ async fn setup_test_app_custom_docker() -> Result<TestInstance, Box<dyn std::err
     let (app_close_channel, rx) = tokio::sync::watch::channel(false);
     let health_check_port = start_coprocessor(rx, &db_url).await;
     Ok(TestInstance {
-        _container: Some(container),
+        _db: TestDb::Dedicated(Box::new(container)),
         app_close_channel: Some(app_close_channel),
         db_url,
         health_check_port,
@@ -197,7 +247,7 @@ pub async fn wait_until_all_allowed_handles_computed(
         .await?;
 
     loop {
-        tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
         let (current_count,): (i64,) = sqlx::query_as(
             "SELECT count(1) FROM computations WHERE is_allowed = TRUE AND is_completed = FALSE AND is_error = FALSE",
         )

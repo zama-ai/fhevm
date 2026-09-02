@@ -1,5 +1,4 @@
 use bigdecimal::num_bigint::BigInt;
-use serial_test::serial;
 
 use host_listener::contracts::TfheContract;
 use host_listener::contracts::TfheContract::TfheContractEvents;
@@ -229,9 +228,14 @@ fn binary_op_to_event(
     }
 }
 
-#[tokio::test]
-#[serial(db)]
-async fn test_fhe_binary_operands_events() -> Result<(), Box<dyn std::error::Error>> {
+/// Runs the binary operator cases for the given input types and operators.
+///
+/// This was one test covering everything, which took over an hour in CI and could not
+/// be split up. `binary_operands_test!` now generates one test per type instead.
+async fn run_binary_operands_events(
+    types: &[i32],
+    op_filter: fn(&BinaryOperatorTestCase) -> bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let EventHarness {
         app,
         pool,
@@ -239,11 +243,7 @@ async fn test_fhe_binary_operands_events() -> Result<(), Box<dyn std::error::Err
     } = setup_event_harness().await?;
     let mut cases = vec![];
     for op in generate_binary_test_cases() {
-        if !supported_types().contains(&op.input_types) {
-            continue;
-        }
-        // TrivialEncrypt test setup uses ClearConst (up to 256-bit payloads).
-        if op.bits > 256 {
+        if !binary_case_selected(&op, types, op_filter) {
             continue;
         }
         let lhs_handle = next_handle();
@@ -302,6 +302,12 @@ async fn test_fhe_binary_operands_events() -> Result<(), Box<dyn std::error::Err
         cases.push((op, output_handle));
     }
 
+    // Otherwise a filter that matches nothing would silently test nothing.
+    assert!(
+        !cases.is_empty(),
+        "no binary operand cases selected for types {types:?}"
+    );
+
     wait_until_all_allowed_handles_computed(&app).await?;
     for (op, output_handle) in cases {
         let decrypt_request = vec![output_handle.to_vec()];
@@ -329,8 +335,108 @@ async fn test_fhe_binary_operands_events() -> Result<(), Box<dyn std::error::Err
     Ok(())
 }
 
+/// Types with cases to run. Anything above 256 bits is left out because the setup
+/// below cannot encrypt values that large.
+const BINARY_SPLIT_TYPES: &[i32] = &[0, 1, 2, 3, 4, 5, 6, 7, 8];
+
+/// The same, minus bool, which has no multiply, divide or remainder.
+const BINARY_SPLIT_TYPES_EXPENSIVE: &[i32] = &[1, 2, 3, 4, 5, 6, 7, 8];
+
+/// Multiply, divide and remainder take far longer than the rest and get slower fast
+/// as types get wider, so they run as separate tests.
+fn is_expensive_binary_op(op: &BinaryOperatorTestCase) -> bool {
+    use fhevm_engine_common::types::SupportedFheOperations as S;
+    matches!(
+        S::try_from(op.operator),
+        Ok(S::FheMul) | Ok(S::FheDiv) | Ok(S::FheRem)
+    )
+}
+
+fn is_cheap_binary_op(op: &BinaryOperatorTestCase) -> bool {
+    !is_expensive_binary_op(op)
+}
+
+/// Which cases a test runs. Shared with the check below so the two cannot disagree.
+fn binary_case_selected(
+    op: &BinaryOperatorTestCase,
+    types: &[i32],
+    op_filter: fn(&BinaryOperatorTestCase) -> bool,
+) -> bool {
+    // TrivialEncrypt test setup uses ClearConst (up to 256-bit payloads).
+    types.contains(&op.input_types) && op.bits <= 256 && op_filter(op)
+}
+
+macro_rules! binary_operands_test {
+    ($name:ident, $ty:expr, $filter:expr) => {
+        #[tokio::test]
+        async fn $name() -> Result<(), Box<dyn std::error::Error>> {
+            run_binary_operands_events(&[$ty], $filter).await
+        }
+    };
+}
+
+binary_operands_test!(binary_ops_cheap_bool, 0, is_cheap_binary_op);
+binary_operands_test!(binary_ops_cheap_u4, 1, is_cheap_binary_op);
+binary_operands_test!(binary_ops_cheap_u8, 2, is_cheap_binary_op);
+binary_operands_test!(binary_ops_cheap_u16, 3, is_cheap_binary_op);
+binary_operands_test!(binary_ops_cheap_u32, 4, is_cheap_binary_op);
+binary_operands_test!(binary_ops_cheap_u64, 5, is_cheap_binary_op);
+binary_operands_test!(binary_ops_cheap_u128, 6, is_cheap_binary_op);
+binary_operands_test!(binary_ops_cheap_u160, 7, is_cheap_binary_op);
+binary_operands_test!(binary_ops_cheap_u256, 8, is_cheap_binary_op);
+
+binary_operands_test!(binary_ops_muldivrem_u4, 1, is_expensive_binary_op);
+binary_operands_test!(binary_ops_muldivrem_u8, 2, is_expensive_binary_op);
+binary_operands_test!(binary_ops_muldivrem_u16, 3, is_expensive_binary_op);
+binary_operands_test!(binary_ops_muldivrem_u32, 4, is_expensive_binary_op);
+binary_operands_test!(binary_ops_muldivrem_u64, 5, is_expensive_binary_op);
+binary_operands_test!(binary_ops_muldivrem_u128, 6, is_expensive_binary_op);
+binary_operands_test!(binary_ops_muldivrem_u160, 7, is_expensive_binary_op);
+binary_operands_test!(binary_ops_muldivrem_u256, 8, is_expensive_binary_op);
+
+/// Checks the split tests still cover every case the original single test did, so a
+/// forgotten type cannot quietly reduce what we test. Needs no database.
+#[test]
+fn binary_operands_split_is_exhaustive() {
+    let all_cases = generate_binary_test_cases();
+
+    let baseline: usize = all_cases
+        .iter()
+        .filter(|op| FULL_SUPPORTED_TYPES.contains(&op.input_types) && op.bits <= 256)
+        .count();
+
+    let mut covered = 0usize;
+    for ty in BINARY_SPLIT_TYPES {
+        covered += all_cases
+            .iter()
+            .filter(|op| binary_case_selected(op, &[*ty], is_cheap_binary_op))
+            .count();
+    }
+    for ty in BINARY_SPLIT_TYPES_EXPENSIVE {
+        covered += all_cases
+            .iter()
+            .filter(|op| binary_case_selected(op, &[*ty], is_expensive_binary_op))
+            .count();
+    }
+
+    assert_eq!(
+        covered, baseline,
+        "the per-type binary operand tests must cover exactly the cases the original \
+         single test did ({baseline}), but they cover {covered}"
+    );
+
+    // Confirm bool really has none, rather than assuming it.
+    assert_eq!(
+        all_cases
+            .iter()
+            .filter(|op| binary_case_selected(op, &[0], is_expensive_binary_op))
+            .count(),
+        0,
+        "bool gained mul/div/rem cases; add it to BINARY_SPLIT_TYPES_EXPENSIVE"
+    );
+}
+
 #[tokio::test]
-#[serial(db)]
 async fn test_fhe_binary_operands_events_panic() -> Result<(), Box<dyn std::error::Error>> {
     let EventHarness {
         app,
@@ -448,7 +554,6 @@ fn unary_op_to_event(
 }
 
 #[tokio::test]
-#[serial(db)]
 async fn test_fhe_unary_operands_events() -> Result<(), Box<dyn std::error::Error>> {
     let ops = generate_unary_test_cases();
     let EventHarness {
@@ -534,7 +639,6 @@ async fn test_fhe_unary_operands_events() -> Result<(), Box<dyn std::error::Erro
 }
 
 #[tokio::test]
-#[serial(db)]
 async fn test_fhe_if_then_else_events() -> Result<(), Box<dyn std::error::Error>> {
     let EventHarness {
         app,
@@ -686,9 +790,11 @@ async fn test_fhe_if_then_else_events() -> Result<(), Box<dyn std::error::Error>
     Ok(())
 }
 
-#[tokio::test]
-#[serial(db)]
-async fn test_fhe_cast_events() -> Result<(), Box<dyn std::error::Error>> {
+/// Runs casts from `types_from` into every supported type.
+///
+/// `cast_events_test!` generates one test per source type. Destination types still
+/// come from `supported_types()`, so the coverage is the same as before.
+async fn run_cast_events(types_from: &[i32]) -> Result<(), Box<dyn std::error::Error>> {
     let EventHarness {
         app,
         pool,
@@ -699,7 +805,7 @@ async fn test_fhe_cast_events() -> Result<(), Box<dyn std::error::Error>> {
 
     let fhe_bool = 0;
     let mut cases = vec![];
-    for type_from in supported_types() {
+    for type_from in types_from {
         for type_to in supported_types() {
             let input_handle = next_handle();
             let output_handle = next_handle();
@@ -755,6 +861,11 @@ async fn test_fhe_cast_events() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    assert!(
+        !cases.is_empty(),
+        "no cast cases selected for source types {types_from:?}"
+    );
+
     wait_until_all_allowed_handles_computed(&app).await?;
     for (type_from, type_to, input, output, output_handle) in cases {
         let decrypt_request = vec![output_handle.to_vec()];
@@ -784,8 +895,39 @@ async fn test_fhe_cast_events() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+macro_rules! cast_events_test {
+    ($name:ident, $ty:expr) => {
+        #[tokio::test]
+        async fn $name() -> Result<(), Box<dyn std::error::Error>> {
+            run_cast_events(&[$ty]).await
+        }
+    };
+}
+
+cast_events_test!(cast_from_bool, 0);
+cast_events_test!(cast_from_u4, 1);
+cast_events_test!(cast_from_u8, 2);
+cast_events_test!(cast_from_u16, 3);
+cast_events_test!(cast_from_u32, 4);
+cast_events_test!(cast_from_u64, 5);
+cast_events_test!(cast_from_u128, 6);
+cast_events_test!(cast_from_u160, 7);
+cast_events_test!(cast_from_u256, 8);
+cast_events_test!(cast_from_u512, 9);
+cast_events_test!(cast_from_u1024, 10);
+cast_events_test!(cast_from_u2048, 11);
+
+/// Checks no supported type is missing a cast test.
+#[test]
+fn cast_split_covers_every_source_type() {
+    const GENERATED_SOURCES: &[i32] = &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+    assert_eq!(
+        GENERATED_SOURCES, FULL_SUPPORTED_TYPES,
+        "a supported type has no cast_from_* test; add one"
+    );
+}
+
 #[tokio::test]
-#[serial(db)]
 async fn test_op_trivial_encrypt() -> Result<(), Box<dyn std::error::Error>> {
     let EventHarness {
         app,
@@ -875,7 +1017,6 @@ async fn test_op_trivial_encrypt() -> Result<(), Box<dyn std::error::Error>> {
 const FHE_SUM_SUPPORTED_TYPES: &[i32] = &[2, 3, 4, 5, 6];
 
 #[tokio::test]
-#[serial(db)]
 async fn test_fhe_sum_events() -> Result<(), Box<dyn std::error::Error>> {
     let EventHarness {
         app,
@@ -945,7 +1086,6 @@ async fn test_fhe_sum_events() -> Result<(), Box<dyn std::error::Error>> {
 const FHE_IS_IN_SUPPORTED_TYPES: &[i32] = &[2, 3, 4, 5, 6, 7, 8];
 
 #[tokio::test]
-#[serial(db)]
 async fn test_fhe_is_in_events() -> Result<(), Box<dyn std::error::Error>> {
     let EventHarness {
         app,
@@ -1037,7 +1177,6 @@ async fn test_fhe_is_in_events() -> Result<(), Box<dyn std::error::Error>> {
 const FHE_MUL_DIV_SUPPORTED_TYPES: &[i32] = &[2, 3, 4, 5];
 
 #[tokio::test]
-#[serial(db)]
 async fn test_fhe_mul_div_events() -> Result<(), Box<dyn std::error::Error>> {
     let EventHarness {
         app,
