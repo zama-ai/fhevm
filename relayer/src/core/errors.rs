@@ -139,18 +139,9 @@ impl From<ReadinessCheckError> for EventProcessingError {
                     reason: round.to_string(),
                 }
             }
-            ReadinessCheckError::ConsensusUnreachable {
-                registered,
-                threshold,
-            } => EventProcessingError::GatewayNotReachable {
-                reason: format!(
-                    "only {registered} of the {threshold} Coprocessors required for a majority \
-                     have a registered bucket URL"
-                ),
-            },
-            ReadinessCheckError::RegistryStale => EventProcessingError::GatewayNotReachable {
-                reason: "the registry snapshot no longer tracks the gateway chain".to_string(),
-            },
+            ReadinessCheckError::RegistryError { reason } => {
+                EventProcessingError::GatewayNotReachable { reason }
+            }
             ReadinessCheckError::AttestationsNotReady { last_round, .. } => {
                 EventProcessingError::AttestationsNotReady {
                     round: last_round.to_string(),

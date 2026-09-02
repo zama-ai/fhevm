@@ -156,8 +156,7 @@ impl PublicDecryptReadinessProcessor {
 
             Err(
                 e @ (ReadinessCheckError::NoAttestationConsensus { .. }
-                | ReadinessCheckError::ConsensusUnreachable { .. }
-                | ReadinessCheckError::RegistryStale),
+                | ReadinessCheckError::RegistryError { .. }),
             ) => {
                 // Operator log: a digest value may legitimately appear here. What a caller sees —
                 // the stored reason and the HTTP response — is decided solely by the `From` impl

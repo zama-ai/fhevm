@@ -458,17 +458,9 @@ impl CoprocessorAttestationCheck {
         job_id: &JobId,
         handles: &[FixedBytes<32>],
     ) -> Result<(), ReadinessCheckError> {
-        // Before `consensus_reachable`: a snapshot that failed to refresh can still report `true`.
-        if self.registry.last_refresh_failed_critically() {
-            return Err(ReadinessCheckError::RegistryStale);
-        }
-
-        let snapshot = self.registry.snapshot();
-        if !snapshot.consensus_reachable() {
-            return Err(ReadinessCheckError::ConsensusUnreachable {
-                registered: snapshot.coprocessors.len(),
-                threshold: snapshot.threshold.get(),
-            });
+        // Set by a `Critical` at startup or at refresh.
+        if let Some(reason) = self.registry.critical_failure() {
+            return Err(ReadinessCheckError::RegistryError { reason });
         }
 
         match tokio::time::timeout(
