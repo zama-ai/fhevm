@@ -1,8 +1,10 @@
 # Porting the FHEVM hardhat plugin from hardhat v2 to hardhat v3
 
-Status: **plan for review — nothing implemented.** The landing zone exists: the `hardhat/v3` cluster
-(own installation root, hardhat 3.15 pinned, hello-world plugin proving the topology, tasks, and the
-single-instance guarantee end to end).
+Status: **plan for review — Stage A2 landed, nothing else implemented.** The landing zone exists: the
+`hardhat/v3` cluster (own installation root, hardhat 3.15 pinned, hello-world plugin proving the
+topology, tasks, and the single-instance guarantee end to end), plus A2's per-connection `fhevm`
+object attached via the `network` hooks. §2, §2b, §5 and Stage A were revised after reading the
+hardhat 3.15 SOURCE (`sdk/hardhat/v3/node_modules/hardhat/src`), not only the docs.
 
 ## The goals (the charter — every decision below serves one of these)
 
@@ -21,9 +23,9 @@ single-instance guarantee end to end).
 launch (`hardhat test`, `hardhat node`, runs against anvil, ...), so user code always finds a live
 stack at the expected addresses. Everything else — the `hre.fhevm` API, tasks, provider hooks — sits
 on top of that guarantee. The port stands or falls on reproducing it in hardhat 3's lifecycle: the
-natural v3 home is the `network.newConnection` chain (deploy-once per connection to a
-development-class network), which is exactly what the phase-2 spike must prove for all three local
-targets.
+natural v3 home is the `network.newConnection` chain (deploy once per development-class CHAIN —
+every in-process connection is a fresh chain; an `http` dev connection reuses what is already
+there), which Stage B proves for all three local targets.
 
 ~7,150 lines across 44 files in `hardhat/v2/plugin/pkg/src`. Four layers:
 
@@ -48,29 +50,57 @@ targets.
   delete triage)**: the consumer-tree path resolution (`resolveFromConsumer` + the paths class) that
   locates sibling npm modules from the USER's project — `@fhevm/solidity` and its `ZamaConfig.sol`,
   `@fhevm/sdk` (pnpm nested-store aware), `solidity-coverage`, the consumer's `node_modules` root.
-  Deploy, config checks and compile integration all stand on it; in v3 it anchors on the resolved
-  project root from the hook context instead of `hre.config.paths`. Also `internal/constants.ts` (113 lines — includes HAND-COPIED addresses:
+  Deploy, config checks and compile integration all stand on it; in v3 it anchors on
+  `context.config.paths.root` (the `HookContext` is the HRE minus `tasks`, and hardhat resolves
+  `root` to the closest npm package root). Also `internal/constants.ts` (113 lines — includes HAND-COPIED addresses:
   the ZamaConfig trio, Sepolia gateway `DECRYPTION_ADDRESS`/`INPUT_VERIFICATION_ADDRESS`),
   `internal/vendored/ethersEthereumLib.ts` (from common-vendored).
 
-## 2. Hardhat 3 plugin API — the facts (from hardhat.org/docs/plugin-development)
+## 2. Hardhat 3 plugin API — the facts (from the hardhat 3.15 source)
 
-Confirmed against the official docs (plugin-development, /explanations/hooks, /lifecycle,
-/type-extensions):
+Confirmed against `node_modules/hardhat/src` (`types/*`, `internal/core/*`,
+`internal/builtin-plugins/{network-manager,node,test,clean,solidity}`):
 
-- A plugin is an OBJECT: `{ id, dependencies, conditionalDependencies, hookHandlers, tasks,
-globalOptions }`. Hook handlers and task actions are LAZY-LOADED modules — nothing runs at import.
-- Hook categories: `config` (runs BEFORE the hook context exists — pure config transforms),
-  `network` (`newConnection`, `onRequest`, `closeConnection`), `test`, `solidity`, `hre`.
-  Chained hooks receive `(context, args, next)` — chain-of-responsibility; chain order is dynamic
-  handlers first, then plugins in reverse dependency order, then the default.
-- **Per-connection state is the documented pattern for what `hre.fhevm` was**: a `WeakMap` created
-  in the hook-handler category factory, populated in `newConnection`, cleaned in `closeConnection`.
-- Type extensions: `declare module 'hardhat/types/network'` to add to `NetworkConnection` (and
-  `hardhat/types/hre` for the HRE), runtime property attached by the matching hook, and the plugin's
-  `index.ts` re-exports `export type * from './type-extensions.js'`. Type-only file, `export {}`.
-- Task overrides across plugins execute in reverse plugin order — the builtin-override pattern
-  (`test`, `clean`, `node`) has a first-class home.
+- A plugin is an OBJECT wrapped in `definePlugin` from `hardhat/plugins`: `{ id, npmPackage,
+dependencies, conditionalDependencies, hookHandlers, globalOptions, tasks }`. Hook-category
+  factories and task actions are LAZY `() => import(...)` modules; each factory runs at most once
+  per HRE. `definePlugin` registers the id so the CLI can warn about a plugin that is imported but
+  missing from the user's `plugins` array — a bare object loses that warning.
+- Plugin order is a reverse topological sort: the 13 builtins first (`network-manager` and `node`
+  among them), then the user's `plugins` in declaration order.
+- Hook categories: `config` (`extendUserConfig`, `validateUserConfig`, `resolveUserConfig`,
+  `validateResolvedConfig` — run BEFORE the hook context exists), `hre` (`created`), `network`
+  (`newConnection`, `closeConnection`, `onRequest`, `onCoverageData`, `onGasMeasurement`), `test`
+  (`registerFileForTestRunner`, `onTestRunStart/WorkerDone/RunDone`), `solidity` (incl. a
+  remappings hook), `configurationVariables`, `userInterruptions`.
+- Chained hooks receive `(context, ...args, next)`; order is dynamic handlers first, then plugins in
+  REVERSE resolved order, then the default. Sequential hooks (`hre.created`) run in FORWARD order,
+  so a user plugin's `created` sees `hre.network` already attached. `next` is called at most once.
+- `HookContext` is the HRE with `tasks` removed (prototype-linked): it carries `config`,
+  `userConfig`, `globalOptions`, `hooks`, `artifacts`, `network`, `solidity`.
+- **Per-connection state**: `newConnection` is a DECORATOR chain — `await next(context)`, attach
+  to the returned `NetworkConnection`, return the SAME object. `closeConnection` mirrors it. A
+  `WeakMap` keyed by the connection is what the builtin network-manager uses for its own
+  per-connection state. A2 landed on exactly this.
+- `NetworkConnection` = `{ id, networkName, networkConfig, chainType, provider, close() }`.
+  `NetworkConfig` is a discriminated union: `type: "edr-simulated"` (in-process EDR, default
+  `chainId 31337`, every `create()` is a FRESH chain) or `type: "http"` (`url`, `timeout`,
+  `httpHeaders`). `chainType` is hardhat's `generic | l1 | op` axis — irrelevant to us.
+- `hre.network` = `NetworkManager`: `create` (always a new connection), `getOrCreate` (cached by
+  network name + chain type, mutex-guarded), deprecated `connect` (= `create`), `createServer`
+  (JSON-RPC server over a fresh connection, `edr-simulated` only). No-argument calls resolve to
+  `--network` or the network literally named `default`.
+- Type extensions: `declare module "hardhat/types/network"` for `NetworkConnection`,
+  `hardhat/types/hre` for the HRE, `hardhat/types/config` for config keys — all in the package
+  `exports` map. The plugin's `index.ts` re-exports `export type * from "./type-extensions.js"`.
+- Tasks: `task(id)`, `emptyTask(id, description)` (scope roots), `overrideTask(id)` from
+  `hardhat/config`; ids are `string | string[]`. Override actions receive `(args, hre, runSuper)`,
+  overrides stack in plugin order, and `runSuper` walks back toward the original. Plugins must use
+  lazy `setAction`; `setInlineAction` is for user configs only.
+- Solidity npm imports (`@fhevm/solidity/...`) resolve natively; no remappings override exists or is
+  needed.
+- The cluster's `node_modules` holds `hardhat` and its `@nomicfoundation` runtime deps ONLY: no
+  mocha or node test-runner plugin, and `hardhat test` runs nothing without one.
 
 ## 2b. The v2 → v3 translation (what v3 forces — the allowed breaking changes)
 
@@ -78,34 +108,47 @@ globalOptions }`. Hook handlers and task actions are LAZY-LOADED modules — not
 | ------------------------------- | ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | side-effect `extendEnvironment` | plugin OBJECT with `hookHandlers`                                              | declarative wiring, no import-order magic                                                                                                                                                                                                                                         |
 | `hre.fhevm` global singleton    | hre created per invocation; networks are CONNECTIONS (`hre.network.connect()`) | **the one real API break**: fhevm state binds to a connection — `connection.fhevm`, implemented exactly as the docs prescribe (WeakMap in the network hook factory, `newConnection`/`closeConnection`); an `hre.fhevm` convenience alias to the default connection where possible |
-| `extendProvider` wrapper        | `network` hook handlers (`onRequest` interception)                             | same interception point, hook-shaped                                                                                                                                                                                                                                              |
+| `extendProvider` wrapper        | `network.onRequest(context, connection, request, next)`                        | v2's wrapper keeps exactly two jobs — inflate `eth_estimateGas` by 120%, decorate failed `eth_sendTransaction` with a decoded FHEVM error — both port 1:1; `onRequest` RETURNS a `JsonRpcResponse` (error in `response.error`, not thrown), so the decoration mutates the response |
 | `extendConfig`                  | `config` hook handlers (`extendUserConfig`/`resolveUserConfig`)                | mechanical                                                                                                                                                                                                                                                                        |
 | eager task actions              | lazy action modules (`setAction(() => import('./tasks/x.js'))`)                | proven in the skeleton                                                                                                                                                                                                                                                            |
 | CJS build (`node10`)            | ESM-only, `nodenext`                                                           | drops the node10 `paths` workaround for `@fhevm/sdk/chains` entirely                                                                                                                                                                                                              |
 
-**Formerly-open items, settled from the hardhat 3.15 SOURCE** (dist/src/types + internal/builtin-plugins):
+**Formerly-open items, settled from the hardhat 3.15 SOURCE** (`src/types` + `src/internal/builtin-plugins`):
 
-- `hardhat node` is a BUILTIN PLUGIN (`builtin-plugins/node`: `task("node", "Start a JSON-RPC server
-on top of Hardhat Network")`, with `json-rpc/` and `task-action` internals) — overridable through
-  the reverse-plugin-order task-override mechanism; the phase-2 spike hooks there.
-- Scoped tasks are string-array ids: `task(["fhevm", "user-decrypt"], ...)`;
-  `hre.tasks.getTask(string | string[])`.
-- `network.onRequest(context, connection, jsonRpcRequest, next) => JsonRpcResponse` intercepts the
-  full JSON-RPC stream with chaining — it covers everything v2's `extendProvider` did.
-- `network.newConnection(context, next) => NetworkConnection` is a DECORATOR chain: call `next()`,
-  attach `fhevm` to the returned connection, return it — even simpler than the WeakMap pattern for
-  the attach itself (the WeakMap remains useful for teardown state); `closeConnection` mirrors it.
-- `hre.created(context, hre)` exists for the `hre.fhevm` convenience alias.
+- **`hardhat node` needs NO override for the pre-deploy.** The builtin node action
+  (`builtin-plugins/node/task-action.ts`) runs `hre.network.create(connectionParams)` FIRST and
+  only then builds `JsonRpcServerImplementation` and calls `listen()`. Our `newConnection`
+  decorator therefore fires before the server accepts a single request. Two constraints: the
+  decorator must return the SAME connection object (the action asserts
+  `provider instanceof EdrProvider`), and the node task connects to the network literally named
+  `node` (not `default`) unless `--network` is given — gate on `networkConfig.type`, never on name.
+  Logging is enabled AFTER `create()`, so the deploy transactions stay silent.
+- `localhost` is pre-extended by hardhat as `{ type: "http", url: "http://localhost:8545" }`; a
+  second process on `--network localhost` gets an `HttpProvider`, our hook fires on it, and a
+  chain-id probe + code-at-address check finds the stack the node process deployed.
+- Scoped tasks are string-array ids with an `emptyTask(["fhevm"], ...)` root:
+  `task(["fhevm", "user-decrypt"], ...)`; `hre.tasks.getTask(string | string[])`.
+- `network.onRequest` covers both surviving jobs of v2's `extendProvider` (see the table above).
+  Nothing else in v2's wrapper survives — its mock-relayer interception is already gone in v2.
+- `newConnection` is a DECORATOR chain (see §2); `closeConnection` mirrors it.
+- `hre.created(context, hre)` exists, runs in forward plugin order, and sees `hre.network`. There is
+  no "default connection" object to alias — only `hre.network.getOrCreate()` (async, cached).
 - `coverage` and `gas-analytics` are builtins with `network.onCoverageData` / `onGasMeasurement`
   hooks — confirming the v2 solidity-coverage workarounds are DELETE-bucket, and offering a native
   home for HCU-style measurement later.
+- The `test` task is a coordinator over runner SUBTASKS (`test mocha`, `test node`,
+  `test solidity`), each supplied by a separate plugin package; it needs no setup override from us
+  because `newConnection` does the setup.
 
 ## 3. Minimization strategy (goal 2) — three buckets for every v2 file
 
-- **DELETE — v2 workarounds hardhat 3 obsoletes.** Candidates (confirm each at port time): the
-  compile remappings subtask override (hh3 resolves npm imports natively), the source-paths
-  override, `utils/solidityCoverage.ts` (hh3 has built-in coverage), ts-node/CJS glue,
-  the `@fhevm/sdk/chains` tsconfig `paths` workaround, most of the provider-wrapper gymnastics.
+- **DELETE — v2 workarounds hardhat 3 obsoletes.** CONFIRMED from the source: the compile
+  remappings subtask override (hh3 resolves npm imports natively and has a `solidity` remappings
+  hook), the source-paths override, `utils/solidityCoverage.ts` (hh3 has built-in coverage), the
+  `test` task override (setup now happens in `newConnection`), ts-node/CJS glue, the
+  `@fhevm/sdk/chains` tsconfig `paths` workaround, the `ProviderWrapper` subclass itself. NOT
+  deleted: the wrapper's two behaviours (gas inflation, send-error decoration) — they port to
+  `onRequest` (see §2b).
 - **SHARE — hardhat-agnostic logic leaves the plugin.** The plugin already delegates crypto to
   `@fhevm/sdk` (`client: FhevmClient`; `chains.ts` imports `@fhevm/sdk/chains`; the in-code
   `TODO(migration step N)` markers chart this). Everything not touching `hre` belongs there:
@@ -113,9 +156,10 @@ on top of Hardhat Network")`, with `json-rpc/` and `task-action` internals) — 
   builders, encrypted-input assembly, error parsing. **v2 benefits equally** — finish the shared
   extraction in `@fhevm/sdk` first, shrink v2 onto it, then v3 imports the same surface. The v3
   plugin ends up as ADAPTER GLUE ONLY: hooks, tasks, network detection, config.
-- **PORT — the thin remainder**, one small function at a time (goal 6): the hook handlers, the
-  task definitions, `networkProvider` chain detection, the deploy/setup path for the cleartext
-  stack, and `FhevmEnvironmentPaths`/`resolveFromConsumer` (the sibling-module locators — see §1;
+- **PORT — the thin remainder**, one small function at a time (goal 6): the hook handlers
+  (`newConnection`/`closeConnection`/`onRequest`), the task definitions, `networkProvider` chain
+  detection, the deploy/setup path for the cleartext stack, and
+  `FhevmEnvironmentPaths`/`resolveFromConsumer` (the sibling-module locators — see §1;
   hardhat-agnostic enough that they may eventually move to `@fhevm/sdk`, but they are ported, never
   deleted).
 
@@ -147,13 +191,14 @@ The v2 behavior to reproduce, as a test matrix for the v3 e2e package (later clu
 
 | target                                          | v2 behavior to keep                                                                                                    |
 | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| in-process `hardhat` network                    | auto-deploy cleartext stack, mock mode, `hre.fhevm` fully functional                                                   |
-| `hardhat node` (`--network localhost`)          | the node-side hooks deploy/serve the stack; a second process connects and finds it; chainId 31337 semantics preserved  |
-| anvil (`--network anvil`)                       | detection by network name + chain probing; same stack deploy against an external anvil; the `test:anvil` operator flow |
-| public chains (sepolia, mainnet, polygon, amoy) | resolved via `@fhevm/sdk/chains`; no stack deploy; addresses from the generated constants                              |
+| in-process `edr-simulated` (`default`, `node`)  | auto-deploy cleartext stack on EVERY new connection (each `create()` is a fresh chain), mock mode, `connection.fhevm` fully functional |
+| `hardhat node` (`--network localhost`)          | `newConnection` deploys in the node process before `listen()`; a second process connects over `http`, finds code at the addresses, skips the deploy; chainId 31337 preserved |
+| anvil (`--network anvil`)                       | `http` network; detection by client version / network name + chain probing; same deploy or skip-if-present against an external anvil; the `test:anvil` operator flow |
+| public chains (sepolia, mainnet, polygon, amoy) | resolved via `@fhevm/sdk/chains` by chainId; no stack deploy; addresses from the generated constants                   |
 
-`hardhat node` is the highest-risk row: v3's node/server hook surface differs most — prototype it
-FIRST (phase 2) so the design fails early if the hook points don't exist.
+`hardhat node` was the highest-risk row; the source de-risked it (§2b): the pre-serve hook point
+is `newConnection` itself. What remains to prove is the ordering (A4) and the skip-if-present
+detection over `http` (B3).
 
 ## 6. Phases
 
@@ -161,8 +206,9 @@ FIRST (phase 2) so the design fails early if the hook points don't exist.
    `@fhevm/sdk` behind its existing entry points; v2 plugin consumes it; v2 suite + e2e stay green.
    This phase is measured by v2's line count going DOWN.
 2. **v3 spike — the risky adapters only:** hre/connection extension exposing a minimal
-   `fhevm` object, the `hardhat node` hooks, anvil detection. Throwaway allowed; goal is to pin
-   the v3 hook surface and the connection-scoping decision (the one API break) with the user.
+   `fhevm` object (done, A2), the `newConnection`-before-`listen()` ordering proof for
+   `hardhat node`, anvil detection. Goal is to pin the connection-scoping decision (the one API
+   break) with the user; the hook surface itself is now pinned by the source (§2).
 3. **Port the public API:** `FhevmExternalAPI` on v3, delegating to the shared layer; the
    generated constants module; vendored destinations for v3.
 4. **Tasks:** the fhevm scope + whichever builtin overrides still have a job in v3.
@@ -175,12 +221,15 @@ Each phase ends green: `make build`, the affected test tiers, and the fhevm-npm 
 
 ## 7. Open questions
 
-1. **Connection scoping — the one deliberate API break (⚑ gate A3).** `connection.fhevm` with an
-   `hre.fhevm` convenience alias, or `hre.fhevm` bound to the default connection only? Sub-question
-   to answer first: maximum v2 compatibility (alias — most v2 test suites port unchanged) vs maximum
-   v3 idiom (connection-only — cleaner, every consumer updates). Decide after the phase-2 spike.
-2. **The ethers bridge.** Keep `@nomicfoundation/hardhat-ethers` (v3 flavor) or go provider-direct
-   through `@fhevm/sdk`'s adapters? Affects how much of `utils/ethers.ts` survives.
+1. **Connection scoping — the one deliberate API break (⚑ gate A3).** The source narrows this: no
+   default-connection object exists, so a SYNC `hre.fhevm` is impossible. The only alias shape is
+   an async accessor over `hre.network.getOrCreate()`. Choice: that async accessor (marginal v2
+   compatibility — v2 code was sync anyway) vs connection-only (`const { fhevm } = await
+network.connect()`, the v3 idiom). Recommendation: connection-only; decide at A3.
+2. **The ethers bridge.** Nothing in our path needs `connection.ethers` from the v3 ethers plugin.
+   Recommendation: provider-direct — hand `connection.provider` (EIP-1193) to `@fhevm/sdk`, wrap
+   in an ethers `BrowserProvider` internally only where the SDK requires ethers. Decides how much
+   of `utils/ethers.ts` survives (expected: little).
 3. **`FhevmDebugger` (⚑ gate D6).** Port as-is, or fold into `@fhevm/sdk` mock tooling?
 4. **Where the shared extraction lands.** Stage D delegates to the PUBLISHED `@fhevm/sdk` for what
    it already exports — but the D4a2 error engine and D5a2 HCU engine are new shared-layer material,
@@ -226,14 +275,15 @@ first review, per the cap rule.
 | A1 config hooks                      | ConfigExtender ≈40                       | 80           | ~160             |
 | A2 connection decoration             | new                                      | 60           | ~140             |
 | A3 hre alias                         | new                                      | 30           | ~70              |
-| A4a/b/c node spike                   | builtin-tasks 149 (node part)            | 40/80/40     | ~100/160/160     |
-| A5 network detection                 | networkProvider 233                      | 160          | ~280             |
+| A4 node ordering spike               | new (no override needed)                 | 30           | ~80              |
+| A5 network detection                 | networkProvider 233                      | 120          | ~220             |
+| A7 onRequest port                    | FhevmProviderExtender 117                | 70           | ~150             |
 | A6 path resolution                   | Paths 148 + path 10                      | 120          | ~240             |
 | B1a contracts repository             | contractsRepository 202                  | 150          | ~230             |
 | B1b1/B1b2 deploy (split, see below)  | FhevmEnvironment 898 (deploy slice)      | 150/150      | ~230/230         |
 | B1c post-deploy setup                | deploy/setup 198                         | 150          | ~230             |
 | B2 anvil deploy                      | delta on B1                              | 80           | ~180             |
-| B3 node deploy                       | delta on A4+B1                           | 100          | ~220             |
+| B3 node skip-if-present              | delta on A4+B1 (detection + spawn test)  | 40           | ~120             |
 | C1a/C1b generator                    | new                                      | 120/80       | ~240/180         |
 | C2 consumers                         | constants 113 swap                       | 100          | ~150             |
 | D0 public type surface               | types 208                                | 180          | ~200             |
@@ -257,36 +307,41 @@ first review, per the cap rule.
   plugin's `ConfigExtender` is empty — there is no `fhevm` user-config surface to port. Config
   hooks (and the `hardhat/types/config` augmentation) are added only when a real config key
   appears in a later step.
-- **A2. Connection decoration.** `network.newConnection` attaches a stub `connection.fhevm`
-  (`isMock`/`isCleartext` placeholders), `closeConnection` cleans up; `NetworkConnection`
-  augmentation. Test: two connections get DISTINCT fhevm instances; close releases state.
-  Commit: `feat(hh-v3-plugin): attach per-connection fhevm object via network hooks`
-- **A3. ⚑ `hre.fhevm` alias** (open question 1 decided here): `hre.created` attaches the
-  default-connection alias, or the alias is dropped. Test matches the decision.
-  Commit: `feat(hh-v3-plugin): expose hre.fhevm alias for the default connection`
-- **A4. SPIKE — `hardhat node`** (three blocks; the port's riskiest assumption dies or survives
-  here; `internal/spike/` code allowed until the shape settles):
-  - **A4a.** Override the builtin `node` task as a pure pass-through (reverse-plugin-order
-    override; internals at `builtin-plugins/node/{json-rpc,task-action}`).
-    Test: `hardhat node` still starts and serves with the override installed.
-    Commit: `feat(hh-v3-plugin): override the builtin node task as a pass-through`
-  - **A4b.** Find the pre-serve hook point: prepare the chain (write a marker transaction/state)
-    BEFORE the server accepts connections. Test: the marker exists on first request.
-    Commit: `feat(hh-v3-plugin): prepare the node chain before the server accepts requests`
-  - **A4c.** External detection: a second process connects over `--network localhost` and finds the
-    marker. Test: spawn node as a child process, probe from a second HRE, tear down.
-    Commit: `feat(hh-v3-plugin): detect a prepared hardhat node from a second process`
-- **A5. Network detection.** Port the `networkProvider` chain-detection minimum (in-process vs
-  `localhost` vs `anvil` vs public chain ids from `@fhevm/sdk/chains`), no deploys yet.
-  Test: unit tests against a fake provider (chainId/clientVersion fixtures).
-  Commit: `feat(hh-v3-plugin): port network detection for hardhat, localhost, anvil`
+- **A2. Connection decoration — LANDED** (`137b1406d`). `network.newConnection` attaches a stub
+  `connection.fhevm` (`isMock`/`isCleartext` placeholders), `closeConnection` cleans up;
+  `NetworkConnection` augmentation. Test: two connections get DISTINCT fhevm instances; close
+  releases state. Follow-up folded into A3: wrap the plugin object in `definePlugin` (§2).
+- **A3. ⚑ `hre.fhevm` alias** (open question 1 decided here). Only an ASYNC accessor over
+  `hre.network.getOrCreate()` is possible; recommendation is to drop the alias. Either way, this
+  commit also switches `index.ts` to `definePlugin`. Test matches the decision.
+  Commit: `feat(hh-v3-plugin): decide the hre.fhevm alias; register the plugin via definePlugin`
+- **A4. SPIKE — `hardhat node` ordering** (ONE block; the source already shows `create()` precedes
+  `listen()`, this commit proves it in our tree). In `newConnection`, on an `edr-simulated`
+  connection, write a marker transaction. Test: `hre.network.createServer()` → `listen()` → a raw
+  HTTP `eth_getCode`/`eth_getTransactionCount` probe from the test sees the marker on the FIRST
+  request; a second `createHardhatRuntimeEnvironment` connecting over `localhost` (with the port
+  overridden) sees it too. No task override, no `internal/spike/`.
+  Commit: `feat(hh-v3-plugin): prove newConnection runs before the node server listens`
+- **A5. Network detection.** Port the `networkProvider` minimum onto the connection:
+  `networkConfig.type === "edr-simulated"` → in-process dev; `type === "http"` → probe `eth_chainId`
+  (+ `web3_clientVersion` for anvil) → `localhost`-class dev / `anvil` / public chain id from
+  `@fhevm/sdk/chains`. Never gate on `networkName` (the node task uses `node`; users rename freely).
+  Test: unit tests against a fake `EthereumProvider` (chainId/clientVersion fixtures) and both
+  config types.
+  Commit: `feat(hh-v3-plugin): port network detection for edr, localhost, anvil, public chains`
 
 - **A6. Consumer path resolution.** Port `FhevmEnvironmentPaths` + `resolveFromConsumer` — the
   sibling-npm-module locators (`@fhevm/solidity`, `ZamaConfig.sol`, `@fhevm/sdk` incl. pnpm layout,
-  consumer `node_modules` root) — anchored on the v3 resolved project root.
+  consumer `node_modules` root) — anchored on `context.config.paths.root`.
   Test: unit tests against a fixture consumer tree (npm and pnpm layouts); missing sibling → the
   named, actionable error.
   Commit: `feat(hh-v3-plugin): port consumer path resolution for sibling npm modules`
+- **A7. `onRequest` port.** The two surviving `FhevmProviderExtender` behaviours as an `onRequest`
+  handler: inflate `eth_estimateGas` results by 120%; on a failed `eth_sendTransaction`, decorate
+  `response.error` with the decoded FHEVM error (the decoder itself arrives in D4a — until then a
+  pass-through with the hook shape and the estimate inflation only). Test: fake `next` returning
+  fixed responses; inflation exact; error response passed through untouched pre-D4a.
+  Commit: `feat(hh-v3-plugin): port gas inflation and send-error decoration to onRequest`
 
 ### Stage B — the essential job: pre-deploy per target
 
@@ -298,18 +353,25 @@ first review, per the cap rule.
   - **B1b1.** The deploy transaction sequence itself (nonce-ordered CREATEs onto the ZamaConfig
     addresses), as a pure function of (provider, artifacts). Test: addresses hold code afterwards.
     Commit: `feat(hh-v3-plugin): port the nonce-ordered cleartext deploy sequence`
-  - **B1b2.** Wire it to `newConnection`: development-class gating, exactly once per connection.
-    Test: two test files in one run, one deploy; non-dev networks untouched.
-    Commit: `feat(hh-v3-plugin): deploy the cleartext stack once per dev connection`
+  - **B1b2.** Wire it to `newConnection`: development-class gating (A5), exactly once per CHAIN.
+    Every `create()` on an `edr-simulated` network is a fresh chain and needs its own deploy; an
+    `http` dev connection whose ZamaConfig addresses already hold code skips it. Test: `create()`
+    twice → two deploys; `getOrCreate()` twice → one deploy; `http` with code present → zero;
+    public chains untouched. Template/docs steer users to `getOrCreate` (per-file `connect()` in a
+    mocha suite redeploys per file — a cost v2 never paid). Before committing the CREATE sequence,
+    measure `hardhat_setCode`-style injection as the faster alternative.
+    Commit: `feat(hh-v3-plugin): deploy the cleartext stack once per dev chain`
   - **B1c.** Post-deploy setup (signers registration, HCU caps — v2's `deploy/setup.ts`).
     Test: coprocessor/KMS signers registered; `assertCoprocessorInitialized` path green.
     Commit: `feat(hh-v3-plugin): run post-deploy signer and HCU setup on the fresh stack`
 - **B2. Anvil deploy.** Same flow against an external anvil.
   Test: behind a `test:anvil` operator script, exactly like v2's.
   Commit: `feat(hh-v3-plugin): pre-deploy the cleartext stack against external anvil`
-- **B3. `hardhat node` deploy** (builds on A4). Test: spawn node, connect `--network localhost`
-  from a second HRE, find the stack without deploying again.
-  Commit: `feat(hh-v3-plugin): serve a pre-deployed cleartext stack from hardhat node`
+- **B3. `hardhat node` skip-if-present** (builds on A4 + B1b2; no new deploy code). Test: spawn
+  `hardhat node` as a child process with the plugin in that process's config, connect
+  `--network localhost` from a second HRE, assert the ZamaConfig addresses hold code and the
+  second process ran ZERO deploy transactions; tear down.
+  Commit: `feat(hh-v3-plugin): reuse the cleartext stack a hardhat node already deployed`
 
 ### Stage C — centralized generated constants (goal 7)
 
@@ -376,17 +438,20 @@ this later without API change). One commit per group, tests run against the B1 s
 
 ### Stage E — tasks
 
-- **E1.** The decrypt tasks, lazy actions (two blocks; each test:
-  `hre.tasks.getTask([...])` resolves and a run round-trips against the B1 stack):
+- **E1.** The decrypt tasks, lazy actions under an `emptyTask(["fhevm"], ...)` scope root; each
+  action opens its connection with `hre.network.getOrCreate()` (no arguments → honours
+  `--network`). Two blocks; each test: `hre.tasks.getTask([...])` resolves and a run round-trips
+  against the B1 stack:
   - **E1a.** `task(["fhevm", "public-decrypt"])`.
     Commit: `feat(hh-v3-plugin): add the fhevm public-decrypt task`
   - **E1b.** `task(["fhevm", "user-decrypt"])`.
     Commit: `feat(hh-v3-plugin): add the fhevm user-decrypt task`
 - **E2.** `["fhevm", "check-fhevm-compatibility"]`. Test likewise.
   Commit: `feat(hh-v3-plugin): add fhevm check-fhevm-compatibility task`
-- **E3.** Builtin overrides that SURVIVE the delete-bucket triage (expected: little or nothing
-  beyond A4's node override — `coverage` and remappings are hh3-native). One commit per override,
-  each with the reason it still exists in its commit message.
+- **E3.** Builtin overrides that SURVIVE the delete-bucket triage. Confirmed dead: `test`,
+  compile remappings, source paths, coverage. Candidates: `clean` (only if the plugin owns a cache
+  dir), `node` (only for an fhevm banner — a `runSuper` pass-through, never for the deploy). One
+  commit per override, each with the reason it still exists in its commit message.
   Commit: `feat(hh-v3-plugin): keep <name> builtin override — one commit per survivor`
 
 ### Stage F — packaging and fidelity
@@ -396,9 +461,12 @@ this later without API change). One commit per group, tests run against the B1 s
 - **F2.** `check:publint`/`attw`/`pack:tarball` green; pkg README. Commit.
   Commit: `chore(hh-v3-plugin): publint, attw and pack:tarball green; package README`
 - **F3.** `hardhat/v3/e2e` cluster member: the §5 parity matrix becomes its test suite, row by row
-  (each row = one commit).
+  (each row = one commit). FIRST commit adds a test-runner plugin — none is installed (§2), and
+  `hardhat test` is a coordinator that runs nothing without one. Pick `@nomicfoundation/hardhat-mocha`
+  (closest to v2 suites) or `@nomicfoundation/hardhat-node-test-runner`; exact pin.
   Commit: `feat(hh-v3-e2e): add e2e member covering one node-parity-matrix row`
 
-Stage order is deliberate: A4 (the riskiest unknown) sits as early as scaffolding allows, the
-essential job (§1) is proven before any API surface is ported onto it, and constants land before
-the API port so no step ever introduces a hand-copied address even temporarily.
+Stage order is deliberate: A4 (formerly the riskiest unknown, now a one-commit ordering proof)
+sits as early as scaffolding allows, the essential job (§1) is proven before any API surface is
+ported onto it, and constants land before the API port so no step ever introduces a hand-copied
+address even temporarily.
