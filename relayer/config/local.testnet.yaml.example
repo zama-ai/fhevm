@@ -251,3 +251,8 @@ storage:
     # timeout checks begin, preventing false positives.
     # VALIDATION: Must be less than 10% of minimum timeout duration AND minimum expiry duration.
     cron_startup_delay_after_recovery: "30s"
+
+shutdown:
+  # Covers the lag until the pod's removal from the service endpoints reaches the ingress
+  # controller. Shutdown as a whole must finish inside terminationGracePeriodSeconds.
+  lb_propagation_wait: "5s"

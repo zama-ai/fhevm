@@ -27,6 +27,7 @@ use crate::gateway::{self, throttlers::init_throttlers};
 use crate::host::{HostChainIdChecker, KeyUrlPoller, UserDecryptSignaturePreChecker};
 use anyhow::Context;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
@@ -47,6 +48,13 @@ use std::sync::OnceLock;
 // Global singleton registry for metrics
 static GLOBAL_REGISTRY: OnceLock<Registry> = OnceLock::new();
 
+// Shutdown hands the dispatcher over. Recovery, not shutdown, is what saves in-flight work,
+// so the sequence below drains the named tasks and abandons the rest - inside the pod's
+// `terminationGracePeriodSeconds`, unset in gitops and so Kubernetes' 30s.
+
+/// Fallback - a named task reaching this stopped observing its token.
+const STOP_WORK_TIMEOUT: Duration = Duration::from_secs(5);
+
 /// Main library function for the FHE Event Relayer service.
 ///
 /// This function performs the following initialization steps:
@@ -54,9 +62,7 @@ static GLOBAL_REGISTRY: OnceLock<Registry> = OnceLock::new();
 /// 2. Sets up transaction services for fhevm and gateway
 /// 3. Creates and configures event handlers
 /// 4. Starts event listeners
-/// 5. Waits for shutdown signal
-///
-/// TODO: properly shutdown tasks
+/// 5. Waits for a shutdown signal, then hands over and exits (see the sequence below)
 pub async fn run_fhevm_relayer(
     settings: Settings,
     shutdown_token: CancellationToken,
@@ -73,8 +79,15 @@ pub async fn run_fhevm_relayer(
     let registry_clone = metrics_registry.clone();
 
     // === Orchestration Phase ===
-    // Create orchestrator, repositories, and gateway components
+    // Create orchestrator, repositories, and gateway components.
+    //
+    // Three tokens, all cancelled at the same moment - they name subsystems, not phases.
+    // intake: HTTP server, gateway listeners, keyurl poller. dequeue: tx/readiness
+    // processors, cron workers, and readiness checks already running. metrics: its server.
     let detached_tasks = TaskTracker::new();
+    let intake_shutdown = CancellationToken::new();
+    let dequeue_shutdown = CancellationToken::new();
+    let metrics_shutdown = CancellationToken::new();
     let orchestrator = Orchestrator::new(
         Arc::new(TokioEventDispatcher::new(detached_tasks.clone())),
         detached_tasks.clone(),
@@ -94,7 +107,8 @@ pub async fn run_fhevm_relayer(
         repositories.clone() as Arc<dyn HealthCheck>,
     );
 
-    let (gateway_throttlers, bouncer_throttlers) = init_throttlers(&settings);
+    let (gateway_throttlers, bouncer_throttlers) =
+        init_throttlers(&settings, detached_tasks.clone());
 
     // Initialize all gateway components
     gateway::initialize_gateway(
@@ -102,6 +116,8 @@ pub async fn run_fhevm_relayer(
         &settings,
         repositories.clone(),
         gateway_throttlers,
+        dequeue_shutdown.clone(),
+        intake_shutdown.clone(),
     )
     .await
     .context("Failed to initialize gateway")?;
@@ -126,7 +142,11 @@ pub async fn run_fhevm_relayer(
         "Starting cron workers"
     );
     repositories
-        .register_background_workers(&orchestrator, settings.storage.cron.clone())
+        .register_background_workers(
+            &orchestrator,
+            settings.storage.cron.clone(),
+            dequeue_shutdown.clone(),
+        )
         .await
         .context("Failed to register background workers")?;
 
@@ -199,6 +219,7 @@ pub async fn run_fhevm_relayer(
             host_chain_id_checker,
             signature_prechecker,
             keyurl_rx,
+            intake_shutdown.clone(),
         )
         .await;
 
@@ -209,10 +230,11 @@ pub async fn run_fhevm_relayer(
         // already gated above, so the readiness future is trivially ready; the task is tracked
         // by the orchestrator for graceful shutdown.
         if let Some(keyurl_poller) = keyurl_poller {
+            let keyurl_intake_shutdown = intake_shutdown.clone();
             orchestrator
                 .spawn_task_and_wait_ready(
                     "keyurl_poller",
-                    async move { keyurl_poller.run(keyurl_tx).await },
+                    async move { keyurl_poller.run(keyurl_tx, keyurl_intake_shutdown).await },
                     async { anyhow::Ok(()) },
                 )
                 .await
@@ -226,6 +248,7 @@ pub async fn run_fhevm_relayer(
         registry_clone,
         metrics_endpoint,
         Arc::clone(&orchestrator),
+        metrics_shutdown.clone(),
     )
     .await;
     info!(
@@ -245,14 +268,35 @@ pub async fn run_fhevm_relayer(
     }
 
     // === Runtime Phase ===
-    // Wait for shutdown signal and shutdown all tasks via orchestrator
-    orchestrator
-        .run_until_shutdown(shutdown_token)
-        .await
-        .context("Failed during shutdown")?;
+    // Wait for the shutdown signal (SIGTERM/SIGINT, see `fhevm-relayer.rs`).
+    shutdown_token.cancelled().await;
+    info!("Shutdown signal received, starting graceful shutdown");
+    orchestrator.begin_task_drain().await;
 
-    // Ensure pools close cleanly before exit.
-    repositories.close_pools().await;
+    // Step 1 - stop looking healthy, keep serving.
+    orchestrator.mark_not_ready();
+
+    // Step 2 - let that reach the load balancer.
+    if settings.http.endpoint.is_some() {
+        let wait = settings.shutdown.lb_propagation_wait;
+        info!(?wait, "Health check failing, waiting for traffic to drain");
+        tokio::time::sleep(wait).await;
+    }
+
+    // Step 3 - stop working. Order does not matter: what is in flight is either abandoned by
+    // design or already durable in Postgres.
+    intake_shutdown.cancel();
+    dequeue_shutdown.cancel();
+    metrics_shutdown.cancel();
+    orchestrator.drain_named_tasks(STOP_WORK_TIMEOUT).await;
+    info!(
+        abandoned = orchestrator.abandoned_detached_tasks(),
+        "Named task drain complete, abandoning remaining detached work"
+    );
+
+    // Step 4 - exit. Pools close with the process; closing them here would wait on the
+    // connections the abandoned tasks still hold.
+    orchestrator.finish_task_drain().await;
 
     info!("Relayer shutdown complete");
 

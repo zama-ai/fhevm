@@ -286,6 +286,14 @@ impl TestSetup {
         Self::new_with_config_path(Some(temp_config_path)).await
     }
 
+    /// Overrides the 0s the other setups use, so a test can observe the serving window.
+    #[allow(dead_code)]
+    pub async fn new_with_lb_propagation_wait(wait: &str) -> anyhow::Result<Self> {
+        let temp_config_dir = TempDir::new()?;
+        let temp_config_path = create_lb_propagation_config(&temp_config_dir, wait)?;
+        Self::new_with_config_path(Some(temp_config_path)).await
+    }
+
     /// Create test setup with admin endpoint enabled
     #[allow(dead_code)]
     pub async fn new_with_admin_endpoint() -> anyhow::Result<Self> {
@@ -360,6 +368,12 @@ impl TestSetup {
             relayer_handle,
             test_schema,
         })
+    }
+
+    /// Does not wait. `shutdown` still has to run afterwards to clean up.
+    #[allow(dead_code)]
+    pub fn begin_shutdown(&self) {
+        self.cancellation_token.cancel();
     }
 
     #[allow(dead_code)]
@@ -477,6 +491,26 @@ fn create_readiness_config(
     let modified_content =
         serde_yaml::to_string(&config).context("Failed to serialize modified config")?;
 
+    std::fs::write(&temp_config_path, modified_content).context("Failed to write temp config")?;
+
+    Ok(temp_config_path)
+}
+
+fn create_lb_propagation_config(
+    temp_dir: &TempDir,
+    wait: &str,
+) -> anyhow::Result<std::path::PathBuf> {
+    let temp_config_path = temp_dir.path().join("lb_propagation.yaml");
+
+    let config_content = std::fs::read_to_string("tests/relayer-test-config.yaml")
+        .context("Failed to read default config")?;
+    let mut config: serde_yaml::Value =
+        serde_yaml::from_str(&config_content).context("Failed to parse YAML config")?;
+
+    config["shutdown"]["lb_propagation_wait"] = serde_yaml::Value::String(wait.to_string());
+
+    let modified_content =
+        serde_yaml::to_string(&config).context("Failed to serialize modified config")?;
     std::fs::write(&temp_config_path, modified_content).context("Failed to write temp config")?;
 
     Ok(temp_config_path)
