@@ -446,6 +446,7 @@ where
         dependence_cross_block: true,
         dependent_ops_max_per_chain: 0,
         is_protocol_config_listener: true,
+        disable_synthetic_ops: false,
     };
 
     ingest_block_logs(
