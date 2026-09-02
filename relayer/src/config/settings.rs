@@ -404,6 +404,15 @@ pub struct MetricsConfig {
     pub retry_after_raw_eta_histogram_bucket: Vec<f64>,
 }
 
+#[derive(Debug, Deserialize, Clone)]
+pub struct ShutdownConfig {
+    /// Covers the lag until the pod's removal from the service endpoints reaches the ingress
+    /// controller. Not the readiness probe's detection time - deletion drops the endpoint as
+    /// it sends SIGTERM, so the probe path never runs.
+    #[serde(deserialize_with = "deserialize_human_duration")]
+    pub lb_propagation_wait: Duration,
+}
+
 /// Deserializes strings like "30s", "5m", "1d" into std::time::Duration.
 /// 'y' not supported
 fn deserialize_human_duration<'de, D>(deserializer: D) -> Result<Duration, D::Error>
@@ -628,6 +637,8 @@ pub struct Settings {
     pub keyurl: KeyUrlConfig,
     /// User-decryption signature check configuration
     pub user_decrypt_signature_check: UserDecryptSignatureCheckConfig,
+    /// Shutdown sequencing
+    pub shutdown: ShutdownConfig,
 }
 
 // Error type for application-specific configuration errors
