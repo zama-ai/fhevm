@@ -117,12 +117,12 @@ impl DbKmsResponsePicker {
                 FROM (
                     SELECT decryption_id
                     FROM public_decryption_responses
-                    WHERE status = 'pending'
+                    WHERE status = 'pending' AND source = 'onchain'
                     LIMIT $1 FOR UPDATE SKIP LOCKED
                 ) AS resp
                 WHERE public_decryption_responses.decryption_id = resp.decryption_id
                 RETURNING resp.decryption_id, decrypted_result, signature, extra_data, created_at,
-                otlp_context
+                otlp_context, source
             ",
         )
         .bind(self.responses_batch_size as i16)
@@ -141,12 +141,12 @@ impl DbKmsResponsePicker {
                 FROM (
                     SELECT decryption_id
                     FROM user_decryption_responses
-                    WHERE status = 'pending'
+                    WHERE status = 'pending' AND source = 'onchain'
                     LIMIT $1 FOR UPDATE SKIP LOCKED
                 ) AS resp
                 WHERE user_decryption_responses.decryption_id = resp.decryption_id
                 RETURNING resp.decryption_id, user_decrypted_shares, signature, extra_data,
-                created_at, otlp_context
+                created_at, otlp_context, source
             ",
         )
         .bind(self.responses_batch_size as i16)
