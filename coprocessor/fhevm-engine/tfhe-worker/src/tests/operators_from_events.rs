@@ -339,8 +339,14 @@ async fn run_binary_operands_events(
 /// below cannot encrypt values that large.
 const BINARY_SPLIT_TYPES: &[i32] = &[0, 1, 2, 3, 4, 5, 6, 7, 8];
 
-/// The same, minus bool, which has no multiply, divide or remainder.
-const BINARY_SPLIT_TYPES_EXPENSIVE: &[i32] = &[1, 2, 3, 4, 5, 6, 7, 8];
+/// The same, minus bool, which has no multiply, divide or remainder. Only up to 64
+/// bits: wider types run one test per operator instead, see BINARY_SPLIT_TYPES_WIDE.
+const BINARY_SPLIT_TYPES_EXPENSIVE: &[i32] = &[1, 2, 3, 4, 5];
+
+/// Types where multiply, divide and remainder are slow enough to be worth a test each.
+/// Together they took 20 minutes as a single test at 256 bits, which no amount of
+/// splitting across machines can shorten because one test cannot be divided.
+const BINARY_SPLIT_TYPES_WIDE: &[i32] = &[6, 7, 8];
 
 /// Multiply, divide and remainder take far longer than the rest and get slower fast
 /// as types get wider, so they run as separate tests.
@@ -354,6 +360,21 @@ fn is_expensive_binary_op(op: &BinaryOperatorTestCase) -> bool {
 
 fn is_cheap_binary_op(op: &BinaryOperatorTestCase) -> bool {
     !is_expensive_binary_op(op)
+}
+
+fn is_mul(op: &BinaryOperatorTestCase) -> bool {
+    use fhevm_engine_common::types::SupportedFheOperations as S;
+    matches!(S::try_from(op.operator), Ok(S::FheMul))
+}
+
+fn is_div(op: &BinaryOperatorTestCase) -> bool {
+    use fhevm_engine_common::types::SupportedFheOperations as S;
+    matches!(S::try_from(op.operator), Ok(S::FheDiv))
+}
+
+fn is_rem(op: &BinaryOperatorTestCase) -> bool {
+    use fhevm_engine_common::types::SupportedFheOperations as S;
+    matches!(S::try_from(op.operator), Ok(S::FheRem))
 }
 
 /// Which cases a test runs. Shared with the check below so the two cannot disagree.
@@ -390,9 +411,16 @@ binary_operands_test!(binary_ops_muldivrem_u8, 2, is_expensive_binary_op);
 binary_operands_test!(binary_ops_muldivrem_u16, 3, is_expensive_binary_op);
 binary_operands_test!(binary_ops_muldivrem_u32, 4, is_expensive_binary_op);
 binary_operands_test!(binary_ops_muldivrem_u64, 5, is_expensive_binary_op);
-binary_operands_test!(binary_ops_muldivrem_u128, 6, is_expensive_binary_op);
-binary_operands_test!(binary_ops_muldivrem_u160, 7, is_expensive_binary_op);
-binary_operands_test!(binary_ops_muldivrem_u256, 8, is_expensive_binary_op);
+
+binary_operands_test!(binary_ops_mul_u128, 6, is_mul);
+binary_operands_test!(binary_ops_div_u128, 6, is_div);
+binary_operands_test!(binary_ops_rem_u128, 6, is_rem);
+binary_operands_test!(binary_ops_mul_u160, 7, is_mul);
+binary_operands_test!(binary_ops_div_u160, 7, is_div);
+binary_operands_test!(binary_ops_rem_u160, 7, is_rem);
+binary_operands_test!(binary_ops_mul_u256, 8, is_mul);
+binary_operands_test!(binary_ops_div_u256, 8, is_div);
+binary_operands_test!(binary_ops_rem_u256, 8, is_rem);
 
 /// Checks the split tests still cover every case the original single test did, so a
 /// forgotten type cannot quietly reduce what we test. Needs no database.
@@ -417,6 +445,33 @@ fn binary_operands_split_is_exhaustive() {
             .iter()
             .filter(|op| binary_case_selected(op, &[*ty], is_expensive_binary_op))
             .count();
+    }
+    // Wide types split mul, div and rem into a test each; between them they must add
+    // up to what is_expensive_binary_op would have selected.
+    for ty in BINARY_SPLIT_TYPES_WIDE {
+        for filter in [is_mul, is_div, is_rem] {
+            covered += all_cases
+                .iter()
+                .filter(|op| binary_case_selected(op, &[*ty], filter))
+                .count();
+        }
+        let combined = all_cases
+            .iter()
+            .filter(|op| binary_case_selected(op, &[*ty], is_expensive_binary_op))
+            .count();
+        let split: usize = [is_mul, is_div, is_rem]
+            .iter()
+            .map(|f| {
+                all_cases
+                    .iter()
+                    .filter(|op| binary_case_selected(op, &[*ty], *f))
+                    .count()
+            })
+            .sum();
+        assert_eq!(
+            split, combined,
+            "mul + div + rem must equal every expensive case for type {ty}"
+        );
     }
 
     assert_eq!(
