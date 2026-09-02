@@ -36,6 +36,7 @@ impl HttpChainClient {
         acl_address: Address,
         tfhe_address: Address,
         kms_generation_address: Option<Address>,
+        protocol_config_address: Option<Address>,
         confidential_bridge_address: Option<Address>,
         retry_interval: Duration,
         max_retries: u32,
@@ -64,6 +65,7 @@ impl HttpChainClient {
             acl_address,
             tfhe_address,
             kms_generation_address,
+            protocol_config_address,
             confidential_bridge_address,
         );
 
@@ -119,11 +121,15 @@ impl HttpChainClient {
         acl_address: Address,
         tfhe_address: Address,
         kms_generation_address: Option<Address>,
+        protocol_config_address: Option<Address>,
         confidential_bridge_address: Option<Address>,
     ) -> Vec<Address> {
         let mut addresses = vec![acl_address, tfhe_address];
         if let Some(kms_generation_address) = kms_generation_address {
             addresses.push(kms_generation_address);
+        }
+        if let Some(protocol_config_address) = protocol_config_address {
+            addresses.push(protocol_config_address);
         }
         if let Some(confidential_bridge_address) = confidential_bridge_address {
             addresses.push(confidential_bridge_address);
@@ -187,6 +193,7 @@ mod tests {
             tfhe_address,
             None,
             None,
+            None,
         );
 
         let filter = HttpChainClient::build_filter(7, &addresses);
@@ -202,6 +209,26 @@ mod tests {
     }
 
     #[test]
+    fn protocol_config_address_is_monitored_when_present() {
+        let acl_address = Address::from([1u8; 20]);
+        let tfhe_address = Address::from([2u8; 20]);
+        let protocol_config_address = Address::from([4u8; 20]);
+        let mut actual = HttpChainClient::monitored_addresses(
+            acl_address,
+            tfhe_address,
+            None,
+            Some(protocol_config_address),
+            None,
+        );
+        actual.sort();
+
+        let mut expected =
+            vec![acl_address, tfhe_address, protocol_config_address];
+        expected.sort();
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
     fn confidential_bridge_address_is_monitored_when_present() {
         let acl_address = Address::from([1u8; 20]);
         let tfhe_address = Address::from([2u8; 20]);
@@ -209,6 +236,7 @@ mod tests {
         let mut actual = HttpChainClient::monitored_addresses(
             acl_address,
             tfhe_address,
+            None,
             None,
             Some(bridge_address),
         );
