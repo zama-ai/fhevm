@@ -12,6 +12,34 @@ npx hardhat node
 npx hardhat ignition deploy ./ignition/modules/Lock.ts
 ```
 
+## Switching the `@fhevm/sdk` source
+
+`test-suite/e2e` doesn't declare `@fhevm/sdk` in `package.json` — it's
+installed in place by `scripts/install-sdk.sh`, either from a local build or
+from the npm registry, without touching `package.json`/`package-lock.json`.
+
+By default (and in the Docker build), it's built and packed from your local
+`sdk/js-sdk` source:
+
+```shell
+cd test-suite/e2e
+npm run sdk:local
+```
+
+Set `SDK_BUILD_PROFILE=dev` before `npm run sdk:local` for a faster,
+unminified build while iterating. Re-run it after every change to
+`sdk/js-sdk` source — the install is a one-off pack, not a live link.
+
+To install a specific published version from the registry instead, pass it
+explicitly — there's no default to fall back to:
+
+```shell
+npm run sdk:registry -- 0.13.2
+```
+
+Both commands wrap `scripts/install-sdk.sh` (`local`/`registry` modes) — see
+its header comment for details.
+
 ## Unified user-decryption suites
 
 E2E coverage for ERC-1271 smart-account signature verification and the unified
