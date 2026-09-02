@@ -11,7 +11,10 @@ use tokio::time::sleep;
 use tracing::{error, info, warn};
 
 use primitives::event::{BlockFlow, BlockPayload, IndexedLog, TransactionPayload};
-use primitives::routing::{consumer_catchup_event_routing, consumer_new_event_routing};
+use primitives::routing::{
+    consumer_catchup_event_routing, consumer_final_catchup_event_routing,
+    consumer_final_event_routing, consumer_new_event_routing,
+};
 
 use crate::blockchain::evm::evm_block_fetcher::FetchedBlock;
 use crate::config::PublishConfig;
@@ -431,6 +434,68 @@ pub async fn publish_block_events(
     Ok(())
 }
 
+/// Finality variant of [`publish_block_events`]: publishes one final block's
+/// events to every FINAL watcher on the `{consumer_id}.final-event` queue.
+///
+/// Called from evm_listener.rs before each final block is persisted to DB.
+/// Returns errors on broker failures, filter fetch failures, or payload
+/// construction failures — callers MUST treat any error as a signal to NOT
+/// advance the finality tip. The handler framework retries the entire block,
+/// which guarantees at-least-once delivery to all consumers.
+///
+/// Same queue-existence, `publish_stale` retry/skip, and error semantics as
+/// the live path (shared `publish_payload_to_consumer`). The flow is always
+/// [`BlockFlow::Final`]: finalized blocks never reorg.
+pub async fn publish_final_block_events(
+    repositories: &Repositories,
+    fetched_block: &FetchedBlock,
+    chain_id: u64,
+    broker: &Broker,
+    event_publisher: &Publisher,
+    publish_config: &PublishConfig,
+) -> Result<(), PublisherError> {
+    // 1. Fetch FINAL filters — propagate DB errors to caller for handler-level retry.
+    let filters = repositories
+        .filters
+        .get_final_filters_by_chain_id()
+        .await
+        .map_err(|e| {
+            error!(error = %e, "Failed to fetch final filters");
+            PublisherError::FilterFetchError {
+                message: e.to_string(),
+            }
+        })?;
+
+    if filters.is_empty() {
+        return Ok(());
+    }
+
+    // 2. Build inverted index from filters — O(F).
+    let filter_index = FilterIndex::from_filters(filters);
+
+    // 3. Match transactions and build per-consumer payloads.
+    //    PayloadBuildError propagated to caller — data may be stale, re-fetch can self-heal.
+    let payloads = filter_index.build_block_payloads(fetched_block, chain_id, BlockFlow::Final)?;
+
+    // 4. For each consumer: verify queue exists, then publish.
+    //    Per-consumer retry/stale semantics live in `publish_payload_to_consumer`.
+    for (consumer_id, payload) in &payloads {
+        let routing_key = consumer_final_event_routing(consumer_id.clone());
+        publish_payload_to_consumer(
+            broker,
+            event_publisher,
+            publish_config,
+            consumer_id,
+            &routing_key,
+            payload,
+            chain_id,
+        )
+        .await?;
+    }
+
+    Ok(())
+}
+
 /// Catchup variant of [`publish_block_events`]: publishes one block's events
 /// to a single consumer on the `catchup-event` queue.
 ///
@@ -489,6 +554,81 @@ pub async fn publish_catchup_block_events(
         .next()
         .expect("payloads is non-empty (checked above)");
     let routing_key = consumer_catchup_event_routing(consumer_id.to_string());
+    publish_payload_to_consumer(
+        broker,
+        event_publisher,
+        publish_config,
+        consumer_id,
+        &routing_key,
+        &payload,
+        chain_id,
+    )
+    .await?;
+
+    Ok(())
+}
+
+/// Final-catchup variant of [`publish_catchup_block_events`]: publishes one
+/// finalized block's events to a single consumer on the
+/// `{consumer_id}.final-catchup-event` queue.
+///
+/// Same error pattern, retry/queue-existence semantics, and `publish_config`
+/// knobs as the live catchup path. Used by the final catchup handler when
+/// replaying historical finalized blocks for a single FINAL watcher in
+/// response to a `CatchupPayload`. The flow is always
+/// [`BlockFlow::FinalCatchup`]: finalized blocks never reorg.
+///
+/// Returns `Ok(())` when the consumer has no FINAL filters on this chain
+/// (no-op), matching the other paths' behavior for an empty filter set.
+pub async fn publish_final_catchup_block_events(
+    repositories: &Repositories,
+    fetched_block: &FetchedBlock,
+    chain_id: u64,
+    consumer_id: &str,
+    broker: &Broker,
+    event_publisher: &Publisher,
+    publish_config: &PublishConfig,
+) -> Result<(), PublisherError> {
+    // 1. Fetch this consumer's FINAL filters on this chain.
+    let filters = repositories
+        .filters
+        .get_final_filters_by_consumer_id(consumer_id)
+        .await
+        .map_err(|e| {
+            error!(error = %e, consumer_id, "Failed to fetch final filters for final catchup");
+            PublisherError::FilterFetchError {
+                message: e.to_string(),
+            }
+        })?;
+
+    if filters.is_empty() {
+        return Ok(());
+    }
+
+    // 2. Build a narrowly-scoped index + payload (same helpers as the live path).
+    let filter_index = FilterIndex::from_filters(filters);
+    let payloads =
+        filter_index.build_block_payloads(fetched_block, chain_id, BlockFlow::FinalCatchup)?;
+
+    // 3. Publish the target consumer's payload (if any) to final-catchup-event.
+    //    With single-consumer filters indexed, payloads contains 0 or 1 entry,
+    //    and that entry's cid is always `consumer_id` (upstream
+    //    get_final_filters_by_consumer_id guarantees it).
+    if payloads.is_empty() {
+        return Ok(());
+    }
+    if payloads.len() > 1 {
+        error!(
+            consumer_id,
+            payloads_len = payloads.len(),
+            "Expected at most 1 payload for single-consumer final catchup; using first"
+        );
+    }
+    let (_, payload) = payloads
+        .into_iter()
+        .next()
+        .expect("payloads is non-empty (checked above)");
+    let routing_key = consumer_final_catchup_event_routing(consumer_id.to_string());
     publish_payload_to_consumer(
         broker,
         event_publisher,
@@ -648,6 +788,7 @@ mod tests {
             from: from.map(|s| s.to_string()),
             to: to.map(|s| s.to_string()),
             log_address: log_address.map(|s| s.to_string()),
+            filter_type: crate::store::models::FilterType::Live,
             created_at: Utc::now(),
         }
     }
