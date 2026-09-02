@@ -11,7 +11,8 @@ use sha2::{Digest, Sha256};
 /// concurrency for those specific colliding requests.
 pub fn compute_advisory_lock_id(input: &[u8]) -> i64 {
     let hash = Sha256::digest(input);
-    let first_8_bytes: [u8; 8] = hash[..8].try_into().unwrap();
+    let mut first_8_bytes = [0u8; 8];
+    first_8_bytes.copy_from_slice(&hash[..8]);
     i64::from_be_bytes(first_8_bytes) // Direct interpretation - full range
 }
 
