@@ -16,6 +16,7 @@ use alloy::{
 };
 use async_trait::async_trait;
 use std::{str::FromStr, sync::Arc, time::Duration};
+use tokio_util::sync::CancellationToken;
 
 /// The last block a single `eth_getLogs` should cover, `max_blocks` counted inclusively.
 fn catch_up_to_block(from_block: u64, head: u64, max_blocks: u64) -> u64 {
@@ -33,6 +34,7 @@ pub struct PollingListener {
     pool_index: usize,
     /// HTTP URL for this listener
     http_url: String,
+    shutdown: CancellationToken,
 }
 
 impl PollingListener {
@@ -42,6 +44,7 @@ impl PollingListener {
         handled_events: Arc<HandledEvents>,
         pool_index: usize,
         http_url: String,
+        shutdown: CancellationToken,
     ) -> anyhow::Result<Self> {
         // Enforce HTTP URL - polling listener requires HTTP, not WebSocket
         if !http_url.starts_with("http://") && !http_url.starts_with("https://") {
@@ -58,7 +61,15 @@ impl PollingListener {
             handled_events,
             pool_index,
             http_url,
+            shutdown,
         })
+    }
+
+    async fn interruptible_sleep(&self, dur: Duration) {
+        tokio::select! {
+            _ = tokio::time::sleep(dur) => {}
+            _ = self.shutdown.cancelled() => {}
+        }
     }
 
     /// The block to resume polling after. Nothing is written here: the first range this
@@ -159,7 +170,16 @@ impl PollingListener {
             }
 
             if !backlog_pending {
-                tokio::time::sleep(Duration::from_millis(poll_interval_ms)).await;
+                self.interruptible_sleep(Duration::from_millis(poll_interval_ms))
+                    .await;
+            }
+
+            if self.shutdown.is_cancelled() {
+                info!(
+                    instance_id = self.pool_index,
+                    "Polling listener stopping (shutdown)"
+                );
+                return Ok(());
             }
 
             // Get current block number
@@ -177,7 +197,8 @@ impl PollingListener {
                         consecutive_failures,
                         max_attempts
                     );
-                    tokio::time::sleep(Duration::from_millis(retry_interval)).await;
+                    self.interruptible_sleep(Duration::from_millis(retry_interval))
+                        .await;
                     continue;
                 }
             };
@@ -218,7 +239,8 @@ impl PollingListener {
                         consecutive_failures,
                         max_attempts
                     );
-                    tokio::time::sleep(Duration::from_millis(retry_interval)).await;
+                    self.interruptible_sleep(Duration::from_millis(retry_interval))
+                        .await;
                     continue;
                 }
             };
