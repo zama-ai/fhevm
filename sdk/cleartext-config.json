@@ -1,0 +1,369 @@
+{
+  "_readme": [
+    "THE source of truth for every value the cleartext stack's languages must agree on.",
+    "",
+    "Above every generation on purpose. Every face is GENERATED from this file by `fhevm-npm",
+    "generate-cleartext-config`: the TypeScript module in `common-vendored/src` (synced into each",
+    "generation's `pkg/ts/` by `fhevm-npm sync-vendored`), each generation's",
+    "`create2-deploy/script/FhevmCleartextConfig.sol`, and each generation's `scripts/cleartext-config.sh`",
+    "(sourced by the launchers). This is the one place a value is DECIDED; every copy is a face of it. See",
+    "host-contracts-cleartext/RULES.md rule 23.",
+    "",
+    "Why JSON and not TypeScript. Solidity cannot read a `.ts` module, and neither can a shell script, a",
+    "Rust crate, or a CI job that wants a chain id without installing a toolchain. Every language in this",
+    "repo can read JSON, and the emitted copies stay checked in — so an operator running `forge script`",
+    "against a testnet from an unbuilt checkout is never blocked on a generator having run.",
+    "",
+    "## The shape of an entry",
+    "",
+    "  value      the value, as a string in every case — including integers. JSON numbers are IEEE doubles,",
+    "             so a uint256 would silently lose precision on the way through a parser; a decimal string",
+    "             cannot. Nothing here is fractional: every numeric value is a non-negative integer, and",
+    "             there is no floating point anywhere in this file by construction.",
+    "  alias      present instead of `value` when the constant is defined as another one. Both faces emit",
+    "             the alias, not a repeat, so the two can never drift apart.",
+    "  ts         the MINIMAL TypeScript type that holds the value exactly. A face may widen it — a uint",
+    "             that fits a `number` also fits a `bigint`, so emitting `100733346448153n` where this says",
+    "             `number` is fine. The reverse is not: a value that needs a `bigint` cannot be narrowed to",
+    "             a `number` without losing digits, so `bigint` here is a floor and the check enforces it.",
+    "  tsEmit     the literal shape the GENERATED TypeScript face emits when it deliberately widens `ts` —",
+    "             always `bigint`, widening being the only direction allowed. Defaults to `ts`. Explicit",
+    "             because the emitted shape is published API surface: a consumer typed against `bigint`",
+    "             breaks if a regeneration silently narrows it.",
+    "  solidity   the Solidity type the mirror declares. Also what tells a consumer how to compare the",
+    "             value: `address` case-insensitively, `string` exactly, `uint*` numerically.",
+    "  formula    for a derived value, the expression it comes from — see below.",
+    "  note       why the value is what it is. Required on every entry, and checked.",
+    "",
+    "## Why a derived value records its formula",
+    "",
+    "Three of these are keccak-derived, and the string being hashed is the real decision — the hex is only",
+    "what it hashes to. Recording only the hex makes the value unverifiable: a mistyped digit looks exactly",
+    "like a correct one, survives review, and then every copy of it agrees with every other. The formula is",
+    "written in Solidity syntax and is EVALUATED by the check, not merely displayed, so it cannot become a",
+    "comment that stopped being true. The preimage is not recorded separately: it is already in the formula,",
+    "and a second copy of a value is the thing this whole file exists to prevent.",
+    "",
+    "## Exactness",
+    "",
+    "Key order is declaration order, and emitters preserve it. It is load-bearing for `alias` entries, which",
+    "must be emitted after the constant they alias.",
+    "",
+    "Values are copied, never tidied. The mnemonic paths end in `/` because forge's `vm.deriveKey(mnemonic,",
+    "path, index)` derives at `{path}{index}` by plain concatenation — a path written `m/44'/60'/0'/2`",
+    "silently derives `m/44'/60'/0'/20` for index 0. That is a valid path, a real key and an entirely wrong",
+    "signer set, and nothing else in a run notices: the stack deploys, verifies against itself, and fails",
+    "only when the js-sdk relayer arrives with keys at the documented path."
+  ],
+
+  "appliesTo": {
+    "generations": ["v12", "v13"],
+    "_note": [
+      "The two generations use this set IDENTICALLY — both receive the same generated",
+      "`cleartext-config.ts`, synced from `common-vendored/src` — which is why there is no per-generation",
+      "section here. That is a fact about today, not a design guarantee. Should a generation ever need a different",
+      "value, add an explicit `overrides` block keyed by generation rather than forking a copy: a forked",
+      "copy is indistinguishable from drift, which is the entire failure this file exists to end."
+    ]
+  },
+
+  "constants": {
+    "CLEARTEXT_GATEWAY_CHAIN_ID": {
+      "value": "100733346448153",
+      "ts": "number",
+      "tsEmit": "bigint",
+      "solidity": "uint256",
+      "formula": "uint48(uint256(keccak256(\"fhevm.cheat.chainId cleartext gateway\")))",
+      "note": "A cheat-code chain id: chosen by hashing a name so it cannot collide with a real network by accident, and so anyone can reproduce it from the string alone. Truncated to 48 bits because a chain id has to fit where chain ids are stored, and 2^48 is far above any real one while still being nowhere near a plausible typo of one. `ts` is `number` because the value fits a double exactly; the emitted face widens it to `bigint` (`tsEmit`) because a chain id is compared against bigint chain ids everywhere it is used."
+    },
+
+    "CLEARTEXT_RELAYER_URL": {
+      "value": "https://relayer.cleartext.foo",
+      "ts": "string",
+      "solidity": "string",
+      "note": "Deliberately a `.foo` TLD, which cannot be registered. A cleartext stack has no relayer to talk to, so the URL exists only to be well-formed; pointing it at an unregistrable name means a client that ignores the cleartext path and actually dials it fails to resolve rather than reaching somebody's real host."
+    },
+
+    "CLEARTEXT_INPUT_VERIFICATION_ADDRESS": {
+      "value": "0x6189F6c0c3E40B4a3c72ec86262295D78d845297",
+      "ts": "string",
+      "solidity": "address",
+      "formula": "address(uint160(uint256(keccak256(\"fhevm.cheat.address cleartext input verification\"))))",
+      "note": "Where the gateway's input-verification contract is *said* to live. Nothing is ever deployed there — the address is a name the cleartext path can carry in place of a real one. Hashed rather than picked so it cannot collide with a deployed contract on any chain, and so it is reproducible from the string. Stored EIP-55 checksummed because Solidity REJECTS a hex address literal containing letters unless it is (error 9429), while TypeScript does not care — so the checksummed spelling is the one both faces can use verbatim."
+    },
+
+    "CLEARTEXT_DECRYPTION_ADDRESS": {
+      "value": "0xEaaA2FC6BC259dF015Aa7Dc8e59e0B67df622721",
+      "ts": "string",
+      "solidity": "address",
+      "formula": "address(uint160(uint256(keccak256(\"fhevm.cheat.address cleartext decryption\"))))",
+      "note": "The same idea as the input-verification address, for the gateway's decryption contract: a hashed placeholder, never deployed, reproducible from its preimage, and checksummed for Solidity's sake."
+    },
+
+    "CLEARTEXT_COPROCESSOR_COUNT": {
+      "value": "4",
+      "ts": "number",
+      "solidity": "uint256",
+      "note": "How many coprocessor signers the stack registers on `InputVerifier`, and therefore how many keys are derived from the coprocessor HD path. Four rather than one because the multi-signer code paths are what a consumer exercises against a real deployment, and a stack with a single signer would let a bug in them pass unnoticed."
+    },
+
+    "CLEARTEXT_COPROCESSOR_THRESHOLD": {
+      "value": "4",
+      "ts": "number",
+      "solidity": "uint256",
+      "note": "Equal to the count, not a majority. A cleartext stack has no real threshold cryptography whose partial failure it needs to tolerate, so requiring every signer keeps a missing or wrong one a loud failure instead of something the threshold silently absorbs."
+    },
+
+    "CLEARTEXT_KMS_NODE_COUNT": {
+      "value": "4",
+      "ts": "number",
+      "solidity": "uint256",
+      "note": "How many KMS nodes the stack registers. In v13 it is also the length of every per-node metadata array `ProtocolConfig` stores — signer, tx-sender, IP address, storage URL — and every KMS threshold equals it, for the reason `CLEARTEXT_COPROCESSOR_THRESHOLD` gives."
+    },
+
+    "CLEARTEXT_HCU_CAP_PER_BLOCK": {
+      "value": "281474976710655",
+      "ts": "number",
+      "tsEmit": "bigint",
+      "solidity": "uint256",
+      "formula": "type(uint48).max",
+      "note": "Effectively uncapped, and uint48 max specifically because that is the width `HCULimit` stores the figure in — the largest value the field can hold, so the cap can never be the thing a test hits. The cleartext stack does no FHE work, so a real per-block HCU budget would only ever be an artificial limit."
+    },
+
+    "CLEARTEXT_MAX_HCU_DEPTH_PER_TX": {
+      "value": "5000000",
+      "ts": "number",
+      "tsEmit": "bigint",
+      "solidity": "uint256",
+      "note": "Kept at the protocol's real default rather than raised to the uint48 maximum like the per-block cap. Depth bounds how far a single transaction can chain dependent operations, and that limit is one a consumer can legitimately hit in cleartext just as in FHE — so leaving it realistic means a contract that would exceed it on a real stack also fails here, rather than passing and failing later."
+    },
+
+    "CLEARTEXT_MAX_HCU_PER_TX": {
+      "value": "20000000",
+      "ts": "number",
+      "tsEmit": "bigint",
+      "solidity": "uint256",
+      "note": "The per-transaction total, at the protocol's real default for the same reason as the depth limit: four times the depth bound, so a wide transaction is allowed more total work than a deep one."
+    },
+
+    "FHEVM_MNEMONIC": {
+      "value": "test test test test test test test future home engine virtual motion",
+      "ts": "string",
+      "solidity": "string",
+      "note": "Published on purpose, and NOT the deploy mnemonic — a different string with a different job. This one is what makes a cleartext stack SDK-compatible: the js-sdk cleartext relayer derives its keys from it at the paths below and looks a signer up by the address they produce. Seed a different set and every other check still passes — the stack deploys, verifies against itself, and fails only when the relayer arrives. It is also why the stack is testnet-only: on mainnet these are keys everyone has."
+    },
+
+    "CLEARTEXT_COPROCESSORS_MNEMONIC": {
+      "alias": "FHEVM_MNEMONIC",
+      "ts": "string",
+      "solidity": "string",
+      "note": "An alias rather than a repeat, in both emitted faces. The three pools share one mnemonic today and are separated only by HD path; naming each one anyway lets a future generation give a pool its own mnemonic without touching a single call site."
+    },
+
+    "CLEARTEXT_COPROCESSORS_MNEMONIC_PATH": {
+      "value": "m/44'/60'/0'/2/",
+      "ts": "string",
+      "solidity": "string",
+      "note": "The HD branch the coprocessor signer pool derives from. Its own branch, so the coprocessor and KMS pools can never overlap however either count changes. The trailing `/` is part of the value: `vm.deriveKey(mnemonic, path, index)` concatenates, so dropping it derives at `m/44'/60'/0'/2<index>` — real keys at a wrong path."
+    },
+
+    "CLEARTEXT_COPROCESSORS_MNEMONIC_INDEX": {
+      "value": "0",
+      "ts": "number",
+      "solidity": "uint32",
+      "note": "The first index of the pool, which occupies `INDEX` through `INDEX + COUNT - 1`. Declared but currently read by nothing: `internal/generateSigners.ts` and `internal/generateLocalHostBytecode.ts` both start at 0 implicitly, so changing this today would have no effect. Recorded anyway because it is the value those two would have to consult, and having it named is what makes that a small change rather than a search. `uint32` on the Solidity side because that is what `vm.deriveKey`'s index parameter takes."
+    },
+
+    "CLEARTEXT_KMS_NODES_MNEMONIC": {
+      "alias": "FHEVM_MNEMONIC",
+      "ts": "string",
+      "solidity": "string",
+      "note": "Aliased for the reason `CLEARTEXT_COPROCESSORS_MNEMONIC` gives."
+    },
+
+    "CLEARTEXT_KMS_NODES_MNEMONIC_PATH": {
+      "value": "m/44'/60'/0'/3/",
+      "ts": "string",
+      "solidity": "string",
+      "note": "The HD branch the KMS signing keys derive from — the set registered on `KMSVerifier` in v12 and on `ProtocolConfig` in v13. A branch of its own, distinct from both the coprocessors' and the tx-senders'. Trailing `/` load-bearing, as above."
+    },
+
+    "CLEARTEXT_KMS_NODES_MNEMONIC_INDEX": {
+      "value": "0",
+      "ts": "number",
+      "solidity": "uint32",
+      "note": "First index of the KMS signing pool. Declared and currently unread, exactly as the coprocessors' index is."
+    },
+
+    "CLEARTEXT_KMS_NODES_TX_SENDER_MNEMONIC": {
+      "alias": "FHEVM_MNEMONIC",
+      "ts": "string",
+      "solidity": "string",
+      "note": "Aliased for the reason `CLEARTEXT_COPROCESSORS_MNEMONIC` gives."
+    },
+
+    "CLEARTEXT_KMS_NODES_TX_SENDER_MNEMONIC_PATH": {
+      "value": "m/44'/60'/0'/4/",
+      "ts": "string",
+      "solidity": "string",
+      "note": "A pool distinct from the KMS signing keys, on its own branch. v13's `ProtocolConfig` records a tx-sender per node alongside that node's signer, and they are deliberately different keys: the address that submits a transaction is not the address that signed the payload. Trailing `/` load-bearing, as above."
+    },
+
+    "CLEARTEXT_KMS_NODES_TX_SENDER_MNEMONIC_INDEX": {
+      "value": "0",
+      "ts": "number",
+      "solidity": "uint32",
+      "note": "First index of the KMS tx-sender pool. Declared and currently unread, exactly as the other two indexes are."
+    },
+
+    "CLEARTEXT_KMS_NODE_IP_ADDRESS_PREFIX": {
+      "value": "127.0.0.",
+      "ts": "string",
+      "solidity": "string",
+      "note": "Node i gets `${prefix}${i + 1}` — so 127.0.0.1 through 127.0.0.4 — in both `pkg/ts/constants.ts` and `internal/generateLocalHostBytecode.ts`. Loopback deliberately: the per-node metadata v13's `ProtocolConfig` stores has to be well-formed, and must not name anything reachable. Note the one-based suffix, which is why the prefix ends at the final dot rather than including a digit."
+    },
+
+    "CLEARTEXT_KMS_NODE_STORAGE_URL_PREFIX": {
+      "value": "s3://kms-bucket-",
+      "ts": "string",
+      "solidity": "string",
+      "note": "Node i gets `${prefix}${i + 1}`, one-based like the IP prefix and built in the same two places. A plausible-looking s3 URL for a bucket that does not exist: `ProtocolConfig` only stores the string, so what matters is that it has the right shape and points nowhere."
+    }
+  },
+
+  "localhost": {
+    "_note": [
+      "The fixed local-deploy addresses, and the recipe that produces them (RULES.md rules 15 and 17).",
+      "",
+      "Separate from `constants` above because this block is NOT mirrored into FhevmCleartextConfig.sol. Its",
+      "faces are `<gen>/internal/constants.ts` and the GENERATED",
+      "`<gen>/pkg/forge/src/_internal/LocalHostAddresses.sol`, so the names here are those files' names, not",
+      "new ones — including `MNEMONIC`, which is deliberately kept even though it reads ambiguously next to",
+      "`FHEVM_MNEMONIC` in `constants`. The ambiguity is real and both files warn about it: two different",
+      "mnemonics with two different jobs, and swapping them produces a stack whose addresses look right and",
+      "whose signatures never verify. Renaming one here would hide that from a grep instead of fixing it.",
+      "",
+      "These addresses are not ours to choose. `library-solidity/config/ZamaConfig.sol` returns three of them",
+      "from `_getLocalConfig()` on chain id 31337, and dApps INHERIT that library — so the literals are",
+      "compiled into consumer bytecode and cannot be reconfigured afterwards. A default local deploy landing",
+      "anywhere else leaves every such dApp calling addresses that hold no code.",
+      "",
+      "Every address is `CREATE(DEPLOYER_ADDRESS, nonce)`, which is why they are recorded WITH their nonces",
+      "rather than as a bare list: the address is a function of the position, nothing else.",
+      "",
+      "## primary and secondary",
+      "",
+      "The nonce table is split in two, and the line is not editorial — it is the one the code already draws,",
+      "between `HOST_NONCE_OFFSET` and the entries positioned against `HOST_NONCE_COUNT` in",
+      "`<gen>/pkg/ts/addresses.ts`:",
+      "",
+      "  primary    the protocol stack proper — the two empty-proxy implementations plus every contract in",
+      "             the `FhevmAddresses` type. These are upstream fhevm contracts, and this block is the one",
+      "             that changes shape between generations: v13 adds `ProtocolConfig` and `KMSGeneration`.",
+      "  secondary  everything positioned AFTER the primary block: the two cleartext-only contracts",
+      "             (`CleartextAddresses`) and `PauserSet`. The same three roles in the same order in every",
+      "             generation — only the nonce they start at moves.",
+      "",
+      "That is the whole mechanism behind the divergence worth knowing about. v12 and v13 agree up to nonce 6",
+      "because their primary blocks agree that far; v13's primary block is two nonces LONGER, so its entire",
+      "secondary block shifts by two. `0x44aA028f…` is therefore `PROTOCOL_CONFIG_ADDRESS` (primary) in v13",
+      "and `CLEARTEXT_ARITHMETIC_ADDRESS` (secondary) in v12 — the same address, a different contract, and not",
+      "even the same category. Reading a role out of the wrong generation's table is silent, which is what the",
+      "per-generation split prevents; splitting each table into the two categories is what makes the reason",
+      "legible instead of a coincidence of numbering.",
+      "",
+      "`test/cleartext-config-mirror.test.ts` re-derives all of it — the deployer from the mnemonic, then",
+      "every address from `CREATE(deployer, nonce)` — and compares the generated Solidity against the result.",
+      "Recomputing rather than transcribing is the point: a wrong hex digit here would otherwise be copied",
+      "into the generated file and agree with itself."
+    ],
+
+    "chainId": {
+      "value": "31337",
+      "note": "The chain id `ZamaConfig._getLocalConfig()` branches on, i.e. anvil's default. Not a value we picked; it is the condition under which a dApp compiled against ZamaConfig expects this exact address set."
+    },
+
+    "MNEMONIC": {
+      "value": "adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer",
+      "note": "The DEPLOY mnemonic — it produces the deployer account, and through it every stack address. Not `FHEVM_MNEMONIC`, which derives the KMS and coprocessor signer pools. Named `MNEMONIC` because that is what `internal/constants.ts` calls it."
+    },
+
+    "DEPLOYER_ADDRESS_INDEX": {
+      "value": "5",
+      "note": "Account index of the deployer within MNEMONIC, at HD path `m/44'/60'/0'/0/5`. Load-bearing: together with a start nonce of 0 it is what makes the deploy land on the addresses ZamaConfig compiles into consumers. Changing it moves the entire stack."
+    },
+
+    "DEPLOYER_ADDRESS": {
+      "value": "0x8B8f5091f8b9817EF69cFC1E8B2f721BafF60DF4",
+      "derivation": "the account at m/44'/60'/0'/0/{DEPLOYER_ADDRESS_INDEX} of MNEMONIC",
+      "note": "Recorded as well as derived so a consumer that only wants the address does not need an HD wallet implementation. The check re-derives it, so the two cannot part company."
+    },
+
+    "DEPLOYER_START_NONCE": {
+      "value": "0",
+      "note": "The deployer must have sent NOTHING when the sequence begins. Part of the address derivation rather than a precondition to be polite about: `CREATE(deployer, nonce)` means a deployer at any other nonce produces a different stack. Emitted into LocalHostAddresses.sol so a consumer can assert it rather than discover it."
+    },
+
+    "zamaConfigLocal": {
+      "_note": "The three addresses `ZamaConfig._getLocalConfig()` returns.",
+      "ACLAddress": "0x50157CFfD6bBFA2DECe204a89ec419c23ef5755D",
+      "CoprocessorAddress": "0xe3a9105a3a932253A70F126eb1E3b589C643dD24",
+      "KMSVerifierAddress": "0x901F8942346f7AB3a01F6D7613119Bca447Bb030"
+    },
+
+    "generations": {
+      "0.13.0": {
+        "PROXY_COUNT": "9",
+        "ADDRESSED_NONCE_COUNT": "12",
+        "_note": "PROXY_COUNT is the arity of the ACLOwner ops array; ADDRESSED_NONCE_COUNT is one past the last nonce any baked-in address depends on — the first nonce a deploy may spend freely. Both are generated, never hand-written, and both change with the generation.",
+        "nonces": {
+          "primary": [
+            { "nonce": 0, "address": "0x34e3eD8472e409dbF8FDf933cA996DC75e4Be126", "role": "EmptyUUPSProxyACL" },
+            { "nonce": 1, "address": "0x50157CFfD6bBFA2DECe204a89ec419c23ef5755D", "role": "ACL_ADDRESS" },
+            { "nonce": 2, "address": "0xCD3ab3bd6bcc0c0bf3E27912a92043e817B1cf69", "role": "EmptyUUPSProxy" },
+            { "nonce": 3, "address": "0xe3a9105a3a932253A70F126eb1E3b589C643dD24", "role": "FHEVM_EXECUTOR_ADDRESS" },
+            { "nonce": 4, "address": "0x901F8942346f7AB3a01F6D7613119Bca447Bb030", "role": "KMS_VERIFIER_ADDRESS" },
+            { "nonce": 5, "address": "0x36772142b74871f255CbD7A3e89B401d3e45825f", "role": "INPUT_VERIFIER_ADDRESS" },
+            { "nonce": 6, "address": "0x233ff88A48c172d29F675403e6A8e302b0F032D9", "role": "HCU_LIMIT_ADDRESS" },
+            { "nonce": 7, "address": "0x44aA028fd264C76BF4A8f8B4d8A5272f6AE25CAc", "role": "PROTOCOL_CONFIG_ADDRESS" },
+            { "nonce": 8, "address": "0x216be43148dB537BeddBC268163deb1a802b5553", "role": "KMS_GENERATION_ADDRESS" }
+          ],
+          "secondary": [
+            {
+              "nonce": 9,
+              "address": "0xded0D2a71268DC12622BdD1b55d68a1CB5662327",
+              "role": "CLEARTEXT_ARITHMETIC_ADDRESS"
+            },
+            { "nonce": 10, "address": "0x6933Afcf0F4bCE1A611baD0A6FaafF0337a7ba1E", "role": "CLEARTEXT_DB_ADDRESS" },
+            { "nonce": 11, "address": "0x590e3330386Fa042843773541aaBb3a45EC3164D", "role": "PAUSER_SET_ADDRESS" }
+          ]
+        }
+      },
+      "0.12.0": {
+        "PROXY_COUNT": "7",
+        "ADDRESSED_NONCE_COUNT": "10",
+        "_note": "Two fewer proxies and two fewer nonces than v13: this generation has no ProtocolConfig and no KMSGeneration. Everything from nonce 7 on therefore names a different contract than v13's table does at the same nonce.",
+        "nonces": {
+          "primary": [
+            { "nonce": 0, "address": "0x34e3eD8472e409dbF8FDf933cA996DC75e4Be126", "role": "EmptyUUPSProxyACL" },
+            { "nonce": 1, "address": "0x50157CFfD6bBFA2DECe204a89ec419c23ef5755D", "role": "ACL_ADDRESS" },
+            { "nonce": 2, "address": "0xCD3ab3bd6bcc0c0bf3E27912a92043e817B1cf69", "role": "EmptyUUPSProxy" },
+            { "nonce": 3, "address": "0xe3a9105a3a932253A70F126eb1E3b589C643dD24", "role": "FHEVM_EXECUTOR_ADDRESS" },
+            { "nonce": 4, "address": "0x901F8942346f7AB3a01F6D7613119Bca447Bb030", "role": "KMS_VERIFIER_ADDRESS" },
+            { "nonce": 5, "address": "0x36772142b74871f255CbD7A3e89B401d3e45825f", "role": "INPUT_VERIFIER_ADDRESS" },
+            { "nonce": 6, "address": "0x233ff88A48c172d29F675403e6A8e302b0F032D9", "role": "HCU_LIMIT_ADDRESS" }
+          ],
+          "secondary": [
+            {
+              "nonce": 7,
+              "address": "0x44aA028fd264C76BF4A8f8B4d8A5272f6AE25CAc",
+              "role": "CLEARTEXT_ARITHMETIC_ADDRESS"
+            },
+            { "nonce": 8, "address": "0x216be43148dB537BeddBC268163deb1a802b5553", "role": "CLEARTEXT_DB_ADDRESS" },
+            { "nonce": 9, "address": "0xded0D2a71268DC12622BdD1b55d68a1CB5662327", "role": "PAUSER_SET_ADDRESS" }
+          ]
+        }
+      }
+    }
+  }
+}

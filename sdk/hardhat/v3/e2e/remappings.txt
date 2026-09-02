@@ -1,0 +1,3 @@
+@fhevm/solidity/=../node_modules/@fhevm/solidity/
+encrypted-types/=../node_modules/encrypted-types/
+forge-std-1.11.0/=dependencies/forge-std-1.11.0/

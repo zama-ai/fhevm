@@ -1,0 +1,548 @@
+{
+  "//": [
+    "The public export surface of @fhevm/host-contracts-cleartext, and the source of truth for it.",
+    "Edited by hand; `npm run generate:exports` renders it into pkg/ts/index.ts and into the export test in",
+    "each test-consumer fixture. `npm run check:exports` fails the build when any of the three drifts.",
+    "",
+    "`blocks` is emitted in order and reproduces index.ts exactly, comments included, so this file is the",
+    "only place a new export is declared. `kind` is the runtime typeof a consumer must find; `array` and",
+    "`object` are distinguished because typeof cannot tell them apart, and `member` / `element` reach one",
+    "level in, since `typeof CONTRACT_VERSIONS === 'object'` would pass for any object at all.",
+    "",
+    "`dummies` carries one sample value per exported type, emitted verbatim into the generated tests and",
+    "checked by each fixture's own tsc. The types are NOT re-described here: TypeScript already describes",
+    "them in pkg/ts/types/public.ts, and a JSON mirror of those fields would be a second definition free to",
+    "drift. A sample value costs one line and catches a renamed or removed FIELD, which a bare type binding",
+    "cannot. Order is dependency-first — the generated bindings reference each other — and is therefore",
+    "independent of the export order in `blocks`. Every type-only export must appear exactly once here, and",
+    "the generator fails if the two lists disagree.",
+    "",
+    "A `dummy` is emitted verbatim, so write it as an array of lines whenever `const dummyX: X = <dummy>;`",
+    "would pass 120 columns. `prettier:check` fails the build if it does."
+  ],
+  "packageSpecifier": "@fhevm/host-contracts-cleartext/ts",
+  "outputs": {
+    "exports": "./pkg/ts/index.ts",
+    "testConsumers": {
+      "esm": "./test-consumer/esm/src/export.ts",
+      "cjs": "./test-consumer/cjs/src/export.ts"
+    }
+  },
+  "blocks": [
+    {
+      "module": "./deploy.js",
+      "exports": [
+        {
+          "name": "deploy",
+          "kind": "function"
+        }
+      ]
+    },
+    {
+      "module": "./upgrade.js",
+      "exports": [
+        {
+          "name": "updateV12ToV13",
+          "kind": "function"
+        }
+      ]
+    },
+    {
+      "module": "./addresses.js",
+      "exports": [
+        {
+          "name": "precomputeAddresses",
+          "kind": "function"
+        }
+      ]
+    },
+    {
+      "comment": [
+        "The deterministic-deployment counterpart: addresses that depend on nothing but the factory, the salt",
+        "inputs and the init code — no deployer nonce, so they survive any transaction that moves it."
+      ],
+      "module": "./create2Addresses.js",
+      "exports": [
+        {
+          "name": "precomputeCreate2Addresses",
+          "kind": "function"
+        },
+        {
+          "name": "CREATE2_FACTORY",
+          "kind": "string"
+        },
+        {
+          "name": "CREATE2_ROLES",
+          "kind": "object",
+          "member": {
+            "acl": "string"
+          }
+        }
+      ]
+    },
+    {
+      "comment": ["Installs a standing `ACLOwner` over an EOA-owned ACL — the prerequisite for `updateV12ToV13`."],
+      "module": "./aclOwner.js",
+      "exports": [
+        {
+          "name": "setupACLOwner",
+          "kind": "function"
+        }
+      ]
+    },
+    {
+      "comment": ["Emergency pause / unpause of the ACL, driven through the standing `ACLOwner` by its admin."],
+      "module": "./aclOwner.js",
+      "exports": [
+        {
+          "name": "pauseACL",
+          "kind": "function"
+        },
+        {
+          "name": "unpauseACL",
+          "kind": "function"
+        }
+      ]
+    },
+    {
+      "comment": ["Rotate / retire KMS contexts via the standing `ACLOwner`."],
+      "module": "./kmsContext.js",
+      "exports": [
+        {
+          "name": "defineNewKmsContext",
+          "kind": "function"
+        },
+        {
+          "name": "destroyKmsContext",
+          "kind": "function"
+        }
+      ]
+    },
+    {
+      "comment": [
+        "The `getVersion()` string every contract in this generation reports. Generated from the contracts",
+        "themselves (internal/generateContractVersions.ts), so it cannot drift from what a deployed stack",
+        "answers — which is what makes it usable as the expected value when verifying a deployment."
+      ],
+      "module": "./versions.js",
+      "exports": [
+        {
+          "name": "CONTRACT_VERSIONS",
+          "kind": "object",
+          "member": {
+            "acl": "string"
+          }
+        }
+      ]
+    },
+    {
+      "comment": [
+        "Full-integrity verification of a deployed or upgraded stack. `snapshotStack` is taken BEFORE an",
+        "upgrade; `verify` compares against it, so \"nothing else changed\" is checkable rather than assumed."
+      ],
+      "module": "./verify.js",
+      "exports": [
+        {
+          "name": "verify",
+          "kind": "function"
+        },
+        {
+          "name": "snapshotStack",
+          "kind": "function"
+        },
+        {
+          "name": "DEFAULT_MAY_CHANGE",
+          "kind": "array",
+          "element": "string"
+        }
+      ]
+    },
+    {
+      "module": "./types/public.js",
+      "typeOnly": true,
+      "exports": [
+        {
+          "comment": ["Abstract adapter interfaces (consumers implement these over their web3 lib)."],
+          "name": "AbstractEthereumProvider"
+        },
+        {
+          "name": "AbstractEthereumUtils"
+        },
+        {
+          "name": "AbstractEthereumSigner"
+        },
+        {
+          "comment": ["Parameter / return shapes referenced by the adapter interfaces above."],
+          "name": "DeployParameters"
+        },
+        {
+          "name": "DeployReturnType"
+        },
+        {
+          "name": "EncodeCallParameters"
+        },
+        {
+          "comment": [
+            "Address sets. `FhevmAddresses` is this package's own; the suffixed one is the PREVIOUS generation,",
+            "and exists only because `updateV12ToV13` takes it as input."
+          ],
+          "name": "FhevmAddresses"
+        },
+        {
+          "name": "CleartextAddresses"
+        },
+        {
+          "name": "FhevmAddressesV12"
+        },
+        {
+          "comment": ["`deploy` config + shared result of `deploy` / `updateV12ToV13`."],
+          "name": "BootstrapConfig"
+        },
+        {
+          "name": "Deployed"
+        },
+        {
+          "comment": ["Per-contract bootstrap init configs."],
+          "name": "ProtocolConfigInitConfig"
+        },
+        {
+          "name": "InputVerifierInitConfig"
+        },
+        {
+          "name": "KMSVerifierInitConfig"
+        },
+        {
+          "name": "HCULimitInitConfig"
+        },
+        {
+          "comment": ["Shared on-chain structs."],
+          "name": "KmsNode"
+        },
+        {
+          "name": "KmsThresholds"
+        },
+        {
+          "comment": ["`updateV12ToV13` migration config."],
+          "name": "UpdateV12ToV13MigrationConfig"
+        },
+        {
+          "comment": ["`verify` / `snapshotStack`."],
+          "name": "AbstractEthereumHistory"
+        },
+        {
+          "name": "PartialStack"
+        },
+        {
+          "name": "SnapshotParameters"
+        },
+        {
+          "name": "StackSnapshot"
+        },
+        {
+          "name": "VerifyCheck"
+        },
+        {
+          "name": "VerifyExpectations"
+        },
+        {
+          "name": "VerifyParameters"
+        },
+        {
+          "name": "VerifyReport"
+        },
+        {
+          "comment": ["`precomputeCreate2Addresses`."],
+          "name": "Create2Parameters"
+        },
+        {
+          "name": "Create2Addresses"
+        }
+      ]
+    },
+    {
+      "comment": [
+        "The gateway the cleartext stack is bootstrapped against. Decided in `sdk/cleartext-config.json` and",
+        "copied here byte-for-byte (rule 23), so a consumer that needs these — the hardhat plugin builds its",
+        "EIP-712 domain from them — reads the source of truth instead of transcribing it. A transcription is",
+        "how the plugin came to hold a stale gateway chain id, which made every input-proof signature recover",
+        "to a junk address."
+      ],
+      "module": "./cleartext-config.js",
+      "exports": [
+        {
+          "name": "CLEARTEXT_GATEWAY_CHAIN_ID",
+          "kind": "bigint"
+        },
+        {
+          "name": "CLEARTEXT_DECRYPTION_ADDRESS",
+          "kind": "string"
+        },
+        {
+          "name": "CLEARTEXT_INPUT_VERIFICATION_ADDRESS",
+          "kind": "string"
+        }
+      ]
+    }
+  ],
+  "dummies": {
+    "//": [
+      "Shared literals the sample values below are built from. `type` is a literal type expression, not a",
+      "name imported from the package — HEX must be the template-literal type the adapter methods return,",
+      "which a plain string literal does not satisfy."
+    ],
+    "preamble": [
+      {
+        "name": "ADDRESS",
+        "type": "string",
+        "expression": "'0x0000000000000000000000000000000000000000'"
+      },
+      {
+        "name": "HEX",
+        "type": "`0x${string}`",
+        "expression": "'0x'"
+      }
+    ],
+    "values": [
+      {
+        "type": "EncodeCallParameters",
+        "dummy": "{ abi: [], functionName: 'owner', args: [] }"
+      },
+      {
+        "type": "DeployParameters",
+        "dummy": "{ abi: [], bytecode: HEX, args: [] }"
+      },
+      {
+        "type": "DeployReturnType",
+        "dummy": "{ contractAddress: ADDRESS }"
+      },
+      {
+        "type": "AbstractEthereumUtils",
+        "dummy": [
+          "{",
+          "  getContractAddress: () => HEX,",
+          "  encodeCall: () => Promise.resolve(HEX),",
+          "  keccak256: () => HEX,",
+          "  encodeAbiParameters: () => HEX,",
+          "  getCreate2Address: () => HEX,",
+          "}"
+        ]
+      },
+      {
+        "type": "AbstractEthereumProvider",
+        "dummy": [
+          "{",
+          "  setCodeAt: () => Promise.resolve(),",
+          "  getCodeAt: () => Promise.resolve(HEX),",
+          "  readContract: () => Promise.resolve(undefined),",
+          "  getTransactionCount: () => Promise.resolve(0),",
+          "}"
+        ]
+      },
+      {
+        "type": "AbstractEthereumHistory",
+        "dummy": [
+          "{",
+          "  getBlockNumber: () => Promise.resolve(0n),",
+          "  getStorageAt: () => Promise.resolve(HEX),",
+          "  getLogs: () => Promise.resolve([]),",
+          "}"
+        ]
+      },
+      {
+        "type": "AbstractEthereumSigner",
+        "dummy": [
+          "{",
+          "  getAddress: () => Promise.resolve(ADDRESS),",
+          "  deploy: () => Promise.resolve({ contractAddress: ADDRESS }),",
+          "  writeContract: () => Promise.resolve(undefined),",
+          "}"
+        ]
+      },
+      {
+        "type": "FhevmAddresses",
+        "dummy": [
+          "{",
+          "  aclAddress: ADDRESS,",
+          "  fhevmExecutorAddress: ADDRESS,",
+          "  kmsVerifierAddress: ADDRESS,",
+          "  inputVerifierAddress: ADDRESS,",
+          "  hcuLimitAddress: ADDRESS,",
+          "  protocolConfigAddress: ADDRESS,",
+          "  kmsGenerationAddress: ADDRESS,",
+          "}"
+        ]
+      },
+      {
+        "type": "FhevmAddressesV12",
+        "dummy": [
+          "{",
+          "  aclAddress: ADDRESS,",
+          "  fhevmExecutorAddress: ADDRESS,",
+          "  kmsVerifierAddress: ADDRESS,",
+          "  inputVerifierAddress: ADDRESS,",
+          "  hcuLimitAddress: ADDRESS,",
+          "}"
+        ]
+      },
+      {
+        "type": "CleartextAddresses",
+        "dummy": ["{", "  cleartextArithmeticAddress: ADDRESS,", "  cleartextDbAddress: ADDRESS,", "}"]
+      },
+      {
+        "type": "KmsNode",
+        "dummy": [
+          "{",
+          "  txSenderAddress: ADDRESS,",
+          "  signerAddress: ADDRESS,",
+          "  ipAddress: '127.0.0.1',",
+          "  storageUrl: 's3://kms-bucket-0',",
+          "}"
+        ]
+      },
+      {
+        "type": "KmsThresholds",
+        "dummy": "{ publicDecryption: 1n, userDecryption: 1n, kmsGen: 1n, mpc: 1n }"
+      },
+      {
+        "type": "InputVerifierInitConfig",
+        "dummy": [
+          "{",
+          "  verifyingContractSource: ADDRESS,",
+          "  chainIDSource: 1n,",
+          "  initialSigners: [ADDRESS],",
+          "  initialThreshold: 1n,",
+          "}"
+        ]
+      },
+      {
+        "type": "KMSVerifierInitConfig",
+        "dummy": "{ verifyingContractSource: ADDRESS, chainIDSource: 1n }"
+      },
+      {
+        "type": "ProtocolConfigInitConfig",
+        "dummy": ["{", "  initialKmsNodes: [dummyKmsNode],", "  initialThresholds: dummyKmsThresholds,", "}"]
+      },
+      {
+        "type": "HCULimitInitConfig",
+        "dummy": "{ hcuCapPerBlock: 1n, maxHCUDepthPerTx: 1n, maxHCUPerTx: 1n }"
+      },
+      {
+        "type": "BootstrapConfig",
+        "dummy": [
+          "{",
+          "  kmsVerifier: dummyKMSVerifierInitConfig,",
+          "  inputVerifier: dummyInputVerifierInitConfig,",
+          "  hcuLimit: dummyHCULimitInitConfig,",
+          "  protocolConfig: dummyProtocolConfigInitConfig,",
+          "}"
+        ]
+      },
+      {
+        "type": "Deployed",
+        "dummy": [
+          "{",
+          "  fhevmAddresses: dummyFhevmAddresses,",
+          "  cleartextAddresses: dummyCleartextAddresses,",
+          "  pauserSetAddress: ADDRESS,",
+          "  aclOwnerAddress: ADDRESS,",
+          "}"
+        ]
+      },
+      {
+        "type": "UpdateV12ToV13MigrationConfig",
+        "dummy": [
+          "{",
+          "  existingContextId: 1n,",
+          "  existingKmsNodes: [dummyKmsNode],",
+          "  existingThresholds: dummyKmsThresholds,",
+          "}"
+        ]
+      },
+      {
+        "//": "`skip` + `detail` is the documented pairing. Not `detail: undefined`: test/ts compiles with",
+        "type": "VerifyCheck",
+        "dummy": "{ name: 'ACL.getVersion', status: 'skip', detail: 'no history adapter' }"
+      },
+      {
+        "type": "VerifyReport",
+        "dummy": "{ ok: true, checks: [dummyVerifyCheck], failures: [], skipped: [] }"
+      },
+      {
+        "type": "StackSnapshot",
+        "dummy": "{ blockNumber: 1n, readings: { 'ACL.getVersion': 'ACL v0.4.0' } }"
+      },
+      {
+        "//": "Every field optional; all of them are supplied so a rename cannot pass as an omission.",
+        "type": "VerifyExpectations",
+        "dummy": [
+          "{",
+          "  admin: ADDRESS,",
+          "  pausers: [ADDRESS],",
+          "  coprocessorSigners: [ADDRESS],",
+          "  coprocessorThreshold: 1n,",
+          "  kmsSigners: [ADDRESS],",
+          "  kmsThresholds: dummyKmsThresholds,",
+          "  kmsContextId: 1n,",
+          "}"
+        ]
+      },
+      {
+        "//": "Only the ACL is required — the shape that makes snapshotting a pre-upgrade v12 stack possible.",
+        "type": "PartialStack",
+        "dummy": "{ fhevmAddresses: { aclAddress: ADDRESS } }"
+      },
+      {
+        "type": "SnapshotParameters",
+        "dummy": [
+          "{",
+          "  ethProvider: dummyAbstractEthereumProvider,",
+          "  history: dummyAbstractEthereumHistory,",
+          "  deployed: dummyPartialStack,",
+          "  abis: {},",
+          "}"
+        ]
+      },
+      {
+        "//": "The 'upgrade' branch of the union: the harder one, and the only user of DEFAULT_MAY_CHANGE.",
+        "type": "VerifyParameters",
+        "dummy": [
+          "{",
+          "  mode: 'upgrade',",
+          "  before: dummyStackSnapshot,",
+          "  mayChange: DEFAULT_MAY_CHANGE,",
+          "  ethProvider: dummyAbstractEthereumProvider,",
+          "  history: dummyAbstractEthereumHistory,",
+          "  deployed: dummyDeployed,",
+          "  expected: dummyVerifyExpectations,",
+          "  abis: {},",
+          "}"
+        ]
+      },
+      {
+        "type": "Create2Parameters",
+        "dummy": [
+          "{",
+          "  ethUtils: dummyAbstractEthereumUtils,",
+          "  version: '0.13',",
+          "  deploymentId: 'export-test',",
+          "  deployer: ADDRESS,",
+          "  factory: CREATE2_FACTORY,",
+          "}"
+        ]
+      },
+      {
+        "type": "Create2Addresses",
+        "dummy": [
+          "{",
+          "  fhevmAddresses: dummyFhevmAddresses,",
+          "  cleartextAddresses: dummyCleartextAddresses,",
+          "  pauserSetAddress: ADDRESS,",
+          "  aclOwnerAddress: ADDRESS,",
+          "  emptyImplementations: { acl: ADDRESS, shared: ADDRESS },",
+          "  factory: CREATE2_FACTORY,",
+          "}"
+        ]
+      }
+    ]
+  }
+}

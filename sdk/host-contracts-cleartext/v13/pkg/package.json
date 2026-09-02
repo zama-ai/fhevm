@@ -1,0 +1,73 @@
+{
+  "name": "@fhevm/host-contracts-cleartext",
+  "version": "0.13.0",
+  "description": "FHEVM host contracts cleartext Solidity contracts",
+  "license": "BSD-3-Clause-Clear",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zama-ai/fhevm.git"
+  },
+  "main": "./ts/_cjs/index.js",
+  "module": "./ts/_esm/index.js",
+  "types": "./ts/_types/index.d.ts",
+  "typings": "./ts/_types/index.d.ts",
+  "typesVersions": {
+    "*": {
+      "ts": [
+        "./ts/_types/index.d.ts"
+      ]
+    }
+  },
+  "sideEffects": false,
+  "files": [
+    "src",
+    "abi",
+    "templates",
+    "ts",
+    "forge",
+    "LICENSE",
+    "!**/tsconfig*.json",
+    "!**/*.tsbuildinfo"
+  ],
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./ts/_types/index.d.ts",
+        "default": "./ts/_esm/index.js"
+      },
+      "require": {
+        "types": "./ts/_types-cjs/index.d.ts",
+        "default": "./ts/_cjs/index.js"
+      }
+    },
+    "./ts": {
+      "import": {
+        "types": "./ts/_types/index.d.ts",
+        "default": "./ts/_esm/index.js"
+      },
+      "require": {
+        "types": "./ts/_types-cjs/index.d.ts",
+        "default": "./ts/_cjs/index.js"
+      }
+    },
+    "./abi/*.json": "./abi/*.json",
+    "./templates/*.json": "./templates/*.json",
+    "./src/*": "./src/*",
+    "./forge/*": "./forge/*",
+    "./package.json": "./package.json"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "5.1.0",
+    "@openzeppelin/contracts-upgradeable": "5.1.0"
+  },
+  "fhevm": {
+    "vendoredFrom": {
+      "repository": "https://github.com/zama-ai/fhevm",
+      "tag": "v0.13.2",
+      "commit": "07fb05fb75f0aa6cea934088640ddb4539d0b1b9",
+      "from": "host-contracts/contracts",
+      "to": "src/contracts"
+    }
+  }
+}
