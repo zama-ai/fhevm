@@ -401,7 +401,7 @@ health: ## Check relayer health endpoints (requires running relayer)
 # and the line naming it. Add a tests/*.rs, add it to a group below:
 # test-groups-check fails the build until you do, and CI runs that check.
 GROUPS := user-decrypt delegated-user-decrypt public-decrypt input-proof \
-          admin-endpoint health keyurl keyurl-poller recovery \
+          admin-endpoint health keyurl keyurl-poller restart \
           schema-isolation threshold-resolver listener-redundancy common
 
 BINS_user-decrypt           := user_decrypt_v2_test user_decrypt_v3_test
@@ -412,7 +412,8 @@ BINS_admin-endpoint         := admin_endpoint_test
 BINS_health                 := health_test
 BINS_keyurl                 := keyurl_test
 BINS_keyurl-poller          := keyurl_poller_test
-BINS_recovery               := handled_events_test recovery_test
+# Surviving a stop is one behaviour, so its tests run as one group.
+BINS_restart                := shutdown_test handled_events_test recovery_test
 BINS_schema-isolation       := schema_isolation_test
 BINS_threshold-resolver     := threshold_resolver_test
 BINS_listener-redundancy    := listener_redundancy_test
