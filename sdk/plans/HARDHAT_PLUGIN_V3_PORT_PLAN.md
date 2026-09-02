@@ -1,6 +1,6 @@
 # Porting the FHEVM hardhat plugin from hardhat v2 to hardhat v3
 
-Version: **1.8** (2026-09-02). Bump the minor for a content change to the plan, the major for a
+Version: **1.9** (2026-09-02). Bump the minor for a content change to the plan, the major for a
 change of charter or stage order; record each bump below.
 
 - 1.0 — initial plan, from the hardhat 3 docs.
@@ -14,8 +14,9 @@ change of charter or stage order; record each bump below.
 - 1.7 — B1a recorded as landed (two commits: cleartext package + ethers peer, then the ABI repository).
 - 1.8 — B1b1 recorded as landed; the plugin switched from ethers to VIEM (open question 2 settled);
   genesis-injection measured and declined; B1a repository re-based on viem.
+- 1.9 — B1b2 recorded as landed: the stack deploys once per development chain inside `newConnection`.
 
-Status: **in progress — Stage A complete (A2–A7) + E2E-0a + B1a + B1b1. Next: B1b2.** The landing zone exists: the
+Status: **in progress — Stage A complete (A2–A7) + E2E-0a + B1a + B1b1 + B1b2. Next: B1c.** The landing zone exists: the
 `hardhat/v3` cluster (own installation root, hardhat 3.15 pinned), the plugin registered via
 `definePlugin` with its per-connection `fhevm` object and the pre-serve chain preparation proven,
 and the `hardhat/v3/e2e` member with the first counter test.
@@ -464,7 +465,15 @@ first review, per the cap rule.
     Test: addresses hold code + shipped `getVersion` strings, second run sends nothing, wrong-nonce
     deployer refused.
     Commit: `feat(hh-v3-plugin): port the nonce-ordered cleartext deploy sequence`
-  - **B1b2.** Wire it to `newConnection`: development-class gating (A5), exactly once per CHAIN.
+  - **B1b2 — LANDED.** `prepare.ts` runs `deployCleartextStack` inside `newConnection` when A5 says
+    development (the A4 marker is gone); public networks get no request at all. The hook's WeakMap
+    keeps each development connection's `Deployed` addresses for B1c and Stage D. Tests: two
+    `create()` → two stacks, `getOrCreate()` twice → one, fake public connection → zero requests; the
+    node test asserts ACL code on the first HTTP request and no redeploy from the remote connection;
+    deploy and repository tests run plugin-less to keep a fresh chain. Cost: the plugin suite went from
+    seconds to ~41 s (a dozen connections, one deploy each) — the per-chain price predicted below.
+    Original spec, kept for the record: wire it to `newConnection`, development-class gating (A5),
+    exactly once per CHAIN.
     Every `create()` on an `edr-simulated` network is a fresh chain and needs its own deploy; an
     `http` dev connection whose ZamaConfig addresses already hold code skips it. Test: `create()`
     twice → two deploys; `getOrCreate()` twice → one deploy; `http` with code present → zero;
