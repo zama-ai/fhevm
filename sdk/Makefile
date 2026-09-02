@@ -393,9 +393,8 @@ compile-hh-v2-plugin: compile-cleartext-v13 ## Compile the Hardhat v2 plugin
 	@echo "==> compile $(DIR_HH_V2_PLUGIN)"
 	$(call run-hh-v2,$(W_HH_V2_PLUGIN),compile)
 
-# No cross-generation prerequisite yet: the hello-world skeleton consumes nothing from the workspace.
-# The real v3 plugin will depend on host-contracts and js-sdk builds, like its v2 sibling.
-compile-hh-v3-plugin: ## Compile the Hardhat v3 plugin (hello-world skeleton)
+# Like its v2 sibling: plugin/pkg imports @fhevm/host-contracts-cleartext/ts, whose types are build output.
+compile-hh-v3-plugin: compile-cleartext-v13 ## Compile the Hardhat v3 plugin
 	@echo "==> compile $(DIR_HH_V3_PLUGIN)"
 	$(call run-hh-v3,$(W_HH_V3_PLUGIN),compile)
 
@@ -515,7 +514,7 @@ lint-hh-v2-template: compile-hh-v2-plugin ## Lint the mirrored Hardhat v2 templa
 lint-hh-v2-e2e: compile-hh-v2-plugin ## Lint Hardhat v2 e2e (self-provides typechain; needs the built plugin)
 	$(call run-hh-v2,$(W_HH_V2_E2E),lint)
 
-lint-hh-v3-plugin: ## Lint the Hardhat v3 plugin
+lint-hh-v3-plugin: compile-cleartext-v13 ## Lint the Hardhat v3 plugin (its types resolve through v13/pkg)
 	$(call run-hh-v3,$(W_HH_V3_PLUGIN),lint)
 
 lint-hh-v3-e2e: compile-hh-v3-plugin ## Lint Hardhat v3 e2e (self-provides typechain; needs the built plugin)

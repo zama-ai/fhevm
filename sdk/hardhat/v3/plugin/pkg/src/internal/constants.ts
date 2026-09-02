@@ -13,3 +13,14 @@ export const FHEVM_SDK_PACKAGE_NAME = '@fhevm/sdk';
 
 /** The plugin's OWN dependency (not a consumer sibling): ABIs and the deploy sequence of the cleartext stack. */
 export const FHEVM_HOST_CONTRACTS_CLEARTEXT_PACKAGE_NAME = '@fhevm/host-contracts-cleartext';
+
+// The account the local cleartext stack is deployed from. COPIED from sdk/cleartext-config.json's
+// `localhost` block (the published package faces every value of that block except these); a generated
+// face replaces this literal. Every stack address is CREATE(deployer, startNonce + k), so all four move
+// together or not at all.
+export const LOCALHOST_DEPLOYER = {
+  mnemonic: 'adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer',
+  path: "m/44'/60'/0'/0/5",
+  address: '0x8B8f5091f8b9817EF69cFC1E8B2f721BafF60DF4',
+  startNonce: 0,
+} as const;
