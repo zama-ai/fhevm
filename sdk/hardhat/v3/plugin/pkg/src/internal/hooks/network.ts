@@ -3,13 +3,15 @@
 //
 // The factory runs at most once per HardhatRuntimeEnvironment, which makes it the documented home
 // for per-connection bookkeeping. `newConnection` is a decorator chain: take what `next()` built,
-// attach fhevm, return it.
+// detect the network, prepare the chain (the cleartext stack, on a development node), attach fhevm,
+// return the SAME connection object.
 //
 // The generic signatures repeat hardhat's own NetworkHooks declarations VERBATIM (`ChainTypeT
 // extends ChainType | string`), which its custom chain-type strings require — the rule below cannot
 // see that.
 /* eslint-disable @typescript-eslint/no-redundant-type-constituents */
 
+import type { Deployed } from '@fhevm/host-contracts-cleartext/ts';
 import type { HookContext, NetworkHooks } from 'hardhat/types/hooks';
 import type { ChainType, NetworkConnection } from 'hardhat/types/network';
 import type { JsonRpcRequest, JsonRpcResponse } from 'hardhat/types/providers';
@@ -20,7 +22,8 @@ import { prepareDevelopmentChain } from '../prepare.js';
 import { handleRequest } from '../requests.js';
 
 export default (): Promise<Partial<NetworkHooks>> => {
-  const fhevmByConnection = new WeakMap<NetworkConnection<ChainType | string>, boolean>();
+  // The stack each development connection runs against; absent for public networks.
+  const stackByConnection = new WeakMap<NetworkConnection<ChainType | string>, Deployed>();
 
   return Promise.resolve({
     async newConnection<ChainTypeT extends ChainType | string>(
@@ -29,9 +32,9 @@ export default (): Promise<Partial<NetworkHooks>> => {
     ): Promise<NetworkConnection<ChainTypeT>> {
       const connection = await next(context);
       const network = await resolveFhevmNetwork(connection);
-      await prepareDevelopmentChain(connection);
+      const stack = await prepareDevelopmentChain(connection, network);
+      if (stack !== undefined) stackByConnection.set(connection, stack);
       connection.fhevm = createFhevmConnection(connection, network);
-      fhevmByConnection.set(connection, true);
       return connection;
     },
 
@@ -53,7 +56,7 @@ export default (): Promise<Partial<NetworkHooks>> => {
       connection: NetworkConnection<ChainTypeT>,
       next: (nextContext: HookContext, nextConnection: NetworkConnection<ChainTypeT>) => Promise<void>,
     ): Promise<void> {
-      fhevmByConnection.delete(connection);
+      stackByConnection.delete(connection);
       await next(context, connection);
     },
   });

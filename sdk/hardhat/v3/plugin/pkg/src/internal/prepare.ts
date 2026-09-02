@@ -1,18 +1,20 @@
 // Prepares a development chain before anyone can use it. Runs inside `newConnection`, which hardhat
-// completes BEFORE `hardhat node` starts listening, so the chain is ready on the first request.
+// completes BEFORE `hardhat node` starts listening, so the stack is ready on the first request.
 //
-// Today the preparation is a marker — one mined block — that lets the ordering be observed; the
-// cleartext stack deploy replaces it. Gating is by network config type on purpose: the node task
-// serves a network named `node`, users rename freely, and only an in-process EDR chain is ours to
-// prepare — an `http` connection reuses whatever the remote node already holds.
+// Once per CHAIN, not per process: every in-process `network.create()` is a fresh chain and needs its
+// own stack, while an `http` development node keeps whatever it already holds (the deploy is
+// idempotent: an ACL that carries code means "present"). Public networks are never touched.
 
+import type { Deployed } from '@fhevm/host-contracts-cleartext/ts';
 import type { NetworkConnection } from 'hardhat/types/network';
 
-export function isDevelopmentChain(connection: NetworkConnection<string>): boolean {
-  return connection.networkConfig.type === 'edr-simulated';
-}
+import { deployCleartextStack } from './deploy.js';
+import { type FhevmNetworkInfo, isDevelopmentNetwork } from './network.js';
 
-export async function prepareDevelopmentChain(connection: NetworkConnection<string>): Promise<void> {
-  if (!isDevelopmentChain(connection)) return;
-  await connection.provider.request({ method: 'hardhat_mine', params: ['0x1'] });
+export async function prepareDevelopmentChain(
+  connection: NetworkConnection<string>,
+  network: FhevmNetworkInfo,
+): Promise<Deployed | undefined> {
+  if (!isDevelopmentNetwork(network)) return undefined;
+  return deployCleartextStack(connection.provider);
 }

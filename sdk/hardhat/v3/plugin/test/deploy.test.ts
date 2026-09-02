@@ -12,7 +12,6 @@ import type { NetworkConnection } from 'hardhat/types/network';
 import { type Address, type Chain, type PublicClient, parseAbi, parseEther, toHex } from 'viem';
 import { mnemonicToAccount } from 'viem/accounts';
 
-import plugin from '../pkg/_esm/index.js';
 import { developmentChain, developmentPublicClient, developmentWalletClient } from '../pkg/_esm/internal/clients.js';
 import { LOCALHOST_DEPLOYER } from '../pkg/_esm/internal/constants.js';
 import { deployCleartextStack, precomputeLocalhostAddresses } from '../pkg/_esm/internal/deploy.js';
@@ -22,7 +21,8 @@ const VERSION_ABI = parseAbi(['function getVersion() view returns (string)']);
 async function withConnection(
   run: (connection: NetworkConnection, client: PublicClient, chain: Chain) => Promise<void>,
 ): Promise<void> {
-  const hre = await createHardhatRuntimeEnvironment({ plugins: [plugin] });
+  // No plugin: the sequence under test must find a FRESH chain, and the plugin would already have run it.
+  const hre = await createHardhatRuntimeEnvironment({});
   const connection = await hre.network.create();
   try {
     const chain = await developmentChain(connection.provider);

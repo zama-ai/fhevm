@@ -9,7 +9,6 @@ import test from 'node:test';
 import { createHardhatRuntimeEnvironment } from 'hardhat/hre';
 import { type PublicClient, getAbiItem } from 'viem';
 
-import plugin from '../pkg/_esm/index.js';
 import { developmentChain, developmentPublicClient } from '../pkg/_esm/internal/clients.js';
 import {
   FhevmCleartextContractsRepository,
@@ -26,7 +25,8 @@ type Fixture = {
 };
 
 async function withFixture(run: (fixture: Fixture) => void): Promise<void> {
-  const hre = await createHardhatRuntimeEnvironment({ plugins: [plugin] });
+  // No plugin: the repository only needs a provider, and the deploy the plugin would run is not under test.
+  const hre = await createHardhatRuntimeEnvironment({});
   const connection = await hre.network.create();
   try {
     const accounts = (await connection.provider.request({ method: 'eth_accounts' })) as string[];
