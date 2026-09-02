@@ -240,13 +240,13 @@ fhevmScope
   .setAction(
     async (
       {
-        acl,
-        kms,
+        acl: _acl,
+        kms: _kms,
       }: {
         acl: string;
         kms: string;
       },
-      hre: HardhatRuntimeEnvironment,
+      _hre: HardhatRuntimeEnvironment,
       // eslint-disable-next-line @typescript-eslint/require-await
     ) => {
       /*
@@ -255,9 +255,6 @@ fhevmScope
         whereas this command is given only an ACL and a KMSVerifier address and is meant to discover
         the rest. Resolving that shape is what makes it more than an import swap.
       */
-      void acl;
-      void kms;
-      void hre;
       throw new HardhatFhevmError(
         `'hardhat ${SCOPE_FHEVM} ${SCOPE_FHEVM_TASK_RESOLVE_FHEVM_CONFIG}' is not implemented yet: the FHEVM hardhat plugin is being migrated to @fhevm/sdk. See plans/MIGRATION_TO_FHEVM_SDK_CLEARTEXT.md.`,
       );

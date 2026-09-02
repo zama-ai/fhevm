@@ -405,11 +405,10 @@ export class FhevmExternalAPI implements HardhatFhevmRuntimeEnvironment {
   }
 
   public async publicDecryptEuint(
-    fhevmType: FhevmTypeEuint,
+    _fhevmType: FhevmTypeEuint,
     handleBytes32: string,
     _options?: FhevmPublicDecryptOptions,
   ): Promise<bigint> {
-    void fhevmType;
     return __asBigInt(await this.__publicDecryptOne(handleBytes32, 'publicDecryptEuint'), handleBytes32);
   }
 
@@ -487,13 +486,12 @@ export class FhevmExternalAPI implements HardhatFhevmRuntimeEnvironment {
   }
 
   public async userDecryptEuint(
-    fhevmType: FhevmTypeEuint,
+    _fhevmType: FhevmTypeEuint,
     handleBytes32: string,
     contractAddress: EthersT.AddressLike,
     user: EthersT.Signer,
     options?: FhevmUserDecryptOptions,
   ): Promise<bigint> {
-    void fhevmType;
     return __asBigInt(
       await this.__userDecryptOne(handleBytes32, contractAddress, user, options, 'userDecryptEuint'),
       handleBytes32,
