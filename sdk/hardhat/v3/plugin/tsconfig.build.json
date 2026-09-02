@@ -1,16 +1,10 @@
 {
-  "//": "Compiles the ESM payload; the types emit reuses this project with declaration flags.",
   "extends": "../../../tsconfig.base.json",
+  "include": ["pkg/src"],
+  "exclude": ["pkg/src/**/*.test.ts", "pkg/_esm/**"],
   "compilerOptions": {
-    "rootDir": "./pkg/src",
-    "outDir": "./pkg/_esm",
-    "types": ["node"],
-    "noEmitOnError": true,
     "sourceMap": true,
-    "declaration": true,
-    "declarationMap": true,
-    "module": "nodenext",
-    "moduleResolution": "nodenext"
-  },
-  "include": ["pkg/src"]
+    "rootDir": "./pkg/src",
+    "types": ["node"]
+  }
 }
