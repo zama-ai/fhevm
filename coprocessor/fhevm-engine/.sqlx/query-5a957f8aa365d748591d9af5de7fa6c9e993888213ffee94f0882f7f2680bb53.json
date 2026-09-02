@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT consensus_epoch\n          FROM blue_green_consensus_epoch\n         WHERE singleton = TRUE\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "consensus_epoch",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "5a957f8aa365d748591d9af5de7fa6c9e993888213ffee94f0882f7f2680bb53"
+}

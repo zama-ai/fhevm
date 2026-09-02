@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT start_block\n          FROM consensus_epoch_block_window\n         WHERE consensus_epoch = $1\n           AND host_chain_id = $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "start_block",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "93c1b08ea4a349076c7e90647b32027334a55a2d829c1d0da23689d792806d62"
+}

@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT consensus_epoch\n          FROM consensus_epoch_history\n         WHERE proposal_id = $1 AND proposal_block = $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "consensus_epoch",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "ea6c61ee3811495c091b37dd6e4f544c07f9d5602d90ce1d285986619655ebca"
+}
