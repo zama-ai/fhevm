@@ -89,9 +89,14 @@ impl DbKmsResponsePublisher {
         otlp_ctx: PropagationContext,
         source: RequestSource,
     ) -> anyhow::Result<PgQueryResult> {
+        // Single statement so the response row and the request status move atomically:
+        //   1. upsert the response, but only if no successful payload exists yet (a retry may
+        //      override a previous error row, but never a payload);
+        //   2. mark the request `completed` only if the response row actually written.
+        // `rows_affected` reflects the outer UPDATE, so it is 1 iff the response was stored.
         sqlx::query!(
-            "WITH response AS (
-                INSERT INTO public_decryption_responses(
+            "WITH written_response AS (
+                INSERT INTO public_decryption_responses AS existing (
                     decryption_id, decrypted_result, signature, extra_data, created_at,
                     otlp_context, source, status
                 )
@@ -106,11 +111,12 @@ impl DbKmsResponsePublisher {
                     status = EXCLUDED.status,
                     error_code = NULL,
                     error_details = NULL
-                WHERE public_decryption_responses.decrypted_result IS NULL
+                WHERE existing.decrypted_result IS NULL
                 RETURNING decryption_id
             )
-            UPDATE public_decryption_requests SET status = 'completed'
-            WHERE decryption_id IN (SELECT decryption_id FROM response)",
+            UPDATE public_decryption_requests AS request SET status = 'completed'
+            FROM written_response
+            WHERE request.decryption_id = written_response.decryption_id",
             response.decryption_id.as_le_slice(),
             response.decrypted_result,
             response.signature,
@@ -135,9 +141,14 @@ impl DbKmsResponsePublisher {
         otlp_ctx: PropagationContext,
         source: RequestSource,
     ) -> anyhow::Result<PgQueryResult> {
+        // Single statement so the response row and the request status move atomically:
+        //   1. upsert the response, but only if no successful payload exists yet (a retry may
+        //      override a previous error row, never a payload);
+        //   2. mark the request `completed` only for the response row actually written.
+        // `rows_affected` reflects the outer UPDATE, so it is 1 iff the response was stored.
         sqlx::query!(
-            "WITH response AS (
-                INSERT INTO user_decryption_responses(
+            "WITH written_response AS (
+                INSERT INTO user_decryption_responses AS existing (
                     decryption_id, user_decrypted_shares, signature, extra_data, created_at,
                     otlp_context, source, status
                 )
@@ -152,11 +163,12 @@ impl DbKmsResponsePublisher {
                     status = EXCLUDED.status,
                     error_code = NULL,
                     error_details = NULL
-                WHERE user_decryption_responses.user_decrypted_shares IS NULL
+                WHERE existing.user_decrypted_shares IS NULL
                 RETURNING decryption_id
             )
-            UPDATE user_decryption_requests SET status = 'completed'
-            WHERE decryption_id IN (SELECT decryption_id FROM response)",
+            UPDATE user_decryption_requests AS request SET status = 'completed'
+            FROM written_response
+            WHERE request.decryption_id = written_response.decryption_id",
             response.decryption_id.as_le_slice(),
             response.user_decrypted_shares,
             response.signature,
@@ -297,9 +309,11 @@ impl DbKmsResponsePublisher {
         extra_data: &[u8],
         otlp_ctx: &PropagationContext,
     ) -> anyhow::Result<()> {
+        // Same shape as `publish_public_decryption`: upsert the error row unless a successful
+        // payload already exists, then mark the request `failed` only if the row was written.
         let query_result = sqlx::query!(
-            "WITH response AS (
-                INSERT INTO public_decryption_responses(
+            "WITH written_response AS (
+                INSERT INTO public_decryption_responses AS existing (
                     decryption_id, error_code, error_details, extra_data, created_at,
                     otlp_context, source, status
                 )
@@ -312,11 +326,12 @@ impl DbKmsResponsePublisher {
                     otlp_context = EXCLUDED.otlp_context,
                     source = EXCLUDED.source,
                     status = EXCLUDED.status
-                WHERE public_decryption_responses.decrypted_result IS NULL
+                WHERE existing.decrypted_result IS NULL
                 RETURNING decryption_id
             )
-            UPDATE public_decryption_requests SET status = 'failed'
-            WHERE decryption_id IN (SELECT decryption_id FROM response)",
+            UPDATE public_decryption_requests AS request SET status = 'failed'
+            FROM written_response
+            WHERE request.decryption_id = written_response.decryption_id",
             decryption_id.as_le_slice(),
             error_code.as_str(),
             error_details,
@@ -341,9 +356,11 @@ impl DbKmsResponsePublisher {
         extra_data: &[u8],
         otlp_ctx: &PropagationContext,
     ) -> anyhow::Result<()> {
+        // Same shape as `publish_public_decryption`: upsert the error row unless a successful
+        // payload already exists, then mark the request `failed` only if the row was written.
         let query_result = sqlx::query!(
-            "WITH response AS (
-                INSERT INTO user_decryption_responses(
+            "WITH written_response AS (
+                INSERT INTO user_decryption_responses AS existing (
                     decryption_id, error_code, error_details, extra_data, created_at,
                     otlp_context, source, status
                 )
@@ -356,11 +373,12 @@ impl DbKmsResponsePublisher {
                     otlp_context = EXCLUDED.otlp_context,
                     source = EXCLUDED.source,
                     status = EXCLUDED.status
-                WHERE user_decryption_responses.user_decrypted_shares IS NULL
+                WHERE existing.user_decrypted_shares IS NULL
                 RETURNING decryption_id
             )
-            UPDATE user_decryption_requests SET status = 'failed'
-            WHERE decryption_id IN (SELECT decryption_id FROM response)",
+            UPDATE user_decryption_requests AS request SET status = 'failed'
+            FROM written_response
+            WHERE request.decryption_id = written_response.decryption_id",
             decryption_id.as_le_slice(),
             error_code.as_str(),
             error_details,
