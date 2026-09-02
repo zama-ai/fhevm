@@ -1,0 +1,22 @@
+[package]
+name = "delegator-vault"
+version = "0.1.0"
+description = "Test-only program-controlled delegator: a vault PDA granting user-decryption delegations via CPI"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "delegator_vault"
+
+[features]
+default = []
+cpi = ["no-entrypoint"]
+no-entrypoint = []
+no-log-ix-name = []
+idl-build = ["anchor-lang/idl-build", "zama-host/idl-build"]
+
+[dependencies]
+anchor-lang = "1.1.2"
+zama-host = { path = "../zama-host", features = ["cpi"] }

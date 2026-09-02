@@ -20,7 +20,7 @@
 mod solana_support;
 
 use kms_worker::core::solana::{
-    delegation::{DelegationFailure, check_delegation},
+    delegation::{AuthorizedRow, DelegationFailure, check_delegation},
     deployment::DeploymentIdentity,
     encrypted_value_account::{
         EncryptedValueAccountFailure, ResolvedEncryptedValueAccount,
@@ -603,7 +603,7 @@ fn authorization_checks_take_the_observation_and_never_a_reader() {
         SolanaPubkeyBytes,
         SolanaPubkeyBytes,
         SolanaPubkeyBytes,
-    ) -> Result<(), DelegationFailure> = check_delegation;
+    ) -> Result<AuthorizedRow, DelegationFailure> = check_delegation;
 
     let _check_handle_binding: fn(
         &ResolvedEncryptedValueAccount,

@@ -55,7 +55,13 @@ export class SolanaUserDecryptRunError extends Error {
   readonly attempts: number;
 
   constructor(rejection: SolanaUserDecryptRejection, attempts: number) {
-    super(`the user-decryption request was not answered after ${attempts} attempt(s): ${rejection.kind}`);
+    // A labeled rejection names its reason in the message: "failed" alone tells the reader
+    // nothing, while the label (e.g. the relayer's `not_allowed_on_host_acl`) is the diagnosis.
+    const cause =
+      'label' in rejection
+        ? `${rejection.kind} [${rejection.label}]${rejection.message === undefined ? '' : `: ${rejection.message}`}`
+        : rejection.kind;
+    super(`the user-decryption request was not answered after ${attempts} attempt(s): ${cause}`);
     this.name = 'SolanaUserDecryptRunError';
     this.rejection = rejection;
     this.attempts = attempts;

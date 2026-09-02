@@ -26,24 +26,27 @@ use thiserror::Error;
 pub type SolanaPubkeyBytes = [u8; 32];
 pub type HandleBytes = [u8; 32];
 
-pub const DELEGATION_SEED: &[u8] = b"user-decryption-delegation";
-pub const HOST_CONFIG_SEED: &[u8] = b"host-config";
-pub const WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY: SolanaPubkeyBytes = [0xff; 32];
-const ANCHOR_DISCRIMINATOR_LEN: usize = 8;
-const USER_DECRYPTION_DELEGATION_SPACE: usize = 32 + 32 + 32 + 8 + 8 + 8 + 1 + 1;
+// The record layout, its decoder and the wildcard sentinel live in the shared crate, so every
+// off-chain reader (this connector's authoritative check, the relayer's advisory pre-check)
+// decodes the same bytes through one implementation.
+pub use zama_solana_acl::UserDecryptionDelegationRecord;
+pub use zama_solana_acl::WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY;
+pub use zama_solana_acl::delegation::DELEGATION_SEED;
 
+pub const HOST_CONFIG_SEED: &[u8] = b"host-config";
+const ANCHOR_DISCRIMINATOR_LEN: usize = 8;
+
+/// A decoded delegation record together with where it was read from.
+///
+/// The record is the shared crate's, held whole rather than restated field by field: a field
+/// added there reaches this reader without a copy to keep in step, and the liveness rule is
+/// asked of the very bytes that were decoded — `record.is_live_at`, whose one definition in
+/// `zama-solana-acl` this reader shares with the relayer's advisory pre-check.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct UserDecryptionDelegationWitness {
     pub account_key: SolanaPubkeyBytes,
     pub owner: SolanaPubkeyBytes,
-    pub delegator: SolanaPubkeyBytes,
-    pub delegate: SolanaPubkeyBytes,
-    pub encrypted_value_account_authority: SolanaPubkeyBytes,
-    pub expiration_slot: u64,
-    pub delegation_counter: u64,
-    pub last_update_slot: u64,
-    pub revoked: bool,
-    pub bump: u8,
+    pub record: UserDecryptionDelegationRecord,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -90,23 +93,31 @@ pub fn decode_user_decryption_delegation_witness(
     owner: SolanaPubkeyBytes,
     data: &[u8],
 ) -> Result<UserDecryptionDelegationWitness, SolanaAclVerificationError> {
-    require_anchor_account_data(
-        data,
-        "UserDecryptionDelegation",
-        USER_DECRYPTION_DELEGATION_SPACE,
-    )?;
-    let mut cursor = AccountDataCursor::new(&data[ANCHOR_DISCRIMINATOR_LEN..]);
+    let record =
+        zama_solana_acl::decode_user_decryption_delegation(data).map_err(|error| match error {
+            zama_solana_acl::AclError::BadDiscriminator => {
+                SolanaAclVerificationError::AccountDiscriminatorMismatch
+            }
+            zama_solana_acl::AclError::BadAccountData => {
+                SolanaAclVerificationError::InvalidAccountData
+            }
+            // The remaining variants belong to the encrypted value account's authorization
+            // rules; the delegation decoder cannot produce them, and enumerating them keeps a
+            // new one from landing here silently.
+            zama_solana_acl::AclError::MmrInconsistent
+            | zama_solana_acl::AclError::MmrPeakCapacityExceeded
+            | zama_solana_acl::AclError::SubjectCapacityExceeded
+            | zama_solana_acl::AclError::HandleMismatch
+            | zama_solana_acl::AclError::SubjectMissing
+            | zama_solana_acl::AclError::HistoricalProofInvalid
+            | zama_solana_acl::AclError::PublicDecryptProofInvalid => {
+                SolanaAclVerificationError::InvalidAccountData
+            }
+        })?;
     Ok(UserDecryptionDelegationWitness {
         account_key,
         owner,
-        delegator: cursor.read_bytes_32()?,
-        delegate: cursor.read_bytes_32()?,
-        encrypted_value_account_authority: cursor.read_bytes_32()?,
-        expiration_slot: cursor.read_u64()?,
-        delegation_counter: cursor.read_u64()?,
-        last_update_slot: cursor.read_u64()?,
-        revoked: cursor.read_bool()?,
-        bump: cursor.read_u8()?,
+        record,
     })
 }
 
@@ -145,70 +156,6 @@ pub fn anchor_account_discriminator(account_name: &str) -> [u8; ANCHOR_DISCRIMIN
     discriminator
 }
 
-fn require_anchor_account_data(
-    data: &[u8],
-    account_name: &str,
-    body_len: usize,
-) -> Result<(), SolanaAclVerificationError> {
-    if data.len() != ANCHOR_DISCRIMINATOR_LEN + body_len {
-        return Err(SolanaAclVerificationError::AccountDataLengthMismatch);
-    }
-    if data[..ANCHOR_DISCRIMINATOR_LEN] != anchor_account_discriminator(account_name) {
-        return Err(SolanaAclVerificationError::AccountDiscriminatorMismatch);
-    }
-    Ok(())
-}
-
-struct AccountDataCursor<'a> {
-    data: &'a [u8],
-    offset: usize,
-}
-
-impl<'a> AccountDataCursor<'a> {
-    fn new(data: &'a [u8]) -> Self {
-        Self { data, offset: 0 }
-    }
-
-    fn read_bytes_32(&mut self) -> Result<[u8; 32], SolanaAclVerificationError> {
-        let bytes = self.read_exact(32)?;
-        let mut output = [0; 32];
-        output.copy_from_slice(bytes);
-        Ok(output)
-    }
-
-    fn read_u64(&mut self) -> Result<u64, SolanaAclVerificationError> {
-        let bytes = self.read_exact(8)?;
-        let mut value = [0; 8];
-        value.copy_from_slice(bytes);
-        Ok(u64::from_le_bytes(value))
-    }
-
-    fn read_u8(&mut self) -> Result<u8, SolanaAclVerificationError> {
-        Ok(self.read_exact(1)?[0])
-    }
-
-    fn read_bool(&mut self) -> Result<bool, SolanaAclVerificationError> {
-        match self.read_u8()? {
-            0 => Ok(false),
-            1 => Ok(true),
-            _ => Err(SolanaAclVerificationError::InvalidAccountData),
-        }
-    }
-
-    fn read_exact(&mut self, len: usize) -> Result<&'a [u8], SolanaAclVerificationError> {
-        let end = self
-            .offset
-            .checked_add(len)
-            .ok_or(SolanaAclVerificationError::AccountDataLengthMismatch)?;
-        if end > self.data.len() {
-            return Err(SolanaAclVerificationError::AccountDataLengthMismatch);
-        }
-        let slice = &self.data[self.offset..end];
-        self.offset = end;
-        Ok(slice)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -231,14 +178,16 @@ mod tests {
         UserDecryptionDelegationWitness {
             account_key,
             owner: HOST_PROGRAM_ID,
-            delegator: OWNER,
-            delegate: DELEGATE,
-            encrypted_value_account_authority,
-            expiration_slot: OBSERVED_SLOT + 20,
-            delegation_counter: 9,
-            last_update_slot: OBSERVED_SLOT - 1,
-            revoked: false,
-            bump,
+            record: UserDecryptionDelegationRecord {
+                delegator: OWNER,
+                delegate: DELEGATE,
+                encrypted_value_account_authority,
+                expiration_slot: OBSERVED_SLOT + 20,
+                delegation_counter: 9,
+                last_update_slot: OBSERVED_SLOT - 1,
+                revoked: false,
+                bump,
+            },
         }
     }
 
@@ -247,15 +196,16 @@ mod tests {
     }
 
     fn encode_delegation(delegation: &UserDecryptionDelegationWitness) -> Vec<u8> {
+        let record = &delegation.record;
         let mut data = anchor_account_discriminator("UserDecryptionDelegation").to_vec();
-        data.extend_from_slice(&delegation.delegator);
-        data.extend_from_slice(&delegation.delegate);
-        data.extend_from_slice(&delegation.encrypted_value_account_authority);
-        data.extend_from_slice(&delegation.expiration_slot.to_le_bytes());
-        data.extend_from_slice(&delegation.delegation_counter.to_le_bytes());
-        data.extend_from_slice(&delegation.last_update_slot.to_le_bytes());
-        data.push(delegation.revoked as u8);
-        data.push(delegation.bump);
+        data.extend_from_slice(&record.delegator);
+        data.extend_from_slice(&record.delegate);
+        data.extend_from_slice(&record.encrypted_value_account_authority);
+        data.extend_from_slice(&record.expiration_slot.to_le_bytes());
+        data.extend_from_slice(&record.delegation_counter.to_le_bytes());
+        data.extend_from_slice(&record.last_update_slot.to_le_bytes());
+        data.push(record.revoked as u8);
+        data.push(record.bump);
         data
     }
 

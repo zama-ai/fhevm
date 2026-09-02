@@ -15,7 +15,7 @@
 //! be "fixed" into symmetry.
 
 use super::snapshot::{HostSnapshot, SnapshotError};
-use crate::core::solana_acl::SolanaPubkeyBytes;
+use crate::core::solana_acl::{SolanaPubkeyBytes, WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY};
 use zama_solana_acl::{AclError, EncryptedValue, decode_on_chain_account};
 
 /// An encrypted value account that passed presence, ownership, type and identity binding.
@@ -67,10 +67,11 @@ pub fn encrypted_value_account_address(
 /// Resolves one entry's encrypted value account against the snapshot.
 ///
 /// In order: the account exists in the snapshot; it is owned by the deployment's program; its data
-/// carries the encrypted value account discriminator and borsh-decodes; and its own fields
-/// reproduce the claimed encrypted value ID. The last check is the backstop that makes a
-/// substituted encrypted value account a rejection rather than a redirection: an attacker naming a
-/// victim's encrypted value ID while supplying a different account fails it.
+/// carries the encrypted value account discriminator and borsh-decodes; its own fields reproduce
+/// the claimed encrypted value ID; and the authority it names is not the wildcard sentinel. The
+/// identity check is the backstop that makes a substituted encrypted value account a rejection
+/// rather than a redirection: an attacker naming a victim's encrypted value ID while supplying a
+/// different account fails it.
 pub fn resolve_encrypted_value_account(
     snapshot: &HostSnapshot,
     program_id: SolanaPubkeyBytes,
@@ -128,6 +129,17 @@ pub fn resolve_encrypted_value_account(
         });
     }
 
+    // h5: the authority the account names is a real authority, not the wildcard sentinel. The
+    // authority-specific delegation address is derived from this value, and with the sentinel in
+    // it that derivation lands on the wildcard row itself — the authority-specific check would be
+    // structurally a wildcard check. No legal account carries it: the authority signs
+    // `fhe_execute`, and the sentinel has no key.
+    if encrypted_value.encrypted_value_account_authority
+        == WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY
+    {
+        return Err(EncryptedValueAccountFailure::SentinelAuthority { account_key });
+    }
+
     Ok(ResolvedEncryptedValueAccount {
         account_key,
         encrypted_value,
@@ -176,6 +188,14 @@ pub enum EncryptedValueAccountFailure {
         claimed: [u8; 32],
         /// What the account's fields derive.
         derived: [u8; 32],
+    },
+    /// The account names the wildcard sentinel as its authority. No legal account does — the
+    /// authority signs `fhe_execute` — and resolving it would send the authority-specific
+    /// delegation check to the wildcard row.
+    #[error("encrypted value account {account_key:?} names the wildcard sentinel as its authority")]
+    SentinelAuthority {
+        /// The address that was read.
+        account_key: SolanaPubkeyBytes,
     },
     /// The snapshot was asked for an account it never read.
     #[error(transparent)]

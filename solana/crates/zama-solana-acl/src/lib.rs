@@ -19,6 +19,11 @@
 #[cfg(not(target_os = "solana"))]
 use sha2::{Digest as _, Sha256};
 
+pub mod delegation;
+pub use delegation::{
+    decode_user_decryption_delegation, UserDecryptionDelegationRecord, DELEGATION_SEED,
+    USER_DECRYPTION_DELEGATION_DISCRIMINATOR, WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY,
+};
 pub mod encrypted_value_account;
 pub use encrypted_value_account::{
     build_proof_from_events, build_verified_proof_from_events, reconstruct,

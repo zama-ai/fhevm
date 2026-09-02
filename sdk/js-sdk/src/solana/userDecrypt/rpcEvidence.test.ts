@@ -52,7 +52,8 @@ const concat = (...parts: readonly Uint8Array[]): Uint8Array => {
 /** The account body: current handle 0x44, leaf count 3, its two peaks. */
 const accountData = (): Uint8Array =>
   concat(
-    new Uint8Array(8).fill(0xdd),
+    // `sha256("account:EncryptedValue")[..8]` — matched by the decoder before anything else.
+    new Uint8Array([0x9b, 0x03, 0x95, 0x3a, 0x84, 0x67, 0xc8, 0xa1]),
     bytes32(0x11),
     bytes32(0x22),
     bytes32(0x33),
@@ -79,7 +80,7 @@ function fixtureRpc() {
             data: [Buffer.from(accountData()).toString('base64'), 'base64'],
             executable: false,
             lamports: 1n,
-            owner: getAddressDecoder().decode(bytes32(0x09)),
+            owner: getAddressDecoder().decode(HOST_PROGRAM_ID),
             rentEpoch: 0n,
             space: BigInt(accountData().length),
           },

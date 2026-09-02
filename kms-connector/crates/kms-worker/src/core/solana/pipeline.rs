@@ -35,7 +35,9 @@
 //! authorized from scratch against its own observation, so a revoked delegation stops the
 //! next request immediately.
 
-use super::delegation::{check_delegation, delegation_address, wildcard_delegation_address};
+use super::delegation::{
+    AuthorizedRow, check_delegation, delegation_address, wildcard_delegation_address,
+};
 use super::deployment::{DeploymentIdentity, check_deployment};
 use super::encrypted_value_account::{
     ResolvedEncryptedValueAccount, resolve_encrypted_value_account,
@@ -50,6 +52,7 @@ use super::scope::check_scope;
 use super::snapshot::{HostSnapshot, HostStateReader, plan_first_read, plan_second_read};
 use super::watermark::{check_not_invalidated, check_window, read_watermark};
 use crate::core::solana_acl::{HandleBytes, SolanaPubkeyBytes};
+use tracing::info;
 use zama_solana_permit::{KmsRouting, PermitError, verify_signature};
 
 /// Everything authorization needs that is neither the request nor chain state.
@@ -100,6 +103,43 @@ impl AuthorizedRequest {
     /// The resolved entries, in request order — same order, same count, duplicates included.
     pub fn entries(&self) -> &[AuthorizedEntry] {
         &self.entries
+    }
+}
+
+/// The audit record of one authorized delegated entry, for the per-request log event: whose
+/// access the signer used, under which authority, for which handle, and which row carried the
+/// grant.
+struct DelegatedEntryAudit {
+    index: usize,
+    delegator: SolanaPubkeyBytes,
+    encrypted_value_account_authority: SolanaPubkeyBytes,
+    handle: HandleBytes,
+    authorizing_row: AuthorizedRow,
+}
+
+impl std::fmt::Debug for DelegatedEntryAudit {
+    // Hand-written for the identities: the derived form prints a `[u8; 32]` as thirty-two
+    // decimal numbers, unreadable in a log line.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("entry")
+            .field("index", &self.index)
+            .field(
+                "delegator",
+                &format_args!("{}", alloy::hex::encode(self.delegator)),
+            )
+            .field(
+                "encrypted_value_account_authority",
+                &format_args!(
+                    "{}",
+                    alloy::hex::encode(self.encrypted_value_account_authority)
+                ),
+            )
+            .field(
+                "handle",
+                &format_args!("{}", alloy::hex::encode(self.handle)),
+            )
+            .field("authorizing_row", &self.authorizing_row)
+            .finish()
     }
 }
 
@@ -183,7 +223,7 @@ where
         let second = reader.read_accounts(&second_keys).await?;
         // The one condition on the pair of reads, and it is ordering rather than agreement: a
         // deciding read behind the discovery read would report grants the discovery read saw as
-        // absent, terminally.
+        // absent, blaming the delegation for what the read did.
         second.deciding_after(&first)?
     };
 
@@ -217,6 +257,7 @@ where
                 index,
                 subject,
                 encrypted_value_account.encrypted_value_account_authority(),
+                entry.handle(),
             ));
         }
         entries.push(AuthorizedEntry {
@@ -228,8 +269,9 @@ where
         });
     }
 
-    for (index, delegator, encrypted_value_account_authority) in delegated {
-        check_delegation(
+    let mut audit = Vec::with_capacity(delegated.len());
+    for (index, delegator, encrypted_value_account_authority, handle) in delegated {
+        let authorizing_row = check_delegation(
             &observation,
             program_id,
             delegator,
@@ -237,6 +279,26 @@ where
             encrypted_value_account_authority,
         )
         .map_err(|source| AuthorizationFailure::Delegation { index, source })?;
+        audit.push(DelegatedEntryAudit {
+            index,
+            delegator,
+            encrypted_value_account_authority,
+            handle,
+            authorizing_row,
+        });
+    }
+
+    // Every delegated authorization leaves one structured log event: whose access was used, by
+    // whom, under which authority — and which row carried each grant, because a wildcard grant
+    // and an authority-scoped one are different facts to an auditor even though they authorize
+    // identically. One event per request, not per entry.
+    if !audit.is_empty() {
+        info!(
+            delegate = %alloy::hex::encode(signer),
+            observed_slot = observation.observed_slot(),
+            entries = ?audit,
+            "Solana delegated user-decryption entries authorized"
+        );
     }
 
     Ok(AuthorizedRequest {

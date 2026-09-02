@@ -181,6 +181,10 @@ jobs:
           # t=1, from which the live client derives the 2t+1=3 on-chain certificate thresholds.
           SOLANA_E2E_SCENARIO: ${{ inputs.kms-mode == 'threshold' && 'solana-threshold-kms' || '' }}
           KMS_THRESHOLD: ${{ inputs.kms-mode == 'threshold' && '1' || '' }}
+          # This lane is where the 2-of-3 Squads delegation arc runs at all, so an unavailable
+          # fixture fails the bring-up instead of leaving a green run that skipped it. Offline
+          # local runs leave this unset and keep the skip.
+          SOLANA_E2E_REQUIRE_SQUADS: "1"
         run: bun run demo up
 
       # The deposit-arc scenario drives the demo dapp's vault module from bun, and the vault reaches
@@ -214,6 +218,10 @@ jobs:
         # submitInputProof -> confidentialTransfer -> current user-decrypt) was moved here from
         # full-vertical.sh's [sdk-transfer] phase. See solana/docs/TESTING.md ("Scenario layer").
         working-directory: test-suite/fhevm
+        env:
+          # Second gate on the same requirement: the bring-up above already refuses without the
+          # fixtures, so this catches a suite run against a stack that booted without them.
+          SOLANA_E2E_REQUIRE_SQUADS: "1"
         run: bun run test:e2e
 
       - name: Require a healthy owned boot before the demo phase

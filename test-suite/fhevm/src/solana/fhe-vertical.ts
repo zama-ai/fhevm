@@ -105,6 +105,12 @@ export const trivialEncryptPersistent = async (
     readonly value: bigint;
     readonly label: Uint8Array;
     readonly fheType?: number;
+    /**
+     * The value's ACL subjects; the payer alone when omitted. Subjects are named, not signed —
+     * which is how a value can belong to a PDA (the delegation scenarios encrypt for a Squads
+     * vault this way).
+     */
+    readonly subjects?: readonly Address[];
   },
 ): Promise<PersistentHandle> => {
   const target = await persistentValueTarget(params.payer.address, params.payer.address, params.label);
@@ -112,7 +118,7 @@ export const trivialEncryptPersistent = async (
   const output = await persistentOutput(context, dictionary, {
     target,
     encryptedValueIndex: 0,
-    subjects: [params.payer.address],
+    subjects: params.subjects ?? [params.payer.address],
   });
   await sendFheExecute(context, {
     payer: params.payer,

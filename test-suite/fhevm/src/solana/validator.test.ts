@@ -25,6 +25,30 @@ describe("validatorStartArgs", () => {
   });
 });
 
+describe("validatorStartArgs genesis extras", () => {
+  test("loads foreign programs and accounts at genesis when given", () => {
+    const args = validatorStartArgs({
+      ledgerDir: "/tmp/ledger",
+      geyserConfigPath: "/tmp/geyser.json",
+      genesisPrograms: [{ address: "SQDS4ep65T869zMMBKyuUq6aD6EgTu8psMjkvj52pCf", soPath: "/tmp/squads.so" }],
+      genesisAccounts: [{ address: "BSTq9w3kZwNwpBXJEvTZz2G9ZTNyKBvoSeXMvwb4cNZr", jsonPath: "/tmp/config.json" }],
+    });
+
+    const programFlag = args.indexOf("--bpf-program");
+    expect(args[programFlag + 1]).toBe("SQDS4ep65T869zMMBKyuUq6aD6EgTu8psMjkvj52pCf");
+    expect(args[programFlag + 2]).toBe("/tmp/squads.so");
+    const accountFlag = args.indexOf("--account");
+    expect(args[accountFlag + 1]).toBe("BSTq9w3kZwNwpBXJEvTZz2G9ZTNyKBvoSeXMvwb4cNZr");
+    expect(args[accountFlag + 2]).toBe("/tmp/config.json");
+  });
+
+  test("adds no genesis flags when none are given — the existing arg shape is untouched", () => {
+    const args = validatorStartArgs({ ledgerDir: "/tmp/ledger", geyserConfigPath: "/tmp/geyser.json" });
+    expect(args).not.toContain("--bpf-program");
+    expect(args).not.toContain("--account");
+  });
+});
+
 describe("isLifecycleLedgerPath", () => {
   test("accepts only the short owned per-boot ledger shape", () => {
     expect(isLifecycleLedgerPath(`/tmp/fhevm-demo-501/${"a".repeat(24)}.ledger`, 501)).toBe(true);

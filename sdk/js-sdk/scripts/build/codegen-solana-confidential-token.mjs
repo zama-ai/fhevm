@@ -99,10 +99,19 @@ const targets = [
     idlPath: idlUrl('zama_host.json'),
     generatedPath: `${sdkRoot}/src/solana/internal/generated/zamaHost`,
     keep: {
-      instructions: new Set(['verifyPublicDecrypt']),
+      // Beside the stateless verifier: the delegation pair and the permit-watermark revocation —
+      // the three self-custody instructions a wallet (or a multisig proposal) builds through the
+      // SDK's hand-written wrappers in src/solana/actions.
+      instructions: new Set([
+        'verifyPublicDecrypt',
+        'delegateForUserDecryption',
+        'revokeDelegationForUserDecryption',
+        'revokePermits',
+      ]),
       definedTypes: new Set(),
-      // verifyPublicDecrypt defaults its host_config account to the same-program host-config PDA, so
-      // the generated builder imports findHostConfigPda; keep that PDA node so the import resolves.
+      // verifyPublicDecrypt and the delegation pair default their host_config account to the
+      // same-program host-config PDA, so the generated builders import findHostConfigPda; keep
+      // that PDA node so the import resolves.
       pdas: new Set(['hostConfig']),
     },
     programAddress(program) {

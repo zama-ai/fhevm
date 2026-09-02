@@ -21,7 +21,7 @@
 import type { SolanaAccessEvidence, SolanaAccessEvidenceSource, SolanaHandleRequest } from './evidence.js';
 import type { SolanaAccessProofServiceConfig } from './proofService.js';
 import type { SolanaRpc } from '../encryptedValueAccount.js';
-import { getAddressEncoder } from '@solana/kit';
+import { getAddressDecoder, getAddressEncoder } from '@solana/kit';
 import { fetchSolanaEncryptedValueState, solanaEncryptedValueAccountAddress } from '../encryptedValueAccount.js';
 import { fetchSolanaHistoricalAccessProof } from './proofService.js';
 import { unsafeBytesEquals } from '../../core/base/bytes.js';
@@ -44,7 +44,12 @@ export function createSolanaRpcAccessEvidenceSource(config: {
       const encryptedValueId = request.encryptedValueId;
       const accountAddress = await solanaEncryptedValueAccountAddress(config.hostProgramId, encryptedValueId);
       const encryptedValueAccount = new Uint8Array(getAddressEncoder().encode(accountAddress));
-      const state = await fetchSolanaEncryptedValueState(config.rpc, accountAddress, { commitment: 'confirmed' });
+      const state = await fetchSolanaEncryptedValueState(
+        config.rpc,
+        accountAddress,
+        { commitment: 'confirmed' },
+        getAddressDecoder().decode(config.hostProgramId),
+      );
 
       if (unsafeBytesEquals(state.currentHandle, request.handle)) {
         return {

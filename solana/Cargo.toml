@@ -9,6 +9,7 @@ members = [
     "crates/zama-solana-transaction",
     "programs/confidential-batcher",
     "programs/confidential-token",
+    "programs/delegator-vault",
     "programs/demo-vault",
     "programs/dep-chain",
     "programs/encrypted-counter",

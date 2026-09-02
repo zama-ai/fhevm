@@ -91,6 +91,8 @@ humantime = "2.3.0"
 governor = "0.10.4"
 indexmap = "2.13.0"
 serde_yaml = "0.9"
+solana-pubkey = { version = "4.3.0", features = ["curve25519"] }
+base64 = "0.23.1"
 
 [build-dependencies]
 built = { version = "0.8", features = [

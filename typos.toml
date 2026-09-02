@@ -183,3 +183,7 @@ PN = "PN"                 # abbreviation P1, ..., PN
 # "SysvarSlotHashes" with a digit 1 in place of the l; whitelist the whole
 # identifier so typos doesn't split it and flag the "ot" fragment.
 SysvarS1otHashes111111111111111111111111111 = "SysvarS1otHashes111111111111111111111111111"
+# Encrypted-value-account address fixture shared by the runtime-test SDK cross-pins and the
+# relayer's PDA-derivation test — a derived PDA whose random "cUeQ" fragment splits into a
+# flagged "Ue". The literal is the cross-side pin and cannot be reworded.
+"5K29xw8jynL8Vw63cRm6cUeQK1dfs5M2Vx3r5inwos5p" = "5K29xw8jynL8Vw63cRm6cUeQK1dfs5M2Vx3r5inwos5p"

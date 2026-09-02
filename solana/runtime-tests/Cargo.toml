@@ -10,6 +10,7 @@ anchor-lang = "1.1.2"
 anchor-spl = { version = "1.1.2", default-features = false, features = ["associated_token", "token", "token_2022"] }
 confidential-batcher = { path = "../programs/confidential-batcher", features = ["no-entrypoint"] }
 confidential-token = { path = "../programs/confidential-token", features = ["no-entrypoint"] }
+delegator-vault = { path = "../programs/delegator-vault", features = ["no-entrypoint"] }
 demo-vault = { path = "../programs/demo-vault", features = ["no-entrypoint"] }
 dep-chain = { path = "../programs/dep-chain", features = ["no-entrypoint"] }
 encrypted-counter = { path = "../programs/encrypted-counter", features = ["no-entrypoint"] }

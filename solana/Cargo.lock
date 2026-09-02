@@ -1204,6 +1204,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "delegator-vault"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang",
+ "zama-host",
+]
+
+[[package]]
 name = "demo-vault"
 version = "0.1.0"
 dependencies = [
@@ -5023,6 +5031,7 @@ dependencies = [
  "bincode",
  "confidential-batcher",
  "confidential-token",
+ "delegator-vault",
  "demo-vault",
  "dep-chain",
  "encrypted-counter",

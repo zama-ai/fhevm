@@ -90,6 +90,8 @@ const encryptedValueBodyDecoder = getStructDecoder([
 
 const DISCRIMINATOR_SIZE = 8;
 const VECTOR_ELEMENT_SIZE = 32;
+/** `sha256("account:EncryptedValue")[..8]` — the crate's `encrypted_value_discriminator()`. */
+const ENCRYPTED_VALUE_DISCRIMINATOR = new Uint8Array([0x9b, 0x03, 0x95, 0x3a, 0x84, 0x67, 0xc8, 0xa1]);
 
 /**
  * Decodes an account's raw data, discriminator included, into its state.
@@ -99,6 +101,11 @@ const VECTOR_ELEMENT_SIZE = 32;
  * @throws If the bytes do not decode as the assumed layout, or decode into an impossible MMR.
  */
 export function decodeSolanaEncryptedValueState(data: Uint8Array, accountName: string): SolanaEncryptedValueState {
+  for (let index = 0; index < ENCRYPTED_VALUE_DISCRIMINATOR.length; index += 1) {
+    if (data[index] !== ENCRYPTED_VALUE_DISCRIMINATOR[index]) {
+      throw new Error(`account ${accountName} does not carry the EncryptedValue discriminator`);
+    }
+  }
   const body = data.slice(DISCRIMINATOR_SIZE);
   const [decoded, offset] = encryptedValueBodyDecoder.read(body, 0);
   const trailingCapacity = body.length - offset;
@@ -136,16 +143,26 @@ export function decodeSolanaEncryptedValueState(data: Uint8Array, accountName: s
  * @param rpc - The Solana RPC to read through.
  * @param address - The account's address.
  * @param config - Standard fetch passthrough, e.g. `{ commitment: 'confirmed' }`.
- * @throws If the account does not exist, or its data does not decode.
+ * @param expectedOwner - The host program expected to own the account. When given, an account
+ * owned by anyone else — e.g. a system account somebody created by transferring lamports to the
+ * PDA — is reported as such instead of failing deeper in the decoder as a phantom layout drift.
+ * @throws If the account does not exist, is not owned by `expectedOwner`, or does not decode.
  */
 export async function fetchSolanaEncryptedValueState(
   rpc: SolanaRpc,
   address: Address,
   config?: FetchAccountConfig,
+  expectedOwner?: Address,
 ): Promise<SolanaEncryptedValueState> {
   const account = await fetchEncodedAccount(rpc, address, config);
   if (!account.exists) {
     throw new Error(`EncryptedValue account ${address} does not exist`);
+  }
+  if (expectedOwner !== undefined && account.programAddress !== expectedOwner) {
+    throw new Error(
+      `account ${address} is owned by ${account.programAddress}, not the zama-host program ` +
+        `${expectedOwner} — no EncryptedValue account lives at this address`,
+    );
   }
   return decodeSolanaEncryptedValueState(account.data, address);
 }

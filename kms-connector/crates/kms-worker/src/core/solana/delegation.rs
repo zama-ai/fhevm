@@ -72,8 +72,22 @@ pub fn wildcard_delegation_address(
     )
 }
 
+/// Which row carried a delegated authorization.
+///
+/// Either row authorizes identically — the distinction changes no outcome. It exists because an
+/// audit record of a delegated authorization has to tell an authority-scoped grant from a
+/// wildcard one, and only this module sees which row it read.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum AuthorizedRow {
+    /// The row for the encrypted value account's own authority.
+    Exact,
+    /// The delegator's wildcard row.
+    Wildcard,
+}
+
 /// Checks that `delegator` has a live delegation to `delegate` covering `encrypted_value_account_authority` at this
-/// observation point: the row for that authority, or the delegator's wildcard row.
+/// observation point: the row for that authority, or the delegator's wildcard row. Names the row
+/// that carried the grant.
 ///
 /// Note the parameter list: a snapshot, three identities and a program id. No counter, and no
 /// reader — both records are read from the observation the rest of the authorization used.
@@ -83,7 +97,7 @@ pub fn check_delegation(
     delegator: SolanaPubkeyBytes,
     delegate: SolanaPubkeyBytes,
     encrypted_value_account_authority: SolanaPubkeyBytes,
-) -> Result<(), DelegationFailure> {
+) -> Result<AuthorizedRow, DelegationFailure> {
     let exact = match check_row(
         snapshot,
         program_id,
@@ -91,7 +105,7 @@ pub fn check_delegation(
         delegate,
         encrypted_value_account_authority,
     )? {
-        RowOutcome::Live => return Ok(()),
+        RowOutcome::Live => return Ok(AuthorizedRow::Exact),
         RowOutcome::NotLive(reason) => reason,
     };
     let wildcard = match check_row(
@@ -101,7 +115,7 @@ pub fn check_delegation(
         delegate,
         WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY,
     )? {
-        RowOutcome::Live => return Ok(()),
+        RowOutcome::Live => return Ok(AuthorizedRow::Wildcard),
         RowOutcome::NotLive(reason) => reason,
     };
 
@@ -164,13 +178,14 @@ fn check_row(
     // two paths cannot drift on the byte layout. Every failure it can report — wrong length,
     // wrong discriminator, an invalid field — says the same thing about these bytes, which is
     // what the variant below is named for.
-    let Ok(record) =
+    let Ok(witness) =
         decode_user_decryption_delegation_witness(account_key, account.owner, &account.data)
     else {
         return Ok(RowOutcome::NotLive(
             DelegationFailure::NotADelegationRecord { account_key },
         ));
     };
+    let record = &witness.record;
 
     // The address is not taken as proof of what the record says.
     if record.delegator != delegator
@@ -197,10 +212,12 @@ fn check_row(
     }
 
     // Both slot bounds are inclusive, and both are against the observation rather than a local
-    // clock. `record.delegation_counter` is decoded by the call above and read by nothing here:
+    // clock. The expiry boundary itself is the shared crate's `is_live_at` (revocation was
+    // excluded above, so not-live means exactly expired), not a re-spelling.
+    // `record.delegation_counter` is decoded by the call above and read by nothing here:
     // pinning it would invalidate in-flight requests on every unrelated delegation update.
     let observed_slot = snapshot.observed_slot();
-    if record.expiration_slot < observed_slot {
+    if !record.is_live_at(observed_slot) {
         return Ok(RowOutcome::NotLive(DelegationFailure::Expired {
             expiration_slot: record.expiration_slot,
             observed_slot,
@@ -267,7 +284,8 @@ pub enum DelegationFailure {
         observed_slot: u64,
     },
     /// It was written after the observation point, so it is not part of the state this
-    /// authorization saw.
+    /// authorization saw. A coherent node cannot produce this — a write lands at or before the
+    /// slot of the bank that holds it — so it reports an incoherent observation, not a dead record.
     #[error(
         "delegation is newer than the observation: written at {last_update_slot} > {observed_slot}"
     )]

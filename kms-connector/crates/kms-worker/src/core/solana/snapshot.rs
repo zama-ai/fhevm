@@ -33,12 +33,13 @@
 //! One thing is asked of the pair, and it is not agreement: order. The deciding read must not be
 //! older than the discovery read ([`HostSnapshot::deciding_after`]). A read that goes backwards is
 //! not a fresher view of the chain — behind a load balancer it is a second node that has fallen
-//! behind — and taking it as the deciding observation turns a grant that demonstrably exists into a
-//! terminal rejection: a delegation record written between the two reads reads as absent from the
-//! older one, and a record the discovery read already saw reads as newer than the observation. Both
-//! of those are terminal, so one lagging node would kill a valid request for good. Ordering costs
-//! one comparison and still compares no values: the chain advancing between the reads remains fine,
-//! which is the case that actually happens.
+//! behind — and taking it as the deciding observation reports as absent a grant the discovery read
+//! demonstrably saw, blaming the delegation for what the read did. Absence is transient,
+//! so the request would only burn attempts rather than die, but the verdict would still be the
+//! wrong one: the disagreement is between two reads, and ordering names it as that —
+//! [`SnapshotError::DecidingReadOlderThanDiscovery`] — instead of as a per-entry finding about a
+//! record. Ordering costs one comparison and still compares no values: the chain advancing between
+//! the reads remains fine, which is the case that actually happens.
 //!
 //! Reads number exactly one for a direct-only request, exactly two when any entry is delegated, and
 //! never three: nothing after the deciding snapshot reads state at all.
