@@ -9,6 +9,7 @@ use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::types::{
     Handle, COMPUTED_HANDLE_INDEX_MARKER, HANDLE_VERSION,
 };
+use fhevm_engine_common::versioning::format_consensus_epoch;
 use sqlx::types::time::{OffsetDateTime, PrimitiveDateTime};
 use tracing::{debug, error, info, warn};
 
@@ -965,6 +966,69 @@ async fn synthetic_logs_for_block(
 /// Channel name the upgrade-controller LISTENs on for `CoprocessorUpgradeProposed` events.
 const UPGRADE_ACTIVATED_CHANNEL: &str = "event_upgrade_activated";
 
+/// Records the event-derived consensus epoch for an accepted upgrade.
+///
+/// The identifier is `{version}/block_{block}` of the
+/// `CoprocessorUpgradeProposed` log (`version` is currently software version).
+/// Replay of the same proposal returns the existing row.
+async fn persist_upgrade_consensus_epoch(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    proposal_id: &[u8],
+    proposal_block: i64,
+    windows: &[(i64, i64, i64)],
+    stack_version: &str,
+    consensus_epoch: &str,
+) -> Result<String, sqlx::Error> {
+    if let Some(consensus_epoch) = sqlx::query_scalar!(
+        r#"
+        SELECT consensus_epoch
+          FROM consensus_epoch_history
+         WHERE proposal_id = $1 AND proposal_block = $2
+        "#,
+        proposal_id,
+        proposal_block,
+    )
+    .fetch_optional(tx.as_mut())
+    .await?
+    {
+        return Ok(consensus_epoch);
+    }
+
+    sqlx::query!(
+        r#"
+        INSERT INTO consensus_epoch_history (
+            consensus_epoch, proposal_id, proposal_block, stack_version, outcome
+        )
+        VALUES ($1, $2, $3, $4, 'pending')
+        "#,
+        consensus_epoch,
+        proposal_id,
+        proposal_block,
+        stack_version,
+    )
+    .execute(tx.as_mut())
+    .await?;
+
+    for &(host_chain_id, start_block, consensus_deadline_block) in windows {
+        sqlx::query!(
+            r#"
+            INSERT INTO consensus_epoch_block_window (
+                consensus_epoch, host_chain_id, start_block, consensus_deadline_block
+            )
+            VALUES ($1, $2, $3, $4)
+            "#,
+            consensus_epoch,
+            host_chain_id,
+            start_block,
+            consensus_deadline_block,
+        )
+        .execute(tx.as_mut())
+        .await?;
+    }
+
+    Ok(consensus_epoch.to_owned())
+}
+
 /// Decodes a log known to come from the configured ProtocolConfig contract on
 /// the authority chain and dispatches it. Caller must pre-gate on
 /// `is_protocol_config_listener && log.address == protocol_config_contract_address`.
@@ -985,7 +1049,21 @@ async fn handle_protocol_config_log(
                     );
                     return Ok(());
                 };
-                notify_coprocessor_upgrade_proposed(tx, chain_id, proposed, proposal_block).await?;
+                if log.log_index.is_none() {
+                    warn!(
+                        proposal_id = %proposed.proposalId,
+                        proposal_block,
+                        "Ignoring CoprocessorUpgradeProposed without a log index"
+                    );
+                    return Ok(());
+                }
+                notify_coprocessor_upgrade_proposed(
+                    tx,
+                    chain_id,
+                    proposed,
+                    proposal_block,
+                )
+                .await?;
             }
             _ => {
                 // ProtocolConfigEvents has no Debug impl; topic0 identifies
@@ -1033,6 +1111,33 @@ async fn notify_coprocessor_upgrade_proposed(
     let proposal_id_bytes = event.proposalId.to_be_bytes::<32>();
     let proposal_id_hex =
         format!("0x{}", alloy_primitives::hex::encode(proposal_id_bytes));
+
+    let Ok(block_number) = u64::try_from(proposal_block) else {
+        warn!(
+            listener_chain_id,
+            proposal_id = %proposal_id_hex,
+            proposal_block,
+            "Rejecting CoprocessorUpgradeProposed: block number exceeds u64"
+        );
+        return Ok(());
+    };
+    let minted_epoch = match format_consensus_epoch(
+        &event.softwareVersion,
+        block_number,
+    ) {
+        Ok(consensus_epoch) => consensus_epoch,
+        Err(reason) => {
+            error!(
+                listener_chain_id,
+                proposal_id = %proposal_id_hex,
+                software_version = %event.softwareVersion,
+                proposal_block,
+                reason,
+                "Rejecting CoprocessorUpgradeProposed: cannot derive consensus_epoch"
+            );
+            return Ok(());
+        }
+    };
 
     // gwStartBlock is a single top-level field shared by every per-chain window.
     let Ok(gw_start_block) = i64::try_from(event.gwStartBlock) else {
@@ -1233,6 +1338,16 @@ async fn notify_coprocessor_upgrade_proposed(
         return Ok(());
     }
 
+    let consensus_epoch = persist_upgrade_consensus_epoch(
+        tx,
+        &proposal_id_bytes,
+        proposal_block,
+        &windows,
+        &event.softwareVersion,
+        &minted_epoch,
+    )
+    .await?;
+
     sqlx::query("DELETE FROM upgrade_state WHERE stack_role IN ('BCS', 'GCS')")
         .execute(&mut **tx)
         .await?;
@@ -1266,6 +1381,7 @@ async fn notify_coprocessor_upgrade_proposed(
     info!(
         proposal_id = %proposal_id_hex,
         software_version = %event.softwareVersion,
+        consensus_epoch,
         chains = windows.len(),
         gw_start_block = event.gwStartBlock,
         "Persisted CoprocessorUpgradeProposed atomically, emitting pg_notify('event_upgrade_activated')"
@@ -2096,6 +2212,22 @@ mod tests {
             "UpgradeActivated"
         );
         assert_eq!(row.try_get::<String, _>("status").unwrap(), "in_progress");
+
+        let consensus_epoch: String = sqlx::query_scalar(
+            "SELECT consensus_epoch FROM consensus_epoch_history WHERE proposal_block = 300",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("consensus_epoch identifier");
+        assert_eq!(consensus_epoch, "v2/block_300");
+        let history_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM consensus_epoch_history WHERE consensus_epoch = $1",
+        )
+        .bind(&consensus_epoch)
+        .fetch_one(&pool)
+        .await
+        .expect("consensus_epoch history");
+        assert_eq!(history_count, 1);
     }
 
     /// A proposal with N windows atomically seeds N upgrade_state rows.
@@ -2181,6 +2313,27 @@ mod tests {
             assert_eq!(
                 row.try_get::<String, _>("status").unwrap(),
                 "in_progress"
+            );
+        }
+
+        let consensus_epoch_windows = sqlx::query(
+            "SELECT host_chain_id, start_block, consensus_deadline_block
+               FROM consensus_epoch_block_window
+              WHERE consensus_epoch = 'v2/block_300'
+              ORDER BY host_chain_id",
+        )
+        .fetch_all(&pool)
+        .await
+        .expect("consensus_epoch windows");
+        assert_eq!(consensus_epoch_windows.len(), 2);
+        for (row, (chain, start, end)) in
+            consensus_epoch_windows.iter().zip(expected)
+        {
+            assert_eq!(row.try_get::<i64, _>("host_chain_id").unwrap(), chain);
+            assert_eq!(row.try_get::<i64, _>("start_block").unwrap(), start);
+            assert_eq!(
+                row.try_get::<i64, _>("consensus_deadline_block").unwrap(),
+                end
             );
         }
     }
