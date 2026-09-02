@@ -776,7 +776,11 @@ export default async function runMigrationAndAdoption(ctx: RolloutRunContext) {
   await ctx.test("input-proof-compute-decrypt", { parallel: false });
 
   logPhase("13 cut over from 0.15.0 Blue to 0.15.1 Green");
-  await ctx.test("blue-green", { blueGreenPredecessorVersion: "v0.15.0", parallel: false });
+  await ctx.test("blue-green", {
+    blueGreenPredecessorVersion: "v0.15.0",
+    blueGreenProposalId: "3",
+    parallel: false,
+  });
   await assertWorkerRepresentation("Green", ["tfhe-worker"], "compressed-xof", greenStartedAt);
 
   logPhase("14 verify post-cutover protocol paths with compressed material");
