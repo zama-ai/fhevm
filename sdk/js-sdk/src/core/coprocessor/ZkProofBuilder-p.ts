@@ -253,11 +253,8 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
     // Fetch before address/chainId checks (main and feature/solana). Tests omit
     // fhevmContext; Solana encrypt still has context.tfheVersion for the key fetch.
     const tfheVersion = fhevmContext?.tryTfheVersion ?? context.tfheVersion;
-    const keyContext =
-      fhevmContext ?? (tfheVersion !== undefined ? createFhevmClientFrozenContext({ tfheVersion }) : undefined);
-    const fheEncryptionKeyWasm = await fetchFheEncryptionKeyWasm(context, {
-      fhevmContext: keyContext as FhevmClientFrozenContext,
-    });
+    const keyContext = fhevmContext ?? createFhevmClientFrozenContext(tfheVersion !== undefined ? { tfheVersion } : {});
+    const fheEncryptionKeyWasm = await fetchFheEncryptionKeyWasm(context, { fhevmContext: keyContext });
 
     if (this.#totalBits === 0) {
       throw new ZkProofError({
