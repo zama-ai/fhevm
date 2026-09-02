@@ -1,4 +1,5 @@
-// Network hook handlers: attach `connection.fhevm` on creation, release it on close.
+// Network hook handlers: attach `connection.fhevm` on creation, release it on close, and shape the
+// JSON-RPC stream (`onRequest`) the way v2's provider wrapper did.
 //
 // The factory runs at most once per HardhatRuntimeEnvironment, which makes it the documented home
 // for per-connection bookkeeping. `newConnection` is a decorator chain: take what `next()` built,
@@ -11,10 +12,12 @@
 
 import type { HookContext, NetworkHooks } from 'hardhat/types/hooks';
 import type { ChainType, NetworkConnection } from 'hardhat/types/network';
+import type { JsonRpcRequest, JsonRpcResponse } from 'hardhat/types/providers';
 
 import { createFhevmConnection } from '../FhevmConnection.js';
 import { resolveFhevmNetwork } from '../network.js';
 import { prepareDevelopmentChain } from '../prepare.js';
+import { handleRequest } from '../requests.js';
 
 export default (): Promise<Partial<NetworkHooks>> => {
   const fhevmByConnection = new WeakMap<NetworkConnection<ChainType | string>, boolean>();
@@ -30,6 +33,19 @@ export default (): Promise<Partial<NetworkHooks>> => {
       connection.fhevm = createFhevmConnection(connection, network);
       fhevmByConnection.set(connection, true);
       return connection;
+    },
+
+    async onRequest<ChainTypeT extends ChainType | string>(
+      context: HookContext,
+      connection: NetworkConnection<ChainTypeT>,
+      request: JsonRpcRequest,
+      next: (
+        nextContext: HookContext,
+        nextConnection: NetworkConnection<ChainTypeT>,
+        nextRequest: JsonRpcRequest,
+      ) => Promise<JsonRpcResponse>,
+    ): Promise<JsonRpcResponse> {
+      return handleRequest(request, (forwarded) => next(context, connection, forwarded));
     },
 
     async closeConnection<ChainTypeT extends ChainType | string>(
