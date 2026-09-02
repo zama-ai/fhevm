@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE block_manifest_state\n           SET publication_error_count = GREATEST(publication_error_count + 1, $4),\n               publication_last_error = $3,\n               publication_next_retry_at = NULL,\n               updated_at = NOW()\n         WHERE host_chain_id = $1\n           AND block_hash = $2\n           AND generation = $5\n           AND manifest_revision = $6\n           AND manifest_required\n           AND NOT manifest_published\n           AND block_content_digest IS NOT NULL\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bytea",
+        "Text",
+        "Int8",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6d3ca03fe009f46804efa176d8f7ed9176cda8f2b03eb8448d550a224ab11656"
+}

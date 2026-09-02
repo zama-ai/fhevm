@@ -1,0 +1,32 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT generation,\n               COUNT(*) FILTER (\n                   WHERE block_content_digest IS NULL\n                      OR (manifest_required AND manifest_published = FALSE)\n               )::BIGINT AS \"pending_work!\",\n               COUNT(*) FILTER (\n                   WHERE manifest_required\n                     AND NOT manifest_published\n                     AND publication_error_count > 0\n                     AND publication_next_retry_at IS NULL\n               )::BIGINT AS \"publication_retry_exhausted!\"\n          FROM block_manifest_state\n         GROUP BY generation\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "generation",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "pending_work!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "publication_retry_exhausted!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "cb0fdb596955e6dc4fad364da8b9e526f9d78806fdc08877486cad4af9d5bac3"
+}

@@ -180,6 +180,34 @@ const MAX_RETRY_ON_UNKNOWN_ERROR: usize = 5;
 // short wait in case the database had a short issue
 const RECONNECTION_DELAY: Duration = Duration::from_millis(100);
 
+async fn insert_handle_producer_block(
+    tx: &mut Transaction<'_>,
+    chain_id: i64,
+    handle: &[u8],
+    producer_block_number: i64,
+    producer_block_hash: &[u8],
+) -> Result<bool, SqlxError> {
+    let done = sqlx::query!(
+        r#"
+        INSERT INTO handle_producer_block (
+            host_chain_id,
+            handle,
+            producer_block_number,
+            producer_block_hash
+        )
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (host_chain_id, handle, producer_block_hash) DO NOTHING
+        "#,
+        chain_id,
+        handle,
+        producer_block_number,
+        producer_block_hash,
+    )
+    .execute(tx.deref_mut())
+    .await?;
+    Ok(done.rows_affected() > 0)
+}
+
 struct AllowedHandleInsert {
     handle: Vec<u8>,
     account_address: String,
@@ -868,18 +896,38 @@ impl Database {
     ) -> Result<bool, SqlxError> {
         let is_scalar = !scalar_byte.is_zero();
         let output_handle = result.to_vec();
-        self.insert_computation_legacy_row(
-            tx,
-            &output_handle,
-            &dependencies,
-            fhe_operation,
-            is_scalar,
-            group_id,
-            output_index,
-            output_count,
-            log,
-        )
-        .await
+        // The output is allowed when this block also emitted persistent
+        // `Allowed` / `AllowedForDecryption` for the result. ACL.allow
+        // requires the caller to already be allowed, and transient allow dies
+        // at tx end, so a handle that must survive later blocks is persist-
+        // allowed in the producing transaction (same host block). Later
+        // Allowed events only add accounts; they do not write this table.
+        let producer_recorded = if log.is_output_allowed(&output_handle) {
+            insert_handle_producer_block(
+                tx,
+                self.chain_id.as_i64(),
+                &output_handle,
+                log.block_number as i64,
+                log.block_hash.as_slice(),
+            )
+            .await?
+        } else {
+            false
+        };
+        let inserted = self
+            .insert_computation_legacy_row(
+                tx,
+                &output_handle,
+                &dependencies,
+                fhe_operation,
+                is_scalar,
+                group_id,
+                output_index,
+                output_count,
+                log,
+            )
+            .await?;
+        Ok(producer_recorded || inserted)
     }
 
     #[allow(clippy::too_many_arguments)]

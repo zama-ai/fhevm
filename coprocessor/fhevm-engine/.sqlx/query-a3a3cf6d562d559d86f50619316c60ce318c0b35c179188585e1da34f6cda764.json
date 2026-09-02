@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO block_manifest_state (\n            generation,\n            host_chain_id,\n            block_number,\n            block_hash,\n            parent_block_hash,\n            publication_cadence\n        )\n        VALUES ($1, $2, $3, $4, $5, $6)\n        ON CONFLICT (generation, host_chain_id, block_hash) DO NOTHING\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8",
+        "Int8",
+        "Bytea",
+        "Bytea",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a3a3cf6d562d559d86f50619316c60ce318c0b35c179188585e1da34f6cda764"
+}

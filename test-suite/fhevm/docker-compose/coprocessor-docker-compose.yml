@@ -240,6 +240,14 @@ services:
       - --gw-url=${GATEWAY_WS_URL}
       - --gateway-config-address=${GATEWAY_CONFIG_ADDRESS}
       - --my-bucket=${BUCKET_NAME}
+      # Unknown chains default to K=30. Local Anvil (31337) and this stack's
+      # host (${CHAIN_ID}, default 12345) publish every block.
+      - --manifest-publication-cadence=31337:1
+      - --manifest-publication-cadence=${CHAIN_ID}:1
+      - --manifest-publication-retry-delay=1s
+      - --manifest-publication-retry-count=30
+      - --signer-type=private-key
+      - --private-key=${TX_SENDER_PRIVATE_KEY}
     depends_on:
       coprocessor-db-migration:
         condition: service_completed_successfully
