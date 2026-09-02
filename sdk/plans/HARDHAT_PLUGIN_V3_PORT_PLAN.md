@@ -278,7 +278,7 @@ first review, per the cap rule.
 | A1 config hooks                      | ConfigExtender ≈40                       | 80           | ~160             |
 | A2 connection decoration             | new                                      | 60           | ~140             |
 | E2E-0a e2e skeleton + first test     | v2 e2e config/scripts + counter test     | 200          | ~330 (incl. 2 .sol) |
-| E2E-0b…0g contract corpus            | v2 e2e contracts 9,805 (verbatim copy)   | ≤500 each    | 7 commits        |
+| E2E-0b contract corpus (on demand)   | v2 e2e contracts 9,805 (verbatim copy)   | ≤500 each    | with ledger rows |
 | A3 hre alias                         | new                                      | 30           | ~70              |
 | A4 node ordering spike               | new (no override needed)                 | 30           | ~80              |
 | A5 network detection                 | networkProvider 233                      | 120          | ~220             |
@@ -349,14 +349,12 @@ first review, per the cap rule.
     Test: `make test-hh-v3-e2e` green; `hardhat test --network node`-style runs are NOT yet
     claimed.
     Commit: `feat(hh-v3-e2e): add the e2e member with the first counter test`
-  - **E2E-0b…0g. The Solidity corpus, verbatim, one directory per commit.** The remaining
-    `hardhat/v2/e2e/contracts/**` (≈9,100 lines) copied unchanged, compile-gated — proving hh3's
-    native npm resolution over the WHOLE v2 corpus long before any test uses it. Order and size:
-    `operators` (6,022 — split in two by file), `operators-public-decrypt` (749),
-    `governance` + `finance` (798), `token/ERC20` + `extensions` (799), `test/doc-examples` (554),
-    then the small rest (`utils`, `test/utils`, `test/token`, `test/finance`, `test/governance`).
-    Test: `hardhat compile` (and `forge fmt --check`/`forge lint`) green after each.
-    Commit: `chore(hh-v3-e2e): copy the <dir> contracts verbatim from the v2 e2e`
+  - **E2E-0b. The rest of the Solidity corpus — DEFERRED, on demand.** The e2e already owns a
+    contract and a test, and hh3's native npm resolution is proven on them; an upfront copy of the
+    remaining ≈9,100 lines would sit idle. Instead each contract directory is copied verbatim in
+    the SAME commit as the first ledger row that needs it (or the commit before, if the cap
+    forces a split), compile-gated. Solidity is never edited on the way in.
+    Commit (when split): `chore(hh-v3-e2e): copy the <dir> contracts verbatim from the v2 e2e`
 - **A3. ⚑ `hre.fhevm` alias — DECIDED: connection-only, no alias.** Hardhat 3's docs show only
   `NetworkConnection` extensions, never the HRE; `hre.created` is undocumented; the official ethers
   plugin attaches `connection.ethers` and nothing on the HRE. `index.ts` switches to `definePlugin`
@@ -364,12 +362,13 @@ first review, per the cap rule.
   diagnostics; the fallback is the id, which is wrong). Test: the HRE has no `fhevm` property
   before or after a connection is created.
   Commit: `feat(hh-v3-plugin): register via definePlugin; fhevm lives on the connection only`
-- **A4. SPIKE — `hardhat node` ordering** (ONE block; the source already shows `create()` precedes
-  `listen()`, this commit proves it in our tree). In `newConnection`, on an `edr-simulated`
-  connection, write a marker transaction. Test: `hre.network.createServer()` → `listen()` → a raw
-  HTTP `eth_getCode`/`eth_getTransactionCount` probe from the test sees the marker on the FIRST
-  request; a second `createHardhatRuntimeEnvironment` connecting over `localhost` (with the port
-  overridden) sees it too. No task override, no `internal/spike/`.
+- **A4. SPIKE — `hardhat node` ordering — PROVEN.** `internal/prepare.ts` adds the
+  `prepareDevelopmentChain` step to `newConnection`, gated on `networkConfig.type ===
+"edr-simulated"` (the wiring B1b2 fills); its body today is a marker — `hardhat_mine` one block,
+  chosen over a marker transaction so no account nonce moves and later CREATE addresses stay
+  deterministic. Test: `hre.network.createServer('default', '127.0.0.1', 0)` → `listen()` → the
+  FIRST raw-HTTP `eth_blockNumber` is `0x1`; a second HRE with an `http` network on that port sees
+  `0x1` too and does not mine again. Passed first run. No task override, no `internal/spike/`.
   Commit: `feat(hh-v3-plugin): prove newConnection runs before the node server listens`
 - **A5. Network detection.** Port the `networkProvider` minimum onto the connection:
   `networkConfig.type === "edr-simulated"` → in-process dev; `type === "http"` → probe `eth_chainId`
@@ -518,7 +517,7 @@ this later without API change). One commit per group, tests run against the B1 s
 
 The rule: a v2 test file ports in the SAME commit as the plugin step that makes its last missing
 API call work (or the very next commit if the cap forces a split), never earlier, never batched
-with unrelated files. The API-per-file map below is grepped from `hardhat/v2/e2e/test`; the
+with unrelated files. The contracts a test deploys travel with it (E2E-0b), verbatim. The API-per-file map below is grepped from `hardhat/v2/e2e/test`; the
 `hardhat-mock-engine/` prefix becomes `test/` in v3 (there is no other engine). Each ported file
 swaps `import { ethers, fhevm } from 'hardhat'` for `const { ethers, fhevm } = await
 network.connect()` (or the A3 alias, if kept) and keeps everything else byte-for-byte where hh3
