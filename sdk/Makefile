@@ -55,6 +55,8 @@ DIR_HH_V3            := hardhat/v3
 DIR_HH_V2_PLUGIN     := hardhat/v2/plugin
 DIR_HH_V2_E2E        := hardhat/v2/e2e
 DIR_HH_V2_TEMPLATE   := hardhat/v2/fhevm-hardhat-template
+DIR_HH_V3_PLUGIN     := hardhat/v3/plugin
+DIR_HH_V3_E2E        := hardhat/v3/e2e
 DIR_FHEVM_NPM        := fhevm-npm
 FHEVM_NPM_CLI        := ./fhevm-npm-cli
 
@@ -76,6 +78,7 @@ W_HH_V2_PLUGIN       := @fhevm/hardhat-plugin-v2-dev
 W_HH_V2_E2E          := @fhevm/hardhat-plugin-v2-e2e-dev
 W_HH_V2_TEMPLATE     := @fhevm/hardhat-template-v2-dev
 W_HH_V3_PLUGIN       := @fhevm/hardhat-plugin-v3-dev
+W_HH_V3_E2E          := @fhevm/hardhat-plugin-v3-e2e-dev
 
 run = npm run --silent $(2) -w $(1)
 
@@ -117,7 +120,7 @@ help: ## List the targets
 	      printf "  \033[36m%-22s\033[0m %s\n", $$2, $$3; \
 	    }'
 
-compile: compile-hh-v2-e2e compile-hh-v2-template compile-hh-v3-plugin ## Compile every package, in dependency order
+compile: compile-hh-v2-e2e compile-hh-v2-template compile-hh-v3-e2e ## Compile every package, in dependency order
 
 # The everyday sweep, in lifecycle order. ONE sub-make with three goals, deliberately: goals run left
 # to right in a single invocation, so the compiles `lint` triggers are not re-run by `compile`.
@@ -128,7 +131,7 @@ build: ## fmt-check, then lint, then compile — everything, gated
 
 lint: lint-shared lint-cleartext lint-hh-v2 lint-hh-v3 lint-npm-cli ## Lint every package
 
-test: test-cleartext-v12 test-cleartext-v13 test-hh-v2-plugin test-hh-v2-template test-hh-v2-e2e test-hh-v3-plugin ## Run package tests only; this is not the full validation workflow (use: 'make ci' instead)
+test: test-cleartext-v12 test-cleartext-v13 test-hh-v2-plugin test-hh-v2-template test-hh-v2-e2e test-hh-v3-plugin test-hh-v3-e2e ## Run package tests only; this is not the full validation workflow (use: 'make ci' instead)
 
 check: check-npm-cli ## Run pre-build checks, build, then post-build checks
 
@@ -286,6 +289,7 @@ clean-scratch: ## Delete the tooling's $TMPDIR scratch roots (consumer installs,
 	rm -rf "$${TMPDIR:-/tmp}/fhevm-npm-test-consumer" "$${TMPDIR:-/tmp}/fhevm-sdk-npm-cache"
 
 clean: clean-scratch ## Remove every package's build output and the tooling's scratch roots
+	$(call run-hh-v3,$(W_HH_V3_E2E),clean)
 	$(call run-hh-v3,$(W_HH_V3_PLUGIN),clean)
 	$(call run-hh-v2,$(W_HH_V2_TEMPLATE),clean)
 	$(call run-hh-v2,$(W_HH_V2_E2E),clean)
@@ -360,7 +364,7 @@ graph: ## Print the dependency graph for TARGET (default: compile)
 ########################################################################################################
 
 .PHONY: compile-package compile-cleartext-v12 compile-cleartext-v13 compile-hh-v2-plugin compile-hh-v2-template
-.PHONY: compile-hh-v2-e2e
+.PHONY: compile-hh-v2-e2e compile-hh-v3-plugin compile-hh-v3-e2e
 
 # Public bridge for tools that discover a package by manifest path while keeping this file authoritative
 # for the actual build graph. Unknown packages fail instead of silently bypassing Make with `npm run build`.
@@ -371,6 +375,8 @@ compile-package: ## Compile PACKAGE and its prerequisites
 	  "./$(DIR_HH_V2_PLUGIN)") target=compile-hh-v2-plugin ;; \
 	  "./$(DIR_HH_V2_TEMPLATE)") target=compile-hh-v2-template ;; \
 	  "./$(DIR_HH_V2_E2E)") target=compile-hh-v2-e2e ;; \
+	  "./$(DIR_HH_V3_PLUGIN)") target=compile-hh-v3-plugin ;; \
+	  "./$(DIR_HH_V3_E2E)") target=compile-hh-v3-e2e ;; \
 	  *) echo "Unsupported build package '$(PACKAGE)'" >&2; exit 2 ;; \
 	esac; \
 	$(MAKE) --no-print-directory "$$target"
@@ -390,8 +396,14 @@ compile-hh-v2-plugin: compile-cleartext-v13 ## Compile the Hardhat v2 plugin
 # No cross-generation prerequisite yet: the hello-world skeleton consumes nothing from the workspace.
 # The real v3 plugin will depend on host-contracts and js-sdk builds, like its v2 sibling.
 compile-hh-v3-plugin: ## Compile the Hardhat v3 plugin (hello-world skeleton)
-	@echo "==> compile $(DIR_HH_V3)/plugin"
+	@echo "==> compile $(DIR_HH_V3_PLUGIN)"
 	$(call run-hh-v3,$(W_HH_V3_PLUGIN),compile)
+
+# `hardhat build` compiles the contracts and generates the typechain types the suite's lint reads.
+# Loading hardhat.config.ts requires the built plugin.
+compile-hh-v3-e2e: compile-hh-v3-plugin ## Compile the Hardhat v3 e2e suite
+	@echo "==> compile $(DIR_HH_V3_E2E)"
+	$(call run-hh-v3,$(W_HH_V3_E2E),compile)
 
 compile-hh-v2-template: compile-hh-v2-plugin ## Compile the mirrored Hardhat v2 template
 	@echo "==> compile $(DIR_HH_V2_TEMPLATE)"
@@ -472,7 +484,7 @@ check-post: check-npm-cli-post-build ## Checks that require a generated and buil
 
 .PHONY: lint-shared lint-cleartext lint-hh-v2
 .PHONY: lint-common lint-common-vendored lint-cleartext-v12 lint-cleartext-v13
-.PHONY: lint-hh-v2-plugin lint-hh-v2-template lint-hh-v2-e2e lint-hh-v3 lint-hh-v3-plugin lint-npm-cli
+.PHONY: lint-hh-v2-plugin lint-hh-v2-template lint-hh-v2-e2e lint-hh-v3 lint-hh-v3-plugin lint-hh-v3-e2e lint-npm-cli
 
 lint-shared: lint-common lint-common-vendored
 
@@ -480,7 +492,7 @@ lint-cleartext: lint-cleartext-v12 lint-cleartext-v13
 
 lint-hh-v2: lint-hh-v2-plugin lint-hh-v2-template lint-hh-v2-e2e
 
-lint-hh-v3: lint-hh-v3-plugin
+lint-hh-v3: lint-hh-v3-plugin lint-hh-v3-e2e
 
 lint-common: ## Lint common
 	$(call run,$(W_COMMON),lint)
@@ -506,6 +518,9 @@ lint-hh-v2-e2e: compile-hh-v2-plugin ## Lint Hardhat v2 e2e (self-provides typec
 lint-hh-v3-plugin: ## Lint the Hardhat v3 plugin
 	$(call run-hh-v3,$(W_HH_V3_PLUGIN),lint)
 
+lint-hh-v3-e2e: compile-hh-v3-plugin ## Lint Hardhat v3 e2e (self-provides typechain; needs the built plugin)
+	$(call run-hh-v3,$(W_HH_V3_E2E),lint)
+
 lint-npm-cli: ## Typecheck and test the fhevm-npm CLI
 	npm --prefix $(DIR_FHEVM_NPM) run typecheck
 	npm --prefix $(DIR_FHEVM_NPM) test
@@ -518,8 +533,8 @@ lint-npm-cli: ## Typecheck and test the fhevm-npm CLI
 # silently rebuilds hides what it costs. `make ci` is the one-liner that orders the whole thing.
 ########################################################################################################
 
-.PHONY: test-cleartext-v12 test-cleartext-v13 test-hh-v2-plugin test-hh-v2-template
-.PHONY: test-hh-v2-e2e test-hh-v2-e2e-anvil test-consumer test-consumer-ci clean-scratch
+.PHONY: test-cleartext-v12 test-cleartext-v13 test-hh-v2-plugin test-hh-v2-template test-hh-v3-plugin
+.PHONY: test-hh-v2-e2e test-hh-v2-e2e-anvil test-hh-v3-e2e test-consumer test-consumer-ci clean-scratch
 
 test-cleartext-v12: compile-cleartext-v12 ## Cleartext v12 unit + forge + harness tests (self-provides ./out)
 	$(call run,$(W_V12),test)
@@ -535,6 +550,9 @@ test-hh-v2-template: compile-hh-v2-template ## Hardhat v2 template tests (worksp
 
 test-hh-v3-plugin: compile-hh-v3-plugin ## Hardhat v3 plugin tests (skip themselves until the cluster is installed)
 	$(call run-hh-v3,$(W_HH_V3_PLUGIN),test)
+
+test-hh-v3-e2e: compile-hh-v3-e2e ## Hardhat v3 e2e tests on the in-process network
+	$(call run-hh-v3,$(W_HH_V3_E2E),test)
 
 # HARDHAT_NETWORK=hardhat — the in-process network, so this needs nothing running. The variants below
 # do: `anvil` a local node, `sepolia`/`devnet` a funded remote account.

@@ -1,0 +1,13 @@
+node_modules
+*.tsbuildinfo
+
+# hardhat build output (artifacts, cache, typechain types)
+artifacts
+cache
+types
+
+# forge: soldeer dependencies and its own cache/out/broadcast
+dependencies
+cache-forge
+out
+broadcast

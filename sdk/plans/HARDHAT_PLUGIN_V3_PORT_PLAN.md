@@ -326,7 +326,17 @@ first review, per the cap rule.
   pure storage write (`FHE.setCoprocessor`), so no live stack is required. Every later test file
   ports when its API lands (see the ledger after Stage F) — the e2e grows ONE test file per commit,
   never ahead of the plugin. Split for the cap rule:
-  - **E2E-0a. Skeleton + first test.** `package.json` (ESM, private,
+  - **E2E-0a. Skeleton + first test — IMPLEMENTED, awaiting commit.** What landed differs from
+    the sketch below in four places, all forced by hardhat 3: `compile` is `hardhat build`
+    (typechain runs inside it, output `types/ethers-contracts`); `tsconfig` sets
+    `skipLibCheck: true` because typechain's generated `hardhat.d.ts` augments the hardhat-ethers
+    helpers interface by extending itself (hardhat's three shipped templates set the same flag;
+    hardhat.org does not document it); `ethers` is NOT declared until a test imports it (rule
+    4.2.1 — the hoisted copy comes from the plugins' peer ranges); the test opens its connection
+    with `network.getOrCreate()` (one chain per run, `--network` honoured). The cluster lockfile
+    grew by ~1,600 lines for the five companion plugins — the one part of this step the 500-line
+    cap cannot split.
+    `package.json` (ESM, private,
     `@fhevm/hardhat-plugin-v3-e2e-dev`), `hardhat.config.ts` via `defineConfig` with
     `plugins: [fhevm, hardhatMocha, hardhatEthers, hardhatEthersChaiMatchers, hardhatTypechain]`
     (the hh3 flavours of v2's stack — exact pins, chosen at implementation time), networks in v3

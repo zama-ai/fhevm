@@ -1,0 +1,43 @@
+{
+  "name": "@fhevm/hardhat-plugin-v3-e2e-dev",
+  "version": "0.0.0",
+  "description": "e2e test suite for Hardhat plugin v3 (esm only)",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "npm run fmt:check && npm run lint && npm run compile",
+    "clean": "rm -rf artifacts cache cache-forge types out broadcast *.tsbuildinfo",
+    "compile": "hardhat build",
+    "fmt": "npm run prettier:write && npm run forge:fmt",
+    "fmt:check": "npm run prettier:check && npm run forge:fmt:check",
+    "forge:fmt": "forge fmt",
+    "forge:fmt:check": "forge fmt --check",
+    "forge:lint": "forge lint",
+    "lint": "npm run compile && npm run forge:lint && eslint && tsc -p ./tsconfig.json --noEmit",
+    "prettier:check": "prettier --check \"**/*.{js,json,md,mjs,ts,yml}\"",
+    "prettier:write": "prettier --write \"**/*.{js,json,md,mjs,ts,yml}\"",
+    "test": "hardhat test"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@fhevm/hardhat-plugin": "0.1.0",
+    "@fhevm/solidity": "0.13.3",
+    "@nomicfoundation/hardhat-ethers": "4.0.15",
+    "@nomicfoundation/hardhat-ethers-chai-matchers": "3.0.11",
+    "@nomicfoundation/hardhat-mocha": "3.1.0",
+    "@nomicfoundation/hardhat-typechain": "3.1.1",
+    "@types/chai": "5.2.3",
+    "@types/mocha": "10.0.10",
+    "@types/node": "^22.0.0",
+    "chai": "5.3.3",
+    "eslint": "^10.0.2",
+    "hardhat": "^3.0.0",
+    "mocha": "11.8.0",
+    "prettier": "^3.8.3",
+    "typescript": "^6.0.2",
+    "typescript-eslint": "^8.58.2"
+  }
+}

@@ -303,7 +303,7 @@
       "name": "fhevm-hardhat-v3-workspace",
       "private": true,
       "member": false,
-      "note": "Installation root for the hardhat v3 generation (a CLUSTER): its own lockfile pins hardhat 3.x, hoisted once for every member — the same no-symlink singleton guarantee as ./hardhat/v2, one root per hardhat major. fhevm-hardhat-template and e2e siblings join its workspaces when they land."
+      "note": "Installation root for the hardhat v3 generation (a CLUSTER): its own lockfile pins hardhat 3.x, hoisted once for every member — the same no-symlink singleton guarantee as ./hardhat/v2, one root per hardhat major. The fhevm-hardhat-template sibling joins its workspaces when it lands."
     },
     "./hardhat/v3/plugin": {
       "kind": "dev",
@@ -329,6 +329,17 @@
         "esm": "./hardhat/v3/plugin/test-consumer/esm"
       },
       "note": "Same npm name as the v2 payload ON PURPOSE: one plugin, a new major line per hardhat generation. Legal because published-name uniqueness is scoped per installation root, and the two payloads never share one."
+    },
+    "./hardhat/v3/e2e": {
+      "kind": "internal-consumer",
+      "type": "esm",
+      "browser": false,
+      "name": "@fhevm/hardhat-plugin-v3-e2e-dev",
+      "private": true,
+      "member": true,
+      "memberOf": "./hardhat/v3",
+      "dependencyGroup": "hardhat/v3",
+      "note": "The v3 twin of ./hardhat/v2/e2e: links the plugin as a cluster member. Born with the v2 Solidity corpus and one test; each v2 test file ports as the plugin surface it needs lands."
     },
     "./hardhat/v3/plugin/test-consumer/esm": {
       "kind": "standalone",
