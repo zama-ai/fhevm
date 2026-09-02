@@ -254,8 +254,7 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
     // fhevmContext; Solana encrypt still has context.tfheVersion for the key fetch.
     const tfheVersion = fhevmContext?.tryTfheVersion ?? context.tfheVersion;
     const keyContext =
-      fhevmContext ??
-      (tfheVersion !== undefined ? createFhevmClientFrozenContext({ tfheVersion }) : undefined);
+      fhevmContext ?? (tfheVersion !== undefined ? createFhevmClientFrozenContext({ tfheVersion }) : undefined);
     const fheEncryptionKeyWasm = await fetchFheEncryptionKeyWasm(context, {
       fhevmContext: keyContext as FhevmClientFrozenContext,
     });
