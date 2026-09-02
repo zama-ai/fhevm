@@ -1,6 +1,6 @@
 # Porting the FHEVM hardhat plugin from hardhat v2 to hardhat v3
 
-Version: **1.7** (2026-09-02). Bump the minor for a content change to the plan, the major for a
+Version: **1.8** (2026-09-02). Bump the minor for a content change to the plan, the major for a
 change of charter or stage order; record each bump below.
 
 - 1.0 — initial plan, from the hardhat 3 docs.
@@ -12,8 +12,10 @@ change of charter or stage order; record each bump below.
 - 1.5 — A6 recorded as landed; `cacheDir`/`dotEnvFile`/`solidityCoverageDir` confirmed delete-bucket.
 - 1.6 — A7 recorded as landed; Stage A complete.
 - 1.7 — B1a recorded as landed (two commits: cleartext package + ethers peer, then the ABI repository).
+- 1.8 — B1b1 recorded as landed; the plugin switched from ethers to VIEM (open question 2 settled);
+  genesis-injection measured and declined; B1a repository re-based on viem.
 
-Status: **in progress — Stage A complete (A2–A7) + E2E-0a + B1a. Next: B1b1.** The landing zone exists: the
+Status: **in progress — Stage A complete (A2–A7) + E2E-0a + B1a + B1b1. Next: B1b2.** The landing zone exists: the
 `hardhat/v3` cluster (own installation root, hardhat 3.15 pinned), the plugin registered via
 `definePlugin` with its per-connection `fhevm` object and the pre-serve chain preparation proven,
 and the `hardhat/v3/e2e` member with the first counter test.
@@ -252,10 +254,14 @@ Each phase ends green: `make build`, the affected test tiers, and the fhevm-npm 
    has no default-connection object, its docs only ever extend `NetworkConnection`, and the official
    ethers plugin does the same. Consumers write `const { fhevm } = await network.connect()`; every
    ported v2 test swaps its `import { fhevm } from 'hardhat'` for that line.
-2. **The ethers bridge.** Nothing in our path needs `connection.ethers` from the v3 ethers plugin.
-   Recommendation: provider-direct — hand `connection.provider` (EIP-1193) to `@fhevm/sdk`, wrap
-   in an ethers `BrowserProvider` internally only where the SDK requires ethers. Decides how much
-   of `utils/ethers.ts` survives (expected: little).
+2. **The web3 library — SETTLED at B1b1: VIEM, provider-direct.** Hardhat 3 recommends viem (its
+   first `--init` template and toolbox), hardhat core depends on neither library, and both are
+   first-class official plugin families. The plugin builds viem clients over `custom(connection.provider)`
+   exactly as `@nomicfoundation/hardhat-viem` does (dev defaults: pollingInterval 50, cacheTime 0,
+   retryCount 0; chain = hardhat preset with the live id). No `hardhat-viem` peer yet — nothing needs
+   its types; revisit at Stage D if the API takes `connection.viem` clients. `utils/ethers.ts` does not
+   survive. The e2e stays on mocha + ethers for now (closest to the v2 suites); its move to the viem
+   toolbox is a separate decision before Stage D.
 3. **`FhevmDebugger` (⚑ gate D6).** Port as-is, or fold into `@fhevm/sdk` mock tooling?
 4. **Where the shared extraction lands.** Stage D delegates to the PUBLISHED `@fhevm/sdk` for what
    it already exports — but the D4a2 error engine and D5a2 HCU engine are new shared-layer material,
@@ -438,9 +444,25 @@ first review, per the cap rule.
     unregistered without an address, cleartext subclass + guard. Addresses are caller input: no
     local address literal. Dropped v2's duplicate wrapper `properties` (one consumer, the error
     decoder — D4a reads `name`/`address`/`readonlyContract`). Test: live provider, 3 tests.
+    SUPERSEDED at B1b1: the repository now holds a viem `Abi` + read-only `getContract` (`contract`),
+    and the payload peers `viem`, not `ethers` — see B1b1 and open question 2.
     Commit: `feat(hh-v3-plugin): load cleartext artifacts from the sibling contracts package`
-  - **B1b1.** The deploy transaction sequence itself (nonce-ordered CREATEs onto the ZamaConfig
-    addresses), as a pure function of (provider, artifacts). Test: addresses hold code afterwards.
+  - **B1b1 — LANDED** (three commits: `switch the plugin to viem` — `viem` peer replaces `ethers`,
+    `contracts.ts` re-based on viem `Abi` + read-only `getContract`, new `clients.ts`; `vendor the
+    viem adapter` — `viemEthereumLib.ts` via sync-vendored after a dedicated common-vendored commit
+    added `createViemEthereumAdaptersFromClients` (existing API untouched); then the deploy).
+    `internal/deploy.ts` ports v2's `setup.ts`: one `deploy()` call through the vendored adapters,
+    deployer from `mnemonicToAccount`, funded via `hardhat_setBalance` with the `anvil_` fallback,
+    refused by name off its start nonce, idempotent when the ACL holds code. Addresses come from the
+    package's `precomputeAddresses` (no literal); the four deployer values are plugin-local constants
+    until C2. Finding: `deploy()` returns `aclOwnerAddress` in the node's casing (lower-case with the
+    viem adapter, checksummed with ethers) while every other address is computed and checksummed —
+    the plugin checksums it; the package or the viem adapter should, upstream.
+    MEASURED AND DECLINED: injecting the package's `state/genesis.json` through the state cheats
+    (175 calls, ~10 ms per fresh chain, versions verified) vs ~26 mined transactions; the user chose
+    the `deploy()` TS API for parity with v2 — genesis stays a gitignored generator output.
+    Test: addresses hold code + shipped `getVersion` strings, second run sends nothing, wrong-nonce
+    deployer refused.
     Commit: `feat(hh-v3-plugin): port the nonce-ordered cleartext deploy sequence`
   - **B1b2.** Wire it to `newConnection`: development-class gating (A5), exactly once per CHAIN.
     Every `create()` on an `edr-simulated` network is a fresh chain and needs its own deploy; an
