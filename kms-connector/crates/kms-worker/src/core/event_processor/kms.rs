@@ -4,6 +4,7 @@ use connector_utils::types::{KmsGrpcRequest, extra_data::parse_extra_data, u256_
 use fhevm_host_bindings::kms_generation::KMSGeneration::{
     CrsgenRequest, KeygenRequest, PrepKeygenRequest,
 };
+use kms_connector_api::ErrorCode;
 use kms_grpc::kms::v1::{
     CompressedKeyConfig, ComputeKeyType, CrsGenRequest, Eip712DomainMsg, KeyGenPreprocRequest,
     KeyGenRequest, KeyGenSecretKeyConfig, KeySetConfig, KeySetType, StandardKeySetConfig,
@@ -35,7 +36,7 @@ impl KMSGenerationProcessor {
         prep_keygen_request: &PrepKeygenRequest,
     ) -> Result<KmsGrpcRequest, ProcessingError> {
         let parsed_extra_data = parse_extra_data(&prep_keygen_request.extraData)
-            .map_err(ProcessingError::Irrecoverable)?;
+            .map_err(|e| ProcessingError::irrecoverable(ErrorCode::Unprocessable, e))?;
 
         Ok(KmsGrpcRequest::PrepKeygen(KeyGenPreprocRequest {
             request_id: Some(u256_to_request_id(prep_keygen_request.prepKeygenId)),
@@ -53,8 +54,8 @@ impl KMSGenerationProcessor {
         &self,
         keygen_request: &KeygenRequest,
     ) -> Result<KmsGrpcRequest, ProcessingError> {
-        let parsed_extra_data =
-            parse_extra_data(&keygen_request.extraData).map_err(ProcessingError::Irrecoverable)?;
+        let parsed_extra_data = parse_extra_data(&keygen_request.extraData)
+            .map_err(|e| ProcessingError::irrecoverable(ErrorCode::Unprocessable, e))?;
 
         Ok(KmsGrpcRequest::Keygen(KeyGenRequest {
             request_id: Some(u256_to_request_id(keygen_request.keyId)),
@@ -74,8 +75,8 @@ impl KMSGenerationProcessor {
         &self,
         crsgen_request: &CrsgenRequest,
     ) -> Result<KmsGrpcRequest, ProcessingError> {
-        let parsed_extra_data =
-            parse_extra_data(&crsgen_request.extraData).map_err(ProcessingError::Irrecoverable)?;
+        let parsed_extra_data = parse_extra_data(&crsgen_request.extraData)
+            .map_err(|e| ProcessingError::irrecoverable(ErrorCode::Unprocessable, e))?;
 
         let max_num_bits = crsgen_request
             .maxBitLength
