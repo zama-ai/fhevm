@@ -182,11 +182,12 @@ Access is `kubectl port-forward` from the dev laptop (Tailscale up, namespace
 admin via `coprocessor-dev-access`/`kms-dev-access`) — see
 [`101-preview-env.md`](./101-preview-env.md#observe-your-environment).
 
-## `use_blockchain_dev`: shared Geth + Nitro (dispatch-only)
+## `use_blockchain_dev`: shared Geth + Nitro
 
-`preview-env-deploy.yml` accepts `use_blockchain_dev=true` on **workflow_dispatch
-only** (PR labels always stay on Anvil). That skips `anvil-host` / `anvil-gateway`
-and points the stack at the shared `blockchain-dev` namespace:
+`preview-env-deploy.yml` accepts `use_blockchain_dev=true` on **workflow_dispatch**,
+and the `preview-env-blue-green` PR label forces the same path (plain e2e labels
+stay on Anvil). That skips `anvil-host` / `anvil-gateway` and points the stack at
+the shared `blockchain-dev` namespace:
 
 | Chain | Node | In-cluster RPC | Chain ID |
 |-------|------|----------------|----------|

@@ -10,7 +10,9 @@ name: preview-env-deploy
 # stack at the shared blockchain-dev Geth (host 1337) + Nitro (gateway 412346)
 # nodes instead. That path generates unique wallets, funds them from the
 # in-cluster faucets, and still deploys this preview's own contracts (which
-# remain on the shared chain after namespace teardown). PR labels ignore it.
+# remain on the shared chain after namespace teardown). The
+# preview-env-blue-green PR label takes the same chain path (Anvil's 80-block
+# window closes during the dry-run e2e while consensus-detector is held at 0).
 #
 # Three PR labels control deployment (see check-labels below):
 #   - preview-env-e2e: deploy the PR branch. On PRs images are ALWAYS built
@@ -20,7 +22,8 @@ name: preview-env-deploy
 #   - preview-env-e2e-tests: same, plus auto-run the e2e test DAG and report
 #     pass/fail back to the PR.
 #   - preview-env-blue-green: deploy RFC-021 BCS+GCS on each party (forces
-#     nb_coprocessor=2). Dispatch encodes the same path as nb_coprocessor=2.
+#     nb_coprocessor=2) and use_blockchain_dev=true. Dispatch encodes the same
+#     dual fleet as nb_coprocessor=2 (chain is still the dispatch input).
 #     With preview-env-e2e-tests (or automated_tests): propose after relayer,
 #     hold consensus-detector so the first e2e stays on blue (assert GCS
 #     computations > 0), enable the detector, wait for versioning=v0.15,
@@ -146,7 +149,7 @@ on:
           - "false"
           - "true"
       use_blockchain_dev:
-        description: "Skip per-namespace Anvil and connect to the shared blockchain-dev Geth (host 1337) + Nitro (gateway 412346). Generates unique wallets and funds them from the blockchain-dev faucets. Dispatch-only (PR labels stay on Anvil). Incompatible with deploy_polygon. Contracts stay on the shared chain after teardown."
+        description: "Skip per-namespace Anvil and connect to the shared blockchain-dev Geth (host 1337) + Nitro (gateway 412346). Generates unique wallets and funds them from the blockchain-dev faucets. The preview-env-blue-green PR label forces this on. Incompatible with deploy_polygon. Contracts stay on the shared chain after teardown."
         required: true
         type: choice
         default: "false"
@@ -241,6 +244,7 @@ jobs:
       observability: ${{ steps.check.outputs.observability }}
       blue_green: ${{ steps.check.outputs.blue_green }}
       nb_coprocessor: ${{ steps.check.outputs.nb_coprocessor }}
+      use_blockchain_dev: ${{ steps.check.outputs.use_blockchain_dev }}
     steps:
       - id: check
         env:
@@ -250,6 +254,7 @@ jobs:
           DISPATCH_AUTOMATED_TESTS: ${{ inputs.automated_tests }}
           DISPATCH_OBSERVABILITY: ${{ inputs.observability }}
           DISPATCH_NB_COPROCESSOR: ${{ inputs.nb_coprocessor || '1' }}
+          DISPATCH_USE_BLOCKCHAIN_DEV: ${{ inputs.use_blockchain_dev || 'false' }}
           PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
         run: |
           # build_test_suite_only is a dispatch-only knob; label-triggered runs
@@ -265,6 +270,7 @@ jobs:
           # (no 26th input). PRs: preview-env-blue-green label, N forced to 2.
           echo "blue_green=false" >> "$GITHUB_OUTPUT"
           echo "nb_coprocessor=${DISPATCH_NB_COPROCESSOR:-1}" >> "$GITHUB_OUTPUT"
+          echo "use_blockchain_dev=false" >> "$GITHUB_OUTPUT"
           if [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
             blue_green=false
             nb_coprocessor="${DISPATCH_NB_COPROCESSOR:-1}"
@@ -278,6 +284,7 @@ jobs:
             echo "observability=${DISPATCH_OBSERVABILITY:-false}" >> "$GITHUB_OUTPUT"
             echo "blue_green=${blue_green}" >> "$GITHUB_OUTPUT"
             echo "nb_coprocessor=${nb_coprocessor}" >> "$GITHUB_OUTPUT"
+            echo "use_blockchain_dev=${DISPATCH_USE_BLOCKCHAIN_DEV:-false}" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           echo "PR labels: $PR_LABELS"
@@ -289,6 +296,7 @@ jobs:
           build_images=false
           automated_tests=false
           blue_green=false
+          use_blockchain_dev=false
           nb_coprocessor="${DISPATCH_NB_COPROCESSOR:-1}"
           # preview-env-e2e-tests: auto-run the e2e DAG AND deploy the env it needs,
           # so the PR-comment report path is reachable without a manual dispatch.
@@ -302,6 +310,7 @@ jobs:
           if echo "$PR_LABELS" | jq -e '.[] | select(. == "preview-env-blue-green")' > /dev/null; then
             blue_green=true
             should_deploy=true
+            use_blockchain_dev=true
             if [[ "${nb_coprocessor}" == "1" ]]; then
               nb_coprocessor=2
             fi
@@ -318,6 +327,7 @@ jobs:
             echo "automated_tests=${automated_tests}"
             echo "blue_green=${blue_green}"
             echo "nb_coprocessor=${nb_coprocessor}"
+            echo "use_blockchain_dev=${use_blockchain_dev}"
           } >> "$GITHUB_OUTPUT"
 
   ##########################################################################
@@ -493,6 +503,9 @@ jobs:
       OBSERVABILITY: ${{ needs.check-labels.outputs.observability }}
       BLUE_GREEN: ${{ needs.check-labels.outputs.blue_green }}
       NB_COPROCESSOR: ${{ needs.check-labels.outputs.nb_coprocessor }}
+      # Overrides the workflow-level input default so the blue-green PR label
+      # can force shared Geth/Nitro (inputs.* is empty on pull_request).
+      USE_BLOCKCHAIN_DEV: ${{ needs.check-labels.outputs.use_blockchain_dev }}
       # Previous-release pin for the BCS fleet (compiled STACK_VERSION=0.14.0).
       BCS_IMAGE_TAG: "v0.14.0-7"
       # In-namespace Jaeger's OTLP gRPC endpoint.

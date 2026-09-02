@@ -30,7 +30,7 @@ new push re-deploys it fresh (an in-flight run is cancelled).
 | --- | --- |
 | `preview-env-e2e` | Deploy the stack, **building fresh images from the PR branch** first (only changed components; the rest resolve to the base commit's images). In-repo charts (`charts/*`) install straight from the checkout. |
 | `preview-env-e2e-tests` | Same, **and** auto-run the e2e test DAG, posting a pass/fail report back to the PR. Deploys the env on its own. |
-| `preview-env-blue-green` | Deploy [RFC-021](https://github.com/zama-ai/tech-spec/pull/443) BCS+GCS on each party (forces `nb_coprocessor=2`). Enough on its own. Combined with `preview-env-e2e-tests`: propose after the relayer is up, hold `consensus-detector` so the first e2e stays on blue (`DryRunStarted`, assert GCS `computations > 0`), then enable the detector, wait for `versioning=v0.15`, and run e2e again on green. Incompatible with `deploy_polygon`. |
+| `preview-env-blue-green` | Deploy [RFC-021](https://github.com/zama-ai/tech-spec/pull/443) BCS+GCS on each party (forces `nb_coprocessor=2`) **on shared `blockchain-dev`** (not Anvil). Enough on its own. Combined with `preview-env-e2e-tests`: propose after the relayer is up, hold `consensus-detector` so the first e2e stays on blue (`DryRunStarted`, assert GCS `computations > 0`), then enable the detector, wait for `versioning=v0.15`, and run e2e again on green. Incompatible with `deploy_polygon`. |
 
 On PRs, images are **always** built fresh from the branch - there is no
 pinned-only PR path (use a `workflow_dispatch` run with `build_images=false`
@@ -78,8 +78,9 @@ Key inputs (all have sensible defaults — you rarely set more than a couple):
 - `use_blockchain_dev` — skip per-namespace Anvil and connect to the shared
   `blockchain-dev` Geth (host chain id `1337`) + Nitro (gateway `412346`).
   Generates a unique mnemonic, funds the derived wallets from the in-cluster
-  faucets, and still deploys **this preview's own contracts**. Dispatch-only
-  (PR labels stay on Anvil). After teardown the contracts remain on the shared
+  faucets, and still deploys **this preview's own contracts**. The
+  `preview-env-blue-green` PR label forces this on (plain `preview-env-e2e`
+  labels stay on Anvil). After teardown the contracts remain on the shared
   chain. Do not combine with `deploy_polygon`.
 
 **Versions** — three kinds:
@@ -249,10 +250,9 @@ kubectl delete namespace <namespace>
   workers/Postgres/S3). Keep it `1` unless you're specifically testing multi-party.
 - **Manual (dispatch) envs never auto-destroy** — run **preview-env-destroy** with
   the namespace to clean up (see [Destroy an environment](#destroy-an-environment)).
-- **`use_blockchain_dev` is dispatch-only.** PR labels always deploy Anvil.
-  Faucet-funded wallets are unique per run. The namespace is
-  `fhevm-ci-<actor>-<run-id-base36>` (read it from the run summary).
-  Destroying the namespace does **not** remove contracts from the shared
-  Geth/Nitro — they stay on `blockchain-dev` (see explorers
+- **`use_blockchain_dev` on dispatch, or via `preview-env-blue-green`.** Plain
+  `preview-env-e2e` / `-tests` labels stay on Anvil. Faucet-funded wallets are
+  unique per run. Destroying the namespace does **not** remove contracts from
+  the shared Geth/Nitro — they stay on `blockchain-dev` (see explorers
   `host-explorer-blockchain-dev` / `gateway-explorer-blockchain-dev`).
   Automated tests use Hardhat network `zwsDev` (live path: HCU cheat tests skip).
