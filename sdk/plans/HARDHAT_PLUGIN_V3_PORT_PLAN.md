@@ -1,6 +1,6 @@
 # Porting the FHEVM hardhat plugin from hardhat v2 to hardhat v3
 
-Version: **1.4** (2026-09-02). Bump the minor for a content change to the plan, the major for a
+Version: **1.5** (2026-09-02). Bump the minor for a content change to the plan, the major for a
 change of charter or stage order; record each bump below.
 
 - 1.0 — initial plan, from the hardhat 3 docs.
@@ -9,8 +9,9 @@ change of charter or stage order; record each bump below.
 - 1.3 — working rules preamble (incl. stop-after-each-step and plan-committed-alone); A3 and A4
   recorded as landed.
 - 1.4 — A5 recorded as landed (two commits: @fhevm/sdk peer, then detection); ledger A5 row done.
+- 1.5 — A6 recorded as landed; `cacheDir`/`dotEnvFile`/`solidityCoverageDir` confirmed delete-bucket.
 
-Status: **in progress — landed: A2, E2E-0a, A3, A4, A5. Next: A6.** The landing zone exists: the
+Status: **in progress — landed: A2, E2E-0a, A3, A4, A5, A6. Next: A7.** The landing zone exists: the
 `hardhat/v3` cluster (own installation root, hardhat 3.15 pinned), the plugin registered via
 `definePlugin` with its per-connection `fhevm` object and the pre-serve chain preparation proven,
 and the `hardhat/v3/e2e` member with the first counter test.
@@ -405,11 +406,15 @@ first review, per the cap rule.
   payload; make's `lint-hh-v3-plugin` has no compile prerequisite) — same shape as the e2e.
   Commit: `feat(hh-v3-plugin): port network detection for edr, localhost, anvil, public chains`
 
-- **A6. Consumer path resolution.** Port `FhevmEnvironmentPaths` + `resolveFromConsumer` — the
-  sibling-npm-module locators (`@fhevm/solidity`, `ZamaConfig.sol`, `@fhevm/sdk` incl. pnpm layout,
-  consumer `node_modules` root) — anchored on `context.config.paths.root`.
-  Test: unit tests against a fixture consumer tree (npm and pnpm layouts); missing sibling → the
-  named, actionable error.
+- **A6. Consumer path resolution — LANDED.** `internal/paths.ts`: `resolveFromConsumer` via Node's
+  own `createRequire` anchored at the project root (v2's `resolve` dependency dropped), and the
+  `FhevmPaths` lazy getters — `root`, `nodeModulesDir`, `fhevmSolidityDir`, `fhevmSolidityConfigFile`
+  (`ZamaConfig.sol`), `fhevmSdkDir` (pnpm: the real nested-store path). Missing sibling →
+  `HardhatPluginError` naming specifier and root. Wired to `context.config.paths.root` at B1a.
+  NOT ported, confirmed from v2's call sites: `cacheDir` (`fhevmTemp`, only the deleted remapping
+  cache and its `clean` hook), `dotEnvFile` (the `.env` devnet flow → `configVariable`),
+  `solidityCoverageDir`. Test: temp consumer trees — npm flat, pnpm symlink, missing sibling (also
+  proves the plugin's own tree cannot leak into consumer resolution).
   Commit: `feat(hh-v3-plugin): port consumer path resolution for sibling npm modules`
 - **A7. `onRequest` port.** The two surviving `FhevmProviderExtender` behaviours as an `onRequest`
   handler: inflate `eth_estimateGas` results by 120%; on a failed `eth_sendTransaction`, decorate
