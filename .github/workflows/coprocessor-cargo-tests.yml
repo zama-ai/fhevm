@@ -221,8 +221,9 @@ jobs:
         fi
         echo "$NEXTEST_FILTER" > /tmp/nextest-filter
         cargo llvm-cov clean --workspace --profile coverage
-        # `--profile` is ambiguous here, so the nextest profile goes in the env var.
-        NEXTEST_PROFILE=ci cargo llvm-cov nextest -p "$TEST_PACKAGE" --profile coverage \
+        # `cargo llvm-cov nextest` forwards flags to nextest, and to nextest
+        # `--profile` means its own profile, so the build profile is --cargo-profile.
+        cargo llvm-cov nextest -p "$TEST_PACKAGE" --cargo-profile coverage --profile ci \
           --partition "count:${SHARD}/${SHARDS}" \
           -E "$NEXTEST_FILTER"
       working-directory: coprocessor/fhevm-engine
