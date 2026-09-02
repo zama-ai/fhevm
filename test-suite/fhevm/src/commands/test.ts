@@ -991,7 +991,10 @@ const startContinuousErc20Traffic = (targets: TrafficTarget[], streams: number):
  */
 const runBlueGreenProfile = async (
   state: State,
-  options: Pick<TestOptions, "blueGreenPredecessorVersion" | "network" | "noHardhatCompile">,
+  options: Pick<
+    TestOptions,
+    "blueGreenPredecessorVersion" | "blueGreenProposalId" | "network" | "noHardhatCompile"
+  >,
 ): Promise<boolean> => {
   if (state.scenario.kind !== "blue-green") {
     throw new PreflightError(
@@ -1004,6 +1007,7 @@ const runBlueGreenProfile = async (
   const gcsStackVersion = await gcsBinaryRelease();
   const gcsVersionLive = gcsStackVersion;
   const predecessorVersion = options.blueGreenPredecessorVersion ?? "v0.14";
+  const proposalId = options.blueGreenProposalId ?? "2";
   const opCount = state.scenario.topology.count;
 
   const operatorDatabases: string[] = [];
@@ -1267,17 +1271,18 @@ const runBlueGreenProfile = async (
     "host-sc-deploy",
     'LOCAL_HOST_RPC_URL="$RPC_URL" npx hardhat task:proposeCoprocessorUpgrade ' +
       '--environment local --start-time "$PROPOSE_START_TIME" --duration 5m --buffer 10s ' +
-      '--proposal-id 2 --software-version "$PROPOSE_SW_VERSION" --use-internal-proxy-address true',
+      '--proposal-id "$PROPOSE_ID" --software-version "$PROPOSE_SW_VERSION" --use-internal-proxy-address true',
     {
       env: {
         LOCAL_GATEWAY_RPC_URL: state.discovery!.endpoints.gateway.http,
         LOCAL_HOST_CHAINS: localHostChains,
         PROPOSE_START_TIME: proposeStartTime,
         PROPOSE_SW_VERSION: gcsVersionLive,
+        PROPOSE_ID: proposalId,
       },
     },
   );
-  console.log(`OK:   activation emitted via task (proposalId=2, version=${gcsVersionLive}, start=${proposeStartTime})`);
+  console.log(`OK:   activation emitted via task (proposalId=${proposalId}, version=${gcsVersionLive}, start=${proposeStartTime})`);
 
   console.log(`\n[7/11] wait for GCS DryRunStarted per operator`);
   for (const db of operatorDatabases) {
