@@ -1,8 +1,8 @@
 mod common;
 
 use crate::common::{
-    TEST_COPRO_REGISTRY_REFRESH, create_mock_user_decryption_request_tx, init_kms_worker,
-    mock_copro_registry_load,
+    TEST_COPRO_REGISTRY_REFRESH, TEST_KMS_CONTEXT_CACHE_REFRESH,
+    create_mock_user_decryption_request_tx, init_kms_worker, mock_copro_registry_load,
 };
 use alloy::{
     primitives::U256,
@@ -113,6 +113,7 @@ async fn test_decryption_context_not_found(
         max_decryption_attempts: MAX_DECRYPTION_ATTEMPTS,
         db_fast_event_polling: Duration::from_millis(500),
         copro_registry_refresh: TEST_COPRO_REGISTRY_REFRESH,
+        kms_context_cache_refresh: TEST_KMS_CONTEXT_CACHE_REFRESH,
         ..Default::default()
     };
     let kms_worker = init_kms_worker(
@@ -219,6 +220,7 @@ async fn test_decryption_context_invalid(#[case] event_type: TestEventType) -> a
         max_decryption_attempts: MAX_DECRYPTION_ATTEMPTS,
         db_fast_event_polling: Duration::from_millis(500),
         copro_registry_refresh: TEST_COPRO_REGISTRY_REFRESH,
+        kms_context_cache_refresh: TEST_KMS_CONTEXT_CACHE_REFRESH,
         ..Default::default()
     };
     let kms_worker = init_kms_worker(
@@ -303,6 +305,7 @@ async fn test_context_destruction_invalidates_returned_epochs() -> anyhow::Resul
     let config = Config {
         kms_core_endpoints: vec![kms_mock_server.base_url().unwrap().to_string()],
         copro_registry_refresh: TEST_COPRO_REGISTRY_REFRESH,
+        kms_context_cache_refresh: TEST_KMS_CONTEXT_CACHE_REFRESH,
         ..Default::default()
     };
     let kms_worker = init_kms_worker(
@@ -349,26 +352,33 @@ async fn test_context_destruction_invalidates_returned_epochs() -> anyhow::Resul
 }
 
 /// Builds a `DbContextManager` whose on-chain fallback is served by the given `Asserter`.
+///
+/// The context cache snapshot is loaded here: rows the test needs cached must be inserted in
+/// the DB *before* this call, as the tests use a refresh interval that never fires.
 async fn setup_context_manager(
+    test_instance: &TestInstance,
     asserter: Asserter,
-) -> anyhow::Result<(TestInstance, DbContextManager<impl Provider + Clone>)> {
-    let test_instance = TestInstanceBuilder::default()
-        .with_db(DbInstance::setup_external().await?)
-        .build();
+    kms_context_cache_refresh: Duration,
+) -> anyhow::Result<DbContextManager<impl Provider + Clone>> {
     let mock_provider = ProviderBuilder::new()
         .disable_recommended_fillers()
         .connect_mocked_client(asserter);
-    let context_manager = DbContextManager::new(
+    let config = Config {
+        kms_context_cache_refresh,
+        ..Default::default()
+    };
+    DbContextManager::connect(
         test_instance.db().clone(),
-        &Config::default(),
+        &config,
         mock_provider,
-    );
-    Ok((test_instance, context_manager))
+        CancellationToken::new(),
+    )
+    .await
 }
 
 /// Pair unknown locally but valid on-chain → fallback validates and caches it: the second
-/// validation must succeed from the DB alone (the asserter queue is then empty, so any other
-/// RPC call would fail).
+/// validation must succeed from the in-memory cache alone (the asserter queue is then empty,
+/// so any other RPC call would fail), and the pair must be persisted in the DB.
 #[rstest]
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
@@ -376,7 +386,11 @@ async fn test_validate_context_fallback_caches_valid_pair() -> anyhow::Result<()
     let asserter = Asserter::new();
     asserter.push_success(&true.abi_encode()); // isValidKmsContext
     asserter.push_success(&true.abi_encode()); // isValidEpochForContext
-    let (test_instance, context_manager) = setup_context_manager(asserter).await?;
+    let test_instance = TestInstanceBuilder::default()
+        .with_db(DbInstance::setup_external().await?)
+        .build();
+    let context_manager =
+        setup_context_manager(&test_instance, asserter, TEST_KMS_CONTEXT_CACHE_REFRESH).await?;
 
     let context_id = U256::from(33);
     let epoch_id = U256::from(5);
@@ -411,7 +425,11 @@ async fn test_validate_context_pending_epoch_is_recoverable() -> anyhow::Result<
     let asserter = Asserter::new();
     asserter.push_success(&true.abi_encode()); // isValidKmsContext
     asserter.push_success(&false.abi_encode()); // isValidEpochForContext
-    let (test_instance, context_manager) = setup_context_manager(asserter).await?;
+    let test_instance = TestInstanceBuilder::default()
+        .with_db(DbInstance::setup_external().await?)
+        .build();
+    let context_manager =
+        setup_context_manager(&test_instance, asserter, TEST_KMS_CONTEXT_CACHE_REFRESH).await?;
 
     let context_id = U256::from(33);
     let epoch_id = U256::from(5);
@@ -444,13 +462,20 @@ async fn test_validate_context_pending_epoch_is_recoverable() -> anyhow::Result<
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
 async fn test_validate_context_destroyed_rejects_any_epoch() -> anyhow::Result<()> {
-    let (test_instance, context_manager) = setup_context_manager(Asserter::new()).await?;
-
+    let test_instance = TestInstanceBuilder::default()
+        .with_db(DbInstance::setup_external().await?)
+        .build();
     sqlx::query!(
         "UPDATE kms_context SET is_valid = false WHERE id = $1",
         TESTING_KMS_CONTEXT.as_le_slice(),
     )
     .execute(test_instance.db())
+    .await?;
+    let context_manager = setup_context_manager(
+        &test_instance,
+        Asserter::new(),
+        TEST_KMS_CONTEXT_CACHE_REFRESH,
+    )
     .await?;
 
     for epoch_id in [Some(DEFAULT_EPOCH_ID), Some(U256::from(99)), None] {
@@ -478,7 +503,9 @@ async fn test_validate_context_destroyed_rejects_any_epoch() -> anyhow::Result<(
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
 async fn test_validate_context_destroyed_epoch_leaves_siblings_valid() -> anyhow::Result<()> {
-    let (test_instance, context_manager) = setup_context_manager(Asserter::new()).await?;
+    let test_instance = TestInstanceBuilder::default()
+        .with_db(DbInstance::setup_external().await?)
+        .build();
 
     // Invalidate an epoch of the testing context, mirroring what the gw-listener does on
     // `KmsEpochDestroyed`. The `context_id` is left NULL, as the event does not carry it: the
@@ -490,6 +517,13 @@ async fn test_validate_context_destroyed_epoch_leaves_siblings_valid() -> anyhow
     )
     .bind(destroyed_epoch_id.as_le_slice())
     .execute(test_instance.db())
+    .await?;
+
+    let context_manager = setup_context_manager(
+        &test_instance,
+        Asserter::new(),
+        TEST_KMS_CONTEXT_CACHE_REFRESH,
+    )
     .await?;
 
     let err = context_manager
@@ -525,7 +559,9 @@ async fn test_validate_context_epoch_of_other_context_falls_back_on_chain() -> a
     let asserter = Asserter::new();
     asserter.push_success(&true.abi_encode()); // isValidKmsContext
     asserter.push_success(&false.abi_encode()); // isValidEpochForContext
-    let (test_instance, context_manager) = setup_context_manager(asserter).await?;
+    let test_instance = TestInstanceBuilder::default()
+        .with_db(DbInstance::setup_external().await?)
+        .build();
 
     // A second valid context, requested with the epoch seeded for `TESTING_KMS_CONTEXT`.
     let other_context_id = U256::from(34);
@@ -536,6 +572,9 @@ async fn test_validate_context_epoch_of_other_context_falls_back_on_chain() -> a
     .bind(other_context_id.as_le_slice())
     .execute(test_instance.db())
     .await?;
+
+    let context_manager =
+        setup_context_manager(&test_instance, asserter, TEST_KMS_CONTEXT_CACHE_REFRESH).await?;
 
     let err = context_manager
         .validate_context(&ExtraData {
@@ -565,8 +604,8 @@ async fn test_validate_context_epoch_of_other_context_falls_back_on_chain() -> a
 
 /// An epoch cached as valid under another context, but whose requested pair the chain confirms
 /// (e.g. the cached association went stale after a reorg) → Valid, and the cached association
-/// is repaired: the second validation must succeed from the DB alone (the asserter queue is
-/// then empty, so any other RPC call would fail).
+/// is repaired: the second validation must succeed from the in-memory cache alone (the asserter
+/// queue is then empty, so any other RPC call would fail).
 #[rstest]
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
@@ -574,7 +613,9 @@ async fn test_validate_context_stale_epoch_association_self_heals() -> anyhow::R
     let asserter = Asserter::new();
     asserter.push_success(&true.abi_encode()); // isValidKmsContext
     asserter.push_success(&true.abi_encode()); // isValidEpochForContext
-    let (test_instance, context_manager) = setup_context_manager(asserter).await?;
+    let test_instance = TestInstanceBuilder::default()
+        .with_db(DbInstance::setup_external().await?)
+        .build();
 
     // A second valid context, requested with the epoch seeded for `TESTING_KMS_CONTEXT`.
     let other_context_id = U256::from(34);
@@ -585,6 +626,9 @@ async fn test_validate_context_stale_epoch_association_self_heals() -> anyhow::R
     .bind(other_context_id.as_le_slice())
     .execute(test_instance.db())
     .await?;
+
+    let context_manager =
+        setup_context_manager(&test_instance, asserter, TEST_KMS_CONTEXT_CACHE_REFRESH).await?;
 
     let extra_data = ExtraData {
         context_id: Some(other_context_id),
@@ -607,13 +651,21 @@ async fn test_validate_context_stale_epoch_association_self_heals() -> anyhow::R
     Ok(())
 }
 
-/// v1 extra_data (no epoch) referencing a context known locally → Valid from the DB alone,
+/// v1 extra_data (no epoch) referencing a context known locally → Valid from the cache alone,
 /// without any RPC call (the asserter queue is empty).
 #[rstest]
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
 async fn test_validate_context_v1_extra_data_validates_context_only() -> anyhow::Result<()> {
-    let (_test_instance, context_manager) = setup_context_manager(Asserter::new()).await?;
+    let test_instance = TestInstanceBuilder::default()
+        .with_db(DbInstance::setup_external().await?)
+        .build();
+    let context_manager = setup_context_manager(
+        &test_instance,
+        Asserter::new(),
+        TEST_KMS_CONTEXT_CACHE_REFRESH,
+    )
+    .await?;
 
     let extra_data = ExtraData {
         context_id: Some(TESTING_KMS_CONTEXT),
@@ -633,7 +685,11 @@ async fn test_validate_context_v1_unknown_context_falls_back_without_caching() -
 {
     let asserter = Asserter::new();
     asserter.push_success(&true.abi_encode()); // isValidKmsContext
-    let (test_instance, context_manager) = setup_context_manager(asserter).await?;
+    let test_instance = TestInstanceBuilder::default()
+        .with_db(DbInstance::setup_external().await?)
+        .build();
+    let context_manager =
+        setup_context_manager(&test_instance, asserter, TEST_KMS_CONTEXT_CACHE_REFRESH).await?;
 
     let context_id = U256::from(33);
     let extra_data = ExtraData {
@@ -657,7 +713,15 @@ async fn test_validate_context_v1_unknown_context_falls_back_without_caching() -
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
 async fn test_validate_context_default_epoch_id_matches_seeded_row() -> anyhow::Result<()> {
-    let (_test_instance, context_manager) = setup_context_manager(Asserter::new()).await?;
+    let test_instance = TestInstanceBuilder::default()
+        .with_db(DbInstance::setup_external().await?)
+        .build();
+    let context_manager = setup_context_manager(
+        &test_instance,
+        Asserter::new(),
+        TEST_KMS_CONTEXT_CACHE_REFRESH,
+    )
+    .await?;
 
     let extra_data = ExtraData {
         context_id: Some(TESTING_KMS_CONTEXT),
@@ -665,4 +729,54 @@ async fn test_validate_context_default_epoch_id_matches_seeded_row() -> anyhow::
     };
     context_manager.validate_context(&extra_data).await?;
     Ok(())
+}
+
+/// A context invalidated in the DB (as the gw-listener does on `KmsContextDestroyed`) keeps
+/// validating from the stale in-memory snapshot, until the refresh task picks up the
+/// invalidation → Irrecoverable error, without any RPC call (the asserter queue is empty).
+#[rstest]
+#[timeout(Duration::from_secs(60))]
+#[tokio::test]
+async fn test_kms_context_cache_refresh_picks_up_invalidation() -> anyhow::Result<()> {
+    let test_instance = TestInstanceBuilder::default()
+        .with_db(DbInstance::setup_external().await?)
+        .build();
+    let context_manager = setup_context_manager(
+        &test_instance,
+        Asserter::new(),
+        Duration::from_millis(100), // Short refresh: the test waits for it to fire
+    )
+    .await?;
+
+    let extra_data = ExtraData {
+        context_id: Some(TESTING_KMS_CONTEXT),
+        epoch_id: Some(DEFAULT_EPOCH_ID),
+    };
+    context_manager.validate_context(&extra_data).await?;
+
+    sqlx::query!(
+        "UPDATE kms_context SET is_valid = false WHERE id = $1",
+        TESTING_KMS_CONTEXT.as_le_slice(),
+    )
+    .execute(test_instance.db())
+    .await?;
+
+    // Within the refresh window the stale snapshot may still validate the pair; the
+    // invalidation must be enforced once the refresh picks it up.
+    loop {
+        match context_manager.validate_context(&extra_data).await {
+            Ok(()) => {
+                info!("Snapshot still stale, waiting for the cache refresh...");
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+            Err(e) => {
+                let err = RequestCheckError::record(e);
+                assert!(
+                    matches!(err, ProcessingError::Irrecoverable(_)),
+                    "unexpected error: {err}"
+                );
+                return Ok(());
+            }
+        }
+    }
 }

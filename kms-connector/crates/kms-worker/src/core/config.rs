@@ -100,6 +100,12 @@ pub struct Config {
     /// Refresh interval of the Coprocessor registry, read from the `GatewayConfig` contract.
     #[serde(with = "humantime_serde", default = "default_copro_registry_refresh")]
     pub copro_registry_refresh: Duration,
+    /// Refresh interval of the in-memory KMS context cache, read from the local DB.
+    #[serde(
+        with = "humantime_serde",
+        default = "default_kms_context_cache_refresh"
+    )]
+    pub kms_context_cache_refresh: Duration,
 
     /// Ceiling on the calls a single host chain endpoint may have in flight, across all requests.
     #[serde(default = "default_host_rpc_max_concurrent_calls")]
@@ -218,6 +224,10 @@ fn default_copro_registry_refresh() -> Duration {
     Duration::from_secs(60)
 }
 
+fn default_kms_context_cache_refresh() -> Duration {
+    Duration::from_secs(60)
+}
+
 fn default_host_rpc_max_concurrent_calls() -> NonZeroUsize {
     NonZeroUsize::new(128).unwrap()
 }
@@ -278,6 +288,7 @@ impl Default for Config {
             s3_max_concurrent_gets: default_s3_max_concurrent_gets(),
             s3_max_ciphertext_size: default_s3_max_ciphertext_size(),
             copro_registry_refresh: default_copro_registry_refresh(),
+            kms_context_cache_refresh: default_kms_context_cache_refresh(),
             host_rpc_max_concurrent_calls: default_host_rpc_max_concurrent_calls(),
             host_rpc_call_timeout: default_host_rpc_call_timeout(),
             erc1271_gas_limit: default_erc1271_gas_limit(),
@@ -320,6 +331,7 @@ mod tests {
             env::remove_var("KMS_CONNECTOR_S3_MAX_CONCURRENT_GETS");
             env::remove_var("KMS_CONNECTOR_S3_MAX_CIPHERTEXT_SIZE");
             env::remove_var("KMS_CONNECTOR_COPRO_REGISTRY_REFRESH");
+            env::remove_var("KMS_CONNECTOR_KMS_CONTEXT_CACHE_REFRESH");
             env::remove_var("KMS_CONNECTOR_HOST_RPC_MAX_CONCURRENT_CALLS");
             env::remove_var("KMS_CONNECTOR_HOST_RPC_CALL_TIMEOUT");
             env::remove_var("KMS_CONNECTOR_SERVICE_NAME");
@@ -393,6 +405,7 @@ mod tests {
             env::set_var("KMS_CONNECTOR_S3_MAX_CONCURRENT_GETS", "8");
             env::set_var("KMS_CONNECTOR_S3_MAX_CIPHERTEXT_SIZE", "1048576");
             env::set_var("KMS_CONNECTOR_COPRO_REGISTRY_REFRESH", "90s");
+            env::set_var("KMS_CONNECTOR_KMS_CONTEXT_CACHE_REFRESH", "30s");
             env::set_var("KMS_CONNECTOR_HOST_RPC_MAX_CONCURRENT_CALLS", "64");
             env::set_var("KMS_CONNECTOR_HOST_RPC_CALL_TIMEOUT", "15s");
             env::set_var("KMS_CONNECTOR_SERVICE_NAME", "kms-connector-test");
@@ -452,6 +465,7 @@ mod tests {
         assert_eq!(config.s3_max_concurrent_gets.get(), 8);
         assert_eq!(config.s3_max_ciphertext_size.get(), 1048576);
         assert_eq!(config.copro_registry_refresh.as_secs(), 90);
+        assert_eq!(config.kms_context_cache_refresh.as_secs(), 30);
         assert_eq!(config.host_rpc_max_concurrent_calls.get(), 64);
         assert_eq!(config.host_rpc_call_timeout.as_secs(), 15);
         assert_eq!(config.service_name, "kms-connector-test");

@@ -9,7 +9,7 @@ mod protocol_config;
 mod rpc;
 
 pub use ciphertext::CiphertextManager;
-pub use context::{ContextManager, DbContextManager};
+pub use context::{ContextManager, DbContextManager, KmsContextCache};
 pub use decryption::DecryptionProcessor;
 pub use error::{ProcessingError, RequestCheckError, RequestCheckKind};
 pub use kms::KMSGenerationProcessor;

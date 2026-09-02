@@ -157,8 +157,13 @@ impl
 
         let event_picker = DbEventPicker::connect(db_pool.clone(), &config).await?;
 
-        let context_manager =
-            DbContextManager::new(db_pool.clone(), &config, ethereum_provider.clone());
+        let context_manager = DbContextManager::connect(
+            db_pool.clone(),
+            &config,
+            ethereum_provider.clone(),
+            cancel_token.clone(),
+        )
+        .await?;
         let ciphertext_manager =
             CiphertextManager::connect(gateway_provider.clone(), &config, cancel_token).await?;
         let decryption_processor = DecryptionProcessor::new(
