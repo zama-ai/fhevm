@@ -17,13 +17,6 @@ use test_harness::instance::ImportMode;
 mod common;
 use common::{allowed_request, trivial_encrypt_request, RawLog};
 
-sol!(
-    #[sol(rpc)]
-    #[derive(Debug, serde::Serialize, serde::Deserialize)]
-    KMSGenerationTest,
-    "artifacts/KMSGenerationTest.sol/KMSGenerationTest.json"
-);
-
 #[tokio::test]
 #[serial(db)]
 async fn poller_state_round_trip() -> Result<(), Box<dyn std::error::Error>> {

@@ -954,7 +954,7 @@ mod tests {
             existingKeyId: alloy::primitives::U256::from_be_slice(&key_id),
             kmsNodeStorageUrls: Vec::new(),
             keyDigests: vec![
-                crate::contracts::kms_generation::IKMSGeneration::KeyDigest {
+                fhevm_host_bindings::kms_generation::IKMSGeneration::KeyDigest {
                     keyType: KeyType::CompressedKeySet as u8,
                     digest: vec![11_u8; 32].into(),
                 },
