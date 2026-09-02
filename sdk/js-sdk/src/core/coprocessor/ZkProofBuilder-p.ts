@@ -191,7 +191,7 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
    * type inside `buildInputProofMetaData`) and the returned proof type differ.
    */
   public async buildSolana(
-    context: Context,
+    context: Context & { readonly tfheVersion: TfheVersion },
     {
       contractAddress,
       userAddress,
@@ -207,6 +207,7 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
       contractAddress,
       userAddress,
       asBytesHex('0x00'),
+      createFhevmClientFrozenContext({ tfheVersion: context.tfheVersion }),
     );
 
     if (!isSolanaHostChainId(chainId)) {
@@ -243,18 +244,14 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
     contractAddress: string,
     userAddress: string,
     extraData: BytesHex,
-    fhevmContext?: FhevmClientFrozenContext,
+    fhevmContext: FhevmClientFrozenContext,
   ): Promise<{
     readonly chainId: bigint | number;
     readonly aclContractAddress: string;
     readonly ciphertextWithZkProof: Uint8Array;
     readonly extraData: BytesHex;
   }> {
-    // Fetch before address/chainId checks (main and feature/solana). Tests omit
-    // fhevmContext; Solana encrypt still has context.tfheVersion for the key fetch.
-    const tfheVersion = fhevmContext?.tryTfheVersion ?? context.tfheVersion;
-    const keyContext = fhevmContext ?? createFhevmClientFrozenContext(tfheVersion !== undefined ? { tfheVersion } : {});
-    const fheEncryptionKeyWasm = await fetchFheEncryptionKeyWasm(context, { fhevmContext: keyContext });
+    const fheEncryptionKeyWasm = await fetchFheEncryptionKeyWasm(context, { fhevmContext });
 
     if (this.#totalBits === 0) {
       throw new ZkProofError({
@@ -291,7 +288,7 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
         fheEncryptionKey: fheEncryptionKeyWasm,
         metaData,
         extraData: asBytesHex(extraData),
-        tfheVersion,
+        tfheVersion: fhevmContext.tfheVersion,
       });
 
     return {
