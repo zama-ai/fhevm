@@ -634,6 +634,7 @@ pub async fn ingest_block_logs(
         &mut tfhe_event_log,
         &db.dependence_chain,
         &db.consumed_boundaries,
+        &db.sealed_chains,
         options.dependence_by_connexity,
         options.dependence_cross_block,
     )
@@ -1343,6 +1344,7 @@ pub async fn synthesize_finalized_fallback_grants(
         &mut logs,
         &db.dependence_chain,
         &db.consumed_boundaries,
+        &db.sealed_chains,
         false,
         false,
     )
@@ -1607,6 +1609,7 @@ mod tests {
                 .iter()
                 .map(|dep| FixedBytes::<32>::from([*dep; 32]))
                 .collect(),
+            outer_boundary_handles: vec![],
             dependents: vec![],
             allowed_handle: vec![],
             size: 1,
