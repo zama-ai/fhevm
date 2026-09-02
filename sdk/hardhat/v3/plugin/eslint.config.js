@@ -9,6 +9,6 @@ export default [
     returnTypeFiles: ['pkg/src/**/*.ts'],
     // Published, but Node-only: a Hardhat plugin never runs in a browser.
     browserSafeFiles: [],
-    ignores: ['pkg/_esm/**', 'pkg/_types/**'],
+    ignores: ['pkg/_esm/**'],
   }),
 ];

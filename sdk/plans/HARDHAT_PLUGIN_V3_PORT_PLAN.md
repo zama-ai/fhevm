@@ -253,10 +253,10 @@ first review, per the cap rule.
 
 ### Stage A — scaffolding and risk spikes (v3 cluster only)
 
-- **A1. Config hook.** `config.extendUserConfig`/`resolveUserConfig` accepting the v2-compatible
-  `fhevm` user-config keys, plus the `hardhat/types/config` augmentation.
-  Test: programmatic HRE with an `fhevm` config block; assert the resolved shape and defaults.
-  Commit: `feat(hh-v3-plugin): add fhevm config hooks and config type extensions`
+- **A1. Config hook.** ~~`config.extendUserConfig`/`resolveUserConfig`~~ **COLLAPSED**: the v2
+  plugin's `ConfigExtender` is empty — there is no `fhevm` user-config surface to port. Config
+  hooks (and the `hardhat/types/config` augmentation) are added only when a real config key
+  appears in a later step.
 - **A2. Connection decoration.** `network.newConnection` attaches a stub `connection.fhevm`
   (`isMock`/`isCleartext` placeholders), `closeConnection` cleans up; `NetworkConnection`
   augmentation. Test: two connections get DISTINCT fhevm instances; close releases state.

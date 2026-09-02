@@ -27,8 +27,8 @@ void test('the hello task is registered on a programmatic hardhat 3 environment'
   }
 
   const { createHardhatRuntimeEnvironment } = await import('hardhat/hre');
-  const { default: plugin } = await import('../pkg/src/index.ts');
-  const hre = await createHardhatRuntimeEnvironment({ plugins: [plugin] });
+  const { default: fhevmPlugin } = await import('../pkg/_esm/index.js');
+  const hre = await createHardhatRuntimeEnvironment({ plugins: [fhevmPlugin] });
 
   const helloTask = hre.tasks.getTask('hello');
   assert.notEqual(helloTask, undefined, "the plugin must register the 'hello' task");
@@ -41,6 +41,6 @@ void test('the cluster resolves exactly one hardhat instance from every member',
   }
 
   const fromOwner = require.resolve('hardhat/package.json');
-  const fromPkg = createRequire(new URL('../pkg/src/index.ts', import.meta.url)).resolve('hardhat/package.json');
+  const fromPkg = createRequire(new URL('../pkg/_esm/index.js', import.meta.url)).resolve('hardhat/package.json');
   assert.equal(fromOwner, fromPkg, 'owner and payload must resolve the SAME hardhat directory');
 });

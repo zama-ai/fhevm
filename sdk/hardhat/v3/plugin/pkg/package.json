@@ -12,15 +12,14 @@
   "engines": {
     "node": ">=22"
   },
-  "types": "./_types/index.d.ts",
+  "types": "./_esm/index.d.ts",
   "files": [
     "_esm",
-    "_types",
     "src"
   ],
   "exports": {
     ".": {
-      "types": "./_types/index.d.ts",
+      "types": "./_esm/index.d.ts",
       "import": "./_esm/index.js"
     },
     "./package.json": "./package.json"
