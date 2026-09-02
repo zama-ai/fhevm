@@ -894,7 +894,10 @@ const startContinuousErc20Traffic = (targets: TrafficTarget[], streams: number):
  */
 const runBlueGreenProfile = async (
   state: State,
-  options: Pick<TestOptions, "blueGreenPredecessorVersion" | "network" | "noHardhatCompile">,
+  options: Pick<
+    TestOptions,
+    "blueGreenPredecessorVersion" | "blueGreenProposalId" | "network" | "noHardhatCompile"
+  >,
 ): Promise<boolean> => {
   if (state.scenario.kind !== "blue-green") {
     throw new PreflightError(
@@ -906,6 +909,7 @@ const runBlueGreenProfile = async (
   const gcsStackVersion = state.scenario.gcs.stackVersion;
   const gcsVersionLive = `v${gcsStackVersion}`;
   const predecessorVersion = options.blueGreenPredecessorVersion ?? "v0.14";
+  const proposalId = options.blueGreenProposalId ?? "2";
   const opCount = state.scenario.topology.count;
 
   const operatorDatabases: string[] = [];
@@ -1162,7 +1166,7 @@ const runBlueGreenProfile = async (
     "--rpc-url", hostRpcUrl,
     "--private-key", deployerPk,
     "proposeCoprocessorUpgrade(uint256,string,(uint64,uint64,uint64)[],uint64)",
-    "2", gcsVersionLive,
+    proposalId, gcsVersionLive,
     okWindows,
     String(gwStartBlock),
   ]);

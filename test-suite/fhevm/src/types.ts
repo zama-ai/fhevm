@@ -275,6 +275,7 @@ export type CleanOptions = {
 };
 
 export type TestOptions = {
+  blueGreenProposalId?: string;
   blueGreenPredecessorVersion?: string;
   grep?: string;
   network: string;
