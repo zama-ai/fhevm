@@ -22,9 +22,9 @@ name: preview-env-deploy
 #   - preview-env-blue-green: deploy RFC-021 BCS+GCS on each party (forces
 #     nb_coprocessor=2). Dispatch encodes the same path as nb_coprocessor=2.
 #     With preview-env-e2e-tests (or automated_tests): propose after relayer,
-#     run e2e during DryRunStarted (assert GCS computations > 0), wait for
-#     versioning=v0.15, then run e2e again on green. Incompatible with
-#     deploy_polygon and with N=1.
+#     hold consensus-detector so the first e2e stays on blue (assert GCS
+#     computations > 0), enable the detector, wait for versioning=v0.15,
+#     then run e2e again on green. Incompatible with deploy_polygon and N=1.
 # The dedicated KMS (env.KMS_REPO_REF/KMS_CORE_TAG) is never built here.
 # (A pinned-only run with no builds is still possible via workflow_dispatch
 # with build_images=false.)
@@ -1226,6 +1226,15 @@ jobs:
                 "${common_args[@]}" \
                 "${gcs_images[@]}"
             done
+            # Unanimity fires when both parties agree (this run: start+79),
+            # not at end_block. Hold the detector so the dry-run e2e DAG
+            # stays on blue; scale it back after assert-gcs-dry-run.
+            if [[ "${AUTOMATED_TESTS}" == "true" ]]; then
+              for i in $(seq 1 "${NB_COPROCESSOR}"); do
+                kubectl scale "deploy/coprocessor-${i}-gcs-consensus-detector" \
+                  -n "${NAMESPACE}" --replicas=0
+              done
+            fi
           fi
           sleep 60
 
@@ -1485,6 +1494,16 @@ jobs:
       - name: Assert GCS shadowed in-window work
         if: env.BLUE_GREEN == 'true' && env.AUTOMATED_TESTS == 'true'
         run: bash ci/preview-env/scripts/assert-gcs-dry-run.sh
+
+      - name: Enable consensus-detector (allow cutover)
+        if: env.BLUE_GREEN == 'true' && env.AUTOMATED_TESTS == 'true'
+        run: |
+          for i in $(seq 1 "${NB_COPROCESSOR}"); do
+            kubectl scale "deploy/coprocessor-${i}-gcs-consensus-detector" \
+              -n "${NAMESPACE}" --replicas=1
+            kubectl rollout status "deploy/coprocessor-${i}-gcs-consensus-detector" \
+              -n "${NAMESPACE}" --timeout=180s
+          done
 
       - name: Wait for e2e workflow and build report
         id: e2e_report

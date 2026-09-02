@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# RFC-021: after in-window e2e, GCS must still be in a live dry-run (or already
-# past it toward cutover) and must have shadowed at least one FHE computation.
-# A PAUSED/failed row or an empty "gcs-<ver>".computations table means the
-# window closed without GCS work (or rollback already wiped the schema).
+# RFC-021: after in-window e2e, GCS must have either shadowed FHE work in
+# "gcs-<ver>".computations, or already cut over (LIVE). Cutover drops that
+# schema, so a LIVE row is the success path — not an empty-table failure.
+# PAUSED/failed still means the window closed without a cutover.
 set -euo pipefail
 
 : "${NAMESPACE:?}"
@@ -25,10 +25,10 @@ for i in $(seq 1 "${NB_COPROCESSOR}"); do
     "SELECT COALESCE(status, '') FROM upgrade_state WHERE stack_role='GCS';" || true)
   last_error=$(psql_party "${i}" \
     "SELECT COALESCE(last_error, '') FROM upgrade_state WHERE stack_role='GCS';" || true)
-  count=$(psql_party "${i}" \
-    "SELECT count(*) FROM \"${schema}\".computations;" || echo "0")
+  live_version=$(psql_party "${i}" \
+    "SELECT COALESCE(stack_version, '') FROM versioning;" || true)
 
-  echo "party ${i}: state=${state} status=${status} ${schema}.computations=${count} last_error='${last_error}'"
+  echo "party ${i}: state=${state} status=${status} versioning=${live_version} last_error='${last_error}'"
 
   if [[ "${state}" == "PAUSED" || "${status}" == "failed" ]]; then
     echo "::error::party ${i} GCS rolled back before in-window work could be asserted (state=${state} status=${status} last_error='${last_error}')"
@@ -36,15 +36,28 @@ for i in $(seq 1 "${NB_COPROCESSOR}"); do
     continue
   fi
   case "${state}" in
-    DryRunStarted|UpgradeAuthorized|LIVE) ;;
+    LIVE)
+      # Schema is dropped at cutover. LIVE + completed is the proof GCS
+      # shadowed and merged; do not query gcs-*.computations.
+      if [[ "${status}" != "completed" ]]; then
+        echo "::error::party ${i} GCS LIVE but status='${status}', expected completed"
+        failed=1
+      fi
+      continue
+      ;;
+    DryRunStarted|UpgradeAuthorized) ;;
     *)
       echo "::error::party ${i} GCS state='${state}', expected DryRunStarted (or UpgradeAuthorized/LIVE if cutover already raced)"
       failed=1
       continue
       ;;
   esac
+
+  count=$(psql_party "${i}" \
+    "SELECT count(*) FROM \"${schema}\".computations;" || echo "0")
+  echo "party ${i}: ${schema}.computations=${count}"
   if [[ "${count}" -lt 1 ]]; then
-    echo "::error::party ${i} ${schema}.computations=${count}, expected > 0 during DryRunStarted"
+    echo "::error::party ${i} ${schema}.computations=${count}, expected > 0 during ${state}"
     failed=1
   fi
 done
@@ -53,4 +66,4 @@ if [[ "${failed}" -ne 0 ]]; then
   exit 1
 fi
 
-echo "GCS shadowed in-window FHE work on ${NB_COPROCESSOR} operator DB(s) (schema ${schema})."
+echo "GCS in-window path ok on ${NB_COPROCESSOR} operator DB(s) (schema ${schema} or LIVE after cutover)."

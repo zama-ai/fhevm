@@ -287,9 +287,10 @@ These are different models. `nb_coprocessor > 1` today is **only** the first.
 Blue-green does **not** register 2N gateway slots. Per party the preview keeps one listener, one Redis, one poller; BCS and GCS `hostListenerConsumer`s share that broker. GCS also runs `upgrade-controller` and `consensus-detector`. Incompatible with `deploy_polygon` and with `nb_coprocessor=1`.
 
 With `automated_tests` (or the `preview-env-e2e-tests` label) the cutover is
-driven by in-window e2e traffic: propose **after** the relayer is ready, run
-the e2e DAG while GCS is in `DryRunStarted` (CI asserts
-`"gcs-<version>".computations > 0` on every party), wait for
+driven by in-window e2e traffic: propose **after** the relayer is ready, hold
+`consensus-detector` at 0 so unanimity cannot fire mid-suite, run the e2e DAG
+while GCS is in `DryRunStarted` (CI asserts `"gcs-<version>".computations > 0`
+on every party), scale the detector back up, wait for
 `versioning=v0.15`, then run the same DAG again on green. A deploy without
 auto-tests still proposes and waits for `DryRunStarted` only.
 
