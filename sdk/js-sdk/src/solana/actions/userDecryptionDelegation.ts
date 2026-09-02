@@ -96,10 +96,7 @@ export async function solanaUserDecryptionDelegationAddress(
   tuple: SolanaUserDecryptionDelegationTuple,
   config?: SolanaZamaHostAddressConfig,
 ): Promise<Address> {
-  const [derived] = await solanaUserDecryptionDelegationPda(
-    tuple,
-    config?.programAddress ?? ZAMA_HOST_PROGRAM_ADDRESS,
-  );
+  const [derived] = await solanaUserDecryptionDelegationPda(tuple, config?.programAddress ?? ZAMA_HOST_PROGRAM_ADDRESS);
   return derived;
 }
 
@@ -148,10 +145,7 @@ function resolvedAddress(value: SolanaSignerOrAddress): Address {
 }
 
 /** Parameters of a delegation grant. Signers where held, bare addresses where only named. */
-export type SolanaDelegateForUserDecryptionParameters = Omit<
-  SolanaUserDecryptionDelegationTuple,
-  'delegator'
-> & {
+export type SolanaDelegateForUserDecryptionParameters = Omit<SolanaUserDecryptionDelegationTuple, 'delegator'> & {
   /** The user granting delegated decrypt rights (see [`SolanaSignerOrAddress`]). */
   readonly delegator: SolanaSignerOrAddress;
   /**

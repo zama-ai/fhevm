@@ -301,9 +301,7 @@ describe('isSolanaUserDecryptionDelegationLiveAt', () => {
 describe('fetchSolanaUserDecryptionDelegation', () => {
   const tuple = { delegator, delegate, encryptedValueAccountAuthority: authority };
 
-  function rpcWith(
-    accounts: Readonly<Record<string, string | { data: string; owner: string }>>,
-  ): SolanaRpc {
+  function rpcWith(accounts: Readonly<Record<string, string | { data: string; owner: string }>>): SolanaRpc {
     return {
       getAccountInfo: (accountAddress: string) => ({
         send: () => {
