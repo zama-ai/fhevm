@@ -1,6 +1,6 @@
 # Porting the FHEVM hardhat plugin from hardhat v2 to hardhat v3
 
-Version: **1.3** (2026-09-02). Bump the minor for a content change to the plan, the major for a
+Version: **1.4** (2026-09-02). Bump the minor for a content change to the plan, the major for a
 change of charter or stage order; record each bump below.
 
 - 1.0 — initial plan, from the hardhat 3 docs.
@@ -8,8 +8,9 @@ change of charter or stage order; record each bump below.
 - 1.2 — E2E-0 added (e2e member born early, ledger after Stage F); E2E-0b deferred to on demand.
 - 1.3 — working rules preamble (incl. stop-after-each-step and plan-committed-alone); A3 and A4
   recorded as landed.
+- 1.4 — A5 recorded as landed (two commits: @fhevm/sdk peer, then detection); ledger A5 row done.
 
-Status: **in progress — landed: A2, E2E-0a, A3, A4. Next: A5.** The landing zone exists: the
+Status: **in progress — landed: A2, E2E-0a, A3, A4, A5. Next: A6.** The landing zone exists: the
 `hardhat/v3` cluster (own installation root, hardhat 3.15 pinned), the plugin registered via
 `definePlugin` with its per-connection `fhevm` object and the pre-serve chain preparation proven,
 and the `hardhat/v3/e2e` member with the first counter test.
@@ -391,12 +392,17 @@ first review, per the cap rule.
   FIRST raw-HTTP `eth_blockNumber` is `0x1`; a second HRE with an `http` network on that port sees
   `0x1` too and does not mine again. Passed first run. No task override, no `internal/spike/`.
   Commit: `feat(hh-v3-plugin): prove newConnection runs before the node server listens`
-- **A5. Network detection.** Port the `networkProvider` minimum onto the connection:
-  `networkConfig.type === "edr-simulated"` → in-process dev; `type === "http"` → probe `eth_chainId`
-  (+ `web3_clientVersion` for anvil) → `localhost`-class dev / `anvil` / public chain id from
-  `@fhevm/sdk/chains`. Never gate on `networkName` (the node task uses `node`; users rename freely).
-  Test: unit tests against a fake `EthereumProvider` (chainId/clientVersion fixtures) and both
-  config types.
+- **A5. Network detection — LANDED** (two commits: `@fhevm/sdk` as the payload's peer `^0.13.3` +
+  dev owner pin `0.13.3` with the consumer-fixture lock regenerated, then the detection).
+  `internal/network.ts`: `edr-simulated` → `hardhat`; `http` on the live `eth_chainId` 31337 →
+  `localhost` (hardhat node or anvil — v2 already dropped the `web3_clientVersion` probe as
+  needless, so no `anvil` kind); public ids from `@fhevm/sdk/chains`; else `unknown`, which is
+  NOT an error (the API throws when used, as v2 did at init); a configured chain id disagreeing with
+  the node throws `HardhatPluginError`. `connection.fhevm` carries real `isCleartext`/`isDevelopment`,
+  the deprecated `isMock` alias and the `network` info. Never gates on `networkName`.
+  Test: six unit tests against fake connections + the live connection/node tests.
+  Side effect: the plugin's `lint` script now runs `compile` first (its tests import the built
+  payload; make's `lint-hh-v3-plugin` has no compile prerequisite) — same shape as the e2e.
   Commit: `feat(hh-v3-plugin): port network detection for edr, localhost, anvil, public chains`
 
 - **A6. Consumer path resolution.** Port `FhevmEnvironmentPaths` + `resolveFromConsumer` — the
@@ -547,7 +553,7 @@ allows.
 | unlocked at            | v2 test files (API they need)                                                                                                                                                                                                                      |
 | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | E2E-0a                 | `internal/FHECounterPublicDecrypt.ts` — the "uninitialized after deployment" case only (compile + deploy + `getCount`)                                                                                                                              |
-| A5                     | the `isCleartext` guards switch on (`beforeEach` throw) in every ported file; `utils.ts` (`isDevelopment`)                                                                                                                                          |
+| A5                     | DONE — the `isCleartext` guard is live in `internal/FHECounterPublicDecrypt.ts`; `utils.ts` (`isDevelopment`) ports with its first user                                                                                                                                          |
 | B1c                    | a NEW smoke test: the ZamaConfig trio holds code on a fresh `default` connection and again on a second `create()` (two chains, two deploys); `TestFHENotInitialized.test.ts` (`assertCoprocessorInitialized`)                                        |
 | B2                     | `test:anvil` + `test:anvil:simple` scripts and `test/test-anvil*.sh` (run the counter file)                                                                                                                                                       |
 | B3                     | `test:node` script + `test/test-hardhat-node.sh`                                                                                                                                                                                                  |
