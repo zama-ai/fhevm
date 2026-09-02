@@ -142,9 +142,6 @@ impl Drop for ClonedDb {
 
 async fn drop_database(admin_url: &str, db_name: &str) -> Result<(), BoxError> {
     let mut conn = PgConnection::connect(admin_url).await?;
-    // Never hang the end of a test: FORCE disconnects anything still attached, and
-    // the timeout caps the wait if that is not enough.
-    conn.execute("SET statement_timeout = '30s'").await?;
     conn.execute(format!(r#"DROP DATABASE IF EXISTS "{db_name}" WITH (FORCE)"#).as_str())
         .await?;
     conn.close().await?;

@@ -13,6 +13,9 @@ test-threads = 16
 # timeout is what stops a genuinely stuck run.
 slow-timeout = { period = "120s" }
 
+# Each test deletes its database as it finishes, without this the test can be reported as leaky.
+leak-timeout = "10s"
+
 # Fixtures depend on Docker, which occasionally fails to start. One retry is cheaper
 # than sending a pull request back through the merge queue.
 retries = 1
