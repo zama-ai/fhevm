@@ -213,7 +213,9 @@ detection over `http` (B3).
    generated constants module; vendored destinations for v3.
 4. **Tasks:** the fhevm scope + whichever builtin overrides still have a job in v3.
 5. **`hardhat/v3/e2e` + `hardhat/v3/fhevm-hardhat-template`** (already-reserved cluster slots):
-   the parity matrix of §5 runs there; template is born workspace-native under option E.
+   the e2e member is born at E2E-0 (Stage A, right after A2) with the v2 Solidity corpus and ONE
+   test, then grows one v2 test file per plugin step per the ledger after Stage F; the parity
+   matrix of §5 is closed there by F3. Template is born workspace-native under option E.
 6. Consumer fixtures + `check:publint`/`pack:tarball` already exist from the skeleton; extend the
    fixture to exercise one encrypt/decrypt round-trip.
 
@@ -261,7 +263,9 @@ included). A block that approaches the cap is split further BEFORE committing �
 or by extracting its test fixtures into a preparatory commit — never waved through. Two mechanical
 consequences: (1) machine-written diffs (lockfiles, generated modules) count too, so a step whose
 generation output is large lands as two commits — generator/config change first, the regenerated
-output second (`chore(...): regenerate …`); (2) the D-stage port blocks are the likeliest offenders —
+output second (`chore(...): regenerate …`); the same shape applies to VERBATIM copies (the e2e
+Solidity corpus, E2E-0b…): one directory per `chore(...)` commit, compile-gated, no edits inside;
+(2) the D-stage port blocks are the likeliest offenders —
 if porting one method group drags more than ~500 lines of shared helpers with it, that is the signal
 the helpers belong in the SHARED layer (§3), not in the plugin.
 
@@ -274,6 +278,8 @@ first review, per the cap rule.
 | ------------------------------------ | ---------------------------------------- | ------------ | ---------------- |
 | A1 config hooks                      | ConfigExtender ≈40                       | 80           | ~160             |
 | A2 connection decoration             | new                                      | 60           | ~140             |
+| E2E-0a e2e skeleton + first test     | v2 e2e config/scripts + counter test     | 200          | ~330 (incl. 2 .sol) |
+| E2E-0b…0g contract corpus            | v2 e2e contracts 9,805 (verbatim copy)   | ≤500 each    | 7 commits        |
 | A3 hre alias                         | new                                      | 30           | ~70              |
 | A4 node ordering spike               | new (no override needed)                 | 30           | ~80              |
 | A5 network detection                 | networkProvider 233                      | 120          | ~220             |
@@ -311,6 +317,37 @@ first review, per the cap rule.
   `connection.fhevm` (`isMock`/`isCleartext` placeholders), `closeConnection` cleans up;
   `NetworkConnection` augmentation. Test: two connections get DISTINCT fhevm instances; close
   releases state. Follow-up folded into A3: wrap the plugin object in `definePlugin` (§2).
+- **E2E-0. The e2e member is born NOW — next commit, before A3.** The v3 twin of
+  `hardhat/v2/e2e`, as a cluster member (`hardhat/v3/e2e`, added to the cluster `workspaces`,
+  fhevm-npm manifest entries, `compile/lint/test-hh-v3-e2e` make targets, `make install`). It
+  needs ZERO plugin functionality to start: the first v2 test —
+  `internal/FHECounterPublicDecrypt.ts` "encrypted count should be uninitialized after deployment"
+  — only compiles, deploys and reads `getCount()`, and `ZamaEthereumConfig`'s constructor is a
+  pure storage write (`FHE.setCoprocessor`), so no live stack is required. Every later test file
+  ports when its API lands (see the ledger after Stage F) — the e2e grows ONE test file per commit,
+  never ahead of the plugin. Split for the cap rule:
+  - **E2E-0a. Skeleton + first test.** `package.json` (ESM, private,
+    `@fhevm/hardhat-plugin-v3-e2e-dev`), `hardhat.config.ts` via `defineConfig` with
+    `plugins: [fhevm, hardhatMocha, hardhatEthers, hardhatEthersChaiMatchers, hardhatTypechain]`
+    (the hh3 flavours of v2's stack — exact pins, chosen at implementation time), networks in v3
+    shape (`default`/`node`: `edr-simulated` with the v2 mnemonic; `anvil`: `http` on 8545;
+    `sepolia`: `http` behind `configVariable`), solidity `0.8.27` profile matching v2's settings,
+    forge fmt/lint wiring copied (`foundry.toml`, `remappings.txt`, `soldeer.lock`). Contracts:
+    ONLY `contracts/test/internal/FHECounter*.sol` (verbatim). Tests: `test/utils/signers.ts`
+    ported to `connection.ethers.getSigners()` + the single counter test above, its `isCleartext`
+    guard marked `// enabled at A5`. Scripts: `test` only (`hardhat test`); `test:node`,
+    `test:anvil*`, `test:sepolia:*` arrive with B3, B2, C+D2 respectively.
+    Test: `make test-hh-v3-e2e` green; `hardhat test --network node`-style runs are NOT yet
+    claimed.
+    Commit: `feat(hh-v3-e2e): add the e2e member with the first counter test`
+  - **E2E-0b…0g. The Solidity corpus, verbatim, one directory per commit.** The remaining
+    `hardhat/v2/e2e/contracts/**` (≈9,100 lines) copied unchanged, compile-gated — proving hh3's
+    native npm resolution over the WHOLE v2 corpus long before any test uses it. Order and size:
+    `operators` (6,022 — split in two by file), `operators-public-decrypt` (749),
+    `governance` + `finance` (798), `token/ERC20` + `extensions` (799), `test/doc-examples` (554),
+    then the small rest (`utils`, `test/utils`, `test/token`, `test/finance`, `test/governance`).
+    Test: `hardhat compile` (and `forge fmt --check`/`forge lint`) green after each.
+    Commit: `chore(hh-v3-e2e): copy the <dir> contracts verbatim from the v2 e2e`
 - **A3. ⚑ `hre.fhevm` alias** (open question 1 decided here). Only an ASYNC accessor over
   `hre.network.getOrCreate()` is possible; recommendation is to drop the alias. Either way, this
   commit also switches `index.ts` to `definePlugin`. Test matches the decision.
@@ -460,11 +497,40 @@ this later without API change). One commit per group, tests run against the B1 s
   Commit: `test(hh-v3-plugin): consumer fixture runs an encrypt/decrypt round-trip`
 - **F2.** `check:publint`/`attw`/`pack:tarball` green; pkg README. Commit.
   Commit: `chore(hh-v3-plugin): publint, attw and pack:tarball green; package README`
-- **F3.** `hardhat/v3/e2e` cluster member: the §5 parity matrix becomes its test suite, row by row
-  (each row = one commit). FIRST commit adds a test-runner plugin — none is installed (§2), and
-  `hardhat test` is a coordinator that runs nothing without one. Pick `@nomicfoundation/hardhat-mocha`
-  (closest to v2 suites) or `@nomicfoundation/hardhat-node-test-runner`; exact pin.
-  Commit: `feat(hh-v3-e2e): add e2e member covering one node-parity-matrix row`
+- **F3.** The e2e member already exists (E2E-0) and has grown test by test via the ledger below;
+  F3 closes the §5 parity matrix — whichever rows the ledger has not yet covered (expected: the
+  Sepolia operator flows and any `test:anvil` rows still red), one row per commit.
+  Commit: `feat(hh-v3-e2e): cover the <row> node-parity-matrix row`
+
+### The e2e ledger — which v2 test file ports at which plugin step
+
+The rule: a v2 test file ports in the SAME commit as the plugin step that makes its last missing
+API call work (or the very next commit if the cap forces a split), never earlier, never batched
+with unrelated files. The API-per-file map below is grepped from `hardhat/v2/e2e/test`; the
+`hardhat-mock-engine/` prefix becomes `test/` in v3 (there is no other engine). Each ported file
+swaps `import { ethers, fhevm } from 'hardhat'` for `const { ethers, fhevm } = await
+network.connect()` (or the A3 alias, if kept) and keeps everything else byte-for-byte where hh3
+allows.
+
+| unlocked at            | v2 test files (API they need)                                                                                                                                                                                                                      |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| E2E-0a                 | `internal/FHECounterPublicDecrypt.ts` — the "uninitialized after deployment" case only (compile + deploy + `getCount`)                                                                                                                              |
+| A5                     | the `isCleartext` guards switch on (`beforeEach` throw) in every ported file; `utils.ts` (`isDevelopment`)                                                                                                                                          |
+| B1c                    | a NEW smoke test: the ZamaConfig trio holds code on a fresh `default` connection and again on a second `create()` (two chains, two deploys); `TestFHENotInitialized.test.ts` (`assertCoprocessorInitialized`)                                        |
+| B2                     | `test:anvil` + `test:anvil:simple` scripts and `test/test-anvil*.sh` (run the counter file)                                                                                                                                                       |
+| B3                     | `test:node` script + `test/test-hardhat-node.sh`                                                                                                                                                                                                  |
+| D1                     | `internal/delegatedUserDecryption.ts` (encrypt half; the delegated decrypt asserts join at D3c), `finance/ConfidentialVestingWallet*.test.ts` (`createEncryptedInput` only)                                                                         |
+| D2                     | `internal/FHECounterPublicDecrypt.ts` — the rest (`publicDecrypt`, `publicDecryptEuint`), `internal/Rand.ts` + fixture, `doc-examples/HeadsOrTails.ts`, `doc-examples/HighestDieRoll.ts`, `operators-public-decrypt/fhevmOperations54.ts`, `operators-manual/manualV13.ts` |
+| D3b                    | `internal/FHECounterUserDecrypt.ts`, `internal/AplusB.ts`, `doc-examples/{DecryptSingleValue,DecryptMultipleValues,EncryptSingleValue,EncryptMultipleValues}.ts`, `confidentialERC20/*`, `finance/*.fixture.ts`, `governance/*`, `utils/EncryptedErrors.*`, `operators-manual/manualWithAllowSender.ts` |
+| D3c                    | `internal/delegatedUserDecryption.ts` — the delegated asserts                                                                                                                                                                                     |
+| D4a3                   | `internal/TestErrors.*`, `internal/TestTrivialPermissions.test.ts`, `internal/TestACL.ts` (`revertedWithCustomErrorArgs`)                                                                                                                          |
+| D4b                    | `internal/TestAsyncDecrypt.ts` (`parseCoprocessorEvents`; also needs D6)                                                                                                                                                                          |
+| D5a3                   | `hcu/fhevmHCU1.ts` (`computeTransactionHCU`)                                                                                                                                                                                                      |
+| D5b + C2               | `sepolia/*` (`getCoprocessorConfig` + generated addresses) and the `test:sepolia:*` scripts — operator-run, never in `make test`                                                                                                                    |
+| D6                     | `operators/fhevmOperations1…13.ts`, `operators-manual/manual.ts` (`debugger`), and `internal/TestAsyncDecrypt.ts` if D4b landed first                                                                                                              |
+
+Running total is the progress meter for goal 3: when the last row is green, the public API is
+proven equivalent on hardhat 3 by the same tests that prove it on hardhat 2.
 
 Stage order is deliberate: A4 (formerly the riskiest unknown, now a one-commit ordering proof)
 sits as early as scaffolding allows, the essential job (§1) is proven before any API surface is
