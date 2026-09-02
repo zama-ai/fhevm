@@ -256,7 +256,7 @@ ci-from-scratch: ## Prove a fresh clone works: uninstall everything, install, th
 # the least time. `clean` is deliberate — stamps make `build` skippable, and validating a stale payload
 # with publint/attw would be worse than not validating it.
 #
-# Excluded on purpose: `test-hh-v2-e2e-anvil`, which needs an anvil node already running.
+# Excluded on purpose: `test-hh-v2-e2e-anvil` and `test-hh-v3-e2e-anvil`, which need an anvil node already running.
 # The spotless check runs FIRST, before anything at all: check-generated needs it anyway, and
 # discovering it only there would have already thrown away every build output for nothing.
 ci: ## Run EVERY gate from a clean tree: formatting, checks, compile, lint, tests, consumer rehearsal
@@ -533,7 +533,7 @@ lint-npm-cli: ## Typecheck and test the fhevm-npm CLI
 ########################################################################################################
 
 .PHONY: test-cleartext-v12 test-cleartext-v13 test-hh-v2-plugin test-hh-v2-template test-hh-v3-plugin
-.PHONY: test-hh-v2-e2e test-hh-v2-e2e-anvil test-hh-v3-e2e test-consumer test-consumer-ci clean-scratch
+.PHONY: test-hh-v2-e2e test-hh-v2-e2e-anvil test-hh-v3-e2e test-hh-v3-e2e-anvil test-consumer test-consumer-ci clean-scratch
 
 test-cleartext-v12: compile-cleartext-v12 ## Cleartext v12 unit + forge + harness tests (self-provides ./out)
 	$(call run,$(W_V12),test)
@@ -552,6 +552,9 @@ test-hh-v3-plugin: compile-hh-v3-plugin ## Hardhat v3 plugin tests (skip themsel
 
 test-hh-v3-e2e: compile-hh-v3-e2e ## Hardhat v3 e2e tests on the in-process network
 	$(call run-hh-v3,$(W_HH_V3_E2E),test)
+
+test-hh-v3-e2e-anvil: compile-hh-v3-e2e ## Hardhat v3 e2e tests against a local anvil (must already be running)
+	$(call run-hh-v3,$(W_HH_V3_E2E),test:anvil)
 
 # HARDHAT_NETWORK=hardhat — the in-process network, so this needs nothing running. The variants below
 # do: `anvil` a local node, `sepolia`/`devnet` a funded remote account.
