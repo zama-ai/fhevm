@@ -122,3 +122,341 @@ jobs:
           PROFILE: ${{ inputs.profile }}
         run: python3 ci/parse_benchmark_profile.py "${PROFILE}" "${GITHUB_OUTPUT}"
 
+  setup-instance:
+    name: coprocessor-gpu-docker-build/setup-instance
+    needs: parse-inputs
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
+    # No scopes at all: this job checks out nothing and reads nothing from the
+    # repository. It starts a slab instance, which authenticates with its own
+    # PAT rather than GITHUB_TOKEN.
+    permissions: {}
+    outputs:
+      runner-name: ${{ steps.start-remote-instance.outputs.label }}
+    steps:
+      - name: Start remote instance
+        id: start-remote-instance
+        if: env.SECRETS_AVAILABLE == 'true'
+        uses: zama-ai/slab-github-runner@d4a5bb6e2a4b8aa19a10f596d7f142006a7e2c21 # v1.6.3
+        with:
+          mode: start
+          github-token: ${{ secrets.SLAB_ACTION_TOKEN }}
+          slab-url: ${{ secrets.SLAB_BASE_URL }}
+          job-secret: ${{ secrets.JOB_SECRET }}
+          backend: ${{ needs.parse-inputs.outputs.backend }}
+          profile: ${{ needs.parse-inputs.outputs.profile }}
+
+  build:
+    name: coprocessor-gpu-docker-build/build
+    needs: [parse-inputs, setup-instance]
+    if: ${{ needs.setup-instance.result == 'success' && needs.setup-instance.outputs.runner-name != '' }}
+    runs-on: ${{ needs.setup-instance.outputs.runner-name }}
+    timeout-minutes: 240
+    permissions:
+      contents: "read" # Required to check out the sources being compiled
+      packages: "write" # Required to push the built images to ghcr.io
+    env:
+      RUNTIME_BASE: ${{ inputs.runtime-base || 'cgr.dev/zama.ai/glibc-dynamic:15.2.0' }}
+      REGISTRY: ghcr.io
+      SQLX_OFFLINE: "true"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: "false"
+          fetch-depth: 0
+
+      # Same versions and host compiler as the GPU test and benchmark jobs, so
+      # an image is built by the toolchain those results were measured with.
+      # The action resolves the toolkit and exports CUDA_PATH, CUDACXX and
+      # LD_LIBRARY_PATH itself, so nothing here hard-codes a CUDA path.
+      - name: Setup CUDA
+        uses: ./.github/actions/gpu_setup
+        with:
+          cuda-version: "12.8 12.2"
+          gcc-version: 12
+          cloud-provider: ${{ needs.parse-inputs.outputs.cloud_provider }}
+
+      # The rest of the native build dependencies. `gpu_setup` installs the
+      # CUDA toolkit, the host compiler, CMake and libclang; it does not install
+      # protoc, and `fhevm-engine-common`'s build.rs drives tonic_build, so the
+      # build fails in that crate's build script with "Could not find `protoc`"
+      # before a single worker is compiled. The CPU images never hit this
+      # because they compile inside `gci/rust-glibc`, which ships protoc; a
+      # native build on a bare GPU instance has to install it. Same package set
+      # as the `Install cargo dependencies` step in coprocessor-benchmark-gpu.yml
+      # and coprocessor-gpu-tests.yml, minus what only those need: no sqlx-cli
+      # (this job builds with SQLX_OFFLINE) and no docker-compose (nothing here
+      # brings up a stack).
+      #
+      # No cmake in this list, deliberately: `gpu_setup` installed a CMake newer
+      # than the distro package, which tfhe-cuda-backend requires, and apt would
+      # replace it with the older one.
+      - name: Install build dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Wait for the dpkg lock rather than failing on it: a freshly booted
+          # image is still running its apt-daily timers.
+          sudo apt-get -o DPkg::Lock::Timeout=600 update
+          sudo apt-get -o DPkg::Lock::Timeout=600 install -y \
+            protobuf-compiler pkg-config libssl-dev acl
+          command -v protoc
+          protoc --version
+
+      # Docker is what packages and pushes the images, and the slab GPU images
+      # do not all ship it -- the benchmark flow installs it conditionally for
+      # the same reason. This has to come before the registry logins, since
+      # docker/login-action shells out to the docker CLI.
+      - name: Install Docker
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v docker >/dev/null 2>&1; then
+            sudo apt-get -o DPkg::Lock::Timeout=600 install -y docker.io
+          fi
+          # Started unconditionally, as the benchmark flow does: an image that
+          # ships docker does not necessarily have the daemon running, and a
+          # stopped daemon would otherwise only surface at the registry login.
+          # `start` is a no-op on an already-running unit.
+          sudo systemctl start docker
+          # The group change does not apply to the shell already running, so
+          # grant access to the socket directly for this job; the group
+          # membership is for anything that reconnects later. `id -un` rather
+          # than a bare $USER: the runner does not always export it, and an
+          # empty user would turn the setfacl into an owner-permission change
+          # that silently grants nothing.
+          runner_user="${USER:-$(id -un)}"
+          sudo usermod -aG docker "${runner_user}"
+          sudo setfacl --modify user:"${runner_user}":rw /var/run/docker.sock
+          # Client *and* server, so an unreachable daemon fails here rather
+          # than four hours later at the packaging step.
+          docker version
+
+      - name: Install the pinned Rust toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Same file the CPU images pin against: coprocessor-docker-build.yml
+          # passes it to common-docker.yml as `rust-toolchain-file-path`, so
+          # reading it here keeps the GPU images on the same compiler instead of
+          # on whatever rustup defaults to today. It is not at the repo root.
+          toolchain_file=coprocessor/fhevm-engine/rust-toolchain.toml
+          version="$(grep -oE 'channel *= *"[^"]+"' "$toolchain_file" | head -1 | cut -d'"' -f2)"
+          test -n "$version" || { echo "could not read the channel from ${toolchain_file}" >&2; exit 1; }
+          echo "building with rust ${version}"
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain "$version" --profile minimal
+          echo "${HOME}/.cargo/bin" >> "${GITHUB_PATH}"
+
+      - name: Record what the build is actually targeting
+        id: device
+        shell: bash
+        run: |
+          set -euo pipefail
+          nvidia-smi
+          # The capability the binaries will be compiled for, read from the
+          # device rather than assumed from the profile name. `8.9` -> `89`.
+          cap="$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -1 | tr -d ' .')"
+          test -n "$cap" || { echo "could not read compute capability from the device" >&2; exit 1; }
+          name="$(nvidia-smi --query-gpu=gpu_name --format=csv,noheader | head -1 | tr ' ' '-')"
+          echo "compute-capability=${cap}" >> "$GITHUB_OUTPUT"
+          echo "gpu-name=${name}" >> "$GITHUB_OUTPUT"
+
+          # The CUDA version comes from the toolkit that will do the compiling,
+          # not from an input: an input could disagree with what `gpu_setup`
+          # actually resolved, and the tag would then name a CUDA release the
+          # binaries were not built with.
+          cuda="$(nvcc --version | grep -oE 'release [0-9]+\.[0-9]+' | head -1 | cut -d' ' -f2)"
+          test -n "$cuda" || { echo "could not read the CUDA release from nvcc" >&2; exit 1; }
+          # And the directory the runtime library will be taken from, with the
+          # same lib64/lib fallback ci/export_cuda_vars.sh uses.
+          if [ -d "${CUDA_PATH}/lib64" ]; then libdir="${CUDA_PATH}/lib64"; else libdir="${CUDA_PATH}/lib"; fi
+          test -f "${libdir}/libcudart.so.12" || { echo "no libcudart.so.12 under ${libdir}" >&2; exit 1; }
+          echo "cuda-version=${cuda}" >> "$GITHUB_OUTPUT"
+          echo "cuda-libdir=${libdir}" >> "$GITHUB_OUTPUT"
+          echo "building for sm_${cap} on ${name} with CUDA ${cuda} (libs from ${libdir})"
+
+      - name: Build the GPU workers
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd coprocessor/fhevm-engine
+          # One cargo invocation for all three: tfhe-rs's CUDA backend is the
+          # expensive part of this build and compiling it three times would
+          # triple the runner hours for an identical artifact.
+          cargo build --release --features gpu \
+            -p tfhe-worker -p sns-worker -p zkproof-worker
+
+      - name: Prove the binaries are GPU builds
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd coprocessor/fhevm-engine/target/release
+          failed=0
+          for binary in tfhe_worker sns_worker zkproof_worker; do
+            test -x "$binary" || { echo "missing $binary" >&2; failed=1; continue; }
+            # A CPU build links no CUDA runtime at all, so this is the check
+            # that distinguishes "built with --features gpu" from "built, and
+            # the flag was silently dropped somewhere in the chain".
+            if ldd "$binary" | grep -q libcudart; then
+              echo "  $binary links libcudart"
+            else
+              echo "  $binary does NOT link libcudart -- this is not a GPU build" >&2
+              failed=1
+            fi
+          done
+          test "$failed" -eq 0
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Login to Chainguard Registry
+        # The production runtime base lives in the zama.ai namespace, same as
+        # the CPU images. Skipped when the base is the open Chainguard image, so
+        # a test run needs no cgr.dev credentials.
+        if: ${{ !contains(env.RUNTIME_BASE, '/chainguard/') }}
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: cgr.dev
+          username: ${{ secrets.CGR_USERNAME }}
+          password: ${{ secrets.CGR_PASSWORD }}
+
+      - name: Build and push the images
+        shell: bash
+        env:
+          PUSH: ${{ inputs.push && 'true' || 'false' }}
+          COMPUTE_CAPABILITY: ${{ steps.device.outputs.compute-capability }}
+          CUDA_VERSION: ${{ steps.device.outputs.cuda-version }}
+          CUDA_LIBDIR: ${{ steps.device.outputs.cuda-libdir }}
+        run: |
+          set -euo pipefail
+          # The version half of the tag: the release tag when this run was
+          # dispatched against one, otherwise the short SHA. Never a bare
+          # `:gpu` -- see the header.
+          #
+          # Seven characters, cut explicitly. `git rev-parse --short` picks its
+          # length from the object count and yields nine on this repo, while the
+          # CPU images -- tagged by the shared ci-templates workflow -- are a
+          # fixed seven. That published the workers of one commit under
+          # `921b69113-cuda12.8-sm90` while its every other service sat at
+          # `921b691`: a bundle nobody can assemble from a single prefix, which
+          # is how the e2e run that validated these images came to pin its CPU
+          # services one commit behind its workers.
+          #
+          # Cut from the built tree rather than GITHUB_SHA, which is the same
+          # commit only while this workflow has no `ref` input to check out
+          # something else. The tag has to name what was compiled.
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            version="${GITHUB_REF_NAME}"
+          else
+            version="$(git rev-parse HEAD | cut -c1-7)"
+          fi
+          suffix="cuda${CUDA_VERSION}-sm${COMPUTE_CAPABILITY}"
+          echo "runtime base: ${RUNTIME_BASE}; cuda ${CUDA_VERSION}; libs from ${CUDA_LIBDIR}"
+
+          for service in tfhe-worker sns-worker zkproof-worker; do
+            case "$service" in
+              tfhe-worker)    binary=tfhe_worker ;;
+              sns-worker)     binary=sns_worker ;;
+              zkproof-worker) binary=zkproof_worker ;;
+            esac
+            image="${REGISTRY}/${GITHUB_REPOSITORY_OWNER}/fhevm/coprocessor/${service}:${version}-${suffix}"
+            echo "=== ${image}"
+            # A staging directory as the build context, not the repo root: the
+            # root now contains a populated `target/` from the cargo build above,
+            # so using it would hand buildx several GB to hash and upload for an
+            # image that needs one 55 MB file.
+            stage="$(mktemp -d)"
+            cp "coprocessor/fhevm-engine/target/release/${binary}" "${stage}/"
+            cp coprocessor/fhevm-engine/Dockerfile.gpu "${stage}/"
+            # The runtime library, taken from the toolkit that just compiled the
+            # binary rather than from a separate CUDA image, so the two cannot
+            # drift apart -- and so no image outside cgr.dev enters the pipeline.
+            cp "${CUDA_LIBDIR}"/libcudart.so.12* "${stage}/"
+            # A fixed name for the binary, so Dockerfile.gpu can set a CMD it
+            # cannot spell otherwise: exec-form CMD does not interpolate build
+            # arguments. Relative, so it resolves inside /usr/local/bin once
+            # copied, and 10 bytes rather than a duplicate 57 MB binary.
+            ln -s "${binary}" "${stage}/worker"
+            docker build \
+              -f "${stage}/Dockerfile.gpu" \
+              --build-arg "BINARY=${binary}" \
+              --build-arg "BINARY_DIR=." \
+              --build-arg "CUDA_VERSION=${CUDA_VERSION}" \
+              --build-arg "RUNTIME_BASE=${RUNTIME_BASE}" \
+              --build-arg "COMPUTE_CAPABILITY=${COMPUTE_CAPABILITY}" \
+              -t "$image" \
+              "${stage}"
+            rm -rf "${stage}"
+            # Checked before pushing: the image must actually exec. `--version`
+            # needs no database and no device, so it runs here without a GPU
+            # handle -- and it is what catches a glibc or missing-library
+            # mismatch between the build host and the runtime base. Verified to
+            # catch exactly that during development, when a binary built on
+            # glibc 2.39 refused to start on a 2.35 base.
+            docker run --rm "$image" "/usr/local/bin/${binary}" --version
+            # And that the default command resolves, so the image is runnable
+            # with no arguments: a broken symlink would otherwise only surface
+            # for whoever first ran the image without naming the binary.
+            docker run --rm "$image" /usr/local/bin/worker --version
+            if [ "$PUSH" = "true" ]; then
+              docker push "$image"
+            else
+              echo "  built, not pushed (push=false)"
+            fi
+          done
+
+      - name: Report what was produced
+        if: ${{ always() }}
+        shell: bash
+        # Every value arrives through the environment rather than being
+        # interpolated into the script. `inputs.profile` is attacker-influenced
+        # in the general case, and a `${{ }}` in a run body is substituted as
+        # *text* before bash sees it, so a value containing shell syntax would
+        # execute. Reading `$PROFILE` instead makes it data.
+        env:
+          DEVICE_NAME: ${{ steps.device.outputs.gpu-name }}
+          COMPUTE_CAPABILITY: ${{ steps.device.outputs.compute-capability }}
+          CUDA_VERSION: ${{ steps.device.outputs.cuda-version }}
+          PROFILE: ${{ inputs.profile }}
+          SLAB_BACKEND: ${{ needs.parse-inputs.outputs.backend }}
+        run: |
+          {
+            echo "### GPU coprocessor images"
+            echo ""
+            echo "- device: ${DEVICE_NAME} (sm_${COMPUTE_CAPABILITY})"
+            echo "- instance: ${PROFILE} (slab backend \`${SLAB_BACKEND}\`)"
+            echo "- CUDA: ${CUDA_VERSION}, runtime base: ${RUNTIME_BASE}"
+            echo ""
+            echo "Each image targets **only** the compute capability above; that is why it is in the tag."
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "${COMPUTE_CAPABILITY}" != "90" ]; then
+            {
+              echo ""
+              echo "> **Not an H100 build.** \`tfhe-cuda-backend\` gates code on \`CUDA_ARCH >= 900\`, including the thread-block-cluster bootstrap paths, so those are compiled out of these images. Do not deploy them to Hopper hardware."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          docker images --format '  {{.Repository}}:{{.Tag}} ({{.Size}})' \
+            | grep -E 'coprocessor/(tfhe|sns|zkproof)-worker' >> "$GITHUB_STEP_SUMMARY" || true
+
+  teardown:
+    name: coprocessor-gpu-docker-build/teardown
+    if: ${{ always() && needs.setup-instance.result == 'success' }}
+    needs: [setup-instance, build]
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
+    # No scopes: stopping a slab instance uses slab's own PAT, and this job
+    # touches no repository content.
+    permissions: {}
+    steps:
+      - name: Stop remote instance
+        if: env.SECRETS_AVAILABLE == 'true'
+        uses: zama-ai/slab-github-runner@d4a5bb6e2a4b8aa19a10f596d7f142006a7e2c21 # v1.6.3
+        with:
+          mode: stop
+          github-token: ${{ secrets.SLAB_ACTION_TOKEN }}
+          slab-url: ${{ secrets.SLAB_BASE_URL }}
+          job-secret: ${{ secrets.JOB_SECRET }}
+          label: ${{ needs.setup-instance.outputs.runner-name }}
