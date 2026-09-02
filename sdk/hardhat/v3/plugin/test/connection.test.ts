@@ -37,3 +37,18 @@ void test('closing a connection is clean with the fhevm hooks installed', async 
   assert.notEqual(connection.fhevm, undefined);
   await connection.close();
 });
+
+// Decided: connection-only, the pattern hardhat 3's own plugins follow. A regression here would
+// mean someone re-introduced a process-wide fhevm object on the HRE.
+void test('the HRE carries no fhevm property; the connection is the only home', async () => {
+  const hre = await createHardhatRuntimeEnvironment({ plugins: [plugin] });
+  assert.equal('fhevm' in hre, false, 'hre.fhevm must not exist');
+
+  const connection = await hre.network.create();
+  try {
+    assert.equal('fhevm' in connection, true);
+    assert.equal('fhevm' in hre, false, 'creating a connection must not attach fhevm to the HRE');
+  } finally {
+    await connection.close();
+  }
+});

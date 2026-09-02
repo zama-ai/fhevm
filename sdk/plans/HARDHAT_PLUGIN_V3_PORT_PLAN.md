@@ -223,11 +223,10 @@ Each phase ends green: `make build`, the affected test tiers, and the fhevm-npm 
 
 ## 7. Open questions
 
-1. **Connection scoping — the one deliberate API break (⚑ gate A3).** The source narrows this: no
-   default-connection object exists, so a SYNC `hre.fhevm` is impossible. The only alias shape is
-   an async accessor over `hre.network.getOrCreate()`. Choice: that async accessor (marginal v2
-   compatibility — v2 code was sync anyway) vs connection-only (`const { fhevm } = await
-network.connect()`, the v3 idiom). Recommendation: connection-only; decide at A3.
+1. **Connection scoping — SETTLED at A3: connection-only.** No `hre.fhevm` in any shape. Hardhat 3
+   has no default-connection object, its docs only ever extend `NetworkConnection`, and the official
+   ethers plugin does the same. Consumers write `const { fhevm } = await network.connect()`; every
+   ported v2 test swaps its `import { fhevm } from 'hardhat'` for that line.
 2. **The ethers bridge.** Nothing in our path needs `connection.ethers` from the v3 ethers plugin.
    Recommendation: provider-direct — hand `connection.provider` (EIP-1193) to `@fhevm/sdk`, wrap
    in an ethers `BrowserProvider` internally only where the SDK requires ethers. Decides how much
@@ -358,10 +357,13 @@ first review, per the cap rule.
     then the small rest (`utils`, `test/utils`, `test/token`, `test/finance`, `test/governance`).
     Test: `hardhat compile` (and `forge fmt --check`/`forge lint`) green after each.
     Commit: `chore(hh-v3-e2e): copy the <dir> contracts verbatim from the v2 e2e`
-- **A3. ⚑ `hre.fhevm` alias** (open question 1 decided here). Only an ASYNC accessor over
-  `hre.network.getOrCreate()` is possible; recommendation is to drop the alias. Either way, this
-  commit also switches `index.ts` to `definePlugin`. Test matches the decision.
-  Commit: `feat(hh-v3-plugin): decide the hre.fhevm alias; register the plugin via definePlugin`
+- **A3. ⚑ `hre.fhevm` alias — DECIDED: connection-only, no alias.** Hardhat 3's docs show only
+  `NetworkConnection` extensions, never the HRE; `hre.created` is undocumented; the official ethers
+  plugin attaches `connection.ethers` and nothing on the HRE. `index.ts` switches to `definePlugin`
+  with `npmPackage` set (hardhat resolves the plugin's package.json through it for dependency
+  diagnostics; the fallback is the id, which is wrong). Test: the HRE has no `fhevm` property
+  before or after a connection is created.
+  Commit: `feat(hh-v3-plugin): register via definePlugin; fhevm lives on the connection only`
 - **A4. SPIKE — `hardhat node` ordering** (ONE block; the source already shows `create()` precedes
   `listen()`, this commit proves it in our tree). In `newConnection`, on an `edr-simulated`
   connection, write a marker transaction. Test: `hre.network.createServer()` → `listen()` → a raw
