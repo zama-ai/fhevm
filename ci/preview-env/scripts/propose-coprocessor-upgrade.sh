@@ -30,8 +30,12 @@ if [[ -z "${WINDOW_END_OFFSET:-}" ]]; then
 fi
 GW_START_OFFSET="${GW_START_OFFSET:-5}"
 TIMEOUT_SECS="${TIMEOUT_SECS:-420}"
-# Live DB stores major.minor (compose e2e: v0.15 from v0.15.0).
-LIVE_VERSION="$(echo "${GCS_VERSION}" | sed -E 's/^v?([0-9]+\.[0-9]+).*/v\1/')"
+# UC writes the binary stack version (v0.15.0). Compose e2e stored v0.15.
+# Compare major.minor so either form counts as cutover.
+version_major_minor() {
+  echo "$1" | sed -E 's/^v?([0-9]+\.[0-9]+).*/v\1/'
+}
+LIVE_VERSION="$(version_major_minor "${GCS_VERSION}")"
 # Versioning bump needs in-window host traffic (unanimity). Default off so a
 # deploy without automated tests still proves the proposal path.
 ASSERT_CUTOVER="${ASSERT_CUTOVER:-false}"
@@ -178,12 +182,12 @@ for i in $(seq 1 "${NB_COPROCESSOR}"); do
   echo "Waiting for party ${i} versioning=${LIVE_VERSION}..."
   while true; do
     version=$(psql_party "${i}" "SELECT stack_version FROM versioning;" || true)
-    if [[ "${version}" == "${LIVE_VERSION}" ]]; then
+    if [[ "$(version_major_minor "${version}")" == "${LIVE_VERSION}" ]]; then
       echo "party ${i}: versioning=${version}"
       break
     fi
     if (( SECONDS >= deadline )); then
-      echo "::error::party ${i} versioning='${version}', expected '${LIVE_VERSION}'"
+      echo "::error::party ${i} versioning='${version}', expected ${LIVE_VERSION} (major.minor)"
       psql_party "${i}" "SELECT stack_role, state, status, version FROM upgrade_state;" || true
       exit 1
     fi
