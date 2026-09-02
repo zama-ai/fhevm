@@ -25,6 +25,7 @@ use futures::{
     future::try_join_all,
     stream::{FuturesUnordered, StreamExt},
 };
+use kms_connector_api::ErrorCode;
 use kms_grpc::kms::v1::{Eip712DomainMsg, PublicDecryptionRequest, UserDecryptionRequest};
 use sqlx::types::chrono::Utc;
 use std::collections::HashMap;
@@ -88,11 +89,13 @@ where
         info!("Starting ACL check for {} handles...", handles.len());
 
         try_join_all(handles.iter().map(|handle| async move {
-            let ct_chain_id = extract_chain_id_from_handle(*handle)
-                .map_err(|e| RequestCheckError::irrecoverable(RequestCheckKind::Acl, e))?;
+            let ct_chain_id = extract_chain_id_from_handle(*handle).map_err(|e| {
+                RequestCheckError::irrecoverable(RequestCheckKind::Acl, ErrorCode::Unprocessable, e)
+            })?;
             let host_client = self.host_clients.get(&ct_chain_id).ok_or_else(|| {
                 RequestCheckError::recoverable(
                     RequestCheckKind::Acl,
+                    ErrorCode::UpstreamTransient,
                     anyhow!("No ACL contract config found for chain id {ct_chain_id}"),
                 )
             })?;
@@ -100,6 +103,7 @@ where
             if !host_client.is_allowed_for_decryption(*handle).await? {
                 return Err(RequestCheckError::recoverable(
                     RequestCheckKind::Acl,
+                    ErrorCode::AclDenied,
                     anyhow!("Decryption is not allowed for {handle}"),
                 ));
             }
@@ -133,6 +137,7 @@ where
                     .map_err(|e2| {
                         RequestCheckError::irrecoverable(
                             RequestCheckKind::Acl,
+                            ErrorCode::Unprocessable,
                             anyhow!(
                                 "Was not able to parse calldata for both userDecryptionRequestCall \
                                 {e2} and delegatedUserDecryptionRequestCall ({e})!"
@@ -151,17 +156,20 @@ where
         let contracts_map_ref = &contracts_map;
 
         try_join_all(handles.iter().map(|handle| async move {
-            let ct_chain_id = extract_chain_id_from_handle(*handle)
-                .map_err(|e| RequestCheckError::irrecoverable(RequestCheckKind::Acl, e))?;
+            let ct_chain_id = extract_chain_id_from_handle(*handle).map_err(|e| {
+                RequestCheckError::irrecoverable(RequestCheckKind::Acl, ErrorCode::Unprocessable, e)
+            })?;
             let host_client = self.host_clients.get(&ct_chain_id).ok_or_else(|| {
                 RequestCheckError::recoverable(
                     RequestCheckKind::Acl,
+                    ErrorCode::UpstreamTransient,
                     anyhow!("No ACL contract config found for chain id {ct_chain_id}"),
                 )
             })?;
             let contract_address = contracts_map_ref.get(handle.as_slice()).ok_or_else(|| {
                 RequestCheckError::irrecoverable(
                     RequestCheckKind::Acl,
+                    ErrorCode::Unprocessable,
                     anyhow!("Could not find contract address for handle {handle}"),
                 )
             })?;
@@ -211,6 +219,7 @@ where
         if !is_delegated {
             return Err(RequestCheckError::recoverable(
                 RequestCheckKind::Acl,
+                ErrorCode::AclDenied,
                 anyhow!(
                     "{user_address} is not a delegate of {delegator_address} for contract \
                     {contract_address} and handle {handle}!",
@@ -232,11 +241,14 @@ where
             .ok_or_else(|| {
                 RequestCheckError::irrecoverable(
                     RequestCheckKind::Acl,
+                    ErrorCode::Unprocessable,
                     anyhow!("request contains no handles"),
                 )
             })
             .map(|h| extract_chain_id_from_handle(h.handle))?
-            .map_err(|e| RequestCheckError::irrecoverable(RequestCheckKind::Acl, e))?;
+            .map_err(|e| {
+                RequestCheckError::irrecoverable(RequestCheckKind::Acl, ErrorCode::Unprocessable, e)
+            })?;
 
         for h in request.handles.iter() {
             match extract_chain_id_from_handle(h.handle) {
@@ -244,6 +256,7 @@ where
                 Ok(other) => {
                     return Err(RequestCheckError::irrecoverable(
                         RequestCheckKind::Acl,
+                        ErrorCode::Unprocessable,
                         anyhow!(
                             "user decryption request handles span multiple chains ({chain_id}, {other})",
                         ),
@@ -252,6 +265,7 @@ where
                 Err(e) => {
                     return Err(RequestCheckError::irrecoverable(
                         RequestCheckKind::Acl,
+                        ErrorCode::Unprocessable,
                         anyhow!(
                             "Failed to extract chain_id from handle {}: {e}",
                             hex::encode(h.handle),
@@ -297,6 +311,7 @@ where
         if now < start {
             return Err(RequestCheckError::recoverable(
                 RequestCheckKind::Signature,
+                ErrorCode::UserSignatureRejected,
                 anyhow!(
                     "RFC016 user decryption request not yet valid: now {now} < startTimestamp {start}",
                 ),
@@ -305,6 +320,7 @@ where
         if now > end {
             return Err(RequestCheckError::irrecoverable(
                 RequestCheckKind::Signature,
+                ErrorCode::UserSignatureRejected,
                 anyhow!(
                     "RFC016 user decryption request validity window expired: now {now} > end {end}"
                 ),
@@ -315,6 +331,7 @@ where
         if payload.allowedContracts.contains(&payload.userAddress) {
             return Err(RequestCheckError::irrecoverable(
                 RequestCheckKind::Signature,
+                ErrorCode::Unprocessable,
                 anyhow!(
                     "userAddress {} is listed in allowedContracts — request rejected",
                     payload.userAddress
@@ -325,6 +342,7 @@ where
         let host_client = self.host_clients.get(&chain_id).ok_or_else(|| {
             RequestCheckError::recoverable(
                 RequestCheckKind::Acl,
+                ErrorCode::UpstreamTransient,
                 anyhow!("No ACL contract config found for chain id {chain_id}"),
             )
         })?;
@@ -399,6 +417,7 @@ where
             if !user_allowed {
                 return Err(RequestCheckError::recoverable(
                     RequestCheckKind::Acl,
+                    ErrorCode::AclDenied,
                     anyhow!("{user_address} is not allowed to decrypt {handle_hex}"),
                 ));
             }
@@ -414,6 +433,7 @@ where
             if !is_delegated {
                 return Err(RequestCheckError::recoverable(
                     RequestCheckKind::Acl,
+                    ErrorCode::AclDenied,
                     anyhow!(
                         "{user_address} is not a delegate of {} for contract {} and handle {handle_hex}",
                         entry.ownerAddress,
@@ -457,6 +477,7 @@ where
         // No contract returned true (all denied, all RPC calls failed, or a mix of both).
         Err(RequestCheckError::recoverable(
             RequestCheckKind::Acl,
+            ErrorCode::AclDenied,
             anyhow!(
                 "No contract in allowedContracts is allowed to decrypt handle {handle} ({rejections:?})",
             ),
@@ -477,6 +498,7 @@ where
         if start_timestamp < invalidation_ts {
             return Err(RequestCheckError::irrecoverable(
                 RequestCheckKind::Signature,
+                ErrorCode::UserSignatureRejected,
                 anyhow!(
                     "RFC016 signature invalidated: startTimestamp {start_timestamp} < \
                      invalidatedBefore {invalidation_ts} for userAddress {user_address}"
@@ -502,12 +524,14 @@ where
         if !user_allowed {
             return Err(RequestCheckError::recoverable(
                 RequestCheckKind::Acl,
+                ErrorCode::AclDenied,
                 anyhow!("{user_address} is not allowed to decrypt {handle}!"),
             ));
         }
         if !contract_allowed {
             return Err(RequestCheckError::recoverable(
                 RequestCheckKind::Acl,
+                ErrorCode::AclDenied,
                 anyhow!("{contract_address} is not allowed to decrypt {handle}!"),
             ));
         }
@@ -523,13 +547,14 @@ where
         user_decrypt_data: Option<UserDecryptionExtraData>,
     ) -> Result<KmsGrpcRequest, ProcessingError> {
         if handles.is_empty() {
-            return Err(ProcessingError::Irrecoverable(anyhow!(
-                "No handles found in the request, cannot proceed"
-            )));
+            return Err(ProcessingError::irrecoverable(
+                ErrorCode::Unprocessable,
+                anyhow!("No handles found in the request, cannot proceed"),
+            ));
         }
 
-        let parsed_extra_data =
-            parse_extra_data(extra_data).map_err(ProcessingError::Irrecoverable)?;
+        let parsed_extra_data = parse_extra_data(extra_data)
+            .map_err(|e| ProcessingError::irrecoverable(ErrorCode::Unprocessable, e))?;
 
         let VerifiedCiphertexts {
             ciphertexts,
@@ -583,18 +608,24 @@ where
             .provider()
             .get_transaction_by_hash(tx_hash)
             .await
-            .map_err(|e| ProcessingError::Recoverable(anyhow::Error::from(e)))?
+            .map_err(ProcessingError::transient)?
             .ok_or_else(|| {
-                ProcessingError::Irrecoverable(anyhow!("No transaction found with hash {tx_hash}!"))
+                ProcessingError::irrecoverable(
+                    ErrorCode::Unprocessable,
+                    anyhow!("No transaction found with hash {tx_hash}!"),
+                )
             })?;
 
         if tx.to() != Some(decryption_address) {
-            return Err(ProcessingError::Irrecoverable(anyhow!(
-                "Transaction {tx_hash} was sent to {:?} rather than directly to the Decryption \
-                contract {decryption_address}: its calldata cannot be associated with the user \
-                decryption event.",
-                tx.to(),
-            )));
+            return Err(ProcessingError::irrecoverable(
+                ErrorCode::Unprocessable,
+                anyhow!(
+                    "Transaction {tx_hash} was sent to {:?} rather than directly to the Decryption \
+                    contract {decryption_address}: its calldata cannot be associated with the user \
+                    decryption event.",
+                    tx.to(),
+                ),
+            ));
         }
 
         Ok(tx.input().to_vec())
@@ -627,6 +658,7 @@ impl UserDecryptionExtraData {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::event_processor::ProcessingErrorKind;
     use alloy::{
         providers::{ProviderBuilder, mock::Asserter},
         rpc::types::Transaction as RpcTransaction,
@@ -650,6 +682,24 @@ mod tests {
         Ok,
         Recoverable,
         Irrecoverable,
+    }
+
+    fn assert_kind(result: &Result<(), ProcessingError>, expected: &ExpectedOutcome) {
+        match expected {
+            ExpectedOutcome::Ok => unreachable!(),
+            ExpectedOutcome::Recoverable => {
+                assert_eq!(
+                    result.as_ref().unwrap_err().kind,
+                    ProcessingErrorKind::Recoverable
+                )
+            }
+            ExpectedOutcome::Irrecoverable => {
+                assert_eq!(
+                    result.as_ref().unwrap_err().kind,
+                    ProcessingErrorKind::Irrecoverable
+                )
+            }
+        }
     }
 
     fn setup_test_processor(
@@ -729,13 +779,10 @@ mod tests {
             .map_err(RequestCheckError::record);
 
         match expected {
-            ExpectedOutcome::Ok => result.unwrap(),
-            ExpectedOutcome::Recoverable => {
-                assert!(matches!(result, Err(ProcessingError::Recoverable(_))))
+            ExpectedOutcome::Ok => {
+                result.unwrap();
             }
-            ExpectedOutcome::Irrecoverable => {
-                assert!(matches!(result, Err(ProcessingError::Irrecoverable(_))))
-            }
+            _ => assert_kind(&result, &expected),
         }
     }
 
@@ -829,13 +876,10 @@ mod tests {
             .map_err(RequestCheckError::record);
 
         match expected {
-            ExpectedOutcome::Ok => result.unwrap(),
-            ExpectedOutcome::Recoverable => {
-                assert!(matches!(result, Err(ProcessingError::Recoverable(_))))
+            ExpectedOutcome::Ok => {
+                result.unwrap();
             }
-            ExpectedOutcome::Irrecoverable => {
-                assert!(matches!(result, Err(ProcessingError::Irrecoverable(_))))
-            }
+            _ => assert_kind(&result, &expected),
         }
     }
 
@@ -894,20 +938,19 @@ mod tests {
             .map_err(RequestCheckError::record);
 
         match expected {
-            ExpectedOutcome::Ok => result.unwrap(),
-            ExpectedOutcome::Recoverable => {
-                assert!(matches!(result, Err(ProcessingError::Recoverable(_))))
+            ExpectedOutcome::Ok => {
+                result.unwrap();
             }
-            ExpectedOutcome::Irrecoverable => match result {
-                Err(ProcessingError::Irrecoverable(e)) => {
-                    let expected_msg = expected_error_msg.unwrap();
-                    assert!(
-                        e.to_string().contains(expected_msg),
-                        "Expected error message to contain '{expected_msg}', got: {e}",
-                    );
-                }
-                _ => panic!("Expected Irrecoverable error, got: {:?}", result),
-            },
+            ExpectedOutcome::Recoverable => assert_kind(&result, &expected),
+            ExpectedOutcome::Irrecoverable => {
+                assert_kind(&result, &expected);
+                let expected_msg = expected_error_msg.unwrap();
+                let msg = format!("{:#}", result.unwrap_err().source);
+                assert!(
+                    msg.contains(expected_msg),
+                    "Expected error message to contain '{expected_msg}', got: {msg}",
+                );
+            }
         }
     }
 
@@ -991,13 +1034,10 @@ mod tests {
             .map_err(RequestCheckError::record);
 
         match expected {
-            ExpectedOutcome::Ok => result.unwrap(),
-            ExpectedOutcome::Recoverable => {
-                assert!(matches!(result, Err(ProcessingError::Recoverable(_))))
+            ExpectedOutcome::Ok => {
+                result.unwrap();
             }
-            ExpectedOutcome::Irrecoverable => {
-                assert!(matches!(result, Err(ProcessingError::Irrecoverable(_))))
-            }
+            _ => assert_kind(&result, &expected),
         }
     }
 
@@ -1022,7 +1062,7 @@ mod tests {
             .check_user_decryption_request_v2(&request)
             .await
             .map_err(RequestCheckError::record);
-        assert!(matches!(result, Err(ProcessingError::Irrecoverable(_))));
+        assert_kind(&result, &ExpectedOutcome::Irrecoverable);
     }
 
     // -------------------------------------------------------------------------
@@ -1091,13 +1131,10 @@ mod tests {
             .map_err(RequestCheckError::record);
 
         match expected {
-            ExpectedOutcome::Ok => result.unwrap(),
-            ExpectedOutcome::Recoverable => {
-                assert!(matches!(result, Err(ProcessingError::Recoverable(_))))
+            ExpectedOutcome::Ok => {
+                result.unwrap();
             }
-            ExpectedOutcome::Irrecoverable => {
-                assert!(matches!(result, Err(ProcessingError::Irrecoverable(_))))
-            }
+            _ => assert_kind(&result, &expected),
         }
     }
 
@@ -1161,13 +1198,10 @@ mod tests {
             .map_err(RequestCheckError::record);
 
         match expected {
-            ExpectedOutcome::Ok => result.unwrap(),
-            ExpectedOutcome::Recoverable => {
-                assert!(matches!(result, Err(ProcessingError::Recoverable(_))))
+            ExpectedOutcome::Ok => {
+                result.unwrap();
             }
-            ExpectedOutcome::Irrecoverable => {
-                assert!(matches!(result, Err(ProcessingError::Irrecoverable(_))))
-            }
+            _ => assert_kind(&result, &expected),
         }
     }
 
@@ -1214,13 +1248,10 @@ mod tests {
             .map_err(RequestCheckError::record);
 
         match expected {
-            ExpectedOutcome::Ok => result.unwrap(),
-            ExpectedOutcome::Recoverable => {
-                assert!(matches!(result, Err(ProcessingError::Recoverable(_))))
+            ExpectedOutcome::Ok => {
+                result.unwrap();
             }
-            ExpectedOutcome::Irrecoverable => {
-                assert!(matches!(result, Err(ProcessingError::Irrecoverable(_))))
-            }
+            _ => assert_kind(&result, &expected),
         }
     }
 
@@ -1260,7 +1291,7 @@ mod tests {
             .check_user_decryption_request_v2(&request)
             .await
             .map_err(RequestCheckError::record);
-        assert!(matches!(result, Err(ProcessingError::Irrecoverable(_))));
+        assert_kind(&result, &ExpectedOutcome::Irrecoverable);
     }
 
     /// A smart-account user (Safe-style) whose contract returns the ERC-1271 magic value
@@ -1345,10 +1376,8 @@ mod tests {
         if should_succeed {
             assert_eq!(result.unwrap(), calldata);
         } else {
-            match result {
-                Err(ProcessingError::Irrecoverable(_)) => (),
-                other => panic!("Expected Irrecoverable error, got: {other:?}"),
-            }
+            let err = result.unwrap_err();
+            assert_eq!(err.kind, ProcessingErrorKind::Irrecoverable);
         }
     }
 
