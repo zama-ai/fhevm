@@ -10,3 +10,6 @@ export const DEVELOPMENT_CHAIN_ID = 31337;
 export const FHEVM_SOLIDITY_PACKAGE_NAME = '@fhevm/solidity';
 export const FHEVM_SOLIDITY_CONFIG_FILE = 'config/ZamaConfig.sol';
 export const FHEVM_SDK_PACKAGE_NAME = '@fhevm/sdk';
+
+/** The plugin's OWN dependency (not a consumer sibling): ABIs and the deploy sequence of the cleartext stack. */
+export const FHEVM_HOST_CONTRACTS_CLEARTEXT_PACKAGE_NAME = '@fhevm/host-contracts-cleartext';
