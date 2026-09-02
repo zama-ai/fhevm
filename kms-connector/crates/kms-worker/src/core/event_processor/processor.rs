@@ -11,9 +11,10 @@ use connector_utils::types::{
     KmsGrpcRequest, KmsGrpcResponse, KmsResponseKind, KmsSendResponse, ProtocolEvent,
     ProtocolEventKind, db::invalidate_kms_epoch, extra_data::parse_extra_data, u256_to_request_id,
 };
+use kms_connector_api::ErrorCode;
 use kms_grpc::kms::v1::{DestroyMpcContextRequest, DestroyMpcEpochRequest};
 use sqlx::{Pool, Postgres};
-use tracing::{error, info, warn};
+use tracing::warn;
 
 /// Interface used to process Gateway's events.
 pub trait EventProcessor: Send {
@@ -22,7 +23,7 @@ pub trait EventProcessor: Send {
     fn process(
         &mut self,
         event: &mut Self::Event,
-    ) -> impl Future<Output = Option<KmsResponseKind>> + Send;
+    ) -> impl Future<Output = Result<Option<KmsResponseKind>, ProcessingError>> + Send;
 }
 
 /// Struct that processes Gateway's events coming from a `Postgres` database.
@@ -43,10 +44,7 @@ pub struct DbEventProcessor<GP: Provider, HP: Provider, C> {
     /// The entity used to build `ProtocolConfig` event requests (context/epoch lifecycle).
     protocol_config_processor: ProtocolConfigProcessor<HP>,
 
-    /// The maximum number of decryption attempts.
-    max_decryption_attempts: u16,
-
-    /// The DB connection pool used to update the events `status` field on error.
+    /// The DB connection pool used to invalidate destroyed KMS epochs.
     db_pool: Pool<Postgres>,
 }
 
@@ -59,56 +57,58 @@ where
     type Event = ProtocolEvent;
 
     #[tracing::instrument(skip_all)]
-    async fn process(&mut self, event: &mut Self::Event) -> Option<KmsResponseKind> {
-        info!("Starting to process {:?}...", event.kind);
-        match (self.inner_process(event).await, &event.kind) {
-            (Ok(response), _) => {
-                info!("Event successfully processed!");
-                response
-            }
-            (Err(ProcessingError::Irrecoverable(e)), _) => {
-                error!("{}", ProcessingError::Irrecoverable(e));
-                if let Err(e) = event.mark_as_failed(&self.db_pool).await {
-                    warn!("{e}");
+    async fn process(
+        &mut self,
+        event: &mut Self::Event,
+    ) -> Result<Option<KmsResponseKind>, ProcessingError> {
+        if event.already_sent {
+            // Poll-only retry: we still re-run live-state checks.
+            self.check_request(event)
+                .await
+                .inspect_err(|_| event.error_counter += 1)?;
+        } else {
+            // We optimistically prepare the request while running the checks.
+            let ((), request) = tokio::try_join!(
+                biased;
+                self.check_request(event),
+                self.prepare_grpc_request(event),
+            )
+            .inspect_err(|_| event.error_counter += 1)?;
+
+            let (error_count, result) = self.kms_client.send_request(&request).await;
+            event.error_counter += error_count;
+            let send_response = result?;
+            event.already_sent = true;
+
+            // Invalidate epochs associated to destroyed context returned by the KMS Core.
+            // A failure must not prevent the event from completing, as retrying would result in an
+            // `NotFound` from KMS Core with no epoch IDs.
+            if let KmsSendResponse::DestroyedEpochs(epoch_ids) = send_response {
+                for epoch_id in epoch_ids {
+                    if let Err(e) = invalidate_kms_epoch(&self.db_pool, epoch_id).await {
+                        warn!("Failed to invalidate destroyed KMS epoch #{epoch_id}: {e}");
+                    }
                 }
-                None
-            }
-            (Err(ProcessingError::Aborted), _) => {
-                warn!("{}", ProcessingError::Aborted);
-                if let Err(e) = event.mark_as_aborted(&self.db_pool).await {
-                    warn!("{e}");
-                }
-                None
-            }
-            // For now, we only check the error counter for public and user decryptions as they are
-            // the most frequent operations, and we want to avoid infinite retry loop for them.
-            // For key management operations, as they are not frequent at all, we currently rely on
-            // a manual cleanup of the DB in such case. We want to avoid to "accidentally" remove a
-            // key management operation at all cost.
-            (
-                Err(ProcessingError::Recoverable(e)),
-                ProtocolEventKind::PublicDecryption(_)
-                | ProtocolEventKind::UserDecryption(_)
-                | ProtocolEventKind::UserDecryptionV2(_),
-            ) if event.error_counter as u16 >= self.max_decryption_attempts => {
-                error!(
-                    "{}. Maximum number of decryption attempts reached: {}",
-                    ProcessingError::Irrecoverable(e),
-                    event.error_counter
-                );
-                if let Err(e) = event.mark_as_failed(&self.db_pool).await {
-                    warn!("{e}");
-                }
-                None
-            }
-            (Err(ProcessingError::Recoverable(e)), _) => {
-                error!("{}", ProcessingError::Recoverable(e));
-                if let Err(e) = event.mark_as_pending(&self.db_pool).await {
-                    warn!("{e}");
-                }
-                None
             }
         }
+
+        let (error_count, grpc_result) = self
+            .kms_client
+            .poll_result(KmsPollTarget::from(&event.kind))
+            .await;
+        event.error_counter += error_count;
+        let grpc_response = grpc_result?;
+
+        if let KmsGrpcResponse::NoResponseExpected = &grpc_response {
+            if let Err(e) = event.mark_as_completed(&self.db_pool).await {
+                warn!("{e}");
+            }
+            return Ok(None);
+        }
+
+        let processed_response = KmsResponseKind::process(grpc_response)
+            .map_err(|e| ProcessingError::irrecoverable(ErrorCode::Unprocessable, e))?;
+        Ok(Some(processed_response))
     }
 }
 
@@ -119,7 +119,6 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
         decryption_processor: DecryptionProcessor<GP, HP>,
         kms_generation_processor: KMSGenerationProcessor,
         protocol_config_processor: ProtocolConfigProcessor<HP>,
-        max_decryption_attempts: u16,
         db_pool: Pool<Postgres>,
     ) -> Self {
         Self {
@@ -128,15 +127,14 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
             decryption_processor,
             kms_generation_processor,
             protocol_config_processor,
-            max_decryption_attempts,
             db_pool,
         }
     }
 
     /// Checks the KMS context referenced by the request's `extra_data` is valid.
     async fn check_context(&self, extra_data: &[u8]) -> Result<(), ProcessingError> {
-        let parsed_extra_data =
-            parse_extra_data(extra_data).map_err(ProcessingError::Irrecoverable)?;
+        let parsed_extra_data = parse_extra_data(extra_data)
+            .map_err(|e| ProcessingError::irrecoverable(ErrorCode::Unprocessable, e))?;
         self.context_manager
             .validate_context(&parsed_extra_data)
             .await
@@ -165,9 +163,12 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
             }
             ProtocolEventKind::UserDecryption(req) => {
                 let tx_hash = event.tx_hash.ok_or_else(|| {
-                    ProcessingError::Irrecoverable(anyhow!(
-                        "No `tx_hash` found for user decryption. Cannot perform ACL check."
-                    ))
+                    ProcessingError::irrecoverable(
+                        ErrorCode::Unprocessable,
+                        anyhow!(
+                            "No `tx_hash` found for user decryption. Cannot perform ACL check."
+                        ),
+                    )
                 })?;
                 tokio::try_join!(
                     biased;
@@ -306,60 +307,5 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                 }))
             }
         }
-    }
-
-    /// Core event processing logic function.
-    async fn inner_process(
-        &mut self,
-        event: &mut ProtocolEvent,
-    ) -> Result<Option<KmsResponseKind>, ProcessingError> {
-        if event.already_sent {
-            // Poll-only retry: we still re-run live-state checks.
-            self.check_request(event)
-                .await
-                .inspect_err(|_| event.error_counter += 1)?;
-        } else {
-            // We optimistically prepare the request while running the checks.
-            let ((), request) = tokio::try_join!(
-                biased;
-                self.check_request(event),
-                self.prepare_grpc_request(event),
-            )
-            .inspect_err(|_| event.error_counter += 1)?;
-
-            let (error_count, result) = self.kms_client.send_request(&request).await;
-            event.error_counter += error_count;
-            let send_response = result?;
-            event.already_sent = true;
-
-            // Invalidate epochs associated to destroyed context returned by the KMS Core.
-            // A failure must not prevent the event from completing, as retrying would result in an
-            // `NotFound` from KMS Core with no epoch IDs.
-            if let KmsSendResponse::DestroyedEpochs(epoch_ids) = send_response {
-                for epoch_id in epoch_ids {
-                    if let Err(e) = invalidate_kms_epoch(&self.db_pool, epoch_id).await {
-                        warn!("Failed to invalidate destroyed KMS epoch #{epoch_id}: {e}");
-                    }
-                }
-            }
-        }
-
-        let (error_count, grpc_result) = self
-            .kms_client
-            .poll_result(KmsPollTarget::from(&event.kind))
-            .await;
-        event.error_counter += error_count;
-        let grpc_response = grpc_result?;
-
-        if let KmsGrpcResponse::NoResponseExpected = &grpc_response {
-            if let Err(e) = event.mark_as_completed(&self.db_pool).await {
-                warn!("{e}");
-            }
-            return Ok(None);
-        }
-
-        let processed_response =
-            KmsResponseKind::process(grpc_response).map_err(ProcessingError::Irrecoverable)?;
-        Ok(Some(processed_response))
     }
 }

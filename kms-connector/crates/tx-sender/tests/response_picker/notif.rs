@@ -1,6 +1,9 @@
-use connector_utils::tests::{
-    db::responses::{TestResponseType, insert_rand_response},
-    setup::TestInstanceBuilder,
+use connector_utils::{
+    tests::{
+        db::responses::{TestResponseType, insert_rand_response},
+        setup::TestInstanceBuilder,
+    },
+    types::db::RequestSource,
 };
 use rstest::rstest;
 use sqlx::{Pool, Postgres};
@@ -25,8 +28,14 @@ async fn test_pick_response_with_pg_notif(
     let mut response_picker = init_response_picker(test_instance.db().clone()).await?;
 
     info!("Triggering Postgres notification with {response_type} insertion...");
-    let inserted_response =
-        insert_rand_response(test_instance.db(), response_type, None, None).await?;
+    let inserted_response = insert_rand_response(
+        test_instance.db(),
+        response_type,
+        None,
+        None,
+        RequestSource::OnChain,
+    )
+    .await?;
     info!("Picking {response_type}...");
     let responses = response_picker.pick_responses().await?;
 
