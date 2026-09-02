@@ -75,11 +75,21 @@ pub struct SemEvmRpcProvider {
     /// Shared HTTP client for batch requests, built with the same production policy
     // batch_client: reqwest::Client,
     batch_client: Client,
+    /// Finality strategy: when true, use the node's `finalized` block tag;
+    /// when false, derive finality as head - `finality_depth`.
+    finality_tag: bool,
+    /// Number of blocks behind head considered final (depth strategy).
+    finality_depth: u64,
 }
 
 impl SemEvmRpcProvider {
     /// Create a new provider with a concurrency limit and a tuned HTTP client.
-    pub fn new(rpc_url: String, max_concurrent_requests: usize) -> Result<Self, RpcProviderError> {
+    pub fn new(
+        rpc_url: String,
+        max_concurrent_requests: usize,
+        finality_tag: bool,
+        finality_depth: u64,
+    ) -> Result<Self, RpcProviderError> {
         let url = Url::parse(&rpc_url)?;
 
         // Extract the host only (no path, no query) to avoid leaking API keys via Prometheus.
@@ -119,6 +129,8 @@ impl SemEvmRpcProvider {
             rpc_url,
             endpoint,
             batch_client,
+            finality_tag,
+            finality_depth,
         })
     }
 
@@ -233,16 +245,55 @@ impl SemEvmRpcProvider {
     pub async fn get_block_number(&self) -> Result<u64, RpcProviderError> {
         let hex: String = self.raw_request("eth_blockNumber", json!([])).await?;
 
-        u64::from_str_radix(hex.trim_start_matches("0x"), 16)
-            .map_err(|e| RpcProviderError::SerdeError(serde::ser::Error::custom(e)))
+        hex_to_u64(&hex)
     }
 
     #[instrument(skip(self), level = "debug")]
     pub async fn get_chain_id(&self) -> Result<u64, RpcProviderError> {
         let hex: String = self.raw_request("eth_chainId", json!([])).await?;
 
-        u64::from_str_radix(hex.trim_start_matches("0x"), 16)
-            .map_err(|e| RpcProviderError::SerdeError(serde::ser::Error::custom(e)))
+        hex_to_u64(&hex)
+    }
+
+    /// Final block number using the configured strategy:
+    /// `finality_tag == true` → the node's `finalized` block tag;
+    /// `finality_tag == false` → head minus `finality_depth`.
+    #[instrument(skip(self), level = "debug")]
+    pub async fn get_final_block_number(&self) -> Result<u64, RpcProviderError> {
+        if self.finality_tag {
+            self.get_finalized_block_number_from_tag().await
+        } else {
+            self.get_finalized_block_number_from_depth().await
+        }
+    }
+
+    /// Finality strategy A: ask the node for the block tagged `finalized`
+    /// (`eth_getBlockByNumber("finalized", false)`) and extract its `number` field.
+    #[instrument(skip(self), level = "debug")]
+    pub async fn get_finalized_block_number_from_tag(&self) -> Result<u64, RpcProviderError> {
+        const METHOD: &str = "eth_getBlockByNumber";
+
+        let block: Option<Value> = self
+            .raw_request(METHOD, json!(["finalized", false]))
+            .await?;
+        let block = block.ok_or(RpcProviderError::NotFound)?;
+
+        let hex = block.get("number").and_then(Value::as_str).ok_or_else(|| {
+            RpcProviderError::DeserializationError {
+                method: METHOD.to_string(),
+                details: "finalized block has no string `number` field".to_string(),
+            }
+        })?;
+
+        hex_to_u64(hex)
+    }
+
+    /// Finality strategy B: head (`eth_blockNumber`) minus the configured
+    /// `finality_depth`, saturating at 0 for chains younger than the depth.
+    #[instrument(skip(self), level = "debug")]
+    pub async fn get_finalized_block_number_from_depth(&self) -> Result<u64, RpcProviderError> {
+        let head = self.get_block_number().await?;
+        Ok(head.saturating_sub(self.finality_depth))
     }
 
     #[instrument(skip(self), level = "debug")]
@@ -531,6 +582,12 @@ fn record_rpc_error(method: &str, endpoint: &str, error_kind: &'static str, elap
         "endpoint" => endpoint.to_owned(),
     )
     .record(elapsed_secs);
+}
+
+/// Convert a 0x-prefixed hex quantity (JSON-RPC encoding) to u64.
+pub(crate) fn hex_to_u64(hex: &str) -> Result<u64, RpcProviderError> {
+    u64::from_str_radix(hex.trim_start_matches("0x"), 16)
+        .map_err(|e| RpcProviderError::SerdeError(serde::ser::Error::custom(e)))
 }
 
 /// Extract transaction hashes from an AnyRpcBlock.
