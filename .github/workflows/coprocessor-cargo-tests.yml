@@ -240,11 +240,13 @@ jobs:
         SQLX_OFFLINE: 'true'
         TEST_PACKAGE: ${{ matrix.package }}
         CARGO_TARGET_DIR: target/llvm-cov-target
+        SHARDS: ${{ matrix.shards }}
       run: |
         set -euo pipefail
         # Same filter the run step used, so the two cannot drift apart.
         NEXTEST_FILTER="$(cat /tmp/nextest-filter)"
         mkdir -p target/nextest/ci
+        echo "$SHARDS" > target/nextest/ci/shard-total.txt
         cargo nextest list -p "$TEST_PACKAGE" --cargo-profile coverage \
           -E "$NEXTEST_FILTER" --message-format json \
           | python3 -c 'import json,sys; d=json.load(sys.stdin); print(sum(1 for s in d["rust-suites"].values() for c in s["testcases"].values() if c["filter-match"]["status"] == "matches"))' \
@@ -261,6 +263,7 @@ jobs:
         path: |
           coprocessor/fhevm-engine/target/nextest/ci/junit.xml
           coprocessor/fhevm-engine/target/nextest/ci/expected-count.txt
+          coprocessor/fhevm-engine/target/nextest/ci/shard-total.txt
         retention-days: 1
         if-no-files-found: ignore
 
@@ -394,6 +397,12 @@ jobs:
         pattern: junit-*
         path: /tmp/reports
 
+    - name: Download shard coverage
+      uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+      with:
+        pattern: lcov-tfhe-worker-*
+        path: /tmp/shard-lcov
+
     - name: Every test ran in exactly one shard
       run: |
         python3 - <<'PY'
@@ -416,6 +425,25 @@ jobs:
                 print(f"  {name}")
             sys.exit(1)
         print("no test ran twice")
+        PY
+
+    # A lost coverage upload would otherwise just shrink the reported number.
+    - name: Every shard reported coverage
+      run: |
+        python3 - <<'PY'
+        import glob, os, sys
+        g = lambda p: glob.glob(p, recursive=True)
+
+        shards = {int(open(p).read()) for p in g("/tmp/reports/**/shard-total.txt")}
+        if len(shards) != 1:
+            sys.exit(f"no shard reported a shard count, or they disagree: {shards}")
+        n = shards.pop()
+        reports = len(g("/tmp/reports/**/junit.xml"))
+        lcov = sum(os.path.getsize(p) > 0 for p in g("/tmp/shard-lcov/**/lcov.info"))
+
+        print(f"{n} shards configured: {reports} test reports, {lcov} coverage files")
+        if (reports, lcov) != (n, n):
+            sys.exit(f"every shard must report both; expected {n} of each")
         PY
 
     - name: No test was skipped by the split
