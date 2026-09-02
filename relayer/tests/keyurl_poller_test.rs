@@ -20,6 +20,7 @@ use fhevm_host_bindings::ikms_generation::IKMSGeneration;
 use fhevm_relayer::config::settings::{ProtocolConfigSettings, RetrySettings};
 use fhevm_relayer::host::KeyUrlPoller;
 use tokio::sync::watch;
+use tokio_util::sync::CancellationToken;
 
 const CONTRACT_ADDR: &str = "0x1234567890123456789012345678901234567890";
 const STORAGE_URL: &str = "http://minio:9000/kms-public";
@@ -246,7 +247,7 @@ async fn run_pushes_updated_value_on_id_change() {
     );
 
     let (tx, mut rx) = watch::channel(initial);
-    let run_handle = tokio::spawn(async move { poller.run(tx).await });
+    let run_handle = tokio::spawn(async move { poller.run(tx, CancellationToken::new()).await });
 
     // Rotate the active key id on-chain; the poller should detect it and push the new value.
     active_key_id.store(7, Ordering::SeqCst);
