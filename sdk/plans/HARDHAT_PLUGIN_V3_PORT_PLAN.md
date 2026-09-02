@@ -1,6 +1,6 @@
 # Porting the FHEVM hardhat plugin from hardhat v2 to hardhat v3
 
-Version: **1.9** (2026-09-02). Bump the minor for a content change to the plan, the major for a
+Version: **1.10** (2026-09-03). Bump the minor for a content change to the plan, the major for a
 change of charter or stage order; record each bump below.
 
 - 1.0 — initial plan, from the hardhat 3 docs.
@@ -15,8 +15,9 @@ change of charter or stage order; record each bump below.
 - 1.8 — B1b1 recorded as landed; the plugin switched from ethers to VIEM (open question 2 settled);
   genesis-injection measured and declined; B1a repository re-based on viem.
 - 1.9 — B1b2 recorded as landed: the stack deploys once per development chain inside `newConnection`.
+- 1.10 — B1c recorded as landed (verification, not setup); ledger: B1c smoke test → D0, `TestFHENotInitialized` → D5b.
 
-Status: **in progress — Stage A complete (A2–A7) + E2E-0a + B1a + B1b1 + B1b2. Next: B1c.** The landing zone exists: the
+Status: **in progress — Stage A complete (A2–A7) + E2E-0a + B1 complete (B1a–B1c). Next: B2.** The landing zone exists: the
 `hardhat/v3` cluster (own installation root, hardhat 3.15 pinned), the plugin registered via
 `definePlugin` with its per-connection `fhevm` object and the pre-serve chain preparation proven,
 and the `hardhat/v3/e2e` member with the first counter test.
@@ -481,8 +482,15 @@ first review, per the cap rule.
     mocha suite redeploys per file — a cost v2 never paid). Before committing the CREATE sequence,
     measure `hardhat_setCode`-style injection as the faster alternative.
     Commit: `feat(hh-v3-plugin): deploy the cleartext stack once per dev chain`
-  - **B1c.** Post-deploy setup (signers registration, HCU caps — v2's `deploy/setup.ts`).
-    Test: coprocessor/KMS signers registered; `assertCoprocessorInitialized` path green.
+  - **B1c — LANDED, as VERIFICATION.** Setup needed no port: the package's `deploy()` registers the
+    KMS/coprocessor signer sets and the HCU caps from its default bootstrap config. `internal/verify.ts`
+    runs the package's own `verify({ mode: 'deploy', expected: { admin: deployer } })` after EVERY
+    preparation (fresh deploy and http reuse alike — a half-deployed or foreign stack fails by name);
+    event-scan and signer-expectation checks skip (no history adapter in process; defaults not
+    stated). Findings for upstream: on a bare chain `verify()` throws from `owner()` instead of
+    reporting, so the plugin treats a throw as a failed verification. Test: signer sets non-empty
+    with thresholds inside, HCU caps positive (via the repository ABIs); verify passes on a prepared
+    chain, refused by name on a bare one. 47 lines of code where 150 were estimated.
     Commit: `feat(hh-v3-plugin): run post-deploy signer and HCU setup on the fresh stack`
 - **B2. Anvil deploy.** Same flow against an external anvil.
   Test: behind a `test:anvil` operator script, exactly like v2's.
@@ -599,7 +607,7 @@ allows.
 | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | E2E-0a                 | `internal/FHECounterPublicDecrypt.ts` — the "uninitialized after deployment" case only (compile + deploy + `getCount`)                                                                                                                              |
 | A5                     | DONE — the `isCleartext` guard is live in `internal/FHECounterPublicDecrypt.ts`; `utils.ts` (`isDevelopment`) ports with its first user                                                                                                                                          |
-| B1c                    | a NEW smoke test: the ZamaConfig trio holds code on a fresh `default` connection and again on a second `create()` (two chains, two deploys); `TestFHENotInitialized.test.ts` (`assertCoprocessorInitialized`)                                        |
+| B1c                    | MOVED: the ZamaConfig-trio smoke test lands with D0 (nothing public exposes the stack addresses before `connection.fhevm` grows them); `TestFHENotInitialized.test.ts` lands with D5b (`assertCoprocessorInitialized`)                                        |
 | B2                     | `test:anvil` + `test:anvil:simple` scripts and `test/test-anvil*.sh` (run the counter file)                                                                                                                                                       |
 | B3                     | `test:node` script + `test/test-hardhat-node.sh`                                                                                                                                                                                                  |
 | D1                     | `internal/delegatedUserDecryption.ts` (encrypt half; the delegated decrypt asserts join at D3c), `finance/ConfidentialVestingWallet*.test.ts` (`createEncryptedInput` only)                                                                         |
