@@ -1,7 +1,8 @@
 // `sdk/cleartext-config.json` is the source of truth for the cleartext stack's shared values;
-// `internal/cleartext-config.ts` and `create2-deploy/script/FhevmCleartextConfig.sol` are faces of it —
-// same names, same order, equal values. Hand-written faces are only safe because they are CHECKED, and
-// this file is that check.
+// `pkg/ts/cleartext-config.ts` (generated from the JSON, synced from common-vendored/src) and
+// `create2-deploy/script/FhevmCleartextConfig.sol` (generated directly) are faces of it — same names,
+// same order, equal values. A face is only safe because it is CHECKED — generated or not, this file is
+// what proves the committed copies match the JSON and the JSON matches its own formulas.
 //
 // Four things are checked, and the last two could not exist before the JSON did:
 //
@@ -32,7 +33,7 @@ import { FHEVM_CONFIG_REMAPPING_PREFIX, PACKAGE_ROOT_ABS_PATH, ZAMA_LOCAL_CONFIG
  * the faces against, and a test that quietly passed in that case would be worse than one that fails.
  */
 const JSON_PATH = join(PACKAGE_ROOT_ABS_PATH, '..', '..', 'cleartext-config.json');
-const TS_PATH = join(PACKAGE_ROOT_ABS_PATH, 'internal', 'cleartext-config.ts');
+const TS_PATH = join(PACKAGE_ROOT_ABS_PATH, 'pkg', 'ts', 'cleartext-config.ts');
 const SOL_PATH = join(PACKAGE_ROOT_ABS_PATH, 'create2-deploy', 'script', 'FhevmCleartextConfig.sol');
 const LOCAL_HOST_ADDRESSES_PATH = join(
   PACKAGE_ROOT_ABS_PATH,
@@ -267,9 +268,9 @@ void test('the TypeScript face matches the source of truth', () => {
   assert.deepEqual(
     [...face.keys()],
     [...truth.keys()],
-    `internal/cleartext-config.ts declares a different set of constants, or in a different order, than\n` +
+    `pkg/ts/cleartext-config.ts declares a different set of constants, or in a different order, than\n` +
       `sdk/cleartext-config.json. Names are verbatim and order is declaration order — an alias must follow\n` +
-      `the constant it aliases.`,
+      `the constant it aliases. The file is generated: rerun \`make generate\`, never edit it.`,
   );
 
   const diffs: string[] = [];
@@ -289,7 +290,7 @@ void test('the TypeScript face matches the source of truth', () => {
     const have = canonical(e.solidity, got);
     if (have !== want) diffs.push(`${name}\n    json: ${want}\n    ts:   ${have}`);
   }
-  assert.deepEqual(diffs, [], 'value drift between sdk/cleartext-config.json and internal/cleartext-config.ts');
+  assert.deepEqual(diffs, [], 'value drift between sdk/cleartext-config.json and pkg/ts/cleartext-config.ts');
 });
 
 void test('the Solidity face matches the source of truth', () => {
@@ -300,10 +301,9 @@ void test('the Solidity face matches the source of truth', () => {
     [...face.keys()],
     [...truth.keys()],
     `create2-deploy/script/FhevmCleartextConfig.sol declares a different set of constants, or in a\n` +
-      `different order, than sdk/cleartext-config.json.\n` +
-      `The mirror is COMPLETE, not trimmed to what today's scripts use — a partial mirror is an invitation\n` +
-      `to declare the missing half somewhere else. And a Solidity-only value (a role name, an artifact\n` +
-      `path) does not belong in this file at all.`,
+      `different order, than sdk/cleartext-config.json. The file is generated: rerun \`make generate\`,\n` +
+      `never edit it. The mirror is COMPLETE, not trimmed to what today's scripts use — and a\n` +
+      `Solidity-only value (a role name, an artifact path) does not belong in the JSON at all.`,
   );
 
   const diffs: string[] = [];

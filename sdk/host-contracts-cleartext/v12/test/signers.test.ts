@@ -19,8 +19,8 @@ const JS_SDK_SIGNERS_PATH = join(
   'cleartext',
   'signers.ts',
 );
-// The shared cleartext config, not ts/constants.ts: the mnemonic and HD paths moved to
-// internal/cleartext-config.ts, of which this is the byte-for-byte payload copy.
+// The shared cleartext config, not ts/constants.ts: the mnemonic and HD paths live in
+// pkg/ts/cleartext-config.ts, generated from sdk/cleartext-config.json and synced from common-vendored.
 const HOST_CONFIG_PATH = join(PKG_DIR_ABS_PATH, 'ts', 'cleartext-config.ts');
 const HOST_COPROCESSOR_SIGNERS_PATH = join(PKG_DIR_ABS_PATH, 'ts', 'signers', 'defaultCoprocessorSigners.ts');
 const HOST_KMS_SIGNERS_PATH = join(PKG_DIR_ABS_PATH, 'ts', 'signers', 'defaultKmsSigners.ts');

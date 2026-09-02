@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import type { CheckCommand } from './base/command.ts';
+import { renderCompletionScript } from './base/sh-completion.ts';
 import { printReport } from './base/diagnostics.ts';
 import { hasDetailedOutput } from './base/verbosity.ts';
 import { type CommandName, parseCliOptions } from './cli-options.ts';
@@ -13,12 +14,14 @@ import { checkNames } from './commands/check-names.ts';
 import { checkOwnership } from './commands/check-ownership.ts';
 import { checkPackageJsonPaths } from './commands/check-package-json-paths.ts';
 import { checkPackageJson } from './commands/check-package-json.ts';
+import { checkCleartextConfig } from './commands/check-cleartext-config.ts';
 import { checkCommitScope } from './commands/check-commit-scope.ts';
 import { checkScripts } from './commands/check-scripts.ts';
 import { checkTscMode } from './commands/check-tsc-mode.ts';
 import { checkTsconfigPaths } from './commands/check-tsconfig-paths.ts';
 import { checkVendoredOrigin } from './commands/check-vendored-origin.ts';
 import { checkWorkspaces } from './commands/check-workspaces.ts';
+import { generateCleartextConfigCommand } from './commands/generate-cleartext-config.ts';
 import { generateExportsCommand } from './commands/generate-exports.ts';
 import { cleanForgeDependencies } from './commands/clean-forge-dependencies.ts';
 import { installForgeDependencies } from './commands/install-forge-dependencies.ts';
@@ -44,6 +47,7 @@ const commands: Readonly<Record<CommandName, CheckCommand>> = {
   'check-tsconfig-paths': checkTsconfigPaths,
   'check-tsc-mode': checkTscMode,
   'check-commit-scope': checkCommitScope,
+  'check-cleartext-config': checkCleartextConfig,
 };
 
 async function main(): Promise<void> {
@@ -52,6 +56,22 @@ async function main(): Promise<void> {
   // needs nothing from npm-manifest.json.
   if (options.command === 'generate-exports') {
     generateExportsCommand({ manifestFile: options.exportManifestFile, check: options.check });
+    return;
+  }
+  // Also manifest-free: it reads sdk/cleartext-config.json and writes the faces generated from it.
+  if (options.command === 'generate-cleartext-config') {
+    generateCleartextConfigCommand({ workspaceRoot: options.workspaceRoot, check: options.check });
+    return;
+  }
+  if (options.command === 'sh-completion') {
+    // Package keys are a convenience for selector arguments; completion still renders outside a workspace.
+    let packageKeys: readonly string[] = [];
+    try {
+      packageKeys = Object.keys(loadNpmManifest(options.manifestFile).packages);
+    } catch {
+      // No manifest reachable: complete commands and flags only.
+    }
+    process.stdout.write(renderCompletionScript(options.shell, options.commands, packageKeys));
     return;
   }
   const manifest = loadNpmManifest(options.manifestFile);

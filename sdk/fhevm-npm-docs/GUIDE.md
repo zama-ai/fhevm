@@ -28,8 +28,10 @@ Regenerate ONLY after changing a generator input (a contract in pkg/src, an expo
 cleartext config, a vendored pin), then inspect the diff and commit it.
 
 ```sh
-# ALL packages — the complete, always-correct form: syncs vendored content first, then runs each
-# generating package's own `generate` (pre-phase -> forge compile -> post-phase):
+# ALL packages — the complete, always-correct form: renders sdk/cleartext-config.json into its faces
+# (common-vendored/src/cleartext-config.ts plus each generation's FhevmCleartextConfig.sol and
+# scripts/cleartext-config.sh), syncs vendored content, then runs each generating package's own
+# `generate` (pre-phase -> forge compile -> post-phase):
 make generate
 
 # ONE package — from the sdk root, or `npm run generate` from inside the package directory:
@@ -37,13 +39,19 @@ npm run generate -w @fhevm/host-contracts-cleartext-v12-dev
 npm run generate -w @fhevm/host-contracts-cleartext-v13-dev
 
 # A single package's `generate` assumes vendored content is already in sync (it is committed, so
-# this holds unless you changed common-vendored/ or a vendored pin — in that case sync first):
+# this holds unless you changed common-vendored/, a vendored pin, or sdk/cleartext-config.json —
+# in that case regenerate the vendored sources and sync first):
+./fhevm-npm-cli generate-cleartext-config
 ./fhevm-npm-cli sync-vendored
 
 # To AUDIT vendored content without writing anything (fails on any difference): copies are current
 # (sync would write nothing) AND each vendored folder matches its declared origin (git commit).
 make check-vendored
 make check-vendored FHEVM_NPM_ARGS=-vv
+
+# To AUDIT the generated cleartext-config faces without writing anything: re-renders every face of
+# sdk/cleartext-config.json in memory and fails if a committed one differs.
+make check-cleartext-config
 
 # Finer-grained still, inside a package: one generator at a time, e.g.
 # `npm run generate:exports` after editing export.manifest.json — no forge compile needed for
@@ -59,6 +67,10 @@ gate above.
 The fhevm-npm CLI has two short invocation forms from the sdk root — `./fhevm-npm-cli <command>`
 (the launcher the Makefile itself uses), and the executable entry file `./fhevm-npm/fhevm-npm.ts
 <command>`. The `./fhevm-npm-cli` spelling in the examples below is equivalent.
+
+Tab completion (commands, flags, package selectors) is rendered from the live command registry —
+`./fhevm-npm-cli sh-completion zsh > ~/.zfunc/_fhevm-npm-cli` (with `~/.zfunc` in `$fpath`), or
+`source <(<sdk>/fhevm-npm-cli sh-completion zsh)` in `~/.zshrc` after `compinit`; `sh-completion bash` likewise.
 
 Inside one package (from its directory), the same verbs work without orchestration — `npm run build`
 (the sweep), `npm run fmt`, `npm run lint`, `npm run compile`, `npm run test`, `npm run check` — plus

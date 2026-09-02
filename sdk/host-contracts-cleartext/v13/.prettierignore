@@ -1,6 +1,7 @@
 dependencies
 pkg/src
 pkg/ts/types/ethereumLibTypes.ts
+pkg/ts/cleartext-config.ts
 pkg/abi
 internal/placeholders
 pkg/templates

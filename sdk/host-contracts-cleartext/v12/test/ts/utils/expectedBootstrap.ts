@@ -13,10 +13,10 @@
 // `pkg/ts/index.ts` does not export the cleartext config, so the payload cannot supply them.
 // Whether it should is an open decision — plans/CLEARTEXT_CONFIG_SOURCE_OF_TRUTH_PLAN.md item 3.
 //
-// So this file is a FACE of `sdk/cleartext-config.json` in exactly the sense RULES.md rule 23 means, like
-// `internal/cleartext-config.ts` and `create2-deploy/script/FhevmCleartextConfig.sol`: a hand-written copy
-// that is safe because it is *checked*. `test/cleartext-config-mirror.test.ts` compares the three values
-// below against the source of truth, so this is one verified copy in place of seven unverified ones.
+// So this file is a FACE of `sdk/cleartext-config.json` in exactly the sense RULES.md rule 23 means — the
+// one still hand-written, safe because it is *checked*. `test/cleartext-config-mirror.test.ts` compares
+// the three values below against the source of truth, so this is one verified copy in place of seven
+// unverified ones.
 //
 // Keep the constant NAMES in the comments beside each value: that is what makes the check able to find
 // them, and what makes a `grep CLEARTEXT_MAX_HCU_PER_TX` reach this file.

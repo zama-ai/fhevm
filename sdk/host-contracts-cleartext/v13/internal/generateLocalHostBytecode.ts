@@ -46,7 +46,7 @@ import {
   CLEARTEXT_KMS_NODE_STORAGE_URL_PREFIX,
   CLEARTEXT_MAX_HCU_DEPTH_PER_TX,
   CLEARTEXT_MAX_HCU_PER_TX,
-} from './cleartext-config.ts';
+} from '@fhevm/sdk-vendored-dev/cleartext-config.ts';
 import {
   ADDRESS_NAMES,
   CONSTANT_NAMES,

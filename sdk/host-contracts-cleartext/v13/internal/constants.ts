@@ -231,6 +231,6 @@ export const CONSTANT_NAMES = {
 export type ContractName = keyof typeof CONSTANT_NAMES;
 
 // The bootstrap defaults the deploy applies when no config is supplied used to be echoed here, as a
-// hand-kept transcription of ts/constants.ts. They now live in `internal/cleartext-config.ts` — the single
-// source of truth, copied byte-for-byte into the payload as pkg/ts/cleartext-config.ts — so the harness
-// and `pkg/ts` read the same literals instead of two copies that could disagree. Import from there.
+// hand-kept transcription of ts/constants.ts. They now live in `pkg/ts/cleartext-config.ts` — generated
+// from sdk/cleartext-config.json and synced from common-vendored/src — so the harness and `pkg/ts` read
+// the same literals. Harness code imports `@fhevm/sdk-vendored-dev/cleartext-config.ts`, the same bytes.

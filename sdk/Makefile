@@ -126,9 +126,12 @@ check: check-npm-cli ## Run pre-build checks, build, then post-build checks
 
 check-pre: check-npm-cli-pre-build ## Run all checks that do not require build output
 
-# Vendored content settles FIRST: sync writes into pkg/src and pkg/ts, which the generators read and
-# forge compiles. Each package's `generate` then owns its internal straddle (pre → forge → post).
+# Vendored content settles FIRST — and in two steps: common-vendored's own `generate` renders
+# sdk/cleartext-config.json into common-vendored/src, THEN sync fans the sources out into pkg/src and
+# pkg/ts, which the generators read and forge compiles. Each package's `generate` then owns its internal
+# straddle (pre → forge → post).
 generate: ## Write every generated file (then commit the result)
+	$(call run,$(W_VENDORED),generate)
 	$(MAKE) sync-common-vendored
 	$(call run,$(W_V12),generate)
 	$(call run,$(W_V13),generate)
@@ -286,6 +289,7 @@ endef
 
 clean-generated: ## Delete every regenerable file, to prove `make generate` reproduces them from nothing
 	$(call require-spotless-worktree)
+	$(call run,$(W_VENDORED),clean:generated)
 	$(call run,$(W_V12),clean:generated)
 	$(call run,$(W_V13),clean:generated)
 	@echo "Deleted. Run 'make generate' - a spotless 'git status' proves the generators reproduce everything."
@@ -369,6 +373,7 @@ check-npm-cli-pre-build: # Internal: run fhevm-npm checks that do not require ge
 	$(call run-fhevm-npm,check-lockfiles)
 	$(call run-fhevm-npm,check-foundry)
 	$(call run-fhevm-npm,check-lint-policy)
+	$(call run-fhevm-npm,check-cleartext-config)
 	$(call run-fhevm-npm,sync-vendored --check)
 
 # Not wired into `check-pre` or `ci`: the mirror spec is not implemented yet. Running it today reports 7
@@ -550,10 +555,15 @@ check-generated: ## Delete every generated file, regenerate, and fail unless the
 # Vendored sources
 ########################################################################################################
 
-.PHONY: sync-common-vendored check-vendored-origin check-vendored
+.PHONY: sync-common-vendored check-vendored-origin check-vendored check-cleartext-config
 
 sync-common-vendored: ## Write every vendored destination from its source of truth
 	$(call run-fhevm-npm,sync-vendored)
+
+# Read-only: re-renders every face of sdk/cleartext-config.json in memory and fails if a committed one
+# differs. The direct guard for the faces nothing else reads back — scripts/cleartext-config.sh above all.
+check-cleartext-config: ## Does every generated cleartext-config face match sdk/cleartext-config.json
+	$(call run-fhevm-npm,check-cleartext-config)
 
 check-vendored-origin: ## Does each local vendored folder match its declared origin (git commit)
 	$(call run-fhevm-npm,check-vendored-origin)

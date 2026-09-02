@@ -9,8 +9,12 @@
   },
   "scripts": {
     "clean": "rm -rf *.tsbuildinfo src/*.tsbuildinfo test/*.tsbuildinfo",
+    "clean:generate:cleartext-config": "rm -rf src/cleartext-config.ts",
+    "clean:generated": "npm run clean:generate:cleartext-config",
     "fmt": "npm run prettier:write",
     "fmt:check": "npm run prettier:check",
+    "generate": "npm run generate:cleartext-config",
+    "generate:cleartext-config": "node ../fhevm-npm/fhevm-npm.ts generate-cleartext-config",
     "lint": "eslint && tsc -p ./tsconfig.json --noEmit",
     "prettier:check": "prettier --check .",
     "prettier:write": "prettier --write ."

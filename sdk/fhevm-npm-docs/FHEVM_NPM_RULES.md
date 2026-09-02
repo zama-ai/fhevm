@@ -492,6 +492,12 @@ package-owned, and CI invokes the conventions.
 `mirror.repository` identifies an independent Git repository that must stay synchronized with the local entry.
 Mirroring is a capability, not a kind; `check:mirror` owns the package-specific contract.
 
+A vendored SOURCE may itself be generated: `common-vendored/src/cleartext-config.ts` is rendered from
+`sdk/cleartext-config.json` by `fhevm-npm generate-cleartext-config` (common-vendored's `generate` script), then
+`sync-vendored` fans the committed result out — regenerate before syncing; `make generate` runs both in order.
+The same command also writes each generation's `FhevmCleartextConfig.sol` and `scripts/cleartext-config.sh`
+directly — no sync hop, because nothing imports those files across packages.
+
 ```jsonc
 // ✅ The manifest describes the copies without prescribing how they are checked.
 "vendored": [

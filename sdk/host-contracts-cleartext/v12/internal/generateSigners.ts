@@ -15,7 +15,7 @@ import {
   CLEARTEXT_KMS_NODES_MNEMONIC_PATH,
   CLEARTEXT_KMS_NODES_TX_SENDER_MNEMONIC,
   CLEARTEXT_KMS_NODES_TX_SENDER_MNEMONIC_PATH,
-} from './cleartext-config.ts';
+} from '@fhevm/sdk-vendored-dev/cleartext-config.ts';
 
 ////////////////////////////////////////////////////////////////////////////////
 

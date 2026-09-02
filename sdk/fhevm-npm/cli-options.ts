@@ -1,6 +1,7 @@
 import { Command, Option } from 'commander';
 import { resolve } from 'node:path';
 
+import type { CompletionCommand, CompletionShell } from './base/sh-completion.ts';
 import { defaultWorkspaceRoot } from './base/paths.ts';
 import { type Verbosity, increaseVerbosity } from './base/verbosity.ts';
 
@@ -19,6 +20,7 @@ export const commandNames = [
   'check-tsconfig-paths',
   'check-tsc-mode',
   'check-commit-scope',
+  'check-cleartext-config',
 ] as const;
 export type CommandName = (typeof commandNames)[number];
 
@@ -28,6 +30,8 @@ export type CliOptions = {
     | 'check-mirror'
     | 'check-vendored-origin'
     | 'clean-forge-dependencies'
+    | 'sh-completion'
+    | 'generate-cleartext-config'
     | 'generate-exports'
     | 'install-forge-dependencies'
     | 'list-packages'
@@ -43,6 +47,12 @@ export type CliOptions = {
   | { readonly command: CommandName }
   | { readonly command: 'check-mirror'; readonly packageSelector: string }
   | { readonly command: 'check-vendored-origin'; readonly packageSelector?: string }
+  | {
+      readonly command: 'sh-completion';
+      readonly shell: CompletionShell;
+      readonly commands: readonly CompletionCommand[];
+    }
+  | { readonly command: 'generate-cleartext-config'; readonly check: boolean }
   | { readonly command: 'generate-exports'; readonly exportManifestFile: string; readonly check: boolean }
   | { readonly command: 'install-forge-dependencies'; readonly packageSelector?: string }
   | {
@@ -104,6 +114,8 @@ export function parseCliOptions(argv: readonly string[]): CliOptions {
 
   let selected: CommandName | undefined;
   let generateExports: { readonly exportManifestFile: string; readonly check: boolean } | undefined;
+  let generateCleartextConfig: { readonly check: boolean } | undefined;
+  let completion: { readonly shell: CompletionShell; readonly commands: readonly CompletionCommand[] } | undefined;
   let sortPackageJson = false;
   let vendoredPackageSelector: string | undefined;
   let checkAllVendored = false;
@@ -266,6 +278,15 @@ Checked scripts:
       selected = 'check-commit-scope';
     });
   program
+    .command('check-cleartext-config')
+    .description(
+      'Check that every generated face of sdk/cleartext-config.json matches it (read-only twin of ' +
+        'generate-cleartext-config --check).',
+    )
+    .action(() => {
+      selected = 'check-cleartext-config';
+    });
+  program
     .command('check-tsc-mode')
     .description("Check that no 'tsc -p' or bare 'tsc' script invocation targets a solution-style tsconfig.")
     .addHelpText(
@@ -286,6 +307,36 @@ Why:
     .option('--check', 'compare the outputs against the manifest instead of writing them', false)
     .action((manifest: string, options: { readonly check: boolean }) => {
       generateExports = { exportManifestFile: resolve(manifest), check: options.check };
+    });
+  program
+    .command('sh-completion <shell>')
+    .description('Print a tab-completion script for zsh or bash, rendered from the live command list.')
+    .action((shell: string) => {
+      if (shell !== 'zsh' && shell !== 'bash') {
+        throw new Error(`sh-completion: unsupported shell '${shell}' — expected zsh or bash`);
+      }
+      // Introspected from the registry itself, so a new command or option is completed without any
+      // hand-kept list. Flags are the bare tokens; the first positional's name selects value completion.
+      completion = {
+        shell,
+        commands: program.commands.map((cmd) => ({
+          name: cmd.name(),
+          description: cmd.description(),
+          flags: cmd.options.flatMap((option) => option.flags.split(/[,\s]+/).filter((t) => t.startsWith('-'))),
+          argument: cmd.registeredArguments[0]?.name(),
+        })),
+      };
+    });
+  program
+    .command('generate-cleartext-config')
+    .description(
+      'Render sdk/cleartext-config.json into every file generated from it: the TypeScript face in ' +
+        "common-vendored/src (copied to each generation's pkg/ts by sync-vendored), and each " +
+        "generation's FhevmCleartextConfig.sol and scripts/cleartext-config.sh.",
+    )
+    .option('--check', 'compare the outputs against the JSON instead of writing them', false)
+    .action((options: { readonly check: boolean }) => {
+      generateCleartextConfig = { check: options.check };
     });
   program
     .command('sync-vendored')
@@ -380,7 +431,9 @@ Why:
     !regenerateConsumerPackageLocks &&
     testConsumer === undefined &&
     syncVendored === undefined &&
-    generateExports === undefined
+    generateExports === undefined &&
+    generateCleartextConfig === undefined &&
+    completion === undefined
   ) {
     program.help({ error: true });
     throw new Error('unreachable');
@@ -395,6 +448,26 @@ Why:
       verbosity: options.verbose,
       sortPackageJson: false,
       ...syncVendored,
+    };
+  }
+  if (completion !== undefined) {
+    return {
+      command: 'sh-completion',
+      workspaceRoot,
+      manifestFile: resolve(workspaceRoot, 'npm-manifest.json'),
+      verbosity: options.verbose,
+      sortPackageJson: false,
+      ...completion,
+    };
+  }
+  if (generateCleartextConfig !== undefined) {
+    return {
+      command: 'generate-cleartext-config',
+      workspaceRoot,
+      manifestFile: resolve(workspaceRoot, 'npm-manifest.json'),
+      verbosity: options.verbose,
+      sortPackageJson: false,
+      ...generateCleartextConfig,
     };
   }
   if (generateExports !== undefined) {

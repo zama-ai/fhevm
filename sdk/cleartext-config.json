@@ -2,10 +2,12 @@
   "_readme": [
     "THE source of truth for every value the cleartext stack's languages must agree on.",
     "",
-    "Above every generation on purpose. `host-contracts-cleartext/v12` and `v13` each hold a TypeScript",
-    "copy and a Solidity copy of these values, and until this file existed the four copies were only kept",
-    "in step by a naming convention and a test. This is the one place a value is DECIDED; the copies are",
-    "faces of it. See host-contracts-cleartext/RULES.md rule 23.",
+    "Above every generation on purpose. Every face is GENERATED from this file by `fhevm-npm",
+    "generate-cleartext-config`: the TypeScript module in `common-vendored/src` (synced into each",
+    "generation's `pkg/ts/` by `fhevm-npm sync-vendored`), each generation's",
+    "`create2-deploy/script/FhevmCleartextConfig.sol`, and each generation's `scripts/cleartext-config.sh`",
+    "(sourced by the launchers). This is the one place a value is DECIDED; every copy is a face of it. See",
+    "host-contracts-cleartext/RULES.md rule 23.",
     "",
     "Why JSON and not TypeScript. Solidity cannot read a `.ts` module, and neither can a shell script, a",
     "Rust crate, or a CI job that wants a chain id without installing a toolchain. Every language in this",
@@ -24,6 +26,10 @@
     "             that fits a `number` also fits a `bigint`, so emitting `100733346448153n` where this says",
     "             `number` is fine. The reverse is not: a value that needs a `bigint` cannot be narrowed to",
     "             a `number` without losing digits, so `bigint` here is a floor and the check enforces it.",
+    "  tsEmit     the literal shape the GENERATED TypeScript face emits when it deliberately widens `ts` —",
+    "             always `bigint`, widening being the only direction allowed. Defaults to `ts`. Explicit",
+    "             because the emitted shape is published API surface: a consumer typed against `bigint`",
+    "             breaks if a regeneration silently narrows it.",
     "  solidity   the Solidity type the mirror declares. Also what tells a consumer how to compare the",
     "             value: `address` case-insensitively, `string` exactly, `uint*` numerically.",
     "  formula    for a derived value, the expression it comes from — see below.",
@@ -53,9 +59,9 @@
   "appliesTo": {
     "generations": ["v12", "v13"],
     "_note": [
-      "The two generations use this set IDENTICALLY — `diff v13/internal/cleartext-config.ts",
-      "v12/internal/cleartext-config.ts` is empty today, which is why there is no per-generation section",
-      "here. That is a fact about today, not a design guarantee. Should a generation ever need a different",
+      "The two generations use this set IDENTICALLY — both receive the same generated",
+      "`cleartext-config.ts`, synced from `common-vendored/src` — which is why there is no per-generation",
+      "section here. That is a fact about today, not a design guarantee. Should a generation ever need a different",
       "value, add an explicit `overrides` block keyed by generation rather than forking a copy: a forked",
       "copy is indistinguishable from drift, which is the entire failure this file exists to end."
     ]
@@ -65,9 +71,10 @@
     "CLEARTEXT_GATEWAY_CHAIN_ID": {
       "value": "100733346448153",
       "ts": "number",
+      "tsEmit": "bigint",
       "solidity": "uint256",
       "formula": "uint48(uint256(keccak256(\"fhevm.cheat.chainId cleartext gateway\")))",
-      "note": "A cheat-code chain id: chosen by hashing a name so it cannot collide with a real network by accident, and so anyone can reproduce it from the string alone. Truncated to 48 bits because a chain id has to fit where chain ids are stored, and 2^48 is far above any real one while still being nowhere near a plausible typo of one. `ts` is `number` because the value fits a double exactly; the emitted faces currently widen it to `bigint`, which this permits."
+      "note": "A cheat-code chain id: chosen by hashing a name so it cannot collide with a real network by accident, and so anyone can reproduce it from the string alone. Truncated to 48 bits because a chain id has to fit where chain ids are stored, and 2^48 is far above any real one while still being nowhere near a plausible typo of one. `ts` is `number` because the value fits a double exactly; the emitted face widens it to `bigint` (`tsEmit`) because a chain id is compared against bigint chain ids everywhere it is used."
     },
 
     "CLEARTEXT_RELAYER_URL": {
@@ -117,6 +124,7 @@
     "CLEARTEXT_HCU_CAP_PER_BLOCK": {
       "value": "281474976710655",
       "ts": "number",
+      "tsEmit": "bigint",
       "solidity": "uint256",
       "formula": "type(uint48).max",
       "note": "Effectively uncapped, and uint48 max specifically because that is the width `HCULimit` stores the figure in — the largest value the field can hold, so the cap can never be the thing a test hits. The cleartext stack does no FHE work, so a real per-block HCU budget would only ever be an artificial limit."
@@ -125,6 +133,7 @@
     "CLEARTEXT_MAX_HCU_DEPTH_PER_TX": {
       "value": "5000000",
       "ts": "number",
+      "tsEmit": "bigint",
       "solidity": "uint256",
       "note": "Kept at the protocol's real default rather than raised to the uint48 maximum like the per-block cap. Depth bounds how far a single transaction can chain dependent operations, and that limit is one a consumer can legitimately hit in cleartext just as in FHE — so leaving it realistic means a contract that would exceed it on a real stack also fails here, rather than passing and failing later."
     },
@@ -132,6 +141,7 @@
     "CLEARTEXT_MAX_HCU_PER_TX": {
       "value": "20000000",
       "ts": "number",
+      "tsEmit": "bigint",
       "solidity": "uint256",
       "note": "The per-transaction total, at the protocol's real default for the same reason as the depth limit: four times the depth bound, so a wide transaction is allowed more total work than a deep one."
     },

@@ -22,9 +22,14 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PACKAGE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+# The deploy mnemonic and deployer index come from the generated shell face of the config, so this
+# launcher cannot drift from the recipe the stack's addresses derive from.
+# shellcheck source=scripts/cleartext-config.sh
+source "$SCRIPT_DIR/cleartext-config.sh"
+
 PORT=8545
-ANVIL_MNEMONIC='adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer'
-ACCOUNT_INDEX=5
+ANVIL_MNEMONIC="$MNEMONIC"
+ACCOUNT_INDEX="$DEPLOYER_ADDRESS_INDEX"
 DEPLOY=1
 
 while [ $# -gt 0 ]; do
@@ -88,9 +93,9 @@ start_anvil
 
 wait_for_node
 
-# ZAMA_LOCAL_ACL / _COPROCESSOR / _KMS_VERIFIER come from anvil-lib.sh, which reads them out of
-# sdk/cleartext-config.json. This script used to redeclare all three, which made it a second copy of a
-# value the sourced library already had.
+# ZAMA_LOCAL_ACL / _COPROCESSOR / _KMS_VERIFIER come from scripts/cleartext-config.sh, the generated
+# shell face of sdk/cleartext-config.json. This script used to redeclare all three, which made it a
+# second copy of a value the sourced config already had.
 #
 # The check below is here rather than in deploy.sh because deploy.sh serves any network, while this script
 # exists to produce the *local* stack: it is the default mnemonic at account index 5, with a start nonce of

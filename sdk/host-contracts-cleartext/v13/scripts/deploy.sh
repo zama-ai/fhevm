@@ -33,9 +33,13 @@ set -euo pipefail
 
 PACKAGE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+# MNEMONIC and DEPLOYER_ADDRESS_INDEX are the defaults from the generated shell face of the config;
+# --mnemonic / --account-index below still override them for non-local targets.
+# shellcheck source=scripts/cleartext-config.sh
+source "$PACKAGE_ROOT/scripts/cleartext-config.sh"
+
 RPC_URL="http://127.0.0.1:8545"
-MNEMONIC='adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer'
-ACCOUNT_INDEX=5
+ACCOUNT_INDEX="$DEPLOYER_ADDRESS_INDEX"
 PRIVATE_KEY=""
 VERIFY=1
 
