@@ -132,7 +132,16 @@ services:
       - --database-url=${DATABASE_URL}
       - --pg-pool-max-connections=10
       - --worker-polling-interval-ms=1000
+      # The adaptive work window gives each acquired chain
+      # ceil(work-items-batch-size / acquired-chains) transactions, and turns
+      # itself off at runtime once more chains are acquired than the window
+      # admits. Leaving --dependence-chains-per-batch at its default of 20
+      # against a window of 10 therefore silently dropped this stack back to
+      # non-adaptive scheduling. 10/2 keeps the pair valid at a share of 5 --
+      # the same share as the shipped 100/20 -- while still exercising the
+      # multi-chain batch path this stack is meant to cover.
       - --work-items-batch-size=10
+      - --dependence-chains-per-batch=2
       - --key-cache-size=32
       - --coprocessor-fhe-threads=8
       - --tokio-threads=4
