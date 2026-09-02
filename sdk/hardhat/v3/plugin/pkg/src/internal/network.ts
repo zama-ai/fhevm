@@ -10,9 +10,7 @@ import type { NetworkConfig } from 'hardhat/types/config';
 import type { NetworkConnection } from 'hardhat/types/network';
 import type { EthereumProvider } from 'hardhat/types/providers';
 
-import { DEVELOPMENT_CHAIN_ID } from './constants.js';
-
-export const PLUGIN_ID = 'fhevm';
+import { DEVELOPMENT_CHAIN_ID, PLUGIN_ID } from './constants.js';
 
 export type FhevmNetworkKind =
   /** In-process EDR chain: ours to prepare. */
