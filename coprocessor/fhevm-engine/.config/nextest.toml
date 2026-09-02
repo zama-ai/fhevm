@@ -16,10 +16,6 @@ slow-timeout = { period = "120s" }
 # Each test deletes its database as it finishes, without this the test can be reported as leaky.
 leak-timeout = "10s"
 
-# Fixtures depend on Docker, which occasionally fails to start. One retry is cheaper
-# than sending a pull request back through the merge queue.
-retries = 1
-
 [test-groups]
 # These check how workers hand locks between each other, using timeouts of a second
 # or two. Running them alongside anything else makes them flaky.
