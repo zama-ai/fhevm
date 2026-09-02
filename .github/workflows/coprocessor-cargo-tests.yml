@@ -47,7 +47,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Split across four machines because this job is by far the slowest.
+          # Split across three machines because this job is by far the slowest.
           - service: tfhe-worker-1
             use_nextest: true
             package: tfhe-worker
@@ -55,7 +55,7 @@ jobs:
             needs_foundry: false
             needs_postgres: true
             shard: 1
-            shards: 4
+            shards: 3
             runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64
           - service: tfhe-worker-2
             use_nextest: true
@@ -64,7 +64,7 @@ jobs:
             needs_foundry: false
             needs_postgres: true
             shard: 2
-            shards: 4
+            shards: 3
             runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64
           - service: tfhe-worker-3
             use_nextest: true
@@ -73,16 +73,7 @@ jobs:
             needs_foundry: false
             needs_postgres: true
             shard: 3
-            shards: 4
-            runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64
-          - service: tfhe-worker-4
-            use_nextest: true
-            package: tfhe-worker
-            needs_localstack: false
-            needs_foundry: false
-            needs_postgres: true
-            shard: 4
-            shards: 4
+            shards: 3
             runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64
           - service: sns-worker
             package: sns-worker
