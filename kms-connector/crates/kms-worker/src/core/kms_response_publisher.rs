@@ -92,7 +92,7 @@ impl DbKmsResponsePublisher {
         // Single statement so the response row and the request status move atomically:
         //   1. upsert the response, but only if no successful payload exists yet (a retry may
         //      override a previous error row, but never a payload);
-        //   2. mark the request `completed` only if the response row actually written.
+        //   2. mark the request `completed` only if the response row is actually written.
         // `rows_affected` reflects the outer UPDATE, so it is 1 iff the response was stored.
         sqlx::query!(
             "WITH written_response AS (
@@ -144,7 +144,7 @@ impl DbKmsResponsePublisher {
         // Single statement so the response row and the request status move atomically:
         //   1. upsert the response, but only if no successful payload exists yet (a retry may
         //      override a previous error row, never a payload);
-        //   2. mark the request `completed` only for the response row actually written.
+        //   2. mark the request `completed` only for the response row is actually written.
         // `rows_affected` reflects the outer UPDATE, so it is 1 iff the response was stored.
         sqlx::query!(
             "WITH written_response AS (
@@ -397,7 +397,7 @@ fn decryption_insert_status(source: RequestSource) -> OperationStatus {
     match source {
         // Onchain-sourced decryption are pending until the tx-sender publishes them on-chain.
         RequestSource::OnChain => OperationStatus::Pending,
-        // HTTP-sourced decryption have no on-chain step so they are marked as `completed` on
+        // HTTP-sourced decryption have no on-chain step so they are marked as `completed`
         // immediately on insert.
         RequestSource::Http => OperationStatus::Completed,
     }
