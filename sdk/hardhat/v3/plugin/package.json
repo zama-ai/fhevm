@@ -8,8 +8,9 @@
   },
   "scripts": {
     "build": "npm run fmt:check && npm run lint && npm run compile",
-    "check": "npm run check:publint",
+    "check": "npm run check:publint && npm run check:vendored-origin",
     "check:publint": "publint --strict ./pkg && attw --pack ./pkg",
+    "check:vendored-origin": "node ../../../fhevm-npm/fhevm-npm.ts check-vendored-origin ./hardhat/v3/plugin",
     "clean": "rm -rf pkg/_esm *.tsbuildinfo test/*.tsbuildinfo pkg/*.tsbuildinfo",
     "compile": "npm run compile:esm",
     "compile:esm": "tsc --project ./tsconfig.build.esm.json --outDir ./pkg/_esm --declaration --declarationMap",
@@ -28,11 +29,11 @@
     "@fhevm/sdk": "0.13.3",
     "@types/node": "^22.0.0",
     "eslint": "^10.0.2",
-    "ethers": "6.17.0",
     "hardhat": "^3.0.0",
     "prettier": "^3.8.3",
     "publint": "^0.2.12",
     "typescript": "^6.0.2",
-    "typescript-eslint": "^8.58.2"
+    "typescript-eslint": "^8.58.2",
+    "viem": "2.55.19"
   }
 }

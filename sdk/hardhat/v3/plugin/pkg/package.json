@@ -29,7 +29,7 @@
   },
   "peerDependencies": {
     "@fhevm/sdk": "^0.13.3",
-    "ethers": "^6.17.0",
-    "hardhat": "^3.0.0"
+    "hardhat": "^3.0.0",
+    "viem": "^2.55.19"
   }
 }
