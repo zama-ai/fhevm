@@ -1,0 +1,14 @@
+{
+  "name": "fhevm-hardhat-v3-workspace",
+  "version": "0.0.0",
+  "description": "Installation root for the hardhat v3 generation: one npm workspace, so every member resolves the SAME hardhat@3 by hoisting — the no-symlink singleton guarantee. Siblings fhevm-hardhat-template and e2e join this workspaces list when they land.",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "workspaces": [
+    "plugin",
+    "plugin/pkg"
+  ]
+}

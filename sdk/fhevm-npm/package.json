@@ -1,0 +1,46 @@
+{
+  "name": "@fhevm/fhevm-npm-dev",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.6"
+  },
+  "bin": {
+    "fhevm-npm": "./fhevm-npm.ts"
+  },
+  "scripts": {
+    "check": "npm run typecheck && npm test",
+    "check:dependencies": "node ./fhevm-npm.ts check-dependencies",
+    "check:foundry": "node ./fhevm-npm.ts check-foundry",
+    "check:lockfiles": "node ./fhevm-npm.ts check-lockfiles",
+    "check:manifest-coverage": "node ./fhevm-npm.ts check-manifest-coverage",
+    "check:mirror": "node ./fhevm-npm.ts check-mirror",
+    "check:names": "node ./fhevm-npm.ts check-names",
+    "check:ownership": "node ./fhevm-npm.ts check-ownership",
+    "check:package-json": "node ./fhevm-npm.ts check-package-json",
+    "check:package-json-paths": "node ./fhevm-npm.ts check-package-json-paths",
+    "check:scripts": "node ./fhevm-npm.ts check-scripts",
+    "check:tsc-mode": "node ./fhevm-npm.ts check-tsc-mode",
+    "check:commit-scope": "node ./fhevm-npm.ts check-commit-scope",
+    "check:tsconfig-paths": "node ./fhevm-npm.ts check-tsconfig-paths",
+    "check:vendored-origin": "node ./fhevm-npm.ts check-vendored-origin",
+    "check:workspaces": "node ./fhevm-npm.ts check-workspaces",
+    "install:forge-dependencies": "node ./fhevm-npm.ts install-forge-dependencies",
+    "list:packages": "node ./fhevm-npm.ts list-packages",
+    "prettier:check": "prettier --check \"**/*.{js,json,md,mjs,ts,yml}\"",
+    "prettier:write": "prettier --write \"**/*.{js,json,md,mjs,ts,yml}\"",
+    "test": "node --test ./test/*.test.ts",
+    "test:consumer:prepare": "node ./fhevm-npm.ts test-consumer",
+    "typecheck": "tsc --project ./tsconfig.json"
+  },
+  "dependencies": {
+    "commander": "14.0.3",
+    "prettier": "3.8.3",
+    "typescript": "6.0.3",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.1"
+  }
+}

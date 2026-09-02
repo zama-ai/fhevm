@@ -1,0 +1,26 @@
+{
+  "name": "@fhevm/hardhat-template-v2-dev",
+  "version": "0.4.2",
+  "description": "Dev owner for the mirrored fhevm-hardhat-template. Never published. The mirrored copy is ./pkg.",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "npm run fmt:check && npm run lint && npm run compile",
+    "check:mirror": "node ../../../fhevm-npm/fhevm-npm.ts check-mirror ./hardhat/v2/fhevm-hardhat-template/pkg",
+    "clean": "rm -rf ./pkg/fhevmTemp ./pkg/artifacts ./pkg/cache ./pkg/coverage ./pkg/types ./pkg/coverage.json ./pkg/dist",
+    "compile": "npm run compile --prefix ./pkg && npm run build:ts --prefix ./pkg -- --lib es2022,dom",
+    "fmt": "npm run prettier:write",
+    "fmt:check": "npm run prettier:check",
+    "lint": "npm run lint --prefix ./pkg",
+    "prettier:check": "npm run prettier:check --prefix ./pkg",
+    "prettier:write": "npm run prettier:write --prefix ./pkg",
+    "test": "npm run test --prefix ./pkg"
+  },
+  "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.5",
+    "publint": "^0.2.12"
+  }
+}
