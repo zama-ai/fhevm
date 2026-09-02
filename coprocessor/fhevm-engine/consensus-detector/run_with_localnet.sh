@@ -40,6 +40,8 @@ cargo run --release $VERSION_OVERRIDE -- \
 --gateway-config-address=${GATEWAY_CONFIG_ADDRESS} \
 --my-bucket=${BUCKET_NAME:-coproc-0} \
 --s3-endpoint=http://localhost:9000 \
+--manifest-publication-cadence=31337:1 \
+--manifest-publication-cadence=${CHAIN_ID:-12345}:1 \
 --commitment-poll-interval=5s \
 --commitment-timeout=60s \
 --poll-interval-secs=30

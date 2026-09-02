@@ -3,8 +3,8 @@ use crate::{
     keyset::fetch_client_key,
     squash_noise::safe_deserialize,
     BigCiphertext, Ciphertext128Format, Config, DBConfig, HandleItem, S3Config, S3MigrationMode,
-    S3RetryPolicy, SchedulePolicy,
-    DEFAULT_S3_MIGRATION_MAX_CONCURRENT_HANDLES, CURRENT_S3_FORMAT_VERSION, DEFAULT_S3_MIGRATION_MAX_RETRIES,
+    S3RetryPolicy, SchedulePolicy, CURRENT_S3_FORMAT_VERSION,
+    DEFAULT_S3_MIGRATION_MAX_CONCURRENT_HANDLES, DEFAULT_S3_MIGRATION_MAX_RETRIES,
 };
 use alloy::signers::local::PrivateKeySigner;
 use alloy_primitives::{B256, U256};
