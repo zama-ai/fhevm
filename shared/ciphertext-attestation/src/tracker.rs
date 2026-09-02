@@ -158,10 +158,9 @@ impl ConsensusTracker {
         }
     }
 
-    /// Fills `signer`'s slot and returns the freshly recomputed verdict. First write wins: a later
-    /// reply for the same signer is dropped even when it carries different material, which makes a
-    /// single Coprocessor structurally unable to occupy two groups at once. A reply from an
-    /// unknown signer is dropped with a `warn!`.
+    /// Fills `signer`'s slot and returns the updated verdict. Within a round, a repeat entry for
+    /// the same Coprocessor is ignored. If a Coprocessor changes its attestation, the next round
+    /// starts fresh and accepts it. An unknown signer's reply is dropped with a `warn!`.
     pub fn record(&mut self, signer: Address, reply: Reply) -> ThresholdStatus {
         match self
             .round
