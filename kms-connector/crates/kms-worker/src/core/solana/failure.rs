@@ -238,7 +238,8 @@ impl EncryptedValueAccountFailure {
             Self::ForeignOwner { .. }
             | Self::WrongAccountType { .. }
             | Self::Malformed { .. }
-            | Self::EncryptedValueIdMismatch { .. } => FailureClass::Terminal,
+            | Self::EncryptedValueIdMismatch { .. }
+            | Self::SentinelAuthority { .. } => FailureClass::Terminal,
             Self::Snapshot(source) => source.class(),
         }
     }
@@ -276,20 +277,34 @@ impl ScopeFailure {
 }
 
 impl DelegationFailure {
-    /// Delegation outcomes are terminal for the request that hit them, including the absence of a
-    /// grant: what repairs that is the delegator granting one, not this request being repeated,
-    /// and a request retried through its whole budget against a grant that was never made costs
-    /// the attempt budget for nothing. A revoked or expired grant will not come back, and a
-    /// record of the wrong shape or the wrong tuple is not this delegation at all.
+    /// Absence is an outcome a later observation can change, exactly as it is for an encrypted
+    /// value account: this connector and the relayer read through their own RPCs and can sit at
+    /// different confirmed slots, so a grant that is confirmed elsewhere can be missing here for
+    /// as long as this reader lags. Judging that terminally fails a delegated request permanently
+    /// over ordinary replica lag, so it is transient and the ordinary attempt budget decides. The
+    /// cost of the other reading — a grant that was never made spending its attempts — is the
+    /// price of not killing a valid request.
+    ///
+    /// `NewerThanObservation` is transient for a stronger reason: it cannot be produced by a
+    /// coherent node at all. `last_update_slot` is written on-chain from `Clock::get().slot`, and
+    /// `observed_slot` is the response's own `context.slot`, so a bank at slot S cannot hold a
+    /// write from a later slot. A record that claims one says the observation is incoherent —
+    /// account data and context slot taken from different banks behind a proxy, or a broken node —
+    /// not that the record is dead: every other check on it has already passed. A repeat against
+    /// a coherent node authorizes, so terminal would let one bad response kill a valid request,
+    /// which is the same reasoning as [`SnapshotError::DecidingReadOlderThanDiscovery`] above.
+    ///
+    /// Every other outcome is a statement about a record that was read: a revoked or expired
+    /// grant will not come back, and a record of the wrong shape, the wrong owner or the wrong
+    /// tuple is not this delegation at all.
     pub fn class(&self) -> FailureClass {
         match self {
-            Self::Absent { .. }
-            | Self::ForeignOwner { .. }
+            Self::Absent { .. } | Self::NewerThanObservation { .. } => FailureClass::Transient,
+            Self::ForeignOwner { .. }
             | Self::NotADelegationRecord { .. }
             | Self::TupleMismatch { .. }
             | Self::Revoked
-            | Self::Expired { .. }
-            | Self::NewerThanObservation { .. } => FailureClass::Terminal,
+            | Self::Expired { .. } => FailureClass::Terminal,
             // The class of a pair is the more forgiving of its halves: if either row could still
             // authorize a repeat, that is the advice to give. Derived from the halves rather than
             // stated as terminal, so a future row-level outcome that is not terminal cannot be

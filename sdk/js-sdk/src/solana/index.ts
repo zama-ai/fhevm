@@ -48,6 +48,33 @@ export type {
   SolanaVerifyPublicDecryptAccounts,
   SolanaVerifyPublicDecryptArgs,
 } from './actions/verifyPublicDecrypt.js';
+export {
+  SOLANA_USER_DECRYPTION_DELEGATION_SEED,
+  SOLANA_WILDCARD_AUTHORITY_WARNING,
+  SOLANA_WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY,
+  buildDelegateForUserDecryptionInstruction,
+  buildRevokeDelegationForUserDecryptionInstruction,
+  decodeSolanaUserDecryptionDelegation,
+  fetchSolanaUserDecryptionDelegation,
+  isSolanaUserDecryptionDelegationLiveAt,
+  solanaDelegationWarnings,
+  solanaUserDecryptionDelegationAddress,
+} from './actions/userDecryptionDelegation.js';
+export type {
+  SolanaDelegateForUserDecryptionParameters,
+  SolanaDelegationWarning,
+  SolanaRevokeDelegationForUserDecryptionParameters,
+  SolanaUserDecryptionDelegationRecord,
+  SolanaSignerOrAddress,
+  SolanaUserDecryptionDelegationRows,
+  SolanaUserDecryptionDelegationTuple,
+  SolanaZamaHostAddressConfig,
+} from './actions/userDecryptionDelegation.js';
+export {
+  SOLANA_PERMIT_INVALIDATION_SEED,
+  buildRevokePermitsInstruction,
+  solanaPermitInvalidationAddress,
+} from './actions/revokePermits.js';
 export type { SolanaDecryptActions } from './clients/decorators/decrypt.js';
 export type { SolanaPublicDecryptActions } from './clients/decorators/publicDecrypt.js';
 

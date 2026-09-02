@@ -19,6 +19,9 @@ import {
 
 const bytes32 = (fill: number): Uint8Array => new Uint8Array(32).fill(fill);
 
+/** `sha256("account:EncryptedValue")[..8]` — the same pin the decoder matches. */
+const ENCRYPTED_VALUE_DISCRIMINATOR = new Uint8Array([0x9b, 0x03, 0x95, 0x3a, 0x84, 0x67, 0xc8, 0xa1]);
+
 const u32LE = (value: number): Uint8Array => {
   const out = new Uint8Array(4);
   new DataView(out.buffer).setUint32(0, value, true);
@@ -52,7 +55,7 @@ function accountData(state: {
   const leafCount = state.leafCount ?? 3n;
   const peaks = state.peaks ?? [bytes32(0x71), bytes32(0x72)];
   return concat(
-    new Uint8Array(8).fill(0xdd), // the discriminator, sliced off before decoding
+    ENCRYPTED_VALUE_DISCRIMINATOR, // matched by the decoder before anything else
     bytes32(0x11), // domain
     bytes32(0x22), // encrypted value account authority
     bytes32(0x33), // label
@@ -103,9 +106,37 @@ describe('decoding an EncryptedValue account', () => {
     const data = accountData({ leafCount: 3n, peaks: [bytes32(0x71)] });
     expect(() => decodeSolanaEncryptedValueState(data, 'the fixture account')).toThrow('drifted');
   });
+
+  it('rejects an account of another type by its discriminator', () => {
+    const data = accountData({});
+    data[0] = data[0]! ^ 0xff;
+    expect(() => decodeSolanaEncryptedValueState(data, 'the fixture account')).toThrow('discriminator');
+  });
 });
 
 describe('fetching an EncryptedValue account', () => {
+  const HOST_PROGRAM = 'HostProgram1111111111111111111111111111111';
+  const SYSTEM_PROGRAM = '11111111111111111111111111111111';
+
+  function rpcWithAccount(owner: string): SolanaRpc {
+    return {
+      getAccountInfo: () => ({
+        send: () =>
+          Promise.resolve({
+            context: { slot: 0n },
+            value: {
+              data: [Buffer.from(accountData({})).toString('base64'), 'base64'],
+              executable: false,
+              lamports: 1_000_000n,
+              owner,
+              rentEpoch: 0n,
+              space: BigInt(accountData({}).length),
+            },
+          }),
+      }),
+    } as unknown as SolanaRpc;
+  }
+
   it('names the account that does not exist', async () => {
     const rpc = {
       getAccountInfo: () => ({
@@ -116,5 +147,29 @@ describe('fetching an EncryptedValue account', () => {
     await expect(
       fetchSolanaEncryptedValueState(rpc, 'Missing111111111111111111111111111111111111' as never),
     ).rejects.toThrow('Missing111111111111111111111111111111111111');
+  });
+
+  // Anyone can create a system account at the canonical address by transferring lamports to it;
+  // with the owner pinned, the read reports that honestly instead of failing deeper in the
+  // decoder as a phantom layout drift.
+  it('refuses a foreign-owned account when the expected owner is pinned', async () => {
+    await expect(
+      fetchSolanaEncryptedValueState(
+        rpcWithAccount(SYSTEM_PROGRAM),
+        'Dusted11111111111111111111111111111111111111' as never,
+        undefined,
+        HOST_PROGRAM as never,
+      ),
+    ).rejects.toThrow('not the zama-host program');
+  });
+
+  it('decodes a host-owned account when the expected owner is pinned', async () => {
+    const state = await fetchSolanaEncryptedValueState(
+      rpcWithAccount(HOST_PROGRAM),
+      'Dusted11111111111111111111111111111111111111' as never,
+      undefined,
+      HOST_PROGRAM as never,
+    );
+    expect(state.leafCount).toBe(3n);
   });
 });

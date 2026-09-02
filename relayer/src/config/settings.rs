@@ -313,6 +313,18 @@ pub struct ReadinessCheckConfig {
 #[derive(Debug, Deserialize, Clone)]
 pub struct HostAclCheckConfig {
     pub retry: RetrySettings,
+    /// Deadline for one Solana host-chain read attempt. The EVM path is dialed through alloy
+    /// and is not covered by this. Defaulted so an existing deployment's config keeps parsing:
+    /// a read that hangs forever holds its readiness permit forever, so no deployment should be
+    /// left without a deadline just because its file predates this field.
+    #[serde(default = "default_host_acl_request_timeout_ms")]
+    pub request_timeout_ms: u64,
+}
+
+/// Ten seconds: a batched `getMultipleAccounts` at `confirmed` answers in well under a second,
+/// so this bounds a stalled read without cutting a merely slow one short.
+fn default_host_acl_request_timeout_ms() -> u64 {
+    10_000
 }
 
 #[derive(Debug, Deserialize, Clone)]

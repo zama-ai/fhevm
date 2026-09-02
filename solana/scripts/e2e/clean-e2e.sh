@@ -267,6 +267,26 @@ fi
 trap cleanup_native_rust_builder_aliases EXIT
 ensure_native_rust_builders
 
+# The real Squads v4 program for the delegated-decrypt scenario, fetched from mainnet and
+# sha256-pinned (nothing is committed — see the fetch script's header). Offline is non-fatal by
+# default: the stack still boots and only the Squads scenario refuses to run. A PIN MISMATCH
+# (exit 2) is fatal: the upstream program changed, and nothing may run against an unreviewed
+# binary. SOLANA_E2E_REQUIRE_SQUADS=1 makes an unavailable fixture fatal too — the CI lane sets
+# it, because a green run that silently skipped the only real 2-of-3 multisig arc proves less
+# than it appears to. An offline laptop leaves it unset and keeps the skip.
+squads_fixtures_status=0
+bash "$ROOT/solana/scripts/e2e/fetch-squads-fixtures.sh" || squads_fixtures_status=$?
+if [ "$squads_fixtures_status" -eq 2 ]; then
+  echo "[clean-e2e] Squads fixture PIN MISMATCH — review the upstream change (see above) before running e2e" >&2
+  exit 1
+elif [ "$squads_fixtures_status" -ne 0 ]; then
+  if [ "${SOLANA_E2E_REQUIRE_SQUADS:-}" = "1" ]; then
+    echo "[clean-e2e] Squads fixtures unavailable and SOLANA_E2E_REQUIRE_SQUADS=1 — the Squads delegation scenario is required in this lane" >&2
+    exit 1
+  fi
+  echo "[clean-e2e] WARN: Squads fixtures unavailable; the Squads delegation scenario will not run"
+fi
+
 # Pin the EVM stack to the main SHA this PoC was validated against. RFC-021 / Solana host support
 # is not yet on a release bundle, so we resolve a specific main commit explicitly.
 BASE_SHA="feaf86e"

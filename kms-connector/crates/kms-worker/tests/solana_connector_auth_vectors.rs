@@ -51,7 +51,7 @@ use kms_worker::core::solana::{
     snapshot::SnapshotAccount,
     watermark::{WatermarkFailure, WindowFailure, permit_invalidation_address},
 };
-use kms_worker::core::solana_acl::SolanaPubkeyBytes;
+use kms_worker::core::solana_acl::{SolanaPubkeyBytes, WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY};
 use schema::{
     CONNECTOR_AUTH_VECTOR_SCHEMA, ConnectorAuthVector, ConnectorAuthVectorFile, Deployment,
     FailureClass, KmsPairStatus, Observation, RecordedAccount, VectorResult, WireHandleEntry,
@@ -444,6 +444,66 @@ fn accepting_scenarios() -> Vec<Scenario> {
             .with_watermark(signer.pubkey(), 0)
             .with_delegation(&delegation_a)
             .with_delegation(&delegation_b),
+    ));
+
+    // The scope a delegation actually has, pinned as behavior rather than left to the reader of
+    // the PDA seeds: one row is keyed by an authority, so it authorizes every value of that
+    // authority — including values in domains the grant never named, because the domain is not a
+    // seed. Same authority, same single row, two domains, both accepted. For the confidential
+    // token program this is the intended scope (its authority PDA is derived from the mint, which
+    // is also the domain, so nothing crosses a mint); an application that reuses one authority
+    // across domains is granting across all of them, and must derive a per-domain authority if it
+    // wants otherwise.
+    let signer = Wallet::new(1);
+    let delegator = Wallet::new(2);
+    let second_domain: SolanaPubkeyBytes = [0x62; 32];
+    let handle_here = handle(0x73, FHE_TYPE_UINT64);
+    let handle_elsewhere = handle(0x74, FHE_TYPE_UINT64);
+    // Only the domain differs: the encrypted value id derives from (domain, authority, label), so
+    // one label is enough to give these two accounts different addresses.
+    let encrypted_value_account_here = EncryptedValueAccountFixture::in_domain(
+        DOMAIN,
+        AUTHORITY,
+        LABEL,
+        handle_here,
+        &[delegator.pubkey()],
+    );
+    let encrypted_value_account_elsewhere = EncryptedValueAccountFixture::in_domain(
+        second_domain,
+        AUTHORITY,
+        LABEL,
+        handle_elsewhere,
+        &[delegator.pubkey()],
+    );
+    assert_ne!(
+        encrypted_value_account_here.account_key, encrypted_value_account_elsewhere.account_key,
+        "the two domains must give two accounts, or this proves nothing about domain scope"
+    );
+    let one_row = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), OBSERVED_SLOT);
+    out.push(Scenario::accepted(
+        "delegated-one-authority-spans-domains",
+        "A single delegation row authorizes the delegator's values in two different domains: the \
+         row is keyed by (delegator, delegate, encrypted value account authority) and the domain \
+         is not among the PDA's seeds. The signed scope still has to name both domains — that is \
+         the permit's rule, not the delegation's.",
+        RequestBuilder::new(&signer)
+            .permit(PermitBuilder::new(signer.pubkey()).scope(&[DOMAIN, second_domain]))
+            .delegated_current(
+                &encrypted_value_account_here,
+                handle_here,
+                delegator.pubkey(),
+            )
+            .delegated_current(
+                &encrypted_value_account_elsewhere,
+                handle_elsewhere,
+                delegator.pubkey(),
+            )
+            .wire(),
+        World::at_slot(OBSERVED_SLOT)
+            .with_encrypted_value_account(&encrypted_value_account_here)
+            .with_encrypted_value_account(&encrypted_value_account_elsewhere)
+            .with_watermark(signer.pubkey(), 0)
+            .with_delegation(&one_row),
     ));
 
     // Many handles in one request. There is no limit here to sit on the boundary of — the request
@@ -1207,11 +1267,13 @@ fn delegation_scenarios() -> Vec<Scenario> {
     out.push(Scenario::rejected(
         "missing-delegation",
         "No delegation record at the canonical address for the tuple, so the delegated entry has \
-         nothing standing behind it.",
+         nothing standing behind it. Transient, not terminal: a grant confirmed on another RPC \
+         is simply not here yet for a reader sitting at an earlier confirmed slot, and refusing \
+         it terminally would fail a valid request permanently over ordinary replica lag.",
         "delegated-current",
         "the delegation record is removed from the observation",
         rule::DELEGATION_ABSENT,
-        FailureClass::Terminal,
+        FailureClass::Transient,
         request.clone(),
         base_world(),
     ));
@@ -1248,11 +1310,15 @@ fn delegation_scenarios() -> Vec<Scenario> {
     out.push(Scenario::rejected(
         "delegation-newer-than-the-observation",
         "A record written after the observation is not part of the state this authorization saw. \
-         Accepting it would mean authorizing from two points in time at once.",
+         Accepting it would mean authorizing from two points in time at once. Transient, not \
+         terminal: the record's last update slot comes from the on-chain clock and the observed \
+         slot is the response's own context slot, so a coherent node cannot produce this, and it \
+         reports an incoherent observation rather than a dead grant. A repeat against a coherent \
+         node authorizes.",
         "delegated-current",
         "the delegation's last update slot is above the observed slot",
         rule::DELEGATION_NEWER_THAN_OBSERVATION,
-        FailureClass::Terminal,
+        FailureClass::Transient,
         request.clone(),
         base_world().with_delegation(&from_the_future),
     ));
@@ -1271,6 +1337,21 @@ fn delegation_scenarios() -> Vec<Scenario> {
         FailureClass::Terminal,
         request.clone(),
         base_world().with_account(expected_key, other_tuple.account()),
+    ));
+
+    let other_delegate =
+        DelegationFixture::live(delegator.pubkey(), Wallet::new(9).pubkey(), OBSERVED_SLOT);
+    out.push(Scenario::rejected(
+        "delegation-record-naming-another-delegate",
+        "The delegate half of the tuple rule: a record at the canonical address delegating to \
+         somebody else is refused. Sitting at the address derived from the delegate is not taken \
+         as proof of naming them.",
+        "delegated-current",
+        "the delegation address holds a record naming another delegate",
+        rule::DELEGATION_TUPLE_MISMATCH,
+        FailureClass::Terminal,
+        request.clone(),
+        base_world().with_account(expected_key, other_delegate.account()),
     ));
 
     let mut foreign = delegation.account();
@@ -1319,7 +1400,43 @@ fn delegation_scenarios() -> Vec<Scenario> {
             .with_delegation(&revoked_wildcard),
     ));
 
-    let _ = (delegator, live, world);
+    // The sentinel is a row-address convention, not an authority an encrypted value account may
+    // name: with it as the account's authority, the authority-specific address derivation lands
+    // on the wildcard row itself, so the guard rejects the account before any row is read.
+    let sentinel_live = handle(0x2f, FHE_TYPE_UINT64);
+    let sentinel_encrypted_value_account = EncryptedValueAccountFixture::in_domain(
+        DOMAIN,
+        WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY,
+        LABEL,
+        sentinel_live,
+        &[delegator.pubkey()],
+    );
+    let sentinel_wildcard_row =
+        DelegationFixture::live_wildcard(delegator.pubkey(), signer.pubkey(), OBSERVED_SLOT);
+    out.push(Scenario::rejected(
+        "sentinel-authority-in-the-encrypted-value-account",
+        "An encrypted value account naming the wildcard sentinel as its authority is rejected at \
+         resolution, before any delegation row is read. A live wildcard row is present — exactly \
+         the row a sentinel authority would resolve to — so an implementation without this guard \
+         authorizes the request, with its authority-specific check structurally a wildcard check.",
+        "delegated-via-wildcard-row",
+        "the encrypted value account names the wildcard sentinel as its authority",
+        rule::ENCRYPTED_VALUE_ACCOUNT_SENTINEL_AUTHORITY,
+        FailureClass::Terminal,
+        RequestBuilder::new(&signer)
+            .delegated_current(
+                &sentinel_encrypted_value_account,
+                sentinel_live,
+                delegator.pubkey(),
+            )
+            .wire(),
+        World::at_slot(OBSERVED_SLOT)
+            .with_encrypted_value_account(&sentinel_encrypted_value_account)
+            .with_watermark(signer.pubkey(), 0)
+            .with_delegation(&sentinel_wildcard_row),
+    ));
+
+    let _ = (live, world);
     out
 }
 
@@ -1527,6 +1644,9 @@ fn rule_name(failure: &AuthorizationFailure) -> &'static str {
             }
             EncryptedValueAccountFailure::EncryptedValueIdMismatch { .. } => {
                 rule::ENCRYPTED_VALUE_ID_MISMATCH
+            }
+            EncryptedValueAccountFailure::SentinelAuthority { .. } => {
+                rule::ENCRYPTED_VALUE_ACCOUNT_SENTINEL_AUTHORITY
             }
             EncryptedValueAccountFailure::Snapshot(_) => panic!("a record carries one observation"),
         },

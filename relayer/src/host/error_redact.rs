@@ -59,4 +59,36 @@ mod tests {
         ));
         assert_eq!(redact_alloy_error(&err), err.to_string());
     }
+
+    /// A real reqwest transport error carrying the request URL, the way production failures
+    /// do: connect to a local port that was bound and immediately freed, so nothing listens.
+    /// Both places a provider credential is normally carried are covered — the path segment
+    /// (Helius-style) and a query parameter (Alchemy-style).
+    #[tokio::test]
+    async fn redact_error_strips_reqwest_url() {
+        let port = {
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind probe port");
+            listener.local_addr().expect("probe port addr").port()
+        };
+        let err = reqwest::Client::new()
+            .get(format!(
+                "http://127.0.0.1:{port}/path-secret?api-key=query-secret"
+            ))
+            .send()
+            .await
+            .expect_err("nothing listens on the freed port");
+        let redacted = redact_error(&err);
+        assert!(
+            !redacted.contains("path-secret"),
+            "leaked the URL path: {redacted}"
+        );
+        assert!(
+            !redacted.contains("query-secret"),
+            "leaked the URL query: {redacted}"
+        );
+        assert!(
+            !redacted.contains("for url"),
+            "kept reqwest's url suffix: {redacted}"
+        );
+    }
 }
