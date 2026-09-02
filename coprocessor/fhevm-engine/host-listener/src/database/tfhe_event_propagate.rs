@@ -289,7 +289,76 @@ impl Database {
             tick: HeartBeat::default(),
             gcs_mode,
         };
+        db.reload_sealed_chains(dependence_cache_size).await;
         Ok(db)
+    }
+
+    /// Rebuild the producer seal from durable state.
+    ///
+    /// `sealed_chains` is process-local, so a restart starts with none. That
+    /// is not the rare event the LRU-eviction case is: catchup replays
+    /// `--catchup-margin` blocks (5 by default) on EVERY restart, and that
+    /// replay rebuilds `past_chains` and `consumed_boundaries` — but not the
+    /// seal, because `update_dependence_chain` is the only writer and ingest
+    /// skips it when every computation insert is a duplicate. A parent that
+    /// was sealed would resume absorbing continuations while its already
+    /// gated child, whose `dependency_count` is durable, waits behind all of
+    /// them. That is the exact condition sealing exists to prevent, and it
+    /// would recur on every deploy.
+    ///
+    /// Nothing new is persisted to fix it, because the seal is not
+    /// independent state: it means "some child is still gated on me", and
+    /// both halves are already durable — the child sits in the parent's
+    /// `dependents`, and it carries `dependency_count > 0`. Deriving rather
+    /// than storing also means the seal cannot drift from the gate it serves.
+    /// A child that discharges stops sealing its parent, and a retired parent
+    /// has its `dependents` pruned, so both leave the set on their own.
+    ///
+    /// Best effort: on error the set stays empty, which is the behaviour
+    /// before this reconstruction existed. Bounded by the cache size and
+    /// ordered most-recent-first so the entries kept are the ones live
+    /// traffic will ask about.
+    async fn reload_sealed_chains(&self, cache_size: u16) {
+        let limit = i64::from(cache_size.max(MINIMUM_BUCKET_CACHE_SIZE));
+        let pool = self.pool.read().await.clone();
+        let rows = sqlx::query_scalar!(
+            r#"
+            SELECT DISTINCT ON (p.last_updated_at, p.dependence_chain_id)
+                p.dependence_chain_id AS "id!"
+            FROM dependence_chain p
+            JOIN dependence_chain c
+              ON c.dependence_chain_id = ANY(p.dependents)
+            WHERE c.dependency_count > 0
+              AND p.status <> 'processed'
+            ORDER BY p.last_updated_at DESC, p.dependence_chain_id
+            LIMIT $1
+            "#,
+            limit,
+        )
+        .fetch_all(&pool)
+        .await;
+        let rows = match rows {
+            Ok(rows) => rows,
+            Err(error) => {
+                warn!(
+                    %error,
+                    "could not rebuild the sealed-chain set; producers may be \
+                     extended while a fork waits on them"
+                );
+                return;
+            }
+        };
+        let mut sealed = self.sealed_chains.write().await;
+        let mut restored = 0_usize;
+        for row in rows {
+            if let Ok(hash) = ChainHash::try_from(row.as_slice()) {
+                sealed.put(hash, ());
+                restored += 1;
+            }
+        }
+        if restored > 0 {
+            info!(restored, "Rebuilt sealed-chain set from gated dependents");
+        }
     }
 
     pub(crate) fn record_slow_lane_marked_chains(&self, count: u64) {

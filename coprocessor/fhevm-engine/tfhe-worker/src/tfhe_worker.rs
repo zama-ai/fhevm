@@ -120,6 +120,28 @@ fn stamp_is_retryable(error_message: Option<&str>) -> bool {
     error_message.is_some_and(|m| m.contains(RETRYABLE_STAMP_MARKER))
 }
 
+/// The demotion bound for the work window, or `None` to disable it.
+///
+/// `None` DISABLES the bound; it is not "a very large threshold". Demotion is
+/// half a mechanism — the window stops selecting the row and
+/// `rearm_demoted_chains` is what gives it another pass — and that sweep never
+/// runs under `--disable-dcid-locking`: `do_cleanup` returns first, and it
+/// re-arms through the `status = 'processed' AND worker_id IS NULL` lifecycle
+/// that mode does not drive. So the bound must be absent there, not large.
+///
+/// A finite sentinel cannot express absence. `error_retry_count` saturates at
+/// [`i16::MAX`] in the stamping UPDATE, and the selectors ask for
+/// `error_retry_count < threshold`, so a threshold of `i16::MAX` becomes a
+/// demotion of its own once a row reaches the ceiling — in the one mode with
+/// nothing to undo it. The queries take a nullable bound instead.
+fn demote_threshold_for(disable_dcid_locking: bool, configured: i16) -> Option<i16> {
+    if disable_dcid_locking {
+        None
+    } else {
+        Some(configured)
+    }
+}
+
 fn dcid_transaction_share(
     work_items_batch_size: i32,
     acquired_dcid_count: usize,
@@ -1148,6 +1170,21 @@ mod operand_boundary_mask_tests {
 
         trx.rollback().await?;
         Ok(())
+    }
+
+    /// Lockless mode must have NO demotion bound, not a large one. The
+    /// counter saturates at `i16::MAX`, so a sentinel of `i16::MAX` would
+    /// re-create the very exclusion the bypass exists to remove — after
+    /// 32_768 failures, in the one mode with no sweep to re-arm the row.
+    #[test]
+    fn demote_threshold_is_absent_rather_than_saturated_without_locking() {
+        assert_eq!(demote_threshold_for(false, 3), Some(3));
+        assert_eq!(demote_threshold_for(true, 3), None);
+        assert_ne!(
+            demote_threshold_for(true, 3),
+            Some(i16::MAX),
+            "a saturating counter makes i16::MAX a real bound, not an absent one"
+        );
     }
 
     /// The share is `ceil(work_items_batch_size / acquired_dcids)` when
@@ -2295,11 +2332,10 @@ async fn query_for_work<'a>(
     // that spent its attempts would never be selected again, even after the
     // fault cleared. The documented fallback mode must not be able to lose
     // work, so demotion does not apply there.
-    let demote_threshold = if args.disable_dcid_locking {
-        i16::MAX
-    } else {
-        args.computation_retry_demote_threshold
-    };
+    let demote_threshold = demote_threshold_for(
+        args.disable_dcid_locking,
+        args.computation_retry_demote_threshold,
+    );
     let s_dcid = tracing::info_span!(
         "query_dependence_chain",
         dependence_chain_id = tracing::field::Empty
@@ -2468,7 +2504,8 @@ WHERE c.transaction_id IN (
           -- DEMOTED and the slow sweep re-arms it with the count reset.
           -- Not terminal: the stamp is untouched and the row still pending.
           AND (is_error = FALSE
-               OR (error_message LIKE '%' || $5 || '%' AND error_retry_count < $6))
+               OR (error_message LIKE '%' || $5 || '%'
+                   AND ($6::smallint IS NULL OR error_retry_count < $6)))
           AND is_allowed = TRUE
           AND ($1::bytea[] IS NULL OR dependence_chain_id = ANY($1))
           -- Same lockless-fallback fairness clause as the non-adaptive
@@ -2525,7 +2562,8 @@ WHERE c.transaction_id IN (
       WHERE is_completed = FALSE
         -- Same demotion bound as the adaptive query above.
         AND (is_error = FALSE
-             OR (error_message LIKE '%' || $4 || '%' AND error_retry_count < $5))
+             OR (error_message LIKE '%' || $4 || '%'
+                 AND ($5::smallint IS NULL OR error_retry_count < $5)))
         AND is_allowed = TRUE
         AND ($1::bytea[] IS NULL OR dependence_chain_id = ANY($1))
         -- Lockless fallback fairness: transactions this worker deferred
