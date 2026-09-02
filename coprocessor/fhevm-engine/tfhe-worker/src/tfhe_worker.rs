@@ -2285,7 +2285,21 @@ async fn query_for_work<'a>(
     deferred_cooldown: &mut DeferredTransactionCooldown,
     gcs_mode: bool,
 ) -> Result<(Vec<ComponentNode>, PrimitiveDateTime, bool), CoprocessorError> {
-    let demote_threshold = args.computation_retry_demote_threshold;
+    // Demotion is only half a mechanism: the row stops being selected here,
+    // and `rearm_demoted_chains` is what gives it another pass. That sweep
+    // runs from `do_cleanup`, which returns immediately when locking is
+    // disabled, and it re-arms through the chain lifecycle (`status =
+    // 'processed' AND worker_id IS NULL`) that lockless mode does not drive.
+    // So with `--disable-dcid-locking` there is nothing to reset the count,
+    // and a bounded pause would become a permanent one: a transient failure
+    // that spent its attempts would never be selected again, even after the
+    // fault cleared. The documented fallback mode must not be able to lose
+    // work, so demotion does not apply there.
+    let demote_threshold = if args.disable_dcid_locking {
+        i16::MAX
+    } else {
+        args.computation_retry_demote_threshold
+    };
     let s_dcid = tracing::info_span!(
         "query_dependence_chain",
         dependence_chain_id = tracing::field::Empty

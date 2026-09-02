@@ -2140,10 +2140,17 @@ async fn test_host_listener_recovers_after_revert() -> Result<(), anyhow::Error>
 }
 
 /// F1 regression: a new chain joining cross-block parents must be gated on
-/// exactly the parents that can still deliver a release decrement. An
-/// incomplete parent gains the child in `dependents` and contributes to
-/// `dependency_count`; a `processed` parent and an unknown (cache-drifted)
-/// parent contribute nothing.
+/// exactly the parents that can still deliver a release decrement, AND that
+/// still owe it something. A parent gates only when it is both incomplete and
+/// has not yet materialized the specific boundary handle this child consumes:
+///
+///   * incomplete, handle not materialized -> gates, adopts the child, and is
+///     SEALED so it stops absorbing continuations the child would wait behind;
+///   * incomplete, handle already in `ciphertexts` -> owes nothing, because the
+///     worker reads the bytes from there; gating on it would make the child
+///     wait for unrelated work on a chain it no longer needs;
+///   * `processed` -> no future release will decrement it;
+///   * unknown (cache-drifted) -> no row to gate on.
 #[tokio::test]
 #[serial(db)]
 async fn test_cross_block_join_gates_on_incomplete_parents(
@@ -2158,10 +2165,20 @@ async fn test_cross_block_join_gates_on_incomplete_parents(
     let parent_incomplete = FixedBytes::<32>::from([0xA1; 32]);
     let parent_processed = FixedBytes::<32>::from([0xA2; 32]);
     let parent_unknown = FixedBytes::<32>::from([0xA3; 32]);
+    let parent_materialized = FixedBytes::<32>::from([0xA4; 32]);
     let child = FixedBytes::<32>::from([0xC1; 32]);
+    // One boundary handle per parent: the gate is armed per handle, not per
+    // chain, so the test has to name what the child actually waits for.
+    let handle_incomplete = FixedBytes::<32>::from([0xB1; 32]);
+    let handle_processed = FixedBytes::<32>::from([0xB2; 32]);
+    let handle_unknown = FixedBytes::<32>::from([0xB3; 32]);
+    let handle_materialized = FixedBytes::<32>::from([0xB4; 32]);
     for (hash, status) in [
         (parent_incomplete, "updated"),
         (parent_processed, "processed"),
+        // Incomplete exactly like `parent_incomplete`; the ONLY difference is
+        // that its handle already exists below.
+        (parent_materialized, "updated"),
     ] {
         sqlx::query(
             "INSERT INTO dependence_chain(
@@ -2177,6 +2194,18 @@ async fn test_cross_block_join_gates_on_incomplete_parents(
         .await?;
     }
 
+    // The materialized parent's boundary handle is already readable from
+    // `ciphertexts`, which is where the worker sources boundary operands.
+    sqlx::query(
+        "INSERT INTO ciphertexts(
+            tenant_id, handle, ciphertext, ciphertext_version, ciphertext_type
+         ) VALUES (1, $1, $2, 1, 1)",
+    )
+    .bind(handle_materialized.as_slice())
+    .bind([0xEE_u8; 8].as_slice())
+    .execute(&pool)
+    .await?;
+
     let chains = vec![Chain {
         hash: child,
         dependencies: vec![],
@@ -2184,6 +2213,13 @@ async fn test_cross_block_join_gates_on_incomplete_parents(
             parent_incomplete,
             parent_processed,
             parent_unknown,
+            parent_materialized,
+        ],
+        outer_boundary_handles: vec![
+            (parent_incomplete, handle_incomplete),
+            (parent_processed, handle_processed),
+            (parent_unknown, handle_unknown),
+            (parent_materialized, handle_materialized),
         ],
         dependents: vec![],
         allowed_handle: vec![],
@@ -2240,6 +2276,37 @@ async fn test_cross_block_join_gates_on_incomplete_parents(
         processed_dependents.is_empty(),
         "a processed parent must not adopt the child: no future release \
          will decrement it"
+    );
+
+    let materialized_dependents: Vec<Vec<u8>> = sqlx::query_scalar(
+        "SELECT unnest(dependents) FROM dependence_chain
+         WHERE dependence_chain_id = $1",
+    )
+    .bind(parent_materialized.as_slice())
+    .fetch_all(&pool)
+    .await?;
+    assert!(
+        materialized_dependents.is_empty(),
+        "an incomplete parent whose boundary handle is already materialized \
+         owes the child nothing: the worker reads the bytes from ciphertexts, \
+         so gating on it would park the child behind unrelated work"
+    );
+
+    // Only the parent that actually gates is sealed: it has work the child
+    // needs, so it must stop absorbing continuations the child would wait on.
+    let sealed = db.sealed_chains.read().await;
+    assert!(
+        sealed.peek(&parent_incomplete).is_some(),
+        "the gating parent is sealed against further linear extension"
+    );
+    assert!(
+        sealed.peek(&parent_materialized).is_none(),
+        "a parent that does not gate is not sealed: sealing it would fragment \
+         a chain for no benefit"
+    );
+    assert!(
+        sealed.peek(&parent_processed).is_none(),
+        "a processed parent is not sealed"
     );
     Ok(())
 }

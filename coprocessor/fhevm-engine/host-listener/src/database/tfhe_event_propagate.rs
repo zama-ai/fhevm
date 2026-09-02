@@ -72,6 +72,12 @@ pub struct Chain {
     // Ingest-only metadata for dependency links split by no_fork grouping.
     // Not used by scheduler execution ordering.
     pub split_dependencies: Vec<ChainHash>,
+    /// The (producer chain, boundary handle) pairs behind this chain's
+    /// CROSS-BLOCK dependencies. `split_dependencies` records which chains a
+    /// new chain waits on; this records what it actually waits FOR, so the
+    /// gate can be armed on the specific handle rather than on retirement of
+    /// the whole producer chain. Empty for chains that extend an existing one.
+    pub outer_boundary_handles: Vec<(ChainHash, Handle)>,
     pub dependents: Vec<ChainHash>,
     pub allowed_handle: Vec<Handle>,
     pub size: u64,
@@ -79,6 +85,19 @@ pub struct Chain {
     pub new_chain: bool,
 }
 pub type ChainCache = Arc<RwLock<lru::LruCache<Handle, ChainHash>>>;
+/// Producer chains SEALED against further linear extension.
+///
+/// A chain is sealed when a fork gates on a boundary handle it has not yet
+/// materialized. Without this the producer keeps absorbing continuations of
+/// its own unrelated traffic, and the fork — gated on the chain, not on the
+/// handle — waits behind all of it. Sealing stops the growth, so the fork
+/// waits only for the producer's undrained tail at seal time; the next
+/// continuation starts its own chain gated on the sealed one.
+///
+/// In memory and LRU-bounded on purpose: losing an entry re-enables extension,
+/// which is exactly the pre-existing behaviour, so a restart or an eviction
+/// degrades to "slower to discharge", never to "wrong".
+pub type SealedChainGuard = Arc<RwLock<lru::LruCache<ChainHash, ()>>>;
 /// Cross-batch record of which transaction consumed a boundary handle. A
 /// DIFFERENT consumer of the same handle in a later ingest batch is a fork:
 /// it must form its own (gated) chain instead of extending the producer's
@@ -171,6 +190,7 @@ pub struct Database {
     pub chain_id: ChainId,
     pub dependence_chain: ChainCache,
     pub consumed_boundaries: ConsumedBoundaryGuard,
+    pub sealed_chains: SealedChainGuard,
     pub tick: HeartBeat,
     /// When true, every connection in this pool sets
     /// `search_path = gcs,public` so writes resolve to the GCS schema.
@@ -250,6 +270,14 @@ impl Database {
                 .unwrap()
                 .into(),
             )));
+        let sealed_chains =
+            Arc::new(tokio::sync::RwLock::new(lru::LruCache::new(
+                std::num::NonZeroU16::new(
+                    dependence_cache_size.max(MINIMUM_BUCKET_CACHE_SIZE),
+                )
+                .unwrap()
+                .into(),
+            )));
         let db = Database {
             url: url.clone(),
             chain_id,
@@ -257,6 +285,7 @@ impl Database {
             pool_refresh_handle: Arc::new(RwLock::new(pool_refresh_handle)),
             dependence_chain: bucket_cache,
             consumed_boundaries,
+            sealed_chains,
             tick: HeartBeat::default(),
             gcs_mode,
         };
@@ -1944,17 +1973,56 @@ impl Database {
                 .filter(|dep| !chain.dependencies.contains(dep))
                 .map(|h| h.to_vec())
                 .collect::<Vec<_>>();
-            let gated_outer_count = if chain.new_chain
-                && !outer_dependencies.is_empty()
+            // Gate on the HANDLE, not on the chain. A parent whose boundary
+            // handle is already materialized owes this child nothing: the
+            // bytes are in `ciphertexts` and the worker will read them there,
+            // so counting the parent would make the child wait for unrelated
+            // work on a chain it no longer needs. Only a parent with at least
+            // one un-materialized consumed handle is counted.
+            //
+            // A parent that IS counted gets SEALED (below): it has work this
+            // child needs, and while it keeps absorbing continuations of its
+            // own traffic the child waits behind all of them.
+            let (gate_parents, gate_handles): (Vec<Vec<u8>>, Vec<Vec<u8>>) =
+                chain
+                    .outer_boundary_handles
+                    .iter()
+                    .filter(|(parent, _)| {
+                        outer_dependencies.contains(&parent.to_vec())
+                    })
+                    .map(|(parent, handle)| (parent.to_vec(), handle.to_vec()))
+                    .unzip();
+            let gated_parents: Vec<Vec<u8>> = if chain.new_chain
+                && !gate_parents.is_empty()
             {
                 sqlx::query_scalar!(
                     r#"
-                    WITH parents AS (
-                        SELECT dependence_chain_id
-                        FROM dependence_chain
-                        WHERE dependence_chain_id = ANY($1::bytea[])
-                          AND status <> 'processed'
-                        ORDER BY dependence_chain_id
+                    WITH consumed AS (
+                        SELECT
+                            u.parent,
+                            u.handle
+                        FROM unnest($1::bytea[], $2::bytea[])
+                            AS u(parent, handle)
+                    ),
+                    -- A parent still owes this child only for the handles it
+                    -- has not materialized. `ciphertexts` is the table the
+                    -- worker reads boundary operands from, so its presence is
+                    -- the readiness condition, not an approximation of one.
+                    pending AS (
+                        SELECT DISTINCT consumed.parent
+                        FROM consumed
+                        WHERE NOT EXISTS (
+                            SELECT 1
+                            FROM ciphertexts ct
+                            WHERE ct.handle = consumed.handle
+                        )
+                    ),
+                    parents AS (
+                        SELECT dc.dependence_chain_id
+                        FROM dependence_chain dc
+                        JOIN pending ON pending.parent = dc.dependence_chain_id
+                        WHERE dc.status <> 'processed'
+                        ORDER BY dc.dependence_chain_id
                         FOR UPDATE SKIP LOCKED
                     ),
                     updated AS (
@@ -1962,23 +2030,37 @@ impl Database {
                         SET dependents = (
                             SELECT ARRAY(
                                 SELECT DISTINCT d
-                                FROM unnest(dc.dependents || $2::bytea[]) AS d
+                                FROM unnest(dc.dependents || $3::bytea[]) AS d
                             )
                         )
                         FROM parents
                         WHERE dc.dependence_chain_id = parents.dependence_chain_id
-                        RETURNING 1
+                        RETURNING dc.dependence_chain_id
                     )
-                    SELECT count(*) AS "count!" FROM updated
+                    SELECT dependence_chain_id AS "id!" FROM updated
                     "#,
-                    &outer_dependencies,
+                    &gate_parents,
+                    &gate_handles,
                     &[chain.hash.to_vec()],
                 )
-                .fetch_one(tx.deref_mut())
+                .fetch_all(tx.deref_mut())
                 .await?
             } else {
-                0
+                Vec::new()
             };
+            let gated_outer_count = gated_parents.len();
+            // Seal exactly the parents that were counted. Sealing is in
+            // memory and LRU-bounded: an eviction or a listener restart
+            // re-enables extension, which is the pre-existing behaviour, so
+            // this can only ever cost discharge latency, never correctness.
+            if !gated_parents.is_empty() {
+                let mut sealed = self.sealed_chains.write().await;
+                for parent in &gated_parents {
+                    if let Ok(hash) = ChainHash::try_from(parent.as_slice()) {
+                        sealed.put(hash, ());
+                    }
+                }
+            }
             sqlx::query!(
                 r#"
                 INSERT INTO dependence_chain(

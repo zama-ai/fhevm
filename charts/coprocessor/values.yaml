@@ -1061,6 +1061,16 @@ tfheWorker:
   #                                              # dependents. An hourly sweep re-arms
   #                                              # demoted chains at slow priority with
   #                                              # the count reset.
+  #                                              #
+  #                                              # Must be >= 1; the worker refuses to
+  #                                              # start otherwise, because a
+  #                                              # non-positive threshold excludes a
+  #                                              # retryable row from the moment it is
+  #                                              # stamped and a sweep cannot bring it
+  #                                              # back. Ignored entirely under
+  #                                              # --disable-dcid-locking, where the
+  #                                              # re-arm sweep does not run: that mode
+  #                                              # retries without demoting.
   #
   #   GPU images only (CPU builds parse and ignore these):
   #     --gpu-streams-per-device=16              # env: FHEVM_GPU_STREAMS_PER_DEVICE

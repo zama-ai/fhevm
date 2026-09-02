@@ -83,6 +83,7 @@ pub struct Args {
     #[arg(
         long,
         env = "FHEVM_COMPUTATION_RETRY_DEMOTE_THRESHOLD",
+        value_parser = parse_positive_i16,
         default_value_t = 3
     )]
     pub computation_retry_demote_threshold: i16,
@@ -228,6 +229,22 @@ pub struct Args {
 fn parse_positive_i32(value: &str) -> Result<i32, String> {
     let parsed = value
         .parse::<i32>()
+        .map_err(|error| format!("must be a positive integer: {error}"))?;
+    if parsed < 1 {
+        Err("must be at least 1".to_owned())
+    } else {
+        Ok(parsed)
+    }
+}
+
+/// Selection requires `error_retry_count < threshold` and a re-arm resets the
+/// count to zero, so a non-positive threshold excludes a retryable row the
+/// moment it is stamped and keeps excluding it after every sweep — the row is
+/// demoted forever and the sweep churns it. Reject the configuration at
+/// startup rather than let it silently strand work.
+fn parse_positive_i16(value: &str) -> Result<i16, String> {
+    let parsed = value
+        .parse::<i16>()
         .map_err(|error| format!("must be a positive integer: {error}"))?;
     if parsed < 1 {
         Err("must be at least 1".to_owned())
@@ -403,5 +420,25 @@ mod tests {
             args.gpu_memory_reservation_timeout_ms,
             args.dcid_ttl_sec
         );
+    }
+
+    /// A non-positive demotion threshold makes `error_retry_count < threshold`
+    /// unsatisfiable, so a retryable row leaves the work window the moment it
+    /// is stamped and stays out after a sweep resets its count to zero. That
+    /// is indistinguishable from losing the work, so it is refused at startup.
+    #[test]
+    fn demotion_threshold_rejects_non_positive_values() {
+        for value in ["0", "-1"] {
+            assert!(
+                Args::try_parse_from([
+                    "tfhe_worker",
+                    &format!("--computation-retry-demote-threshold={value}"),
+                ])
+                .is_err(),
+                "--computation-retry-demote-threshold={value} must be rejected"
+            );
+        }
+        let args = Args::parse_from(["tfhe_worker", "--computation-retry-demote-threshold=1"]);
+        assert_eq!(args.computation_retry_demote_threshold, 1);
     }
 }
