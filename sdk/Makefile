@@ -278,7 +278,14 @@ rebuild: ## Clean everything, then compile from scratch (no gates — use 'build
 # Note the template's own `clean` deliberately does NOT delegate to `pkg`'s: upstream's version ends by
 # running `npm run typechain`, and a clean that regenerates would need the plugin it just helped remove.
 # The parent removes pkg's output directly instead.
-clean: ## Remove every package's build output
+# The tooling's $TMPDIR scratch roots are regenerable by construction and are deleted BEFORE any flow
+# that uses them: a stale root left by an older tool version otherwise trips test-consumer's ownership
+# guard ("Refusing unmarked test-consumer root"). `clean` removes them, and the consumer targets depend
+# on this directly so a standalone `make test-consumer[-ci]` starts fresh too.
+clean-scratch: ## Delete the tooling's $TMPDIR scratch roots (consumer installs, pack npm cache)
+	rm -rf "$${TMPDIR:-/tmp}/fhevm-npm-test-consumer" "$${TMPDIR:-/tmp}/fhevm-sdk-npm-cache"
+
+clean: clean-scratch ## Remove every package's build output and the tooling's scratch roots
 	$(call run-hh-v3,$(W_HH_V3_PLUGIN),clean)
 	$(call run-hh-v2,$(W_HH_V2_TEMPLATE),clean)
 	$(call run-hh-v2,$(W_HH_V2_E2E),clean)
@@ -512,7 +519,7 @@ lint-npm-cli: ## Typecheck and test the fhevm-npm CLI
 ########################################################################################################
 
 .PHONY: test-cleartext-v12 test-cleartext-v13 test-hh-v2-plugin test-hh-v2-template
-.PHONY: test-hh-v2-e2e test-hh-v2-e2e-anvil test-consumer test-consumer-ci
+.PHONY: test-hh-v2-e2e test-hh-v2-e2e-anvil test-consumer test-consumer-ci clean-scratch
 
 test-cleartext-v12: compile-cleartext-v12 ## Cleartext v12 unit + forge + harness tests (self-provides ./out)
 	$(call run,$(W_V12),test)
@@ -539,16 +546,20 @@ test-hh-v2-e2e-anvil: compile-hh-v2-e2e ## Hardhat v2 e2e tests against a local 
 
 # Separate tier: packs and installs each payload into a temp project and runs its suite. Minutes, not
 # seconds, so it is deliberately not part of `make test`.
-test-consumer: compile-hh-v2-template ## Install each published payload as a real consumer
+test-consumer: clean-scratch compile-hh-v2-template ## Install each published payload as a real consumer
 	$(call run-fhevm-npm,test-consumer ./host-contracts-cleartext/v12 --build-linked-dependencies --run)
 	$(call run-fhevm-npm,test-consumer ./host-contracts-cleartext/v13 --build-linked-dependencies --run)
 	$(call run-fhevm-npm,test-consumer ./hardhat/v2/fhevm-hardhat-template/pkg --build-linked-dependencies --run)
 	$(call run-hh-v2,$(W_HH_V2_PLUGIN),test:consumer)
 
-test-consumer-ci: compile-hh-v2-template ## Run every consumer with its committed lockfile
+# The template leg runs WITHOUT --ci on purpose: the workspace-native template is a cluster member with
+# no committed lockfile BY DESIGN (option E) — the lock-replaying rehearsal of it belongs to the
+# publish-mirror RENDER, which regenerates a public lockfile. Until that lands, this leg still proves a
+# fresh consumer install + test of the template against the live workspace payloads.
+test-consumer-ci: clean-scratch compile-hh-v2-template ## Run every consumer from its committed lockfile (template: fresh resolve, see comment)
 	$(call run-fhevm-npm,test-consumer ./host-contracts-cleartext/v12 --build-linked-dependencies --run --ci)
 	$(call run-fhevm-npm,test-consumer ./host-contracts-cleartext/v13 --build-linked-dependencies --run --ci)
-	$(call run-fhevm-npm,test-consumer ./hardhat/v2/fhevm-hardhat-template/pkg --build-linked-dependencies --run --ci)
+	$(call run-fhevm-npm,test-consumer ./hardhat/v2/fhevm-hardhat-template/pkg --build-linked-dependencies --run)
 	$(call run-hh-v2,$(W_HH_V2_PLUGIN),test:consumer)
 
 ########################################################################################################
