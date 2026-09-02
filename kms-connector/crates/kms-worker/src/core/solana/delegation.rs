@@ -284,7 +284,8 @@ pub enum DelegationFailure {
         observed_slot: u64,
     },
     /// It was written after the observation point, so it is not part of the state this
-    /// authorization saw.
+    /// authorization saw. A coherent node cannot produce this — a write lands at or before the
+    /// slot of the bank that holds it — so it reports an incoherent observation, not a dead record.
     #[error(
         "delegation is newer than the observation: written at {last_update_slot} > {observed_slot}"
     )]

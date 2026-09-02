@@ -223,7 +223,7 @@ where
         let second = reader.read_accounts(&second_keys).await?;
         // The one condition on the pair of reads, and it is ordering rather than agreement: a
         // deciding read behind the discovery read would report grants the discovery read saw as
-        // absent, terminally.
+        // absent, blaming the delegation for what the read did.
         second.deciding_after(&first)?
     };
 

@@ -1267,11 +1267,13 @@ fn delegation_scenarios() -> Vec<Scenario> {
     out.push(Scenario::rejected(
         "missing-delegation",
         "No delegation record at the canonical address for the tuple, so the delegated entry has \
-         nothing standing behind it.",
+         nothing standing behind it. Transient, not terminal: a grant confirmed on another RPC \
+         is simply not here yet for a reader sitting at an earlier confirmed slot, and refusing \
+         it terminally would fail a valid request permanently over ordinary replica lag.",
         "delegated-current",
         "the delegation record is removed from the observation",
         rule::DELEGATION_ABSENT,
-        FailureClass::Terminal,
+        FailureClass::Transient,
         request.clone(),
         base_world(),
     ));
@@ -1308,11 +1310,15 @@ fn delegation_scenarios() -> Vec<Scenario> {
     out.push(Scenario::rejected(
         "delegation-newer-than-the-observation",
         "A record written after the observation is not part of the state this authorization saw. \
-         Accepting it would mean authorizing from two points in time at once.",
+         Accepting it would mean authorizing from two points in time at once. Transient, not \
+         terminal: the record's last update slot comes from the on-chain clock and the observed \
+         slot is the response's own context slot, so a coherent node cannot produce this, and it \
+         reports an incoherent observation rather than a dead grant. A repeat against a coherent \
+         node authorizes.",
         "delegated-current",
         "the delegation's last update slot is above the observed slot",
         rule::DELEGATION_NEWER_THAN_OBSERVATION,
-        FailureClass::Terminal,
+        FailureClass::Transient,
         request.clone(),
         base_world().with_delegation(&from_the_future),
     ));

@@ -340,6 +340,10 @@ async fn a_delegation_written_after_the_observation_rejects_its_entry() {
             }
         } if last_update_slot == OBSERVED_SLOT + 1 && observed_slot == OBSERVED_SLOT
     ));
+    // Transient, and pinned as such: a coherent node cannot return a record written after its own
+    // context slot, so this names a bad observation rather than a dead grant. Terminal would let
+    // one bad RPC response kill a valid request.
+    assert_eq!(failure.class(), FailureClass::Transient);
 }
 
 /// A record written exactly at the observation is part of it.
@@ -664,6 +668,57 @@ async fn a_missing_delegation_rejects_its_entry() {
             source: DelegationFailure::Absent { account_key }
         } if account_key == expected_key
     ));
+    // Transient, and pinned as such: this reader and the relayer read through their own RPCs and
+    // can sit at different confirmed slots, so "not here" can mean "not here yet". Terminal would
+    // fail a valid delegated request permanently over ordinary replica lag.
+    assert_eq!(failure.class(), FailureClass::Transient);
+}
+
+/// The other side of the same rule: a revoked, expired or mismatched record stays terminal,
+/// because each describes what a read record says and no later observation changes that. Pinned
+/// together so a future edit to the transient arms cannot quietly take the rest with them.
+#[tokio::test]
+async fn delegation_outcomes_about_a_record_that_exists_stay_terminal() {
+    let signer = Wallet::new(1);
+    let delegator = Wallet::new(2);
+    let stranger = Wallet::new(9);
+    let live = handle(0x3f, FHE_TYPE_UINT64);
+    let encrypted_value_account = EncryptedValueAccountFixture::new(live, &[delegator.pubkey()]);
+    let request = RequestBuilder::new(&signer)
+        .delegated_current(&encrypted_value_account, live, delegator.pubkey())
+        .typed();
+
+    let expected = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), OBSERVED_SLOT);
+    let (expected_key, _) = expected.address();
+
+    let mut revoked = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), OBSERVED_SLOT);
+    revoked.revoked = true;
+    let mut expired = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), OBSERVED_SLOT);
+    expired.expiration_slot = OBSERVED_SLOT - 1;
+    // Somebody else's tuple, planted at the address this request reads: changing a tuple field
+    // moves the record's own address, so a mismatch only exists when the record is placed by
+    // address rather than derived from itself.
+    let mut mismatched = DelegationFixture::live(stranger.pubkey(), signer.pubkey(), OBSERVED_SLOT);
+    mismatched.encrypted_value_account_authority = AUTHORITY;
+
+    for (what, delegation) in [
+        ("revoked", revoked),
+        ("expired", expired),
+        ("tuple mismatch", mismatched),
+    ] {
+        let (outcome, _) = authorize_in(
+            world_with(&encrypted_value_account, signer.pubkey())
+                .with_account(expected_key, delegation.account()),
+            &request,
+        )
+        .await;
+        let failure = outcome.expect_err("none of these authorize");
+        assert_eq!(
+            failure.class(),
+            FailureClass::Terminal,
+            "a {what} delegation must stay terminal"
+        );
+    }
 }
 
 /// A delegation is scoped to an encrypted value account authority, and the encrypted value account

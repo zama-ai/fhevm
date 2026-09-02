@@ -2918,10 +2918,10 @@
     },
     {
       "name": "missing-delegation",
-      "comment": "No delegation record at the canonical address for the tuple, so the delegated entry has nothing standing behind it.",
+      "comment": "No delegation record at the canonical address for the tuple, so the delegated entry has nothing standing behind it. Transient, not terminal: a grant confirmed on another RPC is simply not here yet for a reader sitting at an earlier confirmed slot, and refusing it terminally would fail a valid request permanently over ordinary replica lag.",
       "result": "invalid",
       "rule": "delegation-absent",
-      "class": "terminal",
+      "class": "transient",
       "derived_from": "delegated-current",
       "mutation": "the delegation record is removed from the observation",
       "request": {
@@ -3081,10 +3081,10 @@
     },
     {
       "name": "delegation-newer-than-the-observation",
-      "comment": "A record written after the observation is not part of the state this authorization saw. Accepting it would mean authorizing from two points in time at once.",
+      "comment": "A record written after the observation is not part of the state this authorization saw. Accepting it would mean authorizing from two points in time at once. Transient, not terminal: the record's last update slot comes from the on-chain clock and the observed slot is the response's own context slot, so a coherent node cannot produce this, and it reports an incoherent observation rather than a dead grant. A repeat against a coherent node authorizes.",
       "result": "invalid",
       "rule": "delegation-newer-than-observation",
-      "class": "terminal",
+      "class": "transient",
       "derived_from": "delegated-current",
       "mutation": "the delegation's last update slot is above the observed slot",
       "request": {
