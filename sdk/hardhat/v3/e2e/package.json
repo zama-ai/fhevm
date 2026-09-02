@@ -21,7 +21,8 @@
     "prettier:write": "prettier --write \"**/*.{js,json,md,mjs,ts,yml}\"",
     "test": "hardhat test",
     "test:anvil": "hardhat test --network anvil",
-    "test:anvil:simple": "hardhat test --network anvil --grep 'encrypted count should be uninitialized after deployment'"
+    "test:anvil:simple": "hardhat test --network anvil --grep 'encrypted count should be uninitialized after deployment'",
+    "test:node": "hardhat test --network localhost"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
