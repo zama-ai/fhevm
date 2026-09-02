@@ -215,3 +215,8 @@ storage:
     user_decrypt_expiry: "7d"
     input_proof_expiry: "7d"
     cron_startup_delay_after_recovery: "30s"
+
+shutdown:
+  # Time to keep serving after /healthz starts failing, so the pod's removal from the service
+  # endpoints reaches the ingress controller before the socket closes.
+  lb_propagation_wait: "5s"

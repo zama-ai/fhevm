@@ -411,23 +411,8 @@ pub struct ShutdownConfig {
     /// refused connection. Deleting a pod removes it from the service endpoints at the same
     /// moment it delivers SIGTERM, so this covers the lag until that removal reaches the
     /// ingress controller, not the readiness probe's own detection time. Tests set it to 0.
-    #[serde(
-        default = "default_lb_propagation_wait",
-        deserialize_with = "deserialize_human_duration"
-    )]
+    #[serde(deserialize_with = "deserialize_human_duration")]
     pub lb_propagation_wait: Duration,
-}
-
-fn default_lb_propagation_wait() -> Duration {
-    Duration::from_secs(5)
-}
-
-impl Default for ShutdownConfig {
-    fn default() -> Self {
-        Self {
-            lb_propagation_wait: default_lb_propagation_wait(),
-        }
-    }
 }
 
 /// Deserializes strings like "30s", "5m", "1d" into std::time::Duration.
@@ -655,7 +640,6 @@ pub struct Settings {
     /// User-decryption signature check configuration
     pub user_decrypt_signature_check: UserDecryptSignatureCheckConfig,
     /// Shutdown sequencing
-    #[serde(default)]
     pub shutdown: ShutdownConfig,
 }
 
