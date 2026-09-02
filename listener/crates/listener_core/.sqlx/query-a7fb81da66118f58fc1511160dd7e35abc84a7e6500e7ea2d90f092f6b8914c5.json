@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT id, chain_id, consumer_id, \"from\", \"to\", \"log_address\", created_at\n            FROM filters\n            WHERE chain_id = $1 AND consumer_id = $2\n            ORDER BY id\n            ",
+  "query": "\n            SELECT id, chain_id, consumer_id, \"from\", \"to\", \"log_address\", filter_type as \"filter_type: FilterType\", created_at\n            FROM filters\n            WHERE chain_id = $1 AND filter_type = 'FINAL'::filter_type\n            ORDER BY consumer_id\n            ",
   "describe": {
     "columns": [
       {
@@ -35,14 +35,28 @@
       },
       {
         "ordinal": 6,
+        "name": "filter_type: FilterType",
+        "type_info": {
+          "Custom": {
+            "name": "filter_type",
+            "kind": {
+              "Enum": [
+                "LIVE",
+                "FINAL"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 7,
         "name": "created_at",
         "type_info": "Timestamptz"
       }
     ],
     "parameters": {
       "Left": [
-        "Int8",
-        "Text"
+        "Int8"
       ]
     },
     "nullable": [
@@ -52,8 +66,9 @@
       true,
       true,
       true,
+      false,
       false
     ]
   },
-  "hash": "e14cd99f22c1edec63d8f0aa88d52ea17207326821e8e45209c9bbb95acd9ef6"
+  "hash": "a7fb81da66118f58fc1511160dd7e35abc84a7e6500e7ea2d90f092f6b8914c5"
 }
