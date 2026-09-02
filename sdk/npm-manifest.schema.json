@@ -54,6 +54,19 @@
         }
       }
     },
+    "tarballs": {
+      "type": "object",
+      "description": "Where pack-tarball writes release tarballs, relative to sdk/. Members only add to it; only the workspace root clears it.",
+      "required": ["relPath"],
+      "additionalProperties": false,
+      "properties": {
+        "relPath": {
+          "type": "string",
+          "description": "sdk-relative output directory, e.g. ./tarballs.",
+          "pattern": "^\\./[^.]"
+        }
+      }
+    },
     "packageJson": {
       "type": "object",
       "description": "Required and excluded package.json fields, selected by manifest package kind.",

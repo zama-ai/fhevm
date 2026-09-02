@@ -9,6 +9,9 @@
   "foundry": {
     "version": "1.5.1-stable"
   },
+  "tarballs": {
+    "relPath": "./tarballs"
+  },
   "packageJson": {
     "published": {
       "required": ["name", "version", "description", "license", "repository"],
@@ -66,14 +69,6 @@
       "private": true,
       "member": true,
       "note": "Source of truth for files that are copied rather than imported. Its manifest.json drives `fhevm-npm sync-vendored`."
-    },
-    "./scripts": {
-      "kind": "non-package",
-      "type": "esm",
-      "browser": false,
-      "private": true,
-      "member": false,
-      "note": "Sets `type: module` so the shared .ts scripts resolve as ESM. Deliberately not a member: a script is run by relative path."
     },
     "./host-contracts-cleartext/v12": {
       "kind": "dev",

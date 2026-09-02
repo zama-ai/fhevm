@@ -10,10 +10,9 @@ export {
   MNEMONIC,
   ZAMA_LOCAL_CONFIG,
 } from './constants.ts';
-export { findWorkspaceRootAbsPath, sourceLabel, workspaceTarballsDirAbsPath, zamaConfigAbsPath } from './paths.ts';
+export { findWorkspaceRootAbsPath, sourceLabel, zamaConfigAbsPath } from './paths.ts';
 export { readContractVersions, solidityConstantName, tsKeyName } from './contractVersions.ts';
 export type { ContractVersion } from './contractVersions.ts';
-export { createPackageTarball, extractPackageTarball, tarballDirAbsPath } from './tarball.ts';
 export { checkZamaLocalConfig } from './zamaConfig.ts';
 export type { ZamaLocalConfigCheck, ZamaLocalConfigEntry } from './zamaConfig.ts';
 export { startAnvil, stopAnvil, waitForAnvil } from './anvil.ts';

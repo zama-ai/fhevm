@@ -18,6 +18,7 @@ export const commandNames = [
   'check-lint-policy',
   'check-tsconfig-paths',
   'check-tsc-mode',
+  'check-commit-scope',
 ] as const;
 export type CommandName = (typeof commandNames)[number];
 
@@ -30,6 +31,7 @@ export type CliOptions = {
     | 'generate-exports'
     | 'install-forge-dependencies'
     | 'list-packages'
+    | 'pack-tarball'
     | 'sync-vendored'
     | 'test-consumer'
     | 'test-consumer-regenerate-package-lock';
@@ -50,6 +52,12 @@ export type CliOptions = {
       readonly force: boolean;
     }
   | { readonly command: 'list-packages' }
+  | {
+      readonly command: 'pack-tarball';
+      readonly packageSelector?: string;
+      readonly outDir?: string;
+      readonly clean: boolean;
+    }
   | { readonly command: 'sync-vendored'; readonly check: boolean }
   | { readonly command: 'test-consumer-regenerate-package-lock'; readonly packageSelector?: string }
   | {
@@ -105,6 +113,7 @@ export function parseCliOptions(argv: readonly string[]): CliOptions {
   let cleanForgeDependencies:
     { readonly packageSelector?: string; readonly dryRun: boolean; readonly force: boolean } | undefined;
   let listPackagesSelected = false;
+  let packTarball: { readonly packageSelector?: string; readonly outDir?: string; readonly clean: boolean } | undefined;
   let syncVendored: { readonly check: boolean } | undefined;
   let regenerateConsumerPackageLocks = false;
   let regenerateConsumerPackageLockSelector: string | undefined;
@@ -188,7 +197,7 @@ Checked scripts:
   prettier:check Required on every dev package, shared helper and internal consumer; must exclude Solidity.
   prettier:write Required on every dev package, shared helper and internal consumer; must exclude Solidity.
   prettier.config.js The only package-level Prettier config filename; references the root prettier.base.mjs.
-  test:publint   Required on every dev owner of a published package.
+  check:publint  Required on every dev owner of an npm-distributed package.
   test:consumer  Required on every dev owner of an npm-distributed package; mirror-only consumer projects are exempt.
   fmt            Required on every dev package, shared helper and internal consumer.
   fmt:check      Required wherever fmt is.
@@ -248,6 +257,15 @@ Checked scripts:
       selected = 'check-tsconfig-paths';
     });
   program
+    .command('check-commit-scope')
+    .description(
+      'Check that every pending git change (staged, unstaged, untracked) is inside the sdk workspace — ' +
+        'nothing outside it may be touched by a commit from here.',
+    )
+    .action(() => {
+      selected = 'check-commit-scope';
+    });
+  program
     .command('check-tsc-mode')
     .description("Check that no 'tsc -p' or bare 'tsc' script invocation targets a solution-style tsconfig.")
     .addHelpText(
@@ -304,6 +322,17 @@ Why:
       listPackagesSelected = true;
     });
   program
+    .command('pack-tarball [package]')
+    .description(
+      'Pack one npm-distributed payload (or all of them when omitted) into the manifest-declared ' +
+        "tarballs directory. The payload comes from the dev owner's publishedRelPath.",
+    )
+    .option('-o, --out-dir <dir>', 'override npm-manifest.json#tarballs.relPath')
+    .option('--clean', 'delete existing *.tgz in the output directory first', false)
+    .action((packageSelector: string | undefined, options: { readonly outDir?: string; readonly clean: boolean }) => {
+      packTarball = { packageSelector, outDir: options.outDir, clean: options.clean };
+    });
+  program
     .command('test-consumer [package]')
     .description('Install one checked-in consumer fixture or manifest-listed consumer project.')
     .option('-l, --list', 'list available consumer fixtures and projects', false)
@@ -347,6 +376,7 @@ Why:
     forgeDependencyPackageSelector === undefined &&
     cleanForgeDependencies === undefined &&
     !listPackagesSelected &&
+    packTarball === undefined &&
     !regenerateConsumerPackageLocks &&
     testConsumer === undefined &&
     syncVendored === undefined &&
@@ -444,6 +474,16 @@ Why:
       manifestFile: resolve(workspaceRoot, 'npm-manifest.json'),
       verbosity: options.verbose,
       sortPackageJson: false,
+    };
+  }
+  if (packTarball !== undefined) {
+    return {
+      command: 'pack-tarball',
+      workspaceRoot,
+      manifestFile: resolve(workspaceRoot, 'npm-manifest.json'),
+      verbosity: options.verbose,
+      sortPackageJson: false,
+      ...packTarball,
     };
   }
   if (selected === undefined) throw new Error('unreachable');

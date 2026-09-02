@@ -67,6 +67,12 @@ const foundryPolicySchema = z
   })
   .strict();
 
+const tarballsPolicySchema = z
+  .object({
+    relPath: z.string().regex(/^\.\/[^.]/, 'must be an sdk-relative path such as ./tarballs'),
+  })
+  .strict();
+
 const packageJsonFieldNamesSchema = z
   .array(z.string().regex(/^[A-Za-z][A-Za-z0-9._-]*$/, 'must be a top-level package.json field name'))
   .superRefine(uniqueStrings);
@@ -230,6 +236,7 @@ const npmManifestSchema = z
     inventory: inventorySchema.optional(),
     dependencies: dependencyPolicySchema.optional(),
     foundry: foundryPolicySchema.optional(),
+    tarballs: tarballsPolicySchema.optional(),
     packageJson: packageJsonPolicySchema,
     packages: z.record(
       z.string().regex(PACKAGE_KEY, 'must be a canonical sdk-relative package key'),

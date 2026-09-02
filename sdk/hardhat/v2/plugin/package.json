@@ -18,7 +18,7 @@
     "fmt": "npm run prettier:write",
     "fmt:check": "npm run prettier:check",
     "lint": "eslint && tsc -b ./tsconfig.json --noEmit",
-    "pack:tarball": "\"$(npm prefix)/scripts/pack-tarball.ts\"",
+    "pack:tarball": "node ../../../fhevm-npm/fhevm-npm.ts pack-tarball ./hardhat/v2/plugin",
     "prettier:check": "prettier --check \"**/*.{js,json,md,mjs,ts,yml}\"",
     "prettier:write": "prettier --write \"**/*.{js,json,md,mjs,ts,yml}\"",
     "test": "node --test test/*.test.ts",

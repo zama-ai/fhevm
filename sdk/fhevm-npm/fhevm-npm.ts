@@ -13,6 +13,7 @@ import { checkNames } from './commands/check-names.ts';
 import { checkOwnership } from './commands/check-ownership.ts';
 import { checkPackageJsonPaths } from './commands/check-package-json-paths.ts';
 import { checkPackageJson } from './commands/check-package-json.ts';
+import { checkCommitScope } from './commands/check-commit-scope.ts';
 import { checkScripts } from './commands/check-scripts.ts';
 import { checkTscMode } from './commands/check-tsc-mode.ts';
 import { checkTsconfigPaths } from './commands/check-tsconfig-paths.ts';
@@ -22,6 +23,7 @@ import { generateExportsCommand } from './commands/generate-exports.ts';
 import { cleanForgeDependencies } from './commands/clean-forge-dependencies.ts';
 import { installForgeDependencies } from './commands/install-forge-dependencies.ts';
 import { listPackages } from './commands/list-packages.ts';
+import { packTarballs } from './commands/pack-tarball.ts';
 import { syncVendoredCommand } from './commands/sync-vendored.ts';
 import { testConsumerRegeneratePackageLock } from './commands/test-consumer-regenerate-package-lock.ts';
 import { testConsumer } from './commands/test-consumer.ts';
@@ -41,6 +43,7 @@ const commands: Readonly<Record<CommandName, CheckCommand>> = {
   'check-manifest-coverage': checkManifestCoverage,
   'check-tsconfig-paths': checkTsconfigPaths,
   'check-tsc-mode': checkTscMode,
+  'check-commit-scope': checkCommitScope,
 };
 
 async function main(): Promise<void> {
@@ -65,6 +68,16 @@ async function main(): Promise<void> {
   }
   if (options.command === 'list-packages') {
     listPackages(manifest);
+    return;
+  }
+  if (options.command === 'pack-tarball') {
+    packTarballs({
+      workspaceRoot: options.workspaceRoot,
+      manifest,
+      packageSelector: options.packageSelector,
+      outDir: options.outDir,
+      clean: options.clean,
+    });
     return;
   }
   if (options.command === 'check-mirror') {

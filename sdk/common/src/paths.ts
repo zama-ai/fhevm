@@ -37,18 +37,6 @@ export function findWorkspaceRootAbsPath(startDir: string): string {
   }
 }
 
-/**
- * The shared `tarballs` directory at the workspace root, where every member collects its tarball.
- * Members only add to it; only the workspace root clears it.
- *
- * @param startDir Absolute path inside the workspace — the calling package's own root.
- * @example
- * workspaceTarballsDirAbsPath('/repo/sdk/js-sdk'); // '/repo/sdk/tarballs'
- */
-export function workspaceTarballsDirAbsPath(startDir: string): string {
-  return join(findWorkspaceRootAbsPath(startDir), 'tarballs');
-}
-
 /** The fhevm repo root according to git, or undefined outside a checkout. */
 function _gitRepoRoot(): string | undefined {
   try {

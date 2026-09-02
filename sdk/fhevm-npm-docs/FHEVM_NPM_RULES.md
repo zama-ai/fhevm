@@ -44,7 +44,7 @@ before arguing about a spec.
 - **Non-package** — an unnamed `package.json` carrying directory-local metadata inside another package or project,
   without defining an independently installable package. It has no `name`, version, dependencies or scripts and is
   never a workspace member. It may set fields such as `type`, `main`, `module`, `types`, `typings`, `sideEffects` or
-  `private`. Examples: `scripts/` and `host-contracts-cleartext/v13/pkg/ts/`.
+  `private`. Example: `host-contracts-cleartext/v13/pkg/ts/`.
 
 - **Workspace root** — `sdk/` itself: the member list plus the toolchain every member shares. `private: true`, never
   published, and not a member of anything.
@@ -90,8 +90,9 @@ workspace, changing resolution for every package under it before anyone reviews 
 and tests; `pkg/` holds only what ships. Packing the dev-owner root publishes the development package by mistake.
 
 ```jsonc
-// ✅ The shared script defaults to <member>/pkg, so the published package is what gets packed.
-"pack:tarball": "\"$(npm prefix)/scripts/pack-tarball.ts\""
+// ✅ Delegates to the manifest-aware CLI: the payload comes from this owner's publishedRelPath, and
+//    the tarball lands in npm-manifest.json#tarballs.relPath.
+"pack:tarball": "node ../../fhevm-npm/fhevm-npm.ts pack-tarball ./host-contracts-cleartext/v12"
 
 // ❌ Packs the member root, so foundry.toml, tests and internal/ all ship.
 "pack:tarball": "npm pack"

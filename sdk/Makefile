@@ -5,8 +5,8 @@
 # where it applies) — and `build`, the everyday sweep: fmt:check → lint → compile. Everything below a
 # verb — phases, leaf generators, per-tool scripts — is the package's private business; each package owns the order WITHIN its own verbs, and re-deriving that here would
 # duplicate knowledge with a correct home. The named exceptions are workspace-level, not package-level:
-# the fhevm-npm and scripts/ formatting (non-members `-w` cannot reach) and the `test:anvil` operator
-# target (a manual entry point, not lifecycle orchestration).
+# the fhevm-npm formatting (a non-member `-w` cannot reach) and the `test:anvil` operator target
+# (a manual entry point, not lifecycle orchestration).
 #
 # What Make adds is the edge npm cannot express: `hardhat/v2/e2e`'s LINT consumes the plugin's BUILD
 # output, and `npm run <script> --workspaces` can only sequence whole packages for one script name. That
@@ -77,8 +77,9 @@ W_HH_V2_TEMPLATE_PKG := fhevm-hardhat-template-v2
 
 run = npm run --silent $(2) -w $(1)
 
-# `fhevm-npm` and `scripts` are deliberately NOT workspace members, so `-w` cannot reach them. They still
-# need formatting: both were outside `fmt` entirely, which is how unformatted files reached ci.
+# `fhevm-npm` is deliberately NOT a workspace member, so `-w` cannot reach it. It still needs
+# formatting: it was once outside `fmt` entirely, which is how unformatted files reached ci.
+# (`scripts/` holds only .sh by policy — nothing there for prettier.)
 run-prefix = npm run --silent $(2) --prefix ./$(1)
 
 run-fhevm-npm = $(FHEVM_NPM_CLI) $(FHEVM_NPM_ARGS) $(1)
@@ -133,8 +134,8 @@ generate: ## Write every generated file (then commit the result)
 	$(call run,$(W_V13),generate)
 
 # Each package's `fmt` owns what formatting means there (prettier, plus forge fmt where it has
-# Solidity). The root package.json's own `fmt` covers scripts/, and fhevm-npm is a non-member `-w`
-# cannot reach — those two are the named workspace-level exceptions.
+# Solidity). fhevm-npm is a non-member `-w` cannot reach — the one named workspace-level exception.
+# scripts/ holds only .sh by policy, so nothing there is prettier's business.
 fmt: ## Rewrite formatting everywhere
 	$(call run,$(W_COMMON),fmt)
 	$(call run,$(W_VENDORED),fmt)
@@ -143,7 +144,6 @@ fmt: ## Rewrite formatting everywhere
 	$(call run,$(W_HH_V2_PLUGIN),fmt)
 	$(call run,$(W_HH_V2_TEMPLATE),fmt)
 	$(call run,$(W_HH_V2_E2E),fmt)
-	npm run --silent fmt
 	$(call run-prefix,$(DIR_FHEVM_NPM),prettier:write)
 
 fmt-check: ## Verify formatting everywhere
@@ -154,7 +154,6 @@ fmt-check: ## Verify formatting everywhere
 	$(call run,$(W_HH_V2_PLUGIN),fmt:check)
 	$(call run,$(W_HH_V2_TEMPLATE),fmt:check)
 	$(call run,$(W_HH_V2_E2E),fmt:check)
-	npm run --silent fmt:check
 	$(call run-prefix,$(DIR_FHEVM_NPM),prettier:check)
 
 # fhevm-npm is deliberately NOT a workspace member, so the root `npm install` never reaches it — and

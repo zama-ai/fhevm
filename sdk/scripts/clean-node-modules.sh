@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 #
+# ⚠️  WARNING: keep this a dependency-free bash script — do NOT port it to fhevm-npm. It deletes
+# fhevm-npm's own node_modules and is the recovery tool for a broken tree (FHEVM_NPM_RULES 6.2.x),
+# so it must run when node tooling cannot. `make pristine` calls it (--dry-run, then --force).
+#
 # Deletes every node_modules under the sdk workspace, so the next `npm install` rebuilds the tree
-# from scratch. 
+# from scratch.
 #
 # Usage: ./scripts/clean-node-modules.sh [--dry-run] [--force] [--include-package-lock] [--help]
 #

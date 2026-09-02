@@ -17,6 +17,8 @@ node ./fhevm-npm.ts check-foundry
 node ./fhevm-npm.ts check-manifest-coverage
 node ./fhevm-npm.ts check-tsconfig-paths
 node ./fhevm-npm.ts check-tsc-mode
+node ./fhevm-npm.ts check-commit-scope
+node ./fhevm-npm.ts pack-tarball ./hardhat/v2/plugin
 node ./fhevm-npm.ts test-consumer --list
 node ./fhevm-npm.ts test-consumer ./host-contracts-cleartext/v12
 node ./fhevm-npm.ts test-consumer ./host-contracts-cleartext/v12 --build-linked-dependencies --run

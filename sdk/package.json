@@ -20,8 +20,6 @@
   "scripts": {
     "build": "make build",
     "compile": "make compile",
-    "fmt": "prettier --write \"scripts/**/*.{js,mjs,ts}\"",
-    "fmt:check": "prettier --check \"scripts/**/*.{js,mjs,ts}\"",
     "test:ci": "make ci"
   },
   "devDependencies": {

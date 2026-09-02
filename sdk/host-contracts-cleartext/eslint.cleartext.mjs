@@ -56,15 +56,8 @@ export default function eslintCleartext(packageDir, ignores = []) {
       'cache/**',
       'out/**',
       'tarball/**',
-      // The e2e test imports a second package (@fhevm/host-contracts-cleartext-v12) that only exists
-      // after `test:upgrade-e2e` installs it. It's excluded from every tsconfig so the fixture-less
-      // `tsc` runs don't fail, so the eslint project service can't type it — skip it here. Its own
-      // typecheck runs against test/ts/tsconfig.e2e.json inside `test:upgrade-e2e`.
-      //
-      // Inert in the oldest generation, which has no upgrade e2e to ignore. Kept shared
-      // anyway, per rule 22: ignoring a file that does not exist costs nothing, and the entry is
-      // already correct the day that generation stops being the floor.
-      'test/ts/upgrade-e2e.test.ts',
+      // vitest's cache; only .json today, but a cache is never lint input.
+      '**/.vitest-cache/**',
       ...ignores,
     ],
   });

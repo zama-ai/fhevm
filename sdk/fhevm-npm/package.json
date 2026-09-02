@@ -22,6 +22,7 @@
     "check:package-json-paths": "node ./fhevm-npm.ts check-package-json-paths",
     "check:scripts": "node ./fhevm-npm.ts check-scripts",
     "check:tsc-mode": "node ./fhevm-npm.ts check-tsc-mode",
+    "check:commit-scope": "node ./fhevm-npm.ts check-commit-scope",
     "check:tsconfig-paths": "node ./fhevm-npm.ts check-tsconfig-paths",
     "check:vendored-origin": "node ./fhevm-npm.ts check-vendored-origin",
     "check:workspaces": "node ./fhevm-npm.ts check-workspaces",

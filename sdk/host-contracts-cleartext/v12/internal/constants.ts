@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url';
  */
 export const PACKAGE_ROOT_ABS_PATH = join(dirname(fileURLToPath(import.meta.url)), '..');
 
-/** The sdk workspace root. Tarballs go to tarballDirAbsPath() in @fhevm/sdk-common-dev, not here. */
+/** The sdk workspace root. Tarballs go to npm-manifest.json#tarballs.relPath, via `fhevm-npm pack-tarball`. */
 export const WORKSPACE_ROOT_ABS_PATH = findWorkspaceRootAbsPath(PACKAGE_ROOT_ABS_PATH);
 
 /** The pkg/ directory — the published payload, and the only part of the tree that ships. */
