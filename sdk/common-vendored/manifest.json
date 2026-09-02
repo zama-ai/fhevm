@@ -47,6 +47,18 @@
           "to": "} from '@fhevm/host-contracts-cleartext/ts';"
         }
       ]
+    },
+    {
+      "to": "hardhat/v3/plugin/pkg/src/internal/vendored",
+      "note": "The hardhat 3 payload takes the viem adapter (hardhat 3 recommends viem; its clients wrap the in-process provider), with the same type-import rewrite as the v2 sibling.",
+      "files": ["viemEthereumLib.ts"],
+      "rewrites": [
+        {
+          "file": "viemEthereumLib.ts",
+          "from": "} from './ethereumLibTypes.ts';",
+          "to": "} from '@fhevm/host-contracts-cleartext/ts';"
+        }
+      ]
     }
   ]
 }

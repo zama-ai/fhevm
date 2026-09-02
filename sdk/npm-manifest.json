@@ -328,7 +328,15 @@
       "consumerTests": {
         "esm": "./hardhat/v3/plugin/test-consumer/esm"
       },
-      "note": "Same npm name as the v2 payload ON PURPOSE: one plugin, a new major line per hardhat generation. Legal because published-name uniqueness is scoped per installation root, and the two payloads never share one."
+      "note": "Same npm name as the v2 payload ON PURPOSE: one plugin, a new major line per hardhat generation. Legal because published-name uniqueness is scoped per installation root, and the two payloads never share one.",
+      "vendored": [
+        {
+          "relPath": "./src/internal/vendored",
+          "files": ["viemEthereumLib.ts"],
+          "source": "./sdk/common-vendored/src",
+          "reason": "A published package cannot depend on the private @fhevm/sdk-vendored-dev; the copy's sibling type import is rewritten to @fhevm/host-contracts-cleartext."
+        }
+      ]
     },
     "./hardhat/v3/e2e": {
       "kind": "internal-consumer",

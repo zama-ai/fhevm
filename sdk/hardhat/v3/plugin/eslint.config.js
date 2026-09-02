@@ -9,6 +9,7 @@ export default [
     returnTypeFiles: ['pkg/src/**/*.ts'],
     // Published, but Node-only: a Hardhat plugin never runs in a browser.
     browserSafeFiles: [],
-    ignores: ['pkg/_esm/**'],
+    // `vendored/` stays byte-identical to common-vendored, which an autofix would break.
+    ignores: ['pkg/_esm/**', 'pkg/src/internal/vendored/**'],
   }),
 ];
