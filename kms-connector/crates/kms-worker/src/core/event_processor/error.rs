@@ -9,7 +9,7 @@ use user_decryption_signature::Erc1271Error;
 pub struct ProcessingError {
     pub kind: ProcessingErrorKind,
     /// Caller-facing error code, stored in the error response row for HTTP-sourced decryption.
-    /// Unused for non-decryption events and gateway-sourced decryption.
+    /// Unused for non-decryption events and onchain-sourced decryption.
     pub code: ErrorCode,
     pub source: anyhow::Error,
 }
