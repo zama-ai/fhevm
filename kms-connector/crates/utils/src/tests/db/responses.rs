@@ -292,3 +292,61 @@ pub async fn insert_rand_epoch_result_response(
         crs_list,
     })
 }
+
+pub async fn insert_test_public_decrypt_error_response(
+    db: &Pool<Postgres>,
+    id: Option<U256>,
+    error_code: &str,
+    error_details: &str,
+) -> anyhow::Result<U256> {
+    let decryption_id = id.unwrap_or_else(rand_u256);
+    sqlx::query!(
+        "INSERT INTO public_decryption_responses(
+            decryption_id, error_code, error_details, extra_data, created_at, otlp_context,
+            status, source
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        ON CONFLICT (decryption_id) DO UPDATE SET
+            error_code = EXCLUDED.error_code, error_details = EXCLUDED.error_details",
+        decryption_id.as_le_slice(),
+        error_code,
+        error_details,
+        vec![],
+        Utc::now(),
+        bc2wrap::serialize(&PropagationContext::empty())?,
+        OperationStatus::Completed as OperationStatus,
+        RequestSource::Http as RequestSource,
+    )
+    .execute(db)
+    .await?;
+    Ok(decryption_id)
+}
+
+pub async fn insert_test_user_decrypt_error_response(
+    db: &Pool<Postgres>,
+    id: Option<U256>,
+    error_code: &str,
+    error_details: &str,
+) -> anyhow::Result<U256> {
+    let decryption_id = id.unwrap_or_else(rand_u256);
+    sqlx::query!(
+        "INSERT INTO user_decryption_responses(
+            decryption_id, error_code, error_details, extra_data, created_at, otlp_context,
+            status, source
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        ON CONFLICT (decryption_id) DO UPDATE SET
+            error_code = EXCLUDED.error_code, error_details = EXCLUDED.error_details",
+        decryption_id.as_le_slice(),
+        error_code,
+        error_details,
+        vec![],
+        Utc::now(),
+        bc2wrap::serialize(&PropagationContext::empty())?,
+        OperationStatus::Completed as OperationStatus,
+        RequestSource::Http as RequestSource,
+    )
+    .execute(db)
+    .await?;
+    Ok(decryption_id)
+}

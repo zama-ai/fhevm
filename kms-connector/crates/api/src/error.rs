@@ -1,11 +1,12 @@
 use alloy::primitives::B256;
 use serde::{Deserialize, Serialize};
+use std::fmt::Display;
 #[cfg(test)]
 use strum::IntoEnumIterator;
-use strum::IntoStaticStr;
+use strum::{EnumString, IntoStaticStr};
 
 /// The `v1` error codes.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, IntoStaticStr)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, IntoStaticStr, EnumString)]
 #[cfg_attr(test, derive(strum::EnumIter))]
 #[serde(rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case")]
@@ -16,7 +17,7 @@ pub enum ErrorCode {
     SenderAuthenticationFailed,
     /// Per-sender rate limit exceeded (connector proxy).
     RateLimited,
-    /// Endpoint replica at its in-flight cap; comes with `Retry-After` (connector endpoint).
+    /// Endpoint replica at its in-flight cap (connector endpoint).
     Overloaded,
     /// ACL denied the requested handles (kms_worker row).
     AclDenied,
@@ -35,6 +36,8 @@ pub enum ErrorCode {
     Unprocessable,
     /// Transient KMS Core / RPC failure (kms_worker row).
     UpstreamTransient,
+    /// The endpoint's request timed out before the response was available (connector endpoint).
+    Timeout,
     /// Deserialization fallback for codes this crate version does not know.
     #[serde(other)]
     Unknown,
@@ -54,6 +57,7 @@ impl ErrorCode {
             Self::RateLimited => 429,
             Self::CoproConsensusFailed | Self::UpstreamTransient => 502,
             Self::Overloaded => 503,
+            Self::Timeout => 504,
             Self::Unknown => 500,
         }
     }
@@ -69,8 +73,7 @@ impl ErrorCode {
             Self::Malformed
             | Self::SenderAuthenticationFailed
             | Self::KmsContextDestroyed
-            | Self::Unprocessable
-            | Self::Unknown => false,
+            | Self::Unprocessable => false,
             Self::RateLimited
             | Self::Overloaded
             | Self::AclDenied
@@ -78,7 +81,9 @@ impl ErrorCode {
             | Self::CiphertextNotFound
             | Self::CoproConsensusFailed
             | Self::KmsContextInvalid
-            | Self::UpstreamTransient => true,
+            | Self::UpstreamTransient
+            | Self::Timeout
+            | Self::Unknown => true,
         }
     }
 }
@@ -106,6 +111,26 @@ impl ErrorResponse {
     }
 }
 
+impl Display for ErrorResponse {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {}", self.code.as_str(), self.message)
+    }
+}
+
+#[cfg(feature = "endpoint")]
+use actix_web::{HttpResponse, http::StatusCode};
+
+#[cfg(feature = "endpoint")]
+impl actix_web::ResponseError for ErrorResponse {
+    fn status_code(&self) -> StatusCode {
+        StatusCode::from_u16(self.code.http_status()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR)
+    }
+
+    fn error_response(&self) -> HttpResponse {
+        HttpResponse::build(self.status_code()).json(self)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -116,6 +141,14 @@ mod tests {
             let serialized = serde_json::to_string(&code).unwrap();
             assert_eq!(serialized, format!("\"{}\"", code.as_str()));
         }
+    }
+
+    #[test]
+    fn from_str_round_trips_wire_name() {
+        for code in ErrorCode::iter() {
+            assert_eq!(code.as_str().parse::<ErrorCode>().unwrap(), code);
+        }
+        assert!("not_a_code".parse::<ErrorCode>().is_err());
     }
 
     #[test]

@@ -1,0 +1,46 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT decrypted_result, signature, extra_data, error_code, error_details\n        FROM public_decryption_responses WHERE decryption_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "decrypted_result",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "signature",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 2,
+        "name": "extra_data",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 3,
+        "name": "error_code",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "error_details",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "b66f3d5ae9d7f5a276db6754746c69f60f17af9f272274ebdb5cda99c1eda9e8"
+}

@@ -48,6 +48,7 @@ pub trait DeserializeConfig {
                     .separator("__")
                     .list_separator(",")
                     .with_list_parse_key("kms_core_endpoints")
+                    .with_list_parse_key("supported_chain_ids")
                     .try_parsing(true),
             );
 

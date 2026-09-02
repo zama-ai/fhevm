@@ -1,0 +1,57 @@
+# Example configuration for KMS Connector's `Endpoint`
+
+# Service name for tracing (optional, defaults to "kms-connector-endpoint")
+# ENV: KMS_CONNECTOR_SERVICE_NAME
+# service_name = "kms-connector-endpoint"
+
+# URL of the KMS Connector internal database (required)
+# Format: see https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING-URIS
+# ENV: KMS_CONNECTOR_DATABASE_URL
+database_url = "postgres://postgres:postgres@localhost/kms-connector"
+
+# Size of the database connection pool (optional, defaults to 16)
+# ENV: KMS_CONNECTOR_DATABASE_POOL_SIZE
+# database_pool_size = 16
+
+# Public bind address of the `v1` HTTP decryption interface (optional, defaults to "0.0.0.0:8080")
+# ENV: KMS_CONNECTOR_HTTP_ENDPOINT
+# http_endpoint = "0.0.0.0:8080"
+
+# Maximum number of decryption requests held in-flight by this replica. Beyond this limit, requests
+# are rejected with `503 overloaded` (optional, defaults to 1000)
+# ENV: KMS_CONNECTOR_MAX_IN_FLIGHT_DECRYPTIONS
+# max_in_flight_decryptions = 1000
+
+# How long a decryption request waits for its response before answering `504 timeout` (optional, defaults to "30s")
+# ENV: KMS_CONNECTOR_DECRYPTION_TIMEOUT (format: https://docs.rs/humantime/latest/humantime/)
+# decryption_timeout = "30s"
+
+# Maximum size of a JSON request body, in bytes (optional, defaults to 1 MiB)
+# ENV: KMS_CONNECTOR_MAX_BODY_BYTES
+# max_body_bytes = 1048576
+
+# Maximum total bit size of the handles of a decryption request (optional, defaults to 2048).
+# Mirrors `MAX_DECRYPTION_REQUEST_BITS` of the `Decryption` gateway contract.
+# ENV: KMS_CONNECTOR_MAX_DECRYPTION_REQUEST_BITS
+# max_decryption_request_bits = 2048
+
+# Maximum number of `allowedContracts` of a user decryption request (optional, defaults to 10).
+# Mirrors `MAX_USER_DECRYPT_CONTRACT_ADDRESSES` of the `Decryption` gateway contract.
+# ENV: KMS_CONNECTOR_MAX_ALLOWED_CONTRACTS
+# max_allowed_contracts = 10
+
+# Host chain ids accepted in ciphertext handles (required)
+# ENV: KMS_CONNECTOR_SUPPORTED_CHAIN_IDS (comma-separated list, e.g. "11155111,1")
+supported_chain_ids = [11155111]
+
+# The endpoint used to monitor the connector components (optional, defaults to "0.0.0.0:9100")
+# ENV: KMS_CONNECTOR_MONITORING_ENDPOINT
+# monitoring_endpoint = "0.0.0.0:9100"
+
+# The timeout to perform each external service connection healthcheck (optional, defaults to 3s)
+# ENV: KMS_CONNECTOR_HEALTHCHECK_TIMEOUT (format: https://docs.rs/humantime/latest/humantime/)
+# healthcheck_timeout = "3s"
+
+# The maximum number of tasks to process requests concurrently (optional, defaults to 1000)
+# ENV: KMS_CONNECTOR_TASK_LIMIT
+# task_limit = 1000
