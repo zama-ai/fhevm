@@ -15,7 +15,7 @@
     "compile:esm": "tsc --project ./tsconfig.build.esm.json --outDir ./pkg/_esm --declaration --declarationMap",
     "fmt": "npm run prettier:write",
     "fmt:check": "npm run prettier:check",
-    "lint": "eslint && tsc -p ./tsconfig.json --noEmit",
+    "lint": "npm run compile && eslint && tsc -p ./tsconfig.json --noEmit",
     "pack:tarball": "node ../../../fhevm-npm/fhevm-npm.ts pack-tarball ./hardhat/v3/plugin",
     "prettier:check": "prettier --check \"**/*.{js,json,md,mjs,ts,yml}\"",
     "prettier:write": "prettier --write \"**/*.{js,json,md,mjs,ts,yml}\"",
@@ -25,6 +25,7 @@
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",
     "@eslint/js": "^10.0.1",
+    "@fhevm/sdk": "0.13.3",
     "@types/node": "^22.0.0",
     "eslint": "^10.0.2",
     "hardhat": "^3.0.0",

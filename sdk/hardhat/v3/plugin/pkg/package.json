@@ -25,6 +25,7 @@
     "./package.json": "./package.json"
   },
   "peerDependencies": {
+    "@fhevm/sdk": "^0.13.3",
     "hardhat": "^3.0.0"
   }
 }
