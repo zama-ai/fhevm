@@ -1,6 +1,6 @@
 # Porting the FHEVM hardhat plugin from hardhat v2 to hardhat v3
 
-Version: **1.11** (2026-09-03). Bump the minor for a content change to the plan, the major for a
+Version: **1.12** (2026-09-03). Bump the minor for a content change to the plan, the major for a
 change of charter or stage order; record each bump below.
 
 - 1.0 — initial plan, from the hardhat 3 docs.
@@ -17,8 +17,9 @@ change of charter or stage order; record each bump below.
 - 1.9 — B1b2 recorded as landed: the stack deploys once per development chain inside `newConnection`.
 - 1.10 — B1c recorded as landed (verification, not setup); ledger: B1c smoke test → D0, `TestFHENotInitialized` → D5b.
 - 1.11 — B2 recorded as landed (anvil operator scripts; no plugin change needed); ledger B2 row done.
+- 1.12 — B3 recorded as landed; Stage B complete; ledger B3 row done.
 
-Status: **in progress — Stage A complete (A2–A7) + E2E-0a + B1 complete (B1a–B1c) + B2. Next: B3.** The landing zone exists: the
+Status: **in progress — Stages A and B complete, E2E-0a landed. Next: C1a.** The landing zone exists: the
 `hardhat/v3` cluster (own installation root, hardhat 3.15 pinned), the plugin registered via
 `definePlugin` with its per-connection `fhevm` object and the pre-serve chain preparation proven,
 and the `hardhat/v3/e2e` member with the first counter test.
@@ -501,10 +502,13 @@ first review, per the cap rule.
   adds only the test's own block — the http skip-if-present path, verification included.
   Open: the `test-hh-v3-e2e-anvil` make target (v2 has one, excluded from `ci`) awaits approval.
   Commit: `feat(hh-v3-e2e): run the suite against an external anvil behind an operator script`
-- **B3. `hardhat node` skip-if-present** (builds on A4 + B1b2; no new deploy code). Test: spawn
-  `hardhat node` as a child process with the plugin in that process's config, connect
-  `--network localhost` from a second HRE, assert the ZamaConfig addresses hold code and the
-  second process ran ZERO deploy transactions; tear down.
+- **B3. `hardhat node` skip-if-present — LANDED** (no plugin source change: the same http reuse
+  path anvil took at B2). Plugin test `node-process.test.ts` spawns hardhat's CLI (`node --port 0`,
+  a fixture config carrying the plugin, CLI path via `hardhat/package.json` since the exports map
+  hides `dist/src/cli.js`), reads the announced URL, asserts ACL code at that moment, then connects
+  a second HRE over `http` and asserts deployer nonce and block number unchanged. e2e: `test:node` +
+  `test/test-hardhat-node.sh` ported from v2, passing end to end. All three local targets now reach
+  the stack through one mechanism.
   Commit: `feat(hh-v3-plugin): reuse the cleartext stack a hardhat node already deployed`
 
 ### Stage C — centralized generated constants (goal 7)
@@ -615,7 +619,7 @@ allows.
 | A5                     | DONE — the `isCleartext` guard is live in `internal/FHECounterPublicDecrypt.ts`; `utils.ts` (`isDevelopment`) ports with its first user                                                                                                                                          |
 | B1c                    | MOVED: the ZamaConfig-trio smoke test lands with D0 (nothing public exposes the stack addresses before `connection.fhevm` grows them); `TestFHENotInitialized.test.ts` lands with D5b (`assertCoprocessorInitialized`)                                        |
 | B2                     | DONE — `test:anvil` + `test:anvil:simple` scripts and `test/test-anvil*.sh` (run the counter file)                                                                                                                                                       |
-| B3                     | `test:node` script + `test/test-hardhat-node.sh`                                                                                                                                                                                                  |
+| B3                     | DONE — `test:node` script + `test/test-hardhat-node.sh`                                                                                                                                                                                                  |
 | D1                     | `internal/delegatedUserDecryption.ts` (encrypt half; the delegated decrypt asserts join at D3c), `finance/ConfidentialVestingWallet*.test.ts` (`createEncryptedInput` only)                                                                         |
 | D2                     | `internal/FHECounterPublicDecrypt.ts` — the rest (`publicDecrypt`, `publicDecryptEuint`), `internal/Rand.ts` + fixture, `doc-examples/HeadsOrTails.ts`, `doc-examples/HighestDieRoll.ts`, `operators-public-decrypt/fhevmOperations54.ts`, `operators-manual/manualV13.ts` |
 | D3b                    | `internal/FHECounterUserDecrypt.ts`, `internal/AplusB.ts`, `doc-examples/{DecryptSingleValue,DecryptMultipleValues,EncryptSingleValue,EncryptMultipleValues}.ts`, `confidentialERC20/*`, `finance/*.fixture.ts`, `governance/*`, `utils/EncryptedErrors.*`, `operators-manual/manualWithAllowSender.ts` |
