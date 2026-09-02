@@ -1,6 +1,6 @@
 # Porting the FHEVM hardhat plugin from hardhat v2 to hardhat v3
 
-Version: **1.10** (2026-09-03). Bump the minor for a content change to the plan, the major for a
+Version: **1.11** (2026-09-03). Bump the minor for a content change to the plan, the major for a
 change of charter or stage order; record each bump below.
 
 - 1.0 — initial plan, from the hardhat 3 docs.
@@ -16,8 +16,9 @@ change of charter or stage order; record each bump below.
   genesis-injection measured and declined; B1a repository re-based on viem.
 - 1.9 — B1b2 recorded as landed: the stack deploys once per development chain inside `newConnection`.
 - 1.10 — B1c recorded as landed (verification, not setup); ledger: B1c smoke test → D0, `TestFHENotInitialized` → D5b.
+- 1.11 — B2 recorded as landed (anvil operator scripts; no plugin change needed); ledger B2 row done.
 
-Status: **in progress — Stage A complete (A2–A7) + E2E-0a + B1 complete (B1a–B1c). Next: B2.** The landing zone exists: the
+Status: **in progress — Stage A complete (A2–A7) + E2E-0a + B1 complete (B1a–B1c) + B2. Next: B3.** The landing zone exists: the
 `hardhat/v3` cluster (own installation root, hardhat 3.15 pinned), the plugin registered via
 `definePlugin` with its per-connection `fhevm` object and the pre-serve chain preparation proven,
 and the `hardhat/v3/e2e` member with the first counter test.
@@ -492,9 +493,14 @@ first review, per the cap rule.
     with thresholds inside, HCU caps positive (via the repository ABIs); verify passes on a prepared
     chain, refused by name on a bare one. 47 lines of code where 150 were estimated.
     Commit: `feat(hh-v3-plugin): run post-deploy signer and HCU setup on the fresh stack`
-- **B2. Anvil deploy.** Same flow against an external anvil.
-  Test: behind a `test:anvil` operator script, exactly like v2's.
-  Commit: `feat(hh-v3-plugin): pre-deploy the cleartext stack against external anvil`
+- **B2. Anvil deploy — LANDED, e2e only.** No plugin change: A5 classes anvil as `localhost`, the
+  deployer is funded through `hardhat_setBalance` (anvil aliases it), the viem wallet signs locally.
+  `hardhat/v3/e2e` gains `test:anvil`, `test:anvil:simple` and the two operator scripts ported from
+  v2 (plain bash). Proven on anvil 1.5.1: first `--network anvil` run takes the ACL from no code to
+  the proxy and the deployer from nonce 0 to 26 (block 27); a second run leaves the nonce alone and
+  adds only the test's own block — the http skip-if-present path, verification included.
+  Open: the `test-hh-v3-e2e-anvil` make target (v2 has one, excluded from `ci`) awaits approval.
+  Commit: `feat(hh-v3-e2e): run the suite against an external anvil behind an operator script`
 - **B3. `hardhat node` skip-if-present** (builds on A4 + B1b2; no new deploy code). Test: spawn
   `hardhat node` as a child process with the plugin in that process's config, connect
   `--network localhost` from a second HRE, assert the ZamaConfig addresses hold code and the
@@ -608,7 +614,7 @@ allows.
 | E2E-0a                 | `internal/FHECounterPublicDecrypt.ts` — the "uninitialized after deployment" case only (compile + deploy + `getCount`)                                                                                                                              |
 | A5                     | DONE — the `isCleartext` guard is live in `internal/FHECounterPublicDecrypt.ts`; `utils.ts` (`isDevelopment`) ports with its first user                                                                                                                                          |
 | B1c                    | MOVED: the ZamaConfig-trio smoke test lands with D0 (nothing public exposes the stack addresses before `connection.fhevm` grows them); `TestFHENotInitialized.test.ts` lands with D5b (`assertCoprocessorInitialized`)                                        |
-| B2                     | `test:anvil` + `test:anvil:simple` scripts and `test/test-anvil*.sh` (run the counter file)                                                                                                                                                       |
+| B2                     | DONE — `test:anvil` + `test:anvil:simple` scripts and `test/test-anvil*.sh` (run the counter file)                                                                                                                                                       |
 | B3                     | `test:node` script + `test/test-hardhat-node.sh`                                                                                                                                                                                                  |
 | D1                     | `internal/delegatedUserDecryption.ts` (encrypt half; the delegated decrypt asserts join at D3c), `finance/ConfidentialVestingWallet*.test.ts` (`createEncryptedInput` only)                                                                         |
 | D2                     | `internal/FHECounterPublicDecrypt.ts` — the rest (`publicDecrypt`, `publicDecryptEuint`), `internal/Rand.ts` + fixture, `doc-examples/HeadsOrTails.ts`, `doc-examples/HighestDieRoll.ts`, `operators-public-decrypt/fhevmOperations54.ts`, `operators-manual/manualV13.ts` |
