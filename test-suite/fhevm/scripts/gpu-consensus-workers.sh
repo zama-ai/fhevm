@@ -30,13 +30,14 @@ readonly WORK_ITEMS_BATCH_SIZE="${GPU_CONSENSUS_WORK_ITEMS_BATCH_SIZE:-100}"
 readonly FHE_THREADS="${GPU_CONSENSUS_FHE_THREADS:-8}"
 readonly TOKIO_THREADS="${GPU_CONSENSUS_TOKIO_THREADS:-4}"
 readonly BUILD_MANIFEST="${GPU_RUNTIME_DIR}/build-manifest.env"
+readonly NODE_CONFIG="${GPU_RUNTIME_DIR}/node-config.env"
 readonly DOCKER_WORKER_STATE_FILE="${GPU_RUNTIME_DIR}/docker-workers-to-restore"
 readonly INVOCATION_DIR="${GPU_RUNTIME_DIR}/invocations"
 GPU_TRANSITION_COMPLETE=false
 
 usage() {
   cat <<'EOF'
-Usage: test-suite/fhevm/scripts/gpu-consensus-workers.sh <build|start|stop|status|metadata|test-env|capture-activity>
+Usage: test-suite/fhevm/scripts/gpu-consensus-workers.sh <preflight|build|start|stop|restart-unit|status|conflicts|metadata|test-env|capture-activity>
 
 Builds and runs source-matched GPU-feature TFHE, ZK-proof, and SNS workers for
 the active three-coprocessor consensus topology. All operators use
@@ -49,6 +50,18 @@ Optional tuning variables:
   GPU_CONSENSUS_WORK_ITEMS_BATCH_SIZE=100
   GPU_CONSENSUS_FHE_THREADS=8
   GPU_CONSENSUS_TOKIO_THREADS=4
+
+Any of those may be overridden for a single operator by appending its index:
+GPU_CONSENSUS_<KNOB>_<index>, e.g. GPU_CONSENSUS_WORK_ITEMS_BATCH_SIZE_1=1.
+Two boolean knobs exist only in per-node form, because the worker reads them
+from the environment rather than the command line:
+  GPU_CONSENSUS_ADAPTIVE_BATCH_EXECUTION_<index>=true|false
+  GPU_CONSENSUS_BATCH_EXECUTION_<index>=true|false
+
+Deliberately heterogeneous scheduling is a determinism axis, not a
+misconfiguration: RFC 020 makes result bytes a function of on-chain data alone,
+so three operators scheduling differently must still agree byte for byte. With
+no per-node override set the fleet is homogeneous and the run is unchanged.
 
 `capture-activity [output-path] [seconds]` records nvidia-smi process mapping
 and pmon utilization for the selected GPU. Start it in the background before
@@ -107,12 +120,80 @@ require_three_operator_topology() {
   [[ "${indexes[*]}" == "0 1 2" ]] || die "expected active 3-of-3 environments (0 1 2), found: ${indexes[*]:-(none)}"
 }
 
+# systemd --user is addressed through this user's own runtime directory. A
+# detached or re-parented shell can inherit another user's values -- observed as
+# XDG_RUNTIME_DIR=/run/user/0 while running as uid 1000 -- and then every
+# systemctl call fails with "Failed to connect to bus: Permission denied", which
+# reads as a permissions problem with the units rather than a wrong address. It
+# cost a GPU leg 20 minutes of bring-up before failing at the swap. Derive the
+# address from the running uid instead of trusting the environment.
+ensure_user_bus() {
+  local uid runtime
+  uid="$(id -u)"
+  runtime="/run/user/${uid}"
+  [[ -d "$runtime" ]] ||
+    die "no user runtime directory at $runtime, so systemd --user is unavailable for uid $uid (enable lingering: loginctl enable-linger $(id -un))"
+  export XDG_RUNTIME_DIR="$runtime"
+  export DBUS_SESSION_BUS_ADDRESS="unix:path=${runtime}/bus"
+  systemctl --user is-system-running >/dev/null 2>&1 ||
+    die "systemd --user is not reachable at $DBUS_SESSION_BUS_ADDRESS (enable lingering: loginctl enable-linger $(id -un))"
+}
+
 gpu_uuid() {
-  nvidia-smi --id="$DEVICE" --query-gpu=uuid --format=csv,noheader | tr -d '[:space:]'
+  gpu_uuid_of "$DEVICE"
 }
 
 gpu_name() {
-  nvidia-smi --id="$DEVICE" --query-gpu=name --format=csv,noheader | sed 's/^ *//;s/ *$//'
+  gpu_name_of "$DEVICE"
+}
+
+gpu_uuid_of() {
+  nvidia-smi --id="$1" --query-gpu=uuid --format=csv,noheader | tr -d '[:space:]'
+}
+
+gpu_name_of() {
+  nvidia-smi --id="$1" --query-gpu=name --format=csv,noheader | sed 's/^ *//;s/ *$//'
+}
+
+# Every CUDA device the fleet actually uses, ascending.
+#
+# `$DEVICE` is only the fleet default: GPU_CONSENSUS_DEVICE_<index> can put an
+# operator on another card, and the resolved per-node values are recorded in the
+# node config. Reading them back is the only way to describe the fleet honestly.
+device_set() {
+  if [[ -f "$NODE_CONFIG" ]]; then
+    sed -n 's/^operator_[0-9]\+_device=//p' "$NODE_CONFIG" | tr -d "'\"" | sort -u -n
+  else
+    printf '%s\n' "$DEVICE"
+  fi
+}
+
+# The hardware class names the devices in use, not the default one.
+#
+# This used to be emitted as `gpu-homogeneous-<name>-<uuid>` unconditionally,
+# with the name and UUID read from `--id="$DEVICE"`. A fleet split across two
+# cards was therefore attested as homogeneous on the first card's UUID. The class
+# is RFC-023 evidence, so a confidently wrong label is worse than a missing one:
+# a reader cannot tell a genuinely single-GPU run from a split one, and the byte
+# oracle for "same hardware" would be applied to a fleet that had none.
+hardware_class() {
+  local -a devices=() names=() uuids=()
+  local d
+  while IFS= read -r d; do
+    [[ -n "$d" ]] || continue
+    devices+=("$d")
+    names+=("$(gpu_name_of "$d" | tr ' ' '_')")
+    uuids+=("$(gpu_uuid_of "$d")")
+  done < <(device_set)
+  [[ "${#devices[@]}" -gt 0 ]] || { printf 'gpu-unknown'; return 0; }
+  local name_set uuid_join
+  name_set="$(printf '%s\n' "${names[@]}" | sort -u | paste -sd'+' -)"
+  uuid_join="$(printf '%s\n' "${uuids[@]}" | paste -sd'+' -)"
+  if [[ "${#devices[@]}" -eq 1 ]]; then
+    printf 'gpu-homogeneous-%s-%s' "$name_set" "$uuid_join"
+  else
+    printf 'gpu-split-%s-%s' "$name_set" "$uuid_join"
+  fi
 }
 
 gpu_count() {
@@ -126,6 +207,57 @@ binary_sha() {
 require_positive_integer() {
   local name="$1" value="$2"
   [[ "$value" =~ ^[1-9][0-9]*$ ]] || die "$name must be a positive integer (got $value)"
+}
+
+# Resolve one knob for one operator: GPU_CONSENSUS_<KNOB>_<index> when set,
+# otherwise the fleet-wide value.  Printing nothing for an unset knob with no
+# fleet default is meaningful -- callers use it to mean "leave the binary's own
+# default alone" rather than forcing a value.
+node_tuning() {
+  local knob="$1" index="$2" fleet="$3" name
+  name="GPU_CONSENSUS_${knob}_${index}"
+  printf '%s' "${!name:-$fleet}"
+}
+
+# Validate per-node overrides wherever they appear, without depending on a live
+# topology, so `build` rejects a typo as readily as `start` does.
+validate_node_overrides() {
+  local name value knob
+  while IFS= read -r name; do
+    value="${!name}"
+    [[ -n "$value" ]] || continue
+    knob="${name#GPU_CONSENSUS_}"
+    knob="${knob%_*}"
+    case "$knob" in
+      STREAMS_PER_DEVICE | COMPONENTS_PER_BATCH | WORK_ITEMS_BATCH_SIZE | FHE_THREADS | TOKIO_THREADS)
+        require_positive_integer "$name" "$value"
+        ;;
+      DEVICE)
+        [[ "$value" =~ ^[0-9]+$ ]] || die "$name must be a GPU index (got $value)"
+        ;;
+      ADAPTIVE_BATCH_EXECUTION | BATCH_EXECUTION)
+        [[ "$value" == true || "$value" == false ]] ||
+          die "$name must be true or false (got $value)"
+        ;;
+      *) die "unknown per-node override $name" ;;
+    esac
+  done < <(compgen -v | grep -E '^GPU_CONSENSUS_[A-Z_]+_[0-9]+$' || true)
+
+  # `validate_tuning` refuses a fleet-wide batch/chain pair that inverts,
+  # because the adaptive work window then turns itself off at runtime and the
+  # run measures non-adaptive scheduling while claiming to measure the shipped
+  # configuration. Per-node overrides can invert that pair for a single
+  # operator, which is the same fault one node at a time -- and here it is
+  # worse, since a deliberately heterogeneous run is exactly where a silently
+  # non-adaptive node would be read as evidence about adaptive scheduling.
+  local index items chains
+  while IFS= read -r index; do
+    items="$(node_tuning WORK_ITEMS_BATCH_SIZE "$index" "$WORK_ITEMS_BATCH_SIZE")"
+    chains="$(node_tuning COMPONENTS_PER_BATCH "$index" "$COMPONENTS_PER_BATCH")"
+    if (( items < chains )); then
+      die "operator $index resolves work-items-batch-size ($items) below dependence-chains-per-batch ($chains); an inverted pair disables the adaptive work window at runtime"
+    fi
+  done < <(instance_indexes)
 }
 
 validate_tuning() {
@@ -143,14 +275,60 @@ validate_tuning() {
   fi
   require_positive_integer GPU_CONSENSUS_FHE_THREADS "$FHE_THREADS"
   require_positive_integer GPU_CONSENSUS_TOKIO_THREADS "$TOKIO_THREADS"
+  validate_node_overrides
 }
+
+# The one generated file that is tracked, and why it is excluded below.
+#
+# `E2ECoprocessorConfigLocal.sol` is rendered per stack from discovered
+# addresses, with a `block.chainid` branch per host chain.  It is nonetheless
+# tracked, because a dozen e2e test contracts import it by relative path and
+# `test-suite/e2e/Dockerfile` runs `npx hardhat compile` at image build time --
+# un-tracking it would break any image build that has not generated first.
+readonly GENERATED_TRACKED_SOURCE="test-suite/e2e/contracts/E2ECoprocessorConfigLocal.sol"
 
 require_clean_source() {
   # A manifest names a Git revision, not an arbitrary dirty tree.  Refuse to
   # label a binary as that revision if tracked or untracked source changes
   # could have participated in its build.  Runtime reports under `.fhevm` are
   # ignored by Git and therefore do not prevent a later GPU gate.
-  [[ -z "$(git -C "$REPO_ROOT" status --porcelain)" ]] || die "source tree is dirty; commit or remove changes before producing consensus evidence"
+  #
+  # One documented exception: the generated address config above.  It is
+  # test-contract configuration, not workspace source -- it cannot participate
+  # in building a coprocessor binary, so it cannot invalidate the revision this
+  # manifest names.  Without the exception every freshly booted stack needed a
+  # disposable commit before a GPU gate could run, which is a branch-surgery
+  # step on every consensus campaign.  The manifest records whether it applied,
+  # so the exception is visible in the evidence rather than assumed.
+  local dirty
+  dirty="$(git -C "$REPO_ROOT" status --porcelain -- ":(exclude)$GENERATED_TRACKED_SOURCE")"
+  [[ -n "$dirty" ]] || return 0
+  # Separate the two cases, because they need different actions and the message
+  # used to be identical for both. A leg once died 522s into a bring-up over two
+  # directories of stale Solidity artifacts from contracts deleted upstream, and
+  # the message read as "you have uncommitted work" (F-5).
+  local untracked modified
+  untracked="$(grep '^?? ' <<<"$dirty" | sed 's/^?? //')"
+  modified="$(grep -v '^?? ' <<<"$dirty")"
+  {
+    echo "source tree is dirty; a manifest names a revision, so consensus evidence cannot be built from it."
+    [[ -z "$modified" ]] || { echo "  tracked files modified -- commit or stash:"; sed 's/^/    /' <<<"$modified"; }
+    [[ -z "$untracked" ]] || {
+      echo "  untracked paths -- often build output that no longer belongs to any target:"
+      sed 's/^/    /' <<<"$untracked"
+      echo "  (if they are build droppings, delete them; if they are new source, commit or ignore them)"
+    }
+  } >&2
+  exit 1
+}
+
+# Did the generated address config differ from the committed revision?
+generated_source_state() {
+  if [[ -n "$(git -C "$REPO_ROOT" status --porcelain -- "$GENERATED_TRACKED_SOURCE")" ]]; then
+    printf 'regenerated-for-this-stack'
+  else
+    printf 'matches-revision'
+  fi
 }
 
 write_manifest() {
@@ -160,6 +338,7 @@ write_manifest() {
   mkdir -p "$GPU_RUNTIME_DIR"
   {
     printf 'software_revision=%q\n' "$revision"
+    printf 'e2e_address_config=%q\n' "$(generated_source_state)"
     printf 'gpu_feature=%q\n' gpu
     printf 'cuda_path=%q\n' "${CUDA_PATH:-/usr/local/cuda}"
     printf 'cuda_visible_devices=%q\n' "$DEVICE"
@@ -241,11 +420,13 @@ EOF
 }
 
 start_unit() {
-  local kind="$1" index="$2" env_file="$3" unit
+  local kind="$1" index="$2" env_file="$3" unit device streams
   unit="$(unit_name "$kind" "$index")"
+  device="$(node_tuning DEVICE "$index" "$DEVICE")"
+  streams="$(node_tuning STREAMS_PER_DEVICE "$index" "$STREAMS_PER_DEVICE")"
   systemctl --user stop "$unit" >/dev/null 2>&1 || true
 
-  local -a args
+  local -a args scheduling_env=()
   case "$kind" in
     tfhe)
       args=(
@@ -253,15 +434,25 @@ start_unit() {
         --database-url="$(grep '^DATABASE_URL=' "$env_file" | cut -d= -f2-)"
         --pg-pool-max-connections=10
         --worker-polling-interval-ms=1000
-        --work-items-batch-size="$WORK_ITEMS_BATCH_SIZE"
-        --dependence-chains-per-batch="$COMPONENTS_PER_BATCH"
+        --work-items-batch-size="$(node_tuning WORK_ITEMS_BATCH_SIZE "$index" "$WORK_ITEMS_BATCH_SIZE")"
+        --dependence-chains-per-batch="$(node_tuning COMPONENTS_PER_BATCH "$index" "$COMPONENTS_PER_BATCH")"
         --key-cache-size=32
-        --coprocessor-fhe-threads="$FHE_THREADS"
-        --gpu-streams-per-device="$STREAMS_PER_DEVICE"
+        --coprocessor-fhe-threads="$(node_tuning FHE_THREADS "$index" "$FHE_THREADS")"
+        --gpu-streams-per-device="$streams"
         --tokio-threads="$TOKIO_THREADS"
         --health-check-port=$((18080 + index * 10))
         --metrics-addr=0.0.0.0:$((19100 + index * 10))
       )
+      # `--dcid-adaptive-batch-execution` and `--dcid-batch-execution` are
+      # clap flags: passing one can only turn it ON, so an operator that must
+      # run with it OFF can only be configured through the environment.
+      local knob value
+      for knob in ADAPTIVE_BATCH_EXECUTION BATCH_EXECUTION; do
+        value="$(node_tuning "$knob" "$index" "")"
+        if [[ -n "$value" ]]; then
+          scheduling_env+=(--setenv="FHEVM_DCID_${knob}=$value")
+        fi
+      done
       ;;
     zkproof)
       args=(
@@ -303,7 +494,8 @@ start_unit() {
   systemd-run --user --collect --unit="$unit" \
     --property=Restart=on-failure --property=RestartSec=2 \
     --property="EnvironmentFile=$env_file" \
-    --setenv="CUDA_VISIBLE_DEVICES=$DEVICE" --setenv="FHEVM_GPU_STREAMS_PER_DEVICE=$STREAMS_PER_DEVICE" --setenv=RUST_BACKTRACE=1 \
+    --setenv="CUDA_VISIBLE_DEVICES=$device" --setenv="FHEVM_GPU_STREAMS_PER_DEVICE=$streams" --setenv=RUST_BACKTRACE=1 \
+    "${scheduling_env[@]}" \
     "${BIN_DIR}/${kind}_worker" "${args[@]}" >/dev/null
 }
 
@@ -314,6 +506,51 @@ stop_host_workers() {
       systemctl --user stop "$(unit_name "$kind" "$index")" >/dev/null 2>&1 || true
     done
   done < <(instance_indexes)
+}
+
+# Refuse to swap away a heterogeneity the units will not inherit.
+#
+# The scenario expresses per-operator scheduling as *instance args* on the
+# compose workers. `node_tuning` reads GPU_CONSENSUS_<KNOB>_<index> from the
+# environment and knows nothing about them, so swapping silently replaces a
+# deliberately heterogeneous fleet with a uniform one -- and the gate only says
+# so after a full bring-up, a build and a swap: "every operator scheduled
+# identically" (F-8). The compose workers are still running at this point, so
+# their flags can be read and compared.
+require_scenario_tuning_carried() {
+  local index container cmd win chains
+  local -A wins=() chainses=()
+  while IFS= read -r index; do
+    container="$(container_name tfhe "$index")"
+    cmd="$(docker inspect --format '{{range .Config.Cmd}}{{println .}}{{end}}' "$container" 2>/dev/null)" || continue
+    win="$(sed -n 's/^--work-items-batch-size=//p' <<<"$cmd" | tail -1)"
+    chains="$(sed -n 's/^--dependence-chains-per-batch=//p' <<<"$cmd" | tail -1)"
+    wins[$index]="${win:-default}"
+    chainses[$index]="${chains:-default}"
+  done < <(instance_indexes)
+
+  local distinct_wins distinct_chains
+  distinct_wins="$(printf '%s\n' "${wins[@]}" | sort -u | grep -c . || true)"
+  distinct_chains="$(printf '%s\n' "${chainses[@]}" | sort -u | grep -c . || true)"
+  [[ "${distinct_wins:-1}" -gt 1 || "${distinct_chains:-1}" -gt 1 ]] || return 0
+
+  # The scenario is heterogeneous. Every operator that differs needs its own
+  # override, or that operator's unit silently takes the fleet default.
+  local missing="" name
+  while IFS= read -r index; do
+    name="GPU_CONSENSUS_WORK_ITEMS_BATCH_SIZE_${index}"
+    [[ -n "${!name:-}" ]] || missing+=" ${name}=${wins[$index]}"
+    name="GPU_CONSENSUS_COMPONENTS_PER_BATCH_${index}"
+    [[ -n "${!name:-}" ]] || missing+=" ${name}=${chainses[$index]}"
+  done < <(instance_indexes)
+  [[ -n "$missing" ]] || return 0
+
+  die "this scenario schedules operators differently, but the host units would not inherit it:
+the compose workers run$(for i in "${!wins[@]}"; do printf ' [%s]=%s/%s' "$i" "${wins[$i]}" "${chainses[$i]}"; done)
+and node_tuning reads only the environment. Export the missing overrides and start again:
+ export$missing
+Swapping without them replaces a heterogeneous fleet with a uniform one, and the gate reports
+'every operator scheduled identically' only after the build and swap have already been paid for."
 }
 
 record_running_docker_workers() {
@@ -351,6 +588,18 @@ restore_recorded_docker_workers() {
     docker start "$container" >/dev/null
   done <"$DOCKER_WORKER_STATE_FILE"
   rm -f "$DOCKER_WORKER_STATE_FILE"
+}
+
+# The node config is the marker that says "host GPU workers are serving this
+# stack": run-materialization-consensus.sh keys its GPU detection off the file's
+# existence. Left behind after a stop, it makes every later suite -- on any
+# topology, GPU or not -- believe host workers are in play, and the build
+# manifest's revision check then aborts them all the moment anything is
+# committed. That is how a fork-topology run died in 0s reporting a GPU revision
+# mismatch. The build manifest is deliberately kept: it is build evidence and
+# what makes a rebuild cacheable. This file is session state, not evidence.
+clear_node_config() {
+  rm -f "$NODE_CONFIG"
 }
 
 ensure_no_active_gpu_session() {
@@ -420,6 +669,33 @@ wait_for_units() {
   return 1
 }
 
+# Bring one worker role back after it was stopped.
+#
+# `systemctl start` cannot do this: the units are transient
+# (`systemd-run --collect`), so stopping one garbage-collects it and the name no
+# longer resolves -- `Unit fhevm-gpu-consensus-tfhe-2.service not found`.
+# Restoring needs the original invocation: the generated environment file, the
+# CUDA device, the stream count and the per-node tuning, none of which a caller
+# outside this script has.
+#
+# Without it, a suite that takes an operator offline cannot put it back, and
+# every later suite on the same stack silently runs an operator short. That is
+# not a hypothetical: the degraded suite's C4a stopped operator 2's three units
+# and the fleet stayed at six units for the rest of the leg, so crash-retry and
+# the failure matrix failed for want of a third submitter rather than for
+# anything they were testing.
+restart_unit() {
+  local kind="${1:?restart-unit needs a kind: tfhe|zkproof|sns}"
+  local index="${2:?restart-unit needs an operator index}"
+  case "$kind" in tfhe | zkproof | sns) ;; *) die "unknown worker kind: $kind" ;; esac
+  local host_env="$GPU_RUNTIME_DIR/coprocessor.${index}.env"
+  [[ -f "$host_env" ]] ||
+    die "no generated environment for operator $index at $host_env; restart-unit only works inside a GPU session started by this script"
+  start_unit "$kind" "$index" "$host_env"
+  record_unit_invocation "$(unit_name "$kind" "$index")"
+  echo "gpu-consensus-workers: restarted $(unit_name "$kind" "$index")"
+}
+
 start() {
   require docker
   require nvidia-smi
@@ -444,6 +720,7 @@ start() {
   # operator had intentionally left down.
   GPU_TRANSITION_COMPLETE=false
   trap 'if [[ "$GPU_TRANSITION_COMPLETE" != true ]]; then stop_host_workers; restore_recorded_docker_workers; fi' EXIT
+  require_scenario_tuning_carried
   record_running_docker_workers
   stop_host_workers
   local index kind source host_env
@@ -472,7 +749,43 @@ start() {
   fi
   GPU_TRANSITION_COMPLETE=true
   trap - EXIT
+  write_node_config
   echo "gpu-consensus-workers: all 3 operators run on $(gpu_name) ($(gpu_uuid)), CUDA device $DEVICE"
+  if ! fleet_is_homogeneous; then
+    echo "gpu-consensus-workers: per-operator scheduling overrides are ACTIVE; resolved configuration recorded in $NODE_CONFIG"
+    grep -v '^homogeneous=' "$NODE_CONFIG" | sed 's/^/  /'
+  fi
+}
+
+# Every worker kind here claims rows from one queue per operator database with
+# `FOR UPDATE SKIP LOCKED`.  That is exactly right for one worker and silently
+# wrong for two: each row is served by whichever process won it, so a host unit
+# and a Docker container running side by side split the queue between two
+# *different builds*.  For the SNS worker that means one operator holding a mix
+# of CPU-squashed and GPU-squashed ct128 for handles whose ct64 is identical --
+# indistinguishable from a consensus defect, and it cost a full investigation to
+# tell apart from one (Consensus Defect Log, B-1/L-6).  For the TFHE worker it
+# would diverge ct64 itself.
+#
+# `start` already stops the containers it displaces.  The reverse direction is
+# the gap: these units are transient with `Restart=on-failure`, so they outlive
+# a stack teardown and restart themselves, and the next `fhevm-cli up` brings
+# the containers back underneath them.  Nothing in either component notices, so
+# report it here.
+conflicts() {
+  local index kind unit container found=0
+  while IFS= read -r index; do
+    for kind in tfhe zkproof sns; do
+      unit="$(unit_name "$kind" "$index")"
+      container="$(container_name "$kind" "$index")"
+      [[ "$(systemctl --user show "$unit" --property=ActiveState --value 2>/dev/null)" == "active" ]] || continue
+      [[ "$(docker inspect -f '{{.State.Status}}' "$container" 2>/dev/null)" == "running" ]] || continue
+      printf 'CONFLICT operator=%s kind=%s unit=%s container=%s: both are serving the same queue\n' \
+        "$index" "$kind" "$unit" "$container"
+      found=1
+    done
+  done < <(instance_indexes)
+  return "$found"
 }
 
 status() {
@@ -484,11 +797,73 @@ status() {
         2>/dev/null || true
     done
   done < <(instance_indexes)
+
+  # `status` is what someone runs when the stack is behaving oddly, so it must
+  # not report three healthy units while the containers are double-writing.
+  if ! conflicts; then
+    printf '\nRun `%s stop` to hand the queues back to the containers, or stop the\n' "$0"
+    printf 'containers if the host workers are the ones you want.\n'
+    return 1
+  fi
+}
+
+# The build manifest describes the binaries; this describes how they were
+# scheduled.  A heterogeneous-configuration run is only evidence if the
+# heterogeneity is recorded -- otherwise a green result is indistinguishable
+# from one where the overrides were never picked up.
+write_node_config() {
+  local index
+  umask 077
+  mkdir -p "$GPU_RUNTIME_DIR"
+  {
+    printf 'homogeneous=%q\n' "$(fleet_is_homogeneous && echo true || echo false)"
+    while IFS= read -r index; do
+      printf 'operator_%s_device=%q\n' "$index" "$(node_tuning DEVICE "$index" "$DEVICE")"
+      printf 'operator_%s_gpu_streams_per_device=%q\n' "$index" "$(node_tuning STREAMS_PER_DEVICE "$index" "$STREAMS_PER_DEVICE")"
+      printf 'operator_%s_work_items_batch_size=%q\n' "$index" "$(node_tuning WORK_ITEMS_BATCH_SIZE "$index" "$WORK_ITEMS_BATCH_SIZE")"
+      printf 'operator_%s_dependence_chains_per_batch=%q\n' "$index" "$(node_tuning COMPONENTS_PER_BATCH "$index" "$COMPONENTS_PER_BATCH")"
+      printf 'operator_%s_coprocessor_fhe_threads=%q\n' "$index" "$(node_tuning FHE_THREADS "$index" "$FHE_THREADS")"
+      printf 'operator_%s_adaptive_batch_execution=%q\n' "$index" "$(node_tuning ADAPTIVE_BATCH_EXECUTION "$index" default)"
+      printf 'operator_%s_batch_execution=%q\n' "$index" "$(node_tuning BATCH_EXECUTION "$index" default)"
+    done < <(instance_indexes)
+  } >"$NODE_CONFIG"
+}
+
+fleet_is_homogeneous() {
+  compgen -v | grep -qE '^GPU_CONSENSUS_[A-Z_]+_[0-9]+$' && return 1
+  return 0
+}
+
+# One canonical class string per operator, derived from what `start` actually
+# resolved rather than from the current shell -- `test-env` usually runs in a
+# different shell from `start`, where the override variables are long gone.
+# The consensus gate compares these for distinctness: a run that claims
+# heterogeneous scheduling but whose operators share a class is a vacuous pass.
+scheduling_classes() {
+  [[ -f "$NODE_CONFIG" ]] || return 1
+  local index first=true out="" key
+  # shellcheck disable=SC1090
+  source "$NODE_CONFIG"
+  while IFS= read -r index; do
+    [[ "$first" == true ]] || out+=";"
+    first=false
+    out+="${index}="
+    key="operator_${index}_device";                       out+="device:${!key}"
+    key="operator_${index}_gpu_streams_per_device";       out+=",streams:${!key}"
+    key="operator_${index}_work_items_batch_size";        out+=",window:${!key}"
+    key="operator_${index}_dependence_chains_per_batch";  out+=",chains:${!key}"
+    key="operator_${index}_coprocessor_fhe_threads";      out+=",threads:${!key}"
+    key="operator_${index}_adaptive_batch_execution";     out+=",adaptive:${!key}"
+    key="operator_${index}_batch_execution";              out+=",batch:${!key}"
+  done < <(grep -o '^operator_[0-9]\+_device' "$NODE_CONFIG" | sed 's/^operator_//; s/_device$//' | sort -n)
+  printf '%s' "$out"
 }
 
 metadata() {
   [[ -f "$BUILD_MANIFEST" ]] || die "missing GPU build manifest"
   cat "$BUILD_MANIFEST"
+  [[ -f "$NODE_CONFIG" ]] && cat "$NODE_CONFIG"
+  return 0
 }
 
 test_env() {
@@ -501,8 +876,18 @@ test_env() {
   source "$BUILD_MANIFEST"
   printf 'export CONSENSUS_SOFTWARE_REVISION=%q\n' "$software_revision"
   printf 'export CONSENSUS_BACKEND_CLASS=%q\n' "gpu-cuda"
-  printf 'export CONSENSUS_HARDWARE_CLASS=%q\n' "gpu-homogeneous-${gpu_name// /_}-${gpu_uuid}"
+  printf 'export CONSENSUS_HARDWARE_CLASS=%q\n' "$(hardware_class)"
+  # Exported separately so a gate can assert a device-split run really was split
+  # without having to parse the class string.
+  printf 'export CONSENSUS_DEVICE_COUNT=%q\n' "$(device_set | grep -c .)"
   printf 'export CONSENSUS_GPU_BUILD_MANIFEST_SHA256=%q\n' "$(binary_sha "$BUILD_MANIFEST")"
+  # Scheduling configuration is not part of the hardware class: the operators
+  # remain one backend/hardware class whether or not they schedule alike, and
+  # the byte oracle applies unchanged.  It is exported separately so the gate
+  # can assert the fleet really was heterogeneous when a run claims it.
+  if [[ -f "$NODE_CONFIG" ]]; then
+    printf 'export CONSENSUS_SCHEDULING_CLASSES=%q\n' "$(scheduling_classes)"
+  fi
 }
 
 capture_activity() {
@@ -527,12 +912,24 @@ capture_activity() {
 }
 
 case "${1:-}" in
+  # Check what `build` will check, without building: callers can run this before
+  # a bring-up instead of discovering a dirty tree twenty minutes later.
+  preflight)
+    require docker
+    require nvidia-smi
+    require git
+    require_clean_source
+    [[ -x "${CUDA_PATH:-/usr/local/cuda}/bin/nvcc" ]] || die "nvcc is unavailable under CUDA_PATH=${CUDA_PATH:-/usr/local/cuda}"
+    echo "gpu-consensus-workers: preflight OK (tree clean, nvcc present, $(gpu_count) GPU(s))"
+    ;;
   build) build ;;
-  start) start ;;
-  stop) stop_host_workers; restore_recorded_docker_workers ;;
-  status) status ;;
-  metadata) metadata ;;
-  test-env) test_env ;;
-  capture-activity) capture_activity "$@" ;;
+  start) ensure_user_bus; start ;;
+  stop) ensure_user_bus; stop_host_workers; restore_recorded_docker_workers; clear_node_config ;;
+  status) ensure_user_bus; status ;;
+  conflicts) ensure_user_bus; conflicts ;;
+  metadata) ensure_user_bus; metadata ;;
+  test-env) ensure_user_bus; test_env ;;
+  restart-unit) ensure_user_bus; shift; restart_unit "$@" ;;
+  capture-activity) ensure_user_bus; capture_activity "$@" ;;
   *) usage; exit 2 ;;
 esac
