@@ -1,6 +1,6 @@
 # Porting the FHEVM hardhat plugin from hardhat v2 to hardhat v3
 
-Version: **1.50** (2026-09-03). Bump the minor for a content change to the plan, the major for a
+Version: **1.51** (2026-09-03). Bump the minor for a content change to the plan, the major for a
 change of charter or stage order; record each bump below.
 
 - 1.0 — initial plan, from the hardhat 3 docs.
@@ -77,8 +77,10 @@ change of charter or stage order; record each bump below.
 - 1.49 — `governance/*` ported (fixture, `DelegateBySig`, 15 tests; the upstream-skipped autominer test dropped).
 - 1.50 — `operators-manual/*` ported by transformation (manual, manualWithAllowSender, manualV13: 135 tests).
   Every ledger row except the 13 generated `operators/fhevmOperations*` suites is now ported.
+- 1.51 — the 13 generated `operators/fhevmOperations*` suites ported by transformation (2,394 tests), eslint-ignored
+  as in v2 (codegen output, mocha-context state). The e2e ledger is COMPLETE.
 
-Status: **port complete for development networks — Stages A–F and E2E-0b landed. Open: the public-chain client (network-group decision) and the remaining ledger test ports (contracts now present; smallest first).** The landing zone exists: the
+Status: **port complete for development networks — Stages A–F and E2E-0b landed. Open: the public-chain client (network-group decision). The e2e ledger is complete.** The landing zone exists: the
 `hardhat/v3` cluster (own installation root, hardhat 3.15 pinned), the plugin registered via
 `definePlugin` with its per-connection `fhevm` object and the pre-serve chain preparation proven,
 and the `hardhat/v3/e2e` member with the first counter test.
@@ -905,7 +907,7 @@ allows.
 | D4b                    | MOOT — `internal/TestAsyncDecrypt.ts` is 100% commented out in v2 (mock-engine era); nothing to port                                                                                                                                                                          |
 | D5a3                   | DONE — `internal/FHECounterHCU.ts` and `hcu/fhevmHCU1.ts` (v2 file, over `FHEVMTestSuite1`)                                                                                                                                                                                                      |
 | D5b + C2               | `sepolia/*` (`getCoprocessorConfig` + generated addresses) and the `test:sepolia:*` scripts — operator-run, never in `make test`                                                                                                                    |
-| D6                     | DONE on the counter (`internal/FHECounterDebugger.ts`); `operators-manual/manual.ts` DONE (2026-09-03); `operators/fhevmOperations1…13.ts` corpus landed at E2E-0b; test port pending (36k lines, the one row left)                                                                                                              |
+| D6                     | DONE on the counter (`internal/FHECounterDebugger.ts`); `operators-manual/manual.ts` DONE (2026-09-03); `operators/fhevmOperations1…13.ts` DONE (2026-09-03)                                                                                                              |
 
 Running total is the progress meter for goal 3: when the last row is green, the public API is
 proven equivalent on hardhat 3 by the same tests that prove it on hardhat 2.
