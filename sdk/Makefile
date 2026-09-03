@@ -99,12 +99,12 @@ run-fhevm-npm = $(FHEVM_NPM_CLI) $(FHEVM_NPM_ARGS) $(1)
 # Aggregates
 ########################################################################################################
 
-.PHONY: help graph build compile rebuild ci ci-from-scratch uninstall purge lint test check check-pre generate fmt fmt-check clean clean-generated install
+.PHONY: help graph build compile rebuild ci ci-from-scratch distclean regenerate-package-lock lint test check check-pre generate fmt fmt-check clean clean-generated install
 
 help: ## List the targets
 	@grep -hE '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) \
 	  | awk -F':.*?## ' '{ \
-	      if ($$1 ~ /^(build|check|check-pre|ci|ci-from-scratch|clean|compile|graph|help|install|lint|purge|rebuild|test|uninstall)$$/) group = 0; \
+	      if ($$1 ~ /^(build|check|check-pre|ci|ci-from-scratch|clean|compile|graph|help|install|lint|regenerate-package-lock|rebuild|test|distclean)$$/) group = 0; \
 	      else if ($$1 ~ /^compile-/) group = 1; \
 	      else if ($$1 ~ /^check-/) group = 2; \
 	      else if ($$1 ~ /^fmt($$|-)/) group = 3; \
@@ -197,8 +197,8 @@ install: ## Install every installation root (sdk, fhevm-npm, each hardhat cluste
 # Ordering matters: `clean` runs npm scripts, so it needs node_modules. fhevm-npm's own tree is
 # deliberately KEPT — it is the orchestrator this flow runs (the forge cleaner) and the recovery
 # tool afterwards; broken-tree recovery is `./scripts/clean-node-modules.sh --include-fhevm-npm`.
-uninstall: ## Undo 'make install' and 'make build': shows everything first, asks once, then deletes
-	@echo "🧹 make uninstall will remove ALL of the following:"
+distclean: ## Undo 'make install' and 'make build': shows everything first, asks once, then deletes
+	@echo "🧹 make distclean will remove ALL of the following:"
 	@echo ""
 	@echo "── Forge dependency trees (from forge config --json) ─────────────────────────"
 	$(call run-fhevm-npm,clean-forge-dependencies --dry-run)
@@ -222,31 +222,31 @@ uninstall: ## Undo 'make install' and 'make build': shows everything first, asks
 	$(call run-fhevm-npm,clean-forge-dependencies --force)
 	./scripts/clean-node-modules.sh --force
 
-# apt's remove < purge: `uninstall` plus the INSTALL lockfiles `make install` owns — the sdk root's
+# `distclean` plus the INSTALL lockfiles `make install` owns — the sdk root's
 # and each hardhat cluster's — so the next `make install` re-resolves every dependency range
 # from scratch: a deliberate dependency-upgrade event whose lock diff is the reviewed commit. Excluded
 # on purpose: consumer-fixture lockfiles (their lifecycle is `test-consumer-regenerate-package-lock`)
 # and fhevm-npm's (the autonomous orchestrator manages its own; re-resolve it deliberately with
 # `npm --prefix fhevm-npm install` after deleting its lock).
-# The locks are TRACKED files, so unlike `uninstall` this requires a spotless worktree first: anything
+# The locks are TRACKED files, so unlike `distclean` this requires a spotless worktree first: anything
 # deleted is then recoverable with `git checkout -- .`.
-# The single [Y/n] is uninstall's — the banner below adds the locks to what that question covers.
-purge: ## Everything 'uninstall' removes PLUS the install lockfiles (next install re-resolves deps)
+# The single [Y/n] is distclean's — the banner below adds the locks to what that question covers.
+regenerate-package-lock: ## Everything 'distclean' removes PLUS the install lockfiles (next install re-resolves deps)
 	$(call require-spotless-worktree)
-	@echo "🧹 make purge = make uninstall PLUS these tracked lockfiles:"
+	@echo "🧹 make regenerate-package-lock = make distclean PLUS these tracked lockfiles:"
 	@echo ""
 	@echo "   ./package-lock.json"
 	@echo "   ./$(DIR_HH_V2)/package-lock.json"
 	@echo "   ./$(DIR_HH_V3)/package-lock.json"
 	@echo ""
-	$(MAKE) uninstall
+	$(MAKE) distclean
 	rm -f ./package-lock.json ./$(DIR_HH_V2)/package-lock.json ./$(DIR_HH_V3)/package-lock.json
 	@echo "🗑  install lockfiles removed — 'make install' will re-resolve and rewrite them; review and commit the diff."
 
 # The strongest proof this workspace has: a brand-new machine could clone, install, and pass every
 # gate. Sub-makes for the same `-j` ordering reason `ci` uses them.
-ci-from-scratch: ## Prove a fresh clone works: uninstall everything, install, then every ci gate
-	$(MAKE) uninstall
+ci-from-scratch: ## Prove a fresh clone works: distclean everything, install, then every ci gate
+	$(MAKE) distclean
 	$(MAKE) install
 	$(MAKE) ci
 

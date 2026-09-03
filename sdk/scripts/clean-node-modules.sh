@@ -2,7 +2,7 @@
 #
 # ⚠️  WARNING: keep this a dependency-free bash script — do NOT port it to fhevm-npm. With
 # --include-fhevm-npm it deletes fhevm-npm's own node_modules — the recovery tool for a broken tree
-# (FHEVM_NPM_RULES 6.2.x) — so it must run when node tooling cannot. `make uninstall` calls it
+# (FHEVM_NPM_RULES 6.2.x) — so it must run when node tooling cannot. `make distclean` calls it
 # (--dry-run, then --force).
 #
 # Deletes every node_modules under the sdk workspace, so the next `npm install` rebuilds the tree
