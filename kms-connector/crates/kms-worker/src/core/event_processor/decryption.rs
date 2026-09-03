@@ -33,7 +33,10 @@ use fhevm_gateway_bindings::decryption::Decryption::{
     UserDecryptionRequest_4 as UserDecryptionRequestV3, delegatedUserDecryptionRequestCall,
     userDecryptionRequest_2Call as userDecryptionRequestCall,
 };
-use futures::future::{join_all, try_join_all};
+use futures::{
+    future::try_join_all,
+    stream::{FuturesUnordered, StreamExt},
+};
 use kms_connector_api::ErrorCode;
 use kms_grpc::kms::v1::{Eip712DomainMsg, PublicDecryptionRequest, UserDecryptionRequest};
 use sqlx::types::chrono::Utc;
@@ -172,7 +175,7 @@ where
     ) -> Result<(), RequestCheckError> {
         info!("Starting ACL check for {} handles...", handles.len());
 
-        for handle in handles {
+        try_join_all(handles.iter().map(|handle| async move {
             let ct_chain_id = extract_chain_id_from_handle(*handle).map_err(|e| {
                 RequestCheckError::irrecoverable(RequestCheckKind::Acl, ErrorCode::Unprocessable, e)
             })?;
@@ -183,9 +186,7 @@ where
                     // against the live confirmed encrypted value account.
                     check_solana_handles_public_decrypt(host, &[handle.0], extra_data)
                         .await
-                        .map_err(|e| {
-                            RequestCheckError::from_processing(RequestCheckKind::Acl, e)
-                        })?;
+                        .map_err(|e| RequestCheckError::from_processing(RequestCheckKind::Acl, e))
                 }
                 HostChainAclBackend::Evm(host_client) => {
                     if !host_client.is_allowed_for_decryption(*handle).await? {
@@ -195,9 +196,11 @@ where
                             anyhow!("Decryption is not allowed for {handle}"),
                         ));
                     }
+                    Ok(())
                 }
             }
-        }
+        }))
+        .await?;
 
         info!("ACL check passed for {} handles!", handles.len());
         Ok(())
@@ -241,12 +244,14 @@ where
                 .iter()
                 .map(|c| (c.ctHandle, c.contractAddress)),
         );
-        for handle in handles {
+        let contracts_map_ref = &contracts_map;
+
+        try_join_all(handles.iter().map(|handle| async move {
             let ct_chain_id = extract_chain_id_from_handle(*handle).map_err(|e| {
                 RequestCheckError::irrecoverable(RequestCheckKind::Acl, ErrorCode::Unprocessable, e)
             })?;
             let host_client = self.evm_acl_backend(ct_chain_id)?;
-            let contract_address = contracts_map.get(handle.as_slice()).ok_or_else(|| {
+            let contract_address = contracts_map_ref.get(handle.as_slice()).ok_or_else(|| {
                 RequestCheckError::irrecoverable(
                     RequestCheckKind::Acl,
                     ErrorCode::Unprocessable,
@@ -262,7 +267,7 @@ where
                     *contract_address,
                     delegator_addr,
                 )
-                .await?;
+                .await
             } else {
                 self.inner_acl_check_for_user_decryption(
                     host_client,
@@ -270,9 +275,10 @@ where
                     user_address,
                     *contract_address,
                 )
-                .await?;
+                .await
             }
-        }
+        }))
+        .await?;
 
         info!("ACL check passed for {} handles!", handles.len());
         Ok(())
@@ -671,26 +677,30 @@ where
             return Ok(());
         }
 
-        let calls = allowed_contracts
+        let mut calls: FuturesUnordered<_> = allowed_contracts
             .iter()
-            .map(|c| async move { host_client.is_allowed(handle, *c).await });
-        let results = join_all(calls).await;
+            .map(|c| async move { (c, host_client.is_allowed(handle, *c).await) })
+            .collect();
 
-        // Short-circuit on first positive. Individual transport errors are tolerated as long as at
-        // least one contract returns true.
-        if results.iter().any(|r| matches!(r, Ok(true))) {
-            Ok(())
-        } else {
-            // This branch covers both a genuine denial and an all-RPC-failed wave; the two can't
-            // be cleanly separated here, so it counts as a single ACL rejection.
-            Err(RequestCheckError::recoverable(
-                RequestCheckKind::Acl,
-                ErrorCode::AclDenied,
-                anyhow!(
-                    "No contract in allowedContracts is allowed to decrypt handle {handle} ({results:?})",
-                ),
-            ))
+        // All calls run concurrently; short-circuit on the first positive, dropping `calls`
+        // to cancel the remaining in-flight requests.
+        let mut rejections = Vec::with_capacity(allowed_contracts.len());
+        while let Some((contract, result)) = calls.next().await {
+            match result {
+                Ok(true) => return Ok(()),
+                Ok(false) => rejections.push(format!("{contract}: not allowed")),
+                Err(e) => rejections.push(format!("{contract}: {e}")),
+            }
         }
+
+        // No contract returned true (all denied, all RPC calls failed, or a mix of both).
+        Err(RequestCheckError::recoverable(
+            RequestCheckKind::Acl,
+            ErrorCode::AclDenied,
+            anyhow!(
+                "No contract in allowedContracts is allowed to decrypt handle {handle} ({rejections:?})",
+            ),
+        ))
     }
 
     /// RFC016 signature invalidation check. Rejects if `startTimestamp < invalidationTs`, meaning

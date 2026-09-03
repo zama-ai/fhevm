@@ -3,8 +3,16 @@
 //! Both the prover and the verifier must assemble these bytes identically, or the proof
 //! fails to verify. The layout lives here so the two sides cannot drift:
 //!
+//! EVM hosts (20-byte addresses, 92 bytes total):
+//!
 //! ```text
 //! contract_addr (20) || user_addr (20) || acl_contract_addr (20) || chain_id (32 BE)
+//! ```
+//!
+//! Solana hosts (RFC-021 bytes32 identities, 128 bytes total):
+//!
+//! ```text
+//! contract (32) || user (32) || acl (32) || chain_id (32 BE, chain-type high bit set)
 //! ```
 //!
 //! Verifier side: `zkproof-worker`'s `auxiliary::ZkData`, built from the `verify_proofs`
@@ -12,6 +20,8 @@
 //! [`crate::synthetic_input`] for the blue-green dry-run probe.
 
 use std::str::FromStr;
+
+use anyhow::anyhow;
 
 use crate::chain_id::ChainId;
 
@@ -41,6 +51,43 @@ pub fn assemble_aux_data(
     data[40..60].copy_from_slice(&acl_bytes);
     data[60..].copy_from_slice(&chain_id_bytes);
     Ok(data)
+}
+
+/// Length of the assembled Solana auxiliary data: 3 x 32-byte identity + 32-byte chain id.
+pub const SOLANA_ZK_AUX_DATA_SIZE: usize = 128;
+
+/// Assemble the auxiliary data bound into an input proof for a Solana host.
+///
+/// The three identities are RFC-021 bytes32 host addresses, accepted in either encoding
+/// they appear in (see [`parse_bytes32`]). The chain id keeps its chain-type high bit.
+pub fn assemble_solana_aux_data(
+    contract_identity: &str,
+    user_identity: &str,
+    acl_identity: &str,
+    chain_id: ChainId,
+) -> anyhow::Result<[u8; SOLANA_ZK_AUX_DATA_SIZE]> {
+    let chain_id_bytes: [u8; 32] = alloy::primitives::U256::from(chain_id.as_u64()).to_be_bytes();
+
+    let mut data = [0_u8; SOLANA_ZK_AUX_DATA_SIZE];
+    data[..32].copy_from_slice(&parse_bytes32(contract_identity)?);
+    data[32..64].copy_from_slice(&parse_bytes32(user_identity)?);
+    data[64..96].copy_from_slice(&parse_bytes32(acl_identity)?);
+    data[96..].copy_from_slice(&chain_id_bytes);
+    Ok(data)
+}
+
+/// Parses a Solana `bytes32` host identity from either encoding it appears in:
+/// the `0x`-prefixed hex form carried verbatim by gateway events (contract and
+/// user identities), or the base58 form an on-chain Solana program id is stored
+/// as in `host_chains` (the ACL identity). Both encode the same 32 bytes; the
+/// `0x` prefix is the discriminator.
+pub fn parse_bytes32(value: &str) -> anyhow::Result<[u8; 32]> {
+    let bytes = match value.strip_prefix("0x") {
+        Some(hex_str) => alloy::primitives::hex::decode(hex_str)?,
+        None => bs58::decode(value).into_vec()?,
+    };
+    <[u8; 32]>::try_from(bytes.as_slice())
+        .map_err(|_| anyhow!("expected a 32-byte identity, got {} bytes", bytes.len()))
 }
 
 #[cfg(test)]
@@ -79,5 +126,30 @@ mod tests {
             ChainId::try_from(1_u64).unwrap(),
         )
         .is_err());
+    }
+
+    #[test]
+    fn solana_layout_is_bytes32_identities_then_big_endian_chain_id() {
+        use crate::chain_id::SOLANA_CHAIN_TYPE_BIT;
+        let assembled = assemble_solana_aux_data(
+            &format!("0x{}", "11".repeat(32)),
+            &format!("0x{}", "22".repeat(32)),
+            &format!("0x{}", "33".repeat(32)),
+            ChainId::from_canonical_u64(SOLANA_CHAIN_TYPE_BIT | 12345),
+        )
+        .expect("assemble");
+        assert_eq!(&assembled[0..32], &[0x11; 32]);
+        assert_eq!(&assembled[32..64], &[0x22; 32]);
+        assert_eq!(&assembled[64..96], &[0x33; 32]);
+        let expected_chain_id =
+            alloy::primitives::U256::from(SOLANA_CHAIN_TYPE_BIT | 12345).to_be_bytes::<32>();
+        assert_eq!(&assembled[96..128], &expected_chain_id);
+    }
+
+    #[test]
+    fn parse_bytes32_accepts_hex_and_base58_for_same_identity() {
+        let hex = "0x9c7da263cccb5084844e292a2ce0db0e51bbf310100656aa4572b83dfe35fca5";
+        let base58 = "BXsiKq6Jg4vgdBqSd75NbMbKaB7WFKK48NVXx4zoeLsW";
+        assert_eq!(parse_bytes32(hex).unwrap(), parse_bytes32(base58).unwrap());
     }
 }

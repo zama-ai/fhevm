@@ -77,6 +77,11 @@ const relayerOverrideState: State = {
   overrides: [{ group: "relayer" }],
 };
 
+const solanaProofServiceOverrideState: State = {
+  ...state,
+  overrides: [{ group: "solana-proof-service" }],
+};
+
 const listenerCoreOverrideState: State = {
   ...state,
   overrides: [{ group: "listener-core" }],
@@ -142,11 +147,19 @@ describe("render-compose", () => {
     });
   });
 
-  test("persists kms-core private vault across container recreates", async () => {
+  test("persists kms-core private vault and supplies both keygen CLI formats", async () => {
     const doc = await loadMergedComposeDoc("core");
+    const minio = (await loadMergedComposeDoc("minio")) as typeof doc & {
+      volumes?: Record<string, { name?: string }>;
+    };
     const volumes = doc.services["kms-core"]?.volumes as string[] | undefined;
+    const entrypoint = JSON.stringify(doc.services["kms-core"]?.entrypoint);
     expect(doc.services["kms-core"]?.user).toBe("root");
     expect(volumes).toContain("fhevm_kms_core_keys:/app/kms/core/service/keys");
+    expect(volumes?.some((mount) => mount.endsWith("config/kms-gen-keys.toml"))).toBe(true);
+    expect(entrypoint).toContain("--public-storage");
+    expect(entrypoint).toContain("--config-file config/kms-gen-keys.toml");
+    expect(minio.volumes?.minio_secrets?.name).toBe("fhevm_minio_secrets");
   });
 
   test("keeps localhost MinIO URLs reachable from the e2e container", async () => {
@@ -288,14 +301,51 @@ describe("render-compose", () => {
       await writeFile(envPath("coprocessor.1"), "\n");
       await generateComposeOverrides(relayerOverrideState, stackSpecForState(relayerOverrideState));
       const doc = YAML.parse(await readFile(composePath("relayer"), "utf8")) as {
-        services: Record<string, { image?: string; build?: { context?: string; dockerfile?: string } }>;
+        services: Record<
+          string,
+          { image?: string; platform?: string; build?: { context?: string; dockerfile?: string } }
+        >;
       };
+      expect(doc.services["relayer-db"]?.platform).toBeUndefined();
+      expect(doc.services["relayer-db-migration"]?.platform).toBeUndefined();
       expect(doc.services["relayer-db-migration"]?.image).toContain(":fhevm-local");
       expect(doc.services["relayer-db-migration"]?.build?.dockerfile).toContain(
         "relayer/docker/relayer-migrate/Dockerfile",
       );
+      expect(doc.services["relayer"]?.platform).toBeUndefined();
       expect(doc.services["relayer"]?.image).toContain(":fhevm-local");
       expect(doc.services["relayer"]?.build?.dockerfile).toContain("relayer/docker/relayer/Dockerfile");
+
+      // Relayer override must not piggyback the standalone proof image.
+      await expect(readFile(composePath("solana-proof-service"), "utf8")).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+    });
+  });
+
+  test("retags solana-proof-service for local builds when its override group is set", async () => {
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      await writeFile(envPath("coprocessor"), "\n");
+      await writeFile(envPath("coprocessor.1"), "\n");
+      await generateComposeOverrides(
+        solanaProofServiceOverrideState,
+        stackSpecForState(solanaProofServiceOverrideState),
+      );
+      const proofDoc = YAML.parse(await readFile(composePath("solana-proof-service"), "utf8")) as {
+        services: Record<
+          string,
+          { image?: string; platform?: string; build?: { context?: string; dockerfile?: string } }
+        >;
+      };
+      expect(proofDoc.services["solana-proof-service"]?.platform).toBeUndefined();
+      expect(proofDoc.services["solana-proof-service"]?.image).toBe(
+        "${SOLANA_PROOF_SERVICE_IMAGE_REPOSITORY:-solana-proof-service}:fhevm-local",
+      );
+      expect(proofDoc.services["solana-proof-service"]?.build?.dockerfile).toContain(
+        "solana-proof-service/Dockerfile",
+      );
+      expect(proofDoc.services["solana-proof-db"]).toBeUndefined();
     });
   });
 

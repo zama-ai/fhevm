@@ -4512,6 +4512,7 @@ dependencies = [
  "aws-sigv4",
  "axum 0.7.9",
  "bigdecimal",
+ "bs58",
  "bytesize",
  "clap",
  "futures",
