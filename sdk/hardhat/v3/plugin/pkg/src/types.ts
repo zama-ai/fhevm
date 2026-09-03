@@ -6,7 +6,10 @@
 // until a group lands, its methods throw a named not-implemented error.
 
 import type { createFhevmCleartextClient } from '@fhevm/sdk/viem/cleartext';
-import type { Abi, Address, Hex, LocalAccount, Log, TransactionReceipt, WalletClient } from 'viem';
+import type { Abi, AbiParameter, Address, Hex, LocalAccount, WalletClient } from 'viem';
+
+/** The protocol's type spelling the HCU price table is keyed by (`Uint32`), as `getHCU` takes it. */
+export type { FheTypeName } from './internal/vendored/priceTypes.js';
 
 export type {
   FhevmChainContract,
@@ -129,13 +132,71 @@ export type CoprocessorConfig = {
   KMSVerifierAddress: Address;
 };
 
+/** A contract by address, as a viem contract (`address`) or an ethers one (`getAddress()`). */
+export type FhevmAddressLike = Address | { readonly address: Address } | { getAddress(): Promise<string> };
+
+export type CoprocessorEventName =
+  | 'TrivialEncrypt'
+  | 'FheAdd'
+  | 'FheSub'
+  | 'FheMul'
+  | 'FheDiv'
+  | 'FheRem'
+  | 'FheBitAnd'
+  | 'FheBitOr'
+  | 'FheBitXor'
+  | 'FheShl'
+  | 'FheShr'
+  | 'FheRotl'
+  | 'FheRotr'
+  | 'FheEq'
+  | 'FheNe'
+  | 'FheGe'
+  | 'FheGt'
+  | 'FheLe'
+  | 'FheLt'
+  | 'FheMin'
+  | 'FheMax'
+  | 'FheRand'
+  | 'FheRandBounded'
+  | 'FheNot'
+  | 'FheNeg'
+  | 'Cast'
+  | 'FheIfThenElse'
+  | 'FheSum'
+  | 'FheIsIn'
+  | 'VerifyInput';
+
+/**
+ * A log as viem (`logIndex`, `Hex` fields) or ethers (`index`, plain strings) hands it out; the decoder
+ * reads what both carry and checks the hex itself.
+ */
+export type FhevmLog = {
+  readonly address: string;
+  readonly data: string;
+  readonly topics: readonly string[];
+  readonly blockNumber: number | bigint | null;
+  readonly transactionHash: string | null;
+  readonly transactionIndex: number | null;
+  readonly logIndex?: number | null;
+  readonly index?: number;
+};
+
 export type CoprocessorEvent = {
-  eventName: string;
+  eventName: CoprocessorEventName;
   args: object;
   index: number;
   blockNumber: number;
   transactionHash: Hex;
   transactionIndex: number;
+};
+
+/** A receipt as viem (`status: 'success'`, `transactionHash`) or ethers (`status: 1`, `hash`) hands it out. */
+export type FhevmTransactionReceipt = {
+  readonly status: 'success' | 'reverted' | number | null;
+  readonly transactionHash?: string;
+  readonly hash?: string;
+  readonly logs: readonly FhevmLog[];
 };
 
 export type FhevmTransactionHCUInfo = {
@@ -173,6 +234,19 @@ export type FhevmInputVerifierError = {
 
 export type FhevmContractError = FhevmInputVerifierError;
 
+/** One custom error of an FHEVM contract, as the chai matchers read it. */
+export type FhevmErrorFragment = {
+  readonly name: string;
+  readonly selector: Hex;
+  readonly inputs: readonly AbiParameter[];
+};
+
+/** The slice of an ethers `Interface` chai's `revertedWithCustomError` reads, backed by viem. */
+export type FhevmErrorInterface = {
+  getError(nameOrSelector: string): FhevmErrorFragment | null;
+  decodeErrorResult(fragment: FhevmErrorFragment, data: Hex): readonly unknown[] & { toArray(): unknown[] };
+};
+
 /** Who signs a decryption permit: a viem wallet client carrying its account (hardhat-viem hands these out) or a local account. */
 export type FhevmUser = WalletClient | LocalAccount;
 
@@ -195,14 +269,25 @@ export interface HardhatFhevmRuntimeEnvironment {
 
   typeof(handleBytes32: Hex): FhevmTypeName;
 
-  parseCoprocessorEvents(logs: readonly Log[] | null | undefined): CoprocessorEvent[];
-  computeTransactionHCU(transactionReceipt: TransactionReceipt): FhevmTransactionHCUInfo;
+  /** The FHEVMExecutor operator events among `logs` (a receipt's, from viem or ethers). */
+  parseCoprocessorEvents(logs: readonly FhevmLog[] | null | undefined): CoprocessorEvent[];
+  /** The HCU a mined transaction consumed, from its executor events (a viem or ethers receipt). */
+  computeTransactionHCU(transactionReceipt: FhevmTransactionReceipt): FhevmTransactionHCUInfo;
 
-  assertCoprocessorInitialized(contract: Address, contractName?: string): Promise<void>;
-  getCoprocessorConfig(contractAddress: Address): Promise<CoprocessorConfig>;
+  /** Fails by name when `contract` was not compiled against the stack this connection runs. */
+  assertCoprocessorInitialized(contract: FhevmAddressLike, contractName?: string): Promise<void>;
+  /** The three addresses `contract` stored through `ZamaConfig` or `FHE.setCoprocessor()`. */
+  getCoprocessorConfig(contract: FhevmAddressLike): Promise<CoprocessorConfig>;
 
-  /** For a chai `revertedWithCustomError`-style matcher: the contract carrying the error, and its name. */
-  revertedWithCustomErrorArgs(contractName: FhevmContractName, customErrorName: string): [{ abi: Abi }, string];
+  /**
+   * Chai matcher support: `expect(tx).to.be.revertedWithCustomError(...fhevm.revertedWithCustomErrorArgs('FHEVMExecutor', 'ACLNotAllowed'))`.
+   * The contract carries the viem `abi` and an ethers-shaped `interface`, so both toolboxes' matchers accept it.
+   */
+  revertedWithCustomErrorArgs(
+    contractName: FhevmContractName,
+    customErrorName: string,
+  ): [{ abi: Abi; interface: FhevmErrorInterface }, string];
+  /** The structured view of an FHEVM revert a test caught; prints it framed when `out` is given. */
   tryParseFhevmError(
     e: unknown,
     options?: { out?: 'stderr' | 'stdout' | 'console' },

@@ -43,7 +43,7 @@
     {
       "to": "hardhat/v2/plugin/pkg/src/internal/vendored",
       "note": "Published payload. It already depends on @fhevm/host-contracts-cleartext, so the sibling type import is rewritten to the package rather than copying ethereumLibTypes.ts here.",
-      "files": ["ethersEthereumLib.ts", "fhevm-chains.ts"],
+      "files": ["ethersEthereumLib.ts", "fhevm-chains.ts", "operatorsPrices.ts", "priceTypes.ts"],
       "rewrites": [
         {
           "file": "ethersEthereumLib.ts",
@@ -55,7 +55,7 @@
     {
       "to": "hardhat/v3/plugin/pkg/src/internal/vendored",
       "note": "The hardhat 3 payload takes the viem adapter (hardhat 3 recommends viem; its clients wrap the in-process provider), with the same type-import rewrite as the v2 sibling.",
-      "files": ["fhevm-chains.ts", "viemEthereumLib.ts"],
+      "files": ["fhevm-chains.ts", "operatorsPrices.ts", "priceTypes.ts", "viemEthereumLib.ts"],
       "rewrites": [
         {
           "file": "viemEthereumLib.ts",

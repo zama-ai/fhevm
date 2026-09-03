@@ -29,4 +29,6 @@ export default plugin;
 // The public API, in one module — see types.ts.
 export * from './types.js';
 export { timestampNow } from './internal/time.js';
+// HCU price lookup by executor event name, e.g. `getHCU('FheAdd', 'Uint8')`.
+export { getHCU } from './internal/hcu/prices.js';
 export type * from './type-extensions.js';

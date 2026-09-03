@@ -4,11 +4,21 @@
 // test reaches for a missing group by name instead of by a TypeError.
 
 import { HardhatPluginError } from 'hardhat/plugins';
-import type { Address, Hex } from 'viem';
+import type { Abi, Address, Hex } from 'viem';
 
 import {
   type FhevmClient,
+  type CoprocessorConfig,
+  type CoprocessorEvent,
+  type FhevmAddressLike,
+  type FhevmContractError,
+  type FhevmContractName,
   type FhevmEncryptedInput,
+  type FhevmErrorInterface,
+  type FhevmLog,
+  type FhevmTransactionHCUInfo,
+  type FhevmTransactionReceipt,
+  type FhevmTypeName,
   type FhevmNetworkInfo,
   FhevmType,
   type PublicDecryptResults,
@@ -19,9 +29,17 @@ import {
   type HardhatFhevmRuntimeEnvironment,
 } from '../types.js';
 import { PLUGIN_ID } from './constants.js';
+import type { FhevmContractsRepository } from './contracts.js';
+import { assertCoprocessorInitialized, readCoprocessorConfig, resolveAddress } from './coprocessorConfig.js';
 import { asAddress, asBigInt, asBoolean, publicDecrypt, publicDecryptOne } from './decrypt.js';
 import { createEncryptedInput, encryptOne } from './encrypt.js';
+import { parseCoprocessorEvents } from './events.js';
+import { createErrorInterface } from './errors/interface.js';
+import { parseFhevmHandle } from './fhevmHandle.js';
+import { computeTransactionHCU } from './hcu/hcu.js';
+import { parseFhevmError } from './errors/parse.js';
 import { isFhevmEuint } from './fheType.js';
+import { type LogOutput, logBox } from './log.js';
 import { isCleartextNetwork, isDevelopmentNetwork } from './network.js';
 import { userDecryptOne } from './userDecrypt.js';
 
@@ -38,12 +56,27 @@ class FhevmRuntimeEnvironment implements HardhatFhevmRuntimeEnvironment {
   readonly isCleartext: boolean;
   readonly isDevelopment: boolean;
   readonly #client: FhevmClient | undefined;
+  readonly #repository: FhevmContractsRepository | undefined;
 
-  constructor(network: FhevmNetworkInfo, client: FhevmClient | undefined) {
+  constructor(
+    network: FhevmNetworkInfo,
+    client: FhevmClient | undefined,
+    repository: FhevmContractsRepository | undefined,
+  ) {
     this.network = network;
     this.isCleartext = isCleartextNetwork(network);
     this.isDevelopment = isDevelopmentNetwork(network);
     this.#client = client;
+    this.#repository = repository;
+  }
+
+  get #contracts(): FhevmContractsRepository {
+    if (this.#repository !== undefined) return this.#repository;
+    const { networkName, chainId } = this.network;
+    throw new HardhatPluginError(
+      PLUGIN_ID,
+      `The FHEVM contracts are not available on '${networkName}' (chainId ${String(chainId)}): only development networks are supported yet.`,
+    );
   }
 
   get isMock(): boolean {
@@ -63,32 +96,49 @@ class FhevmRuntimeEnvironment implements HardhatFhevmRuntimeEnvironment {
     );
   }
 
-  typeof(): never {
-    return notImplemented('typeof');
+  typeof(handleBytes32: Hex): FhevmTypeName {
+    return parseFhevmHandle(handleBytes32).typeName;
   }
 
-  parseCoprocessorEvents(): never {
-    return notImplemented('parseCoprocessorEvents');
+  parseCoprocessorEvents(logs: readonly FhevmLog[] | null | undefined): CoprocessorEvent[] {
+    return parseCoprocessorEvents(this.#contracts.fhevmExecutor, logs);
   }
 
-  computeTransactionHCU(): never {
-    return notImplemented('computeTransactionHCU');
+  computeTransactionHCU(transactionReceipt: FhevmTransactionReceipt): FhevmTransactionHCUInfo {
+    return computeTransactionHCU(this.#contracts.fhevmExecutor, transactionReceipt);
   }
 
-  assertCoprocessorInitialized(): Promise<never> {
-    return Promise.reject(notImplementedError('assertCoprocessorInitialized'));
+  assertCoprocessorInitialized(contract: FhevmAddressLike, contractName?: string): Promise<void> {
+    return assertCoprocessorInitialized(this.#contracts, contract, contractName);
   }
 
-  getCoprocessorConfig(): Promise<never> {
-    return Promise.reject(notImplementedError('getCoprocessorConfig'));
+  async getCoprocessorConfig(contract: FhevmAddressLike): Promise<CoprocessorConfig> {
+    return readCoprocessorConfig(this.#contracts.client, await resolveAddress(contract));
   }
 
-  revertedWithCustomErrorArgs(): never {
-    return notImplemented('revertedWithCustomErrorArgs');
+  revertedWithCustomErrorArgs(
+    contractName: FhevmContractName,
+    customErrorName: string,
+  ): [{ abi: Abi; interface: FhevmErrorInterface }, string] {
+    const wrapper = this.#contracts.getContractFromName(contractName);
+    if (wrapper === undefined) {
+      throw new HardhatPluginError(PLUGIN_ID, `Unknown FHEVM contract '${contractName}' on this network.`);
+    }
+    const errorInterface = createErrorInterface(wrapper);
+    if (errorInterface.getError(customErrorName) === null) {
+      throw new HardhatPluginError(
+        PLUGIN_ID,
+        `FHEVM contract '${contractName}' declares no custom error '${customErrorName}'.`,
+      );
+    }
+    return [{ abi: wrapper.abi, interface: errorInterface }, customErrorName];
   }
 
-  tryParseFhevmError(): Promise<never> {
-    return Promise.reject(notImplementedError('tryParseFhevmError'));
+  async tryParseFhevmError(e: unknown, options?: { out?: LogOutput }): Promise<FhevmContractError | undefined> {
+    const error = await parseFhevmError(this.#contracts, e);
+    if (error !== undefined && options?.out !== undefined)
+      logBox(`${error.name} error`, error.longMessage, options.out);
+    return error;
   }
 
   createEncryptedInput(contractAddress: Address, userAddress: Address): FhevmEncryptedInput {
@@ -205,6 +255,7 @@ class FhevmRuntimeEnvironment implements HardhatFhevmRuntimeEnvironment {
 export function createFhevmConnection(
   network: FhevmNetworkInfo,
   client: FhevmClient | undefined,
+  repository: FhevmContractsRepository | undefined,
 ): HardhatFhevmRuntimeEnvironment {
-  return Object.freeze(new FhevmRuntimeEnvironment(network, client));
+  return Object.freeze(new FhevmRuntimeEnvironment(network, client, repository));
 }

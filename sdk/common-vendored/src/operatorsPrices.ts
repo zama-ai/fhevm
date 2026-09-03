@@ -7,7 +7,7 @@
 //
 // Re-sync by copying the upstream file over this one and re-applying those two changes.
 
-import type { PriceData } from './priceTypes';
+import type { PriceData } from './priceTypes.js';
 
 export const ALL_OPERATORS_PRICES: PriceData = {
   fheAdd: {

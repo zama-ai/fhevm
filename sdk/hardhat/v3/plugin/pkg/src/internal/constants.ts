@@ -9,6 +9,8 @@ export const DEVELOPMENT_CHAIN_ID = 31337;
 /** Sibling npm packages the plugin locates in the USER's project, never in its own tree. */
 export const FHEVM_SOLIDITY_PACKAGE_NAME = '@fhevm/solidity';
 export const FHEVM_SOLIDITY_CONFIG_FILE = 'config/ZamaConfig.sol';
+/** The config a consumer contract inherits for the Ethereum-family addresses (and the local stack, which mirrors them). */
+export const FHEVM_SOLIDITY_CONFIG_CONTRACT_NAME = 'ZamaEthereumConfig';
 export const FHEVM_SDK_PACKAGE_NAME = '@fhevm/sdk';
 
 /** The plugin's OWN dependency (not a consumer sibling): ABIs and the deploy sequence of the cleartext stack. */
