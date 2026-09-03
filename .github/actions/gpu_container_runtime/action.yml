@@ -1,0 +1,85 @@
+name: Prepare a GPU host for containerised work
+description: >-
+  Installs Docker with the Compose plugin and the NVIDIA container toolkit on a
+  freshly provisioned GPU instance, then proves the daemon can hand a container a
+  device. The repo's other GPU jobs compile and run on the host, so `gpu_setup`
+  gives them a CUDA toolkit and nothing container-related; a stack brought up with
+  docker compose needs the other half.
+
+inputs:
+  probe-image:
+    description: >-
+      Optional image to exec under `--gpus all` as a last check. Pass one of the
+      built GPU worker images: it links libcudart, so it fails loudly if the
+      runtime hands over a container the driver cannot serve.
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Install Docker and the Compose plugin
+      shell: bash
+      run: |
+        set -euo pipefail
+        # Same shape as the GPU image build's own Docker step: a provisioned
+        # instance may ship docker without running it, and `docker compose` is a
+        # separate package from `docker.io` on Ubuntu -- the e2e stack needs both.
+        sudo apt-get -o DPkg::Lock::Timeout=600 update
+        command -v docker >/dev/null 2>&1 || \
+          sudo apt-get -o DPkg::Lock::Timeout=600 install -y docker.io
+        docker compose version >/dev/null 2>&1 || \
+          sudo apt-get -o DPkg::Lock::Timeout=600 install -y docker-compose-v2
+        sudo systemctl start docker
+        # The new group does not apply to the shell already running, so the
+        # socket is opened for this job directly and the membership is for
+        # anything that reconnects later.
+        runner_user="${USER:-$(id -un)}"
+        sudo usermod -aG docker "${runner_user}"
+        sudo setfacl --modify user:"${runner_user}":rw /var/run/docker.sock
+        docker version
+        docker compose version
+
+    - name: Install the NVIDIA container toolkit
+      shell: bash
+      run: |
+        set -euo pipefail
+        # Without this the daemon has no `nvidia` runtime, and a worker container
+        # starts, sees no device, and computes nothing -- the silent failure the
+        # compose wiring in PR-11 was about. Installed from NVIDIA's own repo
+        # because no distro package tracks it closely enough.
+        if ! command -v nvidia-ctk >/dev/null 2>&1; then
+          curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey \
+            | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+          curl -fsSL https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list \
+            | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' \
+            | sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list > /dev/null
+          sudo apt-get -o DPkg::Lock::Timeout=600 update
+          sudo apt-get -o DPkg::Lock::Timeout=600 install -y nvidia-container-toolkit
+        fi
+        # Set as default as well as registered: the compose renderer asks for
+        # devices through `deploy.resources.reservations`, which the default
+        # runtime serves, and NVIDIA_VISIBLE_DEVICES is honoured either way.
+        sudo nvidia-ctk runtime configure --runtime=docker --set-as-default
+        sudo systemctl restart docker
+
+    - name: Prove the daemon can serve a GPU
+      shell: bash
+      env:
+        PROBE_IMAGE: ${{ inputs.probe-image }}
+      run: |
+        set -euo pipefail
+        # Three separate facts, each with its own failure mode: a driver on the
+        # host, a runtime registered with the daemon, and -- when the caller
+        # names an image -- a container that actually starts against it.
+        nvidia-smi -L
+        runtimes="$(docker info --format '{{json .Runtimes}}')"
+        echo "  daemon runtimes: ${runtimes}"
+        grep -q nvidia <<<"${runtimes}" || {
+          echo "the docker daemon has no nvidia runtime; GPU workers would run blind" >&2
+          exit 1
+        }
+        if [ -n "${PROBE_IMAGE}" ]; then
+          echo "  probing ${PROBE_IMAGE}"
+          docker run --rm --gpus all "${PROBE_IMAGE}" /usr/local/bin/worker --version
+        fi
