@@ -566,21 +566,23 @@ test-hh-v2-e2e-anvil: compile-hh-v2-e2e ## Hardhat v2 e2e tests against a local 
 
 # Separate tier: packs and installs each payload into a temp project and runs its suite. Minutes, not
 # seconds, so it is deliberately not part of `make test`.
-test-consumer: clean-scratch compile-hh-v2-template ## Install each published payload as a real consumer
+test-consumer: clean-scratch compile-hh-v2-template compile-hh-v3-plugin ## Install each published payload as a real consumer
 	$(call run-fhevm-npm,test-consumer ./host-contracts-cleartext/v12 --build-linked-dependencies --run)
 	$(call run-fhevm-npm,test-consumer ./host-contracts-cleartext/v13 --build-linked-dependencies --run)
 	$(call run-fhevm-npm,test-consumer ./hardhat/v2/fhevm-hardhat-template/pkg --build-linked-dependencies --run)
 	$(call run-hh-v2,$(W_HH_V2_PLUGIN),test:consumer)
+	$(call run-hh-v3,$(W_HH_V3_PLUGIN),test:consumer)
 
 # The template leg runs WITHOUT --ci on purpose: the workspace-native template is a cluster member with
 # no committed lockfile BY DESIGN (option E) — the lock-replaying rehearsal of it belongs to the
 # publish-mirror RENDER, which regenerates a public lockfile. Until that lands, this leg still proves a
 # fresh consumer install + test of the template against the live workspace payloads.
-test-consumer-ci: clean-scratch compile-hh-v2-template ## Run every consumer from its committed lockfile (template: fresh resolve, see comment)
+test-consumer-ci: clean-scratch compile-hh-v2-template compile-hh-v3-plugin ## Run every consumer from its committed lockfile (template: fresh resolve, see comment)
 	$(call run-fhevm-npm,test-consumer ./host-contracts-cleartext/v12 --build-linked-dependencies --run --ci)
 	$(call run-fhevm-npm,test-consumer ./host-contracts-cleartext/v13 --build-linked-dependencies --run --ci)
 	$(call run-fhevm-npm,test-consumer ./hardhat/v2/fhevm-hardhat-template/pkg --build-linked-dependencies --run)
 	$(call run-hh-v2,$(W_HH_V2_PLUGIN),test:consumer)
+	$(call run-fhevm-npm,test-consumer ./hardhat/v3/plugin --build-linked-dependencies --run --ci)
 
 ########################################################################################################
 # Generated sources
