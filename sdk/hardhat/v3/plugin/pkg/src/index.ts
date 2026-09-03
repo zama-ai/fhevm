@@ -27,5 +27,6 @@ const plugin: HardhatPlugin = definePlugin({
 
 export default plugin;
 export type { HardhatFhevm } from './internal/FhevmConnection.js';
-export type { FhevmNetworkInfo, FhevmNetworkKind } from './internal/network.js';
+export type { FhevmNetworkInfo, FhevmNetworkKind, FhevmPublicChain } from './internal/network.js';
+export type { FhevmHostChainConstants, FhevmNetworkGroup } from './internal/vendored/fhevm-chains.js';
 export type * from './type-extensions.js';

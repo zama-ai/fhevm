@@ -65,7 +65,13 @@ void test('a public network is left untouched', async () => {
     },
   } as unknown as NetworkConnection<string>;
 
-  const network = { networkName: 'sepolia', chainId: 11_155_111, kind: 'sepolia', url: 'https://rpc.example' } as const;
+  const network = {
+    networkName: 'sepolia',
+    chainId: 11_155_111,
+    kind: 'public',
+    url: 'https://rpc.example',
+    publicChains: [],
+  } as const;
   assert.equal(await prepareDevelopmentChain(connection, network), undefined);
   assert.deepEqual(requests, [], 'no request at all reaches a public network');
 });
