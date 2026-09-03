@@ -1428,18 +1428,47 @@ async fn seed_computation_row_in_transaction(
     is_error: bool,
     error_message: Option<&str>,
 ) {
+    seed_computation_row_in_transaction_with_allowed(
+        pool,
+        dcid,
+        output_handle,
+        transaction_id,
+        true,
+        is_completed,
+        is_error,
+        error_message,
+    )
+    .await
+}
+
+/// As above, but `is_allowed` is a parameter. An internal producer carries
+/// `is_allowed = FALSE`: it is never work in its own right, only executed on
+/// behalf of an allowed consumer -- and it is stamped like any other row when
+/// it fails, so it reaches the demote threshold like any other row too.
+#[allow(clippy::too_many_arguments)]
+async fn seed_computation_row_in_transaction_with_allowed(
+    pool: &sqlx::PgPool,
+    dcid: &[u8],
+    output_handle: &[u8],
+    transaction_id: &[u8],
+    is_allowed: bool,
+    is_completed: bool,
+    is_error: bool,
+    error_message: Option<&str>,
+) {
     sqlx::query(
         r#"
         INSERT INTO computations
             (output_handle, dependencies, fhe_operation, is_scalar,
              dependence_chain_id, transaction_id, is_allowed, is_completed,
              is_error, error_message, host_chain_id, operand_boundary_mask)
-        VALUES ($1, '{}', 0, false, $2, $3, true, $4, $5, $6, 1, $7)
+        VALUES ($1, '{}', 0, false, $2, $3, $4, $5, $6, $7, 1, $8)
         "#,
     )
     .bind(output_handle)
     .bind(dcid)
     .bind(transaction_id)
+    .bind(is_allowed)
     .bind(is_completed)
     .bind(is_error)
     .bind(error_message)
@@ -1481,14 +1510,19 @@ async fn demotion_is_transaction_scoped_so_a_blocked_sibling_cannot_stall_the_ch
     // the same transaction in the other.
     let foreign_demoted_chain = vec![0xB4u8; 32];
     let foreign_pending_chain = vec![0xB5u8; 32];
+    // An internal (is_allowed = FALSE) producer and its allowed consumer, in
+    // one transaction and one chain.
+    let internal_producer_chain = vec![0xB8u8; 32];
     let shared_tx = b"tx-shared-a-and-b".to_vec();
     let control_tx = b"tx-control".to_vec();
     let split_tx = b"tx-split-across-chains".to_vec();
+    let internal_tx = b"tx-internal-producer".to_vec();
     for dcid in [
         &stalled_chain,
         &control_chain,
         &foreign_demoted_chain,
         &foreign_pending_chain,
+        &internal_producer_chain,
     ] {
         sqlx::query(
             "INSERT INTO dependence_chain
@@ -1571,6 +1605,37 @@ async fn demotion_is_transaction_scoped_so_a_blocked_sibling_cannot_stall_the_ch
         None,
     )
     .await;
+    // An internal producer is executed for its allowed consumer and stamped
+    // like any other row when it fails, so it reaches the demote threshold --
+    // and it must be discoverable by the sweep, or the chain it retires can
+    // never come back.
+    seed_computation_row_in_transaction_with_allowed(
+        &pool,
+        &internal_producer_chain,
+        &handle(0xB9),
+        &internal_tx,
+        false, // is_allowed
+        false,
+        true,
+        Some("RETRYABLE SchedulerError::ExecutionPanic(sigsegv)"),
+    )
+    .await;
+    sqlx::query("UPDATE computations SET error_retry_count = $1 WHERE output_handle = $2")
+        .bind(threshold)
+        .bind(handle(0xB9))
+        .execute(&pool)
+        .await
+        .unwrap();
+    seed_computation_row_in_transaction(
+        &pool,
+        &internal_producer_chain,
+        &handle(0xBA),
+        &internal_tx,
+        false,
+        false,
+        None,
+    )
+    .await;
 
     let mut mgr = LockMngr::new_with_conf(
         Uuid::new_v4(),
@@ -1620,14 +1685,40 @@ async fn demotion_is_transaction_scoped_so_a_blocked_sibling_cannot_stall_the_ch
          will re-arm it"
     );
 
-    // 4. Retiring is what lets the sweep see it -- it only looks at processed
+    // 4. An internal producer blocks exactly like an allowed one: the chain
+    //    retires rather than being held open by its allowed consumer.
+    let (status, _, _) = chain_state(&pool, &internal_producer_chain).await;
+    assert_eq!(
+        status, "processed",
+        "a demoted internal producer must block its transaction too"
+    );
+
+    // 5. Retiring is what lets the sweep see it -- it only looks at processed
     //    chains -- so the loop closes: re-armed into the slow lane, A's count
     //    reset, and the transaction selectable again on the next pass.
     let rearmed = rearm_demoted_chains(&pool, threshold).await.unwrap();
     assert_eq!(
-        rearmed, 2,
-        "both chains owning a demoted row are re-armed: the stalled one and \
-         the cross-chain owner"
+        rearmed, 3,
+        "every chain owning a demoted row is re-armed: the stalled one, the \
+         cross-chain owner, and the one whose demoted row is an INTERNAL \
+         producer -- `is_allowed` decides what counts as work, not what \
+         counts as a blocker"
+    );
+    let (status, _, _) = chain_state(&pool, &internal_producer_chain).await;
+    assert_eq!(
+        status, "updated",
+        "the internal producer's chain comes back, or its allowed consumer \
+         and everything downstream are stranded behind a retired chain"
+    );
+    let internal_retry_count: i16 =
+        sqlx::query_scalar("SELECT error_retry_count FROM computations WHERE output_handle = $1")
+            .bind(handle(0xB9))
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        internal_retry_count, 0,
+        "and its attempts are reset, so the transaction is selectable again"
     );
 
     let (status, _, dependency_count) = chain_state(&pool, &stalled_chain).await;
