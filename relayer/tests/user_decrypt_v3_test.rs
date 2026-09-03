@@ -17,6 +17,7 @@ use crate::common::validation_helper::{
 };
 use alloy::primitives::{Address, B256};
 use ethereum_rpc_mock::fhevm::UserDecryptKind;
+use ethereum_rpc_mock::Response;
 use fhevm_relayer::http::endpoints::v2::types::error::ApiResponseStatus;
 use fhevm_relayer::http::endpoints::v2::types::user_decrypt::{
     UserDecryptPostResponseJson, UserDecryptStatusResponseJson,
@@ -584,6 +585,83 @@ async fn v3_e2e_succeeds_against_mocked_gateway() {
             assert!(!item.payload.is_empty(), "Share payload empty");
             assert!(!item.signature.is_empty(), "Share signature empty");
         }
+        break;
+    }
+
+    setup.shutdown().await;
+}
+
+/// The error a same-nonce collision between two dispatchers reports. It must cost a retry,
+/// not a terminal `failure` on the row.
+#[tokio::test]
+async fn v3_replacement_underpriced_then_succeeds() {
+    use alloy::sol_types::SolCall;
+
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+    let payload = helpers::create_v3_envelope();
+    let handles = helpers::extract_handles_from_v3_envelope(&payload);
+    let user_address = helpers::extract_user_address_from_v3_envelope(&payload);
+
+    setup.fhevm_mock.queue_tx_responses_for_selector(
+        setup.fhevm_mock.decryption_contract,
+        fhevm_relayer::gateway::arbitrum::bindings::Decryption::userDecryptionRequest_0Call::SELECTOR,
+        vec![Response::error(
+            "replacement transaction underpriced".to_string(),
+        )],
+    );
+    setup.fhevm_mock.on_user_decrypt_success(
+        UserDecryptKind::Unified,
+        handles,
+        user_address,
+        ethereum_rpc_mock::SubscriptionTarget::All,
+    );
+
+    let response = reqwest::Client::new()
+        .post(helpers::v3_user_decrypt_post_url(&setup))
+        .header("Content-Type", "application/json")
+        .timeout(std::time::Duration::from_secs(10))
+        .json(&payload)
+        .send()
+        .await
+        .expect("POST failed");
+    assert_eq!(response.status(), reqwest::StatusCode::ACCEPTED);
+    let post_response: UserDecryptPostResponseJson = response
+        .json()
+        .await
+        .expect("Failed to parse POST response");
+    let job_id = post_response.result.job_id.clone();
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    loop {
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        let get_response = reqwest::Client::new()
+            .get(helpers::v3_user_decrypt_get_url(&setup, &job_id))
+            .timeout(std::time::Duration::from_secs(10))
+            .send()
+            .await
+            .expect("GET failed");
+
+        let status = get_response.status();
+        if status == reqwest::StatusCode::ACCEPTED {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "v3 job never completed"
+            );
+            continue;
+        }
+
+        assert_eq!(
+            status,
+            reqwest::StatusCode::OK,
+            "v3 job ended in unexpected state {}: {:?}",
+            status,
+            get_response.text().await
+        );
+        let body: UserDecryptStatusResponseJson = get_response
+            .json()
+            .await
+            .expect("Failed to parse GET response");
+        assert_eq!(body.status, ApiResponseStatus::Succeeded);
         break;
     }
 

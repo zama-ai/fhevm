@@ -89,21 +89,30 @@ pub enum LockState {
 /// Keeps a test gate's watch channels open for its lifetime - see
 /// [`DispatchGate::open_for_tests`]. A production gate leaves this `None`, because the lock owns
 /// the senders.
-type TestGateSenders = Arc<(watch::Sender<LockState>, watch::Sender<Option<i64>>)>;
+type TestGateSenders = Arc<(
+    watch::Sender<LockState>,
+    watch::Sender<Option<i64>>,
+    watch::Sender<bool>,
+)>;
 
 /// The dispatch gate: a read-only view of "may this pod drive work right now, and under which
 /// epoch", handed to every subsystem that would otherwise dispatch - listeners, tx and
 /// readiness processors, cron workers, the sweep, HTTP intake. Deliberately not
 /// [`DispatcherLock`] itself: no subsystem behind the gate may acquire or release.
 ///
-/// [`Self::epoch`] is `Some` only when the lock is `Held` **and** an epoch has been minted:
+/// [`Self::epoch`] is `Some` only when the lock is `Held`, an epoch has been minted, **and**
+/// [`DispatcherLock::handover_wait`] has elapsed:
 /// - `Unconfirmed` reads closed - Postgres may already have released the lock to a peer.
 /// - `Held` with no epoch reads closed - intake would stamp `owner_epoch = NULL`, and the
 ///   holder's own sweep claims unowned rows on sight, re-driving a request already running.
-#[derive(Clone)]
+/// - `Held` before the handover wait elapses reads closed - the predecessor may still be
+///   dispatching. A separate signal from the epoch, so [`DispatcherLock::current_epoch`] stays
+///   available the moment the mint lands.
+#[derive(Clone, Debug)]
 pub struct DispatchGate {
     state_rx: watch::Receiver<LockState>,
     epoch_rx: watch::Receiver<Option<i64>>,
+    handover_ready_rx: watch::Receiver<bool>,
     /// Set only by [`DispatchGate::open_for_tests`]: production senders live in the lock, but
     /// a test gate must keep its channels alive itself or `wait_open` would park forever.
     _test_senders: Option<TestGateSenders>,
@@ -114,10 +123,11 @@ pub struct DispatchGate {
 fn dispatching_epoch_of(
     state_rx: &watch::Receiver<LockState>,
     epoch_rx: &watch::Receiver<Option<i64>>,
+    handover_ready_rx: &watch::Receiver<bool>,
 ) -> Option<i64> {
     match *state_rx.borrow() {
-        LockState::Held => *epoch_rx.borrow(),
-        LockState::Unconfirmed | LockState::NotHeld => None,
+        LockState::Held if *handover_ready_rx.borrow() => *epoch_rx.borrow(),
+        LockState::Held | LockState::Unconfirmed | LockState::NotHeld => None,
     }
 }
 
@@ -128,22 +138,24 @@ impl DispatchGate {
     pub fn open_for_tests(epoch: i64) -> Self {
         let (state_tx, state_rx) = watch::channel(LockState::Held);
         let (epoch_tx, epoch_rx) = watch::channel(Some(epoch));
+        let (handover_tx, handover_ready_rx) = watch::channel(true);
         Self {
             state_rx,
             epoch_rx,
-            _test_senders: Some(Arc::new((state_tx, epoch_tx))),
+            handover_ready_rx,
+            _test_senders: Some(Arc::new((state_tx, epoch_tx, handover_tx))),
         }
     }
 
     /// The epoch to stamp on work this pod is about to drive itself, or `None` when the gate is
-    /// closed. See the type's doc comment for why both halves of the condition matter.
+    /// closed. See the type's doc comment for why all three conditions matter.
     ///
     /// Not to be confused with [`DispatcherLock::current_epoch`], which keeps returning this
     /// pod's last real epoch through `Unconfirmed` and past release, and is what the write
     /// fence needs. The distinction: `current_epoch` answers "which epoch does a write of mine
     /// carry", this answers "may I start driving something new".
     pub fn epoch(&self) -> Option<i64> {
-        dispatching_epoch_of(&self.state_rx, &self.epoch_rx)
+        dispatching_epoch_of(&self.state_rx, &self.epoch_rx, &self.handover_ready_rx)
     }
 
     /// Whether the gate is open, read synchronously (no await).
@@ -155,6 +167,9 @@ impl DispatchGate {
     /// [`Self::wait_open`], for a subsystem holding something it must give up when this pod
     /// stops being the dispatcher - the WebSocket listener's subscription is the case that
     /// needs it, since a subscription cannot be paused, only dropped and re-established.
+    ///
+    /// Does not watch `handover_ready_rx`: it flips open only forward, and the reset that
+    /// re-arms it rides along with a `NotHeld` send on `state_rx`, which this already watches.
     pub async fn wait_closed(&self) {
         let mut state_rx = self.state_rx.clone();
         let mut epoch_rx = self.epoch_rx.clone();
@@ -179,17 +194,20 @@ impl DispatchGate {
     pub async fn wait_open(&self) {
         let mut state_rx = self.state_rx.clone();
         let mut epoch_rx = self.epoch_rx.clone();
+        let mut handover_ready_rx = self.handover_ready_rx.clone();
         loop {
             if self.is_open() {
                 return;
             }
-            // Both channels are watched: `Held` and the mint are two independent sends whose
-            // order is not fixed (see `DispatcherLock::subscribe_epoch`), and the gate needs
-            // both. The receivers are cloned before the first check, so a send landing between
-            // the check and the await marks them changed rather than being missed.
+            // All three channels are watched: `Held`, the mint and the handover wait are
+            // independent sends whose order is not fixed (see
+            // `DispatcherLock::subscribe_epoch`), and the gate needs all three. The receivers
+            // are cloned before the first check, so a send landing between the check and the
+            // await marks them changed rather than being missed.
             let closed = tokio::select! {
                 changed = state_rx.changed() => changed.is_err(),
                 changed = epoch_rx.changed() => changed.is_err(),
+                changed = handover_ready_rx.changed() => changed.is_err(),
             };
             if closed {
                 break;
@@ -238,6 +256,11 @@ pub struct DispatcherLock {
     /// [`DispatcherLock::current_epoch`].
     epoch_tx: Arc<watch::Sender<Option<i64>>>,
     epoch_rx: watch::Receiver<Option<i64>>,
+    /// `false` until [`DispatcherLock::run`]'s handover-wait timer fires for the current
+    /// acquisition. Separate from `epoch_tx` so delaying the gate never delays
+    /// [`DispatcherLock::current_epoch`].
+    handover_ready_tx: Arc<watch::Sender<bool>>,
+    handover_ready_rx: watch::Receiver<bool>,
     config: DispatcherLockConfig,
     classid: i32,
     objid: i32,
@@ -299,6 +322,7 @@ impl DispatcherLock {
 
         let (state_tx, state_rx) = watch::channel(LockState::NotHeld);
         let (epoch_tx, epoch_rx) = watch::channel(None);
+        let (handover_ready_tx, handover_ready_rx) = watch::channel(false);
         metrics::set_dispatcher_lock_held(false);
 
         Ok(Self {
@@ -312,6 +336,8 @@ impl DispatcherLock {
             state_rx,
             epoch_tx: Arc::new(epoch_tx),
             epoch_rx,
+            handover_ready_tx: Arc::new(handover_ready_tx),
+            handover_ready_rx,
             config: config.clone(),
             classid: DISPATCHER_LOCK_CLASSID,
             objid,
@@ -329,6 +355,7 @@ impl DispatcherLock {
         DispatchGate {
             state_rx: self.state_rx.clone(),
             epoch_rx: self.epoch_rx.clone(),
+            handover_ready_rx: self.handover_ready_rx.clone(),
             _test_senders: None,
         }
     }
@@ -338,7 +365,7 @@ impl DispatcherLock {
     /// repositories can stamp intake without carrying a second handle. Distinct from
     /// [`Self::current_epoch`], which is what an *already-started* write fences with.
     pub fn dispatching_epoch(&self) -> Option<i64> {
-        dispatching_epoch_of(&self.state_rx, &self.epoch_rx)
+        dispatching_epoch_of(&self.state_rx, &self.epoch_rx, &self.handover_ready_rx)
     }
 
     /// Subscribe to epoch changes. `startup.rs`'s bounded wait for the first acquisition is
@@ -377,6 +404,11 @@ impl DispatcherLock {
 
     fn set_state(&self, state: LockState) {
         metrics::set_dispatcher_lock_held(matches!(state, LockState::Held));
+        // Re-arms the handover wait, so a later acquisition serves it rather than opening on
+        // the previous one's flag.
+        if matches!(state, LockState::NotHeld) {
+            let _ = self.handover_ready_tx.send(false);
+        }
         // No receiver is an error only once the process is already tearing down.
         let _ = self.state_tx.send(state);
     }
@@ -398,6 +430,12 @@ impl DispatcherLock {
         .await
         .context("epoch mint timed out")?
         .context("epoch mint query failed")
+    }
+
+    /// The predecessor's maximum unaware window: how long it may keep dispatching after its
+    /// lock connection died, before its next heartbeat fails and it demotes itself.
+    fn handover_wait(&self) -> Duration {
+        self.config.holder_heartbeat_interval + self.config.query_timeout
     }
 
     /// Try to acquire, once. Never called while already holding: the lock is re-entrant per
@@ -465,17 +503,37 @@ impl DispatcherLock {
     /// see the module docs. Stops
     /// (returning normally, lock still held or not) once `shutdown` fires; the caller
     /// releases afterwards via [`DispatcherLock::release_last`].
+    ///
+    /// A fresh acquisition serves [`Self::handover_wait`] before its gate opens. Heartbeating
+    /// runs throughout, and the timer shares this `select!` with `shutdown` so a SIGTERM
+    /// mid-wait does not block on it.
     pub async fn run(&self, shutdown: CancellationToken) {
         let mut poll_ticker = tokio::time::interval(self.config.standby_poll_interval);
         poll_ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         let mut heartbeat_ticker = tokio::time::interval(self.config.holder_heartbeat_interval);
         heartbeat_ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        let mut gate_open_at: Option<tokio::time::Instant> = None;
 
         loop {
             let holding = self.state() != LockState::NotHeld;
             tokio::select! {
-                _ = poll_ticker.tick(), if !holding => self.poll_tick().await,
+                _ = poll_ticker.tick(), if !holding => {
+                    if self.poll_tick().await {
+                        let wait = self.handover_wait();
+                        gate_open_at = Some(tokio::time::Instant::now() + wait);
+                        info!(
+                            ?wait,
+                            "Dispatcher lock acquired, dispatch gate held closed for the \
+                             predecessor's unaware window"
+                        );
+                    }
+                }
                 _ = heartbeat_ticker.tick(), if holding => self.heartbeat_tick().await,
+                _ = tokio::time::sleep_until(gate_open_at.unwrap_or_else(tokio::time::Instant::now)), if gate_open_at.is_some() => {
+                    let _ = self.handover_ready_tx.send(true);
+                    info!("Dispatcher lock handover wait elapsed, dispatch gate open");
+                    gate_open_at = None;
+                }
                 _ = shutdown.cancelled() => {
                     info!("Dispatcher lock loop stopping (shutdown)");
                     return;
@@ -488,7 +546,10 @@ impl DispatcherLock {
     /// confirmation happens on the first heartbeat (`held_pid` starts `None`), so a readback
     /// failure here can never trigger a second `try_acquire` on a session that already holds
     /// the key - the re-entrant counter would accept it, and nothing unlocks twice.
-    async fn poll_tick(&self) {
+    ///
+    /// Returns whether this call just acquired, so [`Self::run`] times the handover wait from
+    /// the acquisition rather than from the mint.
+    async fn poll_tick(&self) -> bool {
         let mut guard = self.inner.lock().await;
         // Disjoint field borrows: `conn`, `consecutive_failures` and `epoch` need to be usable
         // independently below (`&mut *guard` alone would tie both to one borrow of the
@@ -500,7 +561,7 @@ impl DispatcherLock {
             ..
         } = &mut *guard;
         let Some(conn) = conn.as_mut() else {
-            return;
+            return false;
         };
 
         match self.try_acquire(conn).await {
@@ -509,7 +570,8 @@ impl DispatcherLock {
                 // Best-effort fast path: mint the epoch now, on the same connection, rather
                 // than waiting for the first heartbeat. A failure here is not fatal - the row
                 // still says we hold the lock - so it just falls back to the retry in
-                // `heartbeat_tick`, logged there rather than here.
+                // `heartbeat_tick`, logged there rather than here. Published immediately, so
+                // `current_epoch()` is available at once; the gate is what waits.
                 if let Ok(minted) = self.mint_epoch(conn).await {
                     *epoch = Some(minted);
                     self.set_epoch(Some(minted));
@@ -517,18 +579,21 @@ impl DispatcherLock {
                 drop(guard);
                 self.set_state(LockState::Held);
                 info!("Dispatcher lock acquired, confirming backend pid on next heartbeat");
+                true
             }
             Ok(false) => {
                 // Held by someone else: a completed round trip, which is all this counter
                 // measures. Without the reset a standby's transient errors accumulate over
                 // its whole life until an unrelated one exits it.
                 *consecutive_failures = 0;
+                false
             }
             Err(e) => {
                 warn!(error = %e, "dispatcher lock: try-lock failed");
                 *consecutive_failures += 1;
                 let failures = *consecutive_failures;
                 self.exit_if_past_failure_bound(failures);
+                false
             }
         }
     }
@@ -719,17 +784,29 @@ mod tests {
         assert!(has_negative);
     }
 
-    /// Build a gate over channels the test drives directly. The two states below are the ones
-    /// no integration test can reach: `Unconfirmed` needs the lock's dedicated connection to
-    /// fail, and the `Held`-without-epoch window needs a mint to fail, and the harness can
-    /// force neither.
+    /// Build a gate over channels the test drives directly, with the handover wait already
+    /// elapsed.
     fn gate_at(state: LockState, epoch: Option<i64>) -> DispatchGate {
+        gate_at_with_handover(state, epoch, true)
+    }
+
+    /// As [`gate_at`], with the handover-ready flag under the test's control. The states below
+    /// are the ones no integration test can reach: `Unconfirmed` needs the lock's dedicated
+    /// connection to fail and the `Held`-without-epoch window needs a mint to fail, and the
+    /// harness can force neither.
+    fn gate_at_with_handover(
+        state: LockState,
+        epoch: Option<i64>,
+        handover_ready: bool,
+    ) -> DispatchGate {
         let (state_tx, state_rx) = watch::channel(state);
         let (epoch_tx, epoch_rx) = watch::channel(epoch);
+        let (handover_tx, handover_ready_rx) = watch::channel(handover_ready);
         DispatchGate {
             state_rx,
             epoch_rx,
-            _test_senders: Some(Arc::new((state_tx, epoch_tx))),
+            handover_ready_rx,
+            _test_senders: Some(Arc::new((state_tx, epoch_tx, handover_tx))),
         }
     }
 
@@ -764,6 +841,22 @@ mod tests {
         assert!(!gate_at(LockState::NotHeld, Some(7)).is_open());
     }
 
+    #[test]
+    fn gate_is_closed_while_held_and_minted_but_handover_not_ready() {
+        // The window `Self::run`'s handover wait holds closed: acquired, epoch already minted,
+        // but the predecessor's unaware window has not elapsed yet.
+        let gate = gate_at_with_handover(LockState::Held, Some(7), false);
+        assert_eq!(gate.epoch(), None);
+        assert!(!gate.is_open());
+    }
+
+    #[test]
+    fn gate_opens_once_handover_becomes_ready() {
+        let gate = gate_at_with_handover(LockState::Held, Some(7), true);
+        assert_eq!(gate.epoch(), Some(7));
+        assert!(gate.is_open());
+    }
+
     #[tokio::test]
     async fn gate_wait_open_returns_immediately_when_already_open() {
         let gate = gate_at(LockState::Held, Some(1));
@@ -778,9 +871,11 @@ mod tests {
         // watched only lock state would wake here with the epoch still `None`.
         let (state_tx, state_rx) = watch::channel(LockState::Held);
         let (epoch_tx, epoch_rx) = watch::channel(None);
+        let (handover_tx, handover_ready_rx) = watch::channel(true);
         let gate = DispatchGate {
             state_rx,
             epoch_rx,
+            handover_ready_rx,
             _test_senders: None,
         };
         assert!(!gate.is_open(), "no epoch yet");
@@ -797,15 +892,49 @@ mod tests {
             .expect("waiter task panicked");
         assert_eq!(gate.epoch(), Some(42));
         drop(state_tx);
+        drop(handover_tx);
+    }
+
+    #[tokio::test]
+    async fn gate_wait_open_wakes_on_the_handover_wait_elapsing() {
+        // The handover-wait window: `Held` and the epoch are already both set, but the gate
+        // stays closed until `handover_ready_rx` catches up - the case `Self::run`'s timer
+        // exercises for real.
+        let (state_tx, state_rx) = watch::channel(LockState::Held);
+        let (epoch_tx, epoch_rx) = watch::channel(Some(42));
+        let (handover_tx, handover_ready_rx) = watch::channel(false);
+        let gate = DispatchGate {
+            state_rx,
+            epoch_rx,
+            handover_ready_rx,
+            _test_senders: None,
+        };
+        assert!(!gate.is_open(), "handover wait has not elapsed yet");
+
+        let waiter = tokio::spawn({
+            let gate = gate.clone();
+            async move { gate.wait_open().await }
+        });
+        handover_tx.send(true).expect("send handover ready");
+
+        tokio::time::timeout(std::time::Duration::from_secs(1), waiter)
+            .await
+            .expect("wait_open must wake when the handover wait elapses")
+            .expect("waiter task panicked");
+        assert_eq!(gate.epoch(), Some(42));
+        drop(state_tx);
+        drop(epoch_tx);
     }
 
     #[tokio::test]
     async fn gate_wait_closed_wakes_when_the_lock_is_lost() {
         let (state_tx, state_rx) = watch::channel(LockState::Held);
         let (epoch_tx, epoch_rx) = watch::channel(Some(1));
+        let (handover_tx, handover_ready_rx) = watch::channel(true);
         let gate = DispatchGate {
             state_rx,
             epoch_rx,
+            handover_ready_rx,
             _test_senders: None,
         };
 
@@ -822,5 +951,6 @@ mod tests {
             .expect("wait_closed must wake when the gate closes")
             .expect("waiter task panicked");
         drop(epoch_tx);
+        drop(handover_tx);
     }
 }

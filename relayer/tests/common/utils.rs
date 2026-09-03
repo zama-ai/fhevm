@@ -690,6 +690,15 @@ fn create_admin_endpoint_config(temp_dir: &TempDir) -> anyhow::Result<std::path:
         http["enable_admin_endpoint"] = serde_yaml::Value::Bool(true);
     }
 
+    // These tests post to the TPS admin endpoint right after startup, and the TPS throttler
+    // worker starts only once `DispatchGate` opens - which the base config holds for
+    // `holder_heartbeat_interval + query_timeout`.
+    if let Some(dispatcher_lock) = config.get_mut("dispatcher_lock") {
+        dispatcher_lock["standby_poll_interval"] = serde_yaml::Value::String("5ms".to_string());
+        dispatcher_lock["holder_heartbeat_interval"] = serde_yaml::Value::String("5ms".to_string());
+        dispatcher_lock["query_timeout"] = serde_yaml::Value::String("5ms".to_string());
+    }
+
     // Serialize back to YAML and write to temp file
     let modified_content =
         serde_yaml::to_string(&config).context("Failed to serialize modified config")?;
@@ -1354,10 +1363,15 @@ pub fn register_host_acl_rpc_error(host_server: &MockServer, acl_address: Addres
 
 /// Poll/heartbeat/sweep intervals fast enough that election and handover both resolve inside
 /// the poll budgets the dispatcher tests allow themselves.
+///
+/// `query_timeout` is one of the two terms in `DispatcherLock::handover_wait`, so the test
+/// config's 3s would put every handover past 3s. 500ms still leaves a lock query on a local
+/// Postgres three orders of magnitude of headroom.
 #[allow(dead_code)]
 pub fn fast_timing(settings: &mut Settings) {
     settings.dispatcher_lock.standby_poll_interval = std::time::Duration::from_millis(100);
     settings.dispatcher_lock.holder_heartbeat_interval = std::time::Duration::from_millis(100);
+    settings.dispatcher_lock.query_timeout = std::time::Duration::from_millis(500);
     settings.dispatcher_lock.sweep.interval = std::time::Duration::from_millis(100);
 }
 

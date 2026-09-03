@@ -116,6 +116,9 @@ impl TransactionStatus {
 pub enum TransactionErrorType {
     InvalidAddress,
     Nonce,
+    /// A nonce a peer still holds. Separate from `Nonce` because a burst of these is a
+    /// handover, not a fault, and alerting cannot tell them apart under one label.
+    NonceOccupied,
     Transport,
     Reverted,
     RevertedACLSelector,
@@ -130,6 +133,7 @@ impl TransactionErrorType {
         match self {
             TransactionErrorType::InvalidAddress => "invalid_address",
             TransactionErrorType::Nonce => "nonce_error",
+            TransactionErrorType::NonceOccupied => "nonce_occupied",
             TransactionErrorType::Transport => "transport_error",
             TransactionErrorType::Reverted => "reverted",
             TransactionErrorType::RevertedACLSelector => "reverted_acl_selector",

@@ -52,17 +52,18 @@ static GLOBAL_REGISTRY: OnceLock<Registry> = OnceLock::new();
 // so the sequence below drains the named tasks and abandons the rest - inside the pod's
 // `terminationGracePeriodSeconds`, unset in gitops and so Kubernetes' 30s.
 //
-// One case reaches the client, and it is a defect, not an accepted cost: for ~8s (a heartbeat
-// interval plus its timeout) a stale holder still reads its own gate as open, and both pods
-// sign from one key, so their nonces collide. A collision the engine does not triage fails the
-// send instead of retrying, marking the row `failure`; the successor's sweep saves the row only
-// when it claimed it first, since the fence then refuses the write.
+// Both pods sign from one key, so overlapping dispatch draws from one nonce sequence. Two
+// things keep them from overlapping: a stale holder's send loop gives up once it reads its
+// gate closed, and a fresh holder serves `DispatcherLock::handover_wait` before its own gate
+// opens.
 //
-// TODO: nothing fences the sender account's nonce sequence. `on_tx_in_flight` fences a
-// duplicate send of one *row*, but two dispatchers sending different rows draw from one nonce
-// line, and a successor seeds its counter from the confirmed count - so it reuses a nonce the
-// predecessor still has in flight. Either side can lose the mempool race, so a healthy pod's
-// send can fail too. Fix before running two replicas.
+// A predecessor starved of CPU can exceed that window, and the chain takes no epoch to fence
+// it with. The cost is one duplicate transaction, which the gateway contracts accept: the
+// epoch fence refuses the loser's writes and the sweep re-drives what went unrecorded.
+//
+// One key per pod would remove the shared sequence. It needs per-wallet funding and the
+// ProtocolPayment approval, so it is a throughput choice, not a prerequisite for
+// `replicas: 2`.
 
 /// Fallback - a named task reaching this stopped observing its token.
 const STOP_WORK_TIMEOUT: Duration = Duration::from_secs(5);

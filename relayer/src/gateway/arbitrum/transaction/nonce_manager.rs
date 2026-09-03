@@ -34,6 +34,12 @@ impl fmt::Display for AccountState {
 }
 
 /// A robust, in-memory nonce manager for a scalable transaction engine.
+///
+/// Correct only as the *single* writer for an address: gap tracking assumes every nonce
+/// between the seed and `next_nonce` was drawn here, so a second process on the same key
+/// "fills" gaps that are really the peer's in-flight nonces. Concurrency within one process
+/// is the supported case - `locked_nonces` is exactly the set the node cannot know about yet,
+/// so a mid-life re-seed would collide with our own in-flight sends.
 #[derive(Debug, Default, Clone)]
 pub struct NonceManagerNonOptimistic {
     accounts: DashMap<Address, Arc<Mutex<AccountState>>>,
@@ -137,6 +143,9 @@ impl NonceManagerNonOptimistic {
             return Ok(Arc::clone(entry.value()));
         }
 
+        // Confirmed, not pending: seeding past an unmined transaction leaves a gap nothing
+        // here refills, and every later nonce waits behind it. The cost is a walk through
+        // whatever a predecessor still holds - see `engine`'s underpriced branch.
         let initial_nonce = provider.get_transaction_count(address).await?;
 
         // Use `entry` again, which provides an atomic way to get or insert.
@@ -174,6 +183,59 @@ impl NonceManager for NonceManagerNonOptimistic {
         N: Network,
     {
         self.get_increase_and_lock_nonce(provider, address).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloy::providers::{Provider, ProviderBuilder};
+
+    /// The provider only seeds an unknown account, so a pre-seeded state never touches it.
+    fn offline_provider() -> impl Provider {
+        ProviderBuilder::new().connect_http("http://127.0.0.1:9".parse().unwrap())
+    }
+
+    fn manager_seeded_at(address: Address, next_nonce: u64) -> NonceManagerNonOptimistic {
+        let manager = NonceManagerNonOptimistic::new();
+        manager.accounts.insert(
+            address,
+            Arc::new(Mutex::new(AccountState {
+                next_nonce,
+                ..Default::default()
+            })),
+        );
+        manager
+    }
+
+    /// The contrast the send triage relies on: a confirmed (retired) nonce is never drawn
+    /// again, a released one is drawn next.
+    #[tokio::test]
+    async fn confirmed_nonce_is_retired_released_nonce_is_redrawn() {
+        let address = Address::ZERO;
+        let manager = manager_seeded_at(address, 10);
+        let provider = offline_provider();
+
+        let n = manager
+            .get_increase_and_lock_nonce(&provider, address)
+            .await
+            .unwrap();
+        assert_eq!(n, 10);
+
+        manager.confirm_nonce(address, n).await;
+        let after_confirm = manager
+            .get_increase_and_lock_nonce(&provider, address)
+            .await
+            .unwrap();
+        assert!(after_confirm > n, "a retired nonce must not be redrawn");
+        assert_eq!(after_confirm, 11);
+
+        manager.release_nonce(address, after_confirm).await;
+        let after_release = manager
+            .get_increase_and_lock_nonce(&provider, address)
+            .await
+            .unwrap();
+        assert_eq!(after_release, after_confirm);
     }
 }
 

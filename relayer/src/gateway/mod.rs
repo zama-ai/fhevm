@@ -51,6 +51,7 @@ pub async fn initialize_gateway(
     let tx_engine_gateway = GatewayTransactionEngine::new(
         settings.gateway.blockchain_rpc.clone(),
         settings.gateway.tx_engine.clone(),
+        gate.clone(),
     )
     .await?;
 
