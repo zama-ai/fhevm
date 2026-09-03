@@ -1,6 +1,6 @@
 # Porting the FHEVM hardhat plugin from hardhat v2 to hardhat v3
 
-Version: **1.17** (2026-09-03). Bump the minor for a content change to the plan, the major for a
+Version: **1.18** (2026-09-03). Bump the minor for a content change to the plan, the major for a
 change of charter or stage order; record each bump below.
 
 - 1.0 — initial plan, from the hardhat 3 docs.
@@ -26,8 +26,9 @@ change of charter or stage order; record each bump below.
   source and test projects; ledger: the ZamaConfig-trio smoke test moves from D0 to D5b.
 - 1.17 — D1 landed (encrypt group over the cleartext SDK client; `fhevm.client` live on development
   connections); ledger D1 row: e2e files wait on their contracts (E2E-0b).
+- 1.18 — D2 landed (publicDecrypt group; the v2 counter e2e test is now ported in full).
 
-Status: **in progress — Stages A, B, C, D0 and D1 complete. Next: D2.** The landing zone exists: the
+Status: **in progress — Stages A, B, C and D0–D2 complete. Next: D3a.** The landing zone exists: the
 `hardhat/v3` cluster (own installation root, hardhat 3.15 pinned), the plugin registered via
 `definePlugin` with its per-connection `fhevm` object and the pre-serve chain preparation proven,
 and the `hardhat/v3/e2e` member with the first counter test.
@@ -589,7 +590,16 @@ this later without API change). One commit per group, tests run against the B1 s
   is `Hex[]`, so a `noUncheckedIndexedAccess` consumer must narrow `handles[0]` (the e2e test does).
   Was: `createEncryptedInput` + `encryptUint/Bool/Address`.
   Commit: `feat(hh-v3-plugin): port encrypted-input creation and encrypt helpers`
-- **D2.** `publicDecrypt` + typed variants.
+- **D2. publicDecrypt group — LANDED.** `publicDecrypt` keeps v2's handle-keyed result and carries the
+  KMS proof (`decryptPublicValuesWithSignatures`) so `contract.verify(handles, abiEncodedClearValues,
+  decryptionProof)` works on-chain; the typed variants coerce one `decryptPublicValue` and fail by
+  handle on a type mismatch (`internal/decrypt.ts`). `internal/fhevmHandle.ts` holds the zero-handle
+  guard ("Handle is not initialized" before the SDK's structural "chainId 0" message) and the
+  bytes→hex key. Plugin tests cover the guards (zero handle in every variant and as bytes; an input
+  handle nobody allowed is rejected by the stack); the success path is the e2e counter test, now the
+  full v2 file (123 + on-chain verify, multiple, decrement, not-decryptable). `typeof` (handle
+  parsing) is not assigned to a D step; it lands with D4b/D5 where the parser is needed anyway.
+  Was: `publicDecrypt` + typed variants.
   Commit: `feat(hh-v3-plugin): port publicDecrypt and its typed variants`
 - **D3.** `userDecrypt*` + EIP-712 builders (three blocks):
   - **D3a.** `createEIP712`. Commit: `feat(hh-v3-plugin): port the user-decrypt EIP-712 builder`
@@ -674,7 +684,7 @@ allows.
 | B2                     | DONE — `test:anvil` + `test:anvil:simple` scripts and `test/test-anvil*.sh` (run the counter file)                                                                                                                                                       |
 | B3                     | DONE — `test:node` script + `test/test-hardhat-node.sh`                                                                                                                                                                                                  |
 | D1                     | DONE for the counter: `internal/FHECounterPublicDecrypt.ts` gained "increment the counter by 1" (encrypt + tx; the public-decrypt half joins at D2). `internal/delegatedUserDecryption.ts` and `finance/ConfidentialVestingWallet*.test.ts` wait on their contracts (E2E-0b, on demand) |
-| D2                     | `internal/FHECounterPublicDecrypt.ts` — the rest (`publicDecrypt`, `publicDecryptEuint`), `internal/Rand.ts` + fixture, `doc-examples/HeadsOrTails.ts`, `doc-examples/HighestDieRoll.ts`, `operators-public-decrypt/fhevmOperations54.ts`, `operators-manual/manualV13.ts` |
+| D2                     | DONE for the counter: `internal/FHECounterPublicDecrypt.ts` is the full v2 file. `internal/Rand.ts` + fixture, `doc-examples/HeadsOrTails.ts`, `doc-examples/HighestDieRoll.ts`, `operators-public-decrypt/fhevmOperations54.ts`, `operators-manual/manualV13.ts` wait on their contracts (E2E-0b) |
 | D3b                    | `internal/FHECounterUserDecrypt.ts`, `internal/AplusB.ts`, `doc-examples/{DecryptSingleValue,DecryptMultipleValues,EncryptSingleValue,EncryptMultipleValues}.ts`, `confidentialERC20/*`, `finance/*.fixture.ts`, `governance/*`, `utils/EncryptedErrors.*`, `operators-manual/manualWithAllowSender.ts` |
 | D3c                    | `internal/delegatedUserDecryption.ts` — the delegated asserts                                                                                                                                                                                     |
 | D4a3                   | `internal/TestErrors.*`, `internal/TestTrivialPermissions.test.ts`, `internal/TestACL.ts` (`revertedWithCustomErrorArgs`)                                                                                                                          |
