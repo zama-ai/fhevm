@@ -1,0 +1,416 @@
+# Byte-consensus coverage, on demand.
+#
+# Everything this workflow runs already existed and none of it ran anywhere.
+# That is not a small gap: B-1 -- two squash backends serving one operator queue
+# -- stayed invisible for weeks because nothing executed a three-operator byte
+# comparison automatically. The default scenario is a single coprocessor, the
+# materialization gate throws unless it has three, and no job asked for three,
+# so a defect that needs a 3-of-3 byte comparison to be visible was invisible by
+# construction.
+#
+# Two topologies, because one cannot carry both claims. Byte agreement wants a
+# unanimous 3-of-3: every operator must produce identical bytes, and a majority
+# vote would mask exactly the disagreement being looked for. The drift and
+# recovery cases want `threshold < count`, because a majority has to be able to
+# outvote the drifted operator, so they run at 2-of-3.
+#
+# Each leg ends in an assertion over bytes, not a liveness check, and each suite
+# carries a deliberately-poisoned canary arm that must go red -- see
+# `test/consensus/canary.ts`. The run-validity gates
+# (`test/consensus/validity.ts` and `scripts/consensus-validity.sh`) abort a run
+# whose preconditions do not hold rather than letting it report numbers.
+name: test-suite-consensus
+
+env:
+  # Secrets are available only to zama-ai organization members; the slab steps
+  # below check this rather than failing on a fork.
+  SECRETS_AVAILABLE: ${{ secrets.JOB_SECRET != '' }}
+
+# Manual trigger only, deliberately. These legs bring up a three-operator stack
+# and the heterogeneous one provisions a GPU instance, so nothing here should
+# fire off a clock or off a push: a scheduled run bills hardware nightly whether
+# or not anything changed, and a `pull_request` trigger re-runs on every push to
+# a PR once it is in scope. Someone asks for a run, naming the leg they want.
+on:
+  workflow_dispatch:
+    inputs:
+      leg:
+        description: "Which leg to run"
+        default: "all"
+        type: choice
+        options:
+          - all
+          - byte-agreement
+          - degraded
+          - fork
+          - failure-matrix
+          - crash-retry
+      matrix-column:
+        description: "Failure-matrix column (crash|stall|data|db|all)"
+        default: "crash"
+        type: string
+      build:
+        description: "Build repo-owned images from the checked out branch"
+        default: true
+        type: boolean
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: "read"
+  id-token: "write"
+  packages: "read"
+
+jobs:
+  consensus:
+    name: consensus-${{ matrix.leg }}
+    strategy:
+      # One leg failing must not cancel the others: they cover different
+      # claims, and knowing which of them broke is the point.
+      fail-fast: false
+      matrix:
+        include:
+          - leg: byte-agreement
+            scenario: three-of-three
+          - leg: degraded
+            scenario: two-of-three
+          - leg: fork
+            scenario: three-of-three-fork
+          - leg: failure-matrix
+            scenario: three-of-three
+          - leg: crash-retry
+            scenario: three-of-three
+    env:
+      GH_TOKEN: ${{ github.token }}
+      # Build repo-owned images from the branch by default; only an explicit
+      # dispatch with build=false uses published images instead.
+      BUILD: ${{ inputs.build == false && 'false' || 'true' }}
+      LEG: ${{ matrix.leg }}
+      SCENARIO: ${{ matrix.scenario }}
+      MATRIX_COLUMN: ${{ inputs.matrix-column || 'crash' }}
+    runs-on: runs-on=${{ github.run_id }}/runner=32cpu-linux-x64/volume=160gb
+    timeout-minutes: 150
+    steps:
+      - name: Skip legs not selected
+        if: ${{ inputs.leg != 'all' && inputs.leg != matrix.leg }}
+        run: |
+          echo "leg ${{ matrix.leg }} not selected; nothing to do"
+          echo "SKIP_LEG=1" >> "$GITHUB_ENV"
+
+      - name: Checkout code
+        if: ${{ env.SKIP_LEG != '1' }}
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: "false"
+          fetch-depth: 0
+
+      - name: Setup Docker
+        if: ${{ env.SKIP_LEG != '1' }}
+        uses: docker/setup-buildx-action@d70bba72b1f3fd22344832f00baa16ece964efeb # v3.3.0
+
+      - name: Setup Bun
+        if: ${{ env.SKIP_LEG != '1' }}
+        uses: oven-sh/setup-bun@ecf28ddc73e819eb6fa29df6b34ef8921c743461 # v2.1.3
+
+      - name: Install foundry
+        if: ${{ env.SKIP_LEG != '1' }}
+        uses: foundry-rs/foundry-toolchain@82dee4ba654bd2146511f85f0d013af94670c4de # v1.4.0
+
+      - name: Login to GitHub Container Registry
+        if: ${{ env.SKIP_LEG != '1' }}
+        uses: zama-ai/ci-templates/.github/actions/retry@542103e14b9ae6a9aea27787b8724b3b35bb3918 # v1.0.9
+        env:
+          GHCR_USERNAME: ${{ github.actor }}
+          GHCR_PASSWORD: ${{ secrets.GHCR_READ_TOKEN }}
+        with:
+          command: |
+            echo "Logging into ghcr.io..."
+            echo "$GHCR_PASSWORD" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
+
+      - name: Login to Chainguard Registry
+        if: ${{ env.SKIP_LEG != '1' }}
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: cgr.dev
+          username: ${{ secrets.CGR_USERNAME }}
+          password: ${{ secrets.CGR_PASSWORD }}
+
+      - name: Install safe-chain
+        if: ${{ env.SKIP_LEG != '1' }}
+        shell: bash
+        run: |
+          # safe-chain v1.5.3 is distributed as an immutable GitHub release asset —
+          # its content is permanently fixed and cannot be modified after the tag is published.
+          # Verify immutability: curl -fsSL https://api.github.com/repos/AikidoSec/safe-chain/releases/tags/1.5.3 | grep immutable
+          curl -fsSL https://github.com/AikidoSec/safe-chain/releases/download/1.5.3/install-safe-chain.sh | sh -s -- --ci
+
+      - name: Install CLI deps
+        if: ${{ env.SKIP_LEG != '1' }}
+        working-directory: test-suite/fhevm
+        run: bun install --frozen-lockfile
+
+      - name: Install GitHub CLI
+        if: ${{ env.SKIP_LEG != '1' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gh
+
+      - name: Typecheck and unit test the CLI
+        if: ${{ env.SKIP_LEG != '1' }}
+        working-directory: test-suite/fhevm
+        run: |
+          bun run check
+          bun test src
+
+      - name: Resolve latest-main lock once
+        if: ${{ env.SKIP_LEG != '1' }}
+        working-directory: test-suite/fhevm
+        run: |
+          lock_file="$(./fhevm-cli resolve --target latest-main | tail -n1)"
+          if [ ! -f "$lock_file" ]; then
+            echo "Could not locate resolved lock file: $lock_file" >&2
+            exit 1
+          fi
+          echo "LOCK_FILE=$lock_file" >> "$GITHUB_ENV"
+
+      - name: Boot the stack
+        if: ${{ env.SKIP_LEG != '1' }}
+        working-directory: test-suite/fhevm
+        run: |
+          args=(--scenario "$SCENARIO" --lock-file "$LOCK_FILE")
+          if [ "$BUILD" = "true" ]; then
+            args+=(--build)
+          fi
+          ./fhevm-cli up "${args[@]}"
+
+      # Every leg below asserts over bytes. The suites run their own validity
+      # gates in `before`, so a stack that came up unprovisioned fails here
+      # rather than producing a green.
+
+      - name: Byte agreement — materialization gate, 3-of-3
+        if: ${{ env.SKIP_LEG != '1' && matrix.leg == 'byte-agreement' }}
+        working-directory: test-suite/fhevm
+        run: ./scripts/run-materialization-consensus.sh --suite materialization
+
+      - name: Byte agreement — replacement-block reorg
+        if: ${{ env.SKIP_LEG != '1' && matrix.leg == 'byte-agreement' }}
+        working-directory: test-suite/fhevm
+        run: ./scripts/run-materialization-consensus.sh --suite reorg
+
+      - name: Degraded cluster — C4a, C4b, C6 driven host-side
+        if: ${{ env.SKIP_LEG != '1' && matrix.leg == 'degraded' }}
+        working-directory: test-suite/fhevm
+        run: ./scripts/run-degraded-consensus.sh
+
+      - name: Degraded cluster — C1, C2a canary, C5, C7 in-container
+        # A separate runner because the test container has no Docker socket:
+        # C4a/C4b/C6 need to stop services, C1/C2a/C5/C7 do not.
+        if: ${{ env.SKIP_LEG != '1' && matrix.leg == 'degraded' }}
+        working-directory: test-suite/fhevm
+        run: ./scripts/run-materialization-consensus.sh --suite degraded
+
+      - name: Fork topology — F1' to F5'
+        if: ${{ env.SKIP_LEG != '1' && matrix.leg == 'fork' }}
+        working-directory: test-suite/fhevm
+        run: ./scripts/run-materialization-consensus.sh --suite fork
+
+      - name: Crash-retry byte identity (RFC-020)
+        # Kills one operator's tfhe-worker *while rows are incomplete*, so the
+        # worker returns to work it had already started and executes it twice.
+        # Distinct from the matrix's tfhe-worker-crash cell, which kills with
+        # nothing in flight and therefore never exercises duplicate execution.
+        if: ${{ env.SKIP_LEG != '1' && matrix.leg == 'crash-retry' }}
+        working-directory: test-suite/fhevm
+        run: ./scripts/run-crash-retry-consensus.sh --victim 1 --handles 8
+
+      - name: Failure matrix
+        if: ${{ env.SKIP_LEG != '1' && matrix.leg == 'failure-matrix' }}
+        working-directory: test-suite/fhevm
+        run: ./scripts/run-failure-matrix.sh --column "$MATRIX_COLUMN" --keep-going
+
+      - name: Lock-extension validity gate
+        # Reported for every leg, whatever the leg's own outcome: a green that
+        # silently included work recomputed by a second worker is not the
+        # measurement it appears to be.
+        if: ${{ env.SKIP_LEG != '1' && always() }}
+        working-directory: test-suite/fhevm
+        run: ./scripts/consensus-validity.sh locks --report-only
+
+      - name: Collect logs on failure
+        if: ${{ env.SKIP_LEG != '1' && failure() }}
+        run: |
+          mkdir -p /tmp/consensus-logs
+          for c in $(docker ps -a --format '{{.Names}}'); do
+            docker logs "$c" > "/tmp/consensus-logs/$c.log" 2>&1 || true
+          done
+          docker ps -a > /tmp/consensus-logs/containers.txt 2>&1 || true
+
+      - name: Upload logs
+        if: ${{ env.SKIP_LEG != '1' && failure() }}
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        with:
+          name: consensus-logs-${{ matrix.leg }}
+          path: /tmp/consensus-logs
+          retention-days: 7
+
+      - name: Tear down
+        if: ${{ env.SKIP_LEG != '1' && always() }}
+        working-directory: test-suite/fhevm
+        run: ./fhevm-cli down || true
+
+  # ---------------------------------------------------------------------------
+  # Heterogeneous scheduling. The register's first sequencing item, and the only
+  # leg that cannot run on the CPU runners above: `gpu-consensus-workers.sh`
+  # runs the workers as GPU host binaries, so it needs a GPU instance. Follows
+  # the same slab pattern the coprocessor GPU tests use.
+  #
+  # This is the axis no run has ever varied. Every consensus result to date
+  # compared three operators running the same binary with the *same
+  # configuration*, which tests the weakest form of the RFC-020 claim. Here the
+  # three operators get deliberately different scheduling knobs and must still
+  # agree byte for byte -- and the suite refuses to report agreement unless the
+  # fleet was actually heterogeneous, so a mistyped override cannot yield a
+  # green that asserts nothing.
+  # ---------------------------------------------------------------------------
+  heterogeneous-setup-instance:
+    name: consensus/heterogeneous/setup-instance
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
+    permissions:
+      contents: "read"
+    outputs:
+      runner-name: ${{ steps.start-remote-instance.outputs.label }}
+    steps:
+      - name: Start remote instance
+        id: start-remote-instance
+        if: env.SECRETS_AVAILABLE == 'true'
+        uses: zama-ai/slab-github-runner@d4a5bb6e2a4b8aa19a10f596d7f142006a7e2c21 # v1.6.3
+        with:
+          mode: start
+          github-token: ${{ secrets.SLAB_ACTION_TOKEN }}
+          slab-url: ${{ secrets.SLAB_BASE_URL }}
+          job-secret: ${{ secrets.JOB_SECRET }}
+          backend: hyperstack
+          profile: l40
+
+  heterogeneous:
+    name: consensus/heterogeneous-scheduling
+    needs: heterogeneous-setup-instance
+    if: ${{ needs.heterogeneous-setup-instance.result == 'success' && needs.heterogeneous-setup-instance.outputs.runner-name != '' }}
+    runs-on: ${{ needs.heterogeneous-setup-instance.outputs.runner-name }}
+    timeout-minutes: 180
+    permissions:
+      contents: "read"
+      packages: "read"
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SCENARIO: three-of-three-heterogeneous-scheduling
+      # One knob per operator, so the fleet is heterogeneous along the axis
+      # PR-04 actually changed: window composition and partition shape.
+      # Both halves of the pair are set for every operator, deliberately. The
+      # launcher refuses a resolved pair where work-items-batch-size is below
+      # dependence-chains-per-batch, because the adaptive window then turns
+      # itself off under load and the run measures non-adaptive scheduling while
+      # reporting the shipped configuration. Setting only one half leaves the
+      # other at the fleet default and can invert it silently -- which an
+      # earlier version of this leg did, with operator 0 on items=1 against the
+      # default 20 chains.
+      #
+      # Operator 0 is the shipped default (the worker's own 100/20), operator 1
+      # the serial extreme, operator 2 the wide one. Same software, backend and
+      # hardware; only the scheduling surface varies.
+      GPU_CONSENSUS_WORK_ITEMS_BATCH_SIZE_0: "100"
+      GPU_CONSENSUS_COMPONENTS_PER_BATCH_0: "20"
+      GPU_CONSENSUS_WORK_ITEMS_BATCH_SIZE_1: "1"
+      GPU_CONSENSUS_COMPONENTS_PER_BATCH_1: "1"
+      GPU_CONSENSUS_WORK_ITEMS_BATCH_SIZE_2: "200"
+      GPU_CONSENSUS_COMPONENTS_PER_BATCH_2: "64"
+      GPU_CONSENSUS_ADAPTIVE_BATCH_EXECUTION_0: "true"
+      GPU_CONSENSUS_ADAPTIVE_BATCH_EXECUTION_1: "false"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: "false"
+          fetch-depth: 0
+
+      - name: Setup GPU
+        uses: ./.github/actions/gpu_setup
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@ecf28ddc73e819eb6fa29df6b34ef8921c743461 # v2.1.3
+
+      - name: Install foundry
+        uses: foundry-rs/foundry-toolchain@82dee4ba654bd2146511f85f0d013af94670c4de # v1.4.0
+
+      - name: Login to GitHub Container Registry
+        uses: zama-ai/ci-templates/.github/actions/retry@542103e14b9ae6a9aea27787b8724b3b35bb3918 # v1.0.9
+        env:
+          GHCR_USERNAME: ${{ github.actor }}
+          GHCR_PASSWORD: ${{ secrets.GHCR_READ_TOKEN }}
+        with:
+          command: |
+            echo "$GHCR_PASSWORD" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
+
+      - name: Install CLI deps
+        working-directory: test-suite/fhevm
+        run: bun install --frozen-lockfile
+
+      - name: Boot the stack
+        working-directory: test-suite/fhevm
+        run: |
+          lock_file="$(./fhevm-cli resolve --target latest-main | tail -n1)"
+          ./fhevm-cli up --scenario "$SCENARIO" --lock-file "$lock_file" --build
+
+      - name: Build the GPU worker binaries
+        working-directory: test-suite/fhevm
+        run: ./scripts/gpu-consensus-workers.sh build
+
+      - name: Swap the container workers for GPU host workers
+        working-directory: test-suite/fhevm
+        run: ./scripts/gpu-consensus-workers.sh start
+
+      - name: Refuse a fleet that is not actually heterogeneous, then assert agreement
+        working-directory: test-suite/fhevm
+        # `--heterogeneous` is a flag, not an environment variable: the script
+        # resets EXPECT_HETEROGENEOUS to 0 before parsing, so an env would be
+        # silently ignored and the run would assert agreement without ever
+        # checking the fleet was heterogeneous -- the exact green-that-asserts-
+        # nothing this leg exists to avoid.
+        run: ./scripts/run-materialization-consensus.sh --heterogeneous --suite materialization
+
+      - name: Report the resolved per-node configuration
+        if: ${{ always() }}
+        working-directory: test-suite/fhevm
+        run: |
+          ./scripts/gpu-consensus-workers.sh status || true
+          cat ../../.fhevm/runtime/gpu-consensus-workers/node-config.env 2>/dev/null || true
+
+      - name: Hand the queues back to the containers
+        if: ${{ always() }}
+        working-directory: test-suite/fhevm
+        run: ./scripts/gpu-consensus-workers.sh stop || true
+
+      - name: Tear down
+        if: ${{ always() }}
+        working-directory: test-suite/fhevm
+        run: ./fhevm-cli down || true
+
+  heterogeneous-teardown:
+    name: consensus/heterogeneous/teardown
+    if: ${{ always() && needs.heterogeneous-setup-instance.result == 'success' }}
+    needs: [heterogeneous-setup-instance, heterogeneous]
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
+    permissions:
+      contents: "read"
+    steps:
+      - name: Stop remote instance
+        if: env.SECRETS_AVAILABLE == 'true'
+        uses: zama-ai/slab-github-runner@d4a5bb6e2a4b8aa19a10f596d7f142006a7e2c21 # v1.6.3
+        with:
+          mode: stop
+          github-token: ${{ secrets.SLAB_ACTION_TOKEN }}
+          slab-url: ${{ secrets.SLAB_BASE_URL }}
+          job-secret: ${{ secrets.JOB_SECRET }}
+          label: ${{ needs.heterogeneous-setup-instance.outputs.runner-name }}
