@@ -1,6 +1,6 @@
 # Porting the FHEVM hardhat plugin from hardhat v2 to hardhat v3
 
-Version: **1.34** (2026-09-03). Bump the minor for a content change to the plan, the major for a
+Version: **1.35** (2026-09-03). Bump the minor for a content change to the plan, the major for a
 change of charter or stage order; record each bump below.
 
 - 1.0 — initial plan, from the hardhat 3 docs.
@@ -52,6 +52,7 @@ change of charter or stage order; record each bump below.
 - 1.32 — E2 landed (`fhevm check-fhevm-compatibility <address>` over the D5b methods).
 - 1.33 — E3 landed: the one surviving builtin override is `node`, for the fhevm stack banner; `clean` confirmed dead.
 - 1.34 — F1 landed (consumer fixture runs an encrypt/decrypt round-trip; the leg was silently not running).
+- 1.35 — the v3 plugin consumer leg joined the Makefile `test-consumer` targets (approved Makefile edit).
 
 Status: **in progress — Stages A, B, C, D, E and F1 complete. Next: F2.** The landing zone exists: the
 `hardhat/v3` cluster (own installation root, hardhat 3.15 pinned), the plugin registered via
@@ -818,8 +819,8 @@ this later without API change). One commit per group, tests run against the B1 s
   comment — the public surface exposes no stack addresses, a gap to weigh in F2/§5); event parsed,
   `typeof`, `debugger.decryptEuint` = 42, HCU = table price, `publicDecrypt` refused. Lockfile
   regenerated with `test-consumer-regenerate-package-lock`; both `--run` and `--run --ci` pass.
-  NOT done (Makefile is outside the port's write scope): `test-consumer`/`test-consumer-ci` targets
-  still list only the cleartext packages and the v2 template — the v3 plugin leg should join them.
+  With approval the Makefile's `test-consumer`/`test-consumer-ci` targets gained the v3 plugin leg
+  (prerequisite `compile-hh-v3-plugin`); `make test-consumer-ci` runs six legs green.
   Was: consumer fixture upgraded to a real encrypt/decrypt round-trip.
   Commit: `test(hh-v3-plugin): consumer fixture runs an encrypt/decrypt round-trip`
 - **F2.** `check:publint`/`attw`/`pack:tarball` green; pkg README. Commit.
