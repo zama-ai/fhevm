@@ -32,3 +32,11 @@ export function getAccounts(): Accounts {
   );
   return Object.fromEntries(entries) as Accounts;
 }
+
+// The viem account behind an ethers signer: fixtures send transactions with the signer and decrypt as
+// the same user, and the plugin wants the user as a viem account.
+export function accountFor(signer: { readonly address: string }): HDAccount {
+  const account = Object.values(getAccounts()).find((a) => a.address.toLowerCase() === signer.address.toLowerCase());
+  if (account === undefined) throw new Error(`No suite account for ${signer.address}`);
+  return account;
+}
