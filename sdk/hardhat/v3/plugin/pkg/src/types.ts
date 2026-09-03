@@ -6,7 +6,7 @@
 // until a group lands, its methods throw a named not-implemented error.
 
 import type { createFhevmCleartextClient } from '@fhevm/sdk/viem/cleartext';
-import type { Abi, AbiParameter, Address, Hex, LocalAccount, TransactionReceipt, WalletClient } from 'viem';
+import type { Abi, AbiParameter, Address, Hex, LocalAccount, WalletClient } from 'viem';
 
 export type {
   FhevmChainContract,
@@ -182,6 +182,14 @@ export type CoprocessorEvent = {
   transactionIndex: number;
 };
 
+/** A receipt as viem (`status: 'success'`, `transactionHash`) or ethers (`status: 1`, `hash`) hands it out. */
+export type FhevmTransactionReceipt = {
+  readonly status: 'success' | 'reverted' | number | null;
+  readonly transactionHash?: Hex;
+  readonly hash?: Hex;
+  readonly logs: readonly FhevmLog[];
+};
+
 export type FhevmTransactionHCUInfo = {
   transactionHash: Hex;
   globalHCU: number;
@@ -254,7 +262,8 @@ export interface HardhatFhevmRuntimeEnvironment {
 
   /** The FHEVMExecutor operator events among `logs` (a receipt's, from viem or ethers). */
   parseCoprocessorEvents(logs: readonly FhevmLog[] | null | undefined): CoprocessorEvent[];
-  computeTransactionHCU(transactionReceipt: TransactionReceipt): FhevmTransactionHCUInfo;
+  /** The HCU a mined transaction consumed, from its executor events (a viem or ethers receipt). */
+  computeTransactionHCU(transactionReceipt: FhevmTransactionReceipt): FhevmTransactionHCUInfo;
 
   assertCoprocessorInitialized(contract: Address, contractName?: string): Promise<void>;
   getCoprocessorConfig(contractAddress: Address): Promise<CoprocessorConfig>;
