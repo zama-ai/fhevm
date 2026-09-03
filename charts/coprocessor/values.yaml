@@ -993,16 +993,41 @@ tfheWorker:
   #                                              # generated per process. Set it to
   #                                              # a stable value only if you want
   #                                              # locks reclaimable across restarts.
-  #     --dcid-ttl-sec=30                        # lock TTL in seconds
-  #     --dcid-timeslice-sec=90                  # release the lock after this slice
+  #     --dcid-ttl-sec=30                        # lock TTL in seconds. Must be >= 1;
+  #                                              # zero would make every lock
+  #                                              # steal-eligible the instant it is
+  #                                              # taken. Keep it comfortably above
+  #                                              # --worker-polling-interval-ms, or a
+  #                                              # worker loses its chains just by
+  #                                              # waiting for the next cycle (the
+  #                                              # worker warns at startup if not),
+  #                                              # and above how long a batch takes
+  #                                              # to execute -- leases renew only
+  #                                              # BETWEEN cycles, so a longer batch
+  #                                              # is stealable while it runs. Watch
+  #                                              # coprocessor_worker_dcid_lease_lost_*.
+  #     --dcid-timeslice-sec=90                  # release the lock after this slice.
+  #                                              # Must be >= 1; zero releases every
+  #                                              # chain on the cycle that took it.
   #     --processed-dcid-ttl-sec=172800          # delete processed chains older
   #                                              # than this during idle time (48 h)
-  #     --dcid-cleanup-interval-sec=3600         # expired lock cleanup interval
+  #     --dcid-cleanup-interval-sec=3600         # expired lock cleanup interval, and
+  #                                              # the throttle on the idle sweep that
+  #                                              # re-arms demoted chains. Must be
+  #                                              # >= 1: the sweep is called from the
+  #                                              # worker loop, so zero runs a join
+  #                                              # across `computations` every
+  #                                              # iteration.
   #     --dcid-max-no-progress-cycles=2
   #     --dcid-ignore-dependency-count-threshold=100
   #     --dcid-stale-gate-age-secs=300           # minimum age before the idle-time
   #                                              # repair path may adopt an unowned,
-  #                                              # dependency-gated chain
+  #                                              # dependency-gated chain. Must be
+  #                                              # > 0: zero drops the guard that
+  #                                              # keeps the repair from racing a
+  #                                              # listener mid-arm, and a negative
+  #                                              # value inverts it into matching
+  #                                              # nearly every gated chain.
   #     --disable-dcid-locking                   # presence-only; default OFF.
   #                                              # UNSAFE: multiple workers may then
   #                                              # process the same chain and

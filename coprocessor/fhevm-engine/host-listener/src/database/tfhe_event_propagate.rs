@@ -27,6 +27,7 @@ use std::sync::LazyLock;
 use std::time::Duration;
 use time::{Duration as TimeDuration, PrimitiveDateTime};
 use tokio::sync::RwLock;
+use tracing::debug;
 use tracing::error;
 use tracing::info;
 use tracing::warn;
@@ -113,7 +114,18 @@ const MINIMUM_BUCKET_CACHE_SIZE: u16 = 16;
 /// a failed one. Generous and finite: the state converges as soon as the
 /// database is reachable, and if it is still unreachable twenty minutes in,
 /// the listener has a larger problem than fork discharge latency.
-const SEALED_CHAIN_RELOAD_BACKOFF: &[u64] = &[1, 5, 30, 120, 300, 600];
+/// Steady cadence for refreshing the sealed-chain set once it is healthy.
+///
+/// The refresh is PERIODIC rather than a one-shot with retries, because the
+/// set drifts in normal operation too: an entry evicted from the LRU during a
+/// long run is otherwise never restored, exactly like one lost to a restart.
+/// One bounded query every few minutes closes both, and makes a database
+/// outage of any length self-healing instead of terminal.
+const SEALED_CHAIN_REFRESH_INTERVAL_SECS: u64 = 600;
+/// Delays used while the refresh is FAILING, so a transient outage converges
+/// in seconds rather than waiting out a whole steady interval. Capped at the
+/// last entry and then repeated indefinitely — the loop never gives up.
+const SEALED_CHAIN_RETRY_BACKOFF_SECS: &[u64] = &[1, 5, 30, 120, 300];
 /// Finalized `host_chain_blocks_valid` rows older than this many blocks
 /// below the finalized head are eligible for pruning (when unreferenced).
 const BLOCKS_VALID_RETENTION: i64 = 10_000;
@@ -354,74 +366,90 @@ impl Database {
     /// [`Self::seal_rows_oldest_first`] for why the INSERTION runs the other
     /// way.
     ///
-    /// A failure here is RETRIED in the background rather than propagated.
-    /// Startup must not be gated on it: the listener is the ingest path, so
-    /// refusing to boot over a transient query error trades a bounded
-    /// discharge delay for a total stall — the worse outcome by a wide
-    /// margin. Retrying keeps the state converging without that trade, and
-    /// the exposure while it converges is limited to forks whose gate was
-    /// armed BEFORE the restart, since `update_dependence_chain` seals every
-    /// parent it newly gates.
+    /// The first attempt is synchronous; after it, a background task keeps
+    /// the set fresh forever on [`SEALED_CHAIN_REFRESH_INTERVAL_SECS`],
+    /// falling back to [`SEALED_CHAIN_RETRY_BACKOFF_SECS`] while it is
+    /// failing. Startup is never gated on it: the listener is the ingest
+    /// path, so refusing to boot — or reporting unready — over a query error
+    /// trades a bounded discharge delay for a total ingestion stall, which is
+    /// the worse outcome by a wide margin and would restart into the same
+    /// failing database. Converging in the background gets the same state
+    /// without that trade, and the exposure while it converges is limited to
+    /// forks whose gate was armed BEFORE this process started, since
+    /// `update_dependence_chain` seals every parent it newly gates.
     async fn reload_sealed_chains(&self, cache_size: u16) {
         let limit = i64::from(cache_size.max(MINIMUM_BUCKET_CACHE_SIZE));
-        match Self::try_reload_sealed_chains(
+        let first = Self::try_reload_sealed_chains(
             &self.pool,
             &self.sealed_chains,
             limit,
         )
-        .await
-        {
-            Ok(restored) => {
-                if restored > 0 {
-                    info!(
-                        restored,
-                        "Rebuilt sealed-chain set from gated dependents"
-                    );
+        .await;
+        match &first {
+            Ok(restored) if *restored > 0 => {
+                info!(
+                    restored,
+                    "Rebuilt sealed-chain set from gated dependents"
+                )
+            }
+            Ok(_) => {}
+            Err(error) => warn!(
+                %error,
+                "could not rebuild the sealed-chain set; refreshing in the \
+                 background. Until it succeeds, a producer gated before this \
+                 restart may be extended while its fork waits."
+            ),
+        }
+
+        let pool = self.pool.clone();
+        let sealed_chains = self.sealed_chains.clone();
+        let mut consecutive_failures = usize::from(first.is_err());
+        tokio::spawn(async move {
+            loop {
+                // Healthy: wait out the steady interval. Failing: walk the
+                // backoff and stay on its last entry, so the loop retries for
+                // as long as the process lives rather than giving up and
+                // requiring a restart to recover.
+                let delay = if consecutive_failures == 0 {
+                    SEALED_CHAIN_REFRESH_INTERVAL_SECS
+                } else {
+                    let step = (consecutive_failures - 1)
+                        .min(SEALED_CHAIN_RETRY_BACKOFF_SECS.len() - 1);
+                    SEALED_CHAIN_RETRY_BACKOFF_SECS[step]
+                };
+                tokio::time::sleep(std::time::Duration::from_secs(delay)).await;
+
+                match Self::try_reload_sealed_chains(
+                    &pool,
+                    &sealed_chains,
+                    limit,
+                )
+                .await
+                {
+                    Ok(restored) => {
+                        if consecutive_failures > 0 {
+                            info!(
+                                restored,
+                                attempts = consecutive_failures,
+                                "sealed-chain set recovered after failures"
+                            );
+                        } else {
+                            debug!(restored, "sealed-chain set refreshed");
+                        }
+                        consecutive_failures = 0;
+                    }
+                    Err(error) => {
+                        consecutive_failures =
+                            consecutive_failures.saturating_add(1);
+                        warn!(
+                            %error,
+                            consecutive_failures,
+                            "sealed-chain refresh failed; will retry"
+                        );
+                    }
                 }
             }
-            Err(error) => {
-                warn!(
-                    %error,
-                    "could not rebuild the sealed-chain set; retrying in the \
-                     background. Until it succeeds, a producer gated before \
-                     this restart may be extended while its fork waits."
-                );
-                let pool = self.pool.clone();
-                let sealed_chains = self.sealed_chains.clone();
-                tokio::spawn(async move {
-                    for delay in SEALED_CHAIN_RELOAD_BACKOFF {
-                        tokio::time::sleep(std::time::Duration::from_secs(
-                            *delay,
-                        ))
-                        .await;
-                        match Self::try_reload_sealed_chains(
-                            &pool,
-                            &sealed_chains,
-                            limit,
-                        )
-                        .await
-                        {
-                            Ok(restored) => {
-                                info!(
-                                    restored,
-                                    "Rebuilt sealed-chain set from gated \
-                                     dependents after retry"
-                                );
-                                return;
-                            }
-                            Err(error) => {
-                                warn!(%error, "sealed-chain rebuild retry failed")
-                            }
-                        }
-                    }
-                    error!(
-                        "gave up rebuilding the sealed-chain set; producers \
-                         gated before this restart may be extended while \
-                         their forks wait. Restart the listener to retry."
-                    );
-                });
-            }
-        }
+        });
     }
 
     /// One attempt at the reconstruction. Separated so the retry loop can run

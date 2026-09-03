@@ -149,7 +149,7 @@ pub struct Args {
 
     /// Time-to-live in seconds for dependence chain locks
     /// Defaults to 30 seconds if not provided
-    #[arg(long, value_parser = clap::value_parser!(u32), default_value_t = 30)]
+    #[arg(long, value_parser = parse_positive_u32, default_value_t = 30)]
     pub dcid_ttl_sec: u32,
 
     /// If set to true, disable dependence chain ID locking mechanism
@@ -161,7 +161,7 @@ pub struct Args {
     /// Time slice in seconds for processing each dependence chain
     /// If a worker exceeds this time while processing a dependence chain,
     /// it will release the lock and allow other workers to acquire it
-    #[arg(long, default_value_t = 90)]
+    #[arg(long, value_parser = parse_positive_u32, default_value_t = 90)]
     pub dcid_timeslice_sec: u32,
 
     /// Time-to-live in seconds for processed dependence chains
@@ -170,7 +170,7 @@ pub struct Args {
     pub processed_dcid_ttl_sec: u32,
 
     /// Interval in seconds for cleaning up expired dependence chain locks
-    #[arg(long, default_value_t = 3600)]
+    #[arg(long, value_parser = parse_positive_u32, default_value_t = 3600)]
     pub dcid_cleanup_interval_sec: u32,
 
     /// Maximum number of worker cycles allowed without progress on a
@@ -188,7 +188,7 @@ pub struct Args {
     /// producer chain processed or gone, count never decremented); this age
     /// gate additionally keeps it from racing a listener transaction
     /// mid-arm.
-    #[arg(long, default_value_t = 300.0)]
+    #[arg(long, value_parser = parse_positive_f64, default_value_t = 300.0)]
     pub dcid_stale_gate_age_secs: f64,
 
     /// Log level for the application
@@ -248,6 +248,46 @@ fn parse_positive_i16(value: &str) -> Result<i16, String> {
         .map_err(|error| format!("must be a positive integer: {error}"))?;
     if parsed < 1 {
         Err("must be at least 1".to_owned())
+    } else {
+        Ok(parsed)
+    }
+}
+
+/// Zero is never a sane duration for the DCID lifecycle, and each of the
+/// values guarded by this rejects it for its own reason:
+///
+///   * `--dcid-ttl-sec = 0` stamps `lock_expires_at = NOW()`, so every lock a
+///     worker takes is immediately steal-eligible. With batched acquisition on
+///     by default that is continuous mutual duplication between replicas.
+///   * `--dcid-timeslice-sec = 0` releases every chain on the cycle that
+///     acquired it: pure acquire/release thrash, no work done.
+///   * `--dcid-cleanup-interval-sec = 0` removes the throttle on the idle
+///     sweep, which now runs from the worker loop rather than only from the
+///     no-work branch — so zero means a join across `computations` on EVERY
+///     iteration.
+fn parse_positive_u32(value: &str) -> Result<u32, String> {
+    let parsed = value
+        .parse::<u32>()
+        .map_err(|error| format!("must be a positive integer: {error}"))?;
+    if parsed < 1 {
+        Err("must be at least 1".to_owned())
+    } else {
+        Ok(parsed)
+    }
+}
+
+/// `--dcid-stale-gate-age-secs` must be strictly positive. Zero drops the age
+/// guard that keeps the repair path from racing a listener transaction
+/// mid-arm, and a NEGATIVE value inverts it: the predicate is
+/// `last_updated_at < NOW() - make_interval(secs => $3)`, so a negative
+/// interval reads as `NOW() + |v|` and matches nearly every gated chain. It
+/// also breaks the probe throttle, which compares against half this value.
+fn parse_positive_f64(value: &str) -> Result<f64, String> {
+    let parsed = value
+        .parse::<f64>()
+        .map_err(|error| format!("must be a number: {error}"))?;
+    if !parsed.is_finite() || parsed <= 0.0 {
+        Err("must be a positive number of seconds".to_owned())
     } else {
         Ok(parsed)
     }
@@ -420,6 +460,34 @@ mod tests {
             args.gpu_memory_reservation_timeout_ms,
             args.dcid_ttl_sec
         );
+    }
+
+    /// Zero is not a usable duration anywhere in the DCID lifecycle, and a
+    /// zero TTL is the worst of them: it stamps `lock_expires_at = NOW()`, so
+    /// every lock is steal-eligible the instant it is taken and batched
+    /// workers duplicate each other continuously. The stale-gate age is a
+    /// float and additionally rejects negatives, which invert the guard
+    /// rather than merely removing it.
+    #[test]
+    fn dcid_durations_reject_non_positive_values() {
+        for flag in [
+            "--dcid-ttl-sec",
+            "--dcid-timeslice-sec",
+            "--dcid-cleanup-interval-sec",
+            "--dcid-stale-gate-age-secs",
+        ] {
+            assert!(
+                Args::try_parse_from(["tfhe_worker", &format!("{flag}=0")]).is_err(),
+                "{flag}=0 must be rejected"
+            );
+        }
+        assert!(
+            Args::try_parse_from(["tfhe_worker", "--dcid-stale-gate-age-secs=-300",]).is_err(),
+            "a negative stale-gate age inverts the guard and must be rejected"
+        );
+        let args = Args::parse_from(["tfhe_worker"]);
+        assert!(args.dcid_ttl_sec >= 1);
+        assert!(args.dcid_stale_gate_age_secs > 0.0);
     }
 
     /// A non-positive demotion threshold makes `error_retry_count < threshold`

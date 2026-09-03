@@ -1651,6 +1651,24 @@ async fn tfhe_worker_cycle(
         args.computation_retry_demote_threshold,
     );
 
+    // A lease has to outlive the gap between the renewals that keep it, and
+    // renewals happen once per worker cycle. A worker holding chains across
+    // an idle poll therefore loses them by waiting alone, before execution
+    // time is even considered. This cannot check execution duration — that is
+    // not knowable at startup, and is what the lease-loss counters measure —
+    // but the idle case is a pure function of configuration, so say so.
+    if u64::from(args.dcid_ttl_sec).saturating_mul(1000) <= args.worker_polling_interval_ms {
+        warn!(
+            target: "tfhe_worker",
+            dcid_ttl_sec = args.dcid_ttl_sec,
+            worker_polling_interval_ms = args.worker_polling_interval_ms,
+            "--dcid-ttl-sec does not cover one polling interval: a worker \
+             holding chains will lose its lease while waiting for the next \
+             cycle, before any execution time is counted. Raise \
+             --dcid-ttl-sec above --worker-polling-interval-ms."
+        );
+    }
+
     // The adaptive work window gives each acquired chain
     // ceil(--work-items-batch-size / acquired chains) transactions, and it
     // switches itself OFF for a cycle that acquires more chains than the
