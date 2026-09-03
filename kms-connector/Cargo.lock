@@ -5195,6 +5195,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "proxy"
+version = "0.15.0"
+dependencies = [
+ "anyhow",
+ "connector-utils",
+ "humantime-serde",
+ "serde",
+ "tokio",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
 name = "pulldown-cmark"
 version = "0.13.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
