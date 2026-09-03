@@ -48,6 +48,42 @@ env:
   SECRETS_AVAILABLE: ${{ secrets.JOB_SECRET != '' }}
 
 on:
+  # Callable, so the e2e-on-GPU orchestration can build the workers it is about
+  # to test from the same ref. The dispatch inputs below are `choice` types for
+  # the UI; the callable ones are plain strings with the same defaults, because
+  # `choice` is not a valid workflow_call input type.
+  workflow_call:
+    inputs:
+      profile:
+        description: "Instance to build on, as `backend::profile (hardware)`."
+        type: string
+        default: "hyperstack::l40 (n3-L40x1)"
+      runtime-base:
+        description: "Runtime base image for the worker images."
+        type: string
+        default: "cgr.dev/zama.ai/glibc-dynamic:15.2.0"
+      push:
+        description: "Push to ghcr.io. A caller that runs the images elsewhere needs this on."
+        type: boolean
+        default: false
+    outputs:
+      worker-version:
+        description: >-
+          The tag the three worker images carry, `<sha7>-cuda<version>-sm<capability>`.
+          Read off the build host rather than assumed, so it names the capability
+          actually compiled for.
+        value: ${{ jobs.build.outputs.worker-version }}
+    secrets:
+      SLAB_ACTION_TOKEN:
+        required: true
+      SLAB_BASE_URL:
+        required: true
+      JOB_SECRET:
+        required: true
+      CGR_USERNAME:
+        required: false
+      CGR_PASSWORD:
+        required: false
   workflow_dispatch:
     inputs:
       profile:
@@ -150,6 +186,8 @@ jobs:
     needs: [parse-inputs, setup-instance]
     if: ${{ needs.setup-instance.result == 'success' && needs.setup-instance.outputs.runner-name != '' }}
     runs-on: ${{ needs.setup-instance.outputs.runner-name }}
+    outputs:
+      worker-version: ${{ steps.images.outputs.worker-version }}
     timeout-minutes: 240
     permissions:
       contents: "read" # Required to check out the sources being compiled
@@ -325,6 +363,7 @@ jobs:
           password: ${{ secrets.CGR_PASSWORD }}
 
       - name: Build and push the images
+        id: images
         shell: bash
         env:
           PUSH: ${{ inputs.push && 'true' || 'false' }}
@@ -355,6 +394,10 @@ jobs:
             version="$(git rev-parse HEAD | cut -c1-7)"
           fi
           suffix="cuda${CUDA_VERSION}-sm${COMPUTE_CAPABILITY}"
+          # Published for callers: the orchestrated e2e run needs the exact tag,
+          # and it cannot compute it -- the CUDA version and the compute
+          # capability are read off this build host.
+          echo "worker-version=${version}-${suffix}" >> "$GITHUB_OUTPUT"
           echo "runtime base: ${RUNTIME_BASE}; cuda ${CUDA_VERSION}; libs from ${CUDA_LIBDIR}"
 
           for service in tfhe-worker sns-worker zkproof-worker; do
