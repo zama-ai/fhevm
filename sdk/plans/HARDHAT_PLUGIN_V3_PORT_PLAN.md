@@ -1,6 +1,6 @@
 # Porting the FHEVM hardhat plugin from hardhat v2 to hardhat v3
 
-Version: **1.19** (2026-09-03). Bump the minor for a content change to the plan, the major for a
+Version: **1.20** (2026-09-03). Bump the minor for a content change to the plan, the major for a
 change of charter or stage order; record each bump below.
 
 - 1.0 — initial plan, from the hardhat 3 docs.
@@ -29,8 +29,10 @@ change of charter or stage order; record each bump below.
 - 1.18 — D2 landed (publicDecrypt group; the v2 counter e2e test is now ported in full).
 - 1.19 — D3a resolved as a REMOVAL: `createEIP712`/`createDelegatedUserDecryptEIP712` (deprecated and
   throwing in v2) leave the v3 surface; D3c is the delegated flow only.
+- 1.20 — D3b landed (userDecrypt typed variants; `FhevmUser` = viem wallet client or local account;
+  `timestampNow` module export); the v2 user-decrypt counter e2e test ported.
 
-Status: **in progress — Stages A, B, C and D0–D3a complete. Next: D3b.** The landing zone exists: the
+Status: **in progress — Stages A, B, C and D0–D3b complete. Next: D3c.** The landing zone exists: the
 `hardhat/v3` cluster (own installation root, hardhat 3.15 pinned), the plugin registered via
 `definePlugin` with its per-connection `fhevm` object and the pre-serve chain preparation proven,
 and the `hardhat/v3/e2e` member with the first counter test.
@@ -610,7 +612,16 @@ this later without API change). One commit per group, tests run against the B1 s
     e2e test calls them. That is the D0 rule for engine-era members, so they and the `Kms*EIP712Type`
     types leave the v3 surface instead of being stubbed. Was: `createEIP712`.
     Commit: `refactor(hh-v3-plugin): drop the deprecated EIP-712 builders from the surface`
-  - **D3b.** `userDecryptEbool/Euint/Eaddress`.
+  - **D3b — LANDED.** `userDecryptEbool/Euint/Eaddress` (`internal/userDecrypt.ts`): fresh transport
+    key pair, `signLegacyDecryptionPermit` (days→seconds, default 365 days from `timestampNow`, or
+    `options.validity`), one `decryptValues`. The SDK's viem adapter signs through anything with a
+    viem-style `signTypedData`, so **`FhevmUser = WalletClient | LocalAccount`**: a hardhat-viem wallet
+    client (must carry its account, refused by name otherwise) or a viem local account. An ethers
+    signer is NOT accepted — the plugin is viem-only; the e2e derives viem accounts from the suite
+    mnemonic (`test/utils/signers.ts` `getAccounts`) and keeps sending transactions with ethers.
+    `timestampNow` is a module export (index.ts), as in v2. Relayer-sdk leftovers `FhevmKeypair`,
+    `options.keypair`, `HandleContractPair`, `UserDecryptResults` left the surface. e2e gained `viem`
+    as an exact devDependency (root pin). Was: `userDecryptEbool/Euint/Eaddress`.
     Commit: `feat(hh-v3-plugin): port the userDecrypt typed variants`
   - **D3c.** The delegated user-decrypt flow (`createDelegatedUserDecryptEIP712` left with D3a).
     Commit: `feat(hh-v3-plugin): port the delegated user-decrypt permit flow`
@@ -692,7 +703,7 @@ allows.
 | B3                     | DONE — `test:node` script + `test/test-hardhat-node.sh`                                                                                                                                                                                                  |
 | D1                     | DONE for the counter: `internal/FHECounterPublicDecrypt.ts` gained "increment the counter by 1" (encrypt + tx; the public-decrypt half joins at D2). `internal/delegatedUserDecryption.ts` and `finance/ConfidentialVestingWallet*.test.ts` wait on their contracts (E2E-0b, on demand) |
 | D2                     | DONE for the counter: `internal/FHECounterPublicDecrypt.ts` is the full v2 file. `internal/Rand.ts` + fixture, `doc-examples/HeadsOrTails.ts`, `doc-examples/HighestDieRoll.ts`, `operators-public-decrypt/fhevmOperations54.ts`, `operators-manual/manualV13.ts` wait on their contracts (E2E-0b) |
-| D3b                    | `internal/FHECounterUserDecrypt.ts`, `internal/AplusB.ts`, `doc-examples/{DecryptSingleValue,DecryptMultipleValues,EncryptSingleValue,EncryptMultipleValues}.ts`, `confidentialERC20/*`, `finance/*.fixture.ts`, `governance/*`, `utils/EncryptedErrors.*`, `operators-manual/manualWithAllowSender.ts` |
+| D3b                    | DONE for `internal/FHECounterUserDecrypt.ts` (viem accounts as users). Waiting on their contracts (E2E-0b): `internal/AplusB.ts`, `doc-examples/{DecryptSingleValue,DecryptMultipleValues,EncryptSingleValue,EncryptMultipleValues}.ts`, `confidentialERC20/*`, `finance/*.fixture.ts`, `governance/*`, `utils/EncryptedErrors.*`, `operators-manual/manualWithAllowSender.ts` |
 | D3c                    | `internal/delegatedUserDecryption.ts` — the delegated asserts                                                                                                                                                                                     |
 | D4a3                   | `internal/TestErrors.*`, `internal/TestTrivialPermissions.test.ts`, `internal/TestACL.ts` (`revertedWithCustomErrorArgs`)                                                                                                                          |
 | D4b                    | `internal/TestAsyncDecrypt.ts` (`parseCoprocessorEvents`; also needs D6)                                                                                                                                                                          |
