@@ -137,31 +137,91 @@ pub async fn reconcile_stack_mode(pool: &Pool<Postgres>, mode: &StackMode) -> an
     Ok(())
 }
 
+/// Terminal outcome of [`run_stack_version_listener`]: the pool it was handed
+/// has been closed.
+///
+/// The listener binds to one `Pool` clone for its lifetime and sqlx re-acquires
+/// through that pool on every reconnect, so a closed pool can never serve this
+/// task again. Callers that replace their pool rather than repair it — the
+/// host-listener's `Database::reconnect` closes the pool it displaces — must
+/// re-spawn the listener against the current pool; callers with a single
+/// long-lived pool should treat it as fatal.
+#[derive(Debug, thiserror::Error)]
+#[error("stack-version listener pool was closed")]
+pub struct ListenerPoolClosed;
+
+/// How many consecutive `recv()` failures to absorb before giving up. A pool
+/// that is not closed but cannot serve the listener either is still a stall,
+/// and it must surface rather than be retried in silence.
+const MAX_CONSECUTIVE_LISTENER_ERRORS: usize = 30;
+
 /// Listen for [`EVENT_STACK_VERSION_UPGRADED`] and call [`reconcile_stack_mode`]
-/// on every notification. Runs until `cancel` fires; logs and retries on
-/// listener errors. Spawn this once per service after startup.
+/// on every notification. Runs until `cancel` fires.
+///
+/// Returns an error rather than retrying forever when the listener cannot
+/// recover: [`ListenerPoolClosed`] if the pool went away, or after
+/// [`MAX_CONSECUTIVE_LISTENER_ERRORS`] failures in a row. Spawn this once per
+/// service after startup, and respawn it if the service replaces its pool.
 pub async fn run_stack_version_listener(
     pool: Pool<Postgres>,
     mode: Arc<StackMode>,
     cancel: CancellationToken,
 ) -> anyhow::Result<()> {
-    let mut listener = PgListener::connect_with(&pool).await?;
-    listener.listen(EVENT_STACK_VERSION_UPGRADED).await?;
+    // Startup has the same terminal case as the loop below: `reconnect` can
+    // close the pool between the spawn and the first acquire, and the caller
+    // needs to tell "rebind me to the new pool" apart from "the database is
+    // broken".
+    let mut listener = match PgListener::connect_with(&pool).await {
+        Ok(listener) => listener,
+        Err(err) => {
+            if pool.is_closed() {
+                return Err(ListenerPoolClosed.into());
+            }
+            return Err(err.into());
+        }
+    };
+    if let Err(err) = listener.listen(EVENT_STACK_VERSION_UPGRADED).await {
+        if pool.is_closed() {
+            return Err(ListenerPoolClosed.into());
+        }
+        return Err(err.into());
+    }
     info!(
         channel = EVENT_STACK_VERSION_UPGRADED,
         "stack-version-upgraded listener started"
     );
+    let mut consecutive_errors = 0usize;
     loop {
         tokio::select! {
             _ = cancel.cancelled() => return Ok(()),
             recv = listener.recv() => match recv {
                 Ok(_) => {
+                    consecutive_errors = 0;
                     if let Err(e) = reconcile_stack_mode(&pool, &mode).await {
                         warn!(error = %e, "failed to reconcile stack mode after version upgrade");
                     }
                 }
                 Err(e) => {
-                    warn!(error = %e, "stack-version listener recv error; sleeping before retry");
+                    // A closed pool is terminal, not transient. This task holds
+                    // one pool clone, and a service that swaps its pool closes
+                    // the old one; retrying then spins on a condition that can
+                    // never heal, silently, because the listener is a side task
+                    // whose death only shows up later as a stack that no longer
+                    // reacts to cutover. Hand the decision back to the caller.
+                    if pool.is_closed() {
+                        return Err(ListenerPoolClosed.into());
+                    }
+                    consecutive_errors += 1;
+                    if consecutive_errors > MAX_CONSECUTIVE_LISTENER_ERRORS {
+                        return Err(anyhow::anyhow!(
+                            "stack-version listener failed {consecutive_errors} times in a row, last error: {e}"
+                        ));
+                    }
+                    warn!(
+                        error = %e,
+                        consecutive_errors,
+                        "stack-version listener recv error; sleeping before retry"
+                    );
                     tokio::time::sleep(Duration::from_secs(1)).await;
                 }
             }
@@ -449,7 +509,32 @@ pub async fn begin_write_guarded_conn(
 
 #[cfg(test)]
 mod tests {
-    use super::parse_version;
+    use super::{parse_version, run_stack_version_listener, ListenerPoolClosed, StackMode};
+    use tokio_util::sync::CancellationToken;
+
+    /// A closed pool is terminal for the listener, and it has to say so with a
+    /// distinguishable error: the host-listener replaces its pool on every
+    /// ingestion retry, and the difference between "rebind to the new pool" and
+    /// "the database is broken" is the difference between recovering and
+    /// warning once a second forever (the D-2 regression).
+    #[tokio::test]
+    async fn closed_pool_is_terminal_for_the_stack_version_listener() {
+        // Lazy: no connection is attempted until the listener acquires one, so
+        // this needs no database.
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgres://unused:unused@127.0.0.1:1/unused")
+            .expect("lazy pool");
+        pool.close().await;
+
+        let err = run_stack_version_listener(pool, StackMode::new(false), CancellationToken::new())
+            .await
+            .expect_err("a closed pool cannot serve the listener");
+
+        assert!(
+            err.is::<ListenerPoolClosed>(),
+            "expected ListenerPoolClosed, got: {err}"
+        );
+    }
 
     #[test]
     fn parses_loose_versions() {

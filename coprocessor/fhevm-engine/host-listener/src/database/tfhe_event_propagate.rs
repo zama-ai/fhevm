@@ -15,6 +15,9 @@ use fhevm_engine_common::types::{
 };
 use fhevm_engine_common::utils::DatabaseURL;
 use fhevm_engine_common::utils::{to_hex, HeartBeat};
+use fhevm_engine_common::versioning::{
+    run_stack_version_listener, ListenerPoolClosed, StackMode,
+};
 use prometheus::{register_int_counter_vec, IntCounterVec};
 use sqlx::postgres::PgConnectOptions;
 use sqlx::postgres::PgPoolOptions;
@@ -27,6 +30,7 @@ use std::sync::LazyLock;
 use std::time::Duration;
 use time::{Duration as TimeDuration, PrimitiveDateTime};
 use tokio::sync::RwLock;
+use tokio_util::sync::CancellationToken;
 use tracing::debug;
 use tracing::error;
 use tracing::info;
@@ -148,6 +152,10 @@ const MAX_RETRY_ON_UNKNOWN_ERROR: usize = 5;
 
 // short wait in case the database had a short issue
 const RECONNECTION_DELAY: Duration = Duration::from_millis(100);
+
+/// Delay before rebinding the stack-version listener to a replaced pool, so a
+/// database that is down does not turn the respawn loop into a busy loop.
+const LISTENER_RESPAWN_DELAY: Duration = Duration::from_secs(1);
 
 struct AllowedHandleInsert {
     handle: Vec<u8>,
@@ -2365,6 +2373,47 @@ impl Database {
         }
         Ok(())
     }
+}
+
+/// Spawns the stack-version listener and keeps it bound to whichever pool the
+/// [`Database`] currently holds.
+///
+/// [`Database::reconnect`] installs a fresh pool and closes the one it
+/// displaces, and it runs on *every* ingestion retry. A listener spawned once
+/// against a captured clone therefore dies on the first transient database
+/// error and cannot recover: it warned once a second, forever, while the stack
+/// silently stopped reacting to cutover. Re-spawning is what fixes it, and each
+/// respawn re-reads `db.pool()` — a `Database` clone shares the same
+/// `Arc<RwLock<Pool>>`, so it observes the replacement rather than retrying a
+/// dead object.
+pub fn spawn_stack_version_listener(
+    db: Database,
+    mode: Arc<StackMode>,
+    cancel: CancellationToken,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        while !cancel.is_cancelled() {
+            let pool = db.pool().await;
+            match run_stack_version_listener(pool, mode.clone(), cancel.clone())
+                .await
+            {
+                // Cancelled: the service is shutting down.
+                Ok(()) => return,
+                Err(err) if err.is::<ListenerPoolClosed>() => {
+                    info!(
+                        "stack-version listener lost its pool to a reconnect; rebinding to the current pool"
+                    );
+                }
+                Err(err) => {
+                    error!(
+                        error = %err,
+                        "stack-version listener failed; rebinding to the current pool"
+                    );
+                }
+            }
+            tokio::time::sleep(LISTENER_RESPAWN_DELAY).await;
+        }
+    })
 }
 
 fn event_to_op_int(op: &TfheContractEvents) -> FheOperation {
