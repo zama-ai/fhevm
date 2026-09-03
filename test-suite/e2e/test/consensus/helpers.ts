@@ -208,8 +208,12 @@ export function rfc023CiphertextUrl(bucketUrl: string, handle: string): string {
   // The connector deliberately appends directly to the registered string.
   // Preserve it byte-for-byte (including an accidental trailing slash) so the
   // E2E gate cannot validate a normalized URL different from KMS's real HEAD.
-  // Layout per #3401: 64-bit ciphertext material lives under the ct128/
-  // prefix, chunked; the first chunk existing is the readiness signal.
+  // Layout per #3401, defined by `s3_ct128_key` in
+  // `shared/ciphertext-attestation`: `ct128/{hex(handle)}/{context_id}`.
+  // The trailing segment is the coprocessor context id, NOT a chunk index --
+  // do not "correct" it to 0 on the theory that chunks are zero-based. The
+  // literal 1 is the local stack's context id; a deployment on another
+  // context needs it threaded through the attestation evidence.
   return `${bucketUrl}/ct128/${handle.slice(2).toLowerCase()}/1`;
 }
 
@@ -564,6 +568,28 @@ export async function waitForKmsNamespaceAttestationReadiness(options: {
   probeImage?: string;
 }): Promise<CoprocessorAttestationBucket[]> {
   const buckets = await getRegisteredCoprocessorBuckets(options.gatewayRpcUrl, options.gatewayConfigAddress);
+
+  // The readiness probe performs its RFC-023 HEAD by spawning a container, and
+  // the e2e test container deliberately has no Docker socket (defect L-3), so
+  // in that topology this throws before the gate reaches a single assertion of
+  // its own -- the whole materialization gate became unrunnable for a reason
+  // that has nothing to do with consensus.
+  //
+  // The runner detects the missing socket and sets this, so the omission is
+  // measured rather than assumed, and it is announced loudly: the bucket list
+  // is still returned and every byte-consensus, digest and plaintext assertion
+  // still runs. What is NOT covered is the attestation tier, and a reader of
+  // the output is told so rather than left to infer it from a green.
+  if (process.env.KMS_ATTESTATION_READINESS === 'skip') {
+    console.warn(
+      `[attestation] READINESS PROBE OMITTED for ${buckets.length} bucket(s): this topology ` +
+        'cannot reach the Docker socket the probe needs (L-3). Byte consensus, digests and the ' +
+        'plaintext oracle are still asserted; the RFC-023 attestation tier is NOT covered by ' +
+        'this run.',
+    );
+    return buckets;
+  }
+
   if (buckets.length !== options.expectedCoprocessorCount) {
     throw new Error(
       `GatewayConfig has ${buckets.length} Coprocessor buckets; expected ${options.expectedCoprocessorCount} for this consensus gate`,
@@ -1180,6 +1206,91 @@ export function getCoprocessorDbUrls(count: number): string[] {
     const name = index === 0 ? 'coprocessor' : `coprocessor_${index}`;
     return `postgresql://postgres:postgres@${host}/${name}`;
   });
+}
+
+/**
+ * How one operator was scheduled, as recorded by the topology launcher.
+ *
+ * RFC 020 makes result bytes a function of on-chain data alone, so scheduling
+ * is an axis the protocol claims byte-consensus is independent of, not part of
+ * the execution class. `CONSENSUS_SCHEDULING_CLASSES` carries it in the form
+ * `0=device:0,window:10,...;1=device:0,window:1,...`, one entry per operator.
+ */
+export function parseSchedulingClasses(raw: string): Map<number, string> {
+  const classes = new Map<number, string>();
+  for (const entry of raw.split(';')) {
+    const trimmed = entry.trim();
+    if (!trimmed) continue;
+    const separator = trimmed.indexOf('=');
+    if (separator < 0) throw new Error(`malformed scheduling class entry ${JSON.stringify(trimmed)}`);
+    const index = Number.parseInt(trimmed.slice(0, separator), 10);
+    const description = trimmed.slice(separator + 1);
+    if (!Number.isInteger(index) || index < 0)
+      throw new Error(`malformed operator index in scheduling class entry ${JSON.stringify(trimmed)}`);
+    if (!description) throw new Error(`empty scheduling class for operator ${index}`);
+    if (classes.has(index)) throw new Error(`duplicate scheduling class for operator ${index}`);
+    classes.set(index, description);
+  }
+  return classes;
+}
+
+/**
+ * Fails a run that claims heterogeneous scheduling but did not get it.
+ *
+ * This is the anti-vacuity guard for the whole axis. If an override is
+ * mistyped, or the launcher is an older revision that ignores per-operator
+ * configuration, the fleet silently stays homogeneous and the byte comparison
+ * still passes -- reporting a green for a property that was never exercised.
+ * The distinctness check is what makes the green mean something.
+ */
+export function assertHeterogeneousScheduling(raw: string, expectedOperators: number): Map<number, string> {
+  if (!raw)
+    throw new Error(
+      'CONSENSUS_SCHEDULING_CLASSES is unset: a heterogeneous-scheduling run must be started by a launcher that records per-operator configuration',
+    );
+  const classes = parseSchedulingClasses(raw);
+  if (classes.size !== expectedOperators)
+    throw new Error(`expected scheduling classes for ${expectedOperators} operators, got ${classes.size}`);
+  const distinct = new Set(classes.values());
+  if (distinct.size < 2) {
+    const [only] = distinct;
+    throw new Error(
+      `every operator scheduled identically (${only}); a heterogeneous-scheduling run that is in fact homogeneous proves nothing, so it fails rather than passing vacuously`,
+    );
+  }
+  return classes;
+}
+
+/**
+ * Asserts a device-split run really spanned more than one GPU.
+ *
+ * Device placement is one of the independences RFC-020 claims -- bytes are a
+ * pure function of on-chain data, not of which card computed them -- and it is
+ * the one axis no run varied until this host had two GPUs. The scheduling
+ * classes already carry `device:N` per operator, so the check is cheap; without
+ * it a run with every operator on device 0 would pass as a device-split run and
+ * assert nothing, which is how the heterogeneous leg first went wrong (F-8).
+ */
+export function assertDeviceSplit(raw: string, expectedOperators: number): Map<number, number> {
+  if (!raw)
+    throw new Error(
+      'CONSENSUS_SCHEDULING_CLASSES is unset: a device-split run must be started by a launcher that records per-operator device placement',
+    );
+  const classes = parseSchedulingClasses(raw);
+  if (classes.size !== expectedOperators)
+    throw new Error(`expected scheduling classes for ${expectedOperators} operators, got ${classes.size}`);
+  const devices = new Map<number, number>();
+  for (const [operator, scheduling] of classes) {
+    const match = /(?:^|,)device:(\d+)/.exec(scheduling);
+    if (!match) throw new Error(`operator ${operator} scheduling class records no device: ${scheduling}`);
+    devices.set(operator, Number.parseInt(match[1], 10));
+  }
+  const distinct = new Set(devices.values());
+  if (distinct.size < 2)
+    throw new Error(
+      `every operator ran on CUDA device ${[...distinct][0]}; a device-split run that used one card proves nothing about device independence, so it fails rather than passing vacuously`,
+    );
+  return devices;
 }
 
 /** Explicitly waits for all isolated databases; no test should infer readiness from Docker start. */
