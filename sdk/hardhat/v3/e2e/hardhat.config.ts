@@ -7,8 +7,8 @@ import { configVariable, defineConfig } from 'hardhat/config';
 
 // The v2 suite's accounts: hardhat's own default mnemonic, spelled out so anvil and the in-process
 // networks derive the same ten signers.
-const MNEMONIC = 'test test test test test test test test test test test junk';
-const HD_PATH = "m/44'/60'/0'/0/";
+export const MNEMONIC = 'test test test test test test test test test test test junk';
+export const HD_PATH = "m/44'/60'/0'/0/";
 
 export default defineConfig({
   plugins: [fhevmPlugin, hardhatMocha, hardhatEthers, hardhatEthersChaiMatchers, hardhatTypechain],

@@ -6,10 +6,10 @@
 // see that requirement.
 /* eslint-disable @typescript-eslint/no-redundant-type-constituents, @typescript-eslint/no-unused-vars */
 
-import type { HardhatFhevm } from './internal/FhevmConnection.js';
+import type { HardhatFhevmRuntimeEnvironment } from './types.js';
 
 declare module 'hardhat/types/network' {
   interface NetworkConnection<ChainTypeT extends ChainType | string> {
-    fhevm: HardhatFhevm;
+    fhevm: HardhatFhevmRuntimeEnvironment;
   }
 }
