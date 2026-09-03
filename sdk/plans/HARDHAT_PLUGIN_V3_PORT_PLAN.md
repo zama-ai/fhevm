@@ -1,6 +1,6 @@
 # Porting the FHEVM hardhat plugin from hardhat v2 to hardhat v3
 
-Version: **1.43** (2026-09-03). Bump the minor for a content change to the plan, the major for a
+Version: **1.44** (2026-09-03). Bump the minor for a content change to the plan, the major for a
 change of charter or stage order; record each bump below.
 
 - 1.0 — initial plan, from the hardhat 3 docs.
@@ -66,6 +66,8 @@ change of charter or stage order; record each bump below.
 - 1.41 — ledger row 1 ported: `internal/AplusB.ts` (smallest first).
 - 1.42 — ledger row 2 ported: `hcu/fhevmHCU1.ts` over `FHEVMTestSuite1`; `test/utils/receipts.ts` added.
 - 1.43 — ledger row 3 ported: `doc-examples/DecryptSingleValue.ts`; `test/utils/expect.ts` (shared rejection helper).
+- 1.44 — ledger rows 4–10 ported: the remaining `doc-examples/*` (DecryptMultipleValues, EncryptMultipleValues,
+  EncryptSingleValue, HighestDieRoll, HeadsOrTails). `KMSInvalidSigner` checks use `revertedWithCustomErrorArgs`.
 
 Status: **port complete for development networks — Stages A–F and E2E-0b landed. Open: the public-chain client (network-group decision) and the remaining ledger test ports (contracts now present; smallest first).** The landing zone exists: the
 `hardhat/v3` cluster (own installation root, hardhat 3.15 pinned), the plugin registered via
@@ -887,8 +889,8 @@ allows.
 | B2                     | DONE — `test:anvil` + `test:anvil:simple` scripts and `test/test-anvil*.sh` (run the counter file)                                                                                                                                                       |
 | B3                     | DONE — `test:node` script + `test/test-hardhat-node.sh`                                                                                                                                                                                                  |
 | D1                     | DONE for the counter: `internal/FHECounterPublicDecrypt.ts` gained "increment the counter by 1" (encrypt + tx; the public-decrypt half joins at D2). `internal/delegatedUserDecryption.ts` and `finance/ConfidentialVestingWallet*.test.ts` wait on their contracts (contracts landed at E2E-0b; test port pending) |
-| D2                     | DONE for the counter: `internal/FHECounterPublicDecrypt.ts` is the full v2 file. `internal/Rand.ts` + fixture, `doc-examples/HeadsOrTails.ts`, `doc-examples/HighestDieRoll.ts`, `operators-public-decrypt/fhevmOperations54.ts`, `operators-manual/manualV13.ts` contracts landed at E2E-0b; test port pending |
-| D3b                    | DONE for `internal/FHECounterUserDecrypt.ts` (viem accounts as users). `internal/AplusB.ts` DONE (2026-09-03). Contracts landed at E2E-0b, test port pending: `doc-examples/DecryptSingleValue.ts` DONE (2026-09-03), `doc-examples/{DecryptMultipleValues,EncryptSingleValue,EncryptMultipleValues}.ts`, `confidentialERC20/*`, `finance/*.fixture.ts`, `governance/*`, `utils/EncryptedErrors.*`, `operators-manual/manualWithAllowSender.ts` |
+| D2                     | DONE for the counter: `internal/FHECounterPublicDecrypt.ts` is the full v2 file. `internal/Rand.ts` + fixture, `doc-examples/HeadsOrTails.ts` DONE, `doc-examples/HighestDieRoll.ts` DONE (2026-09-03), `operators-public-decrypt/fhevmOperations54.ts`, `operators-manual/manualV13.ts` contracts landed at E2E-0b; test port pending |
+| D3b                    | DONE for `internal/FHECounterUserDecrypt.ts` (viem accounts as users). `internal/AplusB.ts` DONE (2026-09-03). Contracts landed at E2E-0b, test port pending: `doc-examples/{DecryptSingleValue,DecryptMultipleValues,EncryptSingleValue,EncryptMultipleValues}.ts` DONE (2026-09-03), `confidentialERC20/*`, `finance/*.fixture.ts`, `governance/*`, `utils/EncryptedErrors.*`, `operators-manual/manualWithAllowSender.ts` |
 | D3c                    | DONE on the counter (`internal/delegatedUserDecryption.ts`, `SmartWalletWithDelegation.sol`, `utils/blocks.ts`); the ConfidentialERC20 version of the same asserts contracts landed at E2E-0b; test port pending                                                                                                                                                                                     |
 | D4a3                   | DONE — `internal/TestErrors.test.ts`, `internal/TestTrivialPermissions.test.ts`, `internal/TestACL.ts` (contracts copied verbatim)                                                                                                                          |
 | D4b                    | MOOT — `internal/TestAsyncDecrypt.ts` is 100% commented out in v2 (mock-engine era); nothing to port                                                                                                                                                                          |
