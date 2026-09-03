@@ -1,6 +1,6 @@
 # Porting the FHEVM hardhat plugin from hardhat v2 to hardhat v3
 
-Version: **1.21** (2026-09-03). Bump the minor for a content change to the plan, the major for a
+Version: **1.22** (2026-09-03). Bump the minor for a content change to the plan, the major for a
 change of charter or stage order; record each bump below.
 
 - 1.0 — initial plan, from the hardhat 3 docs.
@@ -33,8 +33,9 @@ change of charter or stage order; record each bump below.
   `timestampNow` module export); the v2 user-decrypt counter e2e test ported.
 - 1.21 — D3c landed (`options.delegatorAddress` on `userDecryptE*`); delegated e2e runs on the counter
   through `SmartWalletWithDelegation`; the ConfidentialERC20 corpus stays E2E-0b.
+- 1.22 — D4a1 landed (error table as typed data with a keyed lookup; template engine on plugin errors).
 
-Status: **in progress — Stages A, B, C and D0–D3 complete. Next: D4a1.** The landing zone exists: the
+Status: **in progress — Stages A, B, C, D0–D3 and D4a1 complete. Next: D4a2.** The landing zone exists: the
 `hardhat/v3` cluster (own installation root, hardhat 3.15 pinned), the plugin registered via
 `definePlugin` with its per-connection `fhevm` object and the pre-serve chain preparation proven,
 and the `hardhat/v3/e2e` member with the first counter test.
@@ -640,7 +641,13 @@ this later without API change). One commit per group, tests run against the B1 s
   - **D4a.** The error layer is 827 v2 lines (`FhevmContractError` 703 + list 124) — the single
     biggest port item, and prime shared-layer material (§3: nothing in it touches `hre`). Three
     blocks, with a standing note that a shared `@fhevm/sdk` home beats porting a2 at all:
-    - **D4a1.** The error LIST (data table).
+    - **D4a1 — LANDED.** `internal/errors/errorTable.ts`: the four v2 entries (InputVerifier
+      `InvalidSigner`, ACL `SenderNotAllowed`, KMSVerifier `KMSInvalidSigner`, FHEVMExecutor
+      `ACLNotAllowed`) plus the default custom-error line, as a frozen typed table; the engine will
+      read it through `lookupErrorTemplates(contract, error)` (own-key checked) instead of v2's
+      runtime `unknown` walk. `applyErrorTemplate` ported on `HardhatPluginError`, dead commented
+      block dropped; message examples say `fhevm.createEncryptedInput` (no `hre.fhevm` in v3).
+      Table-integrity test walks every tag. Was: the error LIST (data table).
       Commit: `feat(hh-v3-plugin): port the fhevm contract error table`
     - **D4a2.** The parsing engine (`FhevmContractError`), trimmed to what v3 consumers reach —
       if it still trends past the cap, split by error family.
