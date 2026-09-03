@@ -1,6 +1,6 @@
 # Porting the FHEVM hardhat plugin from hardhat v2 to hardhat v3
 
-Version: **1.27** (2026-09-03). Bump the minor for a content change to the plan, the major for a
+Version: **1.28** (2026-09-03). Bump the minor for a content change to the plan, the major for a
 change of charter or stage order; record each bump below.
 
 - 1.0 — initial plan, from the hardhat 3 docs.
@@ -42,8 +42,9 @@ change of charter or stage order; record each bump below.
 - 1.26 — D5a1 landed as VENDORING, not generation: the upstream HCU price table lives in
   common-vendored and both plugins receive it through `sync-vendored`.
 - 1.27 — D5a2 landed (HCU engine over the D4b events: price bridge, type-name map, handle parser, walk).
+- 1.28 — D5a3 landed (`computeTransactionHCU`, `typeof`, module `getHCU`); HCU e2e on the counter.
 
-Status: **in progress — Stages A, B, C, D0–D4, D5a1 and D5a2 complete. Next: D5a3.** The landing zone exists: the
+Status: **in progress — Stages A, B, C, D0–D4 and D5a complete. Next: D5b.** The landing zone exists: the
 `hardhat/v3` cluster (own installation root, hardhat 3.15 pinned), the plugin registered via
 `definePlugin` with its per-connection `fhevm` object and the pre-serve chain preparation proven,
 and the `hardhat/v3/e2e` member with the first counter test.
@@ -726,7 +727,15 @@ this later without API change). One commit per group, tests run against the B1 s
       Was: the HCU engine, split by operator family if past the cap.
       Commits: `feat(hh-v3-plugin): port the HCU price bridge and handle parser`,
       `feat(hh-v3-plugin): port the HCU computation walk`
-    - **D5a3.** `computeTransactionHCU` + module-level `getHCU` wiring.
+    - **D5a3 — LANDED.** `connection.fhevm.computeTransactionHCU(receipt)` over the D5a2 walk and the
+      connection's executor; `fhevm.typeof(handle)` (the handle parser's type name — the member the
+      plan had left unassigned); module exports `getHCU` (index.ts) and the `FheTypeName` type it
+      takes. No sync stub is left on the surface. e2e: `internal/FHECounterHCU.ts` — the first
+      `increment` on an uninitialized count costs TrivialEncrypt + FheAdd (`FHE.add` encrypts a zero
+      first), the second a single FheAdd; the 752-line `FHEVMTestSuite1` corpus stays E2E-0b.
+      That e2e forced `FhevmLog`/`FhevmTransactionReceipt` fields to plain `string` (ethers types them
+      so); the decoders check the hex themselves.
+      Was: `computeTransactionHCU` + module-level `getHCU` wiring.
       Commit: `feat(hh-v3-plugin): expose transaction HCU computation`
   - **D5b.** `getCoprocessorConfig` + `assertCoprocessorInitialized`.
     Commit: `feat(hh-v3-plugin): port coprocessor config read and init assertion`
@@ -785,7 +794,7 @@ allows.
 | D3c                    | DONE on the counter (`internal/delegatedUserDecryption.ts`, `SmartWalletWithDelegation.sol`, `utils/blocks.ts`); the ConfidentialERC20 version of the same asserts waits on E2E-0b                                                                                                                                                                                     |
 | D4a3                   | DONE — `internal/TestErrors.test.ts`, `internal/TestTrivialPermissions.test.ts`, `internal/TestACL.ts` (contracts copied verbatim)                                                                                                                          |
 | D4b                    | `internal/TestAsyncDecrypt.ts` (`parseCoprocessorEvents`; also needs D6)                                                                                                                                                                          |
-| D5a3                   | `hcu/fhevmHCU1.ts` (`computeTransactionHCU`)                                                                                                                                                                                                      |
+| D5a3                   | DONE on the counter (`internal/FHECounterHCU.ts`); `hcu/fhevmHCU1.ts` waits on the `FHEVMTestSuite1` corpus (E2E-0b)                                                                                                                                                                                                      |
 | D5b + C2               | `sepolia/*` (`getCoprocessorConfig` + generated addresses) and the `test:sepolia:*` scripts — operator-run, never in `make test`                                                                                                                    |
 | D6                     | `operators/fhevmOperations1…13.ts`, `operators-manual/manual.ts` (`debugger`), and `internal/TestAsyncDecrypt.ts` if D4b landed first                                                                                                              |
 
