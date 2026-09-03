@@ -2,7 +2,6 @@ services:
   host-sc-deploy:
     container_name: host-sc-deploy
     image: ghcr.io/zama-ai/fhevm/host-contracts:${HOST_VERSION}
-    platform: linux/amd64
     env_file:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/host-sc.env
     command:
@@ -16,7 +15,6 @@ services:
   host-sc-add-pausers:
     container_name: host-sc-add-pausers
     image: ghcr.io/zama-ai/fhevm/host-contracts:${HOST_VERSION}
-    platform: linux/amd64
     env_file:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/host-sc.env
     command:
@@ -32,7 +30,6 @@ services:
   host-sc-trigger-keygen:
     container_name: host-sc-trigger-keygen
     image: ghcr.io/zama-ai/fhevm/host-contracts:${HOST_VERSION}
-    platform: linux/amd64
     env_file:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/host-sc.env
     # Using test parameters (--params-type 1) is currently not possible as it can make the random
@@ -49,7 +46,6 @@ services:
   host-sc-trigger-crsgen:
     container_name: host-sc-trigger-crsgen
     image: ghcr.io/zama-ai/fhevm/host-contracts:${HOST_VERSION}
-    platform: linux/amd64
     env_file:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/host-sc.env
     # CRS parameters must match the same params type as the keygen request.
@@ -65,7 +61,6 @@ services:
   host-sc-deploy-bridge:
     container_name: host-sc-deploy-bridge
     image: ghcr.io/zama-ai/fhevm/host-contracts:${HOST_VERSION}
-    platform: linux/amd64
     env_file:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/host-sc.env
     command:
@@ -79,7 +74,6 @@ services:
   host-sc-wire-bridge:
     container_name: host-sc-wire-bridge
     image: ghcr.io/zama-ai/fhevm/host-contracts:${HOST_VERSION}
-    platform: linux/amd64
     env_file:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/host-sc.env
     command:
@@ -93,7 +87,6 @@ services:
   host-sc-context-switch:
     container_name: host-sc-context-switch
     image: ghcr.io/zama-ai/fhevm/host-contracts:${HOST_VERSION}
-    platform: linux/amd64
     env_file:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/${HOST_SC_CONTEXT_ENV:-host-sc.env}
     command:
@@ -104,7 +97,6 @@ services:
   host-sc-epoch-rotation:
     container_name: host-sc-epoch-rotation
     image: ghcr.io/zama-ai/fhevm/host-contracts:${HOST_VERSION}
-    platform: linux/amd64
     env_file:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/host-sc.env
     command:
