@@ -23,13 +23,15 @@ use fhevm_engine_common::drift_revert;
 use fhevm_engine_common::healthz_server::HttpServer as HealthHttpServer;
 use fhevm_engine_common::types::BlockchainProvider;
 use fhevm_engine_common::utils::{DatabaseURL, HeartBeat};
-use fhevm_engine_common::versioning::{run_stack_version_listener, StackMode};
+use fhevm_engine_common::versioning::StackMode;
 use sqlx::postgres::PgPoolOptions;
 
 use crate::database::ingest::{
     ingest_block_logs, update_finalized_blocks, BlockLogs, IngestOptions,
 };
-use crate::database::tfhe_event_propagate::Database;
+use crate::database::tfhe_event_propagate::{
+    spawn_stack_version_listener, Database,
+};
 use crate::health_check::HealthCheck;
 use crate::kms_generation::aws_s3::AwsS3Client;
 use crate::kms_generation::process_kms_generation_activations;
@@ -1186,18 +1188,11 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
     // this (blue) stack is retired and `stack_mode` flips to paused, turning
     // the ingest loop below into a no-op (no DB writes).
     let stack_mode = StackMode::new(gcs_mode);
-    {
-        let pool = db.pool().await;
-        let stack_mode = stack_mode.clone();
-        let cancel = cancel_token.clone();
-        tokio::spawn(async move {
-            if let Err(err) =
-                run_stack_version_listener(pool, stack_mode, cancel).await
-            {
-                error!(error = %err, "stack-version listener exited with error");
-            }
-        });
-    }
+    spawn_stack_version_listener(
+        db.clone(),
+        stack_mode.clone(),
+        cancel_token.clone(),
+    );
 
     // Start health check before drift-revert init so the service stays
     // healthy while waiting for a revert to complete.

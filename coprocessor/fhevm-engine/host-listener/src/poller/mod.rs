@@ -18,14 +18,16 @@ use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::database::connect_pool_with_options;
 use fhevm_engine_common::healthz_server::HttpServer as HealthHttpServer;
 use fhevm_engine_common::utils::{DatabaseURL, HeartBeat};
-use fhevm_engine_common::versioning::{run_stack_version_listener, StackMode};
+use fhevm_engine_common::versioning::StackMode;
 use sqlx::postgres::PgPoolOptions;
 
 use crate::cmd::block_history::BlockSummary;
 use crate::database::ingest::{
     ingest_block_logs, update_finalized_blocks_aux, BlockLogs, IngestOptions,
 };
-use crate::database::tfhe_event_propagate::Database;
+use crate::database::tfhe_event_propagate::{
+    spawn_stack_version_listener, Database,
+};
 use crate::health_check::HealthCheck;
 use crate::kms_generation::aws_s3::AwsS3Client;
 use crate::kms_generation::process_kms_generation_activations;
@@ -264,18 +266,11 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
     // this (blue) stack is retired and `stack_mode` flips to paused, turning
     // the poll loop below into a no-op (stops polling/producing blocks).
     let stack_mode = StackMode::new(config.gcs_mode);
-    {
-        let pool = db.pool().await;
-        let stack_mode = stack_mode.clone();
-        let cancel = cancel_token.clone();
-        tokio::spawn(async move {
-            if let Err(err) =
-                run_stack_version_listener(pool, stack_mode, cancel).await
-            {
-                error!(error = %err, "stack-version listener exited with error");
-            }
-        });
-    }
+    spawn_stack_version_listener(
+        db.clone(),
+        stack_mode.clone(),
+        cancel_token.clone(),
+    );
 
     let initial_anchor = db.poller_get_last_caught_up_block(chain_id).await?;
     db.tick.update();
