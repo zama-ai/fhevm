@@ -1,6 +1,6 @@
 # Porting the FHEVM hardhat plugin from hardhat v2 to hardhat v3
 
-Version: **1.22** (2026-09-03). Bump the minor for a content change to the plan, the major for a
+Version: **1.23** (2026-09-03). Bump the minor for a content change to the plan, the major for a
 change of charter or stage order; record each bump below.
 
 - 1.0 — initial plan, from the hardhat 3 docs.
@@ -34,8 +34,10 @@ change of charter or stage order; record each bump below.
 - 1.21 — D3c landed (`options.delegatorAddress` on `userDecryptE*`); delegated e2e runs on the counter
   through `SmartWalletWithDelegation`; the ConfidentialERC20 corpus stays E2E-0b.
 - 1.22 — D4a1 landed (error table as typed data with a keyed lookup; template engine on plugin errors).
+- 1.23 — D4a2 landed (viem decoder + formatter + in-place decoration of hardhat 3's THROWN revert
+  errors, wired through `onRequest` with a per-connection repository); A7 note corrected.
 
-Status: **in progress — Stages A, B, C, D0–D3 and D4a1 complete. Next: D4a2.** The landing zone exists: the
+Status: **in progress — Stages A, B, C, D0–D3, D4a1 and D4a2 complete. Next: D4a3.** The landing zone exists: the
 `hardhat/v3` cluster (own installation root, hardhat 3.15 pinned), the plugin registered via
 `definePlugin` with its per-connection `fhevm` object and the pre-serve chain preparation proven,
 and the `hardhat/v3/e2e` member with the first counter test.
@@ -649,8 +651,22 @@ this later without API change). One commit per group, tests run against the B1 s
       block dropped; message examples say `fhevm.createEncryptedInput` (no `hre.fhevm` in v3).
       Table-integrity test walks every tag. Was: the error LIST (data table).
       Commit: `feat(hh-v3-plugin): port the fhevm contract error table`
-    - **D4a2.** The parsing engine (`FhevmContractError`), trimmed to what v3 consumers reach —
-      if it still trends past the cap, split by error family.
+    - **D4a2 — LANDED** (~230 lines for v2's 703). Three modules under `internal/errors/`:
+      `decode.ts` (viem `decodeErrorResult` against every repository ABI; exactly ONE owner, so the
+      OpenZeppelin errors every proxy declares stay ambiguous and untouched), `messages.ts` (table
+      templates filled from the error's ABI-named arguments — no per-contract switch any more;
+      `InvalidSigner` takes the tx from/to; a template the values do not cover falls back to the
+      generic line), `decorate.ts` (in-place rewrite of message + stack). Correction to A7: hardhat 3
+      THROWS a failed request (EDR `SolidityError` with `data`/`transactionHash`/`stackTrace`, http
+      `ProviderError` with `data` hex or `{data, transactionHash}`), so `requests.ts` catches, decorates
+      and rethrows the SAME object (chai/ethers keep their `data`); every method is covered, not only
+      sends. EDR blames the proxy's IMPLEMENTATION address, which the repository does not know, so the
+      address hint falls back to the all-ABI decode. `internal/repository.ts` builds the contracts
+      repository per development connection (WeakMap in the hook factory). Table fix: ACL
+      `SenderNotAllowed` tag is `%sender%` (the ABI name). Dropped from v2: the `--verbose` error box
+      (D4a3 decides logging), the exact-message precondition, the ethers `Interface` plumbing. Live
+      test: `ACL.allow` from an unauthorised account surfaces as the FHEVM message.
+      Was: the parsing engine, trimmed to what v3 consumers reach.
       Commit: `feat(hh-v3-plugin): port the fhevm contract error parsing engine`
     - **D4a3.** The two public helpers (`tryParseFhevmError`, `revertedWithCustomErrorArgs`).
       Commit: `feat(hh-v3-plugin): expose the fhevm error parsing helpers`
