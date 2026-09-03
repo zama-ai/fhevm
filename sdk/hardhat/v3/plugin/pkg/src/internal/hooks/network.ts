@@ -16,6 +16,7 @@ import type { HookContext, NetworkHooks } from 'hardhat/types/hooks';
 import type { ChainType, NetworkConnection } from 'hardhat/types/network';
 import type { JsonRpcRequest, JsonRpcResponse } from 'hardhat/types/providers';
 
+import { createSdkClient } from '../client.js';
 import { createFhevmConnection } from '../FhevmConnection.js';
 import { resolveFhevmNetwork } from '../network.js';
 import { prepareDevelopmentChain } from '../prepare.js';
@@ -34,7 +35,8 @@ export default (): Promise<Partial<NetworkHooks>> => {
       const network = await resolveFhevmNetwork(connection);
       const stack = await prepareDevelopmentChain(connection, network);
       if (stack !== undefined) stackByConnection.set(connection, stack);
-      connection.fhevm = createFhevmConnection(connection, network);
+      const client = await createSdkClient(connection, network, stack);
+      connection.fhevm = createFhevmConnection(network, client);
       return connection;
     },
 

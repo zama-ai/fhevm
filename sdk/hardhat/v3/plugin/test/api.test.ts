@@ -18,7 +18,6 @@ const SYNC_STUBS = [
   'parseCoprocessorEvents',
   'computeTransactionHCU',
   'revertedWithCustomErrorArgs',
-  'createEncryptedInput',
   'createEIP712',
   'createDelegatedUserDecryptEIP712',
 ] as const;
@@ -27,9 +26,6 @@ const ASYNC_STUBS = [
   'assertCoprocessorInitialized',
   'getCoprocessorConfig',
   'tryParseFhevmError',
-  'encryptUint',
-  'encryptBool',
-  'encryptAddress',
   'publicDecrypt',
   'publicDecryptEbool',
   'publicDecryptEuint',
@@ -39,7 +35,7 @@ const ASYNC_STUBS = [
   'userDecryptEaddress',
 ] as const;
 
-const STUB_GETTERS = ['debugger', 'client'] as const;
+const STUB_GETTERS = ['debugger'] as const;
 
 function isNotImplemented(member: string): (e: unknown) => boolean {
   return (e: unknown) => e instanceof HardhatPluginError && e.message.includes(`fhevm.${member} is not implemented`);

@@ -91,6 +91,9 @@ export type FhevmClient = ReturnType<typeof createFhevmCleartextClient>;
 
 /** A batched encrypted input: several values sharing one input proof. */
 export type FhevmEncryptedInput = {
+  readonly contractAddress: Address;
+  readonly userAddress: Address;
+
   addBool(value: boolean): FhevmEncryptedInput;
   add8(value: number | bigint): FhevmEncryptedInput;
   add16(value: number | bigint): FhevmEncryptedInput;

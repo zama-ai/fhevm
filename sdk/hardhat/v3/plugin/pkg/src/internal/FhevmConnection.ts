@@ -4,30 +4,41 @@
 // test reaches for a missing group by name instead of by a TypeError.
 
 import { HardhatPluginError } from 'hardhat/plugins';
-import type { NetworkConnection } from 'hardhat/types/network';
+import type { Address, Hex } from 'viem';
 
-import type {
-  FhevmClient,
-  FhevmNetworkInfo,
-  HardhatFhevmRuntimeDebugger,
-  HardhatFhevmRuntimeEnvironment,
+import {
+  type FhevmClient,
+  type FhevmEncryptedInput,
+  type FhevmNetworkInfo,
+  FhevmType,
+  type FhevmTypeEuint,
+  type HardhatFhevmRuntimeDebugger,
+  type HardhatFhevmRuntimeEnvironment,
 } from '../types.js';
 import { PLUGIN_ID } from './constants.js';
+import { createEncryptedInput, encryptOne } from './encrypt.js';
+import { isFhevmEuint } from './fheType.js';
 import { isCleartextNetwork, isDevelopmentNetwork } from './network.js';
 
+function notImplementedError(member: string): HardhatPluginError {
+  return new HardhatPluginError(PLUGIN_ID, `fhevm.${member} is not implemented yet in the hardhat 3 plugin.`);
+}
+
 function notImplemented(member: string): never {
-  throw new HardhatPluginError(PLUGIN_ID, `fhevm.${member} is not implemented yet in the hardhat 3 plugin.`);
+  throw notImplementedError(member);
 }
 
 class FhevmRuntimeEnvironment implements HardhatFhevmRuntimeEnvironment {
   readonly network: FhevmNetworkInfo;
   readonly isCleartext: boolean;
   readonly isDevelopment: boolean;
+  readonly #client: FhevmClient | undefined;
 
-  constructor(network: FhevmNetworkInfo) {
+  constructor(network: FhevmNetworkInfo, client: FhevmClient | undefined) {
     this.network = network;
     this.isCleartext = isCleartextNetwork(network);
     this.isDevelopment = isDevelopmentNetwork(network);
+    this.#client = client;
   }
 
   get isMock(): boolean {
@@ -39,7 +50,12 @@ class FhevmRuntimeEnvironment implements HardhatFhevmRuntimeEnvironment {
   }
 
   get client(): FhevmClient {
-    return notImplemented('client');
+    if (this.#client !== undefined) return this.#client;
+    const { networkName, chainId } = this.network;
+    throw new HardhatPluginError(
+      PLUGIN_ID,
+      `fhevm.client is not available on '${networkName}' (chainId ${String(chainId)}): only development networks are supported yet.`,
+    );
   }
 
   typeof(): never {
@@ -70,20 +86,60 @@ class FhevmRuntimeEnvironment implements HardhatFhevmRuntimeEnvironment {
     return Promise.reject(notImplementedError('tryParseFhevmError'));
   }
 
-  createEncryptedInput(): never {
-    return notImplemented('createEncryptedInput');
+  createEncryptedInput(contractAddress: Address, userAddress: Address): FhevmEncryptedInput {
+    return createEncryptedInput(() => this.client, contractAddress, userAddress);
   }
 
-  encryptUint(): Promise<never> {
-    return Promise.reject(notImplementedError('encryptUint'));
+  async encryptUint(
+    fhevmType: FhevmTypeEuint,
+    value: number | bigint,
+    contractAddress: Address,
+    userAddress: Address,
+  ): Promise<{ externalEuint: Hex; inputProof: Hex }> {
+    if (!isFhevmEuint(fhevmType)) {
+      throw new HardhatPluginError(PLUGIN_ID, `encryptUint: '${String(fhevmType)}' is not a valid FhevmTypeEuint.`);
+    }
+    const { handle, inputProof } = await encryptOne(
+      this.client,
+      'encryptUint',
+      fhevmType,
+      value,
+      contractAddress,
+      userAddress,
+    );
+    return { externalEuint: handle, inputProof };
   }
 
-  encryptBool(): Promise<never> {
-    return Promise.reject(notImplementedError('encryptBool'));
+  async encryptBool(
+    value: boolean,
+    contractAddress: Address,
+    userAddress: Address,
+  ): Promise<{ externalEbool: Hex; inputProof: Hex }> {
+    const { handle, inputProof } = await encryptOne(
+      this.client,
+      'encryptBool',
+      FhevmType.ebool,
+      value,
+      contractAddress,
+      userAddress,
+    );
+    return { externalEbool: handle, inputProof };
   }
 
-  encryptAddress(): Promise<never> {
-    return Promise.reject(notImplementedError('encryptAddress'));
+  async encryptAddress(
+    value: Address,
+    contractAddress: Address,
+    userAddress: Address,
+  ): Promise<{ externalEaddress: Hex; inputProof: Hex }> {
+    const { handle, inputProof } = await encryptOne(
+      this.client,
+      'encryptAddress',
+      FhevmType.eaddress,
+      value,
+      contractAddress,
+      userAddress,
+    );
+    return { externalEaddress: handle, inputProof };
   }
 
   createEIP712(): never {
@@ -123,13 +179,9 @@ class FhevmRuntimeEnvironment implements HardhatFhevmRuntimeEnvironment {
   }
 }
 
-function notImplementedError(member: string): HardhatPluginError {
-  return new HardhatPluginError(PLUGIN_ID, `fhevm.${member} is not implemented yet in the hardhat 3 plugin.`);
-}
-
 export function createFhevmConnection(
-  _connection: NetworkConnection<string>,
   network: FhevmNetworkInfo,
+  client: FhevmClient | undefined,
 ): HardhatFhevmRuntimeEnvironment {
-  return Object.freeze(new FhevmRuntimeEnvironment(network));
+  return Object.freeze(new FhevmRuntimeEnvironment(network, client));
 }
