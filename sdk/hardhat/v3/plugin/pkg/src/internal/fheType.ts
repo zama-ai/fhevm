@@ -40,3 +40,20 @@ export function isFhevmEuint(value: FhevmType | undefined): value is FhevmTypeEu
       return false;
   }
 }
+
+const FHEVM_TYPE_BY_NAME: Readonly<Record<FhevmTypeName, FhevmType>> = Object.freeze({
+  ebool: FhevmType.ebool,
+  euint4: FhevmType.euint4,
+  euint8: FhevmType.euint8,
+  euint16: FhevmType.euint16,
+  euint32: FhevmType.euint32,
+  euint64: FhevmType.euint64,
+  euint128: FhevmType.euint128,
+  eaddress: FhevmType.eaddress,
+  euint256: FhevmType.euint256,
+});
+
+/** Parses a type name (`"euint32"`) into its enum value; undefined when unknown. */
+export function tryParseFhevmType(value: string): FhevmType | undefined {
+  return Object.hasOwn(FHEVM_TYPE_BY_NAME, value) ? FHEVM_TYPE_BY_NAME[value as FhevmTypeName] : undefined;
+}

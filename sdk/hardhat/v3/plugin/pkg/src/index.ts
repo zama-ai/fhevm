@@ -8,8 +8,9 @@
 // on the HRE — the pattern hardhat 3's own plugins follow (`connection.ethers`). There is no
 // `hre.fhevm`: hardhat 3 has no default-connection object to alias.
 
-import { task } from 'hardhat/config';
+import { emptyTask, task } from 'hardhat/config';
 import { definePlugin } from 'hardhat/plugins';
+import { ArgumentType } from 'hardhat/types/arguments';
 import type { HardhatPlugin } from 'hardhat/types/plugins';
 
 const plugin: HardhatPlugin = definePlugin({
@@ -18,9 +19,32 @@ const plugin: HardhatPlugin = definePlugin({
   hookHandlers: {
     network: () => import('./internal/hooks/network.js'),
   },
+  // `hardhat fhevm <task>`: an empty scope root, then one lazily-loaded action per task. Required
+  // inputs are positional (hardhat 3 options always carry a default).
   tasks: [
-    task('hello', 'Print a greeting proving the fhevm plugin is wired into hardhat v3')
-      .setAction(() => import('./tasks/hello.js'))
+    emptyTask(['fhevm'], 'FHEVM related commands').build(),
+    task(['fhevm', 'public-decrypt'], 'Performs a public decryption of the specified byte-32 handle')
+      .addPositionalArgument({
+        name: 'type',
+        description: 'The FHEVM primitive type name (ebool, euint8, …, eaddress)',
+      })
+      .addPositionalArgument({ name: 'handle', description: 'The byte-32 handle to decrypt' })
+      .setAction(() => import('./tasks/publicDecrypt.js'))
+      .build(),
+    task(['fhevm', 'user-decrypt'], 'Performs a user decryption of the specified byte-32 handle')
+      .addPositionalArgument({
+        name: 'type',
+        description: 'The FHEVM primitive type name (ebool, euint8, …, eaddress)',
+      })
+      .addPositionalArgument({ name: 'handle', description: 'The byte-32 handle to decrypt' })
+      .addPositionalArgument({ name: 'contract', description: 'The contract address the handle is allowed for' })
+      .addOption({
+        name: 'user',
+        description: 'The decrypting account, by index',
+        type: ArgumentType.INT,
+        defaultValue: 0,
+      })
+      .setAction(() => import('./tasks/userDecrypt.js'))
       .build(),
   ],
 });

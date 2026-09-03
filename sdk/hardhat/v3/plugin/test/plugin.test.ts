@@ -1,4 +1,4 @@
-// Proves the hello-world plugin loads into a programmatic hardhat 3 environment, and that the whole
+// Proves the plugin loads into a programmatic hardhat 3 environment with its tasks, and that the whole
 // cluster resolves ONE hardhat instance (the topology the cluster exists to guarantee).
 //
 // Skips itself, loudly, until the cluster has been installed once online: hardhat@3 is not in the
@@ -20,7 +20,7 @@ function hardhatInstalled(): boolean {
   }
 }
 
-void test('the hello task is registered on a programmatic hardhat 3 environment', async (t) => {
+void test('the fhevm tasks are registered on a programmatic hardhat 3 environment', async (t) => {
   if (!hardhatInstalled()) {
     t.skip('hardhat@3 is not installed yet — run `npm --prefix hardhat/v3 install` (online) first');
     return;
@@ -30,8 +30,9 @@ void test('the hello task is registered on a programmatic hardhat 3 environment'
   const { default: fhevmPlugin } = await import('../pkg/_esm/index.js');
   const hre = await createHardhatRuntimeEnvironment({ plugins: [fhevmPlugin] });
 
-  const helloTask = hre.tasks.getTask('hello');
-  assert.notEqual(helloTask, undefined, "the plugin must register the 'hello' task");
+  assert.notEqual(hre.tasks.getTask(['fhevm']), undefined, 'the fhevm scope root');
+  assert.notEqual(hre.tasks.getTask(['fhevm', 'public-decrypt']), undefined, 'fhevm public-decrypt');
+  assert.notEqual(hre.tasks.getTask(['fhevm', 'user-decrypt']), undefined, 'fhevm user-decrypt');
 });
 
 void test('the cluster resolves exactly one hardhat instance from every member', (t) => {
