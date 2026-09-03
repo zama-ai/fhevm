@@ -8,8 +8,8 @@ import test from 'node:test';
 import { createHardhatRuntimeEnvironment } from 'hardhat/hre';
 import type { JsonRpcRequest, JsonRpcResponse } from 'hardhat/types/providers';
 
-import plugin from '../pkg/_esm/index.js';
-import { handleRequest, inflateGasEstimate } from '../pkg/_esm/internal/requests.js';
+import plugin from '#esm/index.js';
+import { handleRequest, inflateGasEstimate } from '#esm/internal/requests.js';
 
 const request = (method: string): JsonRpcRequest => ({ jsonrpc: '2.0', id: 1, method, params: [] });
 const ok = (result: unknown): JsonRpcResponse => ({ jsonrpc: '2.0', id: 1, result });

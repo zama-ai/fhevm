@@ -10,14 +10,14 @@ import test from 'node:test';
 import { createHardhatRuntimeEnvironment } from 'hardhat/hre';
 import { encodeErrorResult, encodeFunctionData, hexToBytes } from 'viem';
 
-import plugin from '../pkg/_esm/index.js';
-import { developmentChain, developmentPublicClient } from '../pkg/_esm/internal/clients.js';
-import { FhevmCleartextContractsRepository } from '../pkg/_esm/internal/contracts.js';
-import { precomputeLocalhostAddresses } from '../pkg/_esm/internal/deploy.js';
-import { decodeFhevmError } from '../pkg/_esm/internal/errors/decode.js';
-import { extractRevertData } from '../pkg/_esm/internal/errors/decorate.js';
-import { formatFhevmErrorMessages } from '../pkg/_esm/internal/errors/messages.js';
-import { transactionParties } from '../pkg/_esm/internal/requests.js';
+import plugin from '#esm/index.js';
+import { developmentChain, developmentPublicClient } from '#esm/internal/clients.js';
+import { FhevmCleartextContractsRepository } from '#esm/internal/contracts.js';
+import { precomputeLocalhostAddresses } from '#esm/internal/deploy.js';
+import { decodeFhevmError } from '#esm/internal/errors/decode.js';
+import { extractRevertData } from '#esm/internal/errors/decorate.js';
+import { formatFhevmErrorMessages } from '#esm/internal/errors/messages.js';
+import { transactionParties } from '#esm/internal/requests.js';
 
 const ALICE = '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266';
 const HANDLE = `0x${'11'.repeat(32)}` as const;

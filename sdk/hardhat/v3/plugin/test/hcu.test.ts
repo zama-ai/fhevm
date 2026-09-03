@@ -11,17 +11,17 @@ import { createHardhatRuntimeEnvironment } from 'hardhat/hre';
 import { HardhatPluginError } from 'hardhat/plugins';
 import { encodeAbiParameters, encodeEventTopics, encodeFunctionData } from 'viem';
 
-import plugin, { FhevmType, getHCU as publicGetHCU } from '../pkg/_esm/index.js';
-import type { FhevmLog } from '../pkg/_esm/index.js';
-import { developmentChain, developmentPublicClient } from '../pkg/_esm/internal/clients.js';
-import { type FhevmContractWrapper, FhevmCleartextContractsRepository } from '../pkg/_esm/internal/contracts.js';
-import { precomputeLocalhostAddresses } from '../pkg/_esm/internal/deploy.js';
-import { COPROCESSOR_EVENT_NAMES } from '../pkg/_esm/internal/events.js';
-import { parseFhevmHandle } from '../pkg/_esm/internal/fhevmHandle.js';
-import { getFheTypeName, getFheTypeNameFromByte } from '../pkg/_esm/internal/hcu/fheTypeName.js';
-import { computeTransactionHCU } from '../pkg/_esm/internal/hcu/hcu.js';
-import { HCU_PRICE_BY_EVENT, getBucketedHCU, getHCU, hcuPriceOf } from '../pkg/_esm/internal/hcu/prices.js';
-import { ALL_OPERATORS_PRICES } from '../pkg/_esm/internal/vendored/operatorsPrices.js';
+import plugin, { FhevmType, getHCU as publicGetHCU } from '#esm/index.js';
+import type { FhevmLog } from '#esm/index.js';
+import { developmentChain, developmentPublicClient } from '#esm/internal/clients.js';
+import { type FhevmContractWrapper, FhevmCleartextContractsRepository } from '#esm/internal/contracts.js';
+import { precomputeLocalhostAddresses } from '#esm/internal/deploy.js';
+import { COPROCESSOR_EVENT_NAMES } from '#esm/internal/events.js';
+import { parseFhevmHandle } from '#esm/internal/fhevmHandle.js';
+import { getFheTypeName, getFheTypeNameFromByte } from '#esm/internal/hcu/fheTypeName.js';
+import { computeTransactionHCU } from '#esm/internal/hcu/hcu.js';
+import { HCU_PRICE_BY_EVENT, getBucketedHCU, getHCU, hcuPriceOf } from '#esm/internal/hcu/prices.js';
+import { ALL_OPERATORS_PRICES } from '#esm/internal/vendored/operatorsPrices.js';
 
 const ALICE = '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266';
 const TX_HASH = `0x${'22'.repeat(32)}` as const;

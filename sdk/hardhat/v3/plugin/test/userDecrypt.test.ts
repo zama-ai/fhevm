@@ -13,7 +13,7 @@ import { HardhatPluginError } from 'hardhat/plugins';
 import { createWalletClient, custom } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 
-import plugin, { FhevmType, timestampNow } from '../pkg/_esm/index.js';
+import plugin, { FhevmType, timestampNow } from '#esm/index.js';
 
 const ZERO_HANDLE = `0x${'0'.repeat(64)}` as const;
 const CONTRACT = '0x1111111111111111111111111111111111111111';

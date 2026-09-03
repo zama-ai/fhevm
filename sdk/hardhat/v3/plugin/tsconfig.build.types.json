@@ -1,0 +1,12 @@
+{
+  "//": "Declarations only, into pkg/_types — the js-sdk layout: JavaScript and types in separate trees.",
+  "extends": "./tsconfig.build.json",
+  "include": ["pkg/src/**/*.ts"],
+  "exclude": ["pkg/src/**/*.test.ts", "pkg/_esm/**", "pkg/_types/**"],
+  "compilerOptions": {
+    "declaration": true,
+    "declarationDir": "./pkg/_types",
+    "declarationMap": true,
+    "emitDeclarationOnly": true
+  }
+}

@@ -1,5 +1,5 @@
 {
   "extends": "./tsconfig.build.json",
   "include": ["pkg/src/**/*.ts"],
-  "exclude": ["pkg/src/**/*.test.ts", "pkg/_esm/**"]
+  "exclude": ["pkg/src/**/*.test.ts", "pkg/_esm/**", "pkg/_types/**"]
 }

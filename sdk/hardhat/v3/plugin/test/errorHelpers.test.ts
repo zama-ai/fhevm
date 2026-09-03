@@ -11,8 +11,8 @@ import { createHardhatRuntimeEnvironment } from 'hardhat/hre';
 import { HardhatPluginError } from 'hardhat/plugins';
 import { encodeErrorResult, encodeFunctionData } from 'viem';
 
-import plugin from '../pkg/_esm/index.js';
-import { precomputeLocalhostAddresses } from '../pkg/_esm/internal/deploy.js';
+import plugin from '#esm/index.js';
+import { precomputeLocalhostAddresses } from '#esm/internal/deploy.js';
 
 const ALICE = '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266';
 const HANDLE = `0x${'11'.repeat(32)}` as const;

@@ -10,6 +10,6 @@ export default [
     // Published, but Node-only: a Hardhat plugin never runs in a browser.
     browserSafeFiles: [],
     // `vendored/` stays byte-identical to common-vendored, which an autofix would break.
-    ignores: ['pkg/_esm/**', 'pkg/src/internal/vendored/**'],
+    ignores: ['pkg/_esm/**', 'pkg/_types/**', 'pkg/src/internal/vendored/**'],
   }),
 ];

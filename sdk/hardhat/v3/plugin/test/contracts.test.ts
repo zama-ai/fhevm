@@ -9,13 +9,13 @@ import test from 'node:test';
 import { createHardhatRuntimeEnvironment } from 'hardhat/hre';
 import { type PublicClient, getAbiItem } from 'viem';
 
-import { developmentChain, developmentPublicClient } from '../pkg/_esm/internal/clients.js';
+import { developmentChain, developmentPublicClient } from '#esm/internal/clients.js';
 import {
   FhevmCleartextContractsRepository,
   FhevmContractsRepository,
   type FhevmHostContractsAddresses,
   isCleartextContractsRepository,
-} from '../pkg/_esm/internal/contracts.js';
+} from '#esm/internal/contracts.js';
 
 type Fixture = {
   readonly client: PublicClient;

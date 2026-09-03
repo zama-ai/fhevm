@@ -1,3 +1,4 @@
 pkg/_esm
+pkg/_types
 # Byte-identical copies written by `fhevm-npm sync-vendored`.
 pkg/src/internal/vendored

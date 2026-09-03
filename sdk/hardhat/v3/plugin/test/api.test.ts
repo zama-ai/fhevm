@@ -8,8 +8,8 @@ import test from 'node:test';
 
 import { createHardhatRuntimeEnvironment } from 'hardhat/hre';
 
-import plugin, { FhevmType, getHCU, timestampNow } from '../pkg/_esm/index.js';
-import type { HardhatFhevmRuntimeEnvironment } from '../pkg/_esm/index.js';
+import plugin, { FhevmType, getHCU, timestampNow } from '#esm/index.js';
+import type { HardhatFhevmRuntimeEnvironment } from '#esm/index.js';
 
 const METHODS = [
   'typeof',

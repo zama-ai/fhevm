@@ -1,16 +1,17 @@
 // The per-connection contract: every connection carries its OWN fhevm object, attached by the
 // network hooks — the hardhat 3 replacement for v2's process-wide `hre.fhevm` singleton.
 //
-// Tests import the BUILT payload (pkg/_esm), not the sources: the plugin's lazy imports use `.js`
-// specifiers a source-run cannot resolve, and the built form is what a consumer loads anyway. The
-// Makefile orders compile before test.
+// Tests import the BUILT payload through the `#esm/*` imports map of package.json: JavaScript from
+// pkg/_esm, declarations from pkg/_types (the js-sdk layout). Not the sources: the plugin's lazy
+// imports use `.js` specifiers a source-run cannot resolve, and the built form is what a consumer
+// loads anyway. The Makefile orders compile before test.
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { createHardhatRuntimeEnvironment } from 'hardhat/hre';
 
-import plugin from '../pkg/_esm/index.js';
+import plugin from '#esm/index.js';
 
 void test('every connection carries a frozen fhevm object of its own', async () => {
   const hre = await createHardhatRuntimeEnvironment({ plugins: [plugin] });

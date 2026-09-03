@@ -12,7 +12,7 @@ import {
   FHEVM_ERROR_TABLE,
   applyErrorTemplate,
   lookupErrorTemplates,
-} from '../pkg/_esm/internal/errors/errorTable.js';
+} from '#esm/internal/errors/errorTable.js';
 
 const TAG = /%([a-zA-Z][a-zA-Z0-9]*)?%/g;
 

@@ -11,9 +11,9 @@ import { createHardhatRuntimeEnvironment } from 'hardhat/hre';
 import { HardhatPluginError } from 'hardhat/plugins';
 import { pad, toHex } from 'viem';
 
-import plugin from '../pkg/_esm/index.js';
-import { computeStorageLocation } from '../pkg/_esm/internal/coprocessorConfig.js';
-import { precomputeLocalhostAddresses } from '../pkg/_esm/internal/deploy.js';
+import plugin from '#esm/index.js';
+import { computeStorageLocation } from '#esm/internal/coprocessorConfig.js';
+import { precomputeLocalhostAddresses } from '#esm/internal/deploy.js';
 
 const CONSUMER = '0x1111111111111111111111111111111111111111';
 const FOREIGN = '0x9999999999999999999999999999999999999999';
