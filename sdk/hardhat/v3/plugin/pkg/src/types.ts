@@ -6,7 +6,7 @@
 // until a group lands, its methods throw a named not-implemented error.
 
 import type { createFhevmCleartextClient } from '@fhevm/sdk/viem/cleartext';
-import type { Abi, Address, Hex, Log, TransactionReceipt, WalletClient } from 'viem';
+import type { Abi, Address, Hex, LocalAccount, Log, TransactionReceipt, WalletClient } from 'viem';
 
 export type {
   FhevmChainContract,
@@ -105,18 +105,11 @@ export type FhevmEncryptedInput = {
   encrypt(): Promise<{ handles: Hex[]; inputProof: Hex }>;
 };
 
-export type FhevmKeypair = { publicKey: Hex; privateKey: Hex };
-
 export type FhevmUserDecryptValidity = { startTimestamp: number | bigint; durationDays: number | bigint };
 
 export type FhevmUserDecryptOptions = {
-  keypair?: FhevmKeypair;
   validity?: FhevmUserDecryptValidity;
 };
-
-export type HandleContractPair = { handle: Hex | Uint8Array; contractAddress: Address };
-
-export type UserDecryptResults = Record<Hex, bigint | boolean | Address>;
 
 export type PublicDecryptResults = {
   clearValues: Record<Hex, bigint | boolean | Address>;
@@ -175,8 +168,8 @@ export type FhevmInputVerifierError = {
 
 export type FhevmContractError = FhevmInputVerifierError;
 
-/** A user who may decrypt: a viem wallet client carrying its account (hardhat-viem hands these out). */
-export type FhevmUser = WalletClient;
+/** Who signs a decryption permit: a viem wallet client carrying its account (hardhat-viem hands these out) or a local account. */
+export type FhevmUser = WalletClient | LocalAccount;
 
 ////////////////////////////////////////////////////////////////////////////////
 // The runtime environment, on every connection

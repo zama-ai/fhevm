@@ -28,4 +28,5 @@ const plugin: HardhatPlugin = definePlugin({
 export default plugin;
 // The public API, in one module — see types.ts.
 export * from './types.js';
+export { timestampNow } from './internal/time.js';
 export type * from './type-extensions.js';

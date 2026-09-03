@@ -13,6 +13,8 @@ import {
   FhevmType,
   type PublicDecryptResults,
   type FhevmTypeEuint,
+  type FhevmUser,
+  type FhevmUserDecryptOptions,
   type HardhatFhevmRuntimeDebugger,
   type HardhatFhevmRuntimeEnvironment,
 } from '../types.js';
@@ -21,6 +23,7 @@ import { asAddress, asBigInt, asBoolean, publicDecrypt, publicDecryptOne } from 
 import { createEncryptedInput, encryptOne } from './encrypt.js';
 import { isFhevmEuint } from './fheType.js';
 import { isCleartextNetwork, isDevelopmentNetwork } from './network.js';
+import { userDecryptOne } from './userDecrypt.js';
 
 function notImplementedError(member: string): HardhatPluginError {
   return new HardhatPluginError(PLUGIN_ID, `fhevm.${member} is not implemented yet in the hardhat 3 plugin.`);
@@ -160,16 +163,42 @@ class FhevmRuntimeEnvironment implements HardhatFhevmRuntimeEnvironment {
     return asAddress(await publicDecryptOne(this.client, handleBytes32), handleBytes32);
   }
 
-  userDecryptEbool(): Promise<never> {
-    return Promise.reject(notImplementedError('userDecryptEbool'));
+  async userDecryptEbool(
+    handleBytes32: Hex,
+    contractAddress: Address,
+    user: FhevmUser,
+    options?: FhevmUserDecryptOptions,
+  ): Promise<boolean> {
+    const value = await userDecryptOne(this.client, 'userDecryptEbool', handleBytes32, contractAddress, user, options);
+    return asBoolean(value, handleBytes32);
   }
 
-  userDecryptEuint(): Promise<never> {
-    return Promise.reject(notImplementedError('userDecryptEuint'));
+  async userDecryptEuint(
+    _fhevmType: FhevmTypeEuint,
+    handleBytes32: Hex,
+    contractAddress: Address,
+    user: FhevmUser,
+    options?: FhevmUserDecryptOptions,
+  ): Promise<bigint> {
+    const value = await userDecryptOne(this.client, 'userDecryptEuint', handleBytes32, contractAddress, user, options);
+    return asBigInt(value, handleBytes32);
   }
 
-  userDecryptEaddress(): Promise<never> {
-    return Promise.reject(notImplementedError('userDecryptEaddress'));
+  async userDecryptEaddress(
+    handleBytes32: Hex,
+    contractAddress: Address,
+    user: FhevmUser,
+    options?: FhevmUserDecryptOptions,
+  ): Promise<Address> {
+    const value = await userDecryptOne(
+      this.client,
+      'userDecryptEaddress',
+      handleBytes32,
+      contractAddress,
+      user,
+      options,
+    );
+    return asAddress(value, handleBytes32);
   }
 }
 

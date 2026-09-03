@@ -20,14 +20,7 @@ const SYNC_STUBS = [
   'revertedWithCustomErrorArgs',
 ] as const;
 
-const ASYNC_STUBS = [
-  'assertCoprocessorInitialized',
-  'getCoprocessorConfig',
-  'tryParseFhevmError',
-  'userDecryptEbool',
-  'userDecryptEuint',
-  'userDecryptEaddress',
-] as const;
+const ASYNC_STUBS = ['assertCoprocessorInitialized', 'getCoprocessorConfig', 'tryParseFhevmError'] as const;
 
 const STUB_GETTERS = ['debugger'] as const;
 
