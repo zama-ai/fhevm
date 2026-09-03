@@ -10,6 +10,15 @@ export default [
     returnTypeFiles: ['hardhat.config.ts', 'test/**/*.ts'],
     browserSafeFiles: [],
     // Build output: `hardhat build` (artifacts, typechain `types`), forge.
-    ignores: ['artifacts/**', 'cache/**', 'types/**', 'out/**', 'dependencies/**'],
+    ignores: [
+      'artifacts/**',
+      'cache/**',
+      'types/**',
+      'out/**',
+      'dependencies/**',
+      // 36k lines mirroring library-solidity/test/fhevmOperations, itself codegen output (mocha-context
+      // typed `any`). Linting a generated file only asks for edits the next regeneration discards.
+      'test/operators/**',
+    ],
   }),
 ];
