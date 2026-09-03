@@ -1,6 +1,6 @@
 # Porting the FHEVM hardhat plugin from hardhat v2 to hardhat v3
 
-Version: **1.38** (2026-09-03). Bump the minor for a content change to the plan, the major for a
+Version: **1.39** (2026-09-03). Bump the minor for a content change to the plan, the major for a
 change of charter or stage order; record each bump below.
 
 - 1.0 — initial plan, from the hardhat 3 docs.
@@ -59,6 +59,8 @@ change of charter or stage order; record each bump below.
   the public-chain row is detection-only until the network-group decision. Manifest note fixed.
 - 1.38 — E2E-0b landed: the whole v2 Solidity corpus copied verbatim (47 files, byte-identical),
   `@openzeppelin/contracts` 5.1.0 + forge remapping added; every ledger row now has its contracts.
+- 1.39 — payload layout aligned on js-sdk: declarations in `pkg/_types`, JavaScript in `pkg/_esm`; the
+  plugin tests reach the build through a `#esm/*` imports map (types → `_types`, default → `_esm`).
 
 Status: **port complete for development networks — Stages A–F and E2E-0b landed. Open: the public-chain client (network-group decision), the version scheme (question 5), the remaining ledger test ports (contracts now present).** The landing zone exists: the
 `hardhat/v3` cluster (own installation root, hardhat 3.15 pinned), the plugin registered via
