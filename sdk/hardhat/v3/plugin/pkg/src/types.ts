@@ -6,7 +6,7 @@
 // until a group lands, its methods throw a named not-implemented error.
 
 import type { createFhevmCleartextClient } from '@fhevm/sdk/viem/cleartext';
-import type { Abi, Address, Hex, LocalAccount, Log, TransactionReceipt, WalletClient } from 'viem';
+import type { Abi, AbiParameter, Address, Hex, LocalAccount, Log, TransactionReceipt, WalletClient } from 'viem';
 
 export type {
   FhevmChainContract,
@@ -173,6 +173,19 @@ export type FhevmInputVerifierError = {
 
 export type FhevmContractError = FhevmInputVerifierError;
 
+/** One custom error of an FHEVM contract, as the chai matchers read it. */
+export type FhevmErrorFragment = {
+  readonly name: string;
+  readonly selector: Hex;
+  readonly inputs: readonly AbiParameter[];
+};
+
+/** The slice of an ethers `Interface` chai's `revertedWithCustomError` reads, backed by viem. */
+export type FhevmErrorInterface = {
+  getError(nameOrSelector: string): FhevmErrorFragment | null;
+  decodeErrorResult(fragment: FhevmErrorFragment, data: Hex): readonly unknown[] & { toArray(): unknown[] };
+};
+
 /** Who signs a decryption permit: a viem wallet client carrying its account (hardhat-viem hands these out) or a local account. */
 export type FhevmUser = WalletClient | LocalAccount;
 
@@ -201,8 +214,15 @@ export interface HardhatFhevmRuntimeEnvironment {
   assertCoprocessorInitialized(contract: Address, contractName?: string): Promise<void>;
   getCoprocessorConfig(contractAddress: Address): Promise<CoprocessorConfig>;
 
-  /** For a chai `revertedWithCustomError`-style matcher: the contract carrying the error, and its name. */
-  revertedWithCustomErrorArgs(contractName: FhevmContractName, customErrorName: string): [{ abi: Abi }, string];
+  /**
+   * Chai matcher support: `expect(tx).to.be.revertedWithCustomError(...fhevm.revertedWithCustomErrorArgs('FHEVMExecutor', 'ACLNotAllowed'))`.
+   * The contract carries the viem `abi` and an ethers-shaped `interface`, so both toolboxes' matchers accept it.
+   */
+  revertedWithCustomErrorArgs(
+    contractName: FhevmContractName,
+    customErrorName: string,
+  ): [{ abi: Abi; interface: FhevmErrorInterface }, string];
+  /** The structured view of an FHEVM revert a test caught; prints it framed when `out` is given. */
   tryParseFhevmError(
     e: unknown,
     options?: { out?: 'stderr' | 'stdout' | 'console' },

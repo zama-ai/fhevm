@@ -42,7 +42,7 @@ export default (): Promise<Partial<NetworkHooks>> => {
       const repository = await createRepository(connection, stack);
       if (repository !== undefined) repositoryByConnection.set(connection, repository);
       const client = await createSdkClient(connection, network, stack);
-      connection.fhevm = createFhevmConnection(network, client);
+      connection.fhevm = createFhevmConnection(network, client, repository);
       return connection;
     },
 

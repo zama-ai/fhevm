@@ -13,14 +13,9 @@ import { HardhatPluginError } from 'hardhat/plugins';
 import plugin, { FhevmType } from '../pkg/_esm/index.js';
 import type { HardhatFhevmRuntimeEnvironment } from '../pkg/_esm/index.js';
 
-const SYNC_STUBS = [
-  'typeof',
-  'parseCoprocessorEvents',
-  'computeTransactionHCU',
-  'revertedWithCustomErrorArgs',
-] as const;
+const SYNC_STUBS = ['typeof', 'parseCoprocessorEvents', 'computeTransactionHCU'] as const;
 
-const ASYNC_STUBS = ['assertCoprocessorInitialized', 'getCoprocessorConfig', 'tryParseFhevmError'] as const;
+const ASYNC_STUBS = ['assertCoprocessorInitialized', 'getCoprocessorConfig'] as const;
 
 const STUB_GETTERS = ['debugger'] as const;
 

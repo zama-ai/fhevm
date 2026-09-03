@@ -17,9 +17,9 @@ export type RevertData = {
   readonly revertedAt?: Address | undefined;
 };
 
-/** The revert return data carried by a thrown provider error, in either hardhat 3 shape. */
+/** The revert return data carried by a thrown provider error (or the payload ethers nests it in), in either hardhat 3 shape. */
 export function extractRevertData(e: unknown): RevertData | undefined {
-  if (!(e instanceof Error) || !('data' in e)) return undefined;
+  if (typeof e !== 'object' || e === null || !('data' in e)) return undefined;
   const payload: unknown = e.data;
   if (typeof payload === 'string') {
     return isHex(payload) && payload !== '0x'
@@ -39,7 +39,7 @@ function hashOf(holder: object): Hex | undefined {
 }
 
 // EDR's stack trace is untyped: the last entry's `address` (bytes or hex) is the reverting contract.
-function revertedAt(e: Error): Address | undefined {
+function revertedAt(e: object): Address | undefined {
   if (!('stackTrace' in e) || !Array.isArray(e.stackTrace) || e.stackTrace.length === 0) return undefined;
   const last: unknown = e.stackTrace[e.stackTrace.length - 1];
   if (typeof last !== 'object' || last === null || !('address' in last)) return undefined;

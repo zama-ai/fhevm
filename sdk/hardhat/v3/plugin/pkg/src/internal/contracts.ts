@@ -104,12 +104,13 @@ export class FhevmContractsRepository {
   readonly kmsGeneration: FhevmContractWrapper | undefined;
   readonly pauserSet: FhevmContractWrapper | undefined;
 
-  readonly #client: PublicClient;
+  /** The read client every wrapper is bound to. */
+  readonly client: PublicClient;
   readonly #byAddress = new Map<string, FhevmContractWrapper>();
   readonly #byName = new Map<FhevmContractName, FhevmContractWrapper>();
 
   constructor(client: PublicClient, addresses: FhevmHostContractsAddresses) {
-    this.#client = client;
+    this.client = client;
     this.acl = this.register('ACL', addresses.aclAddress);
     this.fhevmExecutor = this.register('FHEVMExecutor', addresses.fhevmExecutorAddress);
     this.inputVerifier = this.register('InputVerifier', addresses.inputVerifierAddress);
@@ -122,7 +123,7 @@ export class FhevmContractsRepository {
 
   // Addresses are keyed lower-case: a revert reports whatever casing the node used.
   protected register(name: FhevmContractName, address: string): FhevmContractWrapper {
-    const wrapper = wrap(name, address, this.#client);
+    const wrapper = wrap(name, address, this.client);
     this.#byAddress.set(address.toLowerCase(), wrapper);
     this.#byName.set(name, wrapper);
     return wrapper;
