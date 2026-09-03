@@ -1,6 +1,6 @@
 # Porting the FHEVM hardhat plugin from hardhat v2 to hardhat v3
 
-Version: **1.49** (2026-09-03). Bump the minor for a content change to the plan, the major for a
+Version: **1.50** (2026-09-03). Bump the minor for a content change to the plan, the major for a
 change of charter or stage order; record each bump below.
 
 - 1.0 — initial plan, from the hardhat 3 docs.
@@ -75,6 +75,8 @@ change of charter or stage order; record each bump below.
 - 1.47 — `confidentialERC20/*` ported (12 tests over `TestConfidentialERC20Mintable`).
 - 1.48 — `operators-public-decrypt/fhevmOperations54.ts` ported by a mechanical transformation of the v2 file.
 - 1.49 — `governance/*` ported (fixture, `DelegateBySig`, 15 tests; the upstream-skipped autominer test dropped).
+- 1.50 — `operators-manual/*` ported by transformation (manual, manualWithAllowSender, manualV13: 135 tests).
+  Every ledger row except the 13 generated `operators/fhevmOperations*` suites is now ported.
 
 Status: **port complete for development networks — Stages A–F and E2E-0b landed. Open: the public-chain client (network-group decision) and the remaining ledger test ports (contracts now present; smallest first).** The landing zone exists: the
 `hardhat/v3` cluster (own installation root, hardhat 3.15 pinned), the plugin registered via
@@ -896,14 +898,14 @@ allows.
 | B2                     | DONE — `test:anvil` + `test:anvil:simple` scripts and `test/test-anvil*.sh` (run the counter file)                                                                                                                                                       |
 | B3                     | DONE — `test:node` script + `test/test-hardhat-node.sh`                                                                                                                                                                                                  |
 | D1                     | DONE for the counter: `internal/FHECounterPublicDecrypt.ts` gained "increment the counter by 1" (encrypt + tx; the public-decrypt half joins at D2). `internal/delegatedUserDecryption.ts` and `finance/ConfidentialVestingWallet*.test.ts` wait on their contracts (contracts landed at E2E-0b; test port pending) |
-| D2                     | DONE for the counter: `internal/FHECounterPublicDecrypt.ts` is the full v2 file. `internal/Rand.ts` + fixture DONE (2026-09-03), `doc-examples/HeadsOrTails.ts` DONE, `doc-examples/HighestDieRoll.ts` DONE (2026-09-03), `operators-public-decrypt/fhevmOperations54.ts` DONE (2026-09-03), `operators-manual/manualV13.ts` contracts landed at E2E-0b; test port pending |
+| D2                     | DONE for the counter: `internal/FHECounterPublicDecrypt.ts` is the full v2 file. `internal/Rand.ts` + fixture DONE (2026-09-03), `doc-examples/HeadsOrTails.ts` DONE, `doc-examples/HighestDieRoll.ts` DONE (2026-09-03), `operators-public-decrypt/fhevmOperations54.ts` DONE (2026-09-03), `operators-manual/manualV13.ts` DONE (2026-09-03) |
 | D3b                    | DONE for `internal/FHECounterUserDecrypt.ts` (viem accounts as users). `internal/AplusB.ts` DONE (2026-09-03). Contracts landed at E2E-0b, test port pending: `doc-examples/{DecryptSingleValue,DecryptMultipleValues,EncryptSingleValue,EncryptMultipleValues}.ts` DONE (2026-09-03), `confidentialERC20/*` DONE (2026-09-03), `finance/*.fixture.ts` DONE (2026-09-03), `governance/*` DONE (2026-09-03), `utils/EncryptedErrors.*`, `operators-manual/manualWithAllowSender.ts` |
 | D3c                    | DONE on the counter (`internal/delegatedUserDecryption.ts`, `SmartWalletWithDelegation.sol`, `utils/blocks.ts`); the ConfidentialERC20 version DONE (2026-09-03) as `internal/delegatedUserDecryptionERC20.ts`                                                                                                                                                                                     |
 | D4a3                   | DONE — `internal/TestErrors.test.ts`, `internal/TestTrivialPermissions.test.ts`, `internal/TestACL.ts` (contracts copied verbatim)                                                                                                                          |
 | D4b                    | MOOT — `internal/TestAsyncDecrypt.ts` is 100% commented out in v2 (mock-engine era); nothing to port                                                                                                                                                                          |
 | D5a3                   | DONE — `internal/FHECounterHCU.ts` and `hcu/fhevmHCU1.ts` (v2 file, over `FHEVMTestSuite1`)                                                                                                                                                                                                      |
 | D5b + C2               | `sepolia/*` (`getCoprocessorConfig` + generated addresses) and the `test:sepolia:*` scripts — operator-run, never in `make test`                                                                                                                    |
-| D6                     | DONE on the counter (`internal/FHECounterDebugger.ts`); `operators/fhevmOperations1…13.ts` and `operators-manual/manual.ts` corpus landed at E2E-0b; test port pending                                                                                                              |
+| D6                     | DONE on the counter (`internal/FHECounterDebugger.ts`); `operators-manual/manual.ts` DONE (2026-09-03); `operators/fhevmOperations1…13.ts` corpus landed at E2E-0b; test port pending (36k lines, the one row left)                                                                                                              |
 
 Running total is the progress meter for goal 3: when the last row is green, the public API is
 proven equivalent on hardhat 3 by the same tests that prove it on hardhat 2.
