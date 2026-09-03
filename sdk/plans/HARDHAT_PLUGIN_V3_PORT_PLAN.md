@@ -1,6 +1,6 @@
 # Porting the FHEVM hardhat plugin from hardhat v2 to hardhat v3
 
-Version: **1.14** (2026-09-03). Bump the minor for a content change to the plan, the major for a
+Version: **1.15** (2026-09-03). Bump the minor for a content change to the plan, the major for a
 change of charter or stage order; record each bump below.
 
 - 1.0 — initial plan, from the hardhat 3 docs.
@@ -21,8 +21,9 @@ change of charter or stage order; record each bump below.
 - 1.13 — C1a landed together with the command half of C1b; network GROUPS (incl. devnet) and the
   relayer source of truth `fhevm-network-groups.config.json` introduced; face shape settled.
 - 1.14 — C1b complete: generator wired into `generate`/`clean:generated`, first face committed.
+- 1.15 — C2 landed (v3 detection over the face; v2 public configs from the face); Stage C complete.
 
-Status: **in progress — Stages A and B complete, C1 complete (C1a, C1b). Next: C2.** The landing zone exists: the
+Status: **in progress — Stages A, B and C complete. Next: D0.** The landing zone exists: the
 `hardhat/v3` cluster (own installation root, hardhat 3.15 pinned), the plugin registered via
 `definePlugin` with its per-connection `fhevm` object and the pre-serve chain preparation proven,
 and the `hardhat/v3/e2e` member with the first counter test.
@@ -537,10 +538,19 @@ first review, per the cap rule.
     proven: clean, generate, spotless tree; `--check` answers identical; vendored lint and the
     battery's scripts check pass. `sync-vendored` destinations for the copies are C2.
 
-- **C2. Consumers.** v3 plugin consumes the generated module from birth; v2's hand-copied
-  `internal/constants.ts` addresses are replaced by the same module (v2 SHRINKS — first
-  minimization dividend). Test: v2 suite + e2e stay green; grep proves no address literal remains.
-  Commit: `refactor(hh-plugin): replace hand-copied addresses with generated constants`
+- **C2. Consumers — LANDED, two commits.** v3: the face is a `sync-vendored` destination of the
+  plugin (manifest `vendored` entry, origin-checked); `network.ts` drops `@fhevm/sdk/chains` and
+  classifies a remote chain as `public` when any group's host carries its id — `FhevmNetworkKind`
+  is now `hardhat | localhost | public | unknown` and `FhevmNetworkInfo.publicChains` lists every
+  (group, host) pair, since Sepolia and Amoy sit under testnet AND devnet; which group a public
+  connection uses is a Stage D decision (v2 chose by the `devnet` network name + `.env`). v2: the
+  face is vendored too; `EthereumConfig`/`SepoliaConfig` read `FHEVM_CHAINS`, the two dead Sepolia
+  gateway constants (stale anyway) are deleted, and the face's literal types made two `as
+  0x-string` assertions unnecessary. v2 plugin suite + e2e (2673 tests) green; the only 0x literals
+  left in v2's constants are the cleartext stack's (a cleartext-config face, later). TODO.md notes
+  that `network.ts` should import `@fhevm/sdk/chains` once the SDK generates it from the same JSON.
+  Commits: `feat(hh-v3-plugin): resolve public chains from the generated chain constants`,
+  `refactor(hh-plugin): replace hand-copied public addresses with the generated chain constants`
 
 ### Stage D — the public API, method-group by method-group
 
