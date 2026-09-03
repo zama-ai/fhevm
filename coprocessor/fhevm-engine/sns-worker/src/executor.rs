@@ -743,11 +743,7 @@ fn compute_task(
             #[cfg(feature = "test_decrypt_128")]
             decrypt_big_ct(_client_key, &bytes, &ct, &task.handle, enable_compression);
 
-            let format = if enable_compression {
-                Ciphertext128Format::CompressedOnCpu
-            } else {
-                Ciphertext128Format::UncompressedOnCpu
-            };
+            let format = squashed_ct128_format(enable_compression);
 
             task.ct128 = Arc::new(BigCiphertext::new(bytes, format));
 
@@ -895,6 +891,39 @@ async fn notify_ciphertext128_ready(
         .execute(db_txn.as_mut())
         .await?;
     Ok(())
+}
+
+/// The RFC-023 format for a ciphertext this build just squashed.
+///
+/// RFC-023 binds four values: 10 uncompressed on CPU, 11 compressed on CPU, 20
+/// uncompressed on GPU, 21 compressed on GPU. Only compression was consulted
+/// here and the CPU pair was returned unconditionally, so a `--features gpu`
+/// worker computing on a CUDA device recorded "compressed on CPU". The field is
+/// attestation evidence, and a CPU and a GPU squash of the same input are
+/// different-but-valid ciphertexts, so the value has to say which produced it:
+/// anything reading it back to decide whether two operators squashed the same
+/// way was being told they had when they had not.
+///
+/// The backend is a compile-time property of this binary -- `ServerKey` is
+/// `tfhe::CudaServerKey` under the `gpu` feature and `tfhe::ServerKey` without
+/// it -- so the discriminator is `cfg`, not configuration.
+const fn squashed_ct128_format(compressed: bool) -> Ciphertext128Format {
+    #[cfg(feature = "gpu")]
+    {
+        if compressed {
+            Ciphertext128Format::CompressedOnGpu
+        } else {
+            Ciphertext128Format::UncompressedOnGpu
+        }
+    }
+    #[cfg(not(feature = "gpu"))]
+    {
+        if compressed {
+            Ciphertext128Format::CompressedOnCpu
+        } else {
+            Ciphertext128Format::UncompressedOnCpu
+        }
+    }
 }
 
 /// Decompresses a ciphertext based on its type.
