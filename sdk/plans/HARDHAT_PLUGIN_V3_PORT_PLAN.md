@@ -1,6 +1,6 @@
 # Porting the FHEVM hardhat plugin from hardhat v2 to hardhat v3
 
-Version: **1.26** (2026-09-03). Bump the minor for a content change to the plan, the major for a
+Version: **1.27** (2026-09-03). Bump the minor for a content change to the plan, the major for a
 change of charter or stage order; record each bump below.
 
 - 1.0 — initial plan, from the hardhat 3 docs.
@@ -41,8 +41,9 @@ change of charter or stage order; record each bump below.
 - 1.25 — D4b landed (`parseCoprocessorEvents` over viem `decodeEventLog`; accepts viem and ethers logs).
 - 1.26 — D5a1 landed as VENDORING, not generation: the upstream HCU price table lives in
   common-vendored and both plugins receive it through `sync-vendored`.
+- 1.27 — D5a2 landed (HCU engine over the D4b events: price bridge, type-name map, handle parser, walk).
 
-Status: **in progress — Stages A, B, C, D0–D4 and D5a1 complete. Next: D5a2.** The landing zone exists: the
+Status: **in progress — Stages A, B, C, D0–D4, D5a1 and D5a2 complete. Next: D5a3.** The landing zone exists: the
 `hardhat/v3` cluster (own installation root, hardhat 3.15 pinned), the plugin registered via
 `definePlugin` with its per-connection `fhevm` object and the pre-serve chain preparation proven,
 and the `hardhat/v3/e2e` member with the first counter test.
@@ -711,8 +712,20 @@ this later without API change). One commit per group, tests run against the B1 s
       formatting. One copy in the workspace, byte-gated in both generations.
       Was: generated module first, verbatim port if generation is premature.
       Commit: `chore(sdk): vendor the upstream HCU price table in common-vendored`
-    - **D5a2.** The HCU engine (`hcu.ts` + `HCUByOperator`). Split by operator family if it trends
-      past the cap. Commit: `feat(hh-v3-plugin): port the HCU computation engine`
+    - **D5a2 — LANDED** in two commits (~330 source lines for v2's 650). `internal/hcu/prices.ts`
+      bridges upstream operator names to executor event names over the vendored table
+      (`hcuPriceOf`, `getHCU`, `getBucketedHCU`); `internal/hcu/fheTypeName.ts` maps `FhevmType`
+      to the table's `Uint32` spelling; `internal/fhevmHandle.ts` gained `parseFhevmHandle`
+      (protocol layout: index byte, chain id, type byte, version). `internal/hcu/hcu.ts` is the walk:
+      it consumes D4b's `parseCoprocessorEvents`, so viem hands each family NAMED arguments and v2's
+      77-line positional `eventArgs.ts` asserts collapse into four field guards; totals and
+      depth-by-handle as v2. Input `FhevmTransactionReceipt` is structural (viem `status: 'success'`
+      + `transactionHash`, or ethers `status: 1` + `hash`). Tests: every operator event priced except
+      `VerifyInput`; a synthetic TrivialEncrypt→FheAdd receipt walks depth; a live `trivialEncrypt`
+      costs exactly the table price. Public wiring (`computeTransactionHCU`, `typeof`) is D5a3.
+      Was: the HCU engine, split by operator family if past the cap.
+      Commits: `feat(hh-v3-plugin): port the HCU price bridge and handle parser`,
+      `feat(hh-v3-plugin): port the HCU computation walk`
     - **D5a3.** `computeTransactionHCU` + module-level `getHCU` wiring.
       Commit: `feat(hh-v3-plugin): expose transaction HCU computation`
   - **D5b.** `getCoprocessorConfig` + `assertCoprocessorInitialized`.
