@@ -6,7 +6,7 @@
 // until a group lands, its methods throw a named not-implemented error.
 
 import type { createFhevmCleartextClient } from '@fhevm/sdk/viem/cleartext';
-import type { Abi, AbiParameter, Address, Hex, LocalAccount, Log, TransactionReceipt, WalletClient } from 'viem';
+import type { Abi, AbiParameter, Address, Hex, LocalAccount, TransactionReceipt, WalletClient } from 'viem';
 
 export type {
   FhevmChainContract,
@@ -129,8 +129,52 @@ export type CoprocessorConfig = {
   KMSVerifierAddress: Address;
 };
 
+export type CoprocessorEventName =
+  | 'TrivialEncrypt'
+  | 'FheAdd'
+  | 'FheSub'
+  | 'FheMul'
+  | 'FheDiv'
+  | 'FheRem'
+  | 'FheBitAnd'
+  | 'FheBitOr'
+  | 'FheBitXor'
+  | 'FheShl'
+  | 'FheShr'
+  | 'FheRotl'
+  | 'FheRotr'
+  | 'FheEq'
+  | 'FheNe'
+  | 'FheGe'
+  | 'FheGt'
+  | 'FheLe'
+  | 'FheLt'
+  | 'FheMin'
+  | 'FheMax'
+  | 'FheRand'
+  | 'FheRandBounded'
+  | 'FheNot'
+  | 'FheNeg'
+  | 'Cast'
+  | 'FheIfThenElse'
+  | 'FheSum'
+  | 'FheIsIn'
+  | 'VerifyInput';
+
+/** A log as viem (`logIndex`) or ethers (`index`) hands it out; the decoder reads what both carry. */
+export type FhevmLog = {
+  readonly address: Address;
+  readonly data: Hex;
+  readonly topics: readonly Hex[];
+  readonly blockNumber: number | bigint | null;
+  readonly transactionHash: Hex | null;
+  readonly transactionIndex: number | null;
+  readonly logIndex?: number | null;
+  readonly index?: number;
+};
+
 export type CoprocessorEvent = {
-  eventName: string;
+  eventName: CoprocessorEventName;
   args: object;
   index: number;
   blockNumber: number;
@@ -208,7 +252,8 @@ export interface HardhatFhevmRuntimeEnvironment {
 
   typeof(handleBytes32: Hex): FhevmTypeName;
 
-  parseCoprocessorEvents(logs: readonly Log[] | null | undefined): CoprocessorEvent[];
+  /** The FHEVMExecutor operator events among `logs` (a receipt's, from viem or ethers). */
+  parseCoprocessorEvents(logs: readonly FhevmLog[] | null | undefined): CoprocessorEvent[];
   computeTransactionHCU(transactionReceipt: TransactionReceipt): FhevmTransactionHCUInfo;
 
   assertCoprocessorInitialized(contract: Address, contractName?: string): Promise<void>;

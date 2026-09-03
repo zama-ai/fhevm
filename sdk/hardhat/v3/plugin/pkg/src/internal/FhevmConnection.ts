@@ -8,10 +8,12 @@ import type { Abi, Address, Hex } from 'viem';
 
 import {
   type FhevmClient,
+  type CoprocessorEvent,
   type FhevmContractError,
   type FhevmContractName,
   type FhevmEncryptedInput,
   type FhevmErrorInterface,
+  type FhevmLog,
   type FhevmNetworkInfo,
   FhevmType,
   type PublicDecryptResults,
@@ -25,6 +27,7 @@ import { PLUGIN_ID } from './constants.js';
 import type { FhevmContractsRepository } from './contracts.js';
 import { asAddress, asBigInt, asBoolean, publicDecrypt, publicDecryptOne } from './decrypt.js';
 import { createEncryptedInput, encryptOne } from './encrypt.js';
+import { parseCoprocessorEvents } from './events.js';
 import { createErrorInterface } from './errors/interface.js';
 import { parseFhevmError } from './errors/parse.js';
 import { isFhevmEuint } from './fheType.js';
@@ -89,8 +92,8 @@ class FhevmRuntimeEnvironment implements HardhatFhevmRuntimeEnvironment {
     return notImplemented('typeof');
   }
 
-  parseCoprocessorEvents(): never {
-    return notImplemented('parseCoprocessorEvents');
+  parseCoprocessorEvents(logs: readonly FhevmLog[] | null | undefined): CoprocessorEvent[] {
+    return parseCoprocessorEvents(this.#contracts.fhevmExecutor, logs);
   }
 
   computeTransactionHCU(): never {
