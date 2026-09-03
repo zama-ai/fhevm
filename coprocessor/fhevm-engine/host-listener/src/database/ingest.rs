@@ -96,7 +96,7 @@ fn refuse_mask_derivation(reason: &'static str) -> sqlx::Error {
     sqlx::Error::Protocol(reason.into())
 }
 
-fn populate_operand_boundary_masks(
+pub(crate) fn populate_operand_boundary_masks(
     logs: &mut [LogTfhe],
 ) -> Result<(), sqlx::Error> {
     let mask_bearing = |log: &LogTfhe| tfhe_result_handle(&log.event).is_some();
