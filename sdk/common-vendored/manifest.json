@@ -11,6 +11,10 @@
     "sdk/cleartext-config.json, the source of truth for the cleartext stack's shared values — and each",
     "generation receives a copy in pkg/ts/. Regenerate before syncing; `make generate` runs both in order.",
     "",
+    "fhevm-chains.ts is GENERATED too — `fhevm-npm generate-chain-constants` renders it from",
+    "sdk/fhevm-chains.config.json (every deployed host-contract and gateway address, by network group);",
+    "the packages that carry a copy are listed below as they adopt it.",
+    "",
     "A published payload cannot depend on a private workspace member, so it gets copies too. Members that",
     "are never published just import @fhevm/sdk-vendored-dev/<file>.ts instead."
   ],
