@@ -29,6 +29,7 @@ import { generateExportsCommand } from './commands/generate-exports.ts';
 import { cleanForgeDependencies } from './commands/clean-forge-dependencies.ts';
 import { installForgeDependencies } from './commands/install-forge-dependencies.ts';
 import { listPackages } from './commands/list-packages.ts';
+import { listVersions } from './commands/list-versions.ts';
 import { packTarballs } from './commands/pack-tarball.ts';
 import { syncVendoredCommand } from './commands/sync-vendored.ts';
 import { testConsumerRegeneratePackageLock } from './commands/test-consumer-regenerate-package-lock.ts';
@@ -106,6 +107,10 @@ async function main(): Promise<void> {
   }
   if (options.command === 'list-packages') {
     listPackages(manifest);
+    return;
+  }
+  if (options.command === 'list-versions') {
+    await listVersions(options.workspaceRoot, manifest, { checkNpmjs: options.checkNpmjs, json: options.json });
     return;
   }
   if (options.command === 'pack-tarball') {
