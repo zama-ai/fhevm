@@ -9,11 +9,11 @@
   "scripts": {
     "build": "npm run fmt:check && npm run lint && npm run compile",
     "check": "npm run check:publint && npm run check:vendored-origin",
-    "check:publint": "publint --strict ./pkg && attw --pack ./pkg",
+    "check:publint": "publint --strict ./pkg && attw --pack ./pkg --profile esm-only",
     "check:vendored-origin": "node ../../../fhevm-npm/fhevm-npm.ts check-vendored-origin ./hardhat/v3/plugin",
     "clean": "rm -rf pkg/_esm *.tsbuildinfo test/*.tsbuildinfo pkg/*.tsbuildinfo",
     "compile": "npm run compile:esm",
-    "compile:esm": "tsc --project ./tsconfig.build.esm.json --outDir ./pkg/_esm --declaration --declarationMap",
+    "compile:esm": "rm -rf pkg/_esm && tsc --project ./tsconfig.build.esm.json --outDir ./pkg/_esm --declaration --declarationMap",
     "fmt": "npm run prettier:write",
     "fmt:check": "npm run prettier:check",
     "lint": "npm run compile && eslint && tsc -b ./tsconfig.json --noEmit",
@@ -21,7 +21,7 @@
     "prettier:check": "prettier --check \"**/*.{js,json,md,mjs,ts,yml}\"",
     "prettier:write": "prettier --write \"**/*.{js,json,md,mjs,ts,yml}\"",
     "test": "node --test test/*.test.ts",
-    "test:consumer": "node ../../../fhevm-npm/fhevm-npm.ts test-consumer ./hardhat/v3/plugin"
+    "test:consumer": "node ../../../fhevm-npm/fhevm-npm.ts test-consumer ./hardhat/v3/plugin --run --build-linked-dependencies"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",
