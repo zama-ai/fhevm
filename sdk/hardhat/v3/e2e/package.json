@@ -32,6 +32,7 @@
     "@nomicfoundation/hardhat-ethers-chai-matchers": "3.0.11",
     "@nomicfoundation/hardhat-mocha": "3.1.0",
     "@nomicfoundation/hardhat-typechain": "3.1.1",
+    "@openzeppelin/contracts": "5.1.0",
     "@types/chai": "5.2.3",
     "@types/mocha": "10.0.10",
     "@types/node": "^22.0.0",
