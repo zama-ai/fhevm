@@ -1,6 +1,6 @@
 # Porting the FHEVM hardhat plugin from hardhat v2 to hardhat v3
 
-Version: **1.37** (2026-09-03). Bump the minor for a content change to the plan, the major for a
+Version: **1.38** (2026-09-03). Bump the minor for a content change to the plan, the major for a
 change of charter or stage order; record each bump below.
 
 - 1.0 — initial plan, from the hardhat 3 docs.
@@ -25,7 +25,7 @@ change of charter or stage order; record each bump below.
 - 1.16 — D0 landed (public surface isolated in `types.ts`, stubs by name); lint tsconfig split into
   source and test projects; ledger: the ZamaConfig-trio smoke test moves from D0 to D5b.
 - 1.17 — D1 landed (encrypt group over the cleartext SDK client; `fhevm.client` live on development
-  connections); ledger D1 row: e2e files wait on their contracts (E2E-0b).
+  connections); ledger D1 row: e2e files contracts landed at E2E-0b; test port pending.
 - 1.18 — D2 landed (publicDecrypt group; the v2 counter e2e test is now ported in full).
 - 1.19 — D3a resolved as a REMOVAL: `createEIP712`/`createDelegatedUserDecryptEIP712` (deprecated and
   throwing in v2) leave the v3 surface; D3c is the delegated flow only.
@@ -57,8 +57,10 @@ change of charter or stage order; record each bump below.
   README); open question 5 reframed: the version must encode protocol line, hardhat generation, patch.
 - 1.37 — F3 closed with evidence for three parity rows (in-process, `hardhat node`, anvil: 27/27 each);
   the public-chain row is detection-only until the network-group decision. Manifest note fixed.
+- 1.38 — E2E-0b landed: the whole v2 Solidity corpus copied verbatim (47 files, byte-identical),
+  `@openzeppelin/contracts` 5.1.0 + forge remapping added; every ledger row now has its contracts.
 
-Status: **port complete for development networks — Stages A–F landed. Open: the public-chain client (network-group decision), the version scheme (question 5), E2E-0b on demand.** The landing zone exists: the
+Status: **port complete for development networks — Stages A–F and E2E-0b landed. Open: the public-chain client (network-group decision), the version scheme (question 5), the remaining ledger test ports (contracts now present).** The landing zone exists: the
 `hardhat/v3` cluster (own installation root, hardhat 3.15 pinned), the plugin registered via
 `definePlugin` with its per-connection `fhevm` object and the pre-serve chain preparation proven,
 and the `hardhat/v3/e2e` member with the first counter test.
@@ -434,12 +436,16 @@ first review, per the cap rule.
     Test: `make test-hh-v3-e2e` green; `hardhat test --network node`-style runs are NOT yet
     claimed.
     Commit: `feat(hh-v3-e2e): add the e2e member with the first counter test`
-  - **E2E-0b. The rest of the Solidity corpus — DEFERRED, on demand.** The e2e already owns a
-    contract and a test, and hh3's native npm resolution is proven on them; an upfront copy of the
-    remaining ≈9,100 lines would sit idle. Instead each contract directory is copied verbatim in
-    the SAME commit as the first ledger row that needs it (or the commit before, if the cap
-    forces a split), compile-gated. Solidity is never edited on the way in.
-    Commit (when split): `chore(hh-v3-e2e): copy the <dir> contracts verbatim from the v2 e2e`
+  - **E2E-0b — LANDED on demand (2026-09-03).** The whole v2 corpus (47 `.sol`, 9,805 lines) copied
+    verbatim — `diff -rq` against v2 is empty; nothing edited on the way in. Hardhat 3 compiles all
+    40 sources it had not seen (solc 0.8.27, cancun), forge lint/fmt are clean, the 27 e2e tests
+    still pass. `@openzeppelin/contracts` 5.1.0 joined the e2e devDependencies (exact, as v2) with
+    the `@openzeppelin/` forge remapping. One `chore` commit per top-level directory in import order:
+    deps → utils → token → finance → governance → test → operators → operators-public-decrypt
+    (verbatim copies are cap-exempt). The ledger rows that waited on contracts can now port their
+    tests, one row per commit, as the plan always said.
+    Was: deferred, copied per first ledger row that needs it.
+    Commit: `chore(hh-v3-e2e): copy the <dir> contracts verbatim from the v2 e2e`
 - **A3. ⚑ `hre.fhevm` alias — DECIDED: connection-only, no alias.** Hardhat 3's docs show only
   `NetworkConnection` extensions, never the HRE; `hre.created` is undocumented; the official ethers
   plugin attaches `connection.ethers` and nothing on the HRE. `index.ts` switches to `definePlugin`
@@ -872,15 +878,15 @@ allows.
 | B1c                    | DONE at D5b — `internal/CoprocessorConfig.ts` (the ZamaConfig-trio smoke test) and `internal/TestFHENotInitialized.test.ts`                                                                                       |
 | B2                     | DONE — `test:anvil` + `test:anvil:simple` scripts and `test/test-anvil*.sh` (run the counter file)                                                                                                                                                       |
 | B3                     | DONE — `test:node` script + `test/test-hardhat-node.sh`                                                                                                                                                                                                  |
-| D1                     | DONE for the counter: `internal/FHECounterPublicDecrypt.ts` gained "increment the counter by 1" (encrypt + tx; the public-decrypt half joins at D2). `internal/delegatedUserDecryption.ts` and `finance/ConfidentialVestingWallet*.test.ts` wait on their contracts (E2E-0b, on demand) |
-| D2                     | DONE for the counter: `internal/FHECounterPublicDecrypt.ts` is the full v2 file. `internal/Rand.ts` + fixture, `doc-examples/HeadsOrTails.ts`, `doc-examples/HighestDieRoll.ts`, `operators-public-decrypt/fhevmOperations54.ts`, `operators-manual/manualV13.ts` wait on their contracts (E2E-0b) |
-| D3b                    | DONE for `internal/FHECounterUserDecrypt.ts` (viem accounts as users). Waiting on their contracts (E2E-0b): `internal/AplusB.ts`, `doc-examples/{DecryptSingleValue,DecryptMultipleValues,EncryptSingleValue,EncryptMultipleValues}.ts`, `confidentialERC20/*`, `finance/*.fixture.ts`, `governance/*`, `utils/EncryptedErrors.*`, `operators-manual/manualWithAllowSender.ts` |
-| D3c                    | DONE on the counter (`internal/delegatedUserDecryption.ts`, `SmartWalletWithDelegation.sol`, `utils/blocks.ts`); the ConfidentialERC20 version of the same asserts waits on E2E-0b                                                                                                                                                                                     |
+| D1                     | DONE for the counter: `internal/FHECounterPublicDecrypt.ts` gained "increment the counter by 1" (encrypt + tx; the public-decrypt half joins at D2). `internal/delegatedUserDecryption.ts` and `finance/ConfidentialVestingWallet*.test.ts` wait on their contracts (contracts landed at E2E-0b; test port pending) |
+| D2                     | DONE for the counter: `internal/FHECounterPublicDecrypt.ts` is the full v2 file. `internal/Rand.ts` + fixture, `doc-examples/HeadsOrTails.ts`, `doc-examples/HighestDieRoll.ts`, `operators-public-decrypt/fhevmOperations54.ts`, `operators-manual/manualV13.ts` contracts landed at E2E-0b; test port pending |
+| D3b                    | DONE for `internal/FHECounterUserDecrypt.ts` (viem accounts as users). Contracts landed at E2E-0b, test port pending: `internal/AplusB.ts`, `doc-examples/{DecryptSingleValue,DecryptMultipleValues,EncryptSingleValue,EncryptMultipleValues}.ts`, `confidentialERC20/*`, `finance/*.fixture.ts`, `governance/*`, `utils/EncryptedErrors.*`, `operators-manual/manualWithAllowSender.ts` |
+| D3c                    | DONE on the counter (`internal/delegatedUserDecryption.ts`, `SmartWalletWithDelegation.sol`, `utils/blocks.ts`); the ConfidentialERC20 version of the same asserts contracts landed at E2E-0b; test port pending                                                                                                                                                                                     |
 | D4a3                   | DONE — `internal/TestErrors.test.ts`, `internal/TestTrivialPermissions.test.ts`, `internal/TestACL.ts` (contracts copied verbatim)                                                                                                                          |
 | D4b                    | MOOT — `internal/TestAsyncDecrypt.ts` is 100% commented out in v2 (mock-engine era); nothing to port                                                                                                                                                                          |
-| D5a3                   | DONE on the counter (`internal/FHECounterHCU.ts`); `hcu/fhevmHCU1.ts` waits on the `FHEVMTestSuite1` corpus (E2E-0b)                                                                                                                                                                                                      |
+| D5a3                   | DONE on the counter (`internal/FHECounterHCU.ts`); `hcu/fhevmHCU1.ts` corpus landed at E2E-0b; test port pending                                                                                                                                                                                                      |
 | D5b + C2               | `sepolia/*` (`getCoprocessorConfig` + generated addresses) and the `test:sepolia:*` scripts — operator-run, never in `make test`                                                                                                                    |
-| D6                     | DONE on the counter (`internal/FHECounterDebugger.ts`); `operators/fhevmOperations1…13.ts` and `operators-manual/manual.ts` wait on their contract corpus (E2E-0b)                                                                                                              |
+| D6                     | DONE on the counter (`internal/FHECounterDebugger.ts`); `operators/fhevmOperations1…13.ts` and `operators-manual/manual.ts` corpus landed at E2E-0b; test port pending                                                                                                              |
 
 Running total is the progress meter for goal 3: when the last row is green, the public API is
 proven equivalent on hardhat 3 by the same tests that prove it on hardhat 2.
