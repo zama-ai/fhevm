@@ -24,6 +24,7 @@ use crate::core::{
 use anyhow::anyhow;
 use borsh::BorshDeserialize;
 use connector_utils::types::solana_extra_data::parse_solana_mmr_proof_extra_data;
+use kms_connector_api::ErrorCode;
 use solana_pubkey::Pubkey;
 use zama_solana_acl::{EncryptedValue, MmrProof};
 
@@ -58,10 +59,13 @@ pub struct SolanaHost {
 pub fn require_single_handle(handles: &[HandleBytes]) -> Result<HandleBytes, ProcessingError> {
     match handles {
         [single] => Ok(*single),
-        other => Err(ProcessingError::Irrecoverable(anyhow!(
-            "Solana EncryptedValue public-decrypt requires exactly one handle per request, got {}",
-            other.len()
-        ))),
+        other => Err(ProcessingError::irrecoverable(
+            ErrorCode::Unprocessable,
+            anyhow!(
+                "Solana EncryptedValue public-decrypt requires exactly one handle per request, got {}",
+                other.len()
+            ),
+        )),
     }
 }
 
@@ -79,52 +83,66 @@ async fn fetch_encrypted_value_acl(
         .fetcher
         .get_account(&account_key)
         .await
-        .map_err(ProcessingError::Recoverable)?
+        .map_err(ProcessingError::transient)?
         .ok_or_else(|| {
-            ProcessingError::Recoverable(anyhow!(
+            ProcessingError::recoverable(ErrorCode::UpstreamTransient, anyhow!(
                 "Solana EncryptedValue encrypted value account {} not found at confirmed commitment",
                 Pubkey::new_from_array(account_key),
             ))
         })?;
 
     if account.owner != program_id {
-        return Err(ProcessingError::Irrecoverable(anyhow!(
-            "Solana EncryptedValue encrypted value account {} is owned by {}, expected ZamaHost program {}",
-            Pubkey::new_from_array(account_key),
-            Pubkey::new_from_array(account.owner),
-            Pubkey::new_from_array(program_id),
-        )));
+        return Err(ProcessingError::irrecoverable(
+            ErrorCode::Unprocessable,
+            anyhow!(
+                "Solana EncryptedValue encrypted value account {} is owned by {}, expected ZamaHost program {}",
+                Pubkey::new_from_array(account_key),
+                Pubkey::new_from_array(account.owner),
+                Pubkey::new_from_array(program_id),
+            ),
+        ));
     }
 
     let acl = decode_encrypted_value_acl(&account.data).map_err(|e| {
-        ProcessingError::Irrecoverable(anyhow!(
-            "failed to decode EncryptedValue encrypted value account: {e}"
-        ))
+        ProcessingError::irrecoverable(
+            ErrorCode::Unprocessable,
+            anyhow!("failed to decode EncryptedValue encrypted value account: {e}"),
+        )
     })?;
     Ok((account_key, acl))
 }
 
 fn decode_solana_mmr_proof_blob(mmr_proof_bytes: &[u8]) -> Result<(u8, MmrProof), ProcessingError> {
     let [mode, proof_body @ ..] = mmr_proof_bytes else {
-        return Err(ProcessingError::Irrecoverable(anyhow!(
-            "Solana MMR-proof blob is empty (missing mode byte)"
-        )));
+        return Err(ProcessingError::irrecoverable(
+            ErrorCode::Unprocessable,
+            anyhow!("Solana MMR-proof blob is empty (missing mode byte)"),
+        ));
     };
     let mut cursor = proof_body;
     let proof = MmrProof::deserialize(&mut cursor).map_err(|e| {
-        ProcessingError::Irrecoverable(anyhow!("failed to decode Solana MMR proof: {e}"))
+        ProcessingError::irrecoverable(
+            ErrorCode::Unprocessable,
+            anyhow!("failed to decode Solana MMR proof: {e}"),
+        )
     })?;
     if !cursor.is_empty() {
-        return Err(ProcessingError::Irrecoverable(anyhow!(
-            "Solana MMR-proof blob has {} trailing byte(s) after the Borsh proof",
-            cursor.len()
-        )));
+        return Err(ProcessingError::irrecoverable(
+            ErrorCode::Unprocessable,
+            anyhow!(
+                "Solana MMR-proof blob has {} trailing byte(s) after the Borsh proof",
+                cursor.len()
+            ),
+        ));
     }
     if proof.siblings.len() > MAX_MMR_SIBLINGS {
-        return Err(ProcessingError::Irrecoverable(anyhow!(
-            "Solana MMR proof carries {} siblings, exceeding the cap of {MAX_MMR_SIBLINGS}",
-            proof.siblings.len()
-        )));
+        return Err(ProcessingError::irrecoverable(
+            ErrorCode::Unprocessable,
+            anyhow!(
+                "Solana MMR proof carries {} siblings, exceeding the cap of {MAX_MMR_SIBLINGS}",
+                proof.siblings.len()
+            ),
+        ));
     }
     Ok((*mode, proof))
 }
@@ -140,9 +158,12 @@ fn dispatch_solana_public_mmr_proof(
 ) -> Result<(), ProcessingError> {
     let (mode, proof) = decode_solana_mmr_proof_blob(mmr_proof_bytes)?;
     if mode != MMR_PROOF_MODE_PUBLIC {
-        return Err(ProcessingError::Irrecoverable(anyhow!(
-            "Solana public decryption requires MMR proof mode {MMR_PROOF_MODE_PUBLIC:#04x}, got {mode:#04x}"
-        )));
+        return Err(ProcessingError::irrecoverable(
+            ErrorCode::Unprocessable,
+            anyhow!(
+                "Solana public decryption requires MMR proof mode {MMR_PROOF_MODE_PUBLIC:#04x}, got {mode:#04x}"
+            ),
+        ));
     }
 
     let target = EncryptedValueTarget {
@@ -170,29 +191,41 @@ fn classify_mmr_verification_failure(
             | crate::core::solana_acl::SolanaAclVerificationError::PublicDecryptProofInvalid
     );
     if proof_invalid && proof_leaf_count == live_leaf_count {
-        ProcessingError::Recoverable(anyhow!(
-            "Solana MMR proof does not verify against an equal-count KMS confirmed view \
+        ProcessingError::recoverable(
+            ErrorCode::UpstreamTransient,
+            anyhow!(
+                "Solana MMR proof does not verify against an equal-count KMS confirmed view \
              (classification=confirmed_equal_count): proof leaf_count={proof_leaf_count}, live \
              confirmed leaf_count={live_leaf_count}; retrying within the configured decryption \
              attempt budget while confirmed views converge ({error})"
-        ))
+            ),
+        )
     } else if proof_invalid && proof_leaf_count > live_leaf_count {
-        ProcessingError::Recoverable(anyhow!(
-            "Solana MMR proof is ahead of the KMS confirmed view \
+        ProcessingError::recoverable(
+            ErrorCode::UpstreamTransient,
+            anyhow!(
+                "Solana MMR proof is ahead of the KMS confirmed view \
              (classification=confirmed_proof_ahead): proof leaf_count={proof_leaf_count}, live \
              confirmed leaf_count={live_leaf_count}; retrying within the configured decryption \
              attempt budget while the KMS view catches up ({error})"
-        ))
+            ),
+        )
     } else if proof_invalid && proof_leaf_count < live_leaf_count {
-        ProcessingError::Irrecoverable(anyhow!(
-            "Solana MMR proof is stale and immutable: proof leaf_count={proof_leaf_count}, live \
+        ProcessingError::irrecoverable(
+            ErrorCode::Unprocessable,
+            anyhow!(
+                "Solana MMR proof is stale and immutable: proof leaf_count={proof_leaf_count}, live \
              confirmed leaf_count={live_leaf_count} ({error})"
-        ))
+            ),
+        )
     } else {
-        ProcessingError::Irrecoverable(anyhow!(
-            "Solana MMR authorization failed irrecoverably: proof leaf_count={proof_leaf_count}, \
+        ProcessingError::irrecoverable(
+            ErrorCode::Unprocessable,
+            anyhow!(
+                "Solana MMR authorization failed irrecoverably: proof leaf_count={proof_leaf_count}, \
              live confirmed leaf_count={live_leaf_count} ({error})"
-        ))
+            ),
+        )
     }
 }
 
@@ -225,10 +258,13 @@ pub async fn check_solana_handles_public_decrypt(
 }
 
 fn public_decrypt_requires_proof(handle_count: usize) -> ProcessingError {
-    ProcessingError::Irrecoverable(anyhow!(
-        "Solana public decryption for {} handle(s) requires a PublicDecryptLeaf MMR proof, which \
+    ProcessingError::irrecoverable(
+        ErrorCode::Unprocessable,
+        anyhow!(
+            "Solana public decryption for {} handle(s) requires a PublicDecryptLeaf MMR proof, which \
          the gateway public-decryption request did not carry; refusing rather than granting or \
          reading a deleted on-chain flag",
-        handle_count
-    ))
+            handle_count
+        ),
+    )
 }

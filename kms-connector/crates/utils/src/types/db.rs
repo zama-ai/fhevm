@@ -104,6 +104,24 @@ impl From<KeyDigestDbItem> for KeyDigest {
     }
 }
 
+/// Struct representing the `request_source` enum in the database.
+#[derive(sqlx::Type, Copy, Clone, Debug, Default, PartialEq, Eq)]
+#[sqlx(type_name = "request_source", rename_all = "lowercase")]
+pub enum RequestSource {
+    #[default]
+    OnChain,
+    Http,
+}
+
+impl Display for RequestSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::OnChain => "onchain",
+            Self::Http => "http",
+        })
+    }
+}
+
 /// Enum of all the events monitored by the KMS Connector.
 #[derive(sqlx::Type, Copy, Clone, Debug, PartialEq)]
 pub enum EventType {

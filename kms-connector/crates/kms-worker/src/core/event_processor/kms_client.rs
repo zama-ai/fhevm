@@ -14,6 +14,7 @@ use connector_utils::{
         request_id_to_u256, u256_to_request_id, u256_to_u32,
     },
 };
+use kms_connector_api::ErrorCode;
 use kms_grpc::{
     kms::v1::{
         CrsGenRequest, DestroyMpcContextRequest, DestroyMpcContextResponse, DestroyMpcEpochRequest,
@@ -385,12 +386,12 @@ impl KmsClient {
         )
         .await;
 
-        match grpc_result.map_err(ProcessingError::from_response_status) {
+        match grpc_result.map_err(ProcessingError::from_grpc_status) {
             Err(e) => (error_count, Err(e)),
             Ok(grpc_response) => (
                 error_count,
                 KmsGrpcResponse::try_from((request_id, grpc_response))
-                    .map_err(ProcessingError::Irrecoverable),
+                    .map_err(|e| ProcessingError::irrecoverable(ErrorCode::Unprocessable, e)),
             ),
         }
     }
@@ -412,12 +413,12 @@ impl KmsClient {
         )
         .await;
 
-        match grpc_result.map_err(ProcessingError::from_response_status) {
+        match grpc_result.map_err(ProcessingError::from_grpc_status) {
             Err(e) => (error_count, Err(e)),
             Ok(grpc_response) => (
                 error_count,
                 KmsGrpcResponse::try_from((request_id, grpc_response))
-                    .map_err(ProcessingError::Irrecoverable),
+                    .map_err(|e| ProcessingError::irrecoverable(ErrorCode::Unprocessable, e)),
             ),
         }
     }
@@ -440,10 +441,7 @@ impl KmsClient {
         .await;
 
         match grpc_result {
-            Err(status) => (
-                error_count,
-                Err(ProcessingError::from_response_status(status)),
-            ),
+            Err(status) => (error_count, Err(ProcessingError::from_grpc_status(status))),
             Ok(grpc_response) => (
                 error_count,
                 Ok(KmsGrpcResponse::PrepKeygen(grpc_response.into_inner())),
@@ -472,10 +470,7 @@ impl KmsClient {
         .await;
 
         match grpc_result {
-            Err(status) => (
-                error_count,
-                Err(ProcessingError::from_response_status(status)),
-            ),
+            Err(status) => (error_count, Err(ProcessingError::from_grpc_status(status))),
             Ok(grpc_response) => (
                 error_count,
                 Ok(KmsGrpcResponse::Keygen(grpc_response.into_inner())),
@@ -501,10 +496,7 @@ impl KmsClient {
         .await;
 
         match grpc_result {
-            Err(status) => (
-                error_count,
-                Err(ProcessingError::from_response_status(status)),
-            ),
+            Err(status) => (error_count, Err(ProcessingError::from_grpc_status(status))),
             Ok(grpc_response) => (
                 error_count,
                 Ok(KmsGrpcResponse::Crsgen(grpc_response.into_inner())),
@@ -625,7 +617,7 @@ impl KmsClient {
         )
         .await;
 
-        match grpc_result.map_err(ProcessingError::from_response_status) {
+        match grpc_result.map_err(ProcessingError::from_grpc_status) {
             Err(e) => (error_count, Err(e)),
             Ok(grpc_response) => (
                 error_count,
@@ -653,7 +645,13 @@ impl KmsClient {
 }
 
 fn irrecoverable_error<T>(err: anyhow::Error) -> (i16, Result<T, ProcessingError>) {
-    (0, Err(ProcessingError::Irrecoverable(err)))
+    (
+        0,
+        Err(ProcessingError::irrecoverable(
+            ErrorCode::Unprocessable,
+            err,
+        )),
+    )
 }
 
 /// Converts a `DestroyMpcContextResponse` into the list of destroyed epoch IDs to invalidate.
@@ -667,9 +665,10 @@ fn map_destroyed_epochs(
         .collect::<Result<Vec<_>, _>>()
         .map(KmsSendResponse::DestroyedEpochs)
         .map_err(|e| {
-            ProcessingError::Irrecoverable(anyhow!(
-                "Invalid epoch_id in DestroyMpcContextResponse: {e}"
-            ))
+            ProcessingError::irrecoverable(
+                ErrorCode::Unprocessable,
+                anyhow!("Invalid epoch_id in DestroyMpcContextResponse: {e}"),
+            )
         })
 }
 
@@ -717,12 +716,18 @@ where
         if RETRYABLE_GRPC_CODE.contains(&error.code()) {
             warn!("#{i}/{retries} GRPC request attempt failed: {error}");
         } else {
-            return (i, Err(ProcessingError::Irrecoverable(error.into())));
+            return (
+                i,
+                Err(ProcessingError::irrecoverable(
+                    ErrorCode::Unprocessable,
+                    error,
+                )),
+            );
         }
     }
     (
         retries as i16,
-        Err(ProcessingError::Recoverable(anyhow!(
+        Err(ProcessingError::transient(anyhow!(
             "All GRPC requests failed!"
         ))),
     )

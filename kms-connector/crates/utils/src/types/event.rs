@@ -1,6 +1,6 @@
 use crate::{
     monitoring::otlp::PropagationContext,
-    types::db::{OperationStatus, ParamsTypeDb},
+    types::db::{OperationStatus, ParamsTypeDb, RequestSource},
 };
 use alloy::{
     primitives::{Address, FixedBytes, U256},
@@ -48,6 +48,7 @@ pub struct ProtocolEvent {
     pub error_counter: i16,
     pub created_at: DateTime<Utc>,
     pub otlp_context: PropagationContext,
+    pub source: RequestSource,
 }
 
 impl ProtocolEvent {
@@ -55,6 +56,7 @@ impl ProtocolEvent {
         kind: ProtocolEventKind,
         tx_hash: Option<FixedBytes<32>>,
         otlp_context: PropagationContext,
+        source: RequestSource,
     ) -> Self {
         ProtocolEvent {
             kind,
@@ -63,6 +65,7 @@ impl ProtocolEvent {
             error_counter: 0,
             created_at: Utc::now(),
             otlp_context,
+            source,
         }
     }
 
@@ -300,6 +303,7 @@ pub fn from_public_decryption_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> 
         error_counter: row.try_get::<i16, _>("error_counter")?,
         created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
         otlp_context: otlp_context_from_row(row)?,
+        source: row.try_get::<RequestSource, _>("source")?,
     })
 }
 
@@ -344,6 +348,7 @@ pub fn from_user_decryption_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
             error_counter: row.try_get::<i16, _>("error_counter")?,
             created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
             otlp_context: otlp_context_from_row(row)?,
+            source: row.try_get::<RequestSource, _>("source")?,
         });
     }
 
@@ -425,6 +430,7 @@ pub fn from_user_decryption_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
         error_counter: row.try_get::<i16, _>("error_counter")?,
         created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
         otlp_context: otlp_context_from_row(row)?,
+        source: row.try_get::<RequestSource, _>("source")?,
     })
 }
 
@@ -441,6 +447,7 @@ pub fn from_prep_keygen_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
         error_counter: 0,
         created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
         otlp_context: otlp_context_from_row(row)?,
+        source: RequestSource::OnChain,
     })
 }
 
@@ -457,6 +464,7 @@ pub fn from_keygen_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
         error_counter: 0,
         created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
         otlp_context: otlp_context_from_row(row)?,
+        source: RequestSource::OnChain,
     })
 }
 
@@ -485,6 +493,7 @@ pub fn from_new_kms_context_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
         error_counter: 0,
         created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
         otlp_context: otlp_context_from_row(row)?,
+        source: RequestSource::OnChain,
     })
 }
 
@@ -505,6 +514,7 @@ pub fn from_new_kms_epoch_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
         error_counter: 0,
         created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
         otlp_context: otlp_context_from_row(row)?,
+        source: RequestSource::OnChain,
     })
 }
 
@@ -519,6 +529,7 @@ pub fn from_kms_context_destroyed_row(row: &PgRow) -> anyhow::Result<ProtocolEve
         error_counter: 0,
         created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
         otlp_context: otlp_context_from_row(row)?,
+        source: RequestSource::OnChain,
     })
 }
 
@@ -533,6 +544,7 @@ pub fn from_kms_epoch_destroyed_row(row: &PgRow) -> anyhow::Result<ProtocolEvent
         error_counter: 0,
         created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
         otlp_context: otlp_context_from_row(row)?,
+        source: RequestSource::OnChain,
     })
 }
 
@@ -550,6 +562,7 @@ pub fn from_crsgen_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
         error_counter: 0,
         created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
         otlp_context: otlp_context_from_row(row)?,
+        source: RequestSource::OnChain,
     })
 }
 
@@ -564,6 +577,7 @@ pub fn from_abort_keygen_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
         error_counter: 0,
         created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
         otlp_context: otlp_context_from_row(row)?,
+        source: RequestSource::OnChain,
     })
 }
 
@@ -578,6 +592,7 @@ pub fn from_abort_crsgen_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
         error_counter: 0,
         created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
         otlp_context: otlp_context_from_row(row)?,
+        source: RequestSource::OnChain,
     })
 }
 

@@ -4327,6 +4327,7 @@ dependencies = [
  "fhevm_host_bindings",
  "futures",
  "humantime-serde",
+ "kms-connector-api",
  "kms-grpc",
  "mocktail",
  "prometheus",

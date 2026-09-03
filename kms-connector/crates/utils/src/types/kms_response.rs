@@ -2,7 +2,7 @@ use crate::{
     monitoring::otlp::PropagationContext,
     types::{
         KmsGrpcResponse,
-        db::{KeyDigestDbItem, KeyType, OperationStatus},
+        db::{KeyDigestDbItem, KeyType, OperationStatus, RequestSource},
         request_id_to_u256,
     },
 };
@@ -33,6 +33,7 @@ pub struct KmsResponse {
     pub kind: KmsResponseKind,
     pub created_at: DateTime<Utc>,
     pub otlp_context: PropagationContext,
+    pub source: RequestSource,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -100,11 +101,16 @@ pub struct EpochResultResponse {
 }
 
 impl KmsResponse {
-    pub fn new(kind: KmsResponseKind, otlp_context: PropagationContext) -> Self {
+    pub fn new(
+        kind: KmsResponseKind,
+        otlp_context: PropagationContext,
+        source: RequestSource,
+    ) -> Self {
         Self {
             kind,
             created_at: Utc::now(),
             otlp_context,
+            source,
         }
     }
 
@@ -285,6 +291,7 @@ pub fn from_public_decryption_row(row: &PgRow) -> anyhow::Result<KmsResponse> {
             extra_data: row.try_get("extra_data")?,
         }),
         created_at: row.try_get("created_at")?,
+        source: row.try_get("source")?,
     })
 }
 
@@ -298,6 +305,7 @@ pub fn from_user_decryption_row(row: &PgRow) -> anyhow::Result<KmsResponse> {
             extra_data: row.try_get("extra_data")?,
         }),
         created_at: row.try_get("created_at")?,
+        source: row.try_get("source")?,
     })
 }
 
@@ -309,6 +317,7 @@ pub fn from_prep_keygen_row(row: &PgRow) -> anyhow::Result<KmsResponse> {
             signature: row.try_get("signature")?,
         }),
         created_at: row.try_get("created_at")?,
+        source: RequestSource::OnChain,
     })
 }
 
@@ -321,6 +330,7 @@ pub fn from_keygen_row(row: &PgRow) -> anyhow::Result<KmsResponse> {
             signature: row.try_get("signature")?,
         }),
         created_at: row.try_get("created_at")?,
+        source: RequestSource::OnChain,
     })
 }
 
@@ -333,6 +343,7 @@ pub fn from_crsgen_row(row: &PgRow) -> anyhow::Result<KmsResponse> {
             signature: row.try_get("signature")?,
         }),
         created_at: row.try_get("created_at")?,
+        source: RequestSource::OnChain,
     })
 }
 
@@ -343,6 +354,7 @@ pub fn from_new_kms_context_response_row(row: &PgRow) -> anyhow::Result<KmsRespo
             context_id: U256::from_le_bytes(row.try_get::<[u8; 32], _>("context_id")?),
         }),
         created_at: row.try_get("created_at")?,
+        source: RequestSource::OnChain,
     })
 }
 
@@ -356,6 +368,7 @@ pub fn from_epoch_result_row(row: &PgRow) -> anyhow::Result<KmsResponse> {
             crs_list: row.try_get("crs_list")?,
         }),
         created_at: row.try_get("created_at")?,
+        source: RequestSource::OnChain,
     })
 }
 

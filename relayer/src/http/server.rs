@@ -18,13 +18,14 @@ use crate::http::utils::BounceChecker;
 use crate::orchestrator::Orchestrator;
 use crate::store::sql::repositories::Repositories;
 use axum::{
-    routing::{get, post},
     Extension, Router,
+    routing::{get, post},
 };
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio_util::sync::CancellationToken;
 use tower_http::cors::CorsLayer;
 use tracing::info;
 
@@ -54,6 +55,7 @@ pub async fn run_http_server(
     keyurl_rx: tokio::sync::watch::Receiver<
         crate::http::endpoints::v2::types::keyurl::KeyUrlResponseJson,
     >,
+    shutdown: CancellationToken,
 ) -> SocketAddr {
     let http = &settings.http;
     let user_decrypt_shares_threshold = settings.gateway.contracts.user_decrypt_shares_threshold;
@@ -225,7 +227,11 @@ pub async fn run_http_server(
         .spawn_task_and_wait_ready(
             "http_server_axum",
             async move {
-                axum::serve(listener, app).await.unwrap();
+                // Finishes accepted requests, then stops accepting connections.
+                axum::serve(listener, app)
+                    .with_graceful_shutdown(shutdown.cancelled_owned())
+                    .await
+                    .unwrap();
             },
             async move {
                 // Wait for HTTP server to be ready with actual health check

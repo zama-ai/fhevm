@@ -15,6 +15,7 @@ use crate::{
     },
 };
 use std::sync::Arc;
+use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
 /// The Processor responsible for bridging the Readiness Throttler (Queue) and the ReadinessChecker (Executor).
@@ -29,6 +30,7 @@ impl UserDecryptReadinessProcessor {
         throttler_worker: ReadinessWorker<UserDecryptReadinessTask>,
         readiness_checker: Arc<ReadinessChecker>,
         orchestrator: Arc<Orchestrator>,
+        shutdown: CancellationToken,
     ) -> anyhow::Result<()> {
         let task_name = "user_decrypt_readiness_processor";
 
@@ -37,9 +39,10 @@ impl UserDecryptReadinessProcessor {
         let task_future = async move {
             info!("GatewayReadinessProcessor started.");
 
-            // Run the consumer loop
+            // Run the consumer loop; exits once `shutdown` fires, which also cancels the
+            // checks already running.
             throttler_worker
-                .run_consumer(move |task: UserDecryptReadinessTask| {
+                .run_consumer(shutdown, move |task: UserDecryptReadinessTask| {
                     // Clone dependencies for the individual task execution
                     let checker = readiness_checker.clone();
                     Self::process_single_task(checker, task, dispatcher.clone())

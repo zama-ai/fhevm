@@ -12,6 +12,7 @@ ciphertext-attestation.workspace = true
 connector-utils.workspace = true
 fhevm_gateway_bindings.workspace = true
 fhevm_host_bindings.workspace = true
+kms-connector-api.workspace = true
 user-decryption-signature.workspace = true
 zama-solana-acl.workspace = true
 zama-solana-permit.workspace = true

@@ -12,7 +12,7 @@ pub mod solana_public_decrypt;
 pub use ciphertext::CiphertextManager;
 pub use context::{ContextManager, DbContextManager};
 pub use decryption::{DecryptionProcessor, HostChainAclBackend};
-pub use error::{ProcessingError, RequestCheckError, RequestCheckKind};
+pub use error::{ProcessingError, ProcessingErrorKind, RequestCheckError, RequestCheckKind};
 pub use kms::KMSGenerationProcessor;
 pub use kms_client::{KmsClient, KmsPollTarget};
 pub use processor::{DbEventProcessor, EventProcessor};
