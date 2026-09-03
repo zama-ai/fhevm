@@ -1,6 +1,6 @@
 # Porting the FHEVM hardhat plugin from hardhat v2 to hardhat v3
 
-Version: **1.25** (2026-09-03). Bump the minor for a content change to the plan, the major for a
+Version: **1.26** (2026-09-03). Bump the minor for a content change to the plan, the major for a
 change of charter or stage order; record each bump below.
 
 - 1.0 — initial plan, from the hardhat 3 docs.
@@ -39,8 +39,10 @@ change of charter or stage order; record each bump below.
 - 1.24 — D4a3 landed (`revertedWithCustomErrorArgs` with a viem-backed ethers-shaped interface,
   `tryParseFhevmError`); TestErrors/TestTrivialPermissions/TestACL e2e ported. Stage D4a complete.
 - 1.25 — D4b landed (`parseCoprocessorEvents` over viem `decodeEventLog`; accepts viem and ethers logs).
+- 1.26 — D5a1 landed as VENDORING, not generation: the upstream HCU price table lives in
+  common-vendored and both plugins receive it through `sync-vendored`.
 
-Status: **in progress — Stages A, B, C and D0–D4 complete. Next: D5a1.** The landing zone exists: the
+Status: **in progress — Stages A, B, C, D0–D4 and D5a1 complete. Next: D5a2.** The landing zone exists: the
 `hardhat/v3` cluster (own installation root, hardhat 3.15 pinned), the plugin registered via
 `definePlugin` with its per-connection `fhevm` object and the pre-serve chain preparation proven,
 and the `hardhat/v3/e2e` member with the first counter test.
@@ -697,11 +699,18 @@ this later without API change). One commit per group, tests run against the B1 s
 - **D5.** HCU and coprocessor config (two blocks):
   - **D5a.** HCU is 1,162 v2 lines, over half of it a DATA table (`operatorsPrices` 523). Three
     blocks:
-    - **D5a1.** The operator price table. It is DATA, so first choice is goal 7's answer: a
-      generated module (fhevm-npm face from a committed price config) — then the generator commit
-      is small and the big diff is the machine-written output commit, which is the cap rule's
-      sanctioned shape. Verbatim port only if generation is premature.
-      Commit: `feat(hh-v3-plugin): add the HCU operator price table (generated)`
+    - **D5a1 — LANDED as VENDORING.** v2's `operatorsPrices.ts` was already a VERBATIM copy of the
+      fhevm repository's `library-solidity/codegen/src/operatorsPrices.ts` (header + one import line
+      changed), with a small `priceTypes.ts` beside it. Upstream's source of truth is a TypeScript
+      file, so a JSON price config would be a hand-converted duplicate — the "generation is
+      premature" clause. Instead both files moved to `common-vendored/src` (master imports
+      `./priceTypes.js`, which v3's ESM needs and v2's TypeScript resolves too) and became
+      `sync-vendored` destinations of BOTH plugins (`common-vendored/manifest.json`,
+      `npm-manifest.json`); v2's copies moved from `internal/hcu/` to `internal/vendored/`, its
+      three imports and vendored README updated. `common-vendored/.prettierignore` keeps the upstream
+      formatting. One copy in the workspace, byte-gated in both generations.
+      Was: generated module first, verbatim port if generation is premature.
+      Commit: `chore(sdk): vendor the upstream HCU price table in common-vendored`
     - **D5a2.** The HCU engine (`hcu.ts` + `HCUByOperator`). Split by operator family if it trends
       past the cap. Commit: `feat(hh-v3-plugin): port the HCU computation engine`
     - **D5a3.** `computeTransactionHCU` + module-level `getHCU` wiring.
