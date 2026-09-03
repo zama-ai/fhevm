@@ -10,7 +10,7 @@ mod common;
 
 use common::test_schema::TestSchema;
 use fhevm_relayer::config::settings::Settings;
-use fhevm_relayer::orchestrator::DispatcherLock;
+use fhevm_relayer::orchestrator::{DispatcherLock, UNCLAIMED_EPOCH};
 use fhevm_relayer::store::sql::repositories::Repositories;
 use prometheus::Registry;
 use sqlx::postgres::PgPoolOptions;
@@ -108,7 +108,7 @@ impl RepoTestSetup {
         &self,
         status: &str,
         age: std::time::Duration,
-        owner_epoch: Option<i64>,
+        owner_epoch: i64,
     ) -> Vec<u8> {
         let ext_job_id = Uuid::new_v4();
         let int_job_id = Uuid::new_v4().as_bytes().to_vec();
@@ -132,7 +132,7 @@ impl RepoTestSetup {
         int_job_id
     }
 
-    async fn status_and_owner_epoch_only(&self, int_job_id: &[u8]) -> (String, Option<i64>) {
+    async fn status_and_owner_epoch_only(&self, int_job_id: &[u8]) -> (String, i64) {
         let row = sqlx::query(
             "SELECT req_status::text as status, owner_epoch FROM public_decrypt_req WHERE int_job_id = $1",
         )
@@ -143,7 +143,7 @@ impl RepoTestSetup {
         (row.get("status"), row.get("owner_epoch"))
     }
 
-    async fn attempts_and_owner_epoch(&self, int_job_id: &[u8]) -> (i32, Option<i64>) {
+    async fn attempts_and_owner_epoch(&self, int_job_id: &[u8]) -> (i32, i64) {
         let row = sqlx::query(
             "SELECT attempts, owner_epoch FROM public_decrypt_req WHERE int_job_id = $1",
         )
@@ -208,7 +208,7 @@ async fn test_claim_is_not_double_claimed_under_concurrent_claimers_of_the_same_
         attempts, 1,
         "attempts must increment exactly once, not twice"
     );
-    assert_eq!(owner_epoch, Some(111));
+    assert_eq!(owner_epoch, 111);
 
     // The winner's returned epoch matches the row's owner_epoch.
     if let Some((_, _, _, attempts_returned)) = claimed_a.into_iter().chain(claimed_b).next() {
@@ -262,8 +262,7 @@ async fn test_a_lower_epochs_claim_is_defeated_by_a_higher_epochs_concurrent_cla
          change - it is never reset on a takeover (see claim_incomplete_requests's doc comment)"
     );
     assert_eq!(
-        owner_epoch,
-        Some(222),
+        owner_epoch, 222,
         "the higher epoch's claim is what the row ends up owned by"
     );
 }
@@ -281,7 +280,7 @@ async fn test_exhausted_row_from_an_older_epoch_is_failed_not_stranded() {
 
     // owner_epoch=4, attempts already at the bound.
     let int_job_id = setup
-        .insert_public_decrypt_row("processing", std::time::Duration::from_secs(1000), Some(4))
+        .insert_public_decrypt_row("processing", std::time::Duration::from_secs(1000), 4)
         .await;
     sqlx::query("UPDATE public_decrypt_req SET attempts = $1 WHERE int_job_id = $2")
         .bind(max_attempts)
@@ -327,11 +326,7 @@ async fn test_exhausted_row_owned_by_the_current_epoch_is_not_failed() {
     let max_attempts = 5;
 
     let int_job_id = setup
-        .insert_public_decrypt_row(
-            "tx_in_flight",
-            std::time::Duration::from_secs(1000),
-            Some(9),
-        )
+        .insert_public_decrypt_row("tx_in_flight", std::time::Duration::from_secs(1000), 9)
         .await;
     sqlx::query("UPDATE public_decrypt_req SET attempts = $1 WHERE int_job_id = $2")
         .bind(max_attempts)
@@ -422,21 +417,21 @@ async fn test_attempts_bound_redispatch_then_fails_exhausted_row() {
     assert_eq!(err_reason.as_deref(), Some("test: exhausted"));
 }
 
-/// An unowned (`NULL`) `tx_in_flight` row is claimed immediately, however fresh. `NULL` means
-/// intake declined to claim the row, which means the accepting pod also declined to drive it -
-/// so there is nothing to wait for.
+/// An unclaimed `tx_in_flight` row is claimed immediately, however fresh. `UNCLAIMED_EPOCH`
+/// means intake declined to claim the row, which means the accepting pod also declined to drive
+/// it - so there is nothing to wait for.
 ///
 /// The row is also reset to `processing` in the same statement, so `on_tx_in_flight`'s CAS
 /// (which requires `processing`) can claim it again. Without the reset, the row would be claimed
 /// to exhaustion and failed out even though nothing was ever wrong with it.
 #[tokio::test]
-async fn test_null_owner_tx_in_flight_row_is_claimed_immediately_and_reset() {
+async fn test_unclaimed_tx_in_flight_row_is_claimed_immediately_and_reset() {
     let setup = RepoTestSetup::new().await;
     let repo = &setup.repositories.public_decrypt;
 
     // Zero age: freshness is not a factor.
     let int_job_id = setup
-        .insert_public_decrypt_row("tx_in_flight", std::time::Duration::ZERO, None)
+        .insert_public_decrypt_row("tx_in_flight", std::time::Duration::ZERO, UNCLAIMED_EPOCH)
         .await;
 
     let claimed = repo
@@ -456,7 +451,7 @@ async fn test_null_owner_tx_in_flight_row_is_claimed_immediately_and_reset() {
 
     let (status, owner_epoch) = setup.status_and_owner_epoch_only(&int_job_id).await;
     assert_eq!(status, "processing", "tx_in_flight must be reset");
-    assert_eq!(owner_epoch, Some(9));
+    assert_eq!(owner_epoch, 9);
 }
 
 /// A `tx_in_flight` row owned by an *older* epoch is claimed immediately too (epochs are minted
@@ -468,7 +463,7 @@ async fn test_older_epoch_owned_tx_in_flight_row_is_claimed_immediately_and_rese
     let repo = &setup.repositories.public_decrypt;
 
     let int_job_id = setup
-        .insert_public_decrypt_row("tx_in_flight", std::time::Duration::ZERO, Some(3))
+        .insert_public_decrypt_row("tx_in_flight", std::time::Duration::ZERO, 3)
         .await;
 
     let claimed = repo
@@ -483,7 +478,7 @@ async fn test_older_epoch_owned_tx_in_flight_row_is_claimed_immediately_and_rese
 
     let (status, owner_epoch) = setup.status_and_owner_epoch_only(&int_job_id).await;
     assert_eq!(status, "processing", "tx_in_flight must be reset");
-    assert_eq!(owner_epoch, Some(9));
+    assert_eq!(owner_epoch, 9);
 }
 
 /// A row owned by the claiming epoch is never claimed, no matter how long it has sat there.
@@ -498,11 +493,7 @@ async fn test_own_epoch_owned_row_is_never_claimed_however_old() {
     let repo = &setup.repositories.public_decrypt;
 
     let int_job_id = setup
-        .insert_public_decrypt_row(
-            "tx_in_flight",
-            std::time::Duration::from_secs(86_400),
-            Some(9),
-        )
+        .insert_public_decrypt_row("tx_in_flight", std::time::Duration::from_secs(86_400), 9)
         .await;
 
     let claimed = repo
@@ -516,7 +507,7 @@ async fn test_own_epoch_owned_row_is_never_claimed_however_old() {
 
     let (status, owner_epoch) = setup.status_and_owner_epoch_only(&int_job_id).await;
     assert_eq!(status, "tx_in_flight", "the row must be untouched");
-    assert_eq!(owner_epoch, Some(9));
+    assert_eq!(owner_epoch, 9);
 
     // A restart is what resolves it: the next incarnation's epoch is higher, so the row is a
     // predecessor's and claimable at once.

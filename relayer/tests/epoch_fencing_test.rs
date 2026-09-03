@@ -11,7 +11,7 @@ mod common;
 use alloy::primitives::U256;
 use common::test_schema::TestSchema;
 use fhevm_relayer::config::settings::{DispatcherLockConfig, Settings};
-use fhevm_relayer::orchestrator::{DispatcherLock, LockState};
+use fhevm_relayer::orchestrator::{DispatcherLock, LockState, UNCLAIMED_EPOCH};
 use fhevm_relayer::store::sql::repositories::Repositories;
 use prometheus::Registry;
 use sqlx::postgres::PgPoolOptions;
@@ -142,7 +142,7 @@ impl TwoEpochSetup {
     /// Insert a `public_decrypt_req` row directly, bypassing the repository, so the row's
     /// starting state (status, `owner_epoch`) is exactly what each test wants regardless of
     /// what the epoch-aware `INSERT` under test would itself produce.
-    async fn insert_public_decrypt_row(&self, status: &str, owner_epoch: Option<i64>) -> Vec<u8> {
+    async fn insert_public_decrypt_row(&self, status: &str, owner_epoch: i64) -> Vec<u8> {
         let ext_job_id = Uuid::new_v4();
         let int_job_id = Uuid::new_v4().as_bytes().to_vec();
 
@@ -163,7 +163,7 @@ impl TwoEpochSetup {
         int_job_id
     }
 
-    async fn status_and_owner_epoch(&self, int_job_id: &[u8]) -> (String, Option<i64>) {
+    async fn status_and_owner_epoch(&self, int_job_id: &[u8]) -> (String, i64) {
         let row = sqlx::query(
             "SELECT req_status::text as status, owner_epoch FROM public_decrypt_req WHERE int_job_id = $1",
         )
@@ -193,7 +193,7 @@ async fn test_stale_epoch_write_is_refused_current_epoch_write_succeeds() {
 
     // Row already claimed under the CURRENT epoch - e.g. the sweep just claimed it.
     let int_job_id = setup
-        .insert_public_decrypt_row("processing", Some(setup.epoch_b))
+        .insert_public_decrypt_row("processing", setup.epoch_b)
         .await;
 
     // The stale pod (epoch_a) tries to drive it forward - refused.
@@ -210,8 +210,7 @@ async fn test_stale_epoch_write_is_refused_current_epoch_write_succeeds() {
         "status must not move under a refused write"
     );
     assert_eq!(
-        owner_epoch,
-        Some(setup.epoch_b),
+        owner_epoch, setup.epoch_b,
         "owner_epoch must not change under a refused write"
     );
 
@@ -225,12 +224,12 @@ async fn test_stale_epoch_write_is_refused_current_epoch_write_succeeds() {
     assert_eq!(rows, 1, "a write from the current epoch must succeed");
     let (status, owner_epoch) = setup.status_and_owner_epoch(&int_job_id).await;
     assert_eq!(status, "tx_in_flight");
-    assert_eq!(owner_epoch, Some(setup.epoch_b));
+    assert_eq!(owner_epoch, setup.epoch_b);
 }
 
 /// The other direction: a *newer* epoch must be able to write a row an *older* epoch last
-/// touched - this is the fencing-token property (`owner_epoch IS NULL OR owner_epoch <=
-/// $epoch`, not `= $epoch`) that lets a successor take over a genuinely dead predecessor's
+/// touched - this is the fencing-token property (`owner_epoch <= $epoch`,
+/// not `= $epoch`) that lets a successor take over a genuinely dead predecessor's
 /// rows (startup recovery re-driving this same pod's own previous incarnation's rows, or the
 /// sweep reclaiming a peer's). Equality alone would wrongly refuse this forever.
 #[tokio::test]
@@ -240,7 +239,7 @@ async fn test_newer_epoch_write_succeeds_over_an_older_owned_row() {
     // Row last touched by the OLDER epoch (epoch_a) - e.g. this pod's own previous
     // incarnation, or a dead peer's claim.
     let int_job_id = setup
-        .insert_public_decrypt_row("processing", Some(setup.epoch_a))
+        .insert_public_decrypt_row("processing", setup.epoch_a)
         .await;
 
     let rows = setup
@@ -256,19 +255,18 @@ async fn test_newer_epoch_write_succeeds_over_an_older_owned_row() {
     let (status, owner_epoch) = setup.status_and_owner_epoch(&int_job_id).await;
     assert_eq!(status, "tx_in_flight");
     assert_eq!(
-        owner_epoch,
-        Some(setup.epoch_b),
+        owner_epoch, setup.epoch_b,
         "the write must advance owner_epoch to the newer epoch"
     );
 }
 
 /// The `current_epoch() == None` fence path: a pod that has never acquired the lock (the
 /// pre-first-acquisition window every replica passes through at startup, and the entire
-/// failure mode `FIRST_EPOCH_WAIT_BUDGET` in `startup.rs` bounds) can still write a `NULL`-
-/// owned row - the "no behaviour change at one replica" invariant depends on this - but is
+/// failure mode `FIRST_EPOCH_WAIT_BUDGET` in `startup.rs` bounds) can still write an
+/// unclaimed row - the "no behaviour change at one replica" invariant depends on this - but is
 /// refused against a row a real epoch already owns.
 #[tokio::test]
-async fn test_none_epoch_write_succeeds_against_null_owner_and_is_refused_against_a_real_one() {
+async fn test_none_epoch_write_succeeds_against_unclaimed_and_is_refused_against_a_real_one() {
     let setup = TwoEpochSetup::new().await;
 
     // Connected, never run: `current_epoch()` stays `None` for its whole lifetime, matching a
@@ -280,25 +278,27 @@ async fn test_none_epoch_write_succeeds_against_null_owner_and_is_refused_agains
         .await
         .expect("repos for unheld lock");
 
-    let null_owned = setup.insert_public_decrypt_row("processing", None).await;
+    let unclaimed = setup
+        .insert_public_decrypt_row("processing", UNCLAIMED_EPOCH)
+        .await;
     let rows = repos_unheld
         .public_decrypt
-        .update_status_to_tx_in_flight(&null_owned)
+        .update_status_to_tx_in_flight(&unclaimed)
         .await
-        .expect("query null-owned");
+        .expect("query unclaimed");
     assert_eq!(
         rows, 1,
-        "a None-epoch write must succeed against a NULL-owned row"
+        "a None-epoch write must succeed against an unclaimed row"
     );
-    let (status, owner_epoch) = setup.status_and_owner_epoch(&null_owned).await;
+    let (status, owner_epoch) = setup.status_and_owner_epoch(&unclaimed).await;
     assert_eq!(status, "tx_in_flight");
     assert_eq!(
-        owner_epoch, None,
-        "a None-epoch write stamps NULL, not a phantom epoch"
+        owner_epoch, UNCLAIMED_EPOCH,
+        "a None-epoch write stamps UNCLAIMED_EPOCH, not a phantom epoch"
     );
 
     let real_owned = setup
-        .insert_public_decrypt_row("processing", Some(setup.epoch_a))
+        .insert_public_decrypt_row("processing", setup.epoch_a)
         .await;
     let rows = repos_unheld
         .public_decrypt
@@ -311,16 +311,18 @@ async fn test_none_epoch_write_succeeds_against_null_owner_and_is_refused_agains
     );
     let (status, owner_epoch) = setup.status_and_owner_epoch(&real_owned).await;
     assert_eq!(status, "processing", "row must be untouched");
-    assert_eq!(owner_epoch, Some(setup.epoch_a));
+    assert_eq!(owner_epoch, setup.epoch_a);
 }
 
-/// `owner_epoch IS NULL` means "unclaimed" - every pre-migration row and every row an image
+/// `UNCLAIMED_EPOCH` means just that - every pre-migration row and every row an image
 /// predating this column inserts - and must be claimable by any epoch, not rejected as owned
 /// by a phantom epoch.
 #[tokio::test]
-async fn test_null_owner_epoch_row_is_claimable_by_any_epoch() {
+async fn test_unclaimed_owner_epoch_row_is_claimable_by_any_epoch() {
     let setup = TwoEpochSetup::new().await;
-    let int_job_id = setup.insert_public_decrypt_row("processing", None).await;
+    let int_job_id = setup
+        .insert_public_decrypt_row("processing", UNCLAIMED_EPOCH)
+        .await;
 
     let rows = setup
         .repos_a
@@ -332,8 +334,7 @@ async fn test_null_owner_epoch_row_is_claimable_by_any_epoch() {
     let (status, owner_epoch) = setup.status_and_owner_epoch(&int_job_id).await;
     assert_eq!(status, "tx_in_flight");
     assert_eq!(
-        owner_epoch,
-        Some(setup.epoch_a),
+        owner_epoch, setup.epoch_a,
         "the write must stamp the claiming epoch"
     );
 }
@@ -351,7 +352,7 @@ async fn test_stale_owner_failure_write_cannot_shadow_the_new_owners_receipt() {
     let setup = TwoEpochSetup::new().await;
     // The new holder already claimed and is driving this row.
     let int_job_id = setup
-        .insert_public_decrypt_row("tx_in_flight", Some(setup.epoch_b))
+        .insert_public_decrypt_row("tx_in_flight", setup.epoch_b)
         .await;
 
     // The old pod has not yet noticed it lost the lock - its DispatcherLock still reports
@@ -368,7 +369,7 @@ async fn test_stale_owner_failure_write_cannot_shadow_the_new_owners_receipt() {
         status, "tx_in_flight",
         "status must still be tx_in_flight, not failure"
     );
-    assert_eq!(owner_epoch, Some(setup.epoch_b));
+    assert_eq!(owner_epoch, setup.epoch_b);
 
     // The new holder's own send succeeds and records the receipt.
     let gw_reference_id = U256::from(42u64);
@@ -381,7 +382,7 @@ async fn test_stale_owner_failure_write_cannot_shadow_the_new_owners_receipt() {
     assert_eq!(rows, 1, "the current owner's receipt write must succeed");
     let (status, owner_epoch) = setup.status_and_owner_epoch(&int_job_id).await;
     assert_eq!(status, "receipt_received");
-    assert_eq!(owner_epoch, Some(setup.epoch_b));
+    assert_eq!(owner_epoch, setup.epoch_b);
     assert!(
         setup.gw_reference_id(&int_job_id).await.is_some(),
         "gw_reference_id must be stored - the gateway-event listener keys off it to answer \

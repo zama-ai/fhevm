@@ -1364,7 +1364,7 @@ pub fn fast_timing(settings: &mut Settings) {
 /// `(req_status, owner_epoch, attempts)` for one public-decrypt row - the three columns that
 /// together say who drove a request and how it got there.
 #[allow(dead_code)]
-pub async fn row_state(pool: &sqlx::PgPool, ext_job_id: &str) -> (String, Option<i64>, i32) {
+pub async fn row_state(pool: &sqlx::PgPool, ext_job_id: &str) -> (String, i64, i32) {
     use sqlx::Row;
 
     let row = sqlx::query(

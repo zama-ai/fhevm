@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            WITH old AS (\n                SELECT req_status, updated_at FROM input_proof_req WHERE int_job_id = $1\n            ),\n            upd AS (\n                UPDATE input_proof_req\n                SET req_status = 'tx_in_flight'::req_status,\n                    owner_epoch = $2\n                WHERE int_job_id = $1\n                  AND req_status = 'processing'::req_status\n                  AND (owner_epoch IS NULL OR owner_epoch <= $2)\n                RETURNING req_status, updated_at\n            )\n            SELECT\n                old.req_status as \"old_status!: ReqStatus\",\n                old.updated_at as \"old_updated_at!\",\n                upd.updated_at as \"new_updated_at!\"\n            FROM old, upd\n            ",
+  "query": "\n            WITH old AS (\n                SELECT req_status, updated_at FROM input_proof_req WHERE int_job_id = $1\n            ),\n            upd AS (\n                UPDATE input_proof_req\n                SET req_status = 'tx_in_flight'::req_status,\n                    owner_epoch = $2\n                WHERE int_job_id = $1\n                  AND req_status = 'processing'::req_status\n                  AND owner_epoch <= $2\n                RETURNING req_status, updated_at\n            )\n            SELECT\n                old.req_status as \"old_status!: ReqStatus\",\n                old.updated_at as \"old_updated_at!\",\n                upd.updated_at as \"new_updated_at!\"\n            FROM old, upd\n            ",
   "describe": {
     "columns": [
       {
@@ -46,5 +46,5 @@
       false
     ]
   },
-  "hash": "cfd1ba94e7888cec70dfa75bcd383739088c16b8b7d14cd786e061eeae363a57"
+  "hash": "7aa635a799dae019d8f4226e727cf6ec7cbe85f6ca710a47f1e5fadb71cf505b"
 }

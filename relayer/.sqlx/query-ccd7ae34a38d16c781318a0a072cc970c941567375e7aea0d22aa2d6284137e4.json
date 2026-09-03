@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            UPDATE user_decrypt_req\n            SET owner_epoch = $1,\n                attempts = attempts + 1,\n                req_status = CASE\n                    WHEN req_status = 'tx_in_flight'::req_status THEN 'processing'::req_status\n                    ELSE req_status\n                END\n            WHERE req_status IN ('queued'::req_status, 'processing'::req_status, 'tx_in_flight'::req_status)\n              AND attempts < $2\n              AND (owner_epoch IS NULL OR owner_epoch < $1)\n            RETURNING int_job_id, req, req_status as \"req_status!: ReqStatus\", attempts\n            ",
+  "query": "\n            UPDATE input_proof_req\n            SET owner_epoch = $1,\n                attempts = attempts + 1,\n                req_status = CASE\n                    WHEN req_status = 'tx_in_flight'::req_status THEN 'processing'::req_status\n                    ELSE req_status\n                END\n            WHERE req_status IN ('queued'::req_status, 'processing'::req_status, 'tx_in_flight'::req_status)\n              AND attempts < $2\n              AND owner_epoch < $1\n            RETURNING int_job_id, req, req_status as \"req_status!: ReqStatus\", attempts\n            ",
   "describe": {
     "columns": [
       {
@@ -52,5 +52,5 @@
       false
     ]
   },
-  "hash": "c1c2081160cdb8f43e76e81415e83abc5fe1d58e31597e0eee387cb43a57c958"
+  "hash": "ccd7ae34a38d16c781318a0a072cc970c941567375e7aea0d22aa2d6284137e4"
 }

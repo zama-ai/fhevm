@@ -1,0 +1,51 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH stale AS (\n                SELECT id, req_status, updated_at\n                FROM user_decrypt_req\n                WHERE req_status IN ('queued'::req_status, 'processing'::req_status, 'tx_in_flight'::req_status)\n                  AND attempts >= $1\n                  AND owner_epoch < $3\n                FOR UPDATE SKIP LOCKED\n            ),\n            updated AS (\n                UPDATE user_decrypt_req\n                SET req_status = 'failure'::req_status,\n                    err_reason = $2,\n                    owner_epoch = $3\n                FROM stale\n                WHERE user_decrypt_req.id = stale.id\n                RETURNING user_decrypt_req.updated_at as new_updated_at,\n                          stale.req_status as old_status,\n                          stale.updated_at as old_updated_at\n            )\n            SELECT\n                old_status as \"old_status!: ReqStatus\",\n                old_updated_at as \"old_updated_at!\",\n                new_updated_at as \"new_updated_at!\"\n            FROM updated\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "old_status!: ReqStatus",
+        "type_info": {
+          "Custom": {
+            "name": "req_status",
+            "kind": {
+              "Enum": [
+                "queued",
+                "processing",
+                "tx_in_flight",
+                "receipt_received",
+                "completed",
+                "timed_out",
+                "failure"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "old_updated_at!",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 2,
+        "name": "new_updated_at!",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "dac421a70133301748eb04ff11c2896d41088d8236f04b9ad130bcf58d5b1e8c"
+}

@@ -1,10 +1,11 @@
 //! Epoch fencing.
 //!
 //! Every send-decision status write below stamps `owner_epoch` with this pod's
-//! [`DispatcherLock::current_epoch`] in the same statement that changes the row, and applies
-//! only when the row's current `owner_epoch` is `NULL` (never claimed under the fence: every
-//! pre-migration row, and every row inserted by a pod that was not the dispatcher) or less
-//! than or equal to that epoch.
+//! [`DispatcherLock::fencing_epoch`] in the same statement that changes the row, and applies
+//! only when the row's current `owner_epoch` is less than or equal to that epoch.
+//! [`UNCLAIMED_EPOCH`] sorts below every minted epoch, so a row never claimed under the
+//! fence is open to any writer: every pre-migration row, and every row inserted by a pod
+//! that was not the dispatcher.
 //!
 //! The intake `INSERT` instead stamps the caller's [`crate::orchestrator::DispatchGate`]
 //! reading, passed as `dispatch_epoch`: intake decides *whether* this pod drives the row
@@ -31,7 +32,7 @@ use serde_json::Value;
 use crate::core::event::{PublicDecryptRequest, PublicDecryptResponse};
 use crate::core::job_id::JobId;
 use crate::metrics;
-use crate::orchestrator::DispatcherLock;
+use crate::orchestrator::{DispatcherLock, UNCLAIMED_EPOCH};
 use crate::store::sql::models::public_decrypt_req_model::{
     PublicDecryptResponseModel, PublicReqStateModelWithOldStatusAndTimestamp,
 };
@@ -74,9 +75,9 @@ pub enum PublicDecryptCompletionOutcome {
 pub struct PublicDecryptRepository {
     pool: PgClient,
     /// Source of the epoch stamped on writes this pod makes and checked against writes it
-    /// refuses (see the epoch-fencing doc block below). `current_epoch()` is `None` until this
-    /// pod holds the dispatcher lock, in which case a fenced write's predicate degrades to
-    /// "row is unclaimed" - see the module-level rationale.
+    /// refuses (see the epoch-fencing doc block below). `fencing_epoch()` reads
+    /// `UNCLAIMED_EPOCH` until this pod holds the dispatcher lock, which narrows a fenced
+    /// write to rows nothing else has claimed - see the module-level rationale.
     dispatcher_lock: DispatcherLock,
 }
 
@@ -188,7 +189,7 @@ impl PublicDecryptRepository {
             ext_job_id,
             int_job_id_bytes,
             req,
-            dispatch_epoch,
+            dispatch_epoch.unwrap_or(UNCLAIMED_EPOCH),
         )
         .fetch_one(&mut *conn)
         .await;
@@ -257,7 +258,7 @@ impl PublicDecryptRepository {
     /// Returns the number of rows affected (1 if found, 0 if not).
     pub async fn update_status_to_processing(&self, int_job_id_bytes: &[u8]) -> SqlResult<u64> {
         let mut conn = self.pool.get_app_connection().await?;
-        let epoch = self.dispatcher_lock.current_epoch();
+        let epoch = self.dispatcher_lock.fencing_epoch();
 
         let query_start = Instant::now();
         let result = sqlx::query!(
@@ -273,7 +274,7 @@ impl PublicDecryptRepository {
                     owner_epoch = $2
                 WHERE int_job_id = $1
                   AND req_status = 'queued'::req_status
-                  AND (owner_epoch IS NULL OR owner_epoch <= $2)
+                  AND owner_epoch <= $2
                 RETURNING req_status, updated_at
             )
             SELECT
@@ -320,7 +321,7 @@ impl PublicDecryptRepository {
         err_reason: &str,
     ) -> SqlResult<u64> {
         let mut conn = self.pool.get_app_connection().await?;
-        let epoch = self.dispatcher_lock.current_epoch();
+        let epoch = self.dispatcher_lock.fencing_epoch();
 
         let query_start = Instant::now();
         let result = sqlx::query!(
@@ -338,7 +339,7 @@ impl PublicDecryptRepository {
                     owner_epoch = $3
                 WHERE int_job_id = $2
                   AND req_status IN ('queued'::req_status, 'receipt_received'::req_status)
-                  AND (owner_epoch IS NULL OR owner_epoch <= $3)
+                  AND owner_epoch <= $3
                 RETURNING req_status, updated_at
             )
             SELECT
@@ -382,7 +383,7 @@ impl PublicDecryptRepository {
     /// Returns the number of rows affected (1 if found, 0 if not).
     pub async fn update_status_to_tx_in_flight(&self, int_job_id_bytes: &[u8]) -> SqlResult<u64> {
         let mut conn = self.pool.get_app_connection().await?;
-        let epoch = self.dispatcher_lock.current_epoch();
+        let epoch = self.dispatcher_lock.fencing_epoch();
 
         let query_start = Instant::now();
         let result = sqlx::query!(
@@ -398,7 +399,7 @@ impl PublicDecryptRepository {
                     owner_epoch = $2
                 WHERE int_job_id = $1
                   AND req_status = 'processing'::req_status
-                  AND (owner_epoch IS NULL OR owner_epoch <= $2)
+                  AND owner_epoch <= $2
                 RETURNING req_status, updated_at
             )
             SELECT
@@ -448,7 +449,7 @@ impl PublicDecryptRepository {
         let gw_ref_id = id_as_bytes_array.to_vec();
 
         let mut conn = self.pool.get_app_connection().await?;
-        let epoch = self.dispatcher_lock.current_epoch();
+        let epoch = self.dispatcher_lock.fencing_epoch();
 
         let query_start = Instant::now();
         let result = sqlx::query!(
@@ -467,7 +468,7 @@ impl PublicDecryptRepository {
                     owner_epoch = $4
                 WHERE int_job_id = $3
                   AND req_status = 'tx_in_flight'::req_status
-                  AND (owner_epoch IS NULL OR owner_epoch <= $4)
+                  AND owner_epoch <= $4
                 RETURNING req_status, updated_at
             )
             SELECT
@@ -516,7 +517,7 @@ impl PublicDecryptRepository {
         err_reason: &str,
     ) -> SqlResult<u64> {
         let mut conn = self.pool.get_app_connection().await?;
-        let epoch = self.dispatcher_lock.current_epoch();
+        let epoch = self.dispatcher_lock.fencing_epoch();
 
         let query_start = Instant::now();
         let result = sqlx::query!(
@@ -534,7 +535,7 @@ impl PublicDecryptRepository {
                     owner_epoch = $3
                 WHERE int_job_id = $2
                   AND req_status = 'queued'::req_status
-                  AND (owner_epoch IS NULL OR owner_epoch <= $3)
+                  AND owner_epoch <= $3
                 RETURNING req_status, updated_at
             )
             SELECT
@@ -580,7 +581,7 @@ impl PublicDecryptRepository {
         err_reason: &str,
     ) -> SqlResult<u64> {
         let mut conn = self.pool.get_app_connection().await?;
-        let epoch = self.dispatcher_lock.current_epoch();
+        let epoch = self.dispatcher_lock.fencing_epoch();
 
         let query_start = Instant::now();
         let result = sqlx::query!(
@@ -598,7 +599,7 @@ impl PublicDecryptRepository {
                     owner_epoch = $3
                 WHERE int_job_id = $2
                   AND req_status IN ('processing'::req_status, 'tx_in_flight'::req_status)
-                  AND (owner_epoch IS NULL OR owner_epoch <= $3)
+                  AND owner_epoch <= $3
                 RETURNING req_status, updated_at
             )
             SELECT
@@ -838,12 +839,12 @@ impl PublicDecryptRepository {
     /// UPDATE touched come back, so a row a concurrent claimer took is never dispatched here.
     ///
     /// Eligibility is ownership alone, with no time term: `attempts < max_attempts` (see
-    /// [`Self::fail_exhausted_attempts`]) and `owner_epoch IS NULL OR owner_epoch < $epoch`.
-    /// A strictly older epoch is a dead predecessor - epochs are minted only on acquisition
-    /// and are monotonic database-wide. `NULL` means no dispatcher ever claimed the row:
-    /// intake stamps `NULL` exactly when the accepting pod will not drive what it inserted.
-    /// If a predecessor has not yet noticed it is dead, the epoch fence on its later writes -
-    /// not the claim's timing - is what keeps the immediate claim safe.
+    /// [`Self::fail_exhausted_attempts`]) and `owner_epoch < $epoch`. A strictly older epoch
+    /// is a dead predecessor - epochs are minted only on acquisition and are monotonic
+    /// database-wide. `UNCLAIMED_EPOCH` sorts below all of them and means no dispatcher ever
+    /// claimed the row: intake stamps it exactly when the accepting pod will not drive what it
+    /// inserted. If a predecessor has not yet noticed it is dead, the epoch fence on its later
+    /// writes - not the claim's timing - is what keeps the immediate claim safe.
     ///
     /// A row under this pod's own current epoch is never claimed: no query can tell "still
     /// working" from "silently died" - `updated_at` freezes at `on_tx_in_flight`, before RPC
@@ -878,7 +879,7 @@ impl PublicDecryptRepository {
                 END
             WHERE req_status IN ('queued'::req_status, 'processing'::req_status, 'tx_in_flight'::req_status)
               AND attempts < $2
-              AND (owner_epoch IS NULL OR owner_epoch < $1)
+              AND owner_epoch < $1
             RETURNING int_job_id, req, req_status as "req_status!: ReqStatus", attempts
             "#,
             epoch,
@@ -902,8 +903,8 @@ impl PublicDecryptRepository {
 
     /// Sweep: move rows past `max_attempts` to `failure`, stamping `owner_epoch` so the
     /// terminal write stays inside the fence. Uses the claim's exact ownership predicate
-    /// (`owner_epoch IS NULL OR owner_epoch < $epoch`), keeping the two queries
-    /// complementary: claimable while budget remains, failed once it is spent, no third state.
+    /// (`owner_epoch < $epoch`), keeping the two queries complementary: claimable while budget
+    /// remains, failed once it is spent, no third state.
     ///
     /// `<`, deliberately not the `<=` the fence uses: `<=` would fail a row this pod is
     /// actively driving the moment its own claim increments `attempts` to the bound. The
@@ -928,7 +929,7 @@ impl PublicDecryptRepository {
                 FROM public_decrypt_req
                 WHERE req_status IN ('queued'::req_status, 'processing'::req_status, 'tx_in_flight'::req_status)
                   AND attempts >= $1
-                  AND (owner_epoch IS NULL OR owner_epoch < $3)
+                  AND owner_epoch < $3
                 FOR UPDATE SKIP LOCKED
             ),
             updated AS (

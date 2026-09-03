@@ -14,8 +14,8 @@ use crate::{
 ///
 /// [`Self::advance`] is monotonic, but that alone lets a stalled ex-holder push the cursor
 /// *forward* past events its successor has not finished, so it also stamps and checks
-/// `owner_epoch` exactly like a request-row write: `NULL` or `<=` this pod's current epoch
-/// (a fencing token - see `public_decrypt_repo`'s module doc). The listeners read the
+/// `owner_epoch` exactly like a request-row write: `<=` this pod's current epoch (a fencing
+/// token - see `public_decrypt_repo`'s module doc). The listeners read the
 /// dispatch gate at loop boundaries only, so the fence guards the residual window: a range
 /// already in flight when the gate closed, completing and reaching for the cursor afterwards.
 /// A fence refusal reads as the benign `Ok(false)` callers already treat as "another listener
@@ -69,13 +69,13 @@ impl ChainCursorRepository {
     /// Record `block_number` as handled, and report whether the row moved. The statement refuses
     /// a lower block, so a listener that completes a range late - in this process or another -
     /// cannot pull the position backwards.
-    /// It also refuses to move the row at all unless this pod's current epoch owns it (`NULL`,
-    /// i.e. unclaimed, or a match) - see the epoch-fencing doc block on the struct. A refusal for
-    /// either reason reads the same to the caller: `Ok(false)`, already handled as "someone else
-    /// moved this forward".
+    /// It also refuses to move the row at all unless this pod's current epoch owns it -
+    /// unclaimed counts, since `UNCLAIMED_EPOCH` sorts below every minted epoch. See the
+    /// epoch-fencing doc block on the struct. A refusal for either reason reads the same to the
+    /// caller: `Ok(false)`, already handled as "someone else moved this forward".
     pub async fn advance(&self, block_number: u64) -> SqlResult<bool> {
         let mut conn = self.pool.get_app_connection().await?;
-        let epoch = self.dispatcher_lock.current_epoch();
+        let epoch = self.dispatcher_lock.fencing_epoch();
 
         let query_start = Instant::now();
         let result = sqlx::query!(
@@ -86,7 +86,7 @@ impl ChainCursorRepository {
                 SET last_block_number = EXCLUDED.last_block_number,
                     owner_epoch = EXCLUDED.owner_epoch
                 WHERE gateway_chain_cursor.last_block_number < EXCLUDED.last_block_number
-                  AND (gateway_chain_cursor.owner_epoch IS NULL OR gateway_chain_cursor.owner_epoch <= EXCLUDED.owner_epoch)
+                  AND gateway_chain_cursor.owner_epoch <= EXCLUDED.owner_epoch
             "#,
             block_number as i64,
             epoch,

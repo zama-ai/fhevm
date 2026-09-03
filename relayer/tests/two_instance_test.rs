@@ -27,7 +27,7 @@ mod common;
 use common::flows::public_decrypt;
 use common::utils::{fast_timing, row_state, TestSetup};
 use fhevm_relayer::http::endpoints::v2::types::error::ApiResponseStatus;
-use fhevm_relayer::orchestrator::DISPATCHER_LOCK_CLASSID;
+use fhevm_relayer::orchestrator::{DISPATCHER_LOCK_CLASSID, UNCLAIMED_EPOCH};
 use sha2::{Digest, Sha256};
 use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
@@ -125,10 +125,7 @@ async fn probe_dispatch(setup: &TestSetup, pool: &PgPool) -> (bool, i64) {
     assert_eq!(body.status, ApiResponseStatus::Succeeded);
 
     let (_, owner_epoch, attempts) = row_state(pool, &ext_job_id).await;
-    (
-        attempts == 0,
-        owner_epoch.expect("a completed row always carries the epoch that drove it"),
-    )
+    (attempts == 0, owner_epoch)
 }
 
 /// A pool connected to the two instances' shared schema, for assertions that read rows or
@@ -251,7 +248,7 @@ async fn test_standby_accepts_then_the_holders_sweep_drives_it() {
 
     let (_, owner_epoch, attempts) = row_state(&pool, &ext_job_id).await;
     assert!(
-        owner_epoch.is_some(),
+        owner_epoch > UNCLAIMED_EPOCH,
         "the claim must stamp the epoch the holder dispatched it under"
     );
     assert_eq!(
@@ -334,7 +331,6 @@ async fn test_handover_on_graceful_shutdown_drives_the_leavers_incomplete_work()
     assert_eq!(body.status, ApiResponseStatus::Succeeded);
 
     let (_, owner_epoch, attempts) = row_state(&pool, &ext_job_id).await;
-    let owner_epoch = owner_epoch.expect("claimed by the survivor's sweep");
     assert!(
         owner_epoch > holder_epoch,
         "the survivor must mint a strictly higher epoch than the pod it replaced \

@@ -12,7 +12,7 @@ use tracing::error;
 use crate::core::event::{InputProofRequest, InputProofResponse};
 use crate::core::job_id::JobId;
 use crate::metrics;
-use crate::orchestrator::DispatcherLock;
+use crate::orchestrator::{DispatcherLock, UNCLAIMED_EPOCH};
 use crate::store::sql::models::input_proof_req_model::InputProofResponseModel;
 use crate::store::sql::models::req_status_enum_model::ReqStatus;
 use crate::store::sql::{
@@ -158,7 +158,7 @@ impl InputProofRepository {
             ext_job_id,
             int_job_id_bytes,
             req,
-            dispatch_epoch,
+            dispatch_epoch.unwrap_or(UNCLAIMED_EPOCH),
         )
         .fetch_one(&mut *conn)
         .await;
@@ -232,7 +232,7 @@ impl InputProofRepository {
     /// Returns number of rows affected.
     pub async fn update_status_to_tx_in_flight(&self, int_job_id_bytes: &[u8]) -> SqlResult<u64> {
         let mut conn = self.pool.get_app_connection().await?;
-        let epoch = self.dispatcher_lock.current_epoch();
+        let epoch = self.dispatcher_lock.fencing_epoch();
 
         let query_start = Instant::now();
         let result = sqlx::query!(
@@ -246,7 +246,7 @@ impl InputProofRepository {
                     owner_epoch = $2
                 WHERE int_job_id = $1
                   AND req_status = 'processing'::req_status
-                  AND (owner_epoch IS NULL OR owner_epoch <= $2)
+                  AND owner_epoch <= $2
                 RETURNING req_status, updated_at
             )
             SELECT
@@ -293,7 +293,7 @@ impl InputProofRepository {
         let id_as_bytes_array: [u8; 32] = gw_reference_id.to_be_bytes();
         let gw_ref_id = id_as_bytes_array.to_vec();
         let mut conn = self.pool.get_app_connection().await?;
-        let epoch = self.dispatcher_lock.current_epoch();
+        let epoch = self.dispatcher_lock.fencing_epoch();
 
         let query_start = Instant::now();
         let result = sqlx::query!(
@@ -310,7 +310,7 @@ impl InputProofRepository {
                     owner_epoch = $4
                 WHERE int_job_id = $3
                   AND req_status = 'tx_in_flight'::req_status
-                  AND (owner_epoch IS NULL OR owner_epoch <= $4)
+                  AND owner_epoch <= $4
                 RETURNING req_status, updated_at
             )
             SELECT
@@ -357,7 +357,7 @@ impl InputProofRepository {
         err_reason: &str,
     ) -> SqlResult<u64> {
         let mut conn = self.pool.get_app_connection().await?;
-        let epoch = self.dispatcher_lock.current_epoch();
+        let epoch = self.dispatcher_lock.fencing_epoch();
 
         let query_start = Instant::now();
         let result = sqlx::query!(
@@ -375,7 +375,7 @@ impl InputProofRepository {
                   AND req_status IN ('processing'::req_status,
                                      'tx_in_flight'::req_status,
                                      'receipt_received'::req_status)
-                  AND (owner_epoch IS NULL OR owner_epoch <= $3)
+                  AND owner_epoch <= $3
                 RETURNING req_status, updated_at
             )
             SELECT
@@ -768,7 +768,7 @@ impl InputProofRepository {
                 END
             WHERE req_status IN ('queued'::req_status, 'processing'::req_status, 'tx_in_flight'::req_status)
               AND attempts < $2
-              AND (owner_epoch IS NULL OR owner_epoch < $1)
+              AND owner_epoch < $1
             RETURNING int_job_id, req, req_status as "req_status!: ReqStatus", attempts
             "#,
             epoch,
@@ -810,7 +810,7 @@ impl InputProofRepository {
                 FROM input_proof_req
                 WHERE req_status IN ('queued'::req_status, 'processing'::req_status, 'tx_in_flight'::req_status)
                   AND attempts >= $1
-                  AND (owner_epoch IS NULL OR owner_epoch < $3)
+                  AND owner_epoch < $3
                 FOR UPDATE SKIP LOCKED
             ),
             updated AS (

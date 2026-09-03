@@ -68,6 +68,11 @@ pub const DISPATCHER_LOCK_CLASSID: i32 = 0x4841_5F31;
 /// a successor's epoch always compare greater than any predecessor's, across restarts.
 const DISPATCHER_EPOCH_SEQUENCE: &str = "dispatcher_epoch_seq";
 
+/// The `owner_epoch` of a row no dispatcher has claimed. Below every value
+/// `dispatcher_epoch_seq` can mint, so such a row loses to any real epoch while still being
+/// writable by a pod that has not acquired the lock.
+pub const UNCLAIMED_EPOCH: i64 = 0;
+
 /// Whether this process currently holds the dispatch lock. Read synchronously via
 /// [`DispatcherLock::state`]; the dispatch gate reads it through [`DispatchGate`]. See the
 /// module docs for the three states' meaning.
@@ -354,6 +359,18 @@ impl DispatcherLock {
     /// getter - decides whether a successor has since taken the row.
     pub fn current_epoch(&self) -> Option<i64> {
         *self.epoch_rx.borrow()
+    }
+
+    /// For binding a fenced write, and nothing else: the column is NOT NULL, so a write before
+    /// the first acquisition has to send a number rather than nothing.
+    ///
+    /// Never decide anything from this. Anything owing a "not the dispatcher yet" branch - the
+    /// sweep's tick guard, the gate, the startup wait - goes through [`Self::current_epoch`] or
+    /// [`DispatchGate::epoch`], whose `Option` the compiler makes it handle. Taking
+    /// [`UNCLAIMED_EPOCH`] for an epoch instead leaves the sweep claiming rows below it, which
+    /// matches nothing and logs nothing.
+    pub fn fencing_epoch(&self) -> i64 {
+        self.current_epoch().unwrap_or(UNCLAIMED_EPOCH)
     }
 
     fn set_state(&self, state: LockState) {
