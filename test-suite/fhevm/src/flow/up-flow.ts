@@ -3,6 +3,7 @@
  */
 
 import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
 import path from "node:path";
 
 import { ensureLockSnapshot, previewBundle, resolveBundle } from "../resolve/bundle-store";
@@ -48,6 +49,7 @@ import {
   COPROCESSOR_DB_CONTAINER,
   DEFAULT_CHAIN_ID,
   CRSGEN_ID_SELECTOR,
+  DEFAULT_FORK_RPC_PORT,
   DEFAULT_GATEWAY_RPC_PORT,
   DEFAULT_HOST_RPC_PORT,
   DEFAULT_POSTGRES_PASSWORD,
@@ -117,6 +119,7 @@ import {
   listenerContainersForChain,
   postBootHealthGate,
   probeBootstrap,
+  waitForCoprocessorKeyMaterial,
   waitForBootstrap,
   waitForContainer,
   waitForCoprocessor,
@@ -193,6 +196,104 @@ const SCHEMA_GUARDS = {
 } as const satisfies Partial<Record<OverrideGroup, { versionKey: string; repoPath: string }>>;
 
 const SCHEMA_GUARD_TARGETS = new Set<VersionBundle["target"]>(["latest-supported", "latest-main", "sha"]);
+/**
+ * A scenario needs the managed fork Anvil when it routes any instance's RPC at
+ * the `fork-anvil` host. Keying off the hostname rather than a dedicated flag
+ * keeps the scenario file the single source of truth: an instance pointed at
+ * the fork always gets a fork to point at.
+ */
+export const scenarioUsesForkAnvil = (scenario: State["scenario"]) =>
+  scenario.kind === "coprocessor-consensus" &&
+  scenario.instances.some((instance) =>
+    [instance.env.RPC_HTTP_URL, instance.env.RPC_WS_URL].some((value) => {
+      if (!value) return false;
+      try {
+        return new URL(value).hostname === "fork-anvil";
+      } catch {
+        return false;
+      }
+    }),
+  );
+
+/**
+ * Starts the fork Anvil and forks the canonical chain at its tip, leaving
+ * mining stopped.
+ *
+ * Seeding matters: the two chains must agree on every block up to the fork
+ * point, or the instance routed to the fork diverges from genesis and the
+ * suite tests two unrelated chains rather than a fork. Mining stays stopped so
+ * the fork only advances when a test deliberately makes it.
+ *
+ * This forks rather than copying state. `anvil_dumpState`/`anvil_loadState`
+ * failed two ways: Anvil refuses a large dump with `Invalid request`, so an
+ * aged stack broke the fork suites with an error that read as a malformed
+ * request (Consensus Defect Log, L-2); and `loadState` restores headers only,
+ * leaving the fork's EVM returning its own block hashes, which made a
+ * colliding handle unconstructible (L-1). Forking transfers nothing -- pre-fork
+ * state and block hashes are resolved from the canonical chain on demand.
+ */
+const initializeManagedForkAnvil = async (
+  state: State,
+  /** How this process reaches canonical, to read its tip. */
+  canonicalRpcUrl: string,
+  /** How the fork *container* reaches canonical, to fetch pre-fork state. */
+  canonicalRpcUrlInNetwork: string,
+) => {
+  await stepComposeUp("fork-anvil", state);
+  const forkRpcUrl = `http://localhost:${DEFAULT_FORK_RPC_PORT}`;
+  await waitForRpc(forkRpcUrl);
+
+  const anvilRpc = async <T>(url: string, method: string, params: unknown[] = []): Promise<T> => {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+    });
+    if (!response.ok) {
+      throw new PreflightError(`${method} failed: ${response.status} ${response.statusText}`);
+    }
+    const payload = (await response.json()) as { result?: T; error?: { message?: string } };
+    if (payload.error || payload.result === undefined) {
+      throw new PreflightError(`${method} failed: ${payload.error?.message ?? "missing result"}`);
+    }
+    return payload.result;
+  };
+
+  const canonicalTip = await anvilRpc<{ number: string; hash: string }>(
+    canonicalRpcUrl,
+    "eth_getBlockByNumber",
+    ["latest", false],
+  );
+  const forkHeight = Number.parseInt(canonicalTip.number, 16);
+  if (!Number.isInteger(forkHeight)) {
+    throw new PreflightError(`Canonical Anvil returned an unreadable tip (${canonicalTip.number})`);
+  }
+
+  await anvilRpc<null>(forkRpcUrl, "anvil_reset", [
+    { forking: { jsonRpcUrl: canonicalRpcUrlInNetwork, blockNumber: forkHeight } },
+  ]);
+  // A reset restores Anvil's default mining behaviour, and the fork must only
+  // advance when a test makes it.
+  await anvilRpc<boolean>(forkRpcUrl, "evm_setIntervalMining", [0]);
+  await anvilRpc<boolean>(forkRpcUrl, "evm_setAutomine", [false]);
+
+  // Verified, not assumed: a fork that came up on its own genesis instead of
+  // the canonical tip looks fine here and surfaces much later as a suite that
+  // reports "no collision" -- a consensus finding, seemingly, rather than a
+  // broken fixture.
+  const forkTip = await anvilRpc<{ number: string; hash: string }>(forkRpcUrl, "eth_getBlockByNumber", [
+    "latest",
+    false,
+  ]);
+  if (forkTip.hash !== canonicalTip.hash) {
+    throw new PreflightError(
+      `fork-anvil did not come up on the canonical tip: expected ${canonicalTip.number}/` +
+        `${canonicalTip.hash}, got ${forkTip.number}/${forkTip.hash}. It fetches pre-fork state ` +
+        `from ${canonicalRpcUrlInNetwork}, which must resolve from inside the fork container.`,
+    );
+  }
+};
+
 export const preflightPorts = (state: Pick<State, "scenario">) =>
   [...new Set([...PORTS, ...state.scenario.hostChains.map((chain) => chain.rpcPort)])];
 
@@ -344,7 +445,47 @@ const partialSchemaOverrides = (overrides: LocalOverride[]) =>
 
 
 /** Verifies required local tooling and port availability before boot. */
+/**
+ * The record `gpu-consensus-workers.sh` writes while it holds the worker roles:
+ * the containers it stopped, so `stop` can put them back. Its presence means a
+ * GPU session is in effect and was never restored.
+ */
+const GPU_CONSENSUS_RESTORE_RECORD = path.join(
+  REPO_ROOT,
+  ".fhevm/runtime/gpu-consensus-workers/docker-workers-to-restore",
+);
+
+/**
+ * Refuses to bring the stack up while host-run GPU workers still hold the
+ * worker roles.
+ *
+ * `gpu-consensus-workers.sh start` stops the containers it displaces and
+ * guards its own direction; the reverse is the gap this closes. Its units are
+ * transient with `Restart=on-failure`, so they outlive a teardown and restart
+ * themselves, and an `up` then recreates the containers underneath them. Both
+ * survive, both look healthy, and each work queue is split between two
+ * different builds -- which corrupts byte-consensus with no failing check
+ * anywhere (Consensus Defect Log, B-1/L-6).
+ */
+export const assertNoUnrestoredGpuSession = (recordPath = GPU_CONSENSUS_RESTORE_RECORD) => {
+  if (!existsSync(recordPath)) return;
+  throw new PreflightError(
+    [
+      "A GPU consensus worker session is still in effect:",
+      `  ${recordPath}`,
+      "",
+      "Host-run workers hold the tfhe/zkproof/sns roles for this stack. Bringing",
+      "the containers up now would put two different builds on every work queue,",
+      "which splits the queue between them and corrupts byte-consensus without",
+      "failing any health check. Run",
+      "  test-suite/fhevm/scripts/gpu-consensus-workers.sh stop",
+      "to restore the containers and clear this record.",
+    ].join("\n"),
+  );
+};
+
 export const preflight = async (state: State, strictPorts = true, needsGitHub = true) => {
+  assertNoUnrestoredGpuSession();
   const requiredCommands = ["bun", "docker", "cast", ...(needsGitHub ? ["gh"] : [])];
   const whichResults = await Promise.all(
     requiredCommands.map(async (command) => {
@@ -965,6 +1106,19 @@ export const runStep = async (state: State, step: StepName) => {
       await waitForContainer("listener-publisher-for-anvil", "running");
       break;
     case "coprocessor": {
+      // Before the coprocessors, so the instance routed to the fork finds a
+      // seeded chain rather than an empty one on its first poll.
+      if (scenarioUsesForkAnvil(state.scenario)) {
+        const forkDefaultChain = defaultHostChain(state);
+        if (!forkDefaultChain) {
+          throw new PreflightError("Missing default host chain");
+        }
+        await initializeManagedForkAnvil(
+          state,
+          `http://localhost:${forkDefaultChain.rpcPort}`,
+          `http://${forkDefaultChain.node}:${forkDefaultChain.rpcPort}`,
+        );
+      }
       const skipMigration = await coprocessorDbsSeeded(state);
       let runtimeServices: string[];
       if (skipMigration) {
@@ -1097,6 +1251,10 @@ export const runStep = async (state: State, step: StepName) => {
       const bootstrapAttempts =
         state.scenario.kms.mode === "threshold" ? thresholdAttempts : CENTRALIZED_BOOTSTRAP_ATTEMPTS;
       await timed("[bootstrap] wait-for-materials", () => waitForBootstrap(state, bootstrapAttempts));
+      // Bootstrap proves the KMS produced the material; this proves the operators
+      // ingested it. Without the second wait `up` reports ready while operators
+      // hold no key rows, and everything downstream races the ingest (F-1).
+      await timed("[bootstrap] wait-for-key-material", () => waitForCoprocessorKeyMaterial(state));
       await generateRuntime(state, stackSpecForState(state));
       break;
     }
