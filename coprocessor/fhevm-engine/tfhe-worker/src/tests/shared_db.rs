@@ -1,32 +1,18 @@
-//! Gives each test its own database, cheaply.
-//!
-//! Importing the FHE keys takes about 26 seconds, so doing it per test used to cost
-//! more than the tests themselves. Instead we import once into a "template"
-//! database, and every test gets a copy of it — Postgres copies the files directly,
-//! which takes a second or two. Tests stay fully isolated, so they can run at the
-//! same time.
-//!
-//! Set `COPROCESSOR_TEST_PG_URL` to reuse a running Postgres (CI starts one per job,
-//! so all tests share the same import). Leave it unset and we start a container.
-
 use fhevm_engine_common::utils::DatabaseURL;
 use sqlx::postgres::PgConnectOptions;
 use sqlx::{ConnectOptions, Connection, Executor, PgConnection};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use test_harness::db_utils::setup_test_key;
 use test_harness::instance::ImportMode;
 use testcontainers::{core::WaitFor, runners::AsyncRunner, GenericImage, ImageExt};
-use tokio::sync::OnceCell;
+use tokio::sync::{OnceCell, Semaphore, SemaphorePermit};
 use tracing::{info, warn};
 
-/// Admin URL of a Postgres to reuse, e.g.
-/// `postgresql://postgres:postgres@localhost:5432/postgres`.
 const PG_URL_ENV: &str = "COPROCESSOR_TEST_PG_URL";
 
 const POSTGRES_PORT: u16 = 5432;
 
-/// Any fixed number; every process must use the same one to take the same lock.
+/// Any fixed number, the same in every process.
 const TEMPLATE_ADVISORY_LOCK: i64 = 0x7f6e_5d4c_3b2a_1908;
 
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
@@ -34,8 +20,7 @@ type BoxError = Box<dyn std::error::Error + Send + Sync>;
 static SERVER: OnceCell<SharedServer> = OnceCell::const_new();
 
 struct SharedServer {
-    /// Held so the container stays up for as long as the tests need it.
-    /// `None` when reusing a Postgres we did not start.
+    /// Kept so the container outlives the tests.
     _container: Option<Arc<testcontainers::ContainerAsync<GenericImage>>>,
     admin_url: String,
 }
@@ -43,8 +28,7 @@ struct SharedServer {
 async fn server() -> Result<&'static SharedServer, BoxError> {
     SERVER
         .get_or_try_init(|| async {
-            // Blank counts as unset: CI defines the variable for every job but only
-            // fills it in where a server is started.
+            // Blank counts as unset: CI sets it for every job, fills it in for some.
             if let Some(url) = std::env::var(PG_URL_ENV)
                 .ok()
                 .filter(|u| !u.trim().is_empty())
@@ -78,7 +62,6 @@ async fn server() -> Result<&'static SharedServer, BoxError> {
         .await
 }
 
-/// One template per mode, since each mode imports different content.
 fn template_name(mode: &ImportMode) -> &'static str {
     match mode {
         ImportMode::SkipMigrations => "tmpl_bare",
@@ -93,11 +76,13 @@ fn with_database(admin_url: &str, db_name: &str) -> Result<String, BoxError> {
     Ok(opts.database(db_name).to_url_lossy().to_string())
 }
 
-/// A database of this test's own, deleted when dropped.
+/// A database of this test's own, held by an advisory lock that Postgres frees on drop,
+/// panic or kill. `sweep_orphans` reclaims whatever is left unlocked.
 pub struct ClonedDb {
     pub db_url: DatabaseURL,
     db_name: String,
-    admin_url: String,
+    _owner: PgConnection,
+    _keyed_slot: Option<SemaphorePermit<'static>>,
 }
 
 impl ClonedDb {
@@ -110,45 +95,46 @@ impl ClonedDb {
     }
 }
 
-impl Drop for ClonedDb {
-    fn drop(&mut self) {
-        // Copies are ~855 MB each, so failing to delete them fills the disk within
-        // one run. The delete must finish before we return, and the obvious ways do
-        // not work: a spawned task never runs, because the test process exits as soon
-        // as the test does, and `block_in_place` panics on the single-threaded runtime
-        // that `#[tokio::test]` sets up. So do it on a thread we wait for.
-        let (admin_url, db_name) = (self.admin_url.clone(), self.db_name.clone());
-        let worker = std::thread::spawn(move || {
-            let runtime = match tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-            {
-                Ok(runtime) => runtime,
-                Err(err) => {
-                    warn!(db_name, error = %err, "no runtime to drop test database");
-                    return;
-                }
-            };
-            if let Err(err) = runtime.block_on(drop_database(&admin_url, &db_name)) {
-                warn!(db_name, error = %err, "could not drop test database");
-            }
-        });
-        // A leftover database is not worth failing a passing test over.
-        if worker.join().is_err() {
-            warn!(db_name = %self.db_name, "test database cleanup thread panicked");
-        }
-    }
-}
+const MAX_KEYED_TESTS: usize = 4;
+static KEYED_TESTS: Semaphore = Semaphore::const_new(MAX_KEYED_TESTS);
 
-async fn drop_database(admin_url: &str, db_name: &str) -> Result<(), BoxError> {
-    let mut conn = PgConnection::connect(admin_url).await?;
-    conn.execute(format!(r#"DROP DATABASE IF EXISTS "{db_name}" WITH (FORCE)"#).as_str())
-        .await?;
-    conn.close().await?;
+/// Reclaims databases no test holds a lock on. Runs before each clone.
+async fn sweep_orphans(conn: &mut PgConnection) -> Result<(), BoxError> {
+    let names: Vec<String> =
+        sqlx::query_scalar(r"SELECT datname FROM pg_database WHERE datname LIKE 'test\_%'")
+            .fetch_all(&mut *conn)
+            .await
+            .unwrap_or_default();
+
+    let mut reclaimed = 0usize;
+    for name in names {
+        let taken: bool = sqlx::query_scalar("SELECT pg_try_advisory_lock(hashtext($1))")
+            .bind(&name)
+            .fetch_one(&mut *conn)
+            .await
+            .unwrap_or(false);
+        if !taken {
+            continue; // a test still owns it
+        }
+        match conn
+            .execute(format!(r#"DROP DATABASE IF EXISTS "{name}" WITH (FORCE)"#).as_str())
+            .await
+        {
+            Ok(_) => reclaimed += 1,
+            Err(err) => warn!(db_name = %name, error = %err, "could not reclaim database"),
+        }
+        let _ = sqlx::query("SELECT pg_advisory_unlock(hashtext($1))")
+            .bind(&name)
+            .execute(&mut *conn)
+            .await;
+    }
+    if reclaimed > 0 {
+        info!(reclaimed, "reclaimed abandoned test databases");
+    }
     Ok(())
 }
 
-/// `None` if the template does not exist, else whether its import finished.
+/// `None` if absent, else whether the import finished.
 async fn template_state(conn: &mut PgConnection, name: &str) -> Result<Option<bool>, BoxError> {
     let found: Option<bool> =
         sqlx::query_scalar("SELECT datistemplate FROM pg_database WHERE datname = $1")
@@ -158,10 +144,8 @@ async fn template_state(conn: &mut PgConnection, name: &str) -> Result<Option<bo
     Ok(found)
 }
 
-/// Imports the template for `mode` unless it already exists.
-///
-/// Uses a Postgres lock, not one in memory: each test is a separate process, so they
-/// would otherwise all try to import at once.
+/// Imports the template unless it exists. The lock is in Postgres because each test is
+/// a separate process.
 async fn ensure_template(admin_url: &str, mode: &ImportMode) -> Result<String, BoxError> {
     let template = template_name(mode);
 
@@ -188,9 +172,6 @@ async fn seed_template_locked(
     template: &str,
     conn: &mut PgConnection,
 ) -> Result<(), BoxError> {
-    // A template without the flag was left behind by a process that died partway
-    // through importing. Copying it would hand out databases with no keys, so throw
-    // it away and import again.
     match template_state(conn, template).await? {
         Some(true) => return Ok(()),
         Some(false) => {
@@ -219,7 +200,6 @@ async fn seed_template_locked(
             }
             ImportMode::WithKeysNoSns => {
                 sqlx::migrate!("./migrations").run(&pool).await?;
-                // Flatten to a string: this error type cannot cross an await.
                 setup_test_key(&pool, false)
                     .await
                     .map_err(|err| format!("setup_test_key: {err}"))?;
@@ -232,12 +212,12 @@ async fn seed_template_locked(
             }
         }
 
-        // Postgres refuses to copy a database while anything is connected to it.
+        // Postgres will not copy a database while anything is connected.
         pool.close().await;
     }
 
-    // Marking it a template blocks new connections, so nothing can get in the way of
-    // a copy. This also signals that the import finished, so it must come last.
+    // Blocks new connections so nothing can block a copy, and marks the import
+    // finished, so it must come last.
     conn.execute(
         format!(
             "UPDATE pg_database SET datistemplate = true, datallowconn = false \
@@ -252,20 +232,10 @@ async fn seed_template_locked(
 }
 
 fn unique_db_name() -> String {
-    static COUNTER: AtomicU64 = AtomicU64::new(0);
-    // Process id and counter are not enough on their own, because the system reuses
-    // process ids and a name that is already taken cannot be retried.
-    format!(
-        "test_{}_{}_{:08x}",
-        std::process::id(),
-        COUNTER.fetch_add(1, Ordering::Relaxed),
-        rand::random::<u32>()
-    )
+    format!("test_{:016x}", rand::random::<u64>())
 }
 
-/// Gives the caller a database of its own, set up according to `mode`.
-///
-/// The first call imports the data; later calls copy it.
+/// A database of the caller's own. The first call imports, the rest copy.
 pub async fn cloned_test_db(mode: ImportMode) -> Result<ClonedDb, Box<dyn std::error::Error>> {
     cloned_test_db_inner(mode)
         .await
@@ -273,16 +243,29 @@ pub async fn cloned_test_db(mode: ImportMode) -> Result<ClonedDb, Box<dyn std::e
 }
 
 async fn cloned_test_db_inner(mode: ImportMode) -> Result<ClonedDb, BoxError> {
+    // Before anything else, so a test waits rather than piling on another key.
+    let keyed_slot = match mode {
+        ImportMode::WithKeysNoSns | ImportMode::WithAllKeys => Some(KEYED_TESTS.acquire().await?),
+        ImportMode::None | ImportMode::SkipMigrations => None,
+    };
+
     let server = server().await?;
     let template = ensure_template(&server.admin_url, &mode).await?;
     let db_name = unique_db_name();
 
-    let mut conn = PgConnection::connect(&server.admin_url).await?;
-    // Postgres handles one copy at a time, so retry rather than fail when several
-    // tests start together.
+    let mut owner = PgConnection::connect(&server.admin_url).await?;
+    let _ = sweep_orphans(&mut owner).await;
+
+    // Before the database exists, or another sweep could see it unlocked and drop it.
+    sqlx::query("SELECT pg_advisory_lock(hashtext($1))")
+        .bind(&db_name)
+        .execute(&mut owner)
+        .await?;
+
+    // Postgres copies one at a time.
     let mut attempt = 0;
     loop {
-        let created = conn
+        let created = owner
             .execute(format!(r#"CREATE DATABASE "{db_name}" TEMPLATE "{template}""#).as_str())
             .await;
         match created {
@@ -295,7 +278,6 @@ async fn cloned_test_db_inner(mode: ImportMode) -> Result<ClonedDb, BoxError> {
             Err(err) => return Err(err.into()),
         }
     }
-    conn.close().await?;
 
     let db_url = with_database(&server.admin_url, &db_name)?;
     info!(db_name, "Cloned test database from {template}");
@@ -303,6 +285,7 @@ async fn cloned_test_db_inner(mode: ImportMode) -> Result<ClonedDb, BoxError> {
     Ok(ClonedDb {
         db_url: db_url.into(),
         db_name,
-        admin_url: server.admin_url.clone(),
+        _owner: owner,
+        _keyed_slot: keyed_slot,
     })
 }
