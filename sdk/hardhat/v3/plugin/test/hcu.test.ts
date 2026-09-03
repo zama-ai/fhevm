@@ -11,7 +11,7 @@ import { createHardhatRuntimeEnvironment } from 'hardhat/hre';
 import { HardhatPluginError } from 'hardhat/plugins';
 import { encodeAbiParameters, encodeEventTopics, encodeFunctionData } from 'viem';
 
-import plugin, { FhevmType } from '../pkg/_esm/index.js';
+import plugin, { FhevmType, getHCU as publicGetHCU } from '../pkg/_esm/index.js';
 import type { FhevmLog } from '../pkg/_esm/index.js';
 import { developmentChain, developmentPublicClient } from '../pkg/_esm/internal/clients.js';
 import { type FhevmContractWrapper, FhevmCleartextContractsRepository } from '../pkg/_esm/internal/contracts.js';
@@ -154,6 +154,14 @@ void test('a live trivialEncrypt costs exactly the table price', async () => {
 
     const info = computeTransactionHCU(executor, receipt);
     const price = ALL_OPERATORS_PRICES.trivialEncrypt.types?.Uint32 ?? -1;
+    assert.equal(publicGetHCU('TrivialEncrypt', 'Uint32'), price);
+    // The public surface answers the same, and names the result handle's type.
+    const viaFhevm = connection.fhevm.computeTransactionHCU(receipt);
+    assert.deepEqual(viaFhevm, info);
+    const [resultHandle] = Object.keys(info.HCUDepthByHandle) as Array<`0x${string}`>;
+    assert.ok(resultHandle !== undefined);
+    assert.equal(connection.fhevm.typeof(resultHandle), 'euint32');
+    assert.throws(() => connection.fhevm.typeof('0x1234'), isPluginError);
     assert.equal(info.globalHCU, price);
     assert.equal(info.maxHCUDepth, price);
     assert.equal(Object.keys(info.HCUDepthByHandle).length, 1);

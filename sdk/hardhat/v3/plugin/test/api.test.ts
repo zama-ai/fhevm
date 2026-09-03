@@ -13,8 +13,6 @@ import { HardhatPluginError } from 'hardhat/plugins';
 import plugin, { FhevmType } from '../pkg/_esm/index.js';
 import type { HardhatFhevmRuntimeEnvironment } from '../pkg/_esm/index.js';
 
-const SYNC_STUBS = ['typeof', 'computeTransactionHCU'] as const;
-
 const ASYNC_STUBS = ['assertCoprocessorInitialized', 'getCoprocessorConfig'] as const;
 
 const STUB_GETTERS = ['debugger'] as const;
@@ -29,10 +27,6 @@ void test('connection.fhevm exposes the whole public surface; unported members f
   try {
     const fhevm: HardhatFhevmRuntimeEnvironment = connection.fhevm;
 
-    for (const member of SYNC_STUBS) {
-      assert.equal(typeof fhevm[member], 'function', `${member} is a method`);
-      assert.throws(() => (fhevm[member] as () => unknown)(), isNotImplemented(member), member);
-    }
     for (const member of ASYNC_STUBS) {
       assert.equal(typeof fhevm[member], 'function', `${member} is a method`);
       await assert.rejects((fhevm[member] as () => Promise<unknown>)(), isNotImplemented(member), member);

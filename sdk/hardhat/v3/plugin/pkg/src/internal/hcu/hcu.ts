@@ -35,7 +35,7 @@ export function computeTransactionHCU(
   }
 
   return {
-    transactionHash: receipt.transactionHash ?? receipt.hash ?? '0x',
+    transactionHash: hexOrEmpty(receipt.transactionHash ?? receipt.hash),
     globalHCU: total,
     maxHCUDepth: Math.max(0, ...Object.values(depthByHandle)),
     HCUDepthByHandle: depthByHandle,
@@ -162,4 +162,8 @@ function fail(eventName: string, key: string, expected: string, value: unknown):
     PLUGIN_ID,
     `Unexpected ${eventName} event arg '${key}': expected ${expected}, got '${String(value)}'.`,
   );
+}
+
+function hexOrEmpty(value: string | undefined): Hex {
+  return value !== undefined && isHex(value) ? value : '0x';
 }

@@ -14,6 +14,9 @@ import {
   type FhevmEncryptedInput,
   type FhevmErrorInterface,
   type FhevmLog,
+  type FhevmTransactionHCUInfo,
+  type FhevmTransactionReceipt,
+  type FhevmTypeName,
   type FhevmNetworkInfo,
   FhevmType,
   type PublicDecryptResults,
@@ -29,6 +32,8 @@ import { asAddress, asBigInt, asBoolean, publicDecrypt, publicDecryptOne } from 
 import { createEncryptedInput, encryptOne } from './encrypt.js';
 import { parseCoprocessorEvents } from './events.js';
 import { createErrorInterface } from './errors/interface.js';
+import { parseFhevmHandle } from './fhevmHandle.js';
+import { computeTransactionHCU } from './hcu/hcu.js';
 import { parseFhevmError } from './errors/parse.js';
 import { isFhevmEuint } from './fheType.js';
 import { type LogOutput, logBox } from './log.js';
@@ -88,16 +93,16 @@ class FhevmRuntimeEnvironment implements HardhatFhevmRuntimeEnvironment {
     );
   }
 
-  typeof(): never {
-    return notImplemented('typeof');
+  typeof(handleBytes32: Hex): FhevmTypeName {
+    return parseFhevmHandle(handleBytes32).typeName;
   }
 
   parseCoprocessorEvents(logs: readonly FhevmLog[] | null | undefined): CoprocessorEvent[] {
     return parseCoprocessorEvents(this.#contracts.fhevmExecutor, logs);
   }
 
-  computeTransactionHCU(): never {
-    return notImplemented('computeTransactionHCU');
+  computeTransactionHCU(transactionReceipt: FhevmTransactionReceipt): FhevmTransactionHCUInfo {
+    return computeTransactionHCU(this.#contracts.fhevmExecutor, transactionReceipt);
   }
 
   assertCoprocessorInitialized(): Promise<never> {

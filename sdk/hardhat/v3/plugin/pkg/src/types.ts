@@ -8,6 +8,9 @@
 import type { createFhevmCleartextClient } from '@fhevm/sdk/viem/cleartext';
 import type { Abi, AbiParameter, Address, Hex, LocalAccount, WalletClient } from 'viem';
 
+/** The protocol's type spelling the HCU price table is keyed by (`Uint32`), as `getHCU` takes it. */
+export type { FheTypeName } from './internal/vendored/priceTypes.js';
+
 export type {
   FhevmChainContract,
   FhevmGatewayConstants,
@@ -161,13 +164,16 @@ export type CoprocessorEventName =
   | 'FheIsIn'
   | 'VerifyInput';
 
-/** A log as viem (`logIndex`) or ethers (`index`) hands it out; the decoder reads what both carry. */
+/**
+ * A log as viem (`logIndex`, `Hex` fields) or ethers (`index`, plain strings) hands it out; the decoder
+ * reads what both carry and checks the hex itself.
+ */
 export type FhevmLog = {
-  readonly address: Address;
-  readonly data: Hex;
-  readonly topics: readonly Hex[];
+  readonly address: string;
+  readonly data: string;
+  readonly topics: readonly string[];
   readonly blockNumber: number | bigint | null;
-  readonly transactionHash: Hex | null;
+  readonly transactionHash: string | null;
   readonly transactionIndex: number | null;
   readonly logIndex?: number | null;
   readonly index?: number;
@@ -185,8 +191,8 @@ export type CoprocessorEvent = {
 /** A receipt as viem (`status: 'success'`, `transactionHash`) or ethers (`status: 1`, `hash`) hands it out. */
 export type FhevmTransactionReceipt = {
   readonly status: 'success' | 'reverted' | number | null;
-  readonly transactionHash?: Hex;
-  readonly hash?: Hex;
+  readonly transactionHash?: string;
+  readonly hash?: string;
   readonly logs: readonly FhevmLog[];
 };
 

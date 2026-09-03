@@ -2,7 +2,7 @@
 // (the cleartext stack evaluates operators on-chain), but they are still emitted, and HCU pricing
 // (D5) is keyed by them. Logs may come from viem (`logIndex`) or ethers (`index`): both shapes fit.
 
-import { decodeEventLog } from 'viem';
+import { type Hex, decodeEventLog, isHex } from 'viem';
 
 import type { CoprocessorEvent, CoprocessorEventName, FhevmLog } from '../types.js';
 import type { FhevmContractWrapper } from './contracts.js';
@@ -62,8 +62,9 @@ export function parseCoprocessorEvents(
 }
 
 function decodeCoprocessorEvent(executor: FhevmContractWrapper, log: FhevmLog): CoprocessorEvent | undefined {
-  const [signature, ...rest] = log.topics;
-  if (signature === undefined) return undefined;
+  const topics = log.topics.filter((topic): topic is Hex => isHex(topic));
+  const [signature, ...rest] = topics;
+  if (signature === undefined || topics.length !== log.topics.length || !isHex(log.data)) return undefined;
   try {
     const { eventName, args } = decodeEventLog({ abi: executor.abi, data: log.data, topics: [signature, ...rest] });
     if (!isCoprocessorEventName(eventName)) return undefined;
@@ -72,10 +73,14 @@ function decodeCoprocessorEvent(executor: FhevmContractWrapper, log: FhevmLog): 
       args: args ?? {},
       index: log.logIndex ?? log.index ?? -1,
       blockNumber: Number(log.blockNumber ?? -1),
-      transactionHash: log.transactionHash ?? '0x',
+      transactionHash: hexOrEmpty(log.transactionHash),
       transactionIndex: log.transactionIndex ?? -1,
     };
   } catch {
     return undefined;
   }
+}
+
+function hexOrEmpty(value: string | null | undefined): Hex {
+  return value !== null && value !== undefined && isHex(value) ? value : '0x';
 }
