@@ -1,6 +1,6 @@
 # Porting the FHEVM hardhat plugin from hardhat v2 to hardhat v3
 
-Version: **1.32** (2026-09-03). Bump the minor for a content change to the plan, the major for a
+Version: **1.33** (2026-09-03). Bump the minor for a content change to the plan, the major for a
 change of charter or stage order; record each bump below.
 
 - 1.0 — initial plan, from the hardhat 3 docs.
@@ -50,8 +50,9 @@ change of charter or stage order; record each bump below.
 - 1.31 — E1 landed (`fhevm public-decrypt` and `fhevm user-decrypt`, positional required inputs); the
   skeleton's `hello` task retired.
 - 1.32 — E2 landed (`fhevm check-fhevm-compatibility <address>` over the D5b methods).
+- 1.33 — E3 landed: the one surviving builtin override is `node`, for the fhevm stack banner; `clean` confirmed dead.
 
-Status: **in progress — Stages A, B, C, D, E1 and E2 complete. Next: E3.** The landing zone exists: the
+Status: **in progress — Stages A, B, C, D and E complete. Next: F1.** The landing zone exists: the
 `hardhat/v3` cluster (own installation root, hardhat 3.15 pinned), the plugin registered via
 `definePlugin` with its per-connection `fhevm` object and the pre-serve chain preparation proven,
 and the `hardhat/v3/e2e` member with the first counter test.
@@ -791,11 +792,19 @@ this later without API change). One commit per group, tests run against the B1 s
   `hardhat_setCode` + `hardhat_setStorageAt`; e2e runs it on the counter and on an empty address.
   Was: `["fhevm", "check-fhevm-compatibility"]`, test likewise.
   Commit: `feat(hh-v3-plugin): add fhevm check-fhevm-compatibility task`
-- **E3.** Builtin overrides that SURVIVE the delete-bucket triage. Confirmed dead: `test`,
-  compile remappings, source paths, coverage. Candidates: `clean` (only if the plugin owns a cache
-  dir), `node` (only for an fhevm banner — a `runSuper` pass-through, never for the deploy). One
-  commit per override, each with the reason it still exists in its commit message.
-  Commit: `feat(hh-v3-plugin): keep <name> builtin override — one commit per survivor`
+- **E3 — LANDED, one survivor.** `clean` is dead too: the plugin owns no cache directory (A6 put
+  `cacheDir` in the delete bucket). `node` survives for the banner and nothing else:
+  `overrideTask('node')` (`tasks/node.ts`) flags a process-wide request and hands over to `runSuper`;
+  the node task creates its connection through the network hooks, whose `newConnection` deploys the
+  stack and, when the flag is set, prints `internal/nodeBanner.ts` BEFORE hardhat's "Started HTTP and
+  WebSocket JSON-RPC server" line: ONE line always (network, chain id, deployed-by-this-node or reused,
+  verified), the ten addresses + deployer only when `hre.globalOptions.verbosity` exceeds hardhat's
+  default 2. NOTE hardhat's verbosity is the COUNT of v's (`-v` = 1, `-vv` = 2 = default), so the
+  table needs `-vvv` — the level hardhat's own call traces start at. `prepare.ts` now reports `reused`
+  (`isCleartextStackDeployed`). A test run prints no banner (one per in-process connection would be
+  noise). The child-process test asserts the banner, the ACL address and the ordering.
+  Was: candidates `clean` and `node`, one commit per survivor.
+  Commit: `feat(hh-v3-plugin): keep the node builtin override for the fhevm stack banner`
 
 ### Stage F — packaging and fidelity
 
