@@ -1,6 +1,6 @@
 # Porting the FHEVM hardhat plugin from hardhat v2 to hardhat v3
 
-Version: **1.20** (2026-09-03). Bump the minor for a content change to the plan, the major for a
+Version: **1.21** (2026-09-03). Bump the minor for a content change to the plan, the major for a
 change of charter or stage order; record each bump below.
 
 - 1.0 — initial plan, from the hardhat 3 docs.
@@ -31,8 +31,10 @@ change of charter or stage order; record each bump below.
   throwing in v2) leave the v3 surface; D3c is the delegated flow only.
 - 1.20 — D3b landed (userDecrypt typed variants; `FhevmUser` = viem wallet client or local account;
   `timestampNow` module export); the v2 user-decrypt counter e2e test ported.
+- 1.21 — D3c landed (`options.delegatorAddress` on `userDecryptE*`); delegated e2e runs on the counter
+  through `SmartWalletWithDelegation`; the ConfidentialERC20 corpus stays E2E-0b.
 
-Status: **in progress — Stages A, B, C and D0–D3b complete. Next: D3c.** The landing zone exists: the
+Status: **in progress — Stages A, B, C and D0–D3 complete. Next: D4a1.** The landing zone exists: the
 `hardhat/v3` cluster (own installation root, hardhat 3.15 pinned), the plugin registered via
 `definePlugin` with its per-connection `fhevm` object and the pre-serve chain preparation proven,
 and the `hardhat/v3/e2e` member with the first counter test.
@@ -623,7 +625,16 @@ this later without API change). One commit per group, tests run against the B1 s
     `options.keypair`, `HandleContractPair`, `UserDecryptResults` left the surface. e2e gained `viem`
     as an exact devDependency (root pin). Was: `userDecryptEbool/Euint/Eaddress`.
     Commit: `feat(hh-v3-plugin): port the userDecrypt typed variants`
-  - **D3c.** The delegated user-decrypt flow (`createDelegatedUserDecryptEIP712` left with D3a).
+  - **D3c — LANDED.** v2 promised "`userDecryptE*` with delegation options" when it deprecated
+    `delegatedUserDecrypt`; that is the port: `FhevmUserDecryptOptions.delegatorAddress` names the
+    account (typically a contract) whose handle the user decrypts on its behalf, and
+    `signLegacyDecryptionPermit` receives it as `delegatorAddress`. Guarded by name. The v2 e2e file
+    decrypts a ConfidentialERC20 balance — a 609-line contract corpus plus `@openzeppelin/contracts`,
+    which is E2E-0b — so the v3 test plays the scenario on the counter: `SmartWalletWithDelegation`
+    (copied verbatim) increments through its own `proposeTx`/`executeTx`, so the WALLET owns the
+    handle; its delegate decrypts (own EOA, third EOA, after a second increment), an undelegated EOA
+    and a revoked one are refused by the stack's "Delegate … is not delegated" error. `test/utils/blocks.ts`
+    ports `waitNBlocks`. Was: the delegated user-decrypt flow.
     Commit: `feat(hh-v3-plugin): port the delegated user-decrypt permit flow`
 - **D4.** Errors and events (two blocks):
   - **D4a.** The error layer is 827 v2 lines (`FhevmContractError` 703 + list 124) — the single
@@ -704,7 +715,7 @@ allows.
 | D1                     | DONE for the counter: `internal/FHECounterPublicDecrypt.ts` gained "increment the counter by 1" (encrypt + tx; the public-decrypt half joins at D2). `internal/delegatedUserDecryption.ts` and `finance/ConfidentialVestingWallet*.test.ts` wait on their contracts (E2E-0b, on demand) |
 | D2                     | DONE for the counter: `internal/FHECounterPublicDecrypt.ts` is the full v2 file. `internal/Rand.ts` + fixture, `doc-examples/HeadsOrTails.ts`, `doc-examples/HighestDieRoll.ts`, `operators-public-decrypt/fhevmOperations54.ts`, `operators-manual/manualV13.ts` wait on their contracts (E2E-0b) |
 | D3b                    | DONE for `internal/FHECounterUserDecrypt.ts` (viem accounts as users). Waiting on their contracts (E2E-0b): `internal/AplusB.ts`, `doc-examples/{DecryptSingleValue,DecryptMultipleValues,EncryptSingleValue,EncryptMultipleValues}.ts`, `confidentialERC20/*`, `finance/*.fixture.ts`, `governance/*`, `utils/EncryptedErrors.*`, `operators-manual/manualWithAllowSender.ts` |
-| D3c                    | `internal/delegatedUserDecryption.ts` — the delegated asserts                                                                                                                                                                                     |
+| D3c                    | DONE on the counter (`internal/delegatedUserDecryption.ts`, `SmartWalletWithDelegation.sol`, `utils/blocks.ts`); the ConfidentialERC20 version of the same asserts waits on E2E-0b                                                                                                                                                                                     |
 | D4a3                   | `internal/TestErrors.*`, `internal/TestTrivialPermissions.test.ts`, `internal/TestACL.ts` (`revertedWithCustomErrorArgs`)                                                                                                                          |
 | D4b                    | `internal/TestAsyncDecrypt.ts` (`parseCoprocessorEvents`; also needs D6)                                                                                                                                                                          |
 | D5a3                   | `hcu/fhevmHCU1.ts` (`computeTransactionHCU`)                                                                                                                                                                                                      |
