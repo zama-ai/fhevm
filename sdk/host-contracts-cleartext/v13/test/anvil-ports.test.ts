@@ -45,8 +45,8 @@ void test('every startAnvil port in test/ts is unique', () => {
     byPort.set(port, [...(byPort.get(port) ?? []), where]);
   }
   const collisions = [...byPort]
-    .filter(([, wheres]) => wheres.length > 1)
-    .map(([port, wheres]) => `${port}: ${wheres.join(', ')}`);
+    .filter(([, where]) => where.length > 1)
+    .map(([port, where]) => `${port}: ${where.join(', ')}`);
 
   assert.deepEqual(
     collisions,

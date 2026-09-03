@@ -733,7 +733,7 @@ export function resolveOptions(flow: Flow, cli: CliArgs, cfg: ConfigFile, config
   if (admin === '') fail(missing('--admin', 'admin'));
   if (deploymentId === '') fail(missing('--deployment-id', 'deploymentId'));
 
-  // A dry run of `all` would be theatre: nothing is sent, so stage 2 simulates against a chain where
+  // A dry run of `all` would be theater: nothing is sent, so stage 2 simulates against a chain where
   // stage 1 never happened, and every later stage reports blocked on a precondition a real run would
   // have satisfied.
   if (cli.dryRun && stage === 'all') {

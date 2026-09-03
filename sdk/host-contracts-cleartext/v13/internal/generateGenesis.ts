@@ -43,7 +43,7 @@
 // its post-deploy nonce or the next CREATE from it collides with the stack.
 //
 // `balance` is required (alloy-genesis gives it no serde default), so every entry states one. The
-// deployer's is normalised to anvil's default rather than copied: the real post-deploy balance depends on
+// deployer's is normalized to anvil's default rather than copied: the real post-deploy balance depends on
 // gas paid, which depends on the EIP-1559 basefee, which moves with wall-clock block timing. Excluding
 // that — and all block metadata — is what makes this file byte-identical between runs, and therefore what
 // makes its SHA a check on the contents rather than merely on the download.
@@ -75,7 +75,7 @@ const ANVIL_PORT = 8945;
 /** `owner()` — read to find the standing ACLOwner, whose address is not derivable from the config. */
 const OWNER_SELECTOR = '0x8da5cb5b';
 
-/** anvil's default per-account genesis balance (10000 ETH). See the note on normalisation above. */
+/** anvil's default per-account genesis balance (10000 ETH). See the note on normalization above. */
 const DEPLOYER_BALANCE = '0x21e19e0c9bab2400000';
 
 const CONFIG_DIR_ABS_PATH = join(PACKAGE_ROOT_ABS_PATH, 'internal', '.deploy-config');
@@ -273,7 +273,7 @@ export async function writeGenesis(): Promise<GenesisSummary> {
       alloc.set(key, _toAllocEntry(require_(address, name), '0x0'));
     }
 
-    // The deployer EOA: its nonce is load-bearing, its balance is normalised, and it has no code.
+    // The deployer EOA: its nonce is load-bearing, its balance is normalized, and it has no code.
     const deployerAccount = accounts.get(_lower(deployer));
     if (deployerAccount === undefined) {
       throw new Error(`deployer ${deployer} is absent from the state dump`);

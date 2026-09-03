@@ -274,7 +274,7 @@ function _parseEdrError(
 }
 
 /**
- * Mutates an Error object strictly formated as
+ * Mutates an Error object strictly formatted as
  * {
  *    data: BytesLike
  *    stackTrace: [{...}, {...}, {...}, { address: Uint8Array }]
@@ -338,7 +338,7 @@ export async function mutateErrorInPlace(fhevmEnv: FhevmEnvironment, e: Error, a
 }
 
 /**
- * Mutates a HH ProviderError object strictly formated as
+ * Mutates a HH ProviderError object strictly formatted as
  * {
  *    data: {
  *      data: BytesLike,

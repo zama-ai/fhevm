@@ -24,11 +24,11 @@ Start a new anvil with a fresh deployed cleartext
 
 `pkg/forge/` holds the forge-only artifacts — everything needed to stand the stack up from Foundry:
 
-| Path                       | Contents                                                                      |
-| -------------------------- | ----------------------------------------------------------------------------- |
-| `src/FhevmDeploy.sol`      | the deploy tool, and the **only** file a consumer imports                      |
-| `script/`                  | forge scripts (`*.s.sol`) — run by path, not imported, so outside the remapping |
-| `src/_internal/`           | everything generated — addresses, bytecode blobs, bootstrap args, interfaces   |
+| Path                  | Contents                                                                        |
+| --------------------- | ------------------------------------------------------------------------------- |
+| `src/FhevmDeploy.sol` | the deploy tool, and the **only** file a consumer imports                       |
+| `script/`             | forge scripts (`*.s.sol`) — run by path, not imported, so outside the remapping |
+| `src/_internal/`      | everything generated — addresses, bytecode blobs, bootstrap args, interfaces    |
 
 It is the Foundry counterpart to `pkg/ts/`: both are optional conveniences, and the Solidity under
 `pkg/src/` is still the product. The layout is deliberately Foundry-shaped — `src` and `script` where the
@@ -80,7 +80,7 @@ Note `_internal/LocalHostAddresses.sol` declares the same constant names as the
 `fhevm-config-<version>/addresses.sol` you supply for compiling `pkg/src` — import one or the other into a
 given file, or alias.
 
-Two constant flavours, and the difference matters:
+Two constant flavors, and the difference matters:
 
 - **`_CREATION_CODE`** must be deployed — the constructor either takes arguments or writes storage.
   Deploying these in order from account index 5 of the anvil mnemonic, starting at nonce 0, reproduces
@@ -101,9 +101,10 @@ The obvious path for any new version. Exceptions are the norm — treat this as 
 from, not one you can follow blindly.
 
 ## 1. Pick the upstream tag and resolve it to a commit
+
 Pick the upstream tag and resolve it to a commit
 
-This package lives *inside* the fhevm repo, so plain `git` here already targets the right repository.
+This package lives _inside_ the fhevm repo, so plain `git` here already targets the right repository.
 
 ```sh
 # stable tags on the 0.12 line (the [0-9] pattern skips prereleases like v0.12.5-1)
@@ -118,7 +119,7 @@ git rev-list -n 1 v0.12.5
 Both values go into `pkg/package.json` → `fhevm.vendoredFrom` (step 8). The commit matters because a
 tag can be moved or re-pointed later, so the commit is what makes the record verifiable (rule 7).
 
-Choosing *which* tag is a manual decision: numbering on a line is not reliably monotonic — on the 0.13
+Choosing _which_ tag is a manual decision: numbering on a line is not reliably monotonic — on the 0.13
 line `v0.13.3` is an **ancestor** of `v0.13.2`, so the highest patch number is not necessarily the newest
 code (rule 6). Confirm before trusting the ordering:
 
@@ -127,6 +128,7 @@ git merge-base --is-ancestor v0.12.4 v0.12.5 && echo "v0.12.4 is behind v0.12.5"
 ```
 
 ## 2. Sync the vendored sources
+
 Sync the vendored sources
 
 Copy `host-contracts/contracts` into `pkg/src/contracts` — but only the files already vendored here.
@@ -139,12 +141,14 @@ byte-identical. 0.13 adds five (`ProtocolConfig`, `KMSGeneration`, their two int
 where `npm run check:vendored-origin -- --verbose` checks the declared vendored sources.
 
 ## 3. Update the cleartext variants
+
 Update the cleartext variants
 
 Anything in `pkg/src/cleartext/` that extends a synced contract may need the same change —
 `CleartextFHEVMExecutor extends FHEVMExecutor`, so an upstream signature change lands here too.
 
 ## 4. Addresses, if the host address set changed
+
 Addresses, if the host address set changed
 
 1. `pkg/src/addresses/FHEVMHostAddresses.sol` — add/remove the `*Add` aliases.
@@ -155,6 +159,7 @@ Addresses, if the host address set changed
    `npm run generate:placeholders` (also runs as the first step of `build:templates`).
 
 ## 5. If the protocol minor changed (0.12 → 0.13)
+
 If the protocol minor changed (0.12 → 0.13)
 
 The config remapping prefix is version-pinned, so find every occurrence rather than trusting a list:
@@ -168,7 +173,7 @@ Sweep the whole tree, not just `remappings.txt` and `pkg/src`: there are **four*
 those two plus `internal/constants.ts` (`FHEVM_CONFIG_REMAPPING_PREFIX`) and `scripts/deploy.sh`
 (`CONFIG_PREFIX`) — and two more in prose, the `FOUNDRY_REMAPPINGS=` usage lines in
 `pkg/forge/script/FhevmDeployScript.s.sol` and `VerifyFhevmDeploy.s.sol`. A narrower grep found only the
-first two and left `deploy.sh` pointing at the previous generation, which fails at *run* time rather than
+first two and left `deploy.sh` pointing at the previous generation, which fails at _run_ time rather than
 compile time. The consuming layer (`forge-fhevm`) declares the new prefix for its own consumers — see
 RULES.md rule 11.
 
@@ -223,7 +228,7 @@ generation, so a raw comparison would call everything changed), and it keys "is 
 `initializeFromEmptyProxy` rather than off the reinitializer — `CleartextDB`, `KMSGeneration` and
 `ProtocolConfig` are proxy targets with no reinitializer at all.
 
-Its output is a starting point, not a spec. It cannot tell you *which* materializer to call, what
+Its output is a starting point, not a spec. It cannot tell you _which_ materializer to call, what
 arguments to pass, or in what order — the worked example is v13's `updateV12ToV13`, which calls
 `initializeFromMigration` on `ProtocolConfig` (seeding the migrated KMS context) but
 `initializeFromEmptyProxy` on `KMSGeneration`. Compare its op list against the upgrade function of the
@@ -236,17 +241,17 @@ survives a generation change untouched — only the path you pass changes.
 A `⚠` verdict means the two signals disagree. `REINITIALIZER_VERSION` is a compile-time constant, and
 the rule is two-sided:
 
-| Bytecode changed? | Expected | If it is wrong | Reported as |
-| --- | --- | --- | --- |
-| yes | `REINITIALIZER_VERSION` bumped, `reinitializeV<n>` renamed | upgrading that proxy has no replay guard and no on-chain generation marker | `⚠ CHANGED, NOT BUMPED` |
-| no  | **both untouched** | a gratuitous bump forces a pointless upgrade op and burns a version number | `⚠ BUMPED, UNCHANGED` |
+| Bytecode changed? | Expected                                                   | If it is wrong                                                             | Reported as             |
+| ----------------- | ---------------------------------------------------------- | -------------------------------------------------------------------------- | ----------------------- |
+| yes               | `REINITIALIZER_VERSION` bumped, `reinitializeV<n>` renamed | upgrading that proxy has no replay guard and no on-chain generation marker | `⚠ CHANGED, NOT BUMPED` |
+| no                | **both untouched**                                         | a gratuitous bump forces a pointless upgrade op and burns a version number | `⚠ BUMPED, UNCHANGED`   |
 
 So a missing bump is not automatically a defect. `InputVerifier` is the worked example: between v12 and
 v13 its source changed by 11 lines — five doc-comment lines, named mapping parameters, and one private
 constant renamed with an identical value — none of which reach the bytecode. It kept
 `MINOR_VERSION = 2` / `REINITIALIZER_VERSION = 3` and is therefore **deliberately absent** from
-`updateV12ToV13`'s op list — `../v13/pkg/ts/upgrade.ts` says so directly: *"its v13 bytecode is identical
-and its version did not bump"*.
+`updateV12ToV13`'s op list — `../v13/pkg/ts/upgrade.ts` says so directly: _"its v13 bytecode is identical
+and its version did not bump"_.
 
 What to check, per contract whose bytecode changed: that upstream bumped it, and that the op list in the
 upgrade path matches. A contract whose bytecode did not change should not appear there at all.
@@ -255,7 +260,7 @@ Two things that trip people up:
 
 - **The name and the counter differ by one.** `reinitializeV2` is gated by `reinitializer(3)`, because
   `initializeFromEmptyProxy` also consumes `reinitializer(REINITIALIZER_VERSION)`. The function name
-  tracks the contract's *minor* version (`MINOR_VERSION = 2`), not the counter.
+  tracks the contract's _minor_ version (`MINOR_VERSION = 2`), not the counter.
 - **The bodies are empty.** `function reinitializeV4() public virtual reinitializer(REINITIALIZER_VERSION) {}`
   initializes nothing; its only effect is advancing the counter. The bump is bookkeeping and a replay
   guard, not initialization — which is why an upgrade with empty `initData` is mechanically legal, just
@@ -263,12 +268,14 @@ Two things that trip people up:
   live in v13, which is the reference implementation).
 
 ## 8. Version and provenance
+
 Version and provenance
 
 - `pkg/package.json` `version`: major.minor must equal the fhevm line, patch is free (rule 5).
 - `pkg/package.json` `fhevm.vendoredFrom`: update `tag` and `commit` to step 1 (rule 7).
 
 ## 9. Rebuild, then refresh the baseline
+
 Rebuild, then refresh the baseline
 
 Order matters — `generate:patch-sites` reads the templates that `build:templates` produces.
@@ -282,6 +289,7 @@ Review the patch-sites diff rather than accepting it. A count falling to **0** f
 contracts still use means the deploy would bake in a placeholder.
 
 ## 10. Check the size budget
+
 Check the size budget
 
 New upstream code can breach EIP-170, and the margin is thin — `CleartextFHEVMExecutor` sits ~1.5 KB
@@ -292,6 +300,7 @@ forge build --sizes
 ```
 
 ## 11. Verify
+
 Verify
 
 ```sh
@@ -325,7 +334,7 @@ npm run check:zama-config         # also runs inside `npm run build`
 ```
 
 This is the one direction the other address checks do not cover. `generateLocalHostBytecode.ts` asserts
-the *derived* addresses equal `ZAMA_LOCAL_CONFIG`, and `test/templates.test.ts` asserts the generated
+the _derived_ addresses equal `ZAMA_LOCAL_CONFIG`, and `test/templates.test.ts` asserts the generated
 forge constants do too — but all of them compare against that same hand-written constant in
 `internal/constants.ts`. An upstream edit to `_getLocalConfig()` therefore leaves the whole chain
 self-consistent and collectively wrong. This one parses the Solidity instead, so the transcription is
@@ -336,7 +345,7 @@ branch that no longer routes to `_getLocalConfig()`, a renamed field, or a **new
 failures rather than skips. A new field especially — that is an address the cleartext stack has to place,
 and quietly ignoring it would narrow the check to the three fields we happen to know about.
 
-Note it verifies the address *set*, not where a deploy actually lands; that is `./scripts/anvil.sh`
+Note it verifies the address _set_, not where a deploy actually lands; that is `./scripts/anvil.sh`
 below (and still not part of `npm run test` — see RULES.md rule 17).
 
 ## Things that bite

@@ -63,14 +63,14 @@ task("task:decrypt-count", "Calls the getCount() function of Counter Contract")
 
     await fhevm.initializeCLIApi();
 
-    const FHECounterDeployement = taskArguments.address
+    const FHECounterDeployment = taskArguments.address
       ? { address: taskArguments.address }
       : await deployments.get("FHECounter");
-    console.log(`FHECounter: ${FHECounterDeployement.address}`);
+    console.log(`FHECounter: ${FHECounterDeployment.address}`);
 
     const signers = await ethers.getSigners();
 
-    const fheCounterContract = await ethers.getContractAt("FHECounter", FHECounterDeployement.address);
+    const fheCounterContract = await ethers.getContractAt("FHECounter", FHECounterDeployment.address);
 
     const encryptedCount = await fheCounterContract.getCount();
     if (encryptedCount === ethers.ZeroHash) {
@@ -82,7 +82,7 @@ task("task:decrypt-count", "Calls the getCount() function of Counter Contract")
     const clearCount = await fhevm.userDecryptEuint(
       FhevmType.euint32,
       encryptedCount,
-      FHECounterDeployement.address,
+      FHECounterDeployment.address,
       signers[0],
     );
     console.log(`Encrypted count: ${encryptedCount}`);
@@ -107,18 +107,18 @@ task("task:increment", "Calls the increment() function of FHECounter Contract")
 
     await fhevm.initializeCLIApi();
 
-    const FHECounterDeployement = taskArguments.address
+    const FHECounterDeployment = taskArguments.address
       ? { address: taskArguments.address }
       : await deployments.get("FHECounter");
-    console.log(`FHECounter: ${FHECounterDeployement.address}`);
+    console.log(`FHECounter: ${FHECounterDeployment.address}`);
 
     const signers = await ethers.getSigners();
 
-    const fheCounterContract = await ethers.getContractAt("FHECounter", FHECounterDeployement.address);
+    const fheCounterContract = await ethers.getContractAt("FHECounter", FHECounterDeployment.address);
 
     // Encrypt the value passed as argument
     const encryptedValue = await fhevm
-      .createEncryptedInput(FHECounterDeployement.address, signers[0].address)
+      .createEncryptedInput(FHECounterDeployment.address, signers[0].address)
       .add32(value)
       .encrypt();
 
@@ -154,18 +154,18 @@ task("task:decrement", "Calls the decrement() function of FHECounter Contract")
 
     await fhevm.initializeCLIApi();
 
-    const FHECounterDeployement = taskArguments.address
+    const FHECounterDeployment = taskArguments.address
       ? { address: taskArguments.address }
       : await deployments.get("FHECounter");
-    console.log(`FHECounter: ${FHECounterDeployement.address}`);
+    console.log(`FHECounter: ${FHECounterDeployment.address}`);
 
     const signers = await ethers.getSigners();
 
-    const fheCounterContract = await ethers.getContractAt("FHECounter", FHECounterDeployement.address);
+    const fheCounterContract = await ethers.getContractAt("FHECounter", FHECounterDeployment.address);
 
     // Encrypt the value passed as argument
     const encryptedValue = await fhevm
-      .createEncryptedInput(FHECounterDeployement.address, signers[0].address)
+      .createEncryptedInput(FHECounterDeployment.address, signers[0].address)
       .add32(value)
       .encrypt();
 

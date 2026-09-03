@@ -45,7 +45,7 @@ describe('ConfidentialERC20', function () {
   it('should mint the contract', async function () {
     //await helpers.getStorageAt(address, storageSlot);
     /*
-When you encouter this kind of error:
+When you encounter this kind of error:
         CoprocessorConfig storage $ = getCoprocessorConfig(); return "undefined" => FHE.setCoprocessor was not called!
         We must ADD a test!!!!!! for the user!!
 

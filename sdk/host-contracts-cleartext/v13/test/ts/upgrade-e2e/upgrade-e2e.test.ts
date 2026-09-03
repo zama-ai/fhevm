@@ -569,7 +569,7 @@ test('e2e: deploy a v12 cleartext stack, then upgrade it to v13 — cleartext su
     );
     expect(changed, `readable state changed across the upgrade:\n  ${changed.join('\n  ')}`).toEqual([]);
 
-    // The exemptions are not a licence: each one must actually have changed, or it does not belong in
+    // The exemptions are not a license: each one must actually have changed, or it does not belong in
     // MAY_CHANGE. This is what stops the set from quietly growing into a way of ignoring regressions.
     const unusedExemptions = [...MAY_CHANGE].filter((key) => before.has(key) && before.get(key) === after.get(key));
     expect(

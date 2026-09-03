@@ -1,4 +1,4 @@
-// Guards the diagnostics around a mis-implemented AbstractEthereumSigner.
+// Guards the diagnostics around a miss-implemented AbstractEthereumSigner.
 //
 // The invariant: every transaction this package sends from a signer must occupy that signer's next
 // nonce. An adapter that lets its web3 library choose instead fails with `nonce has already been used`
@@ -86,7 +86,7 @@ test('a nonce failure names the failing step and explains the cause', async () =
 
 ////////////////////////////////////////////////////////////////////////////////
 
-test('an unrelated failure is labelled but gets no nonce lecture', async () => {
+test('an unrelated failure is labeled but gets no nonce lecture', async () => {
   const signer = createRevertingSigner();
 
   const error = await captureRejection(() =>

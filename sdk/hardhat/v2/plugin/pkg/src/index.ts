@@ -1,6 +1,6 @@
 // The FHEVM hardhat plugin depends on '@nomicfoundation/hardhat-ethers'
 // It must be imported in the plugin root to make sure the rest of the code
-// can access the hre.ethers propery.
+// can access the hre.ethers property.
 import '@nomicfoundation/hardhat-ethers';
 import { extendConfig, extendEnvironment, extendProvider } from 'hardhat/config';
 

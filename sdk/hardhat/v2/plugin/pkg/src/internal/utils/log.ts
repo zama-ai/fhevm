@@ -4,7 +4,7 @@ import constants from '../constants';
 
 function _log(msg: string, options?: { nocolor?: boolean; out?: 'stderr' | 'stdout' | 'console' }): void {
   if (options?.out === 'stderr') {
-    // use process.sterr.write instead of console.log to escape HH catpure
+    // use process.stderr.write instead of console.log to escape HH capture
     // HH colorizes in red all console.error() calls.
     process.stderr.write(msg + '\n');
   } else if (options?.out === 'stdout') {

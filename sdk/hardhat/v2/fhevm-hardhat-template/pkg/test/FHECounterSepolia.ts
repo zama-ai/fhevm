@@ -26,9 +26,9 @@ describe("FHECounterSepolia", function () {
     }
 
     try {
-      const FHECounterDeployement = await deployments.get("FHECounter");
-      fheCounterContractAddress = FHECounterDeployement.address;
-      fheCounterContract = await ethers.getContractAt("FHECounter", FHECounterDeployement.address);
+      const FHECounterDeployment = await deployments.get("FHECounter");
+      fheCounterContractAddress = FHECounterDeployment.address;
+      fheCounterContract = await ethers.getContractAt("FHECounter", FHECounterDeployment.address);
     } catch (e) {
       (e as Error).message += ". Call 'npx hardhat deploy --network sepolia'";
       throw e;

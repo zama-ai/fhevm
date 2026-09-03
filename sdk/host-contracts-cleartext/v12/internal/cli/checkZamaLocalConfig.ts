@@ -20,7 +20,7 @@ try {
     if (entry.matches) {
       console.log(`   ✅ ${names} ${entry.declared}`);
     } else {
-      // Both values, labelled by which side said what — a single address is unreadable without knowing
+      // Both values, labeled by which side said what — a single address is unreadable without knowing
       // which one is the one that is not ours to change.
       console.log(`   ❌ ${names}`);
       console.log(`      ZamaConfig.sol says  ${entry.declared}`);

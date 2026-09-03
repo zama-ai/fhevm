@@ -147,7 +147,7 @@ Usage: node create2-deploy/deploy-testnet.ts --rpc-url URL --account NAME
   --pauser 0x...       optional operator pauser, step A'
   --confirmations N    reorg DEPTH floor for the between-stage waits (default 3, reorg depth). This is
                        the value the Solidity gate enforces, so it is the one a different
-                       orchestrator also has to honour
+                       orchestrator also has to honor
   --no-finality        between stages wait only for --confirmations of depth, NOT for the previous
                        stage to finalize. Depth is a heuristic — ~3 min at 15 blocks vs ~12.8 min to
                        PoS finality — and testnets are where that gap bites

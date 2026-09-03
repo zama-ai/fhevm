@@ -2,7 +2,7 @@
 # =============================================================================
 # anvil-local-v3.sh — fixed-address local cleartext v12 deployment, no compiler
 #
-# Modelled on forge-fhevm's deploy-local.sh, adapted to this package.
+# Modeled on forge-fhevm's deploy-local.sh, adapted to this package.
 #
 # The idea borrowed from there: a proxy does not have to be CREATEd to exist at
 # a fixed address. Write its runtime code with anvil_setCode, write the three

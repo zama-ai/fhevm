@@ -78,7 +78,7 @@ interface IEIP712Domain {
  *   1. code     — every address holds code, and each proxy resolves to a real implementation
  *   2. versions — getVersion() per contract, against the version constants in pkg/src
  *   3. wiring   — the addresses compiled into each contract are the ones actually deployed. This is the
- *                 group that catches a mis-addressed build, and it needs reading rather than assuming:
+ *                 group that catches a miss-addressed build, and it needs reading rather than assuming:
  *                 the initializers make no cross-contract calls, so a stack whose code points at empty
  *                 addresses deploys perfectly quietly and only fails in use.
  *   4. ownership— ACL is owned by an ACLOwner *contract* (not an EOA) whose `acl()` points back at it,
@@ -164,9 +164,13 @@ contract VerifyFhevmDeploy is Script {
     function _checkVersions() private {
         console.log("[versions]");
         _eqStr("ACL.getVersion", ACL(aclAdd).getVersion(), LocalHostVersions.ACL);
-        _eqStr("FHEVMExecutor.getVersion", FHEVMExecutor(fhevmExecutorAdd).getVersion(), LocalHostVersions.FHEVM_EXECUTOR);
+        _eqStr(
+            "FHEVMExecutor.getVersion", FHEVMExecutor(fhevmExecutorAdd).getVersion(), LocalHostVersions.FHEVM_EXECUTOR
+        );
         _eqStr("KMSVerifier.getVersion", KMSVerifier(kmsVerifierAdd).getVersion(), LocalHostVersions.KMS_VERIFIER);
-        _eqStr("InputVerifier.getVersion", InputVerifier(inputVerifierAdd).getVersion(), LocalHostVersions.INPUT_VERIFIER);
+        _eqStr(
+            "InputVerifier.getVersion", InputVerifier(inputVerifierAdd).getVersion(), LocalHostVersions.INPUT_VERIFIER
+        );
         _eqStr("HCULimit.getVersion", HCULimit(hcuLimitAdd).getVersion(), LocalHostVersions.HCU_LIMIT);
         _eqStr(
             "CleartextArithmetic.getVersion",
@@ -268,9 +272,7 @@ contract VerifyFhevmDeploy is Script {
     function _checkKmsContext() private {
         console.log("[bootstrap: KMS signers]");
         _eqAddrArray(
-            "KMSVerifier.getKmsSigners",
-            KMSVerifier(kmsVerifierAdd).getKmsSigners(),
-            LocalHostBootstrap.kmsSigners()
+            "KMSVerifier.getKmsSigners", KMSVerifier(kmsVerifierAdd).getKmsSigners(), LocalHostBootstrap.kmsSigners()
         );
     }
 
@@ -280,9 +282,7 @@ contract VerifyFhevmDeploy is Script {
     function _checkThresholds() private {
         console.log("[bootstrap: thresholds]");
         _eqUint(
-            "KMSVerifier.getThreshold",
-            KMSVerifier(kmsVerifierAdd).getThreshold(),
-            LocalHostBootstrap.KMS_NODE_COUNT
+            "KMSVerifier.getThreshold", KMSVerifier(kmsVerifierAdd).getThreshold(), LocalHostBootstrap.KMS_NODE_COUNT
         );
     }
 

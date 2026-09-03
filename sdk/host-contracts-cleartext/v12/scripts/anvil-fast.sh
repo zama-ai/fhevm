@@ -73,7 +73,7 @@ if [ ! -f "$GENESIS" ]; then
 fi
 
 # The snapshot is byte-reproducible — balances and block metadata, the only things that move between
-# runs, are normalised out of it — so this checks the contents, not just that the file downloaded intact.
+# runs, are normalized out of it — so this checks the contents, not just that the file downloaded intact.
 if [ "$CHECK" -eq 1 ] && [ -f "${GENESIS}.sha256" ]; then
     if ! (cd "$(dirname "$GENESIS")" && shasum -a 256 -c "$(basename "$GENESIS").sha256" >/dev/null 2>&1); then
         echo "Error: $GENESIS does not match ${GENESIS}.sha256." >&2

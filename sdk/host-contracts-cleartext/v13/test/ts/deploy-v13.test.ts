@@ -152,11 +152,11 @@ const CLEARTEXT_DB_ABI = [
  * This is the only assertion that closes the loop on placeholder patching. Comparing the deploy's
  * returned addresses against `precomputeAddresses` proves nothing about the patch — both sides come
  * from the same derivation — and a non-zero implementation slot only proves *something* is deployed
- * there. Mis-patching (the right address written into the wrong constant's offsets) leaves every
+ * there. Miss-patching (the right address written into the wrong constant's offsets) leaves every
  * proxy correct and every impl slot non-zero, and would go entirely unnoticed without these calls.
  *
  * Nothing during deploy exercises the wiring: the initializers do not call across contracts, so a
- * mis-patched address does not revert. It only surfaces here, or in production.
+ * miss-patched address does not revert. It only surfaces here, or in production.
  *
  * The six getters below cover five distinct patched constants across three contracts — the same
  * probes `scripts/anvil.sh` runs, plus `getHCULimitAddress` and `getPauserSetAddress`.
@@ -413,7 +413,7 @@ test('deploy without precomputed derives addresses from the deployer live nonce'
 
     // (b) A contract really exists at the derived ACL address — this is what catches a bad derivation,
     //     since a miscomputed address would hold nothing. It says nothing about the wiring: the
-    //     initializers make no cross-contract calls, so mis-patched addresses do not revert on deploy.
+    //     initializers make no cross-contract calls, so miss-patched addresses do not revert on deploy.
     const impl = await publicClient.getStorageAt({
       address: deployed.fhevmAddresses.aclAddress as Address,
       slot: IMPL_SLOT,

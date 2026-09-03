@@ -44,7 +44,7 @@ export type FhevmSetupProvider = EthersT.Provider & {
  *   2. `deployer` is at nonce 0, because every address is `CREATE(deployer, nonce)`
  *   3. `admin` is the same account (`FhevmDeploy._fhevmAdmin()` returns `DEPLOYER_ADDRESS`)
  *
- * `config` is deliberately not passed: the default `DEFAUT_BOOTSTRAP_CONFIG_V13` is what seeds the
+ * `config` is deliberately not passed: the default `DEFAULT_BOOTSTRAP_CONFIG_V13` is what seeds the
  * KMS/coprocessor signer sets that `@fhevm/sdk`'s cleartext relayer holds the keys for. A configured
  * stack is a stack the SDK cannot sign for.
  *

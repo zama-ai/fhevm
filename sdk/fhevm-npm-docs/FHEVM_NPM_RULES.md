@@ -670,7 +670,7 @@ mirror-only payloads are exempt.
 ```
 
 **5.2.2 `exports` is the published package's whole public surface, and stays minimal.** What it omits is unreachable
-— provided the consumer resolves in a mode that honours it.
+— provided the consumer resolves in a mode that honors it.
 
 **5.2.3 Consumer tests use the resolution modes the package supports.** A package typechecks and executes with the
 same `module`, `moduleResolution`, runtime loader and TypeScript major its real consumers use. `nodenext` is required
@@ -980,7 +980,7 @@ declared root, follows symlinks with `realpath`, and rejects a result outside th
 "publishedRelPath": "./hardhat/v2/plugin/pkg"
 "source": "./sdk/common-vendored/src"
 
-// ❌ Traversal is rejected even when normalisation would produce an in-tree path.
+// ❌ Traversal is rejected even when normalization would produce an in-tree path.
 "publishedRelPath": "./hardhat/v2/../v3/plugin/pkg"
 "source": "./sdk/../outside"
 

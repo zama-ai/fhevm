@@ -20,7 +20,7 @@ declare namespace WebAssembly {
 - integrate fhevm/sdk
 - PROGRESS create a simple GUIDE
 - PROGRESS remove harness word, remove payload word
-- hardcoded const mnemonic = 'adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer'; is forbidden, import centralized constansts
+- hardcoded const mnemonic = 'adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer'; is forbidden, import centralized constants
 - cleanup /Users/alex/src/me/zama-ai/fhevm/sdk/scripts
 - add fhevm-npm auto check polygon addresses everywhere
-- add a script that tests all links in pacakge.sjomn (README broken)
+- add a script that tests all links in package.json (README broken)

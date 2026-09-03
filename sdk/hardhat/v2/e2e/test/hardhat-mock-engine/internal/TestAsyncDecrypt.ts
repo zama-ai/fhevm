@@ -41,7 +41,7 @@
 //     const y = await contract.yBool();
 //     console.log(y);
 //     const balanceAfterR = await hre.ethers.provider.getBalance(relayerAddress);
-//     console.log("gas paid by relayer (fulfil tx) : ", balanceBeforeR - balanceAfterR);
+//     console.log("gas paid by relayer (fulfill tx) : ", balanceBeforeR - balanceAfterR);
 //     console.log("gas paid by user (request tx) : ", balanceBeforeU - balanceAfterU);
 //   });
 
@@ -56,7 +56,7 @@
 //     expect(y).to.equal(true);
 //     const balanceAfterR = await hre.ethers.provider.getBalance(relayerAddress);
 //     expect(balanceBeforeR - balanceAfterR).to.be.greaterThan(10000000000000n);
-//     console.log("gas paid by relayer (fulfil tx) : ", balanceBeforeR - balanceAfterR);
+//     console.log("gas paid by relayer (fulfill tx) : ", balanceBeforeR - balanceAfterR);
 //     console.log("gas paid by user (request tx) : ", balanceBeforeU - balanceAfterU);
 //   });
 

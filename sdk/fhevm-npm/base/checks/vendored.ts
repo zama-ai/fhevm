@@ -168,7 +168,7 @@ export function upstreamVendoredFiles(
     .sort();
 }
 
-/** One upstream file, normalised the way the destination stores it. */
+/** One upstream file, normalized the way the destination stores it. */
 export function upstreamVendoredContent(
   repositoryRoot: string,
   source: PinnedVendoredTarget['source'],

@@ -473,7 +473,7 @@ void test('create2-deploy: fresh anvil, v12 stack, then the v13 upgrade', { skip
       ] as const) {
         const address = addressOf(v13, role);
         // Not just "has code": the two new proxies are the only addresses in this flow that were PREDICTED
-        // rather than supplied, so this is where a colliding or mis-derived salt would show up.
+        // rather than supplied, so this is where a colliding or miss-derived salt would show up.
         assert.notEqual(await provider.getCode(address), '0x', `no code at ${role}`);
         assert.equal(await versionOf(provider, address), expectVersion(table, key), role);
         for (const live of LIVE_ROLES) {

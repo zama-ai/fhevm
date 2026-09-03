@@ -5,7 +5,7 @@
  * `<host-contracts-cleartext>/pkg/src/contracts/FHEEvents.sol` and the shipped
  * `abi/CleartextFHEVMExecutor.json`.
  *
- * This is the *event* vocabulary, used to recognise coprocessor logs. It is deliberately NOT the
+ * This is the *event* vocabulary, used to recognize coprocessor logs. It is deliberately NOT the
  * same thing as the set of operators HCU can price: `HCUOperatorName` is derived from
  * `HCUByOperator`'s own keys, and three of these events (`VerifyInput`, `FheSum`, `FheIsIn`) have no
  * price entry.

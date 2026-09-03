@@ -36,7 +36,7 @@ export function say(...lines: readonly string[]): void {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-/** Only the first line is labelled; the rest are indented to align under it. */
+/** Only the first line is labeled; the rest are indented to align under it. */
 export function warn(...lines: readonly string[]): void {
   lines.forEach((line, i) => {
     console.log(i === 0 ? `  WARNING: ${line}` : `           ${line}`);

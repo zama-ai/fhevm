@@ -1,7 +1,7 @@
 // Generates pkg/forge/src/_internal/LocalHostBytecode.sol — bytecode for the whole cleartext stack,
 // compiled against the *real* localhost addresses rather than placeholder markers.
 //
-// Modelled on forge-fhevm's src/generated/HostBytecode.sol: a flat list of file-level
+// Modeled on forge-fhevm's src/generated/HostBytecode.sol: a flat list of file-level
 // `bytes constant <NAME>_CREATION_CODE = hex"…"` declarations, so a Foundry consumer can CREATE the
 // stack without compiling any Solidity of ours.
 //
@@ -207,7 +207,7 @@ export function localHostAddresses(): LocalHostStack {
     ADDRESS_NAMES.map((name) => [name, at(DEPLOYER_START_NONCE + NONCE_OFFSET[name])]),
   ) as Record<AddressName, string>;
 
-  // Every nonce the sequence consumes, so the deploy order can be labelled rather than assumed. Indexed
+  // Every nonce the sequence consumes, so the deploy order can be labeled rather than assumed. Indexed
   // by nonce, hence from 0 rather than from the start nonce.
   const nonceSequence: string[] = [];
   for (let nonce = 0n; nonce < ADDRESSED_NONCE_COUNT; nonce++) {

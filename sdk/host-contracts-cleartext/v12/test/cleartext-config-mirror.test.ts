@@ -95,9 +95,9 @@ function comparisonOf(solidityType: string): 'address' | 'uint' | 'string' {
 /**
  * A value reduced to the one form both languages can be compared in.
  *
- * Each normalisation step is a difference in how the two languages SPELL a value, never a difference in
+ * Each normalization step is a difference in how the two languages SPELL a value, never a difference in
  * The value: `100733346448153n` against `100733346448153`, `'0x6189…'` against a bare `0x6189…`, single
- * against double quotes. Trailing characters are NOT normalised — a mnemonic path ending `/` on one side
+ * against double quotes. Trailing characters are NOT normalized — a mnemonic path ending `/` on one side
  * and not the other is the failure this guards against.
  */
 function canonical(solidityType: string, literal: string): string {
@@ -142,7 +142,7 @@ function evaluate(expr: string): bigint {
   if (max) return (1n << BigInt(max[1] ?? '0')) - 1n;
 
   const call = /^([A-Za-z][A-Za-z0-9_]*)\(([\s\S]*)\)$/.exec(e);
-  assert.ok(call, `unparseable formula: ${e}`);
+  assert.ok(call, `unparsable formula: ${e}`);
   const fn = call[1] ?? '';
   const arg = (call[2] ?? '').trim();
 
@@ -159,7 +159,7 @@ function evaluate(expr: string): bigint {
   return inner & ((1n << BigInt(uint[1] ?? '0')) - 1n);
 }
 
-/** What a formula produces, in the same canonical form the recorded value normalises to. */
+/** What a formula produces, in the same canonical form the recorded value normalizes to. */
 function evaluateAs(solidityType: string, formula: string): string {
   const n = evaluate(formula);
   if (comparisonOf(solidityType) === 'address') {
@@ -589,7 +589,7 @@ void test('every generation has the same secondary roles in the same order', () 
   // The invariant the split exists to make visible: only the PRIMARY block changes shape between
   // generations. The secondary block is the same three contracts every time and merely starts later, so a
   // generation whose secondary list differs has either gained a cleartext contract — which would need
-  // saying out loud — or mis-assigned a role across the boundary.
+  // saying out loud — or miss-assigned a role across the boundary.
   const roleLists = Object.entries(readLocalhost().generations).map(
     ([gen, t]) => [gen, t.nonces.secondary.map((e) => e.role)] as const,
   );
@@ -611,7 +611,7 @@ void test('every generation has the same secondary roles in the same order', () 
 // `test/ts/utils/expectedBootstrap.ts` holds the HCU triple that a default deploy must produce. It cannot
 // import the constants: `test/ts/tsconfig.json` sets `rootDir: "."` so nothing there may reach the source
 // tree, which is what stops a test in that suite from exercising our source when its purpose is to
-// exercise the PUBLISHED package. Honouring that boundary costs one hand-written copy, and this is what
+// exercise the PUBLISHED package. Honoring that boundary costs one hand-written copy, and this is what
 // makes the copy safe — the same trade the other two faces make.
 ////////////////////////////////////////////////////////////////////////////////
 

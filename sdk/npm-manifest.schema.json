@@ -200,7 +200,7 @@
         },
         "from": {
           "description": "Directory inside that repository, relative to its root. Written without a leading `./`, matching `fhevm.vendoredFrom.from` byte-for-byte.",
-          "$comment": "The one relative path in this file with no `./`, so it stays comparable to the published field it mirrors. Do not normalise it.",
+          "$comment": "The one relative path in this file with no `./`, so it stays comparable to the published field it mirrors. Do not normalize it.",
           "$ref": "#/$defs/unprefixedRelativePath"
         }
       }
