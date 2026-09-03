@@ -1,6 +1,6 @@
 import { HardhatFhevmError } from '../../error';
 import { FhevmType } from '../fheType';
-import type { FheTypeName } from './priceTypes';
+import type { FheTypeName } from '../vendored/priceTypes';
 
 /**
  * The protocol's own type names, as used by the vendored HCU price table.
@@ -10,7 +10,7 @@ import type { FheTypeName } from './priceTypes';
  */
 // Re-exported from the price types: the vendored table decides which type names exist, so there is
 // exactly one definition rather than two that can drift.
-export type { FheTypeName } from './priceTypes';
+export type { FheTypeName } from '../vendored/priceTypes';
 
 /** `eaddress` is priced as `Uint160`, which is how an address is represented on-chain. */
 const FHEVM_TYPE_TO_FHE_TYPE_NAME: Readonly<Record<FhevmType, FheTypeName | undefined>> = {

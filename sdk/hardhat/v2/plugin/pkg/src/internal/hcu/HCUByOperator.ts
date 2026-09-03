@@ -1,6 +1,6 @@
 import { HardhatFhevmError } from '../../error';
-import { ALL_OPERATORS_PRICES } from './operatorsPrices';
-import type { FheOperatorName, FheTypeName, NBucketedCost } from './priceTypes';
+import { ALL_OPERATORS_PRICES } from '../vendored/operatorsPrices';
+import type { FheOperatorName, FheTypeName, NBucketedCost } from '../vendored/priceTypes';
 
 /**
  * HCU pricing, keyed by the event name `FHEVMExecutor` emits.
