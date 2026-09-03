@@ -873,14 +873,15 @@ impl LockMngr {
         // producer still unrun. The flip happens exactly once per retirement,
         // which is the closest thing to an arming-scoped event available here.
         //
-        // (This is still only approximately exactly-once: a chain re-armed with
-        // new work and retired again decrements its historical dependents a
-        // second time, because `dependents` is append-only and the decrement is
-        // keyed on retirement rather than on the arming. Closing that needs the
-        // discharged children pruned from the parent's `dependents`, which
-        // changes what `acquire_stale_gated_lock`'s ground-truth anti-join
-        // means and is left as a follow-up. GREATEST(..., 0) bounds the damage
-        // to a gate opening early, never to a negative count.)
+        // (Exactly-once now holds across re-armings too: the discharged
+        // children are pruned from the parent's `dependents` below, so a chain
+        // re-armed with new work and retired again no longer decrements its
+        // historical children a second time. That prune is also what changes
+        // the meaning of `acquire_stale_gated_lock`'s ground-truth anti-join --
+        // a pruned parent no longer lists the child, so the repair reads the
+        // gate as stale rather than as still-armed. GREATEST(..., 0) remains
+        // the backstop, bounding any residual double discharge to a gate
+        // opening early rather than to a negative count.)
         //
         // Multiplicity is preserved across parents on purpose: a chain gated on
         // two parents retired together must observe both decrements, and one
@@ -1401,17 +1402,39 @@ pub(crate) async fn delete_old_processed_dependence_chains(
                 SELECT 1
                 FROM computations c
                 WHERE c.dependence_chain_id = dc.dependence_chain_id
-                  AND c.is_allowed = TRUE
                   AND c.is_completed = FALSE
-                  -- Only PENDING or DEMOTED work may hold a chain back. A
-                  -- terminal verdict is is_completed = false forever — the work
-                  -- window never re-selects it so no bytes ever arrive, and the
-                  -- sweep never touches it because it carries no RETRYABLE
-                  -- marker. Without this clause such a chain matches the guard
-                  -- on every pass, is never deleted, and accumulates at the
-                  -- head of the `last_updated_at ASC` scan: an unbounded
-                  -- residue that the 48 h TTL used to clear.
-                  AND (c.is_error = FALSE OR c.error_message LIKE '%' || $3 || '%')
+                  -- Only PENDING or DEMOTED work may hold a chain back, and
+                  -- the two are scoped differently on purpose.
+                  --
+                  -- A RETRYABLE row blocks whatever its `is_allowed`. Only the
+                  -- slow sweep can clear that stamp, and the sweep joins
+                  -- `dependence_chain` -- so deleting the chain orphans the row
+                  -- beyond any reach. The work window would go on excluding its
+                  -- whole transaction (that check keys on transaction_id, not
+                  -- on a chain still existing), stalling an allowed consumer
+                  -- filed under a DIFFERENT chain, which is the ordinary shape
+                  -- when several listeners with divergent caches split a
+                  -- transaction. `is_allowed` decides what counts as WORK, not
+                  -- what counts as a BLOCKER -- the same rule the sweep's
+                  -- discovery follows.
+                  --
+                  -- Ordinary pending work stays allowed-scoped, because it does
+                  -- NOT depend on this row surviving: its transaction remains
+                  -- selectable and the worker loads a non-allowed sibling as a
+                  -- recompute-only producer regardless of any chain of its own.
+                  --
+                  -- A terminal verdict matches neither arm, deliberately. It is
+                  -- is_completed = false forever -- the window never re-selects
+                  -- it so no bytes ever arrive, and the sweep never touches it
+                  -- because it carries no RETRYABLE marker -- so counting it
+                  -- would match the guard on every pass and accumulate an
+                  -- unbounded residue at the head of the `last_updated_at ASC`
+                  -- scan that the 48 h TTL used to clear.
+                  AND (
+                        (c.is_error = TRUE
+                         AND c.error_message LIKE '%' || $3 || '%')
+                     OR (c.is_allowed = TRUE AND c.is_error = FALSE)
+                      )
             )
         ORDER BY last_updated_at ASC
         LIMIT $1

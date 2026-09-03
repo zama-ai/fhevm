@@ -2456,3 +2456,127 @@ async fn rearm_demoted_chains_serves_oldest_first() {
         "the sweep advances to the next-oldest chain"
     );
 }
+
+/// Retention must not delete a chain whose only unfinished row is a demoted
+/// INTERNAL producer.
+///
+/// The two shapes that make this reachable already have tests of their own;
+/// the gap was their combination. An internal (`is_allowed = FALSE`) producer
+/// is executed for an allowed consumer and stamped like any other row, so it
+/// reaches the demote threshold. When the consumer is filed under a DIFFERENT
+/// chain -- routine once several listeners with divergent caches split a
+/// transaction -- the producer's chain holds no allowed unfinished row of its
+/// own, so an allowed-scoped retention guard sees nothing to protect and ages
+/// it out at the TTL.
+///
+/// Nothing TTL-deletes `computations`, so the row outlives its chain. The work
+/// window keys its demotion check on transaction_id rather than on a chain
+/// still existing, so it goes on excluding the whole transaction; and the
+/// sweep joins `dependence_chain`, so with the chain gone it can never reset
+/// the stamp. The allowed consumer stalls permanently.
+#[tokio::test]
+#[serial(db)]
+async fn retention_keeps_a_chain_holding_a_demoted_internal_producer() {
+    let instance = setup().await;
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(2)
+        .connect(instance.db_url())
+        .await
+        .expect("Failed to connect to the database");
+    let threshold: i16 = 3;
+
+    let producer_chain = vec![0xE1u8; 32];
+    let consumer_chain = vec![0xE2u8; 32];
+    let terminal_chain = vec![0xE3u8; 32];
+    let shared_tx = b"tx-split-internal-producer".to_vec();
+    let terminal_tx = b"tx-terminal-only".to_vec();
+
+    // All three retired long enough ago to be past the retention TTL.
+    for dcid in [&producer_chain, &consumer_chain, &terminal_chain] {
+        sqlx::query(
+            "INSERT INTO dependence_chain
+                (dependence_chain_id, status, last_updated_at, block_timestamp, block_height,
+                 schedule_priority, dependency_count, dependents)
+             VALUES ($1, 'processed', NOW() - make_interval(secs => 100000), NOW(), 1, 0, 0,
+                     ARRAY[]::bytea[])",
+        )
+        .bind(dcid)
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+
+    // The demoted internal producer: its chain's ONLY unfinished row, and not
+    // allowed, so an allowed-scoped guard would not see it.
+    seed_computation_row_in_transaction_with_allowed(
+        &pool,
+        &producer_chain,
+        &handle(0xE4),
+        &shared_tx,
+        false, // is_allowed
+        false,
+        true,
+        Some("RETRYABLE SchedulerError::ExecutionPanic(sigsegv)"),
+    )
+    .await;
+    sqlx::query("UPDATE computations SET error_retry_count = $1 WHERE output_handle = $2")
+        .bind(threshold)
+        .bind(handle(0xE4))
+        .execute(&pool)
+        .await
+        .unwrap();
+    // Its allowed consumer, filed under a different chain by another listener.
+    seed_computation_row_in_transaction(
+        &pool,
+        &consumer_chain,
+        &handle(0xE5),
+        &shared_tx,
+        false,
+        false,
+        None,
+    )
+    .await;
+    // Control: a chain whose only unfinished row is a TERMINAL verdict must
+    // still be deletable, or terminal work accumulates at the head of the
+    // `last_updated_at ASC` scan forever.
+    seed_computation_row_in_transaction(
+        &pool,
+        &terminal_chain,
+        &handle(0xE6),
+        &terminal_tx,
+        false,
+        true,
+        Some("invalid FHE operation: unknown opcode"),
+    )
+    .await;
+
+    let deleted = delete_old_processed_dependence_chains(&pool, 100, 3600)
+        .await
+        .unwrap();
+    assert!(deleted >= 1, "the terminal-only chain must age out");
+
+    let producer_alive: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM dependence_chain WHERE dependence_chain_id = $1")
+            .bind(&producer_chain)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        producer_alive, 1,
+        "a demoted INTERNAL producer must hold its chain back: the chain row \
+         is the sweep's only handle on it, and its allowed consumer lives in \
+         another chain"
+    );
+
+    let terminal_alive: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM dependence_chain WHERE dependence_chain_id = $1")
+            .bind(&terminal_chain)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        terminal_alive, 0,
+        "a terminal verdict never heals and must not block deletion, or it \
+         accumulates an unbounded residue"
+    );
+}
