@@ -1,6 +1,6 @@
 # Porting the FHEVM hardhat plugin from hardhat v2 to hardhat v3
 
-Version: **1.36** (2026-09-03). Bump the minor for a content change to the plan, the major for a
+Version: **1.37** (2026-09-03). Bump the minor for a content change to the plan, the major for a
 change of charter or stage order; record each bump below.
 
 - 1.0 — initial plan, from the hardhat 3 docs.
@@ -55,8 +55,10 @@ change of charter or stage order; record each bump below.
 - 1.35 — the v3 plugin consumer leg joined the Makefile `test-consumer` targets (approved Makefile edit).
 - 1.36 — F2 landed (publint + attw esm-only + pack green, build dir cleaned before compile, package
   README); open question 5 reframed: the version must encode protocol line, hardhat generation, patch.
+- 1.37 — F3 closed with evidence for three parity rows (in-process, `hardhat node`, anvil: 27/27 each);
+  the public-chain row is detection-only until the network-group decision. Manifest note fixed.
 
-Status: **in progress — Stages A, B, C, D, E, F1 and F2 complete. Next: F3.** The landing zone exists: the
+Status: **port complete for development networks — Stages A–F landed. Open: the public-chain client (network-group decision), the version scheme (question 5), E2E-0b on demand.** The landing zone exists: the
 `hardhat/v3` cluster (own installation root, hardhat 3.15 pinned), the plugin registered via
 `definePlugin` with its per-connection `fhevm` object and the pre-serve chain preparation proven,
 and the `hardhat/v3/e2e` member with the first counter test.
@@ -267,6 +269,14 @@ The v2 behavior to reproduce, as a test matrix for the v3 e2e package (later clu
 `hardhat node` was the highest-risk row; the source de-risked it (§2b): the pre-serve hook point
 is `newConnection` itself. What remains to prove is the ordering (A4) and the skip-if-present
 detection over `http` (B3).
+
+**F3 status (2026-09-03):** rows 1–3 CLOSED by evidence — the same 27-test e2e suite passes in-process
+(`make test-hh-v3-e2e`), through `test/test-hardhat-node.sh` (node process deploys before `listen()`,
+the test process reuses over `localhost`) and through `test/test-anvil.sh` (fresh anvil, deploy from the
+first connection). Row 4 is detection-only: `fhevm.network.publicChains` resolves from the generated
+constants, but `fhevm.client` and the contracts repository refuse public networks until the
+network-group decision (which gateway serves a chain listed under two); the v2 `sepolia/*` operator
+tests wait on that AND on a live RPC + funded key, so they never run in `make test`.
 
 ## 6. Phases
 
@@ -838,10 +848,12 @@ this later without API change). One commit per group, tests run against the B1 s
   lands". Version stays `0.1.0` pending open question 5.
   Was: publint/attw/pack green; pkg README.
   Commit: `chore(hh-v3-plugin): publint, attw and pack:tarball green; package README`
-- **F3.** The e2e member already exists (E2E-0) and has grown test by test via the ledger below;
-  F3 closes the §5 parity matrix — whichever rows the ledger has not yet covered (expected: the
-  Sepolia operator flows and any `test:anvil` rows still red), one row per commit.
-  Commit: `feat(hh-v3-e2e): cover the <row> node-parity-matrix row`
+- **F3 — CLOSED for development networks** (no new e2e commit needed: every row the suite can reach
+  was already green — see §5 "F3 status"). Left open, recorded in §5 and §7: the public-chain client
+  and the Sepolia operator flows (network-group decision + live RPC). Suggested but not done (Makefile
+  is outside the write scope): `test-hh-v3-e2e-node` / `-anvil-managed` targets wrapping the two
+  operator scripts, so the flows are one `make` away.
+  Was: close the §5 matrix, one row per commit.
 
 ### The e2e ledger — which v2 test file ports at which plugin step
 
@@ -855,7 +867,7 @@ allows.
 
 | unlocked at            | v2 test files (API they need)                                                                                                                                                                                                                      |
 | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| E2E-0a                 | `internal/FHECounterPublicDecrypt.ts` — the "uninitialized after deployment" case only (compile + deploy + `getCount`)                                                                                                                              |
+| E2E-0a                 | DONE — `internal/FHECounterPublicDecrypt.ts` (the full v2 file since D2)                                                                                                                              |
 | A5                     | DONE — the `isCleartext` guard is live in `internal/FHECounterPublicDecrypt.ts`; `utils.ts` (`isDevelopment`) ports with its first user                                                                                                                                          |
 | B1c                    | DONE at D5b — `internal/CoprocessorConfig.ts` (the ZamaConfig-trio smoke test) and `internal/TestFHENotInitialized.test.ts`                                                                                       |
 | B2                     | DONE — `test:anvil` + `test:anvil:simple` scripts and `test/test-anvil*.sh` (run the counter file)                                                                                                                                                       |
