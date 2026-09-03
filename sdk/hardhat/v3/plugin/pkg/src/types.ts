@@ -132,6 +132,9 @@ export type CoprocessorConfig = {
   KMSVerifierAddress: Address;
 };
 
+/** A contract by address, as a viem contract (`address`) or an ethers one (`getAddress()`). */
+export type FhevmAddressLike = Address | { readonly address: Address } | { getAddress(): Promise<string> };
+
 export type CoprocessorEventName =
   | 'TrivialEncrypt'
   | 'FheAdd'
@@ -271,8 +274,10 @@ export interface HardhatFhevmRuntimeEnvironment {
   /** The HCU a mined transaction consumed, from its executor events (a viem or ethers receipt). */
   computeTransactionHCU(transactionReceipt: FhevmTransactionReceipt): FhevmTransactionHCUInfo;
 
-  assertCoprocessorInitialized(contract: Address, contractName?: string): Promise<void>;
-  getCoprocessorConfig(contractAddress: Address): Promise<CoprocessorConfig>;
+  /** Fails by name when `contract` was not compiled against the stack this connection runs. */
+  assertCoprocessorInitialized(contract: FhevmAddressLike, contractName?: string): Promise<void>;
+  /** The three addresses `contract` stored through `ZamaConfig` or `FHE.setCoprocessor()`. */
+  getCoprocessorConfig(contract: FhevmAddressLike): Promise<CoprocessorConfig>;
 
   /**
    * Chai matcher support: `expect(tx).to.be.revertedWithCustomError(...fhevm.revertedWithCustomErrorArgs('FHEVMExecutor', 'ACLNotAllowed'))`.

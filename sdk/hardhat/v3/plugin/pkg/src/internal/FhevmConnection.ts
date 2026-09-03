@@ -8,7 +8,9 @@ import type { Abi, Address, Hex } from 'viem';
 
 import {
   type FhevmClient,
+  type CoprocessorConfig,
   type CoprocessorEvent,
+  type FhevmAddressLike,
   type FhevmContractError,
   type FhevmContractName,
   type FhevmEncryptedInput,
@@ -28,6 +30,7 @@ import {
 } from '../types.js';
 import { PLUGIN_ID } from './constants.js';
 import type { FhevmContractsRepository } from './contracts.js';
+import { assertCoprocessorInitialized, readCoprocessorConfig, resolveAddress } from './coprocessorConfig.js';
 import { asAddress, asBigInt, asBoolean, publicDecrypt, publicDecryptOne } from './decrypt.js';
 import { createEncryptedInput, encryptOne } from './encrypt.js';
 import { parseCoprocessorEvents } from './events.js';
@@ -105,12 +108,12 @@ class FhevmRuntimeEnvironment implements HardhatFhevmRuntimeEnvironment {
     return computeTransactionHCU(this.#contracts.fhevmExecutor, transactionReceipt);
   }
 
-  assertCoprocessorInitialized(): Promise<never> {
-    return Promise.reject(notImplementedError('assertCoprocessorInitialized'));
+  assertCoprocessorInitialized(contract: FhevmAddressLike, contractName?: string): Promise<void> {
+    return assertCoprocessorInitialized(this.#contracts, contract, contractName);
   }
 
-  getCoprocessorConfig(): Promise<never> {
-    return Promise.reject(notImplementedError('getCoprocessorConfig'));
+  async getCoprocessorConfig(contract: FhevmAddressLike): Promise<CoprocessorConfig> {
+    return readCoprocessorConfig(this.#contracts.client, await resolveAddress(contract));
   }
 
   revertedWithCustomErrorArgs(
