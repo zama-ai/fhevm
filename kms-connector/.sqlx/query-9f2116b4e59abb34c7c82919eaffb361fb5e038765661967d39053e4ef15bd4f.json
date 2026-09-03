@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO public_decryption_requests(\n            decryption_id, ct_handles, extra_data, tx_hash, created_at, otlp_context,\n            already_sent, status\n        )\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT DO NOTHING",
+  "query": "INSERT INTO public_decryption_requests(\n            decryption_id, ct_handles, extra_data, tx_hash, created_at, otlp_context,\n            already_sent, status, source\n        )\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT DO NOTHING",
   "describe": {
     "columns": [],
     "parameters": {
@@ -25,10 +25,21 @@
               ]
             }
           }
+        },
+        {
+          "Custom": {
+            "name": "request_source",
+            "kind": {
+              "Enum": [
+                "onchain",
+                "http"
+              ]
+            }
+          }
         }
       ]
     },
     "nullable": []
   },
-  "hash": "224d5f7d164599fa9b3c13eb2263dbc22c7872cc7947a4bc2a5358abafd84b2f"
+  "hash": "9f2116b4e59abb34c7c82919eaffb361fb5e038765661967d39053e4ef15bd4f"
 }

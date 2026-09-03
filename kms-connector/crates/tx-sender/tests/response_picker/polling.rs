@@ -1,6 +1,9 @@
-use connector_utils::tests::{
-    db::responses::{TestResponseType, insert_rand_response},
-    setup::TestInstanceBuilder,
+use connector_utils::{
+    tests::{
+        db::responses::{TestResponseType, insert_rand_response},
+        setup::TestInstanceBuilder,
+    },
+    types::db::RequestSource,
 };
 use rstest::rstest;
 use std::time::Duration;
@@ -23,8 +26,14 @@ async fn test_pick_response_with_polling_backup(
     let test_instance = TestInstanceBuilder::db_setup().await?;
 
     info!("Inserting {response_type} before starting the picker...");
-    let inserted_response =
-        insert_rand_response(test_instance.db(), response_type, None, None).await?;
+    let inserted_response = insert_rand_response(
+        test_instance.db(),
+        response_type,
+        None,
+        None,
+        RequestSource::OnChain,
+    )
+    .await?;
 
     let config = Config {
         database_polling_timeout: Duration::from_millis(500),
