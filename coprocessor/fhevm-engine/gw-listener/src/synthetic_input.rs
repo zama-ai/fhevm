@@ -210,6 +210,7 @@ async fn read_synthetic_input_plan(
             AND u.proposal_id IS NOT NULL
             AND u.version IS NOT NULL
             AND u.gw_start_block IS NOT NULL
+            AND u.host_chain_id >= 0
           ORDER BY u.host_chain_id
           LIMIT 1",
     )

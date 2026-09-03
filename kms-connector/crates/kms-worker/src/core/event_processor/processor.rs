@@ -203,20 +203,7 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                 )?;
                 Ok(())
             }
-            ProtocolEventKind::UserDecryptionV3(req) => {
-                tokio::try_join!(
-                    biased;
-                    async {
-                        self.decryption_processor
-                            .check_user_decryption_request_v3(req)
-                            .await
-                            .map(|_| ())
-                            .map_err(RequestCheckError::record)
-                    },
-                    self.check_context(&req.extraData),
-                )?;
-                Ok(())
-            }
+            ProtocolEventKind::UserDecryptionV3(req) => self.check_context(&req.extraData).await,
             ProtocolEventKind::PrepKeygen(req) => self.check_context(&req.extraData).await,
             ProtocolEventKind::Keygen(req) => self.check_context(&req.extraData).await,
             ProtocolEventKind::Crsgen(req) => self.check_context(&req.extraData).await,

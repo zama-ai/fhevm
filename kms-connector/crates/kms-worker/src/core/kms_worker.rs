@@ -5,7 +5,7 @@ use crate::{
         event_picker::{DbEventPicker, EventPicker},
         event_processor::{
             CiphertextManager, DbContextManager, DbEventProcessor, DecryptionProcessor,
-            EventProcessor, HostChainAclBackend, KMSGenerationProcessor, KmsClient,
+            EventProcessor, HostChainAclBackend, HostRpcClient, KMSGenerationProcessor, KmsClient,
             ProcessingError, ProcessingErrorKind, ProtocolConfigProcessor,
             solana_public_decrypt::SolanaHost,
         },
@@ -349,7 +349,10 @@ async fn register_host_chain_backends(
                     config.host_rpc_call_timeout,
                 )
                 .await?;
-                HostChainAclBackend::Evm(ACL::new(acl_address, provider))
+                HostChainAclBackend::Evm(HostRpcClient::new(
+                    host_chain.chain_id,
+                    ACL::new(acl_address, provider),
+                ))
             }
             HostChainKind::Solana => {
                 let program_id = host_chain.solana_host_program_id.ok_or_else(|| {

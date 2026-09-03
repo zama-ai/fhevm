@@ -10,6 +10,7 @@ import {
   bootstrapUsesHostKmsGeneration,
   requiresGatewayKmsGenerationAddress,
   requiresLegacyHostChainSeedShim,
+  requiresLegacyKmsBootstrapBudget,
   requiresMultichainAclAddress,
   requiresModernHostAddressArtifacts,
   supportsCanonicalProtocolConfigSeeding,
@@ -1006,8 +1007,12 @@ export const runStep = async (state: State, step: StepName) => {
       // much larger budget before we conclude bootstrap failed.
       const CENTRALIZED_BOOTSTRAP_ATTEMPTS = 120;
       const THRESHOLD_BOOTSTRAP_ATTEMPTS = 450;
+      const LEGACY_THRESHOLD_BOOTSTRAP_ATTEMPTS = 1200;
+      const thresholdAttempts = requiresLegacyKmsBootstrapBudget(state.versions.env.CORE_VERSION ?? "")
+        ? LEGACY_THRESHOLD_BOOTSTRAP_ATTEMPTS
+        : THRESHOLD_BOOTSTRAP_ATTEMPTS;
       const bootstrapAttempts =
-        state.scenario.kms.mode === "threshold" ? THRESHOLD_BOOTSTRAP_ATTEMPTS : CENTRALIZED_BOOTSTRAP_ATTEMPTS;
+        state.scenario.kms.mode === "threshold" ? thresholdAttempts : CENTRALIZED_BOOTSTRAP_ATTEMPTS;
       await timed("[bootstrap] wait-for-materials", () => waitForBootstrap(state, bootstrapAttempts));
       await generateRuntime(state, stackSpecForState(state));
       break;
