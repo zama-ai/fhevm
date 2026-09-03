@@ -1,6 +1,6 @@
 # Porting the FHEVM hardhat plugin from hardhat v2 to hardhat v3
 
-Version: **1.33** (2026-09-03). Bump the minor for a content change to the plan, the major for a
+Version: **1.34** (2026-09-03). Bump the minor for a content change to the plan, the major for a
 change of charter or stage order; record each bump below.
 
 - 1.0 — initial plan, from the hardhat 3 docs.
@@ -51,8 +51,9 @@ change of charter or stage order; record each bump below.
   skeleton's `hello` task retired.
 - 1.32 — E2 landed (`fhevm check-fhevm-compatibility <address>` over the D5b methods).
 - 1.33 — E3 landed: the one surviving builtin override is `node`, for the fhevm stack banner; `clean` confirmed dead.
+- 1.34 — F1 landed (consumer fixture runs an encrypt/decrypt round-trip; the leg was silently not running).
 
-Status: **in progress — Stages A, B, C, D and E complete. Next: F1.** The landing zone exists: the
+Status: **in progress — Stages A, B, C, D, E and F1 complete. Next: F2.** The landing zone exists: the
 `hardhat/v3` cluster (own installation root, hardhat 3.15 pinned), the plugin registered via
 `definePlugin` with its per-connection `fhevm` object and the pre-serve chain preparation proven,
 and the `hardhat/v3/e2e` member with the first counter test.
@@ -808,7 +809,18 @@ this later without API change). One commit per group, tests run against the B1 s
 
 ### Stage F — packaging and fidelity
 
-- **F1.** Consumer fixture upgraded to a real encrypt/decrypt round-trip. Test: `test-consumer` leg.
+- **F1 — LANDED.** Finding first: the fixture still asserted the retired `hello` task and the plugin's
+  `test:consumer` script lacked `--run`, so the leg installed and never executed — green by omission
+  since E1. Fixed (`--run --build-linked-dependencies`, as the cleartext packages spell it) and the
+  fixture upgraded: plain-JS consumer declaring the peers (`@fhevm/sdk`, `viem`) as a user would;
+  tasks + module exports registered; a connection deploys the stack; `encryptUint` → handle + proof;
+  `trivialEncrypt` sent to the executor (its localhost address is deterministic and hard-coded with a
+  comment — the public surface exposes no stack addresses, a gap to weigh in F2/§5); event parsed,
+  `typeof`, `debugger.decryptEuint` = 42, HCU = table price, `publicDecrypt` refused. Lockfile
+  regenerated with `test-consumer-regenerate-package-lock`; both `--run` and `--run --ci` pass.
+  NOT done (Makefile is outside the port's write scope): `test-consumer`/`test-consumer-ci` targets
+  still list only the cleartext packages and the v2 template — the v3 plugin leg should join them.
+  Was: consumer fixture upgraded to a real encrypt/decrypt round-trip.
   Commit: `test(hh-v3-plugin): consumer fixture runs an encrypt/decrypt round-trip`
 - **F2.** `check:publint`/`attw`/`pack:tarball` green; pkg README. Commit.
   Commit: `chore(hh-v3-plugin): publint, attw and pack:tarball green; package README`
