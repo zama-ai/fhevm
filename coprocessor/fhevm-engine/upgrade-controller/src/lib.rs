@@ -3024,7 +3024,7 @@ mod tests {
                 host_consensus_reached, gw_consensus_reached, gw_dry_run_started,
                 proposal_block, updated_at
             )
-            VALUES ('GCS', $1, $2, $3, 'v0.15', 100, 200, 1, 1,
+            VALUES ('GCS', $1, $2, $3, $4, 100, 200, 1, 1,
                     TRUE, TRUE, TRUE, 10, NOW())
             ON CONFLICT (stack_role, host_chain_id) DO UPDATE
             SET state = EXCLUDED.state, status = EXCLUDED.status,
@@ -3042,6 +3042,7 @@ mod tests {
         .bind(state)
         .bind(status)
         .bind(&[0x02u8][..])
+        .bind(fhevm_engine_common::STACK_VERSION)
         .execute(pool)
         .await
         .expect("seed GCS row");
