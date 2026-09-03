@@ -223,6 +223,11 @@ describe('GatewayConfig', function () {
       expect(await gatewayConfig.getVersion()).to.equal('GatewayConfig v0.8.0');
     });
 
+    it('Should expose the maximum KMS signer-set size', async function () {
+      // Driven by the one-byte signature-count field of the decryption proof format.
+      expect(await gatewayConfig.getMaxKmsSigners()).to.equal(255);
+    });
+
     it('Should clear a set priority coprocessor slot during the upgrade', async function () {
       const gatewayConfigPhase1 = await deployGatewayConfigPhase1Proxy();
       const proxyAddress = await gatewayConfigPhase1.getAddress();
@@ -1779,7 +1784,9 @@ describe('GatewayConfig', function () {
       it('Should add a new host chain', async function () {
         const txResponse = gatewayConfig.connect(owner).addHostChain(newHostChain);
 
-        await expect(txResponse).to.emit(gatewayConfig, 'AddHostChain').withArgs(toValues(newHostChain));
+        await expect(txResponse)
+          .to.emit(gatewayConfig, 'AddHostChain')
+          .withArgs(newHostChain.chainId, toValues(newHostChain));
       });
 
       it('Should revert because the sender is not the owner', async function () {
@@ -1949,7 +1956,7 @@ describe('GatewayConfig', function () {
         };
         await expect(gatewayConfig.connect(owner).addHostChain(reAdded))
           .to.emit(gatewayConfig, 'AddHostChain')
-          .withArgs(toValues(reAdded));
+          .withArgs(reAdded.chainId, toValues(reAdded));
         expect(await gatewayConfig.isHostChainRegistered(registeredChainId)).to.be.true;
         expect(await gatewayConfig.isHostChainDisabled(registeredChainId)).to.be.false;
       });

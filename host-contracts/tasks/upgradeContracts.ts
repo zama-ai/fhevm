@@ -2,8 +2,8 @@ import { Interface, Wallet } from 'ethers';
 import { task, types } from 'hardhat/config';
 import { HardhatRuntimeEnvironment, TaskArguments } from 'hardhat/types';
 
-import { assertBridgeEndpointImmutable, buildProtocolConfigReinitializeArgs } from './taskDeploy';
-import { getRequiredEnvVar, loadHostAddresses } from './utils/loadVariables';
+import { assertBridgeEndpointImmutable } from './taskDeploy';
+import { getRequiredCountEnvVar, getRequiredEnvVar, loadHostAddresses } from './utils/loadVariables';
 import { buildUpgradeProposal, printUpgradeProposal, verifyProposalImplementation } from './utils/upgradeProposal';
 
 const REINITIALIZE_FUNCTION_PREFIX = 'reinitializeV'; // Prefix for reinitialize functions
@@ -503,8 +503,7 @@ task('task:upgradeProtocolConfig')
     types.boolean,
   )
   .setAction(async function (taskArgs: TaskArguments, hre) {
-    const reinitializeArgs = buildProtocolConfigReinitializeArgs();
-    await upgradeContract('ProtocolConfig', 'PROTOCOL_CONFIG_CONTRACT_ADDRESS', taskArgs, hre, reinitializeArgs);
+    await upgradeContract('ProtocolConfig', 'PROTOCOL_CONFIG_CONTRACT_ADDRESS', taskArgs, hre);
   });
 
 task('task:prepareUpgradeProtocolConfig')
@@ -529,8 +528,7 @@ task('task:prepareUpgradeProtocolConfig')
     types.boolean,
   )
   .setAction(async function (taskArgs: TaskArguments, hre) {
-    const reinitializeArgs = buildProtocolConfigReinitializeArgs();
-    await prepareUpgradeContract('ProtocolConfig', 'PROTOCOL_CONFIG_CONTRACT_ADDRESS', taskArgs, hre, reinitializeArgs);
+    await prepareUpgradeContract('ProtocolConfig', 'PROTOCOL_CONFIG_CONTRACT_ADDRESS', taskArgs, hre);
   });
 
 task('task:upgradeKMSGeneration')
@@ -606,8 +604,8 @@ task('task:upgradeInputVerifier')
   )
   .setAction(async function (taskArgs: TaskArguments, hre) {
     const initialSigners: string[] = [];
-    const numSigners = getRequiredEnvVar('NUM_COPROCESSORS');
-    for (let idx = 0; idx < +numSigners; idx++) {
+    const numSigners = getRequiredCountEnvVar('NUM_COPROCESSORS');
+    for (let idx = 0; idx < numSigners; idx++) {
       initialSigners.push(getRequiredEnvVar(`COPROCESSOR_SIGNER_ADDRESS_${idx}`));
     }
     const coprocessorThreshold = getRequiredEnvVar('COPROCESSOR_THRESHOLD');
@@ -641,8 +639,8 @@ task('task:prepareUpgradeInputVerifier')
   )
   .setAction(async function (taskArgs: TaskArguments, hre) {
     const initialSigners: string[] = [];
-    const numSigners = getRequiredEnvVar('NUM_COPROCESSORS');
-    for (let idx = 0; idx < +numSigners; idx++) {
+    const numSigners = getRequiredCountEnvVar('NUM_COPROCESSORS');
+    for (let idx = 0; idx < numSigners; idx++) {
       initialSigners.push(getRequiredEnvVar(`COPROCESSOR_SIGNER_ADDRESS_${idx}`));
     }
     const coprocessorThreshold = getRequiredEnvVar('COPROCESSOR_THRESHOLD');
