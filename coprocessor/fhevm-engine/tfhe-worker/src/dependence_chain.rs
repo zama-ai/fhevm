@@ -1233,10 +1233,23 @@ pub(crate) async fn rearm_demoted_chains(
     pool: &sqlx::Pool<Postgres>,
     demote_threshold: i16,
 ) -> Result<u64, sqlx::Error> {
+    rearm_demoted_chains_limited(pool, demote_threshold, SLOW_LANE_REARM_BATCH).await
+}
+
+/// `rearm_demoted_chains` with an explicit batch size, so a test can show the
+/// ordering without seeding `SLOW_LANE_REARM_BATCH` chains.
+pub(crate) async fn rearm_demoted_chains_limited(
+    pool: &sqlx::Pool<Postgres>,
+    demote_threshold: i16,
+    batch: i64,
+) -> Result<u64, sqlx::Error> {
     let result = sqlx::query!(
         r#"
         WITH demoted AS (
-            SELECT DISTINCT c.dependence_chain_id
+            -- GROUP BY rather than DISTINCT: `SELECT DISTINCT` requires
+            -- every ORDER BY expression in the select list, and the ordering
+            -- key below is the chain's age, not its id.
+            SELECT c.dependence_chain_id
             FROM computations c
             JOIN dependence_chain dc
               ON dc.dependence_chain_id = c.dependence_chain_id
@@ -1250,6 +1263,14 @@ pub(crate) async fn rearm_demoted_chains(
               -- owner would strand the lease.
               AND dc.status = 'processed'
               AND dc.worker_id IS NULL
+            -- OLDEST FIRST, and not just for tidiness: with more demoted
+            -- chains than the batch admits, an unordered LIMIT lets the plan
+            -- return the same subset every sweep, so the chains behind it
+            -- never get a pass at all. Ordering by age makes the sweep a
+            -- queue -- a chain re-armed here gets `last_updated_at = NOW()`
+            -- below, which sends it to the back.
+            GROUP BY c.dependence_chain_id
+            ORDER BY MIN(dc.last_updated_at) ASC, c.dependence_chain_id ASC
             LIMIT $3
         ),
         rearmed AS (
@@ -1287,7 +1308,7 @@ pub(crate) async fn rearm_demoted_chains(
         "#,
         RETRYABLE_STAMP_MARKER,
         demote_threshold,
-        SLOW_LANE_REARM_BATCH,
+        batch,
         i16::from(SchedulePriority::Slow),
     )
     .fetch_one(pool)
