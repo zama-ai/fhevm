@@ -108,6 +108,12 @@ pub type ConsumedBoundaryGuard =
 pub type OrderedChains = Vec<Chain>;
 
 const MINIMUM_BUCKET_CACHE_SIZE: u16 = 16;
+
+/// Delays, in seconds, between attempts to rebuild the sealed-chain set after
+/// a failed one. Generous and finite: the state converges as soon as the
+/// database is reachable, and if it is still unreachable twenty minutes in,
+/// the listener has a larger problem than fork discharge latency.
+const SEALED_CHAIN_RELOAD_BACKOFF: &[u64] = &[1, 5, 30, 120, 300, 600];
 /// Finalized `host_chain_blocks_valid` rows older than this many blocks
 /// below the finalized head are eligible for pruning (when unreferenced).
 const BLOCKS_VALID_RETENTION: i64 = 10_000;
@@ -293,6 +299,35 @@ impl Database {
         Ok(db)
     }
 
+    /// Insert reconstructed seals so the NEWEST producer ends up
+    /// most-recently used.
+    ///
+    /// The reconstruction query orders most-recent-first, because those are
+    /// the producers live traffic will ask about. `LruCache::put` marks what
+    /// it inserts as most-recently used, so replaying that order directly
+    /// leaves the newest producer as the LEAST-recently used entry — first
+    /// out when the cache is full. A continuation could then extend exactly
+    /// the producer most likely to still be growing, while its child stayed
+    /// gated.
+    ///
+    /// Inserting oldest-first puts recency back the way the query intended:
+    /// the newest producer ends up MRU and is evicted last. Returns how many
+    /// rows were sealed.
+    async fn seal_rows_oldest_first(
+        sealed_chains: &SealedChainGuard,
+        rows_newest_first: Vec<Vec<u8>>,
+    ) -> usize {
+        let mut sealed = sealed_chains.write().await;
+        let mut restored = 0_usize;
+        for row in rows_newest_first.into_iter().rev() {
+            if let Ok(hash) = ChainHash::try_from(row.as_slice()) {
+                sealed.put(hash, ());
+                restored += 1;
+            }
+        }
+        restored
+    }
+
     /// Rebuild the producer seal from durable state.
     ///
     /// `sealed_chains` is process-local, so a restart starts with none. That
@@ -314,13 +349,89 @@ impl Database {
     /// A child that discharges stops sealing its parent, and a retired parent
     /// has its `dependents` pruned, so both leave the set on their own.
     ///
-    /// Best effort: on error the set stays empty, which is the behaviour
-    /// before this reconstruction existed. Bounded by the cache size and
-    /// ordered most-recent-first so the entries kept are the ones live
-    /// traffic will ask about.
+    /// Bounded by the cache size and queried most-recent-first so the
+    /// producers kept are the ones live traffic will ask about — see
+    /// [`Self::seal_rows_oldest_first`] for why the INSERTION runs the other
+    /// way.
+    ///
+    /// A failure here is RETRIED in the background rather than propagated.
+    /// Startup must not be gated on it: the listener is the ingest path, so
+    /// refusing to boot over a transient query error trades a bounded
+    /// discharge delay for a total stall — the worse outcome by a wide
+    /// margin. Retrying keeps the state converging without that trade, and
+    /// the exposure while it converges is limited to forks whose gate was
+    /// armed BEFORE the restart, since `update_dependence_chain` seals every
+    /// parent it newly gates.
     async fn reload_sealed_chains(&self, cache_size: u16) {
         let limit = i64::from(cache_size.max(MINIMUM_BUCKET_CACHE_SIZE));
-        let pool = self.pool.read().await.clone();
+        match Self::try_reload_sealed_chains(
+            &self.pool,
+            &self.sealed_chains,
+            limit,
+        )
+        .await
+        {
+            Ok(restored) => {
+                if restored > 0 {
+                    info!(
+                        restored,
+                        "Rebuilt sealed-chain set from gated dependents"
+                    );
+                }
+            }
+            Err(error) => {
+                warn!(
+                    %error,
+                    "could not rebuild the sealed-chain set; retrying in the \
+                     background. Until it succeeds, a producer gated before \
+                     this restart may be extended while its fork waits."
+                );
+                let pool = self.pool.clone();
+                let sealed_chains = self.sealed_chains.clone();
+                tokio::spawn(async move {
+                    for delay in SEALED_CHAIN_RELOAD_BACKOFF {
+                        tokio::time::sleep(std::time::Duration::from_secs(
+                            *delay,
+                        ))
+                        .await;
+                        match Self::try_reload_sealed_chains(
+                            &pool,
+                            &sealed_chains,
+                            limit,
+                        )
+                        .await
+                        {
+                            Ok(restored) => {
+                                info!(
+                                    restored,
+                                    "Rebuilt sealed-chain set from gated \
+                                     dependents after retry"
+                                );
+                                return;
+                            }
+                            Err(error) => {
+                                warn!(%error, "sealed-chain rebuild retry failed")
+                            }
+                        }
+                    }
+                    error!(
+                        "gave up rebuilding the sealed-chain set; producers \
+                         gated before this restart may be extended while \
+                         their forks wait. Restart the listener to retry."
+                    );
+                });
+            }
+        }
+    }
+
+    /// One attempt at the reconstruction. Separated so the retry loop can run
+    /// it without holding a `&self` across the wait.
+    async fn try_reload_sealed_chains(
+        pool: &Arc<RwLock<sqlx::Pool<Postgres>>>,
+        sealed_chains: &SealedChainGuard,
+        limit: i64,
+    ) -> Result<usize, SqlxError> {
+        let pool = pool.read().await.clone();
         let rows = sqlx::query_scalar!(
             r#"
             SELECT DISTINCT ON (p.last_updated_at, p.dependence_chain_id)
@@ -336,29 +447,8 @@ impl Database {
             limit,
         )
         .fetch_all(&pool)
-        .await;
-        let rows = match rows {
-            Ok(rows) => rows,
-            Err(error) => {
-                warn!(
-                    %error,
-                    "could not rebuild the sealed-chain set; producers may be \
-                     extended while a fork waits on them"
-                );
-                return;
-            }
-        };
-        let mut sealed = self.sealed_chains.write().await;
-        let mut restored = 0_usize;
-        for row in rows {
-            if let Ok(hash) = ChainHash::try_from(row.as_slice()) {
-                sealed.put(hash, ());
-                restored += 1;
-            }
-        }
-        if restored > 0 {
-            info!(restored, "Rebuilt sealed-chain set from gated dependents");
-        }
+        .await?;
+        Ok(Self::seal_rows_oldest_first(sealed_chains, rows).await)
     }
 
     pub(crate) fn record_slow_lane_marked_chains(&self, count: u64) {
@@ -2715,4 +2805,49 @@ where
 /// always-scalar divisor).
 fn fhe_mul_div_factor2_is_scalar(scalar_byte: &ScalarByte) -> bool {
     scalar_byte.0[0] & 0b10 != 0
+}
+
+#[cfg(test)]
+mod sealed_chain_tests {
+    use super::*;
+
+    fn guard(capacity: usize) -> SealedChainGuard {
+        Arc::new(RwLock::new(lru::LruCache::new(
+            std::num::NonZeroUsize::new(capacity).unwrap(),
+        )))
+    }
+
+    fn hash(last: u8) -> ChainHash {
+        ChainHash::from([last; 32])
+    }
+
+    /// The reconstruction query returns newest-first, and `put` marks what it
+    /// inserts as MOST-recently used. Replaying that order directly would
+    /// leave the newest producer LEAST-recently used, so the next distinct
+    /// seal evicts precisely the producer most likely to still be growing —
+    /// letting a continuation extend it while its child stays gated. Recency
+    /// must come out matching the query's intent.
+    #[tokio::test]
+    async fn newest_reconstructed_producer_is_evicted_last() {
+        let sealed = guard(3);
+        // Newest first, as the query returns them.
+        let rows = vec![
+            hash(0xA1).as_slice().to_vec(),
+            hash(0xA2).as_slice().to_vec(),
+            hash(0xA3).as_slice().to_vec(),
+        ];
+        assert_eq!(Database::seal_rows_oldest_first(&sealed, rows).await, 3);
+
+        // A fourth distinct seal must displace the OLDEST, not the newest.
+        sealed.write().await.put(hash(0xA4), ());
+        let sealed = sealed.read().await;
+        assert!(
+            sealed.peek(&hash(0xA1)).is_some(),
+            "the newest reconstructed producer must survive eviction"
+        );
+        assert!(
+            sealed.peek(&hash(0xA3)).is_none(),
+            "the oldest reconstructed producer is the one to drop"
+        );
+    }
 }
