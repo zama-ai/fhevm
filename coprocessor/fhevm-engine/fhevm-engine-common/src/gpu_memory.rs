@@ -12,7 +12,6 @@ use std::{
     time::{Duration, Instant},
 };
 use tfhe::{core_crypto::gpu::get_number_of_gpus, prelude::*, FheUint2, GpuIndex};
-use tokio_util::sync::CancellationToken;
 use tracing::{error, warn};
 
 lazy_static! {
@@ -33,8 +32,6 @@ static RESERVATION_TIMEOUT_COUNTER: LazyLock<IntCounterVec> = LazyLock::new(|| {
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum GpuMemoryReservationError {
-    #[error("GPU memory reservation cancelled for device {gpu_idx} ({amount} bytes)")]
-    Cancelled { gpu_idx: usize, amount: u64 },
     #[error("GPU memory reservation requested unknown device {gpu_idx}")]
     UnknownDevice { gpu_idx: usize },
     #[error("GPU memory reservation accounting overflow on device {gpu_idx}")]
@@ -64,14 +61,12 @@ impl GpuMemoryPool {
         &self,
         amount: u64,
         gpu_idx: usize,
-        cancellation: &CancellationToken,
         max_wait: Duration,
         can_allocate: impl FnMut(u64, usize) -> bool,
     ) -> Result<GpuMemoryReservation<'_>, GpuMemoryReservationError> {
         self.acquire_with_limits(
             amount,
             gpu_idx,
-            cancellation,
             RESERVATION_RETRY_INTERVAL,
             max_wait,
             can_allocate,
@@ -82,7 +77,6 @@ impl GpuMemoryPool {
         &self,
         amount: u64,
         gpu_idx: usize,
-        cancellation: &CancellationToken,
         retry_interval: Duration,
         max_wait: Duration,
         mut can_allocate: impl FnMut(u64, usize) -> bool,
@@ -94,10 +88,6 @@ impl GpuMemoryPool {
         let started_at = Instant::now();
         let mut next_progress_log = RESERVATION_PROGRESS_INTERVAL;
         loop {
-            if cancellation.is_cancelled() {
-                return Err(GpuMemoryReservationError::Cancelled { gpu_idx, amount });
-            }
-
             let previous = counter
                 .fetch_update(Ordering::AcqRel, Ordering::Acquire, |reserved| {
                     reserved.checked_add(amount)
@@ -110,12 +100,6 @@ impl GpuMemoryPool {
                 gpu_idx,
             };
             if can_allocate(total, gpu_idx) {
-                // Close the race where cancellation arrived while CUDA memory
-                // availability was being queried.
-                if cancellation.is_cancelled() {
-                    drop(reservation);
-                    return Err(GpuMemoryReservationError::Cancelled { gpu_idx, amount });
-                }
                 return Ok(reservation);
             }
             drop(reservation);
@@ -157,7 +141,7 @@ impl GpuMemoryPool {
 }
 
 /// Owns one device's reservation accounting. Dropping the guard releases the
-/// reservation on success, ordinary errors, cancellation, and unwinding.
+/// reservation on success, ordinary errors, and unwinding.
 pub struct GpuMemoryReservation<'a> {
     pool: &'a GpuMemoryPool,
     amount: u64,
@@ -185,11 +169,10 @@ impl Drop for GpuMemoryReservation<'_> {
 pub fn reserve_memory_on_gpu(
     amount: u64,
     gpu_idx: usize,
-    cancellation: &CancellationToken,
     max_wait: Duration,
 ) -> Result<GpuMemoryReservation<'static>, GpuMemoryReservationError> {
     GPU_MEMORY_POOL
-        .acquire_with(amount, gpu_idx, cancellation, max_wait, |total, idx| {
+        .acquire_with(amount, gpu_idx, max_wait, |total, idx| {
             check_valid_cuda_malloc(total, GpuIndex::new(idx as u32))
         })
         .inspect_err(|error| {
@@ -2116,20 +2099,19 @@ mod reservation_tests {
     #[test]
     fn reservation_releases_on_success_error_and_drop() {
         let pool = GpuMemoryPool::new(2);
-        let cancellation = CancellationToken::new();
         {
             let _first = pool
-                .acquire_with(11, 0, &cancellation, Duration::from_secs(1), |_, _| true)
+                .acquire_with(11, 0, Duration::from_secs(1), |_, _| true)
                 .expect("first reservation");
             let _second = pool
-                .acquire_with(7, 1, &cancellation, Duration::from_secs(1), |_, _| true)
+                .acquire_with(7, 1, Duration::from_secs(1), |_, _| true)
                 .expect("second reservation");
             assert_eq!(pool.reserved(0), 11);
             assert_eq!(pool.reserved(1), 7);
 
             let operation: Result<(), &'static str> = (|| {
                 let _temporary = pool
-                    .acquire_with(5, 0, &cancellation, Duration::from_secs(1), |_, _| true)
+                    .acquire_with(5, 0, Duration::from_secs(1), |_, _| true)
                     .expect("temporary reservation");
                 Err("operation failed")
             })();
@@ -2143,10 +2125,9 @@ mod reservation_tests {
     #[test]
     fn reservation_releases_during_panic_unwind() {
         let pool = GpuMemoryPool::new(1);
-        let cancellation = CancellationToken::new();
         let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let _reservation = pool
-                .acquire_with(13, 0, &cancellation, Duration::from_secs(1), |_, _| true)
+                .acquire_with(13, 0, Duration::from_secs(1), |_, _| true)
                 .expect("reservation");
             panic!("simulated TFHE panic");
         }));
@@ -2155,60 +2136,9 @@ mod reservation_tests {
     }
 
     #[test]
-    fn waiting_reservation_observes_cancellation_without_leaking() {
-        let pool = GpuMemoryPool::new(1);
-        let cancellation = CancellationToken::new();
-        let cancel_from_probe = cancellation.clone();
-        let mut probes = 0;
-        let result = pool.acquire_with(17, 0, &cancellation, Duration::from_secs(1), |_, _| {
-            probes += 1;
-            cancel_from_probe.cancel();
-            false
-        });
-        let error = match result {
-            Ok(_) => panic!("cancelled reservation must fail"),
-            Err(error) => error,
-        };
-        assert_eq!(probes, 1);
-        assert_eq!(
-            error,
-            GpuMemoryReservationError::Cancelled {
-                gpu_idx: 0,
-                amount: 17
-            }
-        );
-        assert_eq!(pool.reserved(0), 0);
-    }
-
-    #[test]
-    fn cancellation_after_capacity_probe_releases_reservation() {
-        let pool = GpuMemoryPool::new(1);
-        let cancellation = CancellationToken::new();
-        let cancel_from_probe = cancellation.clone();
-        let result = pool.acquire_with(19, 0, &cancellation, Duration::from_secs(1), |_, _| {
-            cancel_from_probe.cancel();
-            true
-        });
-        let error = match result {
-            Ok(_) => panic!("cancellation must win the capacity race"),
-            Err(error) => error,
-        };
-        assert!(matches!(error, GpuMemoryReservationError::Cancelled { .. }));
-        assert_eq!(pool.reserved(0), 0);
-    }
-
-    #[test]
     fn waiting_reservation_times_out_without_leaking() {
         let pool = GpuMemoryPool::new(1);
-        let cancellation = CancellationToken::new();
-        let result = pool.acquire_with_limits(
-            23,
-            0,
-            &cancellation,
-            Duration::ZERO,
-            Duration::ZERO,
-            |_, _| false,
-        );
+        let result = pool.acquire_with_limits(23, 0, Duration::ZERO, Duration::ZERO, |_, _| false);
         let error = match result {
             Ok(_) => panic!("bounded reservation wait must time out"),
             Err(error) => error,
@@ -2237,10 +2167,9 @@ mod reservation_tests {
                 let largest_probe = largest_probe.clone();
                 let successful_guards = successful_guards.clone();
                 scope.spawn(move || {
-                    let cancellation = CancellationToken::new();
                     start.wait();
                     let reservation = pool
-                        .acquire_with(60, 0, &cancellation, Duration::from_secs(1), |total, _| {
+                        .acquire_with(60, 0, Duration::from_secs(1), |total, _| {
                             largest_probe.fetch_max(total, Ordering::AcqRel);
                             total <= 100
                         })

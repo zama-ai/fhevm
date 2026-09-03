@@ -37,9 +37,9 @@ const EVENT_CIPHERTEXT_COMPUTED: &str = "event_ciphertext_computed";
 #[cfg(feature = "gpu")]
 /// Every GPU memory reservation failure is retryable, without limit.
 ///
-/// None of the four variants is a statement about the operands: TimedOut and
-/// Cancelled are pressure and shutdown; UnknownDevice and AccountingOverflow
-/// are deployment and bookkeeping faults. Stamping any of them would make a
+/// None of the three variants is a statement about the operands: TimedOut is
+/// pressure; UnknownDevice and AccountingOverflow are deployment and
+/// bookkeeping faults. Stamping any of them would make a
 /// computation permanently unexecutable — and, through the dead-producer
 /// drain, condemn everything downstream of it — for a condition the inputs
 /// did not cause and that a restart or a quieter device would clear.
@@ -2562,6 +2562,26 @@ WHERE c.transaction_id IN (
           AND (is_error = FALSE
                OR (error_message LIKE '%' || $5 || '%'
                    AND ($6::smallint IS NULL OR error_retry_count < $6)))
+          -- DEMOTION IS TRANSACTION-SCOPED, because selection is. The outer
+          -- query loads every row of a selected transaction, so excluding a
+          -- demoted row here and not its transaction achieves nothing: a
+          -- pending sibling keeps the transaction selectable and drags the
+          -- demoted row back in to be retried, forever. Worse, that sibling
+          -- is never stamped -- it defers on the missing input rather than
+          -- erroring -- so it keeps the chain out of `processed` too, and the
+          -- slow sweep only ever looks at processed chains. Demotion, the
+          -- retirement it enables and the sweep that undoes it were all
+          -- unreachable for this shape.
+          AND NOT EXISTS (
+              SELECT 1
+              FROM computations demoted
+              WHERE demoted.transaction_id = computations.transaction_id
+                AND demoted.is_completed = FALSE
+                AND demoted.is_error = TRUE
+                AND demoted.error_message LIKE '%' || $5 || '%'
+                AND $6::smallint IS NOT NULL
+                AND demoted.error_retry_count >= $6
+          )
           AND is_allowed = TRUE
           AND ($1::bytea[] IS NULL OR dependence_chain_id = ANY($1))
           -- Same lockless-fallback fairness clause as the non-adaptive
@@ -2620,6 +2640,17 @@ WHERE c.transaction_id IN (
         AND (is_error = FALSE
              OR (error_message LIKE '%' || $4 || '%'
                  AND ($5::smallint IS NULL OR error_retry_count < $5)))
+        -- Transaction-scoped, exactly as in the adaptive query above.
+        AND NOT EXISTS (
+            SELECT 1
+            FROM computations demoted
+            WHERE demoted.transaction_id = computations.transaction_id
+              AND demoted.is_completed = FALSE
+              AND demoted.is_error = TRUE
+              AND demoted.error_message LIKE '%' || $4 || '%'
+              AND $5::smallint IS NOT NULL
+              AND demoted.error_retry_count >= $5
+        )
         AND is_allowed = TRUE
         AND ($1::bytea[] IS NULL OR dependence_chain_id = ANY($1))
         -- Lockless fallback fairness: transactions this worker deferred
@@ -3245,10 +3276,6 @@ async fn build_transaction_graph_and_execute<'a>(
             #[cfg(feature = "gpu")]
             gpu_execution_limiter,
             health_check.activity_heartbeat.clone(),
-            // The worker has no per-batch cancellation; the token exists so a
-            // GPU memory reservation wait can be interrupted when one is
-            // introduced, and reservation waits stay bounded by the timeout.
-            tokio_util::sync::CancellationToken::new(),
             gpu_reservation_timeout,
         );
         sched
@@ -3470,17 +3497,11 @@ mod gpu_reservation_error_tests {
 
     #[test]
     fn timeout_and_cancellation_are_retryable() {
-        for reservation_error in [
-            GpuMemoryReservationError::TimedOut {
-                gpu_idx: 0,
-                amount: 1,
-                waited_ms: 10,
-            },
-            GpuMemoryReservationError::Cancelled {
-                gpu_idx: 0,
-                amount: 1,
-            },
-        ] {
+        for reservation_error in [GpuMemoryReservationError::TimedOut {
+            gpu_idx: 0,
+            amount: 1,
+            waited_ms: 10,
+        }] {
             assert!(is_retryable_gpu_reservation_error(
                 &FhevmError::GpuMemoryReservationError(reservation_error)
             ));

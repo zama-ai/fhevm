@@ -1415,6 +1415,245 @@ async fn seed_computation_row(
     .unwrap();
 }
 
+/// `seed_computation_row` with an explicit transaction, so two rows can share
+/// one. The default helper derives the transaction from the output handle,
+/// which puts every row in a transaction of its own.
+#[allow(clippy::too_many_arguments)]
+async fn seed_computation_row_in_transaction(
+    pool: &sqlx::PgPool,
+    dcid: &[u8],
+    output_handle: &[u8],
+    transaction_id: &[u8],
+    is_completed: bool,
+    is_error: bool,
+    error_message: Option<&str>,
+) {
+    sqlx::query(
+        r#"
+        INSERT INTO computations
+            (output_handle, dependencies, fhe_operation, is_scalar,
+             dependence_chain_id, transaction_id, is_allowed, is_completed,
+             is_error, error_message, host_chain_id, operand_boundary_mask)
+        VALUES ($1, '{}', 0, false, $2, $3, true, $4, $5, $6, 1, $7)
+        "#,
+    )
+    .bind(output_handle)
+    .bind(dcid)
+    .bind(transaction_id)
+    .bind(is_completed)
+    .bind(is_error)
+    .bind(error_message)
+    .bind(vec![0_u8; 32])
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+/// Demotion has to be TRANSACTION-scoped, because selection is.
+///
+/// Operation B consumes operation A in the same transaction. A exhausts its
+/// attempts and is demoted; B is still pending and, because it defers on the
+/// missing input rather than erroring, it is never stamped. Row-scoped
+/// demotion made that combination unrecoverable: the window selects
+/// transactions, so B kept the transaction selectable and dragged demoted A
+/// back in to be retried; B's unstamped `is_error = FALSE` kept the chain out
+/// of `processed`; and the slow sweep only looks at processed chains, so the
+/// re-arm that was supposed to bound the whole thing never ran. Demotion, the
+/// retirement it enables, and the sweep were all inert for this shape.
+///
+/// The fix is that a transaction holding a demoted row is not selected and
+/// does not hold its chain open. This test walks the loop it unblocks.
+#[tokio::test]
+#[serial(db)]
+async fn demotion_is_transaction_scoped_so_a_blocked_sibling_cannot_stall_the_chain() {
+    let instance = setup().await;
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(2)
+        .connect(instance.db_url())
+        .await
+        .expect("Failed to connect to the database");
+    let threshold: i16 = 3;
+
+    let stalled_chain = vec![0xB0u8; 32];
+    let control_chain = vec![0xB1u8; 32];
+    // A transaction whose rows span two chains, as a fork-exposed database
+    // can retain them: the demoted row sits in one chain, the pending row of
+    // the same transaction in the other.
+    let foreign_demoted_chain = vec![0xB4u8; 32];
+    let foreign_pending_chain = vec![0xB5u8; 32];
+    let shared_tx = b"tx-shared-a-and-b".to_vec();
+    let control_tx = b"tx-control".to_vec();
+    let split_tx = b"tx-split-across-chains".to_vec();
+    for dcid in [
+        &stalled_chain,
+        &control_chain,
+        &foreign_demoted_chain,
+        &foreign_pending_chain,
+    ] {
+        sqlx::query(
+            "INSERT INTO dependence_chain
+                (dependence_chain_id, status, last_updated_at, block_timestamp, block_height,
+                 schedule_priority, dependency_count, dependents)
+             VALUES ($1, 'updated', NOW(), NOW(), 1, 0, 0, ARRAY[]::bytea[])",
+        )
+        .bind(dcid)
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+
+    // A: retryable stamp, attempts spent -> demoted.
+    seed_computation_row_in_transaction(
+        &pool,
+        &stalled_chain,
+        &handle(0xA0),
+        &shared_tx,
+        false,
+        true,
+        Some("RETRYABLE SchedulerError::ExecutionPanic(sigsegv)"),
+    )
+    .await;
+    sqlx::query("UPDATE computations SET error_retry_count = $1 WHERE output_handle = $2")
+        .bind(threshold)
+        .bind(handle(0xA0))
+        .execute(&pool)
+        .await
+        .unwrap();
+    // B: consumes A, defers on the missing input, never stamped.
+    seed_computation_row_in_transaction(
+        &pool,
+        &stalled_chain,
+        &handle(0xB2),
+        &shared_tx,
+        false,
+        false,
+        None,
+    )
+    .await;
+    // Control: a pending row in a transaction with NO demoted sibling. It must
+    // still hold its chain open, or the scoping is too broad and healthy work
+    // would be retired out from under itself.
+    seed_computation_row_in_transaction(
+        &pool,
+        &control_chain,
+        &handle(0xB3),
+        &control_tx,
+        false,
+        false,
+        None,
+    )
+    .await;
+    // Cross-chain: one chain owns the demoted row, another owns a pending row
+    // of the same transaction.
+    seed_computation_row_in_transaction(
+        &pool,
+        &foreign_demoted_chain,
+        &handle(0xB6),
+        &split_tx,
+        false,
+        true,
+        Some("RETRYABLE SchedulerError::ExecutionPanic(sigsegv)"),
+    )
+    .await;
+    sqlx::query("UPDATE computations SET error_retry_count = $1 WHERE output_handle = $2")
+        .bind(threshold)
+        .bind(handle(0xB6))
+        .execute(&pool)
+        .await
+        .unwrap();
+    seed_computation_row_in_transaction(
+        &pool,
+        &foreign_pending_chain,
+        &handle(0xB7),
+        &split_tx,
+        false,
+        false,
+        None,
+    )
+    .await;
+
+    let mut mgr = LockMngr::new_with_conf(
+        Uuid::new_v4(),
+        pool.clone(),
+        3600,
+        false,
+        None,
+        None,
+        None,
+        threshold,
+    );
+    assert!(!mgr.acquire_next_locks(8).await.unwrap().is_empty());
+    mgr.release_completed_locks().await.unwrap();
+
+    // 1. The stalled chain retires. B is pending and unstamped, but its
+    //    transaction holds a demoted row, so the window will not select it and
+    //    the completion test must not count it either.
+    let (status, worker, _) = chain_state(&pool, &stalled_chain).await;
+    assert_eq!(
+        status, "processed",
+        "a transaction holding a demoted row must not keep its chain open"
+    );
+    assert!(worker.is_none(), "the retired chain is released");
+
+    // 2. The control chain does NOT retire: nothing about it is demoted.
+    let (status, _, _) = chain_state(&pool, &control_chain).await;
+    assert_ne!(
+        status, "processed",
+        "a pending row with no demoted sibling still holds its chain open"
+    );
+
+    // 3. Cross-chain: the completion test is CHAIN-LOCAL, so a chain does not
+    //    retire on a demoted row another chain owns. The sweep re-arms chains
+    //    that OWN the demoted row, and a 'processed' chain is not acquirable,
+    //    so retiring here would strand the pending row until the listener
+    //    happened to refresh that chain with new work.
+    let (status, _, _) = chain_state(&pool, &foreign_pending_chain).await;
+    assert_ne!(
+        status, "processed",
+        "a chain must not retire on a demoted row it does not own: the sweep \
+         would re-arm the other chain and leave this one stranded"
+    );
+    let (status, _, _) = chain_state(&pool, &foreign_demoted_chain).await;
+    assert_eq!(
+        status, "processed",
+        "the chain that OWNS the demoted row still retires, and the sweep \
+         will re-arm it"
+    );
+
+    // 4. Retiring is what lets the sweep see it -- it only looks at processed
+    //    chains -- so the loop closes: re-armed into the slow lane, A's count
+    //    reset, and the transaction selectable again on the next pass.
+    let rearmed = rearm_demoted_chains(&pool, threshold).await.unwrap();
+    assert_eq!(
+        rearmed, 2,
+        "both chains owning a demoted row are re-armed: the stalled one and \
+         the cross-chain owner"
+    );
+
+    let (status, _, dependency_count) = chain_state(&pool, &stalled_chain).await;
+    assert_eq!(status, "updated", "the re-armed chain is acquirable again");
+    assert_eq!(dependency_count, 0);
+    let (retry_count, priority): (i16, i16) = sqlx::query_as(
+        "SELECT c.error_retry_count, dc.schedule_priority
+         FROM computations c
+         JOIN dependence_chain dc ON dc.dependence_chain_id = c.dependence_chain_id
+         WHERE c.output_handle = $1",
+    )
+    .bind(handle(0xA0))
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        retry_count, 0,
+        "the demoted row gets a fresh set of attempts"
+    );
+    assert_eq!(
+        priority,
+        i16::from(SchedulePriority::Slow),
+        "and comes back in the slow lane"
+    );
+}
+
 /// The whole demotion loop, end to end: a row that exhausts its attempts stops
 /// holding its chain open, the chain retires, the sweep re-arms it into the
 /// slow lane with the count reset, and retention does not delete it while the

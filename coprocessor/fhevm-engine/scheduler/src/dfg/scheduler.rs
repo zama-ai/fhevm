@@ -23,7 +23,6 @@ use std::sync::Arc;
 use std::time::Duration;
 use tfhe::ReRandomizationContext;
 use tokio::task::JoinSet;
-use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
 use super::{DFComponentGraph, DFGraph, OpNode};
@@ -91,7 +90,6 @@ pub struct Scheduler<'a> {
     edges: Dag<(), ComponentEdge>,
     /// Observed inside GPU memory reservation waits so a shutting-down
     /// worker does not keep spinning for memory it will never use.
-    cancellation: CancellationToken,
     /// Upper bound on any single GPU memory reservation wait; exceeding it
     /// fails the operation instead of spinning forever while holding
     /// resources.
@@ -120,14 +118,12 @@ impl<'a> Scheduler<'a> {
         #[cfg(feature = "gpu")] csks: Vec<tfhe::CudaServerKey>,
         #[cfg(feature = "gpu")] gpu_execution_limiter: GpuExecutionLimiter,
         activity_heartbeat: HeartBeat,
-        cancellation: CancellationToken,
         gpu_reservation_timeout: Duration,
     ) -> Self {
         let edges = graph.graph.map(|_, _| (), |_, edge| *edge);
         Self {
             graph,
             edges,
-            cancellation,
             gpu_reservation_timeout,
             #[cfg(not(feature = "gpu"))]
             sks,
@@ -261,7 +257,6 @@ impl<'a> Scheduler<'a> {
                 // paces dispatch to the configured stream capacity.
                 #[cfg(feature = "gpu")]
                 let gpu_permit = self.gpu_execution_limiter.acquire(gpu_idx).await?;
-                let cancellation = self.cancellation.clone();
                 let gpu_reservation_timeout = self.gpu_reservation_timeout;
                 let parent_span = tracing::Span::current();
                 let heartbeat = self.activity_heartbeat.clone();
@@ -277,7 +272,6 @@ impl<'a> Scheduler<'a> {
                         gpu_idx,
                         sks,
                         cpk,
-                        &cancellation,
                         gpu_reservation_timeout,
                         heartbeat,
                     );
@@ -335,7 +329,6 @@ impl<'a> Scheduler<'a> {
                     let (sks, cpk, gpu_idx) = self.get_keys(DeviceSelection::RoundRobin)?;
                     #[cfg(feature = "gpu")]
                     let gpu_permit = self.gpu_execution_limiter.acquire(gpu_idx).await?;
-                    let cancellation = self.cancellation.clone();
                     let gpu_reservation_timeout = self.gpu_reservation_timeout;
                     let parent_span = tracing::Span::current();
                     let heartbeat = self.activity_heartbeat.clone();
@@ -351,7 +344,6 @@ impl<'a> Scheduler<'a> {
                             gpu_idx,
                             sks,
                             cpk,
-                            &cancellation,
                             gpu_reservation_timeout,
                             heartbeat,
                         );
@@ -420,7 +412,6 @@ fn execute_partition(
     #[cfg(not(feature = "gpu"))] sks: tfhe::ServerKey,
     #[cfg(feature = "gpu")] sks: tfhe::CudaServerKey,
     cpk: tfhe::CompactPublicKey,
-    cancellation: &CancellationToken,
     gpu_reservation_timeout: Duration,
     activity_heartbeat: HeartBeat,
 ) -> PartitionResult {
@@ -516,7 +507,6 @@ fn execute_partition(
                 gpu_idx,
                 &tid,
                 &cpk,
-                cancellation,
                 gpu_reservation_timeout,
                 &mut boundary_cache,
             );
@@ -660,7 +650,6 @@ fn try_execute_node(
     gpu_idx: usize,
     transaction_id: &Handle,
     cpk: &tfhe::CompactPublicKey,
-    cancellation: &CancellationToken,
     gpu_reservation_timeout: Duration,
     boundary_cache: &mut HashMap<Handle, SupportedFheCiphertexts>,
 ) -> Result<(usize, OpResult)> {
@@ -699,8 +688,7 @@ fn try_execute_node(
                             cct.ct_type,
                             &cct.ct_bytes,
                             gpu_idx,
-                            cancellation,
-                            gpu_reservation_timeout,
+                                            gpu_reservation_timeout,
                         )
                     }),
                 ) {
@@ -768,7 +756,7 @@ fn try_execute_node(
         SchedulerError::SchedulerError
     })?;
 
-    // AssertUnwindSafe: the closure only reads the cancellation token and
+    // AssertUnwindSafe: the closure only reads shared state and
     // owns everything else it touches; a panic cannot leave observable
     // broken state behind.
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -779,7 +767,6 @@ fn try_execute_node(
             gpu_idx,
             transaction_id,
             output_type,
-            cancellation,
             gpu_reservation_timeout,
         )
     }));
@@ -857,7 +844,6 @@ fn run_computation(
     gpu_idx: usize,
     transaction_id: &Handle,
     output_type: i16,
-    cancellation: &CancellationToken,
     gpu_reservation_timeout: Duration,
 ) -> (usize, OpResult) {
     let txn_id_short = telemetry::short_hex_id(transaction_id);
@@ -888,7 +874,6 @@ fn run_computation(
                 &inputs,
                 gpu_idx,
                 output_type,
-                cancellation,
                 gpu_reservation_timeout,
             );
 
