@@ -315,7 +315,7 @@
       "memberOf": "./hardhat/v3",
       "publishedRelPath": "./hardhat/v3/plugin/pkg",
       "dependencyGroup": "hardhat/v3",
-      "note": "Dev owner of the hardhat v3 plugin — hello-world skeleton until the migration lands. Declares no `version`, which the version rule says should be 0.0.0."
+      "note": "Dev owner of the hardhat v3 plugin (lint, tests, consumer fixture, packaging checks). Declares no `version`, which the version rule says should be 0.0.0."
     },
     "./hardhat/v3/plugin/pkg": {
       "kind": "published",
