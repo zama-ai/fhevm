@@ -124,15 +124,6 @@ export type PublicDecryptResults = {
   decryptionProof: Hex;
 };
 
-export type KmsUserDecryptEIP712Type = {
-  domain: Record<string, unknown>;
-  types: Record<string, unknown>;
-  message: Record<string, unknown>;
-  primaryType: string;
-};
-
-export type KmsDelegatedUserDecryptEIP712Type = KmsUserDecryptEIP712Type;
-
 /** The three addresses `FHE.setCoprocessor` records in a consumer contract. */
 export type CoprocessorConfig = {
   ACLAddress: Address;
@@ -236,20 +227,6 @@ export interface HardhatFhevmRuntimeEnvironment {
     contractAddress: Address,
     userAddress: Address,
   ): Promise<{ externalEaddress: Hex; inputProof: Hex }>;
-
-  createEIP712(
-    publicKey: Hex,
-    contractAddresses: Address[],
-    startTimestamp: number | bigint,
-    durationDays: number | bigint,
-  ): KmsUserDecryptEIP712Type;
-  createDelegatedUserDecryptEIP712(
-    publicKey: Hex,
-    contractAddresses: Address[],
-    delegatorAddress: Address,
-    startTimestamp: number | bigint,
-    durationDays: number | bigint,
-  ): KmsDelegatedUserDecryptEIP712Type;
 
   publicDecrypt(handles: Array<Hex | Uint8Array>): Promise<PublicDecryptResults>;
   publicDecryptEbool(handleBytes32: Hex): Promise<boolean>;

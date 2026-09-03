@@ -18,8 +18,6 @@ const SYNC_STUBS = [
   'parseCoprocessorEvents',
   'computeTransactionHCU',
   'revertedWithCustomErrorArgs',
-  'createEIP712',
-  'createDelegatedUserDecryptEIP712',
 ] as const;
 
 const ASYNC_STUBS = [

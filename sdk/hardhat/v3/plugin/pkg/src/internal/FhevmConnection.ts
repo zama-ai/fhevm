@@ -144,14 +144,6 @@ class FhevmRuntimeEnvironment implements HardhatFhevmRuntimeEnvironment {
     return { externalEaddress: handle, inputProof };
   }
 
-  createEIP712(): never {
-    return notImplemented('createEIP712');
-  }
-
-  createDelegatedUserDecryptEIP712(): never {
-    return notImplemented('createDelegatedUserDecryptEIP712');
-  }
-
   publicDecrypt(handles: Array<Hex | Uint8Array>): Promise<PublicDecryptResults> {
     return publicDecrypt(this.client, handles);
   }
