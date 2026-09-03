@@ -1,6 +1,6 @@
 # Porting the FHEVM hardhat plugin from hardhat v2 to hardhat v3
 
-Version: **1.31** (2026-09-03). Bump the minor for a content change to the plan, the major for a
+Version: **1.32** (2026-09-03). Bump the minor for a content change to the plan, the major for a
 change of charter or stage order; record each bump below.
 
 - 1.0 — initial plan, from the hardhat 3 docs.
@@ -49,8 +49,9 @@ change of charter or stage order; record each bump below.
   `createDecryptionSignatures`/`createHandleCoder` dropped. The public surface is complete: Stage D done.
 - 1.31 — E1 landed (`fhevm public-decrypt` and `fhevm user-decrypt`, positional required inputs); the
   skeleton's `hello` task retired.
+- 1.32 — E2 landed (`fhevm check-fhevm-compatibility <address>` over the D5b methods).
 
-Status: **in progress — Stages A, B, C, D and E1 complete. Next: E2.** The landing zone exists: the
+Status: **in progress — Stages A, B, C, D, E1 and E2 complete. Next: E3.** The landing zone exists: the
 `hardhat/v3` cluster (own installation root, hardhat 3.15 pinned), the plugin registered via
 `definePlugin` with its per-connection `fhevm` object and the pre-serve chain preparation proven,
 and the `hardhat/v3/e2e` member with the first counter test.
@@ -782,7 +783,13 @@ this later without API change). One commit per group, tests run against the B1 s
     node (`eth_signTypedData_v4`) — no private key ever reaches the plugin. e2e
     `internal/FHECounterTasks.ts` runs both tasks through `tasks.getTask([...]).run()` against the
     counters. Commit: `feat(hh-v3-plugin): add the fhevm user-decrypt task`
-- **E2.** `["fhevm", "check-fhevm-compatibility"]`. Test likewise.
+- **E2 — LANDED.** `task(['fhevm', 'check-fhevm-compatibility'])`, positional `address`; action
+  `tasks/checkFhevmCompatibility.ts` over the D5b surface: `getCoprocessorConfig` (all-zero + no code
+  → "not a deployed contract"), then `assertCoprocessorInitialized` (uninitialized / mismatch, with the
+  found configuration printed on stderr), success prints and returns the configuration. Plain text —
+  v2's picocolors would be a new dependency for two colours. Plugin test drives all four outcomes with
+  `hardhat_setCode` + `hardhat_setStorageAt`; e2e runs it on the counter and on an empty address.
+  Was: `["fhevm", "check-fhevm-compatibility"]`, test likewise.
   Commit: `feat(hh-v3-plugin): add fhevm check-fhevm-compatibility task`
 - **E3.** Builtin overrides that SURVIVE the delete-bucket triage. Confirmed dead: `test`,
   compile remappings, source paths, coverage. Candidates: `clean` (only if the plugin owns a cache
