@@ -88,8 +88,6 @@ enum DeviceSelection {
 pub struct Scheduler<'a> {
     graph: &'a mut DFComponentGraph,
     edges: Dag<(), ComponentEdge>,
-    /// Observed inside GPU memory reservation waits so a shutting-down
-    /// worker does not keep spinning for memory it will never use.
     /// Upper bound on any single GPU memory reservation wait; exceeding it
     /// fails the operation instead of spinning forever while holding
     /// resources.
