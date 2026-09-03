@@ -15,7 +15,7 @@ import type { HardhatPlugin } from 'hardhat/types/plugins';
 
 const plugin: HardhatPlugin = definePlugin({
   id: 'fhevm',
-  npmPackage: '@fhevm/hardhat-plugin',
+  npmPackage: '@fhevm/hardhat-plugin-v3',
   hookHandlers: {
     network: () => import('./internal/hooks/network.js'),
   },

@@ -26,7 +26,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@fhevm/hardhat-plugin": "0.1.0",
+    "@fhevm/hardhat-plugin-v3": "0.13.0",
     "@fhevm/solidity": "0.13.3",
     "@nomicfoundation/hardhat-ethers": "4.0.15",
     "@nomicfoundation/hardhat-ethers-chai-matchers": "3.0.11",

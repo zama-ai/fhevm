@@ -1,4 +1,4 @@
-import fhevmPlugin from '@fhevm/hardhat-plugin';
+import fhevmPlugin from '@fhevm/hardhat-plugin-v3';
 import hardhatEthers from '@nomicfoundation/hardhat-ethers';
 import hardhatEthersChaiMatchers from '@nomicfoundation/hardhat-ethers-chai-matchers';
 import hardhatMocha from '@nomicfoundation/hardhat-mocha';

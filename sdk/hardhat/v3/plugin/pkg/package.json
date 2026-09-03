@@ -1,6 +1,6 @@
 {
-  "name": "@fhevm/hardhat-plugin",
-  "version": "0.1.0",
+  "name": "@fhevm/hardhat-plugin-v3",
+  "version": "0.13.0",
   "description": "FHEVM plugin for Hardhat 3: a cleartext FHEVM stack on every development connection, encryption, public and user decryption, error diagnostics, HCU accounting and the fhevm tasks.",
   "license": "BSD-3-Clause-Clear",
   "type": "module",

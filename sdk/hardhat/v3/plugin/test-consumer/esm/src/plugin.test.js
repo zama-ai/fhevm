@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import plugin, { FhevmType, getHCU } from '@fhevm/hardhat-plugin';
+import plugin, { FhevmType, getHCU } from '@fhevm/hardhat-plugin-v3';
 import { createHardhatRuntimeEnvironment } from 'hardhat/hre';
 import { createPublicClient, custom, encodeFunctionData, isHex, size } from 'viem';
 
