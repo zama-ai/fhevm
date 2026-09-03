@@ -1,0 +1,14 @@
+{
+  "//": "Harness tests, checked against the BUILT payload (pkg/_esm) like a consumer would see it.",
+  "extends": "../../../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "rootDir": "..",
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "types": ["node"],
+    "module": "nodenext",
+    "moduleResolution": "nodenext"
+  },
+  "include": ["./**/*.ts"]
+}
