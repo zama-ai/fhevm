@@ -337,11 +337,8 @@ export interface HardhatFhevmRuntimeEnvironment {
   ): Promise<Address>;
 }
 
+/** Reads cleartexts off the cleartext stack with NO ACL check — test tooling, cleartext networks only. */
 export interface HardhatFhevmRuntimeDebugger {
-  createDecryptionSignatures(
-    handlesBytes32Hex: Hex[],
-    clearTextValues: Array<bigint | string | boolean>,
-  ): Promise<Hex[]>;
   decryptEbool(handleBytes32: Hex): Promise<boolean>;
   decryptEuint(fhevmType: FhevmTypeEuint, handleBytes32: Hex): Promise<bigint>;
   decryptEaddress(handleBytes32: Hex): Promise<Address>;

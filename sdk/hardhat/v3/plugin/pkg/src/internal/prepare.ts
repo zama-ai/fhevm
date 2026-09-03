@@ -11,16 +11,23 @@ import type { Deployed } from '@fhevm/host-contracts-cleartext/ts';
 import type { NetworkConnection } from 'hardhat/types/network';
 
 import type { FhevmNetworkInfo } from '../types.js';
-import { deployCleartextStack } from './deploy.js';
+import { deployCleartextStack, isCleartextStackDeployed } from './deploy.js';
 import { isDevelopmentNetwork } from './network.js';
 import { verifyCleartextStack } from './verify.js';
+
+export type PreparedStack = {
+  readonly stack: Deployed;
+  /** The chain already held the stack (an `http` node deployed earlier); nothing was sent. */
+  readonly reused: boolean;
+};
 
 export async function prepareDevelopmentChain(
   connection: NetworkConnection<string>,
   network: FhevmNetworkInfo,
-): Promise<Deployed | undefined> {
+): Promise<PreparedStack | undefined> {
   if (!isDevelopmentNetwork(network)) return undefined;
-  const deployed = await deployCleartextStack(connection.provider);
-  await verifyCleartextStack(connection.provider, deployed);
-  return deployed;
+  const reused = await isCleartextStackDeployed(connection.provider);
+  const stack = await deployCleartextStack(connection.provider);
+  await verifyCleartextStack(connection.provider, stack);
+  return { stack, reused };
 }

@@ -20,6 +20,7 @@ import { createSdkClient } from '../client.js';
 import type { FhevmContractsRepository } from '../contracts.js';
 import { createFhevmConnection } from '../FhevmConnection.js';
 import { resolveFhevmNetwork } from '../network.js';
+import { formatStackBanner, nodeBannerLevel } from '../nodeBanner.js';
 import { prepareDevelopmentChain } from '../prepare.js';
 import { createRepository } from '../repository.js';
 import { handleRequest } from '../requests.js';
@@ -37,8 +38,15 @@ export default (): Promise<Partial<NetworkHooks>> => {
     ): Promise<NetworkConnection<ChainTypeT>> {
       const connection = await next(context);
       const network = await resolveFhevmNetwork(connection);
-      const stack = await prepareDevelopmentChain(connection, network);
-      if (stack !== undefined) stackByConnection.set(connection, stack);
+      const prepared = await prepareDevelopmentChain(connection, network);
+      const stack = prepared?.stack;
+      if (prepared !== undefined) {
+        stackByConnection.set(connection, prepared.stack);
+        const banner = nodeBannerLevel();
+        if (banner !== 'none') {
+          console.log(formatStackBanner(network, prepared.stack, prepared.reused, banner === 'detailed'));
+        }
+      }
       const repository = await createRepository(connection, stack);
       if (repository !== undefined) repositoryByConnection.set(connection, repository);
       const client = await createSdkClient(connection, network, stack);

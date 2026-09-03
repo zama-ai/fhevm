@@ -1,7 +1,7 @@
 // The per-connection fhevm object — hardhat 3 scopes networks to CONNECTIONS, so fhevm state lives on
-// each one (v2 had a per-process singleton). It implements the public surface in ../types.ts; the
-// network facts are real, and every method not ported yet throws a named not-implemented error so a
-// test reaches for a missing group by name instead of by a TypeError.
+// each one (v2 had a per-process singleton). It implements the public surface in ../types.ts over the
+// SDK client and the contracts repository of a development connection; on any other network the
+// members that need them fail by name.
 
 import { HardhatPluginError } from 'hardhat/plugins';
 import type { Abi, Address, Hex } from 'viem';
@@ -34,6 +34,7 @@ import { assertCoprocessorInitialized, readCoprocessorConfig, resolveAddress } f
 import { asAddress, asBigInt, asBoolean, publicDecrypt, publicDecryptOne } from './decrypt.js';
 import { createEncryptedInput, encryptOne } from './encrypt.js';
 import { parseCoprocessorEvents } from './events.js';
+import { createDebugger } from './debugger.js';
 import { createErrorInterface } from './errors/interface.js';
 import { parseFhevmHandle } from './fhevmHandle.js';
 import { computeTransactionHCU } from './hcu/hcu.js';
@@ -42,14 +43,6 @@ import { isFhevmEuint } from './fheType.js';
 import { type LogOutput, logBox } from './log.js';
 import { isCleartextNetwork, isDevelopmentNetwork } from './network.js';
 import { userDecryptOne } from './userDecrypt.js';
-
-function notImplementedError(member: string): HardhatPluginError {
-  return new HardhatPluginError(PLUGIN_ID, `fhevm.${member} is not implemented yet in the hardhat 3 plugin.`);
-}
-
-function notImplemented(member: string): never {
-  throw notImplementedError(member);
-}
 
 class FhevmRuntimeEnvironment implements HardhatFhevmRuntimeEnvironment {
   readonly network: FhevmNetworkInfo;
@@ -84,7 +77,7 @@ class FhevmRuntimeEnvironment implements HardhatFhevmRuntimeEnvironment {
   }
 
   get debugger(): HardhatFhevmRuntimeDebugger {
-    return notImplemented('debugger');
+    return createDebugger(this.#contracts, this.network);
   }
 
   get client(): FhevmClient {
