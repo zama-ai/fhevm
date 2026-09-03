@@ -61,9 +61,9 @@ This is NOT working:
     SenderNotAllowed: {
       title: "FHEVM ACL permission error 'SenderNotAllowed()'",
       shortMessage:
-        'The contract or account at address %address% attempted to call FHE.allow(<some-handle>, ...) or a related function like FHE.allowXXX(<some-handle>, ...) to grant FHE access permissions on <some-handle>, without having the necessary access permissions themselves.',
+        'The contract or account at address %sender% attempted to call FHE.allow(<some-handle>, ...) or a related function like FHE.allowXXX(<some-handle>, ...) to grant FHE access permissions on <some-handle>, without having the necessary access permissions themselves.',
       longMessage:
-        'The contract or account at address %address% attempted to call FHE.allow(<some-handle>, ...) or a related function like FHE.allowXXX(<some-handle>, ...) to grant FHE access permissions on <some-handle>, without having the necessary access permissions themselves.',
+        'The contract or account at address %sender% attempted to call FHE.allow(<some-handle>, ...) or a related function like FHE.allowXXX(<some-handle>, ...) to grant FHE access permissions on <some-handle>, without having the necessary access permissions themselves.',
     },
   },
 
@@ -107,6 +107,11 @@ function stringifyTemplateValue(value: unknown): string {
   } catch {
     return '[unserializable]';
   }
+}
+
+/** True when `text` still carries a `%name%` tag. */
+export function hasTemplateTag(text: string): boolean {
+  return TEMPLATE_VARIABLE_TAG.test(text);
 }
 
 /** Fills every `%name%` tag of `template` from `values`; a template with tags and no values is a bug. */

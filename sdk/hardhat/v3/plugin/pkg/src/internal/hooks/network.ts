@@ -17,14 +17,18 @@ import type { ChainType, NetworkConnection } from 'hardhat/types/network';
 import type { JsonRpcRequest, JsonRpcResponse } from 'hardhat/types/providers';
 
 import { createSdkClient } from '../client.js';
+import type { FhevmContractsRepository } from '../contracts.js';
 import { createFhevmConnection } from '../FhevmConnection.js';
 import { resolveFhevmNetwork } from '../network.js';
 import { prepareDevelopmentChain } from '../prepare.js';
+import { createRepository } from '../repository.js';
 import { handleRequest } from '../requests.js';
 
 export default (): Promise<Partial<NetworkHooks>> => {
   // The stack each development connection runs against; absent for public networks.
   const stackByConnection = new WeakMap<NetworkConnection<ChainType | string>, Deployed>();
+  // Its contracts by ABI, for revert decoding in `onRequest`.
+  const repositoryByConnection = new WeakMap<NetworkConnection<ChainType | string>, FhevmContractsRepository>();
 
   return Promise.resolve({
     async newConnection<ChainTypeT extends ChainType | string>(
@@ -35,6 +39,8 @@ export default (): Promise<Partial<NetworkHooks>> => {
       const network = await resolveFhevmNetwork(connection);
       const stack = await prepareDevelopmentChain(connection, network);
       if (stack !== undefined) stackByConnection.set(connection, stack);
+      const repository = await createRepository(connection, stack);
+      if (repository !== undefined) repositoryByConnection.set(connection, repository);
       const client = await createSdkClient(connection, network, stack);
       connection.fhevm = createFhevmConnection(network, client);
       return connection;
@@ -50,7 +56,11 @@ export default (): Promise<Partial<NetworkHooks>> => {
         nextRequest: JsonRpcRequest,
       ) => Promise<JsonRpcResponse>,
     ): Promise<JsonRpcResponse> {
-      return handleRequest(request, (forwarded) => next(context, connection, forwarded));
+      return handleRequest(
+        request,
+        (forwarded) => next(context, connection, forwarded),
+        repositoryByConnection.get(connection),
+      );
     },
 
     async closeConnection<ChainTypeT extends ChainType | string>(
@@ -59,6 +69,7 @@ export default (): Promise<Partial<NetworkHooks>> => {
       next: (nextContext: HookContext, nextConnection: NetworkConnection<ChainTypeT>) => Promise<void>,
     ): Promise<void> {
       stackByConnection.delete(connection);
+      repositoryByConnection.delete(connection);
       await next(context, connection);
     },
   });
