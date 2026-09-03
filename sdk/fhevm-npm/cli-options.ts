@@ -32,6 +32,7 @@ export type CliOptions = {
     | 'check-vendored-origin'
     | 'clean-forge-dependencies'
     | 'sh-completion'
+    | 'generate-chain-constants'
     | 'generate-cleartext-config'
     | 'generate-exports'
     | 'install-forge-dependencies'
@@ -54,6 +55,7 @@ export type CliOptions = {
       readonly shell: CompletionShell;
       readonly commands: readonly CompletionCommand[];
     }
+  | { readonly command: 'generate-chain-constants'; readonly check: boolean }
   | { readonly command: 'generate-cleartext-config'; readonly check: boolean }
   | { readonly command: 'generate-exports'; readonly exportManifestFile: string; readonly check: boolean }
   | { readonly command: 'install-forge-dependencies'; readonly packageSelector?: string }
@@ -119,6 +121,7 @@ export function parseCliOptions(argv: readonly string[]): CliOptions {
   let selected: CommandName | undefined;
   let generateExports: { readonly exportManifestFile: string; readonly check: boolean } | undefined;
   let generateCleartextConfig: { readonly check: boolean } | undefined;
+  let generateChainConstants: { readonly check: boolean } | undefined;
   let completion: { readonly shell: CompletionShell; readonly commands: readonly CompletionCommand[] } | undefined;
   let sortPackageJson = false;
   let vendoredPackageSelector: string | undefined;
@@ -346,6 +349,16 @@ Why:
       generateCleartextConfig = { check: options.check };
     });
   program
+    .command('generate-chain-constants')
+    .description(
+      'Render sdk/fhevm-chains.config.json into its TypeScript face, common-vendored/src/fhevm-chains.ts: every ' +
+        'deployed host-contract and gateway address by network group (sync-vendored copies it to the packages that carry one).',
+    )
+    .option('--check', 'compare the face against the JSON instead of writing it', false)
+    .action((options: { readonly check: boolean }) => {
+      generateChainConstants = { check: options.check };
+    });
+  program
     .command('sync-vendored')
     .description(
       'Write every vendored destination from its source of truth: the shared TypeScript from ' +
@@ -358,8 +371,8 @@ Why:
   program
     .command('sync-fhevm-chains')
     .description(
-      'Write fhevm-chains.config.json — every fhevm host-contract and gateway address on mainnet and ' +
-        "testnet — from the protocol registry at a pinned commit (default: the file's recorded pin).",
+      'Write fhevm-chains.config.json — every fhevm host-contract and gateway address, one section per ' +
+        "network group of fhevm-network-groups.config.json — from the protocol registry at a pinned commit (default: the file's recorded pin).",
     )
     .option('--latest', "pin to the registry's current HEAD", false)
     .option('--commit <sha>', 'pin to an explicit registry commit (full 40-hex sha)')
@@ -460,6 +473,7 @@ Why:
     syncVendored === undefined &&
     generateExports === undefined &&
     generateCleartextConfig === undefined &&
+    generateChainConstants === undefined &&
     completion === undefined &&
     syncFhevmChains === undefined &&
     !checkFhevmChainsOrigin
@@ -516,6 +530,16 @@ Why:
       verbosity: options.verbose,
       sortPackageJson: false,
       ...generateCleartextConfig,
+    };
+  }
+  if (generateChainConstants !== undefined) {
+    return {
+      command: 'generate-chain-constants',
+      workspaceRoot,
+      manifestFile: resolve(workspaceRoot, 'npm-manifest.json'),
+      verbosity: options.verbose,
+      sortPackageJson: false,
+      ...generateChainConstants,
     };
   }
   if (generateExports !== undefined) {

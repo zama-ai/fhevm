@@ -23,6 +23,7 @@ import { checkFhevmChainsOrigin } from './commands/check-fhevm-chains-origin.ts'
 import { checkVendoredOrigin } from './commands/check-vendored-origin.ts';
 import { syncFhevmChains } from './commands/sync-fhevm-chains.ts';
 import { checkWorkspaces } from './commands/check-workspaces.ts';
+import { generateChainConstantsCommand } from './commands/generate-chain-constants.ts';
 import { generateCleartextConfigCommand } from './commands/generate-cleartext-config.ts';
 import { generateExportsCommand } from './commands/generate-exports.ts';
 import { cleanForgeDependencies } from './commands/clean-forge-dependencies.ts';
@@ -63,6 +64,10 @@ async function main(): Promise<void> {
   // Also manifest-free: it reads sdk/cleartext-config.json and writes the faces generated from it.
   if (options.command === 'generate-cleartext-config') {
     generateCleartextConfigCommand({ workspaceRoot: options.workspaceRoot, check: options.check });
+    return;
+  }
+  if (options.command === 'generate-chain-constants') {
+    generateChainConstantsCommand({ workspaceRoot: options.workspaceRoot, check: options.check });
     return;
   }
   // Both are manifest-free: they speak to the protocol registry and the workspace-root chains file.

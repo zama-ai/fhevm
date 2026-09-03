@@ -4,10 +4,28 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { type RegistryReader, chainsConfigPath, renderChainsConfig } from '../base/fhevm-chains.ts';
+import {
+  NETWORK_GROUPS_CONFIG_FILE,
+  type RegistryReader,
+  chainsConfigPath,
+  renderChainsConfig,
+} from '../base/fhevm-chains.ts';
 import { checkFhevmChainsOrigin } from '../commands/check-fhevm-chains-origin.ts';
 
 const PIN = 'a'.repeat(40);
+
+const GROUPS = {
+  mainnet: { registryFile: 'dist/mainnet.json', relayerUrl: 'https://relayer.mainnet.example' },
+  testnet: { registryFile: 'dist/testnet.json', relayerUrl: 'https://relayer.testnet.example' },
+  devnet: { registryFile: 'dist/devnet.json', relayerUrl: 'https://relayer.devnet.example' },
+};
+
+// A workspace holding the groups file the renderer reads its relayers and registry files from.
+function makeWorkspace(): string {
+  const workspace = mkdtempSync(join(tmpdir(), 'fhevm-npm-chains-'));
+  writeFileSync(join(workspace, NETWORK_GROUPS_CONFIG_FILE), JSON.stringify({ groups: GROUPS }));
+  return workspace;
+}
 const ADDR = (last: string): string => `0x${'1'.repeat(39)}${last}`;
 
 function registry(overrides?: { dropContract?: string; moveChain?: string }): string {
@@ -47,7 +65,7 @@ function registry(overrides?: { dropContract?: string; moveChain?: string }): st
 function fakeReader(text: string, head: string = PIN): RegistryReader {
   return {
     fetchFile: (path, ref) => {
-      assert.match(path, /^dist\/(mainnet|testnet)\.json$/);
+      assert.match(path, /^dist\/(mainnet|testnet|devnet)\.json$/);
       assert.equal(ref, head, 'the check must fetch at the registry HEAD');
       return text;
     },
@@ -55,18 +73,19 @@ function fakeReader(text: string, head: string = PIN): RegistryReader {
   };
 }
 
-test('renders both networks: discovered hosts, complete gateway set, pinned source header', async () => {
-  const workspace = mkdtempSync(join(tmpdir(), 'fhevm-npm-chains-'));
+test('renders every network group: discovered hosts, complete gateway set, pinned source header', async () => {
+  const workspace = makeWorkspace();
   try {
     const text = await renderChainsConfig(workspace, fakeReader(registry()), PIN);
     const parsed = JSON.parse(text) as {
-      source: { commit: string };
+      source: { commit: string; files: string[] };
       networks: Record<string, { relayerUrl: string; gateway: { id: number }; hosts: Record<string, unknown> }>;
     };
     assert.equal(parsed.source.commit, PIN);
-    assert.deepEqual(Object.keys(parsed.networks), ['mainnet', 'testnet']);
-    assert.equal(parsed.networks['mainnet']?.relayerUrl, 'https://relayer.mainnet.zama.org');
-    assert.equal(parsed.networks['testnet']?.relayerUrl, 'https://relayer.testnet.zama.org');
+    assert.deepEqual(Object.keys(parsed.networks), ['mainnet', 'testnet', 'devnet']);
+    assert.equal(parsed.networks['mainnet']?.relayerUrl, 'https://relayer.mainnet.example');
+    assert.equal(parsed.networks['devnet']?.relayerUrl, 'https://relayer.devnet.example');
+    assert.deepEqual(parsed.source.files, ['dist/mainnet.json', 'dist/testnet.json', 'dist/devnet.json']);
     assert.equal(parsed.networks['mainnet']?.gateway.id, 261131);
     assert.deepEqual(Object.keys(parsed.networks['mainnet']?.hosts ?? {}), ['ethereum', 'poly']);
 
@@ -79,7 +98,7 @@ test('renders both networks: discovered hosts, complete gateway set, pinned sour
 });
 
 test('refuses a registry missing a required contract, or one on the wrong chain', async () => {
-  const workspace = mkdtempSync(join(tmpdir(), 'fhevm-npm-chains-'));
+  const workspace = makeWorkspace();
   try {
     await assert.rejects(
       renderChainsConfig(workspace, fakeReader(registry({ dropContract: 'POLY_KMS_VERIFIER' })), PIN),
@@ -95,7 +114,7 @@ test('refuses a registry missing a required contract, or one on the wrong chain'
 });
 
 test('check-fhevm-chains-origin: missing file, current file, tampered file', async () => {
-  const workspace = mkdtempSync(join(tmpdir(), 'fhevm-npm-chains-'));
+  const workspace = makeWorkspace();
   const reader = fakeReader(registry());
   try {
     const missing = await checkFhevmChainsOrigin({ workspaceRoot: workspace, reader });
@@ -114,7 +133,7 @@ test('check-fhevm-chains-origin: missing file, current file, tampered file', asy
 });
 
 test('check-fhevm-chains-origin follows the registry HEAD: address drift is red, unrelated commits stay green', async () => {
-  const workspace = mkdtempSync(join(tmpdir(), 'fhevm-npm-chains-'));
+  const workspace = makeWorkspace();
   const head = 'b'.repeat(40);
   try {
     // Synced at PIN, registry moved to `head` with the SAME addresses: current, and the pin may stay old.
@@ -129,5 +148,23 @@ test('check-fhevm-chains-origin follows the registry HEAD: address drift is red,
     assert.match(drifted.violations[0]?.message ?? '', /sync-fhevm-chains --latest/);
   } finally {
     rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test('the groups file is validated: unknown group, missing group, bad registry file, bad relayer', async () => {
+  const cases: ReadonlyArray<[Record<string, unknown>, RegExp]> = [
+    [{ ...GROUPS, staging: GROUPS.devnet }, /groups\.staging: unknown group/],
+    [{ mainnet: GROUPS.mainnet, testnet: GROUPS.testnet }, /groups: missing group 'devnet'/],
+    [{ ...GROUPS, devnet: { ...GROUPS.devnet, registryFile: 'devnet.json' } }, /groups\.devnet\.registryFile/],
+    [{ ...GROUPS, devnet: { ...GROUPS.devnet, relayerUrl: 'relayer' } }, /groups\.devnet\.relayerUrl/],
+  ];
+  for (const [groups, expected] of cases) {
+    const workspace = mkdtempSync(join(tmpdir(), 'fhevm-npm-chains-'));
+    try {
+      writeFileSync(join(workspace, NETWORK_GROUPS_CONFIG_FILE), JSON.stringify({ groups }));
+      await assert.rejects(renderChainsConfig(workspace, fakeReader(registry()), PIN), expected);
+    } finally {
+      rmSync(workspace, { recursive: true, force: true });
+    }
   }
 });
