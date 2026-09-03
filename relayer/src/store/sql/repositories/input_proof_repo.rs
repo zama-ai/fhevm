@@ -753,12 +753,22 @@ impl InputProofRepository {
         &self,
         epoch: i64,
         max_attempts: i32,
+        batch: i64,
     ) -> SqlResult<Vec<(Vec<u8>, Value, ReqStatus, i32)>> {
         let mut conn = self.pool.get_cron_connection().await?;
 
         let query_start = Instant::now();
         let result = sqlx::query!(
             r#"
+            WITH claimed AS (
+                SELECT id
+                FROM input_proof_req
+                WHERE req_status IN ('queued'::req_status, 'processing'::req_status, 'tx_in_flight'::req_status)
+                  AND attempts < $2
+                  AND owner_epoch < $1
+                LIMIT $3
+                FOR UPDATE SKIP LOCKED
+            )
             UPDATE input_proof_req
             SET owner_epoch = $1,
                 attempts = attempts + 1,
@@ -766,13 +776,13 @@ impl InputProofRepository {
                     WHEN req_status = 'tx_in_flight'::req_status THEN 'processing'::req_status
                     ELSE req_status
                 END
-            WHERE req_status IN ('queued'::req_status, 'processing'::req_status, 'tx_in_flight'::req_status)
-              AND attempts < $2
-              AND owner_epoch < $1
-            RETURNING int_job_id, req, req_status as "req_status!: ReqStatus", attempts
+            FROM claimed
+            WHERE input_proof_req.id = claimed.id
+            RETURNING input_proof_req.int_job_id, input_proof_req.req, input_proof_req.req_status as "req_status!: ReqStatus", input_proof_req.attempts
             "#,
             epoch,
             max_attempts,
+            batch,
         )
         .fetch_all(&mut *conn)
         .await;

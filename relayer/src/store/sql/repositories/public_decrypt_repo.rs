@@ -838,6 +838,11 @@ impl PublicDecryptRepository {
     /// and incrementing `attempts` in the same statement that selects them. Only rows the
     /// UPDATE touched come back, so a row a concurrent claimer took is never dispatched here.
     ///
+    /// `batch` bounds one statement rather than the work: what it leaves behind keeps an older
+    /// epoch and so is claimable on the next tick (see `sweep::CLAIM_BATCH`).
+    /// `SKIP LOCKED` passes over a row an app write holds, leaving it for the next tick rather
+    /// than blocking the sweep behind it.
+    ///
     /// Eligibility is ownership alone, with no time term: `attempts < max_attempts` (see
     /// [`Self::fail_exhausted_attempts`]) and `owner_epoch < $epoch`. A strictly older epoch
     /// is a dead predecessor - epochs are minted only on acquisition and are monotonic
@@ -864,12 +869,22 @@ impl PublicDecryptRepository {
         &self,
         epoch: i64,
         max_attempts: i32,
+        batch: i64,
     ) -> SqlResult<Vec<(Vec<u8>, Value, ReqStatus, i32)>> {
         let mut conn = self.pool.get_cron_connection().await?;
 
         let query_start = Instant::now();
         let result = sqlx::query!(
             r#"
+            WITH claimed AS (
+                SELECT id
+                FROM public_decrypt_req
+                WHERE req_status IN ('queued'::req_status, 'processing'::req_status, 'tx_in_flight'::req_status)
+                  AND attempts < $2
+                  AND owner_epoch < $1
+                LIMIT $3
+                FOR UPDATE SKIP LOCKED
+            )
             UPDATE public_decrypt_req
             SET owner_epoch = $1,
                 attempts = attempts + 1,
@@ -877,13 +892,13 @@ impl PublicDecryptRepository {
                     WHEN req_status = 'tx_in_flight'::req_status THEN 'processing'::req_status
                     ELSE req_status
                 END
-            WHERE req_status IN ('queued'::req_status, 'processing'::req_status, 'tx_in_flight'::req_status)
-              AND attempts < $2
-              AND owner_epoch < $1
-            RETURNING int_job_id, req, req_status as "req_status!: ReqStatus", attempts
+            FROM claimed
+            WHERE public_decrypt_req.id = claimed.id
+            RETURNING public_decrypt_req.int_job_id, public_decrypt_req.req, public_decrypt_req.req_status as "req_status!: ReqStatus", public_decrypt_req.attempts
             "#,
             epoch,
             max_attempts,
+            batch,
         )
         .fetch_all(&mut *conn)
         .await;

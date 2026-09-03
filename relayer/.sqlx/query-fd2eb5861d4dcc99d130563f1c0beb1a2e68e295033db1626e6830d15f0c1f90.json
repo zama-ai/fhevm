@@ -1,0 +1,57 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH claimed AS (\n                SELECT id\n                FROM public_decrypt_req\n                WHERE req_status IN ('queued'::req_status, 'processing'::req_status, 'tx_in_flight'::req_status)\n                  AND attempts < $2\n                  AND owner_epoch < $1\n                LIMIT $3\n                FOR UPDATE SKIP LOCKED\n            )\n            UPDATE public_decrypt_req\n            SET owner_epoch = $1,\n                attempts = attempts + 1,\n                req_status = CASE\n                    WHEN req_status = 'tx_in_flight'::req_status THEN 'processing'::req_status\n                    ELSE req_status\n                END\n            FROM claimed\n            WHERE public_decrypt_req.id = claimed.id\n            RETURNING public_decrypt_req.int_job_id, public_decrypt_req.req, public_decrypt_req.req_status as \"req_status!: ReqStatus\", public_decrypt_req.attempts\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "int_job_id",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "req",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 2,
+        "name": "req_status!: ReqStatus",
+        "type_info": {
+          "Custom": {
+            "name": "req_status",
+            "kind": {
+              "Enum": [
+                "queued",
+                "processing",
+                "tx_in_flight",
+                "receipt_received",
+                "completed",
+                "timed_out",
+                "failure"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "attempts",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int4",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "fd2eb5861d4dcc99d130563f1c0beb1a2e68e295033db1626e6830d15f0c1f90"
+}

@@ -44,6 +44,17 @@ use crate::{
 const EXHAUSTED_ATTEMPTS_ERR_REASON: &str =
     "Exceeded maximum sweep re-dispatch attempts without completing";
 
+/// Rows one tick claims per table. A backlog larger than this is drained over consecutive
+/// ticks: each claim stamps the current epoch, so the next tick's predicate skips what this
+/// one took and no row is passed over twice.
+///
+/// Deliberately not configurable. A bound exists so that one statement's duration and lock
+/// footprint stay independent of how much work a failover inherits, and so dispatch starts on
+/// the first rows rather than after the whole backlog commits; at the default 500 ms interval
+/// this drains 200 rows a second, far above any backlog seen. Nothing known would tune it, and
+/// the config already carries more knobs than the deployment sets.
+const CLAIM_BATCH: i64 = 100;
+
 /// One sweep tick: while the dispatch gate is open, fail out exhausted rows, claim the rest,
 /// and dispatch what was claimed. Returns `(dispatched, failed, dispatch_failed)`.
 ///
@@ -76,7 +87,7 @@ async fn run_tick(
     for (int_job_id, req_json, status, _attempts) in furthest_along_first(
         repositories
             .public_decrypt
-            .claim_incomplete_requests(epoch, config.max_attempts)
+            .claim_incomplete_requests(epoch, config.max_attempts, CLAIM_BATCH)
             .await?,
     ) {
         if dispatch_recovered_public_decrypt(orchestrator, int_job_id, req_json, status).await {
@@ -93,7 +104,7 @@ async fn run_tick(
     for (int_job_id, req_json, status, _attempts) in furthest_along_first(
         repositories
             .user_decrypt
-            .claim_incomplete_requests(epoch, config.max_attempts)
+            .claim_incomplete_requests(epoch, config.max_attempts, CLAIM_BATCH)
             .await?,
     ) {
         if dispatch_recovered_user_decrypt(orchestrator, int_job_id, req_json, status).await {
@@ -110,7 +121,7 @@ async fn run_tick(
     for (int_job_id, req_json, _status, _attempts) in furthest_along_first(
         repositories
             .input_proof
-            .claim_incomplete_requests(epoch, config.max_attempts)
+            .claim_incomplete_requests(epoch, config.max_attempts, CLAIM_BATCH)
             .await?,
     ) {
         if dispatch_recovered_input_proof(orchestrator, int_job_id, req_json).await {
@@ -129,6 +140,10 @@ async fn run_tick(
 /// readiness check - a row that may have a send in flight is the one whose duplicate costs a
 /// fee, so it should not queue behind fresh work. An `UPDATE ... RETURNING` has no defined row
 /// order, so the sort happens here rather than in SQL.
+///
+/// Orders within one [`CLAIM_BATCH`], not across a whole backlog: a `processing` row can fall
+/// into a later batch than a `queued` row. Only the dispatch order shifts - the fence, not the
+/// ordering, is what keeps a possible in-flight send safe.
 fn furthest_along_first(
     mut rows: Vec<(Vec<u8>, serde_json::Value, ReqStatus, i32)>,
 ) -> Vec<(Vec<u8>, serde_json::Value, ReqStatus, i32)> {

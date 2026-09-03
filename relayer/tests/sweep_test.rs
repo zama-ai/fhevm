@@ -19,6 +19,11 @@ use uuid::Uuid;
 
 const TEST_CONFIG_PATH: &str = "tests/relayer-test-config.yaml";
 
+/// Above every row count these tests insert, so a claim's bound never truncates what an
+/// assertion expects back. `test_a_backlog_larger_than_the_batch_drains_over_ticks` sets its
+/// own bound instead.
+const TEST_CLAIM_BATCH: i64 = 100;
+
 /// Repositories pointed at a fresh schema-isolated database, plus a raw pool for test-only
 /// setup (inserting rows, backdating `updated_at`) and assertions that go around the
 /// repository's own API.
@@ -191,8 +196,8 @@ async fn test_claim_is_not_double_claimed_under_concurrent_claimers_of_the_same_
     let repo_a = setup.repositories.public_decrypt.clone();
     let repo_b = setup.repositories.public_decrypt.clone();
     let (result_a, result_b) = tokio::join!(
-        repo_a.claim_incomplete_requests(111, 5),
-        repo_b.claim_incomplete_requests(111, 5),
+        repo_a.claim_incomplete_requests(111, 5, TEST_CLAIM_BATCH),
+        repo_b.claim_incomplete_requests(111, 5, TEST_CLAIM_BATCH),
     );
     let claimed_a = result_a.expect("claim a failed");
     let claimed_b = result_b.expect("claim b failed");
@@ -240,13 +245,13 @@ async fn test_a_lower_epochs_claim_is_defeated_by_a_higher_epochs_concurrent_cla
     // the race deterministically, which is the half that matters (the other order already
     // excludes the lower epoch outright, since its predicate no longer matches).
     let claimed_low = repo
-        .claim_incomplete_requests(111, 5)
+        .claim_incomplete_requests(111, 5, TEST_CLAIM_BATCH)
         .await
         .expect("low-epoch claim failed");
     assert_eq!(claimed_low.len(), 1, "the lower epoch claims first");
 
     let claimed_high = repo
-        .claim_incomplete_requests(222, 5)
+        .claim_incomplete_requests(222, 5, TEST_CLAIM_BATCH)
         .await
         .expect("high-epoch claim failed");
     assert_eq!(
@@ -291,7 +296,7 @@ async fn test_exhausted_row_from_an_older_epoch_is_failed_not_stranded() {
 
     // The newer epoch's claim must not touch it - attempts already at the bound.
     let claimed = repo
-        .claim_incomplete_requests(9, max_attempts)
+        .claim_incomplete_requests(9, max_attempts, TEST_CLAIM_BATCH)
         .await
         .expect("claim failed");
     assert!(
@@ -367,14 +372,14 @@ async fn test_attempts_bound_redispatch_then_fails_exhausted_row() {
 
     // First claim, by epoch 1 (row is unowned): attempts 0 -> 1.
     let claimed = repo
-        .claim_incomplete_requests(1, max_attempts)
+        .claim_incomplete_requests(1, max_attempts, TEST_CLAIM_BATCH)
         .await
         .expect("first claim failed");
     assert_eq!(claimed.len(), 1, "first claim must succeed");
 
     // Same epoch again: the row is now this epoch's own, so it is not claimable.
     let claimed = repo
-        .claim_incomplete_requests(1, max_attempts)
+        .claim_incomplete_requests(1, max_attempts, TEST_CLAIM_BATCH)
         .await
         .expect("same-epoch claim query failed");
     assert!(
@@ -384,7 +389,7 @@ async fn test_attempts_bound_redispatch_then_fails_exhausted_row() {
 
     // A successor epoch takes over: attempts 1 -> 2 (== max_attempts).
     let claimed = repo
-        .claim_incomplete_requests(2, max_attempts)
+        .claim_incomplete_requests(2, max_attempts, TEST_CLAIM_BATCH)
         .await
         .expect("successor claim failed");
     assert_eq!(
@@ -396,7 +401,7 @@ async fn test_attempts_bound_redispatch_then_fails_exhausted_row() {
 
     // A third epoch, past the bound: attempts (2) is no longer < max_attempts (2).
     let claimed = repo
-        .claim_incomplete_requests(3, max_attempts)
+        .claim_incomplete_requests(3, max_attempts, TEST_CLAIM_BATCH)
         .await
         .expect("third claim query failed");
     assert!(
@@ -435,7 +440,7 @@ async fn test_unclaimed_tx_in_flight_row_is_claimed_immediately_and_reset() {
         .await;
 
     let claimed = repo
-        .claim_incomplete_requests(9, 5)
+        .claim_incomplete_requests(9, 5, TEST_CLAIM_BATCH)
         .await
         .expect("claim failed");
     assert_eq!(
@@ -467,7 +472,7 @@ async fn test_older_epoch_owned_tx_in_flight_row_is_claimed_immediately_and_rese
         .await;
 
     let claimed = repo
-        .claim_incomplete_requests(9, 5)
+        .claim_incomplete_requests(9, 5, TEST_CLAIM_BATCH)
         .await
         .expect("claim failed");
     assert_eq!(
@@ -497,7 +502,7 @@ async fn test_own_epoch_owned_row_is_never_claimed_however_old() {
         .await;
 
     let claimed = repo
-        .claim_incomplete_requests(9, 5)
+        .claim_incomplete_requests(9, 5, TEST_CLAIM_BATCH)
         .await
         .expect("claim failed");
     assert!(
@@ -512,12 +517,60 @@ async fn test_own_epoch_owned_row_is_never_claimed_however_old() {
     // A restart is what resolves it: the next incarnation's epoch is higher, so the row is a
     // predecessor's and claimable at once.
     let claimed = repo
-        .claim_incomplete_requests(10, 5)
+        .claim_incomplete_requests(10, 5, TEST_CLAIM_BATCH)
         .await
         .expect("successor claim failed");
     assert_eq!(
         claimed.len(),
         1,
         "the same row is claimable by the next epoch, with no wait"
+    );
+}
+
+/// A backlog past the claim's bound is drained over consecutive ticks rather than truncated:
+/// each claim stamps the current epoch, which is what makes the next tick pick up where the
+/// last stopped without an `ORDER BY` to order the set (see
+/// `PublicDecryptRepository::claim_incomplete_requests`'s doc comment).
+#[tokio::test]
+async fn test_a_backlog_larger_than_the_batch_drains_over_ticks() {
+    let setup = RepoTestSetup::new().await;
+    let repo = &setup.repositories.public_decrypt;
+
+    const BACKLOG: usize = 7;
+    const BATCH: i64 = 3;
+
+    for _ in 0..BACKLOG {
+        setup
+            .insert_public_decrypt_row("queued", std::time::Duration::ZERO, UNCLAIMED_EPOCH)
+            .await;
+    }
+
+    let mut claimed_total = 0usize;
+    let mut ticks = 0usize;
+    loop {
+        let claimed = repo
+            .claim_incomplete_requests(9, 5, BATCH)
+            .await
+            .expect("claim failed");
+        if claimed.is_empty() {
+            break;
+        }
+        assert!(
+            claimed.len() as i64 <= BATCH,
+            "a tick must never claim more than its bound (got {})",
+            claimed.len()
+        );
+        claimed_total += claimed.len();
+        ticks += 1;
+        assert!(ticks <= BACKLOG, "the drain must terminate");
+    }
+
+    assert_eq!(
+        claimed_total, BACKLOG,
+        "every backlogged row must be claimed exactly once across the ticks"
+    );
+    assert_eq!(
+        ticks, 3,
+        "7 rows at a bound of 3 must take ceil(7/3) ticks, so no tick claims a row twice"
     );
 }
