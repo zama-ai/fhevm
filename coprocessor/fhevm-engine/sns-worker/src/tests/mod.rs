@@ -53,6 +53,7 @@ static TRACING_INIT: OnceLock<()> = OnceLock::new();
 #[cfg(not(feature = "gpu"))]
 mod s3_migration;
 mod s3_migration_dry_run;
+mod squash_determinism;
 
 pub fn init_tracing() {
     TRACING_INIT.get_or_init(|| {
