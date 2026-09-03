@@ -1,6 +1,6 @@
 # Porting the FHEVM hardhat plugin from hardhat v2 to hardhat v3
 
-Version: **1.29** (2026-09-03). Bump the minor for a content change to the plan, the major for a
+Version: **1.30** (2026-09-03). Bump the minor for a content change to the plan, the major for a
 change of charter or stage order; record each bump below.
 
 - 1.0 — initial plan, from the hardhat 3 docs.
@@ -45,8 +45,10 @@ change of charter or stage order; record each bump below.
 - 1.28 — D5a3 landed (`computeTransactionHCU`, `typeof`, module `getHCU`); HCU e2e on the counter.
 - 1.29 — D5b landed (`getCoprocessorConfig`, `assertCoprocessorInitialized`); the B1c-deferred smoke test
   and `TestFHENotInitialized` e2e landed. Stage D5 complete; only `debugger` (D6) is still a stub.
+- 1.30 — D6 landed: open question 3 decided as PORT (over viem, CleartextDB read); dead
+  `createDecryptionSignatures`/`createHandleCoder` dropped. The public surface is complete: Stage D done.
 
-Status: **in progress — Stages A, B, C and D0–D5 complete. Next: D6.** The landing zone exists: the
+Status: **in progress — Stages A, B, C and D complete. Next: E1.** The landing zone exists: the
 `hardhat/v3` cluster (own installation root, hardhat 3.15 pinned), the plugin registered via
 `definePlugin` with its per-connection `fhevm` object and the pre-serve chain preparation proven,
 and the `hardhat/v3/e2e` member with the first counter test.
@@ -749,7 +751,16 @@ this later without API change). One commit per group, tests run against the B1 s
     `internal/CoprocessorConfig.ts`, the ZamaConfig-trio smoke test deferred since B1c.
     Was: `getCoprocessorConfig` + `assertCoprocessorInitialized`.
     Commit: `feat(hh-v3-plugin): port coprocessor config read and init assertion`
-- **D6. ⚑ `debugger`** (open question 3 decided here): port vs fold into `@fhevm/sdk` mock tooling.
+- **D6 — LANDED as a PORT** (open question 3: `@fhevm/sdk` has no ACL-free cleartext read, and adding
+  one is js-sdk work — open question 4's blocker — so the debugger stays plugin code with the extraction
+  marker). `internal/debugger.ts`: `decryptEbool/Euint/Eaddress` read `CleartextDB.get(handle)`
+  through the repository's viem client, cleartext networks only, type-checked by the handle parser,
+  v2 messages kept. Dropped from the surface: `createDecryptionSignatures` (threw in v2, its only
+  callers sit in the fully commented-out `TestAsyncDecrypt.ts`) and `createHandleCoder` (threw, no
+  caller) — the D3a rule. With it the LAST stub left `FhevmConnection.ts`; `api.test.ts` now asserts
+  every member live. e2e: `internal/FHECounterDebugger.ts` — after `incrementNotPubliclyDecryptable`
+  the ACL refuses `publicDecrypt` while the debugger reads the count.
+  Was: port vs fold into `@fhevm/sdk` mock tooling.
   Commit: `feat(hh-v3-plugin): port the fhevm debugger surface`
 
 ### Stage E — tasks
@@ -803,10 +814,10 @@ allows.
 | D3b                    | DONE for `internal/FHECounterUserDecrypt.ts` (viem accounts as users). Waiting on their contracts (E2E-0b): `internal/AplusB.ts`, `doc-examples/{DecryptSingleValue,DecryptMultipleValues,EncryptSingleValue,EncryptMultipleValues}.ts`, `confidentialERC20/*`, `finance/*.fixture.ts`, `governance/*`, `utils/EncryptedErrors.*`, `operators-manual/manualWithAllowSender.ts` |
 | D3c                    | DONE on the counter (`internal/delegatedUserDecryption.ts`, `SmartWalletWithDelegation.sol`, `utils/blocks.ts`); the ConfidentialERC20 version of the same asserts waits on E2E-0b                                                                                                                                                                                     |
 | D4a3                   | DONE — `internal/TestErrors.test.ts`, `internal/TestTrivialPermissions.test.ts`, `internal/TestACL.ts` (contracts copied verbatim)                                                                                                                          |
-| D4b                    | `internal/TestAsyncDecrypt.ts` (`parseCoprocessorEvents`; also needs D6)                                                                                                                                                                          |
+| D4b                    | MOOT — `internal/TestAsyncDecrypt.ts` is 100% commented out in v2 (mock-engine era); nothing to port                                                                                                                                                                          |
 | D5a3                   | DONE on the counter (`internal/FHECounterHCU.ts`); `hcu/fhevmHCU1.ts` waits on the `FHEVMTestSuite1` corpus (E2E-0b)                                                                                                                                                                                                      |
 | D5b + C2               | `sepolia/*` (`getCoprocessorConfig` + generated addresses) and the `test:sepolia:*` scripts — operator-run, never in `make test`                                                                                                                    |
-| D6                     | `operators/fhevmOperations1…13.ts`, `operators-manual/manual.ts` (`debugger`), and `internal/TestAsyncDecrypt.ts` if D4b landed first                                                                                                              |
+| D6                     | DONE on the counter (`internal/FHECounterDebugger.ts`); `operators/fhevmOperations1…13.ts` and `operators-manual/manual.ts` wait on their contract corpus (E2E-0b)                                                                                                              |
 
 Running total is the progress meter for goal 3: when the last row is green, the public API is
 proven equivalent on hardhat 3 by the same tests that prove it on hardhat 2.
