@@ -1,0 +1,14 @@
+{
+  "_readme": [
+    "Hand-written source of truth for the fhevm NETWORK GROUPS. A group is one gateway deployment with",
+    "the host chains it serves: the protocol registry publishes one file per group, and one relayer",
+    "serves each group. The relayer is infrastructure, not an on-chain address, so the registry cannot",
+    "know it — it is decided here, once. `fhevm-npm sync-fhevm-chains` reads this file to render",
+    "fhevm-chains.config.json; adding a group here (with its registry file) adds it to the next sync."
+  ],
+  "groups": {
+    "mainnet": { "registryFile": "dist/mainnet.json", "relayerUrl": "https://relayer.mainnet.zama.org" },
+    "testnet": { "registryFile": "dist/testnet.json", "relayerUrl": "https://relayer.testnet.zama.org" },
+    "devnet": { "registryFile": "dist/devnet.json", "relayerUrl": "https://relayer.dev.zama.cloud" }
+  }
+}

@@ -11,6 +11,10 @@
     "sdk/cleartext-config.json, the source of truth for the cleartext stack's shared values — and each",
     "generation receives a copy in pkg/ts/. Regenerate before syncing; `make generate` runs both in order.",
     "",
+    "fhevm-chains.ts is GENERATED too — `fhevm-npm generate-chain-constants` renders it from",
+    "sdk/fhevm-chains.config.json (every deployed host-contract and gateway address, by network group);",
+    "the packages that carry a copy are listed below as they adopt it.",
+    "",
     "A published payload cannot depend on a private workspace member, so it gets copies too. Members that",
     "are never published just import @fhevm/sdk-vendored-dev/<file>.ts instead."
   ],
@@ -39,7 +43,7 @@
     {
       "to": "hardhat/v2/plugin/pkg/src/internal/vendored",
       "note": "Published payload. It already depends on @fhevm/host-contracts-cleartext, so the sibling type import is rewritten to the package rather than copying ethereumLibTypes.ts here.",
-      "files": ["ethersEthereumLib.ts"],
+      "files": ["ethersEthereumLib.ts", "fhevm-chains.ts"],
       "rewrites": [
         {
           "file": "ethersEthereumLib.ts",
@@ -51,7 +55,7 @@
     {
       "to": "hardhat/v3/plugin/pkg/src/internal/vendored",
       "note": "The hardhat 3 payload takes the viem adapter (hardhat 3 recommends viem; its clients wrap the in-process provider), with the same type-import rewrite as the v2 sibling.",
-      "files": ["viemEthereumLib.ts"],
+      "files": ["fhevm-chains.ts", "viemEthereumLib.ts"],
       "rewrites": [
         {
           "file": "viemEthereumLib.ts",

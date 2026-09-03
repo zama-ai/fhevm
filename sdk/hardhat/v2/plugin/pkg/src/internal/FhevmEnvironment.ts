@@ -824,7 +824,7 @@ export class FhevmEnvironment {
 
     const sepoliaCoprocessorConfig: CoprocessorConfig = {
       ACLAddress: sepolia.fhevm.contracts.acl.address,
-      CoprocessorAddress: constants.FHEVM_SOLIDITY_PACKAGE.SepoliaConfig.CoprocessorAddress as `0x${string}`,
+      CoprocessorAddress: constants.FHEVM_SOLIDITY_PACKAGE.SepoliaConfig.CoprocessorAddress,
       KMSVerifierAddress: sepolia.fhevm.contracts.kmsVerifier.address,
     };
 
@@ -845,7 +845,7 @@ export class FhevmEnvironment {
 
     const mainnetCoprocessorConfig: CoprocessorConfig = {
       ACLAddress: mainnet.fhevm.contracts.acl.address,
-      CoprocessorAddress: constants.FHEVM_SOLIDITY_PACKAGE.EthereumConfig.CoprocessorAddress as `0x${string}`,
+      CoprocessorAddress: constants.FHEVM_SOLIDITY_PACKAGE.EthereumConfig.CoprocessorAddress,
       KMSVerifierAddress: mainnet.fhevm.contracts.kmsVerifier.address,
     };
 
