@@ -120,20 +120,16 @@ async fn start_coprocessor(rx: Receiver<bool>, db_url: &str) -> u16 {
     let args: Args = Args {
         max_batch_ttl_secs: 300,
         run_bg_worker: true,
-        // Polling this slowly just leaves the machine idle between batches.
-        worker_polling_interval_ms: 100,
+        worker_polling_interval_ms: 1000,
         bridge_polling_interval_ms: 1000,
         bridge_associate_batch_size: 128,
         generate_fhe_keys: false,
-        work_items_batch_size: 100,
+        work_items_batch_size: 40,
         dependence_chains_per_batch: 10,
         key_cache_size: 4,
-        // How many operations the worker runs at once. Small types barely spread
-        // across cores on their own, so running more at a time is what keeps the
-        // machine busy; 4 left it about 69% idle. Production uses 32.
-        coprocessor_fhe_threads: 16,
-        tokio_threads: 4,
-        pg_pool_max_connections: 10,
+        coprocessor_fhe_threads: 4,
+        tokio_threads: 2,
+        pg_pool_max_connections: 2,
         metrics_addr: None,
         database_url: Some(db_url.into()),
         service_name: "coprocessor".to_string(),
@@ -247,7 +243,7 @@ pub async fn wait_until_all_allowed_handles_computed(
         .await?;
 
     loop {
-        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+        tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
         let (current_count,): (i64,) = sqlx::query_as(
             "SELECT count(1) FROM computations WHERE is_allowed = TRUE AND is_completed = FALSE AND is_error = FALSE",
         )
