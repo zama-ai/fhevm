@@ -253,7 +253,7 @@
       "vendored": [
         {
           "relPath": "./src/internal/vendored",
-          "files": ["ethersEthereumLib.ts", "fhevm-chains.ts"],
+          "files": ["ethersEthereumLib.ts", "fhevm-chains.ts", "operatorsPrices.ts", "priceTypes.ts"],
           "source": "./sdk/common-vendored/src",
           "reason": "A published package cannot depend on the private @fhevm/sdk-vendored-dev; the copy's sibling type import is rewritten to @fhevm/host-contracts-cleartext."
         }
@@ -332,7 +332,7 @@
       "vendored": [
         {
           "relPath": "./src/internal/vendored",
-          "files": ["fhevm-chains.ts", "viemEthereumLib.ts"],
+          "files": ["fhevm-chains.ts", "operatorsPrices.ts", "priceTypes.ts", "viemEthereumLib.ts"],
           "source": "./sdk/common-vendored/src",
           "reason": "A published package cannot depend on the private @fhevm/sdk-vendored-dev; the copy's sibling type import is rewritten to @fhevm/host-contracts-cleartext."
         }
