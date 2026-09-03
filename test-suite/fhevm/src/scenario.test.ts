@@ -187,7 +187,7 @@ topology:
   count: 2
   threshold: 2
 gcs:
-  stackVersion: "0.15.0"
+  source: { mode: local }
 `);
       expect(parsed.topology).toEqual({ count: 2, threshold: 2 });
     });
@@ -201,7 +201,7 @@ topology:
   count: 2
   threshold: 3
 gcs:
-  stackVersion: "0.15.0"
+  source: { mode: local }
 `),
       ).toThrow("threshold must be between 1 and count");
     });
@@ -246,7 +246,6 @@ version: 1
 kind: blue-green
 gcs:
   source: { mode: "sha" }
-  stackVersion: "0.15.0"
 `),
       ).toThrow("source.mode must be inherit, local, or registry");
     });
@@ -259,7 +258,7 @@ kind: blue-green
 bcs:
   source: { mode: registry }
 gcs:
-  stackVersion: "0.15.0"
+  source: { mode: local }
 `),
       ).toThrow("tag is required for registry mode");
     });
@@ -324,7 +323,6 @@ version: 1
 kind: blue-green
 gcs:
   source: { mode: registry, tag: v0.15.0 }
-  stackVersion: "0.15.0"
 `),
       );
       expect(resolved.gcs.source).toEqual({ mode: "registry", tag: "v0.15.0" });
@@ -359,7 +357,7 @@ hostChains:
     chainId: "67890"
     rpcPort: 8547
 gcs:
-  stackVersion: "0.15.0"
+  source: { mode: local }
 `),
       );
       expect(resolved.hostChains.map((c) => c.chainId)).toEqual(["12345", "67890"]);

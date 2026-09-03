@@ -535,7 +535,6 @@ version: 1
 kind: blue-green
 gcs:
   source: { mode: local }
-  stackVersion: "0.15.0"
 `),
     );
     const bgState: State = { ...state, scenario: blueGreenScenario };
@@ -643,7 +642,6 @@ topology:
   threshold: 2
 gcs:
   source: { mode: local }
-  stackVersion: "0.15.0"
 `),
     );
     const bgState: State = { ...state, scenario: multiOpBlueGreen };
@@ -690,7 +688,6 @@ bcs:
     tag: v0.13.0
 gcs:
   source: { mode: local }
-  stackVersion: "0.15.0"
 `),
     );
     const bgState: State = { ...state, scenario: realUpgradeScenario };
@@ -759,7 +756,6 @@ bcs:
     tag: v0.14.0-7
 gcs:
   source: { mode: local }
-  stackVersion: "0.15.0"
 `),
     );
     const bgState: State = { ...state, scenario: pinnedBcsScenario };
