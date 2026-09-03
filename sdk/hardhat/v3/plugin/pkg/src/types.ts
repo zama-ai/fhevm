@@ -109,6 +109,11 @@ export type FhevmUserDecryptValidity = { startTimestamp: number | bigint; durati
 
 export type FhevmUserDecryptOptions = {
   validity?: FhevmUserDecryptValidity;
+  /**
+   * Delegated decryption: the account (typically a contract) whose handle the USER decrypts on its
+   * behalf, after it granted `FHE.delegateUserDecryption(user, contract, expiry)` on-chain.
+   */
+  delegatorAddress?: Address;
 };
 
 export type PublicDecryptResults = {

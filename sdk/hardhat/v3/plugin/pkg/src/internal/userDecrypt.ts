@@ -1,5 +1,5 @@
-// One user decryption, end to end: a fresh transport key pair, a decryption permit the user signs, one
-// `decryptValues` call. The SDK's viem adapter signs through anything with a viem-style
+// One user decryption, end to end: a fresh transport key pair, a decryption permit the user signs (naming
+// the delegator when decrypting on another account's behalf), one `decryptValues` call. The SDK's viem adapter signs through anything with a viem-style
 // `signTypedData`, so a user is a wallet client that carries its account or a local account.
 
 import { HardhatPluginError } from 'hardhat/plugins';
@@ -32,6 +32,13 @@ export async function userDecryptOne(
     );
   }
   const { address, signer } = resolveUser(method, user);
+  const delegatorAddress = options?.delegatorAddress;
+  if (delegatorAddress !== undefined && !isAddress(delegatorAddress)) {
+    throw new HardhatPluginError(
+      PLUGIN_ID,
+      `${method}: the 'delegatorAddress' option is not a valid address. Got '${delegatorAddress}' instead.`,
+    );
+  }
 
   const transportKeyPair = await client.generateTransportKeyPair();
   const startTimestamp = Number(options?.validity?.startTimestamp ?? timestampNow());
@@ -44,6 +51,7 @@ export async function userDecryptOne(
     durationSeconds: durationDays * SECONDS_PER_DAY,
     signerAddress: address,
     signer,
+    delegatorAddress,
     transportKeyPair,
   });
 

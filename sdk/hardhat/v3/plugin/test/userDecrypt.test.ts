@@ -40,6 +40,10 @@ void test('user decryption guards fail by name before any permit is signed', asy
       fhevm.userDecryptEaddress(externalEuint, CONTRACT, noAccount),
       pluginError('carries no account'),
     );
+    await assert.rejects(
+      fhevm.userDecryptEuint(FhevmType.euint32, externalEuint, CONTRACT, ALICE, { delegatorAddress: '0xbad' }),
+      pluginError("'delegatorAddress'"),
+    );
   } finally {
     await connection.close();
   }
