@@ -6917,7 +6917,6 @@ dependencies = [
  "rayon",
  "tfhe",
  "tokio",
- "tokio-util",
  "tracing",
  "tracing-opentelemetry",
 ]

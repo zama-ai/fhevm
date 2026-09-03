@@ -3496,7 +3496,7 @@ mod gpu_reservation_error_tests {
     use fhevm_engine_common::gpu_memory::GpuMemoryReservationError;
 
     #[test]
-    fn timeout_and_cancellation_are_retryable() {
+    fn reservation_failures_are_retryable() {
         for reservation_error in [GpuMemoryReservationError::TimedOut {
             gpu_idx: 0,
             amount: 1,

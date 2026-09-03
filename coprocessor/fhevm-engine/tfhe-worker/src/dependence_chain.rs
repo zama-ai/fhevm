@@ -1290,8 +1290,23 @@ pub(crate) async fn rearm_demoted_chains_limited(
             FROM computations c
             JOIN dependence_chain dc
               ON dc.dependence_chain_id = c.dependence_chain_id
-            WHERE c.is_allowed = TRUE
-              AND c.is_completed = FALSE
+            -- NO `is_allowed` FILTER, deliberately. `is_allowed` decides what
+            -- counts as WORK -- only an allowed row makes a transaction
+            -- selectable -- but it must not decide what counts as a BLOCKER.
+            -- A non-allowed internal producer is still executed on behalf of
+            -- an allowed consumer, is still stamped when it panics (the stamp
+            -- does not filter on it either), and so still reaches the demote
+            -- threshold. Filtering it out here while the completion test
+            -- counts it as a blocker is precisely the asymmetry that lets a
+            -- chain retire and then never be re-armed, stranding the allowed
+            -- consumer and everything downstream of it.
+            --
+            -- Harmless in the degenerate case: if the transaction has no
+            -- allowed row at all, the re-arm resets the count, the window
+            -- still will not select the transaction, and the row stops
+            -- matching `error_retry_count >= $2` -- so this settles after one
+            -- pass instead of churning every sweep.
+            WHERE c.is_completed = FALSE
               AND c.is_error = TRUE
               AND c.error_message LIKE '%' || $1 || '%'
               AND c.error_retry_count >= $2

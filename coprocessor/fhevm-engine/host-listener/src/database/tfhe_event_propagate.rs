@@ -110,10 +110,6 @@ pub type OrderedChains = Vec<Chain>;
 
 const MINIMUM_BUCKET_CACHE_SIZE: u16 = 16;
 
-/// Delays, in seconds, between attempts to rebuild the sealed-chain set after
-/// a failed one. Generous and finite: the state converges as soon as the
-/// database is reachable, and if it is still unreachable twenty minutes in,
-/// the listener has a larger problem than fork discharge latency.
 /// Steady cadence for refreshing the sealed-chain set once it is healthy.
 ///
 /// The refresh is PERIODIC rather than a one-shot with retries, because the
