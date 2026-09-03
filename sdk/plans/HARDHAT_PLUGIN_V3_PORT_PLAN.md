@@ -1,6 +1,6 @@
 # Porting the FHEVM hardhat plugin from hardhat v2 to hardhat v3
 
-Version: **1.18** (2026-09-03). Bump the minor for a content change to the plan, the major for a
+Version: **1.19** (2026-09-03). Bump the minor for a content change to the plan, the major for a
 change of charter or stage order; record each bump below.
 
 - 1.0 — initial plan, from the hardhat 3 docs.
@@ -27,8 +27,10 @@ change of charter or stage order; record each bump below.
 - 1.17 — D1 landed (encrypt group over the cleartext SDK client; `fhevm.client` live on development
   connections); ledger D1 row: e2e files wait on their contracts (E2E-0b).
 - 1.18 — D2 landed (publicDecrypt group; the v2 counter e2e test is now ported in full).
+- 1.19 — D3a resolved as a REMOVAL: `createEIP712`/`createDelegatedUserDecryptEIP712` (deprecated and
+  throwing in v2) leave the v3 surface; D3c is the delegated flow only.
 
-Status: **in progress — Stages A, B, C and D0–D2 complete. Next: D3a.** The landing zone exists: the
+Status: **in progress — Stages A, B, C and D0–D3a complete. Next: D3b.** The landing zone exists: the
 `hardhat/v3` cluster (own installation root, hardhat 3.15 pinned), the plugin registered via
 `definePlugin` with its per-connection `fhevm` object and the pre-serve chain preparation proven,
 and the `hardhat/v3/e2e` member with the first counter test.
@@ -602,10 +604,15 @@ this later without API change). One commit per group, tests run against the B1 s
   Was: `publicDecrypt` + typed variants.
   Commit: `feat(hh-v3-plugin): port publicDecrypt and its typed variants`
 - **D3.** `userDecrypt*` + EIP-712 builders (three blocks):
-  - **D3a.** `createEIP712`. Commit: `feat(hh-v3-plugin): port the user-decrypt EIP-712 builder`
+  - **D3a — LANDED as a REMOVAL.** In v2 both `createEIP712` and `createDelegatedUserDecryptEIP712`
+    are `@deprecated` and THROW: they expose the relayer-sdk handshake (generateKeypair + EIP-712 +
+    signTypedData) that `@fhevm/sdk` replaced with transport key pairs and signed permits, and no v2
+    e2e test calls them. That is the D0 rule for engine-era members, so they and the `Kms*EIP712Type`
+    types leave the v3 surface instead of being stubbed. Was: `createEIP712`.
+    Commit: `refactor(hh-v3-plugin): drop the deprecated EIP-712 builders from the surface`
   - **D3b.** `userDecryptEbool/Euint/Eaddress`.
     Commit: `feat(hh-v3-plugin): port the userDecrypt typed variants`
-  - **D3c.** `createDelegatedUserDecryptEIP712` + the delegated flow.
+  - **D3c.** The delegated user-decrypt flow (`createDelegatedUserDecryptEIP712` left with D3a).
     Commit: `feat(hh-v3-plugin): port the delegated user-decrypt permit flow`
 - **D4.** Errors and events (two blocks):
   - **D4a.** The error layer is 827 v2 lines (`FhevmContractError` 703 + list 124) — the single
