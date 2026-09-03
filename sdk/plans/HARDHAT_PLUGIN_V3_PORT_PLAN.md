@@ -1,6 +1,6 @@
 # Porting the FHEVM hardhat plugin from hardhat v2 to hardhat v3
 
-Version: **1.28** (2026-09-03). Bump the minor for a content change to the plan, the major for a
+Version: **1.29** (2026-09-03). Bump the minor for a content change to the plan, the major for a
 change of charter or stage order; record each bump below.
 
 - 1.0 — initial plan, from the hardhat 3 docs.
@@ -43,8 +43,10 @@ change of charter or stage order; record each bump below.
   common-vendored and both plugins receive it through `sync-vendored`.
 - 1.27 — D5a2 landed (HCU engine over the D4b events: price bridge, type-name map, handle parser, walk).
 - 1.28 — D5a3 landed (`computeTransactionHCU`, `typeof`, module `getHCU`); HCU e2e on the counter.
+- 1.29 — D5b landed (`getCoprocessorConfig`, `assertCoprocessorInitialized`); the B1c-deferred smoke test
+  and `TestFHENotInitialized` e2e landed. Stage D5 complete; only `debugger` (D6) is still a stub.
 
-Status: **in progress — Stages A, B, C, D0–D4 and D5a complete. Next: D5b.** The landing zone exists: the
+Status: **in progress — Stages A, B, C and D0–D5 complete. Next: D6.** The landing zone exists: the
 `hardhat/v3` cluster (own installation root, hardhat 3.15 pinned), the plugin registered via
 `definePlugin` with its per-connection `fhevm` object and the pre-serve chain preparation proven,
 and the `hardhat/v3/e2e` member with the first counter test.
@@ -737,7 +739,15 @@ this later without API change). One commit per group, tests run against the B1 s
       so); the decoders check the hex themselves.
       Was: `computeTransactionHCU` + module-level `getHCU` wiring.
       Commit: `feat(hh-v3-plugin): expose transaction HCU computation`
-  - **D5b.** `getCoprocessorConfig` + `assertCoprocessorInitialized`.
+  - **D5b — LANDED.** `internal/coprocessorConfig.ts`: the ERC-7201 location of
+    `confidential.storage.config` recomputed with viem and asserted against the constant, three
+    `getStorageAt` reads, and the assertion against the connection's repository (ACL, executor, KMS
+    verifier). Input is `FhevmAddressLike`: an address, a viem contract (`address`) or an ethers one
+    (`getAddress()`), since v2 took `AddressLike`. The message names `ZamaEthereumConfig` (v2 said the
+    stale `EthereumConfig`). Plugin test writes the three slots with `hardhat_setStorageAt` to cover
+    empty, matching and foreign configs. e2e: `TestFHENotInitialized` (contract copied verbatim) and
+    `internal/CoprocessorConfig.ts`, the ZamaConfig-trio smoke test deferred since B1c.
+    Was: `getCoprocessorConfig` + `assertCoprocessorInitialized`.
     Commit: `feat(hh-v3-plugin): port coprocessor config read and init assertion`
 - **D6. ⚑ `debugger`** (open question 3 decided here): port vs fold into `@fhevm/sdk` mock tooling.
   Commit: `feat(hh-v3-plugin): port the fhevm debugger surface`
@@ -785,7 +795,7 @@ allows.
 | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | E2E-0a                 | `internal/FHECounterPublicDecrypt.ts` — the "uninitialized after deployment" case only (compile + deploy + `getCount`)                                                                                                                              |
 | A5                     | DONE — the `isCleartext` guard is live in `internal/FHECounterPublicDecrypt.ts`; `utils.ts` (`isDevelopment`) ports with its first user                                                                                                                                          |
-| B1c                    | MOVED: the ZamaConfig-trio smoke test AND `TestFHENotInitialized.test.ts` land with D5b (`getCoprocessorConfig` / `assertCoprocessorInitialized`; D0 only stubbed them)                                                                                       |
+| B1c                    | DONE at D5b — `internal/CoprocessorConfig.ts` (the ZamaConfig-trio smoke test) and `internal/TestFHENotInitialized.test.ts`                                                                                       |
 | B2                     | DONE — `test:anvil` + `test:anvil:simple` scripts and `test/test-anvil*.sh` (run the counter file)                                                                                                                                                       |
 | B3                     | DONE — `test:node` script + `test/test-hardhat-node.sh`                                                                                                                                                                                                  |
 | D1                     | DONE for the counter: `internal/FHECounterPublicDecrypt.ts` gained "increment the counter by 1" (encrypt + tx; the public-decrypt half joins at D2). `internal/delegatedUserDecryption.ts` and `finance/ConfidentialVestingWallet*.test.ts` wait on their contracts (E2E-0b, on demand) |
