@@ -8,7 +8,7 @@
 // on the HRE — the pattern hardhat 3's own plugins follow (`connection.ethers`). There is no
 // `hre.fhevm`: hardhat 3 has no default-connection object to alias.
 
-import { emptyTask, task } from 'hardhat/config';
+import { emptyTask, overrideTask, task } from 'hardhat/config';
 import { definePlugin } from 'hardhat/plugins';
 import { ArgumentType } from 'hardhat/types/arguments';
 import type { HardhatPlugin } from 'hardhat/types/plugins';
@@ -52,6 +52,10 @@ const plugin: HardhatPlugin = definePlugin({
     )
       .addPositionalArgument({ name: 'address', description: 'The contract address to check' })
       .setAction(() => import('./tasks/checkFhevmCompatibility.js'))
+      .build(),
+    // The one builtin override that survived the triage: `hardhat node` prints the stack it serves.
+    overrideTask('node')
+      .setAction(() => import('./tasks/node.js'))
       .build(),
   ],
 });

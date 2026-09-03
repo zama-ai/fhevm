@@ -21,12 +21,12 @@ const HARDHAT_CLI = join(dirname(require.resolve('hardhat/package.json')), 'dist
 const PLUGIN_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
 const CONFIG = join(PLUGIN_DIR, 'test', 'fixtures', 'node.config.ts');
 
-type Node = { readonly child: ChildProcess; readonly url: string };
+type Node = { readonly child: ChildProcess; readonly url: string; readonly output: string };
 
 // `--port 0` lets the OS pick, so parallel test runs never fight over 8545; the URL is read back
 // from the line the node task prints once it listens.
-function startNode(): Promise<Node> {
-  const child = spawn(process.execPath, [HARDHAT_CLI, '--config', CONFIG, 'node', '--port', '0'], {
+function startNode(extraArgs: readonly string[] = []): Promise<Node> {
+  const child = spawn(process.execPath, [HARDHAT_CLI, '--config', CONFIG, ...extraArgs, 'node', '--port', '0'], {
     cwd: PLUGIN_DIR,
     stdio: ['ignore', 'pipe', 'pipe'],
     env: { ...process.env, HARDHAT_DISABLE_TELEMETRY: 'true' },
@@ -36,7 +36,7 @@ function startNode(): Promise<Node> {
     const onData = (chunk: Buffer): void => {
       output += chunk.toString();
       const match = /JSON-RPC server at (http:\/\/[^/\s]+)\//.exec(output);
-      if (match?.[1] !== undefined) resolve({ child, url: match[1] });
+      if (match?.[1] !== undefined) resolve({ child, url: match[1], output });
     };
     child.stdout.on('data', onData);
     child.stderr.on('data', onData);
@@ -70,6 +70,12 @@ void test('a hardhat node child process serves the stack, and a localhost connec
   const node = await startNode();
   try {
     const { aclAddress } = precomputeLocalhostAddresses().fhevmAddresses;
+    // The fhevm banner is the operator's evidence, printed before hardhat announces the server: one
+    // line on a plain run, the addresses only when verbose (checked in the test below).
+    const banner = node.output.indexOf('fhevm: cleartext FHEVM stack on');
+    assert.notEqual(banner, -1, node.output);
+    assert.ok(!node.output.includes(aclAddress), 'a plain run lists no address');
+    assert.ok(banner < node.output.indexOf('JSON-RPC server at'), 'the banner precedes the server announcement');
     assert.notEqual(
       await rpc(node.url, 'eth_getCode', [aclAddress, 'latest']),
       '0x',
@@ -91,6 +97,20 @@ void test('a hardhat node child process serves the stack, and a localhost connec
     } finally {
       await connection.close();
     }
+  } finally {
+    await stopNode(node);
+  }
+});
+
+void test('a verbose hardhat node lists the stack addresses in its banner', async () => {
+  // hardhat's verbosity is the count of v's (default 2): -vvv is the first verbose level.
+  const node = await startNode(['-vvv']);
+  try {
+    const { aclAddress, fhevmExecutorAddress } = precomputeLocalhostAddresses().fhevmAddresses;
+    assert.ok(node.output.includes('fhevm: cleartext FHEVM stack on'), node.output);
+    assert.ok(node.output.includes(`ACL`) && node.output.includes(aclAddress), node.output);
+    assert.ok(node.output.includes(fhevmExecutorAddress), node.output);
+    assert.ok(node.output.includes(`deployer (ACL owner)`), node.output);
   } finally {
     await stopNode(node);
   }

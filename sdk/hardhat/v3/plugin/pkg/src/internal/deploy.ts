@@ -39,6 +39,12 @@ export function precomputeLocalhostAddresses(): LocalhostAddresses {
   return { fhevmAddresses, cleartextAddresses, pauserSetAddress };
 }
 
+/** True when the ACL already carries code: the stack is on the chain and `deployCleartextStack` will reuse it. */
+export async function isCleartextStackDeployed(provider: EthereumProvider): Promise<boolean> {
+  const publicClient = developmentPublicClient(provider, await developmentChain(provider));
+  return hasCode(publicClient, precomputeLocalhostAddresses().fhevmAddresses.aclAddress);
+}
+
 export async function deployCleartextStack(provider: EthereumProvider): Promise<Deployed> {
   const chain = await developmentChain(provider);
   const publicClient = developmentPublicClient(provider, chain);
