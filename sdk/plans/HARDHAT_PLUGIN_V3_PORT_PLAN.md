@@ -1,6 +1,6 @@
 # Porting the FHEVM hardhat plugin from hardhat v2 to hardhat v3
 
-Version: **1.39** (2026-09-03). Bump the minor for a content change to the plan, the major for a
+Version: **1.40** (2026-09-03). Bump the minor for a content change to the plan, the major for a
 change of charter or stage order; record each bump below.
 
 - 1.0 — initial plan, from the hardhat 3 docs.
@@ -61,8 +61,10 @@ change of charter or stage order; record each bump below.
   `@openzeppelin/contracts` 5.1.0 + forge remapping added; every ledger row now has its contracts.
 - 1.39 — payload layout aligned on js-sdk: declarations in `pkg/_types`, JavaScript in `pkg/_esm`; the
   plugin tests reach the build through a `#esm/*` imports map (types → `_types`, default → `_esm`).
+- 1.40 — open question 5 DECIDED: the hardhat 3 package is `@fhevm/hardhat-plugin-v3` at `0.13.0` (the
+  FHEVM protocol line + patch). Working rule added: ledger rows are ported from the smallest to the largest.
 
-Status: **port complete for development networks — Stages A–F and E2E-0b landed. Open: the public-chain client (network-group decision), the version scheme (question 5), the remaining ledger test ports (contracts now present).** The landing zone exists: the
+Status: **port complete for development networks — Stages A–F and E2E-0b landed. Open: the public-chain client (network-group decision) and the remaining ledger test ports (contracts now present; smallest first).** The landing zone exists: the
 `hardhat/v3` cluster (own installation root, hardhat 3.15 pinned), the plugin registered via
 `definePlugin` with its per-connection `fhevm` object and the pre-serve chain preparation proven,
 and the `hardhat/v3/e2e` member with the first counter test.
@@ -77,6 +79,7 @@ and the `hardhat/v3/e2e` member with the first counter test.
 - Only tests written in the `fhevm/sdk` folder may be executed.
 - Running `fhevm-npm` (the check battery and its commands) is allowed.
 - Stop after each step: report, then wait for the go-ahead before starting the next one.
+- Ledger e2e test rows are ported from the SMALLEST to the LARGEST (rule added 2026-09-03).
 - The plan is committed ALONE: every commit touching this file bumps the version below and contains
   nothing else — never bundled with a code step.
 
@@ -323,13 +326,13 @@ Each phase ends green: `make build`, the affected test tiers, and the fhevm-npm 
    and pushing code INTO `@fhevm/sdk` needs js-sdk repo work + interim publishes until js-sdk joins
    the workspace. Options: (a) port the engines into the v3 plugin now with an extraction marker;
    (b) accelerate the js-sdk workspace landing so extraction comes first; (c) interim sdk releases.
-5. **The npm version line for `@fhevm/hardhat-plugin` v3 — STILL OPEN (2026-09-03).** The skeleton
-   says `0.1.0`, v2 publishes `0.4.2` under the SAME name. The `1.0.0` proposal is NOT accepted: the
-   number must carry (a) the FHEVM protocol line it targets (`0.13.x`), (b) the hardhat generation
-   (2 or 3) and (c) a patch. Semver has three slots plus a prerelease/build field, so candidates
-   are e.g. `0.13.<hh><patch>`-style minors, a prerelease tag (`0.13.0-hardhat3.1`), or one package
-   name per generation. Publint/pack are green on `0.1.0` meanwhile; the decision gates PUBLISHING,
-   not F2.
+5. **The npm name and version of the hardhat 3 plugin — DECIDED (2026-09-03).** One package per
+   hardhat generation: v2 stays `@fhevm/hardhat-plugin` (`0.4.x`), the hardhat 3 plugin is
+   **`@fhevm/hardhat-plugin-v3`**, versioned on the FHEVM protocol line it targets: **`0.13.0`** (major.minor
+   = protocol `0.13`, patch = plugin patch). The generation lives in the NAME, so semver keeps its three
+   slots. Applied to the payload, the plugin id's `npmPackage`, the e2e and consumer fixture
+   dependencies, both lockfiles, the README and `npm-manifest.json` (the "same name on purpose" note is
+   gone). publint, attw, pack (`fhevm-hardhat-plugin-v3-0.13.0.tgz`), consumer leg, tests: green.
 6. **Is v2 frozen or co-developed during the port?** The plan assumes v2 SHRINKS alongside (C2,
    phase-1 extraction). Active v2 feature work in parallel means every shared change needs a
    two-generation test pass; bugfix-only keeps the port fast. Decides phase-1 aggressiveness.
@@ -853,7 +856,7 @@ this later without API change). One commit per group, tests run against the B1 s
   (install, configure, `connection.fhevm` members, tasks, the node banner, supported networks); the
   payload description no longer says "skeleton". NOT done (outside the write scope): the
   `npm-manifest.json` note for the v3 owner still reads "hello-world skeleton until the migration
-  lands". Version stays `0.1.0` pending open question 5.
+  lands". Version: see open question 5 (decided later the same day: `@fhevm/hardhat-plugin-v3` `0.13.0`).
   Was: publint/attw/pack green; pkg README.
   Commit: `chore(hh-v3-plugin): publint, attw and pack:tarball green; package README`
 - **F3 — CLOSED for development networks** (no new e2e commit needed: every row the suite can reach
