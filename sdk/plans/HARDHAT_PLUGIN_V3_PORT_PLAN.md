@@ -1,6 +1,6 @@
 # Porting the FHEVM hardhat plugin from hardhat v2 to hardhat v3
 
-Version: **1.16** (2026-09-03). Bump the minor for a content change to the plan, the major for a
+Version: **1.17** (2026-09-03). Bump the minor for a content change to the plan, the major for a
 change of charter or stage order; record each bump below.
 
 - 1.0 — initial plan, from the hardhat 3 docs.
@@ -24,8 +24,10 @@ change of charter or stage order; record each bump below.
 - 1.15 — C2 landed (v3 detection over the face; v2 public configs from the face); Stage C complete.
 - 1.16 — D0 landed (public surface isolated in `types.ts`, stubs by name); lint tsconfig split into
   source and test projects; ledger: the ZamaConfig-trio smoke test moves from D0 to D5b.
+- 1.17 — D1 landed (encrypt group over the cleartext SDK client; `fhevm.client` live on development
+  connections); ledger D1 row: e2e files wait on their contracts (E2E-0b).
 
-Status: **in progress — Stages A, B, C and D0 complete. Next: D1.** The landing zone exists: the
+Status: **in progress — Stages A, B, C, D0 and D1 complete. Next: D2.** The landing zone exists: the
 `hardhat/v3` cluster (own installation root, hardhat 3.15 pinned), the plugin registered via
 `definePlugin` with its per-connection `fhevm` object and the pre-serve chain preparation proven,
 and the `hardhat/v3/e2e` member with the first counter test.
@@ -574,7 +576,18 @@ this later without API change). One commit per group, tests run against the B1 s
   built payload, and with a nominal enum the built and source copies of the `NetworkConnection.fhevm`
   augmentation no longer type-merge in one program.
   Was: `types.ts` → `HardhatFhevmRuntimeEnvironment` and friends, methods stubbed `not implemented`.
-- **D1.** `createEncryptedInput` + `encryptUint/Bool/Address`.
+- **D1. Encrypt group — LANDED.** `createEncryptedInput` + `encryptUint/Bool/Address`, backed by the
+  SDK client's `encryptValues`/`encryptValue` (`internal/encrypt.ts`, `internal/fheType.ts` for the
+  enum→SDK-name bridge; euint4 refused by name). The client itself landed here too: `internal/client.ts`
+  builds `createFhevmCleartextClient` over the connection's viem public client and the chain
+  `internal/chains.ts` derives from the DEPLOYED stack (addresses from `Deployed`, gateway from the
+  cleartext package's exported constants), awaits `ready`, and `newConnection` hands it to the
+  connection object — the `client` getter is sync, so creation is eager, once per connection. The SDK's
+  process-wide `setFhevmRuntimeConfig` is set to `{}` on first use; relayer auth joins when public
+  networks do. On a non-development connection `fhevm.client` throws a named "not available" error:
+  public clients wait on the network-group decision (Stage D open question). Consumer note: `handles`
+  is `Hex[]`, so a `noUncheckedIndexedAccess` consumer must narrow `handles[0]` (the e2e test does).
+  Was: `createEncryptedInput` + `encryptUint/Bool/Address`.
   Commit: `feat(hh-v3-plugin): port encrypted-input creation and encrypt helpers`
 - **D2.** `publicDecrypt` + typed variants.
   Commit: `feat(hh-v3-plugin): port publicDecrypt and its typed variants`
@@ -660,7 +673,7 @@ allows.
 | B1c                    | MOVED: the ZamaConfig-trio smoke test AND `TestFHENotInitialized.test.ts` land with D5b (`getCoprocessorConfig` / `assertCoprocessorInitialized`; D0 only stubbed them)                                                                                       |
 | B2                     | DONE — `test:anvil` + `test:anvil:simple` scripts and `test/test-anvil*.sh` (run the counter file)                                                                                                                                                       |
 | B3                     | DONE — `test:node` script + `test/test-hardhat-node.sh`                                                                                                                                                                                                  |
-| D1                     | `internal/delegatedUserDecryption.ts` (encrypt half; the delegated decrypt asserts join at D3c), `finance/ConfidentialVestingWallet*.test.ts` (`createEncryptedInput` only)                                                                         |
+| D1                     | DONE for the counter: `internal/FHECounterPublicDecrypt.ts` gained "increment the counter by 1" (encrypt + tx; the public-decrypt half joins at D2). `internal/delegatedUserDecryption.ts` and `finance/ConfidentialVestingWallet*.test.ts` wait on their contracts (E2E-0b, on demand) |
 | D2                     | `internal/FHECounterPublicDecrypt.ts` — the rest (`publicDecrypt`, `publicDecryptEuint`), `internal/Rand.ts` + fixture, `doc-examples/HeadsOrTails.ts`, `doc-examples/HighestDieRoll.ts`, `operators-public-decrypt/fhevmOperations54.ts`, `operators-manual/manualV13.ts` |
 | D3b                    | `internal/FHECounterUserDecrypt.ts`, `internal/AplusB.ts`, `doc-examples/{DecryptSingleValue,DecryptMultipleValues,EncryptSingleValue,EncryptMultipleValues}.ts`, `confidentialERC20/*`, `finance/*.fixture.ts`, `governance/*`, `utils/EncryptedErrors.*`, `operators-manual/manualWithAllowSender.ts` |
 | D3c                    | `internal/delegatedUserDecryption.ts` — the delegated asserts                                                                                                                                                                                     |
