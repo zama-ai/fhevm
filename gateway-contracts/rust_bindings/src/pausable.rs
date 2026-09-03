@@ -143,26 +143,6 @@ interface Pausable {
 pub mod Pausable {
     use super::*;
     use alloy::sol_types as alloy_sol_types;
-    /// The creation / init bytecode of the contract.
-    ///
-    /// ```text
-    ///0x
-    /// ```
-    #[rustfmt::skip]
-    #[allow(clippy::all)]
-    pub static BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
-        b"",
-    );
-    /// The runtime bytecode of the contract, as deployed on the network.
-    ///
-    /// ```text
-    ///0x
-    /// ```
-    #[rustfmt::skip]
-    #[allow(clippy::all)]
-    pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
-        b"",
-    );
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `EnforcedPause()` and selector `0xd93c0665`.
@@ -230,10 +210,10 @@ error EnforcedPause();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -304,10 +284,10 @@ error ExpectedPause();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -378,10 +358,10 @@ error InvalidInitialization();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -452,10 +432,10 @@ error NotInitializing();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -535,10 +515,10 @@ error NotOwnerOrGatewayConfig(address notOwnerOrGatewayConfig);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -620,10 +600,10 @@ error NotPauserOrGatewayConfig(address notPauserOrGatewayConfig);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -1069,13 +1049,26 @@ function pause() external;
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -1211,16 +1204,29 @@ function paused() external view returns (bool);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: pausedReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -1351,20 +1357,33 @@ function unpause() external;
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
     ///Container for all the [`Pausable`](self) function calls.
     #[derive(Clone)]
     #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive()]
+    #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum PausableCalls {
         #[allow(missing_docs)]
         pause(pauseCall),
@@ -1445,26 +1464,58 @@ function unpause() external;
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::default(),
+            )
+        }
+        #[inline]
+        #[allow(non_snake_case)]
+        fn abi_decode_raw_with_config(
+            selector: [u8; 4],
+            data: &[u8],
+            config: alloy_sol_types::abi::AbiDecoderConfig,
+        ) -> alloy_sol_types::Result<Self> {
             static DECODE_SHIMS: &[fn(
                 &[u8],
+                alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<PausableCalls>] = &[
                 {
-                    fn unpause(data: &[u8]) -> alloy_sol_types::Result<PausableCalls> {
-                        <unpauseCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                    fn unpause(
+                        data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
+                    ) -> alloy_sol_types::Result<PausableCalls> {
+                        <unpauseCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(PausableCalls::unpause)
                     }
                     unpause
                 },
                 {
-                    fn paused(data: &[u8]) -> alloy_sol_types::Result<PausableCalls> {
-                        <pausedCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                    fn paused(
+                        data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
+                    ) -> alloy_sol_types::Result<PausableCalls> {
+                        <pausedCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(PausableCalls::paused)
                     }
                     paused
                 },
                 {
-                    fn pause(data: &[u8]) -> alloy_sol_types::Result<PausableCalls> {
-                        <pauseCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                    fn pause(
+                        data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
+                    ) -> alloy_sol_types::Result<PausableCalls> {
+                        <pauseCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(PausableCalls::pause)
                     }
                     pause
@@ -1478,7 +1529,7 @@ function unpause() external;
                     ),
                 );
             };
-            DECODE_SHIMS[idx](data)
+            DECODE_SHIMS[idx](data, config)
         }
         #[inline]
         #[allow(non_snake_case)]
@@ -1486,46 +1537,11 @@ function unpause() external;
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
-            static DECODE_VALIDATE_SHIMS: &[fn(
-                &[u8],
-            ) -> alloy_sol_types::Result<PausableCalls>] = &[
-                {
-                    fn unpause(data: &[u8]) -> alloy_sol_types::Result<PausableCalls> {
-                        <unpauseCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(PausableCalls::unpause)
-                    }
-                    unpause
-                },
-                {
-                    fn paused(data: &[u8]) -> alloy_sol_types::Result<PausableCalls> {
-                        <pausedCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(PausableCalls::paused)
-                    }
-                    paused
-                },
-                {
-                    fn pause(data: &[u8]) -> alloy_sol_types::Result<PausableCalls> {
-                        <pauseCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(PausableCalls::pause)
-                    }
-                    pause
-                },
-            ];
-            let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
-            };
-            DECODE_VALIDATE_SHIMS[idx](data)
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+            )
         }
         #[inline]
         fn abi_encoded_size(&self) -> usize {
@@ -1670,15 +1686,31 @@ function unpause() external;
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::default(),
+            )
+        }
+        #[inline]
+        #[allow(non_snake_case)]
+        fn abi_decode_raw_with_config(
+            selector: [u8; 4],
+            data: &[u8],
+            config: alloy_sol_types::abi::AbiDecoderConfig,
+        ) -> alloy_sol_types::Result<Self> {
             static DECODE_SHIMS: &[fn(
                 &[u8],
+                alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<PausableErrors>] = &[
                 {
                     fn NotPauserOrGatewayConfig(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<PausableErrors> {
-                        <NotPauserOrGatewayConfig as alloy_sol_types::SolError>::abi_decode_raw(
+                        <NotPauserOrGatewayConfig as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(PausableErrors::NotPauserOrGatewayConfig)
                     }
@@ -1687,9 +1719,11 @@ function unpause() external;
                 {
                     fn ExpectedPause(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<PausableErrors> {
-                        <ExpectedPause as alloy_sol_types::SolError>::abi_decode_raw(
+                        <ExpectedPause as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(PausableErrors::ExpectedPause)
                     }
@@ -1698,9 +1732,11 @@ function unpause() external;
                 {
                     fn NotInitializing(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<PausableErrors> {
-                        <NotInitializing as alloy_sol_types::SolError>::abi_decode_raw(
+                        <NotInitializing as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(PausableErrors::NotInitializing)
                     }
@@ -1709,9 +1745,11 @@ function unpause() external;
                 {
                     fn EnforcedPause(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<PausableErrors> {
-                        <EnforcedPause as alloy_sol_types::SolError>::abi_decode_raw(
+                        <EnforcedPause as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(PausableErrors::EnforcedPause)
                     }
@@ -1720,9 +1758,11 @@ function unpause() external;
                 {
                     fn NotOwnerOrGatewayConfig(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<PausableErrors> {
-                        <NotOwnerOrGatewayConfig as alloy_sol_types::SolError>::abi_decode_raw(
+                        <NotOwnerOrGatewayConfig as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(PausableErrors::NotOwnerOrGatewayConfig)
                     }
@@ -1731,9 +1771,11 @@ function unpause() external;
                 {
                     fn InvalidInitialization(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<PausableErrors> {
-                        <InvalidInitialization as alloy_sol_types::SolError>::abi_decode_raw(
+                        <InvalidInitialization as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(PausableErrors::InvalidInitialization)
                     }
@@ -1748,7 +1790,7 @@ function unpause() external;
                     ),
                 );
             };
-            DECODE_SHIMS[idx](data)
+            DECODE_SHIMS[idx](data, config)
         }
         #[inline]
         #[allow(non_snake_case)]
@@ -1756,85 +1798,11 @@ function unpause() external;
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
-            static DECODE_VALIDATE_SHIMS: &[fn(
-                &[u8],
-            ) -> alloy_sol_types::Result<PausableErrors>] = &[
-                {
-                    fn NotPauserOrGatewayConfig(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<PausableErrors> {
-                        <NotPauserOrGatewayConfig as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(PausableErrors::NotPauserOrGatewayConfig)
-                    }
-                    NotPauserOrGatewayConfig
-                },
-                {
-                    fn ExpectedPause(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<PausableErrors> {
-                        <ExpectedPause as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(PausableErrors::ExpectedPause)
-                    }
-                    ExpectedPause
-                },
-                {
-                    fn NotInitializing(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<PausableErrors> {
-                        <NotInitializing as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(PausableErrors::NotInitializing)
-                    }
-                    NotInitializing
-                },
-                {
-                    fn EnforcedPause(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<PausableErrors> {
-                        <EnforcedPause as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(PausableErrors::EnforcedPause)
-                    }
-                    EnforcedPause
-                },
-                {
-                    fn NotOwnerOrGatewayConfig(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<PausableErrors> {
-                        <NotOwnerOrGatewayConfig as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(PausableErrors::NotOwnerOrGatewayConfig)
-                    }
-                    NotOwnerOrGatewayConfig
-                },
-                {
-                    fn InvalidInitialization(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<PausableErrors> {
-                        <InvalidInitialization as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(PausableErrors::InvalidInitialization)
-                    }
-                    InvalidInitialization
-                },
-            ];
-            let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
-            };
-            DECODE_VALIDATE_SHIMS[idx](data)
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+            )
         }
         #[inline]
         fn abi_encoded_size(&self) -> usize {
@@ -1907,6 +1875,71 @@ function unpause() external;
                     )
                 }
             }
+        }
+    }
+    #[automatically_derived]
+    impl PausableErrors {
+        /**Creates a [`EnforcedPause`] error.
+
+```solidity
+error EnforcedPause()
+```*/
+        #[inline]
+        pub fn enforced_pause() -> Self {
+            Self::EnforcedPause(EnforcedPause)
+        }
+        /**Creates a [`ExpectedPause`] error.
+
+```solidity
+error ExpectedPause()
+```*/
+        #[inline]
+        pub fn expected_pause() -> Self {
+            Self::ExpectedPause(ExpectedPause)
+        }
+        /**Creates a [`InvalidInitialization`] error.
+
+```solidity
+error InvalidInitialization()
+```*/
+        #[inline]
+        pub fn invalid_initialization() -> Self {
+            Self::InvalidInitialization(InvalidInitialization)
+        }
+        /**Creates a [`NotInitializing`] error.
+
+```solidity
+error NotInitializing()
+```*/
+        #[inline]
+        pub fn not_initializing() -> Self {
+            Self::NotInitializing(NotInitializing)
+        }
+        /**Creates a [`NotOwnerOrGatewayConfig`] error.
+
+```solidity
+error NotOwnerOrGatewayConfig(address)
+```*/
+        #[inline]
+        pub fn not_owner_or_gateway_config(
+            not_owner_or_gateway_config: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::NotOwnerOrGatewayConfig(NotOwnerOrGatewayConfig {
+                notOwnerOrGatewayConfig: not_owner_or_gateway_config,
+            })
+        }
+        /**Creates a [`NotPauserOrGatewayConfig`] error.
+
+```solidity
+error NotPauserOrGatewayConfig(address)
+```*/
+        #[inline]
+        pub fn not_pauser_or_gateway_config(
+            not_pauser_or_gateway_config: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::NotPauserOrGatewayConfig(NotPauserOrGatewayConfig {
+                notPauserOrGatewayConfig: not_pauser_or_gateway_config,
+            })
         }
     }
     ///Container for all the [`Pausable`](self) events.
@@ -2045,6 +2078,36 @@ function unpause() external;
             }
         }
     }
+    #[automatically_derived]
+    impl PausableEvents {
+        /**Creates a [`Initialized`] event.
+
+```solidity
+event Initialized(uint64)
+```*/
+        #[inline]
+        pub fn initialized(version: u64) -> Self {
+            Self::Initialized(Initialized { version: version })
+        }
+        /**Creates a [`Paused`] event.
+
+```solidity
+event Paused(address)
+```*/
+        #[inline]
+        pub fn paused(account: alloy::sol_types::private::Address) -> Self {
+            Self::Paused(Paused { account: account })
+        }
+        /**Creates a [`Unpaused`] event.
+
+```solidity
+event Unpaused(address)
+```*/
+        #[inline]
+        pub fn unpaused(account: alloy::sol_types::private::Address) -> Self {
+            Self::Unpaused(Unpaused { account: account })
+        }
+    }
     use alloy::contract as alloy_contract;
     /**Creates a new wrapper around an on-chain [`Pausable`](self) contract instance.
 
@@ -2058,34 +2121,6 @@ See the [wrapper's documentation](`PausableInstance`) for more details.*/
         __provider: P,
     ) -> PausableInstance<P, N> {
         PausableInstance::<P, N>::new(address, __provider)
-    }
-    /**Deploys this contract using the given `provider` and constructor arguments, if any.
-
-Returns a new instance of the contract, if the deployment was successful.
-
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
-    #[inline]
-    pub fn deploy<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(
-        __provider: P,
-    ) -> impl ::core::future::Future<
-        Output = alloy_contract::Result<PausableInstance<P, N>>,
-    > {
-        PausableInstance::<P, N>::deploy(__provider)
-    }
-    /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
-
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
-    #[inline]
-    pub fn deploy_builder<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
-        PausableInstance::<P, N>::deploy_builder(__provider)
     }
     /**A [`Pausable`](self) instance.
 
@@ -2129,31 +2164,6 @@ See the [wrapper's documentation](`PausableInstance`) for more details.*/
                 provider: __provider,
                 _network: ::core::marker::PhantomData,
             }
-        }
-        /**Deploys this contract using the given `provider` and constructor arguments, if any.
-
-Returns a new instance of the contract, if the deployment was successful.
-
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
-        #[inline]
-        pub async fn deploy(
-            __provider: P,
-        ) -> alloy_contract::Result<PausableInstance<P, N>> {
-            let call_builder = Self::deploy_builder(__provider);
-            let contract_address = call_builder.deploy().await?;
-            Ok(Self::new(contract_address, call_builder.provider))
-        }
-        /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
-
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
-        #[inline]
-        pub fn deploy_builder(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
-            alloy_contract::RawCallBuilder::new_raw_deploy(
-                __provider,
-                ::core::clone::Clone::clone(&BYTECODE),
-            )
         }
         /// Returns a reference to the address.
         #[inline]

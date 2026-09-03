@@ -307,26 +307,6 @@ interface EmptyUUPSProxyGatewayConfig {
 pub mod EmptyUUPSProxyGatewayConfig {
     use super::*;
     use alloy::sol_types as alloy_sol_types;
-    /// The creation / init bytecode of the contract.
-    ///
-    /// ```text
-    ///0x60a060405230608052348015610013575f80fd5b5061001c610021565b6100d3565b7ff0c57e16840df040f15088dc2f81fe391c3923bec73e23a9662efc9c229c6a00805468010000000000000000900460ff16156100715760405163f92ee8a960e01b815260040160405180910390fd5b80546001600160401b03908116146100d05780546001600160401b0319166001600160401b0390811782556040519081527fc7f505b2f371ae2175ee4913f4499e1f2633a7b5936321eed1cdaeb6115181d29060200160405180910390a15b50565b608051610b316100f95f395f8181610489015281816104b2015261061c0152610b315ff3fe608060405260043610610093575f3560e01c80638da5cb5b11610066578063c4d66de81161004c578063c4d66de81461017c578063e30c39781461019b578063f2fde38b146101af575f80fd5b80638da5cb5b146100fb578063ad3cb1cc14610127575f80fd5b80634f1ef2861461009757806352d1902d146100ac578063715018a6146100d357806379ba5097146100e7575b5f80fd5b6100aa6100a53660046109d6565b6101ce565b005b3480156100b7575f80fd5b506100c06101ed565b6040519081526020015b60405180910390f35b3480156100de575f80fd5b506100aa61021b565b3480156100f2575f80fd5b506100aa61022e565b348015610106575f80fd5b5061010f61027b565b6040516001600160a01b0390911681526020016100ca565b348015610132575f80fd5b5061016f6040518060400160405280600581526020017f352e302e3000000000000000000000000000000000000000000000000000000081525081565b6040516100ca9190610ab4565b348015610187575f80fd5b506100aa610196366004610ae6565b6102af565b3480156101a6575f80fd5b5061010f6103d1565b3480156101ba575f80fd5b506100aa6101c9366004610ae6565b6103f9565b6101d661047e565b6101df82610535565b6101e9828261053d565b5050565b5f6101f6610611565b507f360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc90565b61022361065a565b61022c5f61068c565b565b33806102386103d1565b6001600160a01b03161461026f5760405163118cdaa760e01b81526001600160a01b03821660048201526024015b60405180910390fd5b6102788161068c565b50565b5f807f9016d09d72d40fdae2fd8ceac6b6234c7706214fd39c1cd1e609a0528c1993005b546001600160a01b031692915050565b7ff0c57e16840df040f15088dc2f81fe391c3923bec73e23a9662efc9c229c6a00805468010000000000000000810460ff16159067ffffffffffffffff165f811580156102f95750825b90505f8267ffffffffffffffff1660011480156103155750303b155b905081158015610323575080155b156103415760405163f92ee8a960e01b815260040160405180910390fd5b845467ffffffffffffffff19166001178555831561037557845468ff00000000000000001916680100000000000000001785555b61037e866106c4565b83156103c957845468ff000000000000000019168555604051600181527fc7f505b2f371ae2175ee4913f4499e1f2633a7b5936321eed1cdaeb6115181d29060200160405180910390a15b505050505050565b5f807f237e158222e3e6968b72b9db0d8043aacf074ad9f650f0d1606b4d82ee432c0061029f565b61040161065a565b7f237e158222e3e6968b72b9db0d8043aacf074ad9f650f0d1606b4d82ee432c0080546001600160a01b0319166001600160a01b038316908117825561044561027b565b6001600160a01b03167f38d16b8cac22d99fc7c124b9cd0de2d3fa1faef420bfe791d8c362d765e2270060405160405180910390a35050565b306001600160a01b037f000000000000000000000000000000000000000000000000000000000000000016148061051757507f00000000000000000000000000000000000000000000000000000000000000006001600160a01b031661050b7f360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc546001600160a01b031690565b6001600160a01b031614155b1561022c5760405163703e46dd60e11b815260040160405180910390fd5b61027861065a565b816001600160a01b03166352d1902d6040518163ffffffff1660e01b8152600401602060405180830381865afa925050508015610597575060408051601f3d908101601f1916820190925261059491810190610aff565b60015b6105bf57604051634c9c8ce360e01b81526001600160a01b0383166004820152602401610266565b7f360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc811461060257604051632a87526960e21b815260048101829052602401610266565b61060c83836106d5565b505050565b306001600160a01b037f0000000000000000000000000000000000000000000000000000000000000000161461022c5760405163703e46dd60e11b815260040160405180910390fd5b3361066361027b565b6001600160a01b03161461022c5760405163118cdaa760e01b8152336004820152602401610266565b7f237e158222e3e6968b72b9db0d8043aacf074ad9f650f0d1606b4d82ee432c0080546001600160a01b03191681556101e98261072a565b6106cc61079a565b610278816107e8565b6106de82610819565b6040516001600160a01b038316907fbc7cd75a20ee27fd9adebab32041f755214dbc6bffa90cc0225b39da2e5c2d3b905f90a28051156107225761060c828261088f565b6101e9610901565b7f9016d09d72d40fdae2fd8ceac6b6234c7706214fd39c1cd1e609a0528c19930080546001600160a01b031981166001600160a01b03848116918217845560405192169182907f8be0079c531659141344cd1fd0a4f28419497f9722a3daafe3b4186f6b6457e0905f90a3505050565b7ff0c57e16840df040f15088dc2f81fe391c3923bec73e23a9662efc9c229c6a005468010000000000000000900460ff1661022c57604051631afcd79f60e31b815260040160405180910390fd5b6107f061079a565b6001600160a01b03811661026f57604051631e4fbdf760e01b81525f6004820152602401610266565b806001600160a01b03163b5f0361084e57604051634c9c8ce360e01b81526001600160a01b0382166004820152602401610266565b7f360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc80546001600160a01b0319166001600160a01b0392909216919091179055565b60605f80846001600160a01b0316846040516108ab9190610b16565b5f60405180830381855af49150503d805f81146108e3576040519150601f19603f3d011682016040523d82523d5f602084013e6108e8565b606091505b50915091506108f8858383610920565b95945050505050565b341561022c5760405163b398979f60e01b815260040160405180910390fd5b606082610935576109308261097f565b610978565b815115801561094c57506001600160a01b0384163b155b1561097557604051639996b31560e01b81526001600160a01b0385166004820152602401610266565b50805b9392505050565b80511561098e57805160208201fd5b60405163d6bda27560e01b815260040160405180910390fd5b80356001600160a01b03811681146109bd575f80fd5b919050565b634e487b7160e01b5f52604160045260245ffd5b5f80604083850312156109e7575f80fd5b6109f0836109a7565b9150602083013567ffffffffffffffff80821115610a0c575f80fd5b818501915085601f830112610a1f575f80fd5b813581811115610a3157610a316109c2565b604051601f8201601f19908116603f01168101908382118183101715610a5957610a596109c2565b81604052828152886020848701011115610a71575f80fd5b826020860160208301375f6020848301015280955050505050509250929050565b5f5b83811015610aac578181015183820152602001610a94565b50505f910152565b602081525f8251806020840152610ad2816040850160208701610a92565b601f01601f19169190910160400192915050565b5f60208284031215610af6575f80fd5b610978826109a7565b5f60208284031215610b0f575f80fd5b5051919050565b5f8251610b27818460208701610a92565b919091019291505056
-    /// ```
-    #[rustfmt::skip]
-    #[allow(clippy::all)]
-    pub static BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
-        b"`\xA0`@R0`\x80R4\x80\x15a\0\x13W_\x80\xFD[Pa\0\x1Ca\0!V[a\0\xD3V[\x7F\xF0\xC5~\x16\x84\r\xF0@\xF1P\x88\xDC/\x81\xFE9\x1C9#\xBE\xC7>#\xA9f.\xFC\x9C\"\x9Cj\0\x80Th\x01\0\0\0\0\0\0\0\0\x90\x04`\xFF\x16\x15a\0qW`@Qc\xF9.\xE8\xA9`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[\x80T`\x01`\x01`@\x1B\x03\x90\x81\x16\x14a\0\xD0W\x80T`\x01`\x01`@\x1B\x03\x19\x16`\x01`\x01`@\x1B\x03\x90\x81\x17\x82U`@Q\x90\x81R\x7F\xC7\xF5\x05\xB2\xF3q\xAE!u\xEEI\x13\xF4I\x9E\x1F&3\xA7\xB5\x93c!\xEE\xD1\xCD\xAE\xB6\x11Q\x81\xD2\x90` \x01`@Q\x80\x91\x03\x90\xA1[PV[`\x80Qa\x0B1a\0\xF9_9_\x81\x81a\x04\x89\x01R\x81\x81a\x04\xB2\x01Ra\x06\x1C\x01Ra\x0B1_\xF3\xFE`\x80`@R`\x046\x10a\0\x93W_5`\xE0\x1C\x80c\x8D\xA5\xCB[\x11a\0fW\x80c\xC4\xD6m\xE8\x11a\0LW\x80c\xC4\xD6m\xE8\x14a\x01|W\x80c\xE3\x0C9x\x14a\x01\x9BW\x80c\xF2\xFD\xE3\x8B\x14a\x01\xAFW_\x80\xFD[\x80c\x8D\xA5\xCB[\x14a\0\xFBW\x80c\xAD<\xB1\xCC\x14a\x01'W_\x80\xFD[\x80cO\x1E\xF2\x86\x14a\0\x97W\x80cR\xD1\x90-\x14a\0\xACW\x80cqP\x18\xA6\x14a\0\xD3W\x80cy\xBAP\x97\x14a\0\xE7W[_\x80\xFD[a\0\xAAa\0\xA56`\x04a\t\xD6V[a\x01\xCEV[\0[4\x80\x15a\0\xB7W_\x80\xFD[Pa\0\xC0a\x01\xEDV[`@Q\x90\x81R` \x01[`@Q\x80\x91\x03\x90\xF3[4\x80\x15a\0\xDEW_\x80\xFD[Pa\0\xAAa\x02\x1BV[4\x80\x15a\0\xF2W_\x80\xFD[Pa\0\xAAa\x02.V[4\x80\x15a\x01\x06W_\x80\xFD[Pa\x01\x0Fa\x02{V[`@Q`\x01`\x01`\xA0\x1B\x03\x90\x91\x16\x81R` \x01a\0\xCAV[4\x80\x15a\x012W_\x80\xFD[Pa\x01o`@Q\x80`@\x01`@R\x80`\x05\x81R` \x01\x7F5.0.0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81RP\x81V[`@Qa\0\xCA\x91\x90a\n\xB4V[4\x80\x15a\x01\x87W_\x80\xFD[Pa\0\xAAa\x01\x966`\x04a\n\xE6V[a\x02\xAFV[4\x80\x15a\x01\xA6W_\x80\xFD[Pa\x01\x0Fa\x03\xD1V[4\x80\x15a\x01\xBAW_\x80\xFD[Pa\0\xAAa\x01\xC96`\x04a\n\xE6V[a\x03\xF9V[a\x01\xD6a\x04~V[a\x01\xDF\x82a\x055V[a\x01\xE9\x82\x82a\x05=V[PPV[_a\x01\xF6a\x06\x11V[P\x7F6\x08\x94\xA1;\xA1\xA3!\x06g\xC8(I-\xB9\x8D\xCA> v\xCC75\xA9 \xA3\xCAP]8+\xBC\x90V[a\x02#a\x06ZV[a\x02,_a\x06\x8CV[V[3\x80a\x028a\x03\xD1V[`\x01`\x01`\xA0\x1B\x03\x16\x14a\x02oW`@Qc\x11\x8C\xDA\xA7`\xE0\x1B\x81R`\x01`\x01`\xA0\x1B\x03\x82\x16`\x04\x82\x01R`$\x01[`@Q\x80\x91\x03\x90\xFD[a\x02x\x81a\x06\x8CV[PV[_\x80\x7F\x90\x16\xD0\x9Dr\xD4\x0F\xDA\xE2\xFD\x8C\xEA\xC6\xB6#Lw\x06!O\xD3\x9C\x1C\xD1\xE6\t\xA0R\x8C\x19\x93\0[T`\x01`\x01`\xA0\x1B\x03\x16\x92\x91PPV[\x7F\xF0\xC5~\x16\x84\r\xF0@\xF1P\x88\xDC/\x81\xFE9\x1C9#\xBE\xC7>#\xA9f.\xFC\x9C\"\x9Cj\0\x80Th\x01\0\0\0\0\0\0\0\0\x81\x04`\xFF\x16\x15\x90g\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16_\x81\x15\x80\x15a\x02\xF9WP\x82[\x90P_\x82g\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16`\x01\x14\x80\x15a\x03\x15WP0;\x15[\x90P\x81\x15\x80\x15a\x03#WP\x80\x15[\x15a\x03AW`@Qc\xF9.\xE8\xA9`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[\x84Tg\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x19\x16`\x01\x17\x85U\x83\x15a\x03uW\x84Th\xFF\0\0\0\0\0\0\0\0\x19\x16h\x01\0\0\0\0\0\0\0\0\x17\x85U[a\x03~\x86a\x06\xC4V[\x83\x15a\x03\xC9W\x84Th\xFF\0\0\0\0\0\0\0\0\x19\x16\x85U`@Q`\x01\x81R\x7F\xC7\xF5\x05\xB2\xF3q\xAE!u\xEEI\x13\xF4I\x9E\x1F&3\xA7\xB5\x93c!\xEE\xD1\xCD\xAE\xB6\x11Q\x81\xD2\x90` \x01`@Q\x80\x91\x03\x90\xA1[PPPPPPV[_\x80\x7F#~\x15\x82\"\xE3\xE6\x96\x8Br\xB9\xDB\r\x80C\xAA\xCF\x07J\xD9\xF6P\xF0\xD1`kM\x82\xEEC,\0a\x02\x9FV[a\x04\x01a\x06ZV[\x7F#~\x15\x82\"\xE3\xE6\x96\x8Br\xB9\xDB\r\x80C\xAA\xCF\x07J\xD9\xF6P\xF0\xD1`kM\x82\xEEC,\0\x80T`\x01`\x01`\xA0\x1B\x03\x19\x16`\x01`\x01`\xA0\x1B\x03\x83\x16\x90\x81\x17\x82Ua\x04Ea\x02{V[`\x01`\x01`\xA0\x1B\x03\x16\x7F8\xD1k\x8C\xAC\"\xD9\x9F\xC7\xC1$\xB9\xCD\r\xE2\xD3\xFA\x1F\xAE\xF4 \xBF\xE7\x91\xD8\xC3b\xD7e\xE2'\0`@Q`@Q\x80\x91\x03\x90\xA3PPV[0`\x01`\x01`\xA0\x1B\x03\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x16\x14\x80a\x05\x17WP\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0`\x01`\x01`\xA0\x1B\x03\x16a\x05\x0B\x7F6\x08\x94\xA1;\xA1\xA3!\x06g\xC8(I-\xB9\x8D\xCA> v\xCC75\xA9 \xA3\xCAP]8+\xBCT`\x01`\x01`\xA0\x1B\x03\x16\x90V[`\x01`\x01`\xA0\x1B\x03\x16\x14\x15[\x15a\x02,W`@Qcp>F\xDD`\xE1\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[a\x02xa\x06ZV[\x81`\x01`\x01`\xA0\x1B\x03\x16cR\xD1\x90-`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x92PPP\x80\x15a\x05\x97WP`@\x80Q`\x1F=\x90\x81\x01`\x1F\x19\x16\x82\x01\x90\x92Ra\x05\x94\x91\x81\x01\x90a\n\xFFV[`\x01[a\x05\xBFW`@QcL\x9C\x8C\xE3`\xE0\x1B\x81R`\x01`\x01`\xA0\x1B\x03\x83\x16`\x04\x82\x01R`$\x01a\x02fV[\x7F6\x08\x94\xA1;\xA1\xA3!\x06g\xC8(I-\xB9\x8D\xCA> v\xCC75\xA9 \xA3\xCAP]8+\xBC\x81\x14a\x06\x02W`@Qc*\x87Ri`\xE2\x1B\x81R`\x04\x81\x01\x82\x90R`$\x01a\x02fV[a\x06\x0C\x83\x83a\x06\xD5V[PPPV[0`\x01`\x01`\xA0\x1B\x03\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x16\x14a\x02,W`@Qcp>F\xDD`\xE1\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[3a\x06ca\x02{V[`\x01`\x01`\xA0\x1B\x03\x16\x14a\x02,W`@Qc\x11\x8C\xDA\xA7`\xE0\x1B\x81R3`\x04\x82\x01R`$\x01a\x02fV[\x7F#~\x15\x82\"\xE3\xE6\x96\x8Br\xB9\xDB\r\x80C\xAA\xCF\x07J\xD9\xF6P\xF0\xD1`kM\x82\xEEC,\0\x80T`\x01`\x01`\xA0\x1B\x03\x19\x16\x81Ua\x01\xE9\x82a\x07*V[a\x06\xCCa\x07\x9AV[a\x02x\x81a\x07\xE8V[a\x06\xDE\x82a\x08\x19V[`@Q`\x01`\x01`\xA0\x1B\x03\x83\x16\x90\x7F\xBC|\xD7Z \xEE'\xFD\x9A\xDE\xBA\xB3 A\xF7U!M\xBCk\xFF\xA9\x0C\xC0\"[9\xDA.\\-;\x90_\x90\xA2\x80Q\x15a\x07\"Wa\x06\x0C\x82\x82a\x08\x8FV[a\x01\xE9a\t\x01V[\x7F\x90\x16\xD0\x9Dr\xD4\x0F\xDA\xE2\xFD\x8C\xEA\xC6\xB6#Lw\x06!O\xD3\x9C\x1C\xD1\xE6\t\xA0R\x8C\x19\x93\0\x80T`\x01`\x01`\xA0\x1B\x03\x19\x81\x16`\x01`\x01`\xA0\x1B\x03\x84\x81\x16\x91\x82\x17\x84U`@Q\x92\x16\x91\x82\x90\x7F\x8B\xE0\x07\x9CS\x16Y\x14\x13D\xCD\x1F\xD0\xA4\xF2\x84\x19I\x7F\x97\"\xA3\xDA\xAF\xE3\xB4\x18okdW\xE0\x90_\x90\xA3PPPV[\x7F\xF0\xC5~\x16\x84\r\xF0@\xF1P\x88\xDC/\x81\xFE9\x1C9#\xBE\xC7>#\xA9f.\xFC\x9C\"\x9Cj\0Th\x01\0\0\0\0\0\0\0\0\x90\x04`\xFF\x16a\x02,W`@Qc\x1A\xFC\xD7\x9F`\xE3\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[a\x07\xF0a\x07\x9AV[`\x01`\x01`\xA0\x1B\x03\x81\x16a\x02oW`@Qc\x1EO\xBD\xF7`\xE0\x1B\x81R_`\x04\x82\x01R`$\x01a\x02fV[\x80`\x01`\x01`\xA0\x1B\x03\x16;_\x03a\x08NW`@QcL\x9C\x8C\xE3`\xE0\x1B\x81R`\x01`\x01`\xA0\x1B\x03\x82\x16`\x04\x82\x01R`$\x01a\x02fV[\x7F6\x08\x94\xA1;\xA1\xA3!\x06g\xC8(I-\xB9\x8D\xCA> v\xCC75\xA9 \xA3\xCAP]8+\xBC\x80T`\x01`\x01`\xA0\x1B\x03\x19\x16`\x01`\x01`\xA0\x1B\x03\x92\x90\x92\x16\x91\x90\x91\x17\x90UV[``_\x80\x84`\x01`\x01`\xA0\x1B\x03\x16\x84`@Qa\x08\xAB\x91\x90a\x0B\x16V[_`@Q\x80\x83\x03\x81\x85Z\xF4\x91PP=\x80_\x81\x14a\x08\xE3W`@Q\x91P`\x1F\x19`?=\x01\x16\x82\x01`@R=\x82R=_` \x84\x01>a\x08\xE8V[``\x91P[P\x91P\x91Pa\x08\xF8\x85\x83\x83a\t V[\x95\x94PPPPPV[4\x15a\x02,W`@Qc\xB3\x98\x97\x9F`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[``\x82a\t5Wa\t0\x82a\t\x7FV[a\txV[\x81Q\x15\x80\x15a\tLWP`\x01`\x01`\xA0\x1B\x03\x84\x16;\x15[\x15a\tuW`@Qc\x99\x96\xB3\x15`\xE0\x1B\x81R`\x01`\x01`\xA0\x1B\x03\x85\x16`\x04\x82\x01R`$\x01a\x02fV[P\x80[\x93\x92PPPV[\x80Q\x15a\t\x8EW\x80Q` \x82\x01\xFD[`@Qc\xD6\xBD\xA2u`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[\x805`\x01`\x01`\xA0\x1B\x03\x81\x16\x81\x14a\t\xBDW_\x80\xFD[\x91\x90PV[cNH{q`\xE0\x1B_R`A`\x04R`$_\xFD[_\x80`@\x83\x85\x03\x12\x15a\t\xE7W_\x80\xFD[a\t\xF0\x83a\t\xA7V[\x91P` \x83\x015g\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x80\x82\x11\x15a\n\x0CW_\x80\xFD[\x81\x85\x01\x91P\x85`\x1F\x83\x01\x12a\n\x1FW_\x80\xFD[\x815\x81\x81\x11\x15a\n1Wa\n1a\t\xC2V[`@Q`\x1F\x82\x01`\x1F\x19\x90\x81\x16`?\x01\x16\x81\x01\x90\x83\x82\x11\x81\x83\x10\x17\x15a\nYWa\nYa\t\xC2V[\x81`@R\x82\x81R\x88` \x84\x87\x01\x01\x11\x15a\nqW_\x80\xFD[\x82` \x86\x01` \x83\x017_` \x84\x83\x01\x01R\x80\x95PPPPPP\x92P\x92\x90PV[_[\x83\x81\x10\x15a\n\xACW\x81\x81\x01Q\x83\x82\x01R` \x01a\n\x94V[PP_\x91\x01RV[` \x81R_\x82Q\x80` \x84\x01Ra\n\xD2\x81`@\x85\x01` \x87\x01a\n\x92V[`\x1F\x01`\x1F\x19\x16\x91\x90\x91\x01`@\x01\x92\x91PPV[_` \x82\x84\x03\x12\x15a\n\xF6W_\x80\xFD[a\tx\x82a\t\xA7V[_` \x82\x84\x03\x12\x15a\x0B\x0FW_\x80\xFD[PQ\x91\x90PV[_\x82Qa\x0B'\x81\x84` \x87\x01a\n\x92V[\x91\x90\x91\x01\x92\x91PPV",
-    );
-    /// The runtime bytecode of the contract, as deployed on the network.
-    ///
-    /// ```text
-    ///0x608060405260043610610093575f3560e01c80638da5cb5b11610066578063c4d66de81161004c578063c4d66de81461017c578063e30c39781461019b578063f2fde38b146101af575f80fd5b80638da5cb5b146100fb578063ad3cb1cc14610127575f80fd5b80634f1ef2861461009757806352d1902d146100ac578063715018a6146100d357806379ba5097146100e7575b5f80fd5b6100aa6100a53660046109d6565b6101ce565b005b3480156100b7575f80fd5b506100c06101ed565b6040519081526020015b60405180910390f35b3480156100de575f80fd5b506100aa61021b565b3480156100f2575f80fd5b506100aa61022e565b348015610106575f80fd5b5061010f61027b565b6040516001600160a01b0390911681526020016100ca565b348015610132575f80fd5b5061016f6040518060400160405280600581526020017f352e302e3000000000000000000000000000000000000000000000000000000081525081565b6040516100ca9190610ab4565b348015610187575f80fd5b506100aa610196366004610ae6565b6102af565b3480156101a6575f80fd5b5061010f6103d1565b3480156101ba575f80fd5b506100aa6101c9366004610ae6565b6103f9565b6101d661047e565b6101df82610535565b6101e9828261053d565b5050565b5f6101f6610611565b507f360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc90565b61022361065a565b61022c5f61068c565b565b33806102386103d1565b6001600160a01b03161461026f5760405163118cdaa760e01b81526001600160a01b03821660048201526024015b60405180910390fd5b6102788161068c565b50565b5f807f9016d09d72d40fdae2fd8ceac6b6234c7706214fd39c1cd1e609a0528c1993005b546001600160a01b031692915050565b7ff0c57e16840df040f15088dc2f81fe391c3923bec73e23a9662efc9c229c6a00805468010000000000000000810460ff16159067ffffffffffffffff165f811580156102f95750825b90505f8267ffffffffffffffff1660011480156103155750303b155b905081158015610323575080155b156103415760405163f92ee8a960e01b815260040160405180910390fd5b845467ffffffffffffffff19166001178555831561037557845468ff00000000000000001916680100000000000000001785555b61037e866106c4565b83156103c957845468ff000000000000000019168555604051600181527fc7f505b2f371ae2175ee4913f4499e1f2633a7b5936321eed1cdaeb6115181d29060200160405180910390a15b505050505050565b5f807f237e158222e3e6968b72b9db0d8043aacf074ad9f650f0d1606b4d82ee432c0061029f565b61040161065a565b7f237e158222e3e6968b72b9db0d8043aacf074ad9f650f0d1606b4d82ee432c0080546001600160a01b0319166001600160a01b038316908117825561044561027b565b6001600160a01b03167f38d16b8cac22d99fc7c124b9cd0de2d3fa1faef420bfe791d8c362d765e2270060405160405180910390a35050565b306001600160a01b037f000000000000000000000000000000000000000000000000000000000000000016148061051757507f00000000000000000000000000000000000000000000000000000000000000006001600160a01b031661050b7f360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc546001600160a01b031690565b6001600160a01b031614155b1561022c5760405163703e46dd60e11b815260040160405180910390fd5b61027861065a565b816001600160a01b03166352d1902d6040518163ffffffff1660e01b8152600401602060405180830381865afa925050508015610597575060408051601f3d908101601f1916820190925261059491810190610aff565b60015b6105bf57604051634c9c8ce360e01b81526001600160a01b0383166004820152602401610266565b7f360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc811461060257604051632a87526960e21b815260048101829052602401610266565b61060c83836106d5565b505050565b306001600160a01b037f0000000000000000000000000000000000000000000000000000000000000000161461022c5760405163703e46dd60e11b815260040160405180910390fd5b3361066361027b565b6001600160a01b03161461022c5760405163118cdaa760e01b8152336004820152602401610266565b7f237e158222e3e6968b72b9db0d8043aacf074ad9f650f0d1606b4d82ee432c0080546001600160a01b03191681556101e98261072a565b6106cc61079a565b610278816107e8565b6106de82610819565b6040516001600160a01b038316907fbc7cd75a20ee27fd9adebab32041f755214dbc6bffa90cc0225b39da2e5c2d3b905f90a28051156107225761060c828261088f565b6101e9610901565b7f9016d09d72d40fdae2fd8ceac6b6234c7706214fd39c1cd1e609a0528c19930080546001600160a01b031981166001600160a01b03848116918217845560405192169182907f8be0079c531659141344cd1fd0a4f28419497f9722a3daafe3b4186f6b6457e0905f90a3505050565b7ff0c57e16840df040f15088dc2f81fe391c3923bec73e23a9662efc9c229c6a005468010000000000000000900460ff1661022c57604051631afcd79f60e31b815260040160405180910390fd5b6107f061079a565b6001600160a01b03811661026f57604051631e4fbdf760e01b81525f6004820152602401610266565b806001600160a01b03163b5f0361084e57604051634c9c8ce360e01b81526001600160a01b0382166004820152602401610266565b7f360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc80546001600160a01b0319166001600160a01b0392909216919091179055565b60605f80846001600160a01b0316846040516108ab9190610b16565b5f60405180830381855af49150503d805f81146108e3576040519150601f19603f3d011682016040523d82523d5f602084013e6108e8565b606091505b50915091506108f8858383610920565b95945050505050565b341561022c5760405163b398979f60e01b815260040160405180910390fd5b606082610935576109308261097f565b610978565b815115801561094c57506001600160a01b0384163b155b1561097557604051639996b31560e01b81526001600160a01b0385166004820152602401610266565b50805b9392505050565b80511561098e57805160208201fd5b60405163d6bda27560e01b815260040160405180910390fd5b80356001600160a01b03811681146109bd575f80fd5b919050565b634e487b7160e01b5f52604160045260245ffd5b5f80604083850312156109e7575f80fd5b6109f0836109a7565b9150602083013567ffffffffffffffff80821115610a0c575f80fd5b818501915085601f830112610a1f575f80fd5b813581811115610a3157610a316109c2565b604051601f8201601f19908116603f01168101908382118183101715610a5957610a596109c2565b81604052828152886020848701011115610a71575f80fd5b826020860160208301375f6020848301015280955050505050509250929050565b5f5b83811015610aac578181015183820152602001610a94565b50505f910152565b602081525f8251806020840152610ad2816040850160208701610a92565b601f01601f19169190910160400192915050565b5f60208284031215610af6575f80fd5b610978826109a7565b5f60208284031215610b0f575f80fd5b5051919050565b5f8251610b27818460208701610a92565b919091019291505056
-    /// ```
-    #[rustfmt::skip]
-    #[allow(clippy::all)]
-    pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
-        b"`\x80`@R`\x046\x10a\0\x93W_5`\xE0\x1C\x80c\x8D\xA5\xCB[\x11a\0fW\x80c\xC4\xD6m\xE8\x11a\0LW\x80c\xC4\xD6m\xE8\x14a\x01|W\x80c\xE3\x0C9x\x14a\x01\x9BW\x80c\xF2\xFD\xE3\x8B\x14a\x01\xAFW_\x80\xFD[\x80c\x8D\xA5\xCB[\x14a\0\xFBW\x80c\xAD<\xB1\xCC\x14a\x01'W_\x80\xFD[\x80cO\x1E\xF2\x86\x14a\0\x97W\x80cR\xD1\x90-\x14a\0\xACW\x80cqP\x18\xA6\x14a\0\xD3W\x80cy\xBAP\x97\x14a\0\xE7W[_\x80\xFD[a\0\xAAa\0\xA56`\x04a\t\xD6V[a\x01\xCEV[\0[4\x80\x15a\0\xB7W_\x80\xFD[Pa\0\xC0a\x01\xEDV[`@Q\x90\x81R` \x01[`@Q\x80\x91\x03\x90\xF3[4\x80\x15a\0\xDEW_\x80\xFD[Pa\0\xAAa\x02\x1BV[4\x80\x15a\0\xF2W_\x80\xFD[Pa\0\xAAa\x02.V[4\x80\x15a\x01\x06W_\x80\xFD[Pa\x01\x0Fa\x02{V[`@Q`\x01`\x01`\xA0\x1B\x03\x90\x91\x16\x81R` \x01a\0\xCAV[4\x80\x15a\x012W_\x80\xFD[Pa\x01o`@Q\x80`@\x01`@R\x80`\x05\x81R` \x01\x7F5.0.0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81RP\x81V[`@Qa\0\xCA\x91\x90a\n\xB4V[4\x80\x15a\x01\x87W_\x80\xFD[Pa\0\xAAa\x01\x966`\x04a\n\xE6V[a\x02\xAFV[4\x80\x15a\x01\xA6W_\x80\xFD[Pa\x01\x0Fa\x03\xD1V[4\x80\x15a\x01\xBAW_\x80\xFD[Pa\0\xAAa\x01\xC96`\x04a\n\xE6V[a\x03\xF9V[a\x01\xD6a\x04~V[a\x01\xDF\x82a\x055V[a\x01\xE9\x82\x82a\x05=V[PPV[_a\x01\xF6a\x06\x11V[P\x7F6\x08\x94\xA1;\xA1\xA3!\x06g\xC8(I-\xB9\x8D\xCA> v\xCC75\xA9 \xA3\xCAP]8+\xBC\x90V[a\x02#a\x06ZV[a\x02,_a\x06\x8CV[V[3\x80a\x028a\x03\xD1V[`\x01`\x01`\xA0\x1B\x03\x16\x14a\x02oW`@Qc\x11\x8C\xDA\xA7`\xE0\x1B\x81R`\x01`\x01`\xA0\x1B\x03\x82\x16`\x04\x82\x01R`$\x01[`@Q\x80\x91\x03\x90\xFD[a\x02x\x81a\x06\x8CV[PV[_\x80\x7F\x90\x16\xD0\x9Dr\xD4\x0F\xDA\xE2\xFD\x8C\xEA\xC6\xB6#Lw\x06!O\xD3\x9C\x1C\xD1\xE6\t\xA0R\x8C\x19\x93\0[T`\x01`\x01`\xA0\x1B\x03\x16\x92\x91PPV[\x7F\xF0\xC5~\x16\x84\r\xF0@\xF1P\x88\xDC/\x81\xFE9\x1C9#\xBE\xC7>#\xA9f.\xFC\x9C\"\x9Cj\0\x80Th\x01\0\0\0\0\0\0\0\0\x81\x04`\xFF\x16\x15\x90g\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16_\x81\x15\x80\x15a\x02\xF9WP\x82[\x90P_\x82g\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16`\x01\x14\x80\x15a\x03\x15WP0;\x15[\x90P\x81\x15\x80\x15a\x03#WP\x80\x15[\x15a\x03AW`@Qc\xF9.\xE8\xA9`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[\x84Tg\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x19\x16`\x01\x17\x85U\x83\x15a\x03uW\x84Th\xFF\0\0\0\0\0\0\0\0\x19\x16h\x01\0\0\0\0\0\0\0\0\x17\x85U[a\x03~\x86a\x06\xC4V[\x83\x15a\x03\xC9W\x84Th\xFF\0\0\0\0\0\0\0\0\x19\x16\x85U`@Q`\x01\x81R\x7F\xC7\xF5\x05\xB2\xF3q\xAE!u\xEEI\x13\xF4I\x9E\x1F&3\xA7\xB5\x93c!\xEE\xD1\xCD\xAE\xB6\x11Q\x81\xD2\x90` \x01`@Q\x80\x91\x03\x90\xA1[PPPPPPV[_\x80\x7F#~\x15\x82\"\xE3\xE6\x96\x8Br\xB9\xDB\r\x80C\xAA\xCF\x07J\xD9\xF6P\xF0\xD1`kM\x82\xEEC,\0a\x02\x9FV[a\x04\x01a\x06ZV[\x7F#~\x15\x82\"\xE3\xE6\x96\x8Br\xB9\xDB\r\x80C\xAA\xCF\x07J\xD9\xF6P\xF0\xD1`kM\x82\xEEC,\0\x80T`\x01`\x01`\xA0\x1B\x03\x19\x16`\x01`\x01`\xA0\x1B\x03\x83\x16\x90\x81\x17\x82Ua\x04Ea\x02{V[`\x01`\x01`\xA0\x1B\x03\x16\x7F8\xD1k\x8C\xAC\"\xD9\x9F\xC7\xC1$\xB9\xCD\r\xE2\xD3\xFA\x1F\xAE\xF4 \xBF\xE7\x91\xD8\xC3b\xD7e\xE2'\0`@Q`@Q\x80\x91\x03\x90\xA3PPV[0`\x01`\x01`\xA0\x1B\x03\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x16\x14\x80a\x05\x17WP\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0`\x01`\x01`\xA0\x1B\x03\x16a\x05\x0B\x7F6\x08\x94\xA1;\xA1\xA3!\x06g\xC8(I-\xB9\x8D\xCA> v\xCC75\xA9 \xA3\xCAP]8+\xBCT`\x01`\x01`\xA0\x1B\x03\x16\x90V[`\x01`\x01`\xA0\x1B\x03\x16\x14\x15[\x15a\x02,W`@Qcp>F\xDD`\xE1\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[a\x02xa\x06ZV[\x81`\x01`\x01`\xA0\x1B\x03\x16cR\xD1\x90-`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x92PPP\x80\x15a\x05\x97WP`@\x80Q`\x1F=\x90\x81\x01`\x1F\x19\x16\x82\x01\x90\x92Ra\x05\x94\x91\x81\x01\x90a\n\xFFV[`\x01[a\x05\xBFW`@QcL\x9C\x8C\xE3`\xE0\x1B\x81R`\x01`\x01`\xA0\x1B\x03\x83\x16`\x04\x82\x01R`$\x01a\x02fV[\x7F6\x08\x94\xA1;\xA1\xA3!\x06g\xC8(I-\xB9\x8D\xCA> v\xCC75\xA9 \xA3\xCAP]8+\xBC\x81\x14a\x06\x02W`@Qc*\x87Ri`\xE2\x1B\x81R`\x04\x81\x01\x82\x90R`$\x01a\x02fV[a\x06\x0C\x83\x83a\x06\xD5V[PPPV[0`\x01`\x01`\xA0\x1B\x03\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x16\x14a\x02,W`@Qcp>F\xDD`\xE1\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[3a\x06ca\x02{V[`\x01`\x01`\xA0\x1B\x03\x16\x14a\x02,W`@Qc\x11\x8C\xDA\xA7`\xE0\x1B\x81R3`\x04\x82\x01R`$\x01a\x02fV[\x7F#~\x15\x82\"\xE3\xE6\x96\x8Br\xB9\xDB\r\x80C\xAA\xCF\x07J\xD9\xF6P\xF0\xD1`kM\x82\xEEC,\0\x80T`\x01`\x01`\xA0\x1B\x03\x19\x16\x81Ua\x01\xE9\x82a\x07*V[a\x06\xCCa\x07\x9AV[a\x02x\x81a\x07\xE8V[a\x06\xDE\x82a\x08\x19V[`@Q`\x01`\x01`\xA0\x1B\x03\x83\x16\x90\x7F\xBC|\xD7Z \xEE'\xFD\x9A\xDE\xBA\xB3 A\xF7U!M\xBCk\xFF\xA9\x0C\xC0\"[9\xDA.\\-;\x90_\x90\xA2\x80Q\x15a\x07\"Wa\x06\x0C\x82\x82a\x08\x8FV[a\x01\xE9a\t\x01V[\x7F\x90\x16\xD0\x9Dr\xD4\x0F\xDA\xE2\xFD\x8C\xEA\xC6\xB6#Lw\x06!O\xD3\x9C\x1C\xD1\xE6\t\xA0R\x8C\x19\x93\0\x80T`\x01`\x01`\xA0\x1B\x03\x19\x81\x16`\x01`\x01`\xA0\x1B\x03\x84\x81\x16\x91\x82\x17\x84U`@Q\x92\x16\x91\x82\x90\x7F\x8B\xE0\x07\x9CS\x16Y\x14\x13D\xCD\x1F\xD0\xA4\xF2\x84\x19I\x7F\x97\"\xA3\xDA\xAF\xE3\xB4\x18okdW\xE0\x90_\x90\xA3PPPV[\x7F\xF0\xC5~\x16\x84\r\xF0@\xF1P\x88\xDC/\x81\xFE9\x1C9#\xBE\xC7>#\xA9f.\xFC\x9C\"\x9Cj\0Th\x01\0\0\0\0\0\0\0\0\x90\x04`\xFF\x16a\x02,W`@Qc\x1A\xFC\xD7\x9F`\xE3\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[a\x07\xF0a\x07\x9AV[`\x01`\x01`\xA0\x1B\x03\x81\x16a\x02oW`@Qc\x1EO\xBD\xF7`\xE0\x1B\x81R_`\x04\x82\x01R`$\x01a\x02fV[\x80`\x01`\x01`\xA0\x1B\x03\x16;_\x03a\x08NW`@QcL\x9C\x8C\xE3`\xE0\x1B\x81R`\x01`\x01`\xA0\x1B\x03\x82\x16`\x04\x82\x01R`$\x01a\x02fV[\x7F6\x08\x94\xA1;\xA1\xA3!\x06g\xC8(I-\xB9\x8D\xCA> v\xCC75\xA9 \xA3\xCAP]8+\xBC\x80T`\x01`\x01`\xA0\x1B\x03\x19\x16`\x01`\x01`\xA0\x1B\x03\x92\x90\x92\x16\x91\x90\x91\x17\x90UV[``_\x80\x84`\x01`\x01`\xA0\x1B\x03\x16\x84`@Qa\x08\xAB\x91\x90a\x0B\x16V[_`@Q\x80\x83\x03\x81\x85Z\xF4\x91PP=\x80_\x81\x14a\x08\xE3W`@Q\x91P`\x1F\x19`?=\x01\x16\x82\x01`@R=\x82R=_` \x84\x01>a\x08\xE8V[``\x91P[P\x91P\x91Pa\x08\xF8\x85\x83\x83a\t V[\x95\x94PPPPPV[4\x15a\x02,W`@Qc\xB3\x98\x97\x9F`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[``\x82a\t5Wa\t0\x82a\t\x7FV[a\txV[\x81Q\x15\x80\x15a\tLWP`\x01`\x01`\xA0\x1B\x03\x84\x16;\x15[\x15a\tuW`@Qc\x99\x96\xB3\x15`\xE0\x1B\x81R`\x01`\x01`\xA0\x1B\x03\x85\x16`\x04\x82\x01R`$\x01a\x02fV[P\x80[\x93\x92PPPV[\x80Q\x15a\t\x8EW\x80Q` \x82\x01\xFD[`@Qc\xD6\xBD\xA2u`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[\x805`\x01`\x01`\xA0\x1B\x03\x81\x16\x81\x14a\t\xBDW_\x80\xFD[\x91\x90PV[cNH{q`\xE0\x1B_R`A`\x04R`$_\xFD[_\x80`@\x83\x85\x03\x12\x15a\t\xE7W_\x80\xFD[a\t\xF0\x83a\t\xA7V[\x91P` \x83\x015g\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x80\x82\x11\x15a\n\x0CW_\x80\xFD[\x81\x85\x01\x91P\x85`\x1F\x83\x01\x12a\n\x1FW_\x80\xFD[\x815\x81\x81\x11\x15a\n1Wa\n1a\t\xC2V[`@Q`\x1F\x82\x01`\x1F\x19\x90\x81\x16`?\x01\x16\x81\x01\x90\x83\x82\x11\x81\x83\x10\x17\x15a\nYWa\nYa\t\xC2V[\x81`@R\x82\x81R\x88` \x84\x87\x01\x01\x11\x15a\nqW_\x80\xFD[\x82` \x86\x01` \x83\x017_` \x84\x83\x01\x01R\x80\x95PPPPPP\x92P\x92\x90PV[_[\x83\x81\x10\x15a\n\xACW\x81\x81\x01Q\x83\x82\x01R` \x01a\n\x94V[PP_\x91\x01RV[` \x81R_\x82Q\x80` \x84\x01Ra\n\xD2\x81`@\x85\x01` \x87\x01a\n\x92V[`\x1F\x01`\x1F\x19\x16\x91\x90\x91\x01`@\x01\x92\x91PPV[_` \x82\x84\x03\x12\x15a\n\xF6W_\x80\xFD[a\tx\x82a\t\xA7V[_` \x82\x84\x03\x12\x15a\x0B\x0FW_\x80\xFD[PQ\x91\x90PV[_\x82Qa\x0B'\x81\x84` \x87\x01a\n\x92V[\x91\x90\x91\x01\x92\x91PPV",
-    );
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `AddressEmptyCode(address)` and selector `0x9996b315`.
@@ -401,10 +381,10 @@ error AddressEmptyCode(address target);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -484,10 +464,10 @@ error ERC1967InvalidImplementation(address implementation);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -558,10 +538,10 @@ error ERC1967NonPayable();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -632,10 +612,10 @@ error FailedCall();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -706,10 +686,10 @@ error InvalidInitialization();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -780,10 +760,10 @@ error NotInitializing();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -861,10 +841,10 @@ error OwnableInvalidOwner(address owner);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -944,10 +924,10 @@ error OwnableUnauthorizedAccount(address account);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -1020,10 +1000,10 @@ error UUPSUnauthorizedCallContext();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -1103,10 +1083,10 @@ error UUPSUnsupportedProxiableUUID(bytes32 slot);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -1759,16 +1739,29 @@ function UPGRADE_INTERFACE_VERSION() external view returns (string memory);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: UPGRADE_INTERFACE_VERSIONReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -1901,13 +1894,26 @@ function acceptOwnership() external;
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -2045,13 +2051,26 @@ function initialize(address initialOwner) external;
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -2187,16 +2206,29 @@ function owner() external view returns (address);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: ownerReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -2332,16 +2364,29 @@ function pendingOwner() external view returns (address);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: pendingOwnerReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -2477,16 +2522,29 @@ function proxiableUUID() external view returns (bytes32);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: proxiableUUIDReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -2621,13 +2679,26 @@ function renounceOwnership() external;
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -2769,13 +2840,26 @@ function transferOwnership(address newOwner) external;
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -2934,20 +3018,33 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
     ///Container for all the [`EmptyUUPSProxyGatewayConfig`](self) function calls.
     #[derive(Clone)]
     #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive()]
+    #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum EmptyUUPSProxyGatewayConfigCalls {
         #[allow(missing_docs)]
         UPGRADE_INTERFACE_VERSION(UPGRADE_INTERFACE_VERSIONCall),
@@ -3080,15 +3177,31 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::default(),
+            )
+        }
+        #[inline]
+        #[allow(non_snake_case)]
+        fn abi_decode_raw_with_config(
+            selector: [u8; 4],
+            data: &[u8],
+            config: alloy_sol_types::abi::AbiDecoderConfig,
+        ) -> alloy_sol_types::Result<Self> {
             static DECODE_SHIMS: &[fn(
                 &[u8],
+                alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<EmptyUUPSProxyGatewayConfigCalls>] = &[
                 {
                     fn upgradeToAndCall(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<EmptyUUPSProxyGatewayConfigCalls> {
-                        <upgradeToAndCallCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <upgradeToAndCallCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(EmptyUUPSProxyGatewayConfigCalls::upgradeToAndCall)
                     }
@@ -3097,9 +3210,11 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn proxiableUUID(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<EmptyUUPSProxyGatewayConfigCalls> {
-                        <proxiableUUIDCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <proxiableUUIDCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(EmptyUUPSProxyGatewayConfigCalls::proxiableUUID)
                     }
@@ -3108,9 +3223,11 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn renounceOwnership(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<EmptyUUPSProxyGatewayConfigCalls> {
-                        <renounceOwnershipCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <renounceOwnershipCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(EmptyUUPSProxyGatewayConfigCalls::renounceOwnership)
                     }
@@ -3119,9 +3236,11 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn acceptOwnership(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<EmptyUUPSProxyGatewayConfigCalls> {
-                        <acceptOwnershipCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <acceptOwnershipCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(EmptyUUPSProxyGatewayConfigCalls::acceptOwnership)
                     }
@@ -3130,8 +3249,12 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn owner(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<EmptyUUPSProxyGatewayConfigCalls> {
-                        <ownerCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                        <ownerCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(EmptyUUPSProxyGatewayConfigCalls::owner)
                     }
                     owner
@@ -3139,9 +3262,11 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn UPGRADE_INTERFACE_VERSION(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<EmptyUUPSProxyGatewayConfigCalls> {
-                        <UPGRADE_INTERFACE_VERSIONCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <UPGRADE_INTERFACE_VERSIONCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(
                                 EmptyUUPSProxyGatewayConfigCalls::UPGRADE_INTERFACE_VERSION,
@@ -3152,9 +3277,11 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn initialize(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<EmptyUUPSProxyGatewayConfigCalls> {
-                        <initializeCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <initializeCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(EmptyUUPSProxyGatewayConfigCalls::initialize)
                     }
@@ -3163,9 +3290,11 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn pendingOwner(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<EmptyUUPSProxyGatewayConfigCalls> {
-                        <pendingOwnerCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <pendingOwnerCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(EmptyUUPSProxyGatewayConfigCalls::pendingOwner)
                     }
@@ -3174,9 +3303,11 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn transferOwnership(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<EmptyUUPSProxyGatewayConfigCalls> {
-                        <transferOwnershipCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <transferOwnershipCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(EmptyUUPSProxyGatewayConfigCalls::transferOwnership)
                     }
@@ -3191,7 +3322,7 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     ),
                 );
             };
-            DECODE_SHIMS[idx](data)
+            DECODE_SHIMS[idx](data, config)
         }
         #[inline]
         #[allow(non_snake_case)]
@@ -3199,120 +3330,11 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
-            static DECODE_VALIDATE_SHIMS: &[fn(
-                &[u8],
-            ) -> alloy_sol_types::Result<EmptyUUPSProxyGatewayConfigCalls>] = &[
-                {
-                    fn upgradeToAndCall(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<EmptyUUPSProxyGatewayConfigCalls> {
-                        <upgradeToAndCallCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(EmptyUUPSProxyGatewayConfigCalls::upgradeToAndCall)
-                    }
-                    upgradeToAndCall
-                },
-                {
-                    fn proxiableUUID(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<EmptyUUPSProxyGatewayConfigCalls> {
-                        <proxiableUUIDCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(EmptyUUPSProxyGatewayConfigCalls::proxiableUUID)
-                    }
-                    proxiableUUID
-                },
-                {
-                    fn renounceOwnership(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<EmptyUUPSProxyGatewayConfigCalls> {
-                        <renounceOwnershipCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(EmptyUUPSProxyGatewayConfigCalls::renounceOwnership)
-                    }
-                    renounceOwnership
-                },
-                {
-                    fn acceptOwnership(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<EmptyUUPSProxyGatewayConfigCalls> {
-                        <acceptOwnershipCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(EmptyUUPSProxyGatewayConfigCalls::acceptOwnership)
-                    }
-                    acceptOwnership
-                },
-                {
-                    fn owner(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<EmptyUUPSProxyGatewayConfigCalls> {
-                        <ownerCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(EmptyUUPSProxyGatewayConfigCalls::owner)
-                    }
-                    owner
-                },
-                {
-                    fn UPGRADE_INTERFACE_VERSION(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<EmptyUUPSProxyGatewayConfigCalls> {
-                        <UPGRADE_INTERFACE_VERSIONCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(
-                                EmptyUUPSProxyGatewayConfigCalls::UPGRADE_INTERFACE_VERSION,
-                            )
-                    }
-                    UPGRADE_INTERFACE_VERSION
-                },
-                {
-                    fn initialize(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<EmptyUUPSProxyGatewayConfigCalls> {
-                        <initializeCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(EmptyUUPSProxyGatewayConfigCalls::initialize)
-                    }
-                    initialize
-                },
-                {
-                    fn pendingOwner(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<EmptyUUPSProxyGatewayConfigCalls> {
-                        <pendingOwnerCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(EmptyUUPSProxyGatewayConfigCalls::pendingOwner)
-                    }
-                    pendingOwner
-                },
-                {
-                    fn transferOwnership(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<EmptyUUPSProxyGatewayConfigCalls> {
-                        <transferOwnershipCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(EmptyUUPSProxyGatewayConfigCalls::transferOwnership)
-                    }
-                    transferOwnership
-                },
-            ];
-            let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
-            };
-            DECODE_VALIDATE_SHIMS[idx](data)
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+            )
         }
         #[inline]
         fn abi_encoded_size(&self) -> usize {
@@ -3563,15 +3585,31 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::default(),
+            )
+        }
+        #[inline]
+        #[allow(non_snake_case)]
+        fn abi_decode_raw_with_config(
+            selector: [u8; 4],
+            data: &[u8],
+            config: alloy_sol_types::abi::AbiDecoderConfig,
+        ) -> alloy_sol_types::Result<Self> {
             static DECODE_SHIMS: &[fn(
                 &[u8],
+                alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<EmptyUUPSProxyGatewayConfigErrors>] = &[
                 {
                     fn OwnableUnauthorizedAccount(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<EmptyUUPSProxyGatewayConfigErrors> {
-                        <OwnableUnauthorizedAccount as alloy_sol_types::SolError>::abi_decode_raw(
+                        <OwnableUnauthorizedAccount as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(
                                 EmptyUUPSProxyGatewayConfigErrors::OwnableUnauthorizedAccount,
@@ -3582,9 +3620,11 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn OwnableInvalidOwner(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<EmptyUUPSProxyGatewayConfigErrors> {
-                        <OwnableInvalidOwner as alloy_sol_types::SolError>::abi_decode_raw(
+                        <OwnableInvalidOwner as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(EmptyUUPSProxyGatewayConfigErrors::OwnableInvalidOwner)
                     }
@@ -3593,9 +3633,11 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn ERC1967InvalidImplementation(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<EmptyUUPSProxyGatewayConfigErrors> {
-                        <ERC1967InvalidImplementation as alloy_sol_types::SolError>::abi_decode_raw(
+                        <ERC1967InvalidImplementation as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(
                                 EmptyUUPSProxyGatewayConfigErrors::ERC1967InvalidImplementation,
@@ -3606,9 +3648,11 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn AddressEmptyCode(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<EmptyUUPSProxyGatewayConfigErrors> {
-                        <AddressEmptyCode as alloy_sol_types::SolError>::abi_decode_raw(
+                        <AddressEmptyCode as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(EmptyUUPSProxyGatewayConfigErrors::AddressEmptyCode)
                     }
@@ -3617,9 +3661,11 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn UUPSUnsupportedProxiableUUID(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<EmptyUUPSProxyGatewayConfigErrors> {
-                        <UUPSUnsupportedProxiableUUID as alloy_sol_types::SolError>::abi_decode_raw(
+                        <UUPSUnsupportedProxiableUUID as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(
                                 EmptyUUPSProxyGatewayConfigErrors::UUPSUnsupportedProxiableUUID,
@@ -3630,9 +3676,11 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn ERC1967NonPayable(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<EmptyUUPSProxyGatewayConfigErrors> {
-                        <ERC1967NonPayable as alloy_sol_types::SolError>::abi_decode_raw(
+                        <ERC1967NonPayable as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(EmptyUUPSProxyGatewayConfigErrors::ERC1967NonPayable)
                     }
@@ -3641,8 +3689,12 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn FailedCall(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<EmptyUUPSProxyGatewayConfigErrors> {
-                        <FailedCall as alloy_sol_types::SolError>::abi_decode_raw(data)
+                        <FailedCall as alloy_sol_types::SolError>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(EmptyUUPSProxyGatewayConfigErrors::FailedCall)
                     }
                     FailedCall
@@ -3650,9 +3702,11 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn NotInitializing(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<EmptyUUPSProxyGatewayConfigErrors> {
-                        <NotInitializing as alloy_sol_types::SolError>::abi_decode_raw(
+                        <NotInitializing as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(EmptyUUPSProxyGatewayConfigErrors::NotInitializing)
                     }
@@ -3661,9 +3715,11 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn UUPSUnauthorizedCallContext(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<EmptyUUPSProxyGatewayConfigErrors> {
-                        <UUPSUnauthorizedCallContext as alloy_sol_types::SolError>::abi_decode_raw(
+                        <UUPSUnauthorizedCallContext as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(
                                 EmptyUUPSProxyGatewayConfigErrors::UUPSUnauthorizedCallContext,
@@ -3674,9 +3730,11 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn InvalidInitialization(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<EmptyUUPSProxyGatewayConfigErrors> {
-                        <InvalidInitialization as alloy_sol_types::SolError>::abi_decode_raw(
+                        <InvalidInitialization as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(
                                 EmptyUUPSProxyGatewayConfigErrors::InvalidInitialization,
@@ -3693,7 +3751,7 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     ),
                 );
             };
-            DECODE_SHIMS[idx](data)
+            DECODE_SHIMS[idx](data, config)
         }
         #[inline]
         #[allow(non_snake_case)]
@@ -3701,139 +3759,11 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
-            static DECODE_VALIDATE_SHIMS: &[fn(
-                &[u8],
-            ) -> alloy_sol_types::Result<EmptyUUPSProxyGatewayConfigErrors>] = &[
-                {
-                    fn OwnableUnauthorizedAccount(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<EmptyUUPSProxyGatewayConfigErrors> {
-                        <OwnableUnauthorizedAccount as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(
-                                EmptyUUPSProxyGatewayConfigErrors::OwnableUnauthorizedAccount,
-                            )
-                    }
-                    OwnableUnauthorizedAccount
-                },
-                {
-                    fn OwnableInvalidOwner(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<EmptyUUPSProxyGatewayConfigErrors> {
-                        <OwnableInvalidOwner as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(EmptyUUPSProxyGatewayConfigErrors::OwnableInvalidOwner)
-                    }
-                    OwnableInvalidOwner
-                },
-                {
-                    fn ERC1967InvalidImplementation(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<EmptyUUPSProxyGatewayConfigErrors> {
-                        <ERC1967InvalidImplementation as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(
-                                EmptyUUPSProxyGatewayConfigErrors::ERC1967InvalidImplementation,
-                            )
-                    }
-                    ERC1967InvalidImplementation
-                },
-                {
-                    fn AddressEmptyCode(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<EmptyUUPSProxyGatewayConfigErrors> {
-                        <AddressEmptyCode as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(EmptyUUPSProxyGatewayConfigErrors::AddressEmptyCode)
-                    }
-                    AddressEmptyCode
-                },
-                {
-                    fn UUPSUnsupportedProxiableUUID(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<EmptyUUPSProxyGatewayConfigErrors> {
-                        <UUPSUnsupportedProxiableUUID as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(
-                                EmptyUUPSProxyGatewayConfigErrors::UUPSUnsupportedProxiableUUID,
-                            )
-                    }
-                    UUPSUnsupportedProxiableUUID
-                },
-                {
-                    fn ERC1967NonPayable(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<EmptyUUPSProxyGatewayConfigErrors> {
-                        <ERC1967NonPayable as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(EmptyUUPSProxyGatewayConfigErrors::ERC1967NonPayable)
-                    }
-                    ERC1967NonPayable
-                },
-                {
-                    fn FailedCall(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<EmptyUUPSProxyGatewayConfigErrors> {
-                        <FailedCall as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(EmptyUUPSProxyGatewayConfigErrors::FailedCall)
-                    }
-                    FailedCall
-                },
-                {
-                    fn NotInitializing(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<EmptyUUPSProxyGatewayConfigErrors> {
-                        <NotInitializing as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(EmptyUUPSProxyGatewayConfigErrors::NotInitializing)
-                    }
-                    NotInitializing
-                },
-                {
-                    fn UUPSUnauthorizedCallContext(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<EmptyUUPSProxyGatewayConfigErrors> {
-                        <UUPSUnauthorizedCallContext as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(
-                                EmptyUUPSProxyGatewayConfigErrors::UUPSUnauthorizedCallContext,
-                            )
-                    }
-                    UUPSUnauthorizedCallContext
-                },
-                {
-                    fn InvalidInitialization(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<EmptyUUPSProxyGatewayConfigErrors> {
-                        <InvalidInitialization as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(
-                                EmptyUUPSProxyGatewayConfigErrors::InvalidInitialization,
-                            )
-                    }
-                    InvalidInitialization
-                },
-            ];
-            let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
-            };
-            DECODE_VALIDATE_SHIMS[idx](data)
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+            )
         }
         #[inline]
         fn abi_encoded_size(&self) -> usize {
@@ -3949,6 +3879,113 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     )
                 }
             }
+        }
+    }
+    #[automatically_derived]
+    impl EmptyUUPSProxyGatewayConfigErrors {
+        /**Creates a [`AddressEmptyCode`] error.
+
+```solidity
+error AddressEmptyCode(address)
+```*/
+        #[inline]
+        pub fn address_empty_code(target: alloy::sol_types::private::Address) -> Self {
+            Self::AddressEmptyCode(AddressEmptyCode { target: target })
+        }
+        /**Creates a [`ERC1967InvalidImplementation`] error.
+
+```solidity
+error ERC1967InvalidImplementation(address)
+```*/
+        #[inline]
+        pub fn erc_1967_invalid_implementation(
+            implementation: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::ERC1967InvalidImplementation(ERC1967InvalidImplementation {
+                implementation: implementation,
+            })
+        }
+        /**Creates a [`ERC1967NonPayable`] error.
+
+```solidity
+error ERC1967NonPayable()
+```*/
+        #[inline]
+        pub fn erc_1967_non_payable() -> Self {
+            Self::ERC1967NonPayable(ERC1967NonPayable)
+        }
+        /**Creates a [`FailedCall`] error.
+
+```solidity
+error FailedCall()
+```*/
+        #[inline]
+        pub fn failed_call() -> Self {
+            Self::FailedCall(FailedCall)
+        }
+        /**Creates a [`InvalidInitialization`] error.
+
+```solidity
+error InvalidInitialization()
+```*/
+        #[inline]
+        pub fn invalid_initialization() -> Self {
+            Self::InvalidInitialization(InvalidInitialization)
+        }
+        /**Creates a [`NotInitializing`] error.
+
+```solidity
+error NotInitializing()
+```*/
+        #[inline]
+        pub fn not_initializing() -> Self {
+            Self::NotInitializing(NotInitializing)
+        }
+        /**Creates a [`OwnableInvalidOwner`] error.
+
+```solidity
+error OwnableInvalidOwner(address)
+```*/
+        #[inline]
+        pub fn ownable_invalid_owner(owner: alloy::sol_types::private::Address) -> Self {
+            Self::OwnableInvalidOwner(OwnableInvalidOwner {
+                owner: owner,
+            })
+        }
+        /**Creates a [`OwnableUnauthorizedAccount`] error.
+
+```solidity
+error OwnableUnauthorizedAccount(address)
+```*/
+        #[inline]
+        pub fn ownable_unauthorized_account(
+            account: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::OwnableUnauthorizedAccount(OwnableUnauthorizedAccount {
+                account: account,
+            })
+        }
+        /**Creates a [`UUPSUnauthorizedCallContext`] error.
+
+```solidity
+error UUPSUnauthorizedCallContext()
+```*/
+        #[inline]
+        pub fn uups_unauthorized_call_context() -> Self {
+            Self::UUPSUnauthorizedCallContext(UUPSUnauthorizedCallContext)
+        }
+        /**Creates a [`UUPSUnsupportedProxiableUUID`] error.
+
+```solidity
+error UUPSUnsupportedProxiableUUID(bytes32)
+```*/
+        #[inline]
+        pub fn uups_unsupported_proxiable_uuid(
+            slot: alloy::sol_types::private::FixedBytes<32>,
+        ) -> Self {
+            Self::UUPSUnsupportedProxiableUUID(UUPSUnsupportedProxiableUUID {
+                slot: slot,
+            })
         }
     }
     ///Container for all the [`EmptyUUPSProxyGatewayConfig`](self) events.
@@ -4116,6 +4153,59 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
             }
         }
     }
+    #[automatically_derived]
+    impl EmptyUUPSProxyGatewayConfigEvents {
+        /**Creates a [`Initialized`] event.
+
+```solidity
+event Initialized(uint64)
+```*/
+        #[inline]
+        pub fn initialized(version: u64) -> Self {
+            Self::Initialized(Initialized { version: version })
+        }
+        /**Creates a [`OwnershipTransferStarted`] event.
+
+```solidity
+event OwnershipTransferStarted(address,address)
+```*/
+        #[inline]
+        pub fn ownership_transfer_started(
+            previous_owner: alloy::sol_types::private::Address,
+            new_owner: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::OwnershipTransferStarted(OwnershipTransferStarted {
+                previousOwner: previous_owner,
+                newOwner: new_owner,
+            })
+        }
+        /**Creates a [`OwnershipTransferred`] event.
+
+```solidity
+event OwnershipTransferred(address,address)
+```*/
+        #[inline]
+        pub fn ownership_transferred(
+            previous_owner: alloy::sol_types::private::Address,
+            new_owner: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::OwnershipTransferred(OwnershipTransferred {
+                previousOwner: previous_owner,
+                newOwner: new_owner,
+            })
+        }
+        /**Creates a [`Upgraded`] event.
+
+```solidity
+event Upgraded(address)
+```*/
+        #[inline]
+        pub fn upgraded(implementation: alloy::sol_types::private::Address) -> Self {
+            Self::Upgraded(Upgraded {
+                implementation: implementation,
+            })
+        }
+    }
     use alloy::contract as alloy_contract;
     /**Creates a new wrapper around an on-chain [`EmptyUUPSProxyGatewayConfig`](self) contract instance.
 
@@ -4129,34 +4219,6 @@ See the [wrapper's documentation](`EmptyUUPSProxyGatewayConfigInstance`) for mor
         __provider: P,
     ) -> EmptyUUPSProxyGatewayConfigInstance<P, N> {
         EmptyUUPSProxyGatewayConfigInstance::<P, N>::new(address, __provider)
-    }
-    /**Deploys this contract using the given `provider` and constructor arguments, if any.
-
-Returns a new instance of the contract, if the deployment was successful.
-
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
-    #[inline]
-    pub fn deploy<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(
-        __provider: P,
-    ) -> impl ::core::future::Future<
-        Output = alloy_contract::Result<EmptyUUPSProxyGatewayConfigInstance<P, N>>,
-    > {
-        EmptyUUPSProxyGatewayConfigInstance::<P, N>::deploy(__provider)
-    }
-    /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
-
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
-    #[inline]
-    pub fn deploy_builder<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
-        EmptyUUPSProxyGatewayConfigInstance::<P, N>::deploy_builder(__provider)
     }
     /**A [`EmptyUUPSProxyGatewayConfig`](self) instance.
 
@@ -4205,31 +4267,6 @@ See the [wrapper's documentation](`EmptyUUPSProxyGatewayConfigInstance`) for mor
                 provider: __provider,
                 _network: ::core::marker::PhantomData,
             }
-        }
-        /**Deploys this contract using the given `provider` and constructor arguments, if any.
-
-Returns a new instance of the contract, if the deployment was successful.
-
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
-        #[inline]
-        pub async fn deploy(
-            __provider: P,
-        ) -> alloy_contract::Result<EmptyUUPSProxyGatewayConfigInstance<P, N>> {
-            let call_builder = Self::deploy_builder(__provider);
-            let contract_address = call_builder.deploy().await?;
-            Ok(Self::new(contract_address, call_builder.provider))
-        }
-        /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
-
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
-        #[inline]
-        pub fn deploy_builder(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
-            alloy_contract::RawCallBuilder::new_raw_deploy(
-                __provider,
-                ::core::clone::Clone::clone(&BYTECODE),
-            )
         }
         /// Returns a reference to the address.
         #[inline]

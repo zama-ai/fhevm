@@ -314,26 +314,6 @@ interface ICiphertextCommits {
 pub mod ICiphertextCommits {
     use super::*;
     use alloy::sol_types as alloy_sol_types;
-    /// The creation / init bytecode of the contract.
-    ///
-    /// ```text
-    ///0x
-    /// ```
-    #[rustfmt::skip]
-    #[allow(clippy::all)]
-    pub static BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
-        b"",
-    );
-    /// The runtime bytecode of the contract, as deployed on the network.
-    ///
-    /// ```text
-    ///0x
-    /// ```
-    #[rustfmt::skip]
-    #[allow(clippy::all)]
-    pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
-        b"",
-    );
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**```solidity
@@ -982,10 +962,10 @@ error CiphertextMaterialNotFound(bytes32 ctHandle);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -1077,10 +1057,10 @@ error CoprocessorAlreadyAdded(bytes32 ctHandle, address txSender);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -1151,10 +1131,10 @@ error EmptyCtHandles();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -1621,13 +1601,26 @@ function addCiphertextMaterial(bytes32 ctHandle, uint256 keyId, bytes32 cipherte
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -1786,17 +1779,30 @@ function getAddCiphertextMaterialConsensusTxSenders(bytes32 ctHandle) external v
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: getAddCiphertextMaterialConsensusTxSendersReturn = r
                             .into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -1969,16 +1975,29 @@ function getCiphertextMaterials(bytes32[] memory ctHandles) external view return
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: getCiphertextMaterialsReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -2151,16 +2170,29 @@ function getSnsCiphertextMaterials(bytes32[] memory ctHandles) external view ret
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: getSnsCiphertextMaterialsReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -2296,16 +2328,29 @@ function getVersion() external pure returns (string memory);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: getVersionReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -2452,23 +2497,36 @@ function isCiphertextMaterialAdded(bytes32 ctHandle) external view returns (bool
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: isCiphertextMaterialAddedReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
     ///Container for all the [`ICiphertextCommits`](self) function calls.
     #[derive(Clone)]
     #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive()]
+    #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum ICiphertextCommitsCalls {
         #[allow(missing_docs)]
         addCiphertextMaterial(addCiphertextMaterialCall),
@@ -2581,15 +2639,31 @@ function isCiphertextMaterialAdded(bytes32 ctHandle) external view returns (bool
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::default(),
+            )
+        }
+        #[inline]
+        #[allow(non_snake_case)]
+        fn abi_decode_raw_with_config(
+            selector: [u8; 4],
+            data: &[u8],
+            config: alloy_sol_types::abi::AbiDecoderConfig,
+        ) -> alloy_sol_types::Result<Self> {
             static DECODE_SHIMS: &[fn(
                 &[u8],
+                alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<ICiphertextCommitsCalls>] = &[
                 {
                     fn getVersion(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ICiphertextCommitsCalls> {
-                        <getVersionCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <getVersionCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(ICiphertextCommitsCalls::getVersion)
                     }
@@ -2598,9 +2672,11 @@ function isCiphertextMaterialAdded(bytes32 ctHandle) external view returns (bool
                 {
                     fn isCiphertextMaterialAdded(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ICiphertextCommitsCalls> {
-                        <isCiphertextMaterialAddedCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <isCiphertextMaterialAddedCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(ICiphertextCommitsCalls::isCiphertextMaterialAdded)
                     }
@@ -2609,9 +2685,11 @@ function isCiphertextMaterialAdded(bytes32 ctHandle) external view returns (bool
                 {
                     fn getCiphertextMaterials(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ICiphertextCommitsCalls> {
-                        <getCiphertextMaterialsCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <getCiphertextMaterialsCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(ICiphertextCommitsCalls::getCiphertextMaterials)
                     }
@@ -2620,9 +2698,11 @@ function isCiphertextMaterialAdded(bytes32 ctHandle) external view returns (bool
                 {
                     fn addCiphertextMaterial(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ICiphertextCommitsCalls> {
-                        <addCiphertextMaterialCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <addCiphertextMaterialCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(ICiphertextCommitsCalls::addCiphertextMaterial)
                     }
@@ -2631,9 +2711,11 @@ function isCiphertextMaterialAdded(bytes32 ctHandle) external view returns (bool
                 {
                     fn getSnsCiphertextMaterials(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ICiphertextCommitsCalls> {
-                        <getSnsCiphertextMaterialsCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <getSnsCiphertextMaterialsCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(ICiphertextCommitsCalls::getSnsCiphertextMaterials)
                     }
@@ -2642,9 +2724,11 @@ function isCiphertextMaterialAdded(bytes32 ctHandle) external view returns (bool
                 {
                     fn getAddCiphertextMaterialConsensusTxSenders(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ICiphertextCommitsCalls> {
-                        <getAddCiphertextMaterialConsensusTxSendersCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <getAddCiphertextMaterialConsensusTxSendersCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(
                                 ICiphertextCommitsCalls::getAddCiphertextMaterialConsensusTxSenders,
@@ -2661,7 +2745,7 @@ function isCiphertextMaterialAdded(bytes32 ctHandle) external view returns (bool
                     ),
                 );
             };
-            DECODE_SHIMS[idx](data)
+            DECODE_SHIMS[idx](data, config)
         }
         #[inline]
         #[allow(non_snake_case)]
@@ -2669,87 +2753,11 @@ function isCiphertextMaterialAdded(bytes32 ctHandle) external view returns (bool
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
-            static DECODE_VALIDATE_SHIMS: &[fn(
-                &[u8],
-            ) -> alloy_sol_types::Result<ICiphertextCommitsCalls>] = &[
-                {
-                    fn getVersion(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ICiphertextCommitsCalls> {
-                        <getVersionCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ICiphertextCommitsCalls::getVersion)
-                    }
-                    getVersion
-                },
-                {
-                    fn isCiphertextMaterialAdded(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ICiphertextCommitsCalls> {
-                        <isCiphertextMaterialAddedCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ICiphertextCommitsCalls::isCiphertextMaterialAdded)
-                    }
-                    isCiphertextMaterialAdded
-                },
-                {
-                    fn getCiphertextMaterials(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ICiphertextCommitsCalls> {
-                        <getCiphertextMaterialsCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ICiphertextCommitsCalls::getCiphertextMaterials)
-                    }
-                    getCiphertextMaterials
-                },
-                {
-                    fn addCiphertextMaterial(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ICiphertextCommitsCalls> {
-                        <addCiphertextMaterialCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ICiphertextCommitsCalls::addCiphertextMaterial)
-                    }
-                    addCiphertextMaterial
-                },
-                {
-                    fn getSnsCiphertextMaterials(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ICiphertextCommitsCalls> {
-                        <getSnsCiphertextMaterialsCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ICiphertextCommitsCalls::getSnsCiphertextMaterials)
-                    }
-                    getSnsCiphertextMaterials
-                },
-                {
-                    fn getAddCiphertextMaterialConsensusTxSenders(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ICiphertextCommitsCalls> {
-                        <getAddCiphertextMaterialConsensusTxSendersCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(
-                                ICiphertextCommitsCalls::getAddCiphertextMaterialConsensusTxSenders,
-                            )
-                    }
-                    getAddCiphertextMaterialConsensusTxSenders
-                },
-            ];
-            let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
-            };
-            DECODE_VALIDATE_SHIMS[idx](data)
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+            )
         }
         #[inline]
         fn abi_encoded_size(&self) -> usize {
@@ -2916,15 +2924,31 @@ function isCiphertextMaterialAdded(bytes32 ctHandle) external view returns (bool
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::default(),
+            )
+        }
+        #[inline]
+        #[allow(non_snake_case)]
+        fn abi_decode_raw_with_config(
+            selector: [u8; 4],
+            data: &[u8],
+            config: alloy_sol_types::abi::AbiDecoderConfig,
+        ) -> alloy_sol_types::Result<Self> {
             static DECODE_SHIMS: &[fn(
                 &[u8],
+                alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<ICiphertextCommitsErrors>] = &[
                 {
                     fn CiphertextMaterialNotFound(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ICiphertextCommitsErrors> {
-                        <CiphertextMaterialNotFound as alloy_sol_types::SolError>::abi_decode_raw(
+                        <CiphertextMaterialNotFound as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(ICiphertextCommitsErrors::CiphertextMaterialNotFound)
                     }
@@ -2933,9 +2957,11 @@ function isCiphertextMaterialAdded(bytes32 ctHandle) external view returns (bool
                 {
                     fn CoprocessorAlreadyAdded(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ICiphertextCommitsErrors> {
-                        <CoprocessorAlreadyAdded as alloy_sol_types::SolError>::abi_decode_raw(
+                        <CoprocessorAlreadyAdded as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(ICiphertextCommitsErrors::CoprocessorAlreadyAdded)
                     }
@@ -2944,9 +2970,11 @@ function isCiphertextMaterialAdded(bytes32 ctHandle) external view returns (bool
                 {
                     fn EmptyCtHandles(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ICiphertextCommitsErrors> {
-                        <EmptyCtHandles as alloy_sol_types::SolError>::abi_decode_raw(
+                        <EmptyCtHandles as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(ICiphertextCommitsErrors::EmptyCtHandles)
                     }
@@ -2961,7 +2989,7 @@ function isCiphertextMaterialAdded(bytes32 ctHandle) external view returns (bool
                     ),
                 );
             };
-            DECODE_SHIMS[idx](data)
+            DECODE_SHIMS[idx](data, config)
         }
         #[inline]
         #[allow(non_snake_case)]
@@ -2969,52 +2997,11 @@ function isCiphertextMaterialAdded(bytes32 ctHandle) external view returns (bool
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
-            static DECODE_VALIDATE_SHIMS: &[fn(
-                &[u8],
-            ) -> alloy_sol_types::Result<ICiphertextCommitsErrors>] = &[
-                {
-                    fn CiphertextMaterialNotFound(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ICiphertextCommitsErrors> {
-                        <CiphertextMaterialNotFound as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ICiphertextCommitsErrors::CiphertextMaterialNotFound)
-                    }
-                    CiphertextMaterialNotFound
-                },
-                {
-                    fn CoprocessorAlreadyAdded(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ICiphertextCommitsErrors> {
-                        <CoprocessorAlreadyAdded as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ICiphertextCommitsErrors::CoprocessorAlreadyAdded)
-                    }
-                    CoprocessorAlreadyAdded
-                },
-                {
-                    fn EmptyCtHandles(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ICiphertextCommitsErrors> {
-                        <EmptyCtHandles as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ICiphertextCommitsErrors::EmptyCtHandles)
-                    }
-                    EmptyCtHandles
-                },
-            ];
-            let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
-            };
-            DECODE_VALIDATE_SHIMS[idx](data)
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+            )
         }
         #[inline]
         fn abi_encoded_size(&self) -> usize {
@@ -3058,6 +3045,46 @@ function isCiphertextMaterialAdded(bytes32 ctHandle) external view returns (bool
                     )
                 }
             }
+        }
+    }
+    #[automatically_derived]
+    impl ICiphertextCommitsErrors {
+        /**Creates a [`CiphertextMaterialNotFound`] error.
+
+```solidity
+error CiphertextMaterialNotFound(bytes32)
+```*/
+        #[inline]
+        pub fn ciphertext_material_not_found(
+            ct_handle: alloy::sol_types::private::FixedBytes<32>,
+        ) -> Self {
+            Self::CiphertextMaterialNotFound(CiphertextMaterialNotFound {
+                ctHandle: ct_handle,
+            })
+        }
+        /**Creates a [`CoprocessorAlreadyAdded`] error.
+
+```solidity
+error CoprocessorAlreadyAdded(bytes32,address)
+```*/
+        #[inline]
+        pub fn coprocessor_already_added(
+            ct_handle: alloy::sol_types::private::FixedBytes<32>,
+            tx_sender: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::CoprocessorAlreadyAdded(CoprocessorAlreadyAdded {
+                ctHandle: ct_handle,
+                txSender: tx_sender,
+            })
+        }
+        /**Creates a [`EmptyCtHandles`] error.
+
+```solidity
+error EmptyCtHandles()
+```*/
+        #[inline]
+        pub fn empty_ct_handles() -> Self {
+            Self::EmptyCtHandles(EmptyCtHandles)
         }
     }
     ///Container for all the [`ICiphertextCommits`](self) events.
@@ -3184,6 +3211,53 @@ function isCiphertextMaterialAdded(bytes32 ctHandle) external view returns (bool
             }
         }
     }
+    #[automatically_derived]
+    impl ICiphertextCommitsEvents {
+        /**Creates a [`AddCiphertextMaterial`] event.
+
+```solidity
+event AddCiphertextMaterial(bytes32,uint256,bytes32,bytes32,address)
+```*/
+        #[inline]
+        pub fn add_ciphertext_material(
+            ct_handle: alloy::sol_types::private::FixedBytes<32>,
+            key_id: alloy::sol_types::private::primitives::aliases::U256,
+            ciphertext_digest: alloy::sol_types::private::FixedBytes<32>,
+            sns_ciphertext_digest: alloy::sol_types::private::FixedBytes<32>,
+            coprocessor_tx_sender: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::AddCiphertextMaterial(AddCiphertextMaterial {
+                ctHandle: ct_handle,
+                keyId: key_id,
+                ciphertextDigest: ciphertext_digest,
+                snsCiphertextDigest: sns_ciphertext_digest,
+                coprocessorTxSender: coprocessor_tx_sender,
+            })
+        }
+        /**Creates a [`AddCiphertextMaterialConsensus`] event.
+
+```solidity
+event AddCiphertextMaterialConsensus(bytes32,uint256,bytes32,bytes32,address[])
+```*/
+        #[inline]
+        pub fn add_ciphertext_material_consensus(
+            ct_handle: alloy::sol_types::private::FixedBytes<32>,
+            key_id: alloy::sol_types::private::primitives::aliases::U256,
+            ciphertext_digest: alloy::sol_types::private::FixedBytes<32>,
+            sns_ciphertext_digest: alloy::sol_types::private::FixedBytes<32>,
+            coprocessor_tx_senders: alloy::sol_types::private::Vec<
+                alloy::sol_types::private::Address,
+            >,
+        ) -> Self {
+            Self::AddCiphertextMaterialConsensus(AddCiphertextMaterialConsensus {
+                ctHandle: ct_handle,
+                keyId: key_id,
+                ciphertextDigest: ciphertext_digest,
+                snsCiphertextDigest: sns_ciphertext_digest,
+                coprocessorTxSenders: coprocessor_tx_senders,
+            })
+        }
+    }
     use alloy::contract as alloy_contract;
     /**Creates a new wrapper around an on-chain [`ICiphertextCommits`](self) contract instance.
 
@@ -3197,34 +3271,6 @@ See the [wrapper's documentation](`ICiphertextCommitsInstance`) for more details
         __provider: P,
     ) -> ICiphertextCommitsInstance<P, N> {
         ICiphertextCommitsInstance::<P, N>::new(address, __provider)
-    }
-    /**Deploys this contract using the given `provider` and constructor arguments, if any.
-
-Returns a new instance of the contract, if the deployment was successful.
-
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
-    #[inline]
-    pub fn deploy<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(
-        __provider: P,
-    ) -> impl ::core::future::Future<
-        Output = alloy_contract::Result<ICiphertextCommitsInstance<P, N>>,
-    > {
-        ICiphertextCommitsInstance::<P, N>::deploy(__provider)
-    }
-    /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
-
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
-    #[inline]
-    pub fn deploy_builder<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
-        ICiphertextCommitsInstance::<P, N>::deploy_builder(__provider)
     }
     /**A [`ICiphertextCommits`](self) instance.
 
@@ -3268,31 +3314,6 @@ See the [wrapper's documentation](`ICiphertextCommitsInstance`) for more details
                 provider: __provider,
                 _network: ::core::marker::PhantomData,
             }
-        }
-        /**Deploys this contract using the given `provider` and constructor arguments, if any.
-
-Returns a new instance of the contract, if the deployment was successful.
-
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
-        #[inline]
-        pub async fn deploy(
-            __provider: P,
-        ) -> alloy_contract::Result<ICiphertextCommitsInstance<P, N>> {
-            let call_builder = Self::deploy_builder(__provider);
-            let contract_address = call_builder.deploy().await?;
-            Ok(Self::new(contract_address, call_builder.provider))
-        }
-        /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
-
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
-        #[inline]
-        pub fn deploy_builder(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
-            alloy_contract::RawCallBuilder::new_raw_deploy(
-                __provider,
-                ::core::clone::Clone::clone(&BYTECODE),
-            )
         }
         /// Returns a reference to the address.
         #[inline]

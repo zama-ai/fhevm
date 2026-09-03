@@ -187,26 +187,6 @@ interface IOAppReceiver {
 pub mod IOAppReceiver {
     use super::*;
     use alloy::sol_types as alloy_sol_types;
-    /// The creation / init bytecode of the contract.
-    ///
-    /// ```text
-    ///0x
-    /// ```
-    #[rustfmt::skip]
-    #[allow(clippy::all)]
-    pub static BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
-        b"",
-    );
-    /// The runtime bytecode of the contract, as deployed on the network.
-    ///
-    /// ```text
-    ///0x
-    /// ```
-    #[rustfmt::skip]
-    #[allow(clippy::all)]
-    pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
-        b"",
-    );
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**```solidity
@@ -598,16 +578,29 @@ function allowInitializePath(Origin memory _origin) external view returns (bool)
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: allowInitializePathReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -778,16 +771,29 @@ function isComposeMsgSender(Origin memory _origin, bytes memory _message, addres
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: isComposeMsgSenderReturn = r.into();
                         r.isSender
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -973,13 +979,26 @@ function lzReceive(Origin memory _origin, bytes32 _guid, bytes memory _message, 
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -1139,23 +1158,36 @@ function nextNonce(uint32 _eid, bytes32 _sender) external view returns (uint64);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: nextNonceReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
     ///Container for all the [`IOAppReceiver`](self) function calls.
     #[derive(Clone)]
     #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive()]
+    #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum IOAppReceiverCalls {
         #[allow(missing_docs)]
         allowInitializePath(allowInitializePathCall),
@@ -1250,14 +1282,32 @@ function nextNonce(uint32 _eid, bytes32 _sender) external view returns (uint64);
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::default(),
+            )
+        }
+        #[inline]
+        #[allow(non_snake_case)]
+        fn abi_decode_raw_with_config(
+            selector: [u8; 4],
+            data: &[u8],
+            config: alloy_sol_types::abi::AbiDecoderConfig,
+        ) -> alloy_sol_types::Result<Self> {
             static DECODE_SHIMS: &[fn(
                 &[u8],
+                alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<IOAppReceiverCalls>] = &[
                 {
                     fn lzReceive(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IOAppReceiverCalls> {
-                        <lzReceiveCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                        <lzReceiveCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(IOAppReceiverCalls::lzReceive)
                     }
                     lzReceive
@@ -1265,8 +1315,12 @@ function nextNonce(uint32 _eid, bytes32 _sender) external view returns (uint64);
                 {
                     fn nextNonce(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IOAppReceiverCalls> {
-                        <nextNonceCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                        <nextNonceCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(IOAppReceiverCalls::nextNonce)
                     }
                     nextNonce
@@ -1274,9 +1328,11 @@ function nextNonce(uint32 _eid, bytes32 _sender) external view returns (uint64);
                 {
                     fn isComposeMsgSender(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IOAppReceiverCalls> {
-                        <isComposeMsgSenderCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <isComposeMsgSenderCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IOAppReceiverCalls::isComposeMsgSender)
                     }
@@ -1285,9 +1341,11 @@ function nextNonce(uint32 _eid, bytes32 _sender) external view returns (uint64);
                 {
                     fn allowInitializePath(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IOAppReceiverCalls> {
-                        <allowInitializePathCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <allowInitializePathCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IOAppReceiverCalls::allowInitializePath)
                     }
@@ -1302,7 +1360,7 @@ function nextNonce(uint32 _eid, bytes32 _sender) external view returns (uint64);
                     ),
                 );
             };
-            DECODE_SHIMS[idx](data)
+            DECODE_SHIMS[idx](data, config)
         }
         #[inline]
         #[allow(non_snake_case)]
@@ -1310,63 +1368,11 @@ function nextNonce(uint32 _eid, bytes32 _sender) external view returns (uint64);
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
-            static DECODE_VALIDATE_SHIMS: &[fn(
-                &[u8],
-            ) -> alloy_sol_types::Result<IOAppReceiverCalls>] = &[
-                {
-                    fn lzReceive(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IOAppReceiverCalls> {
-                        <lzReceiveCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IOAppReceiverCalls::lzReceive)
-                    }
-                    lzReceive
-                },
-                {
-                    fn nextNonce(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IOAppReceiverCalls> {
-                        <nextNonceCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IOAppReceiverCalls::nextNonce)
-                    }
-                    nextNonce
-                },
-                {
-                    fn isComposeMsgSender(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IOAppReceiverCalls> {
-                        <isComposeMsgSenderCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IOAppReceiverCalls::isComposeMsgSender)
-                    }
-                    isComposeMsgSender
-                },
-                {
-                    fn allowInitializePath(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IOAppReceiverCalls> {
-                        <allowInitializePathCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IOAppReceiverCalls::allowInitializePath)
-                    }
-                    allowInitializePath
-                },
-            ];
-            let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
-            };
-            DECODE_VALIDATE_SHIMS[idx](data)
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+            )
         }
         #[inline]
         fn abi_encoded_size(&self) -> usize {
@@ -1433,34 +1439,6 @@ See the [wrapper's documentation](`IOAppReceiverInstance`) for more details.*/
     ) -> IOAppReceiverInstance<P, N> {
         IOAppReceiverInstance::<P, N>::new(address, __provider)
     }
-    /**Deploys this contract using the given `provider` and constructor arguments, if any.
-
-Returns a new instance of the contract, if the deployment was successful.
-
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
-    #[inline]
-    pub fn deploy<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(
-        __provider: P,
-    ) -> impl ::core::future::Future<
-        Output = alloy_contract::Result<IOAppReceiverInstance<P, N>>,
-    > {
-        IOAppReceiverInstance::<P, N>::deploy(__provider)
-    }
-    /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
-
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
-    #[inline]
-    pub fn deploy_builder<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
-        IOAppReceiverInstance::<P, N>::deploy_builder(__provider)
-    }
     /**A [`IOAppReceiver`](self) instance.
 
 Contains type-safe methods for interacting with an on-chain instance of the
@@ -1503,31 +1481,6 @@ See the [wrapper's documentation](`IOAppReceiverInstance`) for more details.*/
                 provider: __provider,
                 _network: ::core::marker::PhantomData,
             }
-        }
-        /**Deploys this contract using the given `provider` and constructor arguments, if any.
-
-Returns a new instance of the contract, if the deployment was successful.
-
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
-        #[inline]
-        pub async fn deploy(
-            __provider: P,
-        ) -> alloy_contract::Result<IOAppReceiverInstance<P, N>> {
-            let call_builder = Self::deploy_builder(__provider);
-            let contract_address = call_builder.deploy().await?;
-            Ok(Self::new(contract_address, call_builder.provider))
-        }
-        /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
-
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
-        #[inline]
-        pub fn deploy_builder(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
-            alloy_contract::RawCallBuilder::new_raw_deploy(
-                __provider,
-                ::core::clone::Clone::clone(&BYTECODE),
-            )
         }
         /// Returns a reference to the address.
         #[inline]

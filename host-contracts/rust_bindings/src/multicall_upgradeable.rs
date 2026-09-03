@@ -87,26 +87,6 @@ interface MulticallUpgradeable {
 pub mod MulticallUpgradeable {
     use super::*;
     use alloy::sol_types as alloy_sol_types;
-    /// The creation / init bytecode of the contract.
-    ///
-    /// ```text
-    ///0x
-    /// ```
-    #[rustfmt::skip]
-    #[allow(clippy::all)]
-    pub static BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
-        b"",
-    );
-    /// The runtime bytecode of the contract, as deployed on the network.
-    ///
-    /// ```text
-    ///0x
-    /// ```
-    #[rustfmt::skip]
-    #[allow(clippy::all)]
-    pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
-        b"",
-    );
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `AddressEmptyCode(address)` and selector `0x9996b315`.
@@ -181,10 +161,10 @@ error AddressEmptyCode(address target);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -255,10 +235,10 @@ error FailedCall();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -329,10 +309,10 @@ error InvalidInitialization();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -403,10 +383,10 @@ error NotInitializing();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -668,23 +648,36 @@ function multicall(bytes[] memory data) external returns (bytes[] memory results
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: multicallReturn = r.into();
                         r.results
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
     ///Container for all the [`MulticallUpgradeable`](self) function calls.
     #[derive(Clone)]
     #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive()]
+    #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum MulticallUpgradeableCalls {
         #[allow(missing_docs)]
         multicall(multicallCall),
@@ -753,44 +746,31 @@ function multicall(bytes[] memory data) external returns (bytes[] memory results
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
-            static DECODE_SHIMS: &[fn(
-                &[u8],
-            ) -> alloy_sol_types::Result<MulticallUpgradeableCalls>] = &[
-                {
-                    fn multicall(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<MulticallUpgradeableCalls> {
-                        <multicallCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
-                            .map(MulticallUpgradeableCalls::multicall)
-                    }
-                    multicall
-                },
-            ];
-            let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
-            };
-            DECODE_SHIMS[idx](data)
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::default(),
+            )
         }
         #[inline]
         #[allow(non_snake_case)]
-        fn abi_decode_raw_validate(
+        fn abi_decode_raw_with_config(
             selector: [u8; 4],
             data: &[u8],
+            config: alloy_sol_types::abi::AbiDecoderConfig,
         ) -> alloy_sol_types::Result<Self> {
-            static DECODE_VALIDATE_SHIMS: &[fn(
+            static DECODE_SHIMS: &[fn(
                 &[u8],
+                alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<MulticallUpgradeableCalls>] = &[
                 {
                     fn multicall(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<MulticallUpgradeableCalls> {
-                        <multicallCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                        <multicallCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(MulticallUpgradeableCalls::multicall)
                     }
@@ -805,7 +785,19 @@ function multicall(bytes[] memory data) external returns (bytes[] memory results
                     ),
                 );
             };
-            DECODE_VALIDATE_SHIMS[idx](data)
+            DECODE_SHIMS[idx](data, config)
+        }
+        #[inline]
+        #[allow(non_snake_case)]
+        fn abi_decode_raw_validate(
+            selector: [u8; 4],
+            data: &[u8],
+        ) -> alloy_sol_types::Result<Self> {
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+            )
         }
         #[inline]
         fn abi_encoded_size(&self) -> usize {
@@ -925,15 +917,31 @@ function multicall(bytes[] memory data) external returns (bytes[] memory results
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::default(),
+            )
+        }
+        #[inline]
+        #[allow(non_snake_case)]
+        fn abi_decode_raw_with_config(
+            selector: [u8; 4],
+            data: &[u8],
+            config: alloy_sol_types::abi::AbiDecoderConfig,
+        ) -> alloy_sol_types::Result<Self> {
             static DECODE_SHIMS: &[fn(
                 &[u8],
+                alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<MulticallUpgradeableErrors>] = &[
                 {
                     fn AddressEmptyCode(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<MulticallUpgradeableErrors> {
-                        <AddressEmptyCode as alloy_sol_types::SolError>::abi_decode_raw(
+                        <AddressEmptyCode as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(MulticallUpgradeableErrors::AddressEmptyCode)
                     }
@@ -942,8 +950,12 @@ function multicall(bytes[] memory data) external returns (bytes[] memory results
                 {
                     fn FailedCall(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<MulticallUpgradeableErrors> {
-                        <FailedCall as alloy_sol_types::SolError>::abi_decode_raw(data)
+                        <FailedCall as alloy_sol_types::SolError>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(MulticallUpgradeableErrors::FailedCall)
                     }
                     FailedCall
@@ -951,9 +963,11 @@ function multicall(bytes[] memory data) external returns (bytes[] memory results
                 {
                     fn NotInitializing(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<MulticallUpgradeableErrors> {
-                        <NotInitializing as alloy_sol_types::SolError>::abi_decode_raw(
+                        <NotInitializing as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(MulticallUpgradeableErrors::NotInitializing)
                     }
@@ -962,9 +976,11 @@ function multicall(bytes[] memory data) external returns (bytes[] memory results
                 {
                     fn InvalidInitialization(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<MulticallUpgradeableErrors> {
-                        <InvalidInitialization as alloy_sol_types::SolError>::abi_decode_raw(
+                        <InvalidInitialization as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(MulticallUpgradeableErrors::InvalidInitialization)
                     }
@@ -979,7 +995,7 @@ function multicall(bytes[] memory data) external returns (bytes[] memory results
                     ),
                 );
             };
-            DECODE_SHIMS[idx](data)
+            DECODE_SHIMS[idx](data, config)
         }
         #[inline]
         #[allow(non_snake_case)]
@@ -987,63 +1003,11 @@ function multicall(bytes[] memory data) external returns (bytes[] memory results
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
-            static DECODE_VALIDATE_SHIMS: &[fn(
-                &[u8],
-            ) -> alloy_sol_types::Result<MulticallUpgradeableErrors>] = &[
-                {
-                    fn AddressEmptyCode(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<MulticallUpgradeableErrors> {
-                        <AddressEmptyCode as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(MulticallUpgradeableErrors::AddressEmptyCode)
-                    }
-                    AddressEmptyCode
-                },
-                {
-                    fn FailedCall(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<MulticallUpgradeableErrors> {
-                        <FailedCall as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(MulticallUpgradeableErrors::FailedCall)
-                    }
-                    FailedCall
-                },
-                {
-                    fn NotInitializing(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<MulticallUpgradeableErrors> {
-                        <NotInitializing as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(MulticallUpgradeableErrors::NotInitializing)
-                    }
-                    NotInitializing
-                },
-                {
-                    fn InvalidInitialization(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<MulticallUpgradeableErrors> {
-                        <InvalidInitialization as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(MulticallUpgradeableErrors::InvalidInitialization)
-                    }
-                    InvalidInitialization
-                },
-            ];
-            let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
-            };
-            DECODE_VALIDATE_SHIMS[idx](data)
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+            )
         }
         #[inline]
         fn abi_encoded_size(&self) -> usize {
@@ -1093,6 +1057,45 @@ function multicall(bytes[] memory data) external returns (bytes[] memory results
                     )
                 }
             }
+        }
+    }
+    #[automatically_derived]
+    impl MulticallUpgradeableErrors {
+        /**Creates a [`AddressEmptyCode`] error.
+
+```solidity
+error AddressEmptyCode(address)
+```*/
+        #[inline]
+        pub fn address_empty_code(target: alloy::sol_types::private::Address) -> Self {
+            Self::AddressEmptyCode(AddressEmptyCode { target: target })
+        }
+        /**Creates a [`FailedCall`] error.
+
+```solidity
+error FailedCall()
+```*/
+        #[inline]
+        pub fn failed_call() -> Self {
+            Self::FailedCall(FailedCall)
+        }
+        /**Creates a [`InvalidInitialization`] error.
+
+```solidity
+error InvalidInitialization()
+```*/
+        #[inline]
+        pub fn invalid_initialization() -> Self {
+            Self::InvalidInitialization(InvalidInitialization)
+        }
+        /**Creates a [`NotInitializing`] error.
+
+```solidity
+error NotInitializing()
+```*/
+        #[inline]
+        pub fn not_initializing() -> Self {
+            Self::NotInitializing(NotInitializing)
         }
     }
     ///Container for all the [`MulticallUpgradeable`](self) events.
@@ -1193,6 +1196,18 @@ function multicall(bytes[] memory data) external returns (bytes[] memory results
             }
         }
     }
+    #[automatically_derived]
+    impl MulticallUpgradeableEvents {
+        /**Creates a [`Initialized`] event.
+
+```solidity
+event Initialized(uint64)
+```*/
+        #[inline]
+        pub fn initialized(version: u64) -> Self {
+            Self::Initialized(Initialized { version: version })
+        }
+    }
     use alloy::contract as alloy_contract;
     /**Creates a new wrapper around an on-chain [`MulticallUpgradeable`](self) contract instance.
 
@@ -1206,34 +1221,6 @@ See the [wrapper's documentation](`MulticallUpgradeableInstance`) for more detai
         __provider: P,
     ) -> MulticallUpgradeableInstance<P, N> {
         MulticallUpgradeableInstance::<P, N>::new(address, __provider)
-    }
-    /**Deploys this contract using the given `provider` and constructor arguments, if any.
-
-Returns a new instance of the contract, if the deployment was successful.
-
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
-    #[inline]
-    pub fn deploy<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(
-        __provider: P,
-    ) -> impl ::core::future::Future<
-        Output = alloy_contract::Result<MulticallUpgradeableInstance<P, N>>,
-    > {
-        MulticallUpgradeableInstance::<P, N>::deploy(__provider)
-    }
-    /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
-
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
-    #[inline]
-    pub fn deploy_builder<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
-        MulticallUpgradeableInstance::<P, N>::deploy_builder(__provider)
     }
     /**A [`MulticallUpgradeable`](self) instance.
 
@@ -1277,31 +1264,6 @@ See the [wrapper's documentation](`MulticallUpgradeableInstance`) for more detai
                 provider: __provider,
                 _network: ::core::marker::PhantomData,
             }
-        }
-        /**Deploys this contract using the given `provider` and constructor arguments, if any.
-
-Returns a new instance of the contract, if the deployment was successful.
-
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
-        #[inline]
-        pub async fn deploy(
-            __provider: P,
-        ) -> alloy_contract::Result<MulticallUpgradeableInstance<P, N>> {
-            let call_builder = Self::deploy_builder(__provider);
-            let contract_address = call_builder.deploy().await?;
-            Ok(Self::new(contract_address, call_builder.provider))
-        }
-        /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
-
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
-        #[inline]
-        pub fn deploy_builder(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
-            alloy_contract::RawCallBuilder::new_raw_deploy(
-                __provider,
-                ::core::clone::Clone::clone(&BYTECODE),
-            )
         }
         /// Returns a reference to the address.
         #[inline]

@@ -348,26 +348,6 @@ interface ERC20 {
 pub mod ERC20 {
     use super::*;
     use alloy::sol_types as alloy_sol_types;
-    /// The creation / init bytecode of the contract.
-    ///
-    /// ```text
-    ///0x
-    /// ```
-    #[rustfmt::skip]
-    #[allow(clippy::all)]
-    pub static BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
-        b"",
-    );
-    /// The runtime bytecode of the contract, as deployed on the network.
-    ///
-    /// ```text
-    ///0x
-    /// ```
-    #[rustfmt::skip]
-    #[allow(clippy::all)]
-    pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
-        b"",
-    );
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `ERC20InsufficientAllowance(address,uint256,uint256)` and selector `0xfb8f41b2`.
@@ -466,10 +446,10 @@ error ERC20InsufficientAllowance(address spender, uint256 allowance, uint256 nee
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -571,10 +551,10 @@ error ERC20InsufficientBalance(address sender, uint256 balance, uint256 needed);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -652,10 +632,10 @@ error ERC20InvalidApprover(address approver);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -733,10 +713,10 @@ error ERC20InvalidReceiver(address receiver);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -814,10 +794,10 @@ error ERC20InvalidSender(address sender);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -895,10 +875,10 @@ error ERC20InvalidSpender(address spender);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -1306,16 +1286,29 @@ function allowance(address owner, address spender) external view returns (uint25
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: allowanceReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -1475,16 +1468,29 @@ function approve(address spender, uint256 value) external returns (bool);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: approveReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -1629,16 +1635,29 @@ function balanceOf(address account) external view returns (uint256);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: balanceOfReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -1774,16 +1793,29 @@ function decimals() external view returns (uint8);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: decimalsReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -1919,16 +1951,29 @@ function name() external view returns (string memory);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: nameReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -2064,16 +2109,29 @@ function symbol() external view returns (string memory);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: symbolReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -2211,16 +2269,29 @@ function totalSupply() external view returns (uint256);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: totalSupplyReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -2380,16 +2451,29 @@ function transfer(address to, uint256 value) external returns (bool);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: transferReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -2558,23 +2642,36 @@ function transferFrom(address from, address to, uint256 value) external returns 
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: transferFromReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
     ///Container for all the [`ERC20`](self) function calls.
     #[derive(Clone)]
     #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive()]
+    #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum ERC20Calls {
         #[allow(missing_docs)]
         allowance(allowanceCall),
@@ -2699,70 +2796,136 @@ function transferFrom(address from, address to, uint256 value) external returns 
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
-            static DECODE_SHIMS: &[fn(&[u8]) -> alloy_sol_types::Result<ERC20Calls>] = &[
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::default(),
+            )
+        }
+        #[inline]
+        #[allow(non_snake_case)]
+        fn abi_decode_raw_with_config(
+            selector: [u8; 4],
+            data: &[u8],
+            config: alloy_sol_types::abi::AbiDecoderConfig,
+        ) -> alloy_sol_types::Result<Self> {
+            static DECODE_SHIMS: &[fn(
+                &[u8],
+                alloy_sol_types::abi::AbiDecoderConfig,
+            ) -> alloy_sol_types::Result<ERC20Calls>] = &[
                 {
-                    fn name(data: &[u8]) -> alloy_sol_types::Result<ERC20Calls> {
-                        <nameCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                    fn name(
+                        data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
+                    ) -> alloy_sol_types::Result<ERC20Calls> {
+                        <nameCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(ERC20Calls::name)
                     }
                     name
                 },
                 {
-                    fn approve(data: &[u8]) -> alloy_sol_types::Result<ERC20Calls> {
-                        <approveCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                    fn approve(
+                        data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
+                    ) -> alloy_sol_types::Result<ERC20Calls> {
+                        <approveCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(ERC20Calls::approve)
                     }
                     approve
                 },
                 {
-                    fn totalSupply(data: &[u8]) -> alloy_sol_types::Result<ERC20Calls> {
-                        <totalSupplyCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                    fn totalSupply(
+                        data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
+                    ) -> alloy_sol_types::Result<ERC20Calls> {
+                        <totalSupplyCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(ERC20Calls::totalSupply)
                     }
                     totalSupply
                 },
                 {
-                    fn transferFrom(data: &[u8]) -> alloy_sol_types::Result<ERC20Calls> {
-                        <transferFromCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                    fn transferFrom(
+                        data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
+                    ) -> alloy_sol_types::Result<ERC20Calls> {
+                        <transferFromCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(ERC20Calls::transferFrom)
                     }
                     transferFrom
                 },
                 {
-                    fn decimals(data: &[u8]) -> alloy_sol_types::Result<ERC20Calls> {
-                        <decimalsCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                    fn decimals(
+                        data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
+                    ) -> alloy_sol_types::Result<ERC20Calls> {
+                        <decimalsCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(ERC20Calls::decimals)
                     }
                     decimals
                 },
                 {
-                    fn balanceOf(data: &[u8]) -> alloy_sol_types::Result<ERC20Calls> {
-                        <balanceOfCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                    fn balanceOf(
+                        data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
+                    ) -> alloy_sol_types::Result<ERC20Calls> {
+                        <balanceOfCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(ERC20Calls::balanceOf)
                     }
                     balanceOf
                 },
                 {
-                    fn symbol(data: &[u8]) -> alloy_sol_types::Result<ERC20Calls> {
-                        <symbolCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                    fn symbol(
+                        data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
+                    ) -> alloy_sol_types::Result<ERC20Calls> {
+                        <symbolCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(ERC20Calls::symbol)
                     }
                     symbol
                 },
                 {
-                    fn transfer(data: &[u8]) -> alloy_sol_types::Result<ERC20Calls> {
-                        <transferCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                    fn transfer(
+                        data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
+                    ) -> alloy_sol_types::Result<ERC20Calls> {
+                        <transferCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(ERC20Calls::transfer)
                     }
                     transfer
                 },
                 {
-                    fn allowance(data: &[u8]) -> alloy_sol_types::Result<ERC20Calls> {
-                        <allowanceCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                    fn allowance(
+                        data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
+                    ) -> alloy_sol_types::Result<ERC20Calls> {
+                        <allowanceCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(ERC20Calls::allowance)
                     }
                     allowance
@@ -2776,7 +2939,7 @@ function transferFrom(address from, address to, uint256 value) external returns 
                     ),
                 );
             };
-            DECODE_SHIMS[idx](data)
+            DECODE_SHIMS[idx](data, config)
         }
         #[inline]
         #[allow(non_snake_case)]
@@ -2784,100 +2947,11 @@ function transferFrom(address from, address to, uint256 value) external returns 
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
-            static DECODE_VALIDATE_SHIMS: &[fn(
-                &[u8],
-            ) -> alloy_sol_types::Result<ERC20Calls>] = &[
-                {
-                    fn name(data: &[u8]) -> alloy_sol_types::Result<ERC20Calls> {
-                        <nameCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ERC20Calls::name)
-                    }
-                    name
-                },
-                {
-                    fn approve(data: &[u8]) -> alloy_sol_types::Result<ERC20Calls> {
-                        <approveCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ERC20Calls::approve)
-                    }
-                    approve
-                },
-                {
-                    fn totalSupply(data: &[u8]) -> alloy_sol_types::Result<ERC20Calls> {
-                        <totalSupplyCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ERC20Calls::totalSupply)
-                    }
-                    totalSupply
-                },
-                {
-                    fn transferFrom(data: &[u8]) -> alloy_sol_types::Result<ERC20Calls> {
-                        <transferFromCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ERC20Calls::transferFrom)
-                    }
-                    transferFrom
-                },
-                {
-                    fn decimals(data: &[u8]) -> alloy_sol_types::Result<ERC20Calls> {
-                        <decimalsCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ERC20Calls::decimals)
-                    }
-                    decimals
-                },
-                {
-                    fn balanceOf(data: &[u8]) -> alloy_sol_types::Result<ERC20Calls> {
-                        <balanceOfCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ERC20Calls::balanceOf)
-                    }
-                    balanceOf
-                },
-                {
-                    fn symbol(data: &[u8]) -> alloy_sol_types::Result<ERC20Calls> {
-                        <symbolCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ERC20Calls::symbol)
-                    }
-                    symbol
-                },
-                {
-                    fn transfer(data: &[u8]) -> alloy_sol_types::Result<ERC20Calls> {
-                        <transferCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ERC20Calls::transfer)
-                    }
-                    transfer
-                },
-                {
-                    fn allowance(data: &[u8]) -> alloy_sol_types::Result<ERC20Calls> {
-                        <allowanceCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ERC20Calls::allowance)
-                    }
-                    allowance
-                },
-            ];
-            let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
-            };
-            DECODE_VALIDATE_SHIMS[idx](data)
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+            )
         }
         #[inline]
         fn abi_encoded_size(&self) -> usize {
@@ -3080,13 +3154,31 @@ function transferFrom(address from, address to, uint256 value) external returns 
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
-            static DECODE_SHIMS: &[fn(&[u8]) -> alloy_sol_types::Result<ERC20Errors>] = &[
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::default(),
+            )
+        }
+        #[inline]
+        #[allow(non_snake_case)]
+        fn abi_decode_raw_with_config(
+            selector: [u8; 4],
+            data: &[u8],
+            config: alloy_sol_types::abi::AbiDecoderConfig,
+        ) -> alloy_sol_types::Result<Self> {
+            static DECODE_SHIMS: &[fn(
+                &[u8],
+                alloy_sol_types::abi::AbiDecoderConfig,
+            ) -> alloy_sol_types::Result<ERC20Errors>] = &[
                 {
                     fn ERC20InvalidSpender(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ERC20Errors> {
-                        <ERC20InvalidSpender as alloy_sol_types::SolError>::abi_decode_raw(
+                        <ERC20InvalidSpender as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(ERC20Errors::ERC20InvalidSpender)
                     }
@@ -3095,9 +3187,11 @@ function transferFrom(address from, address to, uint256 value) external returns 
                 {
                     fn ERC20InvalidSender(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ERC20Errors> {
-                        <ERC20InvalidSender as alloy_sol_types::SolError>::abi_decode_raw(
+                        <ERC20InvalidSender as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(ERC20Errors::ERC20InvalidSender)
                     }
@@ -3106,9 +3200,11 @@ function transferFrom(address from, address to, uint256 value) external returns 
                 {
                     fn ERC20InsufficientBalance(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ERC20Errors> {
-                        <ERC20InsufficientBalance as alloy_sol_types::SolError>::abi_decode_raw(
+                        <ERC20InsufficientBalance as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(ERC20Errors::ERC20InsufficientBalance)
                     }
@@ -3117,9 +3213,11 @@ function transferFrom(address from, address to, uint256 value) external returns 
                 {
                     fn ERC20InvalidApprover(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ERC20Errors> {
-                        <ERC20InvalidApprover as alloy_sol_types::SolError>::abi_decode_raw(
+                        <ERC20InvalidApprover as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(ERC20Errors::ERC20InvalidApprover)
                     }
@@ -3128,9 +3226,11 @@ function transferFrom(address from, address to, uint256 value) external returns 
                 {
                     fn ERC20InvalidReceiver(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ERC20Errors> {
-                        <ERC20InvalidReceiver as alloy_sol_types::SolError>::abi_decode_raw(
+                        <ERC20InvalidReceiver as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(ERC20Errors::ERC20InvalidReceiver)
                     }
@@ -3139,9 +3239,11 @@ function transferFrom(address from, address to, uint256 value) external returns 
                 {
                     fn ERC20InsufficientAllowance(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ERC20Errors> {
-                        <ERC20InsufficientAllowance as alloy_sol_types::SolError>::abi_decode_raw(
+                        <ERC20InsufficientAllowance as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(ERC20Errors::ERC20InsufficientAllowance)
                     }
@@ -3156,7 +3258,7 @@ function transferFrom(address from, address to, uint256 value) external returns 
                     ),
                 );
             };
-            DECODE_SHIMS[idx](data)
+            DECODE_SHIMS[idx](data, config)
         }
         #[inline]
         #[allow(non_snake_case)]
@@ -3164,85 +3266,11 @@ function transferFrom(address from, address to, uint256 value) external returns 
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
-            static DECODE_VALIDATE_SHIMS: &[fn(
-                &[u8],
-            ) -> alloy_sol_types::Result<ERC20Errors>] = &[
-                {
-                    fn ERC20InvalidSpender(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ERC20Errors> {
-                        <ERC20InvalidSpender as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ERC20Errors::ERC20InvalidSpender)
-                    }
-                    ERC20InvalidSpender
-                },
-                {
-                    fn ERC20InvalidSender(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ERC20Errors> {
-                        <ERC20InvalidSender as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ERC20Errors::ERC20InvalidSender)
-                    }
-                    ERC20InvalidSender
-                },
-                {
-                    fn ERC20InsufficientBalance(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ERC20Errors> {
-                        <ERC20InsufficientBalance as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ERC20Errors::ERC20InsufficientBalance)
-                    }
-                    ERC20InsufficientBalance
-                },
-                {
-                    fn ERC20InvalidApprover(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ERC20Errors> {
-                        <ERC20InvalidApprover as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ERC20Errors::ERC20InvalidApprover)
-                    }
-                    ERC20InvalidApprover
-                },
-                {
-                    fn ERC20InvalidReceiver(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ERC20Errors> {
-                        <ERC20InvalidReceiver as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ERC20Errors::ERC20InvalidReceiver)
-                    }
-                    ERC20InvalidReceiver
-                },
-                {
-                    fn ERC20InsufficientAllowance(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ERC20Errors> {
-                        <ERC20InsufficientAllowance as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ERC20Errors::ERC20InsufficientAllowance)
-                    }
-                    ERC20InsufficientAllowance
-                },
-            ];
-            let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
-            };
-            DECODE_VALIDATE_SHIMS[idx](data)
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+            )
         }
         #[inline]
         fn abi_encoded_size(&self) -> usize {
@@ -3319,6 +3347,95 @@ function transferFrom(address from, address to, uint256 value) external returns 
                     )
                 }
             }
+        }
+    }
+    #[automatically_derived]
+    impl ERC20Errors {
+        /**Creates a [`ERC20InsufficientAllowance`] error.
+
+```solidity
+error ERC20InsufficientAllowance(address,uint256,uint256)
+```*/
+        #[inline]
+        pub fn erc_20_insufficient_allowance(
+            spender: alloy::sol_types::private::Address,
+            allowance: alloy::sol_types::private::primitives::aliases::U256,
+            needed: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::ERC20InsufficientAllowance(ERC20InsufficientAllowance {
+                spender: spender,
+                allowance: allowance,
+                needed: needed,
+            })
+        }
+        /**Creates a [`ERC20InsufficientBalance`] error.
+
+```solidity
+error ERC20InsufficientBalance(address,uint256,uint256)
+```*/
+        #[inline]
+        pub fn erc_20_insufficient_balance(
+            sender: alloy::sol_types::private::Address,
+            balance: alloy::sol_types::private::primitives::aliases::U256,
+            needed: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::ERC20InsufficientBalance(ERC20InsufficientBalance {
+                sender: sender,
+                balance: balance,
+                needed: needed,
+            })
+        }
+        /**Creates a [`ERC20InvalidApprover`] error.
+
+```solidity
+error ERC20InvalidApprover(address)
+```*/
+        #[inline]
+        pub fn erc_20_invalid_approver(
+            approver: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::ERC20InvalidApprover(ERC20InvalidApprover {
+                approver: approver,
+            })
+        }
+        /**Creates a [`ERC20InvalidReceiver`] error.
+
+```solidity
+error ERC20InvalidReceiver(address)
+```*/
+        #[inline]
+        pub fn erc_20_invalid_receiver(
+            receiver: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::ERC20InvalidReceiver(ERC20InvalidReceiver {
+                receiver: receiver,
+            })
+        }
+        /**Creates a [`ERC20InvalidSender`] error.
+
+```solidity
+error ERC20InvalidSender(address)
+```*/
+        #[inline]
+        pub fn erc_20_invalid_sender(
+            sender: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::ERC20InvalidSender(ERC20InvalidSender {
+                sender: sender,
+            })
+        }
+        /**Creates a [`ERC20InvalidSpender`] error.
+
+```solidity
+error ERC20InvalidSpender(address)
+```*/
+        #[inline]
+        pub fn erc_20_invalid_spender(
+            spender: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::ERC20InvalidSpender(ERC20InvalidSpender {
+                spender: spender,
+            })
         }
     }
     ///Container for all the [`ERC20`](self) events.
@@ -3435,6 +3552,43 @@ function transferFrom(address from, address to, uint256 value) external returns 
             }
         }
     }
+    #[automatically_derived]
+    impl ERC20Events {
+        /**Creates a [`Approval`] event.
+
+```solidity
+event Approval(address,address,uint256)
+```*/
+        #[inline]
+        pub fn approval(
+            owner: alloy::sol_types::private::Address,
+            spender: alloy::sol_types::private::Address,
+            value: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::Approval(Approval {
+                owner: owner,
+                spender: spender,
+                value: value,
+            })
+        }
+        /**Creates a [`Transfer`] event.
+
+```solidity
+event Transfer(address,address,uint256)
+```*/
+        #[inline]
+        pub fn transfer(
+            from: alloy::sol_types::private::Address,
+            to: alloy::sol_types::private::Address,
+            value: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::Transfer(Transfer {
+                from: from,
+                to: to,
+                value: value,
+            })
+        }
+    }
     use alloy::contract as alloy_contract;
     /**Creates a new wrapper around an on-chain [`ERC20`](self) contract instance.
 
@@ -3445,34 +3599,6 @@ See the [wrapper's documentation](`ERC20Instance`) for more details.*/
         N: alloy_contract::private::Network,
     >(address: alloy_sol_types::private::Address, __provider: P) -> ERC20Instance<P, N> {
         ERC20Instance::<P, N>::new(address, __provider)
-    }
-    /**Deploys this contract using the given `provider` and constructor arguments, if any.
-
-Returns a new instance of the contract, if the deployment was successful.
-
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
-    #[inline]
-    pub fn deploy<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(
-        __provider: P,
-    ) -> impl ::core::future::Future<
-        Output = alloy_contract::Result<ERC20Instance<P, N>>,
-    > {
-        ERC20Instance::<P, N>::deploy(__provider)
-    }
-    /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
-
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
-    #[inline]
-    pub fn deploy_builder<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
-        ERC20Instance::<P, N>::deploy_builder(__provider)
     }
     /**A [`ERC20`](self) instance.
 
@@ -3516,31 +3642,6 @@ See the [wrapper's documentation](`ERC20Instance`) for more details.*/
                 provider: __provider,
                 _network: ::core::marker::PhantomData,
             }
-        }
-        /**Deploys this contract using the given `provider` and constructor arguments, if any.
-
-Returns a new instance of the contract, if the deployment was successful.
-
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
-        #[inline]
-        pub async fn deploy(
-            __provider: P,
-        ) -> alloy_contract::Result<ERC20Instance<P, N>> {
-            let call_builder = Self::deploy_builder(__provider);
-            let contract_address = call_builder.deploy().await?;
-            Ok(Self::new(contract_address, call_builder.provider))
-        }
-        /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
-
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
-        #[inline]
-        pub fn deploy_builder(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
-            alloy_contract::RawCallBuilder::new_raw_deploy(
-                __provider,
-                ::core::clone::Clone::clone(&BYTECODE),
-            )
         }
         /// Returns a reference to the address.
         #[inline]

@@ -1032,26 +1032,6 @@ interface IKMSGeneration {
 pub mod IKMSGeneration {
     use super::*;
     use alloy::sol_types as alloy_sol_types;
-    /// The creation / init bytecode of the contract.
-    ///
-    /// ```text
-    ///0x
-    /// ```
-    #[rustfmt::skip]
-    #[allow(clippy::all)]
-    pub static BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
-        b"",
-    );
-    /// The runtime bytecode of the contract, as deployed on the network.
-    ///
-    /// ```text
-    ///0x
-    /// ```
-    #[rustfmt::skip]
-    #[allow(clippy::all)]
-    pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
-        b"",
-    );
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
@@ -1096,7 +1076,7 @@ pub mod IKMSGeneration {
         }
         impl KeyType {
             /// The Solidity type name.
-            pub const NAME: &'static str = stringify!(@ name);
+            pub const NAME: &'static str = stringify!(KeyType);
             /// Convert from the underlying value type.
             #[inline]
             pub const fn from_underlying(value: u8) -> Self {
@@ -1233,7 +1213,7 @@ pub mod IKMSGeneration {
         }
         impl ParamsType {
             /// The Solidity type name.
-            pub const NAME: &'static str = stringify!(@ name);
+            pub const NAME: &'static str = stringify!(ParamsType);
             /// Convert from the underlying value type.
             #[inline]
             pub const fn from_underlying(value: u8) -> Self {
@@ -1892,10 +1872,10 @@ error AbortCrsgenAlreadyDone(uint256 crsId);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -1975,10 +1955,10 @@ error AbortCrsgenInvalidId(uint256 crsId);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -2058,10 +2038,10 @@ error AbortKeygenAlreadyDone(uint256 prepKeygenId);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -2141,10 +2121,10 @@ error AbortKeygenInvalidId(uint256 prepKeygenId);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -2224,10 +2204,10 @@ error CrsAborted(uint256 crsId);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -2307,10 +2287,10 @@ error CrsNotGenerated(uint256 crsId);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -2390,10 +2370,10 @@ error CrsgenNotRequested(uint256 crsId);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -2473,10 +2453,10 @@ error CrsgenOngoing(uint256 crsId);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -2549,10 +2529,10 @@ error DeserializingExtraDataFail();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -2632,10 +2612,10 @@ error EmptyKeyDigests(uint256 keyId);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -2715,10 +2695,10 @@ error KeyAborted(uint256 keyId);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -2791,10 +2771,10 @@ error KeyManagementRequestPending();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -2874,10 +2854,10 @@ error KeyNotGenerated(uint256 keyId);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -2957,10 +2937,10 @@ error KeygenNotRequested(uint256 keyId);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -3040,10 +3020,10 @@ error KeygenOngoing(uint256 keyId);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -3137,10 +3117,10 @@ error KmsAlreadySignedForCrsgen(uint256 crsId, address kmsSigner);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -3234,10 +3214,10 @@ error KmsAlreadySignedForKeygen(uint256 keyId, address kmsSigner);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -3331,10 +3311,10 @@ error KmsAlreadySignedForPrepKeygen(uint256 prepKeygenId, address kmsSigner);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -3428,10 +3408,10 @@ error KmsSignerDoesNotMatchTxSender(address signerAddress, address txSenderAddre
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -3509,10 +3489,10 @@ error NotKmsSigner(address signerAddress);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -3590,10 +3570,10 @@ error NotKmsTxSender(address txSenderAddress);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -3673,10 +3653,10 @@ error PrepKeygenNotRequested(uint256 prepKeygenId);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -3756,10 +3736,10 @@ error UnsupportedExtraDataVersion(uint8 version);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -5119,13 +5099,26 @@ function abortCrsgen(uint256 crsId) external;
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -5265,13 +5258,26 @@ function abortKeygen(uint256 prepKeygenId) external;
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -5421,13 +5427,26 @@ function crsgenRequest(uint256 maxBitLength, ParamsType paramsType) external;
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -5593,13 +5612,26 @@ function crsgenResponse(uint256 crsId, bytes memory crsDigest, bytes memory sign
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -5739,16 +5771,29 @@ function getActiveCrsId() external view returns (uint256);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: getActiveCrsIdReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -5888,16 +5933,29 @@ function getActiveKeyId() external view returns (uint256);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: getActiveKeyIdReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -6049,16 +6107,29 @@ function getCompletedCrsIds() external view returns (uint256[] memory);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: getCompletedCrsIdsReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -6210,16 +6281,29 @@ function getCompletedKeyIds() external view returns (uint256[] memory);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: getCompletedKeyIdsReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -6376,16 +6460,29 @@ function getConsensusTxSenders(uint256 requestId) external view returns (address
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: getConsensusTxSendersReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -6523,16 +6620,29 @@ function getCrsCounter() external view returns (uint256);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: getCrsCounterReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -6697,13 +6807,26 @@ function getCrsMaterials(uint256 crsId) external view returns (string[] memory, 
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -6850,16 +6973,29 @@ function getCrsParamsType(uint256 crsId) external view returns (ParamsType);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: getCrsParamsTypeReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -6997,16 +7133,29 @@ function getKeyCounter() external view returns (uint256);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: getKeyCounterReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -7149,16 +7298,29 @@ function getKeyInfo(uint256 keyId) external view returns (KeyInfo memory);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: getKeyInfoReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -7327,13 +7489,26 @@ function getKeyMaterials(uint256 keyId) external view returns (string[] memory, 
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -7480,16 +7655,29 @@ function getKeyParamsType(uint256 keyId) external view returns (ParamsType);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: getKeyParamsTypeReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -7625,16 +7813,29 @@ function getVersion() external pure returns (string memory);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: getVersionReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -7779,16 +7980,29 @@ function isRequestDone(uint256 requestId) external view returns (bool);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: isRequestDoneReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -7924,13 +8138,26 @@ function keygen(ParamsType paramsType) external;
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -8100,13 +8327,26 @@ function keygenResponse(uint256 keyId, KeyDigest[] memory keyDigests, bytes memo
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -8265,20 +8505,33 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
     ///Container for all the [`IKMSGeneration`](self) function calls.
     #[derive(Clone)]
     #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive()]
+    #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum IKMSGenerationCalls {
         #[allow(missing_docs)]
         abortCrsgen(abortCrsgenCall),
@@ -8507,15 +8760,31 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::default(),
+            )
+        }
+        #[inline]
+        #[allow(non_snake_case)]
+        fn abi_decode_raw_with_config(
+            selector: [u8; 4],
+            data: &[u8],
+            config: alloy_sol_types::abi::AbiDecoderConfig,
+        ) -> alloy_sol_types::Result<Self> {
             static DECODE_SHIMS: &[fn(
                 &[u8],
+                alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<IKMSGenerationCalls>] = &[
                 {
                     fn getKeyCounter(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IKMSGenerationCalls> {
-                        <getKeyCounterCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <getKeyCounterCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IKMSGenerationCalls::getKeyCounter)
                     }
@@ -8524,9 +8793,11 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                 {
                     fn getVersion(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IKMSGenerationCalls> {
-                        <getVersionCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <getVersionCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IKMSGenerationCalls::getVersion)
                     }
@@ -8535,9 +8806,11 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                 {
                     fn getConsensusTxSenders(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IKMSGenerationCalls> {
-                        <getConsensusTxSendersCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <getConsensusTxSendersCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IKMSGenerationCalls::getConsensusTxSenders)
                     }
@@ -8546,9 +8819,11 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                 {
                     fn abortCrsgen(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IKMSGenerationCalls> {
-                        <abortCrsgenCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <abortCrsgenCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IKMSGenerationCalls::abortCrsgen)
                     }
@@ -8557,9 +8832,11 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                 {
                     fn getKeyParamsType(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IKMSGenerationCalls> {
-                        <getKeyParamsTypeCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <getKeyParamsTypeCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IKMSGenerationCalls::getKeyParamsType)
                     }
@@ -8568,9 +8845,11 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                 {
                     fn getCrsCounter(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IKMSGenerationCalls> {
-                        <getCrsCounterCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <getCrsCounterCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IKMSGenerationCalls::getCrsCounter)
                     }
@@ -8579,9 +8858,11 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                 {
                     fn crsgenRequest(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IKMSGenerationCalls> {
-                        <crsgenRequestCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <crsgenRequestCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IKMSGenerationCalls::crsgenRequest)
                     }
@@ -8590,9 +8871,11 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                 {
                     fn isRequestDone(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IKMSGenerationCalls> {
-                        <isRequestDoneCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <isRequestDoneCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IKMSGenerationCalls::isRequestDone)
                     }
@@ -8601,9 +8884,11 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                 {
                     fn getCrsParamsType(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IKMSGenerationCalls> {
-                        <getCrsParamsTypeCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <getCrsParamsTypeCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IKMSGenerationCalls::getCrsParamsType)
                     }
@@ -8612,9 +8897,11 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                 {
                     fn keygenResponse(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IKMSGenerationCalls> {
-                        <keygenResponseCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <keygenResponseCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IKMSGenerationCalls::keygenResponse)
                     }
@@ -8623,9 +8910,11 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                 {
                     fn prepKeygenResponse(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IKMSGenerationCalls> {
-                        <prepKeygenResponseCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <prepKeygenResponseCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IKMSGenerationCalls::prepKeygenResponse)
                     }
@@ -8634,9 +8923,11 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                 {
                     fn getKeyInfo(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IKMSGenerationCalls> {
-                        <getKeyInfoCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <getKeyInfoCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IKMSGenerationCalls::getKeyInfo)
                     }
@@ -8645,9 +8936,11 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                 {
                     fn crsgenResponse(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IKMSGenerationCalls> {
-                        <crsgenResponseCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <crsgenResponseCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IKMSGenerationCalls::crsgenResponse)
                     }
@@ -8656,9 +8949,11 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                 {
                     fn getKeyMaterials(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IKMSGenerationCalls> {
-                        <getKeyMaterialsCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <getKeyMaterialsCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IKMSGenerationCalls::getKeyMaterials)
                     }
@@ -8667,9 +8962,11 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                 {
                     fn getActiveCrsId(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IKMSGenerationCalls> {
-                        <getActiveCrsIdCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <getActiveCrsIdCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IKMSGenerationCalls::getActiveCrsId)
                     }
@@ -8678,9 +8975,11 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                 {
                     fn abortKeygen(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IKMSGenerationCalls> {
-                        <abortKeygenCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <abortKeygenCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IKMSGenerationCalls::abortKeygen)
                     }
@@ -8689,9 +8988,11 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                 {
                     fn getCrsMaterials(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IKMSGenerationCalls> {
-                        <getCrsMaterialsCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <getCrsMaterialsCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IKMSGenerationCalls::getCrsMaterials)
                     }
@@ -8700,8 +9001,12 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                 {
                     fn keygen(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IKMSGenerationCalls> {
-                        <keygenCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                        <keygenCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(IKMSGenerationCalls::keygen)
                     }
                     keygen
@@ -8709,9 +9014,11 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                 {
                     fn getActiveKeyId(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IKMSGenerationCalls> {
-                        <getActiveKeyIdCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <getActiveKeyIdCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IKMSGenerationCalls::getActiveKeyId)
                     }
@@ -8720,9 +9027,11 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                 {
                     fn getCompletedCrsIds(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IKMSGenerationCalls> {
-                        <getCompletedCrsIdsCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <getCompletedCrsIdsCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IKMSGenerationCalls::getCompletedCrsIds)
                     }
@@ -8731,9 +9040,11 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                 {
                     fn getCompletedKeyIds(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IKMSGenerationCalls> {
-                        <getCompletedKeyIdsCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <getCompletedKeyIdsCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IKMSGenerationCalls::getCompletedKeyIds)
                     }
@@ -8748,7 +9059,7 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                     ),
                 );
             };
-            DECODE_SHIMS[idx](data)
+            DECODE_SHIMS[idx](data, config)
         }
         #[inline]
         #[allow(non_snake_case)]
@@ -8756,250 +9067,11 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
-            static DECODE_VALIDATE_SHIMS: &[fn(
-                &[u8],
-            ) -> alloy_sol_types::Result<IKMSGenerationCalls>] = &[
-                {
-                    fn getKeyCounter(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IKMSGenerationCalls> {
-                        <getKeyCounterCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IKMSGenerationCalls::getKeyCounter)
-                    }
-                    getKeyCounter
-                },
-                {
-                    fn getVersion(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IKMSGenerationCalls> {
-                        <getVersionCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IKMSGenerationCalls::getVersion)
-                    }
-                    getVersion
-                },
-                {
-                    fn getConsensusTxSenders(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IKMSGenerationCalls> {
-                        <getConsensusTxSendersCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IKMSGenerationCalls::getConsensusTxSenders)
-                    }
-                    getConsensusTxSenders
-                },
-                {
-                    fn abortCrsgen(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IKMSGenerationCalls> {
-                        <abortCrsgenCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IKMSGenerationCalls::abortCrsgen)
-                    }
-                    abortCrsgen
-                },
-                {
-                    fn getKeyParamsType(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IKMSGenerationCalls> {
-                        <getKeyParamsTypeCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IKMSGenerationCalls::getKeyParamsType)
-                    }
-                    getKeyParamsType
-                },
-                {
-                    fn getCrsCounter(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IKMSGenerationCalls> {
-                        <getCrsCounterCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IKMSGenerationCalls::getCrsCounter)
-                    }
-                    getCrsCounter
-                },
-                {
-                    fn crsgenRequest(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IKMSGenerationCalls> {
-                        <crsgenRequestCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IKMSGenerationCalls::crsgenRequest)
-                    }
-                    crsgenRequest
-                },
-                {
-                    fn isRequestDone(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IKMSGenerationCalls> {
-                        <isRequestDoneCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IKMSGenerationCalls::isRequestDone)
-                    }
-                    isRequestDone
-                },
-                {
-                    fn getCrsParamsType(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IKMSGenerationCalls> {
-                        <getCrsParamsTypeCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IKMSGenerationCalls::getCrsParamsType)
-                    }
-                    getCrsParamsType
-                },
-                {
-                    fn keygenResponse(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IKMSGenerationCalls> {
-                        <keygenResponseCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IKMSGenerationCalls::keygenResponse)
-                    }
-                    keygenResponse
-                },
-                {
-                    fn prepKeygenResponse(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IKMSGenerationCalls> {
-                        <prepKeygenResponseCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IKMSGenerationCalls::prepKeygenResponse)
-                    }
-                    prepKeygenResponse
-                },
-                {
-                    fn getKeyInfo(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IKMSGenerationCalls> {
-                        <getKeyInfoCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IKMSGenerationCalls::getKeyInfo)
-                    }
-                    getKeyInfo
-                },
-                {
-                    fn crsgenResponse(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IKMSGenerationCalls> {
-                        <crsgenResponseCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IKMSGenerationCalls::crsgenResponse)
-                    }
-                    crsgenResponse
-                },
-                {
-                    fn getKeyMaterials(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IKMSGenerationCalls> {
-                        <getKeyMaterialsCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IKMSGenerationCalls::getKeyMaterials)
-                    }
-                    getKeyMaterials
-                },
-                {
-                    fn getActiveCrsId(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IKMSGenerationCalls> {
-                        <getActiveCrsIdCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IKMSGenerationCalls::getActiveCrsId)
-                    }
-                    getActiveCrsId
-                },
-                {
-                    fn abortKeygen(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IKMSGenerationCalls> {
-                        <abortKeygenCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IKMSGenerationCalls::abortKeygen)
-                    }
-                    abortKeygen
-                },
-                {
-                    fn getCrsMaterials(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IKMSGenerationCalls> {
-                        <getCrsMaterialsCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IKMSGenerationCalls::getCrsMaterials)
-                    }
-                    getCrsMaterials
-                },
-                {
-                    fn keygen(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IKMSGenerationCalls> {
-                        <keygenCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IKMSGenerationCalls::keygen)
-                    }
-                    keygen
-                },
-                {
-                    fn getActiveKeyId(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IKMSGenerationCalls> {
-                        <getActiveKeyIdCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IKMSGenerationCalls::getActiveKeyId)
-                    }
-                    getActiveKeyId
-                },
-                {
-                    fn getCompletedCrsIds(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IKMSGenerationCalls> {
-                        <getCompletedCrsIdsCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IKMSGenerationCalls::getCompletedCrsIds)
-                    }
-                    getCompletedCrsIds
-                },
-                {
-                    fn getCompletedKeyIds(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IKMSGenerationCalls> {
-                        <getCompletedKeyIdsCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IKMSGenerationCalls::getCompletedKeyIds)
-                    }
-                    getCompletedKeyIds
-                },
-            ];
-            let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
-            };
-            DECODE_VALIDATE_SHIMS[idx](data)
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+            )
         }
         #[inline]
         fn abi_encoded_size(&self) -> usize {
@@ -9484,15 +9556,31 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::default(),
+            )
+        }
+        #[inline]
+        #[allow(non_snake_case)]
+        fn abi_decode_raw_with_config(
+            selector: [u8; 4],
+            data: &[u8],
+            config: alloy_sol_types::abi::AbiDecoderConfig,
+        ) -> alloy_sol_types::Result<Self> {
             static DECODE_SHIMS: &[fn(
                 &[u8],
+                alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<IKMSGenerationErrors>] = &[
                 {
                     fn CrsgenOngoing(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
-                        <CrsgenOngoing as alloy_sol_types::SolError>::abi_decode_raw(
+                        <CrsgenOngoing as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IKMSGenerationErrors::CrsgenOngoing)
                     }
@@ -9501,9 +9589,11 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                 {
                     fn PrepKeygenNotRequested(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
-                        <PrepKeygenNotRequested as alloy_sol_types::SolError>::abi_decode_raw(
+                        <PrepKeygenNotRequested as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IKMSGenerationErrors::PrepKeygenNotRequested)
                     }
@@ -9512,9 +9602,11 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                 {
                     fn KmsSignerDoesNotMatchTxSender(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
-                        <KmsSignerDoesNotMatchTxSender as alloy_sol_types::SolError>::abi_decode_raw(
+                        <KmsSignerDoesNotMatchTxSender as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IKMSGenerationErrors::KmsSignerDoesNotMatchTxSender)
                     }
@@ -9523,9 +9615,11 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                 {
                     fn UnsupportedExtraDataVersion(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
-                        <UnsupportedExtraDataVersion as alloy_sol_types::SolError>::abi_decode_raw(
+                        <UnsupportedExtraDataVersion as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IKMSGenerationErrors::UnsupportedExtraDataVersion)
                     }
@@ -9534,8 +9628,12 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                 {
                     fn NotKmsSigner(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
-                        <NotKmsSigner as alloy_sol_types::SolError>::abi_decode_raw(data)
+                        <NotKmsSigner as alloy_sol_types::SolError>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(IKMSGenerationErrors::NotKmsSigner)
                     }
                     NotKmsSigner
@@ -9543,9 +9641,11 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                 {
                     fn KmsAlreadySignedForPrepKeygen(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
-                        <KmsAlreadySignedForPrepKeygen as alloy_sol_types::SolError>::abi_decode_raw(
+                        <KmsAlreadySignedForPrepKeygen as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IKMSGenerationErrors::KmsAlreadySignedForPrepKeygen)
                     }
@@ -9554,9 +9654,11 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                 {
                     fn KeygenOngoing(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
-                        <KeygenOngoing as alloy_sol_types::SolError>::abi_decode_raw(
+                        <KeygenOngoing as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IKMSGenerationErrors::KeygenOngoing)
                     }
@@ -9565,9 +9667,11 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                 {
                     fn KeyManagementRequestPending(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
-                        <KeyManagementRequestPending as alloy_sol_types::SolError>::abi_decode_raw(
+                        <KeyManagementRequestPending as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IKMSGenerationErrors::KeyManagementRequestPending)
                     }
@@ -9576,8 +9680,12 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                 {
                     fn KeyAborted(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
-                        <KeyAborted as alloy_sol_types::SolError>::abi_decode_raw(data)
+                        <KeyAborted as alloy_sol_types::SolError>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(IKMSGenerationErrors::KeyAborted)
                     }
                     KeyAborted
@@ -9585,9 +9693,11 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                 {
                     fn KeyNotGenerated(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
-                        <KeyNotGenerated as alloy_sol_types::SolError>::abi_decode_raw(
+                        <KeyNotGenerated as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IKMSGenerationErrors::KeyNotGenerated)
                     }
@@ -9596,9 +9706,11 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                 {
                     fn DeserializingExtraDataFail(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
-                        <DeserializingExtraDataFail as alloy_sol_types::SolError>::abi_decode_raw(
+                        <DeserializingExtraDataFail as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IKMSGenerationErrors::DeserializingExtraDataFail)
                     }
@@ -9607,9 +9719,11 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                 {
                     fn CrsgenNotRequested(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
-                        <CrsgenNotRequested as alloy_sol_types::SolError>::abi_decode_raw(
+                        <CrsgenNotRequested as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IKMSGenerationErrors::CrsgenNotRequested)
                     }
@@ -9618,9 +9732,11 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                 {
                     fn AbortKeygenAlreadyDone(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
-                        <AbortKeygenAlreadyDone as alloy_sol_types::SolError>::abi_decode_raw(
+                        <AbortKeygenAlreadyDone as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IKMSGenerationErrors::AbortKeygenAlreadyDone)
                     }
@@ -9629,9 +9745,11 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                 {
                     fn KmsAlreadySignedForKeygen(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
-                        <KmsAlreadySignedForKeygen as alloy_sol_types::SolError>::abi_decode_raw(
+                        <KmsAlreadySignedForKeygen as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IKMSGenerationErrors::KmsAlreadySignedForKeygen)
                     }
@@ -9640,9 +9758,11 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                 {
                     fn KeygenNotRequested(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
-                        <KeygenNotRequested as alloy_sol_types::SolError>::abi_decode_raw(
+                        <KeygenNotRequested as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IKMSGenerationErrors::KeygenNotRequested)
                     }
@@ -9651,9 +9771,11 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                 {
                     fn NotKmsTxSender(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
-                        <NotKmsTxSender as alloy_sol_types::SolError>::abi_decode_raw(
+                        <NotKmsTxSender as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IKMSGenerationErrors::NotKmsTxSender)
                     }
@@ -9662,9 +9784,11 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                 {
                     fn AbortCrsgenInvalidId(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
-                        <AbortCrsgenInvalidId as alloy_sol_types::SolError>::abi_decode_raw(
+                        <AbortCrsgenInvalidId as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IKMSGenerationErrors::AbortCrsgenInvalidId)
                     }
@@ -9673,8 +9797,12 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                 {
                     fn CrsAborted(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
-                        <CrsAborted as alloy_sol_types::SolError>::abi_decode_raw(data)
+                        <CrsAborted as alloy_sol_types::SolError>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(IKMSGenerationErrors::CrsAborted)
                     }
                     CrsAborted
@@ -9682,9 +9810,11 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                 {
                     fn CrsNotGenerated(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
-                        <CrsNotGenerated as alloy_sol_types::SolError>::abi_decode_raw(
+                        <CrsNotGenerated as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IKMSGenerationErrors::CrsNotGenerated)
                     }
@@ -9693,9 +9823,11 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                 {
                     fn AbortCrsgenAlreadyDone(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
-                        <AbortCrsgenAlreadyDone as alloy_sol_types::SolError>::abi_decode_raw(
+                        <AbortCrsgenAlreadyDone as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IKMSGenerationErrors::AbortCrsgenAlreadyDone)
                     }
@@ -9704,9 +9836,11 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                 {
                     fn EmptyKeyDigests(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
-                        <EmptyKeyDigests as alloy_sol_types::SolError>::abi_decode_raw(
+                        <EmptyKeyDigests as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IKMSGenerationErrors::EmptyKeyDigests)
                     }
@@ -9715,9 +9849,11 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                 {
                     fn AbortKeygenInvalidId(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
-                        <AbortKeygenInvalidId as alloy_sol_types::SolError>::abi_decode_raw(
+                        <AbortKeygenInvalidId as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IKMSGenerationErrors::AbortKeygenInvalidId)
                     }
@@ -9726,9 +9862,11 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                 {
                     fn KmsAlreadySignedForCrsgen(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
-                        <KmsAlreadySignedForCrsgen as alloy_sol_types::SolError>::abi_decode_raw(
+                        <KmsAlreadySignedForCrsgen as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IKMSGenerationErrors::KmsAlreadySignedForCrsgen)
                     }
@@ -9743,7 +9881,7 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                     ),
                 );
             };
-            DECODE_SHIMS[idx](data)
+            DECODE_SHIMS[idx](data, config)
         }
         #[inline]
         #[allow(non_snake_case)]
@@ -9751,272 +9889,11 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
-            static DECODE_VALIDATE_SHIMS: &[fn(
-                &[u8],
-            ) -> alloy_sol_types::Result<IKMSGenerationErrors>] = &[
-                {
-                    fn CrsgenOngoing(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
-                        <CrsgenOngoing as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IKMSGenerationErrors::CrsgenOngoing)
-                    }
-                    CrsgenOngoing
-                },
-                {
-                    fn PrepKeygenNotRequested(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
-                        <PrepKeygenNotRequested as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IKMSGenerationErrors::PrepKeygenNotRequested)
-                    }
-                    PrepKeygenNotRequested
-                },
-                {
-                    fn KmsSignerDoesNotMatchTxSender(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
-                        <KmsSignerDoesNotMatchTxSender as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IKMSGenerationErrors::KmsSignerDoesNotMatchTxSender)
-                    }
-                    KmsSignerDoesNotMatchTxSender
-                },
-                {
-                    fn UnsupportedExtraDataVersion(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
-                        <UnsupportedExtraDataVersion as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IKMSGenerationErrors::UnsupportedExtraDataVersion)
-                    }
-                    UnsupportedExtraDataVersion
-                },
-                {
-                    fn NotKmsSigner(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
-                        <NotKmsSigner as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IKMSGenerationErrors::NotKmsSigner)
-                    }
-                    NotKmsSigner
-                },
-                {
-                    fn KmsAlreadySignedForPrepKeygen(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
-                        <KmsAlreadySignedForPrepKeygen as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IKMSGenerationErrors::KmsAlreadySignedForPrepKeygen)
-                    }
-                    KmsAlreadySignedForPrepKeygen
-                },
-                {
-                    fn KeygenOngoing(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
-                        <KeygenOngoing as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IKMSGenerationErrors::KeygenOngoing)
-                    }
-                    KeygenOngoing
-                },
-                {
-                    fn KeyManagementRequestPending(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
-                        <KeyManagementRequestPending as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IKMSGenerationErrors::KeyManagementRequestPending)
-                    }
-                    KeyManagementRequestPending
-                },
-                {
-                    fn KeyAborted(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
-                        <KeyAborted as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IKMSGenerationErrors::KeyAborted)
-                    }
-                    KeyAborted
-                },
-                {
-                    fn KeyNotGenerated(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
-                        <KeyNotGenerated as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IKMSGenerationErrors::KeyNotGenerated)
-                    }
-                    KeyNotGenerated
-                },
-                {
-                    fn DeserializingExtraDataFail(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
-                        <DeserializingExtraDataFail as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IKMSGenerationErrors::DeserializingExtraDataFail)
-                    }
-                    DeserializingExtraDataFail
-                },
-                {
-                    fn CrsgenNotRequested(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
-                        <CrsgenNotRequested as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IKMSGenerationErrors::CrsgenNotRequested)
-                    }
-                    CrsgenNotRequested
-                },
-                {
-                    fn AbortKeygenAlreadyDone(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
-                        <AbortKeygenAlreadyDone as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IKMSGenerationErrors::AbortKeygenAlreadyDone)
-                    }
-                    AbortKeygenAlreadyDone
-                },
-                {
-                    fn KmsAlreadySignedForKeygen(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
-                        <KmsAlreadySignedForKeygen as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IKMSGenerationErrors::KmsAlreadySignedForKeygen)
-                    }
-                    KmsAlreadySignedForKeygen
-                },
-                {
-                    fn KeygenNotRequested(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
-                        <KeygenNotRequested as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IKMSGenerationErrors::KeygenNotRequested)
-                    }
-                    KeygenNotRequested
-                },
-                {
-                    fn NotKmsTxSender(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
-                        <NotKmsTxSender as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IKMSGenerationErrors::NotKmsTxSender)
-                    }
-                    NotKmsTxSender
-                },
-                {
-                    fn AbortCrsgenInvalidId(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
-                        <AbortCrsgenInvalidId as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IKMSGenerationErrors::AbortCrsgenInvalidId)
-                    }
-                    AbortCrsgenInvalidId
-                },
-                {
-                    fn CrsAborted(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
-                        <CrsAborted as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IKMSGenerationErrors::CrsAborted)
-                    }
-                    CrsAborted
-                },
-                {
-                    fn CrsNotGenerated(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
-                        <CrsNotGenerated as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IKMSGenerationErrors::CrsNotGenerated)
-                    }
-                    CrsNotGenerated
-                },
-                {
-                    fn AbortCrsgenAlreadyDone(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
-                        <AbortCrsgenAlreadyDone as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IKMSGenerationErrors::AbortCrsgenAlreadyDone)
-                    }
-                    AbortCrsgenAlreadyDone
-                },
-                {
-                    fn EmptyKeyDigests(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
-                        <EmptyKeyDigests as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IKMSGenerationErrors::EmptyKeyDigests)
-                    }
-                    EmptyKeyDigests
-                },
-                {
-                    fn AbortKeygenInvalidId(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
-                        <AbortKeygenInvalidId as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IKMSGenerationErrors::AbortKeygenInvalidId)
-                    }
-                    AbortKeygenInvalidId
-                },
-                {
-                    fn KmsAlreadySignedForCrsgen(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
-                        <KmsAlreadySignedForCrsgen as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IKMSGenerationErrors::KmsAlreadySignedForCrsgen)
-                    }
-                    KmsAlreadySignedForCrsgen
-                },
-            ];
-            let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
-            };
-            DECODE_VALIDATE_SHIMS[idx](data)
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+            )
         }
         #[inline]
         fn abi_encoded_size(&self) -> usize {
@@ -10264,6 +10141,292 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                     )
                 }
             }
+        }
+    }
+    #[automatically_derived]
+    impl IKMSGenerationErrors {
+        /**Creates a [`AbortCrsgenAlreadyDone`] error.
+
+```solidity
+error AbortCrsgenAlreadyDone(uint256)
+```*/
+        #[inline]
+        pub fn abort_crsgen_already_done(
+            crs_id: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::AbortCrsgenAlreadyDone(AbortCrsgenAlreadyDone {
+                crsId: crs_id,
+            })
+        }
+        /**Creates a [`AbortCrsgenInvalidId`] error.
+
+```solidity
+error AbortCrsgenInvalidId(uint256)
+```*/
+        #[inline]
+        pub fn abort_crsgen_invalid_id(
+            crs_id: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::AbortCrsgenInvalidId(AbortCrsgenInvalidId {
+                crsId: crs_id,
+            })
+        }
+        /**Creates a [`AbortKeygenAlreadyDone`] error.
+
+```solidity
+error AbortKeygenAlreadyDone(uint256)
+```*/
+        #[inline]
+        pub fn abort_keygen_already_done(
+            prep_keygen_id: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::AbortKeygenAlreadyDone(AbortKeygenAlreadyDone {
+                prepKeygenId: prep_keygen_id,
+            })
+        }
+        /**Creates a [`AbortKeygenInvalidId`] error.
+
+```solidity
+error AbortKeygenInvalidId(uint256)
+```*/
+        #[inline]
+        pub fn abort_keygen_invalid_id(
+            prep_keygen_id: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::AbortKeygenInvalidId(AbortKeygenInvalidId {
+                prepKeygenId: prep_keygen_id,
+            })
+        }
+        /**Creates a [`CrsAborted`] error.
+
+```solidity
+error CrsAborted(uint256)
+```*/
+        #[inline]
+        pub fn crs_aborted(
+            crs_id: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::CrsAborted(CrsAborted { crsId: crs_id })
+        }
+        /**Creates a [`CrsNotGenerated`] error.
+
+```solidity
+error CrsNotGenerated(uint256)
+```*/
+        #[inline]
+        pub fn crs_not_generated(
+            crs_id: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::CrsNotGenerated(CrsNotGenerated { crsId: crs_id })
+        }
+        /**Creates a [`CrsgenNotRequested`] error.
+
+```solidity
+error CrsgenNotRequested(uint256)
+```*/
+        #[inline]
+        pub fn crsgen_not_requested(
+            crs_id: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::CrsgenNotRequested(CrsgenNotRequested {
+                crsId: crs_id,
+            })
+        }
+        /**Creates a [`CrsgenOngoing`] error.
+
+```solidity
+error CrsgenOngoing(uint256)
+```*/
+        #[inline]
+        pub fn crsgen_ongoing(
+            crs_id: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::CrsgenOngoing(CrsgenOngoing { crsId: crs_id })
+        }
+        /**Creates a [`DeserializingExtraDataFail`] error.
+
+```solidity
+error DeserializingExtraDataFail()
+```*/
+        #[inline]
+        pub fn deserializing_extra_data_fail() -> Self {
+            Self::DeserializingExtraDataFail(DeserializingExtraDataFail)
+        }
+        /**Creates a [`EmptyKeyDigests`] error.
+
+```solidity
+error EmptyKeyDigests(uint256)
+```*/
+        #[inline]
+        pub fn empty_key_digests(
+            key_id: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::EmptyKeyDigests(EmptyKeyDigests { keyId: key_id })
+        }
+        /**Creates a [`KeyAborted`] error.
+
+```solidity
+error KeyAborted(uint256)
+```*/
+        #[inline]
+        pub fn key_aborted(
+            key_id: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::KeyAborted(KeyAborted { keyId: key_id })
+        }
+        /**Creates a [`KeyManagementRequestPending`] error.
+
+```solidity
+error KeyManagementRequestPending()
+```*/
+        #[inline]
+        pub fn key_management_request_pending() -> Self {
+            Self::KeyManagementRequestPending(KeyManagementRequestPending)
+        }
+        /**Creates a [`KeyNotGenerated`] error.
+
+```solidity
+error KeyNotGenerated(uint256)
+```*/
+        #[inline]
+        pub fn key_not_generated(
+            key_id: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::KeyNotGenerated(KeyNotGenerated { keyId: key_id })
+        }
+        /**Creates a [`KeygenNotRequested`] error.
+
+```solidity
+error KeygenNotRequested(uint256)
+```*/
+        #[inline]
+        pub fn keygen_not_requested(
+            key_id: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::KeygenNotRequested(KeygenNotRequested {
+                keyId: key_id,
+            })
+        }
+        /**Creates a [`KeygenOngoing`] error.
+
+```solidity
+error KeygenOngoing(uint256)
+```*/
+        #[inline]
+        pub fn keygen_ongoing(
+            key_id: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::KeygenOngoing(KeygenOngoing { keyId: key_id })
+        }
+        /**Creates a [`KmsAlreadySignedForCrsgen`] error.
+
+```solidity
+error KmsAlreadySignedForCrsgen(uint256,address)
+```*/
+        #[inline]
+        pub fn kms_already_signed_for_crsgen(
+            crs_id: alloy::sol_types::private::primitives::aliases::U256,
+            kms_signer: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::KmsAlreadySignedForCrsgen(KmsAlreadySignedForCrsgen {
+                crsId: crs_id,
+                kmsSigner: kms_signer,
+            })
+        }
+        /**Creates a [`KmsAlreadySignedForKeygen`] error.
+
+```solidity
+error KmsAlreadySignedForKeygen(uint256,address)
+```*/
+        #[inline]
+        pub fn kms_already_signed_for_keygen(
+            key_id: alloy::sol_types::private::primitives::aliases::U256,
+            kms_signer: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::KmsAlreadySignedForKeygen(KmsAlreadySignedForKeygen {
+                keyId: key_id,
+                kmsSigner: kms_signer,
+            })
+        }
+        /**Creates a [`KmsAlreadySignedForPrepKeygen`] error.
+
+```solidity
+error KmsAlreadySignedForPrepKeygen(uint256,address)
+```*/
+        #[inline]
+        pub fn kms_already_signed_for_prep_keygen(
+            prep_keygen_id: alloy::sol_types::private::primitives::aliases::U256,
+            kms_signer: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::KmsAlreadySignedForPrepKeygen(KmsAlreadySignedForPrepKeygen {
+                prepKeygenId: prep_keygen_id,
+                kmsSigner: kms_signer,
+            })
+        }
+        /**Creates a [`KmsSignerDoesNotMatchTxSender`] error.
+
+```solidity
+error KmsSignerDoesNotMatchTxSender(address,address)
+```*/
+        #[inline]
+        pub fn kms_signer_does_not_match_tx_sender(
+            signer_address: alloy::sol_types::private::Address,
+            tx_sender_address: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::KmsSignerDoesNotMatchTxSender(KmsSignerDoesNotMatchTxSender {
+                signerAddress: signer_address,
+                txSenderAddress: tx_sender_address,
+            })
+        }
+        /**Creates a [`NotKmsSigner`] error.
+
+```solidity
+error NotKmsSigner(address)
+```*/
+        #[inline]
+        pub fn not_kms_signer(
+            signer_address: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::NotKmsSigner(NotKmsSigner {
+                signerAddress: signer_address,
+            })
+        }
+        /**Creates a [`NotKmsTxSender`] error.
+
+```solidity
+error NotKmsTxSender(address)
+```*/
+        #[inline]
+        pub fn not_kms_tx_sender(
+            tx_sender_address: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::NotKmsTxSender(NotKmsTxSender {
+                txSenderAddress: tx_sender_address,
+            })
+        }
+        /**Creates a [`PrepKeygenNotRequested`] error.
+
+```solidity
+error PrepKeygenNotRequested(uint256)
+```*/
+        #[inline]
+        pub fn prep_keygen_not_requested(
+            prep_keygen_id: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::PrepKeygenNotRequested(PrepKeygenNotRequested {
+                prepKeygenId: prep_keygen_id,
+            })
+        }
+        /**Creates a [`UnsupportedExtraDataVersion`] error.
+
+```solidity
+error UnsupportedExtraDataVersion(uint8)
+```*/
+        #[inline]
+        pub fn unsupported_extra_data_version(version: u8) -> Self {
+            Self::UnsupportedExtraDataVersion(UnsupportedExtraDataVersion {
+                version: version,
+            })
         }
     }
     ///Container for all the [`IKMSGeneration`](self) events.
@@ -10567,6 +10730,183 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
             }
         }
     }
+    #[automatically_derived]
+    impl IKMSGenerationEvents {
+        /**Creates a [`AbortCrsgen`] event.
+
+```solidity
+event AbortCrsgen(uint256)
+```*/
+        #[inline]
+        pub fn abort_crsgen(
+            crs_id: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::AbortCrsgen(AbortCrsgen { crsId: crs_id })
+        }
+        /**Creates a [`AbortKeygen`] event.
+
+```solidity
+event AbortKeygen(uint256)
+```*/
+        #[inline]
+        pub fn abort_keygen(
+            prep_keygen_id: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::AbortKeygen(AbortKeygen {
+                prepKeygenId: prep_keygen_id,
+            })
+        }
+        /**Creates a [`ActivateCrs`] event.
+
+```solidity
+event ActivateCrs(uint256,string[],bytes)
+```*/
+        #[inline]
+        pub fn activate_crs(
+            crs_id: alloy::sol_types::private::primitives::aliases::U256,
+            kms_node_storage_urls: alloy::sol_types::private::Vec<
+                alloy::sol_types::private::String,
+            >,
+            crs_digest: alloy::sol_types::private::Bytes,
+        ) -> Self {
+            Self::ActivateCrs(ActivateCrs {
+                crsId: crs_id,
+                kmsNodeStorageUrls: kms_node_storage_urls,
+                crsDigest: crs_digest,
+            })
+        }
+        /**Creates a [`ActivateKey`] event.
+
+```solidity
+event ActivateKey(uint256,string[],(uint8,bytes)[])
+```*/
+        #[inline]
+        pub fn activate_key(
+            key_id: alloy::sol_types::private::primitives::aliases::U256,
+            kms_node_storage_urls: alloy::sol_types::private::Vec<
+                alloy::sol_types::private::String,
+            >,
+            key_digests: alloy::sol_types::private::Vec<
+                <KeyDigest as alloy::sol_types::SolType>::RustType,
+            >,
+        ) -> Self {
+            Self::ActivateKey(ActivateKey {
+                keyId: key_id,
+                kmsNodeStorageUrls: kms_node_storage_urls,
+                keyDigests: key_digests,
+            })
+        }
+        /**Creates a [`CrsgenRequest`] event.
+
+```solidity
+event CrsgenRequest(uint256,uint256,uint8,bytes)
+```*/
+        #[inline]
+        pub fn crsgen_request(
+            crs_id: alloy::sol_types::private::primitives::aliases::U256,
+            max_bit_length: alloy::sol_types::private::primitives::aliases::U256,
+            params_type: <ParamsType as alloy::sol_types::SolType>::RustType,
+            extra_data: alloy::sol_types::private::Bytes,
+        ) -> Self {
+            Self::CrsgenRequest(CrsgenRequest {
+                crsId: crs_id,
+                maxBitLength: max_bit_length,
+                paramsType: params_type,
+                extraData: extra_data,
+            })
+        }
+        /**Creates a [`CrsgenResponse`] event.
+
+```solidity
+event CrsgenResponse(uint256,bytes,bytes,address)
+```*/
+        #[inline]
+        pub fn crsgen_response(
+            crs_id: alloy::sol_types::private::primitives::aliases::U256,
+            crs_digest: alloy::sol_types::private::Bytes,
+            signature: alloy::sol_types::private::Bytes,
+            kms_tx_sender: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::CrsgenResponse(CrsgenResponse {
+                crsId: crs_id,
+                crsDigest: crs_digest,
+                signature: signature,
+                kmsTxSender: kms_tx_sender,
+            })
+        }
+        /**Creates a [`KeygenRequest`] event.
+
+```solidity
+event KeygenRequest(uint256,uint256,bytes)
+```*/
+        #[inline]
+        pub fn keygen_request(
+            prep_keygen_id: alloy::sol_types::private::primitives::aliases::U256,
+            key_id: alloy::sol_types::private::primitives::aliases::U256,
+            extra_data: alloy::sol_types::private::Bytes,
+        ) -> Self {
+            Self::KeygenRequest(KeygenRequest {
+                prepKeygenId: prep_keygen_id,
+                keyId: key_id,
+                extraData: extra_data,
+            })
+        }
+        /**Creates a [`KeygenResponse`] event.
+
+```solidity
+event KeygenResponse(uint256,(uint8,bytes)[],bytes,address)
+```*/
+        #[inline]
+        pub fn keygen_response(
+            key_id: alloy::sol_types::private::primitives::aliases::U256,
+            key_digests: alloy::sol_types::private::Vec<
+                <KeyDigest as alloy::sol_types::SolType>::RustType,
+            >,
+            signature: alloy::sol_types::private::Bytes,
+            kms_tx_sender: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::KeygenResponse(KeygenResponse {
+                keyId: key_id,
+                keyDigests: key_digests,
+                signature: signature,
+                kmsTxSender: kms_tx_sender,
+            })
+        }
+        /**Creates a [`PrepKeygenRequest`] event.
+
+```solidity
+event PrepKeygenRequest(uint256,uint8,bytes)
+```*/
+        #[inline]
+        pub fn prep_keygen_request(
+            prep_keygen_id: alloy::sol_types::private::primitives::aliases::U256,
+            params_type: <ParamsType as alloy::sol_types::SolType>::RustType,
+            extra_data: alloy::sol_types::private::Bytes,
+        ) -> Self {
+            Self::PrepKeygenRequest(PrepKeygenRequest {
+                prepKeygenId: prep_keygen_id,
+                paramsType: params_type,
+                extraData: extra_data,
+            })
+        }
+        /**Creates a [`PrepKeygenResponse`] event.
+
+```solidity
+event PrepKeygenResponse(uint256,bytes,address)
+```*/
+        #[inline]
+        pub fn prep_keygen_response(
+            prep_keygen_id: alloy::sol_types::private::primitives::aliases::U256,
+            signature: alloy::sol_types::private::Bytes,
+            kms_tx_sender: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::PrepKeygenResponse(PrepKeygenResponse {
+                prepKeygenId: prep_keygen_id,
+                signature: signature,
+                kmsTxSender: kms_tx_sender,
+            })
+        }
+    }
     use alloy::contract as alloy_contract;
     /**Creates a new wrapper around an on-chain [`IKMSGeneration`](self) contract instance.
 
@@ -10580,34 +10920,6 @@ See the [wrapper's documentation](`IKMSGenerationInstance`) for more details.*/
         __provider: P,
     ) -> IKMSGenerationInstance<P, N> {
         IKMSGenerationInstance::<P, N>::new(address, __provider)
-    }
-    /**Deploys this contract using the given `provider` and constructor arguments, if any.
-
-Returns a new instance of the contract, if the deployment was successful.
-
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
-    #[inline]
-    pub fn deploy<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(
-        __provider: P,
-    ) -> impl ::core::future::Future<
-        Output = alloy_contract::Result<IKMSGenerationInstance<P, N>>,
-    > {
-        IKMSGenerationInstance::<P, N>::deploy(__provider)
-    }
-    /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
-
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
-    #[inline]
-    pub fn deploy_builder<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
-        IKMSGenerationInstance::<P, N>::deploy_builder(__provider)
     }
     /**A [`IKMSGeneration`](self) instance.
 
@@ -10651,31 +10963,6 @@ See the [wrapper's documentation](`IKMSGenerationInstance`) for more details.*/
                 provider: __provider,
                 _network: ::core::marker::PhantomData,
             }
-        }
-        /**Deploys this contract using the given `provider` and constructor arguments, if any.
-
-Returns a new instance of the contract, if the deployment was successful.
-
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
-        #[inline]
-        pub async fn deploy(
-            __provider: P,
-        ) -> alloy_contract::Result<IKMSGenerationInstance<P, N>> {
-            let call_builder = Self::deploy_builder(__provider);
-            let contract_address = call_builder.deploy().await?;
-            Ok(Self::new(contract_address, call_builder.provider))
-        }
-        /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
-
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
-        #[inline]
-        pub fn deploy_builder(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
-            alloy_contract::RawCallBuilder::new_raw_deploy(
-                __provider,
-                ::core::clone::Clone::clone(&BYTECODE),
-            )
         }
         /// Returns a reference to the address.
         #[inline]

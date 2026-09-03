@@ -390,26 +390,6 @@ interface ZamaOFT {
 pub mod ZamaOFT {
     use super::*;
     use alloy::sol_types as alloy_sol_types;
-    /// The creation / init bytecode of the contract.
-    ///
-    /// ```text
-    ///0x608060405234801562000010575f80fd5b5060405162000bdc38038062000bdc8339810160408190526200003391620002a0565b8282600362000043838262000398565b50600462000052828262000398565b5050506200006733826200007060201b60201c565b5050506200048a565b6001600160a01b0382166200009f5760405163ec442f0560e01b81525f60048201526024015b60405180910390fd5b620000ac5f8383620000b0565b5050565b6001600160a01b038316620000de578060025f828254620000d2919062000464565b90915550620001509050565b6001600160a01b0383165f9081526020819052604090205481811015620001325760405163391434e360e21b81526001600160a01b0385166004820152602481018290526044810183905260640162000096565b6001600160a01b0384165f9081526020819052604090209082900390555b6001600160a01b0382166200016e576002805482900390556200018c565b6001600160a01b0382165f9081526020819052604090208054820190555b816001600160a01b0316836001600160a01b03167fddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef83604051620001d291815260200190565b60405180910390a3505050565b634e487b7160e01b5f52604160045260245ffd5b5f82601f83011262000203575f80fd5b81516001600160401b0380821115620002205762000220620001df565b604051601f8301601f19908116603f011681019082821181831017156200024b576200024b620001df565b816040528381526020925086602085880101111562000268575f80fd5b5f91505b838210156200028b57858201830151818301840152908201906200026c565b5f602085830101528094505050505092915050565b5f805f60608486031215620002b3575f80fd5b83516001600160401b0380821115620002ca575f80fd5b620002d887838801620001f3565b94506020860151915080821115620002ee575f80fd5b50620002fd86828701620001f3565b925050604084015190509250925092565b600181811c908216806200032357607f821691505b6020821081036200034257634e487b7160e01b5f52602260045260245ffd5b50919050565b601f8211156200039357805f5260205f20601f840160051c810160208510156200036f5750805b601f840160051c820191505b8181101562000390575f81556001016200037b565b50505b505050565b81516001600160401b03811115620003b457620003b4620001df565b620003cc81620003c584546200030e565b8462000348565b602080601f83116001811462000402575f8415620003ea5750858301515b5f19600386901b1c1916600185901b1785556200045c565b5f85815260208120601f198616915b82811015620004325788860151825594840194600190910190840162000411565b50858210156200045057878501515f19600388901b60f8161c191681555b505060018460011b0185555b505050505050565b808201808211156200048457634e487b7160e01b5f52601160045260245ffd5b92915050565b61074480620004985f395ff3fe608060405234801561000f575f80fd5b50600436106100b9575f3560e01c806340c10f191161007257806395d89b411161005857806395d89b411461016f578063a9059cbb14610177578063dd62ed3e1461018a575f80fd5b806340c10f191461013257806370a0823114610147575f80fd5b806318160ddd116100a257806318160ddd146100fe57806323b872dd14610110578063313ce56714610123575f80fd5b806306fdde03146100bd578063095ea7b3146100db575b5f80fd5b6100c56101c2565b6040516100d291906105d4565b60405180910390f35b6100ee6100e936600461063b565b610252565b60405190151581526020016100d2565b6002545b6040519081526020016100d2565b6100ee61011e366004610663565b61026b565b604051601281526020016100d2565b61014561014036600461063b565b61028e565b005b61010261015536600461069c565b6001600160a01b03165f9081526020819052604090205490565b6100c561029c565b6100ee61018536600461063b565b6102ab565b6101026101983660046106bc565b6001600160a01b039182165f90815260016020908152604080832093909416825291909152205490565b6060600380546101d1906106ed565b80601f01602080910402602001604051908101604052809291908181526020018280546101fd906106ed565b80156102485780601f1061021f57610100808354040283529160200191610248565b820191905f5260205f20905b81548152906001019060200180831161022b57829003601f168201915b5050505050905090565b5f3361025f8185856102b8565b60019150505b92915050565b5f336102788582856102ca565b61028385858561034b565b506001949350505050565b61029882826103a8565b5050565b6060600480546101d1906106ed565b5f3361025f81858561034b565b6102c583838360016103dc565b505050565b6001600160a01b038381165f908152600160209081526040808320938616835292905220545f19811015610345578181101561033757604051637dc7a0d960e11b81526001600160a01b038416600482015260248101829052604481018390526064015b60405180910390fd5b61034584848484035f6103dc565b50505050565b6001600160a01b03831661037457604051634b637e8f60e11b81525f600482015260240161032e565b6001600160a01b03821661039d5760405163ec442f0560e01b81525f600482015260240161032e565b6102c58383836104ae565b6001600160a01b0382166103d15760405163ec442f0560e01b81525f600482015260240161032e565b6102985f83836104ae565b6001600160a01b0384166104055760405163e602df0560e01b81525f600482015260240161032e565b6001600160a01b03831661042e57604051634a1406b160e11b81525f600482015260240161032e565b6001600160a01b038085165f908152600160209081526040808320938716835292905220829055801561034557826001600160a01b0316846001600160a01b03167f8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925846040516104a091815260200190565b60405180910390a350505050565b6001600160a01b0383166104d8578060025f8282546104cd9190610725565b909155506105489050565b6001600160a01b0383165f908152602081905260409020548181101561052a5760405163391434e360e21b81526001600160a01b0385166004820152602481018290526044810183905260640161032e565b6001600160a01b0384165f9081526020819052604090209082900390555b6001600160a01b03821661056457600280548290039055610582565b6001600160a01b0382165f9081526020819052604090208054820190555b816001600160a01b0316836001600160a01b03167fddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef836040516105c791815260200190565b60405180910390a3505050565b5f602080835283518060208501525f5b81811015610600578581018301518582016040015282016105e4565b505f604082860101526040601f19601f8301168501019250505092915050565b80356001600160a01b0381168114610636575f80fd5b919050565b5f806040838503121561064c575f80fd5b61065583610620565b946020939093013593505050565b5f805f60608486031215610675575f80fd5b61067e84610620565b925061068c60208501610620565b9150604084013590509250925092565b5f602082840312156106ac575f80fd5b6106b582610620565b9392505050565b5f80604083850312156106cd575f80fd5b6106d683610620565b91506106e460208401610620565b90509250929050565b600181811c9082168061070157607f821691505b60208210810361071f57634e487b7160e01b5f52602260045260245ffd5b50919050565b8082018082111561026557634e487b7160e01b5f52601160045260245ffd
-    /// ```
-    #[rustfmt::skip]
-    #[allow(clippy::all)]
-    pub static BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
-        b"`\x80`@R4\x80\x15b\0\0\x10W_\x80\xFD[P`@Qb\0\x0B\xDC8\x03\x80b\0\x0B\xDC\x839\x81\x01`@\x81\x90Rb\0\x003\x91b\0\x02\xA0V[\x82\x82`\x03b\0\0C\x83\x82b\0\x03\x98V[P`\x04b\0\0R\x82\x82b\0\x03\x98V[PPPb\0\0g3\x82b\0\0p` \x1B` \x1CV[PPPb\0\x04\x8AV[`\x01`\x01`\xA0\x1B\x03\x82\x16b\0\0\x9FW`@Qc\xECD/\x05`\xE0\x1B\x81R_`\x04\x82\x01R`$\x01[`@Q\x80\x91\x03\x90\xFD[b\0\0\xAC_\x83\x83b\0\0\xB0V[PPV[`\x01`\x01`\xA0\x1B\x03\x83\x16b\0\0\xDEW\x80`\x02_\x82\x82Tb\0\0\xD2\x91\x90b\0\x04dV[\x90\x91UPb\0\x01P\x90PV[`\x01`\x01`\xA0\x1B\x03\x83\x16_\x90\x81R` \x81\x90R`@\x90 T\x81\x81\x10\x15b\0\x012W`@Qc9\x144\xE3`\xE2\x1B\x81R`\x01`\x01`\xA0\x1B\x03\x85\x16`\x04\x82\x01R`$\x81\x01\x82\x90R`D\x81\x01\x83\x90R`d\x01b\0\0\x96V[`\x01`\x01`\xA0\x1B\x03\x84\x16_\x90\x81R` \x81\x90R`@\x90 \x90\x82\x90\x03\x90U[`\x01`\x01`\xA0\x1B\x03\x82\x16b\0\x01nW`\x02\x80T\x82\x90\x03\x90Ub\0\x01\x8CV[`\x01`\x01`\xA0\x1B\x03\x82\x16_\x90\x81R` \x81\x90R`@\x90 \x80T\x82\x01\x90U[\x81`\x01`\x01`\xA0\x1B\x03\x16\x83`\x01`\x01`\xA0\x1B\x03\x16\x7F\xDD\xF2R\xAD\x1B\xE2\xC8\x9Bi\xC2\xB0h\xFC7\x8D\xAA\x95+\xA7\xF1c\xC4\xA1\x16(\xF5ZM\xF5#\xB3\xEF\x83`@Qb\0\x01\xD2\x91\x81R` \x01\x90V[`@Q\x80\x91\x03\x90\xA3PPPV[cNH{q`\xE0\x1B_R`A`\x04R`$_\xFD[_\x82`\x1F\x83\x01\x12b\0\x02\x03W_\x80\xFD[\x81Q`\x01`\x01`@\x1B\x03\x80\x82\x11\x15b\0\x02 Wb\0\x02 b\0\x01\xDFV[`@Q`\x1F\x83\x01`\x1F\x19\x90\x81\x16`?\x01\x16\x81\x01\x90\x82\x82\x11\x81\x83\x10\x17\x15b\0\x02KWb\0\x02Kb\0\x01\xDFV[\x81`@R\x83\x81R` \x92P\x86` \x85\x88\x01\x01\x11\x15b\0\x02hW_\x80\xFD[_\x91P[\x83\x82\x10\x15b\0\x02\x8BW\x85\x82\x01\x83\x01Q\x81\x83\x01\x84\x01R\x90\x82\x01\x90b\0\x02lV[_` \x85\x83\x01\x01R\x80\x94PPPPP\x92\x91PPV[_\x80_``\x84\x86\x03\x12\x15b\0\x02\xB3W_\x80\xFD[\x83Q`\x01`\x01`@\x1B\x03\x80\x82\x11\x15b\0\x02\xCAW_\x80\xFD[b\0\x02\xD8\x87\x83\x88\x01b\0\x01\xF3V[\x94P` \x86\x01Q\x91P\x80\x82\x11\x15b\0\x02\xEEW_\x80\xFD[Pb\0\x02\xFD\x86\x82\x87\x01b\0\x01\xF3V[\x92PP`@\x84\x01Q\x90P\x92P\x92P\x92V[`\x01\x81\x81\x1C\x90\x82\x16\x80b\0\x03#W`\x7F\x82\x16\x91P[` \x82\x10\x81\x03b\0\x03BWcNH{q`\xE0\x1B_R`\"`\x04R`$_\xFD[P\x91\x90PV[`\x1F\x82\x11\x15b\0\x03\x93W\x80_R` _ `\x1F\x84\x01`\x05\x1C\x81\x01` \x85\x10\x15b\0\x03oWP\x80[`\x1F\x84\x01`\x05\x1C\x82\x01\x91P[\x81\x81\x10\x15b\0\x03\x90W_\x81U`\x01\x01b\0\x03{V[PP[PPPV[\x81Q`\x01`\x01`@\x1B\x03\x81\x11\x15b\0\x03\xB4Wb\0\x03\xB4b\0\x01\xDFV[b\0\x03\xCC\x81b\0\x03\xC5\x84Tb\0\x03\x0EV[\x84b\0\x03HV[` \x80`\x1F\x83\x11`\x01\x81\x14b\0\x04\x02W_\x84\x15b\0\x03\xEAWP\x85\x83\x01Q[_\x19`\x03\x86\x90\x1B\x1C\x19\x16`\x01\x85\x90\x1B\x17\x85Ub\0\x04\\V[_\x85\x81R` \x81 `\x1F\x19\x86\x16\x91[\x82\x81\x10\x15b\0\x042W\x88\x86\x01Q\x82U\x94\x84\x01\x94`\x01\x90\x91\x01\x90\x84\x01b\0\x04\x11V[P\x85\x82\x10\x15b\0\x04PW\x87\x85\x01Q_\x19`\x03\x88\x90\x1B`\xF8\x16\x1C\x19\x16\x81U[PP`\x01\x84`\x01\x1B\x01\x85U[PPPPPPV[\x80\x82\x01\x80\x82\x11\x15b\0\x04\x84WcNH{q`\xE0\x1B_R`\x11`\x04R`$_\xFD[\x92\x91PPV[a\x07D\x80b\0\x04\x98_9_\xF3\xFE`\x80`@R4\x80\x15a\0\x0FW_\x80\xFD[P`\x046\x10a\0\xB9W_5`\xE0\x1C\x80c@\xC1\x0F\x19\x11a\0rW\x80c\x95\xD8\x9BA\x11a\0XW\x80c\x95\xD8\x9BA\x14a\x01oW\x80c\xA9\x05\x9C\xBB\x14a\x01wW\x80c\xDDb\xED>\x14a\x01\x8AW_\x80\xFD[\x80c@\xC1\x0F\x19\x14a\x012W\x80cp\xA0\x821\x14a\x01GW_\x80\xFD[\x80c\x18\x16\r\xDD\x11a\0\xA2W\x80c\x18\x16\r\xDD\x14a\0\xFEW\x80c#\xB8r\xDD\x14a\x01\x10W\x80c1<\xE5g\x14a\x01#W_\x80\xFD[\x80c\x06\xFD\xDE\x03\x14a\0\xBDW\x80c\t^\xA7\xB3\x14a\0\xDBW[_\x80\xFD[a\0\xC5a\x01\xC2V[`@Qa\0\xD2\x91\x90a\x05\xD4V[`@Q\x80\x91\x03\x90\xF3[a\0\xEEa\0\xE96`\x04a\x06;V[a\x02RV[`@Q\x90\x15\x15\x81R` \x01a\0\xD2V[`\x02T[`@Q\x90\x81R` \x01a\0\xD2V[a\0\xEEa\x01\x1E6`\x04a\x06cV[a\x02kV[`@Q`\x12\x81R` \x01a\0\xD2V[a\x01Ea\x01@6`\x04a\x06;V[a\x02\x8EV[\0[a\x01\x02a\x01U6`\x04a\x06\x9CV[`\x01`\x01`\xA0\x1B\x03\x16_\x90\x81R` \x81\x90R`@\x90 T\x90V[a\0\xC5a\x02\x9CV[a\0\xEEa\x01\x856`\x04a\x06;V[a\x02\xABV[a\x01\x02a\x01\x986`\x04a\x06\xBCV[`\x01`\x01`\xA0\x1B\x03\x91\x82\x16_\x90\x81R`\x01` \x90\x81R`@\x80\x83 \x93\x90\x94\x16\x82R\x91\x90\x91R T\x90V[```\x03\x80Ta\x01\xD1\x90a\x06\xEDV[\x80`\x1F\x01` \x80\x91\x04\x02` \x01`@Q\x90\x81\x01`@R\x80\x92\x91\x90\x81\x81R` \x01\x82\x80Ta\x01\xFD\x90a\x06\xEDV[\x80\x15a\x02HW\x80`\x1F\x10a\x02\x1FWa\x01\0\x80\x83T\x04\x02\x83R\x91` \x01\x91a\x02HV[\x82\x01\x91\x90_R` _ \x90[\x81T\x81R\x90`\x01\x01\x90` \x01\x80\x83\x11a\x02+W\x82\x90\x03`\x1F\x16\x82\x01\x91[PPPPP\x90P\x90V[_3a\x02_\x81\x85\x85a\x02\xB8V[`\x01\x91PP[\x92\x91PPV[_3a\x02x\x85\x82\x85a\x02\xCAV[a\x02\x83\x85\x85\x85a\x03KV[P`\x01\x94\x93PPPPV[a\x02\x98\x82\x82a\x03\xA8V[PPV[```\x04\x80Ta\x01\xD1\x90a\x06\xEDV[_3a\x02_\x81\x85\x85a\x03KV[a\x02\xC5\x83\x83\x83`\x01a\x03\xDCV[PPPV[`\x01`\x01`\xA0\x1B\x03\x83\x81\x16_\x90\x81R`\x01` \x90\x81R`@\x80\x83 \x93\x86\x16\x83R\x92\x90R T_\x19\x81\x10\x15a\x03EW\x81\x81\x10\x15a\x037W`@Qc}\xC7\xA0\xD9`\xE1\x1B\x81R`\x01`\x01`\xA0\x1B\x03\x84\x16`\x04\x82\x01R`$\x81\x01\x82\x90R`D\x81\x01\x83\x90R`d\x01[`@Q\x80\x91\x03\x90\xFD[a\x03E\x84\x84\x84\x84\x03_a\x03\xDCV[PPPPV[`\x01`\x01`\xA0\x1B\x03\x83\x16a\x03tW`@QcKc~\x8F`\xE1\x1B\x81R_`\x04\x82\x01R`$\x01a\x03.V[`\x01`\x01`\xA0\x1B\x03\x82\x16a\x03\x9DW`@Qc\xECD/\x05`\xE0\x1B\x81R_`\x04\x82\x01R`$\x01a\x03.V[a\x02\xC5\x83\x83\x83a\x04\xAEV[`\x01`\x01`\xA0\x1B\x03\x82\x16a\x03\xD1W`@Qc\xECD/\x05`\xE0\x1B\x81R_`\x04\x82\x01R`$\x01a\x03.V[a\x02\x98_\x83\x83a\x04\xAEV[`\x01`\x01`\xA0\x1B\x03\x84\x16a\x04\x05W`@Qc\xE6\x02\xDF\x05`\xE0\x1B\x81R_`\x04\x82\x01R`$\x01a\x03.V[`\x01`\x01`\xA0\x1B\x03\x83\x16a\x04.W`@QcJ\x14\x06\xB1`\xE1\x1B\x81R_`\x04\x82\x01R`$\x01a\x03.V[`\x01`\x01`\xA0\x1B\x03\x80\x85\x16_\x90\x81R`\x01` \x90\x81R`@\x80\x83 \x93\x87\x16\x83R\x92\x90R \x82\x90U\x80\x15a\x03EW\x82`\x01`\x01`\xA0\x1B\x03\x16\x84`\x01`\x01`\xA0\x1B\x03\x16\x7F\x8C[\xE1\xE5\xEB\xEC}[\xD1OqB}\x1E\x84\xF3\xDD\x03\x14\xC0\xF7\xB2)\x1E[ \n\xC8\xC7\xC3\xB9%\x84`@Qa\x04\xA0\x91\x81R` \x01\x90V[`@Q\x80\x91\x03\x90\xA3PPPPV[`\x01`\x01`\xA0\x1B\x03\x83\x16a\x04\xD8W\x80`\x02_\x82\x82Ta\x04\xCD\x91\x90a\x07%V[\x90\x91UPa\x05H\x90PV[`\x01`\x01`\xA0\x1B\x03\x83\x16_\x90\x81R` \x81\x90R`@\x90 T\x81\x81\x10\x15a\x05*W`@Qc9\x144\xE3`\xE2\x1B\x81R`\x01`\x01`\xA0\x1B\x03\x85\x16`\x04\x82\x01R`$\x81\x01\x82\x90R`D\x81\x01\x83\x90R`d\x01a\x03.V[`\x01`\x01`\xA0\x1B\x03\x84\x16_\x90\x81R` \x81\x90R`@\x90 \x90\x82\x90\x03\x90U[`\x01`\x01`\xA0\x1B\x03\x82\x16a\x05dW`\x02\x80T\x82\x90\x03\x90Ua\x05\x82V[`\x01`\x01`\xA0\x1B\x03\x82\x16_\x90\x81R` \x81\x90R`@\x90 \x80T\x82\x01\x90U[\x81`\x01`\x01`\xA0\x1B\x03\x16\x83`\x01`\x01`\xA0\x1B\x03\x16\x7F\xDD\xF2R\xAD\x1B\xE2\xC8\x9Bi\xC2\xB0h\xFC7\x8D\xAA\x95+\xA7\xF1c\xC4\xA1\x16(\xF5ZM\xF5#\xB3\xEF\x83`@Qa\x05\xC7\x91\x81R` \x01\x90V[`@Q\x80\x91\x03\x90\xA3PPPV[_` \x80\x83R\x83Q\x80` \x85\x01R_[\x81\x81\x10\x15a\x06\0W\x85\x81\x01\x83\x01Q\x85\x82\x01`@\x01R\x82\x01a\x05\xE4V[P_`@\x82\x86\x01\x01R`@`\x1F\x19`\x1F\x83\x01\x16\x85\x01\x01\x92PPP\x92\x91PPV[\x805`\x01`\x01`\xA0\x1B\x03\x81\x16\x81\x14a\x066W_\x80\xFD[\x91\x90PV[_\x80`@\x83\x85\x03\x12\x15a\x06LW_\x80\xFD[a\x06U\x83a\x06 V[\x94` \x93\x90\x93\x015\x93PPPV[_\x80_``\x84\x86\x03\x12\x15a\x06uW_\x80\xFD[a\x06~\x84a\x06 V[\x92Pa\x06\x8C` \x85\x01a\x06 V[\x91P`@\x84\x015\x90P\x92P\x92P\x92V[_` \x82\x84\x03\x12\x15a\x06\xACW_\x80\xFD[a\x06\xB5\x82a\x06 V[\x93\x92PPPV[_\x80`@\x83\x85\x03\x12\x15a\x06\xCDW_\x80\xFD[a\x06\xD6\x83a\x06 V[\x91Pa\x06\xE4` \x84\x01a\x06 V[\x90P\x92P\x92\x90PV[`\x01\x81\x81\x1C\x90\x82\x16\x80a\x07\x01W`\x7F\x82\x16\x91P[` \x82\x10\x81\x03a\x07\x1FWcNH{q`\xE0\x1B_R`\"`\x04R`$_\xFD[P\x91\x90PV[\x80\x82\x01\x80\x82\x11\x15a\x02eWcNH{q`\xE0\x1B_R`\x11`\x04R`$_\xFD",
-    );
-    /// The runtime bytecode of the contract, as deployed on the network.
-    ///
-    /// ```text
-    ///0x608060405234801561000f575f80fd5b50600436106100b9575f3560e01c806340c10f191161007257806395d89b411161005857806395d89b411461016f578063a9059cbb14610177578063dd62ed3e1461018a575f80fd5b806340c10f191461013257806370a0823114610147575f80fd5b806318160ddd116100a257806318160ddd146100fe57806323b872dd14610110578063313ce56714610123575f80fd5b806306fdde03146100bd578063095ea7b3146100db575b5f80fd5b6100c56101c2565b6040516100d291906105d4565b60405180910390f35b6100ee6100e936600461063b565b610252565b60405190151581526020016100d2565b6002545b6040519081526020016100d2565b6100ee61011e366004610663565b61026b565b604051601281526020016100d2565b61014561014036600461063b565b61028e565b005b61010261015536600461069c565b6001600160a01b03165f9081526020819052604090205490565b6100c561029c565b6100ee61018536600461063b565b6102ab565b6101026101983660046106bc565b6001600160a01b039182165f90815260016020908152604080832093909416825291909152205490565b6060600380546101d1906106ed565b80601f01602080910402602001604051908101604052809291908181526020018280546101fd906106ed565b80156102485780601f1061021f57610100808354040283529160200191610248565b820191905f5260205f20905b81548152906001019060200180831161022b57829003601f168201915b5050505050905090565b5f3361025f8185856102b8565b60019150505b92915050565b5f336102788582856102ca565b61028385858561034b565b506001949350505050565b61029882826103a8565b5050565b6060600480546101d1906106ed565b5f3361025f81858561034b565b6102c583838360016103dc565b505050565b6001600160a01b038381165f908152600160209081526040808320938616835292905220545f19811015610345578181101561033757604051637dc7a0d960e11b81526001600160a01b038416600482015260248101829052604481018390526064015b60405180910390fd5b61034584848484035f6103dc565b50505050565b6001600160a01b03831661037457604051634b637e8f60e11b81525f600482015260240161032e565b6001600160a01b03821661039d5760405163ec442f0560e01b81525f600482015260240161032e565b6102c58383836104ae565b6001600160a01b0382166103d15760405163ec442f0560e01b81525f600482015260240161032e565b6102985f83836104ae565b6001600160a01b0384166104055760405163e602df0560e01b81525f600482015260240161032e565b6001600160a01b03831661042e57604051634a1406b160e11b81525f600482015260240161032e565b6001600160a01b038085165f908152600160209081526040808320938716835292905220829055801561034557826001600160a01b0316846001600160a01b03167f8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925846040516104a091815260200190565b60405180910390a350505050565b6001600160a01b0383166104d8578060025f8282546104cd9190610725565b909155506105489050565b6001600160a01b0383165f908152602081905260409020548181101561052a5760405163391434e360e21b81526001600160a01b0385166004820152602481018290526044810183905260640161032e565b6001600160a01b0384165f9081526020819052604090209082900390555b6001600160a01b03821661056457600280548290039055610582565b6001600160a01b0382165f9081526020819052604090208054820190555b816001600160a01b0316836001600160a01b03167fddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef836040516105c791815260200190565b60405180910390a3505050565b5f602080835283518060208501525f5b81811015610600578581018301518582016040015282016105e4565b505f604082860101526040601f19601f8301168501019250505092915050565b80356001600160a01b0381168114610636575f80fd5b919050565b5f806040838503121561064c575f80fd5b61065583610620565b946020939093013593505050565b5f805f60608486031215610675575f80fd5b61067e84610620565b925061068c60208501610620565b9150604084013590509250925092565b5f602082840312156106ac575f80fd5b6106b582610620565b9392505050565b5f80604083850312156106cd575f80fd5b6106d683610620565b91506106e460208401610620565b90509250929050565b600181811c9082168061070157607f821691505b60208210810361071f57634e487b7160e01b5f52602260045260245ffd5b50919050565b8082018082111561026557634e487b7160e01b5f52601160045260245ffd
-    /// ```
-    #[rustfmt::skip]
-    #[allow(clippy::all)]
-    pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
-        b"`\x80`@R4\x80\x15a\0\x0FW_\x80\xFD[P`\x046\x10a\0\xB9W_5`\xE0\x1C\x80c@\xC1\x0F\x19\x11a\0rW\x80c\x95\xD8\x9BA\x11a\0XW\x80c\x95\xD8\x9BA\x14a\x01oW\x80c\xA9\x05\x9C\xBB\x14a\x01wW\x80c\xDDb\xED>\x14a\x01\x8AW_\x80\xFD[\x80c@\xC1\x0F\x19\x14a\x012W\x80cp\xA0\x821\x14a\x01GW_\x80\xFD[\x80c\x18\x16\r\xDD\x11a\0\xA2W\x80c\x18\x16\r\xDD\x14a\0\xFEW\x80c#\xB8r\xDD\x14a\x01\x10W\x80c1<\xE5g\x14a\x01#W_\x80\xFD[\x80c\x06\xFD\xDE\x03\x14a\0\xBDW\x80c\t^\xA7\xB3\x14a\0\xDBW[_\x80\xFD[a\0\xC5a\x01\xC2V[`@Qa\0\xD2\x91\x90a\x05\xD4V[`@Q\x80\x91\x03\x90\xF3[a\0\xEEa\0\xE96`\x04a\x06;V[a\x02RV[`@Q\x90\x15\x15\x81R` \x01a\0\xD2V[`\x02T[`@Q\x90\x81R` \x01a\0\xD2V[a\0\xEEa\x01\x1E6`\x04a\x06cV[a\x02kV[`@Q`\x12\x81R` \x01a\0\xD2V[a\x01Ea\x01@6`\x04a\x06;V[a\x02\x8EV[\0[a\x01\x02a\x01U6`\x04a\x06\x9CV[`\x01`\x01`\xA0\x1B\x03\x16_\x90\x81R` \x81\x90R`@\x90 T\x90V[a\0\xC5a\x02\x9CV[a\0\xEEa\x01\x856`\x04a\x06;V[a\x02\xABV[a\x01\x02a\x01\x986`\x04a\x06\xBCV[`\x01`\x01`\xA0\x1B\x03\x91\x82\x16_\x90\x81R`\x01` \x90\x81R`@\x80\x83 \x93\x90\x94\x16\x82R\x91\x90\x91R T\x90V[```\x03\x80Ta\x01\xD1\x90a\x06\xEDV[\x80`\x1F\x01` \x80\x91\x04\x02` \x01`@Q\x90\x81\x01`@R\x80\x92\x91\x90\x81\x81R` \x01\x82\x80Ta\x01\xFD\x90a\x06\xEDV[\x80\x15a\x02HW\x80`\x1F\x10a\x02\x1FWa\x01\0\x80\x83T\x04\x02\x83R\x91` \x01\x91a\x02HV[\x82\x01\x91\x90_R` _ \x90[\x81T\x81R\x90`\x01\x01\x90` \x01\x80\x83\x11a\x02+W\x82\x90\x03`\x1F\x16\x82\x01\x91[PPPPP\x90P\x90V[_3a\x02_\x81\x85\x85a\x02\xB8V[`\x01\x91PP[\x92\x91PPV[_3a\x02x\x85\x82\x85a\x02\xCAV[a\x02\x83\x85\x85\x85a\x03KV[P`\x01\x94\x93PPPPV[a\x02\x98\x82\x82a\x03\xA8V[PPV[```\x04\x80Ta\x01\xD1\x90a\x06\xEDV[_3a\x02_\x81\x85\x85a\x03KV[a\x02\xC5\x83\x83\x83`\x01a\x03\xDCV[PPPV[`\x01`\x01`\xA0\x1B\x03\x83\x81\x16_\x90\x81R`\x01` \x90\x81R`@\x80\x83 \x93\x86\x16\x83R\x92\x90R T_\x19\x81\x10\x15a\x03EW\x81\x81\x10\x15a\x037W`@Qc}\xC7\xA0\xD9`\xE1\x1B\x81R`\x01`\x01`\xA0\x1B\x03\x84\x16`\x04\x82\x01R`$\x81\x01\x82\x90R`D\x81\x01\x83\x90R`d\x01[`@Q\x80\x91\x03\x90\xFD[a\x03E\x84\x84\x84\x84\x03_a\x03\xDCV[PPPPV[`\x01`\x01`\xA0\x1B\x03\x83\x16a\x03tW`@QcKc~\x8F`\xE1\x1B\x81R_`\x04\x82\x01R`$\x01a\x03.V[`\x01`\x01`\xA0\x1B\x03\x82\x16a\x03\x9DW`@Qc\xECD/\x05`\xE0\x1B\x81R_`\x04\x82\x01R`$\x01a\x03.V[a\x02\xC5\x83\x83\x83a\x04\xAEV[`\x01`\x01`\xA0\x1B\x03\x82\x16a\x03\xD1W`@Qc\xECD/\x05`\xE0\x1B\x81R_`\x04\x82\x01R`$\x01a\x03.V[a\x02\x98_\x83\x83a\x04\xAEV[`\x01`\x01`\xA0\x1B\x03\x84\x16a\x04\x05W`@Qc\xE6\x02\xDF\x05`\xE0\x1B\x81R_`\x04\x82\x01R`$\x01a\x03.V[`\x01`\x01`\xA0\x1B\x03\x83\x16a\x04.W`@QcJ\x14\x06\xB1`\xE1\x1B\x81R_`\x04\x82\x01R`$\x01a\x03.V[`\x01`\x01`\xA0\x1B\x03\x80\x85\x16_\x90\x81R`\x01` \x90\x81R`@\x80\x83 \x93\x87\x16\x83R\x92\x90R \x82\x90U\x80\x15a\x03EW\x82`\x01`\x01`\xA0\x1B\x03\x16\x84`\x01`\x01`\xA0\x1B\x03\x16\x7F\x8C[\xE1\xE5\xEB\xEC}[\xD1OqB}\x1E\x84\xF3\xDD\x03\x14\xC0\xF7\xB2)\x1E[ \n\xC8\xC7\xC3\xB9%\x84`@Qa\x04\xA0\x91\x81R` \x01\x90V[`@Q\x80\x91\x03\x90\xA3PPPPV[`\x01`\x01`\xA0\x1B\x03\x83\x16a\x04\xD8W\x80`\x02_\x82\x82Ta\x04\xCD\x91\x90a\x07%V[\x90\x91UPa\x05H\x90PV[`\x01`\x01`\xA0\x1B\x03\x83\x16_\x90\x81R` \x81\x90R`@\x90 T\x81\x81\x10\x15a\x05*W`@Qc9\x144\xE3`\xE2\x1B\x81R`\x01`\x01`\xA0\x1B\x03\x85\x16`\x04\x82\x01R`$\x81\x01\x82\x90R`D\x81\x01\x83\x90R`d\x01a\x03.V[`\x01`\x01`\xA0\x1B\x03\x84\x16_\x90\x81R` \x81\x90R`@\x90 \x90\x82\x90\x03\x90U[`\x01`\x01`\xA0\x1B\x03\x82\x16a\x05dW`\x02\x80T\x82\x90\x03\x90Ua\x05\x82V[`\x01`\x01`\xA0\x1B\x03\x82\x16_\x90\x81R` \x81\x90R`@\x90 \x80T\x82\x01\x90U[\x81`\x01`\x01`\xA0\x1B\x03\x16\x83`\x01`\x01`\xA0\x1B\x03\x16\x7F\xDD\xF2R\xAD\x1B\xE2\xC8\x9Bi\xC2\xB0h\xFC7\x8D\xAA\x95+\xA7\xF1c\xC4\xA1\x16(\xF5ZM\xF5#\xB3\xEF\x83`@Qa\x05\xC7\x91\x81R` \x01\x90V[`@Q\x80\x91\x03\x90\xA3PPPV[_` \x80\x83R\x83Q\x80` \x85\x01R_[\x81\x81\x10\x15a\x06\0W\x85\x81\x01\x83\x01Q\x85\x82\x01`@\x01R\x82\x01a\x05\xE4V[P_`@\x82\x86\x01\x01R`@`\x1F\x19`\x1F\x83\x01\x16\x85\x01\x01\x92PPP\x92\x91PPV[\x805`\x01`\x01`\xA0\x1B\x03\x81\x16\x81\x14a\x066W_\x80\xFD[\x91\x90PV[_\x80`@\x83\x85\x03\x12\x15a\x06LW_\x80\xFD[a\x06U\x83a\x06 V[\x94` \x93\x90\x93\x015\x93PPPV[_\x80_``\x84\x86\x03\x12\x15a\x06uW_\x80\xFD[a\x06~\x84a\x06 V[\x92Pa\x06\x8C` \x85\x01a\x06 V[\x91P`@\x84\x015\x90P\x92P\x92P\x92V[_` \x82\x84\x03\x12\x15a\x06\xACW_\x80\xFD[a\x06\xB5\x82a\x06 V[\x93\x92PPPV[_\x80`@\x83\x85\x03\x12\x15a\x06\xCDW_\x80\xFD[a\x06\xD6\x83a\x06 V[\x91Pa\x06\xE4` \x84\x01a\x06 V[\x90P\x92P\x92\x90PV[`\x01\x81\x81\x1C\x90\x82\x16\x80a\x07\x01W`\x7F\x82\x16\x91P[` \x82\x10\x81\x03a\x07\x1FWcNH{q`\xE0\x1B_R`\"`\x04R`$_\xFD[P\x91\x90PV[\x80\x82\x01\x80\x82\x11\x15a\x02eWcNH{q`\xE0\x1B_R`\x11`\x04R`$_\xFD",
-    );
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `ERC20InsufficientAllowance(address,uint256,uint256)` and selector `0xfb8f41b2`.
@@ -508,10 +488,10 @@ error ERC20InsufficientAllowance(address spender, uint256 allowance, uint256 nee
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -613,10 +593,10 @@ error ERC20InsufficientBalance(address sender, uint256 balance, uint256 needed);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -694,10 +674,10 @@ error ERC20InvalidApprover(address approver);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -775,10 +755,10 @@ error ERC20InvalidReceiver(address receiver);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -856,10 +836,10 @@ error ERC20InvalidSender(address sender);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -937,10 +917,10 @@ error ERC20InvalidSpender(address spender);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -1440,16 +1420,29 @@ function allowance(address owner, address spender) external view returns (uint25
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: allowanceReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -1609,16 +1602,29 @@ function approve(address spender, uint256 value) external returns (bool);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: approveReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -1763,16 +1769,29 @@ function balanceOf(address account) external view returns (uint256);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: balanceOfReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -1908,16 +1927,29 @@ function decimals() external view returns (uint8);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: decimalsReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -2072,13 +2104,26 @@ function mint(address to, uint256 amount) external;
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -2214,16 +2259,29 @@ function name() external view returns (string memory);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: nameReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -2359,16 +2417,29 @@ function symbol() external view returns (string memory);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: symbolReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -2506,16 +2577,29 @@ function totalSupply() external view returns (uint256);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: totalSupplyReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -2675,16 +2759,29 @@ function transfer(address to, uint256 value) external returns (bool);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: transferReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -2853,23 +2950,36 @@ function transferFrom(address from, address to, uint256 value) external returns 
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: transferFromReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
     ///Container for all the [`ZamaOFT`](self) function calls.
     #[derive(Clone)]
     #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive()]
+    #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum ZamaOFTCalls {
         #[allow(missing_docs)]
         allowance(allowanceCall),
@@ -3000,17 +3110,45 @@ function transferFrom(address from, address to, uint256 value) external returns 
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
-            static DECODE_SHIMS: &[fn(&[u8]) -> alloy_sol_types::Result<ZamaOFTCalls>] = &[
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::default(),
+            )
+        }
+        #[inline]
+        #[allow(non_snake_case)]
+        fn abi_decode_raw_with_config(
+            selector: [u8; 4],
+            data: &[u8],
+            config: alloy_sol_types::abi::AbiDecoderConfig,
+        ) -> alloy_sol_types::Result<Self> {
+            static DECODE_SHIMS: &[fn(
+                &[u8],
+                alloy_sol_types::abi::AbiDecoderConfig,
+            ) -> alloy_sol_types::Result<ZamaOFTCalls>] = &[
                 {
-                    fn name(data: &[u8]) -> alloy_sol_types::Result<ZamaOFTCalls> {
-                        <nameCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                    fn name(
+                        data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
+                    ) -> alloy_sol_types::Result<ZamaOFTCalls> {
+                        <nameCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(ZamaOFTCalls::name)
                     }
                     name
                 },
                 {
-                    fn approve(data: &[u8]) -> alloy_sol_types::Result<ZamaOFTCalls> {
-                        <approveCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                    fn approve(
+                        data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
+                    ) -> alloy_sol_types::Result<ZamaOFTCalls> {
+                        <approveCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(ZamaOFTCalls::approve)
                     }
                     approve
@@ -3018,9 +3156,11 @@ function transferFrom(address from, address to, uint256 value) external returns 
                 {
                     fn totalSupply(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ZamaOFTCalls> {
-                        <totalSupplyCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <totalSupplyCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(ZamaOFTCalls::totalSupply)
                     }
@@ -3029,52 +3169,90 @@ function transferFrom(address from, address to, uint256 value) external returns 
                 {
                     fn transferFrom(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ZamaOFTCalls> {
-                        <transferFromCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <transferFromCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(ZamaOFTCalls::transferFrom)
                     }
                     transferFrom
                 },
                 {
-                    fn decimals(data: &[u8]) -> alloy_sol_types::Result<ZamaOFTCalls> {
-                        <decimalsCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                    fn decimals(
+                        data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
+                    ) -> alloy_sol_types::Result<ZamaOFTCalls> {
+                        <decimalsCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(ZamaOFTCalls::decimals)
                     }
                     decimals
                 },
                 {
-                    fn mint(data: &[u8]) -> alloy_sol_types::Result<ZamaOFTCalls> {
-                        <mintCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                    fn mint(
+                        data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
+                    ) -> alloy_sol_types::Result<ZamaOFTCalls> {
+                        <mintCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(ZamaOFTCalls::mint)
                     }
                     mint
                 },
                 {
-                    fn balanceOf(data: &[u8]) -> alloy_sol_types::Result<ZamaOFTCalls> {
-                        <balanceOfCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                    fn balanceOf(
+                        data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
+                    ) -> alloy_sol_types::Result<ZamaOFTCalls> {
+                        <balanceOfCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(ZamaOFTCalls::balanceOf)
                     }
                     balanceOf
                 },
                 {
-                    fn symbol(data: &[u8]) -> alloy_sol_types::Result<ZamaOFTCalls> {
-                        <symbolCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                    fn symbol(
+                        data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
+                    ) -> alloy_sol_types::Result<ZamaOFTCalls> {
+                        <symbolCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(ZamaOFTCalls::symbol)
                     }
                     symbol
                 },
                 {
-                    fn transfer(data: &[u8]) -> alloy_sol_types::Result<ZamaOFTCalls> {
-                        <transferCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                    fn transfer(
+                        data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
+                    ) -> alloy_sol_types::Result<ZamaOFTCalls> {
+                        <transferCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(ZamaOFTCalls::transfer)
                     }
                     transfer
                 },
                 {
-                    fn allowance(data: &[u8]) -> alloy_sol_types::Result<ZamaOFTCalls> {
-                        <allowanceCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                    fn allowance(
+                        data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
+                    ) -> alloy_sol_types::Result<ZamaOFTCalls> {
+                        <allowanceCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(ZamaOFTCalls::allowance)
                     }
                     allowance
@@ -3088,7 +3266,7 @@ function transferFrom(address from, address to, uint256 value) external returns 
                     ),
                 );
             };
-            DECODE_SHIMS[idx](data)
+            DECODE_SHIMS[idx](data, config)
         }
         #[inline]
         #[allow(non_snake_case)]
@@ -3096,113 +3274,11 @@ function transferFrom(address from, address to, uint256 value) external returns 
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
-            static DECODE_VALIDATE_SHIMS: &[fn(
-                &[u8],
-            ) -> alloy_sol_types::Result<ZamaOFTCalls>] = &[
-                {
-                    fn name(data: &[u8]) -> alloy_sol_types::Result<ZamaOFTCalls> {
-                        <nameCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ZamaOFTCalls::name)
-                    }
-                    name
-                },
-                {
-                    fn approve(data: &[u8]) -> alloy_sol_types::Result<ZamaOFTCalls> {
-                        <approveCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ZamaOFTCalls::approve)
-                    }
-                    approve
-                },
-                {
-                    fn totalSupply(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ZamaOFTCalls> {
-                        <totalSupplyCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ZamaOFTCalls::totalSupply)
-                    }
-                    totalSupply
-                },
-                {
-                    fn transferFrom(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ZamaOFTCalls> {
-                        <transferFromCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ZamaOFTCalls::transferFrom)
-                    }
-                    transferFrom
-                },
-                {
-                    fn decimals(data: &[u8]) -> alloy_sol_types::Result<ZamaOFTCalls> {
-                        <decimalsCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ZamaOFTCalls::decimals)
-                    }
-                    decimals
-                },
-                {
-                    fn mint(data: &[u8]) -> alloy_sol_types::Result<ZamaOFTCalls> {
-                        <mintCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ZamaOFTCalls::mint)
-                    }
-                    mint
-                },
-                {
-                    fn balanceOf(data: &[u8]) -> alloy_sol_types::Result<ZamaOFTCalls> {
-                        <balanceOfCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ZamaOFTCalls::balanceOf)
-                    }
-                    balanceOf
-                },
-                {
-                    fn symbol(data: &[u8]) -> alloy_sol_types::Result<ZamaOFTCalls> {
-                        <symbolCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ZamaOFTCalls::symbol)
-                    }
-                    symbol
-                },
-                {
-                    fn transfer(data: &[u8]) -> alloy_sol_types::Result<ZamaOFTCalls> {
-                        <transferCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ZamaOFTCalls::transfer)
-                    }
-                    transfer
-                },
-                {
-                    fn allowance(data: &[u8]) -> alloy_sol_types::Result<ZamaOFTCalls> {
-                        <allowanceCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ZamaOFTCalls::allowance)
-                    }
-                    allowance
-                },
-            ];
-            let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
-            };
-            DECODE_VALIDATE_SHIMS[idx](data)
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+            )
         }
         #[inline]
         fn abi_encoded_size(&self) -> usize {
@@ -3411,15 +3487,31 @@ function transferFrom(address from, address to, uint256 value) external returns 
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::default(),
+            )
+        }
+        #[inline]
+        #[allow(non_snake_case)]
+        fn abi_decode_raw_with_config(
+            selector: [u8; 4],
+            data: &[u8],
+            config: alloy_sol_types::abi::AbiDecoderConfig,
+        ) -> alloy_sol_types::Result<Self> {
             static DECODE_SHIMS: &[fn(
                 &[u8],
+                alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<ZamaOFTErrors>] = &[
                 {
                     fn ERC20InvalidSpender(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ZamaOFTErrors> {
-                        <ERC20InvalidSpender as alloy_sol_types::SolError>::abi_decode_raw(
+                        <ERC20InvalidSpender as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(ZamaOFTErrors::ERC20InvalidSpender)
                     }
@@ -3428,9 +3520,11 @@ function transferFrom(address from, address to, uint256 value) external returns 
                 {
                     fn ERC20InvalidSender(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ZamaOFTErrors> {
-                        <ERC20InvalidSender as alloy_sol_types::SolError>::abi_decode_raw(
+                        <ERC20InvalidSender as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(ZamaOFTErrors::ERC20InvalidSender)
                     }
@@ -3439,9 +3533,11 @@ function transferFrom(address from, address to, uint256 value) external returns 
                 {
                     fn ERC20InsufficientBalance(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ZamaOFTErrors> {
-                        <ERC20InsufficientBalance as alloy_sol_types::SolError>::abi_decode_raw(
+                        <ERC20InsufficientBalance as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(ZamaOFTErrors::ERC20InsufficientBalance)
                     }
@@ -3450,9 +3546,11 @@ function transferFrom(address from, address to, uint256 value) external returns 
                 {
                     fn ERC20InvalidApprover(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ZamaOFTErrors> {
-                        <ERC20InvalidApprover as alloy_sol_types::SolError>::abi_decode_raw(
+                        <ERC20InvalidApprover as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(ZamaOFTErrors::ERC20InvalidApprover)
                     }
@@ -3461,9 +3559,11 @@ function transferFrom(address from, address to, uint256 value) external returns 
                 {
                     fn ERC20InvalidReceiver(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ZamaOFTErrors> {
-                        <ERC20InvalidReceiver as alloy_sol_types::SolError>::abi_decode_raw(
+                        <ERC20InvalidReceiver as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(ZamaOFTErrors::ERC20InvalidReceiver)
                     }
@@ -3472,9 +3572,11 @@ function transferFrom(address from, address to, uint256 value) external returns 
                 {
                     fn ERC20InsufficientAllowance(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ZamaOFTErrors> {
-                        <ERC20InsufficientAllowance as alloy_sol_types::SolError>::abi_decode_raw(
+                        <ERC20InsufficientAllowance as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(ZamaOFTErrors::ERC20InsufficientAllowance)
                     }
@@ -3489,7 +3591,7 @@ function transferFrom(address from, address to, uint256 value) external returns 
                     ),
                 );
             };
-            DECODE_SHIMS[idx](data)
+            DECODE_SHIMS[idx](data, config)
         }
         #[inline]
         #[allow(non_snake_case)]
@@ -3497,85 +3599,11 @@ function transferFrom(address from, address to, uint256 value) external returns 
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
-            static DECODE_VALIDATE_SHIMS: &[fn(
-                &[u8],
-            ) -> alloy_sol_types::Result<ZamaOFTErrors>] = &[
-                {
-                    fn ERC20InvalidSpender(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ZamaOFTErrors> {
-                        <ERC20InvalidSpender as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ZamaOFTErrors::ERC20InvalidSpender)
-                    }
-                    ERC20InvalidSpender
-                },
-                {
-                    fn ERC20InvalidSender(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ZamaOFTErrors> {
-                        <ERC20InvalidSender as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ZamaOFTErrors::ERC20InvalidSender)
-                    }
-                    ERC20InvalidSender
-                },
-                {
-                    fn ERC20InsufficientBalance(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ZamaOFTErrors> {
-                        <ERC20InsufficientBalance as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ZamaOFTErrors::ERC20InsufficientBalance)
-                    }
-                    ERC20InsufficientBalance
-                },
-                {
-                    fn ERC20InvalidApprover(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ZamaOFTErrors> {
-                        <ERC20InvalidApprover as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ZamaOFTErrors::ERC20InvalidApprover)
-                    }
-                    ERC20InvalidApprover
-                },
-                {
-                    fn ERC20InvalidReceiver(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ZamaOFTErrors> {
-                        <ERC20InvalidReceiver as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ZamaOFTErrors::ERC20InvalidReceiver)
-                    }
-                    ERC20InvalidReceiver
-                },
-                {
-                    fn ERC20InsufficientAllowance(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ZamaOFTErrors> {
-                        <ERC20InsufficientAllowance as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ZamaOFTErrors::ERC20InsufficientAllowance)
-                    }
-                    ERC20InsufficientAllowance
-                },
-            ];
-            let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
-            };
-            DECODE_VALIDATE_SHIMS[idx](data)
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+            )
         }
         #[inline]
         fn abi_encoded_size(&self) -> usize {
@@ -3652,6 +3680,95 @@ function transferFrom(address from, address to, uint256 value) external returns 
                     )
                 }
             }
+        }
+    }
+    #[automatically_derived]
+    impl ZamaOFTErrors {
+        /**Creates a [`ERC20InsufficientAllowance`] error.
+
+```solidity
+error ERC20InsufficientAllowance(address,uint256,uint256)
+```*/
+        #[inline]
+        pub fn erc_20_insufficient_allowance(
+            spender: alloy::sol_types::private::Address,
+            allowance: alloy::sol_types::private::primitives::aliases::U256,
+            needed: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::ERC20InsufficientAllowance(ERC20InsufficientAllowance {
+                spender: spender,
+                allowance: allowance,
+                needed: needed,
+            })
+        }
+        /**Creates a [`ERC20InsufficientBalance`] error.
+
+```solidity
+error ERC20InsufficientBalance(address,uint256,uint256)
+```*/
+        #[inline]
+        pub fn erc_20_insufficient_balance(
+            sender: alloy::sol_types::private::Address,
+            balance: alloy::sol_types::private::primitives::aliases::U256,
+            needed: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::ERC20InsufficientBalance(ERC20InsufficientBalance {
+                sender: sender,
+                balance: balance,
+                needed: needed,
+            })
+        }
+        /**Creates a [`ERC20InvalidApprover`] error.
+
+```solidity
+error ERC20InvalidApprover(address)
+```*/
+        #[inline]
+        pub fn erc_20_invalid_approver(
+            approver: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::ERC20InvalidApprover(ERC20InvalidApprover {
+                approver: approver,
+            })
+        }
+        /**Creates a [`ERC20InvalidReceiver`] error.
+
+```solidity
+error ERC20InvalidReceiver(address)
+```*/
+        #[inline]
+        pub fn erc_20_invalid_receiver(
+            receiver: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::ERC20InvalidReceiver(ERC20InvalidReceiver {
+                receiver: receiver,
+            })
+        }
+        /**Creates a [`ERC20InvalidSender`] error.
+
+```solidity
+error ERC20InvalidSender(address)
+```*/
+        #[inline]
+        pub fn erc_20_invalid_sender(
+            sender: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::ERC20InvalidSender(ERC20InvalidSender {
+                sender: sender,
+            })
+        }
+        /**Creates a [`ERC20InvalidSpender`] error.
+
+```solidity
+error ERC20InvalidSpender(address)
+```*/
+        #[inline]
+        pub fn erc_20_invalid_spender(
+            spender: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::ERC20InvalidSpender(ERC20InvalidSpender {
+                spender: spender,
+            })
         }
     }
     ///Container for all the [`ZamaOFT`](self) events.
@@ -3768,6 +3885,43 @@ function transferFrom(address from, address to, uint256 value) external returns 
             }
         }
     }
+    #[automatically_derived]
+    impl ZamaOFTEvents {
+        /**Creates a [`Approval`] event.
+
+```solidity
+event Approval(address,address,uint256)
+```*/
+        #[inline]
+        pub fn approval(
+            owner: alloy::sol_types::private::Address,
+            spender: alloy::sol_types::private::Address,
+            value: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::Approval(Approval {
+                owner: owner,
+                spender: spender,
+                value: value,
+            })
+        }
+        /**Creates a [`Transfer`] event.
+
+```solidity
+event Transfer(address,address,uint256)
+```*/
+        #[inline]
+        pub fn transfer(
+            from: alloy::sol_types::private::Address,
+            to: alloy::sol_types::private::Address,
+            value: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::Transfer(Transfer {
+                from: from,
+                to: to,
+                value: value,
+            })
+        }
+    }
     use alloy::contract as alloy_contract;
     /**Creates a new wrapper around an on-chain [`ZamaOFT`](self) contract instance.
 
@@ -3781,45 +3935,6 @@ See the [wrapper's documentation](`ZamaOFTInstance`) for more details.*/
         __provider: P,
     ) -> ZamaOFTInstance<P, N> {
         ZamaOFTInstance::<P, N>::new(address, __provider)
-    }
-    /**Deploys this contract using the given `provider` and constructor arguments, if any.
-
-Returns a new instance of the contract, if the deployment was successful.
-
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
-    #[inline]
-    pub fn deploy<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(
-        __provider: P,
-        _name: alloy::sol_types::private::String,
-        _symbol: alloy::sol_types::private::String,
-        _initialSupply: alloy::sol_types::private::primitives::aliases::U256,
-    ) -> impl ::core::future::Future<
-        Output = alloy_contract::Result<ZamaOFTInstance<P, N>>,
-    > {
-        ZamaOFTInstance::<P, N>::deploy(__provider, _name, _symbol, _initialSupply)
-    }
-    /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
-
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
-    #[inline]
-    pub fn deploy_builder<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(
-        __provider: P,
-        _name: alloy::sol_types::private::String,
-        _symbol: alloy::sol_types::private::String,
-        _initialSupply: alloy::sol_types::private::primitives::aliases::U256,
-    ) -> alloy_contract::RawCallBuilder<P, N> {
-        ZamaOFTInstance::<
-            P,
-            N,
-        >::deploy_builder(__provider, _name, _symbol, _initialSupply)
     }
     /**A [`ZamaOFT`](self) instance.
 
@@ -3863,55 +3978,6 @@ See the [wrapper's documentation](`ZamaOFTInstance`) for more details.*/
                 provider: __provider,
                 _network: ::core::marker::PhantomData,
             }
-        }
-        /**Deploys this contract using the given `provider` and constructor arguments, if any.
-
-Returns a new instance of the contract, if the deployment was successful.
-
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
-        #[inline]
-        pub async fn deploy(
-            __provider: P,
-            _name: alloy::sol_types::private::String,
-            _symbol: alloy::sol_types::private::String,
-            _initialSupply: alloy::sol_types::private::primitives::aliases::U256,
-        ) -> alloy_contract::Result<ZamaOFTInstance<P, N>> {
-            let call_builder = Self::deploy_builder(
-                __provider,
-                _name,
-                _symbol,
-                _initialSupply,
-            );
-            let contract_address = call_builder.deploy().await?;
-            Ok(Self::new(contract_address, call_builder.provider))
-        }
-        /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
-
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
-        #[inline]
-        pub fn deploy_builder(
-            __provider: P,
-            _name: alloy::sol_types::private::String,
-            _symbol: alloy::sol_types::private::String,
-            _initialSupply: alloy::sol_types::private::primitives::aliases::U256,
-        ) -> alloy_contract::RawCallBuilder<P, N> {
-            alloy_contract::RawCallBuilder::new_raw_deploy(
-                __provider,
-                [
-                    &BYTECODE[..],
-                    &alloy_sol_types::SolConstructor::abi_encode(
-                        &constructorCall {
-                            _name,
-                            _symbol,
-                            _initialSupply,
-                        },
-                    )[..],
-                ]
-                    .concat()
-                    .into(),
-            )
         }
         /// Returns a reference to the address.
         #[inline]

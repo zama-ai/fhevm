@@ -737,26 +737,6 @@ interface HandlesReceiver {
 pub mod HandlesReceiver {
     use super::*;
     use alloy::sol_types as alloy_sol_types;
-    /// The creation / init bytecode of the contract.
-    ///
-    /// ```text
-    ///0x
-    /// ```
-    #[rustfmt::skip]
-    #[allow(clippy::all)]
-    pub static BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
-        b"",
-    );
-    /// The runtime bytecode of the contract, as deployed on the network.
-    ///
-    /// ```text
-    ///0x
-    /// ```
-    #[rustfmt::skip]
-    #[allow(clippy::all)]
-    pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
-        b"",
-    );
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**```solidity
@@ -1074,10 +1054,10 @@ error InvalidDelegate();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -1148,10 +1128,10 @@ error InvalidEndpointCall();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -1222,10 +1202,10 @@ error InvalidInitialization();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -1303,10 +1283,10 @@ error NoPeer(uint32 eid);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -1384,10 +1364,10 @@ error NotHostOwner(address sender);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -1458,10 +1438,10 @@ error NotInitializing();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -1539,10 +1519,10 @@ error NotLzEndpoint(address caller);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -1620,10 +1600,10 @@ error OnlyEndpoint(address addr);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -1712,10 +1692,10 @@ error OnlyPeer(uint32 eid, bytes32 sender);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -1793,10 +1773,10 @@ error OwnableInvalidOwner(address owner);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -1876,10 +1856,10 @@ error OwnableUnauthorizedAccount(address account);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -1950,10 +1930,10 @@ error PlaintextOutOfRange();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -2031,10 +2011,10 @@ error UnexpectedComposeOrigin(address from);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -2107,10 +2087,10 @@ error UnsupportedFheTypeInDstHandle();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -2181,10 +2161,10 @@ error WrongChainIdInDstHandle();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -2257,10 +2237,10 @@ error WrongHandleVersionInDstHandle();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -2333,10 +2313,10 @@ error WrongIndexByteInDstHandle();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -3673,16 +3653,29 @@ function allowInitializePath(Origin memory origin) external view returns (bool);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: allowInitializePathReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -3818,16 +3811,29 @@ function endpoint() external view returns (address);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: endpointReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -3988,13 +3994,26 @@ function grantFallbackPlaintext(bytes32 dstHandle, uint256 plaintext) external;
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -4165,16 +4184,29 @@ function isComposeMsgSender(Origin memory, bytes memory, address _sender) extern
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: isComposeMsgSenderReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -4356,13 +4388,26 @@ function lzCompose(address from, bytes32 guid, bytes memory message, address, by
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -4548,13 +4593,26 @@ function lzReceive(Origin memory _origin, bytes32 _guid, bytes memory _message, 
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -4711,16 +4769,29 @@ function nextNonce(uint32, bytes32) external view returns (uint64 nonce);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: nextNonceReturn = r.into();
                         r.nonce
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -4874,13 +4945,26 @@ function oAppVersion() external pure returns (uint64 senderVersion, uint64 recei
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -5016,16 +5100,29 @@ function owner() external view returns (address);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: ownerReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -5168,16 +5265,29 @@ function peers(uint32 _eid) external view returns (bytes32);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: peersReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -5312,13 +5422,26 @@ function renounceOwnership() external;
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -5456,13 +5579,26 @@ function setDelegate(address _delegate) external;
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -5617,13 +5753,26 @@ function setPeer(uint32 _eid, bytes32 _peer) external;
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -5765,20 +5914,33 @@ function transferOwnership(address newOwner) external;
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
     ///Container for all the [`HandlesReceiver`](self) function calls.
     #[derive(Clone)]
     #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive()]
+    #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum HandlesReceiverCalls {
         #[allow(missing_docs)]
         allowInitializePath(allowInitializePathCall),
@@ -5945,14 +6107,32 @@ function transferOwnership(address newOwner) external;
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::default(),
+            )
+        }
+        #[inline]
+        #[allow(non_snake_case)]
+        fn abi_decode_raw_with_config(
+            selector: [u8; 4],
+            data: &[u8],
+            config: alloy_sol_types::abi::AbiDecoderConfig,
+        ) -> alloy_sol_types::Result<Self> {
             static DECODE_SHIMS: &[fn(
                 &[u8],
+                alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<HandlesReceiverCalls>] = &[
                 {
                     fn lzReceive(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<HandlesReceiverCalls> {
-                        <lzReceiveCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                        <lzReceiveCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(HandlesReceiverCalls::lzReceive)
                     }
                     lzReceive
@@ -5960,9 +6140,11 @@ function transferOwnership(address newOwner) external;
                 {
                     fn oAppVersion(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<HandlesReceiverCalls> {
-                        <oAppVersionCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <oAppVersionCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(HandlesReceiverCalls::oAppVersion)
                     }
@@ -5971,8 +6153,12 @@ function transferOwnership(address newOwner) external;
                 {
                     fn setPeer(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<HandlesReceiverCalls> {
-                        <setPeerCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                        <setPeerCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(HandlesReceiverCalls::setPeer)
                     }
                     setPeer
@@ -5980,8 +6166,12 @@ function transferOwnership(address newOwner) external;
                 {
                     fn endpoint(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<HandlesReceiverCalls> {
-                        <endpointCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                        <endpointCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(HandlesReceiverCalls::endpoint)
                     }
                     endpoint
@@ -5989,9 +6179,11 @@ function transferOwnership(address newOwner) external;
                 {
                     fn renounceOwnership(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<HandlesReceiverCalls> {
-                        <renounceOwnershipCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <renounceOwnershipCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(HandlesReceiverCalls::renounceOwnership)
                     }
@@ -6000,8 +6192,12 @@ function transferOwnership(address newOwner) external;
                 {
                     fn nextNonce(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<HandlesReceiverCalls> {
-                        <nextNonceCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                        <nextNonceCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(HandlesReceiverCalls::nextNonce)
                     }
                     nextNonce
@@ -6009,9 +6205,11 @@ function transferOwnership(address newOwner) external;
                 {
                     fn isComposeMsgSender(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<HandlesReceiverCalls> {
-                        <isComposeMsgSenderCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <isComposeMsgSenderCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(HandlesReceiverCalls::isComposeMsgSender)
                     }
@@ -6020,8 +6218,12 @@ function transferOwnership(address newOwner) external;
                 {
                     fn owner(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<HandlesReceiverCalls> {
-                        <ownerCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                        <ownerCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(HandlesReceiverCalls::owner)
                     }
                     owner
@@ -6029,9 +6231,11 @@ function transferOwnership(address newOwner) external;
                 {
                     fn grantFallbackPlaintext(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<HandlesReceiverCalls> {
-                        <grantFallbackPlaintextCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <grantFallbackPlaintextCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(HandlesReceiverCalls::grantFallbackPlaintext)
                     }
@@ -6040,8 +6244,12 @@ function transferOwnership(address newOwner) external;
                 {
                     fn peers(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<HandlesReceiverCalls> {
-                        <peersCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                        <peersCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(HandlesReceiverCalls::peers)
                     }
                     peers
@@ -6049,9 +6257,11 @@ function transferOwnership(address newOwner) external;
                 {
                     fn setDelegate(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<HandlesReceiverCalls> {
-                        <setDelegateCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <setDelegateCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(HandlesReceiverCalls::setDelegate)
                     }
@@ -6060,8 +6270,12 @@ function transferOwnership(address newOwner) external;
                 {
                     fn lzCompose(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<HandlesReceiverCalls> {
-                        <lzComposeCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                        <lzComposeCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(HandlesReceiverCalls::lzCompose)
                     }
                     lzCompose
@@ -6069,9 +6283,11 @@ function transferOwnership(address newOwner) external;
                 {
                     fn transferOwnership(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<HandlesReceiverCalls> {
-                        <transferOwnershipCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <transferOwnershipCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(HandlesReceiverCalls::transferOwnership)
                     }
@@ -6080,9 +6296,11 @@ function transferOwnership(address newOwner) external;
                 {
                     fn allowInitializePath(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<HandlesReceiverCalls> {
-                        <allowInitializePathCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <allowInitializePathCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(HandlesReceiverCalls::allowInitializePath)
                     }
@@ -6097,7 +6315,7 @@ function transferOwnership(address newOwner) external;
                     ),
                 );
             };
-            DECODE_SHIMS[idx](data)
+            DECODE_SHIMS[idx](data, config)
         }
         #[inline]
         #[allow(non_snake_case)]
@@ -6105,173 +6323,11 @@ function transferOwnership(address newOwner) external;
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
-            static DECODE_VALIDATE_SHIMS: &[fn(
-                &[u8],
-            ) -> alloy_sol_types::Result<HandlesReceiverCalls>] = &[
-                {
-                    fn lzReceive(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HandlesReceiverCalls> {
-                        <lzReceiveCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(HandlesReceiverCalls::lzReceive)
-                    }
-                    lzReceive
-                },
-                {
-                    fn oAppVersion(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HandlesReceiverCalls> {
-                        <oAppVersionCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(HandlesReceiverCalls::oAppVersion)
-                    }
-                    oAppVersion
-                },
-                {
-                    fn setPeer(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HandlesReceiverCalls> {
-                        <setPeerCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(HandlesReceiverCalls::setPeer)
-                    }
-                    setPeer
-                },
-                {
-                    fn endpoint(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HandlesReceiverCalls> {
-                        <endpointCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(HandlesReceiverCalls::endpoint)
-                    }
-                    endpoint
-                },
-                {
-                    fn renounceOwnership(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HandlesReceiverCalls> {
-                        <renounceOwnershipCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(HandlesReceiverCalls::renounceOwnership)
-                    }
-                    renounceOwnership
-                },
-                {
-                    fn nextNonce(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HandlesReceiverCalls> {
-                        <nextNonceCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(HandlesReceiverCalls::nextNonce)
-                    }
-                    nextNonce
-                },
-                {
-                    fn isComposeMsgSender(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HandlesReceiverCalls> {
-                        <isComposeMsgSenderCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(HandlesReceiverCalls::isComposeMsgSender)
-                    }
-                    isComposeMsgSender
-                },
-                {
-                    fn owner(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HandlesReceiverCalls> {
-                        <ownerCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(HandlesReceiverCalls::owner)
-                    }
-                    owner
-                },
-                {
-                    fn grantFallbackPlaintext(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HandlesReceiverCalls> {
-                        <grantFallbackPlaintextCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(HandlesReceiverCalls::grantFallbackPlaintext)
-                    }
-                    grantFallbackPlaintext
-                },
-                {
-                    fn peers(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HandlesReceiverCalls> {
-                        <peersCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(HandlesReceiverCalls::peers)
-                    }
-                    peers
-                },
-                {
-                    fn setDelegate(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HandlesReceiverCalls> {
-                        <setDelegateCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(HandlesReceiverCalls::setDelegate)
-                    }
-                    setDelegate
-                },
-                {
-                    fn lzCompose(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HandlesReceiverCalls> {
-                        <lzComposeCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(HandlesReceiverCalls::lzCompose)
-                    }
-                    lzCompose
-                },
-                {
-                    fn transferOwnership(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HandlesReceiverCalls> {
-                        <transferOwnershipCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(HandlesReceiverCalls::transferOwnership)
-                    }
-                    transferOwnership
-                },
-                {
-                    fn allowInitializePath(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HandlesReceiverCalls> {
-                        <allowInitializePathCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(HandlesReceiverCalls::allowInitializePath)
-                    }
-                    allowInitializePath
-                },
-            ];
-            let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
-            };
-            DECODE_VALIDATE_SHIMS[idx](data)
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+            )
         }
         #[inline]
         fn abi_encoded_size(&self) -> usize {
@@ -6613,15 +6669,31 @@ function transferOwnership(address newOwner) external;
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::default(),
+            )
+        }
+        #[inline]
+        #[allow(non_snake_case)]
+        fn abi_decode_raw_with_config(
+            selector: [u8; 4],
+            data: &[u8],
+            config: alloy_sol_types::abi::AbiDecoderConfig,
+        ) -> alloy_sol_types::Result<Self> {
             static DECODE_SHIMS: &[fn(
                 &[u8],
+                alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<HandlesReceiverErrors>] = &[
                 {
                     fn InvalidEndpointCall(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<HandlesReceiverErrors> {
-                        <InvalidEndpointCall as alloy_sol_types::SolError>::abi_decode_raw(
+                        <InvalidEndpointCall as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(HandlesReceiverErrors::InvalidEndpointCall)
                     }
@@ -6630,9 +6702,11 @@ function transferOwnership(address newOwner) external;
                 {
                     fn OwnableUnauthorizedAccount(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<HandlesReceiverErrors> {
-                        <OwnableUnauthorizedAccount as alloy_sol_types::SolError>::abi_decode_raw(
+                        <OwnableUnauthorizedAccount as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(HandlesReceiverErrors::OwnableUnauthorizedAccount)
                     }
@@ -6641,9 +6715,11 @@ function transferOwnership(address newOwner) external;
                 {
                     fn OwnableInvalidOwner(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<HandlesReceiverErrors> {
-                        <OwnableInvalidOwner as alloy_sol_types::SolError>::abi_decode_raw(
+                        <OwnableInvalidOwner as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(HandlesReceiverErrors::OwnableInvalidOwner)
                     }
@@ -6652,8 +6728,12 @@ function transferOwnership(address newOwner) external;
                 {
                     fn NotHostOwner(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<HandlesReceiverErrors> {
-                        <NotHostOwner as alloy_sol_types::SolError>::abi_decode_raw(data)
+                        <NotHostOwner as alloy_sol_types::SolError>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(HandlesReceiverErrors::NotHostOwner)
                     }
                     NotHostOwner
@@ -6661,9 +6741,11 @@ function transferOwnership(address newOwner) external;
                 {
                     fn WrongIndexByteInDstHandle(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<HandlesReceiverErrors> {
-                        <WrongIndexByteInDstHandle as alloy_sol_types::SolError>::abi_decode_raw(
+                        <WrongIndexByteInDstHandle as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(HandlesReceiverErrors::WrongIndexByteInDstHandle)
                     }
@@ -6672,9 +6754,11 @@ function transferOwnership(address newOwner) external;
                 {
                     fn WrongChainIdInDstHandle(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<HandlesReceiverErrors> {
-                        <WrongChainIdInDstHandle as alloy_sol_types::SolError>::abi_decode_raw(
+                        <WrongChainIdInDstHandle as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(HandlesReceiverErrors::WrongChainIdInDstHandle)
                     }
@@ -6683,9 +6767,11 @@ function transferOwnership(address newOwner) external;
                 {
                     fn UnexpectedComposeOrigin(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<HandlesReceiverErrors> {
-                        <UnexpectedComposeOrigin as alloy_sol_types::SolError>::abi_decode_raw(
+                        <UnexpectedComposeOrigin as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(HandlesReceiverErrors::UnexpectedComposeOrigin)
                     }
@@ -6694,9 +6780,11 @@ function transferOwnership(address newOwner) external;
                 {
                     fn NotLzEndpoint(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<HandlesReceiverErrors> {
-                        <NotLzEndpoint as alloy_sol_types::SolError>::abi_decode_raw(
+                        <NotLzEndpoint as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(HandlesReceiverErrors::NotLzEndpoint)
                     }
@@ -6705,8 +6793,12 @@ function transferOwnership(address newOwner) external;
                 {
                     fn OnlyEndpoint(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<HandlesReceiverErrors> {
-                        <OnlyEndpoint as alloy_sol_types::SolError>::abi_decode_raw(data)
+                        <OnlyEndpoint as alloy_sol_types::SolError>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(HandlesReceiverErrors::OnlyEndpoint)
                     }
                     OnlyEndpoint
@@ -6714,9 +6806,11 @@ function transferOwnership(address newOwner) external;
                 {
                     fn InvalidDelegate(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<HandlesReceiverErrors> {
-                        <InvalidDelegate as alloy_sol_types::SolError>::abi_decode_raw(
+                        <InvalidDelegate as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(HandlesReceiverErrors::InvalidDelegate)
                     }
@@ -6725,9 +6819,11 @@ function transferOwnership(address newOwner) external;
                 {
                     fn WrongHandleVersionInDstHandle(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<HandlesReceiverErrors> {
-                        <WrongHandleVersionInDstHandle as alloy_sol_types::SolError>::abi_decode_raw(
+                        <WrongHandleVersionInDstHandle as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(HandlesReceiverErrors::WrongHandleVersionInDstHandle)
                     }
@@ -6736,8 +6832,12 @@ function transferOwnership(address newOwner) external;
                 {
                     fn OnlyPeer(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<HandlesReceiverErrors> {
-                        <OnlyPeer as alloy_sol_types::SolError>::abi_decode_raw(data)
+                        <OnlyPeer as alloy_sol_types::SolError>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(HandlesReceiverErrors::OnlyPeer)
                     }
                     OnlyPeer
@@ -6745,9 +6845,11 @@ function transferOwnership(address newOwner) external;
                 {
                     fn NotInitializing(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<HandlesReceiverErrors> {
-                        <NotInitializing as alloy_sol_types::SolError>::abi_decode_raw(
+                        <NotInitializing as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(HandlesReceiverErrors::NotInitializing)
                     }
@@ -6756,9 +6858,11 @@ function transferOwnership(address newOwner) external;
                 {
                     fn UnsupportedFheTypeInDstHandle(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<HandlesReceiverErrors> {
-                        <UnsupportedFheTypeInDstHandle as alloy_sol_types::SolError>::abi_decode_raw(
+                        <UnsupportedFheTypeInDstHandle as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(HandlesReceiverErrors::UnsupportedFheTypeInDstHandle)
                     }
@@ -6767,9 +6871,11 @@ function transferOwnership(address newOwner) external;
                 {
                     fn PlaintextOutOfRange(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<HandlesReceiverErrors> {
-                        <PlaintextOutOfRange as alloy_sol_types::SolError>::abi_decode_raw(
+                        <PlaintextOutOfRange as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(HandlesReceiverErrors::PlaintextOutOfRange)
                     }
@@ -6778,8 +6884,12 @@ function transferOwnership(address newOwner) external;
                 {
                     fn NoPeer(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<HandlesReceiverErrors> {
-                        <NoPeer as alloy_sol_types::SolError>::abi_decode_raw(data)
+                        <NoPeer as alloy_sol_types::SolError>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(HandlesReceiverErrors::NoPeer)
                     }
                     NoPeer
@@ -6787,9 +6897,11 @@ function transferOwnership(address newOwner) external;
                 {
                     fn InvalidInitialization(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<HandlesReceiverErrors> {
-                        <InvalidInitialization as alloy_sol_types::SolError>::abi_decode_raw(
+                        <InvalidInitialization as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(HandlesReceiverErrors::InvalidInitialization)
                     }
@@ -6804,7 +6916,7 @@ function transferOwnership(address newOwner) external;
                     ),
                 );
             };
-            DECODE_SHIMS[idx](data)
+            DECODE_SHIMS[idx](data, config)
         }
         #[inline]
         #[allow(non_snake_case)]
@@ -6812,206 +6924,11 @@ function transferOwnership(address newOwner) external;
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
-            static DECODE_VALIDATE_SHIMS: &[fn(
-                &[u8],
-            ) -> alloy_sol_types::Result<HandlesReceiverErrors>] = &[
-                {
-                    fn InvalidEndpointCall(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HandlesReceiverErrors> {
-                        <InvalidEndpointCall as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(HandlesReceiverErrors::InvalidEndpointCall)
-                    }
-                    InvalidEndpointCall
-                },
-                {
-                    fn OwnableUnauthorizedAccount(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HandlesReceiverErrors> {
-                        <OwnableUnauthorizedAccount as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(HandlesReceiverErrors::OwnableUnauthorizedAccount)
-                    }
-                    OwnableUnauthorizedAccount
-                },
-                {
-                    fn OwnableInvalidOwner(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HandlesReceiverErrors> {
-                        <OwnableInvalidOwner as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(HandlesReceiverErrors::OwnableInvalidOwner)
-                    }
-                    OwnableInvalidOwner
-                },
-                {
-                    fn NotHostOwner(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HandlesReceiverErrors> {
-                        <NotHostOwner as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(HandlesReceiverErrors::NotHostOwner)
-                    }
-                    NotHostOwner
-                },
-                {
-                    fn WrongIndexByteInDstHandle(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HandlesReceiverErrors> {
-                        <WrongIndexByteInDstHandle as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(HandlesReceiverErrors::WrongIndexByteInDstHandle)
-                    }
-                    WrongIndexByteInDstHandle
-                },
-                {
-                    fn WrongChainIdInDstHandle(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HandlesReceiverErrors> {
-                        <WrongChainIdInDstHandle as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(HandlesReceiverErrors::WrongChainIdInDstHandle)
-                    }
-                    WrongChainIdInDstHandle
-                },
-                {
-                    fn UnexpectedComposeOrigin(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HandlesReceiverErrors> {
-                        <UnexpectedComposeOrigin as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(HandlesReceiverErrors::UnexpectedComposeOrigin)
-                    }
-                    UnexpectedComposeOrigin
-                },
-                {
-                    fn NotLzEndpoint(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HandlesReceiverErrors> {
-                        <NotLzEndpoint as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(HandlesReceiverErrors::NotLzEndpoint)
-                    }
-                    NotLzEndpoint
-                },
-                {
-                    fn OnlyEndpoint(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HandlesReceiverErrors> {
-                        <OnlyEndpoint as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(HandlesReceiverErrors::OnlyEndpoint)
-                    }
-                    OnlyEndpoint
-                },
-                {
-                    fn InvalidDelegate(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HandlesReceiverErrors> {
-                        <InvalidDelegate as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(HandlesReceiverErrors::InvalidDelegate)
-                    }
-                    InvalidDelegate
-                },
-                {
-                    fn WrongHandleVersionInDstHandle(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HandlesReceiverErrors> {
-                        <WrongHandleVersionInDstHandle as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(HandlesReceiverErrors::WrongHandleVersionInDstHandle)
-                    }
-                    WrongHandleVersionInDstHandle
-                },
-                {
-                    fn OnlyPeer(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HandlesReceiverErrors> {
-                        <OnlyPeer as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(HandlesReceiverErrors::OnlyPeer)
-                    }
-                    OnlyPeer
-                },
-                {
-                    fn NotInitializing(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HandlesReceiverErrors> {
-                        <NotInitializing as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(HandlesReceiverErrors::NotInitializing)
-                    }
-                    NotInitializing
-                },
-                {
-                    fn UnsupportedFheTypeInDstHandle(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HandlesReceiverErrors> {
-                        <UnsupportedFheTypeInDstHandle as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(HandlesReceiverErrors::UnsupportedFheTypeInDstHandle)
-                    }
-                    UnsupportedFheTypeInDstHandle
-                },
-                {
-                    fn PlaintextOutOfRange(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HandlesReceiverErrors> {
-                        <PlaintextOutOfRange as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(HandlesReceiverErrors::PlaintextOutOfRange)
-                    }
-                    PlaintextOutOfRange
-                },
-                {
-                    fn NoPeer(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HandlesReceiverErrors> {
-                        <NoPeer as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(HandlesReceiverErrors::NoPeer)
-                    }
-                    NoPeer
-                },
-                {
-                    fn InvalidInitialization(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HandlesReceiverErrors> {
-                        <InvalidInitialization as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(HandlesReceiverErrors::InvalidInitialization)
-                    }
-                    InvalidInitialization
-                },
-            ];
-            let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
-            };
-            DECODE_VALIDATE_SHIMS[idx](data)
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+            )
         }
         #[inline]
         fn abi_encoded_size(&self) -> usize {
@@ -7193,6 +7110,178 @@ function transferOwnership(address newOwner) external;
                     )
                 }
             }
+        }
+    }
+    #[automatically_derived]
+    impl HandlesReceiverErrors {
+        /**Creates a [`InvalidDelegate`] error.
+
+```solidity
+error InvalidDelegate()
+```*/
+        #[inline]
+        pub fn invalid_delegate() -> Self {
+            Self::InvalidDelegate(InvalidDelegate)
+        }
+        /**Creates a [`InvalidEndpointCall`] error.
+
+```solidity
+error InvalidEndpointCall()
+```*/
+        #[inline]
+        pub fn invalid_endpoint_call() -> Self {
+            Self::InvalidEndpointCall(InvalidEndpointCall)
+        }
+        /**Creates a [`InvalidInitialization`] error.
+
+```solidity
+error InvalidInitialization()
+```*/
+        #[inline]
+        pub fn invalid_initialization() -> Self {
+            Self::InvalidInitialization(InvalidInitialization)
+        }
+        /**Creates a [`NoPeer`] error.
+
+```solidity
+error NoPeer(uint32)
+```*/
+        #[inline]
+        pub fn no_peer(eid: u32) -> Self {
+            Self::NoPeer(NoPeer { eid: eid })
+        }
+        /**Creates a [`NotHostOwner`] error.
+
+```solidity
+error NotHostOwner(address)
+```*/
+        #[inline]
+        pub fn not_host_owner(sender: alloy::sol_types::private::Address) -> Self {
+            Self::NotHostOwner(NotHostOwner { sender: sender })
+        }
+        /**Creates a [`NotInitializing`] error.
+
+```solidity
+error NotInitializing()
+```*/
+        #[inline]
+        pub fn not_initializing() -> Self {
+            Self::NotInitializing(NotInitializing)
+        }
+        /**Creates a [`NotLzEndpoint`] error.
+
+```solidity
+error NotLzEndpoint(address)
+```*/
+        #[inline]
+        pub fn not_lz_endpoint(caller: alloy::sol_types::private::Address) -> Self {
+            Self::NotLzEndpoint(NotLzEndpoint { caller: caller })
+        }
+        /**Creates a [`OnlyEndpoint`] error.
+
+```solidity
+error OnlyEndpoint(address)
+```*/
+        #[inline]
+        pub fn only_endpoint(addr: alloy::sol_types::private::Address) -> Self {
+            Self::OnlyEndpoint(OnlyEndpoint { addr: addr })
+        }
+        /**Creates a [`OnlyPeer`] error.
+
+```solidity
+error OnlyPeer(uint32,bytes32)
+```*/
+        #[inline]
+        pub fn only_peer(
+            eid: u32,
+            sender: alloy::sol_types::private::FixedBytes<32>,
+        ) -> Self {
+            Self::OnlyPeer(OnlyPeer {
+                eid: eid,
+                sender: sender,
+            })
+        }
+        /**Creates a [`OwnableInvalidOwner`] error.
+
+```solidity
+error OwnableInvalidOwner(address)
+```*/
+        #[inline]
+        pub fn ownable_invalid_owner(owner: alloy::sol_types::private::Address) -> Self {
+            Self::OwnableInvalidOwner(OwnableInvalidOwner {
+                owner: owner,
+            })
+        }
+        /**Creates a [`OwnableUnauthorizedAccount`] error.
+
+```solidity
+error OwnableUnauthorizedAccount(address)
+```*/
+        #[inline]
+        pub fn ownable_unauthorized_account(
+            account: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::OwnableUnauthorizedAccount(OwnableUnauthorizedAccount {
+                account: account,
+            })
+        }
+        /**Creates a [`PlaintextOutOfRange`] error.
+
+```solidity
+error PlaintextOutOfRange()
+```*/
+        #[inline]
+        pub fn plaintext_out_of_range() -> Self {
+            Self::PlaintextOutOfRange(PlaintextOutOfRange)
+        }
+        /**Creates a [`UnexpectedComposeOrigin`] error.
+
+```solidity
+error UnexpectedComposeOrigin(address)
+```*/
+        #[inline]
+        pub fn unexpected_compose_origin(
+            from: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::UnexpectedComposeOrigin(UnexpectedComposeOrigin {
+                from: from,
+            })
+        }
+        /**Creates a [`UnsupportedFheTypeInDstHandle`] error.
+
+```solidity
+error UnsupportedFheTypeInDstHandle()
+```*/
+        #[inline]
+        pub fn unsupported_fhe_type_in_dst_handle() -> Self {
+            Self::UnsupportedFheTypeInDstHandle(UnsupportedFheTypeInDstHandle)
+        }
+        /**Creates a [`WrongChainIdInDstHandle`] error.
+
+```solidity
+error WrongChainIdInDstHandle()
+```*/
+        #[inline]
+        pub fn wrong_chain_id_in_dst_handle() -> Self {
+            Self::WrongChainIdInDstHandle(WrongChainIdInDstHandle)
+        }
+        /**Creates a [`WrongHandleVersionInDstHandle`] error.
+
+```solidity
+error WrongHandleVersionInDstHandle()
+```*/
+        #[inline]
+        pub fn wrong_handle_version_in_dst_handle() -> Self {
+            Self::WrongHandleVersionInDstHandle(WrongHandleVersionInDstHandle)
+        }
+        /**Creates a [`WrongIndexByteInDstHandle`] error.
+
+```solidity
+error WrongIndexByteInDstHandle()
+```*/
+        #[inline]
+        pub fn wrong_index_byte_in_dst_handle() -> Self {
+            Self::WrongIndexByteInDstHandle(WrongIndexByteInDstHandle)
         }
     }
     ///Container for all the [`HandlesReceiver`](self) events.
@@ -7498,6 +7587,152 @@ function transferOwnership(address newOwner) external;
             }
         }
     }
+    #[automatically_derived]
+    impl HandlesReceiverEvents {
+        /**Creates a [`BridgeHandle`] event.
+
+```solidity
+event BridgeHandle(address,bytes32,uint64,bytes32)
+```*/
+        #[inline]
+        pub fn bridge_handle(
+            sender_dapp: alloy::sol_types::private::Address,
+            src_handle: alloy::sol_types::private::FixedBytes<32>,
+            dst_chain_id: u64,
+            guid: alloy::sol_types::private::FixedBytes<32>,
+        ) -> Self {
+            Self::BridgeHandle(BridgeHandle {
+                senderDapp: sender_dapp,
+                srcHandle: src_handle,
+                dstChainId: dst_chain_id,
+                guid: guid,
+            })
+        }
+        /**Creates a [`DstChainIdSet`] event.
+
+```solidity
+event DstChainIdSet(uint32,uint64)
+```*/
+        #[inline]
+        pub fn dst_chain_id_set(dst_eid: u32, dst_chain_id: u64) -> Self {
+            Self::DstChainIdSet(DstChainIdSet {
+                dstEid: dst_eid,
+                dstChainId: dst_chain_id,
+            })
+        }
+        /**Creates a [`FallbackGrantedPlaintext`] event.
+
+```solidity
+event FallbackGrantedPlaintext(bytes32,uint256)
+```*/
+        #[inline]
+        pub fn fallback_granted_plaintext(
+            dst_handle: alloy::sol_types::private::FixedBytes<32>,
+            plaintext: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::FallbackGrantedPlaintext(FallbackGrantedPlaintext {
+                dstHandle: dst_handle,
+                plaintext: plaintext,
+            })
+        }
+        /**Creates a [`HandleBridged`] event.
+
+```solidity
+event HandleBridged(address,bytes32,bytes32,bytes32)
+```*/
+        #[inline]
+        pub fn handle_bridged(
+            receiver_dapp: alloy::sol_types::private::Address,
+            src_handle: alloy::sol_types::private::FixedBytes<32>,
+            dst_handle: alloy::sol_types::private::FixedBytes<32>,
+            guid: alloy::sol_types::private::FixedBytes<32>,
+        ) -> Self {
+            Self::HandleBridged(HandleBridged {
+                receiverDapp: receiver_dapp,
+                srcHandle: src_handle,
+                dstHandle: dst_handle,
+                guid: guid,
+            })
+        }
+        /**Creates a [`Initialized`] event.
+
+```solidity
+event Initialized(uint64)
+```*/
+        #[inline]
+        pub fn initialized(version: u64) -> Self {
+            Self::Initialized(Initialized { version: version })
+        }
+        /**Creates a [`LzReceiveBaseGasSet`] event.
+
+```solidity
+event LzReceiveBaseGasSet(uint32,uint64)
+```*/
+        #[inline]
+        pub fn lz_receive_base_gas_set(dst_eid: u32, lz_receive_base_gas: u64) -> Self {
+            Self::LzReceiveBaseGasSet(LzReceiveBaseGasSet {
+                dstEid: dst_eid,
+                lzReceiveBaseGas: lz_receive_base_gas,
+            })
+        }
+        /**Creates a [`LzReceivePerHandleGasSet`] event.
+
+```solidity
+event LzReceivePerHandleGasSet(uint32,uint64)
+```*/
+        #[inline]
+        pub fn lz_receive_per_handle_gas_set(
+            dst_eid: u32,
+            lz_receive_per_handle_gas: u64,
+        ) -> Self {
+            Self::LzReceivePerHandleGasSet(LzReceivePerHandleGasSet {
+                dstEid: dst_eid,
+                lzReceivePerHandleGas: lz_receive_per_handle_gas,
+            })
+        }
+        /**Creates a [`LzReceivePerPayloadByteGasSet`] event.
+
+```solidity
+event LzReceivePerPayloadByteGasSet(uint32,uint64)
+```*/
+        #[inline]
+        pub fn lz_receive_per_payload_byte_gas_set(
+            dst_eid: u32,
+            lz_receive_per_payload_byte_gas: u64,
+        ) -> Self {
+            Self::LzReceivePerPayloadByteGasSet(LzReceivePerPayloadByteGasSet {
+                dstEid: dst_eid,
+                lzReceivePerPayloadByteGas: lz_receive_per_payload_byte_gas,
+            })
+        }
+        /**Creates a [`OwnershipTransferred`] event.
+
+```solidity
+event OwnershipTransferred(address,address)
+```*/
+        #[inline]
+        pub fn ownership_transferred(
+            previous_owner: alloy::sol_types::private::Address,
+            new_owner: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::OwnershipTransferred(OwnershipTransferred {
+                previousOwner: previous_owner,
+                newOwner: new_owner,
+            })
+        }
+        /**Creates a [`PeerSet`] event.
+
+```solidity
+event PeerSet(uint32,bytes32)
+```*/
+        #[inline]
+        pub fn peer_set(
+            eid: u32,
+            peer: alloy::sol_types::private::FixedBytes<32>,
+        ) -> Self {
+            Self::PeerSet(PeerSet { eid: eid, peer: peer })
+        }
+    }
     use alloy::contract as alloy_contract;
     /**Creates a new wrapper around an on-chain [`HandlesReceiver`](self) contract instance.
 
@@ -7511,34 +7746,6 @@ See the [wrapper's documentation](`HandlesReceiverInstance`) for more details.*/
         __provider: P,
     ) -> HandlesReceiverInstance<P, N> {
         HandlesReceiverInstance::<P, N>::new(address, __provider)
-    }
-    /**Deploys this contract using the given `provider` and constructor arguments, if any.
-
-Returns a new instance of the contract, if the deployment was successful.
-
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
-    #[inline]
-    pub fn deploy<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(
-        __provider: P,
-    ) -> impl ::core::future::Future<
-        Output = alloy_contract::Result<HandlesReceiverInstance<P, N>>,
-    > {
-        HandlesReceiverInstance::<P, N>::deploy(__provider)
-    }
-    /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
-
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
-    #[inline]
-    pub fn deploy_builder<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
-        HandlesReceiverInstance::<P, N>::deploy_builder(__provider)
     }
     /**A [`HandlesReceiver`](self) instance.
 
@@ -7582,31 +7789,6 @@ See the [wrapper's documentation](`HandlesReceiverInstance`) for more details.*/
                 provider: __provider,
                 _network: ::core::marker::PhantomData,
             }
-        }
-        /**Deploys this contract using the given `provider` and constructor arguments, if any.
-
-Returns a new instance of the contract, if the deployment was successful.
-
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
-        #[inline]
-        pub async fn deploy(
-            __provider: P,
-        ) -> alloy_contract::Result<HandlesReceiverInstance<P, N>> {
-            let call_builder = Self::deploy_builder(__provider);
-            let contract_address = call_builder.deploy().await?;
-            Ok(Self::new(contract_address, call_builder.provider))
-        }
-        /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
-
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
-        #[inline]
-        pub fn deploy_builder(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
-            alloy_contract::RawCallBuilder::new_raw_deploy(
-                __provider,
-                ::core::clone::Clone::clone(&BYTECODE),
-            )
         }
         /// Returns a reference to the address.
         #[inline]

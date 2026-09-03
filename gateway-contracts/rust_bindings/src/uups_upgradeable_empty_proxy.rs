@@ -170,26 +170,6 @@ interface UUPSUpgradeableEmptyProxy {
 pub mod UUPSUpgradeableEmptyProxy {
     use super::*;
     use alloy::sol_types as alloy_sol_types;
-    /// The creation / init bytecode of the contract.
-    ///
-    /// ```text
-    ///0x
-    /// ```
-    #[rustfmt::skip]
-    #[allow(clippy::all)]
-    pub static BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
-        b"",
-    );
-    /// The runtime bytecode of the contract, as deployed on the network.
-    ///
-    /// ```text
-    ///0x
-    /// ```
-    #[rustfmt::skip]
-    #[allow(clippy::all)]
-    pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
-        b"",
-    );
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `AddressEmptyCode(address)` and selector `0x9996b315`.
@@ -264,10 +244,10 @@ error AddressEmptyCode(address target);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -347,10 +327,10 @@ error ERC1967InvalidImplementation(address implementation);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -421,10 +401,10 @@ error ERC1967NonPayable();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -495,10 +475,10 @@ error FailedCall();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -569,10 +549,10 @@ error InvalidInitialization();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -643,10 +623,10 @@ error NotInitializing();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -719,10 +699,10 @@ error NotInitializingFromEmptyProxy();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -795,10 +775,10 @@ error UUPSUnauthorizedCallContext();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -878,10 +858,10 @@ error UUPSUnsupportedProxiableUUID(bytes32 slot);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -1233,16 +1213,29 @@ function UPGRADE_INTERFACE_VERSION() external view returns (string memory);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: UPGRADE_INTERFACE_VERSIONReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -1378,16 +1371,29 @@ function proxiableUUID() external view returns (bytes32);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: proxiableUUIDReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -1546,20 +1552,33 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
     ///Container for all the [`UUPSUpgradeableEmptyProxy`](self) function calls.
     #[derive(Clone)]
     #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive()]
+    #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum UUPSUpgradeableEmptyProxyCalls {
         #[allow(missing_docs)]
         UPGRADE_INTERFACE_VERSION(UPGRADE_INTERFACE_VERSIONCall),
@@ -1646,15 +1665,31 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::default(),
+            )
+        }
+        #[inline]
+        #[allow(non_snake_case)]
+        fn abi_decode_raw_with_config(
+            selector: [u8; 4],
+            data: &[u8],
+            config: alloy_sol_types::abi::AbiDecoderConfig,
+        ) -> alloy_sol_types::Result<Self> {
             static DECODE_SHIMS: &[fn(
                 &[u8],
+                alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<UUPSUpgradeableEmptyProxyCalls>] = &[
                 {
                     fn upgradeToAndCall(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<UUPSUpgradeableEmptyProxyCalls> {
-                        <upgradeToAndCallCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <upgradeToAndCallCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(UUPSUpgradeableEmptyProxyCalls::upgradeToAndCall)
                     }
@@ -1663,9 +1698,11 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn proxiableUUID(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<UUPSUpgradeableEmptyProxyCalls> {
-                        <proxiableUUIDCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <proxiableUUIDCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(UUPSUpgradeableEmptyProxyCalls::proxiableUUID)
                     }
@@ -1674,9 +1711,11 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn UPGRADE_INTERFACE_VERSION(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<UUPSUpgradeableEmptyProxyCalls> {
-                        <UPGRADE_INTERFACE_VERSIONCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <UPGRADE_INTERFACE_VERSIONCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(
                                 UUPSUpgradeableEmptyProxyCalls::UPGRADE_INTERFACE_VERSION,
@@ -1693,7 +1732,7 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     ),
                 );
             };
-            DECODE_SHIMS[idx](data)
+            DECODE_SHIMS[idx](data, config)
         }
         #[inline]
         #[allow(non_snake_case)]
@@ -1701,54 +1740,11 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
-            static DECODE_VALIDATE_SHIMS: &[fn(
-                &[u8],
-            ) -> alloy_sol_types::Result<UUPSUpgradeableEmptyProxyCalls>] = &[
-                {
-                    fn upgradeToAndCall(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<UUPSUpgradeableEmptyProxyCalls> {
-                        <upgradeToAndCallCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(UUPSUpgradeableEmptyProxyCalls::upgradeToAndCall)
-                    }
-                    upgradeToAndCall
-                },
-                {
-                    fn proxiableUUID(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<UUPSUpgradeableEmptyProxyCalls> {
-                        <proxiableUUIDCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(UUPSUpgradeableEmptyProxyCalls::proxiableUUID)
-                    }
-                    proxiableUUID
-                },
-                {
-                    fn UPGRADE_INTERFACE_VERSION(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<UUPSUpgradeableEmptyProxyCalls> {
-                        <UPGRADE_INTERFACE_VERSIONCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(
-                                UUPSUpgradeableEmptyProxyCalls::UPGRADE_INTERFACE_VERSION,
-                            )
-                    }
-                    UPGRADE_INTERFACE_VERSION
-                },
-            ];
-            let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
-            };
-            DECODE_VALIDATE_SHIMS[idx](data)
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+            )
         }
         #[inline]
         fn abi_encoded_size(&self) -> usize {
@@ -1932,15 +1928,31 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::default(),
+            )
+        }
+        #[inline]
+        #[allow(non_snake_case)]
+        fn abi_decode_raw_with_config(
+            selector: [u8; 4],
+            data: &[u8],
+            config: alloy_sol_types::abi::AbiDecoderConfig,
+        ) -> alloy_sol_types::Result<Self> {
             static DECODE_SHIMS: &[fn(
                 &[u8],
+                alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<UUPSUpgradeableEmptyProxyErrors>] = &[
                 {
                     fn ERC1967InvalidImplementation(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<UUPSUpgradeableEmptyProxyErrors> {
-                        <ERC1967InvalidImplementation as alloy_sol_types::SolError>::abi_decode_raw(
+                        <ERC1967InvalidImplementation as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(
                                 UUPSUpgradeableEmptyProxyErrors::ERC1967InvalidImplementation,
@@ -1951,9 +1963,11 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn NotInitializingFromEmptyProxy(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<UUPSUpgradeableEmptyProxyErrors> {
-                        <NotInitializingFromEmptyProxy as alloy_sol_types::SolError>::abi_decode_raw(
+                        <NotInitializingFromEmptyProxy as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(
                                 UUPSUpgradeableEmptyProxyErrors::NotInitializingFromEmptyProxy,
@@ -1964,9 +1978,11 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn AddressEmptyCode(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<UUPSUpgradeableEmptyProxyErrors> {
-                        <AddressEmptyCode as alloy_sol_types::SolError>::abi_decode_raw(
+                        <AddressEmptyCode as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(UUPSUpgradeableEmptyProxyErrors::AddressEmptyCode)
                     }
@@ -1975,9 +1991,11 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn UUPSUnsupportedProxiableUUID(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<UUPSUpgradeableEmptyProxyErrors> {
-                        <UUPSUnsupportedProxiableUUID as alloy_sol_types::SolError>::abi_decode_raw(
+                        <UUPSUnsupportedProxiableUUID as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(
                                 UUPSUpgradeableEmptyProxyErrors::UUPSUnsupportedProxiableUUID,
@@ -1988,9 +2006,11 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn ERC1967NonPayable(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<UUPSUpgradeableEmptyProxyErrors> {
-                        <ERC1967NonPayable as alloy_sol_types::SolError>::abi_decode_raw(
+                        <ERC1967NonPayable as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(UUPSUpgradeableEmptyProxyErrors::ERC1967NonPayable)
                     }
@@ -1999,8 +2019,12 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn FailedCall(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<UUPSUpgradeableEmptyProxyErrors> {
-                        <FailedCall as alloy_sol_types::SolError>::abi_decode_raw(data)
+                        <FailedCall as alloy_sol_types::SolError>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(UUPSUpgradeableEmptyProxyErrors::FailedCall)
                     }
                     FailedCall
@@ -2008,9 +2032,11 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn NotInitializing(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<UUPSUpgradeableEmptyProxyErrors> {
-                        <NotInitializing as alloy_sol_types::SolError>::abi_decode_raw(
+                        <NotInitializing as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(UUPSUpgradeableEmptyProxyErrors::NotInitializing)
                     }
@@ -2019,9 +2045,11 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn UUPSUnauthorizedCallContext(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<UUPSUpgradeableEmptyProxyErrors> {
-                        <UUPSUnauthorizedCallContext as alloy_sol_types::SolError>::abi_decode_raw(
+                        <UUPSUnauthorizedCallContext as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(
                                 UUPSUpgradeableEmptyProxyErrors::UUPSUnauthorizedCallContext,
@@ -2032,9 +2060,11 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn InvalidInitialization(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<UUPSUpgradeableEmptyProxyErrors> {
-                        <InvalidInitialization as alloy_sol_types::SolError>::abi_decode_raw(
+                        <InvalidInitialization as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(UUPSUpgradeableEmptyProxyErrors::InvalidInitialization)
                     }
@@ -2049,7 +2079,7 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     ),
                 );
             };
-            DECODE_SHIMS[idx](data)
+            DECODE_SHIMS[idx](data, config)
         }
         #[inline]
         #[allow(non_snake_case)]
@@ -2057,126 +2087,11 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
-            static DECODE_VALIDATE_SHIMS: &[fn(
-                &[u8],
-            ) -> alloy_sol_types::Result<UUPSUpgradeableEmptyProxyErrors>] = &[
-                {
-                    fn ERC1967InvalidImplementation(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<UUPSUpgradeableEmptyProxyErrors> {
-                        <ERC1967InvalidImplementation as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(
-                                UUPSUpgradeableEmptyProxyErrors::ERC1967InvalidImplementation,
-                            )
-                    }
-                    ERC1967InvalidImplementation
-                },
-                {
-                    fn NotInitializingFromEmptyProxy(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<UUPSUpgradeableEmptyProxyErrors> {
-                        <NotInitializingFromEmptyProxy as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(
-                                UUPSUpgradeableEmptyProxyErrors::NotInitializingFromEmptyProxy,
-                            )
-                    }
-                    NotInitializingFromEmptyProxy
-                },
-                {
-                    fn AddressEmptyCode(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<UUPSUpgradeableEmptyProxyErrors> {
-                        <AddressEmptyCode as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(UUPSUpgradeableEmptyProxyErrors::AddressEmptyCode)
-                    }
-                    AddressEmptyCode
-                },
-                {
-                    fn UUPSUnsupportedProxiableUUID(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<UUPSUpgradeableEmptyProxyErrors> {
-                        <UUPSUnsupportedProxiableUUID as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(
-                                UUPSUpgradeableEmptyProxyErrors::UUPSUnsupportedProxiableUUID,
-                            )
-                    }
-                    UUPSUnsupportedProxiableUUID
-                },
-                {
-                    fn ERC1967NonPayable(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<UUPSUpgradeableEmptyProxyErrors> {
-                        <ERC1967NonPayable as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(UUPSUpgradeableEmptyProxyErrors::ERC1967NonPayable)
-                    }
-                    ERC1967NonPayable
-                },
-                {
-                    fn FailedCall(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<UUPSUpgradeableEmptyProxyErrors> {
-                        <FailedCall as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(UUPSUpgradeableEmptyProxyErrors::FailedCall)
-                    }
-                    FailedCall
-                },
-                {
-                    fn NotInitializing(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<UUPSUpgradeableEmptyProxyErrors> {
-                        <NotInitializing as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(UUPSUpgradeableEmptyProxyErrors::NotInitializing)
-                    }
-                    NotInitializing
-                },
-                {
-                    fn UUPSUnauthorizedCallContext(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<UUPSUpgradeableEmptyProxyErrors> {
-                        <UUPSUnauthorizedCallContext as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(
-                                UUPSUpgradeableEmptyProxyErrors::UUPSUnauthorizedCallContext,
-                            )
-                    }
-                    UUPSUnauthorizedCallContext
-                },
-                {
-                    fn InvalidInitialization(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<UUPSUpgradeableEmptyProxyErrors> {
-                        <InvalidInitialization as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(UUPSUpgradeableEmptyProxyErrors::InvalidInitialization)
-                    }
-                    InvalidInitialization
-                },
-            ];
-            let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
-            };
-            DECODE_VALIDATE_SHIMS[idx](data)
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+            )
         }
         #[inline]
         fn abi_encoded_size(&self) -> usize {
@@ -2281,6 +2196,98 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     )
                 }
             }
+        }
+    }
+    #[automatically_derived]
+    impl UUPSUpgradeableEmptyProxyErrors {
+        /**Creates a [`AddressEmptyCode`] error.
+
+```solidity
+error AddressEmptyCode(address)
+```*/
+        #[inline]
+        pub fn address_empty_code(target: alloy::sol_types::private::Address) -> Self {
+            Self::AddressEmptyCode(AddressEmptyCode { target: target })
+        }
+        /**Creates a [`ERC1967InvalidImplementation`] error.
+
+```solidity
+error ERC1967InvalidImplementation(address)
+```*/
+        #[inline]
+        pub fn erc_1967_invalid_implementation(
+            implementation: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::ERC1967InvalidImplementation(ERC1967InvalidImplementation {
+                implementation: implementation,
+            })
+        }
+        /**Creates a [`ERC1967NonPayable`] error.
+
+```solidity
+error ERC1967NonPayable()
+```*/
+        #[inline]
+        pub fn erc_1967_non_payable() -> Self {
+            Self::ERC1967NonPayable(ERC1967NonPayable)
+        }
+        /**Creates a [`FailedCall`] error.
+
+```solidity
+error FailedCall()
+```*/
+        #[inline]
+        pub fn failed_call() -> Self {
+            Self::FailedCall(FailedCall)
+        }
+        /**Creates a [`InvalidInitialization`] error.
+
+```solidity
+error InvalidInitialization()
+```*/
+        #[inline]
+        pub fn invalid_initialization() -> Self {
+            Self::InvalidInitialization(InvalidInitialization)
+        }
+        /**Creates a [`NotInitializing`] error.
+
+```solidity
+error NotInitializing()
+```*/
+        #[inline]
+        pub fn not_initializing() -> Self {
+            Self::NotInitializing(NotInitializing)
+        }
+        /**Creates a [`NotInitializingFromEmptyProxy`] error.
+
+```solidity
+error NotInitializingFromEmptyProxy()
+```*/
+        #[inline]
+        pub fn not_initializing_from_empty_proxy() -> Self {
+            Self::NotInitializingFromEmptyProxy(NotInitializingFromEmptyProxy)
+        }
+        /**Creates a [`UUPSUnauthorizedCallContext`] error.
+
+```solidity
+error UUPSUnauthorizedCallContext()
+```*/
+        #[inline]
+        pub fn uups_unauthorized_call_context() -> Self {
+            Self::UUPSUnauthorizedCallContext(UUPSUnauthorizedCallContext)
+        }
+        /**Creates a [`UUPSUnsupportedProxiableUUID`] error.
+
+```solidity
+error UUPSUnsupportedProxiableUUID(bytes32)
+```*/
+        #[inline]
+        pub fn uups_unsupported_proxiable_uuid(
+            slot: alloy::sol_types::private::FixedBytes<32>,
+        ) -> Self {
+            Self::UUPSUnsupportedProxiableUUID(UUPSUnsupportedProxiableUUID {
+                slot: slot,
+            })
         }
     }
     ///Container for all the [`UUPSUpgradeableEmptyProxy`](self) events.
@@ -2400,6 +2407,29 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
             }
         }
     }
+    #[automatically_derived]
+    impl UUPSUpgradeableEmptyProxyEvents {
+        /**Creates a [`Initialized`] event.
+
+```solidity
+event Initialized(uint64)
+```*/
+        #[inline]
+        pub fn initialized(version: u64) -> Self {
+            Self::Initialized(Initialized { version: version })
+        }
+        /**Creates a [`Upgraded`] event.
+
+```solidity
+event Upgraded(address)
+```*/
+        #[inline]
+        pub fn upgraded(implementation: alloy::sol_types::private::Address) -> Self {
+            Self::Upgraded(Upgraded {
+                implementation: implementation,
+            })
+        }
+    }
     use alloy::contract as alloy_contract;
     /**Creates a new wrapper around an on-chain [`UUPSUpgradeableEmptyProxy`](self) contract instance.
 
@@ -2413,34 +2443,6 @@ See the [wrapper's documentation](`UUPSUpgradeableEmptyProxyInstance`) for more 
         __provider: P,
     ) -> UUPSUpgradeableEmptyProxyInstance<P, N> {
         UUPSUpgradeableEmptyProxyInstance::<P, N>::new(address, __provider)
-    }
-    /**Deploys this contract using the given `provider` and constructor arguments, if any.
-
-Returns a new instance of the contract, if the deployment was successful.
-
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
-    #[inline]
-    pub fn deploy<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(
-        __provider: P,
-    ) -> impl ::core::future::Future<
-        Output = alloy_contract::Result<UUPSUpgradeableEmptyProxyInstance<P, N>>,
-    > {
-        UUPSUpgradeableEmptyProxyInstance::<P, N>::deploy(__provider)
-    }
-    /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
-
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
-    #[inline]
-    pub fn deploy_builder<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
-        UUPSUpgradeableEmptyProxyInstance::<P, N>::deploy_builder(__provider)
     }
     /**A [`UUPSUpgradeableEmptyProxy`](self) instance.
 
@@ -2489,31 +2491,6 @@ See the [wrapper's documentation](`UUPSUpgradeableEmptyProxyInstance`) for more 
                 provider: __provider,
                 _network: ::core::marker::PhantomData,
             }
-        }
-        /**Deploys this contract using the given `provider` and constructor arguments, if any.
-
-Returns a new instance of the contract, if the deployment was successful.
-
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
-        #[inline]
-        pub async fn deploy(
-            __provider: P,
-        ) -> alloy_contract::Result<UUPSUpgradeableEmptyProxyInstance<P, N>> {
-            let call_builder = Self::deploy_builder(__provider);
-            let contract_address = call_builder.deploy().await?;
-            Ok(Self::new(contract_address, call_builder.provider))
-        }
-        /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
-
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
-        #[inline]
-        pub fn deploy_builder(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
-            alloy_contract::RawCallBuilder::new_raw_deploy(
-                __provider,
-                ::core::clone::Clone::clone(&BYTECODE),
-            )
         }
         /// Returns a reference to the address.
         #[inline]

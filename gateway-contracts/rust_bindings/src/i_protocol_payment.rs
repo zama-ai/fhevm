@@ -255,26 +255,6 @@ interface IProtocolPayment {
 pub mod IProtocolPayment {
     use super::*;
     use alloy::sol_types as alloy_sol_types;
-    /// The creation / init bytecode of the contract.
-    ///
-    /// ```text
-    ///0x
-    /// ```
-    #[rustfmt::skip]
-    #[allow(clippy::all)]
-    pub static BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
-        b"",
-    );
-    /// The runtime bytecode of the contract, as deployed on the network.
-    ///
-    /// ```text
-    ///0x
-    /// ```
-    #[rustfmt::skip]
-    #[allow(clippy::all)]
-    pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
-        b"",
-    );
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `SenderNotDecryptionContract(address)` and selector `0x21c6115f`.
@@ -351,10 +331,10 @@ error SenderNotDecryptionContract(address sender);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -434,10 +414,10 @@ error SenderNotInputVerificationContract(address sender);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -1029,13 +1009,26 @@ function collectInputVerificationFee(address txSender) external;
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -1179,13 +1172,26 @@ function collectPublicDecryptionFee(address txSender) external;
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -1329,13 +1335,26 @@ function collectUserDecryptionFee(address txSender) external;
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -1477,16 +1496,29 @@ function getInputVerificationPrice() external view returns (uint256);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: getInputVerificationPriceReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -1628,16 +1660,29 @@ function getPublicDecryptionPrice() external view returns (uint256);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: getPublicDecryptionPriceReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -1779,16 +1824,29 @@ function getUserDecryptionPrice() external view returns (uint256);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: getUserDecryptionPriceReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -1924,16 +1982,29 @@ function getVersion() external pure returns (string memory);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: getVersionReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -2079,13 +2150,26 @@ function setInputVerificationPrice(uint256 price) external;
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -2231,13 +2315,26 @@ function setPublicDecryptionPrice(uint256 price) external;
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -2383,20 +2480,33 @@ function setUserDecryptionPrice(uint256 price) external;
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
     ///Container for all the [`IProtocolPayment`](self) function calls.
     #[derive(Clone)]
     #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive()]
+    #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum IProtocolPaymentCalls {
         #[allow(missing_docs)]
         collectInputVerificationFee(collectInputVerificationFeeCall),
@@ -2539,15 +2649,31 @@ function setUserDecryptionPrice(uint256 price) external;
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::default(),
+            )
+        }
+        #[inline]
+        #[allow(non_snake_case)]
+        fn abi_decode_raw_with_config(
+            selector: [u8; 4],
+            data: &[u8],
+            config: alloy_sol_types::abi::AbiDecoderConfig,
+        ) -> alloy_sol_types::Result<Self> {
             static DECODE_SHIMS: &[fn(
                 &[u8],
+                alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<IProtocolPaymentCalls>] = &[
                 {
                     fn getVersion(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IProtocolPaymentCalls> {
-                        <getVersionCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <getVersionCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IProtocolPaymentCalls::getVersion)
                     }
@@ -2556,9 +2682,11 @@ function setUserDecryptionPrice(uint256 price) external;
                 {
                     fn getInputVerificationPrice(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IProtocolPaymentCalls> {
-                        <getInputVerificationPriceCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <getInputVerificationPriceCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IProtocolPaymentCalls::getInputVerificationPrice)
                     }
@@ -2567,9 +2695,11 @@ function setUserDecryptionPrice(uint256 price) external;
                 {
                     fn setUserDecryptionPrice(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IProtocolPaymentCalls> {
-                        <setUserDecryptionPriceCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <setUserDecryptionPriceCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IProtocolPaymentCalls::setUserDecryptionPrice)
                     }
@@ -2578,9 +2708,11 @@ function setUserDecryptionPrice(uint256 price) external;
                 {
                     fn getPublicDecryptionPrice(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IProtocolPaymentCalls> {
-                        <getPublicDecryptionPriceCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <getPublicDecryptionPriceCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IProtocolPaymentCalls::getPublicDecryptionPrice)
                     }
@@ -2589,9 +2721,11 @@ function setUserDecryptionPrice(uint256 price) external;
                 {
                     fn setInputVerificationPrice(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IProtocolPaymentCalls> {
-                        <setInputVerificationPriceCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <setInputVerificationPriceCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IProtocolPaymentCalls::setInputVerificationPrice)
                     }
@@ -2600,9 +2734,11 @@ function setUserDecryptionPrice(uint256 price) external;
                 {
                     fn collectInputVerificationFee(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IProtocolPaymentCalls> {
-                        <collectInputVerificationFeeCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <collectInputVerificationFeeCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IProtocolPaymentCalls::collectInputVerificationFee)
                     }
@@ -2611,9 +2747,11 @@ function setUserDecryptionPrice(uint256 price) external;
                 {
                     fn collectPublicDecryptionFee(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IProtocolPaymentCalls> {
-                        <collectPublicDecryptionFeeCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <collectPublicDecryptionFeeCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IProtocolPaymentCalls::collectPublicDecryptionFee)
                     }
@@ -2622,9 +2760,11 @@ function setUserDecryptionPrice(uint256 price) external;
                 {
                     fn setPublicDecryptionPrice(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IProtocolPaymentCalls> {
-                        <setPublicDecryptionPriceCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <setPublicDecryptionPriceCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IProtocolPaymentCalls::setPublicDecryptionPrice)
                     }
@@ -2633,9 +2773,11 @@ function setUserDecryptionPrice(uint256 price) external;
                 {
                     fn collectUserDecryptionFee(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IProtocolPaymentCalls> {
-                        <collectUserDecryptionFeeCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <collectUserDecryptionFeeCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IProtocolPaymentCalls::collectUserDecryptionFee)
                     }
@@ -2644,9 +2786,11 @@ function setUserDecryptionPrice(uint256 price) external;
                 {
                     fn getUserDecryptionPrice(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IProtocolPaymentCalls> {
-                        <getUserDecryptionPriceCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <getUserDecryptionPriceCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IProtocolPaymentCalls::getUserDecryptionPrice)
                     }
@@ -2661,7 +2805,7 @@ function setUserDecryptionPrice(uint256 price) external;
                     ),
                 );
             };
-            DECODE_SHIMS[idx](data)
+            DECODE_SHIMS[idx](data, config)
         }
         #[inline]
         #[allow(non_snake_case)]
@@ -2669,129 +2813,11 @@ function setUserDecryptionPrice(uint256 price) external;
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
-            static DECODE_VALIDATE_SHIMS: &[fn(
-                &[u8],
-            ) -> alloy_sol_types::Result<IProtocolPaymentCalls>] = &[
-                {
-                    fn getVersion(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IProtocolPaymentCalls> {
-                        <getVersionCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IProtocolPaymentCalls::getVersion)
-                    }
-                    getVersion
-                },
-                {
-                    fn getInputVerificationPrice(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IProtocolPaymentCalls> {
-                        <getInputVerificationPriceCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IProtocolPaymentCalls::getInputVerificationPrice)
-                    }
-                    getInputVerificationPrice
-                },
-                {
-                    fn setUserDecryptionPrice(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IProtocolPaymentCalls> {
-                        <setUserDecryptionPriceCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IProtocolPaymentCalls::setUserDecryptionPrice)
-                    }
-                    setUserDecryptionPrice
-                },
-                {
-                    fn getPublicDecryptionPrice(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IProtocolPaymentCalls> {
-                        <getPublicDecryptionPriceCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IProtocolPaymentCalls::getPublicDecryptionPrice)
-                    }
-                    getPublicDecryptionPrice
-                },
-                {
-                    fn setInputVerificationPrice(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IProtocolPaymentCalls> {
-                        <setInputVerificationPriceCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IProtocolPaymentCalls::setInputVerificationPrice)
-                    }
-                    setInputVerificationPrice
-                },
-                {
-                    fn collectInputVerificationFee(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IProtocolPaymentCalls> {
-                        <collectInputVerificationFeeCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IProtocolPaymentCalls::collectInputVerificationFee)
-                    }
-                    collectInputVerificationFee
-                },
-                {
-                    fn collectPublicDecryptionFee(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IProtocolPaymentCalls> {
-                        <collectPublicDecryptionFeeCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IProtocolPaymentCalls::collectPublicDecryptionFee)
-                    }
-                    collectPublicDecryptionFee
-                },
-                {
-                    fn setPublicDecryptionPrice(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IProtocolPaymentCalls> {
-                        <setPublicDecryptionPriceCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IProtocolPaymentCalls::setPublicDecryptionPrice)
-                    }
-                    setPublicDecryptionPrice
-                },
-                {
-                    fn collectUserDecryptionFee(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IProtocolPaymentCalls> {
-                        <collectUserDecryptionFeeCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IProtocolPaymentCalls::collectUserDecryptionFee)
-                    }
-                    collectUserDecryptionFee
-                },
-                {
-                    fn getUserDecryptionPrice(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IProtocolPaymentCalls> {
-                        <getUserDecryptionPriceCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IProtocolPaymentCalls::getUserDecryptionPrice)
-                    }
-                    getUserDecryptionPrice
-                },
-            ];
-            let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
-            };
-            DECODE_VALIDATE_SHIMS[idx](data)
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+            )
         }
         #[inline]
         fn abi_encoded_size(&self) -> usize {
@@ -2994,15 +3020,31 @@ function setUserDecryptionPrice(uint256 price) external;
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::default(),
+            )
+        }
+        #[inline]
+        #[allow(non_snake_case)]
+        fn abi_decode_raw_with_config(
+            selector: [u8; 4],
+            data: &[u8],
+            config: alloy_sol_types::abi::AbiDecoderConfig,
+        ) -> alloy_sol_types::Result<Self> {
             static DECODE_SHIMS: &[fn(
                 &[u8],
+                alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<IProtocolPaymentErrors>] = &[
                 {
                     fn SenderNotDecryptionContract(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IProtocolPaymentErrors> {
-                        <SenderNotDecryptionContract as alloy_sol_types::SolError>::abi_decode_raw(
+                        <SenderNotDecryptionContract as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IProtocolPaymentErrors::SenderNotDecryptionContract)
                     }
@@ -3011,9 +3053,11 @@ function setUserDecryptionPrice(uint256 price) external;
                 {
                     fn SenderNotInputVerificationContract(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IProtocolPaymentErrors> {
-                        <SenderNotInputVerificationContract as alloy_sol_types::SolError>::abi_decode_raw(
+                        <SenderNotInputVerificationContract as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(
                                 IProtocolPaymentErrors::SenderNotInputVerificationContract,
@@ -3030,7 +3074,7 @@ function setUserDecryptionPrice(uint256 price) external;
                     ),
                 );
             };
-            DECODE_SHIMS[idx](data)
+            DECODE_SHIMS[idx](data, config)
         }
         #[inline]
         #[allow(non_snake_case)]
@@ -3038,43 +3082,11 @@ function setUserDecryptionPrice(uint256 price) external;
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
-            static DECODE_VALIDATE_SHIMS: &[fn(
-                &[u8],
-            ) -> alloy_sol_types::Result<IProtocolPaymentErrors>] = &[
-                {
-                    fn SenderNotDecryptionContract(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IProtocolPaymentErrors> {
-                        <SenderNotDecryptionContract as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IProtocolPaymentErrors::SenderNotDecryptionContract)
-                    }
-                    SenderNotDecryptionContract
-                },
-                {
-                    fn SenderNotInputVerificationContract(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IProtocolPaymentErrors> {
-                        <SenderNotInputVerificationContract as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(
-                                IProtocolPaymentErrors::SenderNotInputVerificationContract,
-                            )
-                    }
-                    SenderNotInputVerificationContract
-                },
-            ];
-            let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
-            };
-            DECODE_VALIDATE_SHIMS[idx](data)
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+            )
         }
         #[inline]
         fn abi_encoded_size(&self) -> usize {
@@ -3107,6 +3119,35 @@ function setUserDecryptionPrice(uint256 price) external;
                     )
                 }
             }
+        }
+    }
+    #[automatically_derived]
+    impl IProtocolPaymentErrors {
+        /**Creates a [`SenderNotDecryptionContract`] error.
+
+```solidity
+error SenderNotDecryptionContract(address)
+```*/
+        #[inline]
+        pub fn sender_not_decryption_contract(
+            sender: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::SenderNotDecryptionContract(SenderNotDecryptionContract {
+                sender: sender,
+            })
+        }
+        /**Creates a [`SenderNotInputVerificationContract`] error.
+
+```solidity
+error SenderNotInputVerificationContract(address)
+```*/
+        #[inline]
+        pub fn sender_not_input_verification_contract(
+            sender: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::SenderNotInputVerificationContract(SenderNotInputVerificationContract {
+                sender: sender,
+            })
         }
     }
     ///Container for all the [`IProtocolPayment`](self) events.
@@ -3281,6 +3322,65 @@ function setUserDecryptionPrice(uint256 price) external;
             }
         }
     }
+    #[automatically_derived]
+    impl IProtocolPaymentEvents {
+        /**Creates a [`InitializeProtocolPayment`] event.
+
+```solidity
+event InitializeProtocolPayment(uint256,uint256,uint256)
+```*/
+        #[inline]
+        pub fn initialize_protocol_payment(
+            input_verification_price: alloy::sol_types::private::primitives::aliases::U256,
+            public_decryption_price: alloy::sol_types::private::primitives::aliases::U256,
+            user_decryption_price: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::InitializeProtocolPayment(InitializeProtocolPayment {
+                inputVerificationPrice: input_verification_price,
+                publicDecryptionPrice: public_decryption_price,
+                userDecryptionPrice: user_decryption_price,
+            })
+        }
+        /**Creates a [`NewInputVerificationPrice`] event.
+
+```solidity
+event NewInputVerificationPrice(uint256)
+```*/
+        #[inline]
+        pub fn new_input_verification_price(
+            price: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::NewInputVerificationPrice(NewInputVerificationPrice {
+                price: price,
+            })
+        }
+        /**Creates a [`NewPublicDecryptionPrice`] event.
+
+```solidity
+event NewPublicDecryptionPrice(uint256)
+```*/
+        #[inline]
+        pub fn new_public_decryption_price(
+            price: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::NewPublicDecryptionPrice(NewPublicDecryptionPrice {
+                price: price,
+            })
+        }
+        /**Creates a [`NewUserDecryptionPrice`] event.
+
+```solidity
+event NewUserDecryptionPrice(uint256)
+```*/
+        #[inline]
+        pub fn new_user_decryption_price(
+            price: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::NewUserDecryptionPrice(NewUserDecryptionPrice {
+                price: price,
+            })
+        }
+    }
     use alloy::contract as alloy_contract;
     /**Creates a new wrapper around an on-chain [`IProtocolPayment`](self) contract instance.
 
@@ -3294,34 +3394,6 @@ See the [wrapper's documentation](`IProtocolPaymentInstance`) for more details.*
         __provider: P,
     ) -> IProtocolPaymentInstance<P, N> {
         IProtocolPaymentInstance::<P, N>::new(address, __provider)
-    }
-    /**Deploys this contract using the given `provider` and constructor arguments, if any.
-
-Returns a new instance of the contract, if the deployment was successful.
-
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
-    #[inline]
-    pub fn deploy<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(
-        __provider: P,
-    ) -> impl ::core::future::Future<
-        Output = alloy_contract::Result<IProtocolPaymentInstance<P, N>>,
-    > {
-        IProtocolPaymentInstance::<P, N>::deploy(__provider)
-    }
-    /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
-
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
-    #[inline]
-    pub fn deploy_builder<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
-        IProtocolPaymentInstance::<P, N>::deploy_builder(__provider)
     }
     /**A [`IProtocolPayment`](self) instance.
 
@@ -3365,31 +3437,6 @@ See the [wrapper's documentation](`IProtocolPaymentInstance`) for more details.*
                 provider: __provider,
                 _network: ::core::marker::PhantomData,
             }
-        }
-        /**Deploys this contract using the given `provider` and constructor arguments, if any.
-
-Returns a new instance of the contract, if the deployment was successful.
-
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
-        #[inline]
-        pub async fn deploy(
-            __provider: P,
-        ) -> alloy_contract::Result<IProtocolPaymentInstance<P, N>> {
-            let call_builder = Self::deploy_builder(__provider);
-            let contract_address = call_builder.deploy().await?;
-            Ok(Self::new(contract_address, call_builder.provider))
-        }
-        /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
-
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
-        #[inline]
-        pub fn deploy_builder(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
-            alloy_contract::RawCallBuilder::new_raw_deploy(
-                __provider,
-                ::core::clone::Clone::clone(&BYTECODE),
-            )
         }
         /// Returns a reference to the address.
         #[inline]

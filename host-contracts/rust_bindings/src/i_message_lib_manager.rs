@@ -690,26 +690,6 @@ interface IMessageLibManager {
 pub mod IMessageLibManager {
     use super::*;
     use alloy::sol_types as alloy_sol_types;
-    /// The creation / init bytecode of the contract.
-    ///
-    /// ```text
-    ///0x
-    /// ```
-    #[rustfmt::skip]
-    #[allow(clippy::all)]
-    pub static BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
-        b"",
-    );
-    /// The runtime bytecode of the contract, as deployed on the network.
-    ///
-    /// ```text
-    ///0x
-    /// ```
-    #[rustfmt::skip]
-    #[allow(clippy::all)]
-    pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
-        b"",
-    );
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**```solidity
@@ -1935,16 +1915,29 @@ function defaultReceiveLibrary(uint32 _eid) external view returns (address);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: defaultReceiveLibraryReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -2114,13 +2107,26 @@ function defaultReceiveLibraryTimeout(uint32 _eid) external view returns (addres
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -2267,16 +2273,29 @@ function defaultSendLibrary(uint32 _eid) external view returns (address);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: defaultSendLibraryReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -2454,16 +2473,29 @@ function getConfig(address _oapp, address _lib, uint32 _eid, uint32 _configType)
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: getConfigReturn = r.into();
                         r.config
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -2642,13 +2674,26 @@ function getReceiveLibrary(address _receiver, uint32 _eid) external view returns
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -2796,16 +2841,29 @@ function getRegisteredLibraries() external view returns (address[] memory);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: getRegisteredLibrariesReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -2964,16 +3022,29 @@ function getSendLibrary(address _sender, uint32 _eid) external view returns (add
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: getSendLibraryReturn = r.into();
                         r.lib
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -3134,16 +3205,29 @@ function isDefaultSendLibrary(address _sender, uint32 _eid) external view return
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: isDefaultSendLibraryReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -3290,16 +3374,29 @@ function isRegisteredLibrary(address _lib) external view returns (bool);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: isRegisteredLibraryReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -3444,16 +3541,29 @@ function isSupportedEid(uint32 _eid) external view returns (bool);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: isSupportedEidReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -3626,16 +3736,29 @@ function isValidReceiveLibrary(address _receiver, uint32 _eid, address _lib) ext
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: isValidReceiveLibraryReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -3819,13 +3942,26 @@ function receiveLibraryTimeout(address _receiver, uint32 _eid) external view ret
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -3965,13 +4101,26 @@ function registerLibrary(address _lib) external;
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -4139,13 +4288,26 @@ function setConfig(address _oapp, address _lib, SetConfigParam[] memory _params)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -4315,13 +4477,26 @@ function setDefaultReceiveLibrary(uint32 _eid, address _newLib, uint256 _gracePe
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -4491,13 +4666,26 @@ function setDefaultReceiveLibraryTimeout(uint32 _eid, address _lib, uint256 _exp
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -4655,13 +4843,26 @@ function setDefaultSendLibrary(uint32 _eid, address _newLib) external;
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -4838,13 +5039,26 @@ function setReceiveLibrary(address _oapp, uint32 _eid, address _newLib, uint256 
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -5023,13 +5237,26 @@ function setReceiveLibraryTimeout(address _oapp, uint32 _eid, address _lib, uint
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -5195,20 +5422,33 @@ function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
     ///Container for all the [`IMessageLibManager`](self) function calls.
     #[derive(Clone)]
     #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive()]
+    #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum IMessageLibManagerCalls {
         #[allow(missing_docs)]
         defaultReceiveLibrary(defaultReceiveLibraryCall),
@@ -5431,15 +5671,31 @@ function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::default(),
+            )
+        }
+        #[inline]
+        #[allow(non_snake_case)]
+        fn abi_decode_raw_with_config(
+            selector: [u8; 4],
+            data: &[u8],
+            config: alloy_sol_types::abi::AbiDecoderConfig,
+        ) -> alloy_sol_types::Result<Self> {
             static DECODE_SHIMS: &[fn(
                 &[u8],
+                alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<IMessageLibManagerCalls>] = &[
                 {
                     fn setReceiveLibraryTimeout(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
-                        <setReceiveLibraryTimeoutCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <setReceiveLibraryTimeoutCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IMessageLibManagerCalls::setReceiveLibraryTimeout)
                     }
@@ -5448,8 +5704,12 @@ function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
                 {
                     fn getConfig(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
-                        <getConfigCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                        <getConfigCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(IMessageLibManagerCalls::getConfig)
                     }
                     getConfig
@@ -5457,9 +5717,11 @@ function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
                 {
                     fn getReceiveLibrary(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
-                        <getReceiveLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <getReceiveLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IMessageLibManagerCalls::getReceiveLibrary)
                     }
@@ -5468,9 +5730,11 @@ function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
                 {
                     fn isSupportedEid(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
-                        <isSupportedEidCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <isSupportedEidCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IMessageLibManagerCalls::isSupportedEid)
                     }
@@ -5479,9 +5743,11 @@ function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
                 {
                     fn setReceiveLibrary(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
-                        <setReceiveLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <setReceiveLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IMessageLibManagerCalls::setReceiveLibrary)
                     }
@@ -5490,8 +5756,12 @@ function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
                 {
                     fn setConfig(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
-                        <setConfigCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                        <setConfigCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(IMessageLibManagerCalls::setConfig)
                     }
                     setConfig
@@ -5499,9 +5769,11 @@ function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
                 {
                     fn defaultReceiveLibraryTimeout(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
-                        <defaultReceiveLibraryTimeoutCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <defaultReceiveLibraryTimeoutCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IMessageLibManagerCalls::defaultReceiveLibraryTimeout)
                     }
@@ -5510,9 +5782,11 @@ function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
                 {
                     fn defaultReceiveLibrary(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
-                        <defaultReceiveLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <defaultReceiveLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IMessageLibManagerCalls::defaultReceiveLibrary)
                     }
@@ -5521,9 +5795,11 @@ function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
                 {
                     fn getRegisteredLibraries(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
-                        <getRegisteredLibrariesCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <getRegisteredLibrariesCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IMessageLibManagerCalls::getRegisteredLibraries)
                     }
@@ -5532,9 +5808,11 @@ function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
                 {
                     fn setSendLibrary(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
-                        <setSendLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <setSendLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IMessageLibManagerCalls::setSendLibrary)
                     }
@@ -5543,9 +5821,11 @@ function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
                 {
                     fn isValidReceiveLibrary(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
-                        <isValidReceiveLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <isValidReceiveLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IMessageLibManagerCalls::isValidReceiveLibrary)
                     }
@@ -5554,9 +5834,11 @@ function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
                 {
                     fn setDefaultReceiveLibrary(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
-                        <setDefaultReceiveLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <setDefaultReceiveLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IMessageLibManagerCalls::setDefaultReceiveLibrary)
                     }
@@ -5565,9 +5847,11 @@ function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
                 {
                     fn setDefaultSendLibrary(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
-                        <setDefaultSendLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <setDefaultSendLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IMessageLibManagerCalls::setDefaultSendLibrary)
                     }
@@ -5576,9 +5860,11 @@ function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
                 {
                     fn getSendLibrary(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
-                        <getSendLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <getSendLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IMessageLibManagerCalls::getSendLibrary)
                     }
@@ -5587,9 +5873,11 @@ function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
                 {
                     fn setDefaultReceiveLibraryTimeout(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
-                        <setDefaultReceiveLibraryTimeoutCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <setDefaultReceiveLibraryTimeoutCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(
                                 IMessageLibManagerCalls::setDefaultReceiveLibraryTimeout,
@@ -5600,9 +5888,11 @@ function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
                 {
                     fn isRegisteredLibrary(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
-                        <isRegisteredLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <isRegisteredLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IMessageLibManagerCalls::isRegisteredLibrary)
                     }
@@ -5611,9 +5901,11 @@ function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
                 {
                     fn isDefaultSendLibrary(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
-                        <isDefaultSendLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <isDefaultSendLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IMessageLibManagerCalls::isDefaultSendLibrary)
                     }
@@ -5622,9 +5914,11 @@ function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
                 {
                     fn registerLibrary(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
-                        <registerLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <registerLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IMessageLibManagerCalls::registerLibrary)
                     }
@@ -5633,9 +5927,11 @@ function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
                 {
                     fn receiveLibraryTimeout(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
-                        <receiveLibraryTimeoutCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <receiveLibraryTimeoutCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IMessageLibManagerCalls::receiveLibraryTimeout)
                     }
@@ -5644,9 +5940,11 @@ function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
                 {
                     fn defaultSendLibrary(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
-                        <defaultSendLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <defaultSendLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IMessageLibManagerCalls::defaultSendLibrary)
                     }
@@ -5661,7 +5959,7 @@ function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
                     ),
                 );
             };
-            DECODE_SHIMS[idx](data)
+            DECODE_SHIMS[idx](data, config)
         }
         #[inline]
         #[allow(non_snake_case)]
@@ -5669,241 +5967,11 @@ function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
-            static DECODE_VALIDATE_SHIMS: &[fn(
-                &[u8],
-            ) -> alloy_sol_types::Result<IMessageLibManagerCalls>] = &[
-                {
-                    fn setReceiveLibraryTimeout(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
-                        <setReceiveLibraryTimeoutCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IMessageLibManagerCalls::setReceiveLibraryTimeout)
-                    }
-                    setReceiveLibraryTimeout
-                },
-                {
-                    fn getConfig(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
-                        <getConfigCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IMessageLibManagerCalls::getConfig)
-                    }
-                    getConfig
-                },
-                {
-                    fn getReceiveLibrary(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
-                        <getReceiveLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IMessageLibManagerCalls::getReceiveLibrary)
-                    }
-                    getReceiveLibrary
-                },
-                {
-                    fn isSupportedEid(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
-                        <isSupportedEidCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IMessageLibManagerCalls::isSupportedEid)
-                    }
-                    isSupportedEid
-                },
-                {
-                    fn setReceiveLibrary(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
-                        <setReceiveLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IMessageLibManagerCalls::setReceiveLibrary)
-                    }
-                    setReceiveLibrary
-                },
-                {
-                    fn setConfig(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
-                        <setConfigCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IMessageLibManagerCalls::setConfig)
-                    }
-                    setConfig
-                },
-                {
-                    fn defaultReceiveLibraryTimeout(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
-                        <defaultReceiveLibraryTimeoutCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IMessageLibManagerCalls::defaultReceiveLibraryTimeout)
-                    }
-                    defaultReceiveLibraryTimeout
-                },
-                {
-                    fn defaultReceiveLibrary(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
-                        <defaultReceiveLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IMessageLibManagerCalls::defaultReceiveLibrary)
-                    }
-                    defaultReceiveLibrary
-                },
-                {
-                    fn getRegisteredLibraries(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
-                        <getRegisteredLibrariesCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IMessageLibManagerCalls::getRegisteredLibraries)
-                    }
-                    getRegisteredLibraries
-                },
-                {
-                    fn setSendLibrary(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
-                        <setSendLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IMessageLibManagerCalls::setSendLibrary)
-                    }
-                    setSendLibrary
-                },
-                {
-                    fn isValidReceiveLibrary(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
-                        <isValidReceiveLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IMessageLibManagerCalls::isValidReceiveLibrary)
-                    }
-                    isValidReceiveLibrary
-                },
-                {
-                    fn setDefaultReceiveLibrary(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
-                        <setDefaultReceiveLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IMessageLibManagerCalls::setDefaultReceiveLibrary)
-                    }
-                    setDefaultReceiveLibrary
-                },
-                {
-                    fn setDefaultSendLibrary(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
-                        <setDefaultSendLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IMessageLibManagerCalls::setDefaultSendLibrary)
-                    }
-                    setDefaultSendLibrary
-                },
-                {
-                    fn getSendLibrary(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
-                        <getSendLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IMessageLibManagerCalls::getSendLibrary)
-                    }
-                    getSendLibrary
-                },
-                {
-                    fn setDefaultReceiveLibraryTimeout(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
-                        <setDefaultReceiveLibraryTimeoutCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(
-                                IMessageLibManagerCalls::setDefaultReceiveLibraryTimeout,
-                            )
-                    }
-                    setDefaultReceiveLibraryTimeout
-                },
-                {
-                    fn isRegisteredLibrary(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
-                        <isRegisteredLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IMessageLibManagerCalls::isRegisteredLibrary)
-                    }
-                    isRegisteredLibrary
-                },
-                {
-                    fn isDefaultSendLibrary(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
-                        <isDefaultSendLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IMessageLibManagerCalls::isDefaultSendLibrary)
-                    }
-                    isDefaultSendLibrary
-                },
-                {
-                    fn registerLibrary(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
-                        <registerLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IMessageLibManagerCalls::registerLibrary)
-                    }
-                    registerLibrary
-                },
-                {
-                    fn receiveLibraryTimeout(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
-                        <receiveLibraryTimeoutCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IMessageLibManagerCalls::receiveLibraryTimeout)
-                    }
-                    receiveLibraryTimeout
-                },
-                {
-                    fn defaultSendLibrary(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
-                        <defaultSendLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IMessageLibManagerCalls::defaultSendLibrary)
-                    }
-                    defaultSendLibrary
-                },
-            ];
-            let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
-            };
-            DECODE_VALIDATE_SHIMS[idx](data)
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+            )
         }
         #[inline]
         fn abi_encoded_size(&self) -> usize {
@@ -6374,6 +6442,120 @@ function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
             }
         }
     }
+    #[automatically_derived]
+    impl IMessageLibManagerEvents {
+        /**Creates a [`DefaultReceiveLibrarySet`] event.
+
+```solidity
+event DefaultReceiveLibrarySet(uint32,address)
+```*/
+        #[inline]
+        pub fn default_receive_library_set(
+            eid: u32,
+            new_lib: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::DefaultReceiveLibrarySet(DefaultReceiveLibrarySet {
+                eid: eid,
+                newLib: new_lib,
+            })
+        }
+        /**Creates a [`DefaultReceiveLibraryTimeoutSet`] event.
+
+```solidity
+event DefaultReceiveLibraryTimeoutSet(uint32,address,uint256)
+```*/
+        #[inline]
+        pub fn default_receive_library_timeout_set(
+            eid: u32,
+            old_lib: alloy::sol_types::private::Address,
+            expiry: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::DefaultReceiveLibraryTimeoutSet(DefaultReceiveLibraryTimeoutSet {
+                eid: eid,
+                oldLib: old_lib,
+                expiry: expiry,
+            })
+        }
+        /**Creates a [`DefaultSendLibrarySet`] event.
+
+```solidity
+event DefaultSendLibrarySet(uint32,address)
+```*/
+        #[inline]
+        pub fn default_send_library_set(
+            eid: u32,
+            new_lib: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::DefaultSendLibrarySet(DefaultSendLibrarySet {
+                eid: eid,
+                newLib: new_lib,
+            })
+        }
+        /**Creates a [`LibraryRegistered`] event.
+
+```solidity
+event LibraryRegistered(address)
+```*/
+        #[inline]
+        pub fn library_registered(new_lib: alloy::sol_types::private::Address) -> Self {
+            Self::LibraryRegistered(LibraryRegistered {
+                newLib: new_lib,
+            })
+        }
+        /**Creates a [`ReceiveLibrarySet`] event.
+
+```solidity
+event ReceiveLibrarySet(address,uint32,address)
+```*/
+        #[inline]
+        pub fn receive_library_set(
+            receiver: alloy::sol_types::private::Address,
+            eid: u32,
+            new_lib: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::ReceiveLibrarySet(ReceiveLibrarySet {
+                receiver: receiver,
+                eid: eid,
+                newLib: new_lib,
+            })
+        }
+        /**Creates a [`ReceiveLibraryTimeoutSet`] event.
+
+```solidity
+event ReceiveLibraryTimeoutSet(address,uint32,address,uint256)
+```*/
+        #[inline]
+        pub fn receive_library_timeout_set(
+            receiver: alloy::sol_types::private::Address,
+            eid: u32,
+            old_lib: alloy::sol_types::private::Address,
+            timeout: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::ReceiveLibraryTimeoutSet(ReceiveLibraryTimeoutSet {
+                receiver: receiver,
+                eid: eid,
+                oldLib: old_lib,
+                timeout: timeout,
+            })
+        }
+        /**Creates a [`SendLibrarySet`] event.
+
+```solidity
+event SendLibrarySet(address,uint32,address)
+```*/
+        #[inline]
+        pub fn send_library_set(
+            sender: alloy::sol_types::private::Address,
+            eid: u32,
+            new_lib: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::SendLibrarySet(SendLibrarySet {
+                sender: sender,
+                eid: eid,
+                newLib: new_lib,
+            })
+        }
+    }
     use alloy::contract as alloy_contract;
     /**Creates a new wrapper around an on-chain [`IMessageLibManager`](self) contract instance.
 
@@ -6387,34 +6569,6 @@ See the [wrapper's documentation](`IMessageLibManagerInstance`) for more details
         __provider: P,
     ) -> IMessageLibManagerInstance<P, N> {
         IMessageLibManagerInstance::<P, N>::new(address, __provider)
-    }
-    /**Deploys this contract using the given `provider` and constructor arguments, if any.
-
-Returns a new instance of the contract, if the deployment was successful.
-
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
-    #[inline]
-    pub fn deploy<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(
-        __provider: P,
-    ) -> impl ::core::future::Future<
-        Output = alloy_contract::Result<IMessageLibManagerInstance<P, N>>,
-    > {
-        IMessageLibManagerInstance::<P, N>::deploy(__provider)
-    }
-    /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
-
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
-    #[inline]
-    pub fn deploy_builder<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
-        IMessageLibManagerInstance::<P, N>::deploy_builder(__provider)
     }
     /**A [`IMessageLibManager`](self) instance.
 
@@ -6458,31 +6612,6 @@ See the [wrapper's documentation](`IMessageLibManagerInstance`) for more details
                 provider: __provider,
                 _network: ::core::marker::PhantomData,
             }
-        }
-        /**Deploys this contract using the given `provider` and constructor arguments, if any.
-
-Returns a new instance of the contract, if the deployment was successful.
-
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
-        #[inline]
-        pub async fn deploy(
-            __provider: P,
-        ) -> alloy_contract::Result<IMessageLibManagerInstance<P, N>> {
-            let call_builder = Self::deploy_builder(__provider);
-            let contract_address = call_builder.deploy().await?;
-            Ok(Self::new(contract_address, call_builder.provider))
-        }
-        /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
-
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
-        #[inline]
-        pub fn deploy_builder(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
-            alloy_contract::RawCallBuilder::new_raw_deploy(
-                __provider,
-                ::core::clone::Clone::clone(&BYTECODE),
-            )
         }
         /// Returns a reference to the address.
         #[inline]
