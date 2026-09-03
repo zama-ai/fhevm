@@ -242,7 +242,7 @@ const packageEntrySchema = z
 
 const npmManifestSchema = z
   .object({
-    $schema: z.literal('./npm-manifest.schema.json').optional(),
+    $schema: z.literal('./fhevm-npm/schemas/npm-manifest.schema.json').optional(),
     inventory: inventorySchema.optional(),
     dependencies: dependencyPolicySchema.optional(),
     foundry: foundryPolicySchema.optional(),

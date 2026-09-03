@@ -1,4 +1,5 @@
 {
+  "$schema": "./fhevm-npm/schemas/cleartext-config.schema.json",
   "_readme": [
     "THE source of truth for every value the cleartext stack's languages must agree on.",
     "",

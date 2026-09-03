@@ -6,6 +6,7 @@ import { hasDetailedOutput } from './base/verbosity.ts';
 import { type CommandName, parseCliOptions } from './cli-options.ts';
 import { checkDependencies } from './commands/check-dependencies.ts';
 import { checkFoundry } from './commands/check-foundry.ts';
+import { checkJsonSchemas } from './commands/check-json-schemas.ts';
 import { checkLintPolicy } from './commands/check-lint-policy.ts';
 import { checkLockfiles } from './commands/check-lockfiles.ts';
 import { checkManifestCoverage } from './commands/check-manifest-coverage.ts';
@@ -29,6 +30,7 @@ import { generateExportsCommand } from './commands/generate-exports.ts';
 import { cleanForgeDependencies } from './commands/clean-forge-dependencies.ts';
 import { installForgeDependencies } from './commands/install-forge-dependencies.ts';
 import { listPackages } from './commands/list-packages.ts';
+import { listVersions } from './commands/list-versions.ts';
 import { packTarballs } from './commands/pack-tarball.ts';
 import { syncVendoredCommand } from './commands/sync-vendored.ts';
 import { testConsumerRegeneratePackageLock } from './commands/test-consumer-regenerate-package-lock.ts';
@@ -45,6 +47,7 @@ const commands: Readonly<Record<CommandName, CheckCommand>> = {
   'check-scripts': checkScripts,
   'check-lockfiles': checkLockfiles,
   'check-foundry': checkFoundry,
+  'check-json-schemas': checkJsonSchemas,
   'check-lint-policy': checkLintPolicy,
   'check-manifest-coverage': checkManifestCoverage,
   'check-tsconfig-paths': checkTsconfigPaths,
@@ -106,6 +109,10 @@ async function main(): Promise<void> {
   }
   if (options.command === 'list-packages') {
     listPackages(manifest);
+    return;
+  }
+  if (options.command === 'list-versions') {
+    await listVersions(options.workspaceRoot, manifest, { checkNpmjs: options.checkNpmjs, json: options.json });
     return;
   }
   if (options.command === 'pack-tarball') {

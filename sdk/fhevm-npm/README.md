@@ -14,6 +14,7 @@ node ./fhevm-npm.ts check-ownership
 node ./fhevm-npm.ts check-scripts
 node ./fhevm-npm.ts check-lockfiles
 node ./fhevm-npm.ts check-foundry
+node ./fhevm-npm.ts check-json-schemas
 node ./fhevm-npm.ts check-manifest-coverage
 node ./fhevm-npm.ts check-tsconfig-paths
 node ./fhevm-npm.ts check-tsc-mode
@@ -23,6 +24,9 @@ node ./fhevm-npm.ts sync-fhevm-chains --latest
 node ./fhevm-npm.ts check-fhevm-chains-origin
 node ./fhevm-npm.ts generate-chain-constants
 node ./fhevm-npm.ts generate-chain-constants --check
+node ./fhevm-npm.ts list-versions
+node ./fhevm-npm.ts list-versions --check-npmjs
+node ./fhevm-npm.ts list-versions --check-npmjs --json
 node ./fhevm-npm.ts pack-tarball ./hardhat/v2/plugin
 node ./fhevm-npm.ts test-consumer --list
 node ./fhevm-npm.ts test-consumer ./host-contracts-cleartext/v12

@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/zama-ai/fhevm/blob/main/sdk/fhevm-npm/schemas/fhevm-network-groups.config.schema.json",
+  "title": "fhevm network groups configuration",
+  "description": "The closed set of network groups used to render fhevm-chains.config.json.",
+  "type": "object",
+  "required": ["$schema", "_readme", "groups"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "const": "./fhevm-npm/schemas/fhevm-network-groups.config.schema.json" },
+    "_readme": { "$ref": "#/$defs/proseLines" },
+    "groups": {
+      "type": "object",
+      "required": ["mainnet", "testnet", "devnet"],
+      "additionalProperties": false,
+      "properties": {
+        "mainnet": { "$ref": "#/$defs/group" },
+        "testnet": { "$ref": "#/$defs/group" },
+        "devnet": { "$ref": "#/$defs/group" }
+      }
+    }
+  },
+  "$defs": {
+    "proseLines": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+    "group": {
+      "type": "object",
+      "required": ["registryFile", "relayerUrl"],
+      "additionalProperties": false,
+      "properties": {
+        "registryFile": { "type": "string", "pattern": "^dist/[a-z0-9_-]+\\.json$" },
+        "relayerUrl": { "type": "string", "pattern": "^https?://\\S+$" }
+      }
+    }
+  }
+}

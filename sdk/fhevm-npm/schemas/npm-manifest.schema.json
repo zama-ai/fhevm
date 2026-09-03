@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/zama-ai/fhevm/blob/main/sdk/npm-manifest.schema.json",
+  "$id": "https://github.com/zama-ai/fhevm/blob/main/sdk/fhevm-npm/schemas/npm-manifest.schema.json",
   "title": "fhevm sdk npm manifest",
   "description": "Inventory of every source package.json in the sdk/ discovery universe defined by fhevm-npm/npm-rules.md, plus repository-wide npm and toolchain policy.",
   "$comment": "This schema enforces manifest-local shape and kind invariants. A TypeScript validator must enforce filesystem, package.json and cross-entry invariants: complete discovery, key/path containment, member/workspaces equality, package names and privacy, required published package.json fields, private version 0.0.0, exports, dependency rules, dev/published ownership cardinality, and the conventional check:publint, npm-distribution-conditional test:consumer, conditional test:vendored and conditional test:mirror scripts.",
@@ -9,7 +9,7 @@
   "additionalProperties": false,
   "properties": {
     "$schema": {
-      "const": "./npm-manifest.schema.json",
+      "const": "./fhevm-npm/schemas/npm-manifest.schema.json",
       "description": "Path to this schema, so editors validate the manifest as it is typed."
     },
     "inventory": {
@@ -84,7 +84,7 @@
     },
     "packages": {
       "type": "object",
-      "description": "Every in-scope source package.json under sdk/, keyed by its directory relative to sdk/ — leading `./`, no trailing slash, and `.` for the workspace root itself.",
+      "description": "Every in-scope source package.json under sdk/, keyed by its directory relative to sdk/ — leading `./`, no trailing slash, and `.` for the sdk workspace root itself. Nested installation roots use their normal `./…` key.",
       "$comment": "Keyed by relative path and not by package name, because a name is neither always present nor unique: five non-package manifests have no `name` at all, and v12/pkg and v13/pkg both publish as @fhevm/host-contracts-cleartext. Relative paths are unique by construction, so the key doubles as the identity `publishedRelPath` points at. Non-members are included too: a standalone project and a non-package manifest are invisible to `workspaces` yet both change how resolution behaves.",
       "minProperties": 1,
       "required": ["."],
@@ -102,15 +102,7 @@
       },
       "patternProperties": {
         "^\\./": {
-          "allOf": [
-            { "$ref": "#/$defs/package" },
-            {
-              "not": {
-                "properties": { "kind": { "const": "workspace-root" } },
-                "required": ["kind"]
-              }
-            }
-          ]
+          "$ref": "#/$defs/package"
         }
       },
       "additionalProperties": false

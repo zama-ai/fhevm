@@ -1,4 +1,5 @@
 {
+  "$schema": "../../fhevm-npm/schemas/export-manifest.schema.json",
   "//": [
     "The public export surface of @fhevm/host-contracts-cleartext (0.12), and the source of truth for it.",
     "Edited by hand; `npm run generate:exports` renders it into pkg/ts/index.ts and into the export test in",

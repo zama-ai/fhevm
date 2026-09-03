@@ -65,3 +65,15 @@ test("test-consumer accepts '--test-file' without implicitly enabling '--run'", 
   assert.equal(options.testFile, 'test/fhe-rand.test.ts');
   assert.equal(options.run, false);
 });
+
+test('list-versions takes no argument and an optional --check-npmjs', () => {
+  const plain = parseCliOptions(['list-versions']);
+  assert.equal(plain.command, 'list-versions');
+  if (plain.command !== 'list-versions') throw new Error('unreachable');
+  assert.equal(plain.checkNpmjs, false);
+  assert.equal(plain.json, false);
+  const checked = parseCliOptions(['list-versions', '--check-npmjs', '--json']);
+  if (checked.command !== 'list-versions') throw new Error('unreachable');
+  assert.equal(checked.checkNpmjs, true);
+  assert.equal(checked.json, true);
+});

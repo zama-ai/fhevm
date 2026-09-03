@@ -16,6 +16,7 @@ export const commandNames = [
   'check-lockfiles',
   'check-manifest-coverage',
   'check-foundry',
+  'check-json-schemas',
   'check-lint-policy',
   'check-tsconfig-paths',
   'check-tsc-mode',
@@ -37,6 +38,7 @@ export type CliOptions = {
     | 'generate-exports'
     | 'install-forge-dependencies'
     | 'list-packages'
+    | 'list-versions'
     | 'pack-tarball'
     | 'sync-fhevm-chains'
     | 'sync-vendored'
@@ -66,6 +68,7 @@ export type CliOptions = {
       readonly force: boolean;
     }
   | { readonly command: 'list-packages' }
+  | { readonly command: 'list-versions'; readonly checkNpmjs: boolean; readonly json: boolean }
   | {
       readonly command: 'pack-tarball';
       readonly packageSelector?: string;
@@ -133,6 +136,7 @@ export function parseCliOptions(argv: readonly string[]): CliOptions {
     | { readonly packageSelector?: string; readonly dryRun: boolean; readonly force: boolean }
     | undefined;
   let listPackagesSelected = false;
+  let listVersions: { readonly checkNpmjs: boolean; readonly json: boolean } | undefined;
   let packTarball: { readonly packageSelector?: string; readonly outDir?: string; readonly clean: boolean } | undefined;
   let syncVendored: { readonly check: boolean } | undefined;
   let syncFhevmChains: { readonly commit?: string; readonly latest: boolean } | undefined;
@@ -249,6 +253,12 @@ Checked scripts:
     .description('Check that Forge is the only Solidity linter outside declared mirror-only packages.')
     .action(() => {
       selected = 'check-lint-policy';
+    });
+  program
+    .command('check-json-schemas')
+    .description('Validate committed JSON configuration files against the schemas in fhevm-npm/schemas.')
+    .action(() => {
+      selected = 'check-json-schemas';
     });
   program
     .command('check-manifest-coverage')
@@ -413,6 +423,16 @@ Why:
       listPackagesSelected = true;
     });
   program
+    .command('list-versions')
+    .description(
+      'List the version of every published payload, with its distribution channels (npm, mirror) and mirror repository.',
+    )
+    .option('--check-npmjs', 'ask registry.npmjs.org whether each npm-distributed version is published', false)
+    .option('--json', 'print the entries as JSON instead of a table', false)
+    .action((options: { readonly checkNpmjs: boolean; readonly json: boolean }) => {
+      listVersions = { checkNpmjs: options.checkNpmjs, json: options.json };
+    });
+  program
     .command('pack-tarball [package]')
     .description(
       'Pack one npm-distributed payload (or all of them when omitted) into the manifest-declared ' +
@@ -467,6 +487,7 @@ Why:
     forgeDependencyPackageSelector === undefined &&
     cleanForgeDependencies === undefined &&
     !listPackagesSelected &&
+    listVersions === undefined &&
     packTarball === undefined &&
     !regenerateConsumerPackageLocks &&
     testConsumer === undefined &&
@@ -615,6 +636,17 @@ Why:
   if (listPackagesSelected) {
     return {
       command: 'list-packages',
+      workspaceRoot,
+      manifestFile: resolve(workspaceRoot, 'npm-manifest.json'),
+      verbosity: options.verbose,
+      sortPackageJson: false,
+    };
+  }
+  if (listVersions !== undefined) {
+    return {
+      command: 'list-versions',
+      checkNpmjs: listVersions.checkNpmjs,
+      json: listVersions.json,
       workspaceRoot,
       manifestFile: resolve(workspaceRoot, 'npm-manifest.json'),
       verbosity: options.verbose,
