@@ -1,8 +1,11 @@
 use anyhow::Context;
 use ethereum_rpc_mock::{
-    fhevm::FhevmMockWrapper, MockConfig, MockServer, MockServerHandle, Response, UsageLimit,
+    ct_attestation::CtAttestationMock, fhevm::FhevmMockWrapper, MockConfig, MockServer,
+    MockServerHandle, Response, UsageLimit,
 };
-use fhevm_relayer::config::settings::{HostChainConfig, KeyUrlConfig, Settings, StorageConfig};
+use fhevm_relayer::config::settings::{
+    GwCiphertextCheckConfig, HostChainConfig, KeyUrlConfig, Settings, StorageConfig,
+};
 use fhevm_relayer::run_fhevm_relayer;
 use fhevm_relayer::store::sql::client::PgClient;
 use fhevm_relayer::tracing::init_tracing_once;
@@ -18,6 +21,7 @@ use fhevm_host_bindings::i_protocol_config::IProtocolConfig;
 use fhevm_host_bindings::ikms_generation::IKMSGeneration;
 use rand::{rng, RngExt};
 use std::str::FromStr;
+use std::sync::Arc;
 use tempfile::TempDir;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
@@ -34,6 +38,11 @@ pub const TEST_CONFIG_PATH: &str = "tests/relayer-test-config.yaml";
 
 /// Gateway contract addresses the mocks and [`TEST_CONFIG_PATH`] agree on.
 const TEST_INPUT_VERIFICATION_ADDRESS: &str = "0xe61cff9c581c7c91aef682c2c10e8632864339ab";
+
+/// Must match `gateway.readiness_checker.gw_ciphertext_check.gateway_config_address` in
+/// [`TEST_CONFIG_PATH`]: under `source: coprocessor_attestations` the relayer reads the Coprocessor
+/// registry from it while starting up. `source: gateway_chain` carries no such key.
+const TEST_GATEWAY_CONFIG_ADDRESS: &str = "0x576Ea67208b146E63C5255d0f90104E25e3e04c7";
 
 /// Host-chain mock server, with every response the relayer needs to boot already registered.
 ///
@@ -97,7 +106,19 @@ impl HostMock {
     }
 }
 
-/// Gateway-chain mock server with the FHEVM patterns wired.
+/// Which ciphertext-readiness source a [`GatewayMock`] is wired for. Only the selected one gets
+/// fixtures: wiring both would let a test pass on answers the relayer never asked for.
+#[allow(dead_code)]
+pub enum ReadinessSource<'a> {
+    /// `Decryption.isPublicDecryptionReady` / `isUserDecryptionReady_1`. Deliberately left
+    /// unarmed: patterns are matched first-registered-first, so a ready-by-default pattern would
+    /// shadow every later `set_readiness_failure()`. Each test arms its own outcome.
+    GatewayChain,
+    /// Off-chain buckets, reached through the `GatewayConfig` Coprocessor registry.
+    CoprocessorAttestations(&'a CtAttestationMock),
+}
+
+/// Gateway-chain mock server with the FHEVM patterns and the selected readiness source wired.
 ///
 /// Held by the test setup: dropping it shuts the listener down.
 #[allow(dead_code)]
@@ -108,11 +129,11 @@ pub struct GatewayMock {
 }
 
 impl GatewayMock {
-    /// Start a gateway-chain mock on an OS-assigned port, reported as `self.port`. The FHEVM
-    /// patterns are registered before the server starts listening, so the relayer cannot
+    /// Start a gateway-chain mock on an OS-assigned port, reported as `self.port`. FHEVM patterns
+    /// and `readiness`'s fixtures are registered before the server listens, so the relayer cannot
     /// observe a half-configured gateway.
     #[allow(dead_code)]
-    pub async fn start() -> anyhow::Result<Self> {
+    pub async fn start(readiness: ReadinessSource<'_>) -> anyhow::Result<Self> {
         let config = MockConfig {
             port: 0,
             ..MockConfig::new()
@@ -124,7 +145,15 @@ impl GatewayMock {
             Address::from_str(TEST_DECRYPTION_ADDRESS).expect("Invalid decryption address"),
             Address::from_str(TEST_INPUT_VERIFICATION_ADDRESS)
                 .expect("Invalid input verification address"),
+            Address::from_str(TEST_GATEWAY_CONFIG_ADDRESS).expect("Invalid gateway config address"),
         );
+        match readiness {
+            // Deliberately unarmed — see the variant's doc.
+            ReadinessSource::GatewayChain => {}
+            ReadinessSource::CoprocessorAttestations(ct_attestation) => {
+                fhevm.set_coprocessor_registry(ct_attestation)
+            }
+        }
 
         let handle = server
             .start()
@@ -241,6 +270,10 @@ impl SchemaHandle {
 #[allow(dead_code)]
 pub struct TestSetup {
     pub fhevm_mock: FhevmMockWrapper,
+    /// Coprocessor buckets backing the off-chain readiness check, or `None` when the setup runs
+    /// against `source: gateway_chain` and starts no buckets at all. Reach it through
+    /// [`TestSetup::ct_attestation`].
+    ct_attestation: Option<Arc<CtAttestationMock>>,
     pub host_server: MockServer,
     pub settings: Settings,
     pub http_port: u16,
@@ -259,13 +292,25 @@ pub struct TestSetup {
 }
 
 impl TestSetup {
+    /// The Coprocessor buckets backing the off-chain readiness check. Arm the per-test outcome on
+    /// this (`serve_attestations`, `serve_nothing`, ...).
+    ///
+    /// Panics under `source: gateway_chain`, which starts no buckets.
+    #[allow(dead_code)]
+    pub fn ct_attestation(&self) -> &CtAttestationMock {
+        self.ct_attestation.as_deref().expect(
+            "this TestSetup runs against source: gateway_chain and starts no attestation buckets \
+             — arm readiness through `fhevm_mock.set_readiness_*` instead",
+        )
+    }
+
     /// Create test setup with fast readiness config (4 attempts × 250ms = ~1s total)
     /// This config is used in tests for readiness check timing out.
     #[allow(dead_code)]
     pub async fn new_with_fast_readiness() -> anyhow::Result<Self> {
         let temp_config_dir = TempDir::new()?;
         let temp_config_path =
-            create_readiness_config(&temp_config_dir, "fast_readiness.yaml", 4, 250)?;
+            create_readiness_config(&temp_config_dir, "fast_readiness.yaml", 4, 250, None, None)?;
         Self::new_with_config_path(Some(temp_config_path)).await
     }
 
@@ -274,8 +319,44 @@ impl TestSetup {
     #[allow(dead_code)]
     pub async fn new_with_minimal_readiness() -> anyhow::Result<Self> {
         let temp_config_dir = TempDir::new()?;
-        let temp_config_path =
-            create_readiness_config(&temp_config_dir, "minimal_readiness.yaml", 2, 50)?;
+        let temp_config_path = create_readiness_config(
+            &temp_config_dir,
+            "minimal_readiness.yaml",
+            2,
+            50,
+            None,
+            None,
+        )?;
+        Self::new_with_config_path(Some(temp_config_path)).await
+    }
+
+    /// Create a test setup whose overall request budget expires long before its retry attempts do.
+    ///
+    /// The retry counters are deliberately generous (100 × 50ms) while `request_timeout_ms` is
+    /// tiny, so a test can prove the wall-clock budget is what ends the check. `head_timeout_ms` is
+    /// compressed too: the budget only means something relative to how long one bucket probe may
+    /// take, and `validate()` rejects a budget below a single probe's timeout.
+    #[allow(dead_code)]
+    pub async fn new_with_short_request_budget() -> anyhow::Result<Self> {
+        let temp_config_dir = TempDir::new()?;
+        let temp_config_path = create_readiness_config(
+            &temp_config_dir,
+            "short_request_budget.yaml",
+            100,
+            50,
+            Some(50),
+            Some(200),
+        )?;
+        Self::new_with_config_path(Some(temp_config_path)).await
+    }
+
+    /// Create a test setup gated on the on-chain Gateway check (`source: gateway_chain`), armed
+    /// through `fhevm_mock.set_readiness_*` rather than attestation buckets. Retries are minimal
+    /// (2 × 50ms) so a failing check does not wait out a production-shaped budget.
+    #[allow(dead_code)]
+    pub async fn new_with_gateway_chain_readiness() -> anyhow::Result<Self> {
+        let temp_config_dir = TempDir::new()?;
+        let temp_config_path = create_gateway_chain_readiness_config(&temp_config_dir)?;
         Self::new_with_config_path(Some(temp_config_path)).await
     }
 
@@ -371,7 +452,26 @@ impl TestSetup {
         init_tracing_once(&settings.log);
 
         let host = HostMock::start(&settings).await?;
-        let gateway = GatewayMock::start().await?;
+
+        let (ct_attestation, gateway) =
+            match &settings.gateway.readiness_checker.gw_ciphertext_check {
+                GwCiphertextCheckConfig::CoprocessorAttestations { .. } => {
+                    // Attested by default — nearly every test needs an available ciphertext; tests
+                    // wanting another outcome re-arm the buckets themselves.
+                    let ct_attestation = Arc::new(CtAttestationMock::start().await);
+                    ct_attestation.serve_attestations().await;
+                    let gateway = GatewayMock::start(ReadinessSource::CoprocessorAttestations(
+                        &ct_attestation,
+                    ))
+                    .await?;
+                    (Some(ct_attestation), gateway)
+                }
+                // No ready-by-default counterpart here — see ReadinessSource::GatewayChain.
+                GwCiphertextCheckConfig::GatewayChain { .. } => (
+                    None,
+                    GatewayMock::start(ReadinessSource::GatewayChain).await?,
+                ),
+            };
         let (host_port, gateway_port) = (host.port, gateway.port);
 
         tracing::info!(
@@ -408,6 +508,7 @@ impl TestSetup {
 
         Ok(TestSetup {
             fhevm_mock: gateway.fhevm.clone(),
+            ct_attestation,
             host_server: host.server.clone(),
             settings,
             http_port,
@@ -435,7 +536,9 @@ impl TestSetup {
     /// Sharing the mock servers (rather than starting a second pair) is what makes the test's
     /// `fhevm_mock` / `host_server` expectations apply no matter which of the two pods ends up
     /// dispatching. Gets its own HTTP/metrics ports, same as any other constructor - the spawn
-    /// path already binds port 0 and echoes the real address back.
+    /// path already binds port 0 and echoes the real address back. `ct_attestation` is an `Arc`
+    /// clone of `existing`'s, since both instances' gateway mocks share one `GatewayConfig`
+    /// registry pointing at the same attestation buckets.
     ///
     /// The returned instance does not own the schema or the mocks, so its `shutdown()` leaves
     /// them alone: dropping either while `existing` is still running would pull the database or
@@ -477,6 +580,7 @@ impl TestSetup {
 
         Ok(TestSetup {
             fhevm_mock: existing.fhevm_mock.clone(),
+            ct_attestation: existing.ct_attestation.clone(),
             host_server: existing.host_server.clone(),
             settings,
             http_port,
@@ -575,11 +679,17 @@ fn create_multi_chain_config(temp_dir: &TempDir) -> anyhow::Result<std::path::Pa
 }
 
 /// Create a config file with fast readiness settings (4 attempts × 250ms)
+/// `head_timeout_ms` / `request_timeout_ms` are `None` for tests that only care about the retry
+/// counters and want the base config's production-shaped timeouts. A test that needs the overall
+/// request budget to expire during the test must set both, since the budget is only meaningful
+/// relative to how long a single bucket probe is allowed to take.
 fn create_readiness_config(
     temp_dir: &TempDir,
     filename: &str,
     max_attempts: u32,
     retry_interval_ms: u32,
+    head_timeout_ms: Option<u64>,
+    request_timeout_ms: Option<u64>,
 ) -> anyhow::Result<std::path::PathBuf> {
     let temp_config_path = temp_dir.path().join(filename);
 
@@ -601,6 +711,14 @@ fn create_readiness_config(
                     retry["retry_interval_ms"] =
                         serde_yaml::Value::Number(serde_yaml::Number::from(retry_interval_ms));
                 }
+                if let Some(head_timeout_ms) = head_timeout_ms {
+                    gw_ciphertext_check["head_timeout_ms"] =
+                        serde_yaml::Value::Number(serde_yaml::Number::from(head_timeout_ms));
+                }
+                if let Some(request_timeout_ms) = request_timeout_ms {
+                    gw_ciphertext_check["request_timeout_ms"] =
+                        serde_yaml::Value::Number(serde_yaml::Number::from(request_timeout_ms));
+                }
             }
             if let Some(host_acl_check) = readiness_checker.get_mut("host_acl_check") {
                 if let Some(retry) = host_acl_check.get_mut("retry") {
@@ -617,6 +735,48 @@ fn create_readiness_config(
     let modified_content =
         serde_yaml::to_string(&config).context("Failed to serialize modified config")?;
 
+    std::fs::write(&temp_config_path, modified_content).context("Failed to write temp config")?;
+
+    Ok(temp_config_path)
+}
+
+/// Create a config file gated on the on-chain Gateway check (`source: gateway_chain`).
+///
+/// Replaces the whole `gw_ciphertext_check` mapping rather than patching it: serde ignores the
+/// attestation variant's leftover keys, so patching would test a config shape nobody deploys.
+fn create_gateway_chain_readiness_config(temp_dir: &TempDir) -> anyhow::Result<std::path::PathBuf> {
+    let temp_config_path = temp_dir.path().join("gateway_chain_readiness.yaml");
+
+    let config_content = std::fs::read_to_string("tests/relayer-test-config.yaml")
+        .context("Failed to read default config")?;
+    let mut config: serde_yaml::Value =
+        serde_yaml::from_str(&config_content).context("Failed to parse YAML config")?;
+
+    let mut retry = serde_yaml::Mapping::new();
+    retry.insert(
+        serde_yaml::Value::String("max_attempts".to_string()),
+        serde_yaml::Value::Number(serde_yaml::Number::from(2)),
+    );
+    retry.insert(
+        serde_yaml::Value::String("retry_interval_ms".to_string()),
+        serde_yaml::Value::Number(serde_yaml::Number::from(50)),
+    );
+
+    let mut gw_ciphertext_check = serde_yaml::Mapping::new();
+    gw_ciphertext_check.insert(
+        serde_yaml::Value::String("source".to_string()),
+        serde_yaml::Value::String("gateway_chain".to_string()),
+    );
+    gw_ciphertext_check.insert(
+        serde_yaml::Value::String("retry".to_string()),
+        serde_yaml::Value::Mapping(retry),
+    );
+
+    config["gateway"]["readiness_checker"]["gw_ciphertext_check"] =
+        serde_yaml::Value::Mapping(gw_ciphertext_check);
+
+    let modified_content =
+        serde_yaml::to_string(&config).context("Failed to serialize modified config")?;
     std::fs::write(&temp_config_path, modified_content).context("Failed to write temp config")?;
 
     Ok(temp_config_path)

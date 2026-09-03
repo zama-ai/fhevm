@@ -118,9 +118,27 @@ gateway:
         max_attempts: 3
         retry_interval_ms: 1000
     gw_ciphertext_check:
+      # Off-chain Coprocessor attestation consensus (RFC 023). The alternative is the on-chain
+      # Gateway check, via source: gateway_chain, which takes only `retry`:
+      #   source: gateway_chain
+      #   retry:
+      #     max_attempts: 75
+      #     retry_interval_ms: 3000
+      source: coprocessor_attestations
       retry:
         max_attempts: 75
         retry_interval_ms: 3000
+      # Per-bucket S3 attestation HEAD request timeout.
+      head_timeout_ms: 5000
+      # Overall budget for one request's readiness check: all handles, all retries.
+      request_timeout_ms: 240000
+      # Coprocessor registry snapshot refresh interval.
+      registry_refresh_ms: 60000
+      # Handles probed concurrently within one attempt; also the per-bucket HEAD ceiling.
+      max_concurrent_handles: 8
+      # GatewayConfig: Coprocessor registry (signers, S3 buckets, majority
+      # threshold) for this check.
+      gateway_config_address: "0x576Ea67208b146E63C5255d0f90104E25e3e04c7"
     public_decrypt:
       max_concurrency: 250
       capacity: 11000

@@ -333,7 +333,7 @@ async fn test_delegated_user_decrypt_max_retries_updates_db_status() {
         delegate_address,
     );
 
-    setup.fhevm_mock.set_readiness_success();
+    setup.ct_attestation().serve_attestations().await;
     setup.fhevm_mock.queue_tx_responses_for_selector(
         setup.fhevm_mock.decryption_contract,
         constants::DELEGATED_USER_DECRYPT_SELECTOR,
@@ -371,7 +371,7 @@ async fn test_delegated_user_decrypt_contract_paused_returns_503() {
         delegate_address,
     );
 
-    setup.fhevm_mock.set_readiness_success();
+    setup.ct_attestation().serve_attestations().await;
     setup
         .fhevm_mock
         .on_user_decrypt_revert(UserDecryptKind::Delegated, constants::REVERT_ENFORCED_PAUSE);
@@ -403,7 +403,7 @@ async fn test_delegated_user_decrypt_invalid_signature_returns_400() {
         delegate_address,
     );
 
-    setup.fhevm_mock.set_readiness_success();
+    setup.ct_attestation().serve_attestations().await;
     setup.fhevm_mock.on_user_decrypt_revert(
         UserDecryptKind::Delegated,
         constants::REVERT_INVALID_SIGNATURE,
@@ -435,7 +435,7 @@ async fn test_insufficient_balance_returns_503() {
         delegate_address,
     );
 
-    setup.fhevm_mock.set_readiness_success();
+    setup.ct_attestation().serve_attestations().await;
     setup.fhevm_mock.on_user_decrypt_revert(
         UserDecryptKind::Delegated,
         constants::REVERT_INSUFFICIENT_BALANCE,
@@ -467,7 +467,7 @@ async fn test_insufficient_allowance_returns_503() {
         delegate_address,
     );
 
-    setup.fhevm_mock.set_readiness_success();
+    setup.ct_attestation().serve_attestations().await;
     setup.fhevm_mock.on_user_decrypt_revert(
         UserDecryptKind::Delegated,
         constants::REVERT_INSUFFICIENT_ALLOWANCE,
@@ -500,7 +500,7 @@ async fn test_delegated_user_decrypt_unknown_error_returns_500() {
         delegate_address,
     );
 
-    setup.fhevm_mock.set_readiness_success();
+    setup.ct_attestation().serve_attestations().await;
     setup.fhevm_mock.on_user_decrypt_revert(
         UserDecryptKind::Delegated,
         constants::REVERT_UNKNOWN_SELECTOR,
@@ -676,7 +676,7 @@ async fn test_retry_after_failure_creates_new_job_id() {
         delegate_address,
     );
 
-    setup.fhevm_mock.set_readiness_success();
+    setup.ct_attestation().serve_attestations().await;
     setup.fhevm_mock.queue_tx_responses_for_selector(
         setup.fhevm_mock.decryption_contract,
         constants::DELEGATED_USER_DECRYPT_SELECTOR,
@@ -731,18 +731,18 @@ async fn test_retry_after_failure_creates_new_job_id() {
     setup.shutdown().await;
 }
 
-/// Test that a readiness check contract error (RPC node unavailable) correctly
-/// transitions the request from 'queued' to 'failure' so V2 clients see failure.
-/// Before the fix, update_status_to_failure_on_tx_failed silently no-oped because
-/// the request was still in 'queued' state (not 'processing' or 'tx_in_flight').
+/// Test that a terminal readiness failure — Coprocessors serving attestations over divergent
+/// ciphertext material, so no group ever reaches the majority threshold — transitions the request
+/// from 'queued' straight to 'failure', without burning the retry budget that an
+/// as-yet-unattested ciphertext is entitled to.
 #[tokio::test]
-async fn test_readiness_contract_error_returns_failure_v2() {
+async fn test_readiness_no_consensus_returns_failure_v2() {
     let setup = TestSetup::new_with_minimal_readiness()
         .await
         .expect("Failed to create test setup");
 
-    // Configure readiness checks to return RPC error (node unavailable)
-    setup.fhevm_mock.set_readiness_contract_error();
+    // Every Coprocessor signs valid attestations, but over different material
+    setup.ct_attestation().serve_divergent_attestations().await;
 
     let contract_address = helpers::random_address();
     let delegator_address = helpers::random_address();
@@ -763,15 +763,15 @@ async fn test_readiness_contract_error_returns_failure_v2() {
     assert_eq!(
         status,
         reqwest::StatusCode::INTERNAL_SERVER_ERROR,
-        "Expected 500 for readiness check contract error (RPC error is not a known revert)"
+        "Expected 500 when the Coprocessors cannot agree on the ciphertext material"
     );
     assert_eq!(body.status, ApiResponseStatus::Failed);
 
     let error = body.error.as_ref().expect("Error should be present");
     assert_eq!(
         error.label(),
-        "internal_server_error",
-        "Expected label 'internal_server_error' for readiness check contract error"
+        "no_attestation_consensus",
+        "Expected label 'no_attestation_consensus', distinct from the retryable timeout label"
     );
 
     setup.shutdown().await;
@@ -786,8 +786,8 @@ async fn test_readiness_timeout_returns_503_with_correct_label() {
         .await
         .expect("Failed to create test setup");
 
-    // Configure readiness checks to always return false (ciphertext never ready)
-    setup.fhevm_mock.set_readiness_failure();
+    // No Coprocessor has published an attestation for the handle
+    setup.ct_attestation().serve_nothing().await;
 
     let contract_address = helpers::random_address();
     let delegator_address = helpers::random_address();

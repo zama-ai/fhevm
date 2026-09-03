@@ -6,8 +6,8 @@ use super::super::types::user_decrypt::{
     UserDecryptRequestJson, UserDecryptResponseJson, UserDecryptStatusResponseJson,
 };
 use crate::core::errors::{
-    HOST_ACL_FAILED_PREFIX, NOT_ALLOWED_ON_HOST_ACL_PREFIX, READINESS_CHECK_TIMEOUT_MSG,
-    TIMEOUT_REASON_MISSING_MSG,
+    GATEWAY_NOT_REACHABLE_PREFIX, HOST_ACL_FAILED_PREFIX, NOT_ALLOWED_ON_HOST_ACL_PREFIX,
+    NO_ATTESTATION_CONSENSUS_PREFIX, READINESS_CHECK_TIMEOUT_MSG, TIMEOUT_REASON_MISSING_MSG,
 };
 use crate::core::event::{
     ApiVersion, RelayerEvent, RelayerEventData, UserDecryptEventData, UserDecryptRequest,
@@ -761,7 +761,10 @@ impl UserDecryptHandler {
                                 TIMEOUT_REASON_MISSING_MSG.to_string()
                             }
                         };
-                        let error_value = if error_msg == READINESS_CHECK_TIMEOUT_MSG {
+                        // A prefix rather than whole-string equality, matching the host ACL and
+                        // consensus arms below, so a stored reason may append per-request detail
+                        // without silently relabelling itself `response_timed_out`.
+                        let error_value = if error_msg.starts_with(READINESS_CHECK_TIMEOUT_MSG) {
                             V2ErrorResponseBody::readiness_check_timed_out(&error_msg)
                         } else {
                             V2ErrorResponseBody::response_timed_out(&error_msg)
@@ -801,6 +804,16 @@ impl UserDecryptHandler {
                                 (
                                     StatusCode::INTERNAL_SERVER_ERROR,
                                     V2ErrorResponseBody::host_acl_failed(&error_msg),
+                                )
+                            } else if error_msg.starts_with(NO_ATTESTATION_CONSENSUS_PREFIX) {
+                                (
+                                    StatusCode::INTERNAL_SERVER_ERROR,
+                                    V2ErrorResponseBody::no_attestation_consensus(&error_msg),
+                                )
+                            } else if error_msg.starts_with(GATEWAY_NOT_REACHABLE_PREFIX) {
+                                (
+                                    StatusCode::SERVICE_UNAVAILABLE,
+                                    V2ErrorResponseBody::gateway_not_reachable(&error_msg),
                                 )
                             } else {
                                 classify_revert_error(&error_msg)

@@ -1,7 +1,7 @@
 use crate::{
     config::settings::GwEventNotFoundRetryConfig,
     core::{
-        errors::{EventProcessingError, READINESS_CHECK_TIMEOUT_MSG},
+        errors::EventProcessingError,
         event::{
             GatewayChainEventData, GatewayChainEventId, PublicDecryptEventData,
             PublicDecryptEventId, PublicDecryptRequest, PublicDecryptResponse, RelayerEvent,
@@ -563,7 +563,8 @@ impl GatewayHandler {
                 );
             }
 
-            EventProcessingError::ReadinessCheckTimedOut => {
+            EventProcessingError::ReadinessCheckTimedOut
+            | EventProcessingError::AttestationsNotReady { .. } => {
                 error!(
                     job_id = %event.job_id,
                     "Readiness check failed - updating database with timeout status"
@@ -580,7 +581,7 @@ impl GatewayHandler {
 
                     match self
                         .public_decrypt_repo
-                        .update_status_to_timed_out(&job_id_hash[..], READINESS_CHECK_TIMEOUT_MSG)
+                        .update_status_to_timed_out(&job_id_hash[..], &error.to_string())
                         .await
                     {
                         Ok(0) => info!(
@@ -597,13 +598,18 @@ impl GatewayHandler {
                 }
             }
 
+            // Grouped with the ACL failures because they share a shape: a readiness verdict that
+            // is terminal, reached before any gateway transaction, and whose message classifies
+            // the HTTP response — so the reason must be stored verbatim, unprefixed.
             EventProcessingError::NotAllowedOnHostAcl(_)
-            | EventProcessingError::HostAclFailed(_) => {
+            | EventProcessingError::HostAclFailed(_)
+            | EventProcessingError::NoAttestationConsensus { .. }
+            | EventProcessingError::GatewayNotReachable { .. } => {
                 let err_reason = error.to_string();
                 error!(
                     job_id = %event.job_id,
                     error = %err_reason,
-                    "Host ACL check failed"
+                    "Readiness check failed terminally"
                 );
 
                 if let RelayerEventData::PublicDecrypt(

@@ -3,23 +3,6 @@
 //! Both producer and consumer must encode, sign, and verify attestations byte-identically.
 //! This crate is the single source of truth for that encoding.
 //!
-//! Producer flow:
-//!
-//! ```ignore
-//! let attestation: CiphertextAttestation =
-//!     CiphertextAttestationPayload::new(version, handle, key_id, ctx, ct, sns, format)
-//!         .sign(&signer)
-//!         .await?;
-//! s3_push(url, serde_json::to_string(&attestation)?);
-//! ```
-//!
-//! Verifier flow:
-//!
-//! ```ignore
-//! let attestation: CiphertextAttestation = serde_json::from_str(&s3_metadata)?;
-//! attestation.verify(handle, coprocessor_context_id)?;
-//! ```
-//!
 //! See RFC-023 (Off-chain ciphertext commits handling).
 
 use alloy_primitives::{Address, B256, U256};
@@ -27,10 +10,19 @@ use serde::{Deserialize, Serialize};
 
 pub mod consensus;
 pub mod sign;
+pub mod tracker;
 
-/// Domain separator for the canonical signed payload. Scopes the keccak hash to
-/// "FHEVM CT Attestation" and prevents collisions with any other hash computed
-/// over similar-looking inputs.
+#[cfg(feature = "client")]
+pub mod client;
+
+#[cfg(feature = "client")]
+pub use client::{
+    BoundedClient, ConsensusCheckError, CoprocessorEntry, CoprocessorRegistry,
+    CoprocessorRegistrySnapshot, FetchAttestationError, FetchCiphertextError, RegistryError,
+    ResolvedConsensus, fetch_attestations_and_check_consensus,
+};
+
+/// Domain separator for the canonical signed payload.
 pub const DOMAIN_TAG: [u8; 8] = *b"FHEVMCTA";
 
 /// Ceiling on the serialized size of an SNS ciphertext in bytes.
@@ -68,6 +60,11 @@ pub fn s3_ct64_key(handle: &[u8], coprocessor_context_id: U256) -> String {
         hex::encode(handle)
     )
 }
+
+/// Coprocessor context id for RFC-023 V1 deployments. Consensus-critical global state: it is
+/// signed into the attestation payload and baked into the object URL, so it is a wire-format
+/// constant, not per-service config. Retires when `GatewayConfig` gains Coprocessor contexts.
+pub const COPROCESSOR_CONTEXT_ID_V1: U256 = U256::ONE;
 
 /// Versioned encoding of the attestation. The version byte is part of the signed
 /// payload, so a stripped or downgraded `version` field flips signature recovery
@@ -110,13 +107,8 @@ pub enum CiphertextFormat {
     CompressedOnGpu = 21,
 }
 
-/// The full set of fields bound by an attestation signature. Construct, optionally
-/// inspect via [`Self::canonical_bytes`] / [`Self::canonical_digest`], then call
-/// [`Self::sign`] to produce a [`CiphertextAttestation`] for the wire.
-///
-/// Not serializable: `handle` and `coprocessor_context_id` are intentionally
-/// stripped from the wire form (the verifier reconstructs them from the S3
-/// lookup path).
+/// The full set of fields bound by an attestation signature. [`Self::sign`] produces a
+/// [`CiphertextAttestation`] for the wire.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CiphertextAttestationPayload {
     pub version: Version,
@@ -150,13 +142,11 @@ impl CiphertextAttestationPayload {
     }
 }
 
-/// Signed wire form persisted as the S3 metadata header
-/// [`S3_METADATA_ATTESTATION_HEADER`].
+/// Signed wire form persisted as the S3 metadata header [`S3_METADATA_ATTESTATION_HEADER`].
 ///
-/// `handle` and `coprocessor_context_id` are intentionally absent — the verifier
-/// reconstructs them from the S3 lookup path and supplies them to
-/// [`Self::verify`]. Both are bound by the signature, so any path/attestation
-/// mismatch surfaces as a signature failure.
+/// `handle` and `coprocessor_context_id` are intentionally absent — the verifier reconstructs
+/// them from the S3 lookup path and supplies them to [`Self::verify`]. Both are bound by the
+/// signature, so any path/attestation mismatch surfaces as a signature failure.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CiphertextAttestation {
     pub version: Version,
@@ -186,6 +176,12 @@ pub enum AttestationError {
     Serde(#[from] serde_json::Error),
     #[error("signer error: {0}")]
     Signer(#[from] alloy_signer::Error),
+    /// The signature is genuine, but for a different bucket's key.
+    #[error("signer {embedded} is not the registered signer {registered} for this bucket")]
+    SignerNotRegisteredForBucket {
+        embedded: Address,
+        registered: Address,
+    },
 }
 
 pub(crate) mod hex_bytes {

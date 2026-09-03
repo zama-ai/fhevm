@@ -64,6 +64,10 @@ fhevm_gateway_bindings = { path = "../gateway-contracts/rust_bindings", default-
 fhevm_host_bindings = { path = "../host-contracts/rust_bindings", default-features = false }
 # Shared utils for signature verification in user-decrypt requests.
 user-decryption-signature = { path = "../shared/user-decryption-signature" }
+# Off-chain Coprocessor attestation consensus, backing the ciphertext readiness check. `client`
+# brings in the networked half (registry mirroring, S3 fetch, consensus fan-out); the base half
+# (e.g. `tracker::Round`, carried typed through ReadinessCheckError) is always available.
+ciphertext-attestation = { path = "../shared/ciphertext-attestation", features = ["client"] }
 utoipa = { version = "5.4.0", features = ["axum_extras", "preserve_path_order"] }
 utoipa-redoc = { version = "6.0.0", features = ["axum"] }
 validator = { version = "0.20.0", features = ["derive"] }

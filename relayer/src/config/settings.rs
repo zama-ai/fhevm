@@ -7,6 +7,7 @@ use serde::{de::Error, Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fmt;
+use std::num::NonZeroUsize;
 use std::time::Duration;
 
 // Listener pool configuration limits
@@ -61,6 +62,7 @@ impl GatewayConfig {
     pub fn validate(&self) -> Result<(), AppConfigError> {
         self.blockchain_rpc.validate()?;
         self.contracts.validate()?;
+        self.readiness_checker.gw_ciphertext_check.validate()?;
         self.readiness_checker.public_decrypt.validate()?;
         self.readiness_checker.user_decrypt.validate()?;
         self.tx_engine
@@ -288,9 +290,99 @@ pub struct HostAclCheckConfig {
     pub retry: RetrySettings,
 }
 
+/// `gateway.readiness_checker.gw_ciphertext_check` settings, tagged by `source`. Required with no
+/// default, so a deployment cannot silently pick which check gates decryptions — that choice
+/// decides whether a check the deployment never configured is the one standing between a request
+/// and a decryption.
+///
+/// `source: gateway_chain` demands only `retry`: exactly the shape that predates the off-chain
+/// Coprocessor attestation check, so an existing deployment upgrades by adding one key rather
+/// than five.
 #[derive(Debug, Deserialize, Clone)]
-pub struct GwCiphertextCheckConfig {
-    pub retry: RetrySettings,
+#[serde(tag = "source", rename_all = "snake_case")]
+pub enum GwCiphertextCheckConfig {
+    /// Ask the Gateway chain whether the ciphertext material exists, via
+    /// `Decryption.isPublicDecryptionReady` / `isUserDecryptionReady_1`.
+    GatewayChain { retry: RetrySettings },
+    /// Evaluate Coprocessor attestation consensus off-chain, per handle (RFC 023).
+    CoprocessorAttestations {
+        retry: RetrySettings,
+        /// Per-bucket S3 attestation `HEAD` request timeout, in milliseconds.
+        head_timeout_ms: u64,
+        /// Overall budget for one request's readiness check: every handle, every retry.
+        ///
+        /// `retry.max_attempts * retry.retry_interval_ms` bounds only the *sleeping* between attempts.
+        /// Since the check is off-chain, an attempt is no longer a single fast `eth_call` — it is a
+        /// bucket fan-out that can wait out `head_timeout_ms` per unresponsive Coprocessor — so the
+        /// wall clock needs its own bound. Whichever of the two limits is reached first ends the check.
+        request_timeout_ms: u64,
+        /// Coprocessor registry snapshot refresh interval, in milliseconds.
+        registry_refresh_ms: u64,
+        /// Handles probed concurrently within one attempt. Each handle fans out one `HEAD` per
+        /// Coprocessor bucket, so this also bounds per-bucket concurrency.
+        max_concurrent_handles: NonZeroUsize,
+        /// `GatewayConfig` contract, source of the Coprocessor registry (signers, S3 buckets and
+        /// majority threshold) used by this check. Only this check consumes it, so it lives here
+        /// rather than on the shared `contracts` block.
+        gateway_config_address: String,
+    },
+}
+
+impl GwCiphertextCheckConfig {
+    pub fn retry(&self) -> &RetrySettings {
+        match self {
+            Self::GatewayChain { retry } => retry,
+            Self::CoprocessorAttestations { retry, .. } => retry,
+        }
+    }
+
+    /// The retry settings, mutably. Both sources retry, so a caller tuning the retry budget need
+    /// not know which one is configured.
+    pub fn retry_mut(&mut self) -> &mut RetrySettings {
+        match self {
+            Self::GatewayChain { retry } => retry,
+            Self::CoprocessorAttestations { retry, .. } => retry,
+        }
+    }
+
+    pub fn validate(&self) -> Result<(), AppConfigError> {
+        let Self::CoprocessorAttestations {
+            head_timeout_ms,
+            request_timeout_ms,
+            registry_refresh_ms,
+            ..
+        } = self
+        else {
+            // The on-chain Gateway check carries only `retry`, which has no invariants of its own
+            // beyond what deserialization already enforces.
+            return Ok(());
+        };
+
+        if *head_timeout_ms == 0 {
+            return Err(AppConfigError::Config(
+                "gw_ciphertext_check.head_timeout_ms must be greater than 0".to_string(),
+            ));
+        }
+        if *request_timeout_ms == 0 {
+            return Err(AppConfigError::Config(
+                "gw_ciphertext_check.request_timeout_ms must be greater than 0".to_string(),
+            ));
+        }
+        // A budget below one probe's timeout can expire before any bucket has had the chance to
+        // answer, so every request would fail closed on the clock rather than on the attestations.
+        if request_timeout_ms < head_timeout_ms {
+            return Err(AppConfigError::Config(format!(
+                "gw_ciphertext_check.request_timeout_ms ({}) must be at least head_timeout_ms ({})",
+                request_timeout_ms, head_timeout_ms
+            )));
+        }
+        if *registry_refresh_ms == 0 {
+            return Err(AppConfigError::Config(
+                "gw_ciphertext_check.registry_refresh_ms must be greater than 0".to_string(),
+            ));
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -939,6 +1031,16 @@ impl Settings {
         {
             addresses.push(("keyurl.kms_generation_address", kms_generation_address));
         }
+        if let GwCiphertextCheckConfig::CoprocessorAttestations {
+            gateway_config_address,
+            ..
+        } = &self.gateway.readiness_checker.gw_ciphertext_check
+        {
+            addresses.push((
+                "gw_ciphertext_check.gateway_config_address",
+                gateway_config_address,
+            ));
+        }
 
         for (name, address) in addresses {
             if Address::from_str(address).is_err() {
@@ -1277,6 +1379,213 @@ mod tests {
 
         // Verify the value was parsed correctly (value from local.yaml.example)
         assert_eq!(settings.gateway.contracts.user_decrypt_shares_threshold, 9);
+    }
+
+    /// Asserts that dropping `field` from the example config makes deserialization fail.
+    ///
+    /// Every off-chain attestation-readiness setting is explicit config with no silent fallback,
+    /// so a deployment that forgets one fails at startup instead of running on a guessed value.
+    fn assert_field_is_required(field: &str) {
+        let config_path = ConfigBuilder::from_example()
+            .expect("Failed to load example config")
+            .remove_field(field)
+            .to_temp_file()
+            .expect("Failed to create temp config file");
+
+        let config = Config::builder()
+            .add_source(File::from(config_path.as_path()).format(FileFormat::Yaml))
+            .build()
+            .expect("Failed to build config");
+
+        let result: Result<Settings, _> = config.try_deserialize();
+
+        assert!(
+            result.is_err(),
+            "Configuration parsing should fail when {field} is missing"
+        );
+
+        let error_msg = format!("{}", result.unwrap_err());
+        let leaf = field.rsplit('.').next().unwrap_or(field);
+        assert!(
+            error_msg.contains(leaf) || error_msg.contains("missing field"),
+            "Error should mention the missing {leaf} field, got: {error_msg}"
+        );
+    }
+
+    #[test]
+    fn test_gw_ciphertext_check_head_timeout_is_required() {
+        assert_field_is_required("gateway.readiness_checker.gw_ciphertext_check.head_timeout_ms");
+    }
+
+    #[test]
+    fn test_gw_ciphertext_check_registry_refresh_is_required() {
+        assert_field_is_required(
+            "gateway.readiness_checker.gw_ciphertext_check.registry_refresh_ms",
+        );
+    }
+
+    #[test]
+    fn test_gw_ciphertext_check_request_timeout_is_required() {
+        assert_field_is_required(
+            "gateway.readiness_checker.gw_ciphertext_check.request_timeout_ms",
+        );
+    }
+
+    #[test]
+    fn test_gw_ciphertext_check_max_concurrent_handles_is_required() {
+        assert_field_is_required(
+            "gateway.readiness_checker.gw_ciphertext_check.max_concurrent_handles",
+        );
+    }
+
+    #[test]
+    fn test_gw_ciphertext_check_gateway_config_address_is_required() {
+        // Without the GatewayConfig address there is no Coprocessor registry at all, so startup
+        // must fail rather than silently degrade the readiness gate.
+        assert_field_is_required(
+            "gateway.readiness_checker.gw_ciphertext_check.gateway_config_address",
+        );
+    }
+
+    /// The on-chain Gateway check never builds a Coprocessor registry, so it must not demand the
+    /// address that only feeds one.
+    #[test]
+    fn test_gw_ciphertext_check_gateway_chain_does_not_require_gateway_config_address() {
+        let settings = settings_new(
+            ConfigBuilder::from_example()
+                .expect("example config")
+                .set_field(
+                    "gateway.readiness_checker.gw_ciphertext_check",
+                    serde_yaml::from_str(
+                        "source: gateway_chain\nretry:\n  max_attempts: 75\n  retry_interval_ms: 3000\n",
+                    )
+                    .expect("valid gateway_chain block"),
+                ),
+        )
+        .expect("`source: gateway_chain` without `gateway_config_address` should still validate");
+
+        assert!(matches!(
+            settings.gateway.readiness_checker.gw_ciphertext_check,
+            GwCiphertextCheckConfig::GatewayChain { .. }
+        ));
+    }
+
+    /// Builds a `source: coprocessor_attestations` block, reconstructed per case since the enum
+    /// has no mutable fields to poke at directly the way a plain struct would.
+    fn attestation_check(
+        head_timeout_ms: u64,
+        request_timeout_ms: u64,
+        registry_refresh_ms: u64,
+    ) -> GwCiphertextCheckConfig {
+        GwCiphertextCheckConfig::CoprocessorAttestations {
+            retry: RetrySettings {
+                max_attempts: 3,
+                retry_interval_ms: 100,
+            },
+            head_timeout_ms,
+            request_timeout_ms,
+            registry_refresh_ms,
+            max_concurrent_handles: NonZeroUsize::new(8).unwrap(),
+            gateway_config_address: "0x576Ea67208b146E63C5255d0f90104E25e3e04c7".to_string(),
+        }
+    }
+
+    #[test]
+    fn test_gw_ciphertext_check_rejects_zero_timeouts() {
+        assert!(attestation_check(0, 240_000, 60_000).validate().is_err());
+        assert!(attestation_check(5_000, 0, 60_000).validate().is_err());
+        assert!(attestation_check(5_000, 240_000, 0).validate().is_err());
+        assert!(attestation_check(5_000, 240_000, 60_000).validate().is_ok());
+    }
+
+    #[test]
+    fn test_gw_ciphertext_check_rejects_budget_below_one_probe() {
+        // A request budget under a single bucket's HEAD timeout expires before any Coprocessor can
+        // answer, so every request would fail on the clock rather than on the attestations.
+        assert!(attestation_check(5_000, 4_999, 60_000).validate().is_err());
+        assert!(attestation_check(5_000, 5_000, 60_000).validate().is_ok());
+    }
+
+    #[test]
+    fn test_gw_ciphertext_check_source_is_required() {
+        let err = settings_load_error(
+            ConfigBuilder::from_example()
+                .expect("Failed to load example config")
+                .remove_field("gateway.readiness_checker.gw_ciphertext_check.source"),
+        );
+        assert!(
+            err.contains("gw_ciphertext_check.source"),
+            "Error should name the missing `source` field, got: {err}"
+        );
+    }
+
+    #[test]
+    fn test_gw_ciphertext_check_source_rejects_unknown_value() {
+        let err = settings_load_error(
+            ConfigBuilder::from_example()
+                .expect("Failed to load example config")
+                .set_field(
+                    "gateway.readiness_checker.gw_ciphertext_check.source",
+                    serde_yaml::Value::String("bogus".into()),
+                ),
+        );
+        assert!(
+            err.contains("unknown variant `bogus`")
+                && err.contains("`gateway_chain`")
+                && err.contains("`coprocessor_attestations`"),
+            "Error should reject `bogus` and name the valid variants, got: {err}"
+        );
+    }
+
+    /// `source: gateway_chain` carries only `retry` — exactly the shape that predates the
+    /// off-chain Coprocessor attestation check — and must not demand the attestation-only keys.
+    #[test]
+    fn test_gw_ciphertext_check_gateway_chain_accepts_retry_only() {
+        let settings = settings_new(
+            ConfigBuilder::from_example()
+                .expect("example config")
+                .set_field(
+                    "gateway.readiness_checker.gw_ciphertext_check",
+                    serde_yaml::from_str(
+                        "source: gateway_chain\nretry:\n  max_attempts: 75\n  retry_interval_ms: 3000\n",
+                    )
+                    .expect("valid gateway_chain block"),
+                ),
+        )
+        .expect("`source: gateway_chain` with only `retry` should deserialize and validate");
+
+        match &settings.gateway.readiness_checker.gw_ciphertext_check {
+            GwCiphertextCheckConfig::GatewayChain { retry } => {
+                assert_eq!(retry.max_attempts, 75);
+            }
+            other => panic!("expected gw_ciphertext_check.source: gateway_chain, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_gw_ciphertext_check_gateway_chain_requires_retry() {
+        let err = settings_load_error(
+            ConfigBuilder::from_example()
+                .expect("example config")
+                .set_field(
+                    "gateway.readiness_checker.gw_ciphertext_check",
+                    serde_yaml::from_str("source: gateway_chain\n")
+                        .expect("valid gateway_chain tag"),
+                ),
+        );
+        assert!(
+            err.contains("gw_ciphertext_check.retry") || err.contains("missing field"),
+            "Error should name the missing `retry` field, got: {err}"
+        );
+    }
+
+    // `head_timeout_ms`, `request_timeout_ms`, `registry_refresh_ms`, `max_concurrent_handles`,
+    // and `gateway_config_address` are covered by
+    // `test_gw_ciphertext_check_head_timeout_is_required` and friends above, run against the
+    // example's `source: coprocessor_attestations` block; `retry` is the remaining one of the six.
+    #[test]
+    fn test_gw_ciphertext_check_coprocessor_attestations_requires_retry() {
+        assert_field_is_required("gateway.readiness_checker.gw_ciphertext_check.retry");
     }
 
     #[test]
@@ -1988,6 +2297,32 @@ mod tests {
 
         // contracts: YAML has threshold=9, env has 5
         assert_eq!(settings.gateway.contracts.user_decrypt_shares_threshold, 5);
+
+        // gw_ciphertext_check: YAML has source: coprocessor_attestations, 5000/240000/60000; env
+        // overrides to 7000/300000/90000 and a different gateway_config_address (source and
+        // max_concurrent_handles come from the YAML base, untouched by env).
+        match &settings.gateway.readiness_checker.gw_ciphertext_check {
+            GwCiphertextCheckConfig::CoprocessorAttestations {
+                head_timeout_ms,
+                request_timeout_ms,
+                registry_refresh_ms,
+                max_concurrent_handles,
+                gateway_config_address,
+                ..
+            } => {
+                assert_eq!(*head_timeout_ms, 7000);
+                assert_eq!(*request_timeout_ms, 300000);
+                assert_eq!(*registry_refresh_ms, 90000);
+                assert_eq!(max_concurrent_handles.get(), 8);
+                assert_eq!(
+                    gateway_config_address,
+                    "0x1C5d0A5B44e0B3D1A3d1c05A0f5aC2C2b64f1d3C"
+                );
+            }
+            other => panic!(
+                "expected gw_ciphertext_check.source: coprocessor_attestations, got {other:?}"
+            ),
+        }
 
         // copro_kms_backoff_intervals: env overrides to different values
         assert_eq!(

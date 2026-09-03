@@ -47,14 +47,9 @@ impl From<&CiphertextAttestation> for ConsensusMaterial {
 
 /// Validates every fetched attestations and evaluates the majority threshold for a handle.
 ///
-/// The address of the coprocessor's tx-sender is attached to each attestation for debugging.
 /// An attestation counts only if its signature recovers to its embedded `signer` and that signer
-/// is in the `allowed_signers` set.
-/// Survivors are grouped by material tuple; the largest group wins if it gathers at least
-/// `threshold` distinct signers.
-///
-/// `threshold` is a [`NonZeroUsize`]: a zero threshold would let any single attestation win,
-/// so it is unrepresentable here and rejected where the threshold is loaded.
+/// is in the `allowed_signers` set. Survivors are grouped by material tuple; the largest group
+/// wins if it gathers at least `threshold` distinct signers.
 pub fn evaluate(
     handle: B256,
     coprocessor_context_id: U256,
@@ -269,7 +264,7 @@ mod tests {
         let s2 = PrivateKeySigner::random();
         let s3 = PrivateKeySigner::random();
         let signers = signer_set(&[&s1, &s2, &s3]);
-        // s1+s2 agree on the default tuple; s3 dissents with a different format.
+        // s1+s2 agree on the default tuple; s3 attests a different format.
         let atts = vec![
             default_att(&s1).await,
             default_att(&s2).await,

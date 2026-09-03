@@ -154,6 +154,40 @@ impl PublicDecryptReadinessProcessor {
                 .await;
             }
 
+            Err(
+                e @ (ReadinessCheckError::NoAttestationConsensus { .. }
+                | ReadinessCheckError::RegistryError { .. }),
+            ) => {
+                // Operator log: a digest value may legitimately appear here. What a caller sees —
+                // the stored reason and the HTTP response — is decided solely by the `From` impl
+                // below.
+                error!(job_id = %task.job_id, error = ?e, "No Coprocessor attestation consensus");
+
+                Self::dispatch_failure(
+                    &dispatcher,
+                    &task.request,
+                    task.job_id,
+                    EventProcessingError::from(e),
+                )
+                .await;
+            }
+
+            Err(e @ ReadinessCheckError::AttestationsNotReady { .. }) => {
+                error!(
+                    job_id = %task.job_id,
+                    error = ?e,
+                    "Ciphertext attestation readiness check timed out"
+                );
+
+                Self::dispatch_timeout(
+                    &dispatcher,
+                    &task.request,
+                    task.job_id,
+                    EventProcessingError::from(e),
+                )
+                .await;
+            }
+
             Err(e @ ReadinessCheckError::NotAllowedOnHostAcl(_))
             | Err(e @ ReadinessCheckError::HostAclFailed(_)) => {
                 error!(job_id = %task.job_id, error = ?e, "Unexpected ACL error in ciphertext check path");

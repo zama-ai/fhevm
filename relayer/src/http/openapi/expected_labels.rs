@@ -87,6 +87,12 @@ pub const ERROR_LABEL_DEFS: &[ErrorLabelDef] = &[
         retryable: true,
         action: "Retry; if persistent, contact operator",
     },
+    ErrorLabelDef {
+        label: "no_attestation_consensus",
+        http_status: "500",
+        retryable: false,
+        action: "Contact operator with `requestId`",
+    },
     // 503 — transient / infrastructure
     ErrorLabelDef {
         label: "readiness_check_timed_out",
@@ -277,6 +283,10 @@ const ERROR_MATRIX: &[MatrixEntry] = &[
         &[
             ("internal_server_error", "Internal server error"),
             ("host_acl_failed", "Failed to check host ACL"),
+            (
+                "no_attestation_consensus",
+                "Coprocessors did not agree on the ciphertext material",
+            ),
         ],
     ),
     // ── GET 503: timeout / revert errors during polling ──────────────
@@ -312,6 +322,10 @@ const ERROR_MATRIX: &[MatrixEntry] = &[
             (
                 "insufficient_allowance",
                 "Insufficient allowance for transaction",
+            ),
+            (
+                "gateway_not_reachable",
+                "Coprocessor registry on the gateway chain is not usable",
             ),
         ],
     ),
