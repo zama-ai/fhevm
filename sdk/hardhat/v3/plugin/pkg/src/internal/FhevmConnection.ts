@@ -11,11 +11,13 @@ import {
   type FhevmEncryptedInput,
   type FhevmNetworkInfo,
   FhevmType,
+  type PublicDecryptResults,
   type FhevmTypeEuint,
   type HardhatFhevmRuntimeDebugger,
   type HardhatFhevmRuntimeEnvironment,
 } from '../types.js';
 import { PLUGIN_ID } from './constants.js';
+import { asAddress, asBigInt, asBoolean, publicDecrypt, publicDecryptOne } from './decrypt.js';
 import { createEncryptedInput, encryptOne } from './encrypt.js';
 import { isFhevmEuint } from './fheType.js';
 import { isCleartextNetwork, isDevelopmentNetwork } from './network.js';
@@ -150,20 +152,20 @@ class FhevmRuntimeEnvironment implements HardhatFhevmRuntimeEnvironment {
     return notImplemented('createDelegatedUserDecryptEIP712');
   }
 
-  publicDecrypt(): Promise<never> {
-    return Promise.reject(notImplementedError('publicDecrypt'));
+  publicDecrypt(handles: Array<Hex | Uint8Array>): Promise<PublicDecryptResults> {
+    return publicDecrypt(this.client, handles);
   }
 
-  publicDecryptEbool(): Promise<never> {
-    return Promise.reject(notImplementedError('publicDecryptEbool'));
+  async publicDecryptEbool(handleBytes32: Hex): Promise<boolean> {
+    return asBoolean(await publicDecryptOne(this.client, handleBytes32), handleBytes32);
   }
 
-  publicDecryptEuint(): Promise<never> {
-    return Promise.reject(notImplementedError('publicDecryptEuint'));
+  async publicDecryptEuint(_fhevmType: FhevmTypeEuint, handleBytes32: Hex): Promise<bigint> {
+    return asBigInt(await publicDecryptOne(this.client, handleBytes32), handleBytes32);
   }
 
-  publicDecryptEaddress(): Promise<never> {
-    return Promise.reject(notImplementedError('publicDecryptEaddress'));
+  async publicDecryptEaddress(handleBytes32: Hex): Promise<Address> {
+    return asAddress(await publicDecryptOne(this.client, handleBytes32), handleBytes32);
   }
 
   userDecryptEbool(): Promise<never> {
