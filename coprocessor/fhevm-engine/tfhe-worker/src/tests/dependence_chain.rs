@@ -1,5 +1,6 @@
 use crate::dependence_chain::{
-    delete_old_processed_dependence_chains, rearm_demoted_chains, LockMngr, LockingReason,
+    delete_old_processed_dependence_chains, rearm_demoted_chains, rearm_demoted_chains_limited,
+    LockMngr, LockingReason,
 };
 use crate::tests::utils::{setup_test_db_without_worker, TestInstance};
 use fhevm_engine_common::types::SchedulePriority;
@@ -2036,4 +2037,92 @@ async fn test_timeslice_rotates_only_the_locks_that_consumed_it() {
     let (status, owner, _) = chain_state(&pool, &healthy).await;
     assert_eq!(status, "processing", "the fresh lock keeps running");
     assert_eq!(owner, Some(mgr.worker_id()));
+}
+
+/// The sweep must serve demoted chains OLDEST FIRST.
+///
+/// It re-arms at most `SLOW_LANE_REARM_BATCH` chains per pass. With an
+/// unordered `LIMIT` the plan is free to return the same subset every time,
+/// so chains behind it would never get a pass at all -- the opposite of the
+/// bounded trickle demotion promises. Ordering by age makes the sweep a
+/// queue: a chain re-armed here is stamped `last_updated_at = NOW()`, which
+/// sends it to the back.
+#[tokio::test]
+#[serial(db)]
+async fn rearm_demoted_chains_serves_oldest_first() {
+    let instance = setup().await;
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(2)
+        .connect(instance.db_url())
+        .await
+        .expect("Failed to connect to the database");
+    let threshold: i16 = 3;
+
+    // Three demoted chains, distinctly aged. Insert newest first so physical
+    // order disagrees with age order -- an unordered LIMIT would follow the
+    // former.
+    let chains: Vec<(Vec<u8>, i64)> = vec![
+        (vec![0xC1u8; 32], 10),
+        (vec![0xC2u8; 32], 100),
+        (vec![0xC3u8; 32], 1000),
+    ];
+    for (dcid, age_secs) in &chains {
+        sqlx::query(
+            "INSERT INTO dependence_chain
+                (dependence_chain_id, status, last_updated_at, block_timestamp, block_height,
+                 schedule_priority, dependency_count, dependents)
+             VALUES ($1, 'processed', NOW() - make_interval(secs => $2), NOW(), 1, 0, 0,
+                     ARRAY[]::bytea[])",
+        )
+        .bind(dcid)
+        .bind(*age_secs as f64)
+        .execute(&pool)
+        .await
+        .unwrap();
+        seed_computation_row(
+            &pool,
+            dcid,
+            &handle(dcid[0]),
+            false,
+            true,
+            Some("RETRYABLE SchedulerError::ExecutionPanic(sigsegv)"),
+        )
+        .await;
+        sqlx::query("UPDATE computations SET error_retry_count = $1 WHERE output_handle = $2")
+            .bind(threshold)
+            .bind(handle(dcid[0]))
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+
+    // The oldest chain is 0xC3; it must be the one served.
+    let rearmed = rearm_demoted_chains_limited(&pool, threshold, 1)
+        .await
+        .unwrap();
+    assert_eq!(rearmed, 1);
+    let (status, _, _) = chain_state(&pool, &[0xC3u8; 32]).await;
+    assert_eq!(
+        status, "updated",
+        "the OLDEST demoted chain is re-armed first"
+    );
+    for dcid in [vec![0xC1u8; 32], vec![0xC2u8; 32]] {
+        let (status, _, _) = chain_state(&pool, &dcid).await;
+        assert_eq!(
+            status, "processed",
+            "younger demoted chains wait their turn"
+        );
+    }
+
+    // Re-arming stamps NOW(), so the next pass moves on rather than
+    // re-serving the same chain.
+    let rearmed = rearm_demoted_chains_limited(&pool, threshold, 1)
+        .await
+        .unwrap();
+    assert_eq!(rearmed, 1);
+    let (status, _, _) = chain_state(&pool, &[0xC2u8; 32]).await;
+    assert_eq!(
+        status, "updated",
+        "the sweep advances to the next-oldest chain"
+    );
 }

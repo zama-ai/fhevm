@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH demoted AS (\n            -- GROUP BY rather than DISTINCT: `SELECT DISTINCT` requires\n            -- every ORDER BY expression in the select list, and the ordering\n            -- key below is the chain's age, not its id.\n            SELECT c.dependence_chain_id\n            FROM computations c\n            JOIN dependence_chain dc\n              ON dc.dependence_chain_id = c.dependence_chain_id\n            WHERE c.is_allowed = TRUE\n              AND c.is_completed = FALSE\n              AND c.is_error = TRUE\n              AND c.error_message LIKE '%' || $1 || '%'\n              AND c.error_retry_count >= $2\n              -- Only chains nothing is working on. A 'processing' chain is\n              -- owned and will retire on its own terms; re-arming it under its\n              -- owner would strand the lease.\n              AND dc.status = 'processed'\n              AND dc.worker_id IS NULL\n            -- OLDEST FIRST, and not just for tidiness: with more demoted\n            -- chains than the batch admits, an unordered LIMIT lets the plan\n            -- return the same subset every sweep, so the chains behind it\n            -- never get a pass at all. Ordering by age makes the sweep a\n            -- queue -- a chain re-armed here gets `last_updated_at = NOW()`\n            -- below, which sends it to the back.\n            GROUP BY c.dependence_chain_id\n            ORDER BY MIN(dc.last_updated_at) ASC, c.dependence_chain_id ASC\n            LIMIT $3\n        ),\n        rearmed AS (\n            UPDATE dependence_chain dc\n            SET status = 'updated',\n                dependency_count = 0,\n                schedule_priority = $4,\n                last_updated_at = NOW()\n            FROM demoted\n            WHERE dc.dependence_chain_id = demoted.dependence_chain_id\n              -- Re-checked under this statement's own row lock. Between the\n              -- SELECT above and here the listener can re-arm the chain with\n              -- new work; without these two predicates the sweep would zero a\n              -- freshly-armed dependency_count and open a gate early.\n              AND dc.status = 'processed'\n              AND dc.worker_id IS NULL\n            RETURNING dc.dependence_chain_id\n        ),\n        reset AS (\n            -- The count means \"attempts in the current lane pass\", so it has\n            -- to go back to zero or the work window would skip the row it was\n            -- just re-armed for.\n            UPDATE computations c\n            SET error_retry_count = 0\n            FROM rearmed\n            WHERE c.dependence_chain_id = rearmed.dependence_chain_id\n              AND c.is_completed = FALSE\n              AND c.is_error = TRUE\n              AND c.error_message LIKE '%' || $1 || '%'\n            RETURNING 1\n        )\n        SELECT\n            (SELECT count(*) FROM rearmed) AS \"rearmed!\",\n            (SELECT count(*) FROM reset) AS \"reset!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "rearmed!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "reset!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int2",
+        "Int8",
+        "Int2"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "af12e90564e61ea6b0e086d49aba5b5bf9e2fdafd635216f64cc72760caf1e60"
+}

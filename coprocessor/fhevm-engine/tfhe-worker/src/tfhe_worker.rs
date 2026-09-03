@@ -1451,6 +1451,31 @@ lazy_static! {
         "times work items are polled from database"
     )
     .unwrap();
+    /// A DCID lease that lapsed BEFORE this worker started executing its
+    /// batch. Leases are only renewed between cycles, so a cycle whose
+    /// execution outlives `--dcid-ttl-sec` becomes stealable while it runs.
+    /// Losing one is not a correctness fault -- materialization is
+    /// deterministic, which is why the code continues rather than aborting --
+    /// but it means another replica is redundantly executing the same chains,
+    /// doubling GPU and database load exactly when work is already slow.
+    ///
+    /// These two counters exist to answer whether that happens in practice,
+    /// before paying for an in-flight renewal task. A rate near zero says the
+    /// TTL comfortably covers real batches; a non-trivial rate says it does
+    /// not, and sizes the fix.
+    static ref DCID_LEASE_LOST_BEFORE_EXECUTION_COUNTER: IntCounter = register_int_counter!(
+        "coprocessor_worker_dcid_lease_lost_before_execution",
+        "DCID leases lost before batch execution started; the batch may be redundant with another replica"
+    )
+    .unwrap();
+    /// As above, but detected after execution finished: the lease lapsed at
+    /// some point during `schedule()`. Splitting the two says whether batches
+    /// are outliving the TTL, or merely arriving after it already lapsed.
+    static ref DCID_LEASE_LOST_DURING_EXECUTION_COUNTER: IntCounter = register_int_counter!(
+        "coprocessor_worker_dcid_lease_lost_during_execution",
+        "DCID leases lost while a batch was executing; results are deterministic but the work may be duplicated"
+    )
+    .unwrap();
     static ref WORK_ITEMS_NOTIFICATIONS_COUNTER: IntCounter = register_int_counter!(
         "coprocessor_work_items_notifications",
         "times instant notifications for work items received from the database"
@@ -1742,6 +1767,18 @@ async fn tfhe_worker_cycle(
             };
         }
 
+        // The idle-time sweep runs on the LOOP's cadence, not only when the
+        // work window comes back empty. `do_cleanup` is already throttled
+        // internally to `--dcid-cleanup-interval-sec` (1 h), so calling it
+        // every iteration costs one elapsed-time check; what it buys is an
+        // eventual-service guarantee. Reached only from the no-work branch it
+        // could be skipped indefinitely under sustained traffic, and the
+        // sweep is what re-arms demoted chains — whose consumers DEFER rather
+        // than drain, because the dead-producer predicate reads a retryable
+        // stamp as not-dead. A demoted row therefore parks its whole
+        // downstream cone until this runs.
+        dcid_mngr.do_cleanup().await?;
+
         #[cfg(feature = "bench")]
         let now = std::time::SystemTime::now();
         let loop_span = tracing::info_span!("worker_iteration");
@@ -1829,7 +1866,6 @@ async fn tfhe_worker_cycle(
             // state on another connection.
             trx.commit().await?;
             dcid_mngr.release_completed_locks().await?;
-            dcid_mngr.do_cleanup().await?;
             no_progress_cycles = 0;
 
             // Lock another dependence chain if available and
@@ -1880,6 +1916,7 @@ async fn tfhe_worker_cycle(
             // safe because result materialization is deterministic, although
             // it can redundantly execute the batch.
             if dcid_mngr.enabled() {
+                DCID_LEASE_LOST_BEFORE_EXECUTION_COUNTER.inc();
                 warn!(target: "tfhe_worker", "Lost dcid lock before processing transactions; continuing with potentially redundant work");
             }
         }
@@ -2005,6 +2042,7 @@ async fn tfhe_worker_cycle(
             .is_none()
             && dcid_mngr.enabled()
         {
+            DCID_LEASE_LOST_DURING_EXECUTION_COUNTER.inc();
             warn!(target: "tfhe_worker", "Lost dcid lock during transaction execution; persisting deterministic results may be redundant");
         }
         let (has_progressed, panicked_transactions) =
