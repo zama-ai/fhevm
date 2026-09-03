@@ -1,6 +1,6 @@
 # Porting the FHEVM hardhat plugin from hardhat v2 to hardhat v3
 
-Version: **1.30** (2026-09-03). Bump the minor for a content change to the plan, the major for a
+Version: **1.31** (2026-09-03). Bump the minor for a content change to the plan, the major for a
 change of charter or stage order; record each bump below.
 
 - 1.0 — initial plan, from the hardhat 3 docs.
@@ -47,8 +47,10 @@ change of charter or stage order; record each bump below.
   and `TestFHENotInitialized` e2e landed. Stage D5 complete; only `debugger` (D6) is still a stub.
 - 1.30 — D6 landed: open question 3 decided as PORT (over viem, CleartextDB read); dead
   `createDecryptionSignatures`/`createHandleCoder` dropped. The public surface is complete: Stage D done.
+- 1.31 — E1 landed (`fhevm public-decrypt` and `fhevm user-decrypt`, positional required inputs); the
+  skeleton's `hello` task retired.
 
-Status: **in progress — Stages A, B, C and D complete. Next: E1.** The landing zone exists: the
+Status: **in progress — Stages A, B, C, D and E1 complete. Next: E2.** The landing zone exists: the
 `hardhat/v3` cluster (own installation root, hardhat 3.15 pinned), the plugin registered via
 `definePlugin` with its per-connection `fhevm` object and the pre-serve chain preparation proven,
 and the `hardhat/v3/e2e` member with the first counter test.
@@ -769,10 +771,17 @@ this later without API change). One commit per group, tests run against the B1 s
   action opens its connection with `hre.network.getOrCreate()` (no arguments → honours
   `--network`). Two blocks; each test: `hre.tasks.getTask([...])` resolves and a run round-trips
   against the B1 stack:
-  - **E1a.** `task(["fhevm", "public-decrypt"])`.
-    Commit: `feat(hh-v3-plugin): add the fhevm public-decrypt task`
-  - **E1b.** `task(["fhevm", "user-decrypt"])`.
-    Commit: `feat(hh-v3-plugin): add the fhevm user-decrypt task`
+  - **E1a — LANDED.** `emptyTask(['fhevm'])` scope root + `task(['fhevm', 'public-decrypt'])` with
+    POSITIONAL `type` and `handle` (hardhat 3 options always carry a default, so required inputs are
+    positional — open question 7's "v3-idiomatic flags"). Action `tasks/publicDecrypt.ts`, lazy;
+    opens `hre.network.getOrCreate()`; prints AND returns the value, so `task.run()` is testable. The
+    skeleton's `hello` task retired with it. Commit: `feat(hh-v3-plugin): add the fhevm public-decrypt task`
+  - **E1b — LANDED.** `task(['fhevm', 'user-decrypt'])`: positional `type`, `handle`, `contract`;
+    option `--user <index>` (INT, default 0). The account is the network's `eth_accounts[index]`,
+    wrapped as a viem wallet client over the connection's provider, so the permit is signed by the
+    node (`eth_signTypedData_v4`) — no private key ever reaches the plugin. e2e
+    `internal/FHECounterTasks.ts` runs both tasks through `tasks.getTask([...]).run()` against the
+    counters. Commit: `feat(hh-v3-plugin): add the fhevm user-decrypt task`
 - **E2.** `["fhevm", "check-fhevm-compatibility"]`. Test likewise.
   Commit: `feat(hh-v3-plugin): add fhevm check-fhevm-compatibility task`
 - **E3.** Builtin overrides that SURVIVE the delete-bucket triage. Confirmed dead: `test`,
