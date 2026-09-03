@@ -253,7 +253,7 @@
       "vendored": [
         {
           "relPath": "./src/internal/vendored",
-          "files": ["ethersEthereumLib.ts"],
+          "files": ["ethersEthereumLib.ts", "fhevm-chains.ts"],
           "source": "./sdk/common-vendored/src",
           "reason": "A published package cannot depend on the private @fhevm/sdk-vendored-dev; the copy's sibling type import is rewritten to @fhevm/host-contracts-cleartext."
         }

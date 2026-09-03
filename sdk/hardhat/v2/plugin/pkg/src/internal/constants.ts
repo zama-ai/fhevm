@@ -4,6 +4,13 @@ import {
   CLEARTEXT_INPUT_VERIFICATION_ADDRESS,
 } from '@fhevm/host-contracts-cleartext/ts';
 
+import { FHEVM_CHAINS } from './vendored/fhevm-chains';
+
+// The public host chains, from the generated chain constants (rendered from the protocol registry):
+// the plugin keeps no copy of an address that can go stale.
+const ETHEREUM = FHEVM_CHAINS.mainnet.hosts.ethereum.fhevm.contracts;
+const SEPOLIA = FHEVM_CHAINS.testnet.hosts.ethereum_sepolia.fhevm.contracts;
+
 // npmjs.com packages url:
 // =======================
 
@@ -12,8 +19,6 @@ import {
 // https://www.npmjs.com/package/@fhevm/host-contracts-cleartext?activeTab=versions
 
 const constants = {
-  DECRYPTION_ADDRESS: '0x5ffdaAB0373E62E2ea2944776209aEf29E631A64',
-  INPUT_VERIFICATION_ADDRESS: '0x812b06e1CDCE800494b79fFE4f925A504a9A9810',
   FHEVM_HANDLE_VERSION: 0,
   HARDHAT_PLUGIN_NAME: '@fhevm/hardhat-plugin',
   SOLIDITY_COVERAGE_PACKAGE_NAME: 'solidity-coverage',
@@ -27,17 +32,17 @@ const constants = {
     configFile: 'config/ZamaConfig.sol',
     configContractName: 'EthereumConfig',
     // `EthereumConfig`, `SepoliaConfig`, `LocalConfig` must match the exact configuration
-    // defined in `config/ZamaConfig.sol`.
-    // It is essentially used to detect any mismatch with `config/ZamaConfig.sol`
+    // defined in `config/ZamaConfig.sol`. The two public ones come from the generated chain
+    // constants; `LocalConfig` is the cleartext stack's.
     EthereumConfig: {
-      ACLAddress: '0xcA2E8f1F656CD25C01F05d0b243Ab1ecd4a8ffb6',
-      CoprocessorAddress: '0xD82385dADa1ae3E969447f20A3164F6213100e75',
-      KMSVerifierAddress: '0x77627828a55156b04Ac0DC0eb30467f1a552BB03',
+      ACLAddress: ETHEREUM.acl.address,
+      CoprocessorAddress: ETHEREUM.fhevmExecutor.address,
+      KMSVerifierAddress: ETHEREUM.kmsVerifier.address,
     },
     SepoliaConfig: {
-      ACLAddress: '0xf0Ffdc93b7E186bC2f8CB3dAA75D86d1930A433D',
-      CoprocessorAddress: '0x92C920834Ec8941d2C77D188936E1f7A6f49c127',
-      KMSVerifierAddress: '0xbE0E383937d564D7FF0BC3b46c51f0bF8d5C311A',
+      ACLAddress: SEPOLIA.acl.address,
+      CoprocessorAddress: SEPOLIA.fhevmExecutor.address,
+      KMSVerifierAddress: SEPOLIA.kmsVerifier.address,
     },
     LocalConfig: {
       ACLAddress: '0x50157CFfD6bBFA2DECe204a89ec419c23ef5755D',

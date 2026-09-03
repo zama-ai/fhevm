@@ -43,7 +43,7 @@
     {
       "to": "hardhat/v2/plugin/pkg/src/internal/vendored",
       "note": "Published payload. It already depends on @fhevm/host-contracts-cleartext, so the sibling type import is rewritten to the package rather than copying ethereumLibTypes.ts here.",
-      "files": ["ethersEthereumLib.ts"],
+      "files": ["ethersEthereumLib.ts", "fhevm-chains.ts"],
       "rewrites": [
         {
           "file": "ethersEthereumLib.ts",
