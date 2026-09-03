@@ -1,4 +1,5 @@
 use bigdecimal::num_bigint::BigInt;
+use fhevm_engine_common::types::SupportedFheOperations;
 
 use host_listener::contracts::TfheContract;
 use host_listener::contracts::TfheContract::TfheContractEvents;
@@ -362,19 +363,20 @@ fn is_cheap_binary_op(op: &BinaryOperatorTestCase) -> bool {
     !is_expensive_binary_op(op)
 }
 
+fn is_op(op: &BinaryOperatorTestCase, wanted: SupportedFheOperations) -> bool {
+    matches!(SupportedFheOperations::try_from(op.operator), Ok(got) if got == wanted)
+}
+
 fn is_mul(op: &BinaryOperatorTestCase) -> bool {
-    use fhevm_engine_common::types::SupportedFheOperations as S;
-    matches!(S::try_from(op.operator), Ok(S::FheMul))
+    is_op(op, SupportedFheOperations::FheMul)
 }
 
 fn is_div(op: &BinaryOperatorTestCase) -> bool {
-    use fhevm_engine_common::types::SupportedFheOperations as S;
-    matches!(S::try_from(op.operator), Ok(S::FheDiv))
+    is_op(op, SupportedFheOperations::FheDiv)
 }
 
 fn is_rem(op: &BinaryOperatorTestCase) -> bool {
-    use fhevm_engine_common::types::SupportedFheOperations as S;
-    matches!(S::try_from(op.operator), Ok(S::FheRem))
+    is_op(op, SupportedFheOperations::FheRem)
 }
 
 /// Which cases a test runs. Shared with the check below so the two cannot disagree.

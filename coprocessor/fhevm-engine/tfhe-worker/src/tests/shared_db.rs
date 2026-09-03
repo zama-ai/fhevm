@@ -12,6 +12,20 @@ const PG_URL_ENV: &str = "COPROCESSOR_TEST_PG_URL";
 
 const POSTGRES_PORT: u16 = 5432;
 
+/// Fixed so repeated runs share one container rather than adding another each time.
+const FIXTURE_CONTAINER: &str = "tfhe-worker-test-pg";
+const FIXTURE_PORT: u16 = 55432;
+
+fn fixture_url() -> String {
+    format!("postgresql://postgres:postgres@127.0.0.1:{FIXTURE_PORT}/postgres")
+}
+
+async fn running_fixture_url() -> Option<String> {
+    let url = fixture_url();
+    PgConnection::connect(&url).await.ok()?.close().await.ok()?;
+    Some(url)
+}
+
 /// Any fixed number, the same in every process.
 const TEMPLATE_ADVISORY_LOCK: i64 = 0x7f6e_5d4c_3b2a_1908;
 
@@ -40,24 +54,45 @@ async fn server() -> Result<&'static SharedServer, BoxError> {
                 });
             }
 
+            // A fixed name and port, so every run and every test process reuses one
+            // container instead of leaving one behind each time.
+            if let Some(url) = running_fixture_url().await {
+                info!("Reusing test Postgres container {FIXTURE_CONTAINER}");
+                return Ok(SharedServer {
+                    _container: None,
+                    admin_url: url,
+                });
+            }
+
             let container = GenericImage::new("postgres", "15.7")
-                .with_exposed_port(POSTGRES_PORT.into())
                 .with_wait_for(WaitFor::message_on_stderr(
                     "database system is ready to accept connections",
                 ))
                 .with_env_var("POSTGRES_USER", "postgres")
                 .with_env_var("POSTGRES_PASSWORD", "postgres")
+                .with_mapped_port(FIXTURE_PORT, POSTGRES_PORT.into())
+                .with_container_name(FIXTURE_CONTAINER)
                 .start()
-                .await?;
+                .await;
 
-            let host = container.get_host().await?;
-            let port = container.get_host_port_ipv4(POSTGRES_PORT).await?;
-            info!("Started shared test Postgres container on {host}:{port}");
-
-            Ok(SharedServer {
-                _container: Some(Arc::new(container)),
-                admin_url: format!("postgresql://postgres:postgres@{host}:{port}/postgres"),
-            })
+            match container {
+                Ok(container) => {
+                    let host = container.get_host().await?;
+                    info!("Started test Postgres container on {host}:{FIXTURE_PORT}");
+                    Ok(SharedServer {
+                        _container: Some(Arc::new(container)),
+                        admin_url: fixture_url(),
+                    })
+                }
+                // Another process won the race and created it first.
+                Err(err) => match running_fixture_url().await {
+                    Some(url) => Ok(SharedServer {
+                        _container: None,
+                        admin_url: url,
+                    }),
+                    None => Err(err.into()),
+                },
+            }
         })
         .await
 }
@@ -95,8 +130,9 @@ impl ClonedDb {
     }
 }
 
-const MAX_KEYED_TESTS: usize = 4;
-static KEYED_TESTS: Semaphore = Semaphore::const_new(MAX_KEYED_TESTS);
+// Key-loading tests at once per process.
+const MAX_CONCURRENT_KEY_TESTS: usize = 4;
+static KEY_TESTS: Semaphore = Semaphore::const_new(MAX_CONCURRENT_KEY_TESTS);
 
 /// Reclaims databases no test holds a lock on. Runs before each clone.
 async fn sweep_orphans(conn: &mut PgConnection) -> Result<(), BoxError> {
@@ -245,7 +281,7 @@ pub async fn cloned_test_db(mode: ImportMode) -> Result<ClonedDb, Box<dyn std::e
 async fn cloned_test_db_inner(mode: ImportMode) -> Result<ClonedDb, BoxError> {
     // Before anything else, so a test waits rather than piling on another key.
     let keyed_slot = match mode {
-        ImportMode::WithKeysNoSns | ImportMode::WithAllKeys => Some(KEYED_TESTS.acquire().await?),
+        ImportMode::WithKeysNoSns | ImportMode::WithAllKeys => Some(KEY_TESTS.acquire().await?),
         ImportMode::None | ImportMode::SkipMigrations => None,
     };
 
@@ -262,22 +298,9 @@ async fn cloned_test_db_inner(mode: ImportMode) -> Result<ClonedDb, BoxError> {
         .execute(&mut owner)
         .await?;
 
-    // Postgres copies one at a time.
-    let mut attempt = 0;
-    loop {
-        let created = owner
-            .execute(format!(r#"CREATE DATABASE "{db_name}" TEMPLATE "{template}""#).as_str())
-            .await;
-        match created {
-            Ok(_) => break,
-            Err(err) if attempt < 10 => {
-                attempt += 1;
-                warn!(attempt, error = %err, "clone contended, retrying");
-                tokio::time::sleep(std::time::Duration::from_millis(500 * attempt)).await;
-            }
-            Err(err) => return Err(err.into()),
-        }
-    }
+    owner
+        .execute(format!(r#"CREATE DATABASE "{db_name}" TEMPLATE "{template}""#).as_str())
+        .await?;
 
     let db_url = with_database(&server.admin_url, &db_name)?;
     info!(db_name, "Cloned test database from {template}");

@@ -53,7 +53,6 @@ jobs:
             package: tfhe-worker
             needs_localstack: false
             needs_foundry: false
-            needs_postgres: true
             shard: 1
             shards: 3
             runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64
@@ -62,7 +61,6 @@ jobs:
             package: tfhe-worker
             needs_localstack: false
             needs_foundry: false
-            needs_postgres: true
             shard: 2
             shards: 3
             runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64
@@ -71,7 +69,6 @@ jobs:
             package: tfhe-worker
             needs_localstack: false
             needs_foundry: false
-            needs_postgres: true
             shard: 3
             shards: 3
             runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64
@@ -162,7 +159,7 @@ jobs:
 
     # Shared by every test in the job, so the FHE keys are imported once, not per test.
     - name: Start postgres
-      if: ${{ matrix.needs_postgres }}
+      if: ${{ matrix.use_nextest }}
       run: |
         docker run --rm -d -p 5432:5432 --name postgres \
           -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres \
