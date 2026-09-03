@@ -1,7 +1,7 @@
 {
   "name": "hardhat-plugin-v3-consumer-esm",
   "version": "0.0.0",
-  "description": "Isolated ESM consumer of @fhevm/hardhat-plugin (hardhat v3): installs the payload the way a user would and runs an encrypt/decrypt round-trip on the stack it deploys.",
+  "description": "Isolated ESM consumer of @fhevm/hardhat-plugin-v3: installs the payload the way a user would and runs an encrypt/decrypt round-trip on the stack it deploys.",
   "private": true,
   "type": "module",
   "engines": {
@@ -11,7 +11,7 @@
     "test": "node --test --test-concurrency=1 src/*.test.js"
   },
   "devDependencies": {
-    "@fhevm/hardhat-plugin": "file:../../pkg",
+    "@fhevm/hardhat-plugin-v3": "file:../../pkg",
     "@fhevm/sdk": "^0.13.3",
     "hardhat": "^3.0.0",
     "viem": "^2.55.19"

@@ -1,4 +1,4 @@
-import { FhevmType } from '@fhevm/hardhat-plugin';
+import { FhevmType } from '@fhevm/hardhat-plugin-v3';
 import { expect } from 'chai';
 import { network } from 'hardhat';
 

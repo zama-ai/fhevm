@@ -27,7 +27,7 @@ void test('the fhevm tasks are registered on a programmatic hardhat 3 environmen
   }
 
   const { createHardhatRuntimeEnvironment } = await import('hardhat/hre');
-  const { default: fhevmPlugin } = await import('../pkg/_esm/index.js');
+  const { default: fhevmPlugin } = await import('#esm/index.js');
   const hre = await createHardhatRuntimeEnvironment({ plugins: [fhevmPlugin] });
 
   assert.notEqual(hre.tasks.getTask(['fhevm']), undefined, 'the fhevm scope root');
@@ -47,6 +47,6 @@ void test('the cluster resolves exactly one hardhat instance from every member',
   }
 
   const fromOwner = require.resolve('hardhat/package.json');
-  const fromPkg = createRequire(new URL('../pkg/_esm/index.js', import.meta.url)).resolve('hardhat/package.json');
+  const fromPkg = createRequire(new URL('#esm/index.js', import.meta.url)).resolve('hardhat/package.json');
   assert.equal(fromOwner, fromPkg, 'owner and payload must resolve the SAME hardhat directory');
 });

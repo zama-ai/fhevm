@@ -8,10 +8,10 @@ import test from 'node:test';
 import { createHardhatRuntimeEnvironment } from 'hardhat/hre';
 import type { NetworkConnection } from 'hardhat/types/network';
 
-import plugin from '../pkg/_esm/index.js';
-import { LOCALHOST_DEPLOYER } from '../pkg/_esm/internal/constants.js';
-import { precomputeLocalhostAddresses } from '../pkg/_esm/internal/deploy.js';
-import { prepareDevelopmentChain } from '../pkg/_esm/internal/prepare.js';
+import plugin from '#esm/index.js';
+import { LOCALHOST_DEPLOYER } from '#esm/internal/constants.js';
+import { precomputeLocalhostAddresses } from '#esm/internal/deploy.js';
+import { prepareDevelopmentChain } from '#esm/internal/prepare.js';
 
 const { aclAddress } = precomputeLocalhostAddresses().fhevmAddresses;
 

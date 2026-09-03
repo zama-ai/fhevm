@@ -12,9 +12,9 @@ import type { NetworkConnection } from 'hardhat/types/network';
 import { type Address, type Chain, type PublicClient, parseAbi, parseEther, toHex } from 'viem';
 import { mnemonicToAccount } from 'viem/accounts';
 
-import { developmentChain, developmentPublicClient, developmentWalletClient } from '../pkg/_esm/internal/clients.js';
-import { LOCALHOST_DEPLOYER } from '../pkg/_esm/internal/constants.js';
-import { deployCleartextStack, precomputeLocalhostAddresses } from '../pkg/_esm/internal/deploy.js';
+import { developmentChain, developmentPublicClient, developmentWalletClient } from '#esm/internal/clients.js';
+import { LOCALHOST_DEPLOYER } from '#esm/internal/constants.js';
+import { deployCleartextStack, precomputeLocalhostAddresses } from '#esm/internal/deploy.js';
 
 const VERSION_ABI = parseAbi(['function getVersion() view returns (string)']);
 

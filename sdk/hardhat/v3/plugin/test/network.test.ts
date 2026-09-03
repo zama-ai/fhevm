@@ -8,13 +8,13 @@ import test from 'node:test';
 import { HardhatPluginError } from 'hardhat/plugins';
 import type { NetworkConnection } from 'hardhat/types/network';
 
-import { FHEVM_CHAINS } from '../pkg/_esm/internal/vendored/fhevm-chains.js';
+import { FHEVM_CHAINS } from '#esm/internal/vendored/fhevm-chains.js';
 import {
   isCleartextNetwork,
   isDevelopmentNetwork,
   isPublicNetwork,
   resolveFhevmNetwork,
-} from '../pkg/_esm/internal/network.js';
+} from '#esm/internal/network.js';
 
 type FakeConfig =
   { type: 'edr-simulated'; chainId: number } | { type: 'http'; chainId?: number; url: { getUrl(): Promise<string> } };

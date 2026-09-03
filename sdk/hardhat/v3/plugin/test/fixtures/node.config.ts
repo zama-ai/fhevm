@@ -3,6 +3,6 @@
 
 import { defineConfig } from 'hardhat/config';
 
-import plugin from '../../pkg/_esm/index.js';
+import plugin from '#esm/index.js';
 
 export default defineConfig({ plugins: [plugin] });

@@ -9,7 +9,7 @@ import test from 'node:test';
 import { createHardhatRuntimeEnvironment } from 'hardhat/hre';
 import { HardhatPluginError } from 'hardhat/plugins';
 
-import plugin, { FhevmType } from '../pkg/_esm/index.js';
+import plugin, { FhevmType } from '#esm/index.js';
 
 const CONTRACT = '0x1111111111111111111111111111111111111111';
 const pluginError = (fragment: string) => (e: unknown) =>
@@ -50,8 +50,8 @@ void test('the decrypt tasks refuse bad arguments by name, and the ACL refuses a
 
 void test('check-fhevm-compatibility tells an empty address, an uninitialized contract and a foreign config apart', async () => {
   const { pad, toHex } = await import('viem');
-  const { computeStorageLocation } = await import('../pkg/_esm/internal/coprocessorConfig.js');
-  const { precomputeLocalhostAddresses } = await import('../pkg/_esm/internal/deploy.js');
+  const { computeStorageLocation } = await import('#esm/internal/coprocessorConfig.js');
+  const { precomputeLocalhostAddresses } = await import('#esm/internal/deploy.js');
   const hre = await createHardhatRuntimeEnvironment({ plugins: [plugin] });
   const connection = await hre.network.getOrCreate();
   try {

@@ -16,13 +16,13 @@ make check-post             # deliverable gates: publint/attw, contract sizes, c
 make clean                  # remove every package's build output; never touches tracked files
 make rebuild                # clean, then compile from scratch (no gates)
 make ci                     # every gate, from a clean tree
-make uninstall              # undo install+build: build outputs, node_modules, forge deps
+make distclean              # undo install+build: build outputs, node_modules, forge deps
                             # (shows each deletion list and asks first; explicit paths, never git clean;
                             # fhevm-npm/node_modules is kept so the CLI stays runnable)
-make purge                  # uninstall PLUS the install lockfiles (sdk root + each hardhat cluster) —
+make regenerate-package-lock # distclean PLUS the install lockfiles (sdk root + each hardhat cluster) —
                             # the next install re-resolves every range; review and commit the lock diffs
                             # (spotless worktree only)
-make ci-from-scratch        # the strongest proof: uninstall everything, install, then every ci gate
+make ci-from-scratch        # the strongest proof: distclean everything, install, then every ci gate
 make graph TARGET=<t>       # show what <t> would run, without running anything
 make help                   # list every target
 ```
@@ -98,18 +98,18 @@ dependencies are explicit `file:` links (plugin -> host-contracts v13/pkg, owner
 future js-sdk joins the sdk ROOT and is consumed the same way. Cluster members are reached with
 `npm --prefix hardhat/v2 run -w <name> <script>` — the Makefile's run-hh-v2/run-hh-v3 macros.
 
-# Reinstalling after `make uninstall` or `make purge`
+# Reinstalling after `make distclean` or `make regenerate-package-lock`
 
-After `make uninstall`, one command restores everything — the lockfile was kept, so npm REPLAYS the
+After `make distclean`, one command restores everything — the lockfile was kept, so npm REPLAYS the
 recorded versions and the tree comes back exactly as it was:
 
 ```sh
 make install      # one npm install per installation root (sdk, fhevm-npm, hardhat/v2, hardhat/v3) + forge deps
 ```
 
-After `make purge`, the same command does more than restore: the install lockfiles are gone (the sdk
+After `make regenerate-package-lock`, the same command does more than restore: the install lockfiles are gone (the sdk
 root's and each hardhat cluster's), so `npm install` RE-RESOLVES every dependency range to the newest
-in-range versions and writes new lockfiles. That is the point of purge — a deliberate dependency
+in-range versions and writes new lockfiles. That is the point of regenerate-package-lock — a deliberate dependency
 upgrade — and the lock diffs are the deliverable:
 
 ```sh

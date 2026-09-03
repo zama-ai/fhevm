@@ -1,17 +1,17 @@
-# @fhevm/hardhat-plugin (Hardhat 3)
+# @fhevm/hardhat-plugin-v3
 
 FHEVM tooling for [Hardhat 3](https://hardhat.org). On every development connection the plugin deploys
 and verifies the cleartext FHEVM stack, then hands you `connection.fhevm`: encryption, public and user
 decryption, error diagnostics, HCU accounting and a test-only debugger — the same surface the Hardhat 2
 plugin offered, rebuilt on Hardhat 3 connections and [viem](https://viem.sh).
 
-Hardhat 2 projects: this package's `0.x` line for Hardhat 2 is unchanged; this README is the Hardhat 3
-plugin.
+Hardhat 2 projects keep using `@fhevm/hardhat-plugin`; this package is the Hardhat 3 plugin, versioned
+on the FHEVM protocol line it targets (`0.13.x`).
 
 ## Install
 
 ```sh
-npm install --save-dev @fhevm/hardhat-plugin hardhat viem @fhevm/sdk @fhevm/solidity
+npm install --save-dev @fhevm/hardhat-plugin-v3 hardhat viem @fhevm/sdk @fhevm/solidity
 ```
 
 `hardhat`, `viem` and `@fhevm/sdk` are peer dependencies. Node 22 or later.
@@ -20,7 +20,7 @@ npm install --save-dev @fhevm/hardhat-plugin hardhat viem @fhevm/sdk @fhevm/soli
 
 ```ts
 // hardhat.config.ts
-import fhevmPlugin from '@fhevm/hardhat-plugin';
+import fhevmPlugin from '@fhevm/hardhat-plugin-v3';
 import { defineConfig } from 'hardhat/config';
 
 export default defineConfig({
@@ -40,7 +40,7 @@ local stack lands on the addresses that file compiles in.
 Hardhat 3 scopes networks to connections, so there is no `hre.fhevm`: the object lives on the connection.
 
 ```ts
-import { FhevmType } from '@fhevm/hardhat-plugin';
+import { FhevmType } from '@fhevm/hardhat-plugin-v3';
 import { network } from 'hardhat';
 
 const { ethers, fhevm } = await network.connect();

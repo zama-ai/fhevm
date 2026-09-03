@@ -10,7 +10,7 @@ import { createHardhatRuntimeEnvironment } from 'hardhat/hre';
 import { HardhatPluginError } from 'hardhat/plugins';
 import { isHex, size } from 'viem';
 
-import plugin, { FhevmType } from '../pkg/_esm/index.js';
+import plugin, { FhevmType } from '#esm/index.js';
 
 const CONTRACT = '0x1111111111111111111111111111111111111111';
 const USER = '0x2222222222222222222222222222222222222222';

@@ -11,9 +11,9 @@ import { fileURLToPath } from 'node:url';
 
 import { createHardhatRuntimeEnvironment } from 'hardhat/hre';
 
-import plugin from '../pkg/_esm/index.js';
-import { LOCALHOST_DEPLOYER } from '../pkg/_esm/internal/constants.js';
-import { precomputeLocalhostAddresses } from '../pkg/_esm/internal/deploy.js';
+import plugin from '#esm/index.js';
+import { LOCALHOST_DEPLOYER } from '#esm/internal/constants.js';
+import { precomputeLocalhostAddresses } from '#esm/internal/deploy.js';
 
 const require = createRequire(import.meta.url);
 // The CLI file is not in hardhat's exports map; walk from the package root, which is.

@@ -321,14 +321,14 @@
       "kind": "published",
       "type": "esm",
       "browser": false,
-      "name": "@fhevm/hardhat-plugin",
+      "name": "@fhevm/hardhat-plugin-v3",
       "member": true,
       "memberOf": "./hardhat/v3",
       "dependencyGroup": "hardhat/v3",
       "consumerTests": {
         "esm": "./hardhat/v3/plugin/test-consumer/esm"
       },
-      "note": "Same npm name as the v2 payload ON PURPOSE: one plugin, a new major line per hardhat generation. Legal because published-name uniqueness is scoped per installation root, and the two payloads never share one.",
+      "note": "One published package per hardhat generation: the v2 payload stays @fhevm/hardhat-plugin, this one is @fhevm/hardhat-plugin-v3, versioned on the FHEVM protocol line it targets (0.13.x).",
       "vendored": [
         {
           "relPath": "./src/internal/vendored",

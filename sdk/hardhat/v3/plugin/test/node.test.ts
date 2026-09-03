@@ -9,9 +9,9 @@ import test from 'node:test';
 
 import { createHardhatRuntimeEnvironment } from 'hardhat/hre';
 
-import plugin from '../pkg/_esm/index.js';
-import { LOCALHOST_DEPLOYER } from '../pkg/_esm/internal/constants.js';
-import { precomputeLocalhostAddresses } from '../pkg/_esm/internal/deploy.js';
+import plugin from '#esm/index.js';
+import { LOCALHOST_DEPLOYER } from '#esm/internal/constants.js';
+import { precomputeLocalhostAddresses } from '#esm/internal/deploy.js';
 
 async function rpc(url: string, method: string, params: unknown[] = []): Promise<unknown> {
   const response = await fetch(url, {

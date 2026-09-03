@@ -10,7 +10,7 @@ import test from 'node:test';
 
 import { HardhatPluginError } from 'hardhat/plugins';
 
-import { FhevmPaths, resolveFromConsumer } from '../pkg/_esm/internal/paths.js';
+import { FhevmPaths, resolveFromConsumer } from '#esm/internal/paths.js';
 
 function writePackage(dir: string, name: string): void {
   mkdirSync(dir, { recursive: true });

@@ -9,11 +9,11 @@ import test from 'node:test';
 import { createHardhatRuntimeEnvironment } from 'hardhat/hre';
 import { encodeAbiParameters, encodeEventTopics, encodeFunctionData } from 'viem';
 
-import plugin from '../pkg/_esm/index.js';
-import type { FhevmLog } from '../pkg/_esm/index.js';
-import { developmentChain, developmentPublicClient } from '../pkg/_esm/internal/clients.js';
-import { precomputeLocalhostAddresses } from '../pkg/_esm/internal/deploy.js';
-import { COPROCESSOR_EVENT_NAMES } from '../pkg/_esm/internal/events.js';
+import plugin from '#esm/index.js';
+import type { FhevmLog } from '#esm/index.js';
+import { developmentChain, developmentPublicClient } from '#esm/internal/clients.js';
+import { precomputeLocalhostAddresses } from '#esm/internal/deploy.js';
+import { COPROCESSOR_EVENT_NAMES } from '#esm/internal/events.js';
 
 const ALICE = '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266';
 const TX_HASH = `0x${'22'.repeat(32)}` as const;

@@ -11,7 +11,7 @@ import { createHardhatRuntimeEnvironment } from 'hardhat/hre';
 import { HardhatPluginError } from 'hardhat/plugins';
 import { hexToBytes } from 'viem';
 
-import plugin, { FhevmType } from '../pkg/_esm/index.js';
+import plugin, { FhevmType } from '#esm/index.js';
 
 const ZERO_HANDLE = `0x${'0'.repeat(64)}` as const;
 const CONTRACT = '0x1111111111111111111111111111111111111111';

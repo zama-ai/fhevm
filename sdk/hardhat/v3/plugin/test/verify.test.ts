@@ -9,11 +9,11 @@ import { HardhatPluginError } from 'hardhat/plugins';
 import { createHardhatRuntimeEnvironment } from 'hardhat/hre';
 import type { Address, PublicClient } from 'viem';
 
-import plugin from '../pkg/_esm/index.js';
-import { developmentChain, developmentPublicClient } from '../pkg/_esm/internal/clients.js';
-import { FhevmCleartextContractsRepository, type FhevmContractWrapper } from '../pkg/_esm/internal/contracts.js';
-import { deployCleartextStack, precomputeLocalhostAddresses } from '../pkg/_esm/internal/deploy.js';
-import { verifyCleartextStack } from '../pkg/_esm/internal/verify.js';
+import plugin from '#esm/index.js';
+import { developmentChain, developmentPublicClient } from '#esm/internal/clients.js';
+import { FhevmCleartextContractsRepository, type FhevmContractWrapper } from '#esm/internal/contracts.js';
+import { deployCleartextStack, precomputeLocalhostAddresses } from '#esm/internal/deploy.js';
+import { verifyCleartextStack } from '#esm/internal/verify.js';
 
 const localhost = precomputeLocalhostAddresses();
 
