@@ -9,41 +9,9 @@ import type { NetworkConfig } from 'hardhat/types/config';
 import type { NetworkConnection } from 'hardhat/types/network';
 import type { EthereumProvider } from 'hardhat/types/providers';
 
+import type { FhevmNetworkInfo, FhevmNetworkKind, FhevmPublicChain } from '../types.js';
 import { DEVELOPMENT_CHAIN_ID, PLUGIN_ID } from './constants.js';
-import {
-  FHEVM_CHAINS,
-  type FhevmHostChainConstants,
-  type FhevmNetworkGroup,
-  type FhevmNetworkGroupConstants,
-} from './vendored/fhevm-chains.js';
-
-export type FhevmNetworkKind =
-  /** In-process EDR chain: ours to prepare. */
-  | 'hardhat'
-  /** A remote development node on the development chain id: `hardhat node` or anvil. */
-  | 'localhost'
-  /** A host chain the protocol registry knows, served by at least one gateway. */
-  | 'public'
-  | 'unknown';
-
-/** One registry host chain and the network group (gateway + relayer) that serves it. */
-export type FhevmPublicChain = {
-  readonly group: FhevmNetworkGroup;
-  readonly host: FhevmHostChainConstants;
-};
-
-export type FhevmNetworkInfo = {
-  readonly networkName: string;
-  readonly chainId: number;
-  readonly kind: FhevmNetworkKind;
-  /** The remote node's URL; undefined in process. */
-  readonly url: string | undefined;
-  /**
-   * Every registry host chain with this chain id, one per network group that serves it — Sepolia is
-   * under both `testnet` and `devnet`, with different addresses. Empty unless `kind` is `public`.
-   */
-  readonly publicChains: readonly FhevmPublicChain[];
-};
+import { FHEVM_CHAINS, type FhevmNetworkGroup, type FhevmNetworkGroupConstants } from './vendored/fhevm-chains.js';
 
 export async function resolveFhevmNetwork(connection: NetworkConnection<string>): Promise<FhevmNetworkInfo> {
   const { networkName, networkConfig, provider } = connection;

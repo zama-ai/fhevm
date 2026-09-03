@@ -10,8 +10,9 @@
 import type { Deployed } from '@fhevm/host-contracts-cleartext/ts';
 import type { NetworkConnection } from 'hardhat/types/network';
 
+import type { FhevmNetworkInfo } from '../types.js';
 import { deployCleartextStack } from './deploy.js';
-import { type FhevmNetworkInfo, isDevelopmentNetwork } from './network.js';
+import { isDevelopmentNetwork } from './network.js';
 import { verifyCleartextStack } from './verify.js';
 
 export async function prepareDevelopmentChain(
