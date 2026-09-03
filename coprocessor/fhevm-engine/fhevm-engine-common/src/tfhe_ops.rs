@@ -890,7 +890,6 @@ pub fn perform_fhe_operation(
     input_operands: &[SupportedFheCiphertexts],
     _: usize,
     output_type: i16,
-    _: &tokio_util::sync::CancellationToken,
     _: std::time::Duration,
 ) -> Result<SupportedFheCiphertexts, FhevmError> {
     perform_fhe_operation_impl(fhe_operation_int, input_operands, output_type)
@@ -902,7 +901,6 @@ pub fn perform_fhe_operation(
     input_operands: &[SupportedFheCiphertexts],
     gpu_idx: usize,
     output_type: i16,
-    cancellation: &tokio_util::sync::CancellationToken,
     reservation_timeout: std::time::Duration,
 ) -> Result<SupportedFheCiphertexts, FhevmError> {
     use crate::gpu_memory::{get_op_size_on_gpu, reserve_memory_on_gpu};
@@ -912,9 +910,8 @@ pub fn perform_fhe_operation(
     // scratch/output allocation reported by TFHE; counting inputs again was
     // unnecessarily conservative.
     let gpu_mem_res = get_op_size_on_gpu(fhe_operation_int, input_operands)?;
-    let _reservation =
-        reserve_memory_on_gpu(gpu_mem_res, gpu_idx, cancellation, reservation_timeout)
-            .map_err(FhevmError::GpuMemoryReservationError)?;
+    let _reservation = reserve_memory_on_gpu(gpu_mem_res, gpu_idx, reservation_timeout)
+        .map_err(FhevmError::GpuMemoryReservationError)?;
     perform_fhe_operation_impl(fhe_operation_int, input_operands, output_type)
 }
 
