@@ -33,6 +33,11 @@ void test('the fhevm tasks are registered on a programmatic hardhat 3 environmen
   assert.notEqual(hre.tasks.getTask(['fhevm']), undefined, 'the fhevm scope root');
   assert.notEqual(hre.tasks.getTask(['fhevm', 'public-decrypt']), undefined, 'fhevm public-decrypt');
   assert.notEqual(hre.tasks.getTask(['fhevm', 'user-decrypt']), undefined, 'fhevm user-decrypt');
+  assert.notEqual(
+    hre.tasks.getTask(['fhevm', 'check-fhevm-compatibility']),
+    undefined,
+    'fhevm check-fhevm-compatibility',
+  );
 });
 
 void test('the cluster resolves exactly one hardhat instance from every member', (t) => {

@@ -47,3 +47,43 @@ void test('the decrypt tasks refuse bad arguments by name, and the ACL refuses a
     await connection.close();
   }
 });
+
+void test('check-fhevm-compatibility tells an empty address, an uninitialized contract and a foreign config apart', async () => {
+  const { pad, toHex } = await import('viem');
+  const { computeStorageLocation } = await import('../pkg/_esm/internal/coprocessorConfig.js');
+  const { precomputeLocalhostAddresses } = await import('../pkg/_esm/internal/deploy.js');
+  const hre = await createHardhatRuntimeEnvironment({ plugins: [plugin] });
+  const connection = await hre.network.getOrCreate();
+  try {
+    const check = hre.tasks.getTask(['fhevm', 'check-fhevm-compatibility']);
+    const location = computeStorageLocation('confidential.storage.config');
+    const setSlots = async (addresses: readonly string[]): Promise<void> => {
+      for (const [i, value] of addresses.entries()) {
+        await connection.provider.request({
+          method: 'hardhat_setStorageAt',
+          params: [CONTRACT, toHex(location + BigInt(i), { size: 32 }), pad(value as `0x${string}`, { size: 32 })],
+        });
+      }
+    };
+
+    await assert.rejects(check.run({ address: '0xnope' }), pluginError('Invalid address'));
+    await assert.rejects(check.run({ address: CONTRACT }), pluginError('does not correspond to a deployed contract'));
+
+    // Code but no config: deployed, not initialized.
+    await connection.provider.request({ method: 'hardhat_setCode', params: [CONTRACT, '0x6001'] });
+    await assert.rejects(check.run({ address: CONTRACT }), pluginError('is not initialized for FHE operations'));
+
+    const { aclAddress, fhevmExecutorAddress, kmsVerifierAddress } = precomputeLocalhostAddresses().fhevmAddresses;
+    await setSlots([aclAddress, fhevmExecutorAddress, '0x9999999999999999999999999999999999999999']);
+    await assert.rejects(check.run({ address: CONTRACT }), pluginError('Coprocessor KMSVerifierAddress mismatch'));
+
+    await setSlots([aclAddress, fhevmExecutorAddress, kmsVerifierAddress]);
+    assert.deepEqual(await check.run({ address: CONTRACT }), {
+      ACLAddress: aclAddress,
+      CoprocessorAddress: fhevmExecutorAddress,
+      KMSVerifierAddress: kmsVerifierAddress,
+    });
+  } finally {
+    await connection.close();
+  }
+});

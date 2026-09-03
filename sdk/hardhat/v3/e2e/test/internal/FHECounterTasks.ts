@@ -67,3 +67,26 @@ describe('fhevm tasks', function () {
     expect(value).to.eq(4n);
   });
 });
+
+describe('fhevm check-fhevm-compatibility', function () {
+  it('accepts a ZamaEthereumConfig contract and refuses an empty address', async function () {
+    if (!fhevm.isCleartext) {
+      throw new Error(`This hardhat test suite can only run on a cleartext node`);
+    }
+    const factory: FHECounterPublicDecrypt__factory = await ethers.getContractFactory('FHECounterPublicDecrypt');
+    const counter: FHECounterPublicDecrypt = await factory.deploy();
+    const counterAddress = (await counter.getAddress()) as Hex;
+
+    const check = tasks.getTask(['fhevm', 'check-fhevm-compatibility']);
+    const config = (await check.run({ address: counterAddress })) as { ACLAddress: string };
+    expect(config.ACLAddress).to.not.eq(ethers.ZeroAddress);
+
+    let refused = false;
+    try {
+      await check.run({ address: '0x1111111111111111111111111111111111111111' });
+    } catch {
+      refused = true;
+    }
+    expect(refused).to.eq(true);
+  });
+});

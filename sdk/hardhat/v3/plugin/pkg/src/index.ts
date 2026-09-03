@@ -46,6 +46,13 @@ const plugin: HardhatPlugin = definePlugin({
       })
       .setAction(() => import('./tasks/userDecrypt.js'))
       .build(),
+    task(
+      ['fhevm', 'check-fhevm-compatibility'],
+      'Checks if a FHEVM contract is well configured to perform FHEVM operations',
+    )
+      .addPositionalArgument({ name: 'address', description: 'The contract address to check' })
+      .setAction(() => import('./tasks/checkFhevmCompatibility.js'))
+      .build(),
   ],
 });
 
