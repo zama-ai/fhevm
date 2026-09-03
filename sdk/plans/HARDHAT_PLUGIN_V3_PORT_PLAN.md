@@ -1,6 +1,6 @@
 # Porting the FHEVM hardhat plugin from hardhat v2 to hardhat v3
 
-Version: **1.24** (2026-09-03). Bump the minor for a content change to the plan, the major for a
+Version: **1.25** (2026-09-03). Bump the minor for a content change to the plan, the major for a
 change of charter or stage order; record each bump below.
 
 - 1.0 — initial plan, from the hardhat 3 docs.
@@ -38,8 +38,9 @@ change of charter or stage order; record each bump below.
   errors, wired through `onRequest` with a per-connection repository); A7 note corrected.
 - 1.24 — D4a3 landed (`revertedWithCustomErrorArgs` with a viem-backed ethers-shaped interface,
   `tryParseFhevmError`); TestErrors/TestTrivialPermissions/TestACL e2e ported. Stage D4a complete.
+- 1.25 — D4b landed (`parseCoprocessorEvents` over viem `decodeEventLog`; accepts viem and ethers logs).
 
-Status: **in progress — Stages A, B, C, D0–D3 and D4a complete. Next: D4b.** The landing zone exists: the
+Status: **in progress — Stages A, B, C and D0–D4 complete. Next: D5a1.** The landing zone exists: the
 `hardhat/v3` cluster (own installation root, hardhat 3.15 pinned), the plugin registered via
 `definePlugin` with its per-connection `fhevm` object and the pre-serve chain preparation proven,
 and the `hardhat/v3/e2e` member with the first counter test.
@@ -684,7 +685,14 @@ this later without API change). One commit per group, tests run against the B1 s
       tests). Finding: v13's `InvalidSigner` carries an `address` argument.
       Was: the two public helpers.
       Commit: `feat(hh-v3-plugin): expose the fhevm error parsing helpers`
-  - **D4b.** `parseCoprocessorEvents`.
+  - **D4b — LANDED.** `internal/events.ts`: the 30-name operator-event vocabulary (asserted equal to
+    the executor ABI's events minus `Initialized`/`Upgraded`) and `parseCoprocessorEvents` over viem's
+    `decodeEventLog`, restricted to logs FROM the executor address (v2 decoded any log against the
+    executor interface). Input type `FhevmLog` is structural so a receipt from viem (`logIndex`) or
+    ethers (`index`) both fit — the e2e keeps ethers receipts. `CoprocessorEvent.eventName` is the
+    `CoprocessorEventName` union. Live test: `trivialEncrypt` sent straight to the executor yields
+    one `TrivialEncrypt` event. e2e `TestAsyncDecrypt.ts` waits for D6 (`debugger`), as the ledger says.
+    Was: `parseCoprocessorEvents`.
     Commit: `feat(hh-v3-plugin): port coprocessor event parsing`
 - **D5.** HCU and coprocessor config (two blocks):
   - **D5a.** HCU is 1,162 v2 lines, over half of it a DATA table (`operatorsPrices` 523). Three
