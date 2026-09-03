@@ -1,6 +1,6 @@
 # Porting the FHEVM hardhat plugin from hardhat v2 to hardhat v3
 
-Version: **1.15** (2026-09-03). Bump the minor for a content change to the plan, the major for a
+Version: **1.16** (2026-09-03). Bump the minor for a content change to the plan, the major for a
 change of charter or stage order; record each bump below.
 
 - 1.0 — initial plan, from the hardhat 3 docs.
@@ -22,8 +22,10 @@ change of charter or stage order; record each bump below.
   relayer source of truth `fhevm-network-groups.config.json` introduced; face shape settled.
 - 1.14 — C1b complete: generator wired into `generate`/`clean:generated`, first face committed.
 - 1.15 — C2 landed (v3 detection over the face; v2 public configs from the face); Stage C complete.
+- 1.16 — D0 landed (public surface isolated in `types.ts`, stubs by name); lint tsconfig split into
+  source and test projects; ledger: the ZamaConfig-trio smoke test moves from D0 to D5b.
 
-Status: **in progress — Stages A, B and C complete. Next: D0.** The landing zone exists: the
+Status: **in progress — Stages A, B, C and D0 complete. Next: D1.** The landing zone exists: the
 `hardhat/v3` cluster (own installation root, hardhat 3.15 pinned), the plugin registered via
 `definePlugin` with its per-connection `fhevm` object and the pre-serve chain preparation proven,
 and the `hardhat/v3/e2e` member with the first counter test.
@@ -558,9 +560,20 @@ Each step ports one group of `HardhatFhevmRuntimeEnvironment` onto the connectio
 delegating to `@fhevm/sdk` (the published package — the workspace-member extraction can upgrade
 this later without API change). One commit per group, tests run against the B1 stack:
 
-- **D0.** The public type surface (`types.ts` → `HardhatFhevmRuntimeEnvironment` and friends),
-  types only, methods stubbed `not implemented` — the contract lands first, groups fill it in.
-  Commit: `feat(hh-v3-plugin): land the public fhevm type surface with stub methods`
+- **D0. Public type surface — LANDED** (three commits: the lint tsconfig split, `types.ts` alone, then
+  the wiring). `pkg/src/types.ts` is THE public API — every nameable type in one module, so the surface
+  changes in one place; `index.ts` re-exports it and nothing else public. It mirrors v2's
+  `HardhatFhevmRuntimeEnvironment` in viem terms (`Address`/`Hex`/`Log`/`TransactionReceipt`/`Abi`,
+  `FhevmUser = WalletClient`), drops the engine-era members (`initializeCLIApi`, `getRelayerMetadata`,
+  `generateKeypair`, positional `userDecrypt`/`delegatedUserDecrypt`, `publicDecrypt` stays), adds
+  `network: FhevmNetworkInfo`, and carries `FhevmType` as a runtime enum. `FhevmConnection.ts` is a
+  class implementing it: network facts live, every unported member throws
+  `HardhatPluginError` "fhevm.<member> is not implemented" (getters `debugger`/`client` included) so a
+  v2 test fails by member name. `test/api.test.ts` walks every member. The lint project had to split
+  (`tsconfig.json` solution → `pkg/tsconfig.json` + `test/tsconfig.json`, `tsc -b`): tests import the
+  built payload, and with a nominal enum the built and source copies of the `NetworkConnection.fhevm`
+  augmentation no longer type-merge in one program.
+  Was: `types.ts` → `HardhatFhevmRuntimeEnvironment` and friends, methods stubbed `not implemented`.
 - **D1.** `createEncryptedInput` + `encryptUint/Bool/Address`.
   Commit: `feat(hh-v3-plugin): port encrypted-input creation and encrypt helpers`
 - **D2.** `publicDecrypt` + typed variants.
@@ -644,7 +657,7 @@ allows.
 | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | E2E-0a                 | `internal/FHECounterPublicDecrypt.ts` — the "uninitialized after deployment" case only (compile + deploy + `getCount`)                                                                                                                              |
 | A5                     | DONE — the `isCleartext` guard is live in `internal/FHECounterPublicDecrypt.ts`; `utils.ts` (`isDevelopment`) ports with its first user                                                                                                                                          |
-| B1c                    | MOVED: the ZamaConfig-trio smoke test lands with D0 (nothing public exposes the stack addresses before `connection.fhevm` grows them); `TestFHENotInitialized.test.ts` lands with D5b (`assertCoprocessorInitialized`)                                        |
+| B1c                    | MOVED: the ZamaConfig-trio smoke test AND `TestFHENotInitialized.test.ts` land with D5b (`getCoprocessorConfig` / `assertCoprocessorInitialized`; D0 only stubbed them)                                                                                       |
 | B2                     | DONE — `test:anvil` + `test:anvil:simple` scripts and `test/test-anvil*.sh` (run the counter file)                                                                                                                                                       |
 | B3                     | DONE — `test:node` script + `test/test-hardhat-node.sh`                                                                                                                                                                                                  |
 | D1                     | `internal/delegatedUserDecryption.ts` (encrypt half; the delegated decrypt asserts join at D3c), `finance/ConfidentialVestingWallet*.test.ts` (`createEncryptedInput` only)                                                                         |
