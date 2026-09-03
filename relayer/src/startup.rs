@@ -308,7 +308,7 @@ pub async fn run_fhevm_relayer(
         let sweep_repositories = repositories.clone();
         let sweep_orchestrator = orchestrator.clone();
         let sweep_gate = dispatcher_lock.gate();
-        let sweep_config = settings.sweep.clone();
+        let sweep_config = settings.dispatcher_lock.sweep.clone();
         let sweep_shutdown = dequeue_shutdown.clone();
         orchestrator
             .spawn_task_and_wait_ready(
@@ -427,7 +427,9 @@ pub async fn run_fhevm_relayer(
     // earlier would make this process the stalled ex-holder the epoch fence exists to catch.
     // The lock's own loop already stopped polling above; this is the one explicit unlock, not
     // a race with it.
-    dispatcher_lock.release_last().await;
+    dispatcher_lock
+        .release_last(settings.shutdown.lock_release_timeout)
+        .await;
 
     info!("Relayer shutdown complete");
 

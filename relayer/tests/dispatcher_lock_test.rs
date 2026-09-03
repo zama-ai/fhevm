@@ -9,22 +9,30 @@
 mod common;
 
 use common::test_schema::TestSchema;
-use fhevm_relayer::config::settings::DispatcherLockConfig;
+use fhevm_relayer::config::settings::{DispatcherLockConfig, SweepConfig};
 use fhevm_relayer::orchestrator::{DispatcherLock, LockState};
 use std::time::Duration;
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 
+/// The release budget these tests pass to `release_last`. Generous: no test is measuring how
+/// long a local unlock takes.
+const TEST_RELEASE_BUDGET: Duration = Duration::from_secs(5);
+
 /// Short intervals so the tests converge quickly without being flaky.
 fn fast_config() -> DispatcherLockConfig {
     DispatcherLockConfig {
-        poll_interval: Duration::from_millis(50),
-        heartbeat_interval: Duration::from_millis(50),
-        heartbeat_timeout: Duration::from_secs(2),
-        heartbeat_failures_before_exit: 3,
+        standby_poll_interval: Duration::from_millis(50),
+        holder_heartbeat_interval: Duration::from_millis(50),
+        query_timeout: Duration::from_secs(2),
+        exit_after_consecutive_failures: 3,
         connect_timeout: Duration::from_secs(5),
         idle_session_timeout: Duration::from_secs(60),
         key_override: None,
+        sweep: SweepConfig {
+            interval: Duration::from_millis(500),
+            max_attempts: 5,
+        },
     }
 }
 
@@ -83,7 +91,7 @@ async fn test_two_connections_cannot_both_hold_the_same_key() {
     .expect("neither connection acquired the lock within budget");
 
     // A few more poll cycles for the loser: it must never also transition to Held.
-    tokio::time::sleep(config.poll_interval * 5).await;
+    tokio::time::sleep(config.standby_poll_interval * 5).await;
 
     let (winner, loser) = if winner_is_a {
         (&lock_a, &lock_b)
@@ -101,8 +109,8 @@ async fn test_two_connections_cannot_both_hold_the_same_key() {
     shutdown_b.cancel();
     task_a.await.unwrap();
     task_b.await.unwrap();
-    lock_a.release_last().await;
-    lock_b.release_last().await;
+    lock_a.release_last(TEST_RELEASE_BUDGET).await;
+    lock_b.release_last(TEST_RELEASE_BUDGET).await;
 }
 
 /// Once the holder releases, a fresh connection on the same key can acquire it.
@@ -121,7 +129,7 @@ async fn test_released_lock_can_be_reacquired() {
 
     shutdown_a.cancel();
     task_a.await.unwrap();
-    lock_a.release_last().await;
+    lock_a.release_last(TEST_RELEASE_BUDGET).await;
 
     let lock_b = DispatcherLock::connect(&config, &schema.database_url())
         .await
@@ -131,7 +139,7 @@ async fn test_released_lock_can_be_reacquired() {
 
     shutdown_b.cancel();
     task_b.await.unwrap();
-    lock_b.release_last().await;
+    lock_b.release_last(TEST_RELEASE_BUDGET).await;
 }
 
 /// A holder whose node dies without closing its socket sends Postgres no FIN and no RST, so
@@ -168,7 +176,7 @@ async fn test_an_idle_holder_session_is_reaped_and_a_standby_takes_over() {
 
     shutdown_b.cancel();
     task_b.await.unwrap();
-    lock_b.release_last().await;
+    lock_b.release_last(TEST_RELEASE_BUDGET).await;
 }
 
 /// The one way this bound could be worse than the bug it closes: reaping a holder that is
@@ -182,7 +190,7 @@ async fn test_a_heartbeating_holder_is_never_reaped() {
         .await
         .expect("Failed to create test schema");
     let config = DispatcherLockConfig {
-        heartbeat_interval: Duration::from_millis(50),
+        holder_heartbeat_interval: Duration::from_millis(50),
         idle_session_timeout: Duration::from_secs(1),
         ..fast_config()
     };
@@ -225,8 +233,8 @@ async fn test_a_heartbeating_holder_is_never_reaped() {
     shutdown_b.cancel();
     task_a.await.unwrap();
     task_b.await.unwrap();
-    lock_a.release_last().await;
-    lock_b.release_last().await;
+    lock_a.release_last(TEST_RELEASE_BUDGET).await;
+    lock_b.release_last(TEST_RELEASE_BUDGET).await;
 }
 
 /// `current_epoch()` is `None` before acquisition and `Some` once `Held` - the sweep
@@ -253,7 +261,7 @@ async fn test_epoch_is_none_before_acquisition_and_some_once_held() {
 
     shutdown.cancel();
     task.await.unwrap();
-    lock.release_last().await;
+    lock.release_last(TEST_RELEASE_BUDGET).await;
 }
 
 /// `owner_epoch` must be monotonic across acquisitions (the fencing property it exists for):
@@ -275,7 +283,7 @@ async fn test_epoch_increases_across_reacquire() {
 
     shutdown_a.cancel();
     task_a.await.unwrap();
-    lock_a.release_last().await;
+    lock_a.release_last(TEST_RELEASE_BUDGET).await;
     assert_eq!(
         lock_a.current_epoch(),
         Some(epoch_a),
@@ -298,5 +306,5 @@ async fn test_epoch_increases_across_reacquire() {
 
     shutdown_b.cancel();
     task_b.await.unwrap();
-    lock_b.release_last().await;
+    lock_b.release_last(TEST_RELEASE_BUDGET).await;
 }

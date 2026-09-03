@@ -263,3 +263,21 @@ storage:
 shutdown:
   # No load balancer in front of the tests, so nothing has to notice the 503.
   lb_propagation_wait: "0s"
+  lock_release_timeout: "3s"
+
+# Production timings, as in config/local.yaml.example: the tests that need the lock to
+# converge faster than this build their own `DispatcherLockConfig` (see
+# `dispatcher_lock_test.rs::fast_config`) rather than leaning on the base config.
+dispatcher_lock:
+  standby_poll_interval: "2s"
+  holder_heartbeat_interval: "5s"
+  query_timeout: "3s"
+  exit_after_consecutive_failures: 3
+  connect_timeout: "5s"
+  # Must exceed both intervals above.
+  idle_session_timeout: "60s"
+  key_override: null
+
+  sweep:
+    interval: "500ms"
+    max_attempts: 5

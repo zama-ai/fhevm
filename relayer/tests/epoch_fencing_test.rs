@@ -10,7 +10,7 @@ mod common;
 
 use alloy::primitives::U256;
 use common::test_schema::TestSchema;
-use fhevm_relayer::config::settings::{DispatcherLockConfig, Settings};
+use fhevm_relayer::config::settings::{DispatcherLockConfig, Settings, SweepConfig};
 use fhevm_relayer::orchestrator::{DispatcherLock, LockState, UNCLAIMED_EPOCH};
 use fhevm_relayer::store::sql::repositories::Repositories;
 use prometheus::Registry;
@@ -90,19 +90,27 @@ impl TwoEpochSetup {
 
         let (key_a, key_b) = test_lock_keys();
         let fast = DispatcherLockConfig {
-            poll_interval: Duration::from_millis(20),
-            heartbeat_interval: Duration::from_millis(50),
-            heartbeat_timeout: Duration::from_secs(2),
-            heartbeat_failures_before_exit: 3,
+            standby_poll_interval: Duration::from_millis(20),
+            holder_heartbeat_interval: Duration::from_millis(50),
+            query_timeout: Duration::from_secs(2),
+            exit_after_consecutive_failures: 3,
             connect_timeout: Duration::from_secs(5),
             idle_session_timeout: Duration::from_secs(60),
             key_override: Some(key_a),
+            sweep: SweepConfig {
+                interval: Duration::from_millis(500),
+                max_attempts: 5,
+            },
         };
         let lock_a = connect_and_hold(&fast, &schema.database_url()).await;
         let epoch_a = lock_a.current_epoch().expect("epoch minted for a");
 
         let config_b = DispatcherLockConfig {
             key_override: Some(key_b),
+            sweep: SweepConfig {
+                interval: Duration::from_millis(500),
+                max_attempts: 5,
+            },
             ..fast
         };
         let lock_b = connect_and_hold(&config_b, &schema.database_url()).await;

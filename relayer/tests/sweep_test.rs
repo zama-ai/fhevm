@@ -57,12 +57,10 @@ impl RepoTestSetup {
         // `fail_exhausted_attempts` directly with explicit epochs, not the self-served
         // `current_epoch()` write-fencing paths, so an unheld lock (epoch always `None`) is
         // fine here.
-        let dispatcher_lock = DispatcherLock::connect(
-            &fhevm_relayer::config::settings::DispatcherLockConfig::default(),
-            &schema.database_url(),
-        )
-        .await
-        .expect("Failed to connect dispatcher lock");
+        let dispatcher_lock =
+            DispatcherLock::connect(&settings.dispatcher_lock, &schema.database_url())
+                .await
+                .expect("Failed to connect dispatcher lock");
 
         let repositories = Repositories::new(settings.storage.clone(), dispatcher_lock)
             .await

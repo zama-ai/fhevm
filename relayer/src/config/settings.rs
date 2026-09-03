@@ -20,29 +20,10 @@ const MAX_DEDUP_TTL_SECONDS: u64 = 10;
 /// TODO: Replace with proper event buffering solution.
 #[derive(Debug, Deserialize, Clone)]
 pub struct GwEventNotFoundRetryConfig {
-    /// Maximum number of retry attempts (default: 3)
-    #[serde(default = "default_gw_event_retry_max_retries")]
+    /// Retry attempts before the event is treated as unmatched.
     pub max_retries: u32,
-    /// Delay between retries in milliseconds (default: 1000)
-    #[serde(default = "default_gw_event_retry_delay_ms")]
+    /// Delay between those attempts, in milliseconds.
     pub retry_delay_ms: u64,
-}
-
-fn default_gw_event_retry_max_retries() -> u32 {
-    3
-}
-
-fn default_gw_event_retry_delay_ms() -> u64 {
-    1000
-}
-
-impl Default for GwEventNotFoundRetryConfig {
-    fn default() -> Self {
-        Self {
-            max_retries: default_gw_event_retry_max_retries(),
-            retry_delay_ms: default_gw_event_retry_delay_ms(),
-        }
-    }
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -53,7 +34,6 @@ pub struct GatewayConfig {
     pub readiness_checker: ReadinessCheckConfig,
     pub contracts: ContractConfig,
     /// Retry config for gateway events arriving before gw_reference_id stored
-    #[serde(default)]
     pub gw_event_not_found_retry: GwEventNotFoundRetryConfig,
 }
 
@@ -379,7 +359,6 @@ pub struct HttpConfig {
     /// Default retry-after seconds for queued API responses
     pub api_retry_after_seconds: u32,
     /// Enable admin endpoints for dynamic configuration updates
-    #[serde(default)]
     pub enable_admin_endpoint: bool,
     /// Dynamic retry-after configuration for V2 handlers
     pub retry_after: super::retry_after::RetryAfterConfig,
@@ -406,95 +385,46 @@ pub struct MetricsConfig {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct ShutdownConfig {
-    /// Covers the lag until the pod's removal from the service endpoints reaches the ingress
-    /// controller. Not the readiness probe's detection time - deletion drops the endpoint as
-    /// it sends SIGTERM, so the probe path never runs.
+    /// Time this pod keeps serving after it stops reporting Ready, so the load balancer takes
+    /// it out of rotation first. Added to every shutdown.
     #[serde(deserialize_with = "deserialize_human_duration")]
     pub lb_propagation_wait: Duration,
+    /// Bound on the last shutdown step, releasing the dispatcher lock: the unlock and the
+    /// connection close share this budget.
+    #[serde(deserialize_with = "deserialize_human_duration")]
+    pub lock_release_timeout: Duration,
 }
 
-/// The session-level Postgres advisory lock that decides which of N HA-replica pods
-/// dispatches. Every field has a serde default so existing config files - which know
-/// nothing about this section - keep deserializing unchanged.
+/// The Postgres advisory lock that elects which replica dispatches. Every pod serves HTTP and
+/// is Ready; only the holder sends transactions to the gateway.
 #[derive(Debug, Deserialize, Clone)]
 pub struct DispatcherLockConfig {
-    /// How often a non-holder retries acquisition. This is the handover latency once a
-    /// second replica exists: the delay between the old holder releasing (or dying) and a
-    /// standby taking over.
-    #[serde(
-        default = "default_dispatcher_lock_poll_interval",
-        deserialize_with = "deserialize_human_duration"
-    )]
-    pub poll_interval: Duration,
-    /// How often the holder confirms its dedicated connection is still alive.
-    #[serde(
-        default = "default_dispatcher_lock_heartbeat_interval",
-        deserialize_with = "deserialize_human_duration"
-    )]
-    pub heartbeat_interval: Duration,
-    /// Bound on each heartbeat/try-lock round trip. sqlx 0.8.6 sets no TCP keepalive, so a
-    /// query on a black-holed socket would otherwise hang out to TCP retransmit timeouts
-    /// (minutes) instead of surfacing as a failure.
-    #[serde(
-        default = "default_dispatcher_lock_heartbeat_timeout",
-        deserialize_with = "deserialize_human_duration"
-    )]
-    pub heartbeat_timeout: Duration,
-    /// Consecutive heartbeat/try-lock failures tolerated before a hard exit. Distinguishes a
-    /// transient hiccup from a genuinely dead connection.
-    #[serde(default = "default_dispatcher_lock_heartbeat_failures_before_exit")]
-    pub heartbeat_failures_before_exit: u32,
-    /// Bound on the initial dedicated-connection connect.
-    #[serde(
-        default = "default_dispatcher_lock_connect_timeout",
-        deserialize_with = "deserialize_human_duration"
-    )]
+    /// Interval between a standby's attempts to take the lock. Also the failover delay after
+    /// the holder releases or dies.
+    #[serde(deserialize_with = "deserialize_human_duration")]
+    pub standby_poll_interval: Duration,
+    /// Interval between the holder's checks that its lock connection is alive.
+    #[serde(deserialize_with = "deserialize_human_duration")]
+    pub holder_heartbeat_interval: Duration,
+    /// Bound on each query the lock runs on its own connection: try-lock, epoch mint,
+    /// heartbeat, unlock.
+    #[serde(deserialize_with = "deserialize_human_duration")]
+    pub query_timeout: Duration,
+    /// Failed round trips in a row before the pod exits and a standby takes over. The count
+    /// resets on any query that completes.
+    pub exit_after_consecutive_failures: u32,
+    /// Bound on opening the lock's connection at startup.
+    #[serde(deserialize_with = "deserialize_human_duration")]
     pub connect_timeout: Duration,
-    /// Server-side bound on how long Postgres keeps the dedicated lock session alive while it
-    /// sits idle - a session-scoped GUC on that one connection, never the application pools;
-    /// needs Postgres 14+. The only bound on no-dispatcher time when a holder's node dies
-    /// without closing its socket: with no FIN and no RST, Postgres holds the session and the
-    /// lock until TCP keepalive reaps them - hours at Linux defaults - while every standby's
-    /// try-lock keeps reporting "held".
-    ///
-    /// Must be strictly greater than `heartbeat_interval` (see [`Self::validate`]): a bound
-    /// at or below it reaps a live holder between heartbeats - a permanent failover loop.
-    #[serde(
-        default = "default_dispatcher_lock_idle_session_timeout",
-        deserialize_with = "deserialize_human_duration"
-    )]
+    /// Postgres-side timeout that frees the lock when a holder's node dies without closing its
+    /// socket. Must exceed both intervals above (see [`Self::validate`]). Needs Postgres 14+.
+    #[serde(deserialize_with = "deserialize_human_duration")]
     pub idle_session_timeout: Duration,
-    /// Overrides the schema-derived lock key. Every pod must set the same value - the key is
-    /// database-wide, not schema-scoped, and production runs every pod against `public` with
-    /// no override needed. Only exists for operational escape hatches.
-    #[serde(default)]
+    /// Overrides the schema-derived lock key. Set `null` in production, where every pod
+    /// against one database resolves the same key.
     pub key_override: Option<i32>,
-}
-
-fn default_dispatcher_lock_poll_interval() -> Duration {
-    Duration::from_secs(2)
-}
-
-fn default_dispatcher_lock_heartbeat_interval() -> Duration {
-    Duration::from_secs(5)
-}
-
-fn default_dispatcher_lock_heartbeat_timeout() -> Duration {
-    Duration::from_secs(3)
-}
-
-fn default_dispatcher_lock_heartbeat_failures_before_exit() -> u32 {
-    3
-}
-
-fn default_dispatcher_lock_connect_timeout() -> Duration {
-    Duration::from_secs(5)
-}
-
-/// Ten heartbeat intervals at the neighboring defaults: generous headroom for a healthy
-/// holder, while still bounding no-dispatcher time to a minute after a holder's node dies.
-fn default_dispatcher_lock_idle_session_timeout() -> Duration {
-    Duration::from_secs(60)
+    /// Re-dispatch of requests nobody is driving. Runs on the lock holder only.
+    pub sweep: SweepConfig,
 }
 
 impl DispatcherLockConfig {
@@ -502,53 +432,40 @@ impl DispatcherLockConfig {
         // A bound at or below the heartbeat reaps the session of a holder that is doing
         // everything right, every time it pauses between heartbeats - a permanent failover
         // loop, strictly worse than the dead-node window this setting exists to close.
-        if self.idle_session_timeout <= self.heartbeat_interval {
+        if self.idle_session_timeout <= self.holder_heartbeat_interval {
             return Err(AppConfigError::Config(format!(
                 "dispatcher_lock.idle_session_timeout ({:?}) must be greater than \
-                 dispatcher_lock.heartbeat_interval ({:?}): at or below it, Postgres reaps a \
-                 healthy holder's session between heartbeats",
-                self.idle_session_timeout, self.heartbeat_interval
+                 dispatcher_lock.holder_heartbeat_interval ({:?}): at or below it, Postgres \
+                 reaps a healthy holder's session between heartbeats",
+                self.idle_session_timeout, self.holder_heartbeat_interval
             )));
         }
-        Ok(())
-    }
-}
-
-impl Default for DispatcherLockConfig {
-    fn default() -> Self {
-        Self {
-            poll_interval: default_dispatcher_lock_poll_interval(),
-            heartbeat_interval: default_dispatcher_lock_heartbeat_interval(),
-            heartbeat_timeout: default_dispatcher_lock_heartbeat_timeout(),
-            heartbeat_failures_before_exit: default_dispatcher_lock_heartbeat_failures_before_exit(
-            ),
-            connect_timeout: default_dispatcher_lock_connect_timeout(),
-            idle_session_timeout: default_dispatcher_lock_idle_session_timeout(),
-            key_override: None,
+        // A standby idles for a whole poll interval between try-locks, so the same bound reaps
+        // it too. Nothing reconnects the lock's connection: every later try-lock then fails on
+        // a closed socket and the pod exits through `exit_after_consecutive_failures` instead
+        // of ever taking over.
+        if self.idle_session_timeout <= self.standby_poll_interval {
+            return Err(AppConfigError::Config(format!(
+                "dispatcher_lock.idle_session_timeout ({:?}) must be greater than \
+                 dispatcher_lock.standby_poll_interval ({:?}): at or below it, Postgres reaps \
+                 an idle standby's session and it can never acquire the lock",
+                self.idle_session_timeout, self.standby_poll_interval
+            )));
         }
+        self.sweep.validate()
     }
 }
 
-/// The dispatch sweep: while this pod holds the dispatcher lock, it periodically claims and
-/// re-dispatches requests nobody is driving - one a non-holder accepted and left for the
-/// dispatcher, or one orphaned by a former holder that died. It is also how a
-/// restart recovers its own previous incarnation's work. Every field has a serde default so
-/// existing config files keep deserializing unchanged.
+/// Re-dispatches requests nobody is driving: one a standby accepted, one orphaned by a dead
+/// holder, or this pod's own work from before a restart.
 #[derive(Debug, Deserialize, Clone)]
 pub struct SweepConfig {
-    /// How often the holder polls Postgres for claimable rows, and therefore the dominant term
-    /// in how long a request accepted by a non-holder waits before anything drives it. It is
-    /// also the per-tick query cost every holder pays forever, so it stays short without being
-    /// sub-second for its own sake.
-    #[serde(
-        default = "default_sweep_interval",
-        deserialize_with = "deserialize_human_duration"
-    )]
+    /// Interval between the holder's scans, and so the delay before such a request is picked
+    /// up. Every tick costs one Postgres query.
+    #[serde(deserialize_with = "deserialize_human_duration")]
     pub interval: Duration,
-    /// Maximum number of times the sweep re-dispatches one row before giving up on it. A row
-    /// that reaches this bound is moved to `failure` (see `sweep::fail_exhausted_attempts`)
-    /// rather than left to be claimed forever.
-    #[serde(default = "default_sweep_max_attempts")]
+    /// Dispatchers that may pick one request up before it is failed. Counts failovers, not
+    /// retries.
     pub max_attempts: i32,
 }
 
@@ -573,23 +490,6 @@ impl SweepConfig {
     }
 }
 
-fn default_sweep_interval() -> Duration {
-    Duration::from_millis(500)
-}
-
-fn default_sweep_max_attempts() -> i32 {
-    5
-}
-
-impl Default for SweepConfig {
-    fn default() -> Self {
-        Self {
-            interval: default_sweep_interval(),
-            max_attempts: default_sweep_max_attempts(),
-        }
-    }
-}
-
 /// Deserializes strings like "30s", "5m", "1d" into std::time::Duration.
 /// 'y' not supported
 fn deserialize_human_duration<'de, D>(deserializer: D) -> Result<Duration, D::Error>
@@ -604,8 +504,7 @@ where
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct CronConfig {
-    /// Whether the expiry (retention) worker is enabled. Defaults to false.
-    #[serde(default)]
+    /// Whether the expiry (retention) worker is enabled.
     pub expiry_enabled: bool,
     // We map the YAML key `timeout_cron_interval_secs` to this field,
     // but parse the string value into a Duration.
@@ -816,13 +715,8 @@ pub struct Settings {
     pub user_decrypt_signature_check: UserDecryptSignatureCheckConfig,
     /// Shutdown sequencing
     pub shutdown: ShutdownConfig,
-    /// HA dispatcher lock (session-level Postgres advisory lock)
-    #[serde(default)]
+    /// HA dispatcher lock (session-level Postgres advisory lock), and the sweep it gates
     pub dispatcher_lock: DispatcherLockConfig,
-    /// The dispatch sweep: periodic re-dispatch of rows nobody is driving, while this pod
-    /// holds the dispatcher lock.
-    #[serde(default)]
-    pub sweep: SweepConfig,
 }
 
 // Error type for application-specific configuration errors
@@ -879,11 +773,7 @@ impl Settings {
         // Validate cron startup delay (10% rule)
         settings.storage.cron.validate()?;
 
-        // Validate the dispatcher lock's idle-session bound against its own heartbeat
         settings.dispatcher_lock.validate()?;
-
-        // Validate the sweep's claim/exhaustion bound
-        settings.sweep.validate()?;
 
         // Ensure HTTP metrics configuration is provided
         if settings.http.metrics.histogram_buckets.is_empty() {
@@ -2083,27 +1973,55 @@ mod tests {
         }
     }
 
-    /// The default pair must pass its own invariant, and a bound at or below the heartbeat must
-    /// be refused at startup rather than reaping a healthy holder's session in production.
+    /// Pins the example config's pair, since that is what an operator copies now that the
+    /// struct carries no defaults. A bound at or below the heartbeat has Postgres reap a
+    /// healthy holder between its heartbeats.
     #[test]
+    #[serial] // Settings::new reads the environment
     fn test_dispatcher_lock_idle_timeout_must_exceed_the_heartbeat() {
-        DispatcherLockConfig::default()
+        let shipped = settings_new(ConfigBuilder::from_example().expect("example config"))
+            .expect("the example config must load")
+            .dispatcher_lock;
+        shipped
             .validate()
-            .expect("the shipped defaults must satisfy the invariant");
+            .expect("the values config/local.yaml.example ships must satisfy the invariant");
 
         for idle in [Duration::from_secs(5), Duration::from_secs(1)] {
             let err = DispatcherLockConfig {
-                heartbeat_interval: Duration::from_secs(5),
                 idle_session_timeout: idle,
-                ..DispatcherLockConfig::default()
+                ..shipped.clone()
             }
             .validate()
             .expect_err("an idle bound at or below the heartbeat must be rejected")
             .to_string();
             assert!(
-                err.contains("idle_session_timeout"),
-                "the error must name the offending field, got: {err}"
+                err.contains("holder_heartbeat_interval"),
+                "the error must name the interval it was compared against, got: {err}"
             );
         }
+    }
+
+    /// The standby side of the same bound: reaped between its try-locks, a standby's connection
+    /// is never reopened, so it exits on repeated failures instead of taking the lock.
+    #[test]
+    #[serial] // Settings::new reads the environment
+    fn test_dispatcher_lock_idle_timeout_must_exceed_the_standby_poll() {
+        let shipped = settings_new(ConfigBuilder::from_example().expect("example config"))
+            .expect("the example config must load")
+            .dispatcher_lock;
+
+        let err = DispatcherLockConfig {
+            holder_heartbeat_interval: Duration::from_secs(1),
+            standby_poll_interval: Duration::from_secs(30),
+            idle_session_timeout: Duration::from_secs(10),
+            ..shipped
+        }
+        .validate()
+        .expect_err("an idle bound at or below the standby poll must be rejected")
+        .to_string();
+        assert!(
+            err.contains("standby_poll_interval"),
+            "the error must name the interval it was compared against, got: {err}"
+        );
     }
 }

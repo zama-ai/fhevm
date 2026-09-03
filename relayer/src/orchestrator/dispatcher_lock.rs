@@ -31,9 +31,10 @@
 //! keepalive reaps them, over two hours at Linux defaults, while every standby's try-lock
 //! returns a clean `false` and every accepted request sits `queued`. So
 //! [`DispatcherLock::connect`] sets the session-scoped `idle_session_timeout` GUC (Postgres
-//! 14+) on the dedicated connection. A healthy holder never idles past `heartbeat_interval`,
-//! and the config rejects a bound below it. A reaped-but-alive ex-holder is the stale writer
-//! the `owner_epoch` fences refuse; its own failing heartbeats walk it out through the
+//! 14+) on the dedicated connection. A healthy holder never idles past
+//! `holder_heartbeat_interval` and a standby never past `standby_poll_interval`, and the
+//! config rejects a bound below either. A reaped-but-alive ex-holder is the stale writer the
+//! `owner_epoch` fences refuse; its own failing heartbeats walk it out through the
 //! bounded-failure exit.
 //!
 //! Loss exits via a hard [`std::process::exit`], not the graceful shutdown path: shutdown
@@ -47,6 +48,7 @@
 //! re-acquiring while still holding would corrupt the re-entrant counter.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::Context;
 use sha2::{Digest, Sha256};
@@ -260,7 +262,7 @@ impl DispatcherLock {
         // a session idle outside a transaction, which this one always is between its queries.
         let idle_session_timeout = format!("{}ms", config.idle_session_timeout.as_millis());
         tokio::time::timeout(
-            config.heartbeat_timeout,
+            config.query_timeout,
             sqlx::query("SELECT set_config('idle_session_timeout', $1, false)")
                 .bind(&idle_session_timeout)
                 .execute(&mut conn),
@@ -274,7 +276,7 @@ impl DispatcherLock {
         );
 
         let schema: Option<String> = tokio::time::timeout(
-            config.heartbeat_timeout,
+            config.query_timeout,
             sqlx::query_scalar::<_, Option<String>>("SELECT current_schema()").fetch_one(&mut conn),
         )
         .await
@@ -388,7 +390,7 @@ impl DispatcherLock {
     /// next heartbeat instead of leaving the holder without a working sweep.
     async fn mint_epoch(&self, conn: &mut PgConnection) -> anyhow::Result<i64> {
         tokio::time::timeout(
-            self.config.heartbeat_timeout,
+            self.config.query_timeout,
             sqlx::query_scalar::<_, i64>("SELECT nextval($1)")
                 .bind(DISPATCHER_EPOCH_SEQUENCE)
                 .fetch_one(&mut *conn),
@@ -402,7 +404,7 @@ impl DispatcherLock {
     /// session, and a second grab would increment a counter nothing here unlocks twice.
     async fn try_acquire(&self, conn: &mut PgConnection) -> anyhow::Result<bool> {
         tokio::time::timeout(
-            self.config.heartbeat_timeout,
+            self.config.query_timeout,
             sqlx::query_scalar::<_, bool>("SELECT pg_try_advisory_lock($1, $2)")
                 .bind(self.classid)
                 .bind(self.objid)
@@ -418,7 +420,7 @@ impl DispatcherLock {
     /// best-effort, never a hard failure. Never changes lock state.
     async fn verify_in_pg_locks(&self, conn: &mut PgConnection, pid: i32) {
         let visible: Result<bool, _> = tokio::time::timeout(
-            self.config.heartbeat_timeout,
+            self.config.query_timeout,
             sqlx::query_scalar::<_, bool>(
                 "SELECT EXISTS(SELECT 1 FROM pg_locks WHERE locktype = 'advisory' \
                  AND classid = $1 AND objid = $2 AND objsubid = 2 AND pid = $3)",
@@ -447,7 +449,7 @@ impl DispatcherLock {
     /// changed. Returns the observed pid.
     async fn heartbeat(&self, conn: &mut PgConnection) -> anyhow::Result<i32> {
         tokio::time::timeout(
-            self.config.heartbeat_timeout,
+            self.config.query_timeout,
             sqlx::query_scalar::<_, i32>("SELECT pg_backend_pid()").fetch_one(&mut *conn),
         )
         .await
@@ -455,17 +457,18 @@ impl DispatcherLock {
         .context("heartbeat query failed")
     }
 
-    /// Long-running loop: while not holding, poll for acquisition every `poll_interval`;
-    /// while holding - `Held` or `Unconfirmed`, we still hold the session-level lock either
-    /// way - heartbeat every `heartbeat_interval`. `Unconfirmed` must never route back to
-    /// polling: re-acquiring on a session that already holds the key would corrupt the
-    /// re-entrant counter. Exits the process hard on loss - see the module docs. Stops
+    /// Long-running loop: while not holding, poll for acquisition every
+    /// `standby_poll_interval`; while holding - `Held` or `Unconfirmed`, we still hold the
+    /// session-level lock either way - heartbeat every `holder_heartbeat_interval`.
+    /// `Unconfirmed` must never route back to polling: re-acquiring on a session that already
+    /// holds the key would corrupt the re-entrant counter. Exits the process hard on loss -
+    /// see the module docs. Stops
     /// (returning normally, lock still held or not) once `shutdown` fires; the caller
     /// releases afterwards via [`DispatcherLock::release_last`].
     pub async fn run(&self, shutdown: CancellationToken) {
-        let mut poll_ticker = tokio::time::interval(self.config.poll_interval);
+        let mut poll_ticker = tokio::time::interval(self.config.standby_poll_interval);
         poll_ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-        let mut heartbeat_ticker = tokio::time::interval(self.config.heartbeat_interval);
+        let mut heartbeat_ticker = tokio::time::interval(self.config.holder_heartbeat_interval);
         heartbeat_ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
         loop {
@@ -622,7 +625,7 @@ impl DispatcherLock {
     /// threshold the only move is exit. Takes the count, not the guard, so callers keep
     /// their disjoint field borrows.
     fn exit_if_past_failure_bound(&self, consecutive_failures: u32) {
-        if consecutive_failures >= self.config.heartbeat_failures_before_exit {
+        if consecutive_failures >= self.config.exit_after_consecutive_failures {
             error!(
                 alert = true,
                 consecutive_failures,
@@ -633,24 +636,28 @@ impl DispatcherLock {
         }
     }
 
-    /// Release the lock, last, after every other shutdown step. `pg_advisory_unlock` then
-    /// close, both bounded so a hung release cannot eat the shutdown grace period. Never
-    /// called on the loss path - the lock is already gone there, and that path never returns
-    /// (it hard-exits).
+    /// Release the lock, last, after every other shutdown step: `pg_advisory_unlock` then
+    /// close. Never called on the loss path - the lock is already gone there, and that path
+    /// never returns (it hard-exits).
+    ///
+    /// `budget` (`shutdown.lock_release_timeout`) covers both steps together, not each: the
+    /// caller sizes it against what is left of the pod's grace period, and a per-step bound
+    /// would let the release cost twice the number configured.
     ///
     /// Sets `state()` to `NotHeld` but leaves `current_epoch()` alone: detached work
     /// abandoned at shutdown can still fence a write with it, and clearing it would degrade
     /// that write's predicate to `owner_epoch IS NULL`, refusing this pod's own still-valid
     /// write and forcing a successor to redo it.
-    pub async fn release_last(&self) {
+    pub async fn release_last(&self, budget: Duration) {
+        let deadline = tokio::time::Instant::now() + budget;
         let mut guard = self.inner.lock().await;
         let Some(mut conn) = guard.conn.take() else {
             return;
         };
 
         if let Some(pid) = guard.held_pid.take() {
-            let unlocked = tokio::time::timeout(
-                self.config.heartbeat_timeout,
+            let unlocked = tokio::time::timeout_at(
+                deadline,
                 sqlx::query_scalar::<_, bool>("SELECT pg_advisory_unlock($1, $2)")
                     .bind(self.classid)
                     .bind(self.objid)
@@ -661,14 +668,23 @@ impl DispatcherLock {
                 Ok(Ok(true)) => info!(pid, "Dispatcher lock released"),
                 Ok(Ok(false)) => warn!(pid, "dispatcher lock: unlock reported not held"),
                 Ok(Err(e)) => warn!(pid, error = %e, "dispatcher lock: unlock query failed"),
-                Err(_) => warn!(pid, "dispatcher lock: unlock timed out"),
+                Err(_) => warn!(
+                    pid,
+                    alert = true,
+                    "dispatcher lock: unlock did not finish inside \
+                     shutdown.lock_release_timeout; the lock stays held until Postgres reaps \
+                     the session"
+                ),
             }
         }
 
         drop(guard);
         self.set_state(LockState::NotHeld);
 
-        if let Err(e) = tokio::time::timeout(self.config.heartbeat_timeout, conn.close()).await {
+        // Whatever is left of the budget. The unlock above has already freed the lock, so this
+        // is only the courtesy Terminate; dropping the connection instead closes the socket,
+        // which frees the session too.
+        if let Err(e) = tokio::time::timeout_at(deadline, conn.close()).await {
             warn!(error = %e, "dispatcher lock: close timed out");
         }
     }

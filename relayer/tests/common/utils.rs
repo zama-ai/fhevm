@@ -1356,9 +1356,9 @@ pub fn register_host_acl_rpc_error(host_server: &MockServer, acl_address: Addres
 /// the poll budgets the dispatcher tests allow themselves.
 #[allow(dead_code)]
 pub fn fast_timing(settings: &mut Settings) {
-    settings.dispatcher_lock.poll_interval = std::time::Duration::from_millis(100);
-    settings.dispatcher_lock.heartbeat_interval = std::time::Duration::from_millis(100);
-    settings.sweep.interval = std::time::Duration::from_millis(100);
+    settings.dispatcher_lock.standby_poll_interval = std::time::Duration::from_millis(100);
+    settings.dispatcher_lock.holder_heartbeat_interval = std::time::Duration::from_millis(100);
+    settings.dispatcher_lock.sweep.interval = std::time::Duration::from_millis(100);
 }
 
 /// `(req_status, owner_epoch, attempts)` for one public-decrypt row - the three columns that
