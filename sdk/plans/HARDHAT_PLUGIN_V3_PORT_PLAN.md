@@ -1,6 +1,6 @@
 # Porting the FHEVM hardhat plugin from hardhat v2 to hardhat v3
 
-Version: **1.13** (2026-09-03). Bump the minor for a content change to the plan, the major for a
+Version: **1.14** (2026-09-03). Bump the minor for a content change to the plan, the major for a
 change of charter or stage order; record each bump below.
 
 - 1.0 — initial plan, from the hardhat 3 docs.
@@ -20,8 +20,9 @@ change of charter or stage order; record each bump below.
 - 1.12 — B3 recorded as landed; Stage B complete; ledger B3 row done.
 - 1.13 — C1a landed together with the command half of C1b; network GROUPS (incl. devnet) and the
   relayer source of truth `fhevm-network-groups.config.json` introduced; face shape settled.
+- 1.14 — C1b complete: generator wired into `generate`/`clean:generated`, first face committed.
 
-Status: **in progress — Stages A and B complete, C1a + the `generate-chain-constants` command landed. Next: C1b wiring (make generate / check-generated, the committed face), then C2.** The landing zone exists: the
+Status: **in progress — Stages A and B complete, C1 complete (C1a, C1b). Next: C2.** The landing zone exists: the
 `hardhat/v3` cluster (own installation root, hardhat 3.15 pinned), the plugin registered via
 `definePlugin` with its per-connection `fhevm` object and the pre-serve chain preparation proven,
 and the `hardhat/v3/e2e` member with the first counter test.
@@ -528,11 +529,14 @@ first review, per the cap rule.
     source of truth the sync renderer reads; gateway `kmsGeneration` and `multichainAcl` are optional
     (devnet carries their `_LEGACY` predecessors). Tests: exact table, prettier-clean, real config,
     quoting, 11 parser + 4 loader rejections, write/check/missing/drift lifecycle.
-  - **C1b.** Command DONE (`generate-chain-constants` + `--check`, CLI, completion, README; writes
-    `common-vendored/src/fhevm-chains.ts`). REMAINING: `make generate` / `check-generated` wiring and
-    the first committed face (both outside fhevm-npm — approval), then `sync-vendored` destinations
-    for the packages that carry a copy (C2).
-    Commit: `chore(sdk): wire generate-chain-constants into make generate and commit the face`
+  - **C1b — LANDED.** Command (`generate-chain-constants` + `--check`, CLI, completion, README) in
+    the C1a commit; then `common-vendored/package.json` gains the `generate:chain-constants` /
+    `clean:generate:chain-constants` pair under its `generate` / `clean:generated` aggregates — no
+    Makefile change, `make generate` and the `check-generated` gate already delegate to those verbs —
+    and the first face `common-vendored/src/fhevm-chains.ts` (233 lines) is committed. Round trip
+    proven: clean, generate, spotless tree; `--check` answers identical; vendored lint and the
+    battery's scripts check pass. `sync-vendored` destinations for the copies are C2.
+
 - **C2. Consumers.** v3 plugin consumes the generated module from birth; v2's hand-copied
   `internal/constants.ts` addresses are replaced by the same module (v2 SHRINKS — first
   minimization dividend). Test: v2 suite + e2e stay green; grep proves no address literal remains.
