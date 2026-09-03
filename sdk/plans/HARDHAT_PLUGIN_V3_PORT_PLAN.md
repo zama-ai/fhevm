@@ -1,6 +1,6 @@
 # Porting the FHEVM hardhat plugin from hardhat v2 to hardhat v3
 
-Version: **1.35** (2026-09-03). Bump the minor for a content change to the plan, the major for a
+Version: **1.36** (2026-09-03). Bump the minor for a content change to the plan, the major for a
 change of charter or stage order; record each bump below.
 
 - 1.0 — initial plan, from the hardhat 3 docs.
@@ -53,8 +53,10 @@ change of charter or stage order; record each bump below.
 - 1.33 — E3 landed: the one surviving builtin override is `node`, for the fhevm stack banner; `clean` confirmed dead.
 - 1.34 — F1 landed (consumer fixture runs an encrypt/decrypt round-trip; the leg was silently not running).
 - 1.35 — the v3 plugin consumer leg joined the Makefile `test-consumer` targets (approved Makefile edit).
+- 1.36 — F2 landed (publint + attw esm-only + pack green, build dir cleaned before compile, package
+  README); open question 5 reframed: the version must encode protocol line, hardhat generation, patch.
 
-Status: **in progress — Stages A, B, C, D, E and F1 complete. Next: F2.** The landing zone exists: the
+Status: **in progress — Stages A, B, C, D, E, F1 and F2 complete. Next: F3.** The landing zone exists: the
 `hardhat/v3` cluster (own installation root, hardhat 3.15 pinned), the plugin registered via
 `definePlugin` with its per-connection `fhevm` object and the pre-serve chain preparation proven,
 and the `hardhat/v3/e2e` member with the first counter test.
@@ -307,10 +309,13 @@ Each phase ends green: `make build`, the affected test tiers, and the fhevm-npm 
    and pushing code INTO `@fhevm/sdk` needs js-sdk repo work + interim publishes until js-sdk joins
    the workspace. Options: (a) port the engines into the v3 plugin now with an extraction marker;
    (b) accelerate the js-sdk workspace landing so extraction comes first; (c) interim sdk releases.
-5. **The npm version line for `@fhevm/hardhat-plugin` v3.** The skeleton says `0.1.0` but v2
-   publishes `0.4.2` under the SAME name. Proposal: v3 starts at `1.0.0` (major = hardhat
-   generation; `peerDependencies` does the real gating), v2 stays on `0.x`, dist-tags steer
-   (`latest` → v3, `hardhat2` → v2). Must be settled before F2 (publint/pack).
+5. **The npm version line for `@fhevm/hardhat-plugin` v3 — STILL OPEN (2026-09-03).** The skeleton
+   says `0.1.0`, v2 publishes `0.4.2` under the SAME name. The `1.0.0` proposal is NOT accepted: the
+   number must carry (a) the FHEVM protocol line it targets (`0.13.x`), (b) the hardhat generation
+   (2 or 3) and (c) a patch. Semver has three slots plus a prerelease/build field, so candidates
+   are e.g. `0.13.<hh><patch>`-style minors, a prerelease tag (`0.13.0-hardhat3.1`), or one package
+   name per generation. Publint/pack are green on `0.1.0` meanwhile; the decision gates PUBLISHING,
+   not F2.
 6. **Is v2 frozen or co-developed during the port?** The plan assumes v2 SHRINKS alongside (C2,
    phase-1 extraction). Active v2 feature work in parallel means every shared change needs a
    two-generation test pass; bugfix-only keeps the port fast. Decides phase-1 aggressiveness.
@@ -823,7 +828,15 @@ this later without API change). One commit per group, tests run against the B1 s
   (prerequisite `compile-hh-v3-plugin`); `make test-consumer-ci` runs six legs green.
   Was: consumer fixture upgraded to a real encrypt/decrypt round-trip.
   Commit: `test(hh-v3-plugin): consumer fixture runs an encrypt/decrypt round-trip`
-- **F2.** `check:publint`/`attw`/`pack:tarball` green; pkg README. Commit.
+- **F2 — LANDED.** publint was clean; attw's only finding is `CJSResolvesToESM`, inherent to an
+  ESM-only hardhat 3 plugin, so `check:publint` runs attw with `--profile esm-only` and `npm run check`
+  is green. Finding: `pkg/_esm` was never cleaned before a compile, so the tarball still shipped the
+  retired `hello` action — `compile:esm` now removes the directory first. `pkg/README.md` written
+  (install, configure, `connection.fhevm` members, tasks, the node banner, supported networks); the
+  payload description no longer says "skeleton". NOT done (outside the write scope): the
+  `npm-manifest.json` note for the v3 owner still reads "hello-world skeleton until the migration
+  lands". Version stays `0.1.0` pending open question 5.
+  Was: publint/attw/pack green; pkg README.
   Commit: `chore(hh-v3-plugin): publint, attw and pack:tarball green; package README`
 - **F3.** The e2e member already exists (E2E-0) and has grown test by test via the ledger below;
   F3 closes the §5 parity matrix — whichever rows the ledger has not yet covered (expected: the
