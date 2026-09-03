@@ -1,6 +1,6 @@
 # Porting the FHEVM hardhat plugin from hardhat v2 to hardhat v3
 
-Version: **1.23** (2026-09-03). Bump the minor for a content change to the plan, the major for a
+Version: **1.24** (2026-09-03). Bump the minor for a content change to the plan, the major for a
 change of charter or stage order; record each bump below.
 
 - 1.0 — initial plan, from the hardhat 3 docs.
@@ -36,8 +36,10 @@ change of charter or stage order; record each bump below.
 - 1.22 — D4a1 landed (error table as typed data with a keyed lookup; template engine on plugin errors).
 - 1.23 — D4a2 landed (viem decoder + formatter + in-place decoration of hardhat 3's THROWN revert
   errors, wired through `onRequest` with a per-connection repository); A7 note corrected.
+- 1.24 — D4a3 landed (`revertedWithCustomErrorArgs` with a viem-backed ethers-shaped interface,
+  `tryParseFhevmError`); TestErrors/TestTrivialPermissions/TestACL e2e ported. Stage D4a complete.
 
-Status: **in progress — Stages A, B, C, D0–D3, D4a1 and D4a2 complete. Next: D4a3.** The landing zone exists: the
+Status: **in progress — Stages A, B, C, D0–D3 and D4a complete. Next: D4b.** The landing zone exists: the
 `hardhat/v3` cluster (own installation root, hardhat 3.15 pinned), the plugin registered via
 `definePlugin` with its per-connection `fhevm` object and the pre-serve chain preparation proven,
 and the `hardhat/v3/e2e` member with the first counter test.
@@ -668,7 +670,19 @@ this later without API change). One commit per group, tests run against the B1 s
       test: `ACL.allow` from an unauthorised account surfaces as the FHEVM message.
       Was: the parsing engine, trimmed to what v3 consumers reach.
       Commit: `feat(hh-v3-plugin): port the fhevm contract error parsing engine`
-    - **D4a3.** The two public helpers (`tryParseFhevmError`, `revertedWithCustomErrorArgs`).
+    - **D4a3 — LANDED.** `revertedWithCustomErrorArgs(contract, error)` returns
+      `[{ abi, interface }, error]`: the viem `abi` for viem-side assertions and an ethers-SHAPED
+      `interface` (`internal/errors/interface.ts`: `getError(nameOrSelector)`, `decodeErrorResult` with
+      `toArray()`) — exactly the slice `@nomicfoundation/hardhat-ethers-chai-matchers` reads, built on
+      viem, no ethers in the plugin. Unknown contract or error name fails by name (v2 let chai fail).
+      `tryParseFhevmError(e, { out })` (`internal/errors/parse.ts`) reads the revert from the error,
+      from `e.error` or `e.info.error` (ethers' wrappers), structures InputVerifier `InvalidSigner`
+      (tx parties via `getTransaction` when the hash is known) and prints a plain framed box
+      (`internal/log.ts`, no color dependency) when `out` is given. The connection object now holds the
+      contracts repository (`FhevmContractsRepository.client` made public). e2e: `TestErrors`,
+      `TestTrivialPermissions`, `TestACL` contracts copied verbatim and their suites ported (18 e2e
+      tests). Finding: v13's `InvalidSigner` carries an `address` argument.
+      Was: the two public helpers.
       Commit: `feat(hh-v3-plugin): expose the fhevm error parsing helpers`
   - **D4b.** `parseCoprocessorEvents`.
     Commit: `feat(hh-v3-plugin): port coprocessor event parsing`
@@ -739,7 +753,7 @@ allows.
 | D2                     | DONE for the counter: `internal/FHECounterPublicDecrypt.ts` is the full v2 file. `internal/Rand.ts` + fixture, `doc-examples/HeadsOrTails.ts`, `doc-examples/HighestDieRoll.ts`, `operators-public-decrypt/fhevmOperations54.ts`, `operators-manual/manualV13.ts` wait on their contracts (E2E-0b) |
 | D3b                    | DONE for `internal/FHECounterUserDecrypt.ts` (viem accounts as users). Waiting on their contracts (E2E-0b): `internal/AplusB.ts`, `doc-examples/{DecryptSingleValue,DecryptMultipleValues,EncryptSingleValue,EncryptMultipleValues}.ts`, `confidentialERC20/*`, `finance/*.fixture.ts`, `governance/*`, `utils/EncryptedErrors.*`, `operators-manual/manualWithAllowSender.ts` |
 | D3c                    | DONE on the counter (`internal/delegatedUserDecryption.ts`, `SmartWalletWithDelegation.sol`, `utils/blocks.ts`); the ConfidentialERC20 version of the same asserts waits on E2E-0b                                                                                                                                                                                     |
-| D4a3                   | `internal/TestErrors.*`, `internal/TestTrivialPermissions.test.ts`, `internal/TestACL.ts` (`revertedWithCustomErrorArgs`)                                                                                                                          |
+| D4a3                   | DONE — `internal/TestErrors.test.ts`, `internal/TestTrivialPermissions.test.ts`, `internal/TestACL.ts` (contracts copied verbatim)                                                                                                                          |
 | D4b                    | `internal/TestAsyncDecrypt.ts` (`parseCoprocessorEvents`; also needs D6)                                                                                                                                                                          |
 | D5a3                   | `hcu/fhevmHCU1.ts` (`computeTransactionHCU`)                                                                                                                                                                                                      |
 | D5b + C2               | `sepolia/*` (`getCoprocessorConfig` + generated addresses) and the `test:sepolia:*` scripts — operator-run, never in `make test`                                                                                                                    |
