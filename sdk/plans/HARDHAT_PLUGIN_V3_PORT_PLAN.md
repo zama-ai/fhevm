@@ -1,6 +1,6 @@
 # Porting the FHEVM hardhat plugin from hardhat v2 to hardhat v3
 
-Version: **1.12** (2026-09-03). Bump the minor for a content change to the plan, the major for a
+Version: **1.13** (2026-09-03). Bump the minor for a content change to the plan, the major for a
 change of charter or stage order; record each bump below.
 
 - 1.0 — initial plan, from the hardhat 3 docs.
@@ -18,8 +18,10 @@ change of charter or stage order; record each bump below.
 - 1.10 — B1c recorded as landed (verification, not setup); ledger: B1c smoke test → D0, `TestFHENotInitialized` → D5b.
 - 1.11 — B2 recorded as landed (anvil operator scripts; no plugin change needed); ledger B2 row done.
 - 1.12 — B3 recorded as landed; Stage B complete; ledger B3 row done.
+- 1.13 — C1a landed together with the command half of C1b; network GROUPS (incl. devnet) and the
+  relayer source of truth `fhevm-network-groups.config.json` introduced; face shape settled.
 
-Status: **in progress — Stages A and B complete, E2E-0a landed. Next: C1a.** The landing zone exists: the
+Status: **in progress — Stages A and B complete, C1a + the `generate-chain-constants` command landed. Next: C1b wiring (make generate / check-generated, the committed face), then C2.** The landing zone exists: the
 `hardhat/v3` cluster (own installation root, hardhat 3.15 pinned), the plugin registered via
 `definePlugin` with its per-connection `fhevm` object and the pre-serve chain preparation proven,
 and the `hardhat/v3/e2e` member with the first counter test.
@@ -514,12 +516,23 @@ first review, per the cap rule.
 ### Stage C — centralized generated constants (goal 7)
 
 - **C1. fhevm-npm generator** (two blocks; the cleartext-config generator is the template):
-  - **C1a.** The renderer: `fhevm-chains.config.json` → the constants module text, pure function.
-    Test: fixture chains file → exact expected output; malformed input refused with named errors.
-    Commit: `feat(fhevm-npm): render chain address constants from fhevm-chains.config.json`
-  - **C1b.** The command: `generate-chain-constants` + `--check` twin, CLI registration, battery +
-    `make generate` wiring. Test: write/check/missing/drift lifecycle on a temp workspace.
-    Commit: `feat(fhevm-npm): add generate-chain-constants command with check mode`
+  - **C1a — LANDED** (with the command half of C1b, one fhevm-npm commit + one for the re-synced
+    JSON). `base/generate-chain-constants.ts`: `parseChainsConfig` (path-named rejections) and
+    `renderChainConstants`, pure. The FACE: import-free TS, `FHEVM_CHAINS[group].hosts[name]` with
+    hosts in the js-sdk shape `{ name, id, fhevm: { contracts } }`, contracts as `{ address }`
+    objects, gateway + relayer on the GROUP (one gateway serves several host chains, and a host chain
+    recurs across groups — Sepolia is under testnet AND devnet with different addresses), plus
+    `FHEVM_CHAINS_SOURCE_COMMIT`. Decided on the way: `NETWORKS` → `NETWORK_GROUPS` = mainnet,
+    testnet, DEVNET (registry `dist/devnet.json`, gateway 10900, hosts Sepolia/Amoy/BNB/Hoodi);
+    relayer URLs and registry files move to `sdk/fhevm-network-groups.config.json`, the hand-written
+    source of truth the sync renderer reads; gateway `kmsGeneration` and `multichainAcl` are optional
+    (devnet carries their `_LEGACY` predecessors). Tests: exact table, prettier-clean, real config,
+    quoting, 11 parser + 4 loader rejections, write/check/missing/drift lifecycle.
+  - **C1b.** Command DONE (`generate-chain-constants` + `--check`, CLI, completion, README; writes
+    `common-vendored/src/fhevm-chains.ts`). REMAINING: `make generate` / `check-generated` wiring and
+    the first committed face (both outside fhevm-npm — approval), then `sync-vendored` destinations
+    for the packages that carry a copy (C2).
+    Commit: `chore(sdk): wire generate-chain-constants into make generate and commit the face`
 - **C2. Consumers.** v3 plugin consumes the generated module from birth; v2's hand-copied
   `internal/constants.ts` addresses are replaced by the same module (v2 SHRINKS — first
   minimization dividend). Test: v2 suite + e2e stay green; grep proves no address literal remains.
