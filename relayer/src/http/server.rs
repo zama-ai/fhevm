@@ -18,8 +18,8 @@ use crate::http::utils::BounceChecker;
 use crate::orchestrator::Orchestrator;
 use crate::store::sql::repositories::Repositories;
 use axum::{
-    Extension, Router,
     routing::{get, post},
+    Extension, Router,
 };
 use std::collections::HashMap;
 use std::net::SocketAddr;
