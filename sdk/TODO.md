@@ -26,3 +26,4 @@ declare namespace WebAssembly {
 - add a script that tests all links in package.json (README broken)
 - hardhat/v3 plugin `internal/network.ts` classifies public chains from the vendored `fhevm-chains.ts` face; in the future it should import `@fhevm/sdk/chains` instead, once `@fhevm/sdk/chains` is itself auto-generated from `fhevm-chains.config.json` (same source, one copy less)
 - Elias bun bug
+- centralized LOCALHOST_DEPLOYER (HH v3)
