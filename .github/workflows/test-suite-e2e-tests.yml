@@ -13,6 +13,20 @@ on:
         description: "Run from the orchestrated image-validation path."
         default: false
         type: boolean
+      runner:
+        description: >-
+          Runner to run on. Empty keeps the default 32-CPU cloud runner; pass a
+          provisioned instance's label to run the suite there instead.
+        default: ""
+        type: string
+      gpu-host:
+        description: >-
+          Prepare the runner for GPU containers (Docker, the Compose plugin and
+          the NVIDIA container toolkit). A freshly provisioned GPU instance ships
+          none of them, and the default runner needs none, so it stays off unless
+          a caller asks.
+        default: false
+        type: boolean
       build:
         description: "Build repo-owned images from the checked out branch on the runner"
         default: true
@@ -176,13 +190,20 @@ jobs:
       ORCHESTRATED: ${{ inputs.orchestrated && 'true' || 'false' }}
       SCENARIO: ${{ inputs.scenario || 'two-of-three-multi-chain' }}
       TEST_PROFILE: ${{ inputs.test-profile || 'standard' }}
-    runs-on: runs-on=${{ github.run_id }}/runner=32cpu-linux-x64/volume=160gb
+    # The default is unchanged; the override applies only when a caller passes one.
+    runs-on: ${{ inputs.runner || format('runs-on={0}/runner=32cpu-linux-x64/volume=160gb', github.run_id) }}
     steps:
       - name: Checkout code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: "false"
           fetch-depth: 0
+
+      # Ahead of `Setup Docker`: buildx needs a daemon, and a provisioned GPU
+      # instance has none yet.
+      - name: Prepare the GPU host
+        if: inputs.gpu-host
+        uses: ./.github/actions/gpu_container_runtime
 
       - name: Setup Docker
         uses: docker/setup-buildx-action@d70bba72b1f3fd22344832f00baa16ece964efeb # v3.3.0
