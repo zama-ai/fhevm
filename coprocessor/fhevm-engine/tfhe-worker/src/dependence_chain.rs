@@ -805,6 +805,43 @@ impl LockMngr {
                     AND (c.is_error = FALSE
                          OR (c.error_message LIKE '%' || $3 || '%'
                              AND c.error_retry_count < $4))
+                    -- ...and mirror its TRANSACTION scope too. A row whose
+                    -- transaction holds a demoted sibling is not being
+                    -- attempted in this lane either, so counting it here would
+                    -- hold the chain open on work the window will not select.
+                    -- That is the state that made demotion inert: the chain
+                    -- never reached 'processed', so the sweep -- which only
+                    -- looks at processed chains -- never re-armed it.
+                    --
+                    -- CHAIN-LOCAL here, deliberately, where the work window
+                    -- is transaction-wide. The invariant is that a chain may
+                    -- only retire on a demotion the sweep will later re-arm,
+                    -- and `rearm_demoted_chains` selects chains that OWN the
+                    -- demoted row. Retiring on a demoted row belonging to a
+                    -- different chain -- a transaction's rows can span chains
+                    -- when a fork-exposed database retained siblings -- would
+                    -- retire this chain while the sweep re-armed the other
+                    -- one, and a 'processed' chain is not acquirable (the
+                    -- work-stealing branch needs `lock_expires_at < NOW()`,
+                    -- which retirement sets to NULL). The pending row would
+                    -- then be stranded until the listener happened to refresh
+                    -- the chain with new work.
+                    --
+                    -- The window has no such constraint and stays
+                    -- transaction-wide: if any row of a transaction is
+                    -- demoted the transaction cannot complete, so skipping it
+                    -- is right whichever chain holds that row, and
+                    -- over-waiting there costs a pass rather than progress.
+                    AND NOT EXISTS (
+                        SELECT 1
+                        FROM computations demoted
+                        WHERE demoted.transaction_id = c.transaction_id
+                          AND demoted.dependence_chain_id = c.dependence_chain_id
+                          AND demoted.is_completed = FALSE
+                          AND demoted.is_error = TRUE
+                          AND demoted.error_message LIKE '%' || $3 || '%'
+                          AND demoted.error_retry_count >= $4
+                    )
               )
             RETURNING
                 dc.dependence_chain_id,

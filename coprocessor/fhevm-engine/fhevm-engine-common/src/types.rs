@@ -607,7 +607,6 @@ impl SupportedFheCiphertexts {
         ct_type: i16,
         list: &[u8],
         gpu_idx: usize,
-        cancellation: &tokio_util::sync::CancellationToken,
         reservation_timeout: std::time::Duration,
     ) -> Result<Self> {
         use crate::gpu_memory::reserve_memory_on_gpu;
@@ -616,20 +615,13 @@ impl SupportedFheCiphertexts {
         if let Ok(Some(decomp_size)) = ctlist.get_decompression_size_on_gpu(gpu_idx) {
             reserved_mem = decomp_size;
         };
-        let _reservation =
-            reserve_memory_on_gpu(reserved_mem, gpu_idx, cancellation, reservation_timeout)
-                .map_err(FhevmError::GpuMemoryReservationError)?;
+        let _reservation = reserve_memory_on_gpu(reserved_mem, gpu_idx, reservation_timeout)
+            .map_err(FhevmError::GpuMemoryReservationError)?;
         Self::decompress_impl(ct_type, &ctlist)
     }
 
     #[cfg(not(feature = "gpu"))]
-    pub fn decompress(
-        ct_type: i16,
-        list: &[u8],
-        _: usize,
-        _: &tokio_util::sync::CancellationToken,
-        _: std::time::Duration,
-    ) -> Result<Self> {
+    pub fn decompress(ct_type: i16, list: &[u8], _: usize, _: std::time::Duration) -> Result<Self> {
         let ctlist: CompressedCiphertextList = safe_deserialize(list)?;
         Self::decompress_impl(ct_type, &ctlist)
     }
