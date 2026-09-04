@@ -8,7 +8,8 @@
     "node": ">=22"
   },
   "scripts": {
-    "clean": "rm -rf ./broadcast ./cache ./out && npm run clean --prefix ./pkg",
+    "clean": "rm -rf ./broadcast ./cache ./out && npm run clean:pkg",
+    "clean:pkg": "rm -rf ./pkg/artifacts ./pkg/cache ./pkg/coverage ./pkg/dist ./pkg/ignition/deployments ./pkg/*.tsbuildinfo",
     "compile": "npm run compile --prefix ./pkg",
     "fmt": "npm run prettier:write && npm run forge:fmt",
     "fmt:check": "npm run prettier:check && npm run forge:fmt:check",
