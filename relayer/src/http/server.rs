@@ -1,4 +1,4 @@
-use crate::config::settings::HttpConfig;
+use crate::config::settings::{ContractConfig, HttpConfig};
 use crate::core::event::{ApiCategory, ApiVersion};
 use crate::gateway::throttlers::BouncerThrottlers;
 use crate::host::HostChainIdChecker;
@@ -13,6 +13,7 @@ use crate::http::endpoints::{
 };
 use crate::http::openapi_middleware;
 use crate::http::retry_after::RetryAfterState;
+use crate::http::user_decrypt_wait::UserDecryptWaitState;
 use crate::http::utils::BounceChecker;
 use crate::orchestrator::Orchestrator;
 use crate::store::sql::repositories::Repositories;
@@ -45,7 +46,7 @@ pub async fn run_http_server(
     config: &HttpConfig,
     orchestrator: Arc<Orchestrator>,
     repositories: Arc<Repositories>,
-    user_decrypt_shares_threshold: u32,
+    contracts: &ContractConfig,
     bouncer_throttlers: BouncerThrottlers,
     host_chain_id_checker: Arc<HostChainIdChecker>,
 ) -> SocketAddr {
@@ -59,6 +60,9 @@ pub async fn run_http_server(
 
     // Create RetryAfterState directly from config
     let retry_after_state = Arc::new(RetryAfterState::new(&config.retry_after));
+
+    // Optimistic user-decrypt wait window (seeded from gateway.contracts)
+    let user_decrypt_wait_state = Arc::new(UserDecryptWaitState::new(contracts));
 
     // Create AdminConfigRegistry for TPS throttling (separate from retry-after)
     let admin_registry = Arc::new(AdminConfigRegistry::new(
@@ -87,7 +91,7 @@ pub async fn run_http_server(
         orchestrator.clone(),
         api_version,
         repositories.user_decrypt.clone(),
-        user_decrypt_shares_threshold,
+        contracts.user_decrypt_shares_threshold,
         BounceChecker::new(
             bouncer_throttlers
                 .tx_throttlers
@@ -111,6 +115,7 @@ pub async fn run_http_server(
             config.api_retry_after_seconds,
         ),
         retry_after_state.clone(),
+        user_decrypt_wait_state.clone(),
         host_chain_id_checker.clone(),
     ));
 
@@ -158,24 +163,25 @@ pub async fn run_http_server(
         .merge(openapi_middleware());
 
     // Admin endpoints configuration
-    // When enabled, pass both registry (for TPS) and retry-after state
-    // When disabled, None is passed so handler returns 403
-    let (admin_registry_option, retry_after_option): (
-        Option<Arc<AdminConfigRegistry>>,
-        Option<Arc<RetryAfterState>>,
-    ) = if config.enable_admin_endpoint {
+    // When enabled, each backing store is passed as Some: registry (for TPS),
+    // retry-after state and the user-decrypt wait state
+    // When disabled, all are None so the handlers return 403
+    let admin_enabled = config.enable_admin_endpoint;
+    if admin_enabled {
         info!("Admin endpoints enabled at /admin/config");
-        (Some(admin_registry), Some(retry_after_state))
     } else {
         info!("Admin endpoints disabled");
-        (None, None)
-    };
+    }
+    let admin_registry_option = admin_enabled.then_some(admin_registry);
+    let retry_after_option = admin_enabled.then_some(retry_after_state);
+    let user_decrypt_wait_option = admin_enabled.then_some(user_decrypt_wait_state);
 
     app = app
         .route("/admin/config", post(admin::update_config))
         .route("/admin/config", get(admin::get_config))
         .layer(Extension(admin_registry_option))
-        .layer(Extension(retry_after_option));
+        .layer(Extension(retry_after_option))
+        .layer(Extension(user_decrypt_wait_option));
 
     // Setup TCP listener and start server
     let listener = tokio::net::TcpListener::bind(http_endpoint).await.unwrap();

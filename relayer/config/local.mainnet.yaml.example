@@ -121,6 +121,11 @@ gateway:
     decryption_address: "0x0f6024a97684f7d90ddb0fAAD79cB15F2C888D24"
     input_verification_address: "0xcB1bB072f38bdAF0F328CdEf1Fc6eDa1DF029287"
     user_decrypt_shares_threshold: 9
+    # Optimistic wait window: after threshold, wait for up to this many extra
+    # shares (or until the timeout) so the client has spares for a corrupted
+    # share. Set either to 0 to disable.
+    user_decrypt_additional_shares: 2
+    user_decrypt_additional_shares_timeout_secs: 5
   # Retry configuration for gateway events arriving before gw_reference_id is stored.
   # This is a workaround for the race condition where send_raw_transaction_sync has high latency.
   # TODO: Replace with proper event buffering solution.
