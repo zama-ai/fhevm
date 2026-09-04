@@ -32,15 +32,16 @@ pub use hcu_trusted_app_record::*;
 pub use host_config::*;
 pub use kms_context::*;
 pub use permit_invalidation::*;
+pub(crate) use type_gate::assert_reduction_count;
 #[cfg(test)]
 pub(crate) use type_gate::assert_supported_bounded_rand_type;
 pub use type_gate::{
     assert_binary_operand_types, assert_is_in_operand_types, assert_mul_div_operand_types,
-    assert_sum_operand_types, assert_supported_fhe_type, assert_supported_rand_type,
-    assert_ternary_operand_types, assert_unary_operand_type, assert_valid_bounded_rand_upper_bound,
-    max_reduction_operands,
+    assert_sum_operand_types, assert_supported_fhe_type, assert_ternary_operand_types,
+    assert_unary_operand_type, assert_valid_bounded_rand_upper_bound, binary_output_type_ok,
+    is_supported_fhe_type, is_supported_uint_fhe_type, max_reduction_operands,
+    scalar_is_zero_for_type, unary_output_type_ok,
 };
-pub(crate) use type_gate::{assert_reduction_count, is_supported_fhe_type};
 pub use user_decryption_delegation::*;
 
 pub use crate::constants::*;

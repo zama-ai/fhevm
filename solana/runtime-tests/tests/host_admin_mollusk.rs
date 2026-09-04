@@ -4,41 +4,13 @@
 //! touch `HostConfig` through the admin account context; they do not share the
 //! `FheExecutionFixture` harness.
 
-use anchor_lang::AccountDeserialize;
 use mollusk_svm::result::Check;
-use solana_sdk::{account::Account, instruction::Instruction, pubkey::Pubkey};
-use std::collections::HashMap;
-use zama_host::{self as host, HostConfig};
-use zama_solana_test_kit::{
-    anchor_ix, event_authority, funded_system_account, host_svm as mollusk,
-};
+use solana_sdk::{instruction::Instruction, pubkey::Pubkey};
+use zama_host::{self as host};
+use zama_solana_test_kit::{anchor_ix, event_authority};
 
 mod host_fixtures;
-use host_fixtures::host_config_account;
-
-fn mollusk_execute_context(
-    payer: Pubkey,
-    seeded_accounts: Vec<(Pubkey, Account)>,
-) -> mollusk_svm::MolluskContext<HashMap<Pubkey, Account>> {
-    let mut accounts = HashMap::from([(payer, funded_system_account())]);
-    for (pubkey, account) in seeded_accounts {
-        accounts.insert(pubkey, account);
-    }
-    mollusk().with_context(accounts)
-}
-
-fn read_host_config(
-    context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
-    address: Pubkey,
-) -> Option<HostConfig> {
-    let store = context.account_store.borrow();
-    let account = store.get(&address)?;
-    if account.owner != host::id() {
-        return None;
-    }
-    let mut data = account.data.as_slice();
-    HostConfig::try_deserialize(&mut data).ok()
-}
+use host_fixtures::{host_config_account, mollusk_execute_context, read_host_config};
 
 fn set_host_pause_ix(
     program_id: Pubkey,

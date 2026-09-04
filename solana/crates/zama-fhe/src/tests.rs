@@ -7,6 +7,7 @@ use crate::execution::*;
 use crate::lower::StepTables;
 use crate::operand::*;
 use crate::types::*;
+use crate::validate::{validate_binary_step, validate_unary_step};
 use crate::FheExecutionBuildError;
 use anchor_lang::prelude::Pubkey;
 #[cfg(feature = "cpi")]
@@ -233,7 +234,7 @@ fn batch_build_propagates_closure_and_finish_errors() {
                 FheBinaryOpCode::Ge,
                 Operand::persistent(balance_handle(1), Pubkey::new_unique()),
                 scalar_operand_u64(2),
-                FheType::UINT64.byte(),
+                FheType::UINT64,
                 Output::transient(),
             )?;
             Ok(())
@@ -930,7 +931,7 @@ fn rejects_invalid_references_and_types() {
             FheBinaryOpCode::Add,
             Operand::transient(0),
             scalar_operand_u64(1),
-            FheType::UINT64.byte(),
+            FheType::UINT64,
             Output::transient(),
         )
         .unwrap_err();
@@ -943,7 +944,7 @@ fn rejects_invalid_references_and_types() {
             FheBinaryOpCode::Ge,
             Operand::persistent(balance_handle(1), Pubkey::new_unique()),
             scalar_operand_u64(2),
-            FheType::UINT64.byte(),
+            FheType::UINT64,
             Output::transient(),
         )
         .unwrap_err();
@@ -959,7 +960,7 @@ fn rejects_invalid_references_and_types() {
             FheBinaryOpCode::Add,
             Operand::transient(1),
             scalar_operand_u64(1),
-            FheType::UINT64.byte(),
+            FheType::UINT64,
             Output::transient(),
         )
         .unwrap_err();
@@ -973,7 +974,7 @@ fn rejects_invalid_references_and_types() {
             FheBinaryOpCode::Add,
             Operand::transient(9),
             scalar_operand_u64(1),
-            FheType::UINT64.byte(),
+            FheType::UINT64,
             Output::transient(),
         )
         .unwrap_err();
@@ -987,7 +988,7 @@ fn rejects_invalid_references_and_types() {
             FheBinaryOpCode::Add,
             Encrypted::from(input).operand(),
             Operand::transient(1),
-            FheType::UINT64.byte(),
+            FheType::UINT64,
             Output::transient(),
         )
         .unwrap_err();
@@ -1056,7 +1057,7 @@ fn binary_validation_rejects_host_type_mismatches() {
             FheBinaryOpCode::Add,
             bool_lhs,
             scalar_operand_u64(1),
-            FheType::UINT64.byte(),
+            FheType::UINT64,
             Output::transient(),
         )
         .unwrap_err();
@@ -1074,7 +1075,7 @@ fn binary_validation_rejects_host_type_mismatches() {
                 typed_handle(2, FheType::UINT32.byte()),
                 Pubkey::new_unique(),
             ),
-            FheType::UINT64.byte(),
+            FheType::UINT64,
             Output::transient(),
         )
         .unwrap_err();
@@ -1091,7 +1092,7 @@ fn unary_validation_rejects_same_type_cast_and_bad_operand_types() {
         .unary_op(
             FheUnaryOpCode::Cast,
             Operand::persistent(balance_handle(1), Pubkey::new_unique()),
-            FheType::UINT32.byte(),
+            FheType::UINT32,
             Output::transient(),
         )
         .is_ok());
@@ -1101,7 +1102,7 @@ fn unary_validation_rejects_same_type_cast_and_bad_operand_types() {
             .unary_op(
                 FheUnaryOpCode::Cast,
                 Operand::persistent(balance_handle(1), Pubkey::new_unique()),
-                FheType::UINT64.byte(),
+                FheType::UINT64,
                 Output::transient(),
             )
             .unwrap_err(),
@@ -1112,7 +1113,7 @@ fn unary_validation_rejects_same_type_cast_and_bad_operand_types() {
         .unary_op(
             FheUnaryOpCode::Cast,
             Operand::persistent(typed_handle(2, FheType::BOOL.byte()), Pubkey::new_unique()),
-            FheType::UINT32.byte(),
+            FheType::UINT32,
             Output::transient(),
         )
         .is_ok());
@@ -1122,21 +1123,21 @@ fn unary_validation_rejects_same_type_cast_and_bad_operand_types() {
             .unary_op(
                 FheUnaryOpCode::Cast,
                 Operand::persistent(balance_handle(1), Pubkey::new_unique()),
-                FheType::BOOL.byte(),
+                FheType::BOOL,
                 Output::transient(),
             )
             .unwrap_err(),
         FheExecutionBuildError::UnsupportedFheType
     );
     assert_eq!(
-        builder
-            .unary_op(
-                FheUnaryOpCode::Cast,
-                Operand::persistent(balance_handle(1), Pubkey::new_unique()),
-                7u8,
-                Output::transient(),
-            )
-            .unwrap_err(),
+        validate_unary_step(
+            FheUnaryOpCode::Cast,
+            &Operand::persistent(balance_handle(1), Pubkey::new_unique()),
+            7u8,
+            0,
+            |_| None,
+        )
+        .unwrap_err(),
         FheExecutionBuildError::UnsupportedFheType
     );
     assert_eq!(
@@ -1144,7 +1145,7 @@ fn unary_validation_rejects_same_type_cast_and_bad_operand_types() {
             .unary_op(
                 FheUnaryOpCode::Cast,
                 Operand::persistent(typed_handle(3, 7u8), Pubkey::new_unique()),
-                FheType::UINT64.byte(),
+                FheType::UINT64,
                 Output::transient(),
             )
             .unwrap_err(),
@@ -1155,21 +1156,21 @@ fn unary_validation_rejects_same_type_cast_and_bad_operand_types() {
             .unary_op(
                 FheUnaryOpCode::Cast,
                 Operand::persistent(typed_handle(4, 8u8), Pubkey::new_unique()),
-                FheType::UINT64.byte(),
+                FheType::UINT64,
                 Output::transient(),
             )
             .unwrap_err(),
         FheExecutionBuildError::UnsupportedFheType
     );
     assert_eq!(
-        builder
-            .unary_op(
-                FheUnaryOpCode::Cast,
-                Operand::persistent(balance_handle(1), Pubkey::new_unique()),
-                8u8,
-                Output::transient(),
-            )
-            .unwrap_err(),
+        validate_unary_step(
+            FheUnaryOpCode::Cast,
+            &Operand::persistent(balance_handle(1), Pubkey::new_unique()),
+            8u8,
+            0,
+            |_| None,
+        )
+        .unwrap_err(),
         FheExecutionBuildError::UnsupportedFheType
     );
     // Neg rejects a Bool operand (EVM fheNeg supportedTypes = Uint8..Uint128).
@@ -1178,7 +1179,7 @@ fn unary_validation_rejects_same_type_cast_and_bad_operand_types() {
             .unary_op(
                 FheUnaryOpCode::Neg,
                 Operand::persistent(typed_handle(1, FheType::BOOL.byte()), Pubkey::new_unique()),
-                FheType::BOOL.byte(),
+                FheType::BOOL,
                 Output::transient(),
             )
             .unwrap_err(),
@@ -1269,15 +1270,11 @@ fn builder_exposes_the_host_operator_type_surface() {
 
     let u256 = Operand::persistent(typed_handle(3, 8u8), Pubkey::new_unique());
     assert_eq!(
-        builder
-            .binary_op(FheBinaryOpCode::Xor, u256, u256, 8u8, Output::transient(),)
-            .unwrap_err(),
+        validate_binary_step(FheBinaryOpCode::Xor, &u256, &u256, 8u8, 0, |_| None).unwrap_err(),
         FheExecutionBuildError::UnsupportedFheType
     );
     assert_eq!(
-        builder
-            .unary_op(FheUnaryOpCode::Neg, u256, 8u8, Output::transient(),)
-            .unwrap_err(),
+        validate_unary_step(FheUnaryOpCode::Neg, &u256, 8u8, 0, |_| None).unwrap_err(),
         FheExecutionBuildError::UnsupportedFheType
     );
     assert_eq!(

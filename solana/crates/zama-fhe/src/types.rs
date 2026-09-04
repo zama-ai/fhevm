@@ -45,13 +45,6 @@ mod sealed {
 
     pub trait FheTypedSeal {}
     pub trait FheUintSeal {}
-    pub trait FheRandomSeal {}
-    pub trait FheNotSeal {}
-    pub trait FheBitwiseSeal {}
-    pub trait FheShiftSeal {}
-    pub trait FheEqSeal {}
-    pub trait FheNegSeal {}
-    pub trait FheIsInSeal {}
 
     impl FheTypedSeal for Bool {}
     impl FheTypedSeal for Uint<8> {}
@@ -65,56 +58,6 @@ mod sealed {
     impl FheUintSeal for Uint<32> {}
     impl FheUintSeal for Uint<64> {}
     impl FheUintSeal for Uint<128> {}
-
-    impl FheRandomSeal for Bool {}
-    impl FheRandomSeal for Uint<8> {}
-    impl FheRandomSeal for Uint<16> {}
-    impl FheRandomSeal for Uint<32> {}
-    impl FheRandomSeal for Uint<64> {}
-    impl FheRandomSeal for Uint<128> {}
-
-    // NOT / bitwise: Bool + Uint8..Uint128 (host `0 | 2..=6`).
-    impl FheNotSeal for Bool {}
-    impl FheNotSeal for Uint<8> {}
-    impl FheNotSeal for Uint<16> {}
-    impl FheNotSeal for Uint<32> {}
-    impl FheNotSeal for Uint<64> {}
-    impl FheNotSeal for Uint<128> {}
-
-    impl FheBitwiseSeal for Bool {}
-    impl FheBitwiseSeal for Uint<8> {}
-    impl FheBitwiseSeal for Uint<16> {}
-    impl FheBitwiseSeal for Uint<32> {}
-    impl FheBitwiseSeal for Uint<64> {}
-    impl FheBitwiseSeal for Uint<128> {}
-
-    // Shifts/rotations and Neg: Uint8..Uint128 (host `2..=6`).
-    impl FheShiftSeal for Uint<8> {}
-    impl FheShiftSeal for Uint<16> {}
-    impl FheShiftSeal for Uint<32> {}
-    impl FheShiftSeal for Uint<64> {}
-    impl FheShiftSeal for Uint<128> {}
-
-    impl FheNegSeal for Uint<8> {}
-    impl FheNegSeal for Uint<16> {}
-    impl FheNegSeal for Uint<32> {}
-    impl FheNegSeal for Uint<64> {}
-    impl FheNegSeal for Uint<128> {}
-
-    // Eq/Ne: Bool + Uint8..Uint128 (host `0 | 2..=6`).
-    impl FheEqSeal for Bool {}
-    impl FheEqSeal for Uint<8> {}
-    impl FheEqSeal for Uint<16> {}
-    impl FheEqSeal for Uint<32> {}
-    impl FheEqSeal for Uint<64> {}
-    impl FheEqSeal for Uint<128> {}
-
-    // IsIn: Uint8..Uint128 (host `2..=6`; no ebool).
-    impl FheIsInSeal for Uint<8> {}
-    impl FheIsInSeal for Uint<16> {}
-    impl FheIsInSeal for Uint<32> {}
-    impl FheIsInSeal for Uint<64> {}
-    impl FheIsInSeal for Uint<128> {}
 }
 
 /// Compile-time FHE type tag for typed encrypted handles.
@@ -154,73 +97,6 @@ impl FheUint for Uint<16> {}
 impl FheUint for Uint<32> {}
 impl FheUint for Uint<64> {}
 impl FheUint for Uint<128> {}
-
-/// Marker trait for FHE values accepted by host rand steps.
-pub trait FheRandom: FheTyped + sealed::FheRandomSeal {}
-
-impl FheRandom for Bool {}
-impl FheRandom for Uint<8> {}
-impl FheRandom for Uint<16> {}
-impl FheRandom for Uint<32> {}
-impl FheRandom for Uint<64> {}
-impl FheRandom for Uint<128> {}
-
-/// Marker trait for FHE values accepted by bitwise NOT: Bool, Uint8..Uint128.
-pub trait FheNot: FheTyped + sealed::FheNotSeal {}
-
-impl FheNot for Bool {}
-impl FheNot for Uint<8> {}
-impl FheNot for Uint<16> {}
-impl FheNot for Uint<32> {}
-impl FheNot for Uint<64> {}
-impl FheNot for Uint<128> {}
-
-/// Marker trait for values accepted by bitwise And/Or/Xor: Bool, Uint8..Uint128.
-pub trait FheBitwise: FheTyped + sealed::FheBitwiseSeal {}
-
-impl FheBitwise for Bool {}
-impl FheBitwise for Uint<8> {}
-impl FheBitwise for Uint<16> {}
-impl FheBitwise for Uint<32> {}
-impl FheBitwise for Uint<64> {}
-impl FheBitwise for Uint<128> {}
-
-/// Marker trait for values accepted by shifts/rotations: Uint8..Uint128.
-pub trait FheShift: FheTyped + sealed::FheShiftSeal {}
-
-impl FheShift for Uint<8> {}
-impl FheShift for Uint<16> {}
-impl FheShift for Uint<32> {}
-impl FheShift for Uint<64> {}
-impl FheShift for Uint<128> {}
-
-/// Marker trait for values accepted by arithmetic negation: Uint8..Uint128.
-pub trait FheNeg: FheTyped + sealed::FheNegSeal {}
-
-impl FheNeg for Uint<8> {}
-impl FheNeg for Uint<16> {}
-impl FheNeg for Uint<32> {}
-impl FheNeg for Uint<64> {}
-impl FheNeg for Uint<128> {}
-
-/// Marker trait for values accepted by Eq/Ne: Bool, Uint8..Uint128.
-pub trait FheEq: FheTyped + sealed::FheEqSeal {}
-
-impl FheEq for Bool {}
-impl FheEq for Uint<8> {}
-impl FheEq for Uint<16> {}
-impl FheEq for Uint<32> {}
-impl FheEq for Uint<64> {}
-impl FheEq for Uint<128> {}
-
-/// Marker trait for values accepted by IsIn: Uint8..Uint128.
-pub trait FheIsIn: FheTyped + sealed::FheIsInSeal {}
-
-impl FheIsIn for Uint<8> {}
-impl FheIsIn for Uint<16> {}
-impl FheIsIn for Uint<32> {}
-impl FheIsIn for Uint<64> {}
-impl FheIsIn for Uint<128> {}
 
 /// Typed encrypted execution value.
 ///

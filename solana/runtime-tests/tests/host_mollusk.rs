@@ -37,12 +37,11 @@ use zama_host::{
     FheExecuteOutput, FheExecuteStep, FheTernaryOpCode, HostConfig, PreviousState,
 };
 use zama_solana_test_kit::{
-    anchor_error_check, anchor_framework_error_check, anchor_ix, cost_snapshot,
-    deny_subject_record_account, empty_system_account, encrypted_value_account, event_authority,
-    funded_system_account, handle_for_chain, host_svm as mollusk,
+    anchor_error_check, anchor_framework_error_check, anchor_ix, canonical_test_context_id,
+    cost_snapshot, deny_subject_record_account, empty_system_account, encrypted_value_account,
+    event_authority, funded_system_account, handle_for_chain, host_svm as mollusk,
     host_svm_without_previous_bank_hash as mollusk_without_previous_bank_hash, label,
-    canonical_test_context_id, program_data_account,
-    new_encrypted_value as new_encrypted_value_account, read_encrypted_value,
+    new_encrypted_value as new_encrypted_value_account, program_data_account, read_encrypted_value,
     read_encrypted_value_from_result, readonly, readonly_signer, serialized_account, signing,
     system_account, system_program_account, writable, DECRYPTION_CONTRACT, GATEWAY_CHAIN_ID,
     INPUT_VERIFICATION_CONTRACT,
@@ -51,7 +50,7 @@ use zama_solana_test_kit::{
 mod host_fixtures;
 use host_fixtures::{
     created_public_batch, fhe_execute_ix, fhe_execute_ix_with_deny_records, host_config_account,
-    host_config_account_with_flags,
+    host_config_account_with_flags, mollusk_execute_context, read_host_config,
 };
 
 // ---------------------------------------------------------------------------
@@ -2474,30 +2473,6 @@ fn host_config_account_with_block_cap(admin: Pubkey, cap: u64) -> (Pubkey, Accou
     (key, account)
 }
 
-fn mollusk_execute_context(
-    payer: Pubkey,
-    seeded_accounts: Vec<(Pubkey, Account)>,
-) -> mollusk_svm::MolluskContext<HashMap<Pubkey, Account>> {
-    let mut accounts = HashMap::from([(payer, funded_system_account())]);
-    for (pubkey, account) in seeded_accounts {
-        accounts.insert(pubkey, account);
-    }
-    mollusk().with_context(accounts)
-}
-
-fn read_host_config(
-    context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
-    address: Pubkey,
-) -> Option<HostConfig> {
-    let store = context.account_store.borrow();
-    let account = store.get(&address)?;
-    if account.owner != host::id() {
-        return None;
-    }
-    let mut data = account.data.as_slice();
-    HostConfig::try_deserialize(&mut data).ok()
-}
-
 fn read_hcu_block_meter(
     context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
     address: Pubkey,
@@ -2891,7 +2866,10 @@ fn mollusk_destroy_kms_context_rejects_current() {
     let (kms_context, kms_context_acct) = kms_context_account(KMS_CONTEXT_ID);
     let context = mollusk_execute_context(
         admin,
-        vec![(host_config, host_config_account), (kms_context, kms_context_acct)],
+        vec![
+            (host_config, host_config_account),
+            (kms_context, kms_context_acct),
+        ],
     );
 
     context.process_and_validate_instruction(

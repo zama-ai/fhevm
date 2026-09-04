@@ -225,7 +225,7 @@ pub(super) fn walk_steps<'info>(
                 execution.accept_output(ctx, op_index, result, output)?;
             }
             FheExecuteStep::Rand { fhe_type, output } => {
-                assert_supported_rand_type(*fhe_type)?;
+                assert_supported_fhe_type(*fhe_type)?;
                 let seed = handle_context.rand_seed(op_index);
                 let result =
                     computed_rand_handle(seed, *fhe_type, handle_context.derivation.chain_id);

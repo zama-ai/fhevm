@@ -18,32 +18,39 @@ pub fn assert_supported_fhe_type(fhe_type: u8) -> Result<()> {
 /// Checks that a binary operation's declared result type matches the shipped operator.
 fn assert_supported_binary_output_type(op: FheBinaryOpCode, fhe_type: u8) -> Result<()> {
     assert_supported_fhe_type(fhe_type)?;
-    let valid = match op {
+    require!(
+        binary_output_type_ok(op, fhe_type),
+        ZamaHostError::UnsupportedFheType
+    );
+    Ok(())
+}
+
+/// True when `fhe_type` is a legal result type for `op` (after the supported-type gate).
+pub fn binary_output_type_ok(op: FheBinaryOpCode, fhe_type: u8) -> bool {
+    match op {
         FheBinaryOpCode::Add
         | FheBinaryOpCode::Sub
         | FheBinaryOpCode::Mul
         | FheBinaryOpCode::Div
         | FheBinaryOpCode::Rem
         | FheBinaryOpCode::Min
-        | FheBinaryOpCode::Max => matches!(fhe_type, 2..=6),
+        | FheBinaryOpCode::Max => is_supported_uint_fhe_type(fhe_type),
         // Bitwise: Bool + Uint8..Uint128. Solana host max is euint128.
         FheBinaryOpCode::And | FheBinaryOpCode::Or | FheBinaryOpCode::Xor => {
-            matches!(fhe_type, 0 | 2..=6)
+            is_supported_fhe_type(fhe_type)
         }
         // Shifts/rotations: Uint8..Uint128. Solana host max is euint128.
         FheBinaryOpCode::Shl
         | FheBinaryOpCode::Shr
         | FheBinaryOpCode::Rotl
-        | FheBinaryOpCode::Rotr => matches!(fhe_type, 2..=6),
+        | FheBinaryOpCode::Rotr => is_supported_uint_fhe_type(fhe_type),
         FheBinaryOpCode::Eq
         | FheBinaryOpCode::Ne
         | FheBinaryOpCode::Ge
         | FheBinaryOpCode::Gt
         | FheBinaryOpCode::Le
         | FheBinaryOpCode::Lt => fhe_type == 0,
-    };
-    require!(valid, ZamaHostError::UnsupportedFheType);
-    Ok(())
+    }
 }
 
 /// Checks binary operand metadata against the EVM executor's type discipline.
@@ -61,12 +68,15 @@ pub fn assert_binary_operand_types(
         // Uint8..Uint128; ordered comparisons accept Uint8..Uint128. Solana host max is euint128.
         FheBinaryOpCode::Eq | FheBinaryOpCode::Ne => {
             require!(
-                matches!(lhs_type, 0 | 2..=6),
+                is_supported_fhe_type(lhs_type),
                 ZamaHostError::UnsupportedFheType
             );
         }
         FheBinaryOpCode::Ge | FheBinaryOpCode::Gt | FheBinaryOpCode::Le | FheBinaryOpCode::Lt => {
-            require!(matches!(lhs_type, 2..=6), ZamaHostError::UnsupportedFheType);
+            require!(
+                is_supported_uint_fhe_type(lhs_type),
+                ZamaHostError::UnsupportedFheType
+            );
         }
         // Div/Rem: divisor must be a plaintext scalar (EVM `IsNotScalar`), non-zero after truncation.
         FheBinaryOpCode::Div | FheBinaryOpCode::Rem => {
@@ -108,10 +118,6 @@ pub fn assert_binary_operand_types(
     Ok(())
 }
 
-pub fn assert_supported_rand_type(fhe_type: u8) -> Result<()> {
-    assert_supported_fhe_type(fhe_type)
-}
-
 pub(crate) fn assert_supported_bounded_rand_type(fhe_type: u8) -> Result<()> {
     require!(
         bounded_rand_type_bits(fhe_type).is_some(),
@@ -122,27 +128,33 @@ pub(crate) fn assert_supported_bounded_rand_type(fhe_type: u8) -> Result<()> {
 
 pub fn assert_valid_bounded_rand_upper_bound(upper_bound: [u8; 32], fhe_type: u8) -> Result<()> {
     assert_supported_bounded_rand_type(fhe_type)?;
+    let max_bits = bounded_rand_type_bits(fhe_type).ok_or(ZamaHostError::UnsupportedFheType)?;
     let bit_index =
         power_of_two_bit_index(upper_bound).ok_or(ZamaHostError::InvalidRandomUpperBound)?;
-    if let Some(max_bits) = bounded_rand_type_bits(fhe_type).flatten() {
-        require!(
-            bit_index <= max_bits,
-            ZamaHostError::InvalidRandomUpperBound
-        );
-    }
+    require!(
+        bit_index <= max_bits,
+        ZamaHostError::InvalidRandomUpperBound
+    );
     Ok(())
 }
 
 fn assert_supported_unary_output_type(op: FheUnaryOpCode, fhe_type: u8) -> Result<()> {
     assert_supported_fhe_type(fhe_type)?;
-    let valid = match op {
-        FheUnaryOpCode::Neg => matches!(fhe_type, 2..=6),
-        FheUnaryOpCode::Not => matches!(fhe_type, 0 | 2..=6),
-        // Cast output set: Uint8..Uint128 (no ebool, no eaddress/Uint160). Solana host max is euint128.
-        FheUnaryOpCode::Cast => matches!(fhe_type, 2..=6),
-    };
-    require!(valid, ZamaHostError::UnsupportedFheType);
+    require!(
+        unary_output_type_ok(op, fhe_type),
+        ZamaHostError::UnsupportedFheType
+    );
     Ok(())
+}
+
+/// True when `fhe_type` is a legal result type for `op` (after the supported-type gate).
+pub fn unary_output_type_ok(op: FheUnaryOpCode, fhe_type: u8) -> bool {
+    match op {
+        FheUnaryOpCode::Neg => is_supported_uint_fhe_type(fhe_type),
+        FheUnaryOpCode::Not => is_supported_fhe_type(fhe_type),
+        // Cast output set: Uint8..Uint128 (no ebool, no eaddress/Uint160). Solana host max is euint128.
+        FheUnaryOpCode::Cast => is_supported_uint_fhe_type(fhe_type),
+    }
 }
 
 pub fn assert_unary_operand_type(
@@ -159,7 +171,7 @@ pub fn assert_unary_operand_type(
     match op {
         FheUnaryOpCode::Neg => {
             require!(
-                matches!(operand_type, 2..=6),
+                is_supported_uint_fhe_type(operand_type),
                 ZamaHostError::UnsupportedFheType
             );
             require!(
@@ -169,7 +181,7 @@ pub fn assert_unary_operand_type(
         }
         FheUnaryOpCode::Not => {
             require!(
-                matches!(operand_type, 0 | 2..=6),
+                is_supported_fhe_type(operand_type),
                 ZamaHostError::UnsupportedFheType
             );
             require!(
@@ -180,7 +192,7 @@ pub fn assert_unary_operand_type(
         FheUnaryOpCode::Cast => {
             // Cast input set: Bool | Uint8..Uint128 (no eaddress/Uint160). Solana host max is euint128.
             require!(
-                matches!(operand_type, 0 | 2..=6),
+                is_supported_fhe_type(operand_type),
                 ZamaHostError::UnsupportedFheType
             );
             // Cast reinterprets to a different type; a same-type cast is rejected (EVM InvalidType).
@@ -197,7 +209,10 @@ pub fn assert_unary_operand_type(
 /// `fheSum` and the coprocessor, only the maximum operand count is bounded — a zero/single-operand
 /// sum is valid (EVM enforces no minimum).
 pub fn assert_sum_operand_types(operand_handles: &[[u8; 32]], fhe_type: u8) -> Result<()> {
-    require!(matches!(fhe_type, 2..=6), ZamaHostError::UnsupportedFheType);
+    require!(
+        is_supported_uint_fhe_type(fhe_type),
+        ZamaHostError::UnsupportedFheType
+    );
     // Cap the operand count at the coprocessor's FheSum limit (transient operands use no accounts).
     assert_reduction_count(operand_handles.len(), fhe_type)?;
     for handle in operand_handles {
@@ -217,7 +232,10 @@ pub fn assert_is_in_operand_types(
     set_handles: &[[u8; 32]],
     fhe_type: u8,
 ) -> Result<()> {
-    require!(matches!(fhe_type, 2..=6), ZamaHostError::UnsupportedFheType);
+    require!(
+        is_supported_uint_fhe_type(fhe_type),
+        ZamaHostError::UnsupportedFheType
+    );
     // Cap the set size at the coprocessor's FheIsIn limit (its `set_size` bound excludes the value).
     assert_reduction_count(set_handles.len(), fhe_type)?;
     require!(
@@ -282,12 +300,16 @@ pub fn assert_ternary_operand_types(
     Ok(())
 }
 
-pub(crate) fn is_supported_fhe_type(fhe_type: u8) -> bool {
+pub fn is_supported_fhe_type(fhe_type: u8) -> bool {
     matches!(fhe_type, 0 | 2..=6)
 }
 
+pub fn is_supported_uint_fhe_type(fhe_type: u8) -> bool {
+    matches!(fhe_type, 2..=6)
+}
+
 /// Whether a big-endian scalar is zero once truncated to `fhe_type`'s width (EVM `_isScalarZeroForType`).
-fn scalar_is_zero_for_type(scalar: [u8; 32], fhe_type: u8) -> bool {
+pub fn scalar_is_zero_for_type(scalar: [u8; 32], fhe_type: u8) -> bool {
     let width = match fhe_type {
         2 => 1,  // Uint8
         3 => 2,  // Uint16
@@ -315,13 +337,13 @@ pub(crate) fn assert_reduction_count(n: usize, ty: u8) -> Result<()> {
     Ok(())
 }
 
-fn bounded_rand_type_bits(fhe_type: u8) -> Option<Option<u16>> {
+fn bounded_rand_type_bits(fhe_type: u8) -> Option<u16> {
     match fhe_type {
-        2 => Some(Some(8)),
-        3 => Some(Some(16)),
-        4 => Some(Some(32)),
-        5 => Some(Some(64)),
-        6 => Some(Some(128)),
+        2 => Some(8),
+        3 => Some(16),
+        4 => Some(32),
+        5 => Some(64),
+        6 => Some(128),
         _ => None,
     }
 }

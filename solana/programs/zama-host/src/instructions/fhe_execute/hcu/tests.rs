@@ -200,9 +200,9 @@ fn trivial_encrypt_hcu_covers_every_validated_type() {
 
 #[test]
 fn rand_hcu_covers_every_validated_rand_and_bounded_rand_type() {
-    use crate::state::{assert_supported_bounded_rand_type, assert_supported_rand_type};
+    use crate::state::{assert_supported_bounded_rand_type, assert_supported_fhe_type};
     for ty in ALL_FHE_TYPE_PROBES {
-        if assert_supported_rand_type(ty).is_ok() {
+        if assert_supported_fhe_type(ty).is_ok() {
             assert!(
                 rand_hcu(ty).is_ok(),
                 "validated rand type {ty} has no cost row"

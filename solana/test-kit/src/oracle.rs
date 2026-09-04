@@ -16,10 +16,9 @@ use rand::{rngs::StdRng, RngCore, SeedableRng};
 use solana_sdk::pubkey::Pubkey;
 use zama_host::{
     assert_binary_operand_types, assert_is_in_operand_types, assert_mul_div_operand_types,
-    assert_sum_operand_types, assert_supported_fhe_type, assert_supported_rand_type,
-    assert_unary_operand_type, assert_valid_bounded_rand_upper_bound, handle_fhe_type,
-    FheBinaryOpCode, FheExecuteArgs, FheExecuteOperand, FheExecuteStep, FheTernaryOpCode,
-    FheUnaryOpCode,
+    assert_sum_operand_types, assert_supported_fhe_type, assert_unary_operand_type,
+    assert_valid_bounded_rand_upper_bound, handle_fhe_type, FheBinaryOpCode, FheExecuteArgs,
+    FheExecuteOperand, FheExecuteStep, FheTernaryOpCode, FheUnaryOpCode,
 };
 
 use crate::{
@@ -157,7 +156,7 @@ pub fn evaluate(
                 ClearValue::new(*fhe_type, value)?
             }
             FheExecuteStep::Rand { fhe_type, .. } => {
-                canonical(assert_supported_rand_type(*fhe_type), "rand")?;
+                canonical(assert_supported_fhe_type(*fhe_type), "rand")?;
                 let mut value = random_biguint(&mut random);
                 if *fhe_type == 0 {
                     value &= BigUint::from(1u8);
