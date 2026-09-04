@@ -323,6 +323,54 @@ mod tests {
         (signer, payload, digest, bytes)
     }
 
+    /// Mock transport that records the `gas` of each `eth_call` before delegating, so a test
+    /// can assert which budget actually went on the wire.
+    #[derive(Clone)]
+    struct GasSpy {
+        inner: alloy::transports::mock::MockTransport,
+        seen: std::sync::Arc<std::sync::Mutex<Vec<u64>>>,
+    }
+
+    impl tower::Service<alloy::rpc::json_rpc::RequestPacket> for GasSpy {
+        type Response = alloy::rpc::json_rpc::ResponsePacket;
+        type Error = alloy::transports::TransportError;
+        type Future = alloy::transports::TransportFut<'static>;
+
+        fn poll_ready(
+            &mut self,
+            _: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<Result<(), Self::Error>> {
+            std::task::Poll::Ready(Ok(()))
+        }
+
+        fn call(&mut self, req: alloy::rpc::json_rpc::RequestPacket) -> Self::Future {
+            if let alloy::rpc::json_rpc::RequestPacket::Single(r) = &req
+                && r.method() == "eth_call"
+                && let Ok(v) = serde_json::from_str::<serde_json::Value>(r.serialized().get())
+                && let Some(gas) = v["params"][0]["gas"].as_str()
+                && let Ok(gas) = u64::from_str_radix(gas.trim_start_matches("0x"), 16)
+            {
+                self.seen.lock().unwrap().push(gas);
+            }
+            tower::Service::call(&mut self.inner, req)
+        }
+    }
+
+    /// Provider that records the gas of every `eth_call` it issues.
+    fn spying_provider(
+        asserter: Asserter,
+    ) -> (impl Provider, std::sync::Arc<std::sync::Mutex<Vec<u64>>>) {
+        let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let transport = GasSpy {
+            inner: alloy::transports::mock::MockTransport::new(asserter),
+            seen: seen.clone(),
+        };
+        let provider = ProviderBuilder::new()
+            .disable_recommended_fillers()
+            .connect_client(alloy::rpc::client::RpcClient::new(transport, true));
+        (provider, seen)
+    }
+
     fn mock_provider(asserter: Asserter) -> impl Provider {
         ProviderBuilder::new()
             .disable_recommended_fillers()
@@ -493,6 +541,37 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(accepted, Erc1271Accepted::AboveWarnThreshold);
+    }
+
+    #[tokio::test]
+    async fn fallback_puts_the_configured_cap_on_the_wire() {
+        // Pins which budget each call carries. Without it, a fallback that reused
+        // `warn_above` would still satisfy every other test here.
+        let asserter = Asserter::new();
+        let (provider, gas_seen) = spying_provider(asserter.clone());
+        let claimed = Address::from([0xDE; 20]);
+        let digest = B256::from([0u8; 32]);
+        let sig = vec![0x11_u8; 65];
+
+        asserter.push_failure(revert_payload("0x"));
+        let mut returndata = [0u8; 32];
+        returndata[..4].copy_from_slice(&ERC1271_MAGIC_VALUE);
+        asserter.push_success(&returndata);
+
+        verify_signature(
+            &provider,
+            claimed,
+            digest,
+            &sig,
+            Erc1271GasBudget {
+                limit: 250_000,
+                warn_above: 100_000,
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(*gas_seen.lock().unwrap(), vec![100_000, 250_000]);
     }
 
     #[tokio::test]
