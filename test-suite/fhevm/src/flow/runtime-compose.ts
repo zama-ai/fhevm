@@ -65,6 +65,7 @@ export const inspectImageId = async (ref: string) => {
 const saveBuiltImages = async (
   state: State,
   refs: Array<{ ref: string; group: BuiltImage["group"]; instanceIndex?: number }>,
+  persist = true,
 ) => {
   const current = new Map((state.builtImages ?? []).map((item) => [item.ref, item] as const));
   for (const entry of refs) {
@@ -80,7 +81,7 @@ const saveBuiltImages = async (
     });
   }
   state.builtImages = [...current.values()].sort((a, b) => a.ref.localeCompare(b.ref));
-  await saveState(state);
+  if (persist) await saveState(state);
 };
 
 /** Checks whether a set of image refs still matches the last recorded local build ids. */
@@ -184,7 +185,11 @@ const composeBuild = async (component: string, services: string[], env?: Record<
 };
 
 /** Builds any locally overridden images required before a compose-up step. */
-export const maybeBuild = async (component: string, state: State, options: { force?: boolean } = {}) => {
+export const maybeBuild = async (
+  component: string,
+  state: State,
+  options: { force?: boolean; persistState?: boolean } = {},
+) => {
   try {
     if (component === "coprocessor") {
       const doc = await loadMergedComposeDoc(component);
@@ -214,6 +219,28 @@ export const maybeBuild = async (component: string, state: State, options: { for
             services.find((service) => doc.services[service]?.image === ref) ?? "",
           ),
         })),
+        options.persistState !== false,
+      );
+      return;
+    }
+
+    if (component === "kms-connector" && state.kmsConnectorDeploymentByNodeId) {
+      const doc = await loadMergedComposeDoc(component);
+      const services = Object.entries(doc.services)
+        .filter(([, service]) => !!service.build)
+        .map(([name]) => name);
+      if (!services.length) return;
+      const refs = imageRefsFromDoc(doc, services);
+      if (!options.force && (await refsAlreadyBuilt(state, refs))) return;
+      console.log("[build] kms-connector");
+      for (const ref of refs) {
+        await run(["docker", "image", "rm", "-f", ref], { allowFailure: true });
+      }
+      await timed(`[build] ${services.join(",")}`, () => composeBuild(component, services));
+      await saveBuiltImages(
+        state,
+        refs.map((ref) => ({ ref, group: "kms-connector" as const })),
+        options.persistState !== false,
       );
       return;
     }
@@ -253,6 +280,7 @@ export const maybeBuild = async (component: string, state: State, options: { for
       await saveBuiltImages(
         state,
         imageRefsFromDoc(doc, services).map((ref) => ({ ref, group: override.group })),
+        options.persistState !== false,
       );
     }
   } catch (error) {

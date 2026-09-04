@@ -22,6 +22,7 @@ import {
   STANDARD_SHARD_DECRYPTION_TEST_PROFILES,
   STANDARD_SHARD_STATEFUL_TEST_PROFILES,
   STANDARD_TEST_PROFILES,
+  TEST_GREP,
   TEST_SUITE_CONTAINER,
 } from "./layout";
 import { testDefaultScenario } from "./test-fixtures";
@@ -161,6 +162,10 @@ describe("cli", () => {
 
   test("standard suite includes multi-chain isolation coverage", () => {
     expect(STANDARD_TEST_PROFILES).toContain("multi-chain-isolation");
+  });
+
+  test("public-decryption profile selects the active HTTP public decrypt test", () => {
+    expect("test HTTPPublicDecrypt ebool").toMatch(new RegExp(TEST_GREP["public-decryption"]));
   });
 
   test("CI shards partition the standard suite exactly", () => {
