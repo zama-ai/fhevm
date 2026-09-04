@@ -3386,8 +3386,6 @@ dependencies = [
  "serde_json",
  "thiserror",
  "tokio",
- "tower",
- "tracing",
 ]
 
 [[package]]

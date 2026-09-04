@@ -15,7 +15,6 @@ alloy = { version = "1", default-features = false, features = [
     "sol-types",
 ] }
 thiserror = { version = "2.0", default-features = false }
-tracing = "0.1.44"
 
 [dev-dependencies]
 alloy = { version = "1", default-features = false, features = [
@@ -28,4 +27,3 @@ serde_json = { version = "1.0.149", default-features = false, features = [
 tokio = { version = "1.52.1", default-features = false, features = [
     "macros",
 ] }
-tower = { version = "0.5", default-features = false }

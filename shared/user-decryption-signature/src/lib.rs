@@ -17,7 +17,6 @@ use alloy::{
 };
 use fhevm_gateway_bindings::decryption::IDecryption::UserDecryptionRequestPayload;
 use thiserror::Error;
-use tracing::warn;
 
 sol! {
     /// ERC-1271 signature validation interface (OpenZeppelin v5.1).
@@ -50,10 +49,6 @@ pub const DEFAULT_DOMAIN_NAME: &str = "Decryption";
 pub const DEFAULT_DOMAIN_VERSION: &str = "1";
 /// ERC-1271 magic return value: `bytes4(keccak256("isValidSignature(bytes32,bytes)"))`.
 pub const ERC1271_MAGIC_VALUE: [u8; 4] = [0x16, 0x26, 0xba, 0x7e];
-
-/// Gas a wallet is expected to stay under. Exceeding it is legitimate — a Safe owning a Safe
-/// costs ~91k — but rare enough to be worth a log line.
-pub const ERC1271_GAS_WARN_THRESHOLD: u64 = 100_000;
 
 #[derive(Debug, Error)]
 pub enum Erc1271Error {
@@ -198,12 +193,6 @@ async fn check_erc1271_signature<P: Provider>(
 ///    iff the call returns the canonical magic value `0x1626ba7e`. Empty returndata is
 ///    interpreted as "no code at `claimed_signer`" — a single RPC handles both the
 ///    smart-account path and the EOA-mismatch reject.
-///
-/// The call is attempted with [`ERC1271_GAS_WARN_THRESHOLD`] first, and any failure is retried
-/// with the full `gas_limit`, whose result is authoritative. The configured cap is therefore
-/// always offered before a rejection, and a wallet that only succeeds on the retry is logged.
-/// The probe costs one extra call on every rejection, and is skipped when `gas_limit` is at or
-/// below the threshold.
 pub async fn verify_signature<P: Provider>(
     provider: &P,
     claimed_signer: Address,
@@ -218,28 +207,7 @@ pub async fn verify_signature<P: Provider>(
         return Ok(());
     }
 
-    let warn_above = ERC1271_GAS_WARN_THRESHOLD.min(gas_limit);
-    match check_erc1271_signature(provider, claimed_signer, digest, signature, warn_above).await {
-        Ok(()) => Ok(()),
-        // A wallet short on gas can fail in any shape — wrong magic, a reasoned revert, a
-        // reasonless one — so no failure at the probe budget is evidence about the signature.
-        // Offer the full budget and let its result decide.
-        Err(_) if warn_above < gas_limit => {
-            let verified =
-                check_erc1271_signature(provider, claimed_signer, digest, signature, gas_limit)
-                    .await;
-            if verified.is_ok() {
-                warn!(
-                    signer = %claimed_signer,
-                    warn_above,
-                    gas_limit,
-                    "ERC-1271 verification needed more gas than expected"
-                );
-            }
-            verified
-        }
-        Err(e) => Err(e),
-    }
+    check_erc1271_signature(provider, claimed_signer, digest, signature, gas_limit).await
 }
 
 impl From<&UserDecryptionRequestPayload> for UserDecryptRequestVerification {
@@ -302,54 +270,6 @@ mod tests {
         let bytes = sig.as_bytes().to_vec();
         assert_eq!(bytes.len(), 65, "ECDSA signature should be 65 bytes");
         (signer, payload, digest, bytes)
-    }
-
-    /// Mock transport that records the `gas` of each `eth_call` before delegating, so a test
-    /// can assert which budget actually went on the wire.
-    #[derive(Clone)]
-    struct GasSpy {
-        inner: alloy::transports::mock::MockTransport,
-        seen: std::sync::Arc<std::sync::Mutex<Vec<u64>>>,
-    }
-
-    impl tower::Service<alloy::rpc::json_rpc::RequestPacket> for GasSpy {
-        type Response = alloy::rpc::json_rpc::ResponsePacket;
-        type Error = alloy::transports::TransportError;
-        type Future = alloy::transports::TransportFut<'static>;
-
-        fn poll_ready(
-            &mut self,
-            _: &mut std::task::Context<'_>,
-        ) -> std::task::Poll<Result<(), Self::Error>> {
-            std::task::Poll::Ready(Ok(()))
-        }
-
-        fn call(&mut self, req: alloy::rpc::json_rpc::RequestPacket) -> Self::Future {
-            if let alloy::rpc::json_rpc::RequestPacket::Single(r) = &req
-                && r.method() == "eth_call"
-                && let Ok(v) = serde_json::from_str::<serde_json::Value>(r.serialized().get())
-                && let Some(gas) = v["params"][0]["gas"].as_str()
-                && let Ok(gas) = u64::from_str_radix(gas.trim_start_matches("0x"), 16)
-            {
-                self.seen.lock().unwrap().push(gas);
-            }
-            tower::Service::call(&mut self.inner, req)
-        }
-    }
-
-    /// Provider that records the gas of every `eth_call` it issues.
-    fn spying_provider(
-        asserter: Asserter,
-    ) -> (impl Provider, std::sync::Arc<std::sync::Mutex<Vec<u64>>>) {
-        let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
-        let transport = GasSpy {
-            inner: alloy::transports::mock::MockTransport::new(asserter),
-            seen: seen.clone(),
-        };
-        let provider = ProviderBuilder::new()
-            .disable_recommended_fillers()
-            .connect_client(alloy::rpc::client::RpcClient::new(transport, true));
-        (provider, seen)
     }
 
     fn mock_provider(asserter: Asserter) -> impl Provider {
@@ -443,9 +363,8 @@ mod tests {
         assert!(matches!(err, Erc1271Error::WrongMagic(..)));
     }
 
-    /// At the warn threshold, so no second attempt is made and each test asserts against
-    /// exactly one mocked response.
-    const TEST_GAS: u64 = ERC1271_GAS_WARN_THRESHOLD;
+    /// Gas cap passed to the verifier, matching the shipped default.
+    const TEST_GAS: u64 = 250_000;
 
     /// Build a JSON-RPC error payload that mimics what an Ethereum node sends when the call
     /// reverts: a message containing "revert" plus a `data` field whose string value parses
@@ -489,97 +408,6 @@ mod tests {
             .await
             .unwrap_err();
         assert!(matches!(err, Erc1271Error::EmptyRevert(_)), "got {err:?}");
-    }
-
-    /// Above the warn threshold, so the fallback engages.
-    const HEADROOM_GAS: u64 = 250_000;
-
-    /// The probe fails in some shape and the full budget returns magic: the wallet is accepted,
-    /// and reported as having needed more than the threshold.
-    async fn assert_accepted_after_fallback(push_probe_failure: impl Fn(&Asserter)) {
-        let asserter = Asserter::new();
-        let provider = mock_provider(asserter.clone());
-        let sig = vec![0x11_u8; 65];
-
-        push_probe_failure(&asserter);
-        let mut returndata = [0u8; 32];
-        returndata[..4].copy_from_slice(&ERC1271_MAGIC_VALUE);
-        asserter.push_success(&returndata);
-
-        verify_signature(
-            &provider,
-            Address::from([0xDE; 20]),
-            B256::from([0u8; 32]),
-            &sig,
-            HEADROOM_GAS,
-        )
-        .await
-        .expect("the full budget decides");
-    }
-
-    #[tokio::test]
-    async fn wrong_magic_at_the_probe_is_not_final() {
-        // A wallet that staticcalls a nested signer returns bytes4(0) when that call runs out
-        // of gas, rather than reverting.
-        assert_accepted_after_fallback(|a| a.push_success(&[0u8; 32])).await;
-    }
-
-    #[tokio::test]
-    async fn reasoned_revert_at_the_probe_is_not_final() {
-        // A wallet may check `gasleft()` and revert with its own message.
-        assert_accepted_after_fallback(|a| a.push_failure(revert_payload("0xdeadbeef"))).await;
-    }
-
-    #[tokio::test]
-    async fn reasonless_revert_at_the_probe_is_not_final() {
-        assert_accepted_after_fallback(|a| a.push_failure(revert_payload("0x"))).await;
-    }
-
-    #[tokio::test]
-    async fn transport_error_at_the_probe_is_not_final() {
-        assert_accepted_after_fallback(|a| a.push_failure_msg("rate limit exceeded")).await;
-    }
-
-    #[tokio::test]
-    async fn the_full_budget_result_is_authoritative() {
-        // Both attempts fail: the reported error is the second one, not the probe's.
-        let asserter = Asserter::new();
-        let provider = mock_provider(asserter.clone());
-        asserter.push_failure_msg("rate limit exceeded");
-        asserter.push_failure(revert_payload("0xdeadbeef"));
-
-        let err = verify_signature(
-            &provider,
-            Address::from([0xDE; 20]),
-            B256::from([0u8; 32]),
-            &[0x11_u8; 65],
-            HEADROOM_GAS,
-        )
-        .await
-        .unwrap_err();
-        assert!(matches!(err, Erc1271Error::Rejected(..)), "got {err:?}");
-    }
-
-    #[tokio::test]
-    async fn fallback_puts_the_configured_cap_on_the_wire() {
-        // Pins which budget each call carries. Without it, a fallback that reused
-        // `warn_above` would still satisfy every other test here.
-        let asserter = Asserter::new();
-        let (provider, gas_seen) = spying_provider(asserter.clone());
-        let claimed = Address::from([0xDE; 20]);
-        let digest = B256::from([0u8; 32]);
-        let sig = vec![0x11_u8; 65];
-
-        asserter.push_failure(revert_payload("0x"));
-        let mut returndata = [0u8; 32];
-        returndata[..4].copy_from_slice(&ERC1271_MAGIC_VALUE);
-        asserter.push_success(&returndata);
-
-        verify_signature(&provider, claimed, digest, &sig, HEADROOM_GAS)
-            .await
-            .unwrap();
-
-        assert_eq!(*gas_seen.lock().unwrap(), vec![100_000, 250_000]);
     }
 
     #[tokio::test]

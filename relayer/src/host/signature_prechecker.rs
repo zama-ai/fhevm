@@ -208,7 +208,6 @@ mod tests {
     use crate::core::event::{HandleEntry, RequestValiditySeconds};
     use alloy::primitives::Bytes;
     use alloy::providers::mock::Asserter;
-    use user_decryption_signature::ERC1271_GAS_WARN_THRESHOLD;
 
     const TEST_CHAIN_ID: u64 = 8009;
 
@@ -237,7 +236,7 @@ mod tests {
         UserDecryptSignaturePreChecker {
             providers,
             decryption_contract: Address::from([0xCA; 20]),
-            erc1271_gas_limit: ERC1271_GAS_WARN_THRESHOLD,
+            erc1271_gas_limit: 250_000,
             retry: RetrySettings {
                 max_attempts: 3,
                 retry_interval_ms: 0,
@@ -279,26 +278,16 @@ mod tests {
         assert!(matches!(err, SigPreCheckError::HostCallFailed(_)));
     }
 
-    /// Cap above the warn threshold, so a first attempt at the threshold is followed by one
-    /// at the full budget.
-    fn checker_with_headroom(asserter: Asserter) -> UserDecryptSignaturePreChecker {
-        UserDecryptSignaturePreChecker {
-            erc1271_gas_limit: 250_000,
-            ..checker(asserter)
-        }
-    }
-
     #[tokio::test]
     async fn intermittent_empty_revert_is_retried() {
         let asserter = Asserter::new();
-        // Attempt 1 exhausts both budgets; attempt 2 succeeds at the threshold.
-        asserter.push_failure(empty_revert());
+        // Attempt 1 reverts with no reason; attempt 2 succeeds.
         asserter.push_failure(empty_revert());
         let mut returndata = [0u8; 32];
         returndata[..4].copy_from_slice(&[0x16, 0x26, 0xba, 0x7e]);
         asserter.push_success(&returndata);
 
-        checker_with_headroom(asserter)
+        checker(asserter)
             .verify(&unified_request(Bytes::from(vec![0x11; 65])))
             .await
             .unwrap();
@@ -307,12 +296,12 @@ mod tests {
     #[tokio::test]
     async fn persistent_empty_revert_is_invalid_not_server_error() {
         let asserter = Asserter::new();
-        // Three attempts, each spending both budgets: no longer plausibly transient.
-        for _ in 0..6 {
+        // Three attempts, all reasonless reverts: no longer plausibly transient.
+        for _ in 0..3 {
             asserter.push_failure(empty_revert());
         }
 
-        let err = checker_with_headroom(asserter)
+        let err = checker(asserter)
             .verify(&unified_request(Bytes::from(vec![0x11; 65])))
             .await
             .unwrap_err();
