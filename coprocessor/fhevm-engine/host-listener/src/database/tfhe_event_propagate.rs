@@ -225,6 +225,15 @@ impl Database {
         dependence_cache_size: u16,
         gcs_mode: bool,
     ) -> Result<Self> {
+        // A green pool points at the gcs schema. Postgres ignores a schema that is
+        // missing, so writes would go to public instead. Wait for it first.
+        if gcs_mode {
+            fhevm_engine_common::versioning::wait_for_gcs_schema(
+                url.as_str(),
+                fhevm_engine_common::versioning::GCS_SCHEMA_WAIT,
+            )
+            .await?;
+        }
         let (pool, pool_refresh_handle) = Self::new_pool(url, gcs_mode).await;
         let bucket_cache =
             Arc::new(tokio::sync::RwLock::new(lru::LruCache::new(
