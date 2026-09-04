@@ -2,8 +2,13 @@ use crate::tests::event_helpers::{
     allow_handle, decrypt_handles, insert_event, insert_trivial_encrypt, next_handle, scalar_flag,
     setup_event_harness, wait_until_computed, zero_address, EventHarness,
 };
+// Only the GPU byte-repeatability gates below are serialised, so the import
+// carries their cfg: on a CPU build it would be an unused import, and this
+// crate's clippy job denies warnings.
 use host_listener::contracts::TfheContract;
 use host_listener::contracts::TfheContract::TfheContractEvents;
+#[cfg(feature = "gpu")]
+use serial_test::serial;
 
 /// Under the minted-in-transaction handle discriminant, a consumer's
 /// representation is pinned by its handle: operands minted in the consuming
