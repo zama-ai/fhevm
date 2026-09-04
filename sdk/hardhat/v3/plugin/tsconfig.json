@@ -1,0 +1,13 @@
+{
+  "//": "The lint project: every TypeScript file in the package, no emit.",
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "types": ["node"],
+    "module": "nodenext",
+    "moduleResolution": "nodenext"
+  },
+  "include": ["pkg/src/**/*.ts", "test/**/*.ts"]
+}

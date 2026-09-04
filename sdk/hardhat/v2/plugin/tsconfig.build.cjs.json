@@ -1,0 +1,8 @@
+{
+  "//": "The published JavaScript. Module and resolution settings are shared, in tsconfig.build.json.",
+  "extends": "./tsconfig.build.json",
+  "compilerOptions": {
+    "outDir": "./pkg/_cjs",
+    "removeComments": true
+  }
+}

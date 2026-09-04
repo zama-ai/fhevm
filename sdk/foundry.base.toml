@@ -1,0 +1,59 @@
+# Shared Foundry settings for every Solidity package in the sdk/ workspace.
+#
+# SCOPE: cross-generation POLICY only — currently `[fmt]`. Deliberately NOT compile settings.
+#
+# v12/foundry.toml and v13/foundry.toml are byte-identical apart from comments, so it is tempting to
+# hoist all of it here. Do not. `solc_version`, `evm_version`, `optimizer*`, `via_ir` and
+# `bytecode_hash` are part of what a generation FREEZES: v12 targets solc 0.8.24 / cancun because
+# that is what it shipped with, and v14 must be able to move without dragging v12 along. Identical
+# today is not the same as "should change together".
+#
+# Path-shaped keys stay local for the same reason plus a second one: `src`, `out`, `libs`, `skip`,
+# `fs_permissions`, `[fmt] ignore` and `[lint] ignore` describe one package's layout, and a shared
+# value would be silently overridden by every local one anyway.
+#
+# The test for adding a key here: "if I change this, must every generation change with it?" For
+# formatting the answer is yes — one style across the workspace is the whole point. For a compiler
+# target it is no.
+#
+# Pulled in by each package's foundry.toml with, in [profile.default]:
+#
+#     extends = "../../foundry.base.toml"          # path is relative to that foundry.toml
+#
+# Semantics, all measured:
+#   - MERGES, it does not replace: keys set here apply, keys set locally are kept.
+#   - A local key WINS over the same key here — so a package can deviate, deliberately and visibly.
+#   - It is read live, not copied: editing this file changes every package's next `forge fmt`.
+#   - A missing target is a hard error ("failed to extract foundry config"), never a silent fallback.
+#
+# `ignore` is deliberately NOT set here. It is per-package by nature — each package ignores its own
+# fixture paths — and a shared value would be silently overridden by every local one anyway.
+#
+# WHY THIS MATTERS MORE THAN USUAL: vendored sources under pkg/src/contracts are STORED
+# forge-formatted, and the rule 6 gate compares them against `forge fmt`(upstream). Changing any key
+# here therefore changes what that gate expects, and every package's vendored files must be
+# re-formatted in the same commit. Treat an edit here the way you would treat a forge version bump.
+#
+# The values below are forge's own defaults, written out explicitly rather than left implicit. That
+# is the point: the settings are visible and shared, so "why is this file formatted this way" has an
+# answer that lives in one place.
+
+[fmt]
+line_length = 120
+tab_width = 4
+style = "space"
+bracket_spacing = false
+int_types = "long"
+multiline_func_header = "attributes_first"
+quote_style = "double"
+number_underscore = "preserve"
+hex_underscore = "remove"
+single_line_statement_blocks = "preserve"
+override_spacing = false
+wrap_comments = false
+docs_style = "preserve"
+contract_new_lines = false
+sort_imports = false
+pow_no_space = false
+prefer_compact = "all"
+single_line_imports = false

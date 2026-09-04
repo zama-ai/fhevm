@@ -1,0 +1,8 @@
+dependencies
+out
+cache
+dist
+node_modules
+artifacts
+typechain-types
+cache-forge/

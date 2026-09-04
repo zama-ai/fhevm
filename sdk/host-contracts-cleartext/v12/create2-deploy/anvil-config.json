@@ -1,0 +1,9 @@
+{
+  "rpcUrl": "http://127.0.0.1:8545",
+  "admin": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+  "deploymentId": "anvil-rehearsal",
+  "outDir": ".out-anvil",
+  "confirmations": 0,
+  "finality": false,
+  "git": false
+}

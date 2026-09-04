@@ -1,0 +1,10 @@
+{
+  "//": "Declarations only. `sourceMap` from the shared base is ignored when emitDeclarationOnly is set.",
+  "extends": "./tsconfig.build.json",
+  "compilerOptions": {
+    "declaration": true,
+    "declarationDir": "./pkg/_types",
+    "declarationMap": true,
+    "emitDeclarationOnly": true
+  }
+}
