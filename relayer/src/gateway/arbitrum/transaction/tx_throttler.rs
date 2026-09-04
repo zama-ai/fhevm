@@ -167,9 +167,7 @@ pub struct TxThrottlingWorker<T> {
     control_rx: Option<mpsc::Receiver<u32>>,
     // Shared current TPS value (updated on dynamic rate changes)
     current_tps: Arc<AtomicU32>,
-    // Tracks the per-dequeued-item send task spawned in `run_consumer`. Shutdown abandons
-    // these; see the module-level shutdown note in `startup` for what a send killed
-    // mid-flight costs.
+    // Per-item send tasks; shutdown abandons them rather than waiting.
     detached_tasks: TaskTracker,
 }
 
@@ -354,9 +352,8 @@ where
         Arc::new(RateLimiter::direct(quota))
     }
 
-    /// Runs the dequeue loop until `shutdown` fires. Driven from the token, not channel
-    /// closure: the sender half lives in `Arc`s held permanently by the dispatcher and the
-    /// HTTP router state, so it never drops on its own.
+    /// Driven from `shutdown`, not channel closure: the dispatcher and the HTTP router state
+    /// hold the sender in `Arc`s forever, so it never drops on its own.
     ///
     /// Waits for `gate` before touching the queue, and a close observed while parked on an
     /// empty channel returns to that wait, leaving items in the channel: a pod that loses the
@@ -431,14 +428,9 @@ where
                         "Task dequeued for processing"
                     );
 
-                    // 3. Process (Isolated). Tracked in the shared `detached_tasks`, but,
-                    // unlike the readiness-check work sharing that tracker (see
-                    // `readiness/throttler.rs`), deliberately not run under
-                    // `run_until_cancelled`: a send is cancel-unsafe, since the nonce
-                    // protocol (`get_increase_and_lock_nonce` -> send ->
-                    // `confirm_nonce`/`release_nonce`) has no RAII guard, and cutting it short
-                    // after the RPC call leaves the nonce lock held with no one left to
-                    // release it.
+                    // 3. Process (Isolated). Not cancellable, unlike the readiness checks
+                    // sharing this tracker: the nonce protocol has no RAII guard, so cutting
+                    // a send short after the RPC leaves the nonce locked forever.
                     let proc_clone = processor.clone();
 
                     self.detached_tasks.spawn(async move {

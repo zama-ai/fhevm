@@ -24,6 +24,7 @@ use crate::{
         utils::{classify_revert_selector, extract_revert_selector},
     },
     logging::InputProofStep,
+    metrics,
     orchestrator::{
         traits::{Event, EventHandler},
         Orchestrator,
@@ -412,7 +413,8 @@ impl InputProofGatewayHandler {
                         }
                         InputProofCompletionOutcome::NotFound => {
                             if attempt == retry_config.max_retries {
-                                debug!(
+                                metrics::increment_unmatched_gateway_event("verify_proof_response");
+                                info!(
                                     step = %InputProofStep::GwEventRetrying,
                                     gw_reference_id = ?request_event.zkProofId,
                                     max_retries = retry_config.max_retries,
@@ -602,7 +604,8 @@ impl InputProofGatewayHandler {
                         }
                         InputProofCompletionOutcome::NotFound => {
                             if attempt == retry_config.max_retries {
-                                debug!(
+                                metrics::increment_unmatched_gateway_event("reject_proof_response");
+                                info!(
                                     step = %InputProofStep::GwEventRetrying,
                                     gw_reference_id = ?reject_proof_response.zkProofId,
                                     max_retries = retry_config.max_retries,

@@ -327,8 +327,7 @@ impl KeyUrlPoller {
 
     /// Long-running loop: poll the active ids on the configured interval and, on any change,
     /// refetch the materials and push the new value into `tx`. RPC failures are logged and
-    /// retried on the next tick (the last served value is kept). Stops once `shutdown` fires
-    /// (cancelled when shutdown closes the sources of new work).
+    /// retried on the next tick (the last served value is kept).
     pub async fn run(mut self, tx: watch::Sender<KeyUrlResponseJson>, shutdown: CancellationToken) {
         let mut ticker = tokio::time::interval(self.poll_interval);
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);

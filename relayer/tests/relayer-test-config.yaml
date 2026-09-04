@@ -49,6 +49,9 @@ gateway:
     recycle_interval_mins: 30
     # Polling interval in milliseconds (for polling type listeners)
     poll_interval_ms: 2000
+    # Widest block span a single eth_getLogs may ask for. Chunks the catch-up after
+    # downtime so the listener never asks for a range the provider rejects.
+    max_blocks_per_query: 1000
     # How long the event registry remembers an event, in seconds (1-10). It bounds both how
     # long the same log seen by two listener instances counts as one event, and how long an
     # entry survives while its handlers run; the window restarts when they finish.

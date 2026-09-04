@@ -76,6 +76,10 @@ enum Claim {
 /// One phase is not enough. Inserting on observation loses completions, because a dropped
 /// duplicate is not a handled event; inserting on completion alone lets two concurrent
 /// deliveries both dispatch.
+///
+/// The cache holds a marker, never the work: a dispatched event lives in its own detached
+/// task, which owns it to completion. Only a *present* entry causes a skip, so losing one to
+/// the TTL or to `max_capacity` costs at most a duplicate dispatch - never a dropped event.
 struct PhaseCache {
     entries: Cache<EventKey, Phase>,
 }
@@ -119,6 +123,9 @@ impl PhaseCache {
 /// One attested range, and the dispatches that must finish before the cursor may pass it.
 struct PendingRange {
     to_block: u64,
+
+    /// The range's unfinished dispatches. Each decrements it on its way out, and whichever
+    /// takes it to zero releases the range - the listener moved on the moment it dispatched.
     outstanding: Arc<AtomicUsize>,
 }
 
@@ -234,25 +241,25 @@ impl HandledEvents {
 
                 // Queue the range before its dispatches can complete, so a handler that
                 // returns at once still finds something to release.
-                let mut cursor = self.cursor.lock().await;
-                cursor.push(
-                    instance_id,
-                    PendingRange {
-                        to_block: range.to_block,
-                        outstanding: outstanding.clone(),
-                    },
-                );
+                let pending = {
+                    let mut cursor = self.cursor.lock().await;
+                    cursor.push(
+                        instance_id,
+                        PendingRange {
+                            to_block: range.to_block,
+                            outstanding: outstanding.clone(),
+                        },
+                    );
+                    cursor.pending_count(instance_id)
+                };
+                metrics::set_listener_pending_ranges(instance_id, pending);
 
                 // A range whose events were all handled elsewhere - the common case for a
                 // quiet chain - is complete on arrival.
                 if owned.is_empty() {
-                    self.advance_cursor(&mut cursor, instance_id).await;
+                    self.advance_cursor(instance_id).await;
                 }
 
-                metrics::set_listener_pending_ranges(
-                    instance_id,
-                    cursor.pending_count(instance_id),
-                );
                 Some(outstanding)
             }
             None => None,
@@ -296,6 +303,7 @@ impl HandledEvents {
                 "Gateway event handled"
             ),
             Err(e) => error!(
+                alert = true,
                 instance_id,
                 block_number = key.block_number,
                 log_index = key.log_index,
@@ -312,17 +320,23 @@ impl HandledEvents {
         };
 
         if outstanding.fetch_sub(1, Ordering::AcqRel) == 1 {
-            let mut cursor = self.cursor.lock().await;
-            self.advance_cursor(&mut cursor, instance_id).await;
+            self.advance_cursor(instance_id).await;
         }
     }
 
     /// Persist the furthest block whose every observed event is handled.
     ///
-    /// The lock is held across the write so two completions cannot land out of order.
-    async fn advance_cursor(&self, cursor: &mut CursorState, instance_id: usize) {
-        let Some(to_block) = cursor.take_completed_prefix(instance_id) else {
-            return;
+    /// The write runs outside the lock: two completions take disjoint prefixes, and the
+    /// statement refuses a lower block, so nothing here needs the lock to order them. Holding
+    /// it across the write would stall the listener's read loop behind one slow round trip.
+    async fn advance_cursor(&self, instance_id: usize) {
+        let to_block = {
+            let mut cursor = self.cursor.lock().await;
+            let Some(to_block) = cursor.take_completed_prefix(instance_id) else {
+                return;
+            };
+            metrics::set_listener_pending_ranges(instance_id, cursor.pending_count(instance_id));
+            to_block
         };
 
         match self.chain_cursor_repo.advance(to_block).await {
@@ -335,7 +349,8 @@ impl HandledEvents {
                     "Block progress updated"
                 );
             }
-            // Another listener has recorded a further block already.
+            // A further block is already recorded - by another listener, or by a completion
+            // here that took a later prefix and reached the write first.
             Ok(false) => {}
             // The next range to complete writes a higher block, so a failed write costs
             // recovery precision rather than events: a restart re-reads from the last

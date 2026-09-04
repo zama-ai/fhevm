@@ -184,6 +184,11 @@ pub struct ListenerPoolConfig {
     pub recycle_interval_mins: u64,
     /// Polling interval in milliseconds (for polling type listeners)
     pub poll_interval_ms: u64,
+    /// Widest block span a single `eth_getLogs` may ask for (polling listeners only).
+    /// Catching up from far behind the head - after downtime, or after `last_block_number`
+    /// is rewound to force a replay - is chunked to this many blocks per query, so it never
+    /// asks for a range the provider rejects nor gets back one outsized response.
+    pub max_blocks_per_query: u64,
     /// How long the event registry remembers an event, in seconds (1-10).
     ///
     /// It bounds two things: how long the same log observed by two listener instances is
@@ -401,28 +406,11 @@ pub struct MetricsConfig {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct ShutdownConfig {
-    /// How long to keep serving HTTP after `/healthz` starts answering 503, so a request
-    /// routed during the window gets a clean 503 from a pod still listening rather than a
-    /// refused connection. Deleting a pod removes it from the service endpoints at the same
-    /// moment it delivers SIGTERM, so this covers the lag until that removal reaches the
-    /// ingress controller, not the readiness probe's own detection time. Tests set it to 0.
-    #[serde(
-        default = "default_lb_propagation_wait",
-        deserialize_with = "deserialize_human_duration"
-    )]
+    /// Covers the lag until the pod's removal from the service endpoints reaches the ingress
+    /// controller. Not the readiness probe's detection time - deletion drops the endpoint as
+    /// it sends SIGTERM, so the probe path never runs.
+    #[serde(deserialize_with = "deserialize_human_duration")]
     pub lb_propagation_wait: Duration,
-}
-
-fn default_lb_propagation_wait() -> Duration {
-    Duration::from_secs(5)
-}
-
-impl Default for ShutdownConfig {
-    fn default() -> Self {
-        Self {
-            lb_propagation_wait: default_lb_propagation_wait(),
-        }
-    }
 }
 
 /// The session-level Postgres advisory lock that decides which of N HA-replica pods
@@ -827,7 +815,6 @@ pub struct Settings {
     /// User-decryption signature check configuration
     pub user_decrypt_signature_check: UserDecryptSignatureCheckConfig,
     /// Shutdown sequencing
-    #[serde(default)]
     pub shutdown: ShutdownConfig,
     /// HA dispatcher lock (session-level Postgres advisory lock)
     #[serde(default)]
@@ -1051,6 +1038,14 @@ impl Settings {
                 "dedup_ttl_seconds must be between {} and {}, got: {}",
                 MIN_DEDUP_TTL_SECONDS, MAX_DEDUP_TTL_SECONDS, pool_config.dedup_ttl_seconds
             )));
+        }
+
+        // A zero-wide chunk never reaches the head, so the catch-up loop would poll forever
+        // without advancing the cursor.
+        if pool_config.max_blocks_per_query == 0 {
+            return Err(AppConfigError::Config(
+                "listener_pool.max_blocks_per_query must be at least 1".to_string(),
+            ));
         }
 
         // Validate dedup max capacity (should be reasonable)

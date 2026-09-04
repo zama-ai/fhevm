@@ -155,7 +155,7 @@ mod evm_block_computer_tests {
 
     async fn probe_chain_verification(target: &RpcTarget) -> VerificationReport {
         // 1. Create provider
-        let provider = match SemEvmRpcProvider::new(target.url.to_string(), 5) {
+        let provider = match SemEvmRpcProvider::new(target.url.to_string(), 5, false, 64) {
             Ok(p) => p,
             Err(e) => {
                 error!("Failed to create provider: {}", e);

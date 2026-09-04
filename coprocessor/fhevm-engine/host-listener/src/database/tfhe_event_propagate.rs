@@ -204,6 +204,12 @@ pub struct StatsForConsumer {
 }
 
 impl Database {
+    /// Whether this listener is the incoming green (GCS) stack. Only green injects
+    /// synthetic consensus work; see `database::synthetic_ops`.
+    pub fn gcs_mode(&self) -> bool {
+        self.gcs_mode
+    }
+
     pub async fn new(
         url: &DatabaseURL,
         chain_id: ChainId,

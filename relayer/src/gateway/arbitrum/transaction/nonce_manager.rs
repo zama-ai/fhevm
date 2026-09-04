@@ -119,6 +119,10 @@ impl NonceManagerNonOptimistic {
 
     /// Helper to retrieve or initialize the `AccountState` for an address.
     /// This implementation is ATOMIC and solves the concurrency race condition.
+    ///
+    /// Within one process. The counter is seeded once from the confirmed transaction count and
+    /// then advanced in memory, so two pods dispatching at once draw the same numbers - see the
+    /// nonce TODO in `startup`.
     async fn get_or_init_account_state<P, N>(
         &self,
         provider: &P,

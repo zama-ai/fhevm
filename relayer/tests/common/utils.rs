@@ -315,8 +315,7 @@ impl TestSetup {
         Self::new_with_config_path(Some(temp_config_path)).await
     }
 
-    /// Create test setup that keeps serving for `wait` after its health check starts
-    /// failing, instead of the zero the other setups use.
+    /// Overrides the 0s the other setups use, so a test can observe the serving window.
     #[allow(dead_code)]
     pub async fn new_with_lb_propagation_wait(wait: &str) -> anyhow::Result<Self> {
         let temp_config_dir = TempDir::new()?;
@@ -492,8 +491,7 @@ impl TestSetup {
         })
     }
 
-    /// Start the shutdown sequence without waiting for it, so a test can observe the relayer
-    /// while it is shutting down. `shutdown` still has to run afterwards to clean up.
+    /// Does not wait. `shutdown` still has to run afterwards to clean up.
     #[allow(dead_code)]
     pub fn begin_shutdown(&self) {
         self.cancellation_token.cancel();
@@ -622,9 +620,6 @@ fn create_readiness_config(
     Ok(temp_config_path)
 }
 
-/// Create a config file with low retry settings for tx_engine (2 attempts × 100ms)
-/// This config is used in tests for max retries exceeded scenarios.
-/// Copy the test config, setting how long shutdown keeps serving after `/healthz` fails.
 fn create_lb_propagation_config(
     temp_dir: &TempDir,
     wait: &str,
@@ -645,6 +640,8 @@ fn create_lb_propagation_config(
     Ok(temp_config_path)
 }
 
+/// Create a config file with low retry settings for tx_engine (2 attempts × 100ms)
+/// This config is used in tests for max retries exceeded scenarios.
 fn create_low_retry_config(temp_dir: &TempDir) -> anyhow::Result<std::path::PathBuf> {
     let temp_config_path = temp_dir.path().join("low_retry.yaml");
 

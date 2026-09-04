@@ -33,6 +33,9 @@ gateway:
     recycle_interval_mins: 30
     # Polling interval in milliseconds (for polling type listeners)
     poll_interval_ms: 2000
+    # Widest block span a single eth_getLogs may ask for. Chunks the catch-up after
+    # downtime so the listener never asks for a range the provider rejects.
+    max_blocks_per_query: 1000
     # TTL for event deduplication cache in seconds (1-10)
     dedup_ttl_seconds: 5
     # Maximum capacity for deduplication cache
@@ -212,3 +215,8 @@ storage:
     user_decrypt_expiry: "7d"
     input_proof_expiry: "7d"
     cron_startup_delay_after_recovery: "30s"
+
+shutdown:
+  # Covers the lag until the pod's removal from the service endpoints reaches the ingress
+  # controller. Shutdown as a whole must finish inside terminationGracePeriodSeconds.
+  lb_propagation_wait: "5s"

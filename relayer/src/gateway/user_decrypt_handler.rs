@@ -26,6 +26,7 @@ use crate::{
     },
     host::{extra_data::parse_context_id_from_extra_data, ThresholdResolver},
     logging::UserDecryptStep,
+    metrics,
     orchestrator::{
         traits::{Event, EventHandler},
         ContentHasher, Orchestrator,
@@ -448,7 +449,10 @@ impl GatewayHandler {
                                     .contains("Request not found when threshold reached")
                                 {
                                     if attempt == retry_config.max_retries {
-                                        debug!(
+                                        metrics::increment_unmatched_gateway_event(
+                                            "user_decryption_response",
+                                        );
+                                        info!(
                                             step = %UserDecryptStep::GwEventRetrying,
                                             gw_reference_id = %user_decryption_id,
                                             max_retries = retry_config.max_retries,
@@ -726,7 +730,10 @@ impl GatewayHandler {
                     );
                 }
                 Ok(None) => {
-                    debug!(
+                    metrics::increment_unmatched_gateway_event(
+                        "user_decryption_response_threshold_reached",
+                    );
+                    info!(
                         gw_reference_id = %user_decryption_id,
                         "No request matched consensus event; event ignored"
                     );

@@ -18,6 +18,10 @@ use crate::contracts::{
     AclContract, BridgeContract, KMSGeneration, ProtocolConfig, TfheContract,
 };
 use crate::database::dependence_chains::dependence_chains;
+use crate::database::synthetic_ops::{
+    synthetic_logs, synthetic_transaction_hash, SyntheticContext,
+    SYNTHETIC_BLOCK_OFFSET,
+};
 use crate::database::tfhe_event_propagate::{
     acl_result_handles, operand_boundary_mask_from_minted, tfhe_result_handle,
     Chain, ChainHash, Database, Handle as EventHandle, LogTfhe,
@@ -356,7 +360,43 @@ pub async fn ingest_block_logs(
     let mut allow_event_count: i32 = 0;
     let mut fhe_event_count: i32 = 0;
 
-    for log in &block_logs.logs {
+    // GCS only: on one designated block of each chain's dry-run window, append a
+    // deterministic synthetic transaction so a quiet chain can still anchor consensus. The
+    // logs go through the normal decode below, so `fhe_event_count`, `is_allowed`, the
+    // dependence chain and `schedule_order` are all derived by the production path. Blue
+    // never injects, so `public` stays untouched. See `database::synthetic_ops`.
+    let synthetic = if db.gcs_mode() {
+        synthetic_logs_for_block(
+            &mut tx,
+            chain_id,
+            block_number,
+            block_hash,
+            *tfhe_contract_address,
+            *acl_contract_address,
+            // Past every real log index in this block. `logs` can be a filtered subset of
+            // the block's logs, so its length is not an upper bound on their indices.
+            block_logs
+                .logs
+                .iter()
+                .filter_map(|log| log.log_index)
+                .max()
+                .map_or(0, |max| max.saturating_add(1)),
+        )
+        .await?
+    } else {
+        vec![]
+    };
+    if !synthetic.is_empty() {
+        info!(
+            chain_id = chain_id.as_u64(),
+            block_number,
+            count = synthetic.len(),
+            gcs_mode = db.gcs_mode(),
+            "GCS: injecting synthetic consensus work into this block"
+        );
+    }
+
+    for log in block_logs.logs.iter().chain(synthetic.iter()) {
         let current_address = Some(log.inner.address);
         let is_acl_address = &current_address == acl_contract_address;
         if acl_contract_address.is_none() || is_acl_address {
@@ -721,6 +761,136 @@ pub async fn ingest_block_logs(
     tx.commit().await
 }
 
+/// Synthetic logs for this block, or empty if it is not the designated one.
+///
+/// GCS-only, and only for the block at `start_block + SYNTHETIC_BLOCK_OFFSET` of *this*
+/// chain's window, while the proposal is still dry-running. Reads the window from
+/// `upgrade_state` inside the ingest transaction — one indexed read per block on the green
+/// listener only.
+///
+/// Everything the derivation consumes (`proposal_id`, chain id, block number) comes from
+/// on-chain data, so every operator produces byte-identical logs. See
+/// `database::synthetic_ops`.
+async fn synthetic_logs_for_block(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    chain_id: ChainId,
+    block_number: u64,
+    block_hash: BlockHash,
+    tfhe_contract_address: Option<Address>,
+    acl_contract_address: Option<Address>,
+    log_index_base: u64,
+) -> Result<Vec<Log>, sqlx::Error> {
+    let Ok(block_number_i64) = i64::try_from(block_number) else {
+        return Ok(vec![]);
+    };
+    let Ok(chain_id_i64) = i64::try_from(chain_id.as_u64()) else {
+        return Ok(vec![]);
+    };
+
+    let row: Option<(Vec<u8>, String, i64)> = sqlx::query_as(
+        "SELECT proposal_id, version, start_block
+           FROM upgrade_state
+          WHERE stack_role = 'GCS'
+            AND status = 'in_progress'
+            AND state IN ('UpgradeActivated', 'DryRunStarted')
+            AND host_chain_id = $1
+            AND proposal_id IS NOT NULL
+            AND version IS NOT NULL
+            AND start_block IS NOT NULL",
+    )
+    .bind(chain_id_i64)
+    .fetch_optional(tx.as_mut())
+    .await?;
+
+    let Some((proposal_id, target_version, start_block)) = row else {
+        return Ok(vec![]);
+    };
+    if block_number_i64 != start_block.saturating_add(SYNTHETIC_BLOCK_OFFSET) {
+        return Ok(vec![]);
+    }
+
+    let ctx = SyntheticContext {
+        proposal_id: &proposal_id,
+        target_version: &target_version,
+        chain_id: chain_id.as_u64(),
+        block_number: block_number_i64,
+        block_hash,
+    };
+
+    // Record the transaction hash so cutover can find this work and delete it before the merge.
+    // The hash is keccak over the whole context, and `block_hash` is not persisted anywhere the
+    // upgrade-controller can read unambiguously, so it cannot be recomputed there — the injector
+    // is the only component that knows it.
+    //
+    // APPENDED, never overwritten. Injection happens at `start_block + 1` with no wait for
+    // finality, so a reorg re-injects on the replacement block: different block hash, different
+    // transaction hash, a second set of synthetic rows. Overwriting would forget the first set
+    // and let it merge into `public` as live data.
+    //
+    // Same transaction as the log decoding that follows, so the marker and the work it points at
+    // commit together or not at all.
+    let synthetic_txn_hash = synthetic_transaction_hash(&ctx);
+    let recorded = sqlx::query(
+        "UPDATE upgrade_state u
+            SET synthetic_txn_hashes = CASE
+                    -- Offset-aligned membership test, not a `position()` substring search: a
+                    -- 32-byte needle could straddle two stored hashes, and a false positive
+                    -- there would skip the append and leak that fork's rows. Alignment makes
+                    -- the comparison exact, and keeps re-ingesting the same block idempotent.
+                    WHEN EXISTS (
+                        SELECT 1
+                          FROM generate_series(
+                                   1, octet_length(u.synthetic_txn_hashes), 32
+                               ) AS g(pos)
+                         WHERE substring(u.synthetic_txn_hashes FROM g.pos FOR 32) = $1
+                    )
+                    THEN u.synthetic_txn_hashes
+                    ELSE u.synthetic_txn_hashes || $1
+                END,
+                updated_at = NOW()
+          WHERE u.stack_role = 'GCS'
+            AND u.status = 'in_progress'
+            AND u.state IN ('UpgradeActivated', 'DryRunStarted')
+            AND u.host_chain_id = $2
+            -- Pin to the proposal the hash was derived from. Without it, a proposal activated
+            -- between the SELECT above and this UPDATE would be stamped with a hash computed
+            -- from the previous one, and cutover would then delete nothing.
+            AND u.proposal_id = $3",
+    )
+    .bind(synthetic_txn_hash.as_slice())
+    .bind(chain_id_i64)
+    .bind(&proposal_id)
+    .execute(tx.as_mut())
+    .await?
+    .rows_affected();
+
+    // No marker recorded means no injection. The row this UPDATE targets was read a few lines
+    // above, but statements run at READ COMMITTED, so a concurrent FSM write — a rollback to
+    // `PAUSED`, `transition_to_dry_run_started`, a replacement proposal — can move it in between
+    // and leave the predicate matching nothing.
+    //
+    // Returning no logs is what keeps the invariant exact: cutover deletes synthetic work by
+    // marker, so work injected without one would survive into `public` as live data. Skipping
+    // this block costs nothing, because the trigger is a floor rather than an exact match and
+    // the next tick re-evaluates.
+    if recorded == 0 {
+        warn!(
+            chain_id = chain_id.as_u64(),
+            block_number = block_number_i64,
+            synthetic_txn_hash = %alloy::primitives::hex::encode(synthetic_txn_hash),
+            "GCS: upgrade_state moved while injecting; skipping synthetic ops for this block"
+        );
+        return Ok(vec![]);
+    }
+
+    Ok(synthetic_logs(
+        &ctx,
+        tfhe_contract_address,
+        acl_contract_address,
+        log_index_base,
+    ))
+}
+
 /// Channel name the upgrade-controller LISTENs on for `CoprocessorUpgradeProposed` events.
 const UPGRADE_ACTIVATED_CHANNEL: &str = "event_upgrade_activated";
 
@@ -746,9 +916,11 @@ async fn handle_protocol_config_log(
                 };
                 notify_coprocessor_upgrade_proposed(tx, chain_id, proposed, proposal_block).await?;
             }
-            other => {
+            _ => {
+                // ProtocolConfigEvents has no Debug impl; topic0 identifies
+                // the unhandled variant.
                 warn!(
-                    ?other,
+                    topic0 = ?log.topic0(),
                     block_number = ?log.block_number,
                     tx_hash = ?log.transaction_hash,
                     log_index = ?log.log_index,

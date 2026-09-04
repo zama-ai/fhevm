@@ -35,9 +35,7 @@ use tracing::{error, info};
 
 /// Initialize all gateway components including handlers and listeners.
 ///
-/// `intake_shutdown` stops the gateway listeners/pollers, alongside the HTTP server and the
-/// keyurl poller, the sources of new work; `dequeue_shutdown` stops the tx and readiness
-/// processors from dequeuing, and cancels the readiness checks already running.
+/// For what the two tokens cover, see the shutdown sequence in `startup`.
 pub async fn initialize_gateway(
     orchestrator: Arc<Orchestrator>,
     settings: &Settings,
