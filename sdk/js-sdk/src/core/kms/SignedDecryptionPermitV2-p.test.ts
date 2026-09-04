@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { isSignedDecryptionPermitV2, parseSignedDecryptionPermitV2 } from './SignedDecryptionPermitV2-p.js';
+import {
+  isSignedDecryptionPermitV2,
+  parseSignedDecryptionPermitV2,
+  signDecryptionPermitV2,
+} from './SignedDecryptionPermitV2-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 // npx vitest run --config src/vitest.config.ts src/core/kms/SignedDecryptionPermitV2-p.test.ts
@@ -50,5 +54,23 @@ describe('parseSignedDecryptionPermitV2', () => {
     await expect(
       parseSignedDecryptionPermitV2({} as never, { transportKeyPair: {} as never, permit, fhevmContext: {} as never }),
     ).rejects.toThrow();
+  });
+});
+
+describe('signDecryptionPermitV2', () => {
+  it('rejects a delegated permit when signerAddress equals delegatorAddress', async () => {
+    const address = '0x1111111111111111111111111111111111111111';
+    await expect(
+      signDecryptionPermitV2({} as never, {
+        signerAddress: address,
+        delegatorAddress: address,
+        signer: {} as never,
+        contractAddresses: [],
+        startTimestamp: 0,
+        durationSeconds: 1,
+        transportKeyPair: {} as never,
+        fhevmContext: {} as never,
+      }),
+    ).rejects.toThrow('signerAddress and delegatorAddress must be different');
   });
 });
