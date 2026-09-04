@@ -6,11 +6,10 @@
 
 use std::collections::HashMap;
 
-use zama_host::instructions::fhe_execute::assert_ternary_operand_types;
 use zama_host::{
-    assert_binary_operand_types, assert_unary_operand_type, CoprocessorInputAttestation,
-    FheBinaryOpCode, FheExecuteArgs, FheExecuteOperand, FheExecuteOutput, FheExecuteStep,
-    FheTernaryOpCode, FheUnaryOpCode,
+    assert_binary_operand_types, assert_ternary_operand_types, assert_unary_operand_type,
+    CoprocessorInputAttestation, FheBinaryOpCode, FheExecuteArgs, FheExecuteOperand,
+    FheExecuteOutput, FheExecuteStep, FheTernaryOpCode, FheUnaryOpCode,
 };
 use zama_solana_test_kit::oracle::{evaluate, ClearInputs, TypedClearValue};
 use zama_solana_test_kit::{binary_contract_tests, composite_contract_tests, unary_contract_tests};

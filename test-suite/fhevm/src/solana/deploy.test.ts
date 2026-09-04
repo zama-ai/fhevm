@@ -4,6 +4,7 @@ import { generateKeyPairSigner, type Instruction, type TransactionSigner } from 
 
 import { BRINGUP_KMS_CONTEXT_ID, type GatewayBootstrapInputs } from "./addresses";
 import { bootstrapZamaHost, kmsCertificateThreshold, lifecycleComposeProject } from "./deploy";
+import { zamaHostProgramDataAddress } from "./fhe-execute";
 import { getDefineKmsContextInstructionDataDecoder } from "./internal/generated/zamaHost/instructions/defineKmsContext";
 import { getInitializeHostConfigInstructionDataDecoder } from "./internal/generated/zamaHost/instructions/initializeHostConfig";
 import { ZAMA_HOST_PROGRAM_ADDRESS } from "./internal/generated/zamaHost/programAddress.js";
@@ -85,6 +86,9 @@ describe("bootstrapZamaHost", () => {
     expect(sent).toHaveLength(2);
     const [[initialize], [defineContext]] = sent;
     expect(initialize.programAddress).toBe(ZAMA_HOST_PROGRAM_ADDRESS);
+    expect(initialize.accounts?.some((account) => account.address === (await zamaHostProgramDataAddress()))).toBe(
+      true,
+    );
     const initializeData = getInitializeHostConfigInstructionDataDecoder().decode(initialize.data ?? new Uint8Array());
     expect(initializeData.chainId).toBe(9223372036854788153n);
     expect(initializeData.gatewayChainId).toBe(55555n);

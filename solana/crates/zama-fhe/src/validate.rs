@@ -509,7 +509,7 @@ pub(crate) fn validate_supported_binary_output_type(
 }
 
 pub(crate) fn validate_supported_fhe_type(fhe_type: u8) -> Result<()> {
-    if matches!(fhe_type, 0 | 2 | 3 | 4 | 5 | 6) {
+    if matches!(fhe_type, 0 | 2..=6) {
         Ok(())
     } else {
         Err(FheExecutionBuildError::UnsupportedFheType)
@@ -546,11 +546,7 @@ pub(crate) fn validate_uint_fhe_type(fhe_type: u8) -> Result<()> {
 }
 
 pub(crate) fn validate_supported_rand_type(fhe_type: u8) -> Result<()> {
-    if matches!(fhe_type, 0 | 2 | 3 | 4 | 5 | 6) {
-        Ok(())
-    } else {
-        Err(FheExecutionBuildError::UnsupportedFheType)
-    }
+    validate_supported_fhe_type(fhe_type)
 }
 
 pub(crate) fn validate_subjects(subjects: &[Pubkey]) -> Result<()> {

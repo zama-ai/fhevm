@@ -172,7 +172,7 @@ fn binary_op_hcu_covers_every_validated_combination() {
 
 #[test]
 fn ternary_op_hcu_covers_every_validated_output_type() {
-    use super::super::assert_ternary_operand_types;
+    use crate::state::assert_ternary_operand_types;
     for ty in ALL_FHE_TYPE_PROBES {
         let validated =
             assert_ternary_operand_types(handle_of(0), handle_of(ty), handle_of(ty), ty).is_ok();

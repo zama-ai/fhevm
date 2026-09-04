@@ -2,8 +2,6 @@
 
 use std::marker::PhantomData;
 
-use anchor_lang::prelude::Pubkey;
-
 use crate::acl::EncryptedValueId;
 use crate::operand::{BuilderIdentity, Operand};
 use crate::validate::{handle_fhe_type, validate_encrypted_value_id, validate_supported_fhe_type};
@@ -20,8 +18,6 @@ impl FheType {
     pub const UINT32: Self = Self(4);
     pub const UINT64: Self = Self(5);
     pub const UINT128: Self = Self(6);
-    pub const ADDRESS: Self = Self(7);
-    pub const BYTES256: Self = Self(8);
 
     pub(crate) const fn byte(self) -> u8 {
         self.0
@@ -44,22 +40,8 @@ pub struct Uint<const BITS: u16>;
 pub type BoolHandle = StoredValue<Bool>;
 pub type Uint64Handle = StoredValue<Uint<64>>;
 
-/// Marker for encrypted address handles.
-///
-/// Retained as a type tag. Address is not a supported Solana host FHE type and is not
-/// usable in typed ops.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Address;
-
-/// Marker for opaque 256-byte encrypted values.
-///
-/// Retained as a type tag. Bytes256 is not a supported Solana host FHE type (max is
-/// euint128) and is not usable in typed ops.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Bytes256;
-
 mod sealed {
-    use super::{Address, Bool, Bytes256, Uint};
+    use super::{Bool, Uint};
 
     pub trait FheTypedSeal {}
     pub trait FheUintSeal {}
@@ -77,8 +59,6 @@ mod sealed {
     impl FheTypedSeal for Uint<32> {}
     impl FheTypedSeal for Uint<64> {}
     impl FheTypedSeal for Uint<128> {}
-    impl FheTypedSeal for Address {}
-    impl FheTypedSeal for Bytes256 {}
 
     impl FheUintSeal for Uint<8> {}
     impl FheUintSeal for Uint<16> {}
@@ -93,8 +73,7 @@ mod sealed {
     impl FheRandomSeal for Uint<64> {}
     impl FheRandomSeal for Uint<128> {}
 
-    // NOT / bitwise: Bool + Uint8..Uint128 (host `0 | 2..=6`). Address/Bytes256 are not
-    // usable in typed ops; Solana host max is euint128.
+    // NOT / bitwise: Bool + Uint8..Uint128 (host `0 | 2..=6`).
     impl FheNotSeal for Bool {}
     impl FheNotSeal for Uint<8> {}
     impl FheNotSeal for Uint<16> {}
@@ -165,14 +144,6 @@ impl FheTyped for Uint<64> {
 
 impl FheTyped for Uint<128> {
     const FHE_TYPE: FheType = FheType::UINT128;
-}
-
-impl FheTyped for Address {
-    const FHE_TYPE: FheType = FheType::ADDRESS;
-}
-
-impl FheTyped for Bytes256 {
-    const FHE_TYPE: FheType = FheType::BYTES256;
 }
 
 /// Marker trait for integer FHE values accepted by arithmetic/comparison ops.
@@ -283,7 +254,9 @@ impl<T: FheTyped> StoredValue<T> {
     /// account's current handle; the host re-verifies this on-chain.
     pub fn persistent(handle: [u8; 32], key: EncryptedValueId) -> Result<Self> {
         validate_encrypted_value_id(&key)?;
-        if handle_fhe_type(handle) != T::FHE_TYPE.byte() {
+        let fhe_type = handle_fhe_type(handle);
+        validate_supported_fhe_type(fhe_type)?;
+        if fhe_type != T::FHE_TYPE.byte() {
             return Err(FheExecutionBuildError::UnsupportedFheType);
         }
         Ok(Self {
@@ -371,26 +344,6 @@ impl Scalar<Bool> {
         bytes[31] = u8::from(value);
         Self {
             bytes,
-            marker: PhantomData,
-        }
-    }
-}
-
-impl Scalar<Address> {
-    pub fn pubkey(value: Pubkey) -> Self {
-        let mut bytes = [0u8; 32];
-        bytes.copy_from_slice(value.as_ref());
-        Self {
-            bytes,
-            marker: PhantomData,
-        }
-    }
-}
-
-impl Scalar<Bytes256> {
-    pub fn from_bytes(value: [u8; 32]) -> Self {
-        Self {
-            bytes: value,
             marker: PhantomData,
         }
     }

@@ -293,23 +293,6 @@ impl<'info> ExecutionState<'_, '_, 'info> {
     }
 }
 
-/// Checks ternary operand metadata against the declared result type.
-pub fn assert_ternary_operand_types(
-    control: [u8; 32],
-    if_true: [u8; 32],
-    if_false: [u8; 32],
-    output_fhe_type: u8,
-) -> Result<()> {
-    assert_supported_fhe_type(output_fhe_type)?;
-    require!(
-        handle_fhe_type(control) == 0
-            && handle_fhe_type(if_true) == output_fhe_type
-            && handle_fhe_type(if_false) == output_fhe_type,
-        ZamaHostError::InvalidInputHandleType
-    );
-    Ok(())
-}
-
 #[inline(never)]
 fn accept_execution_output<'info>(
     ctx: &Context<'info, FheExecute<'info>>,

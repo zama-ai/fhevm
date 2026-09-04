@@ -125,7 +125,7 @@ pub fn evaluate(
                 let control = resolve_encrypted(control, &args.dictionary, inputs, &produced)?;
                 let if_true = resolve_encrypted(if_true, &args.dictionary, inputs, &produced)?;
                 let if_false = resolve_encrypted(if_false, &args.dictionary, inputs, &produced)?;
-                // Mirrors `fhe_execute::assert_ternary_operand_types`; keep the malformed-ternary
+                // Mirrors `assert_ternary_operand_types`; keep the malformed-ternary
                 // cases in `operator_conformance.rs::rejected::ternary` aligned with it.
                 if control.fhe_type != 0
                     || if_true.fhe_type != *output_fhe_type
