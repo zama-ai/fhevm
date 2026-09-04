@@ -111,6 +111,10 @@ type RelayerAsyncRequestParams = {
   payload: Record<string, unknown>;
   timeoutInSeconds?: number | undefined;
   throwErrorIfNoRetryAfter?: boolean | undefined;
+  // Off by default: the EVM relayer reports `readiness_check_timed_out` as a terminal 503, so the
+  // job is dead and retrying would poll forever. Solana decryptions opt in because their relayer
+  // returns the same label while KMS material is still indexing, and a later attempt can succeed.
+  retryOnReadinessCheckTimeout?: boolean | undefined;
   logger?: Logger | undefined;
   options?:
     | RelayerInputProofOptions
@@ -158,6 +162,7 @@ export class RelayerAsyncRequest {
   private _requestStartTimestamp: number | undefined;
   private _requestGlobalTimeoutID: ReturnType<typeof setTimeout> | undefined;
   private readonly _throwErrorIfNoRetryAfter: boolean;
+  private readonly _retryOnReadinessCheckTimeout: boolean;
 
   // Warning: the following condition should always stand!
   // DEFAULT_RETRY_AFTER_MS >= MINIMUM_RETRY_AFTER_MS
@@ -229,6 +234,7 @@ export class RelayerAsyncRequest {
     this._requestGlobalTimeoutID = undefined;
     this._terminateReason = undefined;
     this._throwErrorIfNoRetryAfter = params.throwErrorIfNoRetryAfter ?? false;
+    this._retryOnReadinessCheckTimeout = params.retryOnReadinessCheckTimeout ?? false;
     this._requestMaxDurationInMs = params.options?.timeout ?? RelayerAsyncRequest.DEFAULT_GLOBAL_REQUEST_TIMEOUT_MS;
 
     this._trace(
@@ -677,6 +683,11 @@ export class RelayerAsyncRequest {
             });
           }
 
+          if (this._retryOnReadinessCheckTimeout && bodyJson.error.label === 'readiness_check_timed_out') {
+            await this._setRetryAfterTimeout(this._getRetryAfterHeaderValueInMs(response));
+            continue;
+          }
+
           this._throwRelayerResponseApiError({
             status: responseStatus,
             relayerApiError: bodyJson.error,
@@ -1060,6 +1071,11 @@ export class RelayerAsyncRequest {
               cause: cause as InvalidPropertyError,
               bodyJson: safeJSONstringify(bodyJson),
             });
+          }
+
+          if (this._retryOnReadinessCheckTimeout && bodyJson.error.label === 'readiness_check_timed_out') {
+            await this._setRetryAfterTimeout(this._getRetryAfterHeaderValueInMs(response));
+            continue;
           }
 
           this._throwRelayerResponseApiError({

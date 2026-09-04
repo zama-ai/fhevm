@@ -138,6 +138,7 @@ export async function publicDecryptCertificate(
   const request = new RelayerAsyncRequest({
     relayerOperation: 'PUBLIC_DECRYPT',
     url: `${removeSuffix(context.chain.fhevm.relayerUrl, '/')}/v2/public-decrypt`,
+    retryOnReadinessCheckTimeout: true,
     payload: {
       ciphertextHandles: [handle.bytes32Hex],
       extraData: requestExtraDataHex,
