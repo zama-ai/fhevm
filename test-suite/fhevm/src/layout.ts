@@ -288,8 +288,7 @@ export const TEST_GREP: Record<string, string> = {
   "erc1271-user-decryption": "ERC-1271 user decryption",
   "unified-user-decryption": "Unified user decryption",
   "decryption-signature-invalidation": "Decryption signature invalidation",
-  "public-decryption":
-    "test async decrypt (uint.*|ebytes.* trivial|ebytes64 non-trivial|ebytes256 non-trivial with snapshot|addresses|several addresses)",
+  "public-decryption": "test HTTPPublicDecrypt ebool",
   "public-decrypt-http-ebool": "test HTTPPublicDecrypt ebool",
   "public-decrypt-http-mixed": "test HTTPPublicDecrypt mixed",
   "random": "generate and decrypt|generating rand in reverting sub-call|upper bound and decrypt",

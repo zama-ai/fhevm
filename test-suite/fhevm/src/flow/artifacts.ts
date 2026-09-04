@@ -1,10 +1,13 @@
 import { ensureLockSnapshot } from "../resolve/bundle-store";
 import { generateRuntime } from "../generate";
 import { requiresMultichainAclAddress } from "../compat/compat";
+import path from "node:path";
+
 import { stackSpecForState, topologyForState } from "../stack-spec/stack-spec";
 import { PreflightError } from "../errors";
 import {
   COMPONENTS,
+  GENERATED_CONFIG_DIR,
   gatewayAddressesPath,
   gatewayAddressesSolidityPath,
   paymentBridgingAddressesSolidityPath,
@@ -19,6 +22,11 @@ import {
 import type { State, StepName } from "../types";
 import { exists, readEnvFile } from "../utils/fs";
 import { generatedComposeComponents } from "../generate/compose";
+import {
+  KMS_THRESHOLD_CONFIG_NAME,
+  KMS_THRESHOLD_SPARE_CONFIG_NAME,
+  kmsThresholdGenKeysConfigName,
+} from "../generate/kms-core";
 import { defaultHostChain, extraHostChains } from "./topology";
 
 /** Validates that a generated address file exists and contains the required keys. */
@@ -55,12 +63,25 @@ export const assertGeneratedAddressFileLacks = async (
 export const runtimeArtifactPaths = (state: State) => {
   const topology = topologyForState(state);
   const defaultChain = defaultHostChain(state);
+  const plan = stackSpecForState(state);
+  const thresholdConfigPaths = plan.kms.mode === "threshold"
+    ? [
+        path.join(GENERATED_CONFIG_DIR, KMS_THRESHOLD_CONFIG_NAME),
+        ...Array.from({ length: plan.kms.parties }, (_, index) =>
+          path.join(GENERATED_CONFIG_DIR, kmsThresholdGenKeysConfigName(index + 1)),
+        ),
+        ...(plan.kms.parties > plan.kms.committeeSize
+          ? [path.join(GENERATED_CONFIG_DIR, KMS_THRESHOLD_SPARE_CONFIG_NAME)]
+          : []),
+      ]
+    : [];
   return [
     versionsEnvPath,
     relayerConfigPath,
     kmsCoreConfigPath,
+    ...thresholdConfigPaths,
     ...COMPONENTS.map(envPath),
-    ...[...generatedComposeComponents(stackSpecForState(state))].map(composePath),
+    ...[...generatedComposeComponents(plan)].map(composePath),
     ...Array.from({ length: Math.max(0, topology.count - 1) }, (_, index) => envPath(`coprocessor.${index + 1}`)),
     ...(state.discovery
       ? [
