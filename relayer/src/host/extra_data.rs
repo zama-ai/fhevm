@@ -11,7 +11,7 @@ const EXTRA_DATA_SOLANA_MIN_LENGTH: usize = 33; // 1 (version) + 32 (context_id)
 
 /// Parse context ID from extra_data bytes.
 ///
-/// - v1: `[0x01 | context_id(32)]`
+/// - v1: `[0x01 | context_id(32)]` — exactly 33 bytes (host parity)
 /// - v2: `[0x02 | context_id(32) | epoch_id(32)]`
 /// - v3 (Solana): `[0x03 | context_id(32) | …]` — only the shared
 ///   `version ‖ context_id` prefix is read; the Solana-specific tail
@@ -26,9 +26,22 @@ pub fn parse_context_id_from_extra_data(extra_data: &[u8]) -> Result<U256, Extra
     match version {
         // 0x00 is the legacy/default marker — use static threshold
         0x00 => Ok(U256::ZERO),
-        EXTRA_DATA_V1_VERSION | EXTRA_DATA_V2_VERSION | EXTRA_DATA_SOLANA_VERSION => {
+        EXTRA_DATA_V1_VERSION => {
+            // Host `extract_kms_context_id` requires v1 to be exactly 33 bytes.
+            if extra_data.len() != EXTRA_DATA_V1_LENGTH {
+                return Err(ExtraDataError::WrongLength {
+                    version,
+                    len: extra_data.len(),
+                    expected: EXTRA_DATA_V1_LENGTH,
+                });
+            }
+            let bytes: [u8; 32] = extra_data[1..33]
+                .try_into()
+                .expect("slice is exactly 32 bytes");
+            Ok(U256::from_be_bytes(bytes))
+        }
+        EXTRA_DATA_V2_VERSION | EXTRA_DATA_SOLANA_VERSION => {
             let min_len = match version {
-                EXTRA_DATA_V1_VERSION => EXTRA_DATA_V1_LENGTH,
                 EXTRA_DATA_V2_VERSION => EXTRA_DATA_V2_LENGTH,
                 _ => EXTRA_DATA_SOLANA_MIN_LENGTH,
             };
@@ -55,6 +68,13 @@ pub enum ExtraDataError {
 
     #[error("extra_data too short for v{version:#04x}: {len} bytes, expected at least {expected}")]
     TooShort {
+        version: u8,
+        len: usize,
+        expected: usize,
+    },
+
+    #[error("extra_data wrong length for v{version:#04x}: {len} bytes, expected {expected}")]
+    WrongLength {
         version: u8,
         len: usize,
         expected: usize,
@@ -113,6 +133,15 @@ mod tests {
     fn v1_too_short_returns_error() {
         let mut data = vec![EXTRA_DATA_V1_VERSION];
         data.extend_from_slice(&[0u8; 10]);
+        assert!(parse_context_id_from_extra_data(&data).is_err());
+    }
+
+    #[test]
+    fn v1_with_trailing_bytes_returns_error() {
+        let context_id = U256::from(42u64);
+        let mut data = vec![EXTRA_DATA_V1_VERSION];
+        data.extend_from_slice(&context_id.to_be_bytes::<32>());
+        data.push(0xff);
         assert!(parse_context_id_from_extra_data(&data).is_err());
     }
 

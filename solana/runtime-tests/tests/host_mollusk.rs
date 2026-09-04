@@ -684,6 +684,37 @@ fn mollusk_remove_subject_rejects_last_subject() {
 }
 
 #[test]
+fn mollusk_remove_subject_rejects_remaining_accounts() {
+    let account = Pubkey::new_unique();
+    let (host_config, host_config_account) = host_config_account(account);
+    let owner = Pubkey::new_unique();
+    let removed = Pubkey::new_unique();
+    let (address, value) = new_encrypted_value_account(
+        Pubkey::new_unique(),
+        account,
+        label("balance"),
+        handle_for_chain(6, 5),
+        &[owner, removed],
+    );
+    let stray = Pubkey::new_unique();
+    let mut ix = remove_subject_ix(account, address, host_config, removed);
+    ix.accounts.push(AccountMeta::new_readonly(stray, false));
+    let accounts = vec![
+        (account, funded_system_account()),
+        (address, encrypted_value_account(&value)),
+        (host_config, host_config_account),
+        (stray, empty_system_account()),
+    ];
+    mollusk().process_and_validate_instruction(
+        &ix,
+        &accounts,
+        &[custom_error(
+            host::errors::ZamaHostError::UnexpectedRemainingAccounts,
+        )],
+    );
+}
+
+#[test]
 fn mollusk_removed_subject_gets_no_historical_leaf_when_later_updated() {
     let account = Pubkey::new_unique();
     let (host_config, host_config_account) = host_config_account(account);
@@ -2892,6 +2923,38 @@ fn mollusk_destroy_kms_context_rejects_current() {
     );
 }
 
+#[test]
+fn mollusk_destroy_kms_context_rejects_already_destroyed() {
+    let program_id = host::id();
+    let admin = Pubkey::new_unique();
+    let other = canonical_test_context_id(2);
+    let (host_config, host_config_account) = host_config_with_context(admin, KMS_CONTEXT_ID);
+    let (kms_context, kms_context_acct) =
+        kms_context_account_with(other, kms_context_signers(), 1, true);
+    let context = mollusk_execute_context(
+        admin,
+        vec![
+            (host_config, host_config_account),
+            (kms_context, kms_context_acct),
+        ],
+    );
+
+    context.process_and_validate_instruction(
+        &anchor_ix(
+            program_id,
+            host::accounts::DestroyKmsContext {
+                admin,
+                host_config,
+                kms_context,
+                event_authority: event_authority(host::id()),
+                program: host::id(),
+            },
+            host::instruction::DestroyKmsContext { context_id: other },
+        ),
+        &[custom_error(host::errors::ZamaHostError::InvalidKmsContext)],
+    );
+}
+
 // ---- set_hcu_block_cap_per_app (admin cap setter) ----
 
 #[test]
@@ -3257,6 +3320,117 @@ fn mollusk_initialize_host_config_defaults_block_cap_to_unrestricted() {
             .expect("config")
             .hcu_block_cap_per_app,
         u64::MAX
+    );
+}
+
+#[test]
+fn mollusk_initialize_host_config_rejects_wrong_upgrade_authority() {
+    let program_id = host::id();
+    let payer = Pubkey::new_unique();
+    let admin = Pubkey::new_unique();
+    let (host_config, _) = host::host_config_address();
+    let args = init_args_with_coprocessor_set(vec![[0x11u8; 20]], 1);
+    let (program_data, program_data_acct) = program_data_account(Pubkey::new_unique());
+    let context = mollusk_execute_context(
+        payer,
+        vec![
+            (host_config, system_account(0)),
+            (program_data, program_data_acct),
+        ],
+    );
+
+    context.process_and_validate_instruction(
+        &initialize_host_config_ix(program_id, payer, admin, host_config, args),
+        &[custom_error(
+            host::errors::ZamaHostError::HostConfigAdminMismatch,
+        )],
+    );
+}
+
+#[test]
+fn mollusk_initialize_host_config_rejects_unsigned_admin() {
+    let program_id = host::id();
+    let payer = Pubkey::new_unique();
+    let admin = Pubkey::new_unique();
+    let (host_config, _) = host::host_config_address();
+    let args = init_args_with_coprocessor_set(vec![[0x11u8; 20]], 1);
+    let (program_data, program_data_acct) = program_data_account(admin);
+    let context = mollusk_execute_context(
+        payer,
+        vec![
+            (host_config, system_account(0)),
+            (program_data, program_data_acct),
+        ],
+    );
+    let mut ix = initialize_host_config_ix(program_id, payer, admin, host_config, args);
+    for meta in ix.accounts.iter_mut() {
+        if meta.pubkey == admin {
+            meta.is_signer = false;
+        }
+    }
+
+    context.process_and_validate_instruction(
+        &ix,
+        &[anchor_error(
+            anchor_lang::error::ErrorCode::AccountNotSigner,
+        )],
+    );
+}
+
+#[test]
+fn mollusk_initialize_host_config_rejects_wrong_program_data_address() {
+    let program_id = host::id();
+    let payer = Pubkey::new_unique();
+    let admin = Pubkey::new_unique();
+    let (host_config, _) = host::host_config_address();
+    let args = init_args_with_coprocessor_set(vec![[0x11u8; 20]], 1);
+    let (canonical, program_data_acct) = program_data_account(admin);
+    let fake = Pubkey::new_unique();
+    let context = mollusk_execute_context(
+        payer,
+        vec![(host_config, system_account(0)), (fake, program_data_acct)],
+    );
+    let mut ix = initialize_host_config_ix(program_id, payer, admin, host_config, args);
+    for meta in ix.accounts.iter_mut() {
+        if meta.pubkey == canonical {
+            meta.pubkey = fake;
+        }
+    }
+
+    context.process_and_validate_instruction(
+        &ix,
+        &[anchor_error(
+            anchor_lang::error::ErrorCode::ConstraintAddress,
+        )],
+    );
+}
+
+#[test]
+fn mollusk_initialize_host_config_rejects_finalized_program() {
+    let program_id = host::id();
+    let payer = Pubkey::new_unique();
+    let admin = Pubkey::new_unique();
+    let (host_config, _) = host::host_config_address();
+    let args = init_args_with_coprocessor_set(vec![[0x11u8; 20]], 1);
+    let (program_data, mut program_data_acct) = program_data_account(admin);
+    let mut data = Vec::with_capacity(13);
+    data.extend_from_slice(&3u32.to_le_bytes());
+    data.extend_from_slice(&0u64.to_le_bytes());
+    data.push(0);
+    program_data_acct.data = data;
+    let context = mollusk_execute_context(
+        payer,
+        vec![
+            (host_config, system_account(0)),
+            (program_data, program_data_acct),
+        ],
+    );
+
+    context.process_and_validate_instruction(
+        &initialize_host_config_ix(program_id, payer, admin, host_config, args),
+        &[custom_error(
+            host::errors::ZamaHostError::HostConfigAdminMismatch,
+        )],
     );
 }
 

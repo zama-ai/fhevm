@@ -5,12 +5,26 @@
 //! `FheExecutionFixture` harness.
 
 use mollusk_svm::result::Check;
-use solana_sdk::{instruction::Instruction, pubkey::Pubkey};
+use solana_sdk::{account::Account, instruction::Instruction, pubkey::Pubkey};
 use zama_host::{self as host};
-use zama_solana_test_kit::{anchor_ix, event_authority};
+use zama_solana_test_kit::{anchor_error_check, anchor_ix, event_authority};
 
 mod host_fixtures;
 use host_fixtures::{host_config_account, mollusk_execute_context, read_host_config};
+
+fn custom_error(error: host::errors::ZamaHostError) -> Check<'static> {
+    anchor_error_check(error as u32)
+}
+
+fn program_owned_account() -> Account {
+    Account {
+        lamports: 1_000_000,
+        data: vec![],
+        owner: host::id(),
+        executable: false,
+        rent_epoch: 0,
+    }
+}
 
 fn set_host_pause_ix(
     program_id: Pubkey,
@@ -133,7 +147,10 @@ fn mollusk_set_admin_transfers_to_pda_without_cosign() {
     let admin = Pubkey::new_unique();
     let (new_admin, _) = Pubkey::find_program_address(&[b"new-admin"], &host::id());
     let (host_config, account) = host_config_account(admin);
-    let context = mollusk_execute_context(admin, vec![(host_config, account)]);
+    let context = mollusk_execute_context(
+        admin,
+        vec![(host_config, account), (new_admin, program_owned_account())],
+    );
 
     context.process_and_validate_instruction(
         &set_admin_ix(program_id, admin, host_config, new_admin),
@@ -144,6 +161,29 @@ fn mollusk_set_admin_transfers_to_pda_without_cosign() {
             .expect("config")
             .admin,
         new_admin
+    );
+}
+
+#[test]
+fn mollusk_set_admin_rejects_unallocated_off_curve_key() {
+    // An off-curve key that is still System-owned (never allocated) must not skip co-sign.
+    let program_id = host::id();
+    let admin = Pubkey::new_unique();
+    let (new_admin, _) = Pubkey::find_program_address(&[b"typo"], &host::id());
+    let (host_config, account) = host_config_account(admin);
+    let context = mollusk_execute_context(admin, vec![(host_config, account)]);
+
+    context.process_and_validate_instruction(
+        &set_admin_ix(program_id, admin, host_config, new_admin),
+        &[custom_error(
+            host::errors::ZamaHostError::HostConfigAdminMismatch,
+        )],
+    );
+    assert_eq!(
+        read_host_config(&context, host_config)
+            .expect("config")
+            .admin,
+        admin
     );
 }
 

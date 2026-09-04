@@ -153,9 +153,9 @@ ID…).
     20 shared-audience eight-subject `make_public` creates
     (`the_builder_admits_what_the_host_heap_cannot_hold` in
     `solana/crates/zama-fhe/src/heap_budget/` builds them `Ok`), and the
-    host's measured wall is 15
-    (`fhe_execute_boundary/subject_heavy_public_creates`: the 16th aborts in
-    the host's CPI frame). Executions in the 16–20 band build cleanly and die
+    host's measured wall is 16
+    (`fhe_execute_boundary/subject_heavy_public_creates`: the 17th aborts in
+    the host's CPI frame). Executions in the 17–20 band build cleanly and die
     on-chain with no error. Until this wall gets a typed policy cap or a
     host-side heap model (a design decision tracked in fhevm-internal#1872),
     apps creating many wide-audience public outputs must budget against the
@@ -260,7 +260,14 @@ ID…).
     only on the block cap). When finite, the ordering invariant
     `block cap ≥ max per tx ≥ max depth` is enforced at set time.
 38. **[ASSUMPTION]** The host admin key is a single trusted key. This is a POC:
-    there is no multisig and no timelock.
+    there is no multisig and no timelock. The initial admin must be the BPF
+    upgrade authority (`ProgramData.upgrade_authority_address`). After init,
+    `set_admin` rotates in one instruction: the current admin signs; a new
+    keypair must co-sign; a new PDA skips co-sign only when it is off-curve
+    and already owned by a program (not the System Program), so a mistyped
+    empty key cannot become admin. A program whose upgrade authority has been
+    burned (`upgrade_authority_address == None`) cannot initialize. Production
+    governance is tracked separately (fhevm-internal#1634).
 40. **[HOLDS]** A compute subject cannot self-trust: HCU trust records are
     written only by the admin, live at a PDA derived from the subject they
     trust, and a caller can neither point at another subject's record (address

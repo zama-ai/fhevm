@@ -37,8 +37,8 @@
 //!
 //! One wall is deliberately *not* typed, because no app-side number can see it: the host's own
 //! CPI frame grows with created outputs times subjects per output, and for shared-audience
-//! `make_public` creates it aborts before the ceilings above do (15 eight-subject public
-//! creates land, the 16th dies host-side, while the app-side ceilings admit 20). That
+//! `make_public` creates it aborts before the ceilings above do (16 eight-subject public
+//! creates land, the 17th dies host-side, while the app-side ceilings admit 20). That
 //! wall — like the host's heap cost for MMR-mature updates — is pinned by the boundary sweeps
 //! in `runtime-tests/tests/fhe_execute_boundary.rs` and documented in invariant #61;
 //! see `crate::cost`'s module doc for the mechanism. `FheExecution::cost`

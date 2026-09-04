@@ -7,7 +7,12 @@
 
 import { createPublicClient, http, parseAbi } from "viem";
 
-import { DEFAULT_HOST_CHAIN_KEY, gatewayAddressesPath, hostChainAddressesPath } from "../layout";
+import {
+  DEFAULT_HOST_CHAIN_KEY,
+  gatewayAddressesPath,
+  hostChainAddressesPath,
+  SOLANA_DEFAULT_PUBLIC_DECRYPT_CONTEXT,
+} from "../layout";
 import { readEnvFile } from "../utils/fs";
 
 // RFC-021 Solana host chain id: the chain-type high bit ORed over 12345. The coprocessor DB
@@ -25,12 +30,22 @@ export const canonicalTestContextId = (n: number): Uint8Array => {
   return id;
 };
 
+const bytes32FromHex = (hex: `0x${string}`): Uint8Array => {
+  const body = hex.slice(2);
+  const out = new Uint8Array(32);
+  for (let i = 0; i < 32; i++) {
+    out[i] = Number.parseInt(body.slice(i * 2, i * 2 + 2), 16);
+  }
+  return out;
+};
+
 /**
  * The KMS context id every bring-up provisions (`deploy.ts` bootstrap and `fhevm-cli up`'s
- * `demo/seed.ts` both define context 1) — the id the scenarios' consume steps and the demo
- * preflight resolve the on-chain `KmsContext` PDA with.
+ * `demo/seed.ts`). This is the tagged gateway uint256 (`SOLANA_DEFAULT_PUBLIC_DECRYPT_CONTEXT`),
+ * not the truncated `canonicalTestContextId(1)` used by isolated host unit tests — the host
+ * equality-matches all 32 bytes, so public-decrypt extra_data must name this id.
  */
-export const BRINGUP_KMS_CONTEXT_ID = canonicalTestContextId(1);
+export const BRINGUP_KMS_CONTEXT_ID = bytes32FromHex(SOLANA_DEFAULT_PUBLIC_DECRYPT_CONTEXT);
 
 // The two GatewayConfig getters the bootstrap needs; viem derives the selectors and decodes the
 // `address[]` returns from these signatures.

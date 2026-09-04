@@ -19,11 +19,11 @@ pub mod contracts;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+use anchor_lang::solana_program::bpf_loader_upgradeable;
 use anchor_lang::{
     prelude::system_program, AccountDeserialize, AccountSerialize, AnchorDeserialize,
     Discriminator, InstructionData, ToAccountMetas,
 };
-use anchor_lang::solana_program::bpf_loader_upgradeable;
 use anchor_spl::token::spl_token;
 use mollusk_svm::{result::Check, Mollusk, MolluskContext};
 use solana_sdk::{
@@ -449,11 +449,8 @@ pub fn canonical_test_context_id(n: u8) -> [u8; 32] {
 /// Fabricated BPF upgradeable `ProgramData` whose upgrade authority is `upgrade_authority`.
 /// Address matches `bpf_loader_upgradeable::get_program_data_address(&host::ID)`.
 pub fn program_data_account(upgrade_authority: Pubkey) -> (Pubkey, Account) {
-    let address = Pubkey::find_program_address(
-        &[host::ID.as_ref()],
-        &bpf_loader_upgradeable::id(),
-    )
-    .0;
+    let address =
+        Pubkey::find_program_address(&[host::ID.as_ref()], &bpf_loader_upgradeable::id()).0;
     let mut data = Vec::with_capacity(45);
     data.extend_from_slice(&3u32.to_le_bytes());
     data.extend_from_slice(&0u64.to_le_bytes());

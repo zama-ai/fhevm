@@ -420,8 +420,6 @@ fn type_bits(fhe_type: u8) -> Result<usize, String> {
         4 => Ok(32),
         5 => Ok(64),
         6 => Ok(128),
-        7 => Ok(160),
-        8 => Ok(256),
         _ => Err(format!("unsupported FHE type {fhe_type}")),
     }
 }

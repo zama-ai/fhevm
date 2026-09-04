@@ -33,7 +33,7 @@
     "solana/instruction_trace_length": {
       "value": 64,
       "extendable": false,
-      "note": "every instruction executed in a transaction, top-level plus each CPI; sits within one step of the all-created-public shape's heap wall (each created output issues ~3 CPIs), and it is shared with the app's own CPIs in the same transaction"
+      "note": "every instruction executed in a transaction, top-level plus each CPI; sits within one step of the all-created-public shape's heap wall (each created output issues 1 CPI on the common path, 3 on the squat fallback), and it is shared with the app's own CPIs in the same transaction"
     },
     "solana/return_data_bytes": {
       "value": 1024,
@@ -78,29 +78,29 @@
   },
   "boundaries": {
     "fhe_execute_boundary/all_created_public": {
-      "max_ok": 20,
-      "first_fail": 21,
+      "max_ok": 22,
+      "first_fail": 23,
       "limited_by": "heap",
       "cost_at_max_ok": {
-        "compute_units": 290146,
-        "unique_accounts": 25,
-        "instruction_data_bytes": 1629,
-        "cpi_instructions": 61,
-        "total_cpi_instruction_data_bytes": 2541,
-        "max_cpi_instruction_data_bytes": 1341
+        "compute_units": 251345,
+        "unique_accounts": 27,
+        "instruction_data_bytes": 1787,
+        "cpi_instructions": 23,
+        "total_cpi_instruction_data_bytes": 2617,
+        "max_cpi_instruction_data_bytes": 1473
       }
     },
     "fhe_execute_boundary/all_private_creates": {
-      "max_ok": 21,
-      "first_fail": 22,
-      "limited_by": "instruction_trace",
+      "max_ok": 32,
+      "first_fail": 33,
+      "limited_by": "MAX_FHE_EXECUTION_STEPS",
       "cost_at_max_ok": {
-        "compute_units": 263574,
-        "unique_accounts": 26,
-        "instruction_data_bytes": 1708,
-        "cpi_instructions": 63,
-        "total_cpi_instruction_data_bytes": 1260,
-        "max_cpi_instruction_data_bytes": 36
+        "compute_units": 333308,
+        "unique_accounts": 37,
+        "instruction_data_bytes": 2577,
+        "cpi_instructions": 32,
+        "total_cpi_instruction_data_bytes": 1664,
+        "max_cpi_instruction_data_bytes": 52
       }
     },
     "fhe_execute_boundary/attestation_per_step": {
@@ -108,7 +108,7 @@
       "first_fail": 16,
       "limited_by": "heap",
       "cost_at_max_ok": {
-        "compute_units": 472004,
+        "compute_units": 470955,
         "unique_accounts": 5,
         "instruction_data_bytes": 14404,
         "cpi_instructions": 0,
@@ -121,12 +121,12 @@
       "first_fail": 33,
       "limited_by": "MAX_FHE_EXECUTION_STEPS",
       "cost_at_max_ok": {
-        "compute_units": 68066,
+        "compute_units": 64403,
         "unique_accounts": 7,
         "instruction_data_bytes": 414,
-        "cpi_instructions": 3,
-        "total_cpi_instruction_data_bytes": 60,
-        "max_cpi_instruction_data_bytes": 36
+        "cpi_instructions": 1,
+        "total_cpi_instruction_data_bytes": 52,
+        "max_cpi_instruction_data_bytes": 52
       }
     },
     "fhe_execute_boundary/mature_updates": {
@@ -134,7 +134,7 @@
       "first_fail": 5,
       "limited_by": "heap",
       "cost_at_max_ok": {
-        "compute_units": 105501,
+        "compute_units": 105551,
         "unique_accounts": 9,
         "instruction_data_bytes": 1817,
         "cpi_instructions": 0,
@@ -147,7 +147,7 @@
       "first_fail": 7,
       "limited_by": "heap",
       "cost_at_max_ok": {
-        "compute_units": 132732,
+        "compute_units": 132814,
         "unique_accounts": 11,
         "instruction_data_bytes": 2573,
         "cpi_instructions": 0,
@@ -160,7 +160,7 @@
       "first_fail": 12,
       "limited_by": "heap",
       "cost_at_max_ok": {
-        "compute_units": 272307,
+        "compute_units": 272469,
         "unique_accounts": 16,
         "instruction_data_bytes": 4463,
         "cpi_instructions": 0,
@@ -173,11 +173,11 @@
       "first_fail": 33,
       "limited_by": "MAX_FHE_EXECUTION_STEPS",
       "cost_at_max_ok": {
-        "compute_units": 160189,
+        "compute_units": 137405,
         "unique_accounts": 13,
         "instruction_data_bytes": 1521,
-        "cpi_instructions": 25,
-        "total_cpi_instruction_data_bytes": 1029,
+        "cpi_instructions": 9,
+        "total_cpi_instruction_data_bytes": 965,
         "max_cpi_instruction_data_bytes": 549
       }
     },
@@ -186,7 +186,7 @@
       "first_fail": 5,
       "limited_by": "heap",
       "cost_at_max_ok": {
-        "compute_units": 59757,
+        "compute_units": 58561,
         "unique_accounts": 5,
         "instruction_data_bytes": 433,
         "cpi_instructions": 0,
@@ -195,29 +195,29 @@
       }
     },
     "fhe_execute_boundary/subject_heavy_creates": {
-      "max_ok": 21,
-      "first_fail": 22,
-      "limited_by": "instruction_trace",
+      "max_ok": 24,
+      "first_fail": 25,
+      "limited_by": "heap",
       "cost_at_max_ok": {
-        "compute_units": 323787,
-        "unique_accounts": 26,
-        "instruction_data_bytes": 2111,
-        "cpi_instructions": 63,
-        "total_cpi_instruction_data_bytes": 1260,
-        "max_cpi_instruction_data_bytes": 36
+        "compute_units": 296293,
+        "unique_accounts": 29,
+        "instruction_data_bytes": 2369,
+        "cpi_instructions": 24,
+        "total_cpi_instruction_data_bytes": 1248,
+        "max_cpi_instruction_data_bytes": 52
       }
     },
     "fhe_execute_boundary/subject_heavy_public_creates": {
-      "max_ok": 15,
-      "first_fail": 16,
+      "max_ok": 16,
+      "first_fail": 17,
       "limited_by": "heap",
       "cost_at_max_ok": {
-        "compute_units": 244646,
-        "unique_accounts": 20,
-        "instruction_data_bytes": 1595,
-        "cpi_instructions": 46,
-        "total_cpi_instruction_data_bytes": 1911,
-        "max_cpi_instruction_data_bytes": 1011
+        "compute_units": 212761,
+        "unique_accounts": 21,
+        "instruction_data_bytes": 1681,
+        "cpi_instructions": 17,
+        "total_cpi_instruction_data_bytes": 1909,
+        "max_cpi_instruction_data_bytes": 1077
       }
     }
   }

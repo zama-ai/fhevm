@@ -49,11 +49,11 @@ use zama_solana_test_kit::signing::{
 };
 use zama_solana_test_kit::{
     account_is_system_owned_and_empty, anchor_error_check, anchor_framework_error_check, anchor_ix,
-    cost_snapshot, decode_anchor_event, deny_subject_record_account, encrypted_value_account,
-    event_authority, handle_for_chain, new_encrypted_value, read_account, read_encrypted_value,
-    read_spl_amount, serialized_account, spl_mint_account, spl_token_account, system_account,
-    u256_be, canonical_test_context_id, Ctx, HostConfigParams, BALANCE_FHE_TYPE,
-    DECRYPTION_CONTRACT, GATEWAY_CHAIN_ID,
+    canonical_test_context_id, cost_snapshot, decode_anchor_event, deny_subject_record_account,
+    encrypted_value_account, event_authority, handle_for_chain, new_encrypted_value, read_account,
+    read_encrypted_value, read_spl_amount, serialized_account, spl_mint_account, spl_token_account,
+    system_account, u256_be, Ctx, HostConfigParams, BALANCE_FHE_TYPE, DECRYPTION_CONTRACT,
+    GATEWAY_CHAIN_ID,
 };
 
 // ---------------------------------------------------------------------------
@@ -5156,8 +5156,7 @@ fn mollusk_disclose_secp_rejects_cleartext_wider_than_u64() {
 /// (55_000) + transferred `Sub` at euint64 (162_000) + balance-binding scalar `Add` at euint64
 /// (133_000) + credit `Add` at euint64 (162_000). The `VerifiedInput` amount is an operand, not
 /// a step, so it adds no HCU. See `zama-host` `HCULimit` tables.
-const TRANSFER_BATCH_HCU: u64 =
-    152_000 + 162_000 + 55_000 + 162_000 + 133_000 + 162_000; // 826_000
+const TRANSFER_BATCH_HCU: u64 = 152_000 + 162_000 + 55_000 + 162_000 + 133_000 + 162_000; // 826_000
 
 /// The fixture's host config with the per-app block cap overridden to `cap`.
 fn host_config_account_with_block_cap(

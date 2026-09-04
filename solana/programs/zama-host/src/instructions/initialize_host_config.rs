@@ -16,6 +16,7 @@ pub struct InitializeHostConfig<'info> {
     /// Initial admin stored in the config. Must be the BPF upgrade authority.
     pub admin: Signer<'info>,
     /// Upgradeable loader `ProgramData` for this program; `admin` must be its upgrade authority.
+    /// A finalized program (`upgrade_authority_address == None`) cannot initialize.
     #[account(
         address = bpf_loader_upgradeable::get_program_data_address(&crate::ID),
         constraint = program_data.upgrade_authority_address == Some(admin.key()) @ ZamaHostError::HostConfigAdminMismatch

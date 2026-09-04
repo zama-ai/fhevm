@@ -536,7 +536,8 @@
         {
           "name": "program_data",
           "docs": [
-            "Upgradeable loader `ProgramData` for this program; `admin` must be its upgrade authority."
+            "Upgradeable loader `ProgramData` for this program; `admin` must be its upgrade authority.",
+            "A finalized program (`upgrade_authority_address == None`) cannot initialize."
           ]
         },
         {
@@ -871,8 +872,9 @@
         {
           "name": "new_admin",
           "docs": [
-            "The incoming admin. A keypair must co-sign (`is_signer`); a PDA skips co-sign",
-            "(`!is_on_curve()`)."
+            "The incoming admin. A keypair must co-sign (`is_signer`); a PDA skips co-sign only when",
+            "it is off-curve and already owned by a program (not System), so a mistyped empty key",
+            "cannot become admin."
           ]
         },
         {

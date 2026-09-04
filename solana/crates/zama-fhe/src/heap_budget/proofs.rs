@@ -22,11 +22,11 @@ use super::harness::{
 use super::shapes::*;
 
 /// Invariant #61's builder-side pin: `build()` admits the shared-audience eight-subject
-/// `make_public` shape all the way to the trace-capped twenty creates — including the 16–20
-/// band the host's own CPI frame cannot hold (the measured wall is 15, pinned by
+/// `make_public` shape all the way to the trace-capped twenty creates — including the 17–20
+/// band the host's own CPI frame cannot hold (the measured wall is 16, pinned by
 /// `fhe_execute_boundary/subject_heavy_public_creates` in `runtime-tests`). If the app-side
 /// model ever learns to reject this shape, this test fails and both #61 and the sweep's
-/// documentation must move together; until then the 16–20 band is the documented gap between
+/// documentation must move together; until then the 17–20 band is the documented gap between
 /// `build`'s admission and the host's survival — fhevm-internal#1872.
 #[test]
 fn the_builder_admits_what_the_host_heap_cannot_hold() {

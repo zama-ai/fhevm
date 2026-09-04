@@ -355,6 +355,21 @@ fn cost_rows_are_representative_and_evm_ordered() {
 }
 
 #[test]
+fn cost_rows_pin_evm_hculimit_literals() {
+    // Spot-check against host-contracts `HCULimit.sol` so a table edit cannot silently drift.
+    assert_eq!(
+        binary_op_hcu(FheBinaryOpCode::Add, EU8, true).unwrap(),
+        84_000
+    );
+    assert_eq!(
+        binary_op_hcu(FheBinaryOpCode::Add, EU64, false).unwrap(),
+        162_000
+    );
+    assert_eq!(rand_hcu(EBOOL).unwrap(), 19_000);
+    assert_eq!(rand_hcu(EU128).unwrap(), 25_000);
+}
+
+#[test]
 fn meter_comparison_prices_operand_width_not_ebool() {
     let steps = vec![
         trivial(EU64),

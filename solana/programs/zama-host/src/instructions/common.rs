@@ -579,10 +579,8 @@ mod tests {
                             total = d;
                         }
                         let bad_depth = total != u64::MAX && depth != u64::MAX && total < depth;
-                        let bad_cap = cap != 0
-                            && cap != u64::MAX
-                            && total != u64::MAX
-                            && cap < total;
+                        let bad_cap =
+                            cap != 0 && cap != u64::MAX && total != u64::MAX && cap < total;
                         assert!(
                             !bad_depth && !bad_cap,
                             "reached unordered finite knobs: total={total} depth={depth} cap={cap}"

@@ -202,8 +202,9 @@ pub fn validate_extra_data_field_decryption(extra_data: &str) -> Result<(), Vali
             validate_id_tag(bytes[1], CONTEXT_ID_TAG)?;
             validate_id_tag(bytes[33], EPOCH_ID_TAG)
         }
-        // Version 3 (Solana, RFC-021): variable-length MMR-proof blob. The contextId here is
-        // not 0x07-tagged — the Solana host derives it, so only the shape is checked.
+        // Version 3 (Solana, RFC-021): variable-length MMR-proof blob. The 32-byte context id
+        // is opaque (the same bytes the gateway minted, including any 0x07 type tag); this
+        // path only checks blob shape.
         s if s.len() >= 4 && s.starts_with("0x") && &s[2..4] == EXTRA_DATA_SOLANA_VERSION_BYTE => {
             validate_solana_mmr_proof_extra_data(s)
         }

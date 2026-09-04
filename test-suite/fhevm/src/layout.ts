@@ -145,10 +145,10 @@ export const COPROCESSOR_DB_CONTAINER = "coprocessor-and-kms-db";
 // Solana host program id as bytes32 — the Solana ACL identity. Single source for the transfer
 // orchestrator and the e2e harness's loadEnv default.
 export const SOLANA_ACL_PROGRAM = "0x4cd3022dff504a675caf2d9b4f4014d0b3dc3ea17ffb97ba355cec5a933a30ee";
-// Default public-decrypt context id: the 32-byte BE gateway KMS context (chain-type tag 0x07 in
-// the high byte ‖ u64 context id 1 in the low 8 bytes). This is the `extraData` a certificate
-// request carries minus its 0x01 version byte; the Solana host's u64 kms_context id (1) is its
-// low 64 bits.
+// Default public-decrypt context id: the 32-byte BE gateway KMS context (`RequestType.KmsContext`
+// tag 0x07 in the high byte ‖ u64 context id 1 in the low 8 bytes). This is the `extraData` a
+// certificate request carries minus its 0x01 version byte, and the id bring-up stores in the
+// Solana `KmsContext` PDA — the host compares the full 32 bytes, it does not truncate.
 export const SOLANA_DEFAULT_PUBLIC_DECRYPT_CONTEXT =
   "0x0700000000000000000000000000000000000000000000000000000000000001";
 

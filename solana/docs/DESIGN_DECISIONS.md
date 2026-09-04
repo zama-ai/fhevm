@@ -1758,7 +1758,8 @@ option). `HostConfig` gains `coprocessor_signers: [[u8; 20]; MAX_COPROCESSOR_SIG
 fixed-capacity array keeps the singleton's byte layout **pinned** (the account serializes to the same
 size regardless of how many signers are active), and avoids threading a second account through
 `fhe_execute`, which is byte-tight. The cap is 8: comfortably above realistic coprocessor-quorum sizes
-while bounding both the account size (+142 bytes vs the single-signer layout, SPACE 151 -> 293) and
+while bounding both the account size (+142 bytes vs the single-signer layout; current
+`HostConfig::SPACE` is 317 after the 32-byte KMS context id) and
 the worst-case per-attestation recovery cost. Rotation is admin-driven for the PoC via the new
 admin-gated `set_coprocessor_signers` instruction (same admin/pause-neutral pattern as the other
 `set_*` config setters); a gateway-sync authority would drive it from the EVM `GatewayConfig`
@@ -2183,7 +2184,8 @@ Why not ship an allocator:
 3. A bigger heap would buy almost nothing. The `fhe_execute_boundary/*` snapshot entries show the
    walls per execution shape: chain-shaped executions reach the host's step cap without touching
    the heap, and for the all-created-public shape the heap wall (21 steps) and the transaction's
-   non-extendable 64-entry instruction trace (~21, at ~3 CPIs per created output) sit within one
+   non-extendable 64-entry instruction trace (common path: 1 CPI per created output; squat
+   fallback: 3) sit within one
    step of each other — an allocator spending a raised frame would gain that shape at most one
    step before the trace stops it anyway. The one axis a raised frame would genuinely extend —
    persistent updates of MMR-mature values, whose decode cost grows with on-chain state

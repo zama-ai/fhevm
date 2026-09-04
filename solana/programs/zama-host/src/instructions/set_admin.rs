@@ -1,6 +1,7 @@
 //! Transfers the host admin key.
 
 use anchor_lang::prelude::*;
+use anchor_lang::solana_program::system_program;
 
 use super::common::*;
 use crate::errors::ZamaHostError;
@@ -15,14 +16,15 @@ pub struct SetAdmin<'info> {
     /// Singleton config PDA.
     #[account(mut, seeds = [HOST_CONFIG_SEED], bump = host_config.bump)]
     pub host_config: Account<'info, HostConfig>,
-    /// The incoming admin. A keypair must co-sign (`is_signer`); a PDA skips co-sign
-    /// (`!is_on_curve()`).
-    /// CHECK: key must equal `new_admin`; signer-or-PDA rule is enforced in the handler.
+    /// The incoming admin. A keypair must co-sign (`is_signer`); a PDA skips co-sign only when
+    /// it is off-curve and already owned by a program (not System), so a mistyped empty key
+    /// cannot become admin.
+    /// CHECK: key must equal `new_admin`; signer-or-existing-PDA rule is enforced in the handler.
     pub new_admin: UncheckedAccount<'info>,
 }
 
 /// Sets `host_config.admin` to `new_admin`. Current admin signs. A new keypair co-signs;
-/// a new PDA does not.
+/// a new PDA does not, provided it already exists as a program-owned account.
 pub fn set_admin(ctx: Context<SetAdmin>, new_admin: Pubkey) -> Result<()> {
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
     assert_admin(&ctx.accounts.host_config, &ctx.accounts.admin)?;
@@ -33,7 +35,8 @@ pub fn set_admin(ctx: Context<SetAdmin>, new_admin: Pubkey) -> Result<()> {
     );
     if !ctx.accounts.new_admin.is_signer {
         require!(
-            !ctx.accounts.new_admin.key().is_on_curve(),
+            !ctx.accounts.new_admin.key().is_on_curve()
+                && ctx.accounts.new_admin.owner != &system_program::ID,
             ZamaHostError::HostConfigAdminMismatch
         );
     }

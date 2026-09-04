@@ -23,12 +23,13 @@
 //!   [`FheExecutionBuildError::ExceedsCpiInstructionDataLimit`].
 //!
 //! What is deliberately *not* enforced here: costs that depend on on-chain state rather than
-//! the execution's shape. A persistent update may add one rent top-up transfer if the account
-//! must grow, the host lazily creates its per-app block meter once under a finite block cap
-//! (three CPIs, first execution only), and the host's heap consumption for updates grows with
-//! the stored value's MMR peak count — none of which the builder can see. Those are measured
-//! per shape by the boundary sweeps in `runtime-tests` and surface through
-//! [`FheExecutionCost::instruction_trace_worst_case`] and the cost-snapshot data instead.
+//! the execution's shape. A persistent create may spend three system CPIs instead of one if the
+//! output PDA is already pre-funded, a persistent update may add one rent top-up transfer if
+//! the account must grow, the host lazily creates its per-app block meter once under a finite
+//! block cap (three CPIs, first execution only), and the host's heap consumption for updates
+//! grows with the stored value's MMR peak count — none of which the builder can see. Those
+//! surface through [`FheExecutionCost::instruction_trace_worst_case`] (honest about squat
+//! creates; that number can exceed the trace limit) and the cost-snapshot data instead.
 //!
 //! One shape-dependent cost also stays measured rather than typed: the host's own **CPI frame**.
 //! The host CPI runs in a fresh 32 KB heap region of its own, and what it allocates
@@ -37,7 +38,7 @@
 //! cannot price that from its side of the CPI boundary: its packet cost interns a shared
 //! audience once in the dictionary, while the host materializes it per created account. The
 //! `subject_heavy_public_creates` boundary sweep in `runtime-tests` pins the measured wall
-//! (15 eight-subject public creates land, 16 abort in the host's CPI frame) where the
+//! (16 eight-subject public creates land, 17 abort in the host's CPI frame) where the
 //! builder's typed ceilings alone would admit 20.
 //!
 //! Both ceilings are runtime facts of the pinned agave 4.x toolchain, asserted against
@@ -159,13 +160,20 @@ impl FheExecutionCost {
         )
     }
 
-    /// The floor plus every state-dependent instruction this execution *can* add: one rent
-    /// top-up transfer per persistent update whose account must grow, and the three CPIs that
-    /// lazily create the per-app block meter on an app's first execution under a finite block
-    /// cap (the meter create still uses the squat path). A transaction budgeted against this
-    /// number lands regardless of on-chain state.
+    /// The floor plus every state-dependent instruction this execution *can* add: two extra
+    /// system CPIs per persistent create if the output PDA is already pre-funded (the squat
+    /// transfer/allocate/assign path instead of one `create_account`), one rent top-up transfer
+    /// per persistent update whose account must grow, and the three CPIs that lazily create the
+    /// per-app block meter on an app's first execution under a finite block cap.
+    ///
+    /// This number is honest about on-chain state; it is not a promise the shape fits. Twenty
+    /// squat creates plus both event CPIs plus the meter is 67, which exceeds
+    /// [`TRANSACTION_INSTRUCTION_TRACE_LIMIT`].
     pub fn instruction_trace_worst_case(&self) -> usize {
-        self.instruction_trace_floor() + self.persistent_updates + CPIS_PER_SQUAT_CREATE
+        self.instruction_trace_floor()
+            + (CPIS_PER_SQUAT_CREATE - CPIS_PER_PERSISTENT_CREATE) * self.persistent_creates
+            + self.persistent_updates
+            + CPIS_PER_SQUAT_CREATE
     }
 }
 
@@ -211,11 +219,22 @@ mod tests {
         };
         // The floor: wrapper (2) + one CPI per create (2) + the rand event (1).
         assert_eq!(cost.instruction_trace_floor(), 5);
-        // The worst case adds one rent top-up transfer per update and the one-time three-CPI
-        // block-meter creation (squat/meter path, not the common-path create CPI).
+        // The worst case charges the squat path (3 CPIs) per create, one rent top-up per
+        // update, and the one-time three-CPI block-meter creation.
         assert_eq!(
             cost.instruction_trace_worst_case(),
-            5 + cost.persistent_updates + CPIS_PER_SQUAT_CREATE
+            5 + (CPIS_PER_SQUAT_CREATE - CPIS_PER_PERSISTENT_CREATE) * cost.persistent_creates
+                + cost.persistent_updates
+                + CPIS_PER_SQUAT_CREATE
         );
+        // 20 squat creates + both events + the meter cannot fit the 64-entry trace.
+        let at_cap = FheExecutionCost {
+            persistent_creates: MAX_PERSISTENT_CREATES,
+            persistent_updates: 0,
+            emits_random_seeds_event: true,
+            emits_public_outputs_event: true,
+            ..cost
+        };
+        assert!(at_cap.instruction_trace_worst_case() > TRANSACTION_INSTRUCTION_TRACE_LIMIT);
     }
 }

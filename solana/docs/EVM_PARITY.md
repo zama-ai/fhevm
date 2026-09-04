@@ -64,7 +64,7 @@ fromExternal** — all implemented. The confidential token is therefore **op-com
 | `ACL.cleanTransientStorage()` | wipe tx transient (AA bundling) | nothing to reclaim — `Transient` results are instruction-scoped and never persisted (the one-shot `TransientSession` account tier was removed, DD-008) | **DIVERGENCE** (no persistent transient state) |
 | `ACL.delegate/revokeForUserDecryption` | user-decrypt delegation lifecycle | `delegate_for_user_decryption` / `revoke_...` — PDA per `(delegator,delegate,app)`, slot-based expiry, same-slot double-update guard, wildcard-delegate rejected | **MET** |
 | `ACL` deny list (`blockAccount`/`isAccountDenied`) | owner deny list | `set_deny_subject` + `DenySubjectRecord`, gated into grant paths | **MET** |
-| `ACL` pause/owner/UUPS | pauser role, 2-step ownership, upgrade | single `admin` (`set_host_pause` etc.) | **DIVERGENCE** (admin signer) + **PRODUCT-OPEN** (BPF upgrade authority handles program upgrade) |
+| `ACL` pause/owner/UUPS | pauser role, 2-step ownership, upgrade | single `admin` (`set_host_pause`; `set_admin` one-step with keypair co-sign / existing-PDA skip; `set_eip712_domain`) | **DIVERGENCE** (admin signer, not Ownable2Step) + **PRODUCT-OPEN** (BPF upgrade authority handles program upgrade; init admin must be that authority) |
 | `FHEVMExecutor.fheAdd/fheSub` | binary add/sub | `fhe_execute` Binary step, op=Add/Sub (the standalone `fhe_binary_op*` instructions were removed; `fhe_execute` is the only compute path, DD-032) | **MET** |
 | `FHEVMExecutor.fheGe` | ≥ comparison → ebool | `fhe_execute` Binary step, op=Ge | **MET** |
 | `FHEVMExecutor.fheIfThenElse(select)` | ternary; ebool control, branch type-checked | `fhe_execute` Ternary step, op=IfThenElse (the standalone `fhe_ternary_op*` instruction was removed, DD-032) | **MET** |
@@ -79,7 +79,7 @@ fromExternal** — all implemented. The confidential token is therefore **op-com
 | `HCULimit` (per-op/tx/block/depth homomorphic-compute caps) | gas-like metering | `HostConfig::max_hcu_per_tx` / `max_hcu_depth_per_tx` summed over one `fhe_execute` execution (`u64::MAX` = off), plus per-app per-slot block cap (`hcu_block_cap_per_app`, DD-039), plus Solana compute-budget + op-count/collection caps | **DIVERGENCE** (per-execution + per-app-per-slot cap vs global per-block metering) — see fragility #3 |
 | `KMSVerifier` (on-chain decrypt-sig threshold verify) | verify KMS sigs on-chain | on-chain secp256k1: `eip712::verify_kms_public_decrypt` recovers EVM KMS signers and threshold-checks them against the witness-pinned `KmsContext` (rejects high-s) | **MET** (DD-021: mirrors EVM `KMSVerifier`) |
 | `ProtocolConfig` / `KMSGeneration` / `PauserSet` (role set) | KMS node/threshold registry, keygen, pauser role set | none (subset in `HostConfig`: authorities/chain_id/flags) | **PRODUCT-OPEN** |
-| `FheType` (86 variants) | type enum | supported set Bool/Uint8..Uint256 (covers token + shipped ops) | **MET (partial)** / **SCOPE** (signed/large/string types) |
+| `FheType` (86 variants) | type enum | supported set Bool/Uint8..Uint128 (covers token + shipped ops; types 7/8 rejected) | **MET (partial)** / **SCOPE** (signed/large/string types) |
 
 ---
 
@@ -99,7 +99,7 @@ fromExternal** — all implemented. The confidential token is therefore **op-com
 | `MAX_DECRYPTION_REQUEST_BITS=2048` | per-request cleartext cap | enforced by the same gateway check the EVM path uses, in `_extractCtHandlesCheckConformanceHandleEntry`; the Solana entrypoint additionally caps a request at `MAX_SOLANA_USER_DECRYPT_HANDLES = 33` handles | **MET** (shared with EVM) |
 | `Structs` (Sns material, delegation, pairs) | cross-contract DTOs | witness structs + on-chain `EncryptedValue`/`UserDecryptionDelegation` (material DTOs are gateway-side `CiphertextCommits` structs, unchanged by Solana, DD-031) | **MET** (re-modeled) |
 | unified decrypt routing | (Solana as a Gateway host chain) | Solana is registered as a host chain (bytes32 ACL = the `zama_host` program id, high-bit chain id); decrypt reuses the Gateway V2 path rather than a parallel native stack. Residual `native-v0` connector library/store code exists but is not the chosen path (DD-012) | **MET** (unified) / replaced native-v0 subsystem |
-| `GatewayConfig` (KMS/coprocessor/host-chain/threshold registry) | on-chain registry | connector reads registry off-chain (`Config`); `HostConfig` holds authorities/flags, the single coprocessor input signer, and the current `KmsContext` pointer | **PRODUCT-OPEN** |
+| `GatewayConfig` (KMS/coprocessor/host-chain/threshold registry) | on-chain registry | connector reads registry off-chain (`Config`); `HostConfig` holds authorities/flags, the coprocessor signer set + threshold, and the current `KmsContext` pointer | **PRODUCT-OPEN** |
 | `KMSGeneration` (keygen/crsgen ceremony) | key/CRS lifecycle | none (referenced only by `key_id`) | **PRODUCT-OPEN** |
 | `ProtocolPayment` ($ZAMA fees) | per-request fee | none (rent/tx fees only) | **PRODUCT-OPEN** |
 
@@ -195,8 +195,9 @@ connector's canonical-PDA + MMR-proof verification (DD-032; materiality now live
    (`HostConfig::hcu_block_cap_per_app`, DD-039) plus per-execution total and critical-path caps
    (`max_hcu_per_tx` / `max_hcu_depth_per_tx`, `u64::MAX` = off) and the Solana compute budget.
    There is no EVM-style *global* per-block `HCULimit` aggregating across all apps; the per-app
-   cap is the Solana analog. Costs are uncalibrated placeholders and limits ship disabled
-   (`u64::MAX` = unrestricted). Relevant to DoS/cost-bounding.
+   cap is the Solana analog. Per-op costs are the EVM `HCULimit.sol` tables through euint128
+   (types 7/8 have no rows); limits ship disabled (`u64::MAX` = unrestricted). Relevant to
+   DoS/cost-bounding.
 4. **On-chain disclosure/redemption uses secp256k1 KMS-cert verification.** Both call the stateless
    host `verify_public_decrypt` verifier and have no request-witness accounts. Disclosure is
    idempotent; redemption additionally consumes the token account's single `PendingBurn`, so payout

@@ -122,10 +122,7 @@ const SECP256K1_HALF_ORDER: [u8; 32] = [
 /// certificate. Returns `None` for an unsupported version or a short payload.
 ///
 /// `0x07` in a protocol context id is `RequestType.KmsContext`, not a Solana chain tag.
-pub fn extract_kms_context_id(
-    extra_data: &[u8],
-    current_context_id: [u8; 32],
-) -> Option<[u8; 32]> {
+pub fn extract_kms_context_id(extra_data: &[u8], current_context_id: [u8; 32]) -> Option<[u8; 32]> {
     match extra_data.first() {
         None | Some(0) => Some(current_context_id),
         Some(1) => {
