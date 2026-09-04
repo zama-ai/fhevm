@@ -1338,7 +1338,8 @@ const dockerContainerHealth = async (
 };
 
 /** Reads the whole log: the startup line this looks for sits near the top, and a threshold core
- * logs enough MPC and gRPC traffic afterwards to push it out of any fixed tail. */
+ * logs enough MPC and gRPC traffic afterwards to push it out of any fixed tail. A timed-out read
+ * (code 124) still carries what was read so far, which includes that top. */
 const dockerLogContains = async (
   manifest: DemoManifest,
   name: string,
@@ -1350,7 +1351,10 @@ const dockerLogContains = async (
     allowFailure: true,
     timeoutMs: 5_000,
   });
-  return result.code === 0 && pattern.test(result.stdout + result.stderr);
+  return (
+    (result.code === 0 || result.code === 124) &&
+    pattern.test(result.stdout + result.stderr)
+  );
 };
 
 type DemoHealth = {

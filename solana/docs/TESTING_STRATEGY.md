@@ -70,7 +70,7 @@ all fail closed (see the `*_rejects_*` mollusk tests).
 ## Reconstruction parity strategy
 
 The rewrite's central correctness bet is that off-chain consumers reproduce on-chain MMR state exactly.
-The e2e `reconstruct=true` arm exercises host-listener reconstruction against the full stack, while
+The solana-e2e scenarios exercise host-listener reconstruction against the full stack, while
 `build_verified_proof` cross-checks reconstructed peaks against final chain state. A divergence fails
 closed rather than yielding a wrong proof, which the KMS then re-verifies against confirmed peaks anyway
 (DD-035).
