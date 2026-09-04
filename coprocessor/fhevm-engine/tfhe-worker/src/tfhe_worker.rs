@@ -2063,16 +2063,16 @@ async fn tfhe_worker_cycle(
             DCID_LEASE_LOST_DURING_EXECUTION_COUNTER.inc();
             warn!(target: "tfhe_worker", "Lost dcid lock during transaction execution; persisting deterministic results may be redundant");
         }
-        let (has_progressed, panicked_transactions) =
+        let (has_progressed, cooldown_transactions) =
             upload_transaction_graph_results(&mut tx_graph, &mut trx, &mut dcid_mngr)
                 .instrument(loop_span.clone())
                 .await?;
         if !dcid_mngr.enabled() {
-            // Pace retryable panics in the lockless fallback: without this
-            // the oldest-first window re-selects a still-failing panic
-            // transaction at poll cadence. With locking the no-progress
-            // parking below paces the same case at the lock TTL.
-            for transaction_id in &panicked_transactions {
+            // Pace retryable failures in the lockless fallback: without this
+            // the oldest-first window re-selects a still-failing transaction
+            // at poll cadence. With locking the no-progress parking below
+            // paces the same case at the lock TTL.
+            for transaction_id in &cooldown_transactions {
                 deferred_cooldown.quarantine(transaction_id);
             }
         }
@@ -3296,10 +3296,16 @@ async fn build_transaction_graph_and_execute<'a>(
 }
 
 #[tracing::instrument(name = "upload_results", skip_all)]
-/// Returns (progress, panicked_transactions): the latter are transactions
-/// with an ExecutionPanic result this cycle — the lockless caller quarantines
-/// them so the oldest-first window cannot re-select a still-failing panic at
-/// poll cadence (DCID locking paces the same case via no-progress parking).
+/// Returns (progress, cooldown_transactions): the latter are transactions that
+/// failed this cycle in a way that leaves the row PENDING and pace-able — a
+/// retryable ExecutionPanic, or a GPU memory reservation timeout. The lockless
+/// caller quarantines them so the oldest-first window cannot re-select a
+/// still-failing transaction at poll cadence (DCID locking paces the same case
+/// via no-progress parking).
+///
+/// The two belong on one list because they share the property that matters
+/// here: neither writes a verdict the window can filter on, so the cooldown is
+/// the only thing that can rotate selection past them.
 async fn upload_transaction_graph_results<'a>(
     tx_graph: &mut DFComponentGraph,
     trx: &mut sqlx::Transaction<'a, Postgres>,
@@ -3313,7 +3319,7 @@ async fn upload_transaction_graph_results<'a>(
     // Get computation results
     let graph_results = tx_graph.get_results();
     let mut handles_to_update = vec![];
-    let mut panicked_transactions: Vec<Vec<u8>> = vec![];
+    let mut cooldown_transactions: Vec<Vec<u8>> = vec![];
     let mut res = false;
 
     // Traverse computations that have been scheduled and
@@ -3341,6 +3347,16 @@ async fn upload_transaction_graph_results<'a>(
                         output_handle = %format!("0x{}", hex::encode(&result.handle)),
                         "transient GPU memory reservation failure; leaving computation pending for retry"
                     );
+                    // Deliberately unstamped -- a reservation failure is not a
+                    // verdict on the operands -- but it must still PACE. In the
+                    // lockless fallback the window is oldest-first and nothing
+                    // else holds this transaction back: unstamped and
+                    // un-cooled, it wins selection again on the next poll and
+                    // keeps every younger transaction out for as long as the
+                    // device stays tight. The cooldown is the only mechanism
+                    // that rotates the window there, so these ids ride the same
+                    // list the panics do.
+                    cooldown_transactions.push(result.transaction_id.clone());
                     continue;
                 }
                 let cerr: Box<dyn std::error::Error + Send + Sync> =
@@ -3404,7 +3420,7 @@ async fn upload_transaction_graph_results<'a>(
                 if let Some(CoprocessorError::SchedulerError(SchedulerError::ExecutionPanic(_))) =
                     cerr.downcast_ref::<CoprocessorError>()
                 {
-                    panicked_transactions.push(result.transaction_id.clone());
+                    cooldown_transactions.push(result.transaction_id.clone());
                 }
                 // A terminal stamp IS progress: a dead-chain drain larger
                 // than one batch would otherwise count as no-progress
@@ -3491,9 +3507,9 @@ async fn upload_transaction_graph_results<'a>(
         .await?;
         res |= comp_updated > 0;
     }
-    panicked_transactions.sort();
-    panicked_transactions.dedup();
-    Ok((res, panicked_transactions))
+    cooldown_transactions.sort();
+    cooldown_transactions.dedup();
+    Ok((res, cooldown_transactions))
 }
 
 #[cfg(all(test, feature = "gpu"))]
