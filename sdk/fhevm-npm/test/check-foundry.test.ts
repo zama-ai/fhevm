@@ -88,6 +88,97 @@ test('checks effective Forge fmt settings against foundry.base.toml', () => {
   }
 });
 
+test("requires a package declaring 'forge:fmt' to own foundry.toml", () => {
+  const workspace = mkdtempSync(join(tmpdir(), 'fhevm-npm-foundry-'));
+  try {
+    mkdirSync(join(workspace, 'member'), { recursive: true });
+    writeFileSync(join(workspace, 'member', 'package.json'), '{"scripts":{"forge:fmt":"forge fmt"}}\n');
+
+    const inspection = inspectFoundry(workspace, manifest('1.5.1-stable'), () => 'forge Version: 1.5.1-stable\n');
+    assert.deepEqual(inspection.violations, [
+      {
+        rule: '4.1.3',
+        packageKey: './member',
+        message: "package declares 'forge:fmt' but has no 'foundry.toml' in the same directory",
+      },
+    ]);
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test("forbids 'forge:fmt' in a published package", () => {
+  const workspace = mkdtempSync(join(tmpdir(), 'fhevm-npm-foundry-'));
+  try {
+    mkdirSync(join(workspace, 'member'), { recursive: true });
+    writeFileSync(join(workspace, 'member', 'package.json'), '{"scripts":{"forge:fmt":"forge fmt"}}\n');
+
+    const inspection = inspectFoundry(
+      workspace,
+      manifest('1.5.1-stable', 'published'),
+      () => 'forge Version: 1.5.1-stable\n',
+    );
+    assert.deepEqual(inspection.violations, [
+      {
+        rule: '2.1.2',
+        packageKey: './member',
+        message: "published package must not declare 'forge:fmt'; the script and foundry.toml belong on its dev owner",
+      },
+    ]);
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test("forbids 'forge:lint' in a published package", () => {
+  const workspace = mkdtempSync(join(tmpdir(), 'fhevm-npm-foundry-'));
+  try {
+    mkdirSync(join(workspace, 'member'), { recursive: true });
+    writeFileSync(join(workspace, 'member', 'package.json'), '{"scripts":{"forge:lint":"forge lint"}}\n');
+
+    const inspection = inspectFoundry(
+      workspace,
+      manifest('1.5.1-stable', 'published'),
+      () => 'forge Version: 1.5.1-stable\n',
+    );
+    assert.deepEqual(inspection.violations, [
+      {
+        rule: '2.1.2',
+        packageKey: './member',
+        message: "published package must not declare 'forge:lint'; the script and foundry.toml belong on its dev owner",
+      },
+    ]);
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test('requires foundry.toml to explicitly extend the workspace base', () => {
+  const workspace = mkdtempSync(join(tmpdir(), 'fhevm-npm-foundry-'));
+  try {
+    mkdirSync(join(workspace, 'member'), { recursive: true });
+    writeFileSync(join(workspace, 'foundry.base.toml'), '[fmt]\nline_length = 120\n');
+    writeFileSync(join(workspace, 'member', 'foundry.toml'), '[profile.default]\nsrc = "src"\n');
+
+    const inspection = inspectFoundry(
+      workspace,
+      manifest('1.5.1-stable'),
+      () => 'forge Version: 1.5.1-stable\n',
+      (_directory, configFile) =>
+        configFile === undefined ? { fmt: { line_length: 120 } } : { fmt: { line_length: 120 } },
+    );
+    assert.deepEqual(inspection.violations, [
+      {
+        rule: '4.1.3',
+        packageKey: './member',
+        message: "foundry.toml must set '[profile.default].extends' to the workspace 'foundry.base.toml'",
+      },
+    ]);
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
 test('ignores the per-package [fmt].ignore rather than demanding it match the shared file', () => {
   const workspace = mkdtempSync(join(tmpdir(), 'fhevm-foundry-'));
   try {
@@ -110,13 +201,18 @@ test('ignores the per-package [fmt].ignore rather than demanding it match the sh
   }
 });
 
-function manifest(version: string) {
+function manifest(version: string, memberKind: 'shared-helper' | 'published' = 'shared-helper') {
   return parseTestNpmManifest({
     foundry: { version },
     packageJson: { published: { required: ['name', 'version'], excluded: ['private'] } },
     packages: {
       '.': { kind: 'workspace-root', name: 'workspace', private: true, member: false },
-      './member': { kind: 'shared-helper', name: 'member-dev', private: true, member: true },
+      './member': {
+        kind: memberKind,
+        name: memberKind === 'published' ? 'member' : 'member-dev',
+        ...(memberKind === 'shared-helper' ? { private: true } : {}),
+        member: true,
+      },
     },
   });
 }

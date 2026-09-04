@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 
 import type { NpmManifest } from '../../manifest.ts';
 import type { Violation } from '../diagnostics.ts';
@@ -26,6 +26,30 @@ export function inspectFoundry(
   const fmtPackageKeys = Object.keys(manifest.packages)
     .sort()
     .filter((key) => existsSync(join(packageDirectory(workspaceRoot, key), 'foundry.toml')));
+
+  for (const key of Object.keys(manifest.packages).sort()) {
+    const directory = packageDirectory(workspaceRoot, key);
+    const packageJsonFile = join(directory, 'package.json');
+    for (const script of ['forge:fmt', 'forge:lint'] as const) {
+      if (!declaresScript(packageJsonFile, script) || manifest.packages[key]?.kind !== 'published') continue;
+      violations.push({
+        rule: '2.1.2',
+        packageKey: key,
+        message: `published package must not declare '${script}'; the script and foundry.toml belong on its dev owner`,
+      });
+    }
+
+    if (!declaresScript(packageJsonFile, 'forge:fmt')) continue;
+    if (manifest.packages[key]?.kind === 'published') {
+      continue;
+    }
+    if (existsSync(join(directory, 'foundry.toml'))) continue;
+    violations.push({
+      rule: '4.1.3',
+      packageKey: key,
+      message: "package declares 'forge:fmt' but has no 'foundry.toml' in the same directory",
+    });
+  }
 
   if (expectedVersion === undefined) {
     violations.push({
@@ -104,6 +128,15 @@ function validateForgeFmtConfig(
 
   for (const key of packageKeys) {
     const directory = packageDirectory(workspaceRoot, key);
+    const configFile = join(directory, 'foundry.toml');
+
+    if (!extendsSharedFoundryConfig(configFile, sharedFile)) {
+      violations.push({
+        rule: '4.1.3',
+        packageKey: key,
+        message: "foundry.toml must set '[profile.default].extends' to the workspace 'foundry.base.toml'",
+      });
+    }
 
     let effective: ReadonlyMap<string, string>;
     try {
@@ -137,6 +170,36 @@ function validateForgeFmtConfig(
       }
     }
   }
+}
+
+function declaresScript(packageJsonFile: string, script: string): boolean {
+  if (!existsSync(packageJsonFile)) return false;
+  try {
+    const parsed = JSON.parse(readFileSync(packageJsonFile, 'utf8')) as { scripts?: unknown };
+    const scripts = parsed.scripts;
+    if (typeof scripts !== 'object' || scripts === null || Array.isArray(scripts)) return false;
+    const command = (scripts as Record<string, unknown>)[script];
+    return typeof command === 'string' && command.trim().length > 0;
+  } catch {
+    // package-json validation owns malformed manifests.
+    return false;
+  }
+}
+
+function extendsSharedFoundryConfig(configFile: string, sharedFile: string): boolean {
+  const lines = readFileSync(configFile, 'utf8').split(/\r?\n/);
+  let inDefaultProfile = false;
+  for (const line of lines) {
+    if (/^\s*\[/.test(line)) {
+      inDefaultProfile = /^\s*\[profile\.default\]\s*(?:#.*)?$/.test(line);
+      continue;
+    }
+    if (!inDefaultProfile) continue;
+    const match = /^\s*extends\s*=\s*(["'])(.*?)\1\s*(?:#.*)?$/.exec(line);
+    if (match?.[2] === undefined) continue;
+    return resolve(dirname(configFile), match[2]) === resolve(sharedFile);
+  }
+  return false;
 }
 
 export function parseForgeVersion(output: string): string {
