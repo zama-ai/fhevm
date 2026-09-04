@@ -1133,6 +1133,7 @@ impl UserDecryptRepository {
                 FROM user_decrypt_req
                 WHERE req_status IN ('queued'::req_status, 'processing'::req_status, 'tx_in_flight'::req_status)
                   AND owner_epoch < $1
+                ORDER BY owner_epoch, id
                 LIMIT $2
                 FOR UPDATE SKIP LOCKED
             )

@@ -20,7 +20,7 @@
 //! `PublicDecryptRepository::claim_incomplete_requests`'s doc comment, kept in one place rather
 //! than restated here: the eligibility predicate and its lack of a time term, why a row under
 //! this pod's own epoch is never claimed, why `tx_in_flight` is reset to `processing`, and
-//! and why `tx_in_flight` is reset to `processing`.
+//! why the claim returns rows oldest first. Rows are dispatched in the order it returns them.
 
 use std::{sync::Arc, time::Duration};
 
@@ -36,7 +36,7 @@ use crate::{
         dispatch_recovered_input_proof, dispatch_recovered_public_decrypt,
         dispatch_recovered_user_decrypt,
     },
-    store::sql::{models::req_status_enum_model::ReqStatus, repositories::Repositories},
+    store::sql::repositories::Repositories,
 };
 
 /// Rows one tick claims per table. A backlog larger than this is drained over consecutive
@@ -72,13 +72,11 @@ async fn run_tick(
     let mut dispatched = 0usize;
     let mut dispatch_failed = 0usize;
 
-    for row in furthest_along_first(
-        repositories
-            .public_decrypt
-            .claim_incomplete_requests(epoch, CLAIM_BATCH)
-            .await?,
-        |row| row.status,
-    ) {
+    for row in repositories
+        .public_decrypt
+        .claim_incomplete_requests(epoch, CLAIM_BATCH)
+        .await?
+    {
         if dispatch_recovered_public_decrypt(orchestrator, row.int_job_id, row.req, row.status)
             .await
         {
@@ -88,13 +86,11 @@ async fn run_tick(
         }
     }
 
-    for row in furthest_along_first(
-        repositories
-            .user_decrypt
-            .claim_incomplete_requests(epoch, CLAIM_BATCH)
-            .await?,
-        |row| row.status,
-    ) {
+    for row in repositories
+        .user_decrypt
+        .claim_incomplete_requests(epoch, CLAIM_BATCH)
+        .await?
+    {
         if dispatch_recovered_user_decrypt(
             orchestrator,
             row.int_job_id,
@@ -110,13 +106,11 @@ async fn run_tick(
         }
     }
 
-    for row in furthest_along_first(
-        repositories
-            .input_proof
-            .claim_incomplete_requests(epoch, CLAIM_BATCH)
-            .await?,
-        |row| row.status,
-    ) {
+    for row in repositories
+        .input_proof
+        .claim_incomplete_requests(epoch, CLAIM_BATCH)
+        .await?
+    {
         if dispatch_recovered_input_proof(orchestrator, row.int_job_id, row.req).await {
             dispatched += 1;
         } else {
@@ -125,25 +119,6 @@ async fn run_tick(
     }
 
     Ok((dispatched, dispatch_failed))
-}
-
-/// Dispatch the rows closest to a receipt first: `processing`, then `queued`. A claim rewrites
-/// `tx_in_flight` to `processing` in the same `UPDATE` and returns the post-update status, so
-/// `processing` covers both the rows that were mid-send and those that had only passed their
-/// readiness check - a row that may have a send in flight is the one whose duplicate costs a
-/// fee, so it should not queue behind fresh work. An `UPDATE ... RETURNING` has no defined row
-/// order, so the sort happens here rather than in SQL.
-///
-/// Orders within one [`CLAIM_BATCH`], not across a whole backlog: a `processing` row can fall
-/// into a later batch than a `queued` row. Only the dispatch order shifts - the fence, not the
-/// ordering, is what keeps a possible in-flight send safe.
-fn furthest_along_first<T>(mut rows: Vec<T>, status_of: impl Fn(&T) -> ReqStatus) -> Vec<T> {
-    rows.sort_by_key(|row| match status_of(row) {
-        ReqStatus::Processing => 0,
-        ReqStatus::Queued => 1,
-        _ => 2,
-    });
-    rows
 }
 
 async fn run_sweep_worker_logic(

@@ -853,6 +853,12 @@ impl PublicDecryptRepository {
     /// `SKIP LOCKED` passes over a row an app write holds, leaving it for the next tick rather
     /// than blocking the sweep behind it.
     ///
+    /// `ORDER BY owner_epoch, id` matches `idx_*_sweep_claim` exactly, so Postgres walks the
+    /// index and stops at `batch` - the ordering costs no sort and reads nothing beyond the
+    /// rows it returns. `id` is the insertion sequence, so a failover's inherited backlog,
+    /// sharing one epoch, comes back oldest first. Callers dispatch in the order returned;
+    /// re-sorting the batch would discard this for an ordering the claim never selected on.
+    ///
     /// Eligibility is ownership alone, with no time term: `owner_epoch < $epoch`. A strictly
     /// older epoch is a dead predecessor - epochs are minted only on acquisition and are monotonic
     /// database-wide. `UNCLAIMED_EPOCH` sorts below all of them and means no dispatcher ever
@@ -885,6 +891,7 @@ impl PublicDecryptRepository {
                 FROM public_decrypt_req
                 WHERE req_status IN ('queued'::req_status, 'processing'::req_status, 'tx_in_flight'::req_status)
                   AND owner_epoch < $1
+                ORDER BY owner_epoch, id
                 LIMIT $2
                 FOR UPDATE SKIP LOCKED
             )

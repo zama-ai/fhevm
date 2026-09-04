@@ -134,6 +134,15 @@ impl RepoTestSetup {
         int_job_id
     }
 
+    async fn row_id(&self, int_job_id: &[u8]) -> i32 {
+        sqlx::query("SELECT id FROM public_decrypt_req WHERE int_job_id = $1")
+            .bind(int_job_id)
+            .fetch_one(&self.raw_pool)
+            .await
+            .expect("Failed to read row")
+            .get("id")
+    }
+
     async fn status_and_owner_epoch_only(&self, int_job_id: &[u8]) -> (String, i64) {
         let row = sqlx::query(
             "SELECT req_status::text as status, owner_epoch FROM public_decrypt_req WHERE int_job_id = $1",
@@ -338,9 +347,8 @@ async fn test_own_epoch_owned_row_is_never_claimed_however_old() {
 }
 
 /// A backlog past the claim's bound is drained over consecutive ticks rather than truncated:
-/// each claim stamps the current epoch, which is what makes the next tick pick up where the
-/// last stopped without an `ORDER BY` to order the set (see
-/// `PublicDecryptRepository::claim_incomplete_requests`'s doc comment).
+/// each claim stamps the current epoch, so the next tick's predicate skips what this one took.
+/// The rows also come back oldest first, so a backlog drains in the order it arrived.
 #[tokio::test]
 async fn test_a_backlog_larger_than_the_batch_drains_over_ticks() {
     let setup = RepoTestSetup::new().await;
@@ -355,7 +363,7 @@ async fn test_a_backlog_larger_than_the_batch_drains_over_ticks() {
             .await;
     }
 
-    let mut claimed_total = 0usize;
+    let mut claimed_ids: Vec<i32> = Vec::new();
     let mut ticks = 0usize;
     loop {
         let claimed = repo
@@ -370,14 +378,24 @@ async fn test_a_backlog_larger_than_the_batch_drains_over_ticks() {
             "a tick must never claim more than its bound (got {})",
             claimed.len()
         );
-        claimed_total += claimed.len();
+        for row in &claimed {
+            claimed_ids.push(setup.row_id(&row.int_job_id).await);
+        }
         ticks += 1;
         assert!(ticks <= BACKLOG, "the drain must terminate");
     }
 
     assert_eq!(
-        claimed_total, BACKLOG,
+        claimed_ids.len(),
+        BACKLOG,
         "every backlogged row must be claimed exactly once across the ticks"
+    );
+    let mut sorted = claimed_ids.clone();
+    sorted.sort_unstable();
+    assert_eq!(
+        claimed_ids, sorted,
+        "a backlog under one epoch must be claimed oldest first, across ticks as well as \
+         within one"
     );
     assert_eq!(
         ticks, 3,

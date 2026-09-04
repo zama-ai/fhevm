@@ -57,9 +57,6 @@ pub enum InputProofInsertResult {
 pub struct ClaimedRequest {
     pub int_job_id: Vec<u8>,
     pub req: Value,
-    /// Post-claim, so `tx_in_flight` never appears here - the claim rewrites it to
-    /// `processing`.
-    pub status: ReqStatus,
 }
 
 pub struct InputProofRepository {
@@ -774,6 +771,7 @@ impl InputProofRepository {
                 FROM input_proof_req
                 WHERE req_status IN ('queued'::req_status, 'processing'::req_status, 'tx_in_flight'::req_status)
                   AND owner_epoch < $1
+                ORDER BY owner_epoch, id
                 LIMIT $2
                 FOR UPDATE SKIP LOCKED
             )
@@ -785,7 +783,7 @@ impl InputProofRepository {
                 END
             FROM claimed
             WHERE input_proof_req.id = claimed.id
-            RETURNING input_proof_req.int_job_id, input_proof_req.req, input_proof_req.req_status as "req_status!: ReqStatus"
+            RETURNING input_proof_req.int_job_id, input_proof_req.req
             "#,
             epoch,
             batch,
@@ -803,7 +801,6 @@ impl InputProofRepository {
             .map(|row| ClaimedRequest {
                 int_job_id: row.int_job_id,
                 req: row.req,
-                status: row.req_status,
             })
             .collect())
     }
