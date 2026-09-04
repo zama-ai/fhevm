@@ -67,9 +67,9 @@ Key inputs (all have sensible defaults — you rarely set more than a couple):
 **Topology**
 - `nb_kms_core` — number of KMS parties (default `4`).
 - `nb_coprocessor` — number of independent coprocessor **identities** (default
-  `1`). `> 1` is N-party consensus (separate wallets/DBs/S3), **not**
-  blue-green. `2` on a dispatch **is** RFC-021 blue-green (BCS+GCS on each
-  of the two parties). `3`/`5` stay N-party only. See `README.md`.
+  `1`). `2` is two-party consensus (one fleet each), **not** blue-green.
+  `2-blue-green` is RFC-021 (BCS+GCS on each of two parties). `3`/`5` stay
+  N-party only. See `README.md`.
 - `deploy_polygon` — also add a second Polygon Amoy (`80002`) host chain (default
   `false`). Fresh local anvil, reuses the ETH KMS key; roughly doubles the
   host-side stack. With `automated_tests` on it also runs a Polygon e2e suite.
