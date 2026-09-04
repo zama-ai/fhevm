@@ -303,7 +303,7 @@
       "name": "fhevm-hardhat-v3-workspace",
       "private": true,
       "member": false,
-      "note": "Installation root for the hardhat v3 generation (a CLUSTER): its own lockfile pins hardhat 3.x, hoisted once for every member — the same no-symlink singleton guarantee as ./hardhat/v2, one root per hardhat major. The fhevm-hardhat-template sibling joins its workspaces when it lands."
+      "note": "Installation root for the hardhat v3 generation (a CLUSTER): its own lockfile pins hardhat 3.x, hoisted once for every member — the same no-symlink singleton guarantee as ./hardhat/v2, one root per hardhat major."
     },
     "./hardhat/v3/plugin": {
       "kind": "dev",
@@ -337,6 +337,28 @@
           "reason": "A published package cannot depend on the private @fhevm/sdk-vendored-dev; the copy's sibling type import is rewritten to @fhevm/host-contracts-cleartext."
         }
       ]
+    },
+    "./hardhat/v3/fhevm-hardhat-template": {
+      "kind": "internal-consumer",
+      "type": "esm",
+      "browser": false,
+      "name": "@fhevm/hardhat-template-v3-dev",
+      "private": true,
+      "member": true,
+      "memberOf": "./hardhat/v3",
+      "dependencyGroup": "hardhat/v3",
+      "note": "Private workspace tooling for the Hardhat v3 template project. It is not published; mirror metadata will be added after the destination repository is decided."
+    },
+    "./hardhat/v3/fhevm-hardhat-template/pkg": {
+      "kind": "internal-consumer",
+      "type": "esm",
+      "browser": false,
+      "name": "fhevm-hardhat-template-v3-dev",
+      "private": true,
+      "member": true,
+      "memberOf": "./hardhat/v3",
+      "dependencyGroup": "hardhat/v3",
+      "note": "Private workspace-native Hardhat v3 template project. It is not published; mirror metadata will be added after the destination repository is decided."
     },
     "./hardhat/v3/e2e": {
       "kind": "internal-consumer",
