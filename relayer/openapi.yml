@@ -115,7 +115,7 @@ info:
   license:
     name: BSD-3-Clause-Clear
     url: https://opensource.org/licenses/BSD-3-Clause-Clear
-  version: 0.14.0
+  version: 0.14.2
 servers:
 - url: /
   description: Current server
@@ -470,6 +470,11 @@ paths:
       tags:
       - User Decrypt
       summary: Check user decryption status.
+      description: |-
+        Once the threshold is reached the relayer may keep returning 202 briefly
+        while it waits for a few extra shares (optimistic wait window). The
+        succeeded result therefore contains at least `threshold` shares and may
+        contain more, ordered by share index.
       operationId: user_decrypt_get_v2
       parameters:
       - name: job_id
@@ -717,6 +722,11 @@ paths:
       tags:
       - Delegated User Decrypt
       summary: Check delegated user decryption status.
+      description: |-
+        Once the threshold is reached the relayer may keep returning 202 briefly
+        while it waits for a few extra shares (optimistic wait window). The
+        succeeded result therefore contains at least `threshold` shares and may
+        contain more, ordered by share index.
       operationId: delegated_user_decrypt_get_v2
       parameters:
       - name: job_id
@@ -1973,7 +1983,7 @@ components:
           example: fhevm-relayer
         version:
           type: string
-          example: 0.14.0
+          example: 0.14.2
   securitySchemes:
     ApiKeyAuth:
       type: apiKey
