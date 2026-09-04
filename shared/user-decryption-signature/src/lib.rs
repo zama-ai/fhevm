@@ -70,9 +70,10 @@ pub const ERC1271_GAS_WARN_THRESHOLD: u64 = 100_000;
 pub enum Erc1271Accepted {
     /// `ecrecover` matched the claimed signer; no on-chain call was made.
     Ecrecover,
-    /// The ERC-1271 call returned the magic value within [`Erc1271GasBudget::warn_above`].
+    /// The call returned the magic value within [`Erc1271GasBudget::warn_above`].
     WithinWarnThreshold,
-    /// The ERC-1271 call needed more than [`Erc1271GasBudget::warn_above`].
+    /// The call did not succeed within [`Erc1271GasBudget::warn_above`], and returned the magic
+    /// value only once given the full [`Erc1271GasBudget::limit`].
     AboveWarnThreshold,
 }
 
@@ -222,10 +223,11 @@ async fn check_erc1271_signature<P: Provider>(
 ///    interpreted as "no code at `claimed_signer`" — a single RPC handles both the
 ///    smart-account path and the EOA-mismatch reject.
 ///
-/// The call is attempted with [`Erc1271GasBudget::warn_above`] first and retried with the full
-/// `limit` on any outcome that an exhausted budget can produce, so the configured cap is always
-/// offered before rejecting. A wallet that needed the retry after a reasonless revert is
-/// reported as [`Erc1271Accepted::AboveWarnThreshold`].
+/// The call is attempted with [`Erc1271GasBudget::warn_above`] first, and any failure is
+/// retried with the full `limit`, whose result is authoritative. The configured cap is
+/// therefore always offered before a rejection, and a wallet that only succeeds on the retry
+/// is reported as [`Erc1271Accepted::AboveWarnThreshold`]. The probe costs one extra call on
+/// every rejection; set `warn_above >= limit` to disable it.
 pub async fn verify_signature<P: Provider>(
     provider: &P,
     claimed_signer: Address,
@@ -243,19 +245,13 @@ pub async fn verify_signature<P: Provider>(
     let warn_above = gas.warn_above.min(gas.limit);
     match check_erc1271_signature(provider, claimed_signer, digest, signature, warn_above).await {
         Ok(()) => Ok(Erc1271Accepted::WithinWarnThreshold),
-        // Neither outcome proves the signature is bad, and an exhausted budget looks like
-        // either one depending on the node: a reasonless revert, or an RPC error carrying no
-        // revert data. Offer the full budget before deciding.
-        Err(first @ (Erc1271Error::EmptyRevert(_) | Erc1271Error::Transport(_)))
-            if warn_above < gas.limit =>
-        {
+        // A wallet short on gas can fail in any shape — wrong magic, a reasoned revert, a
+        // reasonless one — so no failure at the probe budget is evidence about the signature.
+        // Offer the full budget and let its result decide.
+        Err(_) if warn_above < gas.limit => {
             check_erc1271_signature(provider, claimed_signer, digest, signature, gas.limit)
                 .await
-                .map(|()| match first {
-                    // Only a revert is gas-shaped; a transport error says nothing about cost.
-                    Erc1271Error::EmptyRevert(_) => Erc1271Accepted::AboveWarnThreshold,
-                    _ => Erc1271Accepted::WithinWarnThreshold,
-                })
+                .map(|()| Erc1271Accepted::AboveWarnThreshold)
         }
         Err(e) => Err(e),
     }
@@ -513,34 +509,77 @@ mod tests {
         assert!(matches!(err, Erc1271Error::EmptyRevert(_)), "got {err:?}");
     }
 
-    #[tokio::test]
-    async fn erc1271_above_warn_threshold_retries_with_full_budget() {
-        // The wallet exhausts `warn_above` and succeeds within `limit`: accepted, and flagged
-        // so the caller can log how expensive it was.
+    /// Probe budget below the cap, so the fallback engages.
+    const HEADROOM_GAS: Erc1271GasBudget = Erc1271GasBudget {
+        limit: 250_000,
+        warn_above: 100_000,
+    };
+
+    /// The probe fails in some shape and the full budget returns magic: the wallet is accepted,
+    /// and reported as having needed more than the threshold.
+    async fn assert_accepted_after_fallback(push_probe_failure: impl Fn(&Asserter)) {
         let asserter = Asserter::new();
         let provider = mock_provider(asserter.clone());
-        let claimed = Address::from([0xDE; 20]);
-        let digest = B256::from([0u8; 32]);
         let sig = vec![0x11_u8; 65];
 
-        asserter.push_failure(revert_payload("0x"));
+        push_probe_failure(&asserter);
         let mut returndata = [0u8; 32];
         returndata[..4].copy_from_slice(&ERC1271_MAGIC_VALUE);
         asserter.push_success(&returndata);
 
         let accepted = verify_signature(
             &provider,
-            claimed,
-            digest,
+            Address::from([0xDE; 20]),
+            B256::from([0u8; 32]),
             &sig,
-            Erc1271GasBudget {
-                limit: 250_000,
-                warn_above: 100_000,
-            },
+            HEADROOM_GAS,
         )
         .await
-        .unwrap();
+        .expect("the full budget decides");
         assert_eq!(accepted, Erc1271Accepted::AboveWarnThreshold);
+    }
+
+    #[tokio::test]
+    async fn wrong_magic_at_the_probe_is_not_final() {
+        // A wallet that staticcalls a nested signer returns bytes4(0) when that call runs out
+        // of gas, rather than reverting.
+        assert_accepted_after_fallback(|a| a.push_success(&[0u8; 32])).await;
+    }
+
+    #[tokio::test]
+    async fn reasoned_revert_at_the_probe_is_not_final() {
+        // A wallet may check `gasleft()` and revert with its own message.
+        assert_accepted_after_fallback(|a| a.push_failure(revert_payload("0xdeadbeef"))).await;
+    }
+
+    #[tokio::test]
+    async fn reasonless_revert_at_the_probe_is_not_final() {
+        assert_accepted_after_fallback(|a| a.push_failure(revert_payload("0x"))).await;
+    }
+
+    #[tokio::test]
+    async fn transport_error_at_the_probe_is_not_final() {
+        assert_accepted_after_fallback(|a| a.push_failure_msg("rate limit exceeded")).await;
+    }
+
+    #[tokio::test]
+    async fn the_full_budget_result_is_authoritative() {
+        // Both attempts fail: the reported error is the second one, not the probe's.
+        let asserter = Asserter::new();
+        let provider = mock_provider(asserter.clone());
+        asserter.push_failure_msg("rate limit exceeded");
+        asserter.push_failure(revert_payload("0xdeadbeef"));
+
+        let err = verify_signature(
+            &provider,
+            Address::from([0xDE; 20]),
+            B256::from([0u8; 32]),
+            &vec![0x11_u8; 65],
+            HEADROOM_GAS,
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(err, Erc1271Error::Rejected(..)), "got {err:?}");
     }
 
     #[tokio::test]
@@ -558,50 +597,11 @@ mod tests {
         returndata[..4].copy_from_slice(&ERC1271_MAGIC_VALUE);
         asserter.push_success(&returndata);
 
-        verify_signature(
-            &provider,
-            claimed,
-            digest,
-            &sig,
-            Erc1271GasBudget {
-                limit: 250_000,
-                warn_above: 100_000,
-            },
-        )
-        .await
-        .unwrap();
+        verify_signature(&provider, claimed, digest, &sig, HEADROOM_GAS)
+            .await
+            .unwrap();
 
         assert_eq!(*gas_seen.lock().unwrap(), vec![100_000, 250_000]);
-    }
-
-    #[tokio::test]
-    async fn erc1271_transport_retry_makes_no_claim_about_gas() {
-        // The full budget is offered after a transport error too, but only a reasonless
-        // revert justifies reporting the wallet as expensive.
-        let asserter = Asserter::new();
-        let provider = mock_provider(asserter.clone());
-        let claimed = Address::from([0xDE; 20]);
-        let digest = B256::from([0u8; 32]);
-        let sig = vec![0x11_u8; 65];
-
-        asserter.push_failure_msg("rate limit exceeded");
-        let mut returndata = [0u8; 32];
-        returndata[..4].copy_from_slice(&ERC1271_MAGIC_VALUE);
-        asserter.push_success(&returndata);
-
-        let accepted = verify_signature(
-            &provider,
-            claimed,
-            digest,
-            &sig,
-            Erc1271GasBudget {
-                limit: 250_000,
-                warn_above: 100_000,
-            },
-        )
-        .await
-        .unwrap();
-        assert_eq!(accepted, Erc1271Accepted::WithinWarnThreshold);
     }
 
     #[tokio::test]
