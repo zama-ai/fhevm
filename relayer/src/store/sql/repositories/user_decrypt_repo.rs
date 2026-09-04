@@ -11,7 +11,9 @@ use crate::core::event::UserDecryptResponse;
 use crate::metrics;
 use crate::orchestrator::{DispatcherLock, UNCLAIMED_EPOCH};
 use crate::store::sql::models::req_status_enum_model::ReqStatus;
-use crate::store::sql::models::user_decrypt_req_model::{ConsensusReqState, UserDecryptReqData};
+use crate::store::sql::models::user_decrypt_req_model::{
+    ConsensusReqState, UserDecryptReqData, UserDecryptReqType,
+};
 use crate::store::sql::{
     client::PgClient,
     error::{SqlError, SqlResult},
@@ -1110,7 +1112,7 @@ impl UserDecryptRepository {
         epoch: i64,
         max_attempts: i32,
         batch: i64,
-    ) -> SqlResult<Vec<(Vec<u8>, Value, ReqStatus, i32)>> {
+    ) -> SqlResult<Vec<(Vec<u8>, Value, UserDecryptReqType, ReqStatus, i32)>> {
         let mut conn = self.pool.get_cron_connection().await?;
 
         let query_start = Instant::now();
@@ -1134,7 +1136,7 @@ impl UserDecryptRepository {
                 END
             FROM claimed
             WHERE user_decrypt_req.id = claimed.id
-            RETURNING user_decrypt_req.int_job_id, user_decrypt_req.req, user_decrypt_req.req_status as "req_status!: ReqStatus", user_decrypt_req.attempts
+            RETURNING user_decrypt_req.int_job_id, user_decrypt_req.req, user_decrypt_req.req_type as "req_type!: UserDecryptReqType", user_decrypt_req.req_status as "req_status!: ReqStatus", user_decrypt_req.attempts
             "#,
             epoch,
             max_attempts,
@@ -1150,7 +1152,15 @@ impl UserDecryptRepository {
 
         Ok(result?
             .into_iter()
-            .map(|row| (row.int_job_id, row.req, row.req_status, row.attempts))
+            .map(|row| {
+                (
+                    row.int_job_id,
+                    row.req,
+                    row.req_type,
+                    row.req_status,
+                    row.attempts,
+                )
+            })
             .collect())
     }
 

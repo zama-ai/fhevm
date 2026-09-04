@@ -89,6 +89,7 @@ async fn run_tick(
             .public_decrypt
             .claim_incomplete_requests(epoch, config.max_attempts, CLAIM_BATCH)
             .await?,
+        |(_, _, status, _)| *status,
     ) {
         if dispatch_recovered_public_decrypt(orchestrator, int_job_id, req_json, status).await {
             dispatched += 1;
@@ -101,13 +102,16 @@ async fn run_tick(
         .user_decrypt
         .fail_exhausted_attempts(epoch, config.max_attempts, EXHAUSTED_ATTEMPTS_ERR_REASON)
         .await?;
-    for (int_job_id, req_json, status, _attempts) in furthest_along_first(
+    for (int_job_id, req_json, req_type, status, _attempts) in furthest_along_first(
         repositories
             .user_decrypt
             .claim_incomplete_requests(epoch, config.max_attempts, CLAIM_BATCH)
             .await?,
+        |(_, _, _, status, _)| *status,
     ) {
-        if dispatch_recovered_user_decrypt(orchestrator, int_job_id, req_json, status).await {
+        if dispatch_recovered_user_decrypt(orchestrator, int_job_id, req_json, req_type, status)
+            .await
+        {
             dispatched += 1;
         } else {
             dispatch_failed += 1;
@@ -123,6 +127,7 @@ async fn run_tick(
             .input_proof
             .claim_incomplete_requests(epoch, config.max_attempts, CLAIM_BATCH)
             .await?,
+        |(_, _, status, _)| *status,
     ) {
         if dispatch_recovered_input_proof(orchestrator, int_job_id, req_json).await {
             dispatched += 1;
@@ -144,10 +149,8 @@ async fn run_tick(
 /// Orders within one [`CLAIM_BATCH`], not across a whole backlog: a `processing` row can fall
 /// into a later batch than a `queued` row. Only the dispatch order shifts - the fence, not the
 /// ordering, is what keeps a possible in-flight send safe.
-fn furthest_along_first(
-    mut rows: Vec<(Vec<u8>, serde_json::Value, ReqStatus, i32)>,
-) -> Vec<(Vec<u8>, serde_json::Value, ReqStatus, i32)> {
-    rows.sort_by_key(|(_, _, status, _)| match status {
+fn furthest_along_first<T>(mut rows: Vec<T>, status_of: impl Fn(&T) -> ReqStatus) -> Vec<T> {
+    rows.sort_by_key(|row| match status_of(row) {
         ReqStatus::Processing => 0,
         ReqStatus::Queued => 1,
         _ => 2,
