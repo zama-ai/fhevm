@@ -287,6 +287,52 @@ const rewriteComposePaths = (doc: ComposeDoc) => {
 const interpolateString = (value: string, vars: Record<string, string>) =>
   value.replace(/(?<!\$)\$\{([A-Z0-9_]+)\}/g, (match, key) => (key in vars ? vars[key] : match));
 
+/**
+ * Published GPU worker images are tagged `<revision>-cuda<version>-sm<arch>`.
+ * Keying off the tag keeps a CPU run untouched -- it never asks for a GPU it does
+ * not need -- and avoids threading a new flag or scenario field through.
+ */
+const GPU_WORKER_IMAGE = /-cuda[0-9][0-9.]*-sm[0-9]+$/;
+
+/**
+ * Gives a GPU worker image the driver and the devices, because neither arrives
+ * by default.
+ *
+ * Measured on a host whose docker default runtime is already `nvidia`: with
+ * NVIDIA_VISIBLE_DEVICES unset a container sees ZERO /dev/nvidia* devices, so a
+ * GPU image starts, serves, and computes nothing on the GPU. Setting it to `all`
+ * exposes six devices, and NVIDIA_DRIVER_CAPABILITIES=compute,utility injects
+ * libcuda.so.1.
+ *
+ * The device reservation is belt and braces: the env vars are what the nvidia
+ * runtime reads, the reservation is what makes compose ask for that runtime on a
+ * host where `runc` is the default. Relying on the host default is exactly how a
+ * GPU run becomes a CPU run without anyone noticing.
+ *
+ * NVIDIA_VISIBLE_DEVICES stays overridable so a caller can pin one card.
+ */
+const applyGpuImageRuntime = (service: Record<string, unknown>, envVars: Record<string, string>) => {
+  const image = typeof service.image === "string" ? service.image : "";
+  // The override keeps the image as `...:${COPROCESSOR_TFHE_WORKER_VERSION}` so
+  // compose resolves it at run time. Testing the rendered string alone would
+  // therefore match nothing and this wiring would silently do nothing, so
+  // resolve the placeholder against the same env compose will use.
+  const placeholder = /\$\{([A-Z0-9_]+)\}/.exec(image);
+  const tag = placeholder ? (envVars[placeholder[1]] ?? "") : image;
+  if (!GPU_WORKER_IMAGE.test(tag)) return;
+  const environment = normalizeEnvironment(service.environment);
+  service.environment = {
+    NVIDIA_VISIBLE_DEVICES: "all",
+    NVIDIA_DRIVER_CAPABILITIES: "compute,utility",
+    ...environment,
+  };
+  service.deploy = {
+    ...(typeof service.deploy === "object" && service.deploy !== null ? service.deploy : {}),
+    resources: { reservations: { devices: [{ driver: "nvidia", count: "all", capabilities: ["gpu"] }] } },
+  };
+};
+
+
 /** Normalizes compose environment syntax into a flat map before local overrides are merged. */
 const normalizeEnvironment = (value: unknown) => {
   if (Array.isArray(value)) {
@@ -343,6 +389,10 @@ const applyInstanceAdjustments = (
   override: Pick<ResolvedCoprocessorScenarioInstance, "env" | "args"> = { env: {}, args: {} },
   compatArgs: CompatPolicy["coprocessorArgs"] = {},
   compatDropFlags: CompatPolicy["coprocessorDropFlags"] = {},
+  // The image tag lives only in the resolved version bundle: the override keeps
+  // `...:${COPROCESSOR_*_VERSION}` so compose substitutes it at run time, which
+  // is why the GPU wiring cannot be keyed on the rendered image string.
+  versions: Record<string, string> = {},
 ) => {
   const next = interpolateComposeValue(structuredClone(service), envVars) as Record<string, unknown>;
   const serviceKey = baseServiceName.replace(/^coprocessor-/, "");
@@ -354,6 +404,7 @@ const applyInstanceAdjustments = (
   if (Object.keys(override.env).length) {
     next.environment = { ...normalizeEnvironment(next.environment), ...override.env };
   }
+  applyGpuImageRuntime(next, { ...envVars, ...versions });
   if (next.command) {
     const current = Array.isArray(next.command) ? next.command : [];
     const key = serviceKey as keyof CompatPolicy["coprocessorArgs"];
@@ -576,6 +627,7 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
         instance,
         locallyBuilt ? {} : argPolicy.coprocessorArgs,
         locallyBuilt ? {} : argPolicy.coprocessorDropFlags,
+        plan.versions.env,
       );
       adjusted.container_name = serviceName;
       applyCoprocessorSource(adjusted, name, instance, locallyBuilt, plan.e2ePublicRuntime);
@@ -626,6 +678,7 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
           gcsInstance,
           buildSpec ? {} : compat.coprocessorArgs,
           buildSpec ? {} : compat.coprocessorDropFlags,
+          plan.versions.env,
         );
         adjusted.container_name = serviceName;
         if (buildSpec) {
@@ -850,6 +903,7 @@ const buildExtraCoprocessorListenerOverride = async (
         instance,
         locallyBuilt ? {} : argPolicy.coprocessorArgs,
         locallyBuilt ? {} : argPolicy.coprocessorDropFlags,
+        plan.versions.env,
       );
       adjusted.container_name = cloneName;
       // Extra chains keep their env canonical id (default chain), so they don't decode proposals.
@@ -891,6 +945,7 @@ const buildExtraCoprocessorListenerOverride = async (
           gcsInstance,
           buildSpec ? {} : compat.coprocessorArgs,
           buildSpec ? {} : compat.coprocessorDropFlags,
+          plan.versions.env,
         );
         adjusted.container_name = cloneName;
         if (buildSpec) {

@@ -643,4 +643,58 @@ gcs:
       expect(gcsCommand.filter((arg) => arg.startsWith("--bucket-name-"))).toEqual([]);
     });
   });
+
+  test("a GPU-tagged worker image gets the driver and devices; a CPU-tagged one does not", async () => {
+    // The published GPU images are tagged <revision>-cuda<version>-sm<arch>.
+    // Pinning one worker to a GPU tag and leaving another on the CPU tag proves
+    // both halves in one render: the GPU service must be given the nvidia
+    // runtime's env and a device reservation, and the CPU service must be left
+    // alone -- a CPU run that demands a GPU cannot start on a host without one.
+    //
+    // Why this is needed at all: measured on a host whose docker default runtime
+    // is already `nvidia`, a container with NVIDIA_VISIBLE_DEVICES unset sees
+    // zero /dev/nvidia* devices. A GPU image would run, serve, and compute
+    // nothing on the GPU -- the silent failure this wiring exists to prevent.
+    const gpuState: State = {
+      ...state,
+      versions: {
+        ...state.versions,
+        env: {
+          ...state.versions.env,
+          COPROCESSOR_TFHE_WORKER_VERSION: "921b69113-cuda12.8-sm90",
+          COPROCESSOR_SNS_WORKER_VERSION: "921b69113",
+        },
+      },
+    };
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      await writeFile(envPath("coprocessor"), "\n");
+      await writeFile(envPath("coprocessor.1"), "\n");
+      await generateComposeOverrides(gpuState, stackSpecForState(gpuState));
+      const doc = YAML.parse(await readFile(composePath("coprocessor"), "utf8")) as {
+        services: Record<
+          string,
+          {
+            image?: string;
+            environment?: Record<string, string>;
+            deploy?: { resources?: { reservations?: { devices?: unknown[] } } };
+          }
+        >;
+      };
+
+      const gpu = doc.services["coprocessor-tfhe-worker"];
+      // The override deliberately keeps the ${...} placeholder; the GPU wiring is
+      // keyed on the resolved version, which is what compose will substitute.
+      expect(gpu?.image).toContain("${COPROCESSOR_TFHE_WORKER_VERSION}");
+      expect(gpu?.environment?.NVIDIA_VISIBLE_DEVICES).toBe("all");
+      expect(gpu?.environment?.NVIDIA_DRIVER_CAPABILITIES).toBe("compute,utility");
+      expect(gpu?.deploy?.resources?.reservations?.devices).toHaveLength(1);
+
+      const cpu = doc.services["coprocessor-sns-worker"];
+      expect(cpu?.image).toContain("${COPROCESSOR_SNS_WORKER_VERSION}");
+      expect(cpu?.environment?.NVIDIA_VISIBLE_DEVICES).toBeUndefined();
+      expect(cpu?.deploy).toBeUndefined();
+    });
+  });
+
 });

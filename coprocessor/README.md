@@ -300,6 +300,65 @@ When using the `aws-kms` signer type, standard `AWS_*` environment variables are
  - **AWS_SECRET_ACCESS_KEY** (i.e. password)
  - etc.
 
+## GPU-enabled images
+
+The three services that do FHE work — `tfhe-worker`, `sns-worker`, `zkproof-worker` — can also be published as GPU images, built by `.github/workflows/coprocessor-gpu-docker-build.yml`. The other services have no GPU path and stay CPU-only.
+
+**A GPU image targets one compute capability, and its tag says which.** Tags look like:
+
+```
+ghcr.io/zama-ai/fhevm/coprocessor/sns-worker:v0.15.0-cuda12.2-sm90
+                                             ^version ^toolkit  ^compute capability
+```
+
+That is not decoration. `tfhe-cuda-backend` picks its CUDA architectures from the device present when it compiles:
+
+| condition | architectures |
+| --- | --- |
+| `MULTI_ARCH` cargo feature | 75, 80, 86, 89 — no 90, so no H100 |
+| a device is visible | `native`, i.e. that device only |
+| no device | 70, behind a CMake warning |
+
+`docker build` exposes no GPU (buildx has no `--gpus`), so building these images the way the CPU images are built would silently produce `sm_70` binaries for a fleet of H100s. The workflow therefore compiles on a GPU runner, where CMake sees the device and builds `native`, then packages the result with `coprocessor/fhevm-engine/Dockerfile.gpu`. The capability is read off the device with `nvidia-smi` rather than inferred from the runner profile, so the tag cannot claim something the binary does not have.
+
+**Consequence for deployment:** an `sm_90` image runs on H100 and not on L40, and vice versa. Pick the tag that matches the hardware; there is deliberately no floating `:gpu` tag, because "some GPU" is exactly the ambiguity that would put an unrunnable image into a cluster.
+
+### The runner is not a free choice
+
+Instances are chosen with the same `provider::profile (hardware)` string the GPU benchmark job uses, parsed by `ci/parse_benchmark_profile.py`, which maps it onto a slab backend (`terraform` for Scaleway, `hyperstack` for Hyperstack) and refuses a profile that is not in `ci/slab.toml` before any instance is requested.
+
+The default is **`scaleway::single-h100 (H100-1-80G)`**: Scaleway H100s are far more available than Hyperstack's, and production is H100. Only single-GPU profiles are offered — a compile gains nothing from eight GPUs and would hold a scarce multi-GPU instance for the length of a tfhe-rs CUDA build.
+
+`hyperstack::l40` exists for L40 deployments and is **not** a substitute for an H100 build — the difference is functional, not just tuning:
+
+- CMake bakes the detected capability into a `CUDA_ARCH` compile definition, and `tfhe-cuda-backend` gates real code on it. `#if CUDA_ARCH >= 900` appears throughout the programmable bootstrap — the core FHE operation — including the thread-block-cluster (`tbc`) paths that only Hopper provides. Build on an L40 and `CUDA_ARCH=890`, so those paths are *compiled out*.
+- The cubins are architecture-specific anyway, so an L40-built image would not load on an H100 even if the code were identical.
+
+So an L40 build is a valid artifact for L40 hardware and a wrong one for anything else. The run summary says so explicitly whenever the capability is not 90.
+
+**Manual trigger only.** There is no tag or push trigger: a GPU build occupies a scarce GPU runner for the length of a tfhe-rs CUDA compile and produces an artifact valid for exactly one device class, which is not something to fire automatically.
+
+### What is in the image
+
+The runtime base is the same Chainguard pin the CPU images use, `cgr.dev/zama.ai/glibc-dynamic`, so a GPU worker is no more privileged and no larger a supply-chain surface than its CPU sibling. That base is distroless — no package manager, and no shell either — so the one library it lacks, `libcudart.so.12`, is **copied in** from the toolkit that compiled the binary. `libstdc++` and `libgcc_s` are not copied: the base already provides them, and adding an older copy alongside risks shadowing the newer one.
+
+Glibc works out in both directions, which is worth knowing because the two providers differ: the Scaleway image is Ubuntu 24.04 (glibc 2.39) and Hyperstack's is 22.04 (2.35), while the production base ships **glibc 2.43** — read out of a published CPU image. Either build therefore runs on it, and the exec check below is what would catch it if that ever stopped being true.
+
+Measured on a real build: **107 MB**, against 437 MB for an Ubuntu CUDA `-base` plus apt, and 3.65 GB for the CUDA `-runtime` flavor, which bundles cuBLAS, cuFFT and cuSPARSE that a worker never links.
+
+The images set **no `CMD`**. One Dockerfile serves three services, and a Dockerfile cannot interpolate a build argument into an exec-form `CMD`; the alternatives were a shell the distroless base does not have, or a second copy of a 55 MB binary. Nothing is lost, because the stack already names the binary explicitly for the CPU images too — `command: [sns_worker, --database-url=…]` in compose — and the binary keeps its own name on `PATH`.
+
+### Guards before anything is pushed
+
+- **The binaries must link `libcudart`.** A CPU build links no CUDA runtime at all, so this distinguishes a real GPU build from one where `--features gpu` was dropped somewhere in the chain.
+- **Each image must actually `exec`**, checked with `--version`, which needs no database and no device. This is what catches a glibc or missing-library mismatch between the build host and the runtime base — verified in both directions during development: exit 1 against a base whose glibc was too old, exit 0 against the Chainguard base.
+
+### Running it
+
+Dispatch only, with `push` defaulting to off so a run can be inspected before anything reaches the registry.
+
+For testing without cgr.dev credentials, the `runtime-base` input offers Chainguard's public `cgr.dev/chainguard/glibc-dynamic:latest`, which is the same image family as the production pin; the cgr.dev login step is skipped for it. No image from any other registry enters the pipeline: `libcudart` is copied out of the toolkit that compiled the binary, so the shipped runtime and the compiler are the same version by construction, and the CUDA release in the tag is read from `nvcc` rather than taken from an input that could disagree with it.
+
 ## Telemetry Style Guide (Tracing + OTEL)
 
 Use `tracing` spans as the default telemetry API.
