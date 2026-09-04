@@ -172,8 +172,8 @@ impl DbEventPicker {
                     LIMIT 1 FOR UPDATE SKIP LOCKED
                 ) AS req
                 WHERE prep_keygen_requests.prep_keygen_id = req.prep_keygen_id
-                RETURNING req.prep_keygen_id, params_type, extra_data, tx_hash, already_sent,
-                created_at, otlp_context
+                RETURNING req.prep_keygen_id, params_type, existing_key_id, extra_data, tx_hash,
+                already_sent, created_at, otlp_context
             ",
         )
         .fetch_all(&self.db_pool)
@@ -195,8 +195,8 @@ impl DbEventPicker {
                     LIMIT 1 FOR UPDATE SKIP LOCKED
                 ) AS req
                 WHERE keygen_requests.key_id = req.key_id
-                RETURNING prep_keygen_id, req.key_id, extra_data, tx_hash, already_sent,
-                created_at, otlp_context
+                RETURNING prep_keygen_id, req.key_id, existing_key_id, extra_data, tx_hash,
+                already_sent, created_at, otlp_context
             ",
         )
         .fetch_all(&self.db_pool)
