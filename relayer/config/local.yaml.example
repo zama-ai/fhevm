@@ -270,8 +270,10 @@ dispatcher_lock:
   # Bound on each query the lock runs on its own connection: try-lock, epoch mint, heartbeat,
   # unlock.
   query_timeout: "3s"
-  # Failed round trips in a row before the pod exits and a standby takes over.
-  exit_after_consecutive_failures: 3
+  # Failed heartbeats in a row before the holder exits and a standby takes over. At a 5s
+  # heartbeat this rides out about 100s, past an RDS Multi-AZ failover. A standby's failed
+  # try-locks are counted and logged, never an exit.
+  exit_after_consecutive_failures: 20
   # Bound on opening the lock's connection at startup.
   connect_timeout: "5s"
   # Postgres-side timeout that frees the lock when a holder's node dies without closing its

@@ -279,25 +279,6 @@ impl DispatcherLock {
                 .context("dispatcher lock: connect timed out")?
                 .context("dispatcher lock: failed to open dedicated connection")?;
 
-        // Session-scoped (`set_config`'s third argument is `is_local`), on this one connection
-        // and no pooled one. Bounds how long Postgres keeps a session whose client vanished
-        // without closing the socket - see the module docs' loss-detection section. Applies to
-        // a session idle outside a transaction, which this one always is between its queries.
-        let idle_session_timeout = format!("{}ms", config.idle_session_timeout.as_millis());
-        tokio::time::timeout(
-            config.query_timeout,
-            sqlx::query("SELECT set_config('idle_session_timeout', $1, false)")
-                .bind(&idle_session_timeout)
-                .execute(&mut conn),
-        )
-        .await
-        .context("dispatcher lock: setting idle_session_timeout timed out")?
-        .context("dispatcher lock: failed to set idle_session_timeout")?;
-        info!(
-            idle_session_timeout,
-            "Dispatcher lock session idle timeout applied"
-        );
-
         let schema: Option<String> = tokio::time::timeout(
             config.query_timeout,
             sqlx::query_scalar::<_, Option<String>>("SELECT current_schema()").fetch_one(&mut conn),
@@ -430,6 +411,34 @@ impl DispatcherLock {
         .await
         .context("epoch mint timed out")?
         .context("epoch mint query failed")
+    }
+
+    /// Bounds how long Postgres keeps this session after its client vanishes without closing
+    /// the socket - see the module docs' loss-detection section. Session-scoped
+    /// (`set_config`'s third argument is `is_local`) and applied to a session idle outside a
+    /// transaction, which this one always is between queries.
+    ///
+    /// Best-effort: a failure leaves the previous value in force, and the try-lock that just
+    /// succeeded proves the connection works, so there is nothing here to escalate.
+    async fn apply_idle_session_timeout(&self, conn: &mut PgConnection) {
+        let idle_session_timeout = format!("{}ms", self.config.idle_session_timeout.as_millis());
+        let applied = tokio::time::timeout(
+            self.config.query_timeout,
+            sqlx::query("SELECT set_config('idle_session_timeout', $1, false)")
+                .bind(&idle_session_timeout)
+                .execute(conn),
+        )
+        .await;
+        match applied {
+            Ok(Ok(_)) => info!(
+                idle_session_timeout,
+                "Dispatcher lock session idle timeout applied"
+            ),
+            Ok(Err(e)) => {
+                warn!(error = %e, "dispatcher lock: failed to set idle_session_timeout")
+            }
+            Err(_) => warn!("dispatcher lock: setting idle_session_timeout timed out"),
+        }
     }
 
     /// The predecessor's maximum unaware window: how long it may keep dispatching after its
@@ -567,6 +576,12 @@ impl DispatcherLock {
         match self.try_acquire(conn).await {
             Ok(true) => {
                 *consecutive_failures = 0;
+                // Applied here rather than at connect: startup runs `initialize_gateway`
+                // between the two, and a startup longer than the bound would have the session
+                // reaped before this first try-lock. Session-scoped and idempotent, so each
+                // acquisition re-applying it is free. From here the heartbeat keeps the
+                // session short of the bound.
+                self.apply_idle_session_timeout(conn).await;
                 // Best-effort fast path: mint the epoch now, on the same connection, rather
                 // than waiting for the first heartbeat. A failure here is not fatal - the row
                 // still says we hold the lock - so it just falls back to the retry in
@@ -589,10 +604,17 @@ impl DispatcherLock {
                 false
             }
             Err(e) => {
-                warn!(error = %e, "dispatcher lock: try-lock failed");
+                // Counted for the log and the metric, but never an exit: a standby holds
+                // nothing and drives nothing, and during a database outage there is no
+                // healthy peer for it to hand over to. Exiting it first, in every case,
+                // removes the pod that would otherwise take the lock once the database
+                // returns.
                 *consecutive_failures += 1;
-                let failures = *consecutive_failures;
-                self.exit_if_past_failure_bound(failures);
+                warn!(
+                    error = %e,
+                    consecutive_failures = *consecutive_failures,
+                    "dispatcher lock: try-lock failed"
+                );
                 false
             }
         }

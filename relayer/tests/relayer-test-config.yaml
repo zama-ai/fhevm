@@ -273,7 +273,7 @@ dispatcher_lock:
   standby_poll_interval: "2s"
   holder_heartbeat_interval: "500ms"
   query_timeout: "500ms"
-  exit_after_consecutive_failures: 3
+  exit_after_consecutive_failures: 20
   connect_timeout: "5s"
   # Must exceed both intervals above.
   idle_session_timeout: "60s"

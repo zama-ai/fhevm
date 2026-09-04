@@ -429,6 +429,19 @@ pub struct DispatcherLockConfig {
 
 impl DispatcherLockConfig {
     pub fn validate(&self) -> Result<(), AppConfigError> {
+        // Both intervals build a `tokio::time::interval`, which panics on a zero period. The
+        // panic lands in the `JoinSet` and is reaped only at shutdown, so the pod goes Ready
+        // and dispatches nothing.
+        if self.holder_heartbeat_interval.is_zero() {
+            return Err(AppConfigError::Config(
+                "dispatcher_lock.holder_heartbeat_interval must be greater than 0".to_string(),
+            ));
+        }
+        if self.standby_poll_interval.is_zero() {
+            return Err(AppConfigError::Config(
+                "dispatcher_lock.standby_poll_interval must be greater than 0".to_string(),
+            ));
+        }
         // A bound at or below the heartbeat reaps the session of a holder that is doing
         // everything right, every time it pauses between heartbeats - a permanent failover
         // loop, strictly worse than the dead-node window this setting exists to close.
@@ -1986,6 +1999,40 @@ mod tests {
                 "the error must name the interval it was compared against, got: {err}"
             );
         }
+    }
+
+    /// A zero interval panics the lock task at spawn, and the `JoinSet` holds that panic until
+    /// shutdown - so the pod reaches Ready and never dispatches.
+    #[test]
+    #[serial] // Settings::new reads the environment
+    fn test_dispatcher_lock_rejects_zero_intervals() {
+        let shipped = settings_new(ConfigBuilder::from_example().expect("example config"))
+            .expect("the example config must load")
+            .dispatcher_lock;
+
+        let err = DispatcherLockConfig {
+            holder_heartbeat_interval: Duration::ZERO,
+            ..shipped.clone()
+        }
+        .validate()
+        .expect_err("a zero heartbeat interval must be rejected")
+        .to_string();
+        assert!(
+            err.contains("holder_heartbeat_interval"),
+            "the error must name the interval, got: {err}"
+        );
+
+        let err = DispatcherLockConfig {
+            standby_poll_interval: Duration::ZERO,
+            ..shipped.clone()
+        }
+        .validate()
+        .expect_err("a zero standby poll interval must be rejected")
+        .to_string();
+        assert!(
+            err.contains("standby_poll_interval"),
+            "the error must name the interval, got: {err}"
+        );
     }
 
     /// The standby side of the same bound: reaped between its try-locks, a standby's connection
