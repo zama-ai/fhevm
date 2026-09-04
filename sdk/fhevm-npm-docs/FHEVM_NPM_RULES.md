@@ -91,6 +91,8 @@ workspace, changing resolution for every package under it before anyone reviews 
 
 **2.1.2 A dev owner stores its published payload in `pkg/`.** The dev-owner root is private and holds scripts, config
 and tests; `pkg/` holds only what ships. Packing the dev-owner root publishes the development package by mistake.
+In particular, a `published` package never declares `forge:fmt` or `forge:lint`, including when it is mirror-only:
+the Forge scripts and `foundry.toml` belong to the corresponding `dev` owner.
 
 ```jsonc
 // ✅ Delegates to the manifest-aware CLI: the payload comes from this owner's publishedRelPath, and
@@ -361,9 +363,10 @@ duplicate the pin in `.foundry-version` files.
 sdk/some-package/.foundry-version
 ```
 
-**4.1.3 Every Foundry project inherits the shared formatting policy.** Its `foundry.toml` declares `extends` for
-`sdk/foundry.base.toml`; `check-foundry` compares every project's effective `[fmt]` values with the shared file.
-Package-specific `[fmt].ignore` values are exempt.
+**4.1.3 Every Foundry project inherits the shared formatting policy.** A package declaring a non-empty `forge:fmt`
+script has a `foundry.toml` in the same directory. Every `foundry.toml` declares `[profile.default].extends` for
+`sdk/foundry.base.toml`; `check-foundry` verifies that ownership and compares every project's effective `[fmt]`
+values with the shared file. Package-specific `[fmt].ignore` values are exempt.
 
 ```toml
 # ✅ Package-local paths and compiler settings remain local; formatting policy is inherited.
