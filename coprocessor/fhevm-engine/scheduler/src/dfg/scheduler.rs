@@ -102,7 +102,20 @@ pub struct Scheduler<'a> {
     activity_heartbeat: HeartBeat,
 }
 
-type PartitionResult = (HashMap<Handle, Result<TaskResult>>, NodeIndex, usize);
+/// What a partition hands back: one entry per (output handle, transaction)
+/// pair, in production order.
+///
+/// A `Vec` keyed by the pair rather than a `HashMap` keyed by the handle, for
+/// two reasons that only appear when two transactions in one partition mint the
+/// SAME handle -- same block, same operation, same operands, so the same
+/// preimage. A handle-keyed map made those two collide: the second insert
+/// overwrote the first, so one transaction's result vanished and its row never
+/// completed. And an error carried no transaction id at all, so `add_output`
+/// fell back to the first producer and could stamp the wrong row, leaving the
+/// one that actually failed unstamped -- outside the retry and demotion path
+/// entirely.
+type PartitionOutcome = (Handle, Handle, Result<TaskResult>);
+type PartitionResult = (Vec<PartitionOutcome>, NodeIndex, usize);
 impl<'a> Scheduler<'a> {
     fn is_ready_task(&self, node: &ExecNode) -> bool {
         node.dependence_counter
@@ -290,11 +303,14 @@ impl<'a> Scheduler<'a> {
             let (sks, _cpk, _) = self.get_keys(DeviceSelection::Index(result.2))?;
             tfhe::set_server_key(sks);
             let task_index = result.1;
-            for (handle, node_result) in result.0.into_iter() {
+            for (handle, transaction_id, node_result) in result.0.into_iter() {
                 // Add computed allowed handles to the graph. These
                 // can be used as inputs and forwarded to subsequent,
-                // dependent transactions
-                self.graph.add_output(&handle, node_result, &self.edges)?;
+                // dependent transactions. The transaction travels with the
+                // handle: two transactions can mint the same one, and the
+                // graph has to attribute this outcome to the right producer.
+                self.graph
+                    .add_output(&handle, &transaction_id, node_result, &self.edges)?;
             }
             for edge in task_dependences.edges_directed(task_index, Direction::Outgoing) {
                 let dependent_task_index = edge.target();
@@ -431,7 +447,15 @@ fn execute_partition(
     // Memoization is observationally transparent — Decompress(cmp(h)) is
     // deterministic, so a hit and a miss yield the same value.
     let mut boundary_cache: HashMap<Handle, SupportedFheCiphertexts> = HashMap::new();
-    let mut res: HashMap<Handle, Result<TaskResult>> = HashMap::with_capacity(transactions.len());
+    // Two channels, because they answer different questions. `outputs` resolves a
+    // later transaction's input from an earlier one's output in this partition,
+    // where the handle IS the identity -- ct(h) is the same value whichever
+    // transaction minted it, which is the same memo argument as
+    // `boundary_cache` above. `reported` is what the graph is told, and there
+    // the transaction matters: the same handle from two transactions is two
+    // rows, two stamps and two verdicts.
+    let mut outputs: HashMap<Handle, TaskResult> = HashMap::with_capacity(transactions.len());
+    let mut reported: Vec<PartitionOutcome> = Vec::with_capacity(transactions.len());
     // Traverse transactions within the partition. The transactions
     // are topologically sorted so the order is executable
     'tx: for (ref mut dfg, ref mut tx_inputs, tid, _cid) in transactions {
@@ -443,19 +467,24 @@ fn execute_partition(
         // this transaction and possibly more downstream.
         for (h, i) in tx_inputs.iter_mut() {
             if i.is_none() {
-                let Some(Ok(ct)) = res.get(h) else {
-                    warn!(target: "scheduler", {transaction_id = ?hex::encode(tid) },
+                let Some(ct) = outputs.get(h) else {
+                    warn!(target: "scheduler", {transaction_id = ?hex::encode(&tid) },
 		       "Missing input to compute transaction - skipping");
                     for nidx in dfg.graph.node_identifiers() {
                         let Some(node) = dfg.graph.node_weight_mut(nidx) else {
                             error!(target: "scheduler", {index = ?nidx.index() }, "Wrong dataflow graph index");
                             continue;
                         };
-                        if node.is_allowed {
-                            res.insert(
+                        // `is_owned`, matching the bubbled-error arm below:
+                        // an internal producer under our lease has a row of
+                        // ours to stamp, and gating on allowance dropped its
+                        // verdict on the floor.
+                        if node.is_owned {
+                            reported.push((
                                 node.result_handle.clone(),
+                                tid.clone(),
                                 Err(SchedulerError::MissingInputs.into()),
-                            );
+                            ));
                         }
                     }
                     continue 'tx;
@@ -483,11 +512,12 @@ fn execute_partition(
                     error!(target: "scheduler", {index = ?nidx.index() }, "Wrong dataflow graph index");
                     continue;
                 };
-                if node.is_allowed {
-                    res.insert(
+                if node.is_owned {
+                    reported.push((
                         node.result_handle.clone(),
+                        tid.clone(),
                         Err(SchedulerError::CyclicDependence.into()),
-                    );
+                    ));
                 }
             }
             continue 'tx;
@@ -562,14 +592,13 @@ fn execute_partition(
                             let forwarded = if is_allowed {
                                 match compress_output(&working, &tid, opcode) {
                                     Ok(compressed_ct) => {
-                                        res.insert(
-                                            handle,
-                                            Ok(TaskResult {
-                                                compressed_ct,
-                                                is_allowed,
-                                                transaction_id: tid.clone(),
-                                            }),
-                                        );
+                                        let task_result = TaskResult {
+                                            compressed_ct,
+                                            is_allowed,
+                                            transaction_id: tid.clone(),
+                                        };
+                                        outputs.insert(handle.clone(), task_result.clone());
+                                        reported.push((handle, tid.clone(), Ok(task_result)));
                                         Some(working)
                                     }
                                     Err(e) => {
@@ -578,7 +607,7 @@ fn execute_partition(
                                         // downstream ops fail as missing
                                         // inputs instead of computing results
                                         // destined to be discarded.
-                                        res.insert(handle, Err(e));
+                                        reported.push((handle, tid.clone(), Err(e)));
                                         None
                                     }
                                 }
@@ -599,7 +628,7 @@ fn execute_partition(
                             }
                         }
                         Err(e) => {
-                            res.insert(handle, Err(e));
+                            reported.push((handle, tid.clone(), Err(e)));
                         }
                     }
                 }
@@ -623,7 +652,7 @@ fn execute_partition(
                     // recompute-only producer for this chain and its verdicts
                     // belong to the chain that owns it.
                     if node.is_owned {
-                        res.insert(node.result_handle.clone(), Err(e));
+                        reported.push((node.result_handle.clone(), tid.clone(), Err(e)));
                     }
                 }
             }
@@ -651,7 +680,7 @@ fn execute_partition(
     // partition on the same streams, in order; (3) buffer frees are
     // stream-ordered; (4) the GPU memory reservations already release at op
     // return, so the sync never extended that accounting.
-    (res, task_id, gpu_idx)
+    (reported, task_id, gpu_idx)
 }
 
 #[allow(clippy::too_many_arguments)]

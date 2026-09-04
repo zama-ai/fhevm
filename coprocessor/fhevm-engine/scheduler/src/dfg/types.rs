@@ -7,6 +7,7 @@ pub struct CompressedCiphertext {
     pub ct_bytes: Vec<u8>,
 }
 
+#[derive(Clone)]
 pub struct TaskResult {
     pub compressed_ct: CompressedCiphertext,
     pub is_allowed: bool,

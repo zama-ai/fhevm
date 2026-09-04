@@ -471,6 +471,7 @@ impl DFComponentGraph {
     pub fn add_output(
         &mut self,
         handle: &[u8],
+        transaction_id: &[u8],
         result: Result<TaskResult>,
         edges: &Dag<(), ComponentEdge>,
     ) -> Result<()> {
@@ -479,14 +480,24 @@ impl DFComponentGraph {
                 error!(target: "scheduler", { output_handle = ?hex::encode(handle) },
 		       "Missing producer for handle");
             } else {
+                // Attribute to the producer whose TRANSACTION this outcome
+                // belongs to, success or failure alike. Only the success arm
+                // used to do this, from `TaskResult.transaction_id`; an error
+                // carried no identity, so it fell through to `producer[0]` --
+                // an arbitrary one of the colliding transactions. That stamped
+                // a row belonging to another transaction (possibly one on a
+                // chain this worker does not even own) and left the row that
+                // actually failed unstamped, so it never accrued a retry count
+                // and never reached demotion.
+                //
+                // The fallback remains for the single-producer case, which is
+                // every handle that is not a same-block collision.
                 let mut prod_idx = producer[0].0;
-                if let Ok(ref result) = result {
-                    if let Some((pid, _)) = producer
-                        .iter()
-                        .find(|(_, tid)| *tid == result.transaction_id)
-                    {
-                        prod_idx = *pid;
-                    }
+                if let Some((pid, _)) = producer
+                    .iter()
+                    .find(|(_, tid)| tid.as_slice() == transaction_id)
+                {
+                    prod_idx = *pid;
                 }
                 let mut save_result = true;
                 if let Ok(ref result) = result {
@@ -857,6 +868,92 @@ mod tests {
             is_allowed,
             is_owned: true,
         }
+    }
+
+    /// An error must be attributed to the transaction that produced it, even
+    /// when another transaction mints the same handle.
+    ///
+    /// Two transactions in one block performing the same operation on the same
+    /// operands share a handle preimage, so they mint the SAME handle -- the
+    /// reason `produced` maps a handle to a LIST of producers. Successes were
+    /// already disambiguated through `TaskResult.transaction_id`; errors
+    /// carried no identity and fell through to `producer[0]`, an arbitrary one
+    /// of the two. That stamped a row belonging to the other transaction and
+    /// left the one that actually failed unstamped, so it never accrued a retry
+    /// count and never reached demotion.
+    #[test]
+    fn an_error_is_attributed_to_the_transaction_that_raised_it() {
+        let tx_one = handle(0xA1);
+        let tx_two = handle(0xB1);
+        let colliding = handle(0x01);
+        let boundary = handle(0xA0);
+
+        let mut nodes = vec![];
+        for tid in [&tx_one, &tx_two] {
+            let (mut components, _) = build_component_nodes(
+                vec![op(
+                    0x01,
+                    DFGTaskInput::BoundaryDependence(boundary.clone()),
+                    true,
+                )],
+                tid,
+            )
+            .expect("valid transaction graph");
+            nodes.append(&mut components);
+        }
+        let mut graph = DFComponentGraph::default();
+        graph.build(&mut nodes).expect("component graph");
+        assert_eq!(
+            graph.produced.get(&colliding).map(Vec::len),
+            Some(2),
+            "the fixture must actually produce one handle from two \
+             transactions, or this proves nothing"
+        );
+
+        // Blame whichever producer is NOT first in the list, because
+        // `producer[0]` is exactly the old fallback: attributing to the first
+        // one would pass under the bug as well as under the fix. `build` pops
+        // its input, so the list order is not the fixture's order -- read it
+        // rather than assume it.
+        let producers = graph.produced.get(&colliding).expect("producers").clone();
+        let first_tid = producers[0].1.clone();
+        let victim = producers
+            .iter()
+            .map(|(_, tid)| tid.clone())
+            .find(|tid| *tid != first_tid)
+            .expect("two distinct producing transactions");
+
+        // An edge-only view with one node per component, as the scheduler
+        // passes; no edges, since neither transaction depends on the other.
+        let mut edges: Dag<(), ComponentEdge> = Dag::new();
+        for _ in 0..graph.graph.node_count() {
+            edges.add_node(());
+        }
+
+        graph
+            .add_output(
+                &colliding,
+                &victim,
+                Err(SchedulerError::ExecutionPanic("device fault".into()).into()),
+                &edges,
+            )
+            .expect("add_output");
+
+        let attributed: Vec<_> = graph
+            .get_results()
+            .into_iter()
+            .filter(|r| r.handle == colliding && r.compressed_ct.is_err())
+            .map(|r| r.transaction_id)
+            .collect();
+        assert!(
+            attributed.contains(&victim),
+            "the failing transaction must be stamped; got {attributed:?}"
+        );
+        assert!(
+            !attributed.contains(&first_tid),
+            "the other transaction's row must not be stamped for a failure it \
+             did not have; got {attributed:?}"
+        );
     }
 
     /// The transaction is the materialization boundary: a fan-out graph that
