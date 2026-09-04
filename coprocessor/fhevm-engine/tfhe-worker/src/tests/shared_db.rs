@@ -1,3 +1,4 @@
+use fhevm_engine_common::bootstrap_versioning::bootstrap_versioning;
 use fhevm_engine_common::utils::DatabaseURL;
 use sqlx::postgres::PgConnectOptions;
 use sqlx::{ConnectOptions, Connection, Executor, PgConnection};
@@ -257,19 +258,37 @@ async fn seed_template_locked(
             .connect(&template_url)
             .await?;
 
+        // Seed a test database
+        if !matches!(mode, ImportMode::SkipMigrations) {
+            sqlx::query(
+                "CREATE TABLE public._fhevm_versioning_bootstrap (
+                    singleton BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (singleton),
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )",
+            )
+            .execute(&pool)
+            .await?;
+            sqlx::query("INSERT INTO public._fhevm_versioning_bootstrap (singleton) VALUES (TRUE)")
+                .execute(&pool)
+                .await?;
+        }
+
         match mode {
             ImportMode::SkipMigrations => {}
             ImportMode::None => {
                 sqlx::migrate!("./migrations").run(&pool).await?;
+                bootstrap_versioning(&pool).await?;
             }
             ImportMode::WithKeysNoSns => {
                 sqlx::migrate!("./migrations").run(&pool).await?;
+                bootstrap_versioning(&pool).await?;
                 setup_test_key(&pool, false)
                     .await
                     .map_err(|err| format!("setup_test_key: {err}"))?;
             }
             ImportMode::WithAllKeys => {
                 sqlx::migrate!("./migrations").run(&pool).await?;
+                bootstrap_versioning(&pool).await?;
                 setup_test_key(&pool, true)
                     .await
                     .map_err(|err| format!("setup_test_key: {err}"))?;
