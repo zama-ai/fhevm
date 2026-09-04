@@ -1337,6 +1337,8 @@ const dockerContainerHealth = async (
   };
 };
 
+/** Reads the whole log: the startup line this looks for sits near the top, and a threshold core
+ * logs enough MPC and gRPC traffic afterwards to push it out of any fixed tail. */
 const dockerLogContains = async (
   manifest: DemoManifest,
   name: string,
@@ -1344,7 +1346,7 @@ const dockerLogContains = async (
 ): Promise<boolean> => {
   const container = ownedContainer(manifest, name);
   if (container === undefined) return false;
-  const result = await run(["docker", "logs", "--tail", "500", container.id], {
+  const result = await run(["docker", "logs", container.id], {
     allowFailure: true,
     timeoutMs: 5_000,
   });
