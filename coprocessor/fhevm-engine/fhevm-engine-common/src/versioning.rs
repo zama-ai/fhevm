@@ -224,6 +224,86 @@ pub struct StaleStackError {
     pub live: String,
 }
 
+/// Fail unless the GCS schema exists.
+///
+/// Green services pin `search_path` to that schema, and Postgres ignores it when
+/// missing, so writes would go to `public`. The upgrade-controller creates it at
+/// startup; a green service that starts first must wait. Call this before
+/// opening a pool.
+pub async fn assert_gcs_schema_exists(database_url: &str) -> anyhow::Result<()> {
+    let options = crate::database::connect_options_for_database_url(
+        &crate::utils::DatabaseURL::from(database_url),
+    )
+    .await?;
+    let mut conn = PgConnection::connect_with(&options).await?;
+    let exists: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname = $1)")
+            .bind(crate::database::GCS_SCHEMA)
+            .fetch_one(&mut conn)
+            .await?;
+    let _ = conn.close().await;
+    anyhow::ensure!(
+        exists,
+        "schema {} does not exist yet; waiting for the upgrade-controller to create it",
+        crate::database::GCS_SCHEMA
+    );
+    Ok(())
+}
+
+/// How long a green service waits for the upgrade-controller to create the schema.
+///
+/// Long enough that a slow or misconfigured controller can be fixed while the
+/// services keep waiting, short enough that a deploy that will never work still
+/// gives up instead of sitting there.
+pub const GCS_SCHEMA_WAIT: Duration = Duration::from_secs(3600);
+
+/// Wait for the GCS schema, then return.
+///
+/// Every green service starts alongside the upgrade-controller that creates the
+/// schema, so losing that race is normal and must not end the process. Give up
+/// only after `timeout`, which means the controller never got there.
+pub async fn wait_for_gcs_schema(database_url: &str, timeout: Duration) -> anyhow::Result<()> {
+    const POLL: Duration = Duration::from_secs(2);
+    const LOG_EVERY: Duration = Duration::from_secs(30);
+    let mut waited = Duration::ZERO;
+    let mut next_log = Duration::ZERO;
+    loop {
+        match assert_gcs_schema_exists(database_url).await {
+            Ok(()) => {
+                if !waited.is_zero() {
+                    info!(
+                        schema = crate::database::GCS_SCHEMA,
+                        waited_secs = waited.as_secs(),
+                        "GCS schema is present; continuing startup"
+                    );
+                }
+                return Ok(());
+            }
+            Err(err) if waited >= timeout => {
+                return Err(err.context(format!(
+                    "schema {} still missing after {}s",
+                    crate::database::GCS_SCHEMA,
+                    timeout.as_secs()
+                )))
+            }
+            Err(err) => {
+                if waited >= next_log {
+                    warn!(
+                        schema = crate::database::GCS_SCHEMA,
+                        waited_secs = waited.as_secs(),
+                        timeout_secs = timeout.as_secs(),
+                        error = %err,
+                        "waiting for the upgrade-controller to create the GCS schema"
+                    );
+                    next_log = waited + LOG_EVERY;
+                }
+                tokio::time::sleep(POLL).await;
+                waited += POLL;
+            }
+        }
+    }
+}
+
 /// True if `err` is Postgres `undefined_table` (SQLSTATE 42P01) — i.e. the
 /// `versioning` table does not exist yet (migrations not applied).
 fn is_undefined_table(err: &sqlx::Error) -> bool {
