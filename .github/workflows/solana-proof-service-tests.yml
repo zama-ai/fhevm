@@ -57,34 +57,6 @@ jobs:
     permissions:
       contents: 'read'
     runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          persist-credentials: 'false'
-
-      - name: Setup Rust toolchain file
-        run: cp solana-proof-service/rust-toolchain.toml .
-
-      - name: Rust setup
-        uses: dsherret/rust-toolchain-file@3551321aa44dd44a0393eb3b6bdfbc5d25ecf621 # v1
-
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
-        with:
-          workspaces: solana-proof-service
-          key: rust-test-solana-proof-service
-
-      - name: Tests
-        working-directory: solana-proof-service
-        run: make test
-
-  test-db:
-    name: solana-proof-service-tests/test-db
-    needs: check-changes
-    if: ${{ needs.check-changes.outputs.rust-changed == 'true' }}
-    permissions:
-      contents: 'read'
-    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
     services:
       postgres:
         # Match relayer-tests pin.
@@ -131,6 +103,40 @@ jobs:
           workspaces: solana-proof-service
           key: rust-test-db-solana-proof-service
 
-      - name: Postgres integration tests
+      - name: Unit tests, then the Postgres integration tests
         working-directory: solana-proof-service
-        run: make test-db
+        run: |
+          make test
+          make test-db
+
+  fmt-clippy:
+    name: solana-proof-service-tests/fmt-clippy
+    needs: check-changes
+    if: ${{ needs.check-changes.outputs.rust-changed == 'true' }}
+    permissions:
+      contents: 'read'
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: 'false'
+
+      - name: Setup Rust toolchain file
+        run: cp solana-proof-service/rust-toolchain.toml .
+
+      - name: Rust setup
+        uses: dsherret/rust-toolchain-file@3551321aa44dd44a0393eb3b6bdfbc5d25ecf621 # v1
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
+        with:
+          workspaces: solana-proof-service
+          key: rust-build-solana-proof-service
+
+      - name: Format
+        working-directory: solana-proof-service
+        run: make fmt
+
+      - name: Clippy
+        working-directory: solana-proof-service
+        run: make clippy

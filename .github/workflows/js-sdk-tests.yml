@@ -12,6 +12,10 @@ on:
       # The committed cross-implementation byte vectors the SDK's Solana user-decrypt
       # tests assert against: an edit to a vector alone must run its TS consumer.
       - "solana/test-fixtures/user-decrypt/**"
+      # The decryption-request budget parity test reads these three contracts at test time.
+      - "gateway-contracts/contracts/Decryption.sol"
+      - "gateway-contracts/contracts/shared/FheType.sol"
+      - "gateway-contracts/contracts/libraries/FHETypeBitSizes.sol"
   push:
     branches:
       - devex/js-sdk

@@ -9,11 +9,9 @@ name: solana-e2e
 # label greps (and the checker that policed them) have no successor because the failure mode is
 # structurally gone.
 #
-# Ordinary computation ingestion is Yellowstone-first: the coprocessor is fed by gRPC off-chain
-# reconstruction. Created-public lifecycle outputs also emit their narrow CPI event because their
-# public-leaf append is not reconstructible from the computation alone. The single-value `reconstruct` matrix is
-# kept so the job/artifact names keep their `-reconstruct` suffix; the side-stack setup
-# (test-suite/fhevm/src/solana/deploy.ts) no longer keys off it.
+# Computation ingestion is Yellowstone off-chain reconstruction: the coprocessor is fed by gRPC.
+# Created-public lifecycle outputs also emit their narrow CPI event because their public-leaf
+# append is not reconstructible from the computation alone.
 #
 # The lifecycle bring-up also deploys and seeds the confidential-vault demo (#1760). After the e2e
 # phases, the same job refreshes that still-owned boot:
@@ -54,9 +52,9 @@ concurrency:
 
 jobs:
   solana-e2e:
-    # Status-check consumers: this check was named solana-e2e/full-vertical-reconstruct until the
-    # bash vertical retired (fhevm-internal#1876).
-    name: solana-e2e/scenarios${{ matrix.reconstruct && '-reconstruct' || '' }}
+    # Status-check consumers: this check was named solana-e2e/scenarios-reconstruct (and before
+    # that solana-e2e/full-vertical-reconstruct) while an emit/RPC ingestion arm still existed.
+    name: solana-e2e/scenarios
     runs-on: runs-on=${{ github.run_id }}/runner=32cpu-linux-x64/volume=160gb
     # The e2e lane's own history: median successful runs ~50-53 min, observed successful tail up
     # to 72 min (run 29830123609). The demo phase adds ~2 min on the already-built stack. The
@@ -64,12 +62,6 @@ jobs:
     # rather than the bash-era 90: the token-vertical scenario (its own 20-min budget) landed
     # after the 72-min tail was measured.
     timeout-minutes: 120
-    strategy:
-      matrix:
-        # Single-value matrix: only the Yellowstone reconstruction arm remains (the emit/RPC arm
-        # was retired). Kept as a matrix so `${{ matrix.reconstruct }}` keeps the `-reconstruct`
-        # suffix on the job and artifact names.
-        reconstruct: [true]
     permissions:
       contents: "read" # checkout
       packages: "read" # pull repo-owned images from ghcr.io
@@ -279,91 +271,10 @@ jobs:
         if: ${{ failure() }}
         uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
         with:
-          # Distinct per matrix leg: upload-artifact v4 requires unique names within a run.
-          name: solana-e2e${{ matrix.reconstruct && '-reconstruct' || '' }}-logs
+          name: solana-e2e-logs
           path: /tmp/solana-e2e-logs
           retention-days: 7
 
       - name: Tear down the stack
         if: ${{ always() }}
         run: bun run demo down
-
-  # The worker boundary vertical (fhevm-internal#1876): tfhe-worker's solana_vertical test drives
-  # a LiteSVM confidential transfer through off-chain reconstruction into the REAL TFHE worker
-  # against a disposable migrated Postgres (testcontainers), then decrypts the computed
-  # ciphertexts. The scenario job above proves the same arc on the live stack; only this test pins
-  # the reconstruct-to-worker seam against real ciphertexts with no stack in between. It started
-  # life as solana_poc.rs, #[ignore]d and manual-only — this job is what finally runs it on every PR.
-  worker-vertical:
-    name: solana-e2e/worker-vertical
-    runs-on: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/volume=80gb
-    # Cold-cache ceiling: the tfhe-worker build dominates; the SBF builds and the test itself
-    # (six real euint64 ops) are minutes.
-    timeout-minutes: 90
-    permissions:
-      contents: "read" # checkout (incl. the LFS test keys the harness loads into Postgres)
-    steps:
-      - name: Checkout (with the LFS test keys)
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          persist-credentials: "false"
-          lfs: true
-
-      - name: Checkout LFS objects
-        run: git lfs checkout
-
-      - name: Setup Rust toolchain file
-        run: cp coprocessor/fhevm-engine/rust-toolchain.toml .
-
-      - uses: dsherret/rust-toolchain-file@3551321aa44dd44a0393eb3b6bdfbc5d25ecf621 # v1
-
-      - name: Install build dependencies (protoc for prost-build; mold for link speed)
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler mold clang
-
-      - name: Setup Solana + Anchor toolchain
-        # Same pins and retry shape as the scenario job above: agave from the anza installer,
-        # anchor-cli from the prebuilt release binary (no crates.io compile).
-        run: |
-          set -euo pipefail
-          retry() { local n; for n in 1 2 3; do "$@" && return 0; echo "attempt $n failed; retrying in 5s" >&2; sleep 5; done; return 1; }
-          retry curl -sSfL https://release.anza.xyz/v4.1.2/install -o /tmp/anza-install.sh
-          retry sh /tmp/anza-install.sh
-          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
-          mkdir -p "$HOME/.cargo/bin"
-          retry curl -sSfL https://github.com/solana-foundation/anchor/releases/download/v1.1.2/anchor-1.1.2-x86_64-unknown-linux-gnu -o "$HOME/.cargo/bin/anchor"
-          chmod +x "$HOME/.cargo/bin/anchor"
-          anchor --version
-
-      - name: Cache cargo
-        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            coprocessor/fhevm-engine/target
-          key: ${{ runner.os }}-cargo-solana-worker-vertical-${{ hashFiles('coprocessor/fhevm-engine/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-solana-worker-vertical-
-
-      - name: Build the programs the vertical loads into LiteSVM
-        # Per-crate builds, same shape as deploy-demo-programs.sh (--ignore-keys: keep the
-        # declare_id!-pinned ids; --no-idl: the vertical only needs the .so artifacts).
-        working-directory: solana
-        run: |
-          anchor build --ignore-keys --no-idl -p zama_host
-          anchor build --ignore-keys --no-idl -p confidential_token
-
-      - name: Run the worker vertical (real TFHE worker + disposable Postgres)
-        working-directory: coprocessor/fhevm-engine
-        env:
-          SQLX_OFFLINE: "true"
-          # mold only for this native build — job-wide RUSTFLAGS leaked into the anchor/SBF
-          # build above, where rust-lld rejects `-fuse-ld=mold` (measured, not hypothetical).
-          CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
-          RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
-        # The trailing grep is the vacuous-filter guard (same lesson as solana-tests'
-        # host-listener-reconstruct job): `cargo test` exits 0 when a renamed filter matches
-        # nothing, so the job must fail unless exactly the one expected test ran and passed.
-        run: |
-          set -o pipefail
-          cargo test -p tfhe-worker tests::solana_vertical -- --ignored --nocapture | tee /tmp/worker-vertical.log
-          grep -E "test result: ok\. 1 passed" /tmp/worker-vertical.log
