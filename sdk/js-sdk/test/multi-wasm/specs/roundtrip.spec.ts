@@ -10,7 +10,7 @@ const entries = selectMatrixEntries(matrix, {
   cdn: process.env.MULTI_WASM_CDN,
 });
 const chainName = process.env.CHAIN ?? 'localstack';
-const { rpcUrl, mnemonic, fheTestAddress } = loadLocalstackChainDefaults(chainName);
+const { rpcUrl, mnemonic, fheTestAddress, fheEncryptionKeyTrust } = loadLocalstackChainDefaults(chainName);
 
 const ENTRY_PROGRESS_MILESTONES: readonly { readonly progress: number; readonly pattern: RegExp }[] = [
   { progress: 0.02, pattern: /^Matrix entry:/ },
@@ -54,6 +54,10 @@ for (const [entryIndex, entry] of entries.entries()) {
       mnemonic,
       fheTestAddress,
     });
+    if (fheEncryptionKeyTrust !== undefined) {
+      query.set('publicKeyDigest', fheEncryptionKeyTrust.publicKeyDigest);
+      query.set('crsDigest', fheEncryptionKeyTrust.crsDigest);
+    }
 
     await page.goto(`/test/multi-wasm/pages/roundtrip.html?${query.toString()}`);
 

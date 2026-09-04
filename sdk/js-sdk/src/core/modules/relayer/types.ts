@@ -67,6 +67,7 @@ export type FetchFheEncryptionKeyBytesParameters = {
 export type FetchFheEncryptionKeyBytesReturnType = FheEncryptionKeyBytes;
 
 export type FetchFheEncryptionKeyBytesModuleFunction = {
+  /** Raw relayer fetch; returned bytes have not passed the client trust policy. */
   fetchFheEncryptionKeyBytes(
     relayerClient: RelayerClient,
     parameters: FetchFheEncryptionKeyBytesParameters,

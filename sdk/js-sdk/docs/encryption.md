@@ -39,6 +39,10 @@ encrypted.encryptedValue; // a single EncryptedValue
 encrypted.inputProof; // BytesHex
 ```
 
+The SDK authenticates relayer key and CRS bytes against the configured trust
+source before cache admission and native deserialization. Pinned key bytes do
+not contact the relayer. See [Security](security.md#encryption-key-material).
+
 ## Binding: contract and user
 
 Both parameters are mandatory and both are cryptographically bound into the
@@ -193,4 +197,3 @@ offline and submit it later), use the standalone actions `generateZkProof` (from
 - [Actions](actions.md) — the standalone `generateZkProof` (encrypt) / `fetchEncryptedValues` (base) functions.
 - [Error handling](error-handling.md) — `EncryptionError`, `ZkProofError`, `TooManyHandlesError`.
 ```
-

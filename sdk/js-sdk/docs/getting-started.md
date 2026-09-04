@@ -96,7 +96,14 @@ you encrypt or decrypt, resolve the protocol versions and load the WASM once:
 await client.ready; // alias for `await client.init()`
 ```
 
-`ready` is idempotent — awaiting it again returns the same cached promise. If you
+`ready` is idempotent — awaiting it again returns the same cached promise. For
+chain presets that configure KMSGeneration, initialization validates the RPC
+chain and authenticates relayer key material against active on-chain key/CRS
+digests. Chains without that address fail closed before real encryption unless
+explicit trust or trusted pinned bytes are supplied; see
+[Security](security.md#encryption-key-material).
+
+If you
 only need to encrypt or only need to decrypt, use a lighter factory to download
 less WASM — see [Clients](clients.md).
 
@@ -226,4 +233,3 @@ npx tsx ./examples/node-ethers/test-run.ts
   browser headers.
 - [Migration](migration.md) — moving from `@zama-fhe/relayer-sdk`.
 ```
-

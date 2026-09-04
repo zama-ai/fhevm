@@ -1,67 +1,26 @@
-import type { RelayerKeyUrlOptions } from '../types/relayer.js';
 import type { WithEncrypt } from '../types/coreFhevmRuntime.js';
-import type { FhevmChain } from '../types/fhevmChain.js';
 import type { FheEncryptionKeyWasm } from '../types/fheEncryptionKey.js';
-import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
+import type { TfheVersion } from '../types/moduleVersions.js';
+import type { FheEncryptionKeyProvider, FheEncryptionKeyProviderParameters } from './FheEncryptionKeyProvider-p.js';
 import { deserializeFheEncryptionKey } from './deserializeFheEncryptionKey.js';
-import { globalFheEncryptionKeyCache } from './FheEncryptionKeyCache-p.js';
+import { globalFheEncryptionKeyWasmCache } from './FheEncryptionKeyCache-p.js';
+
+export type FheEncryptionKeyWasmContext = {
+  readonly runtime: WithEncrypt;
+  readonly tfheVersion: TfheVersion;
+  readonly fheEncryptionKeyProvider: FheEncryptionKeyProvider;
+};
 
 export async function fetchFheEncryptionKeyWasm(
-  context: {
-    readonly chain: FhevmChain;
-    readonly runtime: WithEncrypt;
-  },
-  parameters: {
-    readonly options?: RelayerKeyUrlOptions | undefined;
-    readonly ignoreCache?: boolean | undefined;
-    readonly fhevmContext: FhevmClientFrozenContext;
-  },
+  context: FheEncryptionKeyWasmContext,
+  parameters: FheEncryptionKeyProviderParameters,
 ): Promise<FheEncryptionKeyWasm> {
-  const relayerUrl = context.chain.fhevm.relayerUrl;
-  const runtime = context.runtime;
-  const logger = runtime.config.logger;
+  const bytes = await context.fheEncryptionKeyProvider.getAuthenticatedBytes(parameters);
 
-  // Ensure a bytes fetch is in-flight
-  globalFheEncryptionKeyCache.ensureBytes({
-    owner: runtime,
-    relayerUrl,
-    fetcher: async () => {
-      logger?.debug?.(
-        `Fetching FHE encryption key/CRS bytes from relayer "${relayerUrl}" (chainId=${context.chain.id}).`,
-      );
-      try {
-        const bytes = await runtime.relayer.fetchFheEncryptionKeyBytes(
-          { relayerUrl, chainId: context.chain.id },
-          parameters,
-        );
-        logger?.debug?.(`Fetched FHE encryption key/CRS bytes from relayer "${relayerUrl}".`);
-        return bytes;
-      } catch (e) {
-        logger?.error?.(`Failed to fetch FHE encryption key/CRS bytes from relayer "${relayerUrl}".`, e);
-        throw e;
-      }
-    },
-    metadata: { chainId: context.chain.id, relayerUrl },
+  return globalFheEncryptionKeyWasmCache.getOrCreate({
+    runtime: context.runtime,
+    tfheVersion: context.tfheVersion,
+    bytes,
+    deserialize: () => deserializeFheEncryptionKey(context, bytes),
   });
-
-  // Upgrade bytes → wasm (chains from pending bytes if still in-flight)
-  globalFheEncryptionKeyCache.ensureWasm({
-    owner: runtime,
-    relayerUrl,
-    deserializeFn: (bytes) =>
-      deserializeFheEncryptionKey(context, { keyBytes: bytes, fhevmContext: parameters.fhevmContext }),
-  });
-
-  const entry = globalFheEncryptionKeyCache.get(relayerUrl);
-  if (entry === undefined) {
-    throw new Error('Failed to fetch global FHE PKE params');
-  }
-
-  await entry.ready;
-
-  if (entry.resolvedKind !== 'wasm') {
-    throw new Error('Expected wasm params but got ' + JSON.stringify(entry.resolvedKind));
-  }
-
-  return entry.value as FheEncryptionKeyWasm;
 }

@@ -38,6 +38,7 @@ type FhevmChain = {
       readonly inputVerifier: ChainContract;
       readonly kmsVerifier: ChainContract;
       readonly protocolConfig: ChainContract | undefined;
+      readonly kmsGeneration?: ChainContract | undefined;
     };
     readonly relayerUrl: string;
     readonly gateway: {
@@ -63,6 +64,7 @@ type ChainContract = {
 | `fhevm.contracts.inputVerifier`         | Verifies encrypted inputs and their proofs.                 |
 | `fhevm.contracts.kmsVerifier`           | Holds the authorized KMS signer set and quorum threshold.   |
 | `fhevm.contracts.protocolConfig`        | Optional aggregate config contract; may be `undefined`.     |
+| `fhevm.contracts.kmsGeneration`         | Optional trust anchor for active encryption-key/CRS digests. |
 | `fhevm.relayerUrl`                       | The Relayer the SDK sends proof and decryption requests to. |
 | `fhevm.gateway.id`                       | The gateway rollup's chain id.                              |
 | `fhevm.gateway.contracts.decryption`     | Gateway decryption contract.                                 |
@@ -78,6 +80,7 @@ type ChainContract = {
 | ACL                      | `0xcA2E8f1F656CD25C01F05d0b243Ab1ecd4a8ffb6`   |
 | Input Verifier           | `0xCe0FC2e05CFff1B719EFF7169f7D80Af770c8EA2`   |
 | KMS Verifier             | `0x77627828a55156b04Ac0DC0eb30467f1a552BB03`   |
+| KMS Generation           | `0xf102cC9A9D2174630c394f5b7B7D63104E348daa`   |
 | Gateway decryption       | `0x0f6024a97684f7d90ddb0fAAD79cB15F2C888D24`   |
 | Gateway input verification | `0xcB1bB072f38bdAF0F328CdEf1Fc6eDa1DF029287` |
 
@@ -91,6 +94,7 @@ Gateway chain id: `261131`.
 | ACL                      | `0xf0Ffdc93b7E186bC2f8CB3dAA75D86d1930A433D`   |
 | Input Verifier           | `0xBBC1fFCdc7C316aAAd72E807D9b0272BE8F84DA0`   |
 | KMS Verifier             | `0xbE0E383937d564D7FF0BC3b46c51f0bF8d5C311A`   |
+| KMS Generation           | `0x77389113d7000EcBCfc2bDed57202f5f46109934`   |
 | Gateway decryption       | `0x5D8BD78e2ea6bbE41f26dFe9fdaEAa349e077478`   |
 | Gateway input verification | `0x483b9dE06E4E4C7D35CCf5837A1668487406D955` |
 
@@ -98,6 +102,17 @@ Gateway chain id: `10901`.
 
 {% endtab %}
 {% endtabs %}
+
+### Encryption-key trust
+
+Presets with a configured KMSGeneration contract verify the RPC chain, read the
+active public-key and CRS IDs and their digests at finalized host-chain state,
+and confirm the chain and IDs again before accepting relayer bytes.
+
+Chains without a configured KMSGeneration address fail closed before real
+encryption unless the application supplies explicit `fheEncryptionKeyTrust` or
+trusted pinned `fheEncryptionKey` bytes. A matching relayer URL alone is never a
+trust signal.
 
 ## Defining a custom chain
 
@@ -116,6 +131,7 @@ export const myDevnet = defineFhevmChain({
       inputVerifier: { address: '0x…' },
       kmsVerifier: { address: '0x…' },
       protocolConfig: { address: '0x…' },
+      kmsGeneration: { address: '0x…' }, // optional trust anchor
     },
     relayerUrl: 'http://localhost:9000',
     gateway: {
@@ -131,8 +147,10 @@ export const myDevnet = defineFhevmChain({
 const client = createFhevmClient({ chain: myDevnet, provider });
 ```
 
-Set `protocolConfig` to `undefined` if your deployment doesn't have one — the
-built-in `mainnet` and `sepolia` definitions currently leave it `undefined`.
+Set `protocolConfig` or `kmsGeneration` to `undefined` when your custom
+deployment does not have that contract. If `kmsGeneration` is undefined, provide
+`fheEncryptionKeyTrust` or trusted pinned `fheEncryptionKey` bytes when creating
+an encryption-capable client.
 
 ## Related
 
@@ -140,4 +158,3 @@ built-in `mainnet` and `sepolia` definitions currently leave it `undefined`.
 - [Runtime configuration](runtime-configuration.md) — everything not chain-specific.
 - [API reference](api-reference.md) — the `FhevmChain` type and `defineFhevmChain` signature.
 ```
-

@@ -69,6 +69,40 @@ entirely on your device.
 
 The SDK is designed to prevent accidental exposure of sensitive material.
 
+### Encryption key material
+
+In SDK-managed client actions, relayer-supplied public-key and CRS bytes are
+authenticated before cache admission or native deserialization when the selected
+chain config provides a `KMSGeneration` address. The SDK verifies the connected RPC chain, reads
+`getActiveKeyId()` and `getActiveCrsId()`, then reads the active digest records
+through `getKeyMaterials()` and `getCrsMaterials()` at finalized host-chain state.
+It checks the chain ID before and after those reads and re-reads the active IDs,
+so an RPC mismatch or mixed rotation snapshot fails closed.
+
+When a chain definition does not specify `contracts.kmsGeneration`, real
+encryption fails closed before fetching relayer key material unless the
+application provides one of these fallback anchors:
+
+- `fheEncryptionKeyTrust`: authenticated public-key and CRS digests, or a resolver
+  that returns them for the requested chain metadata; or
+- `fheEncryptionKey`: complete pinned serialized bytes. The SDK clones and hashes
+  this bundle once at option intake and may also compare it with explicit trust.
+
+Missing trust, digest mismatches, and unavailable configured KMSGeneration reads
+fail before encryption. Public byte-returning actions return clones, so callers
+cannot mutate cached material. Cleartext factories reject both real-key fields at
+their type and runtime boundaries.
+
+The KMSGeneration check relies on the configured RPC provider to report authentic
+finalized host-chain state. Applications should use a provider they trust; a
+relayer and RPC endpoint that collude to present a consistent false state are
+outside this client-side check's trust model.
+
+Advanced extension code can access raw relayer and native-deserializer functions
+through `client.runtime`. Those low-level primitives do not apply the client
+trust policy; callers must authenticate their inputs independently. Use the
+top-level client actions for the managed guarantee above.
+
 ### Transport keys are opaque
 
 When you call `generateTransportKeyPair()`, the returned object wraps the private

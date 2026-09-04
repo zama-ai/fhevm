@@ -6,10 +6,12 @@ import type {
 } from '@fhevm/sdk/ethers';
 import type { FhevmDecryptOptions, FhevmEncryptOptions, FhevmOptions } from '../../src/core/types/coreFhevmClient.js';
 import type { FhevmModuleVersions } from '../../src/core/types/moduleVersions.js';
+import type { FheEncryptionKeyTrust } from '../../src/core/types/fheEncryptionKey.js';
 import type { FheTestBaseEnv, FheTestChainName } from './setupCommon.js';
 import { ethers } from 'ethers';
 import { FHETestABI } from './FheTest-abi-v2.js';
 import { isCleartext, prepareChains } from './setupCommon.js';
+import { createFheTestClientOptions, createFheTestEncryptClientOptions } from './fheEncryptionKeyTrust.js';
 
 // ---------------------------------------------------------------------------
 // FixedNonceManager
@@ -54,6 +56,7 @@ export type FheTestEthersConfig = {
   readonly fheTestAddress: string;
   readonly fheTestContract: ethers.Contract;
   readonly fheEncryptionKeyTfheVersion: string;
+  readonly fheEncryptionKeyTrust?: FheEncryptionKeyTrust | undefined;
   readonly moduleVersions?: FhevmModuleVersions | undefined;
 };
 
@@ -121,6 +124,7 @@ function _buildConfig(env: FheTestBaseEnv): FheTestEthersConfig {
     fheTestAddress: env.fheTestAddress,
     fheTestContract,
     fheEncryptionKeyTfheVersion: env.fheEncryptionKeyTfheVersion,
+    fheEncryptionKeyTrust: env.fheEncryptionKeyTrust,
     moduleVersions: env.moduleVersions,
   };
 }
@@ -154,28 +158,22 @@ export function getEthersClientOptions(
   config: FheTestEthersConfig,
   moduleVersions: FhevmModuleVersions | undefined = config.moduleVersions,
 ): FhevmOptions | undefined {
-  return moduleVersions === undefined ? undefined : { moduleVersions };
+  return createFheTestClientOptions({
+    chainName: config.chainName,
+    fheEncryptionKeyTrust: config.fheEncryptionKeyTrust,
+    moduleVersions,
+  });
 }
 
 export function getEthersEncryptClientOptions(
   config: FheTestEthersConfig,
   moduleVersions: FhevmModuleVersions | undefined = config.moduleVersions,
 ): FhevmEncryptOptions | undefined {
-  if (moduleVersions === undefined) {
-    return undefined;
-  }
-  if (moduleVersions === 'auto') {
-    return { moduleVersions };
-  }
-  if (moduleVersions.tfhe === undefined && moduleVersions.checkCompatibility === undefined) {
-    return undefined;
-  }
-  return {
-    moduleVersions: {
-      tfhe: moduleVersions.tfhe,
-      checkCompatibility: moduleVersions.checkCompatibility,
-    },
-  };
+  return createFheTestEncryptClientOptions({
+    chainName: config.chainName,
+    fheEncryptionKeyTrust: config.fheEncryptionKeyTrust,
+    moduleVersions,
+  });
 }
 
 export function getEthersDecryptClientOptions(

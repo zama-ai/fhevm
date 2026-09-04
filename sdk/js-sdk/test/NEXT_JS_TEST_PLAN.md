@@ -345,10 +345,12 @@ gateway — **no SDK internals needed**.
    deployer mnemonic** (`FIRST_ANVIL_MNEMONIC` for v12; default for v13, so its
    committed `FHEVMHostAddresses.sol` stays clean — v12's is restored post-deploy).
    Per-slot addresses are served at `/gw/<slot>/config` so pages never hardcode them.
-2. **The global FheEncryptionKey cache is keyed by relayer URL** (first-write-wins).
-   Two legs sharing a relayer URL clash — incl. the **cleartext mock**, which writes
-   deadbeef bytes that poison a real key. Each leg uses a **unique** relayer URL
-   (the expected-fail and cleartext legs get dedicated slots).
+2. **Each protocol leg must have a distinct authenticated key identity.** The SDK
+   key cache identity includes mode, chain id, relayer URL, and authenticated
+   digests; WASM wrappers additionally include the owning runtime and TFHE
+   version. Each leg still uses a **unique** relayer URL plus explicit slot digests
+   (the expected-fail and cleartext legs get dedicated slots) so the test fails for
+   protocol/version reasons, not cache mixing.
 
 **Test purpose (scope):** these tests verify each **WASM loads and runs** by
 executing one of its functions — for TFHE, `generateZkProof` (runs the module in

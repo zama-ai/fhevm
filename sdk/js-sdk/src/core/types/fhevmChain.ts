@@ -13,6 +13,7 @@ export type FhevmChain = {
  *       inputVerifier: "0xdeadbeef..."
  *       kmsVerifier: "0xdeadbeef..."
  *       protocolConfig: "0xdeadbeef..."
+ *       kmsGeneration: "0xdeadbeef..."
  *     },
  *     relayerUrl: "http://foo",
  *     gateway?: {
@@ -44,6 +45,8 @@ export type FhevmChainContracts = {
   readonly inputVerifier: ChainContract;
   readonly kmsVerifier: ChainContract;
   readonly protocolConfig?: ChainContract | undefined;
+  /** Optional host-chain KMSGeneration anchor used to authenticate relayer key material. */
+  readonly kmsGeneration?: ChainContract | undefined;
 };
 
 export type FhevmGatewayChain = {
@@ -78,6 +81,7 @@ type ResolvedFhevmChainContracts = {
   readonly inputVerifier: ResolvedChainContract;
   readonly kmsVerifier: ResolvedChainContract;
   readonly protocolConfig?: ResolvedChainContract | undefined;
+  readonly kmsGeneration?: ResolvedChainContract | undefined;
 };
 
 type ResolvedFhevmGatewayChain = {

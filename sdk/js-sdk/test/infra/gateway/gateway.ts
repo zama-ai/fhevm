@@ -17,6 +17,7 @@
 //
 // The SDK is configured with relayerUrl = `{origin}/__gw/<slot>/relayer`.
 
+import type { FheEncryptionKeyDigests } from '../../../src/core/types/fheEncryptionKey.js';
 import { buildKeyUrlResponse, loadKeyFile } from './keyRelayer.js';
 import { readWasmAsset } from './assets.js';
 
@@ -47,6 +48,8 @@ export type SlotChainConfig = {
 export type GatewaySlot = {
   /** Path to a `test/keys/key.<ver>.json` file served by this slot's relayer. */
   readonly keyFilePath: string;
+  /** App-owned digest pins, kept independent from the relayer response path. */
+  readonly fheEncryptionKeyTrust: FheEncryptionKeyDigests;
   /** Anvil RPC URL proxied at `/<slot>/rpc` (omit for relayer-only slots). */
   readonly rpcUrl?: string | undefined;
   /** Chain config served at `/<slot>/config` (omit for relayer-only slots). */
@@ -157,7 +160,7 @@ export async function handleGateway(config: GatewayConfig, req: GatewayRequest):
     return {
       status: 200,
       headers: { 'content-type': 'application/json', ...NO_STORE },
-      body: JSON.stringify(slot.chainConfig),
+      body: JSON.stringify({ ...slot.chainConfig, fheEncryptionKeyTrust: slot.fheEncryptionKeyTrust }),
     };
   }
 

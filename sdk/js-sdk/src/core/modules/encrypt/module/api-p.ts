@@ -33,9 +33,11 @@ import type {
 } from '../../../../wasm/tfhe/TfheApi.js';
 import { isNonEmptyString } from '../../../base/string.js';
 import { hexToBytesFaster } from '../../../base/bytes.js';
+import { asUint32Number } from '../../../base/uint.js';
 import { encryptionBitsFromFheTypeId, isFheTypeId } from '../../../handle/FheType.js';
 import { EncryptionError } from '../../../errors/EncryptionError.js';
 import { getErrorMessage } from '../../../base/errors/utils.js';
+import { assertFheEncryptionKeyWasmOwnedBy } from '../../../key/FheEncryptionKeyWasm-p.js';
 import { initTfheModule } from './init-p.js';
 import { assertIsTypedValue } from '../../../base/typedValue.js';
 
@@ -218,9 +220,10 @@ export async function buildWithProofPacked(
   runtime: FhevmRuntime,
   parameters: BuildWithProofPackedParameters,
 ): Promise<BuildWithProofPackedReturnType> {
-  const tfheLib = await initTfheModule(runtime, { tfheVersion: parameters.tfheVersion });
-
   const { fheEncryptionKey: publicEncryptionParams, metaData, typedValues, extraData } = parameters;
+  assertFheEncryptionKeyWasmOwnedBy(publicEncryptionParams, runtime, parameters.tfheVersion);
+
+  const tfheLib = await initTfheModule(runtime, { tfheVersion: parameters.tfheVersion });
 
   const tfheCompactPublicKeyImpl = publicEncryptionParams.publicKey;
   const tfheCompactPkeCrsImpl = publicEncryptionParams.crs;
@@ -444,6 +447,10 @@ export async function deserializeFheEncryptionCrs(
 
   const { crsBytes: globalFheCrsBytes } = parameters;
 
+  if (globalFheCrsBytes.capacity !== 2048) {
+    throw new Error(`Invalid pke crs capacity ${globalFheCrsBytes.capacity.toString()}. Expecting 2048.`);
+  }
+
   const compactPkeCrsWasm: CompactPkeCrs = tfheLib.CompactPkeCrs.safe_deserialize(
     globalFheCrsBytes.bytes,
     SERIALIZED_SIZE_LIMIT_CRS,
@@ -453,7 +460,7 @@ export async function deserializeFheEncryptionCrs(
     PRIVATE_TFHE_LIB_TOKEN,
     globalFheCrsBytes.id,
     tfheVersion,
-    globalFheCrsBytes.capacity,
+    asUint32Number(globalFheCrsBytes.capacity),
     compactPkeCrsWasm,
   );
 }

@@ -177,6 +177,7 @@ export type ReadContractParameters = {
   readonly functionName: string;
   readonly abi: ReadonlyArray<Record<string, unknown>>;
   readonly args: readonly unknown[];
+  readonly blockTag?: 'latest' | 'safe' | 'finalized' | undefined;
 };
 
 export type ReadContractReturnType = unknown;

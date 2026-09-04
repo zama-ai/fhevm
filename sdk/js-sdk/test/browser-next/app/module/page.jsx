@@ -34,6 +34,9 @@ async function fetchChain(origin, slot) {
         inputVerifier: { address: cfg.contracts.inputVerifier },
         kmsVerifier: { address: cfg.contracts.kmsVerifier },
         protocolConfig: { address: cfg.contracts.protocolConfig },
+        ...(cfg.contracts.kmsGeneration === undefined
+          ? {}
+          : { kmsGeneration: { address: cfg.contracts.kmsGeneration } }),
       },
       relayerUrl: `${origin}/gw/${slot}/relayer`,
       gateway: {

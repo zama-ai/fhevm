@@ -16,18 +16,21 @@ import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext
 import type { TfheVersion } from '../../wasm/tfhe/TfheApi.js';
 import type { TkmsVersion } from '../../wasm/tkms/KmsLibApi.js';
 import type { RelayerFeatures } from '../relayerFeatures/resolveRelayerFeatures-p.js';
+import type { FheEncryptionKeyProvider } from '../key/FheEncryptionKeyProvider-p.js';
 import { InvalidTypeError } from '../base/errors/InvalidTypeError.js';
 import { verifyTrustedValue } from '../base/trustedValue.js';
 import { uid } from '../base/uid.js';
+import { createFheEncryptionKeyPolicy } from '../key/FheEncryptionKeyPolicy-p.js';
+import { createFheEncryptionKeyProvider } from '../key/FheEncryptionKeyProvider-p.js';
 import { createTrustedClient } from '../modules/ethereum/createTrustedClient.js';
 import { asFhevmRuntimeWith, assertIsFhevmRuntime, assertIsFhevmRuntimeWith } from './CoreFhevmRuntime-p.js';
-import { globalFheEncryptionKeyCache } from '../key/FheEncryptionKeyCache-p.js';
 import { cloneModuleVersions } from '../runtimeConfig-p.js';
 import { cloneFhevmClientFrozenContext } from '../frozenContext/fhevmClientFrozenContext-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
 const PRIVATE_TOKEN = Symbol('CoreFhevmHostClient.token');
+const FHE_ENCRYPTION_KEY_PROVIDERS = new WeakMap<object, FheEncryptionKeyProvider>();
 const GET_FROZEN_CONTEXT = Symbol('CoreFhevmHostClient.getFrozenContext');
 const SET_FROZEN_CONTEXT = Symbol('CoreFhevmHostClient.setFrozenContext');
 const GET_FROZEN_CONTEXT_PROMISE = Symbol('CoreFhevmHostClient.getFrozenContextPromise');
@@ -96,6 +99,7 @@ class CoreFhevmImpl<
       readonly runtime: runtime;
       readonly client?: client | undefined;
       readonly options?: FhevmOptions | undefined;
+      readonly fheEncryptionKeyProvider?: FheEncryptionKeyProvider | undefined;
     },
   ) {
     if (privateToken !== PRIVATE_TOKEN) {
@@ -112,11 +116,28 @@ class CoreFhevmImpl<
       parameters.client !== undefined ? createTrustedClient(parameters.client, ownerToken) : undefined;
     this.#chain = parameters.chain;
     this.#options = resolveOptions(parameters.options);
+    const trustedClient = this.#trustedClient;
+    const fheEncryptionKeyProvider =
+      parameters.fheEncryptionKeyProvider ??
+      createFheEncryptionKeyProvider({
+        chain: parameters.chain,
+        runtime: parameters.runtime,
+        policy: createFheEncryptionKeyPolicy(parameters.options, parameters.chain),
+        configuredTrustReader:
+          trustedClient === undefined
+            ? undefined
+            : {
+                getChainId: () => parameters.runtime.ethereum.getChainId(trustedClient),
+                readContract: (readParameters) =>
+                  parameters.runtime.ethereum.readContract(trustedClient, readParameters),
+              },
+      });
     this.#initFns = new Set();
     this.#readyPromise = undefined;
 
     // verify runtime
     (this.#runtime as unknown as { verify: (token: symbol) => void }).verify(ownerToken);
+    FHE_ENCRYPTION_KEY_PROVIDERS.set(this, fheEncryptionKeyProvider);
 
     // Instance-level getters — configurable: false prevents shadowing/redefinition
     Object.defineProperties(this, {
@@ -573,6 +594,14 @@ export function getTrustedClient<client extends NonNullable<object>>(value: {
   return value.trustedClient as TrustedClient<client>;
 }
 
+export function getFheEncryptionKeyProvider(value: unknown): FheEncryptionKeyProvider {
+  const provider = FHE_ENCRYPTION_KEY_PROVIDERS.get(asCoreFhevm(value));
+  if (provider === undefined) {
+    throw new Error('Internal error: FHE encryption-key provider is unavailable.');
+  }
+  return provider;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 
 export type CreateCoreFhevmParameters<
@@ -584,25 +613,13 @@ export type CreateCoreFhevmParameters<
   readonly client?: client | undefined;
   readonly runtime: runtime;
   readonly options?: FhevmOptions | undefined;
+  readonly fheEncryptionKeyProvider?: FheEncryptionKeyProvider | undefined;
 };
 
 export function createCoreFhevm<chain extends FhevmChain, runtime extends FhevmRuntime, client extends NativeClient>(
   ownerToken: symbol,
   parameters: CreateCoreFhevmParameters<chain, runtime, client>,
 ): Fhevm<chain, runtime, client> {
-  // Pre-populate the global FheEncryptionKey cache if the caller provided one.
-  // Avoids a 50MB fetch later when encrypt is first called.
-  // No-op if an entry already exists for this relayerUrl (first write wins).
-  const fheEncryptionKey = parameters.options?.fheEncryptionKey;
-  if (fheEncryptionKey !== undefined) {
-    const relayerUrl = parameters.chain?.fhevm.relayerUrl;
-    globalFheEncryptionKeyCache.setBytes(
-      parameters.runtime,
-      relayerUrl ?? fheEncryptionKey.metadata.relayerUrl,
-      fheEncryptionKey,
-    );
-  }
-
   return new CoreFhevmImpl(PRIVATE_TOKEN, ownerToken, parameters);
 }
 

@@ -65,6 +65,11 @@ const client = createFhevmClient({ chain: sepolia, provider });
 WASM now loads lazily on first use. Call `await client.init()` if you want to
 preload it eagerly (the old `initSDK()`'s role).
 
+Mainnet and Sepolia now authenticate relayer key material against their
+configured KMSGeneration contracts. Chains without a configured KMSGeneration
+address require `fheEncryptionKeyTrust` or trusted pinned `fheEncryptionKey`
+factory options before encryption.
+
 ## Encryption
 
 The builder is replaced by a single declarative call. Old `.add32(42)` becomes
@@ -188,4 +193,3 @@ their replacements.
 - [Clients](clients.md) — choosing an adapter and a client type.
 - [Encryption](encryption.md) · [Decryption](decryption.md) — the new APIs in depth.
 ```
-

@@ -104,11 +104,20 @@ const client = createFhevmClient({
 });
 ```
 
-| Option            | Type                    | Applies to        | Purpose                                                            |
-| ----------------- | ----------------------- | ----------------- | ----------------------------------------------------------------- |
-| `batchRpcCalls`   | `boolean`               | all clients       | Coalesce the client's contract reads into batched RPC calls.      |
-| `fheEncryptionKey`| `FheEncryptionKeyBytes` | encrypt / full    | Provide a pre-fetched FHE public key to skip the network fetch.   |
-| `moduleVersions`  | `FhevmModuleVersions`   | varies by client  | Pin specific TFHE/TKMS WASM versions instead of the defaults.     |
+| Option                  | Type                    | Applies to            | Purpose                                                        |
+| ----------------------- | ----------------------- | --------------------- | -------------------------------------------------------------- |
+| `batchRpcCalls`         | `boolean`               | all clients           | Coalesce the client's contract reads into batched RPC calls.   |
+| `fheEncryptionKey`      | `FheEncryptionKeyBytes` | non-cleartext clients | Supply complete pinned FHE public-key and CRS bytes.            |
+| `fheEncryptionKeyTrust` | `FheEncryptionKeyTrust` | non-cleartext clients | Authenticate relayer key/CRS bytes before they can be used.     |
+| `moduleVersions`        | `FhevmModuleVersions`   | varies by client      | Pin specific TFHE/TKMS WASM versions instead of the defaults.  |
+
+Presets with a configured KMSGeneration contract read active key/CRS digests
+on-chain. They reject application digest overrides, while complete pinned bytes
+are accepted only if they match those on-chain digests. Chains without that
+address fail closed before real encryption unless `fheEncryptionKeyTrust` or
+trusted pinned `fheEncryptionKey` bytes are supplied. Cleartext factories accept
+neither field. See [Security](security.md#encryption-key-material) and
+[Types](types.md#fhe-encryption-key-trust-types).
 
 Module version pinning and the encryption-key cache are covered in
 [Runtime configuration](runtime-configuration.md).
@@ -179,4 +188,3 @@ Each downloads only the WASM it needs. See [Encryption](encryption.md) and
 - [Runtime configuration](runtime-configuration.md) — threads, WASM loading, version pinning.
 - [API reference](api-reference.md) — full factory and method signatures.
 ```
-

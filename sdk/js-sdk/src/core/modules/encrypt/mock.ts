@@ -3,6 +3,7 @@ import type { TfheVersion } from '../../../wasm/tfhe/TfheApi.js';
 import { concatBytes, hexToBytes32 } from '../../base/bytes.js';
 import { remove0x } from '../../base/string.js';
 import { typedValueToBytes32Hex } from '../../base/typedValue.js';
+import { asUint32Number } from '../../base/uint.js';
 import type { FhevmRuntime } from '../../types/coreFhevmRuntime.js';
 import type {
   FheEncryptionCrs,
@@ -284,11 +285,15 @@ export async function deserializeFheEncryptionCrs(
 ): Promise<DeserializeFheEncryptionCrsReturnType> {
   const { crsBytes: globalFheCrsBytes } = parameters;
 
+  if (globalFheCrsBytes.capacity !== 2048) {
+    throw new Error(`Invalid pke crs capacity ${globalFheCrsBytes.capacity.toString()}. Expecting 2048.`);
+  }
+
   return new CleartextTfheCompactPkeCrsImpl(
     PRIVATE_CLEARTEXT_TFHE_LIB_TOKEN,
     globalFheCrsBytes.id,
     parameters.tfheVersion,
-    globalFheCrsBytes.capacity,
+    asUint32Number(globalFheCrsBytes.capacity),
     globalFheCrsBytes.bytes,
   );
 }

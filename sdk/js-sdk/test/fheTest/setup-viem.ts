@@ -6,6 +6,7 @@ import type {
 } from '@fhevm/sdk/viem';
 import type { FhevmDecryptOptions, FhevmEncryptOptions, FhevmOptions } from '../../src/core/types/coreFhevmClient.js';
 import type { FhevmModuleVersions } from '../../src/core/types/moduleVersions.js';
+import type { FheEncryptionKeyTrust } from '../../src/core/types/fheEncryptionKey.js';
 import type { FheTestBaseEnv, FheTestChainName } from './setupCommon.js';
 import { createPublicClient, http, type PublicClient, type Transport, type Chain } from 'viem';
 import { mnemonicToAccount } from 'viem/accounts';
@@ -16,6 +17,7 @@ import {
   polygonAmoy as viemPolygonAmoy,
 } from 'viem/chains';
 import { isCleartext, prepareChains } from './setupCommon.js';
+import { createFheTestClientOptions, createFheTestEncryptClientOptions } from './fheEncryptionKeyTrust.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -36,6 +38,7 @@ export type FheTestViemConfig = {
   readonly fheTestAddress: string;
   readonly protocolVersion: FheTestBaseEnv['protocolVersion'];
   readonly fheEncryptionKeyTfheVersion: string;
+  readonly fheEncryptionKeyTrust?: FheEncryptionKeyTrust | undefined;
   readonly moduleVersions?: FhevmModuleVersions | undefined;
 };
 
@@ -108,6 +111,7 @@ function _buildConfig(env: FheTestBaseEnv): FheTestViemConfig {
     fheTestAddress: env.fheTestAddress,
     protocolVersion: env.protocolVersion,
     fheEncryptionKeyTfheVersion: env.fheEncryptionKeyTfheVersion,
+    fheEncryptionKeyTrust: env.fheEncryptionKeyTrust,
     moduleVersions: env.moduleVersions,
   };
 }
@@ -141,28 +145,22 @@ export function getViemClientOptions(
   config: FheTestViemConfig,
   moduleVersions: FhevmModuleVersions | undefined = config.moduleVersions,
 ): FhevmOptions | undefined {
-  return moduleVersions === undefined ? undefined : { moduleVersions };
+  return createFheTestClientOptions({
+    chainName: config.chainName,
+    fheEncryptionKeyTrust: config.fheEncryptionKeyTrust,
+    moduleVersions,
+  });
 }
 
 export function getViemEncryptClientOptions(
   config: FheTestViemConfig,
   moduleVersions: FhevmModuleVersions | undefined = config.moduleVersions,
 ): FhevmEncryptOptions | undefined {
-  if (moduleVersions === undefined) {
-    return undefined;
-  }
-  if (moduleVersions === 'auto') {
-    return { moduleVersions };
-  }
-  if (moduleVersions.tfhe === undefined && moduleVersions.checkCompatibility === undefined) {
-    return undefined;
-  }
-  return {
-    moduleVersions: {
-      tfhe: moduleVersions.tfhe,
-      checkCompatibility: moduleVersions.checkCompatibility,
-    },
-  };
+  return createFheTestEncryptClientOptions({
+    chainName: config.chainName,
+    fheEncryptionKeyTrust: config.fheEncryptionKeyTrust,
+    moduleVersions,
+  });
 }
 
 export function getViemDecryptClientOptions(

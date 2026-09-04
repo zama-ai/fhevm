@@ -30,6 +30,7 @@ export type FhevmHostAddresses = {
   readonly inputVerifier: string;
   readonly kmsVerifier: string;
   readonly protocolConfig: string;
+  readonly kmsGeneration: string;
 };
 
 /** Host-stack addresses for a deployer (mnemonic, index). */
@@ -41,5 +42,6 @@ export function deriveFhevmHostAddresses(mnemonic: string, index: number = DEFAU
     inputVerifier: at(HOST_NONCE.inputVerifier),
     kmsVerifier: at(HOST_NONCE.kmsVerifier),
     protocolConfig: at(HOST_NONCE.protocolConfig),
+    kmsGeneration: at(HOST_NONCE.kmsGeneration),
   };
 }

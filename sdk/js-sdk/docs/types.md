@@ -135,6 +135,37 @@ type TransportKeyPair = {
 (treat it as a secret); `parseTransportKeyPair` restores it. See
 [Decryption → Persisting a session](decryption.md#persisting-a-session).
 
+## FHE encryption-key trust types
+
+These DTOs are exported from `@fhevm/sdk/types` for the
+`fheEncryptionKeyTrust` and `fheEncryptionKey` factory options:
+
+```ts
+type FheEncryptionKeyMetadata = {
+  readonly relayerUrl: string;
+  readonly chainId: number;
+};
+
+type FheEncryptionKeyDigests = {
+  readonly publicKeyDigest: `0x${string}`;
+  readonly crsDigest: `0x${string}`;
+};
+
+type FheEncryptionKeyTrust =
+  | FheEncryptionKeyDigests
+  | ((metadata: FheEncryptionKeyMetadata) =>
+      FheEncryptionKeyDigests | Promise<FheEncryptionKeyDigests>);
+
+type FheEncryptionKeyBytes = {
+  readonly publicKeyBytes: { readonly id: string; readonly bytes: Uint8Array };
+  readonly crsBytes: { readonly id: string; readonly capacity: number; readonly bytes: Uint8Array };
+  readonly metadata: FheEncryptionKeyMetadata;
+};
+```
+
+Runtime validation requires the supported CRS capacity, non-empty byte arrays,
+and matching chain metadata.
+
 ## `SignedDecryptionPermit`
 
 The EIP-712 permit produced by `signDecryptionPermit`. It is a union over the
@@ -159,4 +190,3 @@ type SignedDecryptionPermit = {
 - [API reference](api-reference.md) — the complete exported type list.
 - [Glossary](GLOSSARY.md) — canonical naming across the SDK and protocol.
 ```
-
