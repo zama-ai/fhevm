@@ -215,6 +215,7 @@ const applyDiscoveryEnv = (
     KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS: connectorKmsGenerationAddress ?? "",
     KMS_CONNECTOR_PROTOCOL_CONFIG_CONTRACT__ADDRESS: primaryHost.PROTOCOL_CONFIG_CONTRACT_ADDRESS,
     KMS_CONNECTOR_HOST_CHAINS: JSON.stringify(kmsHostChains),
+    KMS_CONNECTOR_SUPPORTED_CHAIN_IDS: chains.map((chain) => String(chain.chainId)).join(","),
   });
   updateContracts(envs["relayer"], {
     APP_GATEWAY__CONTRACTS__DECRYPTION_ADDRESS: state.discovery.gateway.DECRYPTION_ADDRESS,
