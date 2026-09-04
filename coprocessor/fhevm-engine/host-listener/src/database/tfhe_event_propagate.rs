@@ -27,6 +27,7 @@ use std::sync::LazyLock;
 use std::time::Duration;
 use time::{Duration as TimeDuration, PrimitiveDateTime};
 use tokio::sync::RwLock;
+use tracing::debug;
 use tracing::error;
 use tracing::info;
 use tracing::warn;
@@ -54,6 +55,20 @@ pub type ChainHash = TransactionHash;
 pub type OperandBoundaryMask = [u8; 32];
 pub const OPERAND_BOUNDARY_MASK_BYTES: usize = 32;
 
+/// Seals dropped because the database says the producer is discharged. The seal
+/// is derived state, so this is the half of convergence that shrinks it; a
+/// refresh that only ever grew the set left retired producers sealed until the
+/// LRU happened to evict them, and every continuation of one kept opening a
+/// chain of its own.
+static SEALED_CHAIN_DISCHARGES_TOTAL: LazyLock<prometheus::IntCounter> =
+    LazyLock::new(|| {
+        prometheus::register_int_counter!(
+            "coprocessor_host_listener_sealed_chain_discharges_total",
+            "Producer seals removed because the database reports them discharged"
+        )
+        .unwrap()
+    });
+
 static SLOW_LANE_MARKED_CHAINS_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(
     || {
         register_int_counter_vec!(
@@ -72,6 +87,12 @@ pub struct Chain {
     // Ingest-only metadata for dependency links split by no_fork grouping.
     // Not used by scheduler execution ordering.
     pub split_dependencies: Vec<ChainHash>,
+    /// The (producer chain, boundary handle) pairs behind this chain's
+    /// CROSS-BLOCK dependencies. `split_dependencies` records which chains a
+    /// new chain waits on; this records what it actually waits FOR, so the
+    /// gate can be armed on the specific handle rather than on retirement of
+    /// the whole producer chain. Empty for chains that extend an existing one.
+    pub outer_boundary_handles: Vec<(ChainHash, Handle)>,
     pub dependents: Vec<ChainHash>,
     pub allowed_handle: Vec<Handle>,
     pub size: u64,
@@ -79,9 +100,42 @@ pub struct Chain {
     pub new_chain: bool,
 }
 pub type ChainCache = Arc<RwLock<lru::LruCache<Handle, ChainHash>>>;
+/// Producer chains SEALED against further linear extension.
+///
+/// A chain is sealed when a fork gates on a boundary handle it has not yet
+/// materialized. Without this the producer keeps absorbing continuations of
+/// its own unrelated traffic, and the fork — gated on the chain, not on the
+/// handle — waits behind all of it. Sealing stops the growth, so the fork
+/// waits only for the producer's undrained tail at seal time; the next
+/// continuation starts its own chain gated on the sealed one.
+///
+/// In memory and LRU-bounded on purpose: losing an entry re-enables extension,
+/// which is exactly the pre-existing behaviour, so a restart or an eviction
+/// degrades to "slower to discharge", never to "wrong".
+pub type SealedChainGuard = Arc<RwLock<lru::LruCache<ChainHash, ()>>>;
+/// Cross-batch record of which transaction consumed a boundary handle. A
+/// DIFFERENT consumer of the same handle in a later ingest batch is a fork:
+/// it must form its own (gated) chain instead of extending the producer's
+/// chain, or independent branches serialize on one DCID. (One transaction
+/// consuming a handle several times — e.g. FheAdd(x, x) — is not a fork.)
+pub type ConsumedBoundaryGuard =
+    Arc<RwLock<lru::LruCache<Handle, TransactionHash>>>;
 pub type OrderedChains = Vec<Chain>;
 
 const MINIMUM_BUCKET_CACHE_SIZE: u16 = 16;
+
+/// Steady cadence for refreshing the sealed-chain set once it is healthy.
+///
+/// The refresh is PERIODIC rather than a one-shot with retries, because the
+/// set drifts in normal operation too: an entry evicted from the LRU during a
+/// long run is otherwise never restored, exactly like one lost to a restart.
+/// One bounded query every few minutes closes both, and makes a database
+/// outage of any length self-healing instead of terminal.
+const SEALED_CHAIN_REFRESH_INTERVAL_SECS: u64 = 600;
+/// Delays used while the refresh is FAILING, so a transient outage converges
+/// in seconds rather than waiting out a whole steady interval. Capped at the
+/// last entry and then repeated indefinitely — the loop never gives up.
+const SEALED_CHAIN_RETRY_BACKOFF_SECS: &[u64] = &[1, 5, 30, 120, 300];
 /// Finalized `host_chain_blocks_valid` rows older than this many blocks
 /// below the finalized head are eligible for pruning (when unreferenced).
 const BLOCKS_VALID_RETENTION: i64 = 10_000;
@@ -163,6 +217,8 @@ pub struct Database {
     pool_refresh_handle: Arc<RwLock<PoolRefreshHandle>>,
     pub chain_id: ChainId,
     pub dependence_chain: ChainCache,
+    pub consumed_boundaries: ConsumedBoundaryGuard,
+    pub sealed_chains: SealedChainGuard,
     pub tick: HeartBeat,
     /// When true, every connection in this pool sets
     /// `search_path = gcs,public` so writes resolve to the GCS schema.
@@ -234,16 +290,265 @@ impl Database {
                 .unwrap()
                 .into(),
             )));
+        let consumed_boundaries =
+            Arc::new(tokio::sync::RwLock::new(lru::LruCache::new(
+                std::num::NonZeroU16::new(
+                    dependence_cache_size.max(MINIMUM_BUCKET_CACHE_SIZE),
+                )
+                .unwrap()
+                .into(),
+            )));
+        let sealed_chains =
+            Arc::new(tokio::sync::RwLock::new(lru::LruCache::new(
+                std::num::NonZeroU16::new(
+                    dependence_cache_size.max(MINIMUM_BUCKET_CACHE_SIZE),
+                )
+                .unwrap()
+                .into(),
+            )));
         let db = Database {
             url: url.clone(),
             chain_id,
             pool: Arc::new(RwLock::new(pool)),
             pool_refresh_handle: Arc::new(RwLock::new(pool_refresh_handle)),
             dependence_chain: bucket_cache,
+            consumed_boundaries,
+            sealed_chains,
             tick: HeartBeat::default(),
             gcs_mode,
         };
+        db.reload_sealed_chains(dependence_cache_size).await;
         Ok(db)
+    }
+
+    /// Insert reconstructed seals so the NEWEST producer ends up
+    /// most-recently used.
+    ///
+    /// The reconstruction query orders most-recent-first, because those are
+    /// the producers live traffic will ask about. `LruCache::put` marks what
+    /// it inserts as most-recently used, so replaying that order directly
+    /// leaves the newest producer as the LEAST-recently used entry — first
+    /// out when the cache is full. A continuation could then extend exactly
+    /// the producer most likely to still be growing, while its child stayed
+    /// gated.
+    ///
+    /// Inserting oldest-first puts recency back the way the query intended:
+    /// the newest producer ends up MRU and is evicted last. Returns how many
+    /// rows were sealed.
+    async fn seal_rows_oldest_first(
+        sealed_chains: &SealedChainGuard,
+        rows_newest_first: Vec<Vec<u8>>,
+    ) -> usize {
+        let mut sealed = sealed_chains.write().await;
+        let mut restored = 0_usize;
+        for row in rows_newest_first.into_iter().rev() {
+            if let Ok(hash) = ChainHash::try_from(row.as_slice()) {
+                sealed.put(hash, ());
+                restored += 1;
+            }
+        }
+        restored
+    }
+
+    /// Rebuild the producer seal from durable state.
+    ///
+    /// `sealed_chains` is process-local, so a restart starts with none. That
+    /// is not the rare event the LRU-eviction case is: catchup replays
+    /// `--catchup-margin` blocks (5 by default) on EVERY restart, and that
+    /// replay rebuilds `past_chains` and `consumed_boundaries` — but not the
+    /// seal, because `update_dependence_chain` is the only writer and ingest
+    /// skips it when every computation insert is a duplicate. A parent that
+    /// was sealed would resume absorbing continuations while its already
+    /// gated child, whose `dependency_count` is durable, waits behind all of
+    /// them. That is the exact condition sealing exists to prevent, and it
+    /// would recur on every deploy.
+    ///
+    /// Nothing new is persisted to fix it, because the seal is not
+    /// independent state: it means "some child is still gated on me", and
+    /// both halves are already durable — the child sits in the parent's
+    /// `dependents`, and it carries `dependency_count > 0`. Deriving rather
+    /// than storing also means the seal cannot drift from the gate it serves.
+    /// A child that discharges stops sealing its parent, and a retired parent
+    /// has its `dependents` pruned, so both leave the set on their own.
+    ///
+    /// Bounded by the cache size and queried most-recent-first so the
+    /// producers kept are the ones live traffic will ask about — see
+    /// [`Self::seal_rows_oldest_first`] for why the INSERTION runs the other
+    /// way.
+    ///
+    /// The first attempt is synchronous; after it, a background task keeps
+    /// the set fresh forever on [`SEALED_CHAIN_REFRESH_INTERVAL_SECS`],
+    /// falling back to [`SEALED_CHAIN_RETRY_BACKOFF_SECS`] while it is
+    /// failing. Startup is never gated on it: the listener is the ingest
+    /// path, so refusing to boot — or reporting unready — over a query error
+    /// trades a bounded discharge delay for a total ingestion stall, which is
+    /// the worse outcome by a wide margin and would restart into the same
+    /// failing database. Converging in the background gets the same state
+    /// without that trade, and the exposure while it converges is limited to
+    /// forks whose gate was armed BEFORE this process started, since
+    /// `update_dependence_chain` seals every parent it newly gates.
+    async fn reload_sealed_chains(&self, cache_size: u16) {
+        let limit = i64::from(cache_size.max(MINIMUM_BUCKET_CACHE_SIZE));
+        let first = Self::try_reload_sealed_chains(
+            &self.pool,
+            &self.sealed_chains,
+            limit,
+        )
+        .await;
+        match &first {
+            Ok(restored) if *restored > 0 => {
+                info!(
+                    restored,
+                    "Rebuilt sealed-chain set from gated dependents"
+                )
+            }
+            Ok(_) => {}
+            Err(error) => warn!(
+                %error,
+                "could not rebuild the sealed-chain set; refreshing in the \
+                 background. Until it succeeds, a producer gated before this \
+                 restart may be extended while its fork waits."
+            ),
+        }
+
+        let pool = self.pool.clone();
+        let sealed_chains = self.sealed_chains.clone();
+        let mut consecutive_failures = usize::from(first.is_err());
+        tokio::spawn(async move {
+            loop {
+                // Healthy: wait out the steady interval. Failing: walk the
+                // backoff and stay on its last entry, so the loop retries for
+                // as long as the process lives rather than giving up and
+                // requiring a restart to recover.
+                let delay = if consecutive_failures == 0 {
+                    SEALED_CHAIN_REFRESH_INTERVAL_SECS
+                } else {
+                    let step = (consecutive_failures - 1)
+                        .min(SEALED_CHAIN_RETRY_BACKOFF_SECS.len() - 1);
+                    SEALED_CHAIN_RETRY_BACKOFF_SECS[step]
+                };
+                tokio::time::sleep(std::time::Duration::from_secs(delay)).await;
+
+                match Self::try_reload_sealed_chains(
+                    &pool,
+                    &sealed_chains,
+                    limit,
+                )
+                .await
+                {
+                    Ok(restored) => {
+                        if consecutive_failures > 0 {
+                            info!(
+                                restored,
+                                attempts = consecutive_failures,
+                                "sealed-chain set recovered after failures"
+                            );
+                        } else {
+                            debug!(restored, "sealed-chain set refreshed");
+                        }
+                        consecutive_failures = 0;
+                    }
+                    Err(error) => {
+                        consecutive_failures =
+                            consecutive_failures.saturating_add(1);
+                        warn!(
+                            %error,
+                            consecutive_failures,
+                            "sealed-chain refresh failed; will retry"
+                        );
+                    }
+                }
+            }
+        });
+    }
+
+    /// One attempt at the reconstruction. Separated so the retry loop can run
+    /// it without holding a `&self` across the wait.
+    async fn try_reload_sealed_chains(
+        pool: &Arc<RwLock<sqlx::Pool<Postgres>>>,
+        sealed_chains: &SealedChainGuard,
+        limit: i64,
+    ) -> Result<usize, SqlxError> {
+        let pool = pool.read().await.clone();
+        let rows = sqlx::query_scalar!(
+            r#"
+            SELECT DISTINCT ON (p.last_updated_at, p.dependence_chain_id)
+                p.dependence_chain_id AS "id!"
+            FROM dependence_chain p
+            JOIN dependence_chain c
+              ON c.dependence_chain_id = ANY(p.dependents)
+            WHERE c.dependency_count > 0
+              AND p.status <> 'processed'
+            ORDER BY p.last_updated_at DESC, p.dependence_chain_id
+            LIMIT $1
+            "#,
+            limit,
+        )
+        .fetch_all(&pool)
+        .await?;
+        // The seal is DERIVED, so a refresh has to be able to shrink it. Only
+        // adding meant a producer that another process retired -- or whose
+        // child discharged -- stayed sealed here until the LRU evicted it by
+        // chance, and `dependence_chains` kept splitting its continuations into
+        // fresh chains for as long as it did. The doc above promises both
+        // halves converge; this is the half that was missing.
+        //
+        // Removal is driven by POSITIVE evidence, not by absence from the query
+        // above: that query is bounded by the cache size, so a still-sealing
+        // producer outside the most-recent N is missing from it for a reason
+        // that has nothing to do with discharge. Dropping a live seal is the
+        // dangerous direction -- it lets a continuation absorb into a producer
+        // whose child is still gated, which is what sealing exists to prevent
+        // -- so this asks the database which of the seals we actually hold are
+        // discharged, and removes only those.
+        let held: Vec<Vec<u8>> = {
+            let sealed = sealed_chains.read().await;
+            sealed.iter().map(|(hash, _)| hash.to_vec()).collect()
+        };
+        let discharged = if held.is_empty() {
+            vec![]
+        } else {
+            sqlx::query_scalar!(
+                r#"
+                SELECT p.dependence_chain_id AS "id!"
+                FROM unnest($1::bytea[]) AS p(dependence_chain_id)
+                WHERE NOT EXISTS (
+                    SELECT 1
+                    FROM dependence_chain parent
+                    JOIN dependence_chain child
+                      ON child.dependence_chain_id = ANY(parent.dependents)
+                    WHERE parent.dependence_chain_id = p.dependence_chain_id
+                      AND parent.status <> 'processed'
+                      AND child.dependency_count > 0
+                )
+                "#,
+                &held,
+            )
+            .fetch_all(&pool)
+            .await?
+        };
+
+        // One critical section, removals first: the insert below re-seals
+        // anything the query pair saw as still gating. A producer newly gated
+        // between the two queries is by construction freshly updated, so it
+        // sorts to the top of the most-recent query and is re-added here in the
+        // same pass.
+        let mut removed = 0_usize;
+        {
+            let mut sealed = sealed_chains.write().await;
+            for row in &discharged {
+                if let Ok(hash) = ChainHash::try_from(row.as_slice()) {
+                    if sealed.pop(&hash).is_some() {
+                        removed += 1;
+                    }
+                }
+            }
+        }
+        if removed > 0 {
+            SEALED_CHAIN_DISCHARGES_TOTAL.inc_by(removed as u64);
+            debug!(removed, "dropped discharged producer seals");
+        }
+        Ok(Self::seal_rows_oldest_first(sealed_chains, rows).await)
     }
 
     pub(crate) fn record_slow_lane_marked_chains(&self, count: u64) {
@@ -1900,6 +2205,121 @@ impl Database {
                 .iter()
                 .map(|h| h.to_vec())
                 .collect::<Vec<_>>();
+            // Cross-block parents (in split_dependencies but not in the
+            // in-block dependencies) gate this chain only if they are still
+            // incomplete at ingest commit. Register the child in each such
+            // parent's dependents so the worker's release decrement reaches
+            // it, and count the rows actually updated: a parent already
+            // 'processed' delivers no future decrement and must not be
+            // counted (park-retry remains the correctness backstop for every
+            // race; the gate is an optimization, so under-counting is safe
+            // and over-counting is not).
+            //
+            // SKIP LOCKED, not a plain FOR UPDATE. A parent row locked by
+            // another session is precisely one a worker is releasing right
+            // now, and skipping it is the safe direction — it under-counts,
+            // which the gate tolerates by design. Waiting instead would
+            // (a) hold this ingest transaction behind an FHE-batch release
+            // and (b) close a deadlock cycle: this statement runs once per
+            // chain inside the enclosing loop, so the ORDER BY only sorts
+            // within one execution while the loop's chain inserts take
+            // further row locks in listener order, against a worker release
+            // that locks its held parents and their dependents in plan
+            // order.
+            let outer_dependencies = chain
+                .split_dependencies
+                .iter()
+                .filter(|dep| !chain.dependencies.contains(dep))
+                .map(|h| h.to_vec())
+                .collect::<Vec<_>>();
+            // Gate on the HANDLE, not on the chain. A parent whose boundary
+            // handle is already materialized owes this child nothing: the
+            // bytes are in `ciphertexts` and the worker will read them there,
+            // so counting the parent would make the child wait for unrelated
+            // work on a chain it no longer needs. Only a parent with at least
+            // one un-materialized consumed handle is counted.
+            //
+            // A parent that IS counted gets SEALED (below): it has work this
+            // child needs, and while it keeps absorbing continuations of its
+            // own traffic the child waits behind all of them.
+            let (gate_parents, gate_handles): (Vec<Vec<u8>>, Vec<Vec<u8>>) =
+                chain
+                    .outer_boundary_handles
+                    .iter()
+                    .filter(|(parent, _)| {
+                        outer_dependencies.contains(&parent.to_vec())
+                    })
+                    .map(|(parent, handle)| (parent.to_vec(), handle.to_vec()))
+                    .unzip();
+            let gated_parents: Vec<Vec<u8>> = if chain.new_chain
+                && !gate_parents.is_empty()
+            {
+                sqlx::query_scalar!(
+                    r#"
+                    WITH consumed AS (
+                        SELECT
+                            u.parent,
+                            u.handle
+                        FROM unnest($1::bytea[], $2::bytea[])
+                            AS u(parent, handle)
+                    ),
+                    -- A parent still owes this child only for the handles it
+                    -- has not materialized. `ciphertexts` is the table the
+                    -- worker reads boundary operands from, so its presence is
+                    -- the readiness condition, not an approximation of one.
+                    pending AS (
+                        SELECT DISTINCT consumed.parent
+                        FROM consumed
+                        WHERE NOT EXISTS (
+                            SELECT 1
+                            FROM ciphertexts ct
+                            WHERE ct.handle = consumed.handle
+                        )
+                    ),
+                    parents AS (
+                        SELECT dc.dependence_chain_id
+                        FROM dependence_chain dc
+                        JOIN pending ON pending.parent = dc.dependence_chain_id
+                        WHERE dc.status <> 'processed'
+                        ORDER BY dc.dependence_chain_id
+                        FOR UPDATE SKIP LOCKED
+                    ),
+                    updated AS (
+                        UPDATE dependence_chain dc
+                        SET dependents = (
+                            SELECT ARRAY(
+                                SELECT DISTINCT d
+                                FROM unnest(dc.dependents || $3::bytea[]) AS d
+                            )
+                        )
+                        FROM parents
+                        WHERE dc.dependence_chain_id = parents.dependence_chain_id
+                        RETURNING dc.dependence_chain_id
+                    )
+                    SELECT dependence_chain_id AS "id!" FROM updated
+                    "#,
+                    &gate_parents,
+                    &gate_handles,
+                    &[chain.hash.to_vec()],
+                )
+                .fetch_all(tx.deref_mut())
+                .await?
+            } else {
+                Vec::new()
+            };
+            let gated_outer_count = gated_parents.len();
+            // Seal exactly the parents that were counted. Sealing is in
+            // memory and LRU-bounded: an eviction or a listener restart
+            // re-enables extension, which is the pre-existing behaviour, so
+            // this can only ever cost discharge latency, never correctness.
+            if !gated_parents.is_empty() {
+                let mut sealed = self.sealed_chains.write().await;
+                for parent in &gated_parents {
+                    if let Ok(hash) = ChainHash::try_from(parent.as_slice()) {
+                        sealed.put(hash, ());
+                    }
+                }
+            }
             sqlx::query!(
                 r#"
                 INSERT INTO dependence_chain(
@@ -1934,7 +2354,7 @@ impl Database {
                 "#,
                 chain.hash.to_vec(),
                 last_updated_at,
-                chain.dependencies.len() as i64,
+                chain.dependencies.len() as i32 + gated_outer_count as i32,
                 &dependents,
                 block_summary.hash.to_vec(),
                 block_summary.number as i64,
@@ -2485,4 +2905,126 @@ where
 /// always-scalar divisor).
 fn fhe_mul_div_factor2_is_scalar(scalar_byte: &ScalarByte) -> bool {
     scalar_byte.0[0] & 0b10 != 0
+}
+
+#[cfg(test)]
+mod sealed_chain_tests {
+    use super::*;
+    use serial_test::serial;
+    use test_harness::instance::ImportMode;
+
+    fn guard(capacity: usize) -> SealedChainGuard {
+        Arc::new(RwLock::new(lru::LruCache::new(
+            std::num::NonZeroUsize::new(capacity).unwrap(),
+        )))
+    }
+
+    fn hash(last: u8) -> ChainHash {
+        ChainHash::from([last; 32])
+    }
+
+    /// A refresh must drop a seal whose producer another process discharged.
+    ///
+    /// The seal is derived, and the module documents both halves of that
+    /// convergence: a child that discharges stops sealing its parent, and a
+    /// retired parent has its dependents pruned. Only the growing half was
+    /// implemented — the refresh inserted what the query returned and never
+    /// removed anything — so a producer discharged elsewhere stayed sealed here
+    /// until the LRU evicted it by chance, and until then every continuation of
+    /// it opened a chain of its own.
+    #[tokio::test]
+    #[serial(db)]
+    async fn refresh_drops_a_seal_after_a_remote_discharge() {
+        let instance = test_harness::instance::setup_test_db(ImportMode::None)
+            .await
+            .expect("test database");
+        let pool = Arc::new(RwLock::new(
+            sqlx::postgres::PgPoolOptions::new()
+                .max_connections(2)
+                .connect(instance.db_url.as_str())
+                .await
+                .expect("pool"),
+        ));
+        let parent = hash(0xB1);
+        let child = hash(0xB2);
+        {
+            let pool = pool.read().await.clone();
+            // The parent gates the child, so the parent is sealed.
+            sqlx::query(
+                "INSERT INTO dependence_chain
+                     (dependence_chain_id, status, last_updated_at,
+                      block_timestamp, block_height, dependency_count, dependents)
+                 VALUES ($1, 'updated', NOW(), NOW(), 1, 0, $2),
+                        ($3, 'updated', NOW(), NOW(), 1, 1, '{}')",
+            )
+            .bind(parent.as_slice())
+            .bind(vec![child.to_vec()])
+            .bind(child.as_slice())
+            .execute(&pool)
+            .await
+            .expect("seed chains");
+        }
+
+        let sealed = guard(8);
+        let restored = Database::try_reload_sealed_chains(&pool, &sealed, 8)
+            .await
+            .expect("first refresh");
+        assert_eq!(restored, 1, "a parent gating a child must be sealed");
+        assert!(
+            sealed.read().await.peek(&parent).is_some(),
+            "the gating parent must be in the local set"
+        );
+
+        // Another process discharges the child. Nothing tells this listener.
+        {
+            let pool = pool.read().await.clone();
+            sqlx::query(
+                "UPDATE dependence_chain SET dependency_count = 0
+                 WHERE dependence_chain_id = $1",
+            )
+            .bind(child.as_slice())
+            .execute(&pool)
+            .await
+            .expect("discharge child");
+        }
+
+        Database::try_reload_sealed_chains(&pool, &sealed, 8)
+            .await
+            .expect("second refresh");
+        assert!(
+            sealed.read().await.peek(&parent).is_none(),
+            "a refresh must drop the seal once the database says the producer \
+             is discharged, or its continuations keep splitting forever"
+        );
+    }
+
+    /// The reconstruction query returns newest-first, and `put` marks what it
+    /// inserts as MOST-recently used. Replaying that order directly would
+    /// leave the newest producer LEAST-recently used, so the next distinct
+    /// seal evicts precisely the producer most likely to still be growing —
+    /// letting a continuation extend it while its child stays gated. Recency
+    /// must come out matching the query's intent.
+    #[tokio::test]
+    async fn newest_reconstructed_producer_is_evicted_last() {
+        let sealed = guard(3);
+        // Newest first, as the query returns them.
+        let rows = vec![
+            hash(0xA1).as_slice().to_vec(),
+            hash(0xA2).as_slice().to_vec(),
+            hash(0xA3).as_slice().to_vec(),
+        ];
+        assert_eq!(Database::seal_rows_oldest_first(&sealed, rows).await, 3);
+
+        // A fourth distinct seal must displace the OLDEST, not the newest.
+        sealed.write().await.put(hash(0xA4), ());
+        let sealed = sealed.read().await;
+        assert!(
+            sealed.peek(&hash(0xA1)).is_some(),
+            "the newest reconstructed producer must survive eviction"
+        );
+        assert!(
+            sealed.peek(&hash(0xA3)).is_none(),
+            "the oldest reconstructed producer is the one to drop"
+        );
+    }
 }

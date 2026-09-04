@@ -20,7 +20,7 @@ use daggy::{
     },
     Dag, NodeIndex,
 };
-use fhevm_engine_common::types::{Handle, SupportedFheCiphertexts, SupportedFheOperations};
+use fhevm_engine_common::types::{Handle, SupportedFheOperations};
 
 pub struct ExecNode {
     df_nodes: Vec<NodeIndex>,
@@ -46,6 +46,16 @@ pub struct DFGOp {
     pub fhe_op: SupportedFheOperations,
     pub inputs: Vec<DFGTaskInput>,
     pub is_allowed: bool,
+    /// Whether this worker OWNS the row: its chain is the one under lease.
+    ///
+    /// Distinct from `is_allowed`, and not derivable from it. `is_allowed` says
+    /// the output is persisted and visible to consumers, so it is already
+    /// `owned && row.is_allowed` by the time it reaches here -- an internal
+    /// producer we own is `is_owned` without being `is_allowed`, and a foreign
+    /// row loaded as a recompute-only producer is neither. Error retention has
+    /// to key on ownership: an owned internal producer has a row of ours to
+    /// stamp, a foreign one does not.
+    pub is_owned: bool,
 }
 impl Default for DFGOp {
     fn default() -> Self {
@@ -54,6 +64,7 @@ impl Default for DFGOp {
             fhe_op: SupportedFheOperations::FheTrivialEncrypt,
             inputs: vec![],
             is_allowed: false,
+            is_owned: false,
         }
     }
 }
@@ -185,7 +196,7 @@ pub fn build_component_nodes(
                 // to the canonical ciphertext fetch below.
                 DFGTaskInput::BoundaryDependence(_)
                 | DFGTaskInput::Value(_)
-                | DFGTaskInput::Compressed(_) => {}
+                | DFGTaskInput::Compressed(..) => {}
             }
         }
         let node_idx = graph.add_node((op.is_allowed, index)).index();
@@ -262,7 +273,7 @@ impl ComponentNode {
                         // choice. Always expose it for canonical sourcing.
                         self.inputs.entry(dh.clone()).or_insert(None);
                     }
-                    DFGTaskInput::Value(_) | DFGTaskInput::Compressed(_) => {}
+                    DFGTaskInput::Value(_) | DFGTaskInput::Compressed(..) => {}
                 }
             }
             self.results.push(op.output_handle.clone());
@@ -276,6 +287,7 @@ impl ComponentNode {
                     (op.fhe_op as i16).into(),
                     std::mem::take(&mut op.inputs),
                     op.is_allowed,
+                    op.is_owned,
                 )
                 .index();
             if index != node_idx {
@@ -459,6 +471,7 @@ impl DFComponentGraph {
     pub fn add_output(
         &mut self,
         handle: &[u8],
+        transaction_id: &[u8],
         result: Result<TaskResult>,
         edges: &Dag<(), ComponentEdge>,
     ) -> Result<()> {
@@ -467,14 +480,24 @@ impl DFComponentGraph {
                 error!(target: "scheduler", { output_handle = ?hex::encode(handle) },
 		       "Missing producer for handle");
             } else {
+                // Attribute to the producer whose TRANSACTION this outcome
+                // belongs to, success or failure alike. Only the success arm
+                // used to do this, from `TaskResult.transaction_id`; an error
+                // carried no identity, so it fell through to `producer[0]` --
+                // an arbitrary one of the colliding transactions. That stamped
+                // a row belonging to another transaction (possibly one on a
+                // chain this worker does not even own) and left the row that
+                // actually failed unstamped, so it never accrued a retry count
+                // and never reached demotion.
+                //
+                // The fallback remains for the single-producer case, which is
+                // every handle that is not a same-block collision.
                 let mut prod_idx = producer[0].0;
-                if let Ok(ref result) = result {
-                    if let Some((pid, _)) = producer
-                        .iter()
-                        .find(|(_, tid)| *tid == result.transaction_id)
-                    {
-                        prod_idx = *pid;
-                    }
+                if let Some((pid, _)) = producer
+                    .iter()
+                    .find(|(_, tid)| tid.as_slice() == transaction_id)
+                {
+                    prod_idx = *pid;
                 }
                 let mut save_result = true;
                 if let Ok(ref result) = result {
@@ -602,6 +625,7 @@ pub struct OpNode {
     result_handle: Handle,
     inputs: Vec<DFGTaskInput>,
     is_allowed: bool,
+    is_owned: bool,
 }
 impl std::fmt::Debug for OpNode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -615,7 +639,7 @@ impl OpNode {
     fn check_ready_inputs(&mut self, ct_map: &mut HashMap<Handle, Option<DFGTxInput>>) -> bool {
         for i in self.inputs.iter_mut() {
             match i {
-                DFGTaskInput::Value(_) | DFGTaskInput::Compressed(_) => continue,
+                DFGTaskInput::Value(_) | DFGTaskInput::Compressed(..) => continue,
                 DFGTaskInput::LocalDependence(d) => {
                     error!(target: "scheduler", handle = ?hex::encode(d),
                            "transaction-local dependence reached execution without local producer");
@@ -624,20 +648,35 @@ impl OpNode {
                 DFGTaskInput::BoundaryDependence(d) => {
                     let resolved = match ct_map.get(d) {
                         Some(Some(DFGTxInput::Value((val, _)))) => {
-                            // A transaction-level input is a value that
-                            // crossed the transaction boundary, and the
-                            // canonical cross-transaction representation is
-                            // the persisted compressed form. A raw ciphertext
-                            // here would make the consumer's bytes depend on
-                            // which node/pass produced it.
-                            if !matches!(val, SupportedFheCiphertexts::Scalar(_)) {
+                            // CONSENSUS INVARIANT: a transaction-level value
+                            // input must be the DECOMPRESSED CANONICAL FORM of
+                            // the handle's persisted bytes — byte-identical to
+                            // what any consumer would reconstruct itself. A raw
+                            // working value injected here would make the
+                            // consumer's bytes depend on which node or pass
+                            // produced it, which is a consensus divergence.
+                            //
+                            // This variant has NO constructor in either build
+                            // configuration: boundary operands enter the graph
+                            // compressed and are decompressed in the executor,
+                            // which memoizes ct(h) per partition rather than
+                            // materializing raw values here. The arm is
+                            // therefore unreachable by construction and the
+                            // check is free — it exists so that if a future
+                            // change starts injecting transaction-level raw
+                            // values, on either backend, this says so instead
+                            // of silently changing consumers' bytes.
+                            if !matches!(
+                                val,
+                                fhevm_engine_common::types::SupportedFheCiphertexts::Scalar(_)
+                            ) {
                                 error!(target: "scheduler", { handle = ?hex::encode(&self.result_handle) },
                                        "Consensus risk: non-scalar raw ciphertext crossing a transaction boundary");
                             }
                             DFGTaskInput::Value(val.clone())
                         }
                         Some(Some(DFGTxInput::Compressed((cct, _)))) => {
-                            DFGTaskInput::Compressed(cct.clone())
+                            DFGTaskInput::Compressed(d.clone(), cct.clone())
                         }
                         _ => return false,
                     };
@@ -654,18 +693,21 @@ pub struct DFGraph {
     pub graph: Dag<OpNode, OpEdge>,
 }
 impl DFGraph {
+    #[allow(clippy::too_many_arguments)]
     pub fn add_node(
         &mut self,
         rh: Handle,
         opcode: i32,
         inputs: Vec<DFGTaskInput>,
         is_allowed: bool,
+        is_owned: bool,
     ) -> NodeIndex {
         self.graph.add_node(OpNode {
             opcode,
             result_handle: rh,
             inputs,
             is_allowed,
+            is_owned,
         })
     }
     pub fn add_dependence(
@@ -818,12 +860,100 @@ mod tests {
     }
 
     fn op(output: u8, input: DFGTaskInput, is_allowed: bool) -> DFGOp {
+        // Owned: these fixtures stand in for rows under this worker's lease.
         DFGOp {
             output_handle: handle(output),
             fhe_op: SupportedFheOperations::FheNot,
             inputs: vec![input],
             is_allowed,
+            is_owned: true,
         }
+    }
+
+    /// An error must be attributed to the transaction that produced it, even
+    /// when another transaction mints the same handle.
+    ///
+    /// Two transactions in one block performing the same operation on the same
+    /// operands share a handle preimage, so they mint the SAME handle -- the
+    /// reason `produced` maps a handle to a LIST of producers. Successes were
+    /// already disambiguated through `TaskResult.transaction_id`; errors
+    /// carried no identity and fell through to `producer[0]`, an arbitrary one
+    /// of the two. That stamped a row belonging to the other transaction and
+    /// left the one that actually failed unstamped, so it never accrued a retry
+    /// count and never reached demotion.
+    #[test]
+    fn an_error_is_attributed_to_the_transaction_that_raised_it() {
+        let tx_one = handle(0xA1);
+        let tx_two = handle(0xB1);
+        let colliding = handle(0x01);
+        let boundary = handle(0xA0);
+
+        let mut nodes = vec![];
+        for tid in [&tx_one, &tx_two] {
+            let (mut components, _) = build_component_nodes(
+                vec![op(
+                    0x01,
+                    DFGTaskInput::BoundaryDependence(boundary.clone()),
+                    true,
+                )],
+                tid,
+            )
+            .expect("valid transaction graph");
+            nodes.append(&mut components);
+        }
+        let mut graph = DFComponentGraph::default();
+        graph.build(&mut nodes).expect("component graph");
+        assert_eq!(
+            graph.produced.get(&colliding).map(Vec::len),
+            Some(2),
+            "the fixture must actually produce one handle from two \
+             transactions, or this proves nothing"
+        );
+
+        // Blame whichever producer is NOT first in the list, because
+        // `producer[0]` is exactly the old fallback: attributing to the first
+        // one would pass under the bug as well as under the fix. `build` pops
+        // its input, so the list order is not the fixture's order -- read it
+        // rather than assume it.
+        let producers = graph.produced.get(&colliding).expect("producers").clone();
+        let first_tid = producers[0].1.clone();
+        let victim = producers
+            .iter()
+            .map(|(_, tid)| tid.clone())
+            .find(|tid| *tid != first_tid)
+            .expect("two distinct producing transactions");
+
+        // An edge-only view with one node per component, as the scheduler
+        // passes; no edges, since neither transaction depends on the other.
+        let mut edges: Dag<(), ComponentEdge> = Dag::new();
+        for _ in 0..graph.graph.node_count() {
+            edges.add_node(());
+        }
+
+        graph
+            .add_output(
+                &colliding,
+                &victim,
+                Err(SchedulerError::ExecutionPanic("device fault".into()).into()),
+                &edges,
+            )
+            .expect("add_output");
+
+        let attributed: Vec<_> = graph
+            .get_results()
+            .into_iter()
+            .filter(|r| r.handle == colliding && r.compressed_ct.is_err())
+            .map(|r| r.transaction_id)
+            .collect();
+        assert!(
+            attributed.contains(&victim),
+            "the failing transaction must be stamped; got {attributed:?}"
+        );
+        assert!(
+            !attributed.contains(&first_tid),
+            "the other transaction's row must not be stamped for a failure it \
+             did not have; got {attributed:?}"
+        );
     }
 
     /// The transaction is the materialization boundary: a fan-out graph that
@@ -922,6 +1052,7 @@ mod tests {
                 fhe_op: SupportedFheOperations::FheNot,
                 inputs: vec![DFGTaskInput::BoundaryDependence(handle(0xC0))],
                 is_allowed: false,
+                is_owned: true,
             },
         ];
 
