@@ -89,6 +89,17 @@ const gatewayContractsOverrideState: State = {
   scenario: testDefaultScenario(),
 };
 
+const testSuiteOverrideState: State = {
+  ...state,
+  overrides: [{ group: "test-suite" }],
+  scenario: testDefaultScenario(),
+};
+
+const kmsConnectorOverrideState: State = {
+  ...state,
+  overrides: [{ group: "kms-connector" }],
+};
+
 const envAndArgsScenarioState: State = {
   ...state,
   scenario: resolveScenarioFile(
@@ -241,6 +252,66 @@ describe("render-compose", () => {
       expect(doc.services["coprocessor1-host-listener"]?.image).toContain(":fhevm-local-i1");
       expect(doc.services["coprocessor-host-listener"]?.build).toBeTruthy();
       expect(doc.services["coprocessor1-host-listener"]?.build).toBeTruthy();
+      const args = (doc.services["coprocessor-host-listener"]?.build as { args?: Record<string, string> })?.args;
+      expect(args?.COPROCESSOR_RUNTIME_BASE_IMAGE).toBeUndefined();
+      expect(args?.COPROCESSOR_DB_MIGRATION_RUNTIME_BASE_IMAGE).toBeUndefined();
+    });
+  });
+
+  test("routes every locally-built coprocessor target through the explicit public E2E runtime bases", async () => {
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      await writeFile(envPath("coprocessor"), "\n");
+      await writeFile(envPath("coprocessor.1"), "\n");
+      const publicRuntimeState: State = { ...inheritedScenarioState, e2ePublicRuntime: true };
+      await generateComposeOverrides(publicRuntimeState, stackSpecForState(publicRuntimeState));
+      const doc = YAML.parse(await readFile(composePath("coprocessor"), "utf8")) as {
+        services: Record<string, { build?: { args?: Record<string, string> } }>;
+      };
+
+      for (const [name, service] of Object.entries(doc.services)) {
+        expect(service.build?.args?.COPROCESSOR_RUNTIME_BASE_IMAGE, name).toBe("e2e-public-runtime");
+        expect(service.build?.args?.COPROCESSOR_DB_MIGRATION_RUNTIME_BASE_IMAGE, name).toBe(
+          "e2e-public-db-migration-runtime",
+        );
+      }
+    });
+  });
+
+  test("routes only local KMS connector runtime services through the public E2E runtime base", async () => {
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      await writeFile(envPath("coprocessor"), "\n");
+      await writeFile(envPath("coprocessor.1"), "\n");
+      const publicRuntimeState: State = { ...kmsConnectorOverrideState, e2ePublicRuntime: true };
+      await generateComposeOverrides(publicRuntimeState, stackSpecForState(publicRuntimeState));
+      const doc = YAML.parse(await readFile(composePath("kms-connector"), "utf8")) as {
+        services: Record<string, { build?: { args?: Record<string, string> } }>;
+      };
+
+      for (const name of ["kms-connector-gw-listener", "kms-connector-kms-worker", "kms-connector-tx-sender"]) {
+        expect(doc.services[name]?.build?.args?.KMS_CONNECTOR_RUNTIME_BASE_IMAGE, name).toBe("e2e-public-runtime");
+        expect(doc.services[name]?.build?.args?.BUILD_ID, name).toMatch(/^(?:[0-9a-f]{7,}|unknown)$/);
+      }
+      expect(doc.services["kms-connector-db-migration"]?.build?.args?.KMS_CONNECTOR_RUNTIME_BASE_IMAGE).toBeUndefined();
+      expect(doc.services["kms-connector-db-migration"]?.build?.args?.BUILD_ID).toBeUndefined();
+    });
+  });
+
+  test("keeps the certified KMS connector runtime base when the public E2E flag is absent", async () => {
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      await writeFile(envPath("coprocessor"), "\n");
+      await writeFile(envPath("coprocessor.1"), "\n");
+      await generateComposeOverrides(kmsConnectorOverrideState, stackSpecForState(kmsConnectorOverrideState));
+      const doc = YAML.parse(await readFile(composePath("kms-connector"), "utf8")) as {
+        services: Record<string, { build?: { args?: Record<string, string> } }>;
+      };
+
+      for (const name of ["kms-connector-gw-listener", "kms-connector-kms-worker", "kms-connector-tx-sender"]) {
+        expect(doc.services[name]?.build?.args?.KMS_CONNECTOR_RUNTIME_BASE_IMAGE, name).toBeUndefined();
+        expect(doc.services[name]?.build?.args?.BUILD_ID, name).toMatch(/^(?:[0-9a-f]{7,}|unknown)$/);
+      }
     });
   });
 
@@ -296,6 +367,21 @@ describe("render-compose", () => {
       );
       expect(doc.services["relayer"]?.image).toContain(":fhevm-local");
       expect(doc.services["relayer"]?.build?.dockerfile).toContain("relayer/docker/relayer/Dockerfile");
+    });
+  });
+
+  test("does not duplicate the test-suite Docker socket group in a local build override", async () => {
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      await writeFile(envPath("coprocessor"), "\n");
+      await generateComposeOverrides(testSuiteOverrideState, stackSpecForState(testSuiteOverrideState));
+      const doc = YAML.parse(await readFile(composePath("test-suite"), "utf8")) as {
+        services: Record<string, { image?: string; build?: unknown; group_add?: unknown }>;
+      };
+      const testSuite = doc.services["test-suite-e2e-debug"];
+      expect(testSuite?.image).toContain(":fhevm-local");
+      expect(testSuite?.build).toBeTruthy();
+      expect(testSuite?.group_add).toBeUndefined();
     });
   });
 
