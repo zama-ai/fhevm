@@ -1271,6 +1271,7 @@ const EXPECTED_ONE_SHOT_CONTAINERS = new Set([
   "coprocessor-db-migration",
   "kms-connector-db-migration",
   "relayer-db-migration",
+  "kms-core-gen-keys",
   "kms-core-init",
   "gateway-deploy-mocked-zama-oft",
   "gateway-set-relayer-mocked-payment",
@@ -1293,6 +1294,11 @@ const EXPECTED_ONE_SHOT_CONTAINERS = new Set([
   "host-sc-unpause",
 ]);
 
+/** Threshold mode runs one connector per party: `kms-connector-{i}-db-migration` for i >= 2. */
+const isExpectedOneShotContainer = (name: string): boolean =>
+  EXPECTED_ONE_SHOT_CONTAINERS.has(name) ||
+  /^kms-connector-\d+-db-migration$/.test(name);
+
 export const acceptableDockerContainerState = (
   name: string,
   status: string,
@@ -1300,9 +1306,7 @@ export const acceptableDockerContainerState = (
   health: string,
 ): boolean =>
   (status === "running" && (health === "" || health === "healthy")) ||
-  (EXPECTED_ONE_SHOT_CONTAINERS.has(name) &&
-    status === "exited" &&
-    exitCode === 0);
+  (isExpectedOneShotContainer(name) && status === "exited" && exitCode === 0);
 
 const dockerContainerHealth = async (
   manifest: DemoManifest,

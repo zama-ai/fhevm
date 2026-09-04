@@ -996,6 +996,21 @@ describe("demo lifecycle ownership primitives", () => {
     expect(acceptableDockerContainerState("kms-core", "exited", 0, "")).toBe(
       false,
     );
+    // Threshold mode: the key-generation job and the per-party connector migrations.
+    expect(
+      acceptableDockerContainerState("kms-core-gen-keys", "exited", 0, ""),
+    ).toBe(true);
+    expect(
+      acceptableDockerContainerState(
+        "kms-connector-3-db-migration",
+        "exited",
+        0,
+        "",
+      ),
+    ).toBe(true);
+    expect(
+      acceptableDockerContainerState("kms-core-3", "exited", 0, ""),
+    ).toBe(false);
     expect(
       acceptableDockerContainerState("kms-core", "running", 0, "starting"),
     ).toBe(false);
