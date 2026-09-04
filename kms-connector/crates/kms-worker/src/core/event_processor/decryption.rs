@@ -1328,7 +1328,9 @@ mod tests {
         let processor = setup_test_processor(asserter.clone(), &sns_ct);
 
         // STATICCALL to a no-code address returns empty returndata at the EVM level →
-        // `EoaMismatchNoCode` rejection.
+        // `EoaMismatchNoCode` rejection. Twice: the probe budget and the full-budget retry
+        // each issue a call, and no amount of gas puts code at the address.
+        asserter.push_success(&Bytes::default());
         asserter.push_success(&Bytes::default());
 
         let mut request = make_v2_request(
