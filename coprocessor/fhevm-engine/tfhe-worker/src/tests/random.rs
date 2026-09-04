@@ -6,7 +6,6 @@ use alloy::primitives::FixedBytes;
 use bigdecimal::num_bigint::BigInt;
 use host_listener::contracts::TfheContract;
 use host_listener::contracts::TfheContract::TfheContractEvents;
-use serial_test::serial;
 use std::str::FromStr;
 
 const RANDOM_SUPPORTED_TYPES_CPU: &[i32] = &[
@@ -65,7 +64,6 @@ fn random_test_supported_types() -> &'static [i32] {
 }
 
 #[tokio::test]
-#[serial(db)]
 async fn test_fhe_random_basic() -> Result<(), Box<dyn std::error::Error>> {
     let harness = setup_event_harness().await?;
     let mut handles = Vec::new();
@@ -179,7 +177,6 @@ async fn test_fhe_random_basic() -> Result<(), Box<dyn std::error::Error>> {
 /// (e.g. upper_bound=1 produces 0 random bits, which behaves differently
 /// on GPU).
 #[tokio::test]
-#[serial(db)]
 async fn test_fhe_random_bounded() -> Result<(), Box<dyn std::error::Error>> {
     let harness = setup_event_harness().await?;
     let mut handles = Vec::new();

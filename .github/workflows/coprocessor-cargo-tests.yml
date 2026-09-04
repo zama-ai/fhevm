@@ -47,10 +47,30 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - service: tfhe-worker
+          # Split across three machines because this job is by far the slowest.
+          - service: tfhe-worker-1
+            use_nextest: true
             package: tfhe-worker
             needs_localstack: false
             needs_foundry: false
+            shard: 1
+            shards: 3
+            runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64
+          - service: tfhe-worker-2
+            use_nextest: true
+            package: tfhe-worker
+            needs_localstack: false
+            needs_foundry: false
+            shard: 2
+            shards: 3
+            runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64
+          - service: tfhe-worker-3
+            use_nextest: true
+            package: tfhe-worker
+            needs_localstack: false
+            needs_foundry: false
+            shard: 3
+            shards: 3
             runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64
           - service: sns-worker
             package: sns-worker
@@ -104,6 +124,12 @@ jobs:
       with:
         tool: cargo-llvm-cov
 
+    - name: Install cargo-nextest
+      if: ${{ matrix.use_nextest }}
+      uses: taiki-e/install-action@a37010ded18ff788be4440302bd6830b1ae50d8b # v2.68.25
+      with:
+        tool: cargo-nextest
+
     - name: Install cargo dependencies
       run: |
         sudo apt-get update
@@ -119,8 +145,8 @@ jobs:
           ~/.cargo/registry
           ~/.cargo/git
           target
-        key: ${{ runner.os }}-cargo-coverage-${{ matrix.service }}-${{ hashFiles('**/Cargo.lock') }}
-        restore-keys: ${{ runner.os }}-cargo-coverage-${{ matrix.service }}-
+        key: ${{ runner.os }}-cargo-coverage-${{ matrix.package }}-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: ${{ runner.os }}-cargo-coverage-${{ matrix.package }}-
 
     - name: Use Node.js
       uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2
@@ -131,7 +157,23 @@ jobs:
       if: ${{ matrix.needs_localstack }}
       run: docker run --rm -d -p 4566:4566 --name localstack localstack/localstack:4.14.0
 
+    # Shared by every test in the job, so the FHE keys are imported once, not per test.
+    - name: Start postgres
+      if: ${{ matrix.use_nextest }}
+      run: |
+        docker run --rm -d -p 5432:5432 --name postgres \
+          -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres \
+          postgres:15.7
+        for _ in $(seq 1 30); do
+          if docker exec postgres pg_isready -U postgres >/dev/null 2>&1; then
+            echo "postgres ready"; exit 0
+          fi
+          sleep 2
+        done
+        echo "postgres did not become ready"; exit 1
+
     - name: Run tests with coverage
+      if: ${{ !matrix.use_nextest }}
       env:
         DATABASE_URL: postgresql://postgres:postgres@localhost:5432/coprocessor
         SQLX_OFFLINE: 'true'
@@ -148,10 +190,70 @@ jobs:
         cargo llvm-cov test -p "$TEST_PACKAGE" --profile coverage
       working-directory: coprocessor/fhevm-engine
 
+    - name: Run tests with coverage (sharded)
+      if: ${{ matrix.use_nextest }}
+      env:
+        DATABASE_URL: postgresql://postgres:postgres@localhost:5432/coprocessor
+        SQLX_OFFLINE: 'true'
+        TEST_PACKAGE: ${{ matrix.package }}
+        IS_MERGE_QUEUE: ${{ startsWith(github.head_ref, 'mergify/merge-queue/') && '1' || '0' }}
+        SHARD: ${{ matrix.shard }}
+        SHARDS: ${{ matrix.shards }}
+        COPROCESSOR_TEST_PG_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+      run: |
+        set -euo pipefail
+        NEXTEST_FILTER='all()'
+        if [ "$IS_MERGE_QUEUE" != "1" ]; then
+          export TFHE_WORKER_EVENT_TYPE_MATRIX=local
+          NEXTEST_FILTER='not test(/_(u128|u160|u256|u512|u1024|u2048)$/)'
+        fi
+        echo "$NEXTEST_FILTER" > /tmp/nextest-filter
+        cargo llvm-cov clean --workspace --profile coverage
+        # `cargo llvm-cov nextest` forwards flags to nextest, and to nextest
+        # `--profile` means its own profile, so the build profile is --cargo-profile.
+        cargo llvm-cov nextest -p "$TEST_PACKAGE" --cargo-profile coverage --profile ci \
+          --partition "count:${SHARD}/${SHARDS}" \
+          -E "$NEXTEST_FILTER"
+      working-directory: coprocessor/fhevm-engine
+
     - name: Export LCOV coverage data
       if: ${{ !cancelled() }}
       run: cargo llvm-cov report --lcov --profile coverage --output-path /tmp/lcov.info || true
       working-directory: coprocessor/fhevm-engine
+
+    # What the shard totals are checked against below.
+    - name: Record expected test count
+      if: ${{ !cancelled() && matrix.use_nextest }}
+      env:
+        SQLX_OFFLINE: 'true'
+        TEST_PACKAGE: ${{ matrix.package }}
+        CARGO_TARGET_DIR: target/llvm-cov-target
+        SHARDS: ${{ matrix.shards }}
+      run: |
+        set -euo pipefail
+        # Same filter the run step used, so the two cannot drift apart.
+        NEXTEST_FILTER="$(cat /tmp/nextest-filter)"
+        mkdir -p target/nextest/ci
+        echo "$SHARDS" > target/nextest/ci/shard-total.txt
+        cargo nextest list -p "$TEST_PACKAGE" --cargo-profile coverage \
+          -E "$NEXTEST_FILTER" --message-format json \
+          | python3 -c 'import json,sys; d=json.load(sys.stdin); print(sum(1 for s in d["rust-suites"].values() for c in s["testcases"].values() if c["filter-match"]["status"] == "matches"))' \
+          > target/nextest/ci/expected-count.txt
+        echo "filter selects $(cat target/nextest/ci/expected-count.txt) tests in total"
+      working-directory: coprocessor/fhevm-engine
+
+    # Read by the shard-coverage job below.
+    - name: Upload test report
+      if: ${{ !cancelled() && matrix.use_nextest }}
+      uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+      with:
+        name: junit-${{ matrix.service }}
+        path: |
+          coprocessor/fhevm-engine/target/nextest/ci/junit.xml
+          coprocessor/fhevm-engine/target/nextest/ci/expected-count.txt
+          coprocessor/fhevm-engine/target/nextest/ci/shard-total.txt
+        retention-days: 1
+        if-no-files-found: ignore
 
     - name: Upload coverage artifact
       if: ${{ !cancelled() }}
@@ -269,15 +371,102 @@ jobs:
       with:
         path: /tmp/coverage-comment.md
 
+  # A test dropped by the split would leave every shard green, so verify none was.
+  shard-coverage:
+    name: coprocessor-cargo-test/shard-coverage
+    needs: [check-changes, cargo-tests]
+    if: ${{ !cancelled() && needs.check-changes.outputs.changes-rust-files == 'true' }}
+    permissions: {}
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
+    steps:
+    - name: Download test reports
+      uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+      with:
+        pattern: junit-*
+        path: /tmp/reports
+
+    - name: Download shard coverage
+      uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+      with:
+        pattern: lcov-tfhe-worker-*
+        path: /tmp/shard-lcov
+
+    - name: Every test ran in exactly one shard
+      run: |
+        python3 - <<'PY'
+        import glob, sys, xml.etree.ElementTree as ET
+        from collections import Counter
+
+        seen = Counter()
+        files = sorted(glob.glob("/tmp/reports/**/junit.xml", recursive=True))
+        if not files:
+            sys.exit("no test reports found; cannot verify shard coverage")
+        for path in files:
+            for case in ET.parse(path).getroot().iter("testcase"):
+                seen[f"{case.get('classname')}::{case.get('name')}"] += 1
+
+        duplicated = sorted(name for name, count in seen.items() if count > 1)
+        print(f"{len(files)} shard reports, {len(seen)} distinct tests")
+        if duplicated:
+            print("tests that ran in more than one shard:")
+            for name in duplicated:
+                print(f"  {name}")
+            sys.exit(1)
+        print("no test ran twice")
+        PY
+
+    # A lost coverage upload would otherwise just shrink the reported number.
+    - name: Every shard reported coverage
+      run: |
+        python3 - <<'PY'
+        import glob, os, sys
+        g = lambda p: glob.glob(p, recursive=True)
+
+        shards = {int(open(p).read()) for p in g("/tmp/reports/**/shard-total.txt")}
+        if len(shards) != 1:
+            sys.exit(f"no shard reported a shard count, or they disagree: {shards}")
+        n = shards.pop()
+        reports = len(g("/tmp/reports/**/junit.xml"))
+        lcov = sum(os.path.getsize(p) > 0 for p in g("/tmp/shard-lcov/**/lcov.info"))
+
+        print(f"{n} shards configured: {reports} test reports, {lcov} coverage files")
+        if (reports, lcov) != (n, n):
+            sys.exit(f"every shard must report both; expected {n} of each")
+        PY
+
+    - name: No test was skipped by the split
+      run: |
+        python3 - <<'PY'
+        import glob, sys, xml.etree.ElementTree as ET
+
+        counts = {p: int(open(p).read().strip())
+                  for p in glob.glob("/tmp/reports/**/expected-count.txt", recursive=True)}
+        if not counts:
+            sys.exit("no expected-count.txt found; cannot verify shard coverage")
+        if len(set(counts.values())) != 1:
+            sys.exit(f"shards disagree on how many tests exist: {counts}")
+        expected = next(iter(counts.values()))
+
+        ran = sum(len(list(ET.parse(p).getroot().iter("testcase")))
+                  for p in glob.glob("/tmp/reports/**/junit.xml", recursive=True))
+
+        print(f"tests selected by the filter: {expected}")
+        print(f"tests the shards actually ran: {ran}")
+        if ran != expected:
+            sys.exit(f"{expected - ran} test(s) ran in no shard at all")
+        print("every selected test ran")
+        PY
+
   cargo-tests-status:
     name: coprocessor-cargo-test/cargo-tests (bpr)
-    needs: [check-changes, cargo-tests, coverage-report]
+    needs: [check-changes, cargo-tests, coverage-report, shard-coverage]
     if: ${{ always() }}
     runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
     env:
       CHECK_CHANGES_RESULT: ${{ needs.check-changes.result }}
       CARGO_TESTS_RESULT: ${{ needs.cargo-tests.result }}
       COVERAGE_RESULT: ${{ needs.coverage-report.result }}
+      SHARD_COVERAGE_RESULT: ${{ needs.shard-coverage.result }}
     steps:
     - name: Check results
       run: |
@@ -286,7 +475,9 @@ jobs:
            [ "$CARGO_TESTS_RESULT" = "failure" ] || \
            [ "$CARGO_TESTS_RESULT" = "cancelled" ] || \
            [ "$COVERAGE_RESULT" = "failure" ] || \
-           [ "$COVERAGE_RESULT" = "cancelled" ]; then
+           [ "$COVERAGE_RESULT" = "cancelled" ] || \
+           [ "$SHARD_COVERAGE_RESULT" = "failure" ] || \
+           [ "$SHARD_COVERAGE_RESULT" = "cancelled" ]; then
           echo "One or more jobs failed or were cancelled"
           exit 1
         fi
