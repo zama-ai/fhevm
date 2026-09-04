@@ -239,6 +239,21 @@ impl BlockchainState {
         state.transaction_receipts.get(&hash).cloned()
     }
 
+    /// Number of transactions accepted for `address`, read off the receipts
+    /// `eth_sendRawTransaction` stores. A send counts whether or not it matched a registered
+    /// pattern, so a duplicate send arriving after a [`UsageLimit::Once`] pattern has been
+    /// consumed still shows up here.
+    ///
+    /// [`UsageLimit::Once`]: crate::pattern_matcher::UsageLimit::Once
+    pub fn transaction_count_to(&self, address: Address) -> usize {
+        let state = self.state.read().unwrap();
+        state
+            .transaction_receipts
+            .values()
+            .filter(|receipt| receipt.to == Some(address))
+            .count()
+    }
+
     /// Get all stored logs
     pub fn get_all_logs(&self) -> Vec<InnerLog> {
         let state = self.state.read().unwrap();

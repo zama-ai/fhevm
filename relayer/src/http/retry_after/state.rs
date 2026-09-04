@@ -3,9 +3,7 @@
 use tokio::sync::RwLock;
 
 use crate::config::retry_after::{BackoffInterval, RetryAfterConfig};
-use crate::http::retry_after::queue_info::{
-    DecryptQueueInfo, ReadinessQueueInfo, RequestQueueInfo, TxQueueInfo,
-};
+use crate::http::retry_after::queue_info::{DecryptQueueInfo, ReadinessQueueInfo, TxQueueInfo};
 use crate::store::sql::models::req_status_enum_model::ReqStatus;
 
 // ========== Decrypt Queue Stage ==========
@@ -39,19 +37,15 @@ fn get_decrypt_stage(info: &DecryptQueueInfo) -> DecryptStage {
 #[derive(Debug, Clone, Copy)]
 pub struct RequestStateInfo {
     pub status: ReqStatus,
-    pub elapsed_since_created_secs: u32,
+    /// How long the request has been in `status`, from the row's `updated_at`. The copro/KMS
+    /// backoff schedule is keyed on it; every other arm works from nominal times alone.
     pub elapsed_in_current_state_secs: u32,
 }
 
 impl RequestStateInfo {
-    pub fn new(
-        status: ReqStatus,
-        elapsed_since_created_secs: u32,
-        elapsed_in_current_state_secs: u32,
-    ) -> Self {
+    pub fn new(status: ReqStatus, elapsed_in_current_state_secs: u32) -> Self {
         Self {
             status,
-            elapsed_since_created_secs,
             elapsed_in_current_state_secs,
         }
     }
@@ -156,102 +150,6 @@ impl RetryAfterState {
 
     // ========== ETA Computation ==========
 
-    /// Compute ETA for a queued request based on queue info.
-    pub async fn compute_queued_eta(&self, queue_info: &RequestQueueInfo) -> u32 {
-        let min_secs = self.min_seconds().await;
-        let max_secs = self.max_seconds().await;
-        let safety_margin = self.safety_margin().await;
-        let nominal_tx_ms = self.nominal_tx_ms().await;
-        let nominal_readiness_ms = self.nominal_readiness_ms().await;
-
-        let raw_eta_ms = match queue_info {
-            RequestQueueInfo::InputProof(tx_info) => {
-                let nominal_processing_ms = self.nominal_input_proof_ms().await;
-                let nominal_tx_confirmation_ms = nominal_tx_ms;
-
-                // Formula: tx_wait_ms + nominal_processing_ms + nominal_tx_confirmation_ms
-                compute_tx_queue_wait_ms(tx_info)
-                    + nominal_processing_ms
-                    + nominal_tx_confirmation_ms
-            }
-            RequestQueueInfo::UserDecrypt(info) => {
-                let nominal_processing_ms = self.nominal_user_decrypt_ms().await;
-                let nominal_tx_confirmation_ms = nominal_tx_ms;
-                compute_decrypt_eta_ms(
-                    info,
-                    nominal_processing_ms,
-                    nominal_readiness_ms,
-                    nominal_tx_confirmation_ms,
-                )
-            }
-            RequestQueueInfo::PublicDecrypt(info) => {
-                let nominal_processing_ms = self.nominal_public_decrypt_ms().await;
-                let nominal_tx_confirmation_ms = nominal_tx_ms;
-                compute_decrypt_eta_ms(
-                    info,
-                    nominal_processing_ms,
-                    nominal_readiness_ms,
-                    nominal_tx_confirmation_ms,
-                )
-            }
-        };
-
-        let with_margin_ms = apply_safety_margin_ms(raw_eta_ms, safety_margin);
-        with_margin_ms.div_ceil(1000).clamp(min_secs, max_secs)
-    }
-
-    /// Compute retry-after for GET (polling existing request).
-    pub async fn compute_for_get(
-        &self,
-        state_info: &RequestStateInfo,
-        queue_info: Option<&RequestQueueInfo>,
-    ) -> u32 {
-        use ReqStatus::*;
-
-        let min_secs = self.min_seconds().await;
-        let max_secs = self.max_seconds().await;
-        let safety_margin = self.safety_margin().await;
-        let nominal_tx_confirmation_ms = self.nominal_tx_ms().await;
-
-        let elapsed_in_state_ms = state_info.elapsed_in_current_state_secs * 1000;
-
-        match state_info.status {
-            Queued => {
-                // Production handlers use specific methods (compute_for_input_proof_get,
-                // compute_for_decrypt_get) which always have queue info.
-                // This fallback handles the None case for tests and legacy callers.
-                if let Some(q_info) = queue_info {
-                    self.compute_queued_eta(q_info).await
-                } else {
-                    let nominal_processing_ms = self.get_default_processing_ms(queue_info).await;
-                    let raw_eta_ms = nominal_processing_ms + nominal_tx_confirmation_ms;
-                    let with_margin_ms = apply_safety_margin_ms(raw_eta_ms, safety_margin);
-                    with_margin_ms.div_ceil(1000).clamp(min_secs, max_secs)
-                }
-            }
-            Processing => {
-                let nominal_processing_ms = self.get_default_processing_ms(queue_info).await;
-                // Formula: raw_eta_ms = (nominal_processing_ms + nominal_tx_confirmation_ms) - elapsed_in_state_ms
-                let raw_eta_ms = (nominal_processing_ms + nominal_tx_confirmation_ms)
-                    .saturating_sub(elapsed_in_state_ms);
-                let with_margin_ms = apply_safety_margin_ms(raw_eta_ms, safety_margin);
-                with_margin_ms.div_ceil(1000).clamp(min_secs, max_secs)
-            }
-            TxInFlight => {
-                // TX sent, waiting for processing (copro/KMS). Only P remains.
-                let nominal_processing_ms = self.get_default_processing_ms(queue_info).await;
-                let raw_eta_ms = nominal_processing_ms.saturating_sub(elapsed_in_state_ms);
-                let with_margin_ms = apply_safety_margin_ms(raw_eta_ms, safety_margin);
-                with_margin_ms.div_ceil(1000).clamp(min_secs, max_secs)
-            }
-            ReceiptReceived => {
-                self.compute_copro_kms_backoff(state_info.elapsed_in_current_state_secs)
-                    .await
-            }
-            Completed | TimedOut | Failure => 0,
-        }
-    }
-
     /// Compute retry-after for input proof POST.
     ///
     /// Formula: `⌈(p/D + P + T) × (1+M) / 1000⌉` clamped to [min, max]
@@ -305,7 +203,7 @@ impl RetryAfterState {
     /// | ReceiptReceived| Backoff schedule B(elapsed)      |
     pub async fn compute_for_input_proof_get(
         &self,
-        tx_info: Option<&TxQueueInfo>,
+        tx_info: &TxQueueInfo,
         state_info: &RequestStateInfo,
     ) -> u32 {
         use ReqStatus::*;
@@ -313,19 +211,10 @@ impl RetryAfterState {
         let min_secs = self.min_seconds().await;
         let max_secs = self.max_seconds().await;
         let margin = self.safety_margin().await;
-        let tx_confirm_ms = self.nominal_tx_ms().await;
         let processing_ms = self.nominal_input_proof_ms().await;
 
         match state_info.status {
-            Queued | Processing => {
-                if let Some(info) = tx_info {
-                    self.compute_for_input_proof_post(info).await
-                } else {
-                    // Fallback: assume no queue wait (P + T)
-                    let raw_eta_ms = processing_ms + tx_confirm_ms;
-                    to_retry_after_secs(raw_eta_ms, margin, min_secs, max_secs)
-                }
-            }
+            Queued | Processing => self.compute_for_input_proof_post(tx_info).await,
             TxInFlight => {
                 // Just processing time remaining (P)
                 to_retry_after_secs(processing_ms, margin, min_secs, max_secs)
@@ -350,7 +239,7 @@ impl RetryAfterState {
     /// | ReceiptReceived | -                  | Backoff schedule                     |
     pub async fn compute_for_decrypt_get(
         &self,
-        info: Option<&DecryptQueueInfo>,
+        decrypt_info: &DecryptQueueInfo,
         state_info: &RequestStateInfo,
         is_user_decrypt: bool,
     ) -> u32 {
@@ -368,22 +257,10 @@ impl RetryAfterState {
 
         match state_info.status {
             Queued => {
-                if let Some(decrypt_info) = info {
-                    self.compute_for_decrypt_post(decrypt_info, is_user_decrypt)
-                        .await
-                } else {
-                    // Fallback: assume no queue wait
-                    let raw_eta_ms = processing_ms + tx_confirm_ms;
-                    to_retry_after_secs(raw_eta_ms, margin, min_secs, max_secs)
-                }
+                self.compute_for_decrypt_post(decrypt_info, is_user_decrypt)
+                    .await
             }
             Processing => {
-                let Some(decrypt_info) = info else {
-                    // Fallback: P + T
-                    let raw_eta_ms = processing_ms + tx_confirm_ms;
-                    return to_retry_after_secs(raw_eta_ms, margin, min_secs, max_secs);
-                };
-
                 let nominal_readiness_ms = self.nominal_readiness_ms().await;
                 let tx_wait_ms = compute_tx_queue_wait_ms(&decrypt_info.tx);
 
@@ -458,15 +335,6 @@ impl RetryAfterState {
     }
 
     // ========== Internal helpers ==========
-
-    async fn get_default_processing_ms(&self, queue_info: Option<&RequestQueueInfo>) -> u32 {
-        match queue_info {
-            Some(RequestQueueInfo::InputProof(_)) => self.nominal_input_proof_ms().await,
-            Some(RequestQueueInfo::UserDecrypt(_)) => self.nominal_user_decrypt_ms().await,
-            Some(RequestQueueInfo::PublicDecrypt(_)) => self.nominal_public_decrypt_ms().await,
-            None => self.nominal_input_proof_ms().await, // Default fallback
-        }
-    }
 
     async fn compute_copro_kms_backoff(&self, elapsed_secs: u32) -> u32 {
         let min_secs = self.min_seconds().await;
@@ -664,22 +532,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_compute_queued_eta_input_proof() {
-        let config = test_config();
-        let state = RetryAfterState::new(&config);
-
-        let tx_info = TxQueueInfo {
-            size: 100,
-            drain_rate_tps: 20,
-            position: None,
-        };
-        let queue_info = RequestQueueInfo::InputProof(tx_info);
-        let result = state.compute_queued_eta(&queue_info).await;
-        assert_eq!(result, 9);
-    }
-
-    #[tokio::test]
-    async fn test_compute_queued_eta_clamped_to_min() {
+    async fn test_eta_clamped_to_min() {
         let config = test_config();
         let state = RetryAfterState::new(&config);
 
@@ -688,13 +541,12 @@ mod tests {
             drain_rate_tps: 100,
             position: None,
         };
-        let queue_info = RequestQueueInfo::InputProof(tx_info);
-        let result = state.compute_queued_eta(&queue_info).await;
-        assert!(result >= 1); // min_seconds
+        let result = state.compute_for_input_proof_post(&tx_info).await;
+        assert!(result >= config.min_seconds);
     }
 
     #[tokio::test]
-    async fn test_compute_queued_eta_clamped_to_max() {
+    async fn test_eta_clamped_to_max() {
         let mut config = test_config();
         config.max_seconds = 10;
         let state = RetryAfterState::new(&config);
@@ -704,8 +556,7 @@ mod tests {
             drain_rate_tps: 1,
             position: None,
         };
-        let queue_info = RequestQueueInfo::InputProof(tx_info);
-        let result = state.compute_queued_eta(&queue_info).await;
+        let result = state.compute_for_input_proof_post(&tx_info).await;
         assert_eq!(result, 10); // max_seconds
     }
 
@@ -764,24 +615,108 @@ mod tests {
         assert_eq!(state.compute_copro_kms_backoff(200).await, 30);
     }
 
+    /// A terminal status tells the client not to poll again, whatever the queues hold.
     #[tokio::test]
     async fn test_compute_for_get_completed() {
         let config = test_config();
         let state = RetryAfterState::new(&config);
 
-        let state_info = RequestStateInfo::new(ReqStatus::Completed, 10, 5);
-        let result = state.compute_for_get(&state_info, None).await;
+        let tx_info = TxQueueInfo {
+            size: 100,
+            drain_rate_tps: 20,
+            position: Some(50),
+        };
+        let state_info = RequestStateInfo::new(ReqStatus::Completed, 5);
+        let result = state
+            .compute_for_input_proof_get(&tx_info, &state_info)
+            .await;
         assert_eq!(result, 0);
     }
 
+    /// The copro/KMS backoff is keyed on time in state. This is the case a hardcoded elapsed of
+    /// zero used to break: it pinned every poll to the first interval.
     #[tokio::test]
     async fn test_compute_for_get_receipt_received() {
         let config = test_config();
         let state = RetryAfterState::new(&config);
 
-        let state_info = RequestStateInfo::new(ReqStatus::ReceiptReceived, 100, 65);
-        let result = state.compute_for_get(&state_info, None).await;
+        let tx_info = TxQueueInfo {
+            size: 0,
+            drain_rate_tps: 20,
+            position: Some(0),
+        };
+        let state_info = RequestStateInfo::new(ReqStatus::ReceiptReceived, 65);
+        let result = state
+            .compute_for_input_proof_get(&tx_info, &state_info)
+            .await;
         assert_eq!(result, 10); // 65s elapsed, uses interval at 60s threshold
+
+        let fresh = RequestStateInfo::new(ReqStatus::ReceiptReceived, 0);
+        assert_ne!(
+            state.compute_for_input_proof_get(&tx_info, &fresh).await,
+            result
+        );
+    }
+
+    /// The regression this whole change exists for. A pod not holding the dispatcher lock has an
+    /// empty in-memory throttler, so it used to report `size: 0` and floor the ETA to
+    /// `min_seconds` while the other pod, seeing the same request, returned a real estimate. With
+    /// the position read from `req_status` both pods are handed the same numbers, so the only way
+    /// they can still disagree is a bug in the formula itself.
+    #[tokio::test]
+    async fn test_get_eta_is_pod_independent() {
+        let config = test_config();
+        let state = RetryAfterState::new(&config);
+        let state_info = RequestStateInfo::new(ReqStatus::Processing, 3);
+
+        // What the passive pod used to build from its own empty queue, with 600 requests
+        // actually backed up in the database.
+        let from_empty_throttler = TxQueueInfo {
+            size: 0,
+            drain_rate_tps: 20,
+            position: None,
+        };
+        // What both pods now build from the row set, same 600 requests.
+        let from_sql = TxQueueInfo {
+            size: 600,
+            drain_rate_tps: 20,
+            position: Some(600),
+        };
+        // A genuinely idle queue.
+        let idle = TxQueueInfo {
+            size: 0,
+            drain_rate_tps: 20,
+            position: Some(0),
+        };
+
+        let passive = state
+            .compute_for_input_proof_get(&from_empty_throttler, &state_info)
+            .await;
+        let real = state
+            .compute_for_input_proof_get(&from_sql, &state_info)
+            .await;
+        let idle_eta = state.compute_for_input_proof_get(&idle, &state_info).await;
+
+        assert_eq!(
+            passive, idle_eta,
+            "the empty throttler makes a 600-deep backlog indistinguishable from an idle queue"
+        );
+        assert!(
+            real > passive,
+            "600 queued requests must widen the ETA: got {real} against {passive}"
+        );
+    }
+
+    /// Position wins over size when both are present: size is only the fallback for a request
+    /// joining the back of the queue.
+    #[test]
+    fn test_position_overrides_size() {
+        let info = TxQueueInfo {
+            size: 10_000,
+            drain_rate_tps: 20,
+            position: Some(20),
+        };
+        assert_eq!(compute_tx_queue_wait_ms(&info), 1000);
     }
 
     #[test]

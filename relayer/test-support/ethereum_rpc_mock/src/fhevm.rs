@@ -214,6 +214,15 @@ impl FhevmMockWrapper {
         U256::from(rand::random::<u64>())
     }
 
+    /// Number of decryption-request transactions the mock has accepted - one per
+    /// `eth_sendRawTransaction` any relayer pointed at this mock sent to the decryption
+    /// contract, matched or unmatched.
+    pub fn decryption_transaction_count(&self) -> usize {
+        self.json_rpc_server
+            .blockchain_state()
+            .transaction_count_to(self.decryption_contract)
+    }
+
     pub fn next_zk_proof_id(&self) -> u64 {
         self.next_zk_proof_id.fetch_add(1, Ordering::SeqCst)
     }

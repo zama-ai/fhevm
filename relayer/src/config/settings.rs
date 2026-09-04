@@ -20,29 +20,10 @@ const MAX_DEDUP_TTL_SECONDS: u64 = 10;
 /// TODO: Replace with proper event buffering solution.
 #[derive(Debug, Deserialize, Clone)]
 pub struct GwEventNotFoundRetryConfig {
-    /// Maximum number of retry attempts (default: 3)
-    #[serde(default = "default_gw_event_retry_max_retries")]
+    /// Retry attempts before the event is treated as unmatched.
     pub max_retries: u32,
-    /// Delay between retries in milliseconds (default: 1000)
-    #[serde(default = "default_gw_event_retry_delay_ms")]
+    /// Delay between those attempts, in milliseconds.
     pub retry_delay_ms: u64,
-}
-
-fn default_gw_event_retry_max_retries() -> u32 {
-    3
-}
-
-fn default_gw_event_retry_delay_ms() -> u64 {
-    1000
-}
-
-impl Default for GwEventNotFoundRetryConfig {
-    fn default() -> Self {
-        Self {
-            max_retries: default_gw_event_retry_max_retries(),
-            retry_delay_ms: default_gw_event_retry_delay_ms(),
-        }
-    }
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -53,7 +34,6 @@ pub struct GatewayConfig {
     pub readiness_checker: ReadinessCheckConfig,
     pub contracts: ContractConfig,
     /// Retry config for gateway events arriving before gw_reference_id stored
-    #[serde(default)]
     pub gw_event_not_found_retry: GwEventNotFoundRetryConfig,
 }
 
@@ -379,7 +359,6 @@ pub struct HttpConfig {
     /// Default retry-after seconds for queued API responses
     pub api_retry_after_seconds: u32,
     /// Enable admin endpoints for dynamic configuration updates
-    #[serde(default)]
     pub enable_admin_endpoint: bool,
     /// Dynamic retry-after configuration for V2 handlers
     pub retry_after: super::retry_after::RetryAfterConfig,
@@ -406,11 +385,108 @@ pub struct MetricsConfig {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct ShutdownConfig {
-    /// Covers the lag until the pod's removal from the service endpoints reaches the ingress
-    /// controller. Not the readiness probe's detection time - deletion drops the endpoint as
-    /// it sends SIGTERM, so the probe path never runs.
+    /// Time this pod keeps serving after it stops reporting Ready, so the load balancer takes
+    /// it out of rotation first. Added to every shutdown.
     #[serde(deserialize_with = "deserialize_human_duration")]
     pub lb_propagation_wait: Duration,
+    /// Bound on the last shutdown step, releasing the dispatcher lock: the unlock and the
+    /// connection close share this budget.
+    #[serde(deserialize_with = "deserialize_human_duration")]
+    pub lock_release_timeout: Duration,
+}
+
+/// The Postgres advisory lock that elects which replica dispatches. Every pod serves HTTP and
+/// is Ready; only the holder sends transactions to the gateway.
+#[derive(Debug, Deserialize, Clone)]
+pub struct DispatcherLockConfig {
+    /// Interval between a standby's attempts to take the lock. Also the failover delay after
+    /// the holder releases or dies.
+    #[serde(deserialize_with = "deserialize_human_duration")]
+    pub standby_poll_interval: Duration,
+    /// Interval between the holder's checks that its lock connection is alive.
+    #[serde(deserialize_with = "deserialize_human_duration")]
+    pub holder_heartbeat_interval: Duration,
+    /// Bound on each query the lock runs on its own connection: try-lock, epoch mint,
+    /// heartbeat, unlock.
+    #[serde(deserialize_with = "deserialize_human_duration")]
+    pub query_timeout: Duration,
+    /// Failed round trips in a row before the pod exits and a standby takes over. The count
+    /// resets on any query that completes.
+    pub exit_after_consecutive_failures: u32,
+    /// Bound on opening the lock's connection at startup.
+    #[serde(deserialize_with = "deserialize_human_duration")]
+    pub connect_timeout: Duration,
+    /// Postgres-side timeout that frees the lock when a holder's node dies without closing its
+    /// socket. Must exceed both intervals above (see [`Self::validate`]). Needs Postgres 14+.
+    #[serde(deserialize_with = "deserialize_human_duration")]
+    pub idle_session_timeout: Duration,
+    /// Overrides the schema-derived lock key. Set `null` in production, where every pod
+    /// against one database resolves the same key.
+    pub key_override: Option<i32>,
+    /// Re-dispatch of requests nobody is driving. Runs on the lock holder only.
+    pub sweep: SweepConfig,
+}
+
+impl DispatcherLockConfig {
+    pub fn validate(&self) -> Result<(), AppConfigError> {
+        // Both intervals build a `tokio::time::interval`, which panics on a zero period. The
+        // panic lands in the `JoinSet` and is reaped only at shutdown, so the pod goes Ready
+        // and dispatches nothing.
+        if self.holder_heartbeat_interval.is_zero() {
+            return Err(AppConfigError::Config(
+                "dispatcher_lock.holder_heartbeat_interval must be greater than 0".to_string(),
+            ));
+        }
+        if self.standby_poll_interval.is_zero() {
+            return Err(AppConfigError::Config(
+                "dispatcher_lock.standby_poll_interval must be greater than 0".to_string(),
+            ));
+        }
+        // A bound at or below the heartbeat reaps the session of a holder that is doing
+        // everything right, every time it pauses between heartbeats - a permanent failover
+        // loop, strictly worse than the dead-node window this setting exists to close.
+        if self.idle_session_timeout <= self.holder_heartbeat_interval {
+            return Err(AppConfigError::Config(format!(
+                "dispatcher_lock.idle_session_timeout ({:?}) must be greater than \
+                 dispatcher_lock.holder_heartbeat_interval ({:?}): at or below it, Postgres \
+                 reaps a healthy holder's session between heartbeats",
+                self.idle_session_timeout, self.holder_heartbeat_interval
+            )));
+        }
+        // Defensive since the bound moved to acquisition: only a pod that has held the lock
+        // carries the GUC, and none returns to polling. A value under the poll interval still
+        // describes a session Postgres would reap between two try-locks, so it stays rejected.
+        if self.idle_session_timeout <= self.standby_poll_interval {
+            return Err(AppConfigError::Config(format!(
+                "dispatcher_lock.idle_session_timeout ({:?}) must be greater than \
+                 dispatcher_lock.standby_poll_interval ({:?}): at or below it, Postgres reaps \
+                 an idle standby's session and it can never acquire the lock",
+                self.idle_session_timeout, self.standby_poll_interval
+            )));
+        }
+        self.sweep.validate()
+    }
+}
+
+/// Re-dispatches requests nobody is driving: one a standby accepted, one orphaned by a dead
+/// holder, or this pod's own work from before a restart.
+#[derive(Debug, Deserialize, Clone)]
+pub struct SweepConfig {
+    /// Interval between the holder's scans, and so the delay before such a request is picked
+    /// up. Every tick costs one Postgres query.
+    #[serde(deserialize_with = "deserialize_human_duration")]
+    pub interval: Duration,
+}
+
+impl SweepConfig {
+    pub fn validate(&self) -> Result<(), AppConfigError> {
+        if self.interval.is_zero() {
+            return Err(AppConfigError::Config(
+                "sweep.interval must be greater than 0".to_string(),
+            ));
+        }
+        Ok(())
+    }
 }
 
 /// Deserializes strings like "30s", "5m", "1d" into std::time::Duration.
@@ -427,8 +503,7 @@ where
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct CronConfig {
-    /// Whether the expiry (retention) worker is enabled. Defaults to false.
-    #[serde(default)]
+    /// Whether the expiry (retention) worker is enabled.
     pub expiry_enabled: bool,
     // We map the YAML key `timeout_cron_interval_secs` to this field,
     // but parse the string value into a Duration.
@@ -639,6 +714,8 @@ pub struct Settings {
     pub user_decrypt_signature_check: UserDecryptSignatureCheckConfig,
     /// Shutdown sequencing
     pub shutdown: ShutdownConfig,
+    /// HA dispatcher lock (session-level Postgres advisory lock), and the sweep it gates
+    pub dispatcher_lock: DispatcherLockConfig,
 }
 
 // Error type for application-specific configuration errors
@@ -694,6 +771,8 @@ impl Settings {
 
         // Validate cron startup delay (10% rule)
         settings.storage.cron.validate()?;
+
+        settings.dispatcher_lock.validate()?;
 
         // Ensure HTTP metrics configuration is provided
         if settings.http.metrics.histogram_buckets.is_empty() {
@@ -1891,5 +1970,91 @@ mod tests {
             }
             other => panic!("expected keyurl.source: config, got {other:?}"),
         }
+    }
+
+    /// Pins the example config's pair, since that is what an operator copies now that the
+    /// struct carries no defaults. A bound at or below the heartbeat has Postgres reap a
+    /// healthy holder between its heartbeats.
+    #[test]
+    #[serial] // Settings::new reads the environment
+    fn test_dispatcher_lock_idle_timeout_must_exceed_the_heartbeat() {
+        let shipped = settings_new(ConfigBuilder::from_example().expect("example config"))
+            .expect("the example config must load")
+            .dispatcher_lock;
+        shipped
+            .validate()
+            .expect("the values config/local.yaml.example ships must satisfy the invariant");
+
+        for idle in [Duration::from_secs(5), Duration::from_secs(1)] {
+            let err = DispatcherLockConfig {
+                idle_session_timeout: idle,
+                ..shipped.clone()
+            }
+            .validate()
+            .expect_err("an idle bound at or below the heartbeat must be rejected")
+            .to_string();
+            assert!(
+                err.contains("holder_heartbeat_interval"),
+                "the error must name the interval it was compared against, got: {err}"
+            );
+        }
+    }
+
+    /// A zero interval panics the lock task at spawn, and the `JoinSet` holds that panic until
+    /// shutdown - so the pod reaches Ready and never dispatches.
+    #[test]
+    #[serial] // Settings::new reads the environment
+    fn test_dispatcher_lock_rejects_zero_intervals() {
+        let shipped = settings_new(ConfigBuilder::from_example().expect("example config"))
+            .expect("the example config must load")
+            .dispatcher_lock;
+
+        let err = DispatcherLockConfig {
+            holder_heartbeat_interval: Duration::ZERO,
+            ..shipped.clone()
+        }
+        .validate()
+        .expect_err("a zero heartbeat interval must be rejected")
+        .to_string();
+        assert!(
+            err.contains("holder_heartbeat_interval"),
+            "the error must name the interval, got: {err}"
+        );
+
+        let err = DispatcherLockConfig {
+            standby_poll_interval: Duration::ZERO,
+            ..shipped.clone()
+        }
+        .validate()
+        .expect_err("a zero standby poll interval must be rejected")
+        .to_string();
+        assert!(
+            err.contains("standby_poll_interval"),
+            "the error must name the interval, got: {err}"
+        );
+    }
+
+    /// The standby side of the same bound: reaped between its try-locks, a standby's connection
+    /// is never reopened, so it exits on repeated failures instead of taking the lock.
+    #[test]
+    #[serial] // Settings::new reads the environment
+    fn test_dispatcher_lock_idle_timeout_must_exceed_the_standby_poll() {
+        let shipped = settings_new(ConfigBuilder::from_example().expect("example config"))
+            .expect("the example config must load")
+            .dispatcher_lock;
+
+        let err = DispatcherLockConfig {
+            holder_heartbeat_interval: Duration::from_secs(1),
+            standby_poll_interval: Duration::from_secs(30),
+            idle_session_timeout: Duration::from_secs(10),
+            ..shipped
+        }
+        .validate()
+        .expect_err("an idle bound at or below the standby poll must be rejected")
+        .to_string();
+        assert!(
+            err.contains("standby_poll_interval"),
+            "the error must name the interval it was compared against, got: {err}"
+        );
     }
 }

@@ -48,4 +48,10 @@ pub struct PublicDecryptResponseModel {
     pub res: Option<Value>,
     pub err_reason: Option<String>,
     pub updated_at: DateTime<Utc>,
+    /// Requests ahead of this one in its current queue. Zero-based; zero once the request has
+    /// left the queues. Read from the DB rather than a per-pod throttler so both pods agree.
+    pub queue_position: i64,
+    /// TX-queue depth, for a request still in the readiness queue: its own position says how far
+    /// it is from being checked, not what it will then queue behind.
+    pub tx_queue_size: i64,
 }

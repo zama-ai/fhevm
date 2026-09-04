@@ -7,7 +7,7 @@ pub mod queue_info;
 pub mod state;
 
 // Re-export key types for convenience
-pub use queue_info::{DecryptQueueInfo, ReadinessQueueInfo, RequestQueueInfo, TxQueueInfo};
+pub use queue_info::{DecryptQueueInfo, ReadinessQueueInfo, TxQueueInfo};
 pub use state::{
     compute_readiness_queue_wait_ms, compute_tx_queue_wait_ms, RequestStateInfo, RetryAfterState,
 };
