@@ -22,5 +22,12 @@ serde = { version = "1", default-features = false, features = [
 ] }
 strum = { version = "0.28", default-features = false, features = ["derive"] }
 
+# Endpoint specific dependencies.
+actix-web = { version = "4", default-features = false, optional = true }
+
 [dev-dependencies]
 serde_json = { version = "1", default-features = false, features = ["std"] }
+
+[features]
+# Server-side helpers for the connector endpoint (i.e. `actix_web::ResponseError` impls).
+endpoint = ["dep:actix-web"]

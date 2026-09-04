@@ -8,13 +8,28 @@ version.workspace = true
 
 [dependencies]
 connector-utils.workspace = true
+kms-connector-api = { workspace = true, features = ["endpoint"] }
+bc2wrap.workspace = true
 
+actix-web.workspace = true
+alloy.workspace = true
 anyhow.workspace = true
 humantime-serde.workspace = true
 serde.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+tfhe.workspace = true
+thiserror.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
 tracing.workspace = true
+tracing-opentelemetry.workspace = true
+
+[dev-dependencies]
+connector-utils = { workspace = true, features = ["tests"] }
+rand.workspace = true
+rstest.workspace = true
+serial_test.workspace = true
 
 [[bin]]
 name = "endpoint"

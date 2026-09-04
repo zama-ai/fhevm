@@ -1,4 +1,4 @@
-use endpoint::core::{Config, Entrypoint};
+use endpoint::core::{Config, Endpoint};
 
 use connector_utils::{
     cli::{Cli, Subcommands},
@@ -20,7 +20,6 @@ async fn main() -> ExitCode {
     ExitCode::SUCCESS
 }
 
-// TODO: this is a dummy entrypoint. Update it once the `Endpoint` service is implemented.
 async fn run() -> anyhow::Result<()> {
     let subcommand = Cli::new("Endpoint").parse();
     match subcommand {
@@ -39,8 +38,8 @@ async fn run() -> anyhow::Result<()> {
             set_task_limit(config.task_limit);
             install_signal_handlers(cancel_token.clone())?;
 
-            let entrypoint = Entrypoint::from_config(config).await?;
-            entrypoint.start(cancel_token).await;
+            let endpoint = Endpoint::from_config(config).await?;
+            endpoint.start(cancel_token).await?;
         }
     }
     Ok(())

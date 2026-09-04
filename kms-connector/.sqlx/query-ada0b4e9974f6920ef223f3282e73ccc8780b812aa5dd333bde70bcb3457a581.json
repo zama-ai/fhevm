@@ -1,0 +1,44 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO public_decryption_responses(\n            decryption_id, error_code, error_details, extra_data, created_at, otlp_context,\n            status, source\n        )\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)\n        ON CONFLICT (decryption_id) DO UPDATE SET\n            error_code = EXCLUDED.error_code, error_details = EXCLUDED.error_details,\n            created_at = EXCLUDED.created_at",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Text",
+        "Text",
+        "Bytea",
+        "Timestamptz",
+        "Bytea",
+        {
+          "Custom": {
+            "name": "operation_status",
+            "kind": {
+              "Enum": [
+                "pending",
+                "under_process",
+                "completed",
+                "failed",
+                "aborted"
+              ]
+            }
+          }
+        },
+        {
+          "Custom": {
+            "name": "request_source",
+            "kind": {
+              "Enum": [
+                "onchain",
+                "http"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ada0b4e9974f6920ef223f3282e73ccc8780b812aa5dd333bde70bcb3457a581"
+}
