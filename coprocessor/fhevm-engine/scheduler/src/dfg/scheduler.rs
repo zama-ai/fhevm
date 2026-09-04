@@ -18,6 +18,9 @@ use fhevm_engine_common::tfhe_ops::perform_fhe_operation;
 use fhevm_engine_common::types::{get_ct_type, Handle, SupportedFheCiphertexts};
 use fhevm_engine_common::utils::HeartBeat;
 use std::collections::HashMap;
+#[cfg(feature = "gpu")]
+use std::sync::Arc;
+use std::time::Duration;
 use tfhe::ReRandomizationContext;
 use tokio::task::JoinSet;
 use tracing::{error, info, warn};
@@ -26,6 +29,48 @@ use super::{DFComponentGraph, DFGraph, OpNode};
 
 const OPERATION_RERANDOMISATION_DOMAIN_SEPARATOR: [u8; 8] = *b"TFHE_Rrd";
 const COMPACT_PUBLIC_ENCRYPTION_DOMAIN_SEPARATOR: [u8; 8] = *b"TFHE_Enc";
+
+/// Process-wide GPU stream capacity shared by every concurrently scheduled
+/// batch. A scheduler-local bound alone would be insufficient if several
+/// schedulers ever run at once, and partitions must not oversubscribe a
+/// device's streams.
+#[cfg(feature = "gpu")]
+#[derive(Clone)]
+pub struct GpuExecutionLimiter {
+    devices: Arc<Vec<Arc<tokio::sync::Semaphore>>>,
+    streams_per_device: usize,
+}
+
+#[cfg(feature = "gpu")]
+impl GpuExecutionLimiter {
+    pub fn new(device_count: usize, streams_per_device: usize) -> Result<Self> {
+        if device_count == 0 || streams_per_device == 0 {
+            anyhow::bail!("GPU execution requires at least one device and stream");
+        }
+        Ok(Self {
+            devices: Arc::new(
+                (0..device_count)
+                    .map(|_| Arc::new(tokio::sync::Semaphore::new(streams_per_device)))
+                    .collect(),
+            ),
+            streams_per_device,
+        })
+    }
+
+    pub fn total_capacity(&self) -> usize {
+        self.devices.len().saturating_mul(self.streams_per_device)
+    }
+
+    pub async fn acquire(&self, device: usize) -> Result<tokio::sync::OwnedSemaphorePermit> {
+        self.devices
+            .get(device)
+            .ok_or_else(|| anyhow::anyhow!("GPU device {device} has no execution limiter"))?
+            .clone()
+            .acquire_owned()
+            .await
+            .map_err(|_| anyhow::anyhow!("GPU execution limiter closed"))
+    }
+}
 
 pub enum PartitionStrategy {
     MaxParallelism,
@@ -43,15 +88,21 @@ enum DeviceSelection {
 pub struct Scheduler<'a> {
     graph: &'a mut DFComponentGraph,
     edges: Dag<(), ComponentEdge>,
+    /// Upper bound on any single GPU memory reservation wait; exceeding it
+    /// fails the operation instead of spinning forever while holding
+    /// resources.
+    gpu_reservation_timeout: Duration,
     #[cfg(not(feature = "gpu"))]
     sks: tfhe::ServerKey,
     cpk: tfhe::CompactPublicKey,
     #[cfg(feature = "gpu")]
     csks: Vec<tfhe::CudaServerKey>,
+    #[cfg(feature = "gpu")]
+    gpu_execution_limiter: GpuExecutionLimiter,
     activity_heartbeat: HeartBeat,
 }
 
-type PartitionResult = (HashMap<Handle, Result<TaskResult>>, NodeIndex);
+type PartitionResult = (HashMap<Handle, Result<TaskResult>>, NodeIndex, usize);
 impl<'a> Scheduler<'a> {
     fn is_ready_task(&self, node: &ExecNode) -> bool {
         node.dependence_counter
@@ -63,17 +114,22 @@ impl<'a> Scheduler<'a> {
         #[cfg(not(feature = "gpu"))] sks: tfhe::ServerKey,
         cpk: tfhe::CompactPublicKey,
         #[cfg(feature = "gpu")] csks: Vec<tfhe::CudaServerKey>,
+        #[cfg(feature = "gpu")] gpu_execution_limiter: GpuExecutionLimiter,
         activity_heartbeat: HeartBeat,
+        gpu_reservation_timeout: Duration,
     ) -> Self {
         let edges = graph.graph.map(|_, _| (), |_, edge| *edge);
         Self {
             graph,
             edges,
+            gpu_reservation_timeout,
             #[cfg(not(feature = "gpu"))]
             sks,
             cpk,
             #[cfg(feature = "gpu")]
             csks,
+            #[cfg(feature = "gpu")]
+            gpu_execution_limiter,
             activity_heartbeat,
         }
     }
@@ -117,25 +173,28 @@ impl<'a> Scheduler<'a> {
     fn get_keys(
         &self,
         _target: DeviceSelection,
-    ) -> Result<(tfhe::ServerKey, tfhe::CompactPublicKey)> {
-        Ok((self.sks.clone(), self.cpk.clone()))
+    ) -> Result<(tfhe::ServerKey, tfhe::CompactPublicKey, usize)> {
+        Ok((self.sks.clone(), self.cpk.clone(), 0))
     }
     #[cfg(feature = "gpu")]
     fn get_keys(
         &self,
         target: DeviceSelection,
-    ) -> Result<(tfhe::CudaServerKey, tfhe::CompactPublicKey)> {
+    ) -> Result<(tfhe::CudaServerKey, tfhe::CompactPublicKey, usize)> {
+        if self.csks.is_empty() {
+            anyhow::bail!("No GPU server keys available");
+        }
         match target {
             DeviceSelection::Index(i) => {
                 if i < self.csks.len() {
-                    Ok((self.csks[i].clone(), self.cpk.clone()))
+                    Ok((self.csks[i].clone(), self.cpk.clone(), i))
                 } else {
                     error!(target: "scheduler", {index = ?i },
 			   "Wrong device index");
                     // Instead of giving up, we'll use device 0 (which
                     // should always be safe to use) and keep making
                     // progress even if suboptimally
-                    Ok((self.csks[0].clone(), self.cpk.clone()))
+                    Ok((self.csks[0].clone(), self.cpk.clone(), 0))
                 }
             }
             DeviceSelection::RoundRobin => {
@@ -143,9 +202,9 @@ impl<'a> Scheduler<'a> {
                     std::sync::atomic::AtomicUsize::new(0);
                 // Use fetch_add to increment atomically
                 let i = LAST.fetch_add(1, std::sync::atomic::Ordering::Relaxed) % self.csks.len();
-                Ok((self.csks[i].clone(), self.cpk.clone()))
+                Ok((self.csks[i].clone(), self.cpk.clone(), i))
             }
-            DeviceSelection::NA => Ok((self.csks[0].clone(), self.cpk.clone())),
+            DeviceSelection::NA => Ok((self.csks[0].clone(), self.cpk.clone(), 0)),
         }
     }
 
@@ -189,12 +248,31 @@ impl<'a> Scheduler<'a> {
                         tx.component_id,
                     ));
                 }
-                let (sks, cpk) = self.get_keys(DeviceSelection::RoundRobin)?;
+                let (sks, cpk, gpu_idx) = self.get_keys(DeviceSelection::RoundRobin)?;
+                // Bound concurrent partitions per device. Permits are
+                // released by the blocking task itself, never by this
+                // coordinator, so waiting here cannot deadlock; it only
+                // paces dispatch to the configured stream capacity.
+                #[cfg(feature = "gpu")]
+                let gpu_permit = self.gpu_execution_limiter.acquire(gpu_idx).await?;
+                let gpu_reservation_timeout = self.gpu_reservation_timeout;
                 let parent_span = tracing::Span::current();
                 let heartbeat = self.activity_heartbeat.clone();
+                let dispatched_at = std::time::Instant::now();
                 set.spawn_blocking(move || {
+                    #[cfg(feature = "gpu")]
+                    let _gpu_permit = gpu_permit;
                     let span_guard = parent_span.enter();
-                    let result = execute_partition(args, index, 0, sks, cpk, heartbeat);
+                    let result = execute_partition(
+                        args,
+                        index,
+                        dispatched_at,
+                        gpu_idx,
+                        sks,
+                        cpk,
+                        gpu_reservation_timeout,
+                        heartbeat,
+                    );
                     drop(span_guard);
                     result
                 });
@@ -206,9 +284,11 @@ impl<'a> Scheduler<'a> {
             // computed within the finished partition. Now check the
             // outputs and update the trnsaction inputs of downstream
             // transactions
-            let (sks, _cpk) = self.get_keys(DeviceSelection::RoundRobin)?;
-            tfhe::set_server_key(sks);
             let result = result?;
+            // Install the key of the device the partition ran on: forwarded
+            // results referenced below live there.
+            let (sks, _cpk, _) = self.get_keys(DeviceSelection::Index(result.2))?;
+            tfhe::set_server_key(sks);
             let task_index = result.1;
             for (handle, node_result) in result.0.into_iter() {
                 // Add computed allowed handles to the graph. These
@@ -244,13 +324,27 @@ impl<'a> Scheduler<'a> {
                             tx.component_id,
                         ));
                     }
-                    let (sks, cpk) = self.get_keys(DeviceSelection::RoundRobin)?;
+                    let (sks, cpk, gpu_idx) = self.get_keys(DeviceSelection::RoundRobin)?;
+                    #[cfg(feature = "gpu")]
+                    let gpu_permit = self.gpu_execution_limiter.acquire(gpu_idx).await?;
+                    let gpu_reservation_timeout = self.gpu_reservation_timeout;
                     let parent_span = tracing::Span::current();
                     let heartbeat = self.activity_heartbeat.clone();
+                    let dispatched_at = std::time::Instant::now();
                     set.spawn_blocking(move || {
+                        #[cfg(feature = "gpu")]
+                        let _gpu_permit = gpu_permit;
                         let span_guard = parent_span.enter();
-                        let result =
-                            execute_partition(args, dependent_task_index, 0, sks, cpk, heartbeat);
+                        let result = execute_partition(
+                            args,
+                            dependent_task_index,
+                            dispatched_at,
+                            gpu_idx,
+                            sks,
+                            cpk,
+                            gpu_reservation_timeout,
+                            heartbeat,
+                        );
                         drop(span_guard);
                         result
                     });
@@ -307,16 +401,36 @@ type ComponentSet = Vec<(DFGraph, HashMap<Handle, Option<DFGTxInput>>, Handle, u
 /// persisted representation. The consuming handle commits to that origin, so
 /// the raw and canonical forms cannot alias even when they represent the same
 /// plaintext operation.
+#[allow(clippy::too_many_arguments)]
 fn execute_partition(
     transactions: ComponentSet,
     task_id: NodeIndex,
+    dispatched_at: std::time::Instant,
     gpu_idx: usize,
     #[cfg(not(feature = "gpu"))] sks: tfhe::ServerKey,
     #[cfg(feature = "gpu")] sks: tfhe::CudaServerKey,
     cpk: tfhe::CompactPublicKey,
+    gpu_reservation_timeout: Duration,
     activity_heartbeat: HeartBeat,
 ) -> PartitionResult {
+    let spawned_at = std::time::Instant::now();
     tfhe::set_server_key(sks);
+    let key_installed_at = std::time::Instant::now();
+    let partition_tx_count = transactions.len();
+    // Per-partition memo of the canonical decompressed form ct(h), permitted
+    // by RFC-020 ("the worker may cache the canonical decompressed form ct(h)
+    // for the duration of the transaction batch"). Without it a boundary
+    // handle consumed by K ops is decompressed K times from identical bytes.
+    //
+    // Scoped to the PARTITION, not the batch, on purpose: a partition runs on
+    // one thread with one server key installed, so entries are created on the
+    // device that consumes them and need no synchronization. A batch-wide
+    // cache would have to be shared across partition threads and would pin
+    // every boundary value to whichever device populated it.
+    //
+    // Memoization is observationally transparent — Decompress(cmp(h)) is
+    // deterministic, so a hit and a miss yield the same value.
+    let mut boundary_cache: HashMap<Handle, SupportedFheCiphertexts> = HashMap::new();
     let mut res: HashMap<Handle, Result<TaskResult>> = HashMap::with_capacity(transactions.len());
     // Traverse transactions within the partition. The transactions
     // are topologically sorted so the order is executable
@@ -384,7 +498,16 @@ fn execute_partition(
                 error!(target: "scheduler", {index = ?nidx.index() }, "Wrong dataflow graph index");
                 continue;
             };
-            let result = try_execute_node(node, nidx.index(), tx_inputs, gpu_idx, &tid, &cpk);
+            let result = try_execute_node(
+                node,
+                nidx.index(),
+                tx_inputs,
+                gpu_idx,
+                &tid,
+                &cpk,
+                gpu_reservation_timeout,
+                &mut boundary_cache,
+            );
             // Per-op progress tick: a partition can legitimately run longer
             // than both the heartbeat freshness window and the in-flight
             // batch TTL; liveness must track op completions, not partition
@@ -495,9 +618,29 @@ fn execute_partition(
         let elapsed = started_at.elapsed();
         FHE_BATCH_LATENCY_HISTOGRAM.observe(elapsed.as_secs_f64());
     }
-    (res, task_id)
+    tracing::info!(
+        target: "scheduler",
+        dispatch_us = spawned_at.duration_since(dispatched_at).as_micros() as u64,
+        key_install_us = key_installed_at.duration_since(spawned_at).as_micros() as u64,
+        exec_us = key_installed_at.elapsed().as_micros() as u64,
+        total_us = dispatched_at.elapsed().as_micros() as u64,
+        tx_count = partition_tx_count,
+        "partition_hop"
+    );
+    // No trailing device synchronization: it would be a DEVICE-WIDE barrier
+    // that couples this partition to every other in-flight partition's
+    // queued kernels — on a dependency-deep workload each link then waits
+    // for all sibling chains before its successor can spawn. It is also not
+    // needed for correctness: (1) every value that escapes the partition is
+    // host bytes produced by compress, which synchronizes the partition's
+    // own streams; (2) raw and canonical forwards are consumed inside the
+    // partition on the same streams, in order; (3) buffer frees are
+    // stream-ordered; (4) the GPU memory reservations already release at op
+    // return, so the sync never extended that accounting.
+    (res, task_id, gpu_idx)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn try_execute_node(
     node: &mut OpNode,
     node_index: usize,
@@ -505,6 +648,8 @@ fn try_execute_node(
     gpu_idx: usize,
     transaction_id: &Handle,
     cpk: &tfhe::CompactPublicKey,
+    gpu_reservation_timeout: Duration,
+    boundary_cache: &mut HashMap<Handle, SupportedFheCiphertexts>,
 ) -> Result<(usize, OpResult)> {
     if !node.check_ready_inputs(tx_inputs) {
         return Err(SchedulerError::SchedulerError.into());
@@ -519,21 +664,65 @@ fn try_execute_node(
             DFGTaskInput::Value(v) => {
                 cts.push(v);
             }
-            DFGTaskInput::Compressed(cct) => {
-                let decompressed = SupportedFheCiphertexts::decompress(
-		    cct.ct_type,
-		    &cct.ct_bytes,
-		    gpu_idx,
-		)
+            DFGTaskInput::Compressed(handle, cct) => {
+                // ct(h) is the same value for every consumer, so a hit and a
+                // miss are indistinguishable to the operation. See the memo's
+                // declaration in execute_partition for the RFC-020 basis.
+                if let Some(cached) = boundary_cache.get(&handle) {
+                    cts.push(cached.clone());
+                    continue;
+                }
+                // Decompression is inside catch_unwind for the same reason
+                // the operation is: an allocation failure that surfaces as a
+                // PANIC rather than as a reservation error would otherwise
+                // escape this function, kill the spawn_blocking task, and fail
+                // the WHOLE batch with nothing stamped — retried only at batch
+                // granularity, unattributable, and rotating forever if it is
+                // deterministic. Caught, it becomes an ExecutionPanic like any
+                // other, and takes the per-computation retry path.
+                let decompressed = match std::panic::catch_unwind(
+                    std::panic::AssertUnwindSafe(|| {
+                        SupportedFheCiphertexts::decompress(
+                            cct.ct_type,
+                            &cct.ct_bytes,
+                            gpu_idx,
+                                            gpu_reservation_timeout,
+                        )
+                    }),
+                ) {
+                    Ok(result) => result,
+                    Err(panic) => {
+                        let msg = panic_message(panic);
+                        error!(
+                            target: "scheduler",
+                            { handle = ?hex::encode(&node.result_handle), ct_type = cct.ct_type, panic = %msg },
+                            "Panic while decompressing op input"
+                        );
+                        return Err(SchedulerError::ExecutionPanic(format!(
+                            "decompressing boundary input: {msg}"
+                        ))
+                        .into());
+                    }
+                }
 		    .map_err(|e| {
-			error!(
+				error!(
 			    target: "scheduler",
 			    { handle = ?hex::encode(&node.result_handle), ct_type = cct.ct_type, error = ?e },
 			    "Error while decompressing op input"
-			);
-			telemetry::set_current_span_error(&e);
-			SchedulerError::DecompressionError
-		    })?;
+				);
+				telemetry::set_current_span_error(&e);
+				#[cfg(feature = "gpu")]
+				if matches!(
+				    e.downcast_ref::<fhevm_engine_common::types::FhevmError>(),
+				    Some(
+					fhevm_engine_common::types::FhevmError::GpuMemoryReservationError(_)
+				    )
+				) {
+				    return e;
+				}
+				anyhow::Error::new(SchedulerError::DecompressionError)
+			    })?;
+                boundary_cache.insert(handle, decompressed.clone());
                 cts.push(decompressed);
             }
             DFGTaskInput::LocalDependence(_) | DFGTaskInput::BoundaryDependence(_) => {
@@ -565,7 +754,10 @@ fn try_execute_node(
         SchedulerError::SchedulerError
     })?;
 
-    let result = std::panic::catch_unwind(|| {
+    // AssertUnwindSafe: the closure only reads shared state and
+    // owns everything else it touches; a panic cannot leave observable
+    // broken state behind.
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         run_computation(
             opcode,
             cts,
@@ -573,8 +765,9 @@ fn try_execute_node(
             gpu_idx,
             transaction_id,
             output_type,
+            gpu_reservation_timeout,
         )
-    });
+    }));
     match result {
         Err(e) => {
             let msg = panic_message(e);
@@ -641,6 +834,7 @@ fn compress_output(
     Ok(CompressedCiphertext { ct_type, ct_bytes })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_computation(
     operation: i32,
     inputs: Vec<SupportedFheCiphertexts>,
@@ -648,6 +842,7 @@ fn run_computation(
     gpu_idx: usize,
     transaction_id: &Handle,
     output_type: i16,
+    gpu_reservation_timeout: Duration,
 ) -> (usize, OpResult) {
     let txn_id_short = telemetry::short_hex_id(transaction_id);
     let op = FheOperation::try_from(operation);
@@ -672,7 +867,13 @@ fn run_computation(
                 tracing::Span::current().record("input_type", inputs[0].type_name());
             }
 
-            let result = perform_fhe_operation(operation as i16, &inputs, gpu_idx, output_type);
+            let result = perform_fhe_operation(
+                operation as i16,
+                &inputs,
+                gpu_idx,
+                output_type,
+                gpu_reservation_timeout,
+            );
 
             match result {
                 Ok(result) => (graph_node_index, Ok(result)),

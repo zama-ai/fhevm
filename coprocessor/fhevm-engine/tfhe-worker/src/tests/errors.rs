@@ -393,7 +393,7 @@ async fn retryable_panic_stamp_is_retried_and_healed() -> Result<(), Box<dyn std
     sqlx::query(
         r#"UPDATE computations
            SET is_error = true,
-               error_message = 'Coprocessor scheduler error: ExecutionPanic("simulated device pressure")'
+               error_message = 'RETRYABLE Coprocessor scheduler error: ExecutionPanic("simulated device pressure")'
            WHERE output_handle = $1 AND transaction_id = $2"#,
     )
     .bind(output.as_slice())

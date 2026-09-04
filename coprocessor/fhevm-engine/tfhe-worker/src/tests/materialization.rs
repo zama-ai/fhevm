@@ -125,3 +125,217 @@ async fn boundary_and_local_sourcing_both_compute_and_persist(
     assert_eq!(plaintexts[1].value, "12");
     Ok(())
 }
+
+/// Experiment, not a gate: does decompress(compress(x)) reproduce x
+/// bit-exactly for noisy production-parameter ciphertexts? FFT rounding
+/// makes inexactness possible rather than guaranteed; the answer decides
+/// whether an equivocation alias can diverge bytes at all (and therefore
+/// whether the drift choreography deserves a gate). Run explicitly:
+/// cargo test --release -p tfhe-worker -- --ignored round_trip_bit_exactness
+#[test]
+#[ignore]
+fn compression_round_trip_bit_exactness_survey() {
+    use fhevm_engine_common::types::SupportedFheCiphertexts;
+    use fhevm_engine_common::utils::{safe_deserialize_key, safe_serialize};
+    use tfhe::prelude::*;
+    use tfhe::xof_key_set::CompressedXofKeySet;
+
+    let keyset_bytes = std::fs::read("../fhevm-keys/xof-keyset").expect("keyset fixture");
+    let keyset: CompressedXofKeySet =
+        safe_deserialize_key(&keyset_bytes).expect("deserialize keyset");
+    let (compact_public_key, server_key) = keyset
+        .decompress()
+        .expect("decompress keyset")
+        .into_raw_parts();
+    tfhe::set_server_key(server_key);
+
+    // Noisy seeds: compact-list encryption carries real encryption noise.
+    let mut builder = tfhe::CompactCiphertextList::builder(&compact_public_key);
+    builder.push(123_456_789_u64);
+    builder.push(987_654_321_u64);
+    let expanded = builder.build().expand().expect("expand");
+    let a: tfhe::FheUint64 = expanded.get(0).expect("get a").expect("a");
+    let mut x: tfhe::FheUint64 = expanded.get(1).expect("get b").expect("b");
+
+    let iterations = 200;
+    let mut mismatches = 0usize;
+    let mut first_mismatch = None;
+    for index in 0..iterations {
+        // Grow noise with a real op before each round trip.
+        x = &x + &a;
+        let ct = SupportedFheCiphertexts::FheUint64(x.clone());
+        let before = safe_serialize(&x);
+        let ct_type = ct.type_num();
+        let compressed = ct.compress().expect("compress");
+        let restored = SupportedFheCiphertexts::decompress_no_memcheck(ct_type, &compressed)
+            .expect("decompress");
+        let SupportedFheCiphertexts::FheUint64(x2) = restored else {
+            panic!("type changed in round trip");
+        };
+        let after = safe_serialize(&x2);
+        if before != after {
+            mismatches += 1;
+            if first_mismatch.is_none() {
+                first_mismatch = Some(index);
+            }
+        }
+        // Continue the chain from the round-tripped value half the time so
+        // both lineages are surveyed.
+        if index % 2 == 0 {
+            x = x2;
+        }
+    }
+    println!(
+        "round-trip survey: {mismatches}/{iterations} bit-mismatches (first at {first_mismatch:?})"
+    );
+}
+
+/// Deterministic handles disjoint from `next_handle`'s namespace so two app
+/// instances (fresh databases) can stage byte-identical fixtures.
+#[cfg(feature = "gpu")]
+fn byte_gate_handle(index: u8) -> host_listener::database::tfhe_event_propagate::Handle {
+    let mut out = [0_u8; 32];
+    out[0] = 0x81;
+    out[30] = 5; // euint64
+    out[31] = index;
+    out.into()
+}
+
+/// Stages four independent transactions of trivial encrypts + adds and
+/// returns every persisted (handle, ciphertext) pair once computed.
+#[cfg(feature = "gpu")]
+async fn run_byte_gate_fixture() -> Result<Vec<(Vec<u8>, Vec<u8>)>, Box<dyn std::error::Error>> {
+    let EventHarness {
+        app,
+        pool,
+        listener_db,
+    } = setup_event_harness().await?;
+    let caller = zero_address();
+    let mut tx = listener_db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
+    let mut index = 0u8;
+    let mut next = || {
+        index += 1;
+        byte_gate_handle(index)
+    };
+    let mut all_handles = Vec::new();
+    for _ in 0..4 {
+        let txid = next();
+        let a = next();
+        let b = next();
+        insert_trivial_encrypt(&listener_db, &mut tx, txid, 11, 5, a, true).await?;
+        insert_trivial_encrypt(&listener_db, &mut tx, txid, 31, 5, b, true).await?;
+        allow_handle(&listener_db, &mut tx, &a).await?;
+        allow_handle(&listener_db, &mut tx, &b).await?;
+        let mut lhs = a;
+        for _ in 0..3 {
+            let out = next();
+            insert_event(
+                &listener_db,
+                &mut tx,
+                txid,
+                TfheContractEvents::FheAdd(TfheContract::FheAdd {
+                    caller,
+                    lhs,
+                    rhs: b,
+                    scalarByte: scalar_flag(false),
+                    result: out,
+                }),
+                true,
+            )
+            .await?;
+            allow_handle(&listener_db, &mut tx, &out).await?;
+            all_handles.push(out);
+            lhs = out;
+        }
+        all_handles.push(a);
+        all_handles.push(b);
+    }
+    tx.commit().await?;
+    wait_until_computed(&app).await?;
+    let mut out = Vec::with_capacity(all_handles.len());
+    for handle in all_handles {
+        let bytes: Vec<u8> =
+            sqlx::query_scalar("SELECT ciphertext FROM ciphertexts WHERE handle = $1")
+                .bind(handle.to_vec())
+                .fetch_one(&pool)
+                .await?;
+        out.push((handle.to_vec(), bytes));
+    }
+    Ok(out)
+}
+
+/// Release gate (one H100): the persisted ciphertext bytes must not depend
+/// on the stream/scheduling shape. Run explicitly:
+/// CUDA_VISIBLE_DEVICES=0 cargo test --release -p tfhe-worker --features gpu \
+///   -- --ignored gpu_ciphertext_bytes_repeatable_across_stream_counts --nocapture
+#[cfg(feature = "gpu")]
+#[tokio::test]
+#[serial(db)]
+#[ignore]
+async fn gpu_ciphertext_bytes_repeatable_across_stream_counts(
+) -> Result<(), Box<dyn std::error::Error>> {
+    std::env::set_var("FHEVM_TEST_DCID_BATCH_EXECUTION", "true");
+    std::env::set_var("FHEVM_TEST_GPU_STREAMS", "1");
+    let single = run_byte_gate_fixture().await;
+    std::env::set_var("FHEVM_TEST_GPU_STREAMS", "16");
+    let wide = run_byte_gate_fixture().await;
+    std::env::remove_var("FHEVM_TEST_GPU_STREAMS");
+    std::env::remove_var("FHEVM_TEST_DCID_BATCH_EXECUTION");
+    let single = single?;
+    let wide = wide?;
+    assert_eq!(single.len(), wide.len());
+    for ((handle, a), (handle2, b)) in single.iter().zip(wide.iter()) {
+        assert_eq!(
+            handle, handle2,
+            "fixture handle order must be deterministic"
+        );
+        assert_eq!(
+            a,
+            b,
+            "ciphertext bytes for {} differ between 1 and 16 streams/device",
+            hex::encode(handle)
+        );
+    }
+    println!("stream-count byte gate: {} handles identical", single.len());
+    Ok(())
+}
+
+/// Release gate (two homogeneous H100s): the persisted bytes must not depend
+/// on the physical device. Digest-file protocol because CUDA visibility is
+/// process-level: the first run records digests, the second compares.
+/// FHEVM_BYTE_GATE_DIGESTS=/tmp/gate.json CUDA_VISIBLE_DEVICES=0 cargo test ... --ignored gpu_ciphertext_bytes_repeatable_across_physical_devices
+/// FHEVM_BYTE_GATE_DIGESTS=/tmp/gate.json CUDA_VISIBLE_DEVICES=1 cargo test ... (same filter)
+#[cfg(feature = "gpu")]
+#[tokio::test]
+#[serial(db)]
+#[ignore]
+async fn gpu_ciphertext_bytes_repeatable_across_physical_devices(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let path = std::env::var("FHEVM_BYTE_GATE_DIGESTS")
+        .expect("set FHEVM_BYTE_GATE_DIGESTS to a shared digest file path");
+    let rows = run_byte_gate_fixture().await?;
+    let digests: Vec<(String, String)> = rows
+        .iter()
+        .map(|(handle, bytes)| (hex::encode(handle), hex::encode(bytes)))
+        .collect();
+    let serialized = serde_json::to_string(&digests)?;
+    if std::path::Path::new(&path).exists() {
+        let previous: Vec<(String, String)> =
+            serde_json::from_str(&std::fs::read_to_string(&path)?)?;
+        assert_eq!(
+            previous, digests,
+            "ciphertext digests differ between physical devices"
+        );
+        println!("device byte gate: {} handles identical", digests.len());
+    } else {
+        std::fs::write(&path, serialized)?;
+        println!(
+            "device byte gate: recorded {} digests; rerun on the other device",
+            digests.len()
+        );
+    }
+    Ok(())
+}
