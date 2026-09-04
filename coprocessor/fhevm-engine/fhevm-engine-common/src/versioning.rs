@@ -251,7 +251,11 @@ pub async fn assert_gcs_schema_exists(database_url: &str) -> anyhow::Result<()> 
 }
 
 /// How long a green service waits for the upgrade-controller to create the schema.
-pub const GCS_SCHEMA_WAIT: Duration = Duration::from_secs(300);
+///
+/// Long enough that a slow or misconfigured controller can be fixed while the
+/// services keep waiting, short enough that a deploy that will never work still
+/// gives up instead of sitting there.
+pub const GCS_SCHEMA_WAIT: Duration = Duration::from_secs(3600);
 
 /// Wait for the GCS schema, then return.
 ///
@@ -260,10 +264,21 @@ pub const GCS_SCHEMA_WAIT: Duration = Duration::from_secs(300);
 /// only after `timeout`, which means the controller never got there.
 pub async fn wait_for_gcs_schema(database_url: &str, timeout: Duration) -> anyhow::Result<()> {
     const POLL: Duration = Duration::from_secs(2);
+    const LOG_EVERY: Duration = Duration::from_secs(30);
     let mut waited = Duration::ZERO;
+    let mut next_log = Duration::ZERO;
     loop {
         match assert_gcs_schema_exists(database_url).await {
-            Ok(()) => return Ok(()),
+            Ok(()) => {
+                if !waited.is_zero() {
+                    info!(
+                        schema = crate::database::GCS_SCHEMA,
+                        waited_secs = waited.as_secs(),
+                        "GCS schema is present; continuing startup"
+                    );
+                }
+                return Ok(());
+            }
             Err(err) if waited >= timeout => {
                 return Err(err.context(format!(
                     "schema {} still missing after {}s",
@@ -272,12 +287,15 @@ pub async fn wait_for_gcs_schema(database_url: &str, timeout: Duration) -> anyho
                 )))
             }
             Err(err) => {
-                if waited.is_zero() {
-                    info!(
+                if waited >= next_log {
+                    warn!(
                         schema = crate::database::GCS_SCHEMA,
+                        waited_secs = waited.as_secs(),
+                        timeout_secs = timeout.as_secs(),
                         error = %err,
                         "waiting for the upgrade-controller to create the GCS schema"
                     );
+                    next_log = waited + LOG_EVERY;
                 }
                 tokio::time::sleep(POLL).await;
                 waited += POLL;
