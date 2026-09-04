@@ -337,7 +337,6 @@ version: 1
 kind: blue-green
 gcs:
   source: { mode: inherit }
-  stackVersion: "0.15.0"
 `),
         ),
       ).toThrow("must be local or registry");
