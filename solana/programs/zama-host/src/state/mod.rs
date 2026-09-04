@@ -158,18 +158,28 @@ pub struct FheExecuteArgs {
     pub steps: Vec<FheExecuteStep>,
 }
 
+/// Resolves an interned dictionary entry; an out-of-range index fails the execution.
+pub fn dictionary_bytes(dictionary: &[[u8; 32]], index: u8) -> Result<[u8; 32]> {
+    dictionary
+        .get(index as usize)
+        .copied()
+        .ok_or_else(|| error!(ZamaHostError::FheExecuteDictionaryIndexOutOfBounds))
+}
+
+/// Resolves an interned dictionary entry as a public key.
+pub fn dictionary_key(dictionary: &[[u8; 32]], index: u8) -> Result<Pubkey> {
+    Ok(Pubkey::new_from_array(dictionary_bytes(dictionary, index)?))
+}
+
 impl FheExecuteArgs {
     /// Resolves an interned dictionary entry; an out-of-range index fails the execution.
-    pub fn dictionary_bytes(&self, index: u8) -> anchor_lang::Result<[u8; 32]> {
-        self.dictionary
-            .get(index as usize)
-            .copied()
-            .ok_or_else(|| error!(ZamaHostError::FheExecuteDictionaryIndexOutOfBounds))
+    pub fn dictionary_bytes(&self, index: u8) -> Result<[u8; 32]> {
+        dictionary_bytes(&self.dictionary, index)
     }
 
     /// Resolves an interned dictionary entry as a public key.
-    pub fn dictionary_key(&self, index: u8) -> anchor_lang::Result<Pubkey> {
-        Ok(Pubkey::new_from_array(self.dictionary_bytes(index)?))
+    pub fn dictionary_key(&self, index: u8) -> Result<Pubkey> {
+        dictionary_key(&self.dictionary, index)
     }
 }
 
@@ -766,7 +776,7 @@ fn scalar_is_zero_for_type(scalar: [u8; 32], fhe_type: u8) -> bool {
 }
 
 /// Coprocessor FheSum/FheIsIn max operand count: 100 for narrow types (Uint8..Uint32), 60 for wider.
-fn max_reduction_operands(fhe_type: u8) -> usize {
+pub fn max_reduction_operands(fhe_type: u8) -> usize {
     match fhe_type {
         2..=4 => 100,
         _ => 60,
@@ -806,8 +816,8 @@ pub fn host_config_address() -> (Pubkey, u8) {
 }
 
 /// Returns the canonical KMS context address for a context id.
-pub fn kms_context_address(context_id: u64) -> (Pubkey, u8) {
-    Pubkey::find_program_address(&[KMS_CONTEXT_SEED, &context_id.to_le_bytes()], &crate::ID)
+pub fn kms_context_address(context_id: [u8; 32]) -> (Pubkey, u8) {
+    Pubkey::find_program_address(&[KMS_CONTEXT_SEED, &context_id], &crate::ID)
 }
 
 /// Returns the canonical deny-list address for a subject.

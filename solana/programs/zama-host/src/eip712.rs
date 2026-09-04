@@ -116,32 +116,27 @@ const SECP256K1_HALF_ORDER: [u8; 32] = [
 
 /// Resolve the KMS context id a public-decrypt certificate is bound to, mirroring the EVM
 /// gateway `_extractContextId`: empty or version-0 `extra_data` selects the current context;
-/// versions 1 and 3 carry a big-endian context id in `extra_data[1..33]` (v3 appends a Solana
-/// MMR-proof tail that is ignored here). Because the KMS signs over
-/// `extra_data`, the returned id is authenticated by the certificate, so a cert minted under
-/// context N cannot be verified against a different context after a rotation. Returns `None` for
-/// an unsupported version or a short version-1 payload.
+/// version 1 is exactly 33 bytes and carries the 32-byte context id in `extra_data[1..33]`;
+/// version 3 carries the same 32-byte id at that offset and may append an MMR-proof tail.
+/// Because the KMS signs over `extra_data`, the returned id is authenticated by the
+/// certificate. Returns `None` for an unsupported version or a short payload.
 ///
-/// The protocol KMS context id is a `uint256` whose high bytes carry a chain-type tag (e.g. the
-/// canonical Solana-host context id is `0x07‖..‖<u64>`), while the on-chain `kms_context` is keyed
-/// by the low-64-bit id (the bootstrap `define_kms_context` registers that u64). So the low 8 bytes
-/// are taken as the context id; the high tag bytes are not part of the on-chain id. This does not
-/// weaken context binding: the full `extra_data` is still signed by the KMS, and the resolved id
-/// must equal the on-chain `kms_context.context_id`, so a mismatched context still fails.
-pub fn extract_kms_context_id(extra_data: &[u8], current_context_id: u64) -> Option<u64> {
+/// `0x07` in a protocol context id is `RequestType.KmsContext`, not a Solana chain tag.
+pub fn extract_kms_context_id(
+    extra_data: &[u8],
+    current_context_id: [u8; 32],
+) -> Option<[u8; 32]> {
     match extra_data.first() {
         None | Some(0) => Some(current_context_id),
-        // Version 1 (context tail) and version 3 (context + Solana MMR-proof tail) both carry the
-        // context id in `extra_data[1..33]`; v3 just appends proof bytes a public-decrypt cert is
-        // signed over. Read the id at the shared offset and ignore any trailing proof bytes.
-        Some(1) | Some(3) => {
+        Some(1) => {
+            if extra_data.len() != 33 {
+                return None;
+            }
+            extra_data[1..33].try_into().ok()
+        }
+        Some(3) => {
             let id_bytes = extra_data.get(1..33)?;
-            // On-chain kms_context is keyed by the low-64-bit id; the high bytes carry the
-            // protocol context's chain-type tag (e.g. 0x07 for the Solana host) and are not
-            // part of the u64 id.
-            let mut buf = [0u8; 8];
-            buf.copy_from_slice(&id_bytes[24..32]);
-            Some(u64::from_be_bytes(buf))
+            id_bytes.try_into().ok()
         }
         Some(_) => None,
     }
@@ -349,41 +344,48 @@ mod tests {
 
     #[test]
     fn extract_kms_context_id_mirrors_evm_extractcontextid() {
+        fn id(n: u8) -> [u8; 32] {
+            let mut out = [0u8; 32];
+            out[31] = n;
+            out
+        }
+        let current = id(7);
         // Empty or version-0 extra_data -> current context.
-        assert_eq!(extract_kms_context_id(&[], 7), Some(7));
-        assert_eq!(extract_kms_context_id(&[0u8], 7), Some(7));
-        // Version 1 -> low-64-bit context id from bytes [25..33].
+        assert_eq!(extract_kms_context_id(&[], current), Some(current));
+        assert_eq!(extract_kms_context_id(&[0u8], current), Some(current));
+        // Version 1 is exactly 33 bytes: version + 32-byte context id.
         let mut v1 = vec![1u8];
-        v1.extend_from_slice(&[0u8; 24]);
-        v1.extend_from_slice(&42u64.to_be_bytes());
-        assert_eq!(extract_kms_context_id(&v1, 7), Some(42));
-        // Version 1 with a chain-type tag in the high bytes (e.g. the Solana-host protocol context
-        // id `0x07‖..‖1`) -> the low-64-bit id (1). The high tag bytes are not part of the u64 id.
+        v1.extend_from_slice(&id(42));
+        assert_eq!(extract_kms_context_id(&v1, current), Some(id(42)));
+        // Version 1 with a RequestType.KmsContext high byte is still the full 32-byte id
+        // (0x07 is not a Solana chain tag and is not truncated).
         let mut tagged = vec![1u8];
-        tagged.push(0x07);
-        tagged.extend_from_slice(&[0u8; 23]);
-        tagged.extend_from_slice(&1u64.to_be_bytes());
-        assert_eq!(extract_kms_context_id(&tagged, 7), Some(1));
+        let mut tagged_id = [0u8; 32];
+        tagged_id[0] = 0x07;
+        tagged_id[31] = 1;
+        tagged.extend_from_slice(&tagged_id);
+        assert_eq!(extract_kms_context_id(&tagged, current), Some(tagged_id));
         // Version 1 with a short payload -> rejected.
-        assert_eq!(extract_kms_context_id(&[1u8, 0, 0], 7), None);
+        assert_eq!(extract_kms_context_id(&[1u8, 0, 0], current), None);
+        // Version 1 longer than 33 is rejected (exact length).
+        let mut v1_long = vec![1u8];
+        v1_long.extend_from_slice(&id(42));
+        v1_long.push(0);
+        assert_eq!(extract_kms_context_id(&v1_long, current), None);
         // Version 3 (context + MMR-proof tail) reads the id at the same [1..33] offset and ignores
-        // the trailing proof bytes. A public-decrypt cert signed over a v3 blob still binds context.
+        // the trailing proof bytes.
         let mut v3 = vec![3u8];
-        v3.extend_from_slice(&[0u8; 24]);
-        v3.extend_from_slice(&42u64.to_be_bytes());
-        v3.extend_from_slice(&[0xABu8; 40]); // trailing encrypted_value_id/proof_slot/mmr bytes, ignored
-        assert_eq!(extract_kms_context_id(&v3, 7), Some(42));
+        v3.extend_from_slice(&id(42));
+        v3.extend_from_slice(&[0xABu8; 40]);
+        assert_eq!(extract_kms_context_id(&v3, current), Some(id(42)));
         // Version 2 is RFC-005 context+epoch on the EVM side, not a Solana certificate shape.
         let mut v2 = vec![2u8];
-        v2.extend_from_slice(&[0u8; 24]);
-        v2.extend_from_slice(&42u64.to_be_bytes());
+        v2.extend_from_slice(&id(42));
         v2.extend_from_slice(&[0xCDu8; 32]);
-        assert_eq!(extract_kms_context_id(&v2, 7), None);
-        // Bare version bytes with no context id are still rejected.
-        assert_eq!(extract_kms_context_id(&[2u8], 7), None);
-        assert_eq!(extract_kms_context_id(&[3u8], 7), None);
-        // Unsupported version -> rejected.
-        assert_eq!(extract_kms_context_id(&[4u8], 7), None);
+        assert_eq!(extract_kms_context_id(&v2, current), None);
+        assert_eq!(extract_kms_context_id(&[2u8], current), None);
+        assert_eq!(extract_kms_context_id(&[3u8], current), None);
+        assert_eq!(extract_kms_context_id(&[4u8], current), None);
     }
 
     #[test]

@@ -41,6 +41,7 @@ use zama_solana_test_kit::{
     deny_subject_record_account, empty_system_account, encrypted_value_account, event_authority,
     funded_system_account, handle_for_chain, host_svm as mollusk,
     host_svm_without_previous_bank_hash as mollusk_without_previous_bank_hash, label,
+    canonical_test_context_id, program_data_account,
     new_encrypted_value as new_encrypted_value_account, read_encrypted_value,
     read_encrypted_value_from_result, readonly, readonly_signer, serialized_account, signing,
     system_account, system_program_account, writable, DECRYPTION_CONTRACT, GATEWAY_CHAIN_ID,
@@ -2431,12 +2432,13 @@ fn mollusk_transaction_later_failure_rolls_back_created_public_output() {
 // the old keyed-nonce `AclRecord` the original PR tested against.
 // ===========================================================================
 
-/// Exact HCU cost of `FheExecutionFixture::success_steps`: `Ge` at ebool (21_000) + `Sub` at
-/// euint64 (38_000) + `IfThenElse` at euint64 (45_000). See `zama-host/src/instructions/fhe_execute/hcu.rs`.
-const FIXTURE_BATCH_HCU: u64 = 21_000 + 38_000 + 45_000; // 104_000
+/// Exact HCU cost of `FheExecutionFixture::success_batch`: `Ge` on euint64 operands (152_000) +
+/// `Sub` at euint64 (162_000) + `IfThenElse` at euint64 (55_000). See
+/// `zama-host/src/instructions/fhe_execute/hcu.rs` (EVM `HCULimit` tables).
+const FIXTURE_BATCH_HCU: u64 = 152_000 + 162_000 + 55_000; // 369_000
 
-/// Exact HCU cost of the fixture's transient-only execution: a single `Ge` at ebool.
-const TRANSIENT_BATCH_HCU: u64 = 21_000;
+/// Exact HCU cost of the fixture's transient-only execution: a single `Ge` on euint64 operands.
+const TRANSIENT_BATCH_HCU: u64 = 152_000;
 
 fn anchor_error(error: anchor_lang::error::ErrorCode) -> Check<'static> {
     anchor_framework_error_check(error)
@@ -2560,6 +2562,109 @@ fn set_max_hcu_depth_per_tx_ix(
     )
 }
 
+fn set_host_pause_ix(
+    program_id: Pubkey,
+    admin: Pubkey,
+    host_config: Pubkey,
+    paused: bool,
+) -> Instruction {
+    anchor_ix(
+        program_id,
+        host::accounts::HostAdmin {
+            admin,
+            host_config,
+            event_authority: event_authority(host::id()),
+            program: host::id(),
+        },
+        host::instruction::SetHostPause { paused },
+    )
+}
+
+fn set_grant_deny_list_enabled_ix(
+    program_id: Pubkey,
+    admin: Pubkey,
+    host_config: Pubkey,
+    enabled: bool,
+) -> Instruction {
+    anchor_ix(
+        program_id,
+        host::accounts::HostAdmin {
+            admin,
+            host_config,
+            event_authority: event_authority(host::id()),
+            program: host::id(),
+        },
+        host::instruction::SetGrantDenyListEnabled { enabled },
+    )
+}
+
+fn set_deny_subject_ix(
+    program_id: Pubkey,
+    payer: Pubkey,
+    admin: Pubkey,
+    host_config: Pubkey,
+    subject: Pubkey,
+    denied: bool,
+) -> Instruction {
+    let deny_subject_record = host::deny_subject_address(subject).0;
+    anchor_ix(
+        program_id,
+        host::accounts::SetDenySubject {
+            payer,
+            admin,
+            host_config,
+            deny_subject_record,
+            system_program: system_program::ID,
+            event_authority: event_authority(host::id()),
+            program: host::id(),
+        },
+        host::instruction::SetDenySubject { subject, denied },
+    )
+}
+
+fn set_admin_ix(
+    program_id: Pubkey,
+    admin: Pubkey,
+    host_config: Pubkey,
+    new_admin: Pubkey,
+) -> Instruction {
+    anchor_ix(
+        program_id,
+        host::accounts::SetAdmin {
+            admin,
+            host_config,
+            new_admin,
+            event_authority: event_authority(host::id()),
+            program: host::id(),
+        },
+        host::instruction::SetAdmin { new_admin },
+    )
+}
+
+fn set_eip712_domain_ix(
+    program_id: Pubkey,
+    admin: Pubkey,
+    host_config: Pubkey,
+    gateway_chain_id: u64,
+    input_verification_contract: [u8; 20],
+    decryption_contract: [u8; 20],
+) -> Instruction {
+    anchor_ix(
+        program_id,
+        host::accounts::HostAdmin {
+            admin,
+            host_config,
+            event_authority: event_authority(host::id()),
+            program: host::id(),
+        },
+        host::instruction::SetEip712Domain {
+            gateway_chain_id,
+            input_verification_contract,
+            decryption_contract,
+        },
+    )
+}
+
 fn set_hcu_block_cap_per_app_ix(
     program_id: Pubkey,
     admin: Pubkey,
@@ -2601,7 +2706,7 @@ fn define_kms_context_ix(
     program_id: Pubkey,
     admin: Pubkey,
     host_config: Pubkey,
-    context_id: u64,
+    context_id: [u8; 32],
     signers: Vec<[u8; 20]>,
     thresholds: host::KmsThresholds,
 ) -> Instruction {
@@ -2686,6 +2791,7 @@ fn initialize_host_config_ix(
         host::accounts::InitializeHostConfig {
             payer,
             admin,
+            program_data: program_data_account(admin).0,
             host_config,
             system_program: system_program::ID,
             event_authority: event_authority(host::id()),
@@ -2814,6 +2920,148 @@ fn mollusk_set_max_hcu_setters_reject_zero() {
     let config = read_host_config(&context, host_config).expect("config");
     assert_eq!(config.max_hcu_per_tx, u64::MAX);
     assert_eq!(config.max_hcu_depth_per_tx, u64::MAX);
+}
+
+#[test]
+fn mollusk_set_max_hcu_depth_per_tx_persists_nonzero() {
+    let program_id = host::id();
+    let admin = Pubkey::new_unique();
+    let (host_config, account) = host_config_account(admin);
+    let context = mollusk_execute_context(admin, vec![(host_config, account)]);
+
+    context.process_and_validate_instruction(
+        &set_max_hcu_depth_per_tx_ix(program_id, admin, host_config, 20_000_000),
+        &[Check::success()],
+    );
+    assert_eq!(
+        read_host_config(&context, host_config)
+            .expect("config")
+            .max_hcu_depth_per_tx,
+        20_000_000
+    );
+}
+
+#[test]
+fn mollusk_set_host_pause_persists() {
+    let program_id = host::id();
+    let admin = Pubkey::new_unique();
+    let (host_config, account) = host_config_account(admin);
+    let context = mollusk_execute_context(admin, vec![(host_config, account)]);
+
+    context.process_and_validate_instruction(
+        &set_host_pause_ix(program_id, admin, host_config, true),
+        &[Check::success()],
+    );
+    assert!(
+        read_host_config(&context, host_config)
+            .expect("config")
+            .paused
+    );
+}
+
+#[test]
+fn mollusk_set_grant_deny_list_enabled_persists() {
+    let program_id = host::id();
+    let admin = Pubkey::new_unique();
+    let (host_config, account) = host_config_account(admin);
+    let context = mollusk_execute_context(admin, vec![(host_config, account)]);
+
+    context.process_and_validate_instruction(
+        &set_grant_deny_list_enabled_ix(program_id, admin, host_config, true),
+        &[Check::success()],
+    );
+    assert!(
+        read_host_config(&context, host_config)
+            .expect("config")
+            .grant_deny_list_enabled
+    );
+}
+
+#[test]
+fn mollusk_set_deny_subject_creates_record() {
+    let program_id = host::id();
+    let admin = Pubkey::new_unique();
+    let subject = Pubkey::new_unique();
+    let (host_config, account) = host_config_account(admin);
+    let deny_record = host::deny_subject_address(subject).0;
+    let context = mollusk_execute_context(
+        admin,
+        vec![(host_config, account), (deny_record, system_account(0))],
+    );
+
+    context.process_and_validate_instruction(
+        &set_deny_subject_ix(program_id, admin, admin, host_config, subject, true),
+        &[Check::success()],
+    );
+    let store = context.account_store.borrow();
+    let record = store.get(&deny_record).expect("deny record");
+    assert_eq!(record.owner, host::id());
+}
+
+#[test]
+fn mollusk_set_admin_transfers_to_pda_without_cosign() {
+    let program_id = host::id();
+    let admin = Pubkey::new_unique();
+    let (new_admin, _) = Pubkey::find_program_address(&[b"new-admin"], &host::id());
+    let (host_config, account) = host_config_account(admin);
+    let context = mollusk_execute_context(admin, vec![(host_config, account)]);
+
+    context.process_and_validate_instruction(
+        &set_admin_ix(program_id, admin, host_config, new_admin),
+        &[Check::success()],
+    );
+    assert_eq!(
+        read_host_config(&context, host_config).expect("config").admin,
+        new_admin
+    );
+}
+
+#[test]
+fn mollusk_set_eip712_domain_persists_zeros() {
+    let program_id = host::id();
+    let admin = Pubkey::new_unique();
+    let (host_config, account) = host_config_account(admin);
+    let context = mollusk_execute_context(admin, vec![(host_config, account)]);
+
+    context.process_and_validate_instruction(
+        &set_eip712_domain_ix(program_id, admin, host_config, 0, [0u8; 20], [0u8; 20]),
+        &[Check::success()],
+    );
+    let config = read_host_config(&context, host_config).expect("config");
+    assert_eq!(config.gateway_chain_id, 0);
+    assert_eq!(config.input_verification_contract, [0u8; 20]);
+    assert_eq!(config.decryption_contract, [0u8; 20]);
+}
+
+#[test]
+fn mollusk_destroy_kms_context_rejects_current() {
+    let program_id = host::id();
+    let admin = Pubkey::new_unique();
+    let (host_config, host_config_account) = host_config_with_context(admin, KMS_CONTEXT_ID);
+    let (kms_context, kms_context_acct) = kms_context_account(KMS_CONTEXT_ID);
+    let context = mollusk_execute_context(
+        admin,
+        vec![(host_config, host_config_account), (kms_context, kms_context_acct)],
+    );
+
+    context.process_and_validate_instruction(
+        &anchor_ix(
+            program_id,
+            host::accounts::DestroyKmsContext {
+                admin,
+                host_config,
+                kms_context,
+                event_authority: event_authority(host::id()),
+                program: host::id(),
+            },
+            host::instruction::DestroyKmsContext {
+                context_id: KMS_CONTEXT_ID,
+            },
+        ),
+        &[custom_error(
+            host::errors::ZamaHostError::CurrentKmsContextCannotBeDestroyed,
+        )],
+    );
 }
 
 // ---- set_hcu_block_cap_per_app (admin cap setter) ----
@@ -3163,7 +3411,14 @@ fn mollusk_initialize_host_config_defaults_block_cap_to_unrestricted() {
         decryption_contract: [0u8; 20],
         grant_deny_list_enabled: false,
     };
-    let context = mollusk_execute_context(payer, vec![(host_config, system_account(0))]);
+    let (program_data, program_data_acct) = program_data_account(admin);
+    let context = mollusk_execute_context(
+        payer,
+        vec![
+            (host_config, system_account(0)),
+            (program_data, program_data_acct),
+        ],
+    );
 
     context.process_and_validate_instruction(
         &initialize_host_config_ix(program_id, payer, admin, host_config, args),
@@ -3206,7 +3461,14 @@ fn mollusk_initialize_host_config_stores_registered_signer_set_and_threshold() {
     let (host_config, _) = host::host_config_address();
     let signers = vec![[0x11u8; 20], [0x22u8; 20], [0x33u8; 20]];
     let args = init_args_with_coprocessor_set(signers.clone(), 2);
-    let context = mollusk_execute_context(payer, vec![(host_config, system_account(0))]);
+    let (program_data, program_data_acct) = program_data_account(admin);
+    let context = mollusk_execute_context(
+        payer,
+        vec![
+            (host_config, system_account(0)),
+            (program_data, program_data_acct),
+        ],
+    );
 
     context.process_and_validate_instruction(
         &initialize_host_config_ix(program_id, payer, admin, host_config, args),
@@ -3227,7 +3489,14 @@ fn mollusk_initialize_host_config_rejects_duplicate_coprocessor_signer() {
     let (host_config, _) = host::host_config_address();
     // A duplicate would silently raise the effective quorum (distinct-signer counting).
     let args = init_args_with_coprocessor_set(vec![[0x11u8; 20], [0x11u8; 20]], 1);
-    let context = mollusk_execute_context(payer, vec![(host_config, system_account(0))]);
+    let (program_data, program_data_acct) = program_data_account(admin);
+    let context = mollusk_execute_context(
+        payer,
+        vec![
+            (host_config, system_account(0)),
+            (program_data, program_data_acct),
+        ],
+    );
 
     context.process_and_validate_instruction(
         &initialize_host_config_ix(program_id, payer, admin, host_config, args),
@@ -3245,7 +3514,14 @@ fn mollusk_initialize_host_config_rejects_threshold_above_signer_count() {
     let (host_config, _) = host::host_config_address();
     // threshold 3 > 2 signers: unsatisfiable, must be rejected.
     let args = init_args_with_coprocessor_set(vec![[0x11u8; 20], [0x22u8; 20]], 3);
-    let context = mollusk_execute_context(payer, vec![(host_config, system_account(0))]);
+    let (program_data, program_data_acct) = program_data_account(admin);
+    let context = mollusk_execute_context(
+        payer,
+        vec![
+            (host_config, system_account(0)),
+            (program_data, program_data_acct),
+        ],
+    );
 
     context.process_and_validate_instruction(
         &initialize_host_config_ix(program_id, payer, admin, host_config, args),
@@ -3262,7 +3538,14 @@ fn mollusk_initialize_host_config_rejects_zero_threshold() {
     let admin = Pubkey::new_unique();
     let (host_config, _) = host::host_config_address();
     let args = init_args_with_coprocessor_set(vec![[0x11u8; 20]], 0);
-    let context = mollusk_execute_context(payer, vec![(host_config, system_account(0))]);
+    let (program_data, program_data_acct) = program_data_account(admin);
+    let context = mollusk_execute_context(
+        payer,
+        vec![
+            (host_config, system_account(0)),
+            (program_data, program_data_acct),
+        ],
+    );
 
     context.process_and_validate_instruction(
         &initialize_host_config_ix(program_id, payer, admin, host_config, args),
@@ -3279,7 +3562,14 @@ fn mollusk_initialize_host_config_rejects_empty_coprocessor_set() {
     let admin = Pubkey::new_unique();
     let (host_config, _) = host::host_config_address();
     let args = init_args_with_coprocessor_set(vec![], 1);
-    let context = mollusk_execute_context(payer, vec![(host_config, system_account(0))]);
+    let (program_data, program_data_acct) = program_data_account(admin);
+    let context = mollusk_execute_context(
+        payer,
+        vec![
+            (host_config, system_account(0)),
+            (program_data, program_data_acct),
+        ],
+    );
 
     context.process_and_validate_instruction(
         &initialize_host_config_ix(program_id, payer, admin, host_config, args),
@@ -3296,7 +3586,14 @@ fn mollusk_initialize_host_config_rejects_zero_coprocessor_signer() {
     let admin = Pubkey::new_unique();
     let (host_config, _) = host::host_config_address();
     let args = init_args_with_coprocessor_set(vec![[0u8; 20]], 1);
-    let context = mollusk_execute_context(payer, vec![(host_config, system_account(0))]);
+    let (program_data, program_data_acct) = program_data_account(admin);
+    let context = mollusk_execute_context(
+        payer,
+        vec![
+            (host_config, system_account(0)),
+            (program_data, program_data_acct),
+        ],
+    );
 
     context.process_and_validate_instruction(
         &initialize_host_config_ix(program_id, payer, admin, host_config, args),
@@ -3314,7 +3611,14 @@ fn mollusk_initialize_host_config_rejects_too_many_coprocessor_signers() {
     let (host_config, _) = host::host_config_address();
     let signers: Vec<[u8; 20]> = (1..=9).map(|i| [i; 20]).collect();
     let args = init_args_with_coprocessor_set(signers, 1);
-    let context = mollusk_execute_context(payer, vec![(host_config, system_account(0))]);
+    let (program_data, program_data_acct) = program_data_account(admin);
+    let context = mollusk_execute_context(
+        payer,
+        vec![
+            (host_config, system_account(0)),
+            (program_data, program_data_acct),
+        ],
+    );
 
     context.process_and_validate_instruction(
         &initialize_host_config_ix(program_id, payer, admin, host_config, args),
@@ -3388,7 +3692,7 @@ fn mollusk_define_kms_context_at_realistic_signer_count() {
     let program_id = host::id();
     let admin = Pubkey::new_unique();
     let (host_config, account) = host_config_account_with_flags(admin, false, false);
-    let context_id = 1; // current_kms_context_id starts at 0, so the next context is 1.
+    let context_id = canonical_test_context_id(1);
     let kms_context = host::kms_context_address(context_id).0;
     let context = mollusk_execute_context(
         admin,
@@ -3442,7 +3746,7 @@ fn run_define_kms_context_expecting(signers: Vec<[u8; 20]>, expected: Check<'sta
     let program_id = host::id();
     let admin = Pubkey::new_unique();
     let (host_config, account) = host_config_account_with_flags(admin, false, false);
-    let context_id = 1;
+    let context_id = canonical_test_context_id(1);
     let kms_context = host::kms_context_address(context_id).0;
     let context = mollusk_execute_context(
         admin,
@@ -3611,8 +3915,8 @@ impl FheExecutionFixture {
         }
     }
 
-    /// `Ge` (ebool) + `Sub` (euint64) + `IfThenElse` (euint64, persistent output) — costs exactly
-    /// `FIXTURE_BATCH_HCU`.
+    /// `Ge` (euint64 operands → ebool) + `Sub` (euint64) + `IfThenElse` (euint64, persistent
+    /// output) — costs exactly `FIXTURE_BATCH_HCU`.
     fn success_batch(&self) -> FheExecuteArgs {
         let mut dictionary = ExecutionDictionary::default();
         let steps = vec![
@@ -4408,11 +4712,11 @@ fn mollusk_fhe_execute_lazy_reset_zeroes_prior_slot_usage() {
     // A meter last written in a different slot is treated as used = 0 for this slot's execution:
     // even a value that would exceed the cap in-slot no longer blocks, and the meter is
     // rewritten at the current slot with just this execution's cost.
-    let fixture = FheExecutionFixture::with_block_cap(150_000);
+    let fixture = FheExecutionFixture::with_block_cap(500_000);
     let slot = fixture.context.mollusk.sysvars.clock.slot;
     // Seed as-of a different slot with usage that would exceed the cap if it carried over.
     let (meter_pda, meter_account) =
-        hcu_block_meter_account(fixture.block_cap_app(), slot.wrapping_add(1), 140_000);
+        hcu_block_meter_account(fixture.block_cap_app(), slot.wrapping_add(1), 490_000);
     fixture.seed_account(meter_pda, meter_account);
 
     fixture.context.process_and_validate_instruction(
@@ -4457,11 +4761,11 @@ fn mollusk_fhe_execute_clean_first_call_lazy_creates_meter_at_batch_cost() {
 fn mollusk_fhe_execute_per_app_meters_are_isolated_under_uniform_cap() {
     // The cap is uniform, but each compute subject has its own meter: one subject being maxed out
     // this slot does not throttle a different compute subject, and does not draw down its budget.
-    let fixture = FheExecutionFixture::with_block_cap(150_000);
+    let fixture = FheExecutionFixture::with_block_cap(500_000);
     let slot = fixture.context.mollusk.sysvars.clock.slot;
     // A different compute subject is maxed out for the slot.
     let (other_meter_pda, other_meter_account) =
-        hcu_block_meter_account(Pubkey::new_unique(), slot, 150_000);
+        hcu_block_meter_account(Pubkey::new_unique(), slot, 500_000);
     fixture.seed_account(other_meter_pda, other_meter_account);
 
     // The fixture app's own execution still succeeds against its own fresh meter.
@@ -4474,7 +4778,7 @@ fn mollusk_fhe_execute_per_app_meters_are_isolated_under_uniform_cap() {
         read_hcu_block_meter(&fixture.context, other_meter_pda)
             .expect("other meter")
             .used_hcu,
-        150_000
+        500_000
     );
     assert_eq!(
         read_hcu_block_meter(&fixture.context, meter_pda)
@@ -4689,14 +4993,18 @@ fn mollusk_fhe_execute_meter_accumulation_overflow_fails_closed() {
 // verify_public_decrypt: stateless pull-oracle verifier (fhevm-internal#1704)
 // ---------------------------------------------------------------------------
 
-const KMS_CONTEXT_ID: u64 = 1;
+const KMS_CONTEXT_ID: [u8; 32] = {
+    let mut id = [0u8; 32];
+    id[31] = 1;
+    id
+};
 
 fn kms_context_signers() -> Vec<[u8; 20]> {
     vec![signing::secp_evm_address(&signing::kms_signing_key())]
 }
 
 /// Host config with an active KMS context id and the fixtures' gateway EIP-712 domain.
-fn host_config_with_context(admin: Pubkey, context_id: u64) -> (Pubkey, Account) {
+fn host_config_with_context(admin: Pubkey, context_id: [u8; 32]) -> (Pubkey, Account) {
     let (host_config, bump) = host::host_config_address();
     (
         host_config,
@@ -4729,7 +5037,7 @@ fn host_config_with_context(admin: Pubkey, context_id: u64) -> (Pubkey, Account)
 
 /// Canonical `KmsContext` PDA for `context_id`, with the given signer set / public-decrypt threshold.
 fn kms_context_account_with(
-    context_id: u64,
+    context_id: [u8; 32],
     signers: Vec<[u8; 20]>,
     public_decryption: u8,
     destroyed: bool,
@@ -4759,7 +5067,7 @@ fn kms_context_account_with(
 }
 
 /// The canonical single-signer, threshold-1 KMS context the fixtures pin.
-fn kms_context_account(context_id: u64) -> (Pubkey, Account) {
+fn kms_context_account(context_id: [u8; 32]) -> (Pubkey, Account) {
     kms_context_account_with(context_id, kms_context_signers(), 1, false)
 }
 
@@ -4887,7 +5195,7 @@ fn mollusk_verify_public_decrypt_returns_handle_and_cleartext() {
     // v0 extra_data resolves to the current context, so return_data carries the current id.
     let mut expected = handle.to_vec();
     expected.extend_from_slice(&cleartext);
-    expected.extend_from_slice(&KMS_CONTEXT_ID.to_le_bytes());
+    expected.extend_from_slice(&KMS_CONTEXT_ID);
     let result = mollusk().process_and_validate_instruction(
         &ix,
         &accounts,
@@ -4910,7 +5218,7 @@ fn rotate_to_next_context(
     host_config: Pubkey,
     host_config_account: Account,
 ) -> (Account, Pubkey, Account) {
-    let next_context_id = KMS_CONTEXT_ID + 1;
+    let next_context_id = canonical_test_context_id(2);
     let (next_kms_context, _) = host::kms_context_address(next_context_id);
     let define_ix = anchor_ix(
         host::id(),
@@ -5008,7 +5316,7 @@ fn mollusk_verify_public_decrypt_accepts_live_rotated_out_context() {
     ];
     let mut expected = handle.to_vec();
     expected.extend_from_slice(&cleartext);
-    expected.extend_from_slice(&KMS_CONTEXT_ID.to_le_bytes());
+    expected.extend_from_slice(&KMS_CONTEXT_ID);
     let result = mollusk().process_and_validate_instruction(
         &ix,
         &accounts,
@@ -5224,7 +5532,7 @@ fn mollusk_verify_public_decrypt_rejects_nonexistent_context_id() {
         handle,
     );
 
-    let nonexistent_context_id = 99u64;
+    let nonexistent_context_id = canonical_test_context_id(99);
     let (nonexistent_kms_context, _) = host::kms_context_address(nonexistent_context_id);
     let cleartext = zama_solana_test_kit::u256_be(4242);
     let extra_data = signing::context_extra_data_v1(nonexistent_context_id);
@@ -5501,7 +5809,7 @@ fn mollusk_verify_public_decrypt_survives_update_after_seal() {
     ];
     let mut expected = handle0.to_vec();
     expected.extend_from_slice(&cleartext);
-    expected.extend_from_slice(&KMS_CONTEXT_ID.to_le_bytes());
+    expected.extend_from_slice(&KMS_CONTEXT_ID);
     let result = mollusk().process_and_validate_instruction(
         &ix,
         &accounts,

@@ -23,8 +23,7 @@ pub(crate) struct InputVerifierParams {
     pub chain_id: u64,
     pub gateway_chain_id: u64,
     pub input_verification_contract: [u8; 20],
-    /// Registered coprocessor signer set (fixed-cap; only the first `coprocessor_signer_count`
-    /// entries are active).
+    /// Active coprocessor signer set, copied through [`HostConfig::active_coprocessor_signers`].
     pub coprocessor_signers: [[u8; 20]; HostConfig::MAX_COPROCESSOR_SIGNERS],
     pub coprocessor_signer_count: u8,
     pub coprocessor_threshold: u8,
@@ -32,32 +31,27 @@ pub(crate) struct InputVerifierParams {
 
 impl InputVerifierParams {
     pub fn from_config(config: &HostConfig) -> Self {
+        let active = config.active_coprocessor_signers();
+        let mut coprocessor_signers = [[0u8; 20]; HostConfig::MAX_COPROCESSOR_SIGNERS];
+        coprocessor_signers[..active.len()].copy_from_slice(active);
         Self {
             chain_id: config.chain_id,
             gateway_chain_id: config.gateway_chain_id,
             input_verification_contract: config.input_verification_contract,
-            coprocessor_signers: config.coprocessor_signers,
-            coprocessor_signer_count: config.coprocessor_signer_count,
+            coprocessor_signers,
+            coprocessor_signer_count: active.len() as u8,
             coprocessor_threshold: config.coprocessor_threshold,
         }
-    }
-
-    /// Active coprocessor signer set (the first `coprocessor_signer_count` entries).
-    /// Count is write-validated (`≤ MAX`); clamp defends a corrupted singleton without panicking.
-    fn active_signers(&self) -> &[[u8; 20]] {
-        let count =
-            (self.coprocessor_signer_count as usize).min(HostConfig::MAX_COPROCESSOR_SIGNERS);
-        &self.coprocessor_signers[..count]
     }
 }
 
 /// Verifies the coprocessor's EIP-712 `CiphertextVerification` attestation for an encrypted input:
 /// config sanity, per-handle metadata, selected-handle match, and `secp256k1_recover` of the
-/// signers against the registered coprocessor signer set at the configured threshold. Used by the
-/// `fhe_execute` `VerifiedInput` operand, which carries the whole attestation — taking it as one
-/// value keeps the two 32-byte identities and two slices unswappable at the call site.
-/// The attested `contract_address` is the input's natural ACL domain (EVM parity with the
-/// verifyInput contract); the caller-is-contract gate is enforced by the operand resolver.
+/// signers against the registered coprocessor signer set at the configured threshold. Success
+/// means a quorum signed this blob; the caller is responsible for the contract bind
+/// (`attestation.contract_address == compute_subject`). Used by the `fhe_execute`
+/// `VerifiedInput` operand, which carries the whole attestation — taking it as one value keeps
+/// the two 32-byte identities and two slices unswappable at the call site.
 pub(crate) fn verify_input_attestation(
     params: &InputVerifierParams,
     attestation: &CoprocessorInputAttestation,
@@ -96,7 +90,7 @@ pub(crate) fn verify_input_attestation(
     let verifier = Eip712VerifierConfig {
         gateway_chain_id: params.gateway_chain_id,
         verifying_contract: params.input_verification_contract,
-        signers: params.active_signers(),
+        signers: &params.coprocessor_signers[..params.coprocessor_signer_count as usize],
         threshold: params.coprocessor_threshold,
     };
     require!(

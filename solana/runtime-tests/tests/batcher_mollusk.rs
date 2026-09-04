@@ -48,7 +48,11 @@ use zama_solana_test_kit::{
     system_account, Ctx, HostConfigParams, BALANCE_FHE_TYPE, DECIMALS,
 };
 
-const KMS_CONTEXT_ID: u64 = 9;
+const KMS_CONTEXT_ID: [u8; 32] = {
+    let mut id = [0u8; 32];
+    id[31] = 9;
+    id
+};
 /// Generous batch-authority funding for owner-charged rent (token-account and
 /// encrypted value account creation at open; the redeem marker and wrap growth at settle).
 const AUTHORITY_FUNDING: u64 = 100_000_000;

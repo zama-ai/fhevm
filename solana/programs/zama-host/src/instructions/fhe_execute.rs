@@ -100,6 +100,7 @@ pub fn fhe_execute<'info>(
     let host_config = &ctx.accounts.host_config;
     let execution = hcu::meter_execution(
         &args.steps,
+        &args.dictionary,
         host_config.max_hcu_per_tx,
         host_config.max_hcu_depth_per_tx,
     )?;
@@ -237,10 +238,7 @@ struct ExecutionState<'t, 'a, 'info> {
 
 impl<'info> ExecutionState<'_, '_, 'info> {
     fn dictionary_bytes(&self, index: u8) -> Result<[u8; 32]> {
-        self.dictionary
-            .get(index as usize)
-            .copied()
-            .ok_or_else(|| error!(ZamaHostError::FheExecuteDictionaryIndexOutOfBounds))
+        dictionary_bytes(self.dictionary, index)
     }
 
     #[inline(never)]
@@ -255,7 +253,7 @@ impl<'info> ExecutionState<'_, '_, 'info> {
             .table
             .canonical_encrypted_value(encrypted_value_index)?;
         assert_encrypted_value_subject_allowed(value, handle, chain_id, subject)?;
-        Ok(ResolvedOperand::encrypted(handle, false))
+        Ok(ResolvedOperand::encrypted(handle))
     }
 
     #[inline(never)]
@@ -270,7 +268,7 @@ impl<'info> ExecutionState<'_, '_, 'info> {
         // public_decrypt propagates like a public scalar (the app controls decryptability of
         // results via an explicit allow_for_decryption; it is not blocked by the input itself).
         verify_input_attestation(&self.verifier_params, attestation)?;
-        Ok(ResolvedOperand::encrypted(attestation.input_handle, true))
+        Ok(ResolvedOperand::encrypted(attestation.input_handle))
     }
 
     #[inline(never)]
@@ -280,7 +278,6 @@ impl<'info> ExecutionState<'_, '_, 'info> {
         op_index: u16,
         result: [u8; 32],
         output: &FheExecuteOutput,
-        output_public_decrypt_allowed: bool,
     ) -> Result<()> {
         let created_public_output = accept_execution_output(
             ctx,
@@ -289,7 +286,6 @@ impl<'info> ExecutionState<'_, '_, 'info> {
             &mut self.produced,
             result,
             output,
-            output_public_decrypt_allowed,
             op_index,
         )?;
         if let Some(record) = created_public_output {
@@ -324,7 +320,6 @@ fn accept_execution_output<'info>(
     produced: &mut Vec<ProducedValue>,
     result: [u8; 32],
     output: &FheExecuteOutput,
-    output_public_decrypt_allowed: bool,
     op_index: u16,
 ) -> Result<Option<ProducedPublicOutput>> {
     require!(
@@ -375,22 +370,16 @@ fn accept_execution_output<'info>(
         }
     };
 
-    produced.push(ProducedValue {
-        handle: result,
-        public_decrypt_allowed: output_public_decrypt_allowed,
-    });
+    produced.push(ProducedValue { handle: result });
     Ok(created_public_output)
 }
 
 fn dictionary_bytes(dictionary: &[[u8; 32]], index: u8) -> Result<[u8; 32]> {
-    dictionary
-        .get(index as usize)
-        .copied()
-        .ok_or_else(|| error!(ZamaHostError::FheExecuteDictionaryIndexOutOfBounds))
+    crate::state::dictionary_bytes(dictionary, index)
 }
 
 fn dictionary_key(dictionary: &[[u8; 32]], index: u8) -> Result<Pubkey> {
-    Ok(Pubkey::new_from_array(dictionary_bytes(dictionary, index)?))
+    crate::state::dictionary_key(dictionary, index)
 }
 
 fn resolve_dictionary_subjects(dictionary: &[[u8; 32]], indexes: &[u8]) -> Result<Vec<Pubkey>> {
@@ -428,22 +417,19 @@ fn persistent_output_authority<'info>(
 #[derive(Clone)]
 pub(super) struct ProducedValue {
     handle: [u8; 32],
-    public_decrypt_allowed: bool,
 }
 
 #[derive(Clone)]
 pub(super) struct ResolvedOperand {
     pub(super) handle: [u8; 32],
     pub(super) scalar: bool,
-    pub(super) public_decrypt_allowed: bool,
 }
 
 impl ResolvedOperand {
-    fn encrypted(handle: [u8; 32], public_decrypt_allowed: bool) -> Self {
+    fn encrypted(handle: [u8; 32]) -> Self {
         Self {
             handle,
             scalar: false,
-            public_decrypt_allowed,
         }
     }
 
@@ -451,7 +437,6 @@ impl ResolvedOperand {
         Self {
             handle,
             scalar: true,
-            public_decrypt_allowed: true,
         }
     }
 
@@ -459,21 +444,8 @@ impl ResolvedOperand {
         Self {
             handle: value.handle,
             scalar: false,
-            public_decrypt_allowed: value.public_decrypt_allowed,
         }
     }
-}
-
-fn inputs_allow_public_decrypt(lhs: &ResolvedOperand, rhs: &ResolvedOperand) -> bool {
-    lhs.public_decrypt_allowed && rhs.public_decrypt_allowed
-}
-
-fn inputs3_allow_public_decrypt(
-    first: &ResolvedOperand,
-    second: &ResolvedOperand,
-    third: &ResolvedOperand,
-) -> bool {
-    first.public_decrypt_allowed && second.public_decrypt_allowed && third.public_decrypt_allowed
 }
 
 #[inline(never)]
@@ -702,7 +674,7 @@ mod tests {
             coprocessor_signer_count: 0,
             coprocessor_threshold: 0,
             decryption_contract: [0; 20],
-            current_kms_context_id: 0,
+            current_kms_context_id: [0u8; 32],
             paused: false,
             grant_deny_list_enabled: true,
             max_hcu_per_tx: u64::MAX,

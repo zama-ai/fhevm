@@ -29,7 +29,7 @@ pub struct SetDenySubject<'info> {
 /// Creates or updates the deny-list state for `subject`.
 pub fn set_deny_subject(ctx: Context<SetDenySubject>, subject: Pubkey, denied: bool) -> Result<()> {
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
-    assert_admin(&ctx.accounts.host_config, ctx.accounts.admin.key())?;
+    assert_admin(&ctx.accounts.host_config, &ctx.accounts.admin)?;
     let (expected, bump) = deny_subject_address(subject);
     require_keys_eq!(
         expected,
@@ -73,7 +73,7 @@ pub fn set_deny_subject(ctx: Context<SetDenySubject>, subject: Pubkey, denied: b
 }
 
 fn current_deny_status(info: &AccountInfo, subject: Pubkey, bump: u8) -> Result<Option<bool>> {
-    if is_absent_deny_record(info)? {
+    if is_uninitialized_pda_account(info, ZamaHostError::DenyRecordMismatch)? {
         return Ok(None);
     }
     require_keys_eq!(*info.owner, crate::ID, ZamaHostError::DenyRecordMismatch);

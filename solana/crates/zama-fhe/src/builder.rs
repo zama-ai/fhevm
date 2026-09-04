@@ -86,9 +86,10 @@ pub struct FheExecutionBuilder<'id> {
     /// Coprocessor attestations backing `VerifiedInput` operands, referenced by index. Held here
     /// (rather than inline in the operand) so `Operand` stays `Copy`.
     pub(crate) verified_inputs: TalliedVec<CoprocessorInputAttestation>,
-    /// Persistent outputs committed so far that create their account — three system CPIs each on
-    /// the host, which is what [`crate::cost::instruction_trace_floor`] charges against the
-    /// transaction's instruction trace.
+    /// Persistent outputs committed so far that create their account — one system CPI each on
+    /// the common host path, which is what [`crate::cost::instruction_trace_floor`] charges against
+    /// the transaction's instruction trace. The SDK still caps these at
+    /// [`crate::cost::MAX_PERSISTENT_CREATES`] because the host heap binds around 20.
     pub(crate) persistent_creates: usize,
     /// Persistent outputs committed so far that update an existing account.
     pub(crate) persistent_updates: usize,
@@ -234,10 +235,17 @@ impl<'id> FheExecutionBuilder<'id> {
                     step,
                     FheExecuteStep::Rand { .. } | FheExecuteStep::RandBounded { .. }
                 );
-                // Every created output costs the transaction three CPIs on the host, so the
-                // instruction trace runs out before the step cap does on create-heavy shapes.
-                // Checked per step against the floor — the count the transaction pays even in
-                // the minimal wrapper — so the step that can never land is the one rejected.
+                // Heap, not the instruction trace, binds public creates around 20. The SDK still
+                // refuses the 21st create here so `MAX_PERSISTENT_CREATES` remains the public cap
+                // even though the common-path floor no longer hits the trace limit at 20.
+                if *persistent_creates + usize::from(creates_account)
+                    > crate::cost::MAX_PERSISTENT_CREATES
+                {
+                    return Err(FheExecutionBuildError::ExceedsInstructionTraceLimit);
+                }
+                // Every created output costs the transaction one CPI on the common host path, so
+                // the instruction-trace floor is still checked per step against the cheapest
+                // wrapper.
                 let floor = crate::cost::instruction_trace_floor(
                     *persistent_creates + usize::from(creates_account),
                     *has_rand_step || is_rand,

@@ -181,11 +181,13 @@ fn the_tally_never_crosses_the_budget_even_transiently() {
 #[test]
 fn the_heap_tally_matches_a_counting_allocator_for_every_admitted_shape() {
     // The ceilings that define "admitted" hold where this file assumes they do.
-    assert_eq!(
-        instruction_trace_floor(MAX_PERSISTENT_CREATES, true, true),
-        TRANSACTION_INSTRUCTION_TRACE_LIMIT,
+    // Trace no longer binds at MAX_PERSISTENT_CREATES (one CPI per create); heap does.
+    assert!(
+        instruction_trace_floor(MAX_PERSISTENT_CREATES, true, true)
+            < TRANSACTION_INSTRUCTION_TRACE_LIMIT,
         "MAX_PERSISTENT_CREATES is stale against the trace model"
     );
+    assert_eq!(MAX_PERSISTENT_CREATES, 20);
     let mut admitted = 0;
     for (name, build) in frontier_shapes() {
         let Ok(shape) = try_measure(name, build) else {
@@ -223,7 +225,8 @@ fn the_shapes_past_each_ceiling_are_rejected_with_their_own_error() {
         )
         .unwrap_err()
     };
-    // The 21st create's three host CPIs cannot fit any transaction's instruction trace.
+    // The 21st create is the SDK cap (`MAX_PERSISTENT_CREATES`); heap binds public creates
+    // around 20, and the common-path floor no longer trips the instruction-trace limit.
     assert_eq!(
         build(Box::new(persist_shape(
             PersistKind::Create,

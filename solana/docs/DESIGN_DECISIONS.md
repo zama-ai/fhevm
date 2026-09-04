@@ -228,9 +228,10 @@ duration of the batch.
 The Solana equivalent is the consuming program's **compute-authority PDA** — a PDA the program signs
 with via `invoke_signed`. In confidential-token this is the `[b"fhe-compute", mint]` compute signer.
 It is never a user key and never the bare program id (program ids cannot sign). The host layer only
-enforces `attestation.contract_address == compute_subject` (whatever signer consumes the input, the
-msg.sender analog); the PDA convention is **app policy** — apps MUST bind attestations to their
-compute-authority PDA, and MUST check the attested `user_address` themselves. Confidential-token
+enforces `attestation.contract_address == compute_subject` (whatever signer consumes the input).
+`user_address` is **not** EVM `msg.sender`; the host does not interpret it. `compute_subject` is the
+msg.sender analog for the contract bind. The PDA convention is **app policy** — apps MUST bind
+attestations to their compute-authority PDA, and MUST check the attested `user_address` themselves. Confidential-token
 checks the attested user equals the token account owner. This mirrors EVM, where `userAddress` is
 attested but the contract decides its meaning. Per-state-account (per-mint) scoping is deliberate and
 finer-grained than EVM's per-contract binding.
@@ -753,7 +754,7 @@ Decision:
 
 The VerifierSet subsystem was REMOVED. Witnesses and decrypt trust anchor to a `define_kms_context`
 singleton keyed by `kms_context_id` (`zama_host::kms_context_address(context_id)`, seed
-`[KMS_CONTEXT_SEED, context_id.to_le_bytes()]`; `destroy_kms_context` exists for lifecycle). Decrypt
+`[KMS_CONTEXT_SEED, context_id]` with a 32-byte id; `destroy_kms_context` exists for lifecycle). Decrypt
 and disclosure witnesses pin the `kms_context_id` they were minted under.
 
 Why / what worked:
@@ -1608,8 +1609,8 @@ Decision:
 A new host instruction `verify_public_decrypt` is a CPI-able, stateless verifier. It verifies a KMS
 `PublicDecryptVerification` secp256k1 threshold certificate plus an MMR public-leaf inclusion proof
 (`zama_solana_acl::authorize_public`, exact-handle, no roll-forward) and returns the proven
-`(handle, cleartext, context_id)` via `set_return_data` (72 bytes: `handle ++ cleartext ++
-context_id`, the last 8 bytes the verified context id little-endian, well under the 1024-byte limit). It creates nothing, mutates nothing, emits nothing, and takes no signer — all three accounts
+`(handle, cleartext, context_id)` via `set_return_data` (96 bytes: `handle ++ cleartext ++
+context_id`, the last 32 bytes the verified context id, well under the 1024-byte limit). It creates nothing, mutates nothing, emits nothing, and takes no signer — all three accounts
 (`host_config`, `kms_context`, `encrypted_value`) are read-only. An app CPIs it, asserts the returned
 handle equals the handle it pinned at request time, then applies its own state transition; act-once
 and timeout live in the app's own state machine (a settled flag + deadline), which it needs anyway.
@@ -1654,8 +1655,8 @@ rotation is no longer the revocation boundary, `destroy` is.
    non-destroyed context the cert names (default). Apps that need current-only can compare
    `return_data`'s context id to `host_config.current_kms_context_id` — not wired in the token today.
 
-The verified context id is surfaced in `return_data` (8 little-endian bytes appended after `handle ++
-cleartext`, so 72 bytes total) precisely so a calling program can pick its own policy: an
+The verified context id is surfaced in `return_data` (32 bytes appended after `handle ++
+cleartext`, so 96 bytes total) precisely so a calling program can pick its own policy: an
 informational consumer accepts any live context, while a value-releasing instruction can compare the
 returned id against `host_config.current_kms_context_id` and demand current-only. Confidential-token's
 `disclose_secp` and `redeem_burned_amount` both take the default (accept any live context), matching
@@ -1995,7 +1996,7 @@ Which option an event gets is decided by whether the instruction is administrati
 else. An admin instruction changes a protocol-level setting that off-chain components have to be able
 to query directly, so it emits. Everything else is reconstructed on demand.
 
-The six admin and config events — `HostConfigInitializedEvent`, `HostConfigUpdatedEvent`,
+The five admin and config events — `HostConfigUpdatedEvent`,
 `DenySubjectUpdatedEvent`, `HcuAppTrustUpdatedEvent`, `NewKmsContextEvent`, `KmsContextDestroyedEvent` —
 take the first option. Their eleven instructions gain Anchor's `#[event_cpi]` accounts
 (`event_authority`, `program`), which is a visible ABI change: `initialize_host_config` and
@@ -2003,7 +2004,7 @@ take the first option. Their eleven instructions gain Anchor's `#[event_cpi]` ac
 `set_deny_subject` and `set_hcu_app_trusted` from five to seven, and the six `HostAdmin` config setters
 from two to four.
 
-Note that no in-tree component reads any of the six today; the only off-chain reader of host config
+Note that no in-tree component reads any of the five today; the only off-chain reader of host config
 state reads the account, not an event (`host-listener`'s `parse_host_config`). That is deliberate and is
 not an argument against emitting them: the transport exists because the category calls for it, so that
 a component which needs an admin change does not have to replay instruction data to find one. The test

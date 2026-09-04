@@ -68,7 +68,10 @@ pub fn revoke_permits(ctx: Context<RevokePermits>) -> Result<()> {
         ZamaHostError::PermitInvalidationAccountInvalid
     );
 
-    let previous_watermark = if is_absent_watermark(&invalidation)? {
+    let previous_watermark = if is_uninitialized_pda_account(
+        &invalidation,
+        ZamaHostError::PermitInvalidationAccountInvalid,
+    )? {
         create_pda_if_needed(
             &ctx.accounts.user.to_account_info(),
             &invalidation,
@@ -93,21 +96,6 @@ pub fn revoke_permits(ctx: Context<RevokePermits>) -> Result<()> {
             bump,
         },
     )
-}
-
-/// True when the watermark slot has never been written: system-owned and empty.
-///
-/// A system-owned empty account cannot be executable, so that combination is refused
-/// rather than treated as absent.
-fn is_absent_watermark(invalidation: &AccountInfo) -> Result<bool> {
-    if invalidation.owner == &System::id() && invalidation.data_is_empty() {
-        require!(
-            !invalidation.executable,
-            ZamaHostError::PermitInvalidationAccountInvalid
-        );
-        return Ok(true);
-    }
-    Ok(false)
 }
 
 /// Reads the watermark out of an existing record, refusing anything this instruction did

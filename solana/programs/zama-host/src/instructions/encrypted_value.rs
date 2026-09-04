@@ -174,6 +174,7 @@ pub fn make_handle_public(
     handle: [u8; 32],
 ) -> Result<()> {
     assert_not_paused(&ctx.accounts.host_config)?;
+    assert_no_remaining_accounts(ctx.remaining_accounts)?;
     let info = ctx.accounts.encrypted_value.to_account_info();
     let mut value = read_canonical_encrypted_value(&info)?;
     let authority = ctx.accounts.authority.key();

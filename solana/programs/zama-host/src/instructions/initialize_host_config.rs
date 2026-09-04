@@ -1,10 +1,9 @@
 //! Initializes the singleton ZamaHost configuration account.
 
 use anchor_lang::prelude::*;
+use anchor_lang::solana_program::bpf_loader_upgradeable;
 
 use super::common::*;
-use crate::event_cpi::emit_event_cpi;
-use crate::events::HostConfigInitializedEvent;
 use crate::{errors::ZamaHostError, state::*};
 
 /// Accounts for initializing the singleton [`HostConfig`].
@@ -14,8 +13,14 @@ pub struct InitializeHostConfig<'info> {
     /// Pays rent for the config account.
     #[account(mut)]
     pub payer: Signer<'info>,
-    /// Initial admin stored in the config.
+    /// Initial admin stored in the config. Must be the BPF upgrade authority.
     pub admin: Signer<'info>,
+    /// Upgradeable loader `ProgramData` for this program; `admin` must be its upgrade authority.
+    #[account(
+        address = bpf_loader_upgradeable::get_program_data_address(&crate::ID),
+        constraint = program_data.upgrade_authority_address == Some(admin.key()) @ ZamaHostError::HostConfigAdminMismatch
+    )]
+    pub program_data: Account<'info, ProgramData>,
     /// Singleton config PDA.
     #[account(
         init,
@@ -41,7 +46,6 @@ pub fn initialize_host_config(
         args.coprocessor_threshold,
     )?;
     let updated_slot = Clock::get()?.slot;
-    let config_key = ctx.accounts.host_config.key();
     let config = &mut ctx.accounts.host_config;
     config.admin = ctx.accounts.admin.key();
     config.chain_id = args.chain_id;
@@ -51,7 +55,7 @@ pub fn initialize_host_config(
     config.coprocessor_signer_count = coprocessor_signer_count;
     config.coprocessor_threshold = args.coprocessor_threshold;
     config.decryption_contract = args.decryption_contract;
-    config.current_kms_context_id = 0;
+    config.current_kms_context_id = [0u8; 32];
     config.paused = false;
     config.grant_deny_list_enabled = args.grant_deny_list_enabled;
     // Ship HCU enforcement disabled (u64::MAX = unlimited); an admin enables it post-calibration.
@@ -63,16 +67,7 @@ pub fn initialize_host_config(
     config.updated_slot = updated_slot;
     config.bump = ctx.bumps.host_config;
     let admin = config.admin;
-    let chain_id = config.chain_id;
-    emit_event_cpi(
-        &ctx.accounts.event_authority,
-        &HostConfigInitializedEvent {
-            version: EVENT_VERSION,
-            config: config_key,
-            admin,
-            chain_id,
-        },
-    )?;
+    emit_config_updated(config, admin, &ctx.accounts.event_authority)?;
     Ok(())
 }
 

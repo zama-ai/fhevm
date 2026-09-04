@@ -22,7 +22,7 @@ pub struct HostAdmin<'info> {
 /// Updates the host pause flag.
 pub fn set_host_pause(ctx: Context<HostAdmin>, paused: bool) -> Result<()> {
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
-    assert_admin(&ctx.accounts.host_config, ctx.accounts.admin.key())?;
+    assert_admin(&ctx.accounts.host_config, &ctx.accounts.admin)?;
     if ctx.accounts.host_config.paused == paused {
         return Ok(());
     }

@@ -9,8 +9,9 @@
 //!
 //! - **Instruction trace.** A transaction may execute at most
 //!   [`TRANSACTION_INSTRUCTION_TRACE_LIMIT`] instructions, top-level and CPI together. The host
-//!   issues exactly three system-program CPIs per persistent output it creates (transfer,
-//!   allocate, assign), plus one event CPI per event kind the execution emits. The floor below
+//!   issues one system-program CPI per persistent output it creates on the common path
+//!   (`create_account`; the three-step transfer/allocate/assign path is only the pre-funded
+//!   squat fallback), plus one event CPI per event kind the execution emits. The floor below
 //!   is what the transaction is guaranteed to spend even in the minimal production wrapper —
 //!   one app instruction invoking `fhe_execute` once; an execution whose floor exceeds the
 //!   limit cannot land in any transaction, and the builder rejects the step that crosses it
@@ -77,20 +78,22 @@ pub const BUILD_HEAP_BUDGET_BYTES: usize = PROGRAM_HEAP_BYTES - APP_HEAP_RESERVE
 /// every invoke (`solana-program-runtime`'s `check_instruction_size`). Not extendable.
 pub const CPI_INSTRUCTION_DATA_LIMIT: usize = 10 * 1024;
 
-/// System-program CPIs the host issues to create one persistent output account: transfer,
-/// allocate, assign (`create_pda_strict`). Two suffice when the address is already funded to
-/// rent exemption, so counting three never under-counts.
-pub const CPIS_PER_PERSISTENT_CREATE: usize = 3;
+/// System-program CPIs the host issues to create one persistent output account on the common
+/// path: a single `create_account` (`create_pda_strict` via `fund_allocate_assign`). The
+/// three-step transfer/allocate/assign path is only the pre-funded squat fallback, so the
+/// builder's floor charges one CPI.
+pub const CPIS_PER_PERSISTENT_CREATE: usize = 1;
 
-/// Persistent creates one execution can carry. The 21st create's three host CPIs push the
-/// transaction's instruction trace past [`TRANSACTION_INSTRUCTION_TRACE_LIMIT`] even in the
-/// cheapest wrapper (no event CPIs). Event kinds only spend remaining headroom; they never
-/// move this cap. Pinned by [`instruction_trace_floor`].
+/// Persistent creates one execution can carry. The common-path floor no longer binds this at
+/// 20 — `instruction_trace_floor(20, true, true)` sits well under
+/// [`TRANSACTION_INSTRUCTION_TRACE_LIMIT`] — so the SDK still caps public creates here because
+/// the host heap binds around 20. Event kinds only spend remaining headroom; they never move
+/// this cap.
 pub const MAX_PERSISTENT_CREATES: usize = 20;
 
 /// The instructions a transaction is guaranteed to execute for one `fhe_execute` invocation in
-/// the minimal production wrapper: the app instruction, its `fhe_execute` CPI, three
-/// system-program CPIs per created persistent output, and one event CPI per event kind emitted
+/// the minimal production wrapper: the app instruction, its `fhe_execute` CPI, one
+/// system-program CPI per created persistent output, and one event CPI per event kind emitted
 /// (random seeds, public outputs). Everything an app adds on top — its own CPIs, other
 /// instructions in the transaction — comes out of what the limit leaves over this floor.
 pub fn instruction_trace_floor(
@@ -110,7 +113,7 @@ pub fn instruction_trace_floor(
 pub struct FheExecutionCost {
     /// Steps in the execution.
     pub steps: usize,
-    /// Persistent outputs this execution creates (three system CPIs each).
+    /// Persistent outputs this execution creates (one system CPI each on the common path).
     pub persistent_creates: usize,
     /// Persistent outputs this execution updates (no CPI, unless the account needs a rent
     /// top-up to grow — see [`instruction_trace_worst_case`](Self::instruction_trace_worst_case)).
@@ -155,9 +158,10 @@ impl FheExecutionCost {
     /// The floor plus every state-dependent instruction this execution *can* add: one rent
     /// top-up transfer per persistent update whose account must grow, and the three CPIs that
     /// lazily create the per-app block meter on an app's first execution under a finite block
-    /// cap. A transaction budgeted against this number lands regardless of on-chain state.
+    /// cap (the meter create still uses the squat path). A transaction budgeted against this
+    /// number lands regardless of on-chain state.
     pub fn instruction_trace_worst_case(&self) -> usize {
-        self.instruction_trace_floor() + self.persistent_updates + CPIS_PER_PERSISTENT_CREATE
+        self.instruction_trace_floor() + self.persistent_updates + 3
     }
 }
 
@@ -169,16 +173,20 @@ mod tests {
     fn the_floor_counts_the_wrapper_the_creates_and_the_events() {
         // The minimal wrapper alone: app instruction + fhe_execute CPI.
         assert_eq!(instruction_trace_floor(0, false, false), 2);
-        // Each create is three system CPIs; each event kind is one CPI.
-        assert_eq!(instruction_trace_floor(1, false, false), 5);
+        // Each create is one system CPI on the common path; each event kind is one CPI.
+        assert_eq!(instruction_trace_floor(1, false, false), 3);
+        // Trace no longer binds at 20; heap does. The floor with events sits well under 64.
         assert_eq!(
             instruction_trace_floor(MAX_PERSISTENT_CREATES, true, true),
-            TRANSACTION_INSTRUCTION_TRACE_LIMIT
+            2 + MAX_PERSISTENT_CREATES + 2
         );
-        // The first create past the cap cannot land in any transaction.
+        assert!(
+            instruction_trace_floor(MAX_PERSISTENT_CREATES, true, true)
+                < TRANSACTION_INSTRUCTION_TRACE_LIMIT
+        );
         assert_eq!(
             instruction_trace_floor(MAX_PERSISTENT_CREATES + 1, false, false),
-            TRANSACTION_INSTRUCTION_TRACE_LIMIT + 1
+            2 + MAX_PERSISTENT_CREATES + 1
         );
     }
 
@@ -197,13 +205,13 @@ mod tests {
             dynamic_accounts: 0,
             output_authorities: 0,
         };
-        // The floor: wrapper (2) + three CPIs per create (6) + the rand event (1).
-        assert_eq!(cost.instruction_trace_floor(), 9);
+        // The floor: wrapper (2) + one CPI per create (2) + the rand event (1).
+        assert_eq!(cost.instruction_trace_floor(), 5);
         // The worst case adds one rent top-up transfer per update and the one-time three-CPI
-        // block-meter creation.
+        // block-meter creation (squat/meter path, not the common-path create CPI).
         assert_eq!(
             cost.instruction_trace_worst_case(),
-            9 + cost.persistent_updates + CPIS_PER_PERSISTENT_CREATE
+            5 + cost.persistent_updates + 3
         );
     }
 }

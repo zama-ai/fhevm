@@ -1,243 +1,601 @@
 //! In-execution HCU (Homomorphic Compute Unit) cost model for [`super::fhe_execute`].
 //!
 //! Pure, account-independent metering over an `fhe_execute` execution. Everything needed is in
-//! [`FheExecuteStep`]: a step's cost is a function of its op, result FHE type, and scalar flag; its
-//! critical-path *depth* is a function of the operand *kinds* (an `EarlierStep` reads the depth of
-//! the producer it points at; persistent / verified / scalar operands are zero-depth leaves). No
-//! sysvars, no accounts — so it runs once in [`super::fhe_execute`], before execution mutates any
-//! account, and its total feeds the block-cap charge unchanged.
+//! [`FheExecuteStep`] plus the interned dictionary (so comparisons can price on operand width).
+//! A step's cost is a function of its op, FHE type, and scalar flag; its critical-path *depth*
+//! is a function of the operand *kinds* (an `EarlierStep` reads the depth of the producer it
+//! points at; persistent / verified / scalar operands are zero-depth leaves). No sysvars, no
+//! accounts — so it runs once in [`super::fhe_execute`], before execution mutates any account,
+//! and its total feeds the block-cap charge unchanged.
 //!
 //! **Fail-closed:** every op variant is enumerated explicitly (no `_ =>` arm over the op enums), so a
 //! newly added op fails to compile until a cost decision is made; any `(op, fhe_type, scalar)`
-//! combination without a ported row returns [`ZamaHostError::HcuUnknownCost`].
+//! combination without a ported EVM row returns [`ZamaHostError::HcuUnknownCost`].
 //!
-//! **Numbers are representative, EVM-ordered placeholders** (scalar ≤ ciphertext; monotonic in width;
-//! select ≥ comparison). Solana-fleet calibration is deferred; because the limits ship at
-//! `u64::MAX` (unlimited) and `0` is rejected by the setters, placeholder costs cannot reject
-//! anything pre-calibration.
+//! **Numbers are the EVM `HCULimit` tables**, hardcoded, through `euint128` (type 6). Types 7
+//! (`euint160`) and 8 (`euint256`) have no rows. Caps stay `u64::MAX` (off).
 
 use anchor_lang::prelude::*;
 
 use crate::errors::ZamaHostError;
 use crate::state::{
-    FheBinaryOpCode, FheExecuteOperand, FheExecuteStep, FheTernaryOpCode, FheUnaryOpCode,
+    handle_fhe_type, FheBinaryOpCode, FheExecuteOperand, FheExecuteStep, FheTernaryOpCode,
+    FheUnaryOpCode,
 };
 
-/// Cost of a binary op producing `fhe_type`. `scalar` is true when the RHS is a plaintext scalar.
-pub(super) fn binary_op_hcu(op: FheBinaryOpCode, fhe_type: u8, scalar: bool) -> Result<u64> {
-    // No `_ =>` arm: a new FheBinaryOpCode variant must break the build here.
-    match op {
-        FheBinaryOpCode::Add | FheBinaryOpCode::Sub => arithmetic_hcu(fhe_type, scalar),
-        FheBinaryOpCode::Mul | FheBinaryOpCode::Div | FheBinaryOpCode::Rem => {
-            mul_div_rem_hcu(fhe_type, scalar)
-        }
-        FheBinaryOpCode::And | FheBinaryOpCode::Or | FheBinaryOpCode::Xor => {
-            bitwise_hcu(fhe_type, scalar)
-        }
-        FheBinaryOpCode::Shl
-        | FheBinaryOpCode::Shr
-        | FheBinaryOpCode::Rotl
-        | FheBinaryOpCode::Rotr => shift_hcu(fhe_type, scalar),
-        // Comparisons produce an `ebool` (fhe_type 0).
+fn is_comparison(op: FheBinaryOpCode) -> bool {
+    matches!(
+        op,
         FheBinaryOpCode::Eq
-        | FheBinaryOpCode::Ne
-        | FheBinaryOpCode::Ge
-        | FheBinaryOpCode::Gt
-        | FheBinaryOpCode::Le
-        | FheBinaryOpCode::Lt => comparison_hcu(fhe_type, scalar),
-        // Min/Max: a comparison plus a select.
-        FheBinaryOpCode::Min | FheBinaryOpCode::Max => select_hcu(fhe_type),
+            | FheBinaryOpCode::Ne
+            | FheBinaryOpCode::Ge
+            | FheBinaryOpCode::Gt
+            | FheBinaryOpCode::Le
+            | FheBinaryOpCode::Lt
+    )
+}
+
+/// Cost of a binary op. `fhe_type` is the result type except for comparisons, which price on
+/// **operand width**.
+pub(super) fn binary_op_hcu(op: FheBinaryOpCode, fhe_type: u8, scalar: bool) -> Result<u64> {
+    match op {
+        FheBinaryOpCode::Add => add_hcu(fhe_type, scalar),
+        FheBinaryOpCode::Sub => sub_hcu(fhe_type, scalar),
+        FheBinaryOpCode::Mul => mul_hcu(fhe_type, scalar),
+        FheBinaryOpCode::Div => div_hcu(fhe_type, scalar),
+        FheBinaryOpCode::Rem => rem_hcu(fhe_type, scalar),
+        FheBinaryOpCode::And => bitand_hcu(fhe_type, scalar),
+        FheBinaryOpCode::Or => bitor_hcu(fhe_type, scalar),
+        FheBinaryOpCode::Xor => bitxor_hcu(fhe_type, scalar),
+        FheBinaryOpCode::Shl => shl_hcu(fhe_type, scalar),
+        FheBinaryOpCode::Shr => shr_hcu(fhe_type, scalar),
+        FheBinaryOpCode::Rotl => rotl_hcu(fhe_type, scalar),
+        FheBinaryOpCode::Rotr => rotr_hcu(fhe_type, scalar),
+        FheBinaryOpCode::Eq => eq_hcu(fhe_type, scalar),
+        FheBinaryOpCode::Ne => ne_hcu(fhe_type, scalar),
+        FheBinaryOpCode::Ge => ge_hcu(fhe_type, scalar),
+        FheBinaryOpCode::Gt => gt_hcu(fhe_type, scalar),
+        FheBinaryOpCode::Le => le_hcu(fhe_type, scalar),
+        FheBinaryOpCode::Lt => lt_hcu(fhe_type, scalar),
+        FheBinaryOpCode::Min => min_hcu(fhe_type, scalar),
+        FheBinaryOpCode::Max => max_hcu(fhe_type, scalar),
     }
 }
 
-/// Cost of a unary op producing `fhe_type`.
 pub(super) fn unary_op_hcu(op: FheUnaryOpCode, fhe_type: u8) -> Result<u64> {
-    // No `_ =>` arm: a new FheUnaryOpCode variant must break the build here.
     match op {
-        FheUnaryOpCode::Neg | FheUnaryOpCode::Not => unary_transform_hcu(fhe_type),
+        FheUnaryOpCode::Neg => neg_hcu(fhe_type),
+        FheUnaryOpCode::Not => not_hcu(fhe_type),
         FheUnaryOpCode::Cast => cast_hcu(fhe_type),
     }
 }
 
-/// Cost of a ternary op producing `fhe_type`.
 pub(super) fn ternary_op_hcu(op: FheTernaryOpCode, fhe_type: u8) -> Result<u64> {
-    // No `_ =>` arm: a new FheTernaryOpCode variant must break the build here.
     match op {
         FheTernaryOpCode::IfThenElse => select_hcu(fhe_type),
     }
 }
 
-/// Cost of trivially encrypting a plaintext of `fhe_type`.
 pub(super) fn trivial_encrypt_hcu(fhe_type: u8) -> Result<u64> {
-    // Supported trivial-encrypt types mirror `state::assert_supported_fhe_type` (0 | 2..=8).
     match fhe_type {
-        0 => Ok(100),   // ebool
-        2 => Ok(200),   // euint8
-        3 => Ok(300),   // euint16
-        4 => Ok(500),   // euint32
-        5 => Ok(900),   // euint64
-        6 => Ok(1_700), // euint128
-        7 => Ok(2_100), // euint160
-        8 => Ok(3_300), // euint256
+        0 | 2 | 3 | 4 | 5 | 6 => Ok(32),
         _ => Err(error!(ZamaHostError::HcuUnknownCost)),
     }
 }
 
-/// Cost of generating a random ciphertext of `fhe_type`.
 pub(super) fn rand_hcu(fhe_type: u8) -> Result<u64> {
-    // Supported rand types mirror `state::assert_supported_rand_type` (0 | 2..=6 | 8 — note: not 7).
     match fhe_type {
-        0 => Ok(40_000),
-        2 => Ok(42_000),
-        3 => Ok(44_000),
-        4 => Ok(47_000),
-        5 => Ok(52_000),
-        6 => Ok(60_000),
-        8 => Ok(80_000),
+        0 => Ok(19_000),
+        2 => Ok(23_000),
+        3 => Ok(23_000),
+        4 => Ok(24_000),
+        5 => Ok(24_000),
+        6 => Ok(25_000),
         _ => Err(error!(ZamaHostError::HcuUnknownCost)),
     }
 }
 
-/// Add/Sub: monotonic in width; scalar form is cheaper. Same table for Add and Sub (EVM parity).
-fn arithmetic_hcu(fhe_type: u8, scalar: bool) -> Result<u64> {
-    let base: u64 = match fhe_type {
-        2 => 28_000, // euint8
-        3 => 31_000, // euint16
-        4 => 34_000, // euint32
-        5 => 38_000, // euint64
-        6 => 45_000, // euint128
+fn add_hcu(fhe_type: u8, scalar: bool) -> Result<u64> {
+    Ok(match (fhe_type, scalar) {
+        (2, true) => 84_000,
+        (3, true) => 93_000,
+        (4, true) => 95_000,
+        (5, true) => 133_000,
+        (6, true) => 172_000,
+        (2, false) => 88_000,
+        (3, false) => 93_000,
+        (4, false) => 125_000,
+        (5, false) => 162_000,
+        (6, false) => 259_000,
         _ => return Err(error!(ZamaHostError::HcuUnknownCost)),
-    };
-    // Scalar operations skip ciphertext-ciphertext work: 12.5% cheaper (keeps width-monotonicity).
-    Ok(if scalar { base - base / 8 } else { base })
+    })
 }
 
-/// Ge: result is `ebool` (type 0); operand width is not encoded in the result type, so the placeholder
-/// is a single comparison cost (see tests-stage note on this representativeness limitation).
-fn comparison_hcu(fhe_type: u8, scalar: bool) -> Result<u64> {
+fn sub_hcu(fhe_type: u8, scalar: bool) -> Result<u64> {
+    Ok(match (fhe_type, scalar) {
+        (2, true) => 84_000,
+        (3, true) => 93_000,
+        (4, true) => 95_000,
+        (5, true) => 133_000,
+        (6, true) => 172_000,
+        (2, false) => 91_000,
+        (3, false) => 93_000,
+        (4, false) => 125_000,
+        (5, false) => 162_000,
+        (6, false) => 260_000,
+        _ => return Err(error!(ZamaHostError::HcuUnknownCost)),
+    })
+}
+
+fn mul_hcu(fhe_type: u8, scalar: bool) -> Result<u64> {
+    Ok(match (fhe_type, scalar) {
+        (2, true) => 122_000,
+        (3, true) => 193_000,
+        (4, true) => 265_000,
+        (5, true) => 365_000,
+        (6, true) => 696_000,
+        (2, false) => 150_000,
+        (3, false) => 222_000,
+        (4, false) => 328_000,
+        (5, false) => 596_000,
+        (6, false) => 1_686_000,
+        _ => return Err(error!(ZamaHostError::HcuUnknownCost)),
+    })
+}
+
+fn div_hcu(fhe_type: u8, scalar: bool) -> Result<u64> {
+    if !scalar {
+        return Err(error!(ZamaHostError::HcuUnknownCost));
+    }
     match fhe_type {
-        0 => Ok(if scalar { 18_000 } else { 21_000 }),
+        2 => Ok(210_000),
+        3 => Ok(302_000),
+        4 => Ok(438_000),
+        5 => Ok(715_000),
+        6 => Ok(1_225_000),
         _ => Err(error!(ZamaHostError::HcuUnknownCost)),
     }
 }
 
-/// IfThenElse (select): at least as expensive as a comparison, monotonic in width.
+fn rem_hcu(fhe_type: u8, scalar: bool) -> Result<u64> {
+    if !scalar {
+        return Err(error!(ZamaHostError::HcuUnknownCost));
+    }
+    match fhe_type {
+        2 => Ok(440_000),
+        3 => Ok(580_000),
+        4 => Ok(792_000),
+        5 => Ok(1_153_000),
+        6 => Ok(1_943_000),
+        _ => Err(error!(ZamaHostError::HcuUnknownCost)),
+    }
+}
+
+fn bitand_hcu(fhe_type: u8, scalar: bool) -> Result<u64> {
+    Ok(match (fhe_type, scalar) {
+        (0, true) => 22_000,
+        (2, true) => 31_000,
+        (3, true) => 31_000,
+        (4, true) => 32_000,
+        (5, true) => 34_000,
+        (6, true) => 37_000,
+        (0, false) => 25_000,
+        (2, false) => 31_000,
+        (3, false) => 31_000,
+        (4, false) => 32_000,
+        (5, false) => 34_000,
+        (6, false) => 37_000,
+        _ => return Err(error!(ZamaHostError::HcuUnknownCost)),
+    })
+}
+
+fn bitor_hcu(fhe_type: u8, scalar: bool) -> Result<u64> {
+    Ok(match (fhe_type, scalar) {
+        (0, true) => 22_000,
+        (2, true) => 30_000,
+        (3, true) => 30_000,
+        (4, true) => 32_000,
+        (5, true) => 34_000,
+        (6, true) => 37_000,
+        (0, false) => 24_000,
+        (2, false) => 30_000,
+        (3, false) => 31_000,
+        (4, false) => 32_000,
+        (5, false) => 34_000,
+        (6, false) => 37_000,
+        _ => return Err(error!(ZamaHostError::HcuUnknownCost)),
+    })
+}
+
+fn bitxor_hcu(fhe_type: u8, scalar: bool) -> Result<u64> {
+    Ok(match (fhe_type, scalar) {
+        (0, true) => 22_000,
+        (2, true) => 31_000,
+        (3, true) => 31_000,
+        (4, true) => 32_000,
+        (5, true) => 34_000,
+        (6, true) => 37_000,
+        (0, false) => 22_000,
+        (2, false) => 31_000,
+        (3, false) => 31_000,
+        (4, false) => 32_000,
+        (5, false) => 34_000,
+        (6, false) => 37_000,
+        _ => return Err(error!(ZamaHostError::HcuUnknownCost)),
+    })
+}
+
+fn shl_hcu(fhe_type: u8, scalar: bool) -> Result<u64> {
+    Ok(match (fhe_type, scalar) {
+        (2, true) => 32_000,
+        (3, true) => 32_000,
+        (4, true) => 32_000,
+        (5, true) => 34_000,
+        (6, true) => 37_000,
+        (2, false) => 92_000,
+        (3, false) => 125_000,
+        (4, false) => 162_000,
+        (5, false) => 208_000,
+        (6, false) => 272_000,
+        _ => return Err(error!(ZamaHostError::HcuUnknownCost)),
+    })
+}
+
+fn shr_hcu(fhe_type: u8, scalar: bool) -> Result<u64> {
+    Ok(match (fhe_type, scalar) {
+        (2, true) => 32_000,
+        (3, true) => 32_000,
+        (4, true) => 32_000,
+        (5, true) => 34_000,
+        (6, true) => 37_000,
+        (2, false) => 91_000,
+        (3, false) => 123_000,
+        (4, false) => 163_000,
+        (5, false) => 209_000,
+        (6, false) => 272_000,
+        _ => return Err(error!(ZamaHostError::HcuUnknownCost)),
+    })
+}
+
+fn rotl_hcu(fhe_type: u8, scalar: bool) -> Result<u64> {
+    Ok(match (fhe_type, scalar) {
+        (2, true) => 31_000,
+        (3, true) => 31_000,
+        (4, true) => 32_000,
+        (5, true) => 34_000,
+        (6, true) => 37_000,
+        (2, false) => 91_000,
+        (3, false) => 125_000,
+        (4, false) => 163_000,
+        (5, false) => 209_000,
+        (6, false) => 278_000,
+        _ => return Err(error!(ZamaHostError::HcuUnknownCost)),
+    })
+}
+
+fn rotr_hcu(fhe_type: u8, scalar: bool) -> Result<u64> {
+    Ok(match (fhe_type, scalar) {
+        (2, true) => 31_000,
+        (3, true) => 31_000,
+        (4, true) => 32_000,
+        (5, true) => 34_000,
+        (6, true) => 37_000,
+        (2, false) => 93_000,
+        (3, false) => 125_000,
+        (4, false) => 160_000,
+        (5, false) => 209_000,
+        (6, false) => 283_000,
+        _ => return Err(error!(ZamaHostError::HcuUnknownCost)),
+    })
+}
+
+fn eq_hcu(fhe_type: u8, scalar: bool) -> Result<u64> {
+    Ok(match (fhe_type, scalar) {
+        (0, true) => 25_000,
+        (2, true) => 55_000,
+        (3, true) => 55_000,
+        (4, true) => 82_000,
+        (5, true) => 83_000,
+        (6, true) => 117_000,
+        (0, false) => 26_000,
+        (2, false) => 55_000,
+        (3, false) => 83_000,
+        (4, false) => 86_000,
+        (5, false) => 120_000,
+        (6, false) => 122_000,
+        _ => return Err(error!(ZamaHostError::HcuUnknownCost)),
+    })
+}
+
+fn ne_hcu(fhe_type: u8, scalar: bool) -> Result<u64> {
+    Ok(match (fhe_type, scalar) {
+        (0, true) => 23_000,
+        (2, true) => 55_000,
+        (3, true) => 55_000,
+        (4, true) => 83_000,
+        (5, true) => 84_000,
+        (6, true) => 117_000,
+        (0, false) => 23_000,
+        (2, false) => 55_000,
+        (3, false) => 83_000,
+        (4, false) => 85_000,
+        (5, false) => 118_000,
+        (6, false) => 122_000,
+        _ => return Err(error!(ZamaHostError::HcuUnknownCost)),
+    })
+}
+
+fn ge_hcu(fhe_type: u8, scalar: bool) -> Result<u64> {
+    Ok(match (fhe_type, scalar) {
+        (2, true) => 52_000,
+        (3, true) => 55_000,
+        (4, true) => 84_000,
+        (5, true) => 116_000,
+        (6, true) => 149_000,
+        (2, false) => 63_000,
+        (3, false) => 84_000,
+        (4, false) => 118_000,
+        (5, false) => 152_000,
+        (6, false) => 210_000,
+        _ => return Err(error!(ZamaHostError::HcuUnknownCost)),
+    })
+}
+
+fn gt_hcu(fhe_type: u8, scalar: bool) -> Result<u64> {
+    Ok(match (fhe_type, scalar) {
+        (2, true) => 52_000,
+        (3, true) => 55_000,
+        (4, true) => 84_000,
+        (5, true) => 117_000,
+        (6, true) => 150_000,
+        (2, false) => 59_000,
+        (3, false) => 84_000,
+        (4, false) => 118_000,
+        (5, false) => 152_000,
+        (6, false) => 218_000,
+        _ => return Err(error!(ZamaHostError::HcuUnknownCost)),
+    })
+}
+
+fn le_hcu(fhe_type: u8, scalar: bool) -> Result<u64> {
+    Ok(match (fhe_type, scalar) {
+        (2, true) => 58_000,
+        (3, true) => 58_000,
+        (4, true) => 84_000,
+        (5, true) => 119_000,
+        (6, true) => 150_000,
+        (2, false) => 58_000,
+        (3, false) => 83_000,
+        (4, false) => 117_000,
+        (5, false) => 149_000,
+        (6, false) => 218_000,
+        _ => return Err(error!(ZamaHostError::HcuUnknownCost)),
+    })
+}
+
+fn lt_hcu(fhe_type: u8, scalar: bool) -> Result<u64> {
+    Ok(match (fhe_type, scalar) {
+        (2, true) => 52_000,
+        (3, true) => 58_000,
+        (4, true) => 83_000,
+        (5, true) => 118_000,
+        (6, true) => 149_000,
+        (2, false) => 59_000,
+        (3, false) => 84_000,
+        (4, false) => 117_000,
+        (5, false) => 146_000,
+        (6, false) => 215_000,
+        _ => return Err(error!(ZamaHostError::HcuUnknownCost)),
+    })
+}
+
+fn min_hcu(fhe_type: u8, scalar: bool) -> Result<u64> {
+    Ok(match (fhe_type, scalar) {
+        (2, true) => 84_000,
+        (3, true) => 88_000,
+        (4, true) => 117_000,
+        (5, true) => 150_000,
+        (6, true) => 186_000,
+        (2, false) => 119_000,
+        (3, false) => 146_000,
+        (4, false) => 182_000,
+        (5, false) => 219_000,
+        (6, false) => 289_000,
+        _ => return Err(error!(ZamaHostError::HcuUnknownCost)),
+    })
+}
+
+fn max_hcu(fhe_type: u8, scalar: bool) -> Result<u64> {
+    Ok(match (fhe_type, scalar) {
+        (2, true) => 89_000,
+        (3, true) => 89_000,
+        (4, true) => 117_000,
+        (5, true) => 149_000,
+        (6, true) => 180_000,
+        (2, false) => 121_000,
+        (3, false) => 145_000,
+        (4, false) => 180_000,
+        (5, false) => 218_000,
+        (6, false) => 290_000,
+        _ => return Err(error!(ZamaHostError::HcuUnknownCost)),
+    })
+}
+
 fn select_hcu(fhe_type: u8) -> Result<u64> {
     match fhe_type {
-        0 => Ok(30_000),
-        2 => Ok(32_000),
-        3 => Ok(35_000),
-        4 => Ok(38_000),
-        5 => Ok(45_000),
-        6 => Ok(55_000),
-        7 => Ok(60_000),
-        8 => Ok(75_000),
+        0 => Ok(55_000),
+        2 => Ok(55_000),
+        3 => Ok(55_000),
+        4 => Ok(55_000),
+        5 => Ok(55_000),
+        6 => Ok(57_000),
         _ => Err(error!(ZamaHostError::HcuUnknownCost)),
     }
 }
 
-/// Mul/Div/Rem: heaviest binary ops; monotonic in width; scalar form is cheaper.
-fn mul_div_rem_hcu(fhe_type: u8, scalar: bool) -> Result<u64> {
-    let base: u64 = match fhe_type {
-        2 => 150_000, // euint8
-        3 => 180_000, // euint16
-        4 => 220_000, // euint32
-        5 => 290_000, // euint64
-        6 => 480_000, // euint128
-        _ => return Err(error!(ZamaHostError::HcuUnknownCost)),
-    };
-    Ok(if scalar { base - base / 8 } else { base })
-}
-
-/// fheMulDiv: a dedicated cost mirroring EVM `HCULimit.checkHCUForFheMulDiv` — a single calibrated
-/// opHCU per result type and `factor2` scalar-ness (NOT a mul+div sum), since the coprocessor runs
-/// the fused op as an unoptimized 2N-wide chained mul+div. EVM caps mulDiv at Uint64.
 fn mul_div_hcu(fhe_type: u8, factor2_scalar: bool) -> Result<u64> {
     let cost = match (fhe_type, factor2_scalar) {
-        (2, true) => 495_000,    // euint8, scalar factor2
-        (3, true) => 703_000,    // euint16
-        (4, true) => 1_080_000,  // euint32
-        (5, true) => 1_921_000,  // euint64
-        (2, false) => 524_000,   // euint8, encrypted factor2
-        (3, false) => 766_000,   // euint16
-        (4, false) => 1_311_000, // euint32
-        (5, false) => 2_911_000, // euint64
+        (2, true) => 495_000,
+        (3, true) => 703_000,
+        (4, true) => 1_080_000,
+        (5, true) => 1_921_000,
+        (2, false) => 524_000,
+        (3, false) => 766_000,
+        (4, false) => 1_311_000,
+        (5, false) => 2_911_000,
         _ => return Err(error!(ZamaHostError::HcuUnknownCost)),
     };
     Ok(cost)
 }
 
-/// And/Or/Xor: bitwise, cheaper than arithmetic (no carry propagation); scalar form is cheaper.
-fn bitwise_hcu(fhe_type: u8, scalar: bool) -> Result<u64> {
-    let base: u64 = match fhe_type {
-        0 => 16_000, // ebool
-        2 => 20_000, // euint8
-        3 => 22_000, // euint16
-        4 => 24_000, // euint32
-        5 => 27_000, // euint64
-        6 => 32_000, // euint128
-        8 => 40_000, // euint256
-        _ => return Err(error!(ZamaHostError::HcuUnknownCost)),
-    };
-    Ok(if scalar { base - base / 8 } else { base })
-}
-
-/// Shl/Shr/Rotl/Rotr: shift/rotate, between bitwise and arithmetic; scalar form is cheaper.
-fn shift_hcu(fhe_type: u8, scalar: bool) -> Result<u64> {
-    let base: u64 = match fhe_type {
-        2 => 25_000, // euint8
-        3 => 28_000, // euint16
-        4 => 31_000, // euint32
-        5 => 35_000, // euint64
-        6 => 42_000, // euint128
-        8 => 55_000, // euint256
-        _ => return Err(error!(ZamaHostError::HcuUnknownCost)),
-    };
-    Ok(if scalar { base - base / 8 } else { base })
-}
-
-/// Neg/Not: single-operand transform; cheaper than a binary op. `Not` also applies to `ebool` (0).
-fn unary_transform_hcu(fhe_type: u8) -> Result<u64> {
+fn neg_hcu(fhe_type: u8) -> Result<u64> {
     match fhe_type {
-        0 => Ok(15_000), // ebool (Not)
-        2 => Ok(18_000), // euint8
-        3 => Ok(20_000), // euint16
-        4 => Ok(23_000), // euint32
-        5 => Ok(27_000), // euint64
-        6 => Ok(33_000), // euint128
-        8 => Ok(42_000), // euint256
+        2 => Ok(79_000),
+        3 => Ok(93_000),
+        4 => Ok(95_000),
+        5 => Ok(131_000),
+        6 => Ok(168_000),
         _ => Err(error!(ZamaHostError::HcuUnknownCost)),
     }
 }
 
-/// Cast: reinterpret/resize to `fhe_type`; cheap relative to arithmetic. Covers every type Cast's
-/// output validation accepts (`is_supported_fhe_type`: 0 | 2..=8), including Address (7) and
-/// Uint256 (8), so metering never rejects a cast the on-chain/client validation admitted.
+fn not_hcu(fhe_type: u8) -> Result<u64> {
+    match fhe_type {
+        0 => Ok(2),
+        2 => Ok(9),
+        3 => Ok(16),
+        4 => Ok(32),
+        5 => Ok(63),
+        6 => Ok(130),
+        _ => Err(error!(ZamaHostError::HcuUnknownCost)),
+    }
+}
+
 fn cast_hcu(fhe_type: u8) -> Result<u64> {
     match fhe_type {
-        0 | 2 | 3 | 4 | 5 | 6 | 7 | 8 => Ok(5_000),
+        0 | 2 | 3 | 4 | 5 | 6 => Ok(32),
         _ => Err(error!(ZamaHostError::HcuUnknownCost)),
     }
 }
 
-/// Sum of `operand_count` ciphertexts ≈ `(operand_count - 1)` additions of `fhe_type`.
 fn sum_hcu(fhe_type: u8, operand_count: usize) -> Result<u64> {
-    let per_add = arithmetic_hcu(fhe_type, false)?;
-    let adds = operand_count.max(1) as u64 - 1;
-    per_add
-        .checked_mul(adds)
-        .ok_or_else(|| error!(ZamaHostError::HcuUnknownCost))
+    let n = operand_count;
+    let cost = match fhe_type {
+        2 => {
+            if n <= 10 {
+                90_900
+            } else if n <= 30 {
+                127_000
+            } else if n <= 60 {
+                148_000
+            } else {
+                159_000
+            }
+        }
+        3 => {
+            if n <= 10 {
+                95_000
+            } else if n <= 30 {
+                136_000
+            } else if n <= 60 {
+                162_000
+            } else {
+                184_000
+            }
+        }
+        4 => {
+            if n <= 10 {
+                116_000
+            } else if n <= 30 {
+                164_000
+            } else if n <= 60 {
+                205_000
+            } else {
+                281_000
+            }
+        }
+        5 => {
+            if n <= 10 {
+                139_000
+            } else if n <= 30 {
+                216_000
+            } else {
+                306_000
+            }
+        }
+        6 => {
+            if n <= 10 {
+                219_000
+            } else if n <= 30 {
+                355_000
+            } else {
+                552_000
+            }
+        }
+        _ => return Err(error!(ZamaHostError::HcuUnknownCost)),
+    };
+    Ok(cost)
 }
 
-/// IsIn: one equality per set member (select-cost proxy, spanning the full Uint8..Uint256 range), OR-reduced to `ebool`.
 fn is_in_hcu(fhe_type: u8, set_len: usize) -> Result<u64> {
-    let per_member = select_hcu(fhe_type)?;
-    per_member
-        .checked_mul(set_len.max(1) as u64)
-        .ok_or_else(|| error!(ZamaHostError::HcuUnknownCost))
+    let n = set_len;
+    let cost = match fhe_type {
+        2 => {
+            if n <= 10 {
+                71_300
+            } else if n <= 30 {
+                148_000
+            } else if n <= 60 {
+                247_000
+            } else {
+                374_000
+            }
+        }
+        3 => {
+            if n <= 10 {
+                103_000
+            } else if n <= 30 {
+                218_000
+            } else if n <= 60 {
+                378_000
+            } else {
+                605_000
+            }
+        }
+        4 => {
+            if n <= 10 {
+                137_000
+            } else if n <= 30 {
+                300_000
+            } else if n <= 60 {
+                531_000
+            } else {
+                827_000
+            }
+        }
+        5 => {
+            if n <= 10 {
+                218_000
+            } else if n <= 30 {
+                492_000
+            } else {
+                879_000
+            }
+        }
+        6 => {
+            if n <= 10 {
+                256_000
+            } else if n <= 30 {
+                535_000
+            } else {
+                921_000
+            }
+        }
+        _ => return Err(error!(ZamaHostError::HcuUnknownCost)),
+    };
+    Ok(cost)
 }
 
-/// `u64::MAX = unlimited`: a no-op when `limit == u64::MAX`, otherwise `used <= limit` or `err`.
 pub(super) fn enforce_le(used: u64, limit: u64, err: ZamaHostError) -> Result<()> {
     if limit != u64::MAX && used > limit {
         return Err(error!(err));
@@ -245,24 +603,18 @@ pub(super) fn enforce_le(used: u64, limit: u64, err: ZamaHostError) -> Result<()
     Ok(())
 }
 
-/// Running execution total with checked arithmetic; overflow fails closed (never wraps).
 pub(super) fn accumulate_total(running: u64, step_hcu: u64) -> Result<u64> {
     running
         .checked_add(step_hcu)
         .ok_or_else(|| error!(ZamaHostError::HcuTransactionLimitExceeded))
 }
 
-/// Per-step cumulative depth = op cost + max input depth; overflow fails closed.
 pub(super) fn step_depth(step_hcu: u64, max_input_depth: u64) -> Result<u64> {
     step_hcu
         .checked_add(max_input_depth)
         .ok_or_else(|| error!(ZamaHostError::HcuTransactionDepthLimitExceeded))
 }
 
-/// The result of metering one execution: the summed total and the cumulative depth of each produced step.
-///
-/// Production only needs the enforcement side-effect of [`meter_execution`]; the returned values exist
-/// for unit tests, so the fields are read only under `#[cfg(test)]`.
 #[derive(Debug)]
 #[cfg_attr(not(test), allow(dead_code))]
 pub(super) struct ExecutionMeter {
@@ -270,12 +622,7 @@ pub(super) struct ExecutionMeter {
     pub step_depths: Vec<u64>,
 }
 
-/// Depth a resolved operand contributes: an `EarlierStep` carries its producer's cumulative depth;
-/// every other operand kind is a zero-depth leaf (persistent resets in-execution; verified input &
-/// scalar are intrinsic zero leaves). An out-of-range producer index is treated as `0` here;
-/// the walk's operand resolver rejects it with the precise `FheExecuteEarlierStepMissing`.
 fn operand_depth(operand: &FheExecuteOperand, step_depths: &[u64]) -> u64 {
-    // No `_ =>` arm: a new FheExecuteOperand variant must break the build here.
     match operand {
         FheExecuteOperand::EarlierStep { producer_index } => step_depths
             .get(*producer_index as usize)
@@ -287,19 +634,45 @@ fn operand_depth(operand: &FheExecuteOperand, step_depths: &[u64]) -> u64 {
     }
 }
 
-/// Meters an execution: sums per-step costs into an execution total and computes each step's critical-path depth,
-/// enforcing both caps after every step (`u64::MAX = unlimited`). Pure over `steps` + the two limits, so
-/// off-chain planners compute exactly what on-chain enforcement trips.
+fn operand_pricing_type(
+    operand: &FheExecuteOperand,
+    dictionary: &[[u8; 32]],
+    produced_types: &[u8],
+) -> Result<u8> {
+    match operand {
+        FheExecuteOperand::EarlierStep { producer_index } => produced_types
+            .get(*producer_index as usize)
+            .copied()
+            .ok_or_else(|| error!(ZamaHostError::FheExecuteEarlierStepMissing)),
+        FheExecuteOperand::StoredValue { handle_index, .. } => {
+            let handle = dictionary
+                .get(*handle_index as usize)
+                .ok_or_else(|| error!(ZamaHostError::FheExecuteDictionaryIndexOutOfBounds))?;
+            Ok(handle_fhe_type(*handle))
+        }
+        FheExecuteOperand::VerifiedInput { attestation } => {
+            Ok(handle_fhe_type(attestation.input_handle))
+        }
+        FheExecuteOperand::Scalar { .. } => Err(error!(ZamaHostError::HcuUnknownCost)),
+    }
+}
+
+/// Meters an execution: sums per-step costs into an execution total and computes each step's
+/// critical-path depth, enforcing both caps after every step (`u64::MAX = unlimited`). Comparisons
+/// price on operand width, resolved from the dictionary / attestation handle / earlier produced
+/// types.
 pub(super) fn meter_execution(
     steps: &[FheExecuteStep],
+    dictionary: &[[u8; 32]],
     max_hcu_per_tx: u64,
     max_hcu_depth_per_tx: u64,
 ) -> Result<ExecutionMeter> {
     let mut total: u64 = 0;
     let mut step_depths: Vec<u64> = Vec::with_capacity(steps.len());
+    let mut produced_types: Vec<u8> = Vec::with_capacity(steps.len());
 
     for step in steps {
-        let (op_hcu, max_input_depth) = match step {
+        let (op_hcu, max_input_depth, produced_type) = match step {
             FheExecuteStep::Binary {
                 op,
                 lhs,
@@ -307,13 +680,18 @@ pub(super) fn meter_execution(
                 output_fhe_type,
                 ..
             } => {
+                let pricing_type = if is_comparison(*op) {
+                    operand_pricing_type(lhs, dictionary, &produced_types)?
+                } else {
+                    *output_fhe_type
+                };
                 let cost = binary_op_hcu(
                     *op,
-                    *output_fhe_type,
+                    pricing_type,
                     matches!(rhs, FheExecuteOperand::Scalar { .. }),
                 )?;
                 let depth = operand_depth(lhs, &step_depths).max(operand_depth(rhs, &step_depths));
-                (cost, depth)
+                (cost, depth, *output_fhe_type)
             }
             FheExecuteStep::Ternary {
                 op,
@@ -327,10 +705,12 @@ pub(super) fn meter_execution(
                 let depth = operand_depth(control, &step_depths)
                     .max(operand_depth(if_true, &step_depths))
                     .max(operand_depth(if_false, &step_depths));
-                (cost, depth)
+                (cost, depth, *output_fhe_type)
             }
-            FheExecuteStep::TrivialEncrypt { fhe_type, .. } => (trivial_encrypt_hcu(*fhe_type)?, 0),
-            FheExecuteStep::Rand { fhe_type, .. } => (rand_hcu(*fhe_type)?, 0),
+            FheExecuteStep::TrivialEncrypt { fhe_type, .. } => {
+                (trivial_encrypt_hcu(*fhe_type)?, 0, *fhe_type)
+            }
+            FheExecuteStep::Rand { fhe_type, .. } => (rand_hcu(*fhe_type)?, 0, *fhe_type),
             FheExecuteStep::Unary {
                 op,
                 operand,
@@ -339,10 +719,9 @@ pub(super) fn meter_execution(
             } => {
                 let cost = unary_op_hcu(*op, *output_fhe_type)?;
                 let depth = operand_depth(operand, &step_depths);
-                (cost, depth)
+                (cost, depth, *output_fhe_type)
             }
-            // Bounded randomness is a fresh creation (no operands), like Rand.
-            FheExecuteStep::RandBounded { fhe_type, .. } => (rand_hcu(*fhe_type)?, 0),
+            FheExecuteStep::RandBounded { fhe_type, .. } => (rand_hcu(*fhe_type)?, 0, *fhe_type),
             FheExecuteStep::Sum {
                 operands, fhe_type, ..
             } => {
@@ -352,7 +731,7 @@ pub(super) fn meter_execution(
                     .map(|operand| operand_depth(operand, &step_depths))
                     .max()
                     .unwrap_or(0);
-                (cost, depth)
+                (cost, depth, *fhe_type)
             }
             FheExecuteStep::IsIn {
                 value,
@@ -367,7 +746,7 @@ pub(super) fn meter_execution(
                         .max()
                         .unwrap_or(0),
                 );
-                (cost, depth)
+                (cost, depth, 0)
             }
             FheExecuteStep::MulDiv {
                 factor1,
@@ -381,11 +760,10 @@ pub(super) fn meter_execution(
                 )?;
                 let depth =
                     operand_depth(factor1, &step_depths).max(operand_depth(factor2, &step_depths));
-                (cost, depth)
+                (cost, depth, *output_fhe_type)
             }
         };
 
-        // Total: running sum, capped.
         total = accumulate_total(total, op_hcu)?;
         enforce_le(
             total,
@@ -393,7 +771,6 @@ pub(super) fn meter_execution(
             ZamaHostError::HcuTransactionLimitExceeded,
         )?;
 
-        // Depth: critical path, capped independently of total.
         let depth = step_depth(op_hcu, max_input_depth)?;
         enforce_le(
             depth,
@@ -402,6 +779,7 @@ pub(super) fn meter_execution(
         )?;
 
         step_depths.push(depth);
+        produced_types.push(produced_type);
     }
 
     Ok(ExecutionMeter { total, step_depths })
@@ -506,23 +884,21 @@ mod tests {
                 assert!(binary_op_hcu(FheBinaryOpCode::Sub, ty, scalar).unwrap() > 0);
             }
         }
-        assert!(binary_op_hcu(FheBinaryOpCode::Ge, EBOOL, false).unwrap() > 0);
-        assert!(binary_op_hcu(FheBinaryOpCode::Ge, EBOOL, true).unwrap() > 0);
+        assert!(binary_op_hcu(FheBinaryOpCode::Ge, EU8, false).unwrap() > 0);
+        assert!(binary_op_hcu(FheBinaryOpCode::Ge, EU8, true).unwrap() > 0);
+        assert!(binary_op_hcu(FheBinaryOpCode::Eq, EBOOL, false).unwrap() > 0);
     }
 
     #[test]
     fn unary_op_hcu_covers_every_validated_output_type() {
-        // Metering must define a cost for every output type the unary validation accepts, or a
-        // validated op fails mid-execution with HcuUnknownCost. Cast accepts the full supported set
-        // (is_supported_fhe_type: 0 | 2..=8, including Address=7 and Uint256=8).
-        for ty in [EBOOL, EU8, 3, 4, EU64, EU128, 7, 8] {
+        // Cast / Not / Neg price through euint128 only (types 7 and 8 have no HCU row).
+        for ty in [EBOOL, EU8, 3, 4, EU64, EU128] {
             assert!(unary_op_hcu(FheUnaryOpCode::Cast, ty).unwrap() > 0);
         }
-        // Neg accepts 2..=6 | 8; Not additionally accepts ebool.
-        for ty in [EU8, 3, 4, EU64, EU128, 8] {
+        for ty in [EU8, 3, 4, EU64, EU128] {
             assert!(unary_op_hcu(FheUnaryOpCode::Neg, ty).unwrap() > 0);
         }
-        for ty in [EBOOL, EU8, 3, 4, EU64, EU128, 8] {
+        for ty in [EBOOL, EU8, 3, 4, EU64, EU128] {
             assert!(unary_op_hcu(FheUnaryOpCode::Not, ty).unwrap() > 0);
         }
     }
@@ -558,10 +934,30 @@ mod tests {
                         )
                         .is_ok();
                         if validated {
+                            let dropped = ty == 7
+                                || ty == 8
+                                || operand_ty == 7
+                                || operand_ty == 8;
+                            let priced = if matches!(
+                                op,
+                                FheBinaryOpCode::Eq
+                                    | FheBinaryOpCode::Ne
+                                    | FheBinaryOpCode::Ge
+                                    | FheBinaryOpCode::Gt
+                                    | FheBinaryOpCode::Le
+                                    | FheBinaryOpCode::Lt
+                            ) {
+                                binary_op_hcu(op, operand_ty, scalar)
+                            } else {
+                                binary_op_hcu(op, ty, scalar)
+                            };
+                            if dropped {
+                                continue;
+                            }
                             assert!(
-                                binary_op_hcu(op, ty, scalar).is_ok(),
-                                "validated binary op {op:?} output type {ty} scalar {scalar} \
-                                 has no cost row"
+                                priced.is_ok(),
+                                "validated binary op {op:?} output type {ty} operand {operand_ty} \
+                                 scalar {scalar} has no cost row"
                             );
                         }
                     }
@@ -577,7 +973,7 @@ mod tests {
             let validated =
                 assert_ternary_operand_types(handle_of(0), handle_of(ty), handle_of(ty), ty)
                     .is_ok();
-            if validated {
+            if validated && ty != 7 && ty != 8 {
                 assert!(
                     ternary_op_hcu(FheTernaryOpCode::IfThenElse, ty).is_ok(),
                     "validated ternary output type {ty} has no cost row"
@@ -590,7 +986,7 @@ mod tests {
     fn trivial_encrypt_hcu_covers_every_validated_type() {
         use crate::state::assert_supported_fhe_type;
         for ty in ALL_FHE_TYPE_PROBES {
-            if assert_supported_fhe_type(ty).is_ok() {
+            if assert_supported_fhe_type(ty).is_ok() && ty != 7 && ty != 8 {
                 assert!(
                     trivial_encrypt_hcu(ty).is_ok(),
                     "validated trivial-encrypt type {ty} has no cost row"
@@ -603,14 +999,14 @@ mod tests {
     fn rand_hcu_covers_every_validated_rand_and_bounded_rand_type() {
         use crate::state::{assert_supported_bounded_rand_type, assert_supported_rand_type};
         for ty in ALL_FHE_TYPE_PROBES {
-            if assert_supported_rand_type(ty).is_ok() {
+            if assert_supported_rand_type(ty).is_ok() && ty != 8 {
                 assert!(
                     rand_hcu(ty).is_ok(),
                     "validated rand type {ty} has no cost row"
                 );
             }
             // RandBounded meters through the same rand_hcu table.
-            if assert_supported_bounded_rand_type(ty).is_ok() {
+            if assert_supported_bounded_rand_type(ty).is_ok() && ty != 8 {
                 assert!(
                     rand_hcu(ty).is_ok(),
                     "validated bounded-rand type {ty} has no cost row"
@@ -626,7 +1022,7 @@ mod tests {
             // 100 operands is the widest count any type admits; validation gates per type.
             for count in [0usize, 1, 2, 60, 100] {
                 let handles = vec![handle_of(ty); count];
-                if assert_sum_operand_types(&handles, ty).is_ok() {
+                if assert_sum_operand_types(&handles, ty).is_ok() && ty != 7 && ty != 8 {
                     assert!(
                         sum_hcu(ty, count).is_ok(),
                         "validated sum type {ty} x{count} has no cost row"
@@ -642,7 +1038,10 @@ mod tests {
         for ty in ALL_FHE_TYPE_PROBES {
             for count in [0usize, 1, 2, 60, 100] {
                 let handles = vec![handle_of(ty); count];
-                if assert_is_in_operand_types(handle_of(ty), &handles, ty).is_ok() {
+                if assert_is_in_operand_types(handle_of(ty), &handles, ty).is_ok()
+                    && ty != 7
+                    && ty != 8
+                {
                     assert!(
                         is_in_hcu(ty, count).is_ok(),
                         "validated is-in type {ty} x{count} has no cost row"
@@ -665,7 +1064,7 @@ mod tests {
                     ty,
                 )
                 .is_ok();
-                if validated {
+                if validated && ty != 7 && ty != 8 {
                     assert!(
                         mul_div_hcu(ty, scalar).is_ok(),
                         "validated mul-div output type {ty} scalar {scalar} has no cost row"
@@ -719,7 +1118,7 @@ mod tests {
 
     #[test]
     fn rand_hcu_returns_cost() {
-        for ty in [0u8, 2, 3, 4, 5, 6, 8] {
+        for ty in [0u8, 2, 3, 4, 5, 6] {
             assert!(rand_hcu(ty).unwrap() > 0);
         }
     }
@@ -752,10 +1151,25 @@ mod tests {
             binary_op_hcu(FheBinaryOpCode::Add, EU64, true).unwrap()
                 <= binary_op_hcu(FheBinaryOpCode::Add, EU64, false).unwrap()
         );
-        assert!(
-            ternary_op_hcu(FheTernaryOpCode::IfThenElse, EU64).unwrap()
-                >= binary_op_hcu(FheBinaryOpCode::Ge, EBOOL, false).unwrap()
-        );
+        assert!(sum_hcu(EU64, 1).unwrap() > 0);
+    }
+
+    #[test]
+    fn meter_comparison_prices_operand_width_not_ebool() {
+        let steps = vec![
+            trivial(EU64),
+            FheExecuteStep::Binary {
+                op: FheBinaryOpCode::Ge,
+                lhs: FheExecuteOperand::EarlierStep { producer_index: 0 },
+                rhs: FheExecuteOperand::EarlierStep { producer_index: 0 },
+                output_fhe_type: EBOOL,
+                output: FheExecuteOutput::Transient,
+            },
+        ];
+        let m = meter_execution(&steps, &[], u64::MAX, u64::MAX).unwrap();
+        let expected = trivial_encrypt_hcu(EU64).unwrap()
+            + binary_op_hcu(FheBinaryOpCode::Ge, EU64, false).unwrap();
+        assert_eq!(m.total, expected);
     }
 
     #[test]
@@ -831,7 +1245,7 @@ mod tests {
     #[test]
     fn meter_single_step_total_and_depth() {
         let steps = vec![trivial(EU64)];
-        let m = meter_execution(&steps, u64::MAX, u64::MAX).unwrap();
+        let m = meter_execution(&steps, &[], u64::MAX, u64::MAX).unwrap();
         let cost = trivial_encrypt_hcu(EU64).unwrap();
         assert_eq!(m.total, cost);
         assert_eq!(m.step_depths, vec![cost]);
@@ -840,7 +1254,7 @@ mod tests {
     #[test]
     fn meter_chain_depth_accumulates_along_path() {
         let steps = vec![trivial(EU64), add_local(EU64, 0, 0), add_local(EU64, 1, 1)];
-        let m = meter_execution(&steps, u64::MAX, u64::MAX).unwrap();
+        let m = meter_execution(&steps, &[], u64::MAX, u64::MAX).unwrap();
         let t = trivial_encrypt_hcu(EU64).unwrap();
         let add = binary_op_hcu(FheBinaryOpCode::Add, EU64, false).unwrap();
         assert_eq!(m.step_depths, vec![t, add + t, add + add + t]);
@@ -850,7 +1264,7 @@ mod tests {
     #[test]
     fn meter_total_sums_all_steps_depth_le_total() {
         let steps = vec![trivial(EU64), trivial(EU64), add_local(EU64, 0, 1)];
-        let m = meter_execution(&steps, u64::MAX, u64::MAX).unwrap();
+        let m = meter_execution(&steps, &[], u64::MAX, u64::MAX).unwrap();
         let t = trivial_encrypt_hcu(EU64).unwrap();
         let add = binary_op_hcu(FheBinaryOpCode::Add, EU64, false).unwrap();
         assert_eq!(m.total, t + t + add);
@@ -869,7 +1283,7 @@ mod tests {
         let total = trivial_encrypt_hcu(EU64).unwrap()
             + binary_op_hcu(FheBinaryOpCode::Add, EU64, false).unwrap();
         assert_eq!(
-            meter_execution(&steps, total - 1, u64::MAX).unwrap_err(),
+            meter_execution(&steps, &[], total - 1, u64::MAX).unwrap_err(),
             error!(ZamaHostError::HcuTransactionLimitExceeded)
         );
     }
@@ -879,7 +1293,7 @@ mod tests {
         let steps = vec![trivial(EU64), add_local(EU64, 0, 0)];
         let total = trivial_encrypt_hcu(EU64).unwrap()
             + binary_op_hcu(FheBinaryOpCode::Add, EU64, false).unwrap();
-        let m = meter_execution(&steps, total, u64::MAX).unwrap();
+        let m = meter_execution(&steps, &[], total, u64::MAX).unwrap();
         assert_eq!(m.total, total);
     }
 
@@ -890,7 +1304,7 @@ mod tests {
         let add = binary_op_hcu(FheBinaryOpCode::Add, EU64, false).unwrap();
         let max_depth = add + t; // depth of step c (add+add+t) exceeds this
         assert_eq!(
-            meter_execution(&steps, u64::MAX, max_depth).unwrap_err(),
+            meter_execution(&steps, &[], u64::MAX, max_depth).unwrap_err(),
             error!(ZamaHostError::HcuTransactionDepthLimitExceeded)
         );
     }
@@ -900,7 +1314,7 @@ mod tests {
         let steps = vec![trivial(EU64), add_local(EU64, 0, 0)];
         let t = trivial_encrypt_hcu(EU64).unwrap();
         let add = binary_op_hcu(FheBinaryOpCode::Add, EU64, false).unwrap();
-        let m = meter_execution(&steps, u64::MAX, add + t).unwrap();
+        let m = meter_execution(&steps, &[], u64::MAX, add + t).unwrap();
         assert_eq!(*m.step_depths.last().unwrap(), add + t);
     }
 
@@ -912,7 +1326,7 @@ mod tests {
             output: FheExecuteOutput::Transient,
         }];
         assert_eq!(
-            meter_execution(&steps, u64::MAX, u64::MAX).unwrap_err(),
+            meter_execution(&steps, &[], u64::MAX, u64::MAX).unwrap_err(),
             error!(ZamaHostError::HcuUnknownCost)
         );
     }
@@ -922,7 +1336,7 @@ mod tests {
     #[test]
     fn meter_scalar_is_zero_leaf() {
         let steps = vec![trivial(EU64), add_scalar(EU64, 0)];
-        let m = meter_execution(&steps, u64::MAX, u64::MAX).unwrap();
+        let m = meter_execution(&steps, &[], u64::MAX, u64::MAX).unwrap();
         let t = trivial_encrypt_hcu(EU64).unwrap();
         let add_scalar_cost = binary_op_hcu(FheBinaryOpCode::Add, EU64, true).unwrap();
         assert_eq!(m.total, t + add_scalar_cost);
@@ -950,7 +1364,7 @@ mod tests {
             output_fhe_type: EU64,
             output: FheExecuteOutput::Transient,
         }];
-        let m = meter_execution(&steps, u64::MAX, u64::MAX).unwrap();
+        let m = meter_execution(&steps, &[], u64::MAX, u64::MAX).unwrap();
         let add_scalar_cost = binary_op_hcu(FheBinaryOpCode::Add, EU64, true).unwrap();
         assert_eq!(m.total, add_scalar_cost);
         assert_eq!(m.step_depths, vec![add_scalar_cost]);
@@ -964,7 +1378,7 @@ mod tests {
             add_scalar(EU64, 1),
             add_persistent(EU64, 2),
         ];
-        let m = meter_execution(&steps, u64::MAX, u64::MAX).unwrap();
+        let m = meter_execution(&steps, &[], u64::MAX, u64::MAX).unwrap();
         let expected = trivial_encrypt_hcu(EU64).unwrap()
             + binary_op_hcu(FheBinaryOpCode::Add, EU64, false).unwrap()
             + binary_op_hcu(FheBinaryOpCode::Add, EU64, true).unwrap()
@@ -977,7 +1391,7 @@ mod tests {
         // A persistent operand contributes depth 0 (in-execution reset), so a
         // chain split across a persistent boundary resets depth there rather than carrying it forward.
         let steps = vec![trivial(EU64), add_persistent(EU64, 0)];
-        let m = meter_execution(&steps, u64::MAX, u64::MAX).unwrap();
+        let m = meter_execution(&steps, &[], u64::MAX, u64::MAX).unwrap();
         let t = trivial_encrypt_hcu(EU64).unwrap();
         let add = binary_op_hcu(FheBinaryOpCode::Add, EU64, false).unwrap();
         assert_eq!(*m.step_depths.last().unwrap(), add + t); // add + max(depth(a)=t, persistent=0)
@@ -995,7 +1409,7 @@ mod tests {
             steps.push(add_local(EU128, i - 1, i - 1));
         }
         assert_eq!(steps.len(), crate::state::MAX_FHE_EXECUTION_STEPS);
-        assert!(meter_execution(&steps, u64::MAX, u64::MAX).is_ok());
+        assert!(meter_execution(&steps, &[], u64::MAX, u64::MAX).is_ok());
     }
 
     // ---- determinism is the on-chain==off-chain parity basis ----
@@ -1003,8 +1417,8 @@ mod tests {
     #[test]
     fn meter_is_deterministic() {
         let steps = vec![trivial(EU64), add_local(EU64, 0, 0), add_scalar(EU64, 1)];
-        let a = meter_execution(&steps, u64::MAX, u64::MAX).unwrap();
-        let b = meter_execution(&steps, u64::MAX, u64::MAX).unwrap();
+        let a = meter_execution(&steps, &[], u64::MAX, u64::MAX).unwrap();
+        let b = meter_execution(&steps, &[], u64::MAX, u64::MAX).unwrap();
         assert_eq!(a.total, b.total);
         assert_eq!(a.step_depths, b.step_depths);
     }
@@ -1017,11 +1431,11 @@ mod tests {
         // total, BOTH succeed even though their combined cost exceeds the limit. A future reviewer
         // must not "fix" this into a false cross-execution coverage claim.
         let execution = vec![trivial(EU64), add_local(EU64, 0, 0)];
-        let one = meter_execution(&execution, u64::MAX, u64::MAX)
+        let one = meter_execution(&execution, &[], u64::MAX, u64::MAX)
             .unwrap()
             .total;
         let limit = one + one / 2; // < 2 * one
-        assert!(meter_execution(&execution, limit, u64::MAX).is_ok()); // execution A
-        assert!(meter_execution(&execution, limit, u64::MAX).is_ok()); // execution B — combined exceeds `limit`
+        assert!(meter_execution(&execution, &[], limit, u64::MAX).is_ok()); // execution A
+        assert!(meter_execution(&execution, &[], limit, u64::MAX).is_ok()); // execution B — combined exceeds `limit`
     }
 }

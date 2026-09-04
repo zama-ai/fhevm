@@ -250,6 +250,8 @@ ID…).
     connector from serving delegated decryptions, so a delegator frozen out of
     revoking would be left with grants they can neither use nor withdraw, and a
     lever the operator can switch off is not the user's lever.
+    While `remove_subject` exists, pause also freezes subject revocation
+    (`remove_subject` calls `assert_not_paused`).
     Not gated: `verify_public_decrypt` (DD-040, already-sealed leaves reveal
     nothing new) and the admin setters, pause included.
 37. **[HOLDS]** HCU enforcement ships disabled (unrestricted defaults) and is

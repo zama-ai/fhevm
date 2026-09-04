@@ -144,12 +144,7 @@ impl ExecutionState<'_, '_, '_> {
 
     /// Resolves a binary left-hand operand, which may not be a scalar.
     fn resolve_lhs_operand(&mut self, operand: &FheExecuteOperand) -> Result<ResolvedOperand> {
-        match operand {
-            FheExecuteOperand::Scalar { .. } => {
-                Err(error!(ZamaHostError::InvalidFheExecuteAccount))
-            }
-            _ => self.resolve_encrypted_operand(operand),
-        }
+        self.resolve_encrypted_operand(operand)
     }
 
     /// Resolves a binary right-hand operand, which may be a scalar.
@@ -197,13 +192,7 @@ pub(super) fn walk_steps<'info>(
                     rhs.scalar,
                     *output_fhe_type,
                 );
-                execution.accept_output(
-                    ctx,
-                    op_index,
-                    result,
-                    output,
-                    inputs_allow_public_decrypt(&lhs, &rhs),
-                )?;
+                execution.accept_output(ctx, op_index, result, output)?;
             }
             FheExecuteStep::Ternary {
                 op,
@@ -229,13 +218,7 @@ pub(super) fn walk_steps<'info>(
                     if_false.handle,
                     *output_fhe_type,
                 );
-                execution.accept_output(
-                    ctx,
-                    op_index,
-                    result,
-                    output,
-                    inputs3_allow_public_decrypt(&control, &if_true, &if_false),
-                )?;
+                execution.accept_output(ctx, op_index, result, output)?;
             }
             FheExecuteStep::TrivialEncrypt {
                 plaintext,
@@ -244,14 +227,14 @@ pub(super) fn walk_steps<'info>(
             } => {
                 assert_supported_fhe_type(*fhe_type)?;
                 let result = handle_context.trivial_result(*plaintext, *fhe_type);
-                execution.accept_output(ctx, op_index, result, output, false)?;
+                execution.accept_output(ctx, op_index, result, output)?;
             }
             FheExecuteStep::Rand { fhe_type, output } => {
                 assert_supported_rand_type(*fhe_type)?;
                 let seed = handle_context.rand_seed(op_index);
                 let result =
                     computed_rand_handle(seed, *fhe_type, handle_context.derivation.chain_id);
-                execution.accept_output(ctx, op_index, result, output, false)?;
+                execution.accept_output(ctx, op_index, result, output)?;
             }
             FheExecuteStep::Unary {
                 op,
@@ -262,13 +245,7 @@ pub(super) fn walk_steps<'info>(
                 let operand = execution.resolve_encrypted_operand(operand)?;
                 assert_unary_operand_type(*op, operand.handle, *output_fhe_type)?;
                 let result = handle_context.unary_result(*op, operand.handle, *output_fhe_type);
-                execution.accept_output(
-                    ctx,
-                    op_index,
-                    result,
-                    output,
-                    operand.public_decrypt_allowed,
-                )?;
+                execution.accept_output(ctx, op_index, result, output)?;
             }
             FheExecuteStep::RandBounded {
                 upper_bound,
@@ -283,22 +260,25 @@ pub(super) fn walk_steps<'info>(
                     *fhe_type,
                     handle_context.derivation.chain_id,
                 );
-                execution.accept_output(ctx, op_index, result, output, false)?;
+                execution.accept_output(ctx, op_index, result, output)?;
             }
             FheExecuteStep::Sum {
                 operands,
                 fhe_type,
                 output,
             } => {
+                require!(
+                    operands.len() <= max_reduction_operands(*fhe_type),
+                    ZamaHostError::InvalidFheExecuteAccount
+                );
                 let mut resolved: Vec<ResolvedOperand> = Vec::with_capacity(operands.len());
                 for operand in operands {
                     resolved.push(execution.resolve_encrypted_operand(operand)?);
                 }
                 let operand_handles: Vec<[u8; 32]> = resolved.iter().map(|r| r.handle).collect();
                 assert_sum_operand_types(&operand_handles, *fhe_type)?;
-                let public_decrypt = resolved.iter().all(|r| r.public_decrypt_allowed);
                 let result = handle_context.sum_result(&operand_handles, *fhe_type);
-                execution.accept_output(ctx, op_index, result, output, public_decrypt)?;
+                execution.accept_output(ctx, op_index, result, output)?;
             }
             FheExecuteStep::IsIn {
                 value,
@@ -306,6 +286,10 @@ pub(super) fn walk_steps<'info>(
                 fhe_type,
                 output,
             } => {
+                require!(
+                    set.len() <= max_reduction_operands(*fhe_type),
+                    ZamaHostError::InvalidFheExecuteAccount
+                );
                 let value_resolved = execution.resolve_encrypted_operand(value)?;
                 let mut set_resolved: Vec<ResolvedOperand> = Vec::with_capacity(set.len());
                 for operand in set {
@@ -313,11 +297,9 @@ pub(super) fn walk_steps<'info>(
                 }
                 let set_handles: Vec<[u8; 32]> = set_resolved.iter().map(|r| r.handle).collect();
                 assert_is_in_operand_types(value_resolved.handle, &set_handles, *fhe_type)?;
-                let public_decrypt = value_resolved.public_decrypt_allowed
-                    && set_resolved.iter().all(|r| r.public_decrypt_allowed);
                 let result =
                     handle_context.is_in_result(value_resolved.handle, &set_handles, *fhe_type);
-                execution.accept_output(ctx, op_index, result, output, public_decrypt)?;
+                execution.accept_output(ctx, op_index, result, output)?;
             }
             FheExecuteStep::MulDiv {
                 factor1,
@@ -342,13 +324,7 @@ pub(super) fn walk_steps<'info>(
                     *divisor,
                     *output_fhe_type,
                 );
-                execution.accept_output(
-                    ctx,
-                    op_index,
-                    result,
-                    output,
-                    inputs_allow_public_decrypt(&factor1, &factor2),
-                )?;
+                execution.accept_output(ctx, op_index, result, output)?;
             }
         }
     }
