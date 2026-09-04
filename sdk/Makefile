@@ -80,7 +80,7 @@ W_HH_V2_E2E          := @fhevm/hardhat-plugin-v2-e2e-dev
 W_HH_V2_TEMPLATE     := @fhevm/hardhat-template-v2-dev
 W_HH_V3_PLUGIN       := @fhevm/hardhat-plugin-v3-dev
 W_HH_V3_E2E          := @fhevm/hardhat-plugin-v3-e2e-dev
-W_HH_V3_TEMPLATE     := fhevm-hardhat-template-v3-dev
+W_HH_V3_TEMPLATE     := @fhevm/hardhat-template-v3-dev
 
 run = npm run --silent $(2) -w $(1)
 
@@ -187,6 +187,13 @@ install: ## Install every installation root (sdk, fhevm-npm, each hardhat cluste
 	npm --prefix $(DIR_FHEVM_NPM) install
 	npm --prefix $(DIR_HH_V2) install
 	npm --prefix $(DIR_HH_V3) install
+	$(call run-fhevm-npm,install-forge-dependencies)
+
+install-fast: ## Install every installation root (sdk, fhevm-npm, each hardhat cluster) and forge dependencies
+	npm install --no-audit --no-fund
+	npm --prefix $(DIR_FHEVM_NPM) install --no-audit --no-fund
+	npm --prefix $(DIR_HH_V2) install --no-audit --no-fund
+	npm --prefix $(DIR_HH_V3) install --no-audit --no-fund
 	$(call run-fhevm-npm,install-forge-dependencies)
 
 # Deliberately NOT `git clean`: pattern-based deletion cannot distinguish a build output from a
