@@ -9,6 +9,12 @@ parties:
 | **1. Key resharing (epoch rotation)**              | New key shares, same committee                             | `defineNewEpochForCurrentKmsContext()` | **None** (no-arg call)           |
 | **2. Context switch (committee change/node swap)** | Committee membership and/or metadata; includes a resharing | `defineNewKmsContextAndEpoch(...)`     | Yes — the **new** committee (§2) |
 
+Both run on the canonical host (Ethereum) only, and they can only ever complete there: the
+KMS connectors watch Ethereum's `ProtocolConfig` and no other chain, so the same call on a
+non-canonical host would open a context or epoch that no confirmation ever arrives for, and
+it would stay Pending forever. Non-canonical hosts are updated by mirroring the result of
+the canonical operation instead — §5.
+
 Audience: whoever coordinates the governance operation with the external KMS parties.
 
 ---
@@ -134,6 +140,7 @@ receiver.
 5. **Verify**: run a decryption smoke test **after** the epoch id advances. The
    relayer must already be epoch-aware (§1) or requests will carry the stale epoch.
 6. **Gateway: nothing to do.**
+7. **Replicas**: mirror the new epoch onto every non-canonical host chain (§5).
 
 ## 4. Context switch (committee change / node swap)
 
@@ -246,11 +253,161 @@ the new committee. For a node swap remember: the incoming node **inherits the ou
   members so the live set is exactly `2t + 1` _including_ the new node, and decrypt
   — this is what the E2E `kms-context-switch` profile automates. **Do not do this
   on mainnet.**
+- **Mirror the switch onto every non-canonical host** (§5). Until then, those chains still
+  return the previous pair from `getCurrentKmsContextAndEpoch` and still list the previous
+  committee.
 - Only after all of the above: the outgoing party may decommission its node.
   Coordinate retention of its old key material per policy (it remains part of the
   previous context's history).
 
-## 5. Quick reference
+## 5. Mirroring onto non-canonical hosts (replicas)
+
+Ethereum is the canonical host: §3 and §4 run there and nowhere else. The same
+`ProtocolConfig` is deployed on every other host chain (e.g. Polygon), but those
+replicas never run the lifecycle — no quorum, no reshare, no `KMSGeneration`. Their only
+write path is the two mirror methods, which import state Ethereum has already finalized
+and land it as immediately `Active`. **Bringing each replica forward after a canonical
+rotation is the operator's job** — nothing on-chain does it for you, and nothing flags a
+replica that fell behind.
+
+The tasks below are defined in `host-contracts/tasks/mirrorKmsContext.ts`.
+
+### 5.1 Which task follows which operation
+
+| Canonical operation                 | Run on each replica                                                            | Replica method it calls    |
+| ----------------------------------- | ------------------------------------------------------------------------------ | -------------------------- |
+| Key resharing / epoch rotation (§3) | `task:buildMirrorKmsEpochCalldata` · `task:mirrorKmsEpoch`                     | `mirrorKmsEpoch`           |
+| Context switch (§4)                 | `task:buildMirrorKmsContextAndEpochCalldata` · `task:mirrorKmsContextAndEpoch` | `mirrorKmsContextAndEpoch` |
+
+As everywhere else in this runbook, `build…Calldata` is the DAO path (prints the target
+and calldata, never broadcasts) and the bare task broadcasts with
+`DEPLOYER_PRIVATE_KEY`.
+
+**No ids or committee data are passed on the command line.** Those methods do take a context
+id, an epoch id and — for a context switch — the node set, thresholds, software version and
+PCR values, but the task reads all of it from canonical and encodes the arguments itself. The
+only inputs you supply are the canonical connection flags below.
+
+These tasks are for a replica that is **already deployed and initialized**. Standing up a
+_new_ replica is a different path — `task:exportCanonicalProtocolConfig` then
+`task:deployProtocolConfigFromCanonical` (`initializeFromCanonical`), documented in the
+host-contracts README. Use the mirror tasks for every rotation after that.
+
+### 5.2 Preconditions
+
+- **Canonical must have activated already.** Both tasks read canonical's _active_
+  context/epoch, so they can only run after §3 step 4 / §4 phase 2 completes. There is no
+  way to pre-stage a mirror.
+- **The default read is canonical's latest _finalized_ block**, not its head — a
+  finalized block cannot be reorged out, which keeps the read reproducible. On Ethereum
+  that trails the head by ~13 minutes (two consensus-layer epochs — not KMS epochs). Run the
+  task earlier than that and it still sees the pre-rotation state, stopping with
+  `Replica … is already at context <id>, which is >= canonical's <id>`. That message means
+  **"canonical's rotation is not finalized yet"**, not "nothing to do" — wait and re-run.
+  Pass `--block-number` to pin the read to a specific canonical height instead.
+- **No committee metadata to collect.** Unlike §4, there is no questionnaire and no
+  `committee.env`: everything the replica needs is read back from canonical. Only two
+  connection parameters are required (`--canonical-rpc-url`,
+  `--canonical-protocol-config-address`).
+- **Replica address**: `PROTOCOL_CONFIG_CONTRACT_ADDRESS` for the replica chain, or
+  `--use-internal-proxy-address` to resolve it from `addresses/`.
+- **Authorization**: both mirror methods are `onlyACLOwner` on the replica chain, so the
+  broadcaster (or the DAO executing the calldata) must be that chain's ACL owner.
+- **Ids only move forward, and gaps are fine.** The replica rejects any context/epoch id
+  that is not strictly greater than its current one, so a mirror cannot roll it back or be
+  applied twice. A replica that missed several canonical rotations does not have to replay
+  them one by one: it jumps straight to canonical's current pair in a single call.
+- **Gateway: nothing to do.** The gateway registers a context once, from the canonical
+  flow (§4.2 step 3). It is not per-replica.
+
+### 5.3 Mirror a context switch
+
+> **Run by** the replica-chain operator (or its DAO) · **needs** the `host-contracts` repo,
+> a canonical RPC url, the replica network config · **when** after canonical activation is
+> finalized · **access** read-only on canonical; one `onlyACLOwner` write on the replica.
+
+```bash
+cd host-contracts
+export PROTOCOL_CONFIG_CONTRACT_ADDRESS=<replica ProtocolConfig proxy>
+
+# DAO path — prints target + calldata, never broadcasts:
+npx hardhat task:buildMirrorKmsContextAndEpochCalldata --network <replica-network> \
+  --canonical-rpc-url <ethereum-rpc-url> \
+  --canonical-protocol-config-address <canonical ProtocolConfig>
+
+# No-DAO path — broadcasts with DEPLOYER_PRIVATE_KEY:
+npx hardhat task:mirrorKmsContextAndEpoch --network <replica-network> \
+  --canonical-rpc-url <ethereum-rpc-url> \
+  --canonical-protocol-config-address <canonical ProtocolConfig>
+```
+
+There is no committee to re-type: `mirrorKmsContextAndEpoch` needs the full
+`KmsNodeParams` plus the software version and PCR values, which the contract does not store,
+so the task recovers them from canonical's `NewKmsContext` event and checks them against the
+on-chain `contextInfoHash` anchor before using them. A wrong or tampered canonical RPC cannot
+slip a different committee past that check. Thresholds are read from canonical's live state
+rather than the event, so a threshold changed since the switch is mirrored at its current
+value.
+
+Two errors are worth knowing:
+
+- `has no context anchor recorded` — the `--canonical-protocol-config-address` is not a
+  canonical `ProtocolConfig`. Replicas never write an anchor, so this is normally a
+  canonical/replica address mix-up.
+- `is already at context …` — either canonical's rotation is not finalized yet (§5.2) or this
+  replica is already up to date.
+
+### 5.4 Mirror an epoch rotation
+
+Same-set rotations carry no committee data, so this path is just the two ids — no event
+read, no anchor check:
+
+```bash
+cd host-contracts
+export PROTOCOL_CONFIG_CONTRACT_ADDRESS=<replica ProtocolConfig proxy>
+
+# DAO path:
+npx hardhat task:buildMirrorKmsEpochCalldata --network <replica-network> \
+  --canonical-rpc-url <ethereum-rpc-url> \
+  --canonical-protocol-config-address <canonical ProtocolConfig>
+
+# No-DAO path:
+npx hardhat task:mirrorKmsEpoch --network <replica-network> \
+  --canonical-rpc-url <ethereum-rpc-url> \
+  --canonical-protocol-config-address <canonical ProtocolConfig>
+```
+
+If the replica is not on canonical's active context yet, the task refuses with
+`… is at context <a>, but canonical's active context is <b>` and tells you to run
+`task:mirrorKmsContextAndEpoch` first — do that (§5.3), then re-run this.
+
+### 5.5 Verify mirroring results
+
+```bash
+CANON_PC=<canonical ProtocolConfig>;    CANON_RPC=<ethereum-rpc-url>
+REPL_PC=$PROTOCOL_CONFIG_CONTRACT_ADDRESS;  REPL_RPC=<replica-rpc-url>
+
+# The pair must be identical on both chains.
+cast call $CANON_PC "getCurrentKmsContextAndEpoch()(uint256,uint256)" --rpc-url $CANON_RPC
+cast call $REPL_PC  "getCurrentKmsContextAndEpoch()(uint256,uint256)" --rpc-url $REPL_RPC
+
+# And so must the stored node set and thresholds for that context id.
+cast call $REPL_PC "getKmsNodesForContext(uint256)((address,address,string,string)[])" <contextId> --rpc-url $REPL_RPC
+cast call $REPL_PC "getMpcThresholdForContext(uint256)(uint256)" <contextId> --rpc-url $REPL_RPC
+```
+
+The MPC metadata (`partyId`, `mpcIdentity`, `caCert`, `storagePrefix`), software version and
+PCR values are not stored on-chain — read them from the replica's
+`MirrorKmsContextAndEpoch` event, where they match canonical's `NewKmsContext` exactly.
+Worth knowing: the bootstrap path (`initializeFromCanonical`) could not recover them and
+filled placeholders, so the first mirrored switch is where a replica's event history starts
+carrying the real values.
+
+`task:kmsContextSwitchStatus` is a canonical-side tool. Pointed at a replica it reports
+`idle`, because it tracks the pending/quorum path that replicas never run — that is the
+expected output, not a problem.
+
+## 6. Quick reference
 
 ```text
 Host tasks (host-contracts/, reads PROTOCOL_CONFIG_CONTRACT_ADDRESS):
@@ -263,6 +420,14 @@ Host tasks (host-contracts/, reads PROTOCOL_CONFIG_CONTRACT_ADDRESS):
   task:buildDestroyKmsEpochCalldata               DAO calldata, cancel/retire an epoch (--epoch-id)
   task:destroyKmsEpoch                            direct broadcast
   task:kmsContextSwitchStatus                     read-only progress (--from-block!)
+
+Replica mirror tasks (host-contracts/, run on each non-canonical chain after canonical
+activates; all take --canonical-rpc-url + --canonical-protocol-config-address,
+optional --block-number):
+  task:buildMirrorKmsContextAndEpochCalldata      DAO calldata, mirror a context switch
+  task:mirrorKmsContextAndEpoch                   direct broadcast
+  task:buildMirrorKmsEpochCalldata                DAO calldata, mirror an epoch rotation
+  task:mirrorKmsEpoch                             direct broadcast
 
 Gateway tasks (gateway-contracts/, reads GATEWAY_CONFIG_ADDRESS, KMS_CONTEXT_ID):
   task:buildUpdateKmsContextProposal              DAO proposal triple (--verify-context-id)
@@ -310,6 +475,12 @@ Quorum cheat-sheet:
 - **Party IDs are positional and contiguous `1..n`.** The KMS core rejects any id outside
   that range. In a node swap, the incoming node **takes the dropped node's party id** —
   only the identity fields (addresses, `mpcIdentity`, cert, storage prefix) change.
+- **Canonical vs replica.** The lifecycle above exists only on the canonical host
+  (Ethereum). Other host chains run the same `ProtocolConfig` but as read-replicas: no
+  quorum path, no `KMSGeneration`, and one write path — `mirrorKmsContextAndEpoch` /
+  `mirrorKmsEpoch`, which import already-finalized canonical state as immediately `Active`.
+  The only on-chain guard is that ids strictly increase, which prevents a rollback but not
+  a replica left behind; keeping every replica current is operational discipline (§5).
 - **`mpcIdentity` must equal the identity the core itself is configured with** (its
   `mpc_identity` in the core/peers config). A mismatch makes the reshare role-resolution
   fail on the on-chain-vs-config merge and the reshare never starts (observed failure:
