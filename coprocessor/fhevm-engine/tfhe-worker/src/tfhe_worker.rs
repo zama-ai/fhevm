@@ -1384,14 +1384,40 @@ async fn query_ciphertexts<'a>(
     let mut ciphertext_map: HashMap<Vec<u8>, (i16, Vec<u8>)> =
         HashMap::with_capacity(cts_to_query.len());
 
-    let rows: Vec<(Vec<u8>, Vec<u8>, i16)> = sqlx::query_as(
-        "SELECT handle, ciphertext, ciphertext_type
-         FROM ciphertexts
-         WHERE handle = ANY($1::BYTEA[])",
-    )
-    .bind(cts_to_query)
-    .fetch_all(trx.as_mut())
-    .await
+    let rows: Vec<(Vec<u8>, Vec<u8>, i16)> = if gcs_mode {
+        // GCS: never serve a *pre-snapshot* ciphertext (produced before this
+        // chain's start_block) out of gcs.ciphertexts. Such a handle may have
+        // been backfilled into gcs by cross-block dependence resolution, and its
+        // byte form there is ordering-dependent across operators (green's own
+        // re-derivation), which breaks the consensus state_hash. Excluding it
+        // here routes it to the canonical, block-gated public.ciphertexts
+        // fallback below, so every operator resolves pre-snapshot deps
+        // identically regardless of backfill timing.
+        sqlx::query_as(
+            "SELECT c.handle, c.ciphertext, c.ciphertext_type
+             FROM ciphertexts c
+             WHERE c.handle = ANY($1::BYTEA[])
+               AND NOT EXISTS (
+                   SELECT 1 FROM computations comp
+                   JOIN public.upgrade_state us
+                     ON us.stack_role = 'GCS' AND us.host_chain_id = comp.host_chain_id
+                   WHERE comp.output_handle = c.handle
+                     AND comp.block_number IS NOT NULL
+                     AND comp.block_number < us.start_block)",
+        )
+        .bind(cts_to_query)
+        .fetch_all(trx.as_mut())
+        .await
+    } else {
+        sqlx::query_as(
+            "SELECT handle, ciphertext, ciphertext_type
+             FROM ciphertexts
+             WHERE handle = ANY($1::BYTEA[])",
+        )
+        .bind(cts_to_query)
+        .fetch_all(trx.as_mut())
+        .await
+    }
     .map_err(|err| {
         error!(target: "tfhe_worker", { error = %err }, "error while querying ciphertexts");
         err
@@ -1550,10 +1576,30 @@ async fn query_dead_boundary_handles<'a>(
     }
     let mut dead: HashSet<Vec<u8>> = HashSet::new();
     let mut seen: HashSet<Vec<u8>> = HashSet::new();
+    // GCS: never judge a *pre-snapshot* producer (block_number below its
+    // chain's start_block) from gcs.computations. Such a row may have been
+    // backfilled by cross-block dependence resolution, and whether it is
+    // present - and what stamps it carries - depends on backfill timing,
+    // which differs across operators. Excluding it here leaves the handle
+    // unseen so the canonical, block-gated public.computations fallback
+    // below delivers the same verdict on every operator. Mirrors the
+    // pre-snapshot exclusion in query_ciphertexts.
+    let pre_snapshot_exclusion = if gcs_mode {
+        "AND NOT EXISTS (
+              SELECT 1 FROM computations comp
+              JOIN public.upgrade_state us
+                ON us.stack_role = 'GCS' AND us.host_chain_id = comp.host_chain_id
+              WHERE comp.output_handle = c.output_handle
+                AND comp.block_number IS NOT NULL
+                AND comp.block_number < us.start_block)"
+    } else {
+        ""
+    };
     let local_query = format!(
         "SELECT c.output_handle, ({DEAD_PRODUCER_PREDICATE}) AS dead
          FROM computations c
          WHERE c.output_handle = ANY($1::BYTEA[])
+         {pre_snapshot_exclusion}
          GROUP BY c.output_handle"
     );
     for row in sqlx::query(&local_query)
@@ -1571,9 +1617,10 @@ async fn query_dead_boundary_handles<'a>(
     }
     // GCS mode: `computations` resolves to gcs.computations, created empty
     // at cutover — a producer that errored terminally in BCS before the
-    // snapshot leaves rows only in public.computations. Mirror
-    // query_ciphertexts' qualified fallback for handles the GCS schema has
-    // never seen, bounded to pre-start blocks so a post-start BCS judgment
+    // snapshot leaves rows only in public.computations, and pre-snapshot
+    // rows that were backfilled into gcs are excluded above. Mirror
+    // query_ciphertexts' qualified fallback for handles the local query did
+    // not judge, bounded to pre-start blocks so a post-start BCS judgment
     // is never imported (a NULL start_block fails the bound: fail-safe,
     // nothing is judged dead).
     if gcs_mode {
