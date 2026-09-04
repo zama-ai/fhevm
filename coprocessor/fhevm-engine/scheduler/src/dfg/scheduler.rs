@@ -608,7 +608,21 @@ fn execute_partition(
                         error!(target: "scheduler", {index = ?nidx.index() }, "Wrong dataflow graph index");
                         continue;
                     };
-                    if node.is_allowed {
+                    // OWNERSHIP, not allowance. This arm carries the errors
+                    // that never became an OpResult -- a decompression failure,
+                    // a caught panic around it, missing inputs, a
+                    // re-randomization fault -- and gating them on `is_allowed`
+                    // silently discarded every one raised by an internal
+                    // producer. Nothing then stamped that row, so it never
+                    // accumulated a retry count and never reached demotion,
+                    // while its allowed consumer came back as MissingInputs,
+                    // which the upload path ignores by design. Both rows sat
+                    // pending forever, re-executed at poll cadence.
+                    //
+                    // A foreign row stays excluded: it is loaded as a
+                    // recompute-only producer for this chain and its verdicts
+                    // belong to the chain that owns it.
+                    if node.is_owned {
                         res.insert(node.result_handle.clone(), Err(e));
                     }
                 }
