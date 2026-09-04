@@ -62,6 +62,9 @@ on:
       upgrade_controller_build_result:
         description: "Result of the build-upgrade-controller job"
         value: ${{ jobs.build-upgrade-controller.result }}
+      image_tag:
+        description: "Published tag when build_stack_version is set (e.g. abc1234-gcs0.15.0); empty otherwise"
+        value: ${{ jobs.build-decisions.outputs.image_tag }}
   workflow_dispatch:
     inputs:
       build_db_migration:
@@ -310,6 +313,7 @@ jobs:
       zkproof_worker: ${{ steps.decide.outputs.zkproof_worker }}
       consensus_detector: ${{ steps.decide.outputs.consensus_detector }}
       upgrade_controller: ${{ steps.decide.outputs.upgrade_controller }}
+      image_tag: ${{ steps.gcs-tag.outputs.image_tag }}
     steps:
       - id: decide
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
@@ -364,6 +368,26 @@ jobs:
               core.setOutput(name, action);
               core.info(`${name}: ${action} (changes: ${changes}, build_input: ${build_input})`);
             }
+
+      # Distinct tag so a GCS compile (BUILD_STACK_VERSION) cannot overwrite the
+      # same-commit baseline image. Empty STACK_VERSION keeps common-docker's SHA.
+      - id: gcs-tag
+        env:
+          STACK_VERSION: ${{ inputs.build_stack_version }}
+          # Same precedence as ci-templates common-docker determine-tag.
+          COMMIT_HASH: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          if [[ -z "${STACK_VERSION}" ]]; then
+            echo "image_tag=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ ! "${STACK_VERSION}" =~ ^[0-9]+(\.[0-9]+)*$ ]]; then
+            echo "::error::build_stack_version must be a dotted numeric version"
+            exit 1
+          fi
+          short="${COMMIT_HASH:0:7}"
+          echo "image_tag=${short}-gcs${STACK_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "GCS images will be tagged ${short}-gcs${STACK_VERSION}"
 
   ########################################################################
   #                             DB MIGRATION                             #
@@ -431,6 +455,7 @@ jobs:
       runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/extras=s3-cache
       rust-toolchain-file-path: coprocessor/fhevm-engine/rust-toolchain.toml
       build-args: ${{ inputs.build_stack_version != '' && format('BUILD_STACK_VERSION={0}', inputs.build_stack_version) || '' }}
+      image-tag: ${{ needs.build-decisions.outputs.image_tag }}
 
   re-tag-gw-listener-image:
     needs: [build-decisions, check-changes-gw-listener]
@@ -462,6 +487,7 @@ jobs:
       runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/extras=s3-cache
       rust-toolchain-file-path: coprocessor/fhevm-engine/rust-toolchain.toml
       build-args: ${{ inputs.build_stack_version != '' && format('BUILD_STACK_VERSION={0}', inputs.build_stack_version) || '' }}
+      image-tag: ${{ needs.build-decisions.outputs.image_tag }}
 
   re-tag-host-listener-image:
     needs: [build-decisions, check-changes-host-listener]
@@ -493,6 +519,7 @@ jobs:
       runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/extras=s3-cache
       rust-toolchain-file-path: coprocessor/fhevm-engine/rust-toolchain.toml
       build-args: ${{ inputs.build_stack_version != '' && format('BUILD_STACK_VERSION={0}', inputs.build_stack_version) || '' }}
+      image-tag: ${{ needs.build-decisions.outputs.image_tag }}
 
   re-tag-sns-worker-image:
     needs: [build-decisions, check-changes-sns-worker]
@@ -524,6 +551,7 @@ jobs:
       runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/extras=s3-cache
       rust-toolchain-file-path: coprocessor/fhevm-engine/rust-toolchain.toml
       build-args: ${{ inputs.build_stack_version != '' && format('BUILD_STACK_VERSION={0}', inputs.build_stack_version) || '' }}
+      image-tag: ${{ needs.build-decisions.outputs.image_tag }}
 
   re-tag-tfhe-worker-image:
     needs: [build-decisions, check-changes-tfhe-worker]
@@ -555,6 +583,7 @@ jobs:
       runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/extras=s3-cache
       rust-toolchain-file-path: coprocessor/fhevm-engine/rust-toolchain.toml
       build-args: ${{ inputs.build_stack_version != '' && format('BUILD_STACK_VERSION={0}', inputs.build_stack_version) || '' }}
+      image-tag: ${{ needs.build-decisions.outputs.image_tag }}
 
   re-tag-tx-sender-image:
     needs: [build-decisions, check-changes-tx-sender]
@@ -586,6 +615,7 @@ jobs:
       runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/extras=s3-cache
       rust-toolchain-file-path: coprocessor/fhevm-engine/rust-toolchain.toml
       build-args: ${{ inputs.build_stack_version != '' && format('BUILD_STACK_VERSION={0}', inputs.build_stack_version) || '' }}
+      image-tag: ${{ needs.build-decisions.outputs.image_tag }}
 
   re-tag-zkproof-worker-image:
     needs: [build-decisions, check-changes-zkproof-worker]
@@ -617,6 +647,7 @@ jobs:
       runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/extras=s3-cache
       rust-toolchain-file-path: coprocessor/fhevm-engine/rust-toolchain.toml
       build-args: ${{ inputs.build_stack_version != '' && format('BUILD_STACK_VERSION={0}', inputs.build_stack_version) || '' }}
+      image-tag: ${{ needs.build-decisions.outputs.image_tag }}
 
   re-tag-consensus-detector-image:
     needs: [build-decisions, check-changes-consensus-detector]
@@ -648,6 +679,7 @@ jobs:
       runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/extras=s3-cache
       rust-toolchain-file-path: coprocessor/fhevm-engine/rust-toolchain.toml
       build-args: ${{ inputs.build_stack_version != '' && format('BUILD_STACK_VERSION={0}', inputs.build_stack_version) || '' }}
+      image-tag: ${{ needs.build-decisions.outputs.image_tag }}
 
   re-tag-upgrade-controller-image:
     needs: [build-decisions, check-changes-upgrade-controller]

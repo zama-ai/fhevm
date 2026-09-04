@@ -387,8 +387,8 @@ jobs:
     permissions: *docker_permissions
     secrets: *docker_secrets
     with:
-      # Blue-green GCS is the same CI images compiled as 0.15.0. BCS stays
-      # the registry pin v0.14.0-7. Empty keeps the hardcoded 0.14.0 baseline.
+      # Blue-green GCS is compiled as 0.15.0 and published as <sha>-gcs0.15.0.
+      # BCS stays the registry pin v0.14.0-7. Empty keeps the SHA / 0.14.0 baseline.
       build_stack_version: ${{ needs.check-labels.outputs.blue_green == 'true' && '0.15.0' || '' }}
 
   build-listener:
@@ -1213,7 +1213,8 @@ jobs:
             for i in $(seq 1 "${NB_COPROCESSOR}"); do
               privkey=$(jq -r --argjson party "${i}" '.[] | select(.party == $party) | .privateKey' <<<"${COPROC_WALLETS_JSON}")
               party_common "${i}" "${privkey}" "-gcs"
-              # Same repos/tags as the regular coprocessor CI build (compiled 0.15.0).
+              # TAGS_JSON workers are <sha>-gcs0.15.0 when this run built GCS.
+              # UC/CD are not in TAGS_JSON; they share the worker tag.
               gcs_images=(
                 --set-string "gwListener.image.tag=$(jq -r .coprocessor_gw_listener <<<"${TAGS_JSON}")"
                 --set-string "hostListenerShared.image.tag=$(jq -r .coprocessor_host_listener <<<"${TAGS_JSON}")"
@@ -1224,7 +1225,6 @@ jobs:
                 --set-string "tfheWorker.image.tag=$(jq -r .coprocessor_tfhe_worker <<<"${TAGS_JSON}")"
                 --set-string "txSender.image.tag=$(jq -r .coprocessor_tx_sender <<<"${TAGS_JSON}")"
                 --set-string "zkProofWorker.image.tag=$(jq -r .coprocessor_zkproof_worker <<<"${TAGS_JSON}")"
-                # UC/CD share this run's SHA with the force-built workers (not in TAGS_JSON).
                 --set-string "upgradeController.image.tag=$(jq -r .coprocessor_tfhe_worker <<<"${TAGS_JSON}")"
                 --set-string "consensusDetector.image.tag=$(jq -r .coprocessor_tfhe_worker <<<"${TAGS_JSON}")"
               )
