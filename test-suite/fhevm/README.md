@@ -561,7 +561,31 @@ That keeps the scenario explicit while limiting the local build to `host-listene
 
 `--scenario` can be combined with `--override coprocessor` as long as the scenario only defines topology/env/args and leaves coprocessor source inherited. If the scenario explicitly pins coprocessor source (for example with `source.mode=local` or `source.mode=registry`), overlapping `--override coprocessor...` inputs fail fast.
 
+### GPU consensus workers
+
+`scripts/gpu-consensus-workers.sh` runs the TFHE, ZK-proof and SNS workers on the host with GPU features, for the three-operator consensus topology. `start` stops the container workers it displaces and records them; `stop` puts them back and clears that record.
+
+Only one worker may serve an operator's work queue. Each role claims rows with `FOR UPDATE SKIP LOCKED`, which is correct for one worker and silently wrong for two: each row is served by whichever process won it, so a host worker and a container split the queue between two different builds. For the SNS worker that leaves one operator holding a mix of CPU-squashed and GPU-squashed `ct128` for handles whose `ct64` is identical — it reads as a consensus defect, and telling it apart from one cost a full investigation. For the TFHE worker it would diverge `ct64` itself.
+
+The units are transient with `Restart=on-failure`, so they survive a stack teardown and restart themselves. Always end a session with `stop` rather than stopping the units by hand — otherwise the next `up` recreates the containers underneath them. Three guards enforce this:
+
+- `up` refuses to start while the restore record exists, and names the fix.
+- readiness refuses to call the stack ready if any worker process outside the stack's containers is running, or if operators disagree on `gpu_enabled`.
+- `gpu-consensus-workers.sh conflicts` reports any queue served by both a unit and a container, and `status` exits non-zero when it finds one.
+
+```sh
+./scripts/gpu-consensus-workers.sh start
+./scripts/gpu-consensus-workers.sh conflicts   # exits 0 when clean
+./scripts/gpu-consensus-workers.sh stop
+```
+
 ## Troubleshooting
+
+**A coprocessor service exits and comes back on its own**
+
+That is intended. The coprocessor runtime services carry `restart: "on-failure:10"`. They implement exit-for-restart — on a fatal error they log, flush telemetry and exit non-zero, expecting a supervisor — and without a policy the stack degraded permanently on any such path. `docker inspect -f '{{.RestartCount}}' <service>` tells you whether one has been recovering.
+
+`on-failure` and not `unless-stopped`: a clean exit 0 is a service that meant to finish (a retired stack after cutover, a `--stack-version` probe) and restarting it would loop. Docker also treats `docker kill` and `docker stop` as manual and suppresses the policy for both, so fault injection still holds a service down until you start it again. The bound of 10 keeps a genuinely broken deploy from hiding in a crash loop; Docker resets the counter once a container stays up ten seconds, so it only bites on a real loop.
 
 **Services exit silently shortly after startup (e.g. `coprocessor-zkproof-worker`)**
 

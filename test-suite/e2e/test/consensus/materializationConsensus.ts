@@ -7,9 +7,13 @@
  */
 import { expect } from 'chai';
 
+import { assertCanaryFiresWith } from './canary';
+import { assertCiphertext128Format, assertRunValidity } from './validity';
 import {
   type ConsensusDatabaseReport,
   assertConsensusEventBindings,
+  assertDeviceSplit,
+  assertHeterogeneousScheduling,
   attestationEvidenceFromCanonicalOutput,
   getCoprocessorDbUrls,
   waitForConsensus,
@@ -35,6 +39,12 @@ const CONSENSUS_THRESHOLD = Number.parseInt(
 const GATEWAY_RPC_URL = process.env.GATEWAY_RPC_URL ?? '';
 const GATEWAY_CONFIG_ADDRESS = process.env.GATEWAY_CONFIG_ADDRESS ?? '';
 const CIPHERTEXT_COMMITS_ADDRESS = process.env.CIPHERTEXT_COMMITS_ADDRESS ?? '';
+// Scheduling is an axis the protocol claims byte-consensus is independent of,
+// so a deliberately heterogeneous fleet is a stronger run of this same gate --
+// not a different execution class. Set by the topology launcher's `test-env`.
+const SCHEDULING_CLASSES = process.env.CONSENSUS_SCHEDULING_CLASSES ?? '';
+const EXPECT_HETEROGENEOUS_SCHEDULING = process.env.EXPECT_HETEROGENEOUS_SCHEDULING === '1';
+const EXPECT_DEVICE_SPLIT = process.env.EXPECT_DEVICE_SPLIT === '1';
 
 function required(value: string, name: string): string {
   if (!value) throw new Error(`${name} must be set for the materialization consensus gate`);
@@ -106,6 +116,10 @@ describe('Materialization byte consensus', function () {
   this.timeout(15 * 60_000);
 
   let databaseUrls: string[];
+  // Hoisted: the after-hook format gate needs the backend class the before
+  // hook resolved, and re-reading the environment there would let a run whose
+  // env changed mid-flight judge itself against the wrong backend.
+  let execution: { softwareRevision: string; backendClass: string; hardwareClass: string };
 
   before(async function () {
     if (!ENABLE_MATERIALIZATION_CONSENSUS) {
@@ -122,7 +136,7 @@ describe('Materialization byte consensus', function () {
     // topology launcher pins every node to the same image/backend/hardware
     // class; recording it here makes byte equality auditable and prevents a
     // CPU/GPU comparison from being mislabeled as a consensus failure.
-    const execution = {
+    execution = {
       softwareRevision: required(process.env.CONSENSUS_SOFTWARE_REVISION ?? '', 'CONSENSUS_SOFTWARE_REVISION'),
       backendClass: required(process.env.CONSENSUS_BACKEND_CLASS ?? '', 'CONSENSUS_BACKEND_CLASS'),
       hardwareClass: required(process.env.CONSENSUS_HARDWARE_CLASS ?? '', 'CONSENSUS_HARDWARE_CLASS'),
@@ -130,7 +144,33 @@ describe('Materialization byte consensus', function () {
     required(GATEWAY_RPC_URL, 'GATEWAY_RPC_URL');
     required(GATEWAY_CONFIG_ADDRESS, 'GATEWAY_CONFIG_ADDRESS');
     required(CIPHERTEXT_COMMITS_ADDRESS, 'CIPHERTEXT_COMMITS_ADDRESS');
-    console.info(`[materialization-consensus] homogeneous execution class ${JSON.stringify(execution)}`);
+    console.info(`[materialization-consensus] execution class ${JSON.stringify(execution)}`);
+
+    // The execution class above is what must be identical. Scheduling is what
+    // may differ: RFC 020 makes result bytes a function of on-chain data
+    // alone, independent of how a worker windows, batches and places the work.
+    // When a run claims to exercise that independence, prove the fleet really
+    // was heterogeneous before spending ten minutes concluding it agrees --
+    // otherwise a mistyped override yields a green that asserts nothing.
+    if (EXPECT_HETEROGENEOUS_SCHEDULING) {
+      const classes = assertHeterogeneousScheduling(SCHEDULING_CLASSES, COPROCESSOR_COUNT);
+      for (const [index, description] of [...classes].sort((a, b) => a[0] - b[0]))
+        console.info(`[materialization-consensus] operator ${index} scheduling ${description}`);
+    } else if (SCHEDULING_CLASSES) {
+      console.info(`[materialization-consensus] scheduling classes ${SCHEDULING_CLASSES}`);
+    }
+
+    // Device placement is the independence no run varied until this host had two
+    // GPUs. Assert the split happened rather than trusting the override: an
+    // unset or mistyped GPU_CONSENSUS_DEVICE_<index> leaves every operator on
+    // card 0, and the run would then report device independence it never tested.
+    if (EXPECT_DEVICE_SPLIT) {
+      const devices = assertDeviceSplit(SCHEDULING_CLASSES, COPROCESSOR_COUNT);
+      console.info(
+        `[materialization-consensus] device split across CUDA devices ` +
+          `${[...new Set(devices.values())].sort().join(', ')} (hardware class ${execution.hardwareClass})`,
+      );
+    }
 
     // Keep the opt-in suite import-safe on a developer machine that has not
     // installed/configured the SDK.  The ordinary E2E runtime is loaded only
@@ -144,6 +184,30 @@ describe('Materialization byte consensus', function () {
     this.instances = await createInstances(this.signers);
     databaseUrls = getCoprocessorDbUrls(COPROCESSOR_COUNT);
     await waitForDatabaseReadiness(databaseUrls);
+
+    // The thorough oracle is also the most expensive; ten minutes spent on a
+    // stack that was never provisioned is the worst kind of green.
+    console.info(
+      `[materialization-consensus] validity gates: ${await assertRunValidity({
+        databaseUrls,
+        rpcUrl: process.env.RPC_URL,
+      })}`,
+    );
+  });
+
+  // The format gate needs rows to judge, so it runs once the suite has
+  // materialized something rather than in `before` on an empty stack.
+  // Failing here still fails the suite, which is what it is for: a GPU run
+  // whose rows say CPU had a worker of the wrong backend on a queue.
+  after(async function () {
+    if (!ENABLE_MATERIALIZATION_CONSENSUS) return;
+    const formats = await assertCiphertext128Format(databaseUrls, execution.backendClass);
+    const values = [...new Set([...formats.values()].flat())];
+    console.info(
+        `[materialization-consensus] ciphertext128_format ${values.join(',')} identical on all ` +
+          `${formats.size} operator(s) — they squashed the same way. Whether that value matches ` +
+          `${execution.backendClass} is a separate question, answered by the warnings above.`,
+    );
   });
 
   it('converges on same-block cross-transaction boundaries and intra-transaction fan-out', async function () {
@@ -168,6 +232,27 @@ describe('Materialization byte consensus', function () {
       { timeoutMs: 10 * 60_000 },
     );
     assertFixtureTransactionShape(reports, run);
+
+    // The canary this suite class owes, aimed at the comparator these
+    // assertions actually rest on. `waitForConsensusDatabaseReports` is the
+    // gate's oracle: it fails closed on a missing or duplicate canonical row,
+    // a ciphertext-to-digest mismatch, or a provenance difference. Poison one
+    // operator's digest and it must reject the fleet -- with a short timeout,
+    // since here a rejection is the expected outcome rather than something to
+    // wait ten minutes for.
+    const canaryHandle = run.handles[FIXTURE_PRODUCED_OUTPUT_LABELS[0]];
+    await assertCanaryFiresWith(
+      databaseUrls[databaseUrls.length - 1],
+      canaryHandle,
+      'materialization-consensus',
+      async (phase) => {
+        await waitForConsensusDatabaseReports(
+          databaseUrls,
+          FIXTURE_PRODUCED_OUTPUT_LABELS.map((label) => run.handles[label]),
+          { timeoutMs: phase === 'poisoned' ? 45_000 : 6 * 60_000 },
+        );
+      },
+    );
 
     // Every produced output is publishable in this fixture.  This includes
     // materialized TrivialEncrypt values: they have a producing transaction

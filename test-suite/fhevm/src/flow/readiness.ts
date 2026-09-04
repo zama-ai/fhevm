@@ -15,6 +15,7 @@ import {
   KMS_CORE_CONTAINER,
   MINIO_EXTERNAL_URL,
   TEST_SUITE_CONTAINER,
+  coprocessorDatabaseName,
   defaultHostChainKey,
   hostChainSuffix,
 } from "../layout";
@@ -200,6 +201,153 @@ export const coprocessorHealthContainers = (state: Pick<State, "scenario" | "ver
   return names;
 };
 
+/**
+ * Worker roles that claim rows from a per-operator queue, with the process name
+ * each one runs under.
+ */
+const QUEUE_WORKERS = [
+  { service: "tfhe-worker", process: "tfhe_worker" },
+  { service: "zkproof-worker", process: "zkproof_worker" },
+  { service: "sns-worker", process: "sns_worker" },
+] as const;
+
+/** PIDs of the running containers for one worker role, across all operators. */
+const containerWorkerPids = async (service: string, count: number) => {
+  const pids = new Set<number>();
+  for (let index = 0; index < count; index += 1) {
+    const inspected = await run(
+      ["docker", "inspect", "-f", "{{.State.Pid}}", toServiceName(service, index)],
+      { allowFailure: true },
+    );
+    const pid = Number.parseInt(inspected.stdout.trim(), 10);
+    if (Number.isInteger(pid) && pid > 0) pids.add(pid);
+  }
+  return pids;
+};
+
+/** PIDs of every process on this host running under `name`. */
+const hostProcessPids = async (name: string) => {
+  const found = await run(["pgrep", "-x", name], { allowFailure: true });
+  return found.stdout
+    .split("\n")
+    .map((line) => Number.parseInt(line.trim(), 10))
+    .filter((pid) => Number.isInteger(pid) && pid > 0);
+};
+
+/** Host PIDs for a role that no container of this stack accounts for. */
+export const strayWorkerPids = (owned: ReadonlySet<number>, hostPids: readonly number[]) =>
+  hostPids.filter((pid) => !owned.has(pid));
+
+/**
+ * Reads `gpu_enabled` out of an sns-worker's startup output.
+ *
+ * The worker logs JSON (`"gpu_enabled":true`), but accept a bare `=` form too
+ * rather than have the guard go quiet on a formatting change -- a check that
+ * silently stops checking is worse than no check.
+ */
+export const parseSquashBackend = (logs: string) => {
+  const match = /gpu_enabled"?\s*[:=]\s*"?(true|false)/i.exec(logs);
+  return match ? (match[1].toLowerCase() as "true" | "false") : undefined;
+};
+
+/**
+ * Groups operators by squash backend. Operators whose backend could not be
+ * read are left out: an older image without the startup line is not evidence
+ * of a split.
+ */
+export const backendSplit = (backends: readonly (string | undefined)[]) => {
+  const grouped = new Map<string, number[]>();
+  backends.forEach((backend, index) => {
+    if (!backend) return;
+    grouped.set(backend, [...(grouped.get(backend) ?? []), index]);
+  });
+  return grouped;
+};
+
+/**
+ * Refuses to call the stack ready while a second process is serving any
+ * operator's work queue.
+ *
+ * Every worker role here claims rows with `FOR UPDATE SKIP LOCKED`, which is
+ * right for one worker and silently wrong for two: each row is served by
+ * whichever process won it, so two *different builds* on one database split the
+ * queue between them. That is not a liveness problem -- both are healthy, both
+ * make progress, and every other check here passes -- and the only symptom is
+ * bytes that disagree for no visible reason. A CPU container racing a CUDA host
+ * worker produces exactly that: one operator holding a mix of CPU-squashed and
+ * GPU-squashed ct128 for handles whose ct64 is identical, which reads as a
+ * consensus defect and costs an investigation to tell apart from one
+ * (Consensus Defect Log, B-1/L-6). `gpu-consensus-workers.sh` displaces the
+ * containers deliberately and restores them on `stop`, but its units are
+ * transient with `Restart=on-failure`, so they outlive a teardown and the next
+ * `up` brings the containers back underneath them.
+ *
+ * This compares host process IDs against the container PIDs, so it only sees
+ * what shares this PID namespace. With a remote Docker daemon `pgrep` finds
+ * nothing and the check passes vacuously -- it is a guard against the local
+ * footgun, not a proof of exclusivity.
+ */
+export const assertOneWorkerPerQueue = async (state: Pick<State, "scenario">) => {
+  const count = topologyForState(state).count;
+  const strays: string[] = [];
+  for (const worker of QUEUE_WORKERS) {
+    const owned = await containerWorkerPids(worker.service, count);
+    if (owned.size === 0) continue; // role not deployed in this scenario
+    const hostPids = await hostProcessPids(worker.process);
+    for (const pid of strayWorkerPids(owned, hostPids)) {
+      const exe = await run(["readlink", "-f", `/proc/${pid}/exe`], { allowFailure: true });
+      strays.push(`${worker.process} pid=${pid} ${exe.stdout.trim() || "(unknown binary)"}`);
+    }
+  }
+  if (strays.length > 0) {
+    throw new PreflightError(
+      [
+        "A worker outside this stack is serving the same operator queues:",
+        ...strays.map((stray) => `  ${stray}`),
+        "",
+        "Two workers on one queue split it between two builds, which corrupts",
+        "byte-consensus without failing any health check. Run",
+        "`test-suite/fhevm/scripts/gpu-consensus-workers.sh stop` to hand the",
+        "queues back to the containers, or stop the containers if the host",
+        "workers are the ones you want.",
+      ].join("\n"),
+    );
+  }
+};
+
+/**
+ * Refuses to call a multi-operator stack ready unless every operator squashes
+ * on the same backend.
+ *
+ * Consensus is a byte comparison and the CPU and CUDA squash paths produce
+ * different (both correct) ct128 for the same ct64, so a fleet split across
+ * backends cannot reach quorum on the SNS digest while agreeing on everything
+ * else. Reading it from the worker's own startup line is cheap; discovering it
+ * from divergent bytes is not.
+ */
+export const assertUniformSquashBackend = async (state: Pick<State, "scenario">) => {
+  const count = topologyForState(state).count;
+  if (count < 2) return;
+  const observed: (string | undefined)[] = [];
+  for (let index = 0; index < count; index += 1) {
+    const logs = await run(["docker", "logs", toServiceName("sns-worker", index)], {
+      allowFailure: true,
+    });
+    observed.push(parseSquashBackend(`${logs.stdout}${logs.stderr}`));
+  }
+  const backends = backendSplit(observed);
+  if (backends.size > 1) {
+    const split = [...backends.entries()]
+      .map(([backend, operators]) => `gpu_enabled=${backend}: operator ${operators.join(", ")}`)
+      .join("; ");
+    throw new PreflightError(
+      `Operators are split across squash backends (${split}). CPU and GPU squashing ` +
+        "produce different ct128 bytes for the same input, so this fleet cannot reach " +
+        "byte-consensus on the SNS digest. Make every operator use the same backend.",
+    );
+  }
+};
+
 /** Waits for all coprocessor runtime services to reach their expected states. */
 export const waitForCoprocessorServices = async (state: State, skipMigration: boolean) => {
   const waitCoreFleet = async (prefix: string, withMigration: boolean) => {
@@ -227,6 +375,10 @@ export const waitForCoprocessorServices = async (state: State, skipMigration: bo
       await waitForContainer(`${prefix}gcs-consensus-detector`, "running");
     }
   }
+  // Both of these are about who is allowed to serve the queues, so they belong
+  // after the containers are up and before anything calls the stack ready.
+  await assertOneWorkerPerQueue(state);
+  await assertUniformSquashBackend(state);
 };
 
 /** Waits for the full coprocessor stack, including migrations, to become ready. */
@@ -516,6 +668,86 @@ export const waitForBootstrap = async (state: State, attempts = 120) => {
     }
   }
   throw new BootstrapTimeout(attempts * 2);
+};
+
+/**
+ * Waits until every coprocessor database holds the ingested keyset.
+ *
+ * `waitForBootstrap` proves the KMS produced key material and the gateway
+ * recorded it; it says nothing about whether each coprocessor has ingested it.
+ * The insert is large (~444 MB compressed) and lands seconds to minutes later,
+ * so `up` used to report the stack ready while operators still held no key rows
+ * — and anything that trusted that signal raced the ingest. A suite launched on
+ * the readiness signal failed in two seconds with "operator 2 holds no key
+ * rows"; every driver since has carried its own wait, which is a workaround for
+ * a readiness signal that overstates readiness (Consensus Defect Log, F-1).
+ *
+ * The fork topology is the deliberate exception: the operator following
+ * `fork-anvil` cannot ingest keys until a suite seeds that chain from a
+ * post-keygen canonical tip, so only the operators on the canonical chain are
+ * required.
+ */
+export const waitForCoprocessorKeyMaterial = async (state: State, attempts = 150) => {
+  const count = topologyForState(state).count;
+  // Narrowed the same way `scenarioUsesForkAnvil` does: only a consensus
+  // scenario has instances, and the fork is identified by the hostname an
+  // instance is pointed at rather than by a flag.
+  const forkOperators = new Set<number>();
+  if (state.scenario.kind === "coprocessor-consensus") {
+    state.scenario.instances.forEach((instance, position) => {
+      const onFork = [instance.env.RPC_HTTP_URL, instance.env.RPC_WS_URL].some((value) => {
+        if (!value) return false;
+        try {
+          return new URL(String(value)).hostname === "fork-anvil";
+        } catch {
+          return false;
+        }
+      });
+      if (onFork) forkOperators.add(instance.index ?? position);
+    });
+  }
+  const required = Array.from({ length: count }, (_, index) => index).filter(
+    (index) => !forkOperators.has(index),
+  );
+  if (forkOperators.size > 0) {
+    console.log(
+      `[wait] key material: operator(s) ${[...forkOperators].join(", ")} follow fork-anvil and ` +
+        "cannot ingest until a suite seeds that chain, so they are not required here",
+    );
+  }
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const pending: number[] = [];
+    for (const index of required) {
+      const result = await run(
+        [
+          "docker",
+          "exec",
+          COPROCESSOR_DB_CONTAINER,
+          "psql",
+          "-U",
+          "postgres",
+          "-d",
+          coprocessorDatabaseName(index),
+          "-tAc",
+          "SELECT count(compressed_xof_keyset) FROM keys",
+        ],
+        { allowFailure: true },
+      );
+      if (Number.parseInt((result.stdout ?? "").trim(), 10) < 1) pending.push(index);
+    }
+    if (pending.length === 0) {
+      console.log(`[wait] key material ingested on operator(s) ${required.join(", ")}`);
+      return;
+    }
+    if (attempt === 0 || (attempt + 1) % 10 === 0) {
+      console.log(`[wait] key material on operator(s) ${pending.join(", ")} (${(attempt + 1) * 2}s elapsed)`);
+    }
+    await Bun.sleep(2_000);
+  }
+  throw new Error(
+    `coprocessor key material never landed on operator(s) ${required.join(", ")} within ${attempts * 2}s; ` +
+      "the stack is not usable and a suite started now would fail its own key-material gate",
+  );
 };
 
 /** Waits for the kms-connector runtime services to become ready. */

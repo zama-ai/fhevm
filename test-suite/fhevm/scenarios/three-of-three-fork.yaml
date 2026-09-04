@@ -1,0 +1,90 @@
+## Three coprocessor instances on a dual-Anvil topology, for fork testing.
+##
+## Coprocessors 0 and 1 observe the canonical chain (host-node); coprocessor 2
+## observes the fork Anvil. All three submit to the same Gateway.
+##
+## Both Anvil instances share a chain ID and mnemonic, so they share a genesis.
+## fhevm-cli brings the fork up from the canonical tip before the coprocessors
+## start, so the two chains agree on every block up to the fork point; the test
+## orchestrator then creates divergence deliberately.
+##
+## What this topology is FOR, under the revised RFC 019: the re-randomization
+## seed binds no chain coordinate beyond those already committed by the output
+## handle, so a handle minted on both branches from identical operands must
+## carry identical bytes on every operator, and genuinely different branch
+## content must mint a different handle instead of colliding. That is the
+## opposite of the retired block-context model, in which the same handle
+## legitimately denoted different ciphertexts per branch.
+##
+## Every operator runs with a shortened stale-gate age. A reorg that removes a
+## producer block leaves that producer's cross-block child holding a dependency
+## count nothing will ever decrement; `acquire_stale_gated_lock` is the repair,
+## and its age gate defaults to 300s. Thirty seconds lets the fork suite observe
+## the repair instead of timing out short of it, and is still far longer than
+## arming a gate takes -- which is what the age gate is there to avoid racing.
+##
+## Usage:
+##   ./fhevm-cli up --scenario three-of-three-fork --build
+version: 1
+kind: coprocessor-consensus
+name: Three Of Three Fork
+description: >-
+  Three coprocessors on a dual-Anvil topology for fork testing. Coprocessors 0 and 1 follow the canonical
+  Anvil; coprocessor 2 follows the fork Anvil over the Docker network. Used to assert that a handle minted
+  on competing branches from identical operands produces one digest fleet-wide, that divergent branch
+  content mints distinct handles rather than colliding, and that orphaned-branch rows are benign after the
+  reorg resolves.
+topology:
+  count: 3
+  threshold: 3
+instances:
+  - index: 0
+    # Default RPC: the canonical Anvil.
+    args:
+      host-listener:
+        - --catchup-margin=8
+        - --catchup-finalization-in-blocks=2
+        - --reorg-maximum-duration-in-blocks=8
+      host-listener-poller:
+        - --finality-lag=2
+      tfhe-worker:
+        # See the stale-gate note in this file's header.
+        - --dcid-stale-gate-age-secs=30
+  - index: 1
+    # Default RPC: the canonical Anvil.
+    args:
+      host-listener:
+        - --catchup-margin=8
+        - --catchup-finalization-in-blocks=2
+        - --reorg-maximum-duration-in-blocks=8
+      host-listener-poller:
+        - --finality-lag=2
+      tfhe-worker:
+        # See the stale-gate note in this file's header.
+        - --dcid-stale-gate-age-secs=30
+  - index: 2
+    env:
+      # The only instance routed to the fork, by container hostname. fhevm-cli
+      # keys the managed fork Anvil off exactly this: a scenario that mentions
+      # the `fork-anvil` host gets one started and seeded from the canonical
+      # tip before the coprocessors come up.
+      RPC_HTTP_URL: "http://fork-anvil:8546"
+      RPC_WS_URL: "ws://fork-anvil:8546"
+    args:
+      host-listener:
+        - --catchup-margin=8
+        - --catchup-finalization-in-blocks=2
+        - --reorg-maximum-duration-in-blocks=8
+      host-listener-poller:
+        - --finality-lag=2
+      tfhe-worker:
+        # See the stale-gate note in this file's header.
+        - --dcid-stale-gate-age-secs=30
+      # The shared listener-core publisher reads the CANONICAL chain and
+      # publishes into redis DB 0. Feeding that stream to this instance would
+      # split its ingestion between two chains -- the consumer inserting
+      # canonical blocks while its own listener and poller follow the fork --
+      # so the consumer is parked on an empty redis DB. Ingestion here is fully
+      # covered by this instance's WS listener and poller against fork-anvil.
+      host-listener-consumer:
+        - --url=redis://listener-redis:6379/9

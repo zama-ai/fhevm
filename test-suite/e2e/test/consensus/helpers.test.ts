@@ -10,10 +10,12 @@ import {
   assertAttestationMatchesOutputEvidence,
   assertCanonicalOutputDigestBindings,
   assertConsensusEventBindings,
+  assertHeterogeneousScheduling,
   assertEquivalentCanonicalOutputs,
   assertEquivalentCompletedTransactions,
   attestationEvidenceFromCanonicalOutput,
   attestationMetadataFromWgetHeaders,
+  parseSchedulingClasses,
   containerName,
   kmsNamespaceAttestationHeadArgs,
   rfc023AttestationPrehash,
@@ -210,7 +212,7 @@ describe('Materialization consensus harness helpers', () => {
 
   it('probes the exact RFC-023 object in the KMS worker network namespace without a shell', () => {
     const url = rfc023CiphertextUrl('http://minio:9000/coproc-0-ct128', expectedHandle);
-    expect(url).to.equal(`http://minio:9000/coproc-0-ct128/${handle.toString('hex')}/1`);
+    expect(url).to.equal(`http://minio:9000/coproc-0-ct128/ct128/${handle.toString('hex')}/1`);
     expect(kmsNamespaceAttestationHeadArgs('kms-connector-kms-worker', 'probe-image', url)).to.deep.equal([
       'run',
       '--rm',
@@ -237,7 +239,7 @@ describe('Materialization consensus harness helpers', () => {
 
   it('does not normalize the registered bucket string away from the connector request target', () => {
     expect(rfc023CiphertextUrl('http://minio:9000/coproc-0-ct128/', expectedHandle)).to.equal(
-      `http://minio:9000/coproc-0-ct128//${handle.toString('hex')}/1`,
+      `http://minio:9000/coproc-0-ct128//ct128/${handle.toString('hex')}/1`,
     );
   });
 
@@ -335,5 +337,47 @@ describe('Materialization consensus harness helpers', () => {
     expect(() => attestationMetadataFromWgetHeaders(headers.replace('"compressed_on_cpu"', '"toString"'))).to.throw(
       'unsupported attestation format',
     );
+  });
+});
+
+describe('scheduling class parsing', function () {
+  const heterogeneous =
+    '0=device:0,window:10,chains:20,adaptive:default;' +
+    '1=device:0,window:1,chains:1,adaptive:false;' +
+    '2=device:1,window:200,chains:64,adaptive:default';
+  const homogeneous = '0=device:0,window:10;1=device:0,window:10;2=device:0,window:10';
+
+  it('parses one entry per operator', function () {
+    const classes = parseSchedulingClasses(heterogeneous);
+    expect(classes.size).to.eq(3);
+    expect(classes.get(1)).to.eq('device:0,window:1,chains:1,adaptive:false');
+  });
+
+  it('ignores surrounding whitespace and empty entries', function () {
+    expect(parseSchedulingClasses(' 0=a ; 1=b ;').size).to.eq(2);
+  });
+
+  it('rejects a malformed entry rather than dropping it', function () {
+    expect(() => parseSchedulingClasses('0=a;garbage')).to.throw(/malformed scheduling class entry/);
+    expect(() => parseSchedulingClasses('0=a;1=')).to.throw(/empty scheduling class/);
+    expect(() => parseSchedulingClasses('0=a;0=b')).to.throw(/duplicate scheduling class/);
+  });
+
+  it('accepts a genuinely heterogeneous fleet', function () {
+    expect(assertHeterogeneousScheduling(heterogeneous, 3).size).to.eq(3);
+  });
+
+  // The guard that gives the axis its meaning: without it a mistyped override
+  // silently produces a homogeneous fleet and a vacuous green.
+  it('fails a fleet that is homogeneous despite claiming otherwise', function () {
+    expect(() => assertHeterogeneousScheduling(homogeneous, 3)).to.throw(/every operator scheduled identically/);
+  });
+
+  it('fails when the launcher recorded nothing', function () {
+    expect(() => assertHeterogeneousScheduling('', 3)).to.throw(/CONSENSUS_SCHEDULING_CLASSES is unset/);
+  });
+
+  it('fails when an operator is missing from the record', function () {
+    expect(() => assertHeterogeneousScheduling('0=a;1=b', 3)).to.throw(/expected scheduling classes for 3 operators/);
   });
 });

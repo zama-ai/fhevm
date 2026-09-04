@@ -1,0 +1,46 @@
+## Secondary Anvil node for dual-Anvil fork testing.
+##
+## Runs alongside the primary host-node and serves a divergent chain history to
+## whichever coprocessor instances a scenario routes here (via per-instance
+## RPC_HTTP_URL / RPC_WS_URL overrides).
+##
+## Both Anvil instances share the same chain ID and mnemonic, so they share a
+## genesis; divergence comes only from the transactions each receives after the
+## fork point. Under the revised RFC 019 that is precisely what makes the fork
+## suite meaningful: a handle minted on both branches from identical operands
+## must produce identical bytes, while genuinely different branch content mints
+## a different handle.
+##
+## fhevm-cli brings this up automatically for scenarios that route an instance
+## to the `fork-anvil` hostname. It starts with mining stopped and is
+## initialized from the canonical tip before the coprocessors start, so both
+## chains agree on every block up to the fork point. The fork tests resume its
+## mining only while creating divergence.
+networks:
+  default:
+    name: fhevm_default
+    external: true
+
+services:
+  fork-anvil:
+    container_name: fork-anvil
+    image: ghcr.io/foundry-rs/foundry:v1.3.5
+    env_file:
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/host-node.env
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        exec anvil \
+          --no-mining \
+          --host 0.0.0.0 \
+          --port 8546 \
+          --chain-id "$${HOST_NODE_CHAIN_ID:-12345}" \
+          --accounts 120 \
+          --mnemonic "$${MNEMONIC:?MNEMONIC must be set by host-node.env}"
+    ports:
+      # In-network the fork answers on fork-anvil:8546, matching the gateway's
+      # port only by coincidence — they are different containers. On the host
+      # it takes 8548: 8546 is the gateway and 8547 is the second host chain in
+      # multi-chain scenarios, so reusing either would collide.
+      - "8548:8546"

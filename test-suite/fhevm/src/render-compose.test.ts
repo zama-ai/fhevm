@@ -7,6 +7,7 @@ import { generateComposeOverrides, loadMergedComposeDoc, serviceNameList } from 
 import { TEMPLATE_COMPOSE_DIR, composePath, envPath } from "./layout";
 import { presetBundle } from "./resolve/target";
 import {
+  loadCoprocessorScenario,
   parseBlueGreenScenario,
   parseCoprocessorScenario,
   resolveBlueGreenScenario,
@@ -195,6 +196,81 @@ describe("render-compose", () => {
       expect(String((doc.services["coprocessor-db-migration"]?.command as string[] | undefined)?.[0] ?? "")).toContain(
         "/initialize_db.sh",
       );
+    });
+  });
+
+  test("gives every coprocessor runtime service a bounded on-failure restart policy", async () => {
+    await withTempStateDir(async () => {
+      const doc = await loadMergedComposeDoc("coprocessor");
+      const runtime = [
+        "coprocessor-host-listener",
+        "coprocessor-host-listener-poller",
+        "coprocessor-host-listener-consumer",
+        "coprocessor-gw-listener",
+        "coprocessor-tfhe-worker",
+        "coprocessor-zkproof-worker",
+        "coprocessor-sns-worker",
+        "coprocessor-transaction-sender",
+        "coprocessor-consensus-detector",
+        "coprocessor-upgrade-controller",
+      ];
+      // These implement exit-for-restart: fatal error, non-zero exit, and they
+      // expect to be brought back. Without a policy the stack degraded
+      // permanently on any fatal path (L-5).
+      for (const service of runtime) {
+        expect(doc.services[service]?.restart, `${service} must recover from a fatal exit`).toBe("on-failure:10");
+      }
+      // `on-failure`, never `unless-stopped`: a clean exit 0 is a service that
+      // meant to finish, and restarting it would loop. Bounded, so a genuinely
+      // broken deploy stops instead of hiding in a crash loop.
+      for (const service of runtime) {
+        expect(String(doc.services[service]?.restart)).toStartWith("on-failure");
+      }
+      // One-shots must stay one-shot: readiness waits for db-migration to
+      // reach `complete`, and a failing migration should surface at once
+      // rather than retry.
+      expect(doc.services["coprocessor-db-migration"]?.restart).toBeUndefined();
+    });
+  });
+
+  test("exposes tfhe-worker metrics on the base service and on every clone", async () => {
+    await withTempStateDir(async () => {
+      // The run-validity gates read
+      // `coprocessor_worker_deferred_transactions_current` from each operator's
+      // worker and refuse to guess when they cannot. That only works if the
+      // flag survives clone generation, which rewrites the command.
+      const base = await loadMergedComposeDoc("coprocessor");
+      const baseCommand = (base.services["coprocessor-tfhe-worker"]?.command ?? []) as string[];
+      expect(baseCommand.some((arg) => String(arg).startsWith("--metrics-addr="))).toBe(true);
+
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      await writeFile(envPath("coprocessor"), "\n");
+      await writeFile(envPath("coprocessor.1"), "\n");
+      await generateComposeOverrides(state, stackSpecForState(state));
+      const doc = YAML.parse(await readFile(composePath("coprocessor"), "utf8")) as {
+        services: Record<string, { command?: string[] }>;
+      };
+      const clone = (doc.services["coprocessor1-tfhe-worker"]?.command ?? []) as string[];
+      expect(
+        clone.some((arg) => String(arg).startsWith("--metrics-addr=")),
+        "operator 1's worker must expose metrics or its validity gate cannot be evaluated",
+      ).toBe(true);
+    });
+  });
+
+  test("carries the restart policy onto per-operator clones", async () => {
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      await writeFile(envPath("coprocessor"), "\n");
+      await writeFile(envPath("coprocessor.1"), "\n");
+      await generateComposeOverrides(state, stackSpecForState(state));
+      const doc = YAML.parse(await readFile(composePath("coprocessor"), "utf8")) as {
+        services: Record<string, { restart?: string }>;
+      };
+      // Operator 1 is the one the failure matrix injects faults into, so it is
+      // the operator whose recovery matters most.
+      expect(doc.services["coprocessor1-host-listener"]?.restart).toBe("on-failure:10");
+      expect(doc.services["coprocessor1-host-listener-poller"]?.restart).toBe("on-failure:10");
     });
   });
 
@@ -458,6 +534,139 @@ describe("render-compose", () => {
       expect(doc.services["coprocessor1-host-listener"]?.command).toEqual(
         expect.arrayContaining(["--error-sleep-max-secs=30", "--initial-block-time=2"]),
       );
+    });
+  });
+
+  // Guards the shipped scenario file itself, not a copy of it inline: the
+  // point of the heterogeneous-scheduling topology is that the three operators
+  // come up scheduling DIFFERENTLY, and a silent regression to a uniform fleet
+  // would leave the byte-consensus gate passing while asserting nothing.
+  test("heterogeneous-scheduling scenario renders three distinct tfhe-worker configurations", async () => {
+    const heterogeneous = resolveScenarioFile(
+      path.join("/tmp", "three-of-three-heterogeneous-scheduling.yaml"),
+      await loadCoprocessorScenario("three-of-three-heterogeneous-scheduling"),
+    );
+    const heterogeneousState: State = { ...state, scenario: heterogeneous };
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      for (const name of ["coprocessor", "coprocessor.1", "coprocessor.2"]) {
+        await writeFile(envPath(name), "\n");
+      }
+      await generateComposeOverrides(heterogeneousState, stackSpecForState(heterogeneousState));
+      const doc = YAML.parse(await readFile(composePath("coprocessor"), "utf8")) as {
+        services: Record<string, { command?: string[]; environment?: Record<string, string> }>;
+      };
+
+      const workers = ["coprocessor-tfhe-worker", "coprocessor1-tfhe-worker", "coprocessor2-tfhe-worker"];
+      const windows = workers.map(
+        (name) =>
+          doc.services[name]?.command?.find((argument) => argument.startsWith("--work-items-batch-size=")) ?? "missing",
+      );
+      const chains = workers.map(
+        (name) =>
+          doc.services[name]?.command?.find((argument) => argument.startsWith("--dependence-chains-per-batch=")) ??
+          "missing",
+      );
+
+      expect(windows).toEqual([
+        "--work-items-batch-size=100",
+        "--work-items-batch-size=1",
+        "--work-items-batch-size=200",
+      ]);
+      expect(chains).toEqual([
+        "--dependence-chains-per-batch=20",
+        "--dependence-chains-per-batch=1",
+        "--dependence-chains-per-batch=64",
+      ]);
+
+      // The compose template already carries `--work-items-batch-size=10`, so
+      // an override that appended instead of replacing would leave the worker
+      // with the flag twice. Assert each appears exactly once.
+      for (const name of workers) {
+        const command = doc.services[name]?.command ?? [];
+        expect(command.filter((argument) => argument.startsWith("--work-items-batch-size=")).length).toBe(1);
+      }
+
+      // The two DCID booleans have no command-line route that can turn them
+      // off, so they must arrive as environment entries on the right operators
+      // and nowhere else.
+      expect(doc.services["coprocessor1-tfhe-worker"]?.environment?.FHEVM_DCID_ADAPTIVE_BATCH_EXECUTION).toBe("false");
+      expect(doc.services["coprocessor2-tfhe-worker"]?.environment?.FHEVM_DCID_BATCH_EXECUTION).toBe("false");
+      expect(doc.services["coprocessor-tfhe-worker"]?.environment?.FHEVM_DCID_ADAPTIVE_BATCH_EXECUTION).toBeUndefined();
+      expect(doc.services["coprocessor-tfhe-worker"]?.environment?.FHEVM_DCID_BATCH_EXECUTION).toBeUndefined();
+
+      // No operator may invert its own pair. The adaptive window gives each
+      // acquired chain ceil(window / acquired-chains) transactions and turns
+      // itself off once more chains are acquired than the window admits, so an
+      // operator whose window is below its chain count schedules
+      // non-adaptively -- while this scenario presents it as a scheduling
+      // variant of the adaptive baseline. Asserted as a property rather than
+      // left to the literals above, because the literals are exactly what went
+      // wrong: operator 0 shipped as 10/20 for a while, under a comment calling
+      // it the adaptive default.
+      windows.forEach((window, index) => {
+        const windowValue = Number.parseInt(window.split("=")[1] ?? "", 10);
+        const chainValue = Number.parseInt(chains[index].split("=")[1] ?? "", 10);
+        expect(Number.isInteger(windowValue) && Number.isInteger(chainValue)).toBe(true);
+        expect(
+          windowValue >= chainValue,
+          `operator ${index} has window ${windowValue} below its ${chainValue} chains, which disables ` +
+            "the adaptive window under load",
+        ).toBe(true);
+      });
+
+      // The whole point: no two operators schedule alike.
+      const classes = workers.map((name) => JSON.stringify(doc.services[name]?.command));
+      expect(new Set(classes).size).toBe(workers.length);
+    });
+  });
+
+  // The dual-Anvil scenario was re-derived from the wave2 original, which was
+  // written against binaries that no longer exist in this shape. Two flags it
+  // used were removed with the RFC 011 settlement machinery, and passing an
+  // unknown flag makes the listener exit at startup -- every operator would
+  // crash-loop and the fork suite would fail for a reason unrelated to forks.
+  test("fork scenario routes one instance to the fork and passes no retired listener flags", async () => {
+    const forkScenario = resolveScenarioFile(
+      path.join("/tmp", "three-of-three-fork.yaml"),
+      await loadCoprocessorScenario("three-of-three-fork"),
+    );
+    const forkState: State = { ...state, scenario: forkScenario };
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      for (const name of ["coprocessor", "coprocessor.1", "coprocessor.2"]) {
+        await writeFile(envPath(name), "\n");
+      }
+      await generateComposeOverrides(forkState, stackSpecForState(forkState));
+      const doc = YAML.parse(await readFile(composePath("coprocessor"), "utf8")) as {
+        services: Record<string, { command?: string[]; environment?: Record<string, string> }>;
+      };
+
+      // Exactly one instance follows the fork.
+      const routed = Object.entries(doc.services).filter(([, service]) =>
+        Object.values(service.environment ?? {}).some((value) => String(value).includes("fork-anvil")),
+      );
+      expect(routed.length).toBeGreaterThan(0);
+      for (const [name] of routed) expect(name.startsWith("coprocessor2-")).toBe(true);
+      expect(doc.services["coprocessor2-host-listener"]?.environment?.RPC_HTTP_URL).toBe("http://fork-anvil:8546");
+      expect(doc.services["coprocessor-host-listener"]?.environment?.RPC_HTTP_URL).toBeUndefined();
+
+      // Retired flags must not come back. `--settlement-finality-lag` no
+      // longer exists on either binary, and the poller never accepted
+      // `--reorg-maximum-duration-in-blocks`.
+      for (const [name, service] of Object.entries(doc.services)) {
+        const command = (service.command ?? []).map(String);
+        expect(
+          command.some((argument) => argument.startsWith("--settlement-finality-lag")),
+          `${name} passes a flag no current binary accepts`,
+        ).toBe(false);
+        if (name.endsWith("host-listener-poller")) {
+          expect(
+            command.some((argument) => argument.startsWith("--reorg-maximum-duration-in-blocks")),
+            `${name} passes a flag the poller does not accept`,
+          ).toBe(false);
+        }
+      }
     });
   });
 

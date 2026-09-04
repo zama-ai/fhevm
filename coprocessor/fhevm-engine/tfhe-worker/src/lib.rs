@@ -44,7 +44,7 @@ fn start_runtime_inner(
     close_recv: Option<tokio::sync::watch::Receiver<bool>>,
     readiness: tfhe_worker::Readiness,
 ) {
-    tokio::runtime::Builder::new_multi_thread()
+    let fatal = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(args.tokio_threads)
         // not using tokio main to specify max blocking threads
         .max_blocking_threads(args.coprocessor_fhe_threads)
@@ -63,10 +63,29 @@ fn start_runtime_inner(
                         info!(target: "main_wchannel", "Service stopped voluntarily");
                     }
                 }
+                // Callers that pass `close_recv` run the worker in-process (the
+                // unit tests and the benchmark harness) and own the process
+                // themselves, so a failure here must not take them down.
+                false
             } else if let Err(e) = async_main_inner(args, readiness).await {
                 error!(target: "main", { error = e }, "Runtime error");
+                true
+            } else {
+                false
             }
-        })
+        });
+
+    // Exit-for-restart, as `sns-worker` and `zkproof-worker` already do: a
+    // supervisor can only act on the exit status, and `restart: on-failure` is
+    // defined to ignore exit 0. Logging the error and returning normally left a
+    // failed daemon looking like a clean shutdown, so compose never restarted
+    // it -- the failure mode the failure matrix's database cells exposed, where
+    // all three tfhe-workers stayed `exited` while every other worker recovered
+    // (Consensus Defect Log, D-3). Reached only on the daemon path, and after
+    // the runtime has shut down so telemetry is flushed first.
+    if fatal {
+        std::process::exit(1);
+    }
 }
 
 // Used for testing as we would call `async_main()` multiple times.
