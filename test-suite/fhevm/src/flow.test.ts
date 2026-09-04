@@ -1,3 +1,4 @@
+import path from "node:path";
 import { describe, expect, test } from "bun:test";
 
 import { assertContractTaskStackRunning } from "./flow/contracts";
@@ -10,7 +11,12 @@ import {
   runtimeArtifactPaths,
   shouldShowResumeHint,
 } from "./flow/up-flow";
-import { envPath, hostChainAddressesPath, kmsCoreConfigPath } from "./layout";
+import {
+  KMS_THRESHOLD_CONFIG_NAME,
+  KMS_THRESHOLD_SPARE_CONFIG_NAME,
+  kmsThresholdGenKeysConfigName,
+} from "./generate/kms-core";
+import { GENERATED_CONFIG_DIR, envPath, hostChainAddressesPath, kmsCoreConfigPath } from "./layout";
 import {
   type Discovery,
   OVERRIDE_GROUPS,
@@ -412,6 +418,22 @@ describe("runtime helpers", () => {
 
   test("runtime artifacts include the generated kms-core config", () => {
     expect(runtimeArtifactPaths(completeState())).toContain(kmsCoreConfigPath);
+  });
+
+  test("runtime artifacts include every threshold keygen config", () => {
+    const state = completeState();
+    state.scenario.kms = { mode: "threshold", parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" };
+    const paths = runtimeArtifactPaths(state);
+    expect(paths).toContain(path.join(GENERATED_CONFIG_DIR, KMS_THRESHOLD_CONFIG_NAME));
+    for (let partyId = 1; partyId <= 4; partyId += 1) {
+      expect(paths).toContain(path.join(GENERATED_CONFIG_DIR, kmsThresholdGenKeysConfigName(partyId)));
+    }
+  });
+
+  test("runtime artifacts include the spare config when the cluster has a spare party", () => {
+    const state = completeState();
+    state.scenario.kms = { mode: "threshold", parties: 5, threshold: 1, committeeSize: 4, fheParams: "Test" };
+    expect(runtimeArtifactPaths(state)).toContain(path.join(GENERATED_CONFIG_DIR, KMS_THRESHOLD_SPARE_CONFIG_NAME));
   });
 
   test("runtime artifacts use the first explicit chain key for default host addresses", () => {
