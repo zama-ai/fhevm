@@ -268,7 +268,7 @@
       "member": true,
       "memberOf": "./hardhat/v2",
       "dependencyGroup": "hardhat/v2",
-      "note": "Dev owner for the template. Owns the outbound render spec (mirror.manifest.json) that turns the workspace-native ./pkg into the public repository.",
+      "note": "Dev owner for the workspace-native template. Its check:mirror script invokes the package-specific fhevm-npm comparison against the public repository.",
       "publishedRelPath": "./hardhat/v2/fhevm-hardhat-template/pkg"
     },
     "./hardhat/v2/fhevm-hardhat-template/pkg": {
@@ -283,7 +283,7 @@
       "mirror": {
         "repository": "https://github.com/zama-ai/fhevm-hardhat-template"
       },
-      "note": "The WORKSPACE-NATIVE template: an ordinary cluster member, free to differ from the public repository — github.com/zama-ai/fhevm-hardhat-template is a RENDER of it (publish-mirror), produced from the owner's mirror.manifest.json: registry dependency ranges for the file: links, solhint and its configs re-added, CI extras, regenerated lockfile. The rendered artifact is the read-only thing, not this copy; consumer fidelity is proven by test-consumer against the render."
+      "note": "The WORKSPACE-NATIVE template: an ordinary cluster member, free to differ from the public repository. check-mirror clones github.com/zama-ai/fhevm-hardhat-template and applies the package-specific package.json transformation implemented in fhevm-npm before comparing tracked files; the public lockfile and CI-only files are excluded. Consumer fidelity is proven independently by test-consumer."
     },
     "./hardhat/v2/e2e": {
       "kind": "internal-consumer",
