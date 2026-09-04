@@ -434,7 +434,6 @@ bcs:
   source: { mode: registry, tag: v0.14.0-10 }
 gcs:
   source: { mode: registry, tag: target-sha }
-  stackVersion: "0.15.0"
 `),
     );
     const bgState: State = { ...state, scenario: blueGreenScenario };
@@ -467,7 +466,6 @@ version: 1
 kind: blue-green
 gcs:
   source: { mode: local }
-  stackVersion: "0.15.0"
   deferredStart: true
 `),
     );
@@ -644,7 +642,6 @@ bcs:
     tag: v0.14.0-10
 gcs:
   source: { mode: local }
-  stackVersion: "0.15.0"
 `),
     );
     hotfixScenario.bcs.source = { mode: "registry", tag: "04fb072", compatTag: "v0.14.0-10" };
@@ -676,7 +673,6 @@ bcs:
     tag: v0.14.0-10
 gcs:
   source: { mode: local }
-  stackVersion: "0.15.1"
 `),
     );
     upgradedScenario.bcs.source = { mode: "registry", tag: "15abcde", compatTag: "v0.15.0" };

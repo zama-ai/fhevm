@@ -20,7 +20,7 @@ const blueGreenScenario: State["scenario"] = {
   hostChains: defaultScenario.hostChains,
   topology: { count: 2, threshold: 2 },
   bcs: { source: { mode: "registry", tag: "v0.14.0-10" }, env: {}, args: {} },
-  gcs: { source: { mode: "local" }, env: {}, args: {}, stackVersion: "0.15.0", deferredStart: true },
+  gcs: { source: { mode: "local" }, env: {}, args: {}, deferredStart: true },
   kms: defaultScenario.kms,
 };
 const thresholdBlueGreenScenario: State["scenario"] = {

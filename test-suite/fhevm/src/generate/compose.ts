@@ -613,7 +613,7 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
         );
         adjusted.container_name = serviceName;
         applyCoprocessorSource(adjusted, baseName, gcsInstance, locallyBuilt);
-        if (buildSpec) {
+        if (locallyBuilt) {
           adjusted.image = retagLocal(service.image, "gcs-candidate");
           adjusted.build = buildSpec;
         }
@@ -875,7 +875,7 @@ const buildExtraCoprocessorListenerOverride = async (
         );
         adjusted.container_name = cloneName;
         applyCoprocessorSource(adjusted, baseName, gcsInstance, locallyBuilt);
-        if (buildSpec) {
+        if (locallyBuilt) {
           adjusted.image = retagLocal(baseService.image, "gcs-candidate");
           adjusted.build = buildSpec;
         }
