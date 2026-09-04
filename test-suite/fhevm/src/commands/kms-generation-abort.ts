@@ -59,7 +59,7 @@ const RECOVERY_POLL_MS = 5_000;
 /** The event topics the profile asserts on, hashed up front. */
 const loadAbiHashes = async () => {
   const [prepKeygenRequest, crsgenRequest, abortKeygen, abortCrsgen] = await Promise.all([
-    keccakTopic("PrepKeygenRequest(uint256,uint8,bytes)"),
+    keccakTopic("PrepKeygenRequest(uint256,uint8,uint256,bytes)"),
     keccakTopic("CrsgenRequest(uint256,uint256,uint8,bytes)"),
     keccakTopic("AbortKeygen(uint256)"),
     keccakTopic("AbortCrsgen(uint256)"),
