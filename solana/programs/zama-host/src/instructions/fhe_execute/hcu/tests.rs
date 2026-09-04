@@ -387,6 +387,71 @@ fn meter_comparison_prices_operand_width_not_ebool() {
     assert_eq!(m.total, expected);
 }
 
+fn typed_handle(fhe_type: u8) -> [u8; 32] {
+    let mut handle = [0u8; 32];
+    handle[30] = fhe_type;
+    handle
+}
+
+#[test]
+fn meter_comparison_prices_dictionary_and_verified_input_width() {
+    let handle = typed_handle(EU64);
+    let stored = FheExecuteStep::Binary {
+        op: FheBinaryOpCode::Ge,
+        lhs: FheExecuteOperand::StoredValue {
+            handle_index: 0,
+            encrypted_value_index: 0,
+        },
+        rhs: FheExecuteOperand::StoredValue {
+            handle_index: 0,
+            encrypted_value_index: 0,
+        },
+        output_fhe_type: EBOOL,
+        output: FheExecuteOutput::Transient,
+    };
+    let stored_meter = meter_execution(&[stored], &[handle], u64::MAX, u64::MAX).unwrap();
+    assert_eq!(
+        stored_meter.total,
+        binary_op_hcu(FheBinaryOpCode::Ge, EU64, false).unwrap()
+    );
+
+    let attestation = CoprocessorInputAttestation {
+        input_handle: handle,
+        ct_handles: vec![handle],
+        handle_index: 0,
+        user_address: [0u8; 32],
+        contract_address: [0u8; 32],
+        contract_chain_id: 0,
+        extra_data: vec![],
+        signatures: vec![],
+    };
+    let verified = FheExecuteStep::Binary {
+        op: FheBinaryOpCode::Ge,
+        lhs: FheExecuteOperand::VerifiedInput {
+            attestation: Box::new(attestation),
+        },
+        rhs: FheExecuteOperand::VerifiedInput {
+            attestation: Box::new(CoprocessorInputAttestation {
+                input_handle: handle,
+                ct_handles: vec![handle],
+                handle_index: 0,
+                user_address: [0u8; 32],
+                contract_address: [0u8; 32],
+                contract_chain_id: 0,
+                extra_data: vec![],
+                signatures: vec![],
+            }),
+        },
+        output_fhe_type: EBOOL,
+        output: FheExecuteOutput::Transient,
+    };
+    let verified_meter = meter_execution(&[verified], &[], u64::MAX, u64::MAX).unwrap();
+    assert_eq!(
+        verified_meter.total,
+        binary_op_hcu(FheBinaryOpCode::Ge, EU64, false).unwrap()
+    );
+}
+
 #[test]
 fn cost_accessors_are_deterministic() {
     assert_eq!(

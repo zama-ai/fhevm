@@ -183,7 +183,10 @@ export type InitializeHostConfigAsyncInput<
   payer: TransactionSigner<TAccountPayer>;
   /** Initial admin stored in the config. Must be the BPF upgrade authority. */
   admin: TransactionSigner<TAccountAdmin>;
-  /** Upgradeable loader `ProgramData` for this program; `admin` must be its upgrade authority. */
+  /**
+   * Upgradeable loader `ProgramData` for this program; `admin` must be its upgrade authority.
+   * A finalized program (`upgrade_authority_address == None`) cannot initialize.
+   */
   programData: Address<TAccountProgramData>;
   /** Singleton config PDA. */
   hostConfig?: Address<TAccountHostConfig>;
@@ -296,7 +299,10 @@ export type InitializeHostConfigInput<
   payer: TransactionSigner<TAccountPayer>;
   /** Initial admin stored in the config. Must be the BPF upgrade authority. */
   admin: TransactionSigner<TAccountAdmin>;
-  /** Upgradeable loader `ProgramData` for this program; `admin` must be its upgrade authority. */
+  /**
+   * Upgradeable loader `ProgramData` for this program; `admin` must be its upgrade authority.
+   * A finalized program (`upgrade_authority_address == None`) cannot initialize.
+   */
   programData: Address<TAccountProgramData>;
   /** Singleton config PDA. */
   hostConfig: Address<TAccountHostConfig>;
@@ -401,7 +407,10 @@ export type ParsedInitializeHostConfigInstruction<
     payer: TAccountMetas[0];
     /** Initial admin stored in the config. Must be the BPF upgrade authority. */
     admin: TAccountMetas[1];
-    /** Upgradeable loader `ProgramData` for this program; `admin` must be its upgrade authority. */
+    /**
+     * Upgradeable loader `ProgramData` for this program; `admin` must be its upgrade authority.
+     * A finalized program (`upgrade_authority_address == None`) cannot initialize.
+     */
     programData: TAccountMetas[2];
     /** Singleton config PDA. */
     hostConfig: TAccountMetas[3];

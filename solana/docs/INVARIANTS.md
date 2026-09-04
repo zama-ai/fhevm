@@ -172,8 +172,11 @@ ID…).
     `verify_public_decrypt`: a KMS threshold certificate **and** an MMR
     inclusion proof that the exact handle was sealed public.
 22. **[HOLDS]** Certificate binding chain: signed extra_data → context id →
-    canonical KmsContext PDA → signer set. Destroying a context invalidates
-    every certificate it issued; rotation alone invalidates none.
+    canonical KmsContext PDA → signer set. Empty or version-0 extra_data
+    selects the current context; version 1 is exactly 33 bytes and carries
+    the 32-byte id; version 3 carries the same 32-byte id and may append an
+    MMR-proof tail. Destroying a context invalidates every certificate it
+    issued; rotation alone invalidates none.
 23. **[ASSUMPTION]** The coprocessor and KMS committees are honest at their
     thresholds, and their EVM signing keys are not compromised.
 24. **[ANTI]** `verify_public_decrypt` provides no act-once/replay protection;

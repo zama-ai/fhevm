@@ -20,16 +20,6 @@ import { readEnvFile } from "../utils/fs";
 export const SOLANA_HOST_CHAIN_ID = 9223372036854788153n;
 export const SOLANA_HOST_CHAIN_ID_I64 = SOLANA_HOST_CHAIN_ID - (1n << 64n);
 
-/**
- * Test KMS context id: 31 zero bytes and last byte `n`. Matches Rust
- * `canonical_test_context_id(n)`. `n = 0` is the reserved all-zero id.
- */
-export const canonicalTestContextId = (n: number): Uint8Array => {
-  const id = new Uint8Array(32);
-  id[31] = n;
-  return id;
-};
-
 const bytes32FromHex = (hex: `0x${string}`): Uint8Array => {
   const body = hex.slice(2);
   const out = new Uint8Array(32);
@@ -41,9 +31,9 @@ const bytes32FromHex = (hex: `0x${string}`): Uint8Array => {
 
 /**
  * The KMS context id every bring-up provisions (`deploy.ts` bootstrap and `fhevm-cli up`'s
- * `demo/seed.ts`). This is the tagged gateway uint256 (`SOLANA_DEFAULT_PUBLIC_DECRYPT_CONTEXT`),
- * not the truncated `canonicalTestContextId(1)` used by isolated host unit tests — the host
- * equality-matches all 32 bytes, so public-decrypt extra_data must name this id.
+ * `demo/seed.ts`). This is the tagged gateway uint256 (`SOLANA_DEFAULT_PUBLIC_DECRYPT_CONTEXT`).
+ * Isolated host unit tests still mint untagged `canonical_test_context_id(n)` in Rust; the host
+ * equality-matches all 32 bytes, so public-decrypt extra_data must name this bring-up id.
  */
 export const BRINGUP_KMS_CONTEXT_ID = bytes32FromHex(SOLANA_DEFAULT_PUBLIC_DECRYPT_CONTEXT);
 

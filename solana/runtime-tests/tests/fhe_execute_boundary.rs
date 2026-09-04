@@ -514,6 +514,11 @@ struct BoundaryShape {
 
 /// The whole frontier as data: every swept shape, its builder, and its pin. The sweeps, the
 /// snapshot, and the printer all walk this one table, so a new axis is one new row.
+///
+/// No row is now limited by `instruction_trace`: the common-path create is one CPI, so 20
+/// creates plus events sit well under 64. That floor is pinned by `zama-fhe`'s
+/// `instruction_trace_floor` unit test; squat creates that would exhaust the trace are a
+/// worst-case number on `FheExecutionCost`, not a swept shape.
 fn boundary_shapes() -> Vec<BoundaryShape> {
     let shape = |profile: &'static str,
                  min_steps: usize,

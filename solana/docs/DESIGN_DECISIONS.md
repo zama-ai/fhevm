@@ -231,7 +231,9 @@ It is never a user key and never the bare program id (program ids cannot sign). 
 enforces `attestation.contract_address == compute_subject` (whatever signer consumes the input).
 `user_address` is **not** EVM `msg.sender`; the host does not interpret it. `compute_subject` is the
 msg.sender analog for the contract bind. The PDA convention is **app policy** — apps MUST bind
-attestations to their compute-authority PDA, and MUST check the attested `user_address` themselves. Confidential-token
+attestations to their compute-authority PDA, and MUST check the attested `user_address` themselves.
+An observer who sees another user's verified input can replay it if the app skips that check.
+Confidential-token
 checks the attested user equals the token account owner. Per-state-account (per-mint) scoping is
 deliberate and finer-grained than EVM's per-contract binding.
 
