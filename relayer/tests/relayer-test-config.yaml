@@ -20,7 +20,7 @@ keyurl:
   poll_interval_ms: 2000
 
 user_decrypt_signature_check:
-  erc1271_gas_limit: 100000
+  erc1271_gas_limit: 250000
 
 gateway:
   blockchain_rpc:

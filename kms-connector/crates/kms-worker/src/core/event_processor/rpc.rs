@@ -4,6 +4,8 @@ use alloy::{
     providers::Provider,
 };
 use fhevm_host_bindings::acl::ACL::ACLInstance;
+use tracing::warn;
+use user_decryption_signature::{ERC1271_GAS_WARN_THRESHOLD, Erc1271Accepted, Erc1271GasBudget};
 
 /// A client for one host chain's RPC node, tagged with its chain id so every error it produces
 /// carries the host chain identity.
@@ -74,15 +76,31 @@ impl<P: Provider> HostRpcClient<P> {
         signature: &[u8],
         gas_limit: u64,
     ) -> Result<(), RequestCheckError> {
-        user_decryption_signature::verify_signature(
+        let accepted = user_decryption_signature::verify_signature(
             self.acl_contract.provider(),
             claimed_signer,
             digest,
             signature,
-            gas_limit,
+            Erc1271GasBudget {
+                limit: gas_limit,
+                warn_above: ERC1271_GAS_WARN_THRESHOLD,
+            },
         )
         .await
-        .map_err(|e| RequestCheckError::from(e).context(format!("on host chain {}", self.chain_id)))
+        .map_err(|e| {
+            RequestCheckError::from(e).context(format!("on host chain {}", self.chain_id))
+        })?;
+
+        if accepted == Erc1271Accepted::AboveWarnThreshold {
+            warn!(
+                signer = %claimed_signer,
+                chain_id = self.chain_id,
+                warn_above = ERC1271_GAS_WARN_THRESHOLD,
+                gas_limit,
+                "ERC-1271 verification needed more gas than expected"
+            );
+        }
+        Ok(())
     }
 
     fn acl_err(&self, e: impl Into<anyhow::Error>) -> RequestCheckError {

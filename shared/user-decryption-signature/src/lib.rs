@@ -50,6 +50,32 @@ pub const DEFAULT_DOMAIN_VERSION: &str = "1";
 /// ERC-1271 magic return value: `bytes4(keccak256("isValidSignature(bytes32,bytes)"))`.
 pub const ERC1271_MAGIC_VALUE: [u8; 4] = [0x16, 0x26, 0xba, 0x7e];
 
+/// Gas budgets for the ERC-1271 `isValidSignature` STATICCALL.
+#[derive(Debug, Clone, Copy)]
+pub struct Erc1271GasBudget {
+    /// Hard cap on the call.
+    pub limit: u64,
+    /// Tripwire. The call is attempted with this budget first; needing more is reported as
+    /// [`Erc1271Accepted::AboveWarnThreshold`] so callers can flag an unusually expensive
+    /// wallet before it approaches `limit`.
+    pub warn_above: u64,
+}
+
+/// Gas a wallet is expected to stay under. Exceeding it is legitimate — a Safe owning a Safe
+/// costs ~91k — but rare enough to be worth a log line.
+pub const ERC1271_GAS_WARN_THRESHOLD: u64 = 100_000;
+
+/// How a signature was accepted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Erc1271Accepted {
+    /// `ecrecover` matched the claimed signer; no on-chain call was made.
+    Ecrecover,
+    /// The ERC-1271 call returned the magic value within [`Erc1271GasBudget::warn_above`].
+    WithinWarnThreshold,
+    /// The ERC-1271 call needed more than [`Erc1271GasBudget::warn_above`].
+    AboveWarnThreshold,
+}
+
 #[derive(Debug, Error)]
 pub enum Erc1271Error {
     #[error("ecrecover signer mismatch and userAddress {0} has no contract code on host chain")]
@@ -62,6 +88,11 @@ pub enum Erc1271Error {
         "ERC-1271 isValidSignature reverted or returned malformed data for userAddress {0}: {1}"
     )]
     Rejected(Address, String),
+    #[error(
+        "ERC-1271 isValidSignature reverted with no reason for userAddress {0}; \
+         typically an under-gassed call, or a wallet that reverts without a reason"
+    )]
+    EmptyRevert(Address),
     #[error("RPC transport error during ERC-1271 verification: {0}")]
     Transport(String),
 }
@@ -115,7 +146,8 @@ fn try_ecrecover(digest: &B256, signature: &[u8]) -> Option<Address> {
 ///   outcome, slightly inaccurate error message; not worth a second RPC to disambiguate.
 /// - returndata length 1..32 → `Rejected` (non-compliant ABI return);
 /// - leading bytes don't match magic → `WrongMagic`;
-/// - `isValidSignature` call reverted → `Rejected`;
+/// - `isValidSignature` reverted with a reason → `Rejected`;
+/// - `isValidSignature` reverted with no reason → `EmptyRevert` (ambiguous, retryable);
 /// - any other RPC-layer error → `Transport`.
 async fn check_erc1271_signature<P: Provider>(
     provider: &P,
@@ -136,11 +168,17 @@ async fn check_erc1271_signature<P: Provider>(
     let returndata = provider.call(tx).await.map_err(|err| match err {
         RpcError::ErrorResp(e) => {
             if let Some(revert_data) = e.as_revert_data() {
-                // A revert is interpreted as an invalid signature
-                Erc1271Error::Rejected(
-                    addr,
-                    format!("isValidSignature call reverted: {revert_data}"),
-                )
+                // Nodes answer an under-gassed call with `execution reverted` and
+                // `data: "0x"`, which `as_revert_data` still reports as revert data. Only a
+                // reason makes the rejection deterministic.
+                if revert_data.is_empty() {
+                    Erc1271Error::EmptyRevert(addr)
+                } else {
+                    Erc1271Error::Rejected(
+                        addr,
+                        format!("isValidSignature call reverted: {revert_data}"),
+                    )
+                }
             } else {
                 Erc1271Error::Transport(e.to_string())
             }
@@ -183,21 +221,37 @@ async fn check_erc1271_signature<P: Provider>(
 ///    iff the call returns the canonical magic value `0x1626ba7e`. Empty returndata is
 ///    interpreted as "no code at `claimed_signer`" — a single RPC handles both the
 ///    smart-account path and the EOA-mismatch reject.
+///
+/// The call is attempted with [`Erc1271GasBudget::warn_above`] first and retried with the full
+/// `limit` only if that budget produced a reasonless revert, so an unusually expensive wallet
+/// is reported to the caller ([`Erc1271Accepted::AboveWarnThreshold`]) at the cost of one extra
+/// RPC on that path alone.
 pub async fn verify_signature<P: Provider>(
     provider: &P,
     claimed_signer: Address,
     digest: B256,
     signature: &[u8],
-    gas_limit: u64,
-) -> Result<(), Erc1271Error> {
+    gas: Erc1271GasBudget,
+) -> Result<Erc1271Accepted, Erc1271Error> {
     if !signature.is_empty()
         && let Some(recovered) = try_ecrecover(&digest, signature)
         && recovered == claimed_signer
     {
-        return Ok(());
+        return Ok(Erc1271Accepted::Ecrecover);
     }
 
-    check_erc1271_signature(provider, claimed_signer, digest, signature, gas_limit).await
+    let warn_above = gas.warn_above.min(gas.limit);
+    match check_erc1271_signature(provider, claimed_signer, digest, signature, warn_above).await {
+        Ok(()) => Ok(Erc1271Accepted::WithinWarnThreshold),
+        // Exhausting the budget is indistinguishable from a wallet that reverts without a
+        // reason, so the only way to tell them apart is to offer the full budget and see.
+        Err(Erc1271Error::EmptyRevert(_)) if warn_above < gas.limit => {
+            check_erc1271_signature(provider, claimed_signer, digest, signature, gas.limit)
+                .await
+                .map(|()| Erc1271Accepted::AboveWarnThreshold)
+        }
+        Err(e) => Err(e),
+    }
 }
 
 impl From<&UserDecryptionRequestPayload> for UserDecryptRequestVerification {
@@ -275,7 +329,7 @@ mod tests {
         let gateway = Address::from([0xCA; 20]);
         let (signer, _, digest, sig) = signed_payload(gateway);
 
-        verify_signature(&provider, signer.address(), digest, &sig, 100_000)
+        verify_signature(&provider, signer.address(), digest, &sig, TEST_GAS)
             .await
             .unwrap();
 
@@ -297,7 +351,7 @@ mod tests {
 
         asserter.push_success(&Bytes::default());
 
-        let err = verify_signature(&provider, claimed, digest, &sig, 100_000)
+        let err = verify_signature(&provider, claimed, digest, &sig, TEST_GAS)
             .await
             .unwrap_err();
         assert!(matches!(err, Erc1271Error::EoaMismatchNoCode(_)));
@@ -312,7 +366,7 @@ mod tests {
 
         asserter.push_success(&Bytes::default());
 
-        let err = verify_signature(&provider, claimed, digest, &[], 100_000)
+        let err = verify_signature(&provider, claimed, digest, &[], TEST_GAS)
             .await
             .unwrap_err();
         assert!(matches!(err, Erc1271Error::EmptySigOnEoa(_)));
@@ -331,7 +385,7 @@ mod tests {
         returndata[..4].copy_from_slice(&ERC1271_MAGIC_VALUE);
         asserter.push_success(&returndata);
 
-        verify_signature(&provider, claimed, digest, &sig, 100_000)
+        verify_signature(&provider, claimed, digest, &sig, TEST_GAS)
             .await
             .unwrap();
     }
@@ -347,11 +401,18 @@ mod tests {
         // 32 bytes of zeros — wrong magic
         asserter.push_success(&[0u8; 32]);
 
-        let err = verify_signature(&provider, claimed, digest, &sig, 100_000)
+        let err = verify_signature(&provider, claimed, digest, &sig, TEST_GAS)
             .await
             .unwrap_err();
         assert!(matches!(err, Erc1271Error::WrongMagic(..)));
     }
+
+    /// Single-budget default: `warn_above == limit`, so no second attempt is made and each
+    /// test asserts against exactly one mocked response.
+    const TEST_GAS: Erc1271GasBudget = Erc1271GasBudget {
+        limit: 100_000,
+        warn_above: 100_000,
+    };
 
     /// Build a JSON-RPC error payload that mimics what an Ethereum node sends when the call
     /// reverts: a message containing "revert" plus a `data` field whose string value parses
@@ -373,10 +434,58 @@ mod tests {
 
         asserter.push_failure(revert_payload("0xdeadbeef"));
 
-        let err = verify_signature(&provider, claimed, digest, &sig, 100_000)
+        let err = verify_signature(&provider, claimed, digest, &sig, TEST_GAS)
             .await
             .unwrap_err();
         assert!(matches!(err, Erc1271Error::Rejected(_, _)));
+    }
+
+    #[tokio::test]
+    async fn erc1271_empty_revert_is_not_a_definitive_rejection() {
+        // `data: "0x"` is what a node returns for an under-gassed call. `as_revert_data`
+        // accepts it, so only the emptiness check keeps it out of `Rejected`.
+        let asserter = Asserter::new();
+        let provider = mock_provider(asserter.clone());
+        let claimed = Address::from([0xDE; 20]);
+        let digest = B256::from([0u8; 32]);
+        let sig = vec![0x11_u8; 65];
+
+        asserter.push_failure(revert_payload("0x"));
+
+        let err = verify_signature(&provider, claimed, digest, &sig, TEST_GAS)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, Erc1271Error::EmptyRevert(_)), "got {err:?}");
+    }
+
+    #[tokio::test]
+    async fn erc1271_above_warn_threshold_retries_with_full_budget() {
+        // The wallet exhausts `warn_above` and succeeds within `limit`: accepted, and flagged
+        // so the caller can log how expensive it was.
+        let asserter = Asserter::new();
+        let provider = mock_provider(asserter.clone());
+        let claimed = Address::from([0xDE; 20]);
+        let digest = B256::from([0u8; 32]);
+        let sig = vec![0x11_u8; 65];
+
+        asserter.push_failure(revert_payload("0x"));
+        let mut returndata = [0u8; 32];
+        returndata[..4].copy_from_slice(&ERC1271_MAGIC_VALUE);
+        asserter.push_success(&returndata);
+
+        let accepted = verify_signature(
+            &provider,
+            claimed,
+            digest,
+            &sig,
+            Erc1271GasBudget {
+                limit: 250_000,
+                warn_above: 100_000,
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(accepted, Erc1271Accepted::AboveWarnThreshold);
     }
 
     #[tokio::test]
@@ -391,7 +500,7 @@ mod tests {
 
         asserter.push_failure_msg("rate limit exceeded");
 
-        let err = verify_signature(&provider, claimed, digest, &sig, 100_000)
+        let err = verify_signature(&provider, claimed, digest, &sig, TEST_GAS)
             .await
             .unwrap_err();
         assert!(matches!(err, Erc1271Error::Transport(_)));
@@ -408,7 +517,7 @@ mod tests {
         // Only 4 bytes returned — a non-compliant fallback function
         asserter.push_success(&ERC1271_MAGIC_VALUE);
 
-        let err = verify_signature(&provider, claimed, digest, &sig, 100_000)
+        let err = verify_signature(&provider, claimed, digest, &sig, TEST_GAS)
             .await
             .unwrap_err();
         assert!(matches!(err, Erc1271Error::Rejected(_, _)));
@@ -426,7 +535,7 @@ mod tests {
         returndata[..4].copy_from_slice(&ERC1271_MAGIC_VALUE);
         asserter.push_success(&returndata);
 
-        verify_signature(&provider, claimed, digest, &[], 100_000)
+        verify_signature(&provider, claimed, digest, &[], TEST_GAS)
             .await
             .unwrap();
     }
@@ -444,7 +553,7 @@ mod tests {
         returndata[..4].copy_from_slice(&ERC1271_MAGIC_VALUE);
         asserter.push_success(&returndata);
 
-        verify_signature(&provider, claimed, digest, &sig, 100_000)
+        verify_signature(&provider, claimed, digest, &sig, TEST_GAS)
             .await
             .unwrap();
     }

@@ -216,7 +216,10 @@ fn default_s3_connect_timeout() -> Duration {
 }
 
 fn default_erc1271_gas_limit() -> u64 {
-    100_000
+    // Bounds a read-only STATICCALL. A nested Safe (a Safe owning a Safe) costs ~91k gas;
+    // the rest is headroom for deeper nesting, and `ERC1271_GAS_WARN_THRESHOLD` logs a call
+    // that needs more than 100k. Kept equal to the relayer config and the js-sdk.
+    250_000
 }
 
 fn default_ct_attestation_verifier_enabled() -> bool {

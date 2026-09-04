@@ -18,13 +18,15 @@ use std::str::FromStr;
 use std::time::Duration;
 use tracing::warn;
 use user_decryption_signature::{
-    compute_user_decrypt_digest, default_user_decrypt_domain, verify_signature, Erc1271Error,
+    compute_user_decrypt_digest, default_user_decrypt_domain, verify_signature, Erc1271Accepted,
+    Erc1271Error, Erc1271GasBudget, ERC1271_GAS_WARN_THRESHOLD,
 };
 
 /// Outcome of a failed pre-check.
 #[derive(Debug, thiserror::Error)]
 pub enum SigPreCheckError {
-    /// The signature is definitively invalid — the request must not be forwarded.
+    /// The signature is invalid, or reverted without a reason on every attempt — either
+    /// way the request must not be forwarded.
     #[error("invalid user-decryption signature for {signer}: {reason}")]
     Invalid { signer: Address, reason: String },
     /// The host-chain call could not complete (transport error after retries). Surfaced as a
@@ -77,8 +79,8 @@ impl UserDecryptSignaturePreChecker {
 
     /// Verify the signature on a unified v3 request. Non-unified variants are a no-op (the
     /// pre-check is wired only into the v3 endpoint). Recomputes the EIP-712 digest, then runs
-    /// the shared verifier, retrying transport errors like the host ACL checks do and rejecting
-    /// only on definitive verification failures.
+    /// the shared verifier, retrying transport failures and reasonless reverts like the host
+    /// ACL checks do, and rejecting on definitive verification failures.
     pub async fn verify(&self, request: &UserDecryptRequest) -> Result<(), SigPreCheckError> {
         let UserDecryptRequest::Eip712UnifiedV1 {
             handles,
@@ -115,7 +117,7 @@ impl UserDecryptSignaturePreChecker {
 
         let max_attempts = self.retry.max_attempts.max(1);
         let interval = Duration::from_millis(self.retry.retry_interval_ms);
-        let mut last_transport_err = String::new();
+        let mut last_retryable: Option<Erc1271Error> = None;
 
         for attempt in 0..max_attempts {
             match verify_signature(
@@ -123,28 +125,42 @@ impl UserDecryptSignaturePreChecker {
                 user_address,
                 digest,
                 signature.as_ref(),
-                self.erc1271_gas_limit,
+                Erc1271GasBudget {
+                    limit: self.erc1271_gas_limit,
+                    warn_above: ERC1271_GAS_WARN_THRESHOLD,
+                },
             )
             .await
             {
-                Ok(()) => return Ok(()),
-                // Transport errors are non-deterministic — retry like the host ACL checks do.
-                Err(Erc1271Error::Transport(msg)) => {
-                    last_transport_err = msg;
+                Ok(Erc1271Accepted::AboveWarnThreshold) => {
+                    warn!(
+                        signer = %user_address,
+                        chain_id,
+                        warn_above = ERC1271_GAS_WARN_THRESHOLD,
+                        gas_limit = self.erc1271_gas_limit,
+                        "ERC-1271 verification needed more gas than expected"
+                    );
+                    return Ok(());
+                }
+                Ok(_) => return Ok(()),
+                // Retry what is not proof of a bad signature: transport failures, and
+                // reasonless reverts, which an under-gassed call produces too.
+                Err(e @ (Erc1271Error::Transport(_) | Erc1271Error::EmptyRevert(_))) => {
                     if attempt + 1 < max_attempts {
                         warn!(
                             signer = %user_address,
                             chain_id,
                             attempt = attempt + 1,
                             max_attempts,
-                            error = %last_transport_err,
+                            error = %e,
                             "Signature pre-check RPC failed, retrying"
                         );
                         tokio::time::sleep(interval).await;
                     }
+                    last_retryable = Some(e);
                 }
                 // Every other variant is a definitive rejection (ecrecover mismatch, wrong/empty
-                // ERC-1271 magic, revert, short returndata). The error Display encodes the path.
+                // ERC-1271 magic, reasoned revert, short returndata). The Display encodes the path.
                 Err(e) => {
                     return Err(SigPreCheckError::Invalid {
                         signer: user_address,
@@ -154,7 +170,18 @@ impl UserDecryptSignaturePreChecker {
             }
         }
 
-        Err(SigPreCheckError::HostCallFailed(last_transport_err))
+        match last_retryable {
+            // Survived every attempt: no longer plausibly transient, so answer as a
+            // rejection rather than a server error.
+            Some(e @ Erc1271Error::EmptyRevert(_)) => Err(SigPreCheckError::Invalid {
+                signer: user_address,
+                reason: e.to_string(),
+            }),
+            Some(e) => Err(SigPreCheckError::HostCallFailed(e.to_string())),
+            None => Err(SigPreCheckError::HostCallFailed(
+                "signature pre-check exhausted its attempts without a result".to_string(),
+            )),
+        }
     }
 }
 
