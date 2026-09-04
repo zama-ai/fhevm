@@ -101,7 +101,7 @@ jobs:
   quality:
     name: dod quality (build:prod + unit)
     if: ${{ github.event_name == 'pull_request' || inputs.mode == 'real' }}
-    runs-on: ubuntu-latest
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64/extras=s3-cache
     timeout-minutes: 30
     permissions:
       contents: "read" # checkout the repository
@@ -126,7 +126,7 @@ jobs:
   build-dev:
     name: dod build:dev
     if: ${{ github.event_name == 'pull_request' || inputs.mode == 'real' }}
-    runs-on: ubuntu-latest
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64/extras=s3-cache
     timeout-minutes: 30
     permissions:
       contents: "read" # checkout the repository
@@ -150,7 +150,7 @@ jobs:
   browser:
     name: dod browser
     if: ${{ github.event_name == 'pull_request' || inputs.mode == 'real' }}
-    runs-on: ubuntu-latest
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64/extras=s3-cache
     timeout-minutes: 30
     permissions:
       contents: "read" # checkout the repository
@@ -176,7 +176,7 @@ jobs:
   cleartext:
     name: dod cleartext ${{ matrix.profile }}
     if: ${{ github.event_name == 'pull_request' || inputs.mode == 'real' }}
-    runs-on: ubuntu-latest
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64/extras=s3-cache
     timeout-minutes: 40
     permissions:
       contents: "read" # checkout the repository
@@ -222,7 +222,7 @@ jobs:
   localstack:
     name: dod localstack ${{ matrix.name }}
     if: ${{ github.event_name == 'pull_request' || inputs.mode == 'real' }}
-    runs-on: large_ubuntu_32
+    runs-on: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/extras=s3-cache
     timeout-minutes: 60
     permissions:
       contents: "read" # checkout the repository
