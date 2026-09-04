@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE computations\n             SET operand_boundary_mask = $3\n             WHERE output_handle = $1 AND transaction_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Bytea",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e437fabd3627468fe1e1802deaea9941581ae3056298141447a1c239ff586f3d"
+}

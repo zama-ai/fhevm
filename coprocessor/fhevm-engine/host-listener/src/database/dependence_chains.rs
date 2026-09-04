@@ -777,6 +777,11 @@ mod tests {
 
     /// What each listener ingests, plus the transaction they disagree about:
     /// (primary blocks, catchup blocks, split transaction).
+    /// Like [`ListenerFixture`], plus the handle whose mask the two views
+    /// disagree about.
+    pub(super) type MaskFixture =
+        (Vec<(u64, Vec<LogTfhe>)>, Vec<(u64, Vec<LogTfhe>)>, Handle);
+
     pub(super) type ListenerFixture = (
         Vec<(u64, Vec<LogTfhe>)>,
         Vec<(u64, Vec<LogTfhe>)>,
@@ -836,6 +841,44 @@ mod tests {
             vec![(1, block1), (2, partial_block2)],
             vec![(2, full_block2)],
             split_tx,
+        )
+    }
+
+    /// The mirror of [`primary_and_catchup_logs`], in the direction that stores
+    /// a WRONG answer rather than merely a split one.
+    ///
+    /// There the primary misses the LAST operation of the transaction, which
+    /// costs nothing: the operations it does see have correct masks, because a
+    /// later operation cannot change whether an earlier one's operands were
+    /// minted in the transaction. Here it misses the FIRST, and the operation it
+    /// does see has an operand that WAS minted in this transaction by an event
+    /// outside its view. It therefore derives a boundary bit where the truth is
+    /// transaction-local, and `ON CONFLICT DO NOTHING` would freeze that.
+    ///
+    /// Returns the two listeners' blocks and the handle of the operation whose
+    /// mask the two views disagree about.
+    pub(super) fn primary_missing_first_op_logs() -> MaskFixture {
+        let tx1 = TransactionHash::with_last_byte(0x31);
+        let split_tx = TransactionHash::with_last_byte(0x32);
+
+        let mut block1 = vec![];
+        let root = input_handle(&mut block1, tx1);
+        let produced = op1(root, &mut block1, tx1);
+
+        let mut full_block2 = vec![];
+        // `first`'s operand comes from another transaction, so its own mask is
+        // boundary-set in every view -- it is `second` that the views disagree
+        // about.
+        let first = op1(produced, &mut full_block2, split_tx);
+        let second = op1(first, &mut full_block2, split_tx);
+
+        let mut partial_block2 = copy_logs(&full_block2);
+        partial_block2.remove(0);
+
+        (
+            vec![(1, copy_logs(&block1)), (2, partial_block2)],
+            vec![(2, full_block2)],
+            second,
         )
     }
 
@@ -1669,6 +1712,77 @@ mod multi_listener_tests {
     use fhevm_engine_common::chain_id::ChainId;
     use serial_test::serial;
     use test_harness::instance::ImportMode;
+
+    /// A mask derived from a partial view must not outlive the view.
+    ///
+    /// The bit means "no view of mine minted this operand", so it is an absence
+    /// of evidence; a clear bit is positive evidence that some view saw the
+    /// producer. Re-observation can therefore only ever clear bits, which makes
+    /// the repair monotonic and order-independent — asserted here in both
+    /// directions, because a plain last-write-wins update would pass the first
+    /// assertion and fail the last.
+    #[tokio::test]
+    #[serial(db)]
+    async fn a_complete_re_observation_repairs_a_partial_view_mask() {
+        use super::tests::primary_missing_first_op_logs;
+
+        let instance = test_harness::instance::setup_test_db(ImportMode::None)
+            .await
+            .expect("test database");
+        let chain_id = ChainId::try_from(42_u64).expect("chain id");
+        let primary = Database::new(&instance.db_url, chain_id, 10_000)
+            .await
+            .expect("primary listener");
+        let catchup = Database::new(&instance.db_url, chain_id, 10_000)
+            .await
+            .expect("catchup listener");
+
+        let (mut primary_blocks, mut catchup_blocks, second) =
+            primary_missing_first_op_logs();
+        for (number, logs) in primary_blocks.iter_mut() {
+            ingest_block(&primary, logs, *number).await;
+        }
+
+        let pool = primary.pool.read().await.clone();
+        let mask_of_second = |pool: sqlx::Pool<sqlx::Postgres>| async move {
+            sqlx::query_scalar::<_, Vec<u8>>(
+                "SELECT operand_boundary_mask FROM computations
+                 WHERE output_handle = $1",
+            )
+            .bind(second.as_slice())
+            .fetch_one(&pool)
+            .await
+            .expect("stored mask")
+        };
+
+        // Vacuity guard: if the partial view stops storing the wrong answer,
+        // every assertion below passes for the wrong reason.
+        let partial = mask_of_second(pool.clone()).await;
+        assert_eq!(
+            partial[31], 0b11,
+            "the partial view must actually store both operands as boundaries"
+        );
+
+        for (number, logs) in catchup_blocks.iter_mut() {
+            ingest_block(&catchup, logs, *number).await;
+        }
+        assert_eq!(
+            mask_of_second(pool.clone()).await,
+            vec![0_u8; 32],
+            "a complete re-observation must clear the operand bits it proves \
+             transaction-local"
+        );
+
+        // And the poorer view, arriving again afterwards, must not undo it.
+        for (number, logs) in primary_blocks.iter_mut() {
+            ingest_block(&primary, logs, *number).await;
+        }
+        assert_eq!(
+            mask_of_second(pool).await,
+            vec![0_u8; 32],
+            "a partial view must never re-set a bit a complete one cleared"
+        );
+    }
 
     #[tokio::test]
     #[serial(db)]

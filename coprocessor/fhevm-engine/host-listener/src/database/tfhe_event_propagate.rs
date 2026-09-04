@@ -55,6 +55,32 @@ pub type ChainHash = TransactionHash;
 pub type OperandBoundaryMask = [u8; 32];
 pub const OPERAND_BOUNDARY_MASK_BYTES: usize = 32;
 
+/// Masks repaired on re-observation: a row was first written from a view that
+/// did not include an earlier producer of the same transaction, and a later,
+/// more complete view proved one of its operands transaction-local. Expected to
+/// be zero on a single-listener deployment; a sustained rate means some ingest
+/// path is regularly observing partial transactions.
+static OPERAND_MASK_REPAIRS_TOTAL: LazyLock<prometheus::IntCounter> =
+    LazyLock::new(|| {
+        prometheus::register_int_counter!(
+            "coprocessor_host_listener_operand_mask_repairs_total",
+            "Stored operand boundary masks corrected by a more complete re-observation"
+        )
+        .unwrap()
+    });
+
+/// Re-observations whose immutable content disagreed with the stored row. This
+/// is not a partial view -- it is two different computations claiming one
+/// (handle, transaction) identity, which no ordering can reconcile. Page on it.
+static OPERAND_MASK_CONTRADICTIONS_TOTAL: LazyLock<prometheus::IntCounter> =
+    LazyLock::new(|| {
+        prometheus::register_int_counter!(
+            "coprocessor_host_listener_operand_mask_contradictions_total",
+            "Re-observed computations whose immutable content disagreed with the stored row"
+        )
+        .unwrap()
+    });
+
 static SLOW_LANE_MARKED_CHAINS_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(
     || {
         register_int_counter_vec!(
@@ -736,6 +762,127 @@ impl Database {
         .await
     }
 
+    /// Reconciles a re-observed computation's boundary mask with the stored one.
+    ///
+    /// The mask is derived from the events VISIBLE when a row is first written,
+    /// and the insert is `ON CONFLICT DO NOTHING`, so a view that missed an
+    /// earlier producer of the same transaction freezes a wrong answer: it marks
+    /// an operand as a boundary (bit set) that a complete view would have marked
+    /// transaction-local (bit clear). The worker then sources that operand from
+    /// the durable side instead of from its in-transaction producer.
+    ///
+    /// The repair is a bitwise AND, and the direction is what makes it safe.
+    /// A set bit is an ABSENCE of evidence -- "no view I had minted this
+    /// operand" -- while a clear bit is POSITIVE evidence that some view saw the
+    /// producer. Positive evidence cannot be undone by a later, poorer view, so
+    /// AND is monotonic, idempotent and order-independent: whatever sequence of
+    /// partial views arrives, the stored mask converges on the one the most
+    /// complete view derives. A last-write-wins update would merely reverse
+    /// which race won.
+    ///
+    /// A NULL stored mask is a pre-mask legacy row -- no information -- so the
+    /// incoming mask is adopted whole.
+    ///
+    /// Disagreement on immutable content is a different animal and is refused:
+    /// two different computations cannot share one `(output_handle,
+    /// transaction_id)` identity, and no merge order reconciles that.
+    #[allow(clippy::too_many_arguments)]
+    async fn reconcile_operand_boundary_mask(
+        &self,
+        tx: &mut Transaction<'_>,
+        output_handle: &[u8],
+        dependencies: &[Vec<u8>],
+        fhe_operation: FheOperation,
+        is_scalar: bool,
+        transaction_id: Option<&Vec<u8>>,
+        incoming: &OperandBoundaryMask,
+    ) -> Result<(), SqlxError> {
+        let Some(transaction_id) = transaction_id else {
+            // Without a transaction id there is no conflict target to reconcile
+            // against; such rows are refused upstream of here.
+            return Ok(());
+        };
+        // FOR UPDATE: two ingest paths can reach the same row concurrently, and
+        // read-modify-write on a mask must not interleave.
+        let stored = sqlx::query!(
+            "SELECT operand_boundary_mask, dependencies, fhe_operation, is_scalar
+             FROM computations
+             WHERE output_handle = $1 AND transaction_id = $2
+             FOR UPDATE",
+            output_handle,
+            transaction_id,
+        )
+        .fetch_optional(tx.deref_mut())
+        .await?;
+        let Some(stored) = stored else {
+            // The conflicting row disappeared under us (a reorg cleanup); there
+            // is nothing to reconcile and the next observation re-inserts.
+            return Ok(());
+        };
+
+        let same_content = stored.fhe_operation == fhe_operation as i16
+            && stored.is_scalar == is_scalar
+            && stored.dependencies.as_slice() == dependencies;
+        if !same_content {
+            OPERAND_MASK_CONTRADICTIONS_TOTAL.inc();
+            error!(
+                target: "host_listener",
+                output_handle = %alloy_primitives::hex::encode(output_handle),
+                transaction_id = %alloy_primitives::hex::encode(transaction_id),
+                "re-observed computation contradicts the stored row's immutable content"
+            );
+            return Err(SqlxError::Protocol(
+                "re-observed computation contradicts stored immutable content"
+                    .into(),
+            ));
+        }
+
+        let merged: Vec<u8> = match stored.operand_boundary_mask.as_deref() {
+            None => incoming.to_vec(),
+            Some(current) if current.len() != incoming.len() => {
+                OPERAND_MASK_CONTRADICTIONS_TOTAL.inc();
+                error!(
+                    target: "host_listener",
+                    output_handle = %alloy_primitives::hex::encode(output_handle),
+                    stored_len = current.len(),
+                    incoming_len = incoming.len(),
+                    "stored operand boundary mask has an unexpected width"
+                );
+                return Err(SqlxError::Protocol(
+                    "stored operand boundary mask has an unexpected width"
+                        .into(),
+                ));
+            }
+            Some(current) => current
+                .iter()
+                .zip(incoming.iter())
+                .map(|(stored_byte, incoming_byte)| stored_byte & incoming_byte)
+                .collect(),
+        };
+
+        if stored.operand_boundary_mask.as_deref() == Some(merged.as_slice()) {
+            return Ok(());
+        }
+        sqlx::query!(
+            "UPDATE computations
+             SET operand_boundary_mask = $3
+             WHERE output_handle = $1 AND transaction_id = $2",
+            output_handle,
+            transaction_id,
+            merged.as_slice(),
+        )
+        .execute(tx.deref_mut())
+        .await?;
+        OPERAND_MASK_REPAIRS_TOTAL.inc();
+        warn!(
+            target: "host_listener",
+            output_handle = %alloy_primitives::hex::encode(output_handle),
+            transaction_id = %alloy_primitives::hex::encode(transaction_id),
+            "repaired an operand boundary mask from a more complete re-observation"
+        );
+        Ok(())
+    }
+
     async fn insert_computation_legacy_row(
         &self,
         tx: &mut Transaction<'_>,
@@ -790,10 +937,27 @@ impl Database {
             log.block_number as i64,
             operand_boundary_mask.as_slice(),
         );
-        query
+        let inserted = query
             .execute(tx.deref_mut())
             .await
-            .map(|result| result.rows_affected() > 0)
+            .map(|result| result.rows_affected() > 0)?;
+        if !inserted {
+            // `ON CONFLICT DO NOTHING` kept whatever was written first, mask
+            // included. If this observation saw more of the transaction, its
+            // mask proves operands local that the stored one calls boundaries,
+            // and that correction must not be dropped on the floor.
+            self.reconcile_operand_boundary_mask(
+                tx,
+                output_handle,
+                dependencies,
+                fhe_operation,
+                is_scalar,
+                log.transaction_hash.map(|txh| txh.to_vec()).as_ref(),
+                operand_boundary_mask,
+            )
+            .await?;
+        }
+        Ok(inserted)
     }
 
     #[rustfmt::skip]
