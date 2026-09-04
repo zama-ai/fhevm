@@ -1182,7 +1182,7 @@ impl LockMngr {
             // Before deleting: give demoted rows their next pass. Running the
             // sweep first means a chain re-armed here is no longer 'processed'
             // when the delete runs, so the two cannot race over it.
-            let rearmed = rearm_demoted_chains(&self.pool, self.demote_threshold).await?;
+            let rearmed = rearm_demoted_chains(&self.pool).await?;
             if rearmed > 0 {
                 info!(
                     rearmed,
@@ -1267,18 +1267,14 @@ impl LockMngr {
 /// Nothing here writes a verdict. A permanently failing row costs a bounded
 /// trickle of retries per sweep interval for as long as it exists, and is
 /// visible as a non-zero slow-lane gauge rather than as a condemned cone.
-pub(crate) async fn rearm_demoted_chains(
-    pool: &sqlx::Pool<Postgres>,
-    demote_threshold: i16,
-) -> Result<u64, sqlx::Error> {
-    rearm_demoted_chains_limited(pool, demote_threshold, SLOW_LANE_REARM_BATCH).await
+pub(crate) async fn rearm_demoted_chains(pool: &sqlx::Pool<Postgres>) -> Result<u64, sqlx::Error> {
+    rearm_demoted_chains_limited(pool, SLOW_LANE_REARM_BATCH).await
 }
 
 /// `rearm_demoted_chains` with an explicit batch size, so a test can show the
 /// ordering without seeding `SLOW_LANE_REARM_BATCH` chains.
 pub(crate) async fn rearm_demoted_chains_limited(
     pool: &sqlx::Pool<Postgres>,
-    demote_threshold: i16,
     batch: i64,
 ) -> Result<u64, sqlx::Error> {
     let result = sqlx::query!(
@@ -1305,12 +1301,29 @@ pub(crate) async fn rearm_demoted_chains_limited(
             -- Harmless in the degenerate case: if the transaction has no
             -- allowed row at all, the re-arm resets the count, the window
             -- still will not select the transaction, and the row stops
-            -- matching `error_retry_count >= $2` -- so this settles after one
-            -- pass instead of churning every sweep.
+            -- selectable, so this settles after one pass instead of churning
+            -- every sweep.
             WHERE c.is_completed = FALSE
               AND c.is_error = TRUE
               AND c.error_message LIKE '%' || $1 || '%'
-              AND c.error_retry_count >= $2
+              -- NO comparison against the demote threshold, deliberately.
+              -- Demotion is not persisted: it is inferred as
+              -- `retryable && error_retry_count >= <current threshold>`. Read
+              -- the same way here, the sweep stops recognising work it retired
+              -- under a LOWER threshold -- raise 3 to 5 and a row demoted at 3
+              -- matches neither the window (`count < 5`, but its chain is
+              -- already processed and unowned, so acquisition cannot reach it)
+              -- nor this sweep (`3 >= 5` is false). Retention keeps the row,
+              -- and nothing ever runs it again: a permanent wedge from a config
+              -- change alone.
+              --
+              -- The predicate is unnecessary as well as harmful. This CTE
+              -- already requires `dc.status = 'processed'` with no owner, and a
+              -- chain only reaches that state while a retryable row of it is
+              -- still pending BECAUSE that row was demoted -- the completion
+              -- test counts every non-demoted retryable row as a blocker. So on
+              -- an unowned processed chain, a pending retryable row is demoted
+              -- by construction, whatever the current threshold says.
               -- Only chains nothing is working on. A 'processing' chain is
               -- owned and will retire on its own terms; re-arming it under its
               -- owner would strand the lease.
@@ -1324,13 +1337,13 @@ pub(crate) async fn rearm_demoted_chains_limited(
             -- below, which sends it to the back.
             GROUP BY c.dependence_chain_id
             ORDER BY MIN(dc.last_updated_at) ASC, c.dependence_chain_id ASC
-            LIMIT $3
+            LIMIT $2
         ),
         rearmed AS (
             UPDATE dependence_chain dc
             SET status = 'updated',
                 dependency_count = 0,
-                schedule_priority = $4,
+                schedule_priority = $3,
                 last_updated_at = NOW()
             FROM demoted
             WHERE dc.dependence_chain_id = demoted.dependence_chain_id
@@ -1360,7 +1373,6 @@ pub(crate) async fn rearm_demoted_chains_limited(
             (SELECT count(*) FROM reset) AS "reset!"
         "#,
         RETRYABLE_STAMP_MARKER,
-        demote_threshold,
         batch,
         i16::from(SchedulePriority::Slow),
     )

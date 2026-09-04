@@ -1696,7 +1696,7 @@ async fn demotion_is_transaction_scoped_so_a_blocked_sibling_cannot_stall_the_ch
     // 5. Retiring is what lets the sweep see it -- it only looks at processed
     //    chains -- so the loop closes: re-armed into the slow lane, A's count
     //    reset, and the transaction selectable again on the next pass.
-    let rearmed = rearm_demoted_chains(&pool, threshold).await.unwrap();
+    let rearmed = rearm_demoted_chains(&pool).await.unwrap();
     assert_eq!(
         rearmed, 3,
         "every chain owning a demoted row is re-armed: the stalled one, the \
@@ -1835,7 +1835,7 @@ async fn test_demote_retire_sweep_and_retention_loop() {
     // 2. The sweep re-arms the demoted chain into the slow lane and resets the
     //    count, so the work window selects the row again. The terminal chain is
     //    left alone — there is nothing to retry.
-    let rearmed = rearm_demoted_chains(&pool, threshold).await.unwrap();
+    let rearmed = rearm_demoted_chains(&pool).await.unwrap();
     assert_eq!(rearmed, 1, "only the demoted chain is re-armed");
 
     let (status, _, dependency_count) = chain_state(&pool, &demoted_chain).await;
@@ -1927,6 +1927,74 @@ async fn chain_state(pool: &sqlx::PgPool, dcid: &[u8]) -> (String, Option<Uuid>,
 /// (status='processed', lock_expires_at IS NULL) — the computation would be
 /// lost outright. A deterministic stamp, by contrast, IS terminal and must
 /// let the chain retire.
+/// A row demoted under one threshold must still be swept after the threshold
+/// changes.
+///
+/// Demotion is not persisted anywhere: it is inferred as `retryable stamp &&
+/// error_retry_count >= <the threshold this process was started with>`. While
+/// the sweep read it the same way, raising the threshold stranded everything
+/// already retired under the lower one — a row at 3 stopped matching `>= 5`,
+/// and its chain was `processed` and unowned, so ordinary acquisition could not
+/// reach it either. Permanent, from a config change alone.
+///
+/// The sweep therefore does not consult the threshold at all, which this pins:
+/// a count of 3 is re-armed with no threshold anywhere in the call.
+#[tokio::test]
+#[serial(db)]
+async fn rearm_sweeps_a_row_demoted_under_a_lower_threshold() {
+    let instance = setup().await;
+    let pool = PgPoolOptions::new()
+        .max_connections(2)
+        .connect(instance.db_url())
+        .await
+        .expect("Failed to connect to the database");
+
+    let stranded = b"stranded-chain-000".to_vec();
+    seed_chain(&pool, &stranded, 0, &[]).await;
+    seed_computation_row(
+        &pool,
+        &stranded,
+        b"stranded-output00",
+        false,
+        true,
+        Some("RETRYABLE SchedulerError::ExecutionPanic(device fault)"),
+    )
+    .await;
+    // Retired under a threshold of 3, and the worker now runs with 5.
+    sqlx::query("UPDATE computations SET error_retry_count = 3 WHERE output_handle = $1")
+        .bind(b"stranded-output00".to_vec())
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "UPDATE dependence_chain SET status = 'processed', worker_id = NULL
+         WHERE dependence_chain_id = $1",
+    )
+    .bind(&stranded)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let rearmed = rearm_demoted_chains(&pool).await.unwrap();
+    assert_eq!(
+        rearmed, 1,
+        "a demoted row on an unowned processed chain must be re-armed whatever \
+         threshold the process now carries"
+    );
+    let (status, _, _) = chain_state(&pool, &stranded).await;
+    assert_eq!(
+        status, "updated",
+        "the chain must come back, or nothing can ever run the row again"
+    );
+    let count: i16 =
+        sqlx::query_scalar("SELECT error_retry_count FROM computations WHERE output_handle = $1")
+            .bind(b"stranded-output00".to_vec())
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(count, 0, "the sweep re-arms with the attempt count reset");
+}
+
 #[tokio::test]
 #[serial(db)]
 async fn test_release_completed_lock_keeps_chain_with_retryable_stamp() {
@@ -2427,9 +2495,7 @@ async fn rearm_demoted_chains_serves_oldest_first() {
     }
 
     // The oldest chain is 0xC3; it must be the one served.
-    let rearmed = rearm_demoted_chains_limited(&pool, threshold, 1)
-        .await
-        .unwrap();
+    let rearmed = rearm_demoted_chains_limited(&pool, 1).await.unwrap();
     assert_eq!(rearmed, 1);
     let (status, _, _) = chain_state(&pool, &[0xC3u8; 32]).await;
     assert_eq!(
@@ -2446,9 +2512,7 @@ async fn rearm_demoted_chains_serves_oldest_first() {
 
     // Re-arming stamps NOW(), so the next pass moves on rather than
     // re-serving the same chain.
-    let rearmed = rearm_demoted_chains_limited(&pool, threshold, 1)
-        .await
-        .unwrap();
+    let rearmed = rearm_demoted_chains_limited(&pool, 1).await.unwrap();
     assert_eq!(rearmed, 1);
     let (status, _, _) = chain_state(&pool, &[0xC2u8; 32]).await;
     assert_eq!(
