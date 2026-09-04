@@ -307,7 +307,8 @@ pub async fn insert_test_public_decrypt_error_response(
         )
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         ON CONFLICT (decryption_id) DO UPDATE SET
-            error_code = EXCLUDED.error_code, error_details = EXCLUDED.error_details",
+            error_code = EXCLUDED.error_code, error_details = EXCLUDED.error_details,
+            created_at = EXCLUDED.created_at",
         decryption_id.as_le_slice(),
         error_code,
         error_details,
@@ -336,7 +337,8 @@ pub async fn insert_test_user_decrypt_error_response(
         )
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         ON CONFLICT (decryption_id) DO UPDATE SET
-            error_code = EXCLUDED.error_code, error_details = EXCLUDED.error_details",
+            error_code = EXCLUDED.error_code, error_details = EXCLUDED.error_details,
+            created_at = EXCLUDED.created_at",
         decryption_id.as_le_slice(),
         error_code,
         error_details,

@@ -9,14 +9,19 @@
 //!    means the kms-worker is already on it and we attach),
 //! 6. wait for the response listener to wake the waiter, then read the response row.
 
-use crate::core::http::AppState;
+use crate::core::{http::AppState, waiters::WaiterGuard};
 use actix_web::HttpResponse;
 use alloy::primitives::B256;
 use anyhow::anyhow;
 use connector_utils::monitoring::otlp::PropagationContext;
 use kms_connector_api::{ErrorCode, ErrorResponse};
-use sqlx::{PgExecutor, Postgres, Transaction, postgres::PgQueryResult};
+use sqlx::{
+    PgExecutor, Postgres, Transaction,
+    postgres::PgQueryResult,
+    types::chrono::{DateTime, Utc},
+};
 use std::{future::Future, sync::Arc};
+use tokio::{sync::oneshot, time::Instant};
 use tracing::{debug, info, warn};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
@@ -39,11 +44,26 @@ pub trait DecryptionRoute {
     /// The `error_code` of an error row, `None` for a payload row.
     fn error_code(response_row: &Self::ResponseRow) -> Option<ErrorCode>;
 
+    /// The `created_at` of a response row.
+    fn created_at(response_row: &Self::ResponseRow) -> DateTime<Utc>;
+
     /// `200` body or mapped error from a response row.
     fn build_response(
         id: B256,
         response_row: Self::ResponseRow,
     ) -> Result<HttpResponse, ErrorResponse>;
+}
+
+/// Outcome of the lookup transaction of [`find_response_or_store_request`].
+enum LookupOutcome<Row> {
+    /// A payload or non-retryable error row to serve as is.
+    Serve(Row),
+    /// The request is stored for processing, its response has to be waited for.
+    Stored,
+    /// The request is stored for reprocessing, after a retryable error row was skipped.
+    Retry {
+        old_response_created_at: DateTime<Utc>,
+    },
 }
 
 /// Handles a validated decryption request.
@@ -61,51 +81,57 @@ pub async fn handle<R: DecryptionRoute>(
             Some(id),
         ));
     };
-    let (_guard, receiver) = state.waiters.register(id, permit);
+    let (guard, receiver) = state.waiters.register(id, permit);
 
-    let response_row = find_response_or_store_request::<R>(state, id, request)
+    let lookup = find_response_or_store_request::<R>(state, id, request)
         .await
         .map_err(|e| {
             warn!(decryption_id = %id, "Failed to find response or store request: {e}");
             upstream_transient("temporary storage error", id)
         })?;
 
-    let row = match response_row {
-        Some(row) => {
-            debug!(decryption_id = %id, "Serving existing response row");
-            row
+    let row = match lookup {
+        LookupOutcome::Serve(row) => row,
+        LookupOutcome::Stored => {
+            wait_and_read_response::<R>(state, id, &guard, receiver, None).await?
         }
-        None => wait_and_read_response::<R>(state, id, receiver).await?,
+        LookupOutcome::Retry {
+            old_response_created_at,
+        } => {
+            wait_and_read_response::<R>(state, id, &guard, receiver, Some(old_response_created_at))
+                .await?
+        }
     };
 
     R::build_response(id, row)
 }
 
-/// Returns the response row to serve, or `None` once the request is stored for (re)processing.
+/// Serves an existing response row, or stores the request for (re)processing.
 async fn find_response_or_store_request<R: DecryptionRoute>(
     state: &AppState,
     id: B256,
     request: &R::Request,
-) -> anyhow::Result<Option<R::ResponseRow>> {
+) -> anyhow::Result<LookupOutcome<R::ResponseRow>> {
     let mut tx: Transaction<'_, Postgres> = state.db_pool.begin().await?;
 
-    let mut retrying = false;
+    let mut old_response_created_at = None;
     if let Some(row) = R::read_response(&mut *tx, id).await? {
         match R::error_code(&row) {
             Some(code) if code.retryable() => {
                 debug!(decryption_id = %id, "Ignoring retryable `{}` error row", code.as_str());
-                retrying = true;
+                old_response_created_at = Some(R::created_at(&row));
             }
             _ => {
                 tx.commit().await?;
-                return Ok(Some(row));
+                debug!(decryption_id = %id, "Serving existing response row");
+                return Ok(LookupOutcome::Serve(row));
             }
         }
     }
 
     let otlp_ctx = PropagationContext::inject(&tracing::Span::current().context());
     let result = R::upsert_request(&mut *tx, id, request, &otlp_ctx).await?;
-    match (result.rows_affected(), retrying) {
+    match (result.rows_affected(), old_response_created_at.is_some()) {
         (1, true) => info!(decryption_id = %id, "Retrying failed decryption request"),
         (1, false) => info!(decryption_id = %id, "Decryption request stored in DB"),
         (0, _) => debug!(decryption_id = %id, "Decryption request already in progress, attaching"),
@@ -113,41 +139,65 @@ async fn find_response_or_store_request<R: DecryptionRoute>(
     }
 
     tx.commit().await?;
-    Ok(None)
+    match old_response_created_at {
+        Some(old_response_created_at) => Ok(LookupOutcome::Retry {
+            old_response_created_at,
+        }),
+        None => Ok(LookupOutcome::Stored),
+    }
 }
 
+/// Waits for the response of `id` and reads it, within `Config::decryption_timeout` overall.
+///
+/// A wake-up that only leads to the stale row identified by `old_response_created_at` re-arms the
+/// waiter and keeps waiting.
 async fn wait_and_read_response<R: DecryptionRoute>(
     state: &AppState,
     id: B256,
-    receiver: tokio::sync::oneshot::Receiver<()>,
+    guard: &WaiterGuard,
+    mut receiver: oneshot::Receiver<()>,
+    old_response_created_at: Option<DateTime<Utc>>,
 ) -> Result<R::ResponseRow, ErrorResponse> {
     let timeout = state.config.decryption_timeout;
-    let wake_signal = tokio::time::timeout(timeout, receiver).await.map_err(|_| {
-        warn!(decryption_id = %id, "No response within {timeout:?}, answering timeout");
-        ErrorResponse::new(
-            ErrorCode::Timeout,
-            format!("no response within {timeout:?}"),
-            Some(id),
-        )
-    })?;
-    wake_signal.map_err(|_| {
-        warn!(decryption_id = %id, "Response listener gone while waiting");
-        upstream_transient("connection to the response stream was lost", id)
-    })?;
-    R::read_response(&state.db_pool, id)
-        .await
-        .map_err(|e| {
-            warn!(decryption_id = %id, "Failed to read notified response row: {e}");
-            upstream_transient("temporary storage error", id)
-        })?
-        .ok_or_else(|| {
-            warn!(decryption_id = %id, "Notified response row not found");
-            ErrorResponse::new(
-                ErrorCode::Unknown,
-                "response was announced but could not be read",
-                Some(id),
-            )
-        })
+    let deadline = Instant::now() + timeout;
+    loop {
+        let wake_signal = tokio::time::timeout_at(deadline, receiver)
+            .await
+            .map_err(|_| {
+                warn!(decryption_id = %id, "No response within {timeout:?}, answering timeout");
+                ErrorResponse::new(
+                    ErrorCode::Timeout,
+                    format!("no response within {timeout:?}"),
+                    Some(id),
+                )
+            })?;
+        wake_signal.map_err(|_| {
+            warn!(decryption_id = %id, "Response listener gone while waiting");
+            upstream_transient("connection to the response stream was lost", id)
+        })?;
+
+        let row = R::read_response(&state.db_pool, id)
+            .await
+            .map_err(|e| {
+                warn!(decryption_id = %id, "Failed to read notified response row: {e}");
+                upstream_transient("temporary storage error", id)
+            })?
+            .ok_or_else(|| {
+                warn!(decryption_id = %id, "Notified response row not found");
+                ErrorResponse::new(
+                    ErrorCode::Unknown,
+                    "response was announced but could not be read",
+                    Some(id),
+                )
+            })?;
+
+        if old_response_created_at == Some(R::created_at(&row)) {
+            debug!(decryption_id = %id, "Woken up by the stale error row, waiting again");
+            receiver = guard.rearm();
+            continue;
+        }
+        return Ok(row);
+    }
 }
 
 fn upstream_transient(message: impl Into<String>, id: B256) -> ErrorResponse {

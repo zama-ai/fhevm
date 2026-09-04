@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO user_decryption_responses(\n            decryption_id, error_code, error_details, extra_data, created_at, otlp_context,\n            status, source\n        )\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)\n        ON CONFLICT (decryption_id) DO UPDATE SET\n            error_code = EXCLUDED.error_code, error_details = EXCLUDED.error_details",
+  "query": "INSERT INTO public_decryption_responses(\n            decryption_id, error_code, error_details, extra_data, created_at, otlp_context,\n            status, source\n        )\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)\n        ON CONFLICT (decryption_id) DO UPDATE SET\n            error_code = EXCLUDED.error_code, error_details = EXCLUDED.error_details,\n            created_at = EXCLUDED.created_at",
   "describe": {
     "columns": [],
     "parameters": {
@@ -40,5 +40,5 @@
     },
     "nullable": []
   },
-  "hash": "acddcde93cc0cc1e711db200a4c7414d272db28cdb94ca06a7291b68d7626076"
+  "hash": "ada0b4e9974f6920ef223f3282e73ccc8780b812aa5dd333bde70bcb3457a581"
 }

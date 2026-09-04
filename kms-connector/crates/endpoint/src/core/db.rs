@@ -7,7 +7,11 @@ use alloy::{
 use anyhow::anyhow;
 use connector_utils::monitoring::otlp::PropagationContext;
 use kms_connector_api::{PublicDecryptionRequest, UserDecryptionRequest};
-use sqlx::{PgExecutor, postgres::PgQueryResult, types::chrono::Utc};
+use sqlx::{
+    PgExecutor,
+    postgres::PgQueryResult,
+    types::chrono::{DateTime, Utc},
+};
 
 /// A `public_decryption_responses` row, either a payload or a worker-side error.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -17,6 +21,7 @@ pub struct PublicDecryptionResponseRow {
     pub extra_data: Vec<u8>,
     pub error_code: Option<String>,
     pub error_details: Option<String>,
+    pub created_at: DateTime<Utc>,
 }
 
 /// A `user_decryption_responses` row, either a payload or a worker-side error.
@@ -27,8 +32,10 @@ pub struct UserDecryptionResponseRow {
     pub extra_data: Vec<u8>,
     pub error_code: Option<String>,
     pub error_details: Option<String>,
+    pub created_at: DateTime<Utc>,
 }
 
+/// Reads the HTTP-sourced public decryption response of `id`, if any.
 pub async fn read_public_decryption_response<'e>(
     executor: impl PgExecutor<'e>,
     id: B256,
@@ -36,14 +43,15 @@ pub async fn read_public_decryption_response<'e>(
     let db_id = id_to_db_bytes(id);
     sqlx::query_as!(
         PublicDecryptionResponseRow,
-        "SELECT decrypted_result, signature, extra_data, error_code, error_details
-        FROM public_decryption_responses WHERE decryption_id = $1",
+        "SELECT decrypted_result, signature, extra_data, error_code, error_details, created_at
+        FROM public_decryption_responses WHERE decryption_id = $1 AND source = 'http'",
         db_id.as_slice(),
     )
     .fetch_optional(executor)
     .await
 }
 
+/// Reads the HTTP-sourced user decryption response of `id`, if any.
 pub async fn read_user_decryption_response<'e>(
     executor: impl PgExecutor<'e>,
     id: B256,
@@ -51,8 +59,8 @@ pub async fn read_user_decryption_response<'e>(
     let db_id = id_to_db_bytes(id);
     sqlx::query_as!(
         UserDecryptionResponseRow,
-        "SELECT user_decrypted_shares, signature, extra_data, error_code, error_details
-        FROM user_decryption_responses WHERE decryption_id = $1",
+        "SELECT user_decrypted_shares, signature, extra_data, error_code, error_details, created_at
+        FROM user_decryption_responses WHERE decryption_id = $1 AND source = 'http'",
         db_id.as_slice(),
     )
     .fetch_optional(executor)
@@ -60,6 +68,8 @@ pub async fn read_user_decryption_response<'e>(
 }
 
 /// Upserts an HTTP-sourced public decryption request, or re-arms it if it previously `failed`.
+///
+/// Only HTTP-sourced rows are ever re-armed: a Gateway row can never be touched by the endpoint.
 pub async fn upsert_public_decryption_request<'e>(
     executor: impl PgExecutor<'e>,
     id: B256,
@@ -78,7 +88,7 @@ pub async fn upsert_public_decryption_request<'e>(
             status = 'pending',
             created_at = EXCLUDED.created_at,
             otlp_context = EXCLUDED.otlp_context
-        WHERE existing.status = 'failed'",
+        WHERE existing.status = 'failed' AND existing.source = 'http'",
         db_id.as_slice(),
         &ct_handles,
         request.extraData.as_ref(),
@@ -134,7 +144,7 @@ pub async fn upsert_user_decryption_request<'e>(
             status = 'pending',
             created_at = EXCLUDED.created_at,
             otlp_context = EXCLUDED.otlp_context
-        WHERE existing.status = 'failed'",
+        WHERE existing.status = 'failed' AND existing.source = 'http'",
         db_id.as_slice(),
         &ct_handles,
         request.userAddress.as_slice(),

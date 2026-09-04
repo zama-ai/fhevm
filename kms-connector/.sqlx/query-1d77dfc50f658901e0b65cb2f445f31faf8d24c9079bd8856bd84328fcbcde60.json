@@ -1,11 +1,11 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT user_decrypted_shares, signature, extra_data, error_code, error_details\n        FROM user_decryption_responses WHERE decryption_id = $1",
+  "query": "SELECT decrypted_result, signature, extra_data, error_code, error_details, created_at\n        FROM public_decryption_responses WHERE decryption_id = $1 AND source = 'http'",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "user_decrypted_shares",
+        "name": "decrypted_result",
         "type_info": "Bytea"
       },
       {
@@ -27,6 +27,11 @@
         "ordinal": 4,
         "name": "error_details",
         "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "created_at",
+        "type_info": "Timestamptz"
       }
     ],
     "parameters": {
@@ -39,8 +44,9 @@
       true,
       false,
       true,
-      true
+      true,
+      false
     ]
   },
-  "hash": "83df5f45d31a4a3fe8485e321a82ea52b68e778c9248a3bb7ec4386b3d8bcde3"
+  "hash": "1d77dfc50f658901e0b65cb2f445f31faf8d24c9079bd8856bd84328fcbcde60"
 }

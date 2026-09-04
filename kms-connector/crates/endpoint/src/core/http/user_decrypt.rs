@@ -15,7 +15,11 @@ use actix_web::{
 use alloy::primitives::B256;
 use connector_utils::monitoring::otlp::PropagationContext;
 use kms_connector_api::{ErrorCode, ErrorResponse, UserDecryptionRequest, UserDecryptionResponse};
-use sqlx::{PgExecutor, postgres::PgQueryResult};
+use sqlx::{
+    PgExecutor,
+    postgres::PgQueryResult,
+    types::chrono::{DateTime, Utc},
+};
 
 /// `POST /v1/user-decrypt`
 #[tracing::instrument(skip_all, fields(decryption_id))]
@@ -52,6 +56,10 @@ impl DecryptionRoute for UserRoute {
         otlp_ctx: &PropagationContext,
     ) -> anyhow::Result<PgQueryResult> {
         upsert_user_decryption_request(executor, id, request, otlp_ctx).await
+    }
+
+    fn created_at(response_row: &Self::ResponseRow) -> DateTime<Utc> {
+        response_row.created_at
     }
 
     fn error_code(response_row: &Self::ResponseRow) -> Option<ErrorCode> {

@@ -119,6 +119,22 @@ pub struct WaiterGuard {
     _permit: OwnedSemaphorePermit,
 }
 
+impl WaiterGuard {
+    /// Re-registers this waiter after a wake-up that turned out to be stale.
+    pub fn rearm(&self) -> oneshot::Receiver<()> {
+        let (tx, rx) = oneshot::channel();
+        self.waiters
+            .lock()
+            .entry(self.id)
+            .or_default()
+            .push(Waiter {
+                token: self.token,
+                wake: tx,
+            });
+        rx
+    }
+}
+
 impl Drop for WaiterGuard {
     fn drop(&mut self) {
         self.waiters.remove_waiter(&self.id, self.token);
@@ -180,6 +196,28 @@ mod tests {
         drop(g);
         assert!(!waiters.contains(&id));
         assert!(waiters.is_empty());
+    }
+
+    #[tokio::test]
+    async fn rearmed_waiter_is_woken_again_and_removed_on_drop() {
+        let waiters = Arc::new(Waiters::new());
+        let sem = Arc::new(Semaphore::new(1));
+        let id = B256::repeat_byte(4);
+        let (g, rx) = waiters.register(id, permit(&sem).await);
+
+        assert!(waiters.wake(&id));
+        rx.await.unwrap();
+        assert!(!waiters.contains(&id));
+
+        let rx = g.rearm();
+        assert!(waiters.contains(&id));
+        assert!(waiters.wake(&id));
+        rx.await.unwrap();
+
+        let _rx = g.rearm();
+        drop(g);
+        assert!(!waiters.contains(&id));
+        assert_eq!(sem.available_permits(), 1);
     }
 
     #[tokio::test]
