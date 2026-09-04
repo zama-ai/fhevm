@@ -16,6 +16,7 @@
 #   docker build --target gw-listener -t gw-listener:latest .
 #   docker build --target kms-worker -t kms-worker:latest .
 #   docker build --target tx-sender -t tx-sender:latest .
+#   docker build --target endpoint -t endpoint:latest .
 #
 # Usage (via docker-compose, recommended for local dev):
 #   cd test-suite/fhevm
@@ -85,12 +86,13 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     mkdir -p /out && \
     cp target/${CARGO_PROFILE}/gw-listener /out/ && \
     cp target/${CARGO_PROFILE}/kms-worker /out/ && \
-    cp target/${CARGO_PROFILE}/tx-sender /out/
+    cp target/${CARGO_PROFILE}/tx-sender /out/ && \
+    cp target/${CARGO_PROFILE}/endpoint /out/
 
 # =============================================================================
 # Stage 2a: gw-listener runtime
 # =============================================================================
-FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0 AS gw-listener
+FROM cgr.dev/zama.ai/glibc-dynamic:16.2.0 AS gw-listener
 
 COPY --from=builder /etc/group /etc/group
 COPY --from=builder /etc/passwd /etc/passwd
@@ -106,7 +108,7 @@ HEALTHCHECK --start-period=5s --interval=1m --timeout=3s --retries=3 \
 # =============================================================================
 # Stage 2b: kms-worker runtime
 # =============================================================================
-FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0 AS kms-worker
+FROM cgr.dev/zama.ai/glibc-dynamic:16.2.0 AS kms-worker
 
 COPY --from=builder /etc/group /etc/group
 COPY --from=builder /etc/passwd /etc/passwd
@@ -122,7 +124,7 @@ HEALTHCHECK --start-period=5s --interval=1m --timeout=3s --retries=3 \
 # =============================================================================
 # Stage 2c: tx-sender runtime
 # =============================================================================
-FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0 AS tx-sender
+FROM cgr.dev/zama.ai/glibc-dynamic:16.2.0 AS tx-sender
 
 COPY --from=builder /etc/group /etc/group
 COPY --from=builder /etc/passwd /etc/passwd
@@ -134,3 +136,19 @@ ENTRYPOINT ["/app/kms-connector/bin/tx-sender", "start"]
 
 HEALTHCHECK --start-period=5s --interval=1m --timeout=3s --retries=3 \
     CMD ["/app/kms-connector/bin/tx-sender", "health", "--endpoint", "http://127.0.0.1:9100/healthz"]
+
+# =============================================================================
+# Stage 2d: endpoint runtime
+# =============================================================================
+FROM cgr.dev/zama.ai/glibc-dynamic:16.2.0 AS endpoint
+
+COPY --from=builder /etc/group /etc/group
+COPY --from=builder /etc/passwd /etc/passwd
+COPY --from=builder --chown=fhevm:fhevm /out/endpoint /app/kms-connector/bin/endpoint
+
+USER fhevm:fhevm
+
+ENTRYPOINT ["/app/kms-connector/bin/endpoint", "start"]
+
+HEALTHCHECK --start-period=5s --interval=1m --timeout=3s --retries=3 \
+    CMD ["/app/kms-connector/bin/endpoint", "health", "--endpoint", "http://127.0.0.1:9100/healthz"]
