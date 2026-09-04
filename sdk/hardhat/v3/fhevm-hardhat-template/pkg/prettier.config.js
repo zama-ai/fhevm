@@ -1,1 +1,5 @@
-export { default } from '../../../../prettier.base.mjs';
+/** @type {import('prettier').Config} */
+export default {
+  singleQuote: true,
+  printWidth: 120,
+};
