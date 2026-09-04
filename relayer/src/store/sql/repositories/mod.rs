@@ -4,6 +4,7 @@ pub mod expiry_repo;
 pub mod health;
 pub mod input_proof_repo;
 pub mod public_decrypt_repo;
+pub mod queue_depth;
 pub mod timeout_repo;
 pub mod user_decrypt_repo;
 pub mod utils;

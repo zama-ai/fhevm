@@ -255,27 +255,6 @@ where
     pub fn max_concurrency(&self) -> usize {
         self.max_parallelism
     }
-
-    /// Get queue info for ETA computation.
-    /// Returns current queue size and max concurrency.
-    /// Position is None since we don't know which specific request this is for.
-    pub async fn get_queue_info(&self) -> ReadinessQueueInfo {
-        ReadinessQueueInfo {
-            size: self.len().await,
-            max_concurrency: self.max_parallelism,
-            position: None,
-        }
-    }
-
-    /// Get queue info for a specific request ID.
-    /// Returns current queue size, max concurrency, and position if request is in queue.
-    pub async fn get_queue_info_for_request(&self, request_id: &str) -> ReadinessQueueInfo {
-        ReadinessQueueInfo {
-            size: self.len().await,
-            max_concurrency: self.max_parallelism,
-            position: self.get_position(request_id).await,
-        }
-    }
 }
 
 impl<T> ReadinessWorker<T>

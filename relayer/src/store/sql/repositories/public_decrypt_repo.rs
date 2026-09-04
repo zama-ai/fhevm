@@ -37,6 +37,7 @@ use crate::store::sql::models::public_decrypt_req_model::{
     PublicDecryptResponseModel, PublicReqStateModelWithOldStatusAndTimestamp,
 };
 use crate::store::sql::models::req_status_enum_model::ReqStatus;
+use crate::store::sql::repositories::queue_depth::QUEUE_SCAN_CAP;
 use crate::store::sql::{
     client::PgClient,
     error::{SqlError, SqlResult},
@@ -52,6 +53,18 @@ pub struct ClaimedRequest {
     /// Post-claim, so `tx_in_flight` never appears here - the claim rewrites it to
     /// `processing`. Chooses which event the row is re-dispatched as.
     pub status: ReqStatus,
+}
+
+/// Insert outcome plus the queue depths from the same statement (see
+/// [`queue_depth`](crate::store::sql::repositories::queue_depth)). Decrypt needs both stages,
+/// unlike input proof's single depth.
+pub struct PublicDecryptInsertOutcome {
+    pub result: PublicDecryptInsertResult,
+    /// Requests in the readiness queue at insert time. Excludes this row: a data-modifying CTE
+    /// is invisible to its own statement.
+    pub readiness_queue_size: i64,
+    /// Requests in the TX queue at insert time, from the same pre-insert snapshot.
+    pub tx_queue_size: i64,
 }
 
 pub enum PublicDecryptInsertResult {
@@ -161,13 +174,16 @@ impl PublicDecryptRepository {
     /// read. Two reads can disagree: an epoch stamped without a dispatch leaves a row nothing
     /// claims until this pod restarts (the sweep skips its own epoch), and `None` stamped
     /// before a dispatch has the sweep re-drive a request already running.
+    ///
+    /// Also returns both queue depths from the same statement - see
+    /// [`PublicDecryptInsertOutcome`].
     pub async fn insert_data_on_conflict_and_get_ext_job_id(
         &self,
         ext_job_id: Uuid,
         int_job_id_bytes: &[u8],
         request: PublicDecryptRequest,
         dispatch_epoch: Option<i64>,
-    ) -> SqlResult<PublicDecryptInsertResult> {
+    ) -> SqlResult<PublicDecryptInsertOutcome> {
         let req = serde_json::to_value(&request).map_err(|e| {
             SqlError::conversion_error(
                 "request",
@@ -181,25 +197,52 @@ impl PublicDecryptRepository {
         let query_start = Instant::now();
         let result = sqlx::query!(
             r#"
-            INSERT INTO public_decrypt_req (
-                ext_job_id,
-                int_job_id,
-                req,
-                req_status,
-                owner_epoch,
-                created_at,
-                updated_at
+            WITH ins AS (
+                INSERT INTO public_decrypt_req (
+                    ext_job_id,
+                    int_job_id,
+                    req,
+                    req_status,
+                    owner_epoch,
+                    created_at,
+                    updated_at
+                )
+                VALUES ($1, $2, $3, 'queued'::req_status, $4, NOW(), NOW())
+                ON CONFLICT (int_job_id)
+                WHERE req_status NOT IN ('failure'::req_status, 'timed_out'::req_status)
+                DO UPDATE SET updated_at = public_decrypt_req.updated_at
+                RETURNING ext_job_id, (xmax = 0) AS is_inserted, req_status, res
             )
-            VALUES ($1, $2, $3, 'queued'::req_status, $4, NOW(), NOW())
-            ON CONFLICT (int_job_id)
-            WHERE req_status NOT IN ('failure'::req_status, 'timed_out'::req_status)
-            DO UPDATE SET updated_at = public_decrypt_req.updated_at
-            RETURNING ext_job_id, (xmax = 0) AS "is_inserted!", req_status AS "req_status!: ReqStatus", res
+            SELECT
+                ins.ext_job_id AS "ext_job_id!",
+                ins.is_inserted AS "is_inserted!",
+                ins.req_status AS "req_status!: ReqStatus",
+                ins.res,
+                (
+                    SELECT COUNT(*)
+                    FROM (
+                        SELECT 1
+                        FROM public_decrypt_req q
+                        WHERE q.req_status = 'queued'::req_status
+                        LIMIT $5
+                    ) depth
+                ) AS "readiness_queue_size!",
+                (
+                    SELECT COUNT(*)
+                    FROM (
+                        SELECT 1
+                        FROM public_decrypt_req q
+                        WHERE q.req_status = 'processing'::req_status
+                        LIMIT $5
+                    ) depth
+                ) AS "tx_queue_size!"
+            FROM ins
             "#,
             ext_job_id,
             int_job_id_bytes,
             req,
             dispatch_epoch.unwrap_or(UNCLAIMED_EPOCH),
+            QUEUE_SCAN_CAP,
         )
         .fetch_one(&mut *conn)
         .await;
@@ -259,7 +302,11 @@ impl PublicDecryptRepository {
             }
         };
 
-        Ok(insert_result)
+        Ok(PublicDecryptInsertOutcome {
+            result: insert_result,
+            readiness_queue_size: record.readiness_queue_size,
+            tx_queue_size: record.tx_queue_size,
+        })
     }
 
     // GATEWAY READINESS CHECK.
@@ -810,7 +857,11 @@ impl PublicDecryptRepository {
     }
 
     // select in `public_decrypt_req` by `ext_job_id` (need status `res` and `err_reason` and `updated_at` and `ext_request_id`)
-    /// Select status, res, err_reason, and updated_at by ext_job_id.
+    /// Select status, res, err_reason, updated_at and queue position by ext_job_id.
+    ///
+    /// Position is a scalar subquery, not a second query. See
+    /// [`queue_depth`](crate::store::sql::repositories::queue_depth) for why the status list
+    /// repeats and what bounds the scan.
     pub async fn find_status_and_res_by_ext_id(
         &self,
         ext_job_id: Uuid,
@@ -821,15 +872,36 @@ impl PublicDecryptRepository {
             PublicDecryptResponseModel,
             r#"
             SELECT
-                ext_job_id,
-                req_status as "req_status!: ReqStatus", -- Force Non-Null Enum
-                res,
-                err_reason,
-                updated_at
-            FROM public_decrypt_req
-            WHERE ext_job_id = $1
+                r.ext_job_id,
+                r.req_status as "req_status!: ReqStatus", -- Force Non-Null Enum
+                r.res,
+                r.err_reason,
+                r.updated_at,
+                (
+                    SELECT COUNT(*)
+                    FROM (
+                        SELECT 1
+                        FROM public_decrypt_req q
+                        WHERE q.req_status = r.req_status
+                          AND q.req_status IN ('queued'::req_status, 'processing'::req_status, 'tx_in_flight'::req_status)
+                          AND q.id < r.id
+                        LIMIT $2
+                    ) ahead
+                ) as "queue_position!",
+                (
+                    SELECT COUNT(*)
+                    FROM (
+                        SELECT 1
+                        FROM public_decrypt_req q
+                        WHERE q.req_status = 'processing'::req_status
+                        LIMIT $2
+                    ) depth
+                ) as "tx_queue_size!"
+            FROM public_decrypt_req r
+            WHERE r.ext_job_id = $1
             "#,
-            ext_job_id
+            ext_job_id,
+            QUEUE_SCAN_CAP,
         )
         .fetch_optional(&mut *conn)
         .await;

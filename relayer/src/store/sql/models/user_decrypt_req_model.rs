@@ -305,6 +305,14 @@ pub struct UserDecryptResponseModel {
     pub gw_consensus_tx_hash: Option<String>,
     pub resolved_threshold: Option<i64>,
     pub shares: Json<Vec<UserDecryptResponseShare>>,
+    /// Requests ahead of this one in the queue its status names, from the DB rather than a
+    /// per-pod throttler. Zero-based. Scoped to whichever queue `req_status` currently names -
+    /// `queued` (readiness) or `processing` (TX); the handler picks the matching side of
+    /// `DecryptQueueInfo`.
+    pub queue_position: i64,
+    /// TX-queue depth, for a request still in the readiness queue: its own position says how far
+    /// it is from being checked, not what it will then queue behind.
+    pub tx_queue_size: i64,
 }
 
 #[derive(Debug, FromRow)]

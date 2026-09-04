@@ -14,6 +14,7 @@ use crate::store::sql::models::req_status_enum_model::ReqStatus;
 use crate::store::sql::models::user_decrypt_req_model::{
     ConsensusReqState, UserDecryptReqData, UserDecryptReqType,
 };
+use crate::store::sql::repositories::queue_depth::QUEUE_SCAN_CAP;
 use crate::store::sql::{
     client::PgClient,
     error::{SqlError, SqlResult},
@@ -65,6 +66,17 @@ pub struct ClaimedRequest {
     /// Post-claim, so `tx_in_flight` never appears here - the claim rewrites it to
     /// `processing`. Chooses which event the row is re-dispatched as.
     pub status: ReqStatus,
+}
+
+/// Insert outcome plus both queue depths the same statement measured, for the POST ETA. A decrypt
+/// request crosses both queues, unlike an input proof.
+pub struct UserDecryptInsertOutcome {
+    pub result: UserDecryptInsertResult,
+    /// Readiness-queue depth at insert time. Excludes this row: a data-modifying CTE is
+    /// invisible to its own statement.
+    pub readiness_queue_size: i64,
+    /// TX-queue depth at insert time. Same exclusion as `readiness_queue_size`.
+    pub tx_queue_size: i64,
 }
 
 pub enum UserDecryptInsertResult {
@@ -149,13 +161,15 @@ impl UserDecryptRepository {
     /// `dispatch_epoch` must be the same [`crate::orchestrator::DispatchGate::epoch`] reading
     /// the caller decided on - see
     /// [`crate::store::sql::repositories::public_decrypt_repo::PublicDecryptRepository::insert_data_on_conflict_and_get_ext_job_id`].
+    ///
+    /// Also returns both queue depths, measured in the same statement.
     pub async fn insert_data_on_conflict_and_get_ext_job_id(
         &self,
         ext_job_id: Uuid,
         int_job_id_bytes: &[u8],
         request_data: UserDecryptReqData,
         dispatch_epoch: Option<i64>,
-    ) -> SqlResult<UserDecryptInsertResult> {
+    ) -> SqlResult<UserDecryptInsertOutcome> {
         // Use a transaction to ensure atomic read of status + shares for completed duplicates.
         // This prevents race conditions where shares could be deleted between the INSERT
         // and the subsequent SELECT query.
@@ -175,24 +189,51 @@ impl UserDecryptRepository {
         // Logic: Use (xmax=0) to detect if this was a true INSERT or an ON CONFLICT update.
         let result = sqlx::query!(
             r#"
-            INSERT INTO user_decrypt_req (
-                ext_job_id,
-                int_job_id,
-                req,
-                req_type,
-                owner_epoch
+            WITH ins AS (
+                INSERT INTO user_decrypt_req (
+                    ext_job_id,
+                    int_job_id,
+                    req,
+                    req_type,
+                    owner_epoch
+                )
+                VALUES ($1, $2, $3, $4::user_decrypt_req_type, $5)
+                ON CONFLICT (int_job_id)
+                WHERE req_status NOT IN ('failure'::req_status, 'timed_out'::req_status)
+                DO UPDATE SET updated_at = user_decrypt_req.updated_at
+                RETURNING ext_job_id, (xmax = 0) AS is_inserted, req_status, gw_reference_id
             )
-            VALUES ($1, $2, $3, $4::user_decrypt_req_type, $5)
-            ON CONFLICT (int_job_id)
-            WHERE req_status NOT IN ('failure'::req_status, 'timed_out'::req_status)
-            DO UPDATE SET updated_at = user_decrypt_req.updated_at
-            RETURNING ext_job_id, (xmax = 0) AS "is_inserted!", req_status AS "req_status!: ReqStatus", gw_reference_id
+            SELECT
+                ins.ext_job_id AS "ext_job_id!",
+                ins.is_inserted AS "is_inserted!",
+                ins.req_status AS "req_status!: ReqStatus",
+                ins.gw_reference_id,
+                (
+                    SELECT COUNT(*)
+                    FROM (
+                        SELECT 1
+                        FROM user_decrypt_req q
+                        WHERE q.req_status = 'queued'::req_status
+                        LIMIT $6
+                    ) depth
+                ) AS "readiness_queue_size!",
+                (
+                    SELECT COUNT(*)
+                    FROM (
+                        SELECT 1
+                        FROM user_decrypt_req q
+                        WHERE q.req_status = 'processing'::req_status
+                        LIMIT $6
+                    ) depth
+                ) AS "tx_queue_size!"
+            FROM ins
             "#,
             ext_job_id,
             int_job_id_bytes,
             request,
             req_type as _,
             dispatch_epoch.unwrap_or(UNCLAIMED_EPOCH),
+            QUEUE_SCAN_CAP,
         )
         .fetch_one(&mut *tx)
         .await;
@@ -306,7 +347,11 @@ impl UserDecryptRepository {
         };
 
         tx.commit().await?;
-        Ok(insert_result)
+        Ok(UserDecryptInsertOutcome {
+            result: insert_result,
+            readiness_queue_size: record.readiness_queue_size,
+            tx_queue_size: record.tx_queue_size,
+        })
     }
 
     // GW READINESS LOGIC CHECK.
@@ -1041,6 +1086,11 @@ impl UserDecryptRepository {
     /// The share LIMIT uses `COALESCE(resolved_threshold, $2)`: if the dynamic threshold
     /// was stored at completion time, it takes precedence; otherwise the static fallback
     /// `$2` is used (backward compatibility for rows created before the migration).
+    ///
+    /// Also returns the queue position, via the same correlated subquery pattern as
+    /// [`queue_depth`](crate::store::sql::repositories::queue_depth). It sits validly next to
+    /// `GROUP BY r.id`: it only references `r.id` and `r.req_status`, both functionally dependent
+    /// on the grouped primary key, like the other ungrouped `r.*` columns above it.
     pub async fn find_req_and_shares_by_ext_job_id(
         &self,
         ext_job_id: Uuid,
@@ -1076,7 +1126,27 @@ impl UserDecryptRepository {
                     )
                     FILTER (WHERE s.id IS NOT NULL),
                     '[]'::jsonb
-                ) as "shares!: Json<Vec<UserDecryptResponseShare>>"
+                ) as "shares!: Json<Vec<UserDecryptResponseShare>>",
+                (
+                    SELECT COUNT(*)
+                    FROM (
+                        SELECT 1
+                        FROM user_decrypt_req q
+                        WHERE q.req_status = r.req_status
+                          AND q.req_status IN ('queued'::req_status, 'processing'::req_status, 'tx_in_flight'::req_status)
+                          AND q.id < r.id
+                        LIMIT $3
+                    ) ahead
+                ) as "queue_position!",
+                (
+                    SELECT COUNT(*)
+                    FROM (
+                        SELECT 1
+                        FROM user_decrypt_req q
+                        WHERE q.req_status = 'processing'::req_status
+                        LIMIT $3
+                    ) depth
+                ) as "tx_queue_size!"
             FROM user_decrypt_req r
             LEFT JOIN (
                 SELECT * FROM user_decrypt_share
@@ -1093,7 +1163,8 @@ impl UserDecryptRepository {
             GROUP BY r.id
             "#,
             ext_job_id,
-            fallback_threshold
+            fallback_threshold,
+            QUEUE_SCAN_CAP,
         )
         .fetch_optional(&mut *conn)
         .await;

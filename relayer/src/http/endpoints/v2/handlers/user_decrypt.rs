@@ -14,7 +14,9 @@ use crate::core::event::{
 };
 use crate::core::job_id::JobId;
 use crate::host::HostChainIdChecker;
-use crate::http::retry_after::{DecryptQueueInfo, RequestStateInfo, RetryAfterState};
+use crate::http::retry_after::{
+    DecryptQueueInfo, ReadinessQueueInfo, RequestStateInfo, RetryAfterState, TxQueueInfo,
+};
 use crate::http::utils::BounceChecker;
 use crate::http::{parse_and_validate, AppResponse};
 use crate::logging::UserDecryptStep;
@@ -39,6 +41,7 @@ use axum::{
     http::{header, StatusCode},
     Json,
 };
+use chrono::Utc;
 use std::sync::Arc;
 use tracing::{error, info, instrument, span, Level};
 use uuid::Uuid;
@@ -286,14 +289,17 @@ impl UserDecryptHandler {
         };
 
         // Extract ext_job_id from any variant
-        let assigned_ext_job_id = match &insert_result {
+        let assigned_ext_job_id = match &insert_result.result {
             UserDecryptInsertResult::Inserted { ext_job_id } => *ext_job_id,
             UserDecryptInsertResult::DuplicateCompleted { ext_job_id, .. } => *ext_job_id,
             UserDecryptInsertResult::DuplicateProcessing { ext_job_id } => *ext_job_id,
         };
 
         // Only dispatch event for new requests (deduplication)
-        if matches!(insert_result, UserDecryptInsertResult::Inserted { .. }) {
+        if matches!(
+            insert_result.result,
+            UserDecryptInsertResult::Inserted { .. }
+        ) {
             let request_data = UserDecryptEventData::ReqRcvdFromUser {
                 decrypt_request: user_decrypt_request,
             };
@@ -342,17 +348,21 @@ impl UserDecryptHandler {
         // Generate a new request_id for this HTTP request (not stored)
         let request_id_for_response = uuid::Uuid::new_v4();
 
-        // Compute dynamic retry-after based on dual queue state
-        let readiness_queue_info = self
-            .user_decrypt_queue_checker
-            .readiness_throttler()
-            .get_queue_info()
-            .await;
-        let tx_queue_info = self
-            .user_decrypt_queue_checker
-            .tx_throttler()
-            .get_queue_info()
-            .await;
+        // Depth from the same INSERT, so both pods agree. max_concurrency/current_tps are
+        // startup config, identical on every pod. Position None: joins at the back.
+        let readiness_queue_info = ReadinessQueueInfo {
+            size: insert_result.readiness_queue_size as usize,
+            max_concurrency: self
+                .user_decrypt_queue_checker
+                .readiness_throttler()
+                .max_concurrency(),
+            position: None,
+        };
+        let tx_queue_info = TxQueueInfo {
+            size: insert_result.tx_queue_size as usize,
+            drain_rate_tps: self.user_decrypt_queue_checker.tx_throttler().current_tps(),
+            position: None,
+        };
         let decrypt_queue_info = DecryptQueueInfo::new(readiness_queue_info, tx_queue_info);
         let retry_after = self
             .retry_after_state
@@ -535,14 +545,17 @@ impl UserDecryptHandler {
         };
 
         // Extract ext_job_id from any variant
-        let assigned_ext_job_id = match &insert_result {
+        let assigned_ext_job_id = match &insert_result.result {
             UserDecryptInsertResult::Inserted { ext_job_id } => *ext_job_id,
             UserDecryptInsertResult::DuplicateCompleted { ext_job_id, .. } => *ext_job_id,
             UserDecryptInsertResult::DuplicateProcessing { ext_job_id } => *ext_job_id,
         };
 
         // Only dispatch event for new requests (deduplication)
-        if matches!(insert_result, UserDecryptInsertResult::Inserted { .. }) {
+        if matches!(
+            insert_result.result,
+            UserDecryptInsertResult::Inserted { .. }
+        ) {
             let request_data = UserDecryptEventData::ReqRcvdFromUser {
                 decrypt_request: delegated_user_decrypt_request,
             };
@@ -594,17 +607,21 @@ impl UserDecryptHandler {
         // Generate a new request_id for this HTTP request (not stored)
         let request_id_for_response = uuid::Uuid::new_v4();
 
-        // Compute dynamic retry-after based on dual queue state
-        let readiness_queue_info = self
-            .user_decrypt_queue_checker
-            .readiness_throttler()
-            .get_queue_info()
-            .await;
-        let tx_queue_info = self
-            .user_decrypt_queue_checker
-            .tx_throttler()
-            .get_queue_info()
-            .await;
+        // Depth from the same INSERT, so both pods agree. max_concurrency/current_tps are
+        // startup config, identical on every pod. Position None: joins at the back.
+        let readiness_queue_info = ReadinessQueueInfo {
+            size: insert_result.readiness_queue_size as usize,
+            max_concurrency: self
+                .user_decrypt_queue_checker
+                .readiness_throttler()
+                .max_concurrency(),
+            position: None,
+        };
+        let tx_queue_info = TxQueueInfo {
+            size: insert_result.tx_queue_size as usize,
+            drain_rate_tps: self.user_decrypt_queue_checker.tx_throttler().current_tps(),
+            position: None,
+        };
         let decrypt_queue_info = DecryptQueueInfo::new(readiness_queue_info, tx_queue_info);
         let retry_after = self
             .retry_after_state
@@ -824,30 +841,51 @@ impl UserDecryptHandler {
                         // Request is still in progress, return 202 with dynamic Retry-After header
                         info!("Request still in progress, returning queued status");
 
-                        // Compute dynamic retry-after based on current state
-                        let state_info = RequestStateInfo::new(response_model.req_status, 0, 0);
+                        // `updated_at` is stamped on every real row change, so it dates
+                        // time-in-status. The copro/KMS backoff is keyed on this; a hardcoded
+                        // zero pinned every poll to the first interval.
+                        let elapsed_in_state_secs = (Utc::now() - response_model.updated_at)
+                            .num_seconds()
+                            .clamp(0, u32::MAX as i64)
+                            as u32;
+                        let state_info =
+                            RequestStateInfo::new(response_model.req_status, elapsed_in_state_secs);
 
-                        // For Queued status, also get queue info for more accurate ETA
-                        let decrypt_queue_info = if response_model.req_status == ReqStatus::Queued {
-                            let readiness_queue_info = self
+                        // Position is from the same SELECT as status, not a per-pod throttler
+                        // (empty on the passive HA pod). `get_decrypt_stage` picks the stage from
+                        // whichever side carries `Some` position, so only the side named by
+                        // `req_status` gets it. A queued request has not reached the TX queue, so
+                        // that side takes the measured depth.
+                        let queue_position = response_model.queue_position as usize;
+                        let (readiness_position, tx_position) =
+                            if response_model.req_status == ReqStatus::Queued {
+                                (Some(queue_position), None)
+                            } else {
+                                (None, Some(queue_position))
+                            };
+                        let readiness_queue_info = ReadinessQueueInfo {
+                            size: queue_position,
+                            max_concurrency: self
                                 .user_decrypt_queue_checker
                                 .readiness_throttler()
-                                .get_queue_info()
-                                .await;
-                            let tx_queue_info = self
+                                .max_concurrency(),
+                            position: readiness_position,
+                        };
+                        let tx_queue_info = TxQueueInfo {
+                            size: response_model.tx_queue_size as usize,
+                            drain_rate_tps: self
                                 .user_decrypt_queue_checker
                                 .tx_throttler()
-                                .get_queue_info()
-                                .await;
-                            Some(DecryptQueueInfo::new(readiness_queue_info, tx_queue_info))
-                        } else {
-                            None
+                                .current_tps(),
+                            position: tx_position,
                         };
+                        let decrypt_queue_info =
+                            DecryptQueueInfo::new(readiness_queue_info, tx_queue_info);
 
                         let retry_after = self
                             .retry_after_state
                             .compute_for_decrypt_get(
-                                decrypt_queue_info.as_ref(),
+                                &decrypt_queue_info,
                                 &state_info,
                                 true, // is_user_decrypt
                             )

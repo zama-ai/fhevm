@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT\n                req_status as \"req_status!: ReqStatus\",\n                res,\n                err_reason,\n                accepted,\n                updated_at\n            FROM input_proof_req\n            WHERE ext_job_id = $1\n            ",
+  "query": "\n            SELECT\n                r.req_status as \"req_status!: ReqStatus\",\n                r.res,\n                r.err_reason,\n                r.accepted,\n                r.updated_at,\n                (\n                    SELECT COUNT(*)\n                    FROM (\n                        SELECT 1\n                        FROM input_proof_req q\n                        WHERE q.req_status = r.req_status\n                          AND q.req_status IN ('queued'::req_status, 'processing'::req_status, 'tx_in_flight'::req_status)\n                          AND q.id < r.id\n                        LIMIT $2\n                    ) ahead\n                ) as \"queue_position!\"\n            FROM input_proof_req r\n            WHERE r.ext_job_id = $1\n            ",
   "describe": {
     "columns": [
       {
@@ -42,11 +42,17 @@
         "ordinal": 4,
         "name": "updated_at",
         "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 5,
+        "name": "queue_position!",
+        "type_info": "Int8"
       }
     ],
     "parameters": {
       "Left": [
-        "Uuid"
+        "Uuid",
+        "Int8"
       ]
     },
     "nullable": [
@@ -54,8 +60,9 @@
       true,
       true,
       true,
-      false
+      false,
+      null
     ]
   },
-  "hash": "2e52f277a4eaa00e33d019e0ceb25553d02827c2b7a6e0007f43d4027e221abc"
+  "hash": "980b71127a1c0e4542fc4eb217e3a53bb726d5924e18b9e759b6ac43604dff61"
 }

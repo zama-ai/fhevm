@@ -15,6 +15,7 @@ use crate::metrics;
 use crate::orchestrator::{DispatcherLock, UNCLAIMED_EPOCH};
 use crate::store::sql::models::input_proof_req_model::InputProofResponseModel;
 use crate::store::sql::models::req_status_enum_model::ReqStatus;
+use crate::store::sql::repositories::queue_depth::QUEUE_SCAN_CAP;
 use crate::store::sql::{
     client::PgClient,
     error::{SqlError, SqlResult},
@@ -36,6 +37,14 @@ pub enum InputProofCompletionOutcome {
     },
     /// Request with this gw_reference_id was not found
     NotFound,
+}
+
+/// Insert outcome plus the queue depth the same statement measured, for the POST ETA.
+pub struct InputProofInsertOutcome {
+    pub result: InputProofInsertResult,
+    /// TX queue depth, so the new request's own position. Excludes this row: a data-modifying
+    /// CTE is invisible to its own statement.
+    pub tx_queue_size: i64,
 }
 
 /// Result of attempting to insert a new input proof request
@@ -126,13 +135,15 @@ impl InputProofRepository {
     /// `dispatch_epoch` must be the same [`crate::orchestrator::DispatchGate::epoch`] reading
     /// the caller decided on - see
     /// [`crate::store::sql::repositories::public_decrypt_repo::PublicDecryptRepository::insert_data_on_conflict_and_get_ext_job_id`].
+    ///
+    /// Also returns the TX queue depth, measured in the same statement.
     pub async fn insert_data_on_conflict_and_get_ext_job_id(
         &self,
         ext_job_id: Uuid,
         int_job_id_bytes: &[u8],
         request: InputProofRequest,
         dispatch_epoch: Option<i64>,
-    ) -> SqlResult<InputProofInsertResult> {
+    ) -> SqlResult<InputProofInsertOutcome> {
         let req = serde_json::to_value(&request).map_err(|e| {
             SqlError::conversion_error(
                 "request",
@@ -148,24 +159,43 @@ impl InputProofRepository {
         // xmax = 0 indicates true INSERT; xmax != 0 indicates ON CONFLICT update path
         let result = sqlx::query!(
             r#"
-            INSERT INTO input_proof_req (
-                ext_job_id,
-                int_job_id,
-                req,
-                req_status,
-                owner_epoch
+            WITH ins AS (
+                INSERT INTO input_proof_req (
+                    ext_job_id,
+                    int_job_id,
+                    req,
+                    req_status,
+                    owner_epoch
+                )
+                VALUES ($1, $2, $3, 'processing'::req_status, $4)
+                ON CONFLICT (int_job_id)
+                WHERE req_status NOT IN ('failure'::req_status, 'timed_out'::req_status)
+                  AND int_job_id != '\x0000000000000000000000000000000000000000000000000000000000000000'
+                DO UPDATE SET updated_at = input_proof_req.updated_at
+                RETURNING ext_job_id, (xmax = 0) AS is_inserted, req_status, accepted, res
             )
-            VALUES ($1, $2, $3, 'processing'::req_status, $4)
-            ON CONFLICT (int_job_id)
-            WHERE req_status NOT IN ('failure'::req_status, 'timed_out'::req_status)
-              AND int_job_id != '\x0000000000000000000000000000000000000000000000000000000000000000'
-            DO UPDATE SET updated_at = input_proof_req.updated_at
-            RETURNING ext_job_id, (xmax = 0) AS "is_inserted!", req_status AS "req_status!: ReqStatus", accepted, res
+            SELECT
+                ins.ext_job_id AS "ext_job_id!",
+                ins.is_inserted AS "is_inserted!",
+                ins.req_status AS "req_status!: ReqStatus",
+                ins.accepted,
+                ins.res,
+                (
+                    SELECT COUNT(*)
+                    FROM (
+                        SELECT 1
+                        FROM input_proof_req q
+                        WHERE q.req_status = 'processing'::req_status
+                        LIMIT $5
+                    ) depth
+                ) AS "tx_queue_size!"
+            FROM ins
             "#,
             ext_job_id,
             int_job_id_bytes,
             req,
             dispatch_epoch.unwrap_or(UNCLAIMED_EPOCH),
+            QUEUE_SCAN_CAP,
         )
         .fetch_one(&mut *conn)
         .await;
@@ -232,7 +262,10 @@ impl InputProofRepository {
             }
         };
 
-        Ok(insert_result)
+        Ok(InputProofInsertOutcome {
+            result: insert_result,
+            tx_queue_size: record.tx_queue_size,
+        })
     }
 
     /// Update req_status to 'tx_in_flight' by int_job_id.
@@ -711,7 +744,11 @@ impl InputProofRepository {
 
     // GET REQUEST.
     // select by ext_job_id and return res, err_reason, accepted, updated_at
-    /// Select status, res, err_reason, accepted, and updated_at by ext_job_id.
+    /// Select status, res, err_reason, accepted, updated_at and queue position by ext_job_id.
+    ///
+    /// The position rides along so the GET ETA costs no extra round trip. See
+    /// [`queue_depth`](crate::store::sql::repositories::queue_depth) for why the subquery repeats
+    /// the status list and what bounds the scan.
     pub async fn find_status_by_ext_id(
         &self,
         ext_job_id: Uuid,
@@ -723,15 +760,27 @@ impl InputProofRepository {
             InputProofResponseModel,
             r#"
             SELECT
-                req_status as "req_status!: ReqStatus",
-                res,
-                err_reason,
-                accepted,
-                updated_at
-            FROM input_proof_req
-            WHERE ext_job_id = $1
+                r.req_status as "req_status!: ReqStatus",
+                r.res,
+                r.err_reason,
+                r.accepted,
+                r.updated_at,
+                (
+                    SELECT COUNT(*)
+                    FROM (
+                        SELECT 1
+                        FROM input_proof_req q
+                        WHERE q.req_status = r.req_status
+                          AND q.req_status IN ('queued'::req_status, 'processing'::req_status, 'tx_in_flight'::req_status)
+                          AND q.id < r.id
+                        LIMIT $2
+                    ) ahead
+                ) as "queue_position!"
+            FROM input_proof_req r
+            WHERE r.ext_job_id = $1
             "#,
-            ext_job_id
+            ext_job_id,
+            QUEUE_SCAN_CAP,
         )
         .fetch_optional(&mut *conn)
         .await;
