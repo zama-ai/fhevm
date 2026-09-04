@@ -1005,6 +1005,14 @@ async fn tfhe_worker_cycle(
     // `search_path = gcs,public` so unqualified writes land in `gcs.*` and
     // shared read-only tables (keys, crs, host_chains, upgrade_state, …)
     // still resolve from `public` via fallback.
+    if gcs_mode {
+        fhevm_engine_common::versioning::wait_for_gcs_schema(
+            db_url.as_str(),
+            fhevm_engine_common::versioning::GCS_SCHEMA_WAIT,
+        )
+        .await
+        .map_err(|e| CoprocessorError::Other(e.into()))?;
+    }
     let (pool, _pool_refresh_handle) = connect_pool_with_options_and_connect_options(
         &db_url,
         sqlx::postgres::PgPoolOptions::new().max_connections(args.pg_pool_max_connections),
