@@ -223,9 +223,9 @@ async fn check_erc1271_signature<P: Provider>(
 ///    smart-account path and the EOA-mismatch reject.
 ///
 /// The call is attempted with [`Erc1271GasBudget::warn_above`] first and retried with the full
-/// `limit` only if that budget produced a reasonless revert, so an unusually expensive wallet
-/// is reported to the caller ([`Erc1271Accepted::AboveWarnThreshold`]) at the cost of one extra
-/// RPC on that path alone.
+/// `limit` on any outcome that an exhausted budget can produce, so the configured cap is always
+/// offered before rejecting. A wallet that needed the retry after a reasonless revert is
+/// reported as [`Erc1271Accepted::AboveWarnThreshold`].
 pub async fn verify_signature<P: Provider>(
     provider: &P,
     claimed_signer: Address,
@@ -243,12 +243,19 @@ pub async fn verify_signature<P: Provider>(
     let warn_above = gas.warn_above.min(gas.limit);
     match check_erc1271_signature(provider, claimed_signer, digest, signature, warn_above).await {
         Ok(()) => Ok(Erc1271Accepted::WithinWarnThreshold),
-        // Exhausting the budget is indistinguishable from a wallet that reverts without a
-        // reason, so the only way to tell them apart is to offer the full budget and see.
-        Err(Erc1271Error::EmptyRevert(_)) if warn_above < gas.limit => {
+        // Neither outcome proves the signature is bad, and an exhausted budget looks like
+        // either one depending on the node: a reasonless revert, or an RPC error carrying no
+        // revert data. Offer the full budget before deciding.
+        Err(first @ (Erc1271Error::EmptyRevert(_) | Erc1271Error::Transport(_)))
+            if warn_above < gas.limit =>
+        {
             check_erc1271_signature(provider, claimed_signer, digest, signature, gas.limit)
                 .await
-                .map(|()| Erc1271Accepted::AboveWarnThreshold)
+                .map(|()| match first {
+                    // Only a revert is gas-shaped; a transport error says nothing about cost.
+                    Erc1271Error::EmptyRevert(_) => Erc1271Accepted::AboveWarnThreshold,
+                    _ => Erc1271Accepted::WithinWarnThreshold,
+                })
         }
         Err(e) => Err(e),
     }
@@ -486,6 +493,36 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(accepted, Erc1271Accepted::AboveWarnThreshold);
+    }
+
+    #[tokio::test]
+    async fn erc1271_transport_retry_makes_no_claim_about_gas() {
+        // The full budget is offered after a transport error too, but only a reasonless
+        // revert justifies reporting the wallet as expensive.
+        let asserter = Asserter::new();
+        let provider = mock_provider(asserter.clone());
+        let claimed = Address::from([0xDE; 20]);
+        let digest = B256::from([0u8; 32]);
+        let sig = vec![0x11_u8; 65];
+
+        asserter.push_failure_msg("rate limit exceeded");
+        let mut returndata = [0u8; 32];
+        returndata[..4].copy_from_slice(&ERC1271_MAGIC_VALUE);
+        asserter.push_success(&returndata);
+
+        let accepted = verify_signature(
+            &provider,
+            claimed,
+            digest,
+            &sig,
+            Erc1271GasBudget {
+                limit: 250_000,
+                warn_above: 100_000,
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(accepted, Erc1271Accepted::WithinWarnThreshold);
     }
 
     #[tokio::test]
