@@ -184,6 +184,24 @@ describe('verifyErc1271UserDecrypt', () => {
     expect(data).toContain(remove0x(SIG_130));
   });
 
+  it('caps the ERC-1271 call at the advertised gas limit', async () => {
+    const call = queuedCall({ success: true, data: RETURN_MAGIC });
+    const { context } = makeContext({ call });
+
+    await expect(
+      verifyErc1271UserDecrypt(context, { userAddress: WALLET, eip712: makeEip712(), signature: SIG_65 }),
+    ).resolves.toBeUndefined();
+
+    // A literal, not ERC1271_GAS_LIMIT: the cap is shared with the relayer and the KMS
+    // connector, so moving it has to be a deliberate edit here too.
+    const mockCalls = (call as unknown as { mock: { calls: [unknown, { gas: bigint }][] } }).mock.calls;
+    const callArgs = mockCalls[0];
+    if (callArgs === undefined) {
+      throw new Error('expected the mocked eth_call to have been invoked');
+    }
+    expect(callArgs[1].gas).toBe(250_000n);
+  });
+
   it('accepts the empty approveHash signature when the wallet returns magic', async () => {
     const { context } = makeContext({ call: queuedCall({ success: true, data: RETURN_MAGIC }) });
 
