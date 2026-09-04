@@ -574,7 +574,7 @@ mod tests {
             &provider,
             Address::from([0xDE; 20]),
             B256::from([0u8; 32]),
-            &vec![0x11_u8; 65],
+            &[0x11_u8; 65],
             HEADROOM_GAS,
         )
         .await
