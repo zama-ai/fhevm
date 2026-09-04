@@ -31,7 +31,6 @@ fn fast_config() -> DispatcherLockConfig {
         key_override: None,
         sweep: SweepConfig {
             interval: Duration::from_millis(500),
-            max_attempts: 5,
         },
     }
 }

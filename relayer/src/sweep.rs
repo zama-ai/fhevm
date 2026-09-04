@@ -19,8 +19,8 @@
 //! then makes is itself fenced against `owner_epoch`. What makes the claim safe is all in
 //! `PublicDecryptRepository::claim_incomplete_requests`'s doc comment, kept in one place rather
 //! than restated here: the eligibility predicate and its lack of a time term, why a row under
-//! this pod's own epoch is never claimed, why `tx_in_flight` is reset to `processing`, and why
-//! `attempts` is never reset.
+//! this pod's own epoch is never claimed, why `tx_in_flight` is reset to `processing`, and
+//! and why `tx_in_flight` is reset to `processing`.
 
 use std::{sync::Arc, time::Duration};
 
@@ -39,11 +39,6 @@ use crate::{
     store::sql::{models::req_status_enum_model::ReqStatus, repositories::Repositories},
 };
 
-/// Recorded on a row that exhausted `max_attempts` without completing (see
-/// [`run_tick`]'s call into `fail_exhausted_attempts`).
-const EXHAUSTED_ATTEMPTS_ERR_REASON: &str =
-    "Exceeded maximum sweep re-dispatch attempts without completing";
-
 /// Rows one tick claims per table. A backlog larger than this is drained over consecutive
 /// ticks: each claim stamps the current epoch, so the next tick's predicate skips what this
 /// one took and no row is passed over twice.
@@ -55,61 +50,36 @@ const EXHAUSTED_ATTEMPTS_ERR_REASON: &str =
 /// the config already carries more knobs than the deployment sets.
 const CLAIM_BATCH: i64 = 100;
 
-/// One sweep tick: while the dispatch gate is open, fail out exhausted rows, claim the rest,
-/// and dispatch what was claimed. Returns `(dispatched, failed, dispatch_failed)`.
+/// One sweep tick: while the dispatch gate is open, claim incomplete requests and dispatch
+/// what was claimed. Returns `(dispatched, dispatch_failed)`.
 ///
 /// `dispatched` counts claim plus hand-off to `dispatch_event`, which spawns handlers
 /// detached and returns at once - there is no synchronous signal for a downstream CAS loss,
-/// so such a row still counts. `dispatch_failed` counts claims that produced no event: a
-/// poison row (`req` no longer deserializes, or a bad `int_job_id`), re-claimed once per
-/// epoch until `max_attempts` fails it out. A no-op returning zeros while the gate is closed.
+/// so such a row still counts. `dispatch_failed` counts claims that produced no event, which
+/// takes a malformed `int_job_id`. A no-op returning zeros while the gate is closed.
 async fn run_tick(
     repositories: &Arc<Repositories>,
     orchestrator: &Arc<Orchestrator>,
     gate: &DispatchGate,
-    config: &SweepConfig,
-) -> anyhow::Result<(usize, u64, usize)> {
+) -> anyhow::Result<(usize, usize)> {
     let Some(epoch) = gate.epoch() else {
         // Not the dispatcher, or holding without a minted epoch yet (a short window right after
         // acquisition, self-healing within one heartbeat interval). Nothing to claim with.
         debug!("Sweep tick skipped: dispatch gate closed");
-        return Ok((0, 0, 0));
+        return Ok((0, 0));
     };
 
     let mut dispatched = 0usize;
-    let mut failed = 0u64;
     let mut dispatch_failed = 0usize;
 
-    failed += repositories
-        .public_decrypt
-        .fail_exhausted_attempts(epoch, config.max_attempts, EXHAUSTED_ATTEMPTS_ERR_REASON)
-        .await?;
-    for (int_job_id, req_json, status, _attempts) in furthest_along_first(
+    for row in furthest_along_first(
         repositories
             .public_decrypt
-            .claim_incomplete_requests(epoch, config.max_attempts, CLAIM_BATCH)
+            .claim_incomplete_requests(epoch, CLAIM_BATCH)
             .await?,
-        |(_, _, status, _)| *status,
+        |row| row.status,
     ) {
-        if dispatch_recovered_public_decrypt(orchestrator, int_job_id, req_json, status).await {
-            dispatched += 1;
-        } else {
-            dispatch_failed += 1;
-        }
-    }
-
-    failed += repositories
-        .user_decrypt
-        .fail_exhausted_attempts(epoch, config.max_attempts, EXHAUSTED_ATTEMPTS_ERR_REASON)
-        .await?;
-    for (int_job_id, req_json, req_type, status, _attempts) in furthest_along_first(
-        repositories
-            .user_decrypt
-            .claim_incomplete_requests(epoch, config.max_attempts, CLAIM_BATCH)
-            .await?,
-        |(_, _, _, status, _)| *status,
-    ) {
-        if dispatch_recovered_user_decrypt(orchestrator, int_job_id, req_json, req_type, status)
+        if dispatch_recovered_public_decrypt(orchestrator, row.int_job_id, row.req, row.status)
             .await
         {
             dispatched += 1;
@@ -118,25 +88,43 @@ async fn run_tick(
         }
     }
 
-    failed += repositories
-        .input_proof
-        .fail_exhausted_attempts(epoch, config.max_attempts, EXHAUSTED_ATTEMPTS_ERR_REASON)
-        .await?;
-    for (int_job_id, req_json, _status, _attempts) in furthest_along_first(
+    for row in furthest_along_first(
         repositories
-            .input_proof
-            .claim_incomplete_requests(epoch, config.max_attempts, CLAIM_BATCH)
+            .user_decrypt
+            .claim_incomplete_requests(epoch, CLAIM_BATCH)
             .await?,
-        |(_, _, status, _)| *status,
+        |row| row.status,
     ) {
-        if dispatch_recovered_input_proof(orchestrator, int_job_id, req_json).await {
+        if dispatch_recovered_user_decrypt(
+            orchestrator,
+            row.int_job_id,
+            row.req,
+            row.req_type,
+            row.status,
+        )
+        .await
+        {
             dispatched += 1;
         } else {
             dispatch_failed += 1;
         }
     }
 
-    Ok((dispatched, failed, dispatch_failed))
+    for row in furthest_along_first(
+        repositories
+            .input_proof
+            .claim_incomplete_requests(epoch, CLAIM_BATCH)
+            .await?,
+        |row| row.status,
+    ) {
+        if dispatch_recovered_input_proof(orchestrator, row.int_job_id, row.req).await {
+            dispatched += 1;
+        } else {
+            dispatch_failed += 1;
+        }
+    }
+
+    Ok((dispatched, dispatch_failed))
 }
 
 /// Dispatch the rows closest to a receipt first: `processing`, then `queued`. A claim rewrites
@@ -170,7 +158,6 @@ async fn run_sweep_worker_logic(
 
     debug!(
         interval_ms = config.interval.as_millis() as u64,
-        max_attempts = config.max_attempts,
         "Sweep worker initialized"
     );
 
@@ -187,23 +174,21 @@ async fn run_sweep_worker_logic(
             _ = shutdown.cancelled() => return,
         }
 
-        match run_tick(&repositories, &orchestrator, &gate, &config).await {
-            Ok((0, 0, 0)) => {
+        match run_tick(&repositories, &orchestrator, &gate).await {
+            Ok((0, 0)) => {
                 debug!(step = %WorkerStep::TickCompleted, worker = "sweep", "Tick complete, nothing to claim");
             }
-            Ok((dispatched, failed, dispatch_failed)) => {
+            Ok((dispatched, dispatch_failed)) => {
                 info!(
                     step = %WorkerStep::RowsProcessed,
                     worker = "sweep",
                     dispatched,
-                    failed_exhausted = failed,
                     dispatch_failed,
                     "Sweep tick claimed and re-dispatched requests"
                 );
                 if dispatch_failed > 0 {
                     // Claimed, then no event built from the row - see `run_tick`'s doc comment.
-                    // Such a row makes no progress until `max_attempts` fails it out, so this is
-                    // worth more than a count in an info line if it ever recurs.
+                    // Such a row is re-claimed on every later epoch and never progresses.
                     warn!(
                         worker = "sweep",
                         dispatch_failed, "Claimed rows could not be turned back into events"

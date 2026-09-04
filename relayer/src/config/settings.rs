@@ -464,23 +464,10 @@ pub struct SweepConfig {
     /// up. Every tick costs one Postgres query.
     #[serde(deserialize_with = "deserialize_human_duration")]
     pub interval: Duration,
-    /// Dispatchers that may pick one request up before it is failed. Counts failovers, not
-    /// retries.
-    pub max_attempts: i32,
 }
 
 impl SweepConfig {
     pub fn validate(&self) -> Result<(), AppConfigError> {
-        // `attempts < max_attempts` (claim) and `attempts >= max_attempts` (fail_exhausted)
-        // are complementary only when `max_attempts` is a real, positive bound - at `<= 0`
-        // every stale in-progress row would be failed on sight and none would ever be
-        // claimable, since a fresh row's `attempts` (0) already satisfies `>= max_attempts`.
-        if self.max_attempts <= 0 {
-            return Err(AppConfigError::Config(format!(
-                "sweep.max_attempts must be greater than 0: {}",
-                self.max_attempts
-            )));
-        }
         if self.interval.is_zero() {
             return Err(AppConfigError::Config(
                 "sweep.interval must be greater than 0".to_string(),

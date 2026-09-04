@@ -99,7 +99,6 @@ impl TwoEpochSetup {
             key_override: Some(key_a),
             sweep: SweepConfig {
                 interval: Duration::from_millis(500),
-                max_attempts: 5,
             },
         };
         let lock_a = connect_and_hold(&fast, &schema.database_url()).await;
@@ -109,7 +108,6 @@ impl TwoEpochSetup {
             key_override: Some(key_b),
             sweep: SweepConfig {
                 interval: Duration::from_millis(500),
-                max_attempts: 5,
             },
             ..fast
         };

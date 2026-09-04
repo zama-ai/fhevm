@@ -91,18 +91,14 @@ async fn wait_for_single_holder(pool: &PgPool, objid: i32, budget: Duration) -> 
 /// Submit a fresh public-decrypt request through `setup`'s own HTTP port, drive it to
 /// completion, and read back how it got there: `(driven_directly, epoch)`.
 ///
-/// `driven_directly` is `attempts == 0` - the row's `attempts` column is only ever touched by
-/// the sweep's claim `UPDATE` (see `sweep.rs`'s module docs), never by the direct-dispatch path
-/// an accepting pod takes when it is itself the confirmed dispatcher (`public_decrypt.rs`'s
-/// handler calls `orchestrator.dispatch_event` inline in that case, without going through a
-/// claim at all). So `attempts == 0` after completion means `setup` *was* the dispatcher at
-/// submission time; `attempts == 1` means some peer's sweep had to claim what `setup` merely
-/// accepted - meaning `setup` was the standby, and whichever pod's sweep claimed it is the
-/// dispatcher.
+/// `driven_directly` comes from the epoch intake stamps, read before the request is driven:
+/// a confirmed dispatcher stamps its own epoch on the `INSERT` and dispatches in process, and
+/// a standby stamps [`UNCLAIMED_EPOCH`] and leaves the row for a peer's sweep. Only the
+/// dispatcher can produce a non-zero epoch at that point, so a non-zero reading identifies
+/// `setup` as the dispatcher outright.
 ///
-/// `epoch` is the `owner_epoch` the completed row carries either way. That makes this useful
-/// for more than identification: called against the pod already established as the dispatcher,
-/// it also hands back that pod's current minted epoch - which is exactly what
+/// `epoch` is the `owner_epoch` the completed row carries either way. Called against the pod
+/// already established as the dispatcher, it hands back that pod's current minted epoch, which
 /// [`test_handover_on_graceful_shutdown_drives_the_leavers_incomplete_work`] needs before
 /// taking that pod down, to later prove its successor minted a strictly higher one.
 async fn probe_dispatch(setup: &TestSetup, pool: &PgPool) -> (bool, i64) {
@@ -116,6 +112,11 @@ async fn probe_dispatch(setup: &TestSetup, pool: &PgPool) -> (bool, i64) {
     );
 
     let ext_job_id = public_decrypt::submit_request(setup, &payload).await;
+
+    // Before the request is driven: a sweep claim would overwrite this with the claiming pod's
+    // epoch, and only the dispatcher's own intake can have stamped a non-zero one already.
+    let (_, epoch_at_intake) = row_state(pool, &ext_job_id).await;
+
     let (http_status, body) = public_decrypt::poll_until_terminal(setup, &ext_job_id).await;
     assert_eq!(
         http_status,
@@ -124,8 +125,8 @@ async fn probe_dispatch(setup: &TestSetup, pool: &PgPool) -> (bool, i64) {
     );
     assert_eq!(body.status, ApiResponseStatus::Succeeded);
 
-    let (_, owner_epoch, attempts) = row_state(pool, &ext_job_id).await;
-    (attempts == 0, owner_epoch)
+    let (_, owner_epoch) = row_state(pool, &ext_job_id).await;
+    (epoch_at_intake > UNCLAIMED_EPOCH, owner_epoch)
 }
 
 /// A pool connected to the two instances' shared schema, for assertions that read rows or
@@ -191,13 +192,9 @@ async fn test_exactly_one_of_two_instances_becomes_the_dispatcher() {
 /// and heartbeating against the same Postgres, under its own epoch - that claims and completes
 /// it.
 ///
-/// Two independent properties pin the single driver down, and neither one covers the other.
-/// `attempts == 1` counts claims: the sweep's claim `UPDATE` is the only writer of that column,
-/// so a re-dispatch on every tick or a second sweep claiming the same row both show up there.
-/// One gateway transaction counts sends, which is the half `attempts` is blind to: the
-/// in-process dispatch an accepting pod takes when it is the confirmed dispatcher never claims,
-/// so a standby that also drove this row would send a second decryption request while leaving
-/// `attempts` at 1.
+/// One gateway transaction is what pins the single driver down: the row is claimed by one
+/// pod's sweep and dispatched by that pod alone, so a standby that also drove it in process
+/// would send a second decryption request.
 #[tokio::test]
 async fn test_standby_accepts_then_the_holders_sweep_drives_it() {
     let setup_a = TestSetup::new_with_settings(fast_timing)
@@ -246,21 +243,16 @@ async fn test_standby_accepts_then_the_holders_sweep_drives_it() {
     // the two counts are read.
     tokio::time::sleep(Duration::from_millis(500)).await;
 
-    let (_, owner_epoch, attempts) = row_state(&pool, &ext_job_id).await;
+    let (_, owner_epoch) = row_state(&pool, &ext_job_id).await;
     assert!(
         owner_epoch > UNCLAIMED_EPOCH,
         "the claim must stamp the epoch the holder dispatched it under"
     );
     assert_eq!(
-        attempts, 1,
-        "one claim - not a re-dispatch per sweep tick, and not a second sweep claiming the \
-         same row"
-    );
-    assert_eq!(
         standby.fhevm_mock.decryption_transaction_count() - sends_before,
         1,
         "one pod sends the decryption request - a standby that also drove this row in process \
-         would send a second while leaving attempts at 1"
+         would send a second"
     );
 
     // Joined instance first, owner last - see the module doc comment.
@@ -330,15 +322,11 @@ async fn test_handover_on_graceful_shutdown_drives_the_leavers_incomplete_work()
     );
     assert_eq!(body.status, ApiResponseStatus::Succeeded);
 
-    let (_, owner_epoch, attempts) = row_state(&pool, &ext_job_id).await;
+    let (_, owner_epoch) = row_state(&pool, &ext_job_id).await;
     assert!(
         owner_epoch > holder_epoch,
         "the survivor must mint a strictly higher epoch than the pod it replaced \
          (survivor epoch {owner_epoch}, leaver epoch {holder_epoch})"
-    );
-    assert_eq!(
-        attempts, 1,
-        "one claim by the survivor's sweep - not a re-dispatch per tick"
     );
 
     // Joined instance first, owner last, regardless of which one ended up as leaver or

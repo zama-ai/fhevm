@@ -44,6 +44,16 @@ use crate::store::sql::{
 use alloy::primitives::U256;
 use uuid::Uuid;
 
+/// One row the sweep claimed, in the order [`PublicDecryptRepository::claim_incomplete_requests`]
+/// returns them.
+pub struct ClaimedRequest {
+    pub int_job_id: Vec<u8>,
+    pub req: Value,
+    /// Post-claim, so `tx_in_flight` never appears here - the claim rewrites it to
+    /// `processing`. Chooses which event the row is re-dispatched as.
+    pub status: ReqStatus,
+}
+
 pub enum PublicDecryptInsertResult {
     /// New request inserted into DB
     Inserted { ext_job_id: Uuid },
@@ -835,7 +845,7 @@ impl PublicDecryptRepository {
     }
 
     /// Sweep: atomically claim incomplete requests nobody is driving, stamping `owner_epoch`
-    /// and incrementing `attempts` in the same statement that selects them. Only rows the
+    /// in the same statement that selects them. Only rows the
     /// UPDATE touched come back, so a row a concurrent claimer took is never dispatched here.
     ///
     /// `batch` bounds one statement rather than the work: what it leaves behind keeps an older
@@ -843,9 +853,8 @@ impl PublicDecryptRepository {
     /// `SKIP LOCKED` passes over a row an app write holds, leaving it for the next tick rather
     /// than blocking the sweep behind it.
     ///
-    /// Eligibility is ownership alone, with no time term: `attempts < max_attempts` (see
-    /// [`Self::fail_exhausted_attempts`]) and `owner_epoch < $epoch`. A strictly older epoch
-    /// is a dead predecessor - epochs are minted only on acquisition and are monotonic
+    /// Eligibility is ownership alone, with no time term: `owner_epoch < $epoch`. A strictly
+    /// older epoch is a dead predecessor - epochs are minted only on acquisition and are monotonic
     /// database-wide. `UNCLAIMED_EPOCH` sorts below all of them and means no dispatcher ever
     /// claimed the row: intake stamps it exactly when the accepting pod will not drive what it
     /// inserted. If a predecessor has not yet noticed it is dead, the epoch fence on its later
@@ -859,18 +868,13 @@ impl PublicDecryptRepository {
     ///
     /// A row claimed out of `tx_in_flight` is reset to `processing` in the same statement:
     /// nothing else moves a `tx_in_flight` row back, so without the reset `on_tx_in_flight`'s
-    /// CAS refuses every re-dispatch and the row is claimed to exhaustion with a
-    /// possibly-successful transaction orphaned.
-    ///
-    /// `attempts` is never reset, including on ownership change: a crash-looping pod mints a
-    /// fresh epoch every restart, so a per-owner budget would never bind. It bounds the row's
-    /// total redrive count across its whole life, whichever pods spent it.
+    /// CAS refuses every re-dispatch and the row is left with a possibly-successful
+    /// transaction orphaned.
     pub async fn claim_incomplete_requests(
         &self,
         epoch: i64,
-        max_attempts: i32,
         batch: i64,
-    ) -> SqlResult<Vec<(Vec<u8>, Value, ReqStatus, i32)>> {
+    ) -> SqlResult<Vec<ClaimedRequest>> {
         let mut conn = self.pool.get_cron_connection().await?;
 
         let query_start = Instant::now();
@@ -880,24 +884,21 @@ impl PublicDecryptRepository {
                 SELECT id
                 FROM public_decrypt_req
                 WHERE req_status IN ('queued'::req_status, 'processing'::req_status, 'tx_in_flight'::req_status)
-                  AND attempts < $2
                   AND owner_epoch < $1
-                LIMIT $3
+                LIMIT $2
                 FOR UPDATE SKIP LOCKED
             )
             UPDATE public_decrypt_req
             SET owner_epoch = $1,
-                attempts = attempts + 1,
                 req_status = CASE
                     WHEN req_status = 'tx_in_flight'::req_status THEN 'processing'::req_status
                     ELSE req_status
                 END
             FROM claimed
             WHERE public_decrypt_req.id = claimed.id
-            RETURNING public_decrypt_req.int_job_id, public_decrypt_req.req, public_decrypt_req.req_status as "req_status!: ReqStatus", public_decrypt_req.attempts
+            RETURNING public_decrypt_req.int_job_id, public_decrypt_req.req, public_decrypt_req.req_status as "req_status!: ReqStatus"
             "#,
             epoch,
-            max_attempts,
             batch,
         )
         .fetch_all(&mut *conn)
@@ -912,86 +913,12 @@ impl PublicDecryptRepository {
 
         Ok(result?
             .into_iter()
-            .map(|row| (row.int_job_id, row.req, row.req_status, row.attempts))
+            .map(|row| ClaimedRequest {
+                int_job_id: row.int_job_id,
+                req: row.req,
+                status: row.req_status,
+            })
             .collect())
-    }
-
-    /// Sweep: move rows past `max_attempts` to `failure`, stamping `owner_epoch` so the
-    /// terminal write stays inside the fence. Uses the claim's exact ownership predicate
-    /// (`owner_epoch < $epoch`), keeping the two queries complementary: claimable while budget
-    /// remains, failed once it is spent, no third state.
-    ///
-    /// `<`, deliberately not the `<=` the fence uses: `<=` would fail a row this pod is
-    /// actively driving the moment its own claim increments `attempts` to the bound. The
-    /// fence asks "may my write land"; this and the claim ask "is anybody driving".
-    ///
-    /// The failing epoch need not be the one that spent the budget - `attempts` is per row,
-    /// not per owner. An exhausted row under this pod's *own* epoch is neither claimed nor
-    /// failed; a restart's higher epoch resolves it.
-    pub async fn fail_exhausted_attempts(
-        &self,
-        epoch: i64,
-        max_attempts: i32,
-        err_reason: &str,
-    ) -> SqlResult<u64> {
-        let mut conn = self.pool.get_cron_connection().await?;
-
-        let query_start = Instant::now();
-        let result = sqlx::query!(
-            r#"
-            WITH stale AS (
-                SELECT id, req_status, updated_at
-                FROM public_decrypt_req
-                WHERE req_status IN ('queued'::req_status, 'processing'::req_status, 'tx_in_flight'::req_status)
-                  AND attempts >= $1
-                  AND owner_epoch < $3
-                FOR UPDATE SKIP LOCKED
-            ),
-            updated AS (
-                UPDATE public_decrypt_req
-                SET req_status = 'failure'::req_status,
-                    err_reason = $2,
-                    owner_epoch = $3
-                FROM stale
-                WHERE public_decrypt_req.id = stale.id
-                RETURNING public_decrypt_req.updated_at as new_updated_at,
-                          stale.req_status as old_status,
-                          stale.updated_at as old_updated_at
-            )
-            SELECT
-                old_status as "old_status!: ReqStatus",
-                old_updated_at as "old_updated_at!",
-                new_updated_at as "new_updated_at!"
-            FROM updated
-            "#,
-            max_attempts,
-            err_reason,
-            epoch,
-        )
-        .fetch_all(&mut *conn)
-        .await;
-
-        match &result {
-            Ok(_) => {
-                metrics::observe_query(metrics::Table::PublicDecryptReq, query_start.elapsed())
-            }
-            Err(_) => metrics::increment_error(metrics::Table::PublicDecryptReq),
-        }
-
-        let rows = result?;
-        let count = rows.len() as u64;
-
-        for row in rows {
-            metrics::record_status_transition(
-                metrics::RequestType::PublicDecrypt,
-                row.old_status,
-                ReqStatus::Failure,
-                row.old_updated_at,
-                row.new_updated_at,
-            );
-        }
-
-        Ok(count)
     }
 
     pub async fn count_by_status(&self) -> SqlResult<Vec<(ReqStatus, i64)>> {

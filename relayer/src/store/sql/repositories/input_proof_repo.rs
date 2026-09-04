@@ -52,6 +52,16 @@ pub enum InputProofInsertResult {
     DuplicateProcessing { ext_job_id: Uuid },
 }
 
+/// One row the sweep claimed, in the order [`InputProofRepository::claim_incomplete_requests`]
+/// returns them. No status: an input proof is always re-dispatched as `ReqRcvdFromUser`.
+pub struct ClaimedRequest {
+    pub int_job_id: Vec<u8>,
+    pub req: Value,
+    /// Post-claim, so `tx_in_flight` never appears here - the claim rewrites it to
+    /// `processing`.
+    pub status: ReqStatus,
+}
+
 pub struct InputProofRepository {
     pool: PgClient,
     dispatcher_lock: DispatcherLock,
@@ -738,23 +748,22 @@ impl InputProofRepository {
     }
 
     /// Sweep: atomically claim incomplete requests nobody current is driving, stamping
-    /// `owner_epoch` and incrementing `attempts` in the same statement that selects them. Only
+    /// `owner_epoch` in the same statement that selects them. Only
     /// rows this UPDATE actually touched come back - a row a concurrent claimer already took is
     /// not returned here, so the caller never dispatches it (see
     /// `update_status_to_tx_in_flight`'s doc comment for the CAS-with-discarded-count bug
     /// this is built not to repeat).
     ///
-    /// Eligibility, the `tx_in_flight` reset and the lifetime `attempts` budget all work
-    /// exactly as they do for public decrypt requests. See
+    /// Eligibility and the `tx_in_flight` reset work exactly as they do for public decrypt
+    /// requests. See
     /// [`crate::store::sql::repositories::public_decrypt_repo::PublicDecryptRepository::claim_incomplete_requests`]
     /// for the reasoning; it is the canonical copy for all three request tables, kept in one
     /// place because three copies of it had already drifted apart once.
     pub async fn claim_incomplete_requests(
         &self,
         epoch: i64,
-        max_attempts: i32,
         batch: i64,
-    ) -> SqlResult<Vec<(Vec<u8>, Value, ReqStatus, i32)>> {
+    ) -> SqlResult<Vec<ClaimedRequest>> {
         let mut conn = self.pool.get_cron_connection().await?;
 
         let query_start = Instant::now();
@@ -764,24 +773,21 @@ impl InputProofRepository {
                 SELECT id
                 FROM input_proof_req
                 WHERE req_status IN ('queued'::req_status, 'processing'::req_status, 'tx_in_flight'::req_status)
-                  AND attempts < $2
                   AND owner_epoch < $1
-                LIMIT $3
+                LIMIT $2
                 FOR UPDATE SKIP LOCKED
             )
             UPDATE input_proof_req
             SET owner_epoch = $1,
-                attempts = attempts + 1,
                 req_status = CASE
                     WHEN req_status = 'tx_in_flight'::req_status THEN 'processing'::req_status
                     ELSE req_status
                 END
             FROM claimed
             WHERE input_proof_req.id = claimed.id
-            RETURNING input_proof_req.int_job_id, input_proof_req.req, input_proof_req.req_status as "req_status!: ReqStatus", input_proof_req.attempts
+            RETURNING input_proof_req.int_job_id, input_proof_req.req, input_proof_req.req_status as "req_status!: ReqStatus"
             "#,
             epoch,
-            max_attempts,
             batch,
         )
         .fetch_all(&mut *conn)
@@ -794,78 +800,12 @@ impl InputProofRepository {
 
         Ok(result?
             .into_iter()
-            .map(|row| (row.int_job_id, row.req, row.req_status, row.attempts))
+            .map(|row| ClaimedRequest {
+                int_job_id: row.int_job_id,
+                req: row.req,
+                status: row.req_status,
+            })
             .collect())
-    }
-
-    /// Sweep: move requests that have exhausted `max_attempts` to `failure`, so a row that
-    /// never completes is not claimed forever. Shares the claim's ownership predicate and
-    /// stamps `owner_epoch`; see
-    /// [`crate::store::sql::repositories::public_decrypt_repo::PublicDecryptRepository::fail_exhausted_attempts`]
-    /// for why the comparison is `<` here and `<=` in every other fenced write, and for why an
-    /// epoch can fail a row it never attempted itself.
-    pub async fn fail_exhausted_attempts(
-        &self,
-        epoch: i64,
-        max_attempts: i32,
-        err_reason: &str,
-    ) -> SqlResult<u64> {
-        let mut conn = self.pool.get_cron_connection().await?;
-
-        let query_start = Instant::now();
-        let result = sqlx::query!(
-            r#"
-            WITH stale AS (
-                SELECT id, req_status, updated_at
-                FROM input_proof_req
-                WHERE req_status IN ('queued'::req_status, 'processing'::req_status, 'tx_in_flight'::req_status)
-                  AND attempts >= $1
-                  AND owner_epoch < $3
-                FOR UPDATE SKIP LOCKED
-            ),
-            updated AS (
-                UPDATE input_proof_req
-                SET req_status = 'failure'::req_status,
-                    err_reason = $2,
-                    owner_epoch = $3
-                FROM stale
-                WHERE input_proof_req.id = stale.id
-                RETURNING input_proof_req.updated_at as new_updated_at,
-                          stale.req_status as old_status,
-                          stale.updated_at as old_updated_at
-            )
-            SELECT
-                old_status as "old_status!: ReqStatus",
-                old_updated_at as "old_updated_at!",
-                new_updated_at as "new_updated_at!"
-            FROM updated
-            "#,
-            max_attempts,
-            err_reason,
-            epoch,
-        )
-        .fetch_all(&mut *conn)
-        .await;
-
-        match &result {
-            Ok(_) => metrics::observe_query(metrics::Table::InputProofReq, query_start.elapsed()),
-            Err(_) => metrics::increment_error(metrics::Table::InputProofReq),
-        }
-
-        let rows = result?;
-        let count = rows.len() as u64;
-
-        for row in rows {
-            metrics::record_status_transition(
-                metrics::RequestType::InputProof,
-                row.old_status,
-                ReqStatus::Failure,
-                row.old_updated_at,
-                row.new_updated_at,
-            );
-        }
-
-        Ok(count)
     }
 
     pub async fn count_by_status(&self) -> SqlResult<Vec<(ReqStatus, i64)>> {

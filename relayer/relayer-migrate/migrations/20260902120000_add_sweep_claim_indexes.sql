@@ -1,13 +1,12 @@
--- Serves both sweep queries in store::sql::repositories. Nothing indexed them before: the
+-- Serves the sweep claim in store::sql::repositories. Nothing indexed it before: the
 -- pre-existing `idx_*_timeout_check` indexes read as req_status coverage but are partial on
 -- `receipt_received`, which the sweep never matches, so the holder sequentially scanned every
 -- request table twice a second at the default 500 ms interval.
 --
 -- Partial on the live statuses because the terminal ones accumulate without bound, which sizes
--- the index to the in-flight backlog rather than to history. Keyed on `owner_epoch` because
--- that is the term that rules rows out - a claimed row carries the current epoch, so the
--- predicate matches nothing in steady state, while `attempts < max_attempts` is true of nearly
--- every live row.
+-- the index to the in-flight backlog rather than to history. Keyed on `owner_epoch`, the term
+-- that rules rows out: a claimed row carries the current epoch, so the predicate matches
+-- nothing in steady state.
 --
 -- Built without CONCURRENTLY, so this holds SHARE against each table - blocking writes, not
 -- reads - for one sequential scan. Measured at 51 ms over a 1M-row table, and the alternative

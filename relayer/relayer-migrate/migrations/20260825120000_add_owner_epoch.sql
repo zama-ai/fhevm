@@ -11,23 +11,16 @@
 -- predicates. Rust keeps the distinction in the type system instead: `current_epoch()` stays
 -- `Option<i64>` for gating, and `fencing_epoch()` flattens it only for a write.
 --
--- `attempts` counts sweep re-dispatches of a row: the claim increments it, and a row
--- reaching max_attempts is failed out instead of claimed again. The cursor gets no
--- `attempts`: it is never re-dispatched.
---
 -- ADD COLUMN with a constant default is metadata-only on Postgres 11+ (deployed: 17), so
 -- this does not rewrite the populated request tables.
 ALTER TABLE user_decrypt_req
-    ADD COLUMN owner_epoch BIGINT NOT NULL DEFAULT 0,
-    ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0;
+    ADD COLUMN owner_epoch BIGINT NOT NULL DEFAULT 0;
 
 ALTER TABLE public_decrypt_req
-    ADD COLUMN owner_epoch BIGINT NOT NULL DEFAULT 0,
-    ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0;
+    ADD COLUMN owner_epoch BIGINT NOT NULL DEFAULT 0;
 
 ALTER TABLE input_proof_req
-    ADD COLUMN owner_epoch BIGINT NOT NULL DEFAULT 0,
-    ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0;
+    ADD COLUMN owner_epoch BIGINT NOT NULL DEFAULT 0;
 
 ALTER TABLE gateway_chain_cursor
     ADD COLUMN owner_epoch BIGINT NOT NULL DEFAULT 0;
@@ -38,30 +31,18 @@ COMMENT ON COLUMN user_decrypt_req.owner_epoch IS
     'predating this column; 0 is below every epoch dispatcher_epoch_seq can mint, so such a '
     'row loses to any real epoch. Stamped by the lock holder''s claim, checked by every '
     'send-decision write in store::sql::repositories.';
-COMMENT ON COLUMN user_decrypt_req.attempts IS
-    'Number of times the sweep has re-dispatched this row. Incremented by the claim and '
-    'bounded by the sweep''s max_attempts.';
-
 COMMENT ON COLUMN public_decrypt_req.owner_epoch IS
     'Dispatcher generation that currently owns this row for status writes. 0 means no '
     'dispatcher has claimed it under the epoch fence yet, which is the case for every row '
     'predating this column; 0 is below every epoch dispatcher_epoch_seq can mint, so such a '
     'row loses to any real epoch. Stamped by the lock holder''s claim, checked by every '
     'send-decision write in store::sql::repositories.';
-COMMENT ON COLUMN public_decrypt_req.attempts IS
-    'Number of times the sweep has re-dispatched this row. Incremented by the claim and '
-    'bounded by the sweep''s max_attempts.';
-
 COMMENT ON COLUMN input_proof_req.owner_epoch IS
     'Dispatcher generation that currently owns this row for status writes. 0 means no '
     'dispatcher has claimed it under the epoch fence yet, which is the case for every row '
     'predating this column; 0 is below every epoch dispatcher_epoch_seq can mint, so such a '
     'row loses to any real epoch. Stamped by the lock holder''s claim, checked by every '
     'send-decision write in store::sql::repositories.';
-COMMENT ON COLUMN input_proof_req.attempts IS
-    'Number of times the sweep has re-dispatched this row. Incremented by the claim and '
-    'bounded by the sweep''s max_attempts.';
-
 COMMENT ON COLUMN gateway_chain_cursor.owner_epoch IS
     'Dispatcher generation that currently owns the cursor for position writes. 0 means no '
     'dispatcher has claimed it under the epoch fence yet, which is the case for the row '

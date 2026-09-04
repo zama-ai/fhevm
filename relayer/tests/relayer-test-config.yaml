@@ -281,4 +281,3 @@ dispatcher_lock:
 
   sweep:
     interval: "500ms"
-    max_attempts: 5

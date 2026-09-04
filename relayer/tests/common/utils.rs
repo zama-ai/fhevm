@@ -1375,15 +1375,14 @@ pub fn fast_timing(settings: &mut Settings) {
     settings.dispatcher_lock.sweep.interval = std::time::Duration::from_millis(100);
 }
 
-/// `(req_status, owner_epoch, attempts)` for one public-decrypt row - the three columns that
-/// together say who drove a request and how it got there.
+/// `(req_status, owner_epoch)` for one public-decrypt row.
 #[allow(dead_code)]
-pub async fn row_state(pool: &sqlx::PgPool, ext_job_id: &str) -> (String, i64, i32) {
+pub async fn row_state(pool: &sqlx::PgPool, ext_job_id: &str) -> (String, i64) {
     use sqlx::Row;
 
     let row = sqlx::query(
         r#"
-        SELECT req_status::text AS status, owner_epoch, attempts
+        SELECT req_status::text AS status, owner_epoch
         FROM public_decrypt_req
         WHERE ext_job_id = $1::uuid
         "#,
@@ -1392,11 +1391,7 @@ pub async fn row_state(pool: &sqlx::PgPool, ext_job_id: &str) -> (String, i64, i
     .fetch_one(pool)
     .await
     .expect("Failed to read the request row");
-    (
-        row.get("status"),
-        row.get("owner_epoch"),
-        row.get("attempts"),
-    )
+    (row.get("status"), row.get("owner_epoch"))
 }
 
 #[cfg(test)]

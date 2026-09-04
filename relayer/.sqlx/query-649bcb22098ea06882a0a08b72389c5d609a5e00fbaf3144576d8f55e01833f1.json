@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            WITH claimed AS (\n                SELECT id\n                FROM user_decrypt_req\n                WHERE req_status IN ('queued'::req_status, 'processing'::req_status, 'tx_in_flight'::req_status)\n                  AND attempts < $2\n                  AND owner_epoch < $1\n                LIMIT $3\n                FOR UPDATE SKIP LOCKED\n            )\n            UPDATE user_decrypt_req\n            SET owner_epoch = $1,\n                attempts = attempts + 1,\n                req_status = CASE\n                    WHEN req_status = 'tx_in_flight'::req_status THEN 'processing'::req_status\n                    ELSE req_status\n                END\n            FROM claimed\n            WHERE user_decrypt_req.id = claimed.id\n            RETURNING user_decrypt_req.int_job_id, user_decrypt_req.req, user_decrypt_req.req_type as \"req_type!: UserDecryptReqType\", user_decrypt_req.req_status as \"req_status!: ReqStatus\", user_decrypt_req.attempts\n            ",
+  "query": "\n            WITH claimed AS (\n                SELECT id\n                FROM user_decrypt_req\n                WHERE req_status IN ('queued'::req_status, 'processing'::req_status, 'tx_in_flight'::req_status)\n                  AND owner_epoch < $1\n                LIMIT $2\n                FOR UPDATE SKIP LOCKED\n            )\n            UPDATE user_decrypt_req\n            SET owner_epoch = $1,\n                req_status = CASE\n                    WHEN req_status = 'tx_in_flight'::req_status THEN 'processing'::req_status\n                    ELSE req_status\n                END\n            FROM claimed\n            WHERE user_decrypt_req.id = claimed.id\n            RETURNING user_decrypt_req.int_job_id, user_decrypt_req.req, user_decrypt_req.req_type as \"req_type!: UserDecryptReqType\", user_decrypt_req.req_status as \"req_status!: ReqStatus\"\n            ",
   "describe": {
     "columns": [
       {
@@ -48,17 +48,11 @@
             }
           }
         }
-      },
-      {
-        "ordinal": 4,
-        "name": "attempts",
-        "type_info": "Int4"
       }
     ],
     "parameters": {
       "Left": [
         "Int8",
-        "Int4",
         "Int8"
       ]
     },
@@ -66,9 +60,8 @@
       false,
       false,
       false,
-      false,
       false
     ]
   },
-  "hash": "ec558d2faaa2d44d4ddb459fb55659cd4d2c656e7afb8c5bd29033d64fd5d811"
+  "hash": "649bcb22098ea06882a0a08b72389c5d609a5e00fbaf3144576d8f55e01833f1"
 }
