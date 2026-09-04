@@ -497,6 +497,73 @@ export class TypedPlaintext {
 }
 if (Symbol.dispose) TypedPlaintext.prototype[Symbol.dispose] = TypedPlaintext.prototype.free;
 
+/**
+ * A single signature together with the scheme that produced it.
+ *
+ * Used to carry a chain-native signature for one signing scheme when a response
+ * may be signed under several schemes at once (e.g. ECDSA/secp256k1 EIP-712 for
+ * an EVM, ed25519 for Solana, ML-DSA for post-quantum).
+ */
+export class TypedSignature {
+    static __wrap(ptr) {
+        const obj = Object.create(TypedSignature.prototype);
+        obj.__wbg_ptr = ptr;
+        TypedSignatureFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    static __unwrap(jsValue) {
+        if (!(jsValue instanceof TypedSignature)) {
+            return 0;
+        }
+        return jsValue.__destroy_into_raw();
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        TypedSignatureFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_typedsignature_free(ptr, 0);
+    }
+    /**
+     * The signature scheme that produced `signature`.
+     * @returns {number}
+     */
+    get scheme() {
+        const ret = wasm.__wbg_get_typedsignature_scheme(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * The raw, scheme-specific signature bytes.
+     * @returns {Uint8Array}
+     */
+    get signature() {
+        const ret = wasm.__wbg_get_typedsignature_signature(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * The signature scheme that produced `signature`.
+     * @param {number} arg0
+     */
+    set scheme(arg0) {
+        wasm.__wbg_set_typedsignature_scheme(this.__wbg_ptr, arg0);
+    }
+    /**
+     * The raw, scheme-specific signature bytes.
+     * @param {Uint8Array} arg0
+     */
+    set signature(arg0) {
+        const ptr0 = passArray8ToWasm0(arg0, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.__wbg_set_typedsignature_signature(this.__wbg_ptr, ptr0, len0);
+    }
+}
+if (Symbol.dispose) TypedSignature.prototype[Symbol.dispose] = TypedSignature.prototype.free;
+
 export class TypedSigncryptedCiphertext {
     static __wrap(ptr) {
         const obj = Object.create(TypedSigncryptedCiphertext.prototype);
@@ -610,7 +677,7 @@ export class UserDecryptionRequest {
     }
     /**
      * The EVM client's (blockchain wallet) address, encoded using EIP-55, including `0x`.
-     * Solana requests MUST leave this empty and use `solana_pubkey` instead.
+     * Solana requests MUST leave this empty and carry their identity in `signing_metadata`.
      * @returns {string}
      */
     get client_address() {
@@ -627,9 +694,7 @@ export class UserDecryptionRequest {
     }
     /**
      * MPC context ID which is used to identify the context to use for this request.
-     *
-     * NOTE: at the moment this can be None since we do not fully support multiple contexts.
-     * See <https://github.com/zama-ai/kms-internal/issues/2530>
+     * If unset, the server's default context is used.
      * @returns {RequestId | undefined}
      */
     get context_id() {
@@ -656,7 +721,8 @@ export class UserDecryptionRequest {
         return v1;
     }
     /**
-     * The epoch number placeholder (zama-ai/kms-internal#2743).
+     * The MPC epoch ID identifying which epoch's key material and session to
+     * use for this request.
      * @returns {RequestId | undefined}
      */
     get epoch_id() {
@@ -692,6 +758,18 @@ export class UserDecryptionRequest {
         return ret === 0 ? undefined : RequestId.__wrap(ret);
     }
     /**
+     * The signature schemes to include in the response `signatures` field.
+     * If empty, the response `signatures` list is empty; legacy ECDSA signatures
+     * remain available via the deprecated scalar fields for backward compatibility.
+     * @returns {Int32Array}
+     */
+    get signing_schemes() {
+        const ret = wasm.__wbg_get_userdecryptionrequest_signing_schemes(this.__wbg_ptr);
+        var v1 = getArrayI32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
      * The list of ciphertexts to decrypt for the user.
      * @returns {TypedCiphertext[]}
      */
@@ -703,7 +781,7 @@ export class UserDecryptionRequest {
     }
     /**
      * The EVM client's (blockchain wallet) address, encoded using EIP-55, including `0x`.
-     * Solana requests MUST leave this empty and use `solana_pubkey` instead.
+     * Solana requests MUST leave this empty and carry their identity in `signing_metadata`.
      * @param {string} arg0
      */
     set client_address(arg0) {
@@ -713,9 +791,7 @@ export class UserDecryptionRequest {
     }
     /**
      * MPC context ID which is used to identify the context to use for this request.
-     *
-     * NOTE: at the moment this can be None since we do not fully support multiple contexts.
-     * See <https://github.com/zama-ai/kms-internal/issues/2530>
+     * If unset, the server's default context is used.
      * @param {RequestId | null} [arg0]
      */
     set context_id(arg0) {
@@ -749,7 +825,8 @@ export class UserDecryptionRequest {
         wasm.__wbg_set_userdecryptionrequest_enc_key(this.__wbg_ptr, ptr0, len0);
     }
     /**
-     * The epoch number placeholder (zama-ai/kms-internal#2743).
+     * The MPC epoch ID identifying which epoch's key material and session to
+     * use for this request.
      * @param {RequestId | null} [arg0]
      */
     set epoch_id(arg0) {
@@ -796,6 +873,17 @@ export class UserDecryptionRequest {
         wasm.__wbg_set_userdecryptionrequest_request_id(this.__wbg_ptr, ptr0);
     }
     /**
+     * The signature schemes to include in the response `signatures` field.
+     * If empty, the response `signatures` list is empty; legacy ECDSA signatures
+     * remain available via the deprecated scalar fields for backward compatibility.
+     * @param {Int32Array} arg0
+     */
+    set signing_schemes(arg0) {
+        const ptr0 = passArray32ToWasm0(arg0, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.__wbg_set_userdecryptionrequest_signing_schemes(this.__wbg_ptr, ptr0, len0);
+    }
+    /**
      * The list of ciphertexts to decrypt for the user.
      * @param {TypedCiphertext[]} arg0
      */
@@ -819,7 +907,7 @@ export class UserDecryptionResponse {
         wasm.__wbg_userdecryptionresponse_free(ptr, 0);
     }
     /**
-     * This is the external signature created from the Eip712 domain
+     * This is the external ECDSA signature created from the Eip712 domain
      * on the structure, where userDecryptedShare is bc2wrap::serialize(&payload)
      * struct UserDecryptResponseVerification {
      * bytes publicKey;
@@ -827,6 +915,7 @@ export class UserDecryptionResponse {
      * bytes userDecryptedShare; // serialization of payload
      * bytes extraData;
      * }
+     * DEPRECATED: To be removed in 0.16 TODO(0.16)
      * @returns {Uint8Array}
      */
     get external_signature() {
@@ -854,6 +943,11 @@ export class UserDecryptionResponse {
         return ret === 0 ? undefined : UserDecryptionResponsePayload.__wrap(ret);
     }
     /**
+     * DEPRECATED to be removed in 0.16.0 TODO(0.16)
+     * The KMS-internal ECDSA/secp256k1 authenticity signature over
+     * the serialization of \[UserDecryptionResponsePayload\]. Kept at field 1 (and
+     * kept populated) for wire backward-compatibility with clients that predate
+     * the multi-scheme `signatures` list.
      * @returns {Uint8Array}
      */
     get signature() {
@@ -863,7 +957,18 @@ export class UserDecryptionResponse {
         return v1;
     }
     /**
-     * This is the external signature created from the Eip712 domain
+     * Per-scheme KMS signatures, one per scheme requested in the request's
+     * `signing_schemes`.
+     * @returns {TypedSignature[]}
+     */
+    get signatures() {
+        const ret = wasm.__wbg_get_userdecryptionresponse_signatures(this.__wbg_ptr);
+        var v1 = getArrayJsValueFromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * This is the external ECDSA signature created from the Eip712 domain
      * on the structure, where userDecryptedShare is bc2wrap::serialize(&payload)
      * struct UserDecryptResponseVerification {
      * bytes publicKey;
@@ -871,6 +976,7 @@ export class UserDecryptionResponse {
      * bytes userDecryptedShare; // serialization of payload
      * bytes extraData;
      * }
+     * DEPRECATED: To be removed in 0.16 TODO(0.16)
      * @param {Uint8Array} arg0
      */
     set external_signature(arg0) {
@@ -900,12 +1006,27 @@ export class UserDecryptionResponse {
         wasm.__wbg_set_userdecryptionresponse_payload(this.__wbg_ptr, ptr0);
     }
     /**
+     * DEPRECATED to be removed in 0.16.0 TODO(0.16)
+     * The KMS-internal ECDSA/secp256k1 authenticity signature over
+     * the serialization of \[UserDecryptionResponsePayload\]. Kept at field 1 (and
+     * kept populated) for wire backward-compatibility with clients that predate
+     * the multi-scheme `signatures` list.
      * @param {Uint8Array} arg0
      */
     set signature(arg0) {
         const ptr0 = passArray8ToWasm0(arg0, wasm.__wbindgen_malloc);
         const len0 = WASM_VECTOR_LEN;
         wasm.__wbg_set_userdecryptionresponse_signature(this.__wbg_ptr, ptr0, len0);
+    }
+    /**
+     * Per-scheme KMS signatures, one per scheme requested in the request's
+     * `signing_schemes`.
+     * @param {TypedSignature[]} arg0
+     */
+    set signatures(arg0) {
+        const ptr0 = passArrayJsValueToWasm0(arg0, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.__wbg_set_userdecryptionresponse_signatures(this.__wbg_ptr, ptr0, len0);
     }
 }
 if (Symbol.dispose) UserDecryptionResponse.prototype[Symbol.dispose] = UserDecryptionResponse.prototype.free;
@@ -1037,25 +1158,19 @@ if (Symbol.dispose) UserDecryptionResponsePayload.prototype[Symbol.dispose] = Us
  * The request half of the same contract [process_user_decryption_resp_solana_from_js] enforces:
  * given the fields the client already holds, it returns the 32-byte value a KMS node must have
  * signcrypted against. A caller can use it to check a response digest without running the whole
- * response path, and the JS vector suite uses it to check this build against the committed
- * normative set (see the module docs).
+ * response path, and the JS vector suite (tests/js/linker_vectors.test.js) uses it to check this
+ * build against the committed normative set (see the module docs).
  *
  * This is marshalling and nothing else — JS values in, the typed request built, and the one
  * canonical link computation in [crate::client::solana_response] called. No part of the
  * construction is repeated here: a second copy would be a link rule that agrees today and drifts
  * tomorrow.
  *
- * * `solana_user_pubkey` - the recipient's raw 32-byte ed25519 wallet key.
- *
- * * `host_chain_id` - the Solana host chain id the client's permit was signed for, as a JS
- * `BigInt`. It is a `u64` with bit 63 set, so it does not fit a JS number exactly and a `Number`
- * argument is rejected by the boundary rather than silently rounded.
- *
- * * `verifying_program_id` - the on-chain verifying program, 32 bytes.
- *
- * * `kms_context_id` - the KMS context id, 32 bytes.
- *
- * * `kms_epoch_id` - the KMS epoch id, 32 bytes.
+ * * `solana_request` - the Solana-owned request fields, as one named object:
+ * `{ user_pubkey, host_chain_id, verifying_program_id }`, in exactly the shape
+ * [process_user_decryption_resp_solana_from_js] takes them. Identities are 32-byte hex strings;
+ * `host_chain_id` is a decimal string, because a Solana chain id sets bit 63 and does not fit a
+ * JS number.
  *
  * * `handles` - the ciphertext handles as an array of hex strings (with or without a leading
  * "0x"), in request order and with duplicates preserved, exactly as the request lists them: order
@@ -1064,36 +1179,30 @@ if (Symbol.dispose) UserDecryptionResponsePayload.prototype[Symbol.dispose] = Us
  * * `enc_key` - the serialized transport (ephemeral ML-KEM) public key, as the request carries it.
  * The bytes are bound verbatim and no width is enforced.
  *
+ * * `extra_data` - the request's `extra_data`, verbatim. Opaque bytes bound as they are: nothing
+ * here parses them.
+ *
  * Returns the 32-byte link, or throws if the fields are not a valid request — a wrong-width
  * identity, a handle that is not a 32-byte Solana handle, an empty handle list, handles disagreeing
  * on the embedded chain id, or a `host_chain_id` that is not the one the handles embed.
- * @param {Uint8Array} solana_user_pubkey
- * @param {bigint} host_chain_id
- * @param {Uint8Array} verifying_program_id
- * @param {Uint8Array} kms_context_id
- * @param {Uint8Array} kms_epoch_id
+ * @param {any} solana_request
  * @param {any} handles
  * @param {Uint8Array} enc_key
+ * @param {Uint8Array} extra_data
  * @returns {Uint8Array}
  */
-export function compute_solana_user_decrypt_link_from_js(solana_user_pubkey, host_chain_id, verifying_program_id, kms_context_id, kms_epoch_id, handles, enc_key) {
-    const ptr0 = passArray8ToWasm0(solana_user_pubkey, wasm.__wbindgen_malloc);
+export function compute_solana_user_decrypt_link_from_js(solana_request, handles, enc_key, extra_data) {
+    const ptr0 = passArray8ToWasm0(enc_key, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
-    const ptr1 = passArray8ToWasm0(verifying_program_id, wasm.__wbindgen_malloc);
+    const ptr1 = passArray8ToWasm0(extra_data, wasm.__wbindgen_malloc);
     const len1 = WASM_VECTOR_LEN;
-    const ptr2 = passArray8ToWasm0(kms_context_id, wasm.__wbindgen_malloc);
-    const len2 = WASM_VECTOR_LEN;
-    const ptr3 = passArray8ToWasm0(kms_epoch_id, wasm.__wbindgen_malloc);
-    const len3 = WASM_VECTOR_LEN;
-    const ptr4 = passArray8ToWasm0(enc_key, wasm.__wbindgen_malloc);
-    const len4 = WASM_VECTOR_LEN;
-    const ret = wasm.compute_solana_user_decrypt_link_from_js(ptr0, len0, host_chain_id, ptr1, len1, ptr2, len2, ptr3, len3, handles, ptr4, len4);
+    const ret = wasm.compute_solana_user_decrypt_link_from_js(solana_request, handles, ptr0, len0, ptr1, len1);
     if (ret[3]) {
         throw takeFromExternrefTable0(ret[2]);
     }
-    var v6 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+    var v3 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
     wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
-    return v6;
+    return v3;
 }
 
 /**
@@ -1420,7 +1529,7 @@ export function process_user_decryption_resp_from_js(client, request, eip712_dom
 /**
  * Solana variant of [process_user_decryption_resp_from_js]. The signed link is the Solana
  * user-decryption binding over the deployment pair (`verifying_program_id`, host chain id), the
- * recipient, the KMS context and epoch, the handles and the transport key, not the EVM EIP-712
+ * recipient, the handles, the transport key and the request's `extra_data`, not the EVM EIP-712
  * `UserDecryptionLinker`; de-signcryption is otherwise identical to the EVM path.
  *
  * * `client` - the client built with [new_solana_client] from trusted configuration: the
@@ -1431,6 +1540,11 @@ export function process_user_decryption_resp_from_js(client, request, eip712_dom
  * set authenticates nothing. The client's wallet address plays no part on this path — the
  * recipient is the 32-byte ed25519 key below.
  *
+ * * `solana_request` - the Solana-owned request fields, as one named object:
+ * `{ user_pubkey, host_chain_id, verifying_program_id }`.
+ * Identities are 32-byte hex strings; `host_chain_id` is a decimal string, the vector-set
+ * convention, because a Solana chain id sets bit 63 and does not fit a JS number.
+ *
  * * `eip712_domain` - the EIP-712 domain a KMS node produced the response's `external_signature`
  * under, in the same JS shape [process_user_decryption_resp_from_js] takes it. A wasm response
  * never carries an internal ECDSA signature (see [js_to_resp]), so this is the domain every share
@@ -1439,36 +1553,24 @@ export function process_user_decryption_resp_from_js(client, request, eip712_dom
  * signature rule rather than accepted unchecked.
  * @param {Client} client
  * @param {any} request
- * @param {Uint8Array} solana_user_pubkey
- * @param {bigint} host_chain_id
- * @param {Uint8Array} verifying_program_id
- * @param {Uint8Array} kms_context_id
- * @param {Uint8Array} kms_epoch_id
+ * @param {any} solana_request
  * @param {any} agg_resp
  * @param {PublicEncKeyMlKem512} enc_pk
  * @param {PrivateEncKeyMlKem512} enc_sk
  * @param {any} eip712_domain
  * @returns {TypedPlaintext[]}
  */
-export function process_user_decryption_resp_solana_from_js(client, request, solana_user_pubkey, host_chain_id, verifying_program_id, kms_context_id, kms_epoch_id, agg_resp, enc_pk, enc_sk, eip712_domain) {
+export function process_user_decryption_resp_solana_from_js(client, request, solana_request, agg_resp, enc_pk, enc_sk, eip712_domain) {
     _assertClass(client, Client);
-    const ptr0 = passArray8ToWasm0(solana_user_pubkey, wasm.__wbindgen_malloc);
-    const len0 = WASM_VECTOR_LEN;
-    const ptr1 = passArray8ToWasm0(verifying_program_id, wasm.__wbindgen_malloc);
-    const len1 = WASM_VECTOR_LEN;
-    const ptr2 = passArray8ToWasm0(kms_context_id, wasm.__wbindgen_malloc);
-    const len2 = WASM_VECTOR_LEN;
-    const ptr3 = passArray8ToWasm0(kms_epoch_id, wasm.__wbindgen_malloc);
-    const len3 = WASM_VECTOR_LEN;
     _assertClass(enc_pk, PublicEncKeyMlKem512);
     _assertClass(enc_sk, PrivateEncKeyMlKem512);
-    const ret = wasm.process_user_decryption_resp_solana_from_js(client.__wbg_ptr, request, ptr0, len0, host_chain_id, ptr1, len1, ptr2, len2, ptr3, len3, agg_resp, enc_pk.__wbg_ptr, enc_sk.__wbg_ptr, eip712_domain);
+    const ret = wasm.process_user_decryption_resp_solana_from_js(client.__wbg_ptr, request, solana_request, agg_resp, enc_pk.__wbg_ptr, enc_sk.__wbg_ptr, eip712_domain);
     if (ret[3]) {
         throw takeFromExternrefTable0(ret[2]);
     }
-    var v5 = getArrayJsValueFromWasm0(ret[0], ret[1]).slice();
+    var v1 = getArrayJsValueFromWasm0(ret[0], ret[1]).slice();
     wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
-    return v5;
+    return v1;
 }
 
 /**
@@ -1785,6 +1887,14 @@ function __wbg_get_imports() {
             const ret = TypedPlaintext.__wrap(arg0);
             return ret;
         },
+        __wbg_typedsignature_new: function(arg0) {
+            const ret = TypedSignature.__wrap(arg0);
+            return ret;
+        },
+        __wbg_typedsignature_unwrap: function(arg0) {
+            const ret = TypedSignature.__unwrap(arg0);
+            return ret;
+        },
         __wbg_typedsigncryptedciphertext_new: function(arg0) {
             const ret = TypedSigncryptedCiphertext.__wrap(arg0);
             return ret;
@@ -1863,6 +1973,9 @@ const TypedCiphertextFinalization = (typeof FinalizationRegistry === 'undefined'
 const TypedPlaintextFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_typedplaintext_free(ptr, 1));
+const TypedSignatureFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_typedsignature_free(ptr, 1));
 const TypedSigncryptedCiphertextFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_typedsigncryptedciphertext_free(ptr, 1));
@@ -1953,6 +2066,11 @@ function debugString(val) {
     return className;
 }
 
+function getArrayI32FromWasm0(ptr, len) {
+    ptr = ptr >>> 0;
+    return getInt32ArrayMemory0().subarray(ptr / 4, ptr / 4 + len);
+}
+
 function getArrayJsValueFromWasm0(ptr, len) {
     ptr = ptr >>> 0;
     const mem = getDataViewMemory0();
@@ -1977,8 +2095,24 @@ function getDataViewMemory0() {
     return cachedDataViewMemory0;
 }
 
+let cachedInt32ArrayMemory0 = null;
+function getInt32ArrayMemory0() {
+    if (cachedInt32ArrayMemory0 === null || cachedInt32ArrayMemory0.byteLength === 0) {
+        cachedInt32ArrayMemory0 = new Int32Array(wasm.memory.buffer);
+    }
+    return cachedInt32ArrayMemory0;
+}
+
 function getStringFromWasm0(ptr, len) {
     return decodeText(ptr >>> 0, len);
+}
+
+let cachedUint32ArrayMemory0 = null;
+function getUint32ArrayMemory0() {
+    if (cachedUint32ArrayMemory0 === null || cachedUint32ArrayMemory0.byteLength === 0) {
+        cachedUint32ArrayMemory0 = new Uint32Array(wasm.memory.buffer);
+    }
+    return cachedUint32ArrayMemory0;
 }
 
 let cachedUint8ArrayMemory0 = null;
@@ -2000,6 +2134,13 @@ function handleError(f, args) {
 
 function isLikeNone(x) {
     return x === undefined || x === null;
+}
+
+function passArray32ToWasm0(arg, malloc) {
+    const ptr = malloc(arg.length * 4, 4) >>> 0;
+    getUint32ArrayMemory0().set(arg, ptr / 4);
+    WASM_VECTOR_LEN = arg.length;
+    return ptr;
 }
 
 function passArray8ToWasm0(arg, malloc) {
@@ -2097,6 +2238,8 @@ function __wbg_finalize_init(instance, module) {
     wasm = instance.exports;
     wasmModule = module;
     cachedDataViewMemory0 = null;
+    cachedInt32ArrayMemory0 = null;
+    cachedUint32ArrayMemory0 = null;
     cachedUint8ArrayMemory0 = null;
     wasm.__wbindgen_start();
     return wasm;

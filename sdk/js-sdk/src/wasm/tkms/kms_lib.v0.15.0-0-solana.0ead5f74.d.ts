@@ -127,6 +127,27 @@ export class TypedPlaintext {
     fhe_type: number;
 }
 
+/**
+ * A single signature together with the scheme that produced it.
+ *
+ * Used to carry a chain-native signature for one signing scheme when a response
+ * may be signed under several schemes at once (e.g. ECDSA/secp256k1 EIP-712 for
+ * an EVM, ed25519 for Solana, ML-DSA for post-quantum).
+ */
+export class TypedSignature {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * The signature scheme that produced `signature`.
+     */
+    scheme: number;
+    /**
+     * The raw, scheme-specific signature bytes.
+     */
+    signature: Uint8Array;
+}
+
 export class TypedSigncryptedCiphertext {
     private constructor();
     free(): void;
@@ -158,21 +179,17 @@ export class UserDecryptionRequest {
     [Symbol.dispose](): void;
     /**
      * The EVM client's (blockchain wallet) address, encoded using EIP-55, including `0x`.
-     * Solana requests MUST leave this empty and use `solana_pubkey` instead.
+     * Solana requests MUST leave this empty and carry their identity in `signing_metadata`.
      */
     client_address: string;
     /**
      * MPC context ID which is used to identify the context to use for this request.
-     *
-     * NOTE: at the moment this can be None since we do not fully support multiple contexts.
-     * See <https://github.com/zama-ai/kms-internal/issues/2530>
+     * If unset, the server's default context is used.
      */
     get context_id(): RequestId | undefined;
     /**
      * MPC context ID which is used to identify the context to use for this request.
-     *
-     * NOTE: at the moment this can be None since we do not fully support multiple contexts.
-     * See <https://github.com/zama-ai/kms-internal/issues/2530>
+     * If unset, the server's default context is used.
      */
     set context_id(value: RequestId | null | undefined);
     /**
@@ -189,11 +206,13 @@ export class UserDecryptionRequest {
      */
     enc_key: Uint8Array;
     /**
-     * The epoch number placeholder (zama-ai/kms-internal#2743).
+     * The MPC epoch ID identifying which epoch's key material and session to
+     * use for this request.
      */
     get epoch_id(): RequestId | undefined;
     /**
-     * The epoch number placeholder (zama-ai/kms-internal#2743).
+     * The MPC epoch ID identifying which epoch's key material and session to
+     * use for this request.
      */
     set epoch_id(value: RequestId | null | undefined);
     /**
@@ -221,6 +240,12 @@ export class UserDecryptionRequest {
      */
     set request_id(value: RequestId | null | undefined);
     /**
+     * The signature schemes to include in the response `signatures` field.
+     * If empty, the response `signatures` list is empty; legacy ECDSA signatures
+     * remain available via the deprecated scalar fields for backward compatibility.
+     */
+    signing_schemes: Int32Array;
+    /**
      * The list of ciphertexts to decrypt for the user.
      */
     typed_ciphertexts: TypedCiphertext[];
@@ -231,7 +256,7 @@ export class UserDecryptionResponse {
     free(): void;
     [Symbol.dispose](): void;
     /**
-     * This is the external signature created from the Eip712 domain
+     * This is the external ECDSA signature created from the Eip712 domain
      * on the structure, where userDecryptedShare is bc2wrap::serialize(&payload)
      * struct UserDecryptResponseVerification {
      * bytes publicKey;
@@ -239,6 +264,7 @@ export class UserDecryptionResponse {
      * bytes userDecryptedShare; // serialization of payload
      * bytes extraData;
      * }
+     * DEPRECATED: To be removed in 0.16 TODO(0.16)
      */
     external_signature: Uint8Array;
     /**
@@ -253,7 +279,19 @@ export class UserDecryptionResponse {
      * The actual \[UserDecryptionResponsePayload\].
      */
     set payload(value: UserDecryptionResponsePayload | null | undefined);
+    /**
+     * DEPRECATED to be removed in 0.16.0 TODO(0.16)
+     * The KMS-internal ECDSA/secp256k1 authenticity signature over
+     * the serialization of \[UserDecryptionResponsePayload\]. Kept at field 1 (and
+     * kept populated) for wire backward-compatibility with clients that predate
+     * the multi-scheme `signatures` list.
+     */
     signature: Uint8Array;
+    /**
+     * Per-scheme KMS signatures, one per scheme requested in the request's
+     * `signing_schemes`.
+     */
+    signatures: TypedSignature[];
 }
 
 export class UserDecryptionResponsePayload {
@@ -295,25 +333,19 @@ export class UserDecryptionResponsePayload {
  * The request half of the same contract [process_user_decryption_resp_solana_from_js] enforces:
  * given the fields the client already holds, it returns the 32-byte value a KMS node must have
  * signcrypted against. A caller can use it to check a response digest without running the whole
- * response path, and the JS vector suite uses it to check this build against the committed
- * normative set (see the module docs).
+ * response path, and the JS vector suite (tests/js/linker_vectors.test.js) uses it to check this
+ * build against the committed normative set (see the module docs).
  *
  * This is marshalling and nothing else — JS values in, the typed request built, and the one
  * canonical link computation in [crate::client::solana_response] called. No part of the
  * construction is repeated here: a second copy would be a link rule that agrees today and drifts
  * tomorrow.
  *
- * * `solana_user_pubkey` - the recipient's raw 32-byte ed25519 wallet key.
- *
- * * `host_chain_id` - the Solana host chain id the client's permit was signed for, as a JS
- * `BigInt`. It is a `u64` with bit 63 set, so it does not fit a JS number exactly and a `Number`
- * argument is rejected by the boundary rather than silently rounded.
- *
- * * `verifying_program_id` - the on-chain verifying program, 32 bytes.
- *
- * * `kms_context_id` - the KMS context id, 32 bytes.
- *
- * * `kms_epoch_id` - the KMS epoch id, 32 bytes.
+ * * `solana_request` - the Solana-owned request fields, as one named object:
+ * `{ user_pubkey, host_chain_id, verifying_program_id }`, in exactly the shape
+ * [process_user_decryption_resp_solana_from_js] takes them. Identities are 32-byte hex strings;
+ * `host_chain_id` is a decimal string, because a Solana chain id sets bit 63 and does not fit a
+ * JS number.
  *
  * * `handles` - the ciphertext handles as an array of hex strings (with or without a leading
  * "0x"), in request order and with duplicates preserved, exactly as the request lists them: order
@@ -322,11 +354,14 @@ export class UserDecryptionResponsePayload {
  * * `enc_key` - the serialized transport (ephemeral ML-KEM) public key, as the request carries it.
  * The bytes are bound verbatim and no width is enforced.
  *
+ * * `extra_data` - the request's `extra_data`, verbatim. Opaque bytes bound as they are: nothing
+ * here parses them.
+ *
  * Returns the 32-byte link, or throws if the fields are not a valid request — a wrong-width
  * identity, a handle that is not a 32-byte Solana handle, an empty handle list, handles disagreeing
  * on the embedded chain id, or a `host_chain_id` that is not the one the handles embed.
  */
-export function compute_solana_user_decrypt_link_from_js(solana_user_pubkey: Uint8Array, host_chain_id: bigint, verifying_program_id: Uint8Array, kms_context_id: Uint8Array, kms_epoch_id: Uint8Array, handles: any, enc_key: Uint8Array): Uint8Array;
+export function compute_solana_user_decrypt_link_from_js(solana_request: any, handles: any, enc_key: Uint8Array, extra_data: Uint8Array): Uint8Array;
 
 export function get_client_address(client: Client): string;
 
@@ -471,7 +506,7 @@ export function process_user_decryption_resp_from_js(client: Client, request: an
 /**
  * Solana variant of [process_user_decryption_resp_from_js]. The signed link is the Solana
  * user-decryption binding over the deployment pair (`verifying_program_id`, host chain id), the
- * recipient, the KMS context and epoch, the handles and the transport key, not the EVM EIP-712
+ * recipient, the handles, the transport key and the request's `extra_data`, not the EVM EIP-712
  * `UserDecryptionLinker`; de-signcryption is otherwise identical to the EVM path.
  *
  * * `client` - the client built with [new_solana_client] from trusted configuration: the
@@ -482,6 +517,11 @@ export function process_user_decryption_resp_from_js(client: Client, request: an
  * set authenticates nothing. The client's wallet address plays no part on this path — the
  * recipient is the 32-byte ed25519 key below.
  *
+ * * `solana_request` - the Solana-owned request fields, as one named object:
+ * `{ user_pubkey, host_chain_id, verifying_program_id }`.
+ * Identities are 32-byte hex strings; `host_chain_id` is a decimal string, the vector-set
+ * convention, because a Solana chain id sets bit 63 and does not fit a JS number.
+ *
  * * `eip712_domain` - the EIP-712 domain a KMS node produced the response's `external_signature`
  * under, in the same JS shape [process_user_decryption_resp_from_js] takes it. A wasm response
  * never carries an internal ECDSA signature (see [js_to_resp]), so this is the domain every share
@@ -489,7 +529,7 @@ export function process_user_decryption_resp_from_js(client: Client, request: an
  * domain — under which no real external signature verifies, so such a response is rejected by the
  * signature rule rather than accepted unchecked.
  */
-export function process_user_decryption_resp_solana_from_js(client: Client, request: any, solana_user_pubkey: Uint8Array, host_chain_id: bigint, verifying_program_id: Uint8Array, kms_context_id: Uint8Array, kms_epoch_id: Uint8Array, agg_resp: any, enc_pk: PublicEncKeyMlKem512, enc_sk: PrivateEncKeyMlKem512, eip712_domain: any): TypedPlaintext[];
+export function process_user_decryption_resp_solana_from_js(client: Client, request: any, solana_request: any, agg_resp: any, enc_pk: PublicEncKeyMlKem512, enc_sk: PrivateEncKeyMlKem512, eip712_domain: any): TypedPlaintext[];
 
 export function public_sig_key_to_u8vec(pk: PublicSigKey): Uint8Array;
 
@@ -505,15 +545,10 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
-    readonly __wbg_ciphertexthandle_free: (a: number, b: number) => void;
-    readonly __wbg_parseduserdecryptionrequest_free: (a: number, b: number) => void;
-    readonly __wbg_privatesigkey_free: (a: number, b: number) => void;
-    readonly __wbg_publicsigkey_free: (a: number, b: number) => void;
-    readonly __wbg_client_free: (a: number, b: number) => void;
     readonly __wbg_privateenckeymlkem512_free: (a: number, b: number) => void;
     readonly __wbg_publicenckeymlkem512_free: (a: number, b: number) => void;
     readonly __wbg_serveridaddr_free: (a: number, b: number) => void;
-    readonly compute_solana_user_decrypt_link_from_js: (a: number, b: number, c: bigint, d: number, e: number, f: number, g: number, h: number, i: number, j: any, k: number, l: number) => [number, number, number, number];
+    readonly compute_solana_user_decrypt_link_from_js: (a: any, b: any, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly get_client_address: (a: number) => [number, number];
     readonly get_client_secret_key: (a: number) => number;
     readonly get_server_addrs: (a: number) => [number, number];
@@ -530,12 +565,17 @@ export interface InitOutput {
     readonly new_solana_client: (a: number, b: number, c: number, d: number) => [number, number, number];
     readonly private_sig_key_to_u8vec: (a: number) => [number, number, number, number];
     readonly process_user_decryption_resp_from_js: (a: number, b: any, c: any, d: any, e: number, f: number, g: number, h: number) => [number, number, number, number];
-    readonly process_user_decryption_resp_solana_from_js: (a: number, b: any, c: number, d: number, e: bigint, f: number, g: number, h: number, i: number, j: number, k: number, l: any, m: number, n: number, o: any) => [number, number, number, number];
+    readonly process_user_decryption_resp_solana_from_js: (a: number, b: any, c: any, d: any, e: number, f: number, g: any) => [number, number, number, number];
     readonly public_sig_key_to_u8vec: (a: number) => [number, number];
     readonly u8vec_to_ml_kem_pke_pk: (a: number, b: number) => [number, number, number];
     readonly u8vec_to_ml_kem_pke_sk: (a: number, b: number) => [number, number, number];
     readonly u8vec_to_private_sig_key: (a: number, b: number) => [number, number, number];
     readonly u8vec_to_public_sig_key: (a: number, b: number) => [number, number, number];
+    readonly __wbg_ciphertexthandle_free: (a: number, b: number) => void;
+    readonly __wbg_parseduserdecryptionrequest_free: (a: number, b: number) => void;
+    readonly __wbg_client_free: (a: number, b: number) => void;
+    readonly __wbg_privatesigkey_free: (a: number, b: number) => void;
+    readonly __wbg_publicsigkey_free: (a: number, b: number) => void;
     readonly __wbg_eip712domainmsg_free: (a: number, b: number) => void;
     readonly __wbg_get_eip712domainmsg_chain_id: (a: number) => [number, number];
     readonly __wbg_get_eip712domainmsg_name: (a: number) => [number, number];
@@ -553,8 +593,10 @@ export interface InitOutput {
     readonly __wbg_get_userdecryptionrequest_extra_data: (a: number) => [number, number];
     readonly __wbg_get_userdecryptionrequest_key_id: (a: number) => number;
     readonly __wbg_get_userdecryptionrequest_request_id: (a: number) => number;
+    readonly __wbg_get_userdecryptionrequest_signing_schemes: (a: number) => [number, number];
     readonly __wbg_get_userdecryptionrequest_typed_ciphertexts: (a: number) => [number, number];
     readonly __wbg_get_userdecryptionresponse_payload: (a: number) => number;
+    readonly __wbg_get_userdecryptionresponse_signatures: (a: number) => [number, number];
     readonly __wbg_get_userdecryptionresponsepayload_degree: (a: number) => number;
     readonly __wbg_get_userdecryptionresponsepayload_party_id: (a: number) => number;
     readonly __wbg_get_userdecryptionresponsepayload_signcrypted_ciphertexts: (a: number) => [number, number];
@@ -572,27 +614,33 @@ export interface InitOutput {
     readonly __wbg_set_userdecryptionrequest_epoch_id: (a: number, b: number) => void;
     readonly __wbg_set_userdecryptionrequest_key_id: (a: number, b: number) => void;
     readonly __wbg_set_userdecryptionrequest_request_id: (a: number, b: number) => void;
+    readonly __wbg_set_userdecryptionrequest_signing_schemes: (a: number, b: number, c: number) => void;
     readonly __wbg_set_userdecryptionrequest_typed_ciphertexts: (a: number, b: number, c: number) => void;
     readonly __wbg_set_userdecryptionresponse_payload: (a: number, b: number) => void;
+    readonly __wbg_set_userdecryptionresponse_signatures: (a: number, b: number, c: number) => void;
     readonly __wbg_set_userdecryptionresponsepayload_degree: (a: number, b: number) => void;
     readonly __wbg_set_userdecryptionresponsepayload_party_id: (a: number, b: number) => void;
     readonly __wbg_set_userdecryptionresponsepayload_signcrypted_ciphertexts: (a: number, b: number, c: number) => void;
     readonly __wbg_typedciphertext_free: (a: number, b: number) => void;
     readonly __wbg_typedplaintext_free: (a: number, b: number) => void;
+    readonly __wbg_typedsignature_free: (a: number, b: number) => void;
     readonly __wbg_typedsigncryptedciphertext_free: (a: number, b: number) => void;
     readonly __wbg_userdecryptionrequest_free: (a: number, b: number) => void;
     readonly __wbg_userdecryptionresponse_free: (a: number, b: number) => void;
     readonly __wbg_userdecryptionresponsepayload_free: (a: number, b: number) => void;
     readonly __wbg_get_requestid_request_id: (a: number) => [number, number];
     readonly __wbg_get_userdecryptionrequest_client_address: (a: number) => [number, number];
+    readonly __wbg_get_typedsignature_scheme: (a: number) => number;
     readonly __wbg_get_typedsigncryptedciphertext_fhe_type: (a: number) => number;
     readonly __wbg_get_typedsigncryptedciphertext_packing_factor: (a: number) => number;
+    readonly __wbg_set_typedsignature_scheme: (a: number, b: number) => void;
     readonly __wbg_set_typedsigncryptedciphertext_fhe_type: (a: number, b: number) => void;
     readonly __wbg_set_typedsigncryptedciphertext_packing_factor: (a: number, b: number) => void;
     readonly __wbg_set_requestid_request_id: (a: number, b: number, c: number) => void;
     readonly __wbg_set_typedciphertext_ciphertext: (a: number, b: number, c: number) => void;
     readonly __wbg_set_typedciphertext_external_handle: (a: number, b: number, c: number) => void;
     readonly __wbg_set_typedplaintext_bytes: (a: number, b: number, c: number) => void;
+    readonly __wbg_set_typedsignature_signature: (a: number, b: number, c: number) => void;
     readonly __wbg_set_typedsigncryptedciphertext_external_handle: (a: number, b: number, c: number) => void;
     readonly __wbg_set_typedsigncryptedciphertext_signcrypted_ciphertext: (a: number, b: number, c: number) => void;
     readonly __wbg_set_userdecryptionrequest_client_address: (a: number, b: number, c: number) => void;
@@ -604,6 +652,7 @@ export interface InitOutput {
     readonly __wbg_set_userdecryptionresponsepayload_digest: (a: number, b: number, c: number) => void;
     readonly __wbg_set_userdecryptionresponsepayload_verification_key: (a: number, b: number, c: number) => void;
     readonly __wbg_get_typedplaintext_bytes: (a: number) => [number, number];
+    readonly __wbg_get_typedsignature_signature: (a: number) => [number, number];
     readonly __wbg_get_typedsigncryptedciphertext_external_handle: (a: number) => [number, number];
     readonly __wbg_get_typedsigncryptedciphertext_signcrypted_ciphertext: (a: number) => [number, number];
     readonly __wbg_get_userdecryptionrequest_enc_key: (a: number) => [number, number];

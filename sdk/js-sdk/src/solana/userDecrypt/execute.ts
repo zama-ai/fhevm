@@ -20,6 +20,7 @@ import type {
 import type { SolanaUserDecryptClock, SolanaUserDecryptTransport } from './session.js';
 import { runSolanaUserDecrypt } from './session.js';
 import { verifySolanaUserDecryptResponse } from './response.js';
+import { encodeSolanaKmsRouting } from '../permit/index.js';
 
 /**
  * One signed permit and everything created alongside it. The reusable object of the whole path:
@@ -44,9 +45,10 @@ export interface SolanaUserDecryptVerification {
 /**
  * The link inputs a permit's fields pin, for the given handles.
  *
- * Everything but the handles is the permit's own: the KMS routing ids come from the extraData the
- * wallet signed, not from configuration — so the link this client computes and the link the KMS
- * computes can only disagree if the permit itself does.
+ * Everything but the handles is the permit's own: the extra_data is the KMS routing the wallet
+ * signed, re-encoded to the exact wire bytes the request carries, not read from configuration — so
+ * the link this client computes and the link the KMS computes can only disagree if the permit
+ * itself does.
  *
  * @param fields - The signed permit's validated fields.
  * @param handles - The requested handles, in the order the request carries them.
@@ -59,8 +61,7 @@ export function solanaUserDecryptLinkInputs(
     userPubkey: fields.userPubkey,
     hostChainId: fields.chainId,
     verifyingProgramId: fields.verifyingProgramId,
-    kmsContextId: fields.kmsRouting.kmsContextId,
-    kmsEpochId: fields.kmsRouting.kmsEpochId,
+    extraData: encodeSolanaKmsRouting(fields.kmsRouting),
     handles,
     transportKey: fields.transportKey,
   };
