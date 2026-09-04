@@ -225,3 +225,12 @@ export const zamaEventAuthorityAddress = async (): Promise<Address> => {
   });
   return eventAuthority;
 };
+
+/** BPF upgradeable loader `ProgramData` PDA for zama-host (`[program_id]` under the loader). */
+export const zamaHostProgramDataAddress = async (): Promise<Address> => {
+  const [programData] = await getProgramDerivedAddress({
+    programAddress: "BPFLoaderUpgradeab1e11111111111111111111111" as Address,
+    seeds: [getAddressEncoder().encode(ZAMA_HOST_PROGRAM_ADDRESS)],
+  });
+  return programData;
+};

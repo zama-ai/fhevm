@@ -142,11 +142,6 @@ impl ExecutionState<'_, '_, '_> {
         }
     }
 
-    /// Resolves a binary left-hand operand, which may not be a scalar.
-    fn resolve_lhs_operand(&mut self, operand: &FheExecuteOperand) -> Result<ResolvedOperand> {
-        self.resolve_encrypted_operand(operand)
-    }
-
     /// Resolves a binary right-hand operand, which may be a scalar.
     fn resolve_rhs_operand(&mut self, operand: &FheExecuteOperand) -> Result<ResolvedOperand> {
         match operand {
@@ -176,7 +171,7 @@ pub(super) fn walk_steps<'info>(
                 output_fhe_type,
                 output,
             } => {
-                let lhs = execution.resolve_lhs_operand(lhs)?;
+                let lhs = execution.resolve_encrypted_operand(lhs)?;
                 let rhs = execution.resolve_rhs_operand(rhs)?;
                 assert_binary_operand_types(
                     *op,
@@ -267,10 +262,7 @@ pub(super) fn walk_steps<'info>(
                 fhe_type,
                 output,
             } => {
-                require!(
-                    operands.len() <= max_reduction_operands(*fhe_type),
-                    ZamaHostError::InvalidFheExecuteAccount
-                );
+                assert_reduction_count(operands.len(), *fhe_type)?;
                 let mut resolved: Vec<ResolvedOperand> = Vec::with_capacity(operands.len());
                 for operand in operands {
                     resolved.push(execution.resolve_encrypted_operand(operand)?);
@@ -286,10 +278,7 @@ pub(super) fn walk_steps<'info>(
                 fhe_type,
                 output,
             } => {
-                require!(
-                    set.len() <= max_reduction_operands(*fhe_type),
-                    ZamaHostError::InvalidFheExecuteAccount
-                );
+                assert_reduction_count(set.len(), *fhe_type)?;
                 let value_resolved = execution.resolve_encrypted_operand(value)?;
                 let mut set_resolved: Vec<ResolvedOperand> = Vec::with_capacity(set.len());
                 for operand in set {
@@ -308,7 +297,7 @@ pub(super) fn walk_steps<'info>(
                 output_fhe_type,
                 output,
             } => {
-                let factor1 = execution.resolve_lhs_operand(factor1)?;
+                let factor1 = execution.resolve_encrypted_operand(factor1)?;
                 let factor2 = execution.resolve_rhs_operand(factor2)?;
                 assert_mul_div_operand_types(
                     factor1.handle,

@@ -10,15 +10,18 @@
 //! that region three times — building, serializing the packet, and assembling the CPI account
 //! tables in `FheExecution::invoke` — and the budget below charges all three.
 //!
-//! An execution `build` returns is one whose *app-side* instruction fits: four ceilings make
+//! An execution `build` returns is one whose *app-side* instruction fits: five ceilings make
 //! every wall the builder can see a typed rejection instead of a runtime abort, each an exact
 //! function of the shape:
 //!
 //! - **Steps** — the host's `MAX_FHE_EXECUTION_STEPS`, the one step ceiling
 //!   ([`FheExecutionBuildError::TooManySteps`]), gated in [`FheExecutionBuilder::commit_step`].
-//! - **Instruction trace** — three system CPIs per created output plus the event CPIs, checked
-//!   per step against the transaction's 64-instruction trace; at most 20 creates fit
+//! - **Instruction trace** — one system CPI per created output on the common path plus the event
+//!   CPIs, checked per step against the transaction's 64-instruction trace
 //!   ([`FheExecutionBuildError::ExceedsInstructionTraceLimit`]).
+//! - **Persistent creates** — at most [`crate::cost::MAX_PERSISTENT_CREATES`] (20); that is the
+//!   heap/product cap, not the trace cap
+//!   ([`FheExecutionBuildError::ExceedsPersistentCreateLimit`]).
 //! - **CPI packet** — the serialized packet must fit the 10 KiB a CPI may carry, counted
 //!   exactly at `finish` ([`FheExecutionBuildError::ExceedsCpiInstructionDataLimit`]).
 //! - **Build heap** — the builder admits every byte it requests from the allocator against
@@ -241,7 +244,7 @@ impl<'id> FheExecutionBuilder<'id> {
                 if *persistent_creates + usize::from(creates_account)
                     > crate::cost::MAX_PERSISTENT_CREATES
                 {
-                    return Err(FheExecutionBuildError::ExceedsInstructionTraceLimit);
+                    return Err(FheExecutionBuildError::ExceedsPersistentCreateLimit);
                 }
                 // Every created output costs the transaction one CPI on the common host path, so
                 // the instruction-trace floor is still checked per step against the cheapest

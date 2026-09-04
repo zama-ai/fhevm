@@ -45,10 +45,16 @@ pub type BoolHandle = StoredValue<Bool>;
 pub type Uint64Handle = StoredValue<Uint<64>>;
 
 /// Marker for encrypted address handles.
+///
+/// Retained as a type tag. Address is not a supported Solana host FHE type and is not
+/// usable in typed ops.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Address;
 
 /// Marker for opaque 256-byte encrypted values.
+///
+/// Retained as a type tag. Bytes256 is not a supported Solana host FHE type (max is
+/// euint128) and is not usable in typed ops.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Bytes256;
 
@@ -86,16 +92,15 @@ mod sealed {
     impl FheRandomSeal for Uint<32> {}
     impl FheRandomSeal for Uint<64> {}
     impl FheRandomSeal for Uint<128> {}
-    impl FheRandomSeal for Bytes256 {}
 
-    // NOT / bitwise: Bool + Uint8..Uint128 + Uint256 (host `0 | 2..=6 | 8`).
+    // NOT / bitwise: Bool + Uint8..Uint128 (host `0 | 2..=6`). Address/Bytes256 are not
+    // usable in typed ops; Solana host max is euint128.
     impl FheNotSeal for Bool {}
     impl FheNotSeal for Uint<8> {}
     impl FheNotSeal for Uint<16> {}
     impl FheNotSeal for Uint<32> {}
     impl FheNotSeal for Uint<64> {}
     impl FheNotSeal for Uint<128> {}
-    impl FheNotSeal for Bytes256 {}
 
     impl FheBitwiseSeal for Bool {}
     impl FheBitwiseSeal for Uint<8> {}
@@ -103,41 +108,34 @@ mod sealed {
     impl FheBitwiseSeal for Uint<32> {}
     impl FheBitwiseSeal for Uint<64> {}
     impl FheBitwiseSeal for Uint<128> {}
-    impl FheBitwiseSeal for Bytes256 {}
 
-    // Shifts/rotations and Neg: Uint8..Uint128 + Uint256 (host `2..=6 | 8`).
+    // Shifts/rotations and Neg: Uint8..Uint128 (host `2..=6`).
     impl FheShiftSeal for Uint<8> {}
     impl FheShiftSeal for Uint<16> {}
     impl FheShiftSeal for Uint<32> {}
     impl FheShiftSeal for Uint<64> {}
     impl FheShiftSeal for Uint<128> {}
-    impl FheShiftSeal for Bytes256 {}
 
     impl FheNegSeal for Uint<8> {}
     impl FheNegSeal for Uint<16> {}
     impl FheNegSeal for Uint<32> {}
     impl FheNegSeal for Uint<64> {}
     impl FheNegSeal for Uint<128> {}
-    impl FheNegSeal for Bytes256 {}
 
-    // Eq/Ne: Bool + Uint8..Uint128 + Uint160 + Uint256 (host `0 | 2..=8`).
+    // Eq/Ne: Bool + Uint8..Uint128 (host `0 | 2..=6`).
     impl FheEqSeal for Bool {}
     impl FheEqSeal for Uint<8> {}
     impl FheEqSeal for Uint<16> {}
     impl FheEqSeal for Uint<32> {}
     impl FheEqSeal for Uint<64> {}
     impl FheEqSeal for Uint<128> {}
-    impl FheEqSeal for Address {}
-    impl FheEqSeal for Bytes256 {}
 
-    // IsIn: Uint8..Uint128 + Uint160 + Uint256 (host/EVM/coprocessor `2..=8`; no ebool).
+    // IsIn: Uint8..Uint128 (host `2..=6`; no ebool).
     impl FheIsInSeal for Uint<8> {}
     impl FheIsInSeal for Uint<16> {}
     impl FheIsInSeal for Uint<32> {}
     impl FheIsInSeal for Uint<64> {}
     impl FheIsInSeal for Uint<128> {}
-    impl FheIsInSeal for Address {}
-    impl FheIsInSeal for Bytes256 {}
 }
 
 /// Compile-time FHE type tag for typed encrypted handles.
@@ -195,9 +193,8 @@ impl FheRandom for Uint<16> {}
 impl FheRandom for Uint<32> {}
 impl FheRandom for Uint<64> {}
 impl FheRandom for Uint<128> {}
-impl FheRandom for Bytes256 {}
 
-/// Marker trait for FHE values accepted by bitwise NOT: Bool, Uint8..Uint128, Uint256.
+/// Marker trait for FHE values accepted by bitwise NOT: Bool, Uint8..Uint128.
 pub trait FheNot: FheTyped + sealed::FheNotSeal {}
 
 impl FheNot for Bool {}
@@ -206,9 +203,8 @@ impl FheNot for Uint<16> {}
 impl FheNot for Uint<32> {}
 impl FheNot for Uint<64> {}
 impl FheNot for Uint<128> {}
-impl FheNot for Bytes256 {}
 
-/// Marker trait for values accepted by bitwise And/Or/Xor: Bool, Uint8..Uint128, Uint256.
+/// Marker trait for values accepted by bitwise And/Or/Xor: Bool, Uint8..Uint128.
 pub trait FheBitwise: FheTyped + sealed::FheBitwiseSeal {}
 
 impl FheBitwise for Bool {}
@@ -217,9 +213,8 @@ impl FheBitwise for Uint<16> {}
 impl FheBitwise for Uint<32> {}
 impl FheBitwise for Uint<64> {}
 impl FheBitwise for Uint<128> {}
-impl FheBitwise for Bytes256 {}
 
-/// Marker trait for values accepted by shifts/rotations: Uint8..Uint128, Uint256.
+/// Marker trait for values accepted by shifts/rotations: Uint8..Uint128.
 pub trait FheShift: FheTyped + sealed::FheShiftSeal {}
 
 impl FheShift for Uint<8> {}
@@ -227,9 +222,8 @@ impl FheShift for Uint<16> {}
 impl FheShift for Uint<32> {}
 impl FheShift for Uint<64> {}
 impl FheShift for Uint<128> {}
-impl FheShift for Bytes256 {}
 
-/// Marker trait for values accepted by arithmetic negation: Uint8..Uint128, Uint256.
+/// Marker trait for values accepted by arithmetic negation: Uint8..Uint128.
 pub trait FheNeg: FheTyped + sealed::FheNegSeal {}
 
 impl FheNeg for Uint<8> {}
@@ -237,9 +231,8 @@ impl FheNeg for Uint<16> {}
 impl FheNeg for Uint<32> {}
 impl FheNeg for Uint<64> {}
 impl FheNeg for Uint<128> {}
-impl FheNeg for Bytes256 {}
 
-/// Marker trait for values accepted by Eq/Ne: Bool, Uint8..Uint128, Uint160, Uint256.
+/// Marker trait for values accepted by Eq/Ne: Bool, Uint8..Uint128.
 pub trait FheEq: FheTyped + sealed::FheEqSeal {}
 
 impl FheEq for Bool {}
@@ -248,10 +241,8 @@ impl FheEq for Uint<16> {}
 impl FheEq for Uint<32> {}
 impl FheEq for Uint<64> {}
 impl FheEq for Uint<128> {}
-impl FheEq for Address {}
-impl FheEq for Bytes256 {}
 
-/// Marker trait for values accepted by IsIn: Uint8..Uint128, Uint160, Uint256.
+/// Marker trait for values accepted by IsIn: Uint8..Uint128.
 pub trait FheIsIn: FheTyped + sealed::FheIsInSeal {}
 
 impl FheIsIn for Uint<8> {}
@@ -259,8 +250,6 @@ impl FheIsIn for Uint<16> {}
 impl FheIsIn for Uint<32> {}
 impl FheIsIn for Uint<64> {}
 impl FheIsIn for Uint<128> {}
-impl FheIsIn for Address {}
-impl FheIsIn for Bytes256 {}
 
 /// Typed encrypted execution value.
 ///

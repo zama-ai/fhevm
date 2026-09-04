@@ -16,11 +16,21 @@ export const SOLANA_HOST_CHAIN_ID = 9223372036854788153n;
 export const SOLANA_HOST_CHAIN_ID_I64 = SOLANA_HOST_CHAIN_ID - (1n << 64n);
 
 /**
+ * Test KMS context id: 31 zero bytes and last byte `n`. Matches Rust
+ * `canonical_test_context_id(n)`. `n = 0` is the reserved all-zero id.
+ */
+export const canonicalTestContextId = (n: number): Uint8Array => {
+  const id = new Uint8Array(32);
+  id[31] = n;
+  return id;
+};
+
+/**
  * The KMS context id every bring-up provisions (`deploy.ts` bootstrap and `fhevm-cli up`'s
  * `demo/seed.ts` both define context 1) — the id the scenarios' consume steps and the demo
  * preflight resolve the on-chain `KmsContext` PDA with.
  */
-export const BRINGUP_KMS_CONTEXT_ID = 1n;
+export const BRINGUP_KMS_CONTEXT_ID = canonicalTestContextId(1);
 
 // The two GatewayConfig getters the bootstrap needs; viem derives the selectors and decodes the
 // `address[]` returns from these signatures.

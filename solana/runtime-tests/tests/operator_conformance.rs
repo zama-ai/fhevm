@@ -247,10 +247,20 @@ mod edges {
         );
     }
     #[test]
-    fn unary_cast_u256_to_u8_truncates_high_bytes() {
+    fn unary_cast_u256_to_u8_is_unsupported() {
         let mut input = [0xff; 32];
         input[31] = 0x2a;
-        run_unary(FheUnaryOpCode::Cast, 8, input, 2, be(0x2a));
+        let operand = handle(1, 8);
+        expect_error(
+            args(vec![FheExecuteStep::Unary {
+                op: FheUnaryOpCode::Cast,
+                operand: persistent(operand),
+                output_fhe_type: 2,
+                output: local_output(),
+            }]),
+            HashMap::from([(operand, TypedClearValue::from_be_bytes(8, input))]),
+            "UnsupportedFheType",
+        );
     }
     #[test]
     fn sum_u8_wraps() {
@@ -316,49 +326,32 @@ mod edges {
         );
     }
     #[test]
-    fn is_in_u256_accepts_exact_wide_set_cap() {
-        let wide = handle(1, 8);
+    fn is_in_u128_accepts_exact_wide_set_cap() {
+        let wide = handle(1, 6);
         let execution = args(vec![is_in_step(
             persistent(wide),
             vec![persistent(wide); 60],
-            8,
+            6,
         )]);
         assert_eq!(
-            evaluate(&execution, &HashMap::from([(wide, typed(8, 9))])).unwrap(),
+            evaluate(&execution, &HashMap::from([(wide, typed(6, 9))])).unwrap(),
             vec![typed(0, 1)]
         );
     }
     #[test]
-    fn is_in_u160_high_bit_present() {
+    fn is_in_u160_is_unsupported() {
         let value = handle(1, 7);
-        let member = handle(2, 7);
-        let mut high = [0; 32];
-        high[12] = 1;
-        let execution = args(vec![is_in_step(
-            persistent(value),
-            vec![persistent(member)],
-            7,
-        )]);
-        let inputs = HashMap::from([
-            (value, TypedClearValue::from_be_bytes(7, high)),
-            (member, TypedClearValue::from_be_bytes(7, high)),
-        ]);
-        assert_eq!(evaluate(&execution, &inputs).unwrap(), vec![typed(0, 1)]);
-    }
-    #[test]
-    fn is_in_u160_high_bit_empty_set_is_false() {
-        let value = handle(1, 7);
-        let mut high = [0; 32];
-        high[12] = 1;
-        let execution = args(vec![is_in_step(persistent(value), vec![], 7)]);
-        let inputs = HashMap::from([(value, TypedClearValue::from_be_bytes(7, high))]);
-        assert_eq!(evaluate(&execution, &inputs).unwrap(), vec![typed(0, 0)]);
+        expect_error(
+            args(vec![is_in_step(persistent(value), vec![], 7)]),
+            HashMap::from([(value, typed(7, 1))]),
+            "UnsupportedFheType",
+        );
     }
     #[test]
     fn rand_then_bounded_rand_preserves_deterministic_output_order() {
         let execution = args(vec![
             FheExecuteStep::Rand {
-                fhe_type: 8,
+                fhe_type: 6,
                 output: local_output(),
             },
             bounded_rand_step(be(16), 2),
@@ -366,97 +359,80 @@ mod edges {
         let first = evaluate(&execution, &ClearInputs::new()).unwrap();
         let second = evaluate(&execution, &ClearInputs::new()).unwrap();
         assert_eq!(first, second);
-        assert_eq!([first[0].fhe_type, first[1].fhe_type], [8, 2]);
+        assert_eq!([first[0].fhe_type, first[1].fhe_type], [6, 2]);
         assert!(u64::from_be_bytes(first[1].value[24..].try_into().unwrap()) < 16);
     }
     #[test]
-    fn binary_eq_u160_high_bit_differs_from_zero() {
+    fn binary_eq_u160_is_unsupported() {
         let high = handle(1, 7);
         let zero = handle(2, 7);
-        let mut high_value = [0; 32];
-        high_value[12] = 0x80;
-        let execution = args(vec![binary(
-            FheBinaryOpCode::Eq,
-            persistent(high),
-            persistent(zero),
-            0,
-        )]);
-        let inputs = HashMap::from([
-            (high, TypedClearValue::from_be_bytes(7, high_value)),
-            (zero, typed(7, 0)),
-        ]);
-        assert_eq!(evaluate(&execution, &inputs).unwrap(), vec![typed(0, 0)]);
-    }
-    #[test]
-    fn binary_ne_u256_distinct_high_bits() {
-        let lhs = handle(1, 8);
-        let rhs = handle(2, 8);
-        let mut lhs_value = [0; 32];
-        lhs_value[0] = 0x80;
-        let mut rhs_value = [0; 32];
-        rhs_value[0] = 0x40;
-        let execution = args(vec![binary(
-            FheBinaryOpCode::Ne,
-            persistent(lhs),
-            persistent(rhs),
-            0,
-        )]);
-        let inputs = HashMap::from([
-            (lhs, TypedClearValue::from_be_bytes(8, lhs_value)),
-            (rhs, TypedClearValue::from_be_bytes(8, rhs_value)),
-        ]);
-        assert_eq!(evaluate(&execution, &inputs).unwrap(), vec![typed(0, 1)]);
-    }
-    #[test]
-    fn binary_rotr_u256_moves_low_bit_to_high_bit() {
-        let one = handle(1, 8);
-        let mut expected = [0; 32];
-        expected[0] = 0x80;
-        let execution = args(vec![binary(
-            FheBinaryOpCode::Rotr,
-            persistent(one),
-            scalar(be(1)),
-            8,
-        )]);
-        assert_eq!(
-            evaluate(&execution, &HashMap::from([(one, typed(8, 1))])).unwrap(),
-            vec![TypedClearValue::from_be_bytes(8, expected)]
+        expect_error(
+            args(vec![binary(
+                FheBinaryOpCode::Eq,
+                persistent(high),
+                persistent(zero),
+                0,
+            )]),
+            HashMap::from([(high, typed(7, 1)), (zero, typed(7, 0))]),
+            "UnsupportedFheType",
         );
     }
     #[test]
-    fn binary_eq_u256_equal_patterned_high_and_low_bytes() {
+    fn binary_ne_u256_is_unsupported() {
         let lhs = handle(1, 8);
         let rhs = handle(2, 8);
-        let mut pattern = [0; 32];
-        pattern[0] = 0x80;
-        pattern[31] = 1;
-        let execution = args(vec![binary(
-            FheBinaryOpCode::Eq,
-            persistent(lhs),
-            persistent(rhs),
-            0,
-        )]);
-        let inputs = HashMap::from([
-            (lhs, TypedClearValue::from_be_bytes(8, pattern)),
-            (rhs, TypedClearValue::from_be_bytes(8, pattern)),
-        ]);
-        assert_eq!(evaluate(&execution, &inputs).unwrap(), vec![typed(0, 1)]);
+        expect_error(
+            args(vec![binary(
+                FheBinaryOpCode::Ne,
+                persistent(lhs),
+                persistent(rhs),
+                0,
+            )]),
+            HashMap::from([(lhs, typed(8, 1)), (rhs, typed(8, 2))]),
+            "UnsupportedFheType",
+        );
     }
     #[test]
-    fn unary_not_u256_patterned_bytes_has_literal_complement() {
-        let mut input = [0; 32];
-        input[0] = 0x80;
-        input[31] = 1;
-        run_unary(
-            FheUnaryOpCode::Not,
-            8,
-            input,
-            8,
-            [
-                0x7f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-                0xff, 0xff, 0xff, 0xfe,
-            ],
+    fn binary_rotr_u256_is_unsupported() {
+        let one = handle(1, 8);
+        expect_error(
+            args(vec![binary(
+                FheBinaryOpCode::Rotr,
+                persistent(one),
+                scalar(be(1)),
+                8,
+            )]),
+            HashMap::from([(one, typed(8, 1))]),
+            "UnsupportedFheType",
+        );
+    }
+    #[test]
+    fn binary_eq_u256_is_unsupported() {
+        let lhs = handle(1, 8);
+        let rhs = handle(2, 8);
+        expect_error(
+            args(vec![binary(
+                FheBinaryOpCode::Eq,
+                persistent(lhs),
+                persistent(rhs),
+                0,
+            )]),
+            HashMap::from([(lhs, typed(8, 1)), (rhs, typed(8, 1))]),
+            "UnsupportedFheType",
+        );
+    }
+    #[test]
+    fn unary_not_u256_is_unsupported() {
+        let operand = handle(1, 8);
+        expect_error(
+            args(vec![FheExecuteStep::Unary {
+                op: FheUnaryOpCode::Not,
+                operand: persistent(operand),
+                output_fhe_type: 8,
+                output: local_output(),
+            }]),
+            HashMap::from([(operand, typed(8, 1))]),
+            "UnsupportedFheType",
         );
     }
 }
@@ -648,15 +624,24 @@ mod rejected {
             );
         }
         #[test]
-        fn is_in_u256_over_wide_cap() {
+        fn is_in_u256_type() {
             let input = handle(1, 8);
+            expect_error(
+                args(vec![is_in_step(persistent(input), vec![], 8)]),
+                HashMap::from([(input, typed(8, 1))]),
+                "UnsupportedFheType",
+            );
+        }
+        #[test]
+        fn is_in_u128_over_wide_cap() {
+            let input = handle(1, 6);
             expect_error(
                 args(vec![is_in_step(
                     persistent(input),
                     vec![persistent(input); 61],
-                    8,
+                    6,
                 )]),
-                HashMap::from([(input, typed(8, 1))]),
+                HashMap::from([(input, typed(6, 1))]),
                 "InvalidFheExecuteAccount",
             );
         }
@@ -901,9 +886,9 @@ fn expected_binary(op: FheBinaryOpCode, input: u8, scalar: bool, output: u8) -> 
     match op {
         Add | Sub | Mul | Min | Max => matches!(input, 2..=6) && output == input,
         Div | Rem => matches!(input, 2..=6) && scalar && output == input,
-        And | Or | Xor => matches!(input, 0 | 2..=6 | 8) && output == input,
-        Shl | Shr | Rotl | Rotr => matches!(input, 2..=6 | 8) && output == input,
-        Eq | Ne => matches!(input, 0 | 2..=8) && output == 0,
+        And | Or | Xor => matches!(input, 0 | 2..=6) && output == input,
+        Shl | Shr | Rotl | Rotr => matches!(input, 2..=6) && output == input,
+        Eq | Ne => matches!(input, 0 | 2..=6) && output == 0,
         Ge | Gt | Le | Lt => matches!(input, 2..=6) && output == 0,
     }
 }
@@ -918,10 +903,10 @@ fn unary_ops() -> [FheUnaryOpCode; 3] {
 
 fn expected_unary(op: FheUnaryOpCode, input: u8, output: u8) -> bool {
     match op {
-        FheUnaryOpCode::Neg => matches!(input, 2..=6 | 8) && output == input,
-        FheUnaryOpCode::Not => matches!(input, 0 | 2..=6 | 8) && output == input,
+        FheUnaryOpCode::Neg => matches!(input, 2..=6) && output == input,
+        FheUnaryOpCode::Not => matches!(input, 0 | 2..=6) && output == input,
         FheUnaryOpCode::Cast => {
-            matches!(input, 0 | 2..=6 | 8) && matches!(output, 2..=6 | 8) && input != output
+            matches!(input, 0 | 2..=6) && matches!(output, 2..=6) && input != output
         }
     }
 }
@@ -939,7 +924,7 @@ fn expected_ternary(
 ) -> bool {
     match op {
         FheTernaryOpCode::IfThenElse => {
-            control == 0 && matches!(if_true, 0 | 2..=8) && if_true == output && if_false == output
+            control == 0 && matches!(if_true, 0 | 2..=6) && if_true == output && if_false == output
         }
     }
 }

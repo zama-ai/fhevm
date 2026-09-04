@@ -232,9 +232,8 @@ enforces `attestation.contract_address == compute_subject` (whatever signer cons
 `user_address` is **not** EVM `msg.sender`; the host does not interpret it. `compute_subject` is the
 msg.sender analog for the contract bind. The PDA convention is **app policy** — apps MUST bind
 attestations to their compute-authority PDA, and MUST check the attested `user_address` themselves. Confidential-token
-checks the attested user equals the token account owner. This mirrors EVM, where `userAddress` is
-attested but the contract decides its meaning. Per-state-account (per-mint) scoping is deliberate and
-finer-grained than EVM's per-contract binding.
+checks the attested user equals the token account owner. Per-state-account (per-mint) scoping is
+deliberate and finer-grained than EVM's per-contract binding.
 
 **Derived outputs are NOT tainted by the input attestation.** Once verified, the input is an ordinary
 operand; any *persistent* ACL on an input-derived handle is the app's separate, explicit choice at

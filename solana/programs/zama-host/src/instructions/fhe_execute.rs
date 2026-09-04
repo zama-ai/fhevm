@@ -13,7 +13,7 @@ use super::common::*;
 use super::encrypted_value::{
     append_public_decrypt_leaf, grow_account_if_needed, update_encrypted_value,
 };
-use super::input_verification::{verify_input_attestation, InputVerifierParams};
+use super::input_verification::verify_input_attestation;
 use crate::{
     errors::ZamaHostError,
     events::{
@@ -214,7 +214,7 @@ fn execute_steps<'a, 'info>(
         created_public_outputs: Vec::new(),
         subject,
         chain_id: handle_context.derivation.chain_id,
-        verifier_params: InputVerifierParams::from_config(&ctx.accounts.host_config),
+        host_config: ctx.accounts.host_config.as_ref(),
     };
     walk_steps(&mut execution, ctx, args, handle_context)?;
     Ok(execution.created_public_outputs)
@@ -233,12 +233,12 @@ struct ExecutionState<'t, 'a, 'info> {
     created_public_outputs: Vec<ProducedPublicOutput>,
     subject: Pubkey,
     chain_id: u64,
-    verifier_params: InputVerifierParams,
+    host_config: &'t HostConfig,
 }
 
 impl<'info> ExecutionState<'_, '_, 'info> {
     fn dictionary_bytes(&self, index: u8) -> Result<[u8; 32]> {
-        dictionary_bytes(self.dictionary, index)
+        crate::state::dictionary_bytes(self.dictionary, index)
     }
 
     #[inline(never)]
@@ -265,9 +265,7 @@ impl<'info> ExecutionState<'_, '_, 'info> {
         // PDA — the "allow" exists only for this instruction's execution (the EVM
         // `allowTransient(input, msg.sender)` analog). The caller-is-contract gate is enforced in
         // `resolve_encrypted_operand`; derived outputs are then unconstrained, exactly like EVM.
-        // public_decrypt propagates like a public scalar (the app controls decryptability of
-        // results via an explicit allow_for_decryption; it is not blocked by the input itself).
-        verify_input_attestation(&self.verifier_params, attestation)?;
+        verify_input_attestation(self.host_config, attestation)?;
         Ok(ResolvedOperand::encrypted(attestation.input_handle))
     }
 
@@ -339,9 +337,9 @@ fn accept_execution_output<'info>(
             previous_state,
             make_public,
         } => {
-            let output_domain = dictionary_key(dictionary, *output_domain_index)?;
-            let output_authority = dictionary_key(dictionary, *output_account_index)?;
-            let output_label = dictionary_bytes(dictionary, *output_label_index)?;
+            let output_domain = crate::state::dictionary_key(dictionary, *output_domain_index)?;
+            let output_authority = crate::state::dictionary_key(dictionary, *output_account_index)?;
+            let output_label = crate::state::dictionary_bytes(dictionary, *output_label_index)?;
             let output_subjects = resolve_dictionary_subjects(dictionary, output_subject_indexes)?;
             let encrypted_value_account_authority = persistent_output_authority(
                 table,
@@ -374,18 +372,10 @@ fn accept_execution_output<'info>(
     Ok(created_public_output)
 }
 
-fn dictionary_bytes(dictionary: &[[u8; 32]], index: u8) -> Result<[u8; 32]> {
-    crate::state::dictionary_bytes(dictionary, index)
-}
-
-fn dictionary_key(dictionary: &[[u8; 32]], index: u8) -> Result<Pubkey> {
-    crate::state::dictionary_key(dictionary, index)
-}
-
 fn resolve_dictionary_subjects(dictionary: &[[u8; 32]], indexes: &[u8]) -> Result<Vec<Pubkey>> {
     indexes
         .iter()
-        .map(|index| dictionary_key(dictionary, *index))
+        .map(|index| crate::state::dictionary_key(dictionary, *index))
         .collect()
 }
 

@@ -315,9 +315,9 @@ where
     let lhs_type = operand_fhe_type(lhs, produced_count, &produced_type)?
         .ok_or(FheExecutionBuildError::ScalarLhsOperand)?;
     match op {
-        // Eq/Ne accept the widest operand set (Bool..Uint256); ordered comparisons Uint8..Uint128.
+        // Eq/Ne accept Bool and Uint8..Uint128; ordered comparisons Uint8..Uint128.
         FheBinaryOpCode::Eq | FheBinaryOpCode::Ne => {
-            if !matches!(lhs_type, 0 | 2..=8) {
+            if !matches!(lhs_type, 0 | 2..=6) {
                 return Err(FheExecutionBuildError::UnsupportedFheType);
             }
         }
@@ -383,10 +383,10 @@ where
 {
     validate_supported_fhe_type(output_fhe_type)?;
     let valid_output = match op {
-        FheUnaryOpCode::Neg => matches!(output_fhe_type, 2..=6 | 8),
-        FheUnaryOpCode::Not => matches!(output_fhe_type, 0 | 2..=6 | 8),
-        // EVM `cast` output set: Uint8..Uint128 | Uint256 (no ebool, no eaddress/Uint160).
-        FheUnaryOpCode::Cast => matches!(output_fhe_type, 2..=6 | 8),
+        FheUnaryOpCode::Neg => matches!(output_fhe_type, 2..=6),
+        FheUnaryOpCode::Not => matches!(output_fhe_type, 0 | 2..=6),
+        // Cast output set: Uint8..Uint128 (no ebool, no eaddress/Uint160). Solana host max is euint128.
+        FheUnaryOpCode::Cast => matches!(output_fhe_type, 2..=6),
     };
     if !valid_output {
         return Err(FheExecutionBuildError::UnsupportedFheType);
@@ -396,7 +396,7 @@ where
     validate_supported_fhe_type(operand_type)?;
     match op {
         FheUnaryOpCode::Neg => {
-            if !matches!(operand_type, 2..=6 | 8) {
+            if !matches!(operand_type, 2..=6) {
                 return Err(FheExecutionBuildError::UnsupportedFheType);
             }
             if operand_type != output_fhe_type {
@@ -404,7 +404,7 @@ where
             }
         }
         FheUnaryOpCode::Not => {
-            if !matches!(operand_type, 0 | 2..=6 | 8) {
+            if !matches!(operand_type, 0 | 2..=6) {
                 return Err(FheExecutionBuildError::UnsupportedFheType);
             }
             if operand_type != output_fhe_type {
@@ -412,8 +412,8 @@ where
             }
         }
         FheUnaryOpCode::Cast => {
-            // EVM `cast` input set: Bool | Uint8..Uint128 | Uint256 (no eaddress/Uint160).
-            if !matches!(operand_type, 0 | 2..=6 | 8) {
+            // Cast input set: Bool | Uint8..Uint128 (no eaddress/Uint160). Solana host max is euint128.
+            if !matches!(operand_type, 0 | 2..=6) {
                 return Err(FheExecutionBuildError::UnsupportedFheType);
             }
             // Same-type cast is rejected (EVM InvalidType parity).
@@ -489,12 +489,12 @@ pub(crate) fn validate_supported_binary_output_type(
         | FheBinaryOpCode::Min
         | FheBinaryOpCode::Max => matches!(output_fhe_type, 2..=6),
         FheBinaryOpCode::And | FheBinaryOpCode::Or | FheBinaryOpCode::Xor => {
-            matches!(output_fhe_type, 0 | 2..=6 | 8)
+            matches!(output_fhe_type, 0 | 2..=6)
         }
         FheBinaryOpCode::Shl
         | FheBinaryOpCode::Shr
         | FheBinaryOpCode::Rotl
-        | FheBinaryOpCode::Rotr => matches!(output_fhe_type, 2..=6 | 8),
+        | FheBinaryOpCode::Rotr => matches!(output_fhe_type, 2..=6),
         FheBinaryOpCode::Eq
         | FheBinaryOpCode::Ne
         | FheBinaryOpCode::Ge
@@ -509,7 +509,7 @@ pub(crate) fn validate_supported_binary_output_type(
 }
 
 pub(crate) fn validate_supported_fhe_type(fhe_type: u8) -> Result<()> {
-    if matches!(fhe_type, 0 | 2 | 3 | 4 | 5 | 6 | 7 | 8) {
+    if matches!(fhe_type, 0 | 2 | 3 | 4 | 5 | 6) {
         Ok(())
     } else {
         Err(FheExecutionBuildError::UnsupportedFheType)
@@ -546,7 +546,7 @@ pub(crate) fn validate_uint_fhe_type(fhe_type: u8) -> Result<()> {
 }
 
 pub(crate) fn validate_supported_rand_type(fhe_type: u8) -> Result<()> {
-    if matches!(fhe_type, 0 | 2 | 3 | 4 | 5 | 6 | 8) {
+    if matches!(fhe_type, 0 | 2 | 3 | 4 | 5 | 6) {
         Ok(())
     } else {
         Err(FheExecutionBuildError::UnsupportedFheType)

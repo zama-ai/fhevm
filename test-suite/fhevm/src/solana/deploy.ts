@@ -27,7 +27,7 @@ import {
   SOLANA_HOST_CHAIN_ID_I64,
   type GatewayBootstrapInputs,
 } from "./addresses";
-import { zamaEventAuthorityAddress } from "./fhe-execute";
+import { zamaEventAuthorityAddress, zamaHostProgramDataAddress } from "./fhe-execute";
 import {
   getDefineKmsContextInstructionAsync,
   getInitializeHostConfigInstructionAsync,
@@ -96,6 +96,7 @@ export const bootstrapZamaHost = async (
       await getInitializeHostConfigInstructionAsync({
         payer: params.payer,
         admin: params.payer,
+        programData: await zamaHostProgramDataAddress(),
         chainId: SOLANA_HOST_CHAIN_ID,
         gatewayChainId: params.gateway.gatewayChainId,
         inputVerificationContract: params.gateway.inputVerificationContract,

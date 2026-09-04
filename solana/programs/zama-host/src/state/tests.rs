@@ -167,13 +167,19 @@ fn assert_is_in_operand_types_enforces_uniform_declared_type() {
     let value = typed_handle(1, 4);
     let set = [typed_handle(2, 4), typed_handle(3, 4)];
     assert!(assert_is_in_operand_types(value, &set, 4).is_ok());
-    // The full EVM/coprocessor range Uint8..Uint256 (2..=8) is accepted, including Uint256.
-    assert!(assert_is_in_operand_types(
-        typed_handle(1, 8),
-        &[typed_handle(2, 8), typed_handle(3, 8)],
-        8
-    )
-    .is_ok());
+    // Solana host max is euint128: Uint256 (type 8) is rejected at the type gate.
+    assert_error(
+        assert_is_in_operand_types(
+            typed_handle(1, 8),
+            &[typed_handle(2, 8), typed_handle(3, 8)],
+            8,
+        ),
+        ZamaHostError::UnsupportedFheType,
+    );
+    assert_error(
+        assert_is_in_operand_types(typed_handle(1, 7), &[typed_handle(2, 7)], 7),
+        ZamaHostError::UnsupportedFheType,
+    );
     // Value type mismatch and set-element type mismatch are both rejected.
     assert_error(
         assert_is_in_operand_types(typed_handle(1, 5), &set, 4),
@@ -235,9 +241,13 @@ fn assert_unary_operand_type_rejects_same_type_cast() {
         assert_unary_operand_type(FheUnaryOpCode::Cast, typed_handle(1, 5), 5),
         ZamaHostError::UnsupportedFheType,
     );
-    // EVM cast type sets: bool input casts (bool -> Uint32), and Uint256 both ways, are allowed...
+    // Cast type sets: bool input casts (bool -> Uint32) are allowed. Uint256 is outside
+    // the Solana host type gate (max is euint128).
     assert!(assert_unary_operand_type(FheUnaryOpCode::Cast, typed_handle(1, 0), 4).is_ok());
-    assert!(assert_unary_operand_type(FheUnaryOpCode::Cast, typed_handle(1, 8), 5).is_ok());
+    assert_error(
+        assert_unary_operand_type(FheUnaryOpCode::Cast, typed_handle(1, 8), 5),
+        ZamaHostError::UnsupportedFheType,
+    );
     // ...but casting TO ebool (0) or eaddress/Uint160 (7), or FROM eaddress (7), is rejected.
     assert_error(
         assert_unary_operand_type(FheUnaryOpCode::Cast, typed_handle(1, 5), 0),
@@ -262,7 +272,7 @@ fn assert_unary_operand_type_rejects_same_type_cast() {
 
 #[test]
 fn assert_binary_operand_types_matches_evm_supported_sets() {
-    // Eq/Ne accept the widest set including Bool and Uint256; their output is ebool.
+    // Eq/Ne accept Bool and Uint8..Uint128; their output is ebool. Uint256 is rejected.
     assert!(assert_binary_operand_types(
         FheBinaryOpCode::Eq,
         typed_handle(1, 0),
@@ -271,15 +281,17 @@ fn assert_binary_operand_types_matches_evm_supported_sets() {
         0
     )
     .is_ok());
-    assert!(assert_binary_operand_types(
-        FheBinaryOpCode::Ne,
-        typed_handle(1, 8),
-        typed_handle(2, 8),
-        false,
-        0
-    )
-    .is_ok());
-    // Ordered comparisons reject Bool/Uint256 (EVM fheGe supportedTypes = Uint8..Uint128).
+    assert_error(
+        assert_binary_operand_types(
+            FheBinaryOpCode::Ne,
+            typed_handle(1, 8),
+            typed_handle(2, 8),
+            false,
+            0,
+        ),
+        ZamaHostError::UnsupportedFheType,
+    );
+    // Ordered comparisons reject Bool (EVM fheGe supportedTypes = Uint8..Uint128).
     assert_error(
         assert_binary_operand_types(
             FheBinaryOpCode::Ge,
@@ -290,15 +302,17 @@ fn assert_binary_operand_types_matches_evm_supported_sets() {
         ),
         ZamaHostError::UnsupportedFheType,
     );
-    // Bitwise ops accept Uint256; the operand type must equal the output type.
-    assert!(assert_binary_operand_types(
-        FheBinaryOpCode::And,
-        typed_handle(1, 8),
-        typed_handle(2, 8),
-        false,
-        8
-    )
-    .is_ok());
+    // Bitwise ops reject Uint256; Solana host max is euint128.
+    assert_error(
+        assert_binary_operand_types(
+            FheBinaryOpCode::And,
+            typed_handle(1, 8),
+            typed_handle(2, 8),
+            false,
+            8,
+        ),
+        ZamaHostError::UnsupportedFheType,
+    );
     assert_error(
         assert_binary_operand_types(
             FheBinaryOpCode::And,
@@ -307,7 +321,7 @@ fn assert_binary_operand_types_matches_evm_supported_sets() {
             false,
             8,
         ),
-        ZamaHostError::BinaryOperandTypeMismatch,
+        ZamaHostError::UnsupportedFheType,
     );
 }
 

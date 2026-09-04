@@ -84,6 +84,10 @@ pub const CPI_INSTRUCTION_DATA_LIMIT: usize = 10 * 1024;
 /// builder's floor charges one CPI.
 pub const CPIS_PER_PERSISTENT_CREATE: usize = 1;
 
+/// System-program CPIs the host issues to lazily create the per-app block meter on an app's
+/// first execution under a finite block cap (the squat/meter path, not the common-path create).
+pub const CPIS_PER_SQUAT_CREATE: usize = 3;
+
 /// Persistent creates one execution can carry. The common-path floor no longer binds this at
 /// 20 — `instruction_trace_floor(20, true, true)` sits well under
 /// [`TRANSACTION_INSTRUCTION_TRACE_LIMIT`] — so the SDK still caps public creates here because
@@ -161,7 +165,7 @@ impl FheExecutionCost {
     /// cap (the meter create still uses the squat path). A transaction budgeted against this
     /// number lands regardless of on-chain state.
     pub fn instruction_trace_worst_case(&self) -> usize {
-        self.instruction_trace_floor() + self.persistent_updates + 3
+        self.instruction_trace_floor() + self.persistent_updates + CPIS_PER_SQUAT_CREATE
     }
 }
 
@@ -211,7 +215,7 @@ mod tests {
         // block-meter creation (squat/meter path, not the common-path create CPI).
         assert_eq!(
             cost.instruction_trace_worst_case(),
-            5 + cost.persistent_updates + 3
+            5 + cost.persistent_updates + CPIS_PER_SQUAT_CREATE
         );
     }
 }

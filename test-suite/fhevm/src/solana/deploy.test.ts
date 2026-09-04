@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import { generateKeyPairSigner, type Instruction, type TransactionSigner } from "@solana/kit";
 
-import type { GatewayBootstrapInputs } from "./addresses";
+import { BRINGUP_KMS_CONTEXT_ID, type GatewayBootstrapInputs } from "./addresses";
 import { bootstrapZamaHost, kmsCertificateThreshold, lifecycleComposeProject } from "./deploy";
 import { getDefineKmsContextInstructionDataDecoder } from "./internal/generated/zamaHost/instructions/defineKmsContext";
 import { getInitializeHostConfigInstructionDataDecoder } from "./internal/generated/zamaHost/instructions/initializeHostConfig";
@@ -95,7 +95,7 @@ describe("bootstrapZamaHost", () => {
 
     expect(defineContext.programAddress).toBe(ZAMA_HOST_PROGRAM_ADDRESS);
     const defineData = getDefineKmsContextInstructionDataDecoder().decode(defineContext.data ?? new Uint8Array());
-    expect(defineData.contextId).toBe(1n);
+    expect(Buffer.from(defineData.contextId)).toEqual(Buffer.from(BRINGUP_KMS_CONTEXT_ID));
     expect(defineData.signers).toHaveLength(4);
     expect(defineData.thresholds).toEqual({ publicDecryption: 3, userDecryption: 3, kmsGen: 3, mpc: 1 });
   });

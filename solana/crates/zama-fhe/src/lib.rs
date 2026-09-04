@@ -54,8 +54,8 @@ pub use acl::{
 pub use builder::FheExecutionBuilder;
 pub use cost::{
     instruction_trace_floor, FheExecutionCost, APP_HEAP_RESERVE_BYTES, BUILD_HEAP_BUDGET_BYTES,
-    CPIS_PER_PERSISTENT_CREATE, CPI_INSTRUCTION_DATA_LIMIT, MAX_PERSISTENT_CREATES,
-    PROGRAM_HEAP_BYTES, TRANSACTION_INSTRUCTION_TRACE_LIMIT,
+    CPIS_PER_PERSISTENT_CREATE, CPIS_PER_SQUAT_CREATE, CPI_INSTRUCTION_DATA_LIMIT,
+    MAX_PERSISTENT_CREATES, PROGRAM_HEAP_BYTES, TRANSACTION_INSTRUCTION_TRACE_LIMIT,
 };
 #[cfg(feature = "cpi")]
 pub use cpi::ExecutionCpiAccounts;
@@ -95,11 +95,15 @@ pub enum FheExecutionBuildError {
     TooManySteps,
     /// The step's persistent creates and events would push the transaction past Solana's
     /// 64-instruction trace even in the minimal wrapper — one app instruction invoking
-    /// `fhe_execute` once — so the execution could never land. Three system CPIs per created
-    /// output is the binding term: at most 20 creates fit one execution. Split the creates
-    /// across executions, or update existing accounts instead (updates cost no CPI). See
-    /// [`instruction_trace_floor`].
+    /// `fhe_execute` once — so the execution could never land. The common path is one system
+    /// CPI per created output; see [`instruction_trace_floor`].
     ExceedsInstructionTraceLimit,
+    /// The execution would create more persistent accounts than
+    /// [`MAX_PERSISTENT_CREATES`](crate::cost::MAX_PERSISTENT_CREATES) (20). That is the
+    /// heap/product cap, not the instruction-trace cap: the common-path floor at 20 creates
+    /// sits well under the 64-instruction trace. Split the creates across executions, or
+    /// update existing accounts instead.
+    ExceedsPersistentCreateLimit,
     /// The serialized `fhe_execute` packet exceeds the 10 KiB the runtime allows a CPI to
     /// carry ([`CPI_INSTRUCTION_DATA_LIMIT`]), and the packet always travels by CPI — so the
     /// runtime would reject the invoke. Verified-input attestations are the heavy term

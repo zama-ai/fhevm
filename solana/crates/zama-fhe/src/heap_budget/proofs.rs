@@ -39,7 +39,7 @@ fn the_builder_admits_what_the_host_heap_cannot_hold() {
             panic!("{creates} shared-audience public creates should build: {error:?}")
         });
     }
-    // One past the trace cap is where the app-side ceilings finally stop the shape — the gap
+    // One past the heap/product cap is where the app-side ceilings finally stop the shape — the gap
     // is exactly the 16–20 band, not open-ended.
     assert_eq!(
         FheExecution::build(
@@ -47,7 +47,7 @@ fn the_builder_admits_what_the_host_heap_cannot_hold() {
             shared_audience_public_creates_shape(MAX_PERSISTENT_CREATES + 1),
         )
         .unwrap_err(),
-        crate::FheExecutionBuildError::ExceedsInstructionTraceLimit,
+        crate::FheExecutionBuildError::ExceedsPersistentCreateLimit,
     );
 }
 
@@ -234,7 +234,7 @@ fn the_shapes_past_each_ceiling_are_rejected_with_their_own_error() {
             MAX_PERSISTENT_CREATES + 1,
             1,
         ))),
-        crate::FheExecutionBuildError::ExceedsInstructionTraceLimit,
+        crate::FheExecutionBuildError::ExceedsPersistentCreateLimit,
     );
     // Twenty wide-audience creates build a packet that fits a CPI but a build that cannot
     // survive the program heap.

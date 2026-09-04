@@ -57,6 +57,7 @@ export type InitializeHostConfigInstruction<
   TProgram extends string = typeof ZAMA_HOST_PROGRAM_ADDRESS,
   TAccountPayer extends string | AccountMeta<string> = string,
   TAccountAdmin extends string | AccountMeta<string> = string,
+  TAccountProgramData extends string | AccountMeta<string> = string,
   TAccountHostConfig extends string | AccountMeta<string> = string,
   TAccountSystemProgram extends string | AccountMeta<string> = '11111111111111111111111111111111',
   TAccountEventAuthority extends string | AccountMeta<string> = string,
@@ -72,6 +73,7 @@ export type InitializeHostConfigInstruction<
       TAccountAdmin extends string
         ? ReadonlySignerAccount<TAccountAdmin> & AccountSignerMeta<TAccountAdmin>
         : TAccountAdmin,
+      TAccountProgramData extends string ? ReadonlyAccount<TAccountProgramData> : TAccountProgramData,
       TAccountHostConfig extends string ? WritableAccount<TAccountHostConfig> : TAccountHostConfig,
       TAccountSystemProgram extends string ? ReadonlyAccount<TAccountSystemProgram> : TAccountSystemProgram,
       TAccountEventAuthority extends string ? ReadonlyAccount<TAccountEventAuthority> : TAccountEventAuthority,
@@ -171,6 +173,7 @@ export function getInitializeHostConfigInstructionDataCodec(): Codec<
 export type InitializeHostConfigAsyncInput<
   TAccountPayer extends string = string,
   TAccountAdmin extends string = string,
+  TAccountProgramData extends string = string,
   TAccountHostConfig extends string = string,
   TAccountSystemProgram extends string = string,
   TAccountEventAuthority extends string = string,
@@ -178,8 +181,10 @@ export type InitializeHostConfigAsyncInput<
 > = {
   /** Pays rent for the config account. */
   payer: TransactionSigner<TAccountPayer>;
-  /** Initial admin stored in the config. */
+  /** Initial admin stored in the config. Must be the BPF upgrade authority. */
   admin: TransactionSigner<TAccountAdmin>;
+  /** Upgradeable loader `ProgramData` for this program; `admin` must be its upgrade authority. */
+  programData: Address<TAccountProgramData>;
   /** Singleton config PDA. */
   hostConfig?: Address<TAccountHostConfig>;
   /** System program used for account creation. */
@@ -198,6 +203,7 @@ export type InitializeHostConfigAsyncInput<
 export async function getInitializeHostConfigInstructionAsync<
   TAccountPayer extends string,
   TAccountAdmin extends string,
+  TAccountProgramData extends string,
   TAccountHostConfig extends string,
   TAccountSystemProgram extends string,
   TAccountEventAuthority extends string,
@@ -207,6 +213,7 @@ export async function getInitializeHostConfigInstructionAsync<
   input: InitializeHostConfigAsyncInput<
     TAccountPayer,
     TAccountAdmin,
+    TAccountProgramData,
     TAccountHostConfig,
     TAccountSystemProgram,
     TAccountEventAuthority,
@@ -218,6 +225,7 @@ export async function getInitializeHostConfigInstructionAsync<
     TProgramAddress,
     TAccountPayer,
     TAccountAdmin,
+    TAccountProgramData,
     TAccountHostConfig,
     TAccountSystemProgram,
     TAccountEventAuthority,
@@ -231,6 +239,7 @@ export async function getInitializeHostConfigInstructionAsync<
   const originalAccounts = {
     payer: { value: input.payer ?? null, isWritable: true },
     admin: { value: input.admin ?? null, isWritable: false },
+    programData: { value: input.programData ?? null, isWritable: false },
     hostConfig: { value: input.hostConfig ?? null, isWritable: true },
     systemProgram: { value: input.systemProgram ?? null, isWritable: false },
     eventAuthority: { value: input.eventAuthority ?? null, isWritable: false },
@@ -254,6 +263,7 @@ export async function getInitializeHostConfigInstructionAsync<
     accounts: [
       getAccountMeta('payer', accounts.payer),
       getAccountMeta('admin', accounts.admin),
+      getAccountMeta('programData', accounts.programData),
       getAccountMeta('hostConfig', accounts.hostConfig),
       getAccountMeta('systemProgram', accounts.systemProgram),
       getAccountMeta('eventAuthority', accounts.eventAuthority),
@@ -265,6 +275,7 @@ export async function getInitializeHostConfigInstructionAsync<
     TProgramAddress,
     TAccountPayer,
     TAccountAdmin,
+    TAccountProgramData,
     TAccountHostConfig,
     TAccountSystemProgram,
     TAccountEventAuthority,
@@ -275,6 +286,7 @@ export async function getInitializeHostConfigInstructionAsync<
 export type InitializeHostConfigInput<
   TAccountPayer extends string = string,
   TAccountAdmin extends string = string,
+  TAccountProgramData extends string = string,
   TAccountHostConfig extends string = string,
   TAccountSystemProgram extends string = string,
   TAccountEventAuthority extends string = string,
@@ -282,8 +294,10 @@ export type InitializeHostConfigInput<
 > = {
   /** Pays rent for the config account. */
   payer: TransactionSigner<TAccountPayer>;
-  /** Initial admin stored in the config. */
+  /** Initial admin stored in the config. Must be the BPF upgrade authority. */
   admin: TransactionSigner<TAccountAdmin>;
+  /** Upgradeable loader `ProgramData` for this program; `admin` must be its upgrade authority. */
+  programData: Address<TAccountProgramData>;
   /** Singleton config PDA. */
   hostConfig: Address<TAccountHostConfig>;
   /** System program used for account creation. */
@@ -302,6 +316,7 @@ export type InitializeHostConfigInput<
 export function getInitializeHostConfigInstruction<
   TAccountPayer extends string,
   TAccountAdmin extends string,
+  TAccountProgramData extends string,
   TAccountHostConfig extends string,
   TAccountSystemProgram extends string,
   TAccountEventAuthority extends string,
@@ -311,6 +326,7 @@ export function getInitializeHostConfigInstruction<
   input: InitializeHostConfigInput<
     TAccountPayer,
     TAccountAdmin,
+    TAccountProgramData,
     TAccountHostConfig,
     TAccountSystemProgram,
     TAccountEventAuthority,
@@ -321,6 +337,7 @@ export function getInitializeHostConfigInstruction<
   TProgramAddress,
   TAccountPayer,
   TAccountAdmin,
+  TAccountProgramData,
   TAccountHostConfig,
   TAccountSystemProgram,
   TAccountEventAuthority,
@@ -333,6 +350,7 @@ export function getInitializeHostConfigInstruction<
   const originalAccounts = {
     payer: { value: input.payer ?? null, isWritable: true },
     admin: { value: input.admin ?? null, isWritable: false },
+    programData: { value: input.programData ?? null, isWritable: false },
     hostConfig: { value: input.hostConfig ?? null, isWritable: true },
     systemProgram: { value: input.systemProgram ?? null, isWritable: false },
     eventAuthority: { value: input.eventAuthority ?? null, isWritable: false },
@@ -353,6 +371,7 @@ export function getInitializeHostConfigInstruction<
     accounts: [
       getAccountMeta('payer', accounts.payer),
       getAccountMeta('admin', accounts.admin),
+      getAccountMeta('programData', accounts.programData),
       getAccountMeta('hostConfig', accounts.hostConfig),
       getAccountMeta('systemProgram', accounts.systemProgram),
       getAccountMeta('eventAuthority', accounts.eventAuthority),
@@ -364,6 +383,7 @@ export function getInitializeHostConfigInstruction<
     TProgramAddress,
     TAccountPayer,
     TAccountAdmin,
+    TAccountProgramData,
     TAccountHostConfig,
     TAccountSystemProgram,
     TAccountEventAuthority,
@@ -379,14 +399,16 @@ export type ParsedInitializeHostConfigInstruction<
   accounts: {
     /** Pays rent for the config account. */
     payer: TAccountMetas[0];
-    /** Initial admin stored in the config. */
+    /** Initial admin stored in the config. Must be the BPF upgrade authority. */
     admin: TAccountMetas[1];
+    /** Upgradeable loader `ProgramData` for this program; `admin` must be its upgrade authority. */
+    programData: TAccountMetas[2];
     /** Singleton config PDA. */
-    hostConfig: TAccountMetas[2];
+    hostConfig: TAccountMetas[3];
     /** System program used for account creation. */
-    systemProgram: TAccountMetas[3];
-    eventAuthority: TAccountMetas[4];
-    program: TAccountMetas[5];
+    systemProgram: TAccountMetas[4];
+    eventAuthority: TAccountMetas[5];
+    program: TAccountMetas[6];
   };
   data: InitializeHostConfigInstructionData;
 };
@@ -397,10 +419,10 @@ export function parseInitializeHostConfigInstruction<
 >(
   instruction: Instruction<TProgram> & InstructionWithAccounts<TAccountMetas> & InstructionWithData<ReadonlyUint8Array>,
 ): ParsedInitializeHostConfigInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 6) {
+  if (instruction.accounts.length < 7) {
     throw new SolanaError(SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS, {
       actualAccountMetas: instruction.accounts.length,
-      expectedAccountMetas: 6,
+      expectedAccountMetas: 7,
     });
   }
   let accountIndex = 0;
@@ -414,6 +436,7 @@ export function parseInitializeHostConfigInstruction<
     accounts: {
       payer: getNextAccount(),
       admin: getNextAccount(),
+      programData: getNextAccount(),
       hostConfig: getNextAccount(),
       systemProgram: getNextAccount(),
       eventAuthority: getNextAccount(),

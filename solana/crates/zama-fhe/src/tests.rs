@@ -1116,7 +1116,7 @@ fn unary_validation_rejects_same_type_cast_and_bad_operand_types() {
             Output::transient(),
         )
         .is_ok());
-    // ...but casting TO ebool, TO eaddress, or FROM eaddress is rejected.
+    // ...but casting TO ebool, TO eaddress, FROM eaddress, or FROM/TO Bytes256 is rejected.
     assert_eq!(
         builder
             .unary_op(
@@ -1153,7 +1153,32 @@ fn unary_validation_rejects_same_type_cast_and_bad_operand_types() {
             .unwrap_err(),
         FheExecutionBuildError::UnsupportedFheType
     );
-    // Neg rejects a Bool operand (EVM fheNeg supportedTypes = Uint8..Uint128 + Uint256).
+    assert_eq!(
+        builder
+            .unary_op(
+                FheUnaryOpCode::Cast,
+                Operand::persistent(
+                    typed_handle(4, FheType::BYTES256.byte()),
+                    Pubkey::new_unique()
+                ),
+                FheType::UINT64,
+                Output::transient(),
+            )
+            .unwrap_err(),
+        FheExecutionBuildError::UnsupportedFheType
+    );
+    assert_eq!(
+        builder
+            .unary_op(
+                FheUnaryOpCode::Cast,
+                Operand::persistent(balance_handle(1), Pubkey::new_unique()),
+                FheType::BYTES256,
+                Output::transient(),
+            )
+            .unwrap_err(),
+        FheExecutionBuildError::UnsupportedFheType
+    );
+    // Neg rejects a Bool operand (EVM fheNeg supportedTypes = Uint8..Uint128).
     assert_eq!(
         builder
             .unary_op(
@@ -1219,7 +1244,8 @@ fn div_rem_require_nonzero_scalar_divisor() {
 
 #[test]
 fn builder_exposes_the_host_operator_type_surface() {
-    // The typed builder must express the host's type matrix: bitwise on Bool/Uint256, neg on Uint256, eq on Bool, is_in on Uint160.
+    // The typed builder must express the host's type matrix: bitwise/eq on Bool. Address and
+    // Bytes256 are outside the type gate (Solana host max is euint128).
     let auth = Pubkey::new_unique();
     let mut builder = FheExecutionBuilder::new(encrypted_value_account_authority(auth));
 
@@ -1235,25 +1261,6 @@ fn builder_exposes_the_host_operator_type_surface() {
     .unwrap();
     assert!(builder.and(bool_a, bool_b, Output::transient()).is_ok());
 
-    let u256_a = StoredValue::<Bytes256>::persistent(
-        typed_handle(3, FheType::BYTES256.byte()),
-        encrypted_value_id(auth, 3),
-    )
-    .unwrap();
-    let u256_b = StoredValue::<Bytes256>::persistent(
-        typed_handle(4, FheType::BYTES256.byte()),
-        encrypted_value_id(auth, 4),
-    )
-    .unwrap();
-    assert!(builder.xor(u256_a, u256_b, Output::transient()).is_ok());
-
-    let u256_c = StoredValue::<Bytes256>::persistent(
-        typed_handle(5, FheType::BYTES256.byte()),
-        encrypted_value_id(auth, 5),
-    )
-    .unwrap();
-    assert!(builder.neg(u256_c, Output::transient()).is_ok());
-
     let bool_c = StoredValue::<Bool>::persistent(
         typed_handle(6, FheType::BOOL.byte()),
         encrypted_value_id(auth, 6),
@@ -1266,17 +1273,41 @@ fn builder_exposes_the_host_operator_type_surface() {
     .unwrap();
     assert!(builder.eq(bool_c, bool_d, Output::transient()).is_ok());
 
-    let addr_v = StoredValue::<Address>::persistent(
-        typed_handle(8, FheType::ADDRESS.byte()),
-        encrypted_value_id(auth, 8),
-    )
-    .unwrap();
-    let addr_s = StoredValue::<Address>::persistent(
-        typed_handle(9, FheType::ADDRESS.byte()),
-        encrypted_value_id(auth, 9),
-    )
-    .unwrap();
-    assert!(builder.is_in(addr_v, [addr_s], Output::transient()).is_ok());
+    let u256 = Operand::persistent(
+        typed_handle(3, FheType::BYTES256.byte()),
+        Pubkey::new_unique(),
+    );
+    assert_eq!(
+        builder
+            .binary_op(
+                FheBinaryOpCode::Xor,
+                u256,
+                u256,
+                FheType::BYTES256,
+                Output::transient(),
+            )
+            .unwrap_err(),
+        FheExecutionBuildError::UnsupportedFheType
+    );
+    assert_eq!(
+        builder
+            .unary_op(
+                FheUnaryOpCode::Neg,
+                u256,
+                FheType::BYTES256,
+                Output::transient(),
+            )
+            .unwrap_err(),
+        FheExecutionBuildError::UnsupportedFheType
+    );
+    assert_eq!(
+        FheType::from_host_byte(FheType::ADDRESS.byte()).unwrap_err(),
+        FheExecutionBuildError::UnsupportedFheType
+    );
+    assert_eq!(
+        FheType::from_host_byte(FheType::BYTES256.byte()).unwrap_err(),
+        FheExecutionBuildError::UnsupportedFheType
+    );
 }
 
 #[test]

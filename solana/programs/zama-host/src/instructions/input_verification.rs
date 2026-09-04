@@ -16,35 +16,6 @@ use crate::{
     state::*,
 };
 
-/// The host_config fields needed to verify an input attestation, copied out so callers that don't
-/// hold a `&HostConfig` (the `fhe_execute` operand resolver) can carry them by value.
-#[derive(Clone, Copy)]
-pub(crate) struct InputVerifierParams {
-    pub chain_id: u64,
-    pub gateway_chain_id: u64,
-    pub input_verification_contract: [u8; 20],
-    /// Active coprocessor signer set, copied through [`HostConfig::active_coprocessor_signers`].
-    pub coprocessor_signers: [[u8; 20]; HostConfig::MAX_COPROCESSOR_SIGNERS],
-    pub coprocessor_signer_count: u8,
-    pub coprocessor_threshold: u8,
-}
-
-impl InputVerifierParams {
-    pub fn from_config(config: &HostConfig) -> Self {
-        let active = config.active_coprocessor_signers();
-        let mut coprocessor_signers = [[0u8; 20]; HostConfig::MAX_COPROCESSOR_SIGNERS];
-        coprocessor_signers[..active.len()].copy_from_slice(active);
-        Self {
-            chain_id: config.chain_id,
-            gateway_chain_id: config.gateway_chain_id,
-            input_verification_contract: config.input_verification_contract,
-            coprocessor_signers,
-            coprocessor_signer_count: active.len() as u8,
-            coprocessor_threshold: config.coprocessor_threshold,
-        }
-    }
-}
-
 /// Verifies the coprocessor's EIP-712 `CiphertextVerification` attestation for an encrypted input:
 /// config sanity, per-handle metadata, selected-handle match, and `secp256k1_recover` of the
 /// signers against the registered coprocessor signer set at the configured threshold. Success
@@ -53,11 +24,12 @@ impl InputVerifierParams {
 /// `VerifiedInput` operand, which carries the whole attestation — taking it as one value keeps
 /// the two 32-byte identities and two slices unswappable at the call site.
 pub(crate) fn verify_input_attestation(
-    params: &InputVerifierParams,
+    config: &HostConfig,
     attestation: &CoprocessorInputAttestation,
 ) -> Result<()> {
     require!(
-        params.coprocessor_signer_count > 0 && params.input_verification_contract != [0u8; 20],
+        !config.active_coprocessor_signers().is_empty()
+            && config.input_verification_contract != [0u8; 20],
         ZamaHostError::GatewayVerifierConfigUnset
     );
     require!(
@@ -72,11 +44,11 @@ pub(crate) fn verify_input_attestation(
     // EVM parity: InputVerifier requires `contractChainId == block.chainid`. The attested
     // `contract_chain_id` is the HOST chain id (not the gateway chain id used for the EIP-712 domain).
     require!(
-        attestation.contract_chain_id == params.chain_id,
+        attestation.contract_chain_id == config.chain_id,
         ZamaHostError::AttestationChainIdMismatch
     );
     for (index, handle) in attestation.ct_handles.iter().enumerate() {
-        assert_input_handle_metadata(*handle, params.chain_id, index as u8)?;
+        assert_input_handle_metadata(*handle, config.chain_id, index as u8)?;
     }
     let selected = attestation
         .ct_handles
@@ -88,10 +60,10 @@ pub(crate) fn verify_input_attestation(
     );
 
     let verifier = Eip712VerifierConfig {
-        gateway_chain_id: params.gateway_chain_id,
-        verifying_contract: params.input_verification_contract,
-        signers: &params.coprocessor_signers[..params.coprocessor_signer_count as usize],
-        threshold: params.coprocessor_threshold,
+        gateway_chain_id: config.gateway_chain_id,
+        verifying_contract: config.input_verification_contract,
+        signers: config.active_coprocessor_signers(),
+        threshold: config.coprocessor_threshold,
     };
     require!(
         verify_coprocessor_attestation(
