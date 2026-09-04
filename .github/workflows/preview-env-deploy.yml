@@ -22,8 +22,8 @@ name: preview-env-deploy
 #   - preview-env-e2e-tests: same, plus auto-run the e2e test DAG and report
 #     pass/fail back to the PR.
 #   - preview-env-blue-green: deploy RFC-021 BCS+GCS on each party (forces
-#     nb_coprocessor=2) and use_blockchain_dev=true. Dispatch encodes the same
-#     dual fleet as nb_coprocessor=2 (chain is still the dispatch input).
+#     nb_coprocessor=2) and use_blockchain_dev=true. Dispatch opt-in is
+#     nb_coprocessor=2-blue-green (plain 2 is two-party consensus only).
 #     With preview-env-e2e-tests (or automated_tests): propose after relayer,
 #     hold consensus-detector so the first e2e stays on blue (assert GCS
 #     computations > 0), enable the detector, wait for versioning=v0.15,
@@ -79,13 +79,14 @@ on:
         required: false
         default: ""
       nb_coprocessor:
-        description: "Number of coprocessor parties to deploy"
+        description: "Coprocessor identities (wallets/DBs/S3). 2 is two-party consensus (one fleet each). 2-blue-green is RFC-021 BCS+GCS on two identities. 3 and 5 are N-party only."
         required: true
         type: choice
         default: "1"
         options:
           - "1"
           - "2"
+          - "2-blue-green"
           - "3"
           - "5"
       kms_connector_version:
@@ -266,16 +267,17 @@ jobs:
           # observability is a dispatch-only knob for now (no PR label), off by
           # default.
           echo "observability=false" >> "$GITHUB_OUTPUT"
-          # RFC-021 dual fleet. Dispatch: nb_coprocessor=2 encodes the flag
-          # (no 26th input). PRs: preview-env-blue-green label, N forced to 2.
+          # RFC-021 dual fleet. Dispatch: nb_coprocessor=2-blue-green (plain 2
+          # is two-party consensus). PRs: preview-env-blue-green label, N=2.
           echo "blue_green=false" >> "$GITHUB_OUTPUT"
-          echo "nb_coprocessor=${DISPATCH_NB_COPROCESSOR:-1}" >> "$GITHUB_OUTPUT"
+          echo "nb_coprocessor=1" >> "$GITHUB_OUTPUT"
           echo "use_blockchain_dev=false" >> "$GITHUB_OUTPUT"
           if [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
             blue_green=false
             nb_coprocessor="${DISPATCH_NB_COPROCESSOR:-1}"
-            if [[ "${nb_coprocessor}" == "2" ]]; then
+            if [[ "${nb_coprocessor}" == "2-blue-green" ]]; then
               blue_green=true
+              nb_coprocessor=2
             fi
             echo "should_deploy=true" >> "$GITHUB_OUTPUT"
             echo "build_images=${DISPATCH_BUILD_IMAGES}" >> "$GITHUB_OUTPUT"
