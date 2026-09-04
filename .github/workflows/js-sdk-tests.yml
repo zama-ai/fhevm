@@ -24,7 +24,7 @@ permissions: {}
 jobs:
   run-tests:
     name: js-sdk-tests/test
-    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64/extras=s3-cache
     defaults:
       run:
         working-directory: ./sdk/js-sdk
