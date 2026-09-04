@@ -6,6 +6,7 @@ import { hasDetailedOutput } from './base/verbosity.ts';
 import { type CommandName, parseCliOptions } from './cli-options.ts';
 import { checkDependencies } from './commands/check-dependencies.ts';
 import { checkFoundry } from './commands/check-foundry.ts';
+import { checkJsonSchemas } from './commands/check-json-schemas.ts';
 import { checkLintPolicy } from './commands/check-lint-policy.ts';
 import { checkLockfiles } from './commands/check-lockfiles.ts';
 import { checkManifestCoverage } from './commands/check-manifest-coverage.ts';
@@ -46,6 +47,7 @@ const commands: Readonly<Record<CommandName, CheckCommand>> = {
   'check-scripts': checkScripts,
   'check-lockfiles': checkLockfiles,
   'check-foundry': checkFoundry,
+  'check-json-schemas': checkJsonSchemas,
   'check-lint-policy': checkLintPolicy,
   'check-manifest-coverage': checkManifestCoverage,
   'check-tsconfig-paths': checkTsconfigPaths,

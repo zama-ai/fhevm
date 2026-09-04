@@ -13,6 +13,7 @@
     "check": "npm run typecheck && npm test",
     "check:dependencies": "node ./fhevm-npm.ts check-dependencies",
     "check:foundry": "node ./fhevm-npm.ts check-foundry",
+    "check:json-schemas": "node ./fhevm-npm.ts check-json-schemas",
     "check:lockfiles": "node ./fhevm-npm.ts check-lockfiles",
     "check:manifest-coverage": "node ./fhevm-npm.ts check-manifest-coverage",
     "check:mirror": "node ./fhevm-npm.ts check-mirror",
@@ -35,6 +36,7 @@
     "typecheck": "tsc --project ./tsconfig.json"
   },
   "dependencies": {
+    "ajv": "8.20.0",
     "commander": "14.0.3",
     "prettier": "3.8.3",
     "typescript": "6.0.3",

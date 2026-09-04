@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/zama-ai/fhevm/sdk/fhevm-npm/export-manifest.schema.json",
+  "$id": "https://github.com/zama-ai/fhevm/blob/main/sdk/fhevm-npm/schemas/export-manifest.schema.json",
   "title": "fhevm-npm export manifest",
   "type": "object",
   "additionalProperties": false,

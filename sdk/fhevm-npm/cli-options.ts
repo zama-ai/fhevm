@@ -16,6 +16,7 @@ export const commandNames = [
   'check-lockfiles',
   'check-manifest-coverage',
   'check-foundry',
+  'check-json-schemas',
   'check-lint-policy',
   'check-tsconfig-paths',
   'check-tsc-mode',
@@ -252,6 +253,12 @@ Checked scripts:
     .description('Check that Forge is the only Solidity linter outside declared mirror-only packages.')
     .action(() => {
       selected = 'check-lint-policy';
+    });
+  program
+    .command('check-json-schemas')
+    .description('Validate committed JSON configuration files against the schemas in fhevm-npm/schemas.')
+    .action(() => {
+      selected = 'check-json-schemas';
     });
   program
     .command('check-manifest-coverage')

@@ -78,9 +78,11 @@ test('renders every network group: discovered hosts, complete gateway set, pinne
   try {
     const text = await renderChainsConfig(workspace, fakeReader(registry()), PIN);
     const parsed = JSON.parse(text) as {
+      $schema: string;
       source: { commit: string; files: string[] };
       networks: Record<string, { relayerUrl: string; gateway: { id: number }; hosts: Record<string, unknown> }>;
     };
+    assert.equal(parsed.$schema, './fhevm-npm/schemas/fhevm-chains.config.schema.json');
     assert.equal(parsed.source.commit, PIN);
     assert.deepEqual(Object.keys(parsed.networks), ['mainnet', 'testnet', 'devnet']);
     assert.equal(parsed.networks['mainnet']?.relayerUrl, 'https://relayer.mainnet.example');

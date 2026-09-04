@@ -5,7 +5,7 @@ import { ManifestValidationError, parseNpmManifest } from '../manifest.ts';
 
 test('parses the manifest-local package invariants', () => {
   const manifest = parseNpmManifest({
-    $schema: './npm-manifest.schema.json',
+    $schema: './fhevm-npm/schemas/npm-manifest.schema.json',
     foundry: { version: '1.5.1-stable' },
     packageJson: {
       published: { required: ['name', 'version', 'description', 'license'], excluded: ['private'] },

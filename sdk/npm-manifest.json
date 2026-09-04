@@ -1,5 +1,5 @@
 {
-  "$schema": "./npm-manifest.schema.json",
+  "$schema": "./fhevm-npm/schemas/npm-manifest.schema.json",
   "inventory": {
     "exclude": ["./js-sdk", "./cli-js-sdk"]
   },
