@@ -172,6 +172,7 @@ where
     let digest = Bytes::from(KEY_DIGEST.to_vec());
     let event = ActivateKey {
         keyId: U256::from(TEST_KEY_ID),
+        existingKeyId: U256::ZERO,
         kmsNodeStorageUrls: kms_storage_urls(),
         keyDigests: vec![
             KeyDigest {
