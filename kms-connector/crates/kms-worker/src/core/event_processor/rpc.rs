@@ -81,10 +81,7 @@ impl<P: Provider> HostRpcClient<P> {
             claimed_signer,
             digest,
             signature,
-            Erc1271GasBudget {
-                limit: gas_limit,
-                warn_above: ERC1271_GAS_WARN_THRESHOLD,
-            },
+            Erc1271GasBudget::capped_at(gas_limit),
         )
         .await
         .map_err(|e| {

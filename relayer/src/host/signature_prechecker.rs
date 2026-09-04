@@ -125,10 +125,7 @@ impl UserDecryptSignaturePreChecker {
                 user_address,
                 digest,
                 signature.as_ref(),
-                Erc1271GasBudget {
-                    limit: self.erc1271_gas_limit,
-                    warn_above: ERC1271_GAS_WARN_THRESHOLD,
-                },
+                Erc1271GasBudget::capped_at(self.erc1271_gas_limit),
             )
             .await
             {

@@ -61,6 +61,18 @@ pub struct Erc1271GasBudget {
     pub warn_above: u64,
 }
 
+impl Erc1271GasBudget {
+    /// Cap the call at `limit`, probing at [`ERC1271_GAS_WARN_THRESHOLD`]. Single argument on
+    /// purpose: the two fields are both gas values, and swapping them silently collapses the
+    /// budget to the threshold.
+    pub const fn capped_at(limit: u64) -> Self {
+        Self {
+            limit,
+            warn_above: ERC1271_GAS_WARN_THRESHOLD,
+        }
+    }
+}
+
 /// Gas a wallet is expected to stay under. Exceeding it is legitimate — a Safe owning a Safe
 /// costs ~91k — but rare enough to be worth a log line.
 pub const ERC1271_GAS_WARN_THRESHOLD: u64 = 100_000;
