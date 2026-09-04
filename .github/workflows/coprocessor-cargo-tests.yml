@@ -179,8 +179,7 @@ jobs:
         SQLX_OFFLINE: 'true'
         TEST_GLOBAL_LOCALSTACK: ${{ matrix.needs_localstack && '1' || '0' }}
         TEST_PACKAGE: ${{ matrix.package }}
-        # TEMPORARY: forced to 1 so this PR runs the full type matrix. Revert before merge.
-        IS_MERGE_QUEUE: '1'
+        IS_MERGE_QUEUE: ${{ startsWith(github.head_ref, 'mergify/merge-queue/') && '1' || '0' }}
       run: |
         # Merge queue: leave unset so supported_types() defaults to full matrix.
         # PR CI: run only small types (bool through 64-bit) for faster feedback.
@@ -197,8 +196,7 @@ jobs:
         DATABASE_URL: postgresql://postgres:postgres@localhost:5432/coprocessor
         SQLX_OFFLINE: 'true'
         TEST_PACKAGE: ${{ matrix.package }}
-        # TEMPORARY: forced to 1 so this PR runs the full type matrix. Revert before merge.
-        IS_MERGE_QUEUE: '1'
+        IS_MERGE_QUEUE: ${{ startsWith(github.head_ref, 'mergify/merge-queue/') && '1' || '0' }}
         SHARD: ${{ matrix.shard }}
         SHARDS: ${{ matrix.shards }}
         COPROCESSOR_TEST_PG_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
