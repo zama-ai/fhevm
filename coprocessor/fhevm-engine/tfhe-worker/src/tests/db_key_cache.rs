@@ -1,7 +1,7 @@
+use crate::tests::shared_db::cloned_test_db;
 use fhevm_engine_common::db_keys::DbKeyCache;
-use serial_test::serial;
 use sqlx::postgres::PgPoolOptions;
-use test_harness::instance::{setup_test_db, ImportMode};
+use test_harness::instance::ImportMode;
 
 fn db_url_for_role(base_url: &str, username: &str, password: &str) -> String {
     let (_, host_and_db) = base_url
@@ -15,10 +15,9 @@ fn random_key_id() -> Vec<u8> {
 }
 
 #[tokio::test]
-#[serial(db)]
 async fn test_fetch_latest_uses_cache_without_selecting_key_blobs(
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let db = setup_test_db(ImportMode::WithKeysNoSns).await?;
+    let db = cloned_test_db(ImportMode::WithKeysNoSns).await?;
     let admin_pool = PgPoolOptions::new()
         .max_connections(4)
         .connect(db.db_url())
@@ -27,14 +26,17 @@ async fn test_fetch_latest_uses_cache_without_selecting_key_blobs(
 
     let expected = cache.fetch_latest_from_pool(&admin_pool).await?;
 
-    let role = format!("key_meta_reader_{}", rand::random::<u32>());
-    let password = "key_meta_reader_password";
+    let role = format!("key_meta_reader_{}", rand::random::<u64>());
+    let password = format!("{:032x}", rand::random::<u128>());
     sqlx::query(&format!("CREATE ROLE {role} LOGIN PASSWORD '{password}'"))
         .execute(&admin_pool)
         .await?;
-    sqlx::query(&format!("GRANT CONNECT ON DATABASE coprocessor TO {role}"))
-        .execute(&admin_pool)
-        .await?;
+    let db_name = db.db_name();
+    sqlx::query(&format!(
+        "GRANT CONNECT ON DATABASE \"{db_name}\" TO {role}"
+    ))
+    .execute(&admin_pool)
+    .await?;
     sqlx::query(&format!("GRANT USAGE ON SCHEMA public TO {role}"))
         .execute(&admin_pool)
         .await?;
@@ -46,10 +48,24 @@ async fn test_fetch_latest_uses_cache_without_selecting_key_blobs(
 
     let limited_pool = PgPoolOptions::new()
         .max_connections(2)
-        .connect(&db_url_for_role(db.db_url(), &role, password))
+        .connect(&db_url_for_role(db.db_url(), &role, &password))
         .await?;
 
-    let cached = cache.fetch_latest_from_pool(&limited_pool).await?;
+    let cached = cache.fetch_latest_from_pool(&limited_pool).await;
+    limited_pool.close().await;
+    sqlx::query(&format!("DROP OWNED BY {role}"))
+        .execute(&admin_pool)
+        .await?;
+    sqlx::query(&format!(
+        "REVOKE CONNECT ON DATABASE \"{db_name}\" FROM {role}"
+    ))
+    .execute(&admin_pool)
+    .await?;
+    sqlx::query(&format!("DROP ROLE {role}"))
+        .execute(&admin_pool)
+        .await?;
+
+    let cached = cached?;
     assert_eq!(cached.key_id, expected.key_id);
     assert_eq!(cached.sequence_number, expected.sequence_number);
 
@@ -57,10 +73,9 @@ async fn test_fetch_latest_uses_cache_without_selecting_key_blobs(
 }
 
 #[tokio::test]
-#[serial(db)]
 async fn test_fetch_latest_refreshes_cache_after_key_rotation(
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let db = setup_test_db(ImportMode::WithKeysNoSns).await?;
+    let db = cloned_test_db(ImportMode::WithKeysNoSns).await?;
     let pool = PgPoolOptions::new()
         .max_connections(4)
         .connect(db.db_url())
@@ -102,10 +117,9 @@ async fn test_fetch_latest_refreshes_cache_after_key_rotation(
 }
 
 #[tokio::test]
-#[serial(db)]
 #[cfg(not(feature = "gpu"))]
 async fn test_force_legacy_ignores_compressed_material() -> Result<(), Box<dyn std::error::Error>> {
-    let db = setup_test_db(ImportMode::WithKeysNoSns).await?;
+    let db = cloned_test_db(ImportMode::WithKeysNoSns).await?;
     let pool = PgPoolOptions::new().connect(db.db_url()).await?;
     sqlx::query("UPDATE keys SET compressed_xof_keyset = $1")
         .bind(vec![0_u8])
@@ -129,10 +143,9 @@ fn test_force_legacy_is_rejected_by_gpu_workers() {
 }
 
 #[tokio::test]
-#[serial(db)]
 async fn test_default_preserves_compressed_first_selection(
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let db = setup_test_db(ImportMode::WithKeysNoSns).await?;
+    let db = cloned_test_db(ImportMode::WithKeysNoSns).await?;
     let pool = PgPoolOptions::new().connect(db.db_url()).await?;
     sqlx::query("UPDATE keys SET compressed_xof_keyset = $1")
         .bind(vec![0_u8])
@@ -151,11 +164,10 @@ async fn test_default_preserves_compressed_first_selection(
 }
 
 #[tokio::test]
-#[serial(db)]
 #[cfg(not(feature = "gpu"))]
 async fn test_default_falls_back_to_legacy_when_compressed_material_is_missing(
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let db = setup_test_db(ImportMode::WithKeysNoSns).await?;
+    let db = cloned_test_db(ImportMode::WithKeysNoSns).await?;
     let pool = PgPoolOptions::new().connect(db.db_url()).await?;
     sqlx::query("UPDATE keys SET compressed_xof_keyset = NULL")
         .execute(&pool)
@@ -168,10 +180,9 @@ async fn test_default_falls_back_to_legacy_when_compressed_material_is_missing(
 }
 
 #[tokio::test]
-#[serial(db)]
 #[cfg(feature = "gpu")]
 async fn test_default_rejects_legacy_fallback_on_gpu() -> Result<(), Box<dyn std::error::Error>> {
-    let db = setup_test_db(ImportMode::WithKeysNoSns).await?;
+    let db = cloned_test_db(ImportMode::WithKeysNoSns).await?;
     let pool = PgPoolOptions::new().connect(db.db_url()).await?;
     sqlx::query("UPDATE keys SET compressed_xof_keyset = NULL")
         .execute(&pool)
