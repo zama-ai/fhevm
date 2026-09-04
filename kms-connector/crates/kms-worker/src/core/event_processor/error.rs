@@ -137,8 +137,6 @@ impl RequestCheckError {
 impl From<Erc1271Error> for RequestCheckError {
     fn from(err: Erc1271Error) -> Self {
         let kind = match &err {
-            // A reasonless revert does not prove the signature is bad — an under-gassed
-            // call looks identical — so report it as an environment problem.
             Erc1271Error::Transport(_) | Erc1271Error::EmptyRevert(_) => RequestCheckKind::Network,
             Erc1271Error::EmptySigOnEoa(_)
             | Erc1271Error::EoaMismatchNoCode(_)

@@ -17,6 +17,7 @@ use alloy::{
 };
 use fhevm_gateway_bindings::decryption::IDecryption::UserDecryptionRequestPayload;
 use thiserror::Error;
+use tracing::warn;
 
 sol! {
     /// ERC-1271 signature validation interface (OpenZeppelin v5.1).
@@ -50,44 +51,9 @@ pub const DEFAULT_DOMAIN_VERSION: &str = "1";
 /// ERC-1271 magic return value: `bytes4(keccak256("isValidSignature(bytes32,bytes)"))`.
 pub const ERC1271_MAGIC_VALUE: [u8; 4] = [0x16, 0x26, 0xba, 0x7e];
 
-/// Gas budgets for the ERC-1271 `isValidSignature` STATICCALL.
-#[derive(Debug, Clone, Copy)]
-pub struct Erc1271GasBudget {
-    /// Hard cap on the call.
-    pub limit: u64,
-    /// Tripwire. The call is attempted with this budget first; needing more is reported as
-    /// [`Erc1271Accepted::AboveWarnThreshold`] so callers can flag an unusually expensive
-    /// wallet before it approaches `limit`.
-    pub warn_above: u64,
-}
-
-impl Erc1271GasBudget {
-    /// Cap the call at `limit`, probing at [`ERC1271_GAS_WARN_THRESHOLD`]. Single argument on
-    /// purpose: the two fields are both gas values, and swapping them silently collapses the
-    /// budget to the threshold.
-    pub const fn capped_at(limit: u64) -> Self {
-        Self {
-            limit,
-            warn_above: ERC1271_GAS_WARN_THRESHOLD,
-        }
-    }
-}
-
 /// Gas a wallet is expected to stay under. Exceeding it is legitimate — a Safe owning a Safe
 /// costs ~91k — but rare enough to be worth a log line.
 pub const ERC1271_GAS_WARN_THRESHOLD: u64 = 100_000;
-
-/// How a signature was accepted.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Erc1271Accepted {
-    /// `ecrecover` matched the claimed signer; no on-chain call was made.
-    Ecrecover,
-    /// The call returned the magic value within [`Erc1271GasBudget::warn_above`].
-    WithinWarnThreshold,
-    /// The call did not succeed within [`Erc1271GasBudget::warn_above`], and returned the magic
-    /// value only once given the full [`Erc1271GasBudget::limit`].
-    AboveWarnThreshold,
-}
 
 #[derive(Debug, Error)]
 pub enum Erc1271Error {
@@ -101,10 +67,7 @@ pub enum Erc1271Error {
         "ERC-1271 isValidSignature reverted or returned malformed data for userAddress {0}: {1}"
     )]
     Rejected(Address, String),
-    #[error(
-        "ERC-1271 isValidSignature reverted with no reason for userAddress {0}; \
-         typically an under-gassed call, or a wallet that reverts without a reason"
-    )]
+    #[error("ERC-1271 isValidSignature reverted with no reason for userAddress {0}")]
     EmptyRevert(Address),
     #[error("RPC transport error during ERC-1271 verification: {0}")]
     Transport(String),
@@ -181,9 +144,10 @@ async fn check_erc1271_signature<P: Provider>(
     let returndata = provider.call(tx).await.map_err(|err| match err {
         RpcError::ErrorResp(e) => {
             if let Some(revert_data) = e.as_revert_data() {
-                // Nodes answer an under-gassed call with `execution reverted` and
-                // `data: "0x"`, which `as_revert_data` still reports as revert data. Only a
-                // reason makes the rejection deterministic.
+                // Empty `data` still counts as revert data to `as_revert_data`, but says
+                // nothing about why: an under-gassed call, a nested call into an address with
+                // no code, and a wallet reverting silently all look like this. Only a reason
+                // makes the rejection deterministic.
                 if revert_data.is_empty() {
                     Erc1271Error::EmptyRevert(addr)
                 } else {
@@ -235,35 +199,44 @@ async fn check_erc1271_signature<P: Provider>(
 ///    interpreted as "no code at `claimed_signer`" — a single RPC handles both the
 ///    smart-account path and the EOA-mismatch reject.
 ///
-/// The call is attempted with [`Erc1271GasBudget::warn_above`] first, and any failure is
-/// retried with the full `limit`, whose result is authoritative. The configured cap is
-/// therefore always offered before a rejection, and a wallet that only succeeds on the retry
-/// is reported as [`Erc1271Accepted::AboveWarnThreshold`]. The probe costs one extra call on
-/// every rejection; set `warn_above >= limit` to disable it.
+/// The call is attempted with [`ERC1271_GAS_WARN_THRESHOLD`] first, and any failure is retried
+/// with the full `gas_limit`, whose result is authoritative. The configured cap is therefore
+/// always offered before a rejection, and a wallet that only succeeds on the retry is logged.
+/// The probe costs one extra call on every rejection, and is skipped when `gas_limit` is at or
+/// below the threshold.
 pub async fn verify_signature<P: Provider>(
     provider: &P,
     claimed_signer: Address,
     digest: B256,
     signature: &[u8],
-    gas: Erc1271GasBudget,
-) -> Result<Erc1271Accepted, Erc1271Error> {
+    gas_limit: u64,
+) -> Result<(), Erc1271Error> {
     if !signature.is_empty()
         && let Some(recovered) = try_ecrecover(&digest, signature)
         && recovered == claimed_signer
     {
-        return Ok(Erc1271Accepted::Ecrecover);
+        return Ok(());
     }
 
-    let warn_above = gas.warn_above.min(gas.limit);
+    let warn_above = ERC1271_GAS_WARN_THRESHOLD.min(gas_limit);
     match check_erc1271_signature(provider, claimed_signer, digest, signature, warn_above).await {
-        Ok(()) => Ok(Erc1271Accepted::WithinWarnThreshold),
+        Ok(()) => Ok(()),
         // A wallet short on gas can fail in any shape — wrong magic, a reasoned revert, a
         // reasonless one — so no failure at the probe budget is evidence about the signature.
         // Offer the full budget and let its result decide.
-        Err(_) if warn_above < gas.limit => {
-            check_erc1271_signature(provider, claimed_signer, digest, signature, gas.limit)
-                .await
-                .map(|()| Erc1271Accepted::AboveWarnThreshold)
+        Err(_) if warn_above < gas_limit => {
+            let verified =
+                check_erc1271_signature(provider, claimed_signer, digest, signature, gas_limit)
+                    .await;
+            if verified.is_ok() {
+                warn!(
+                    signer = %claimed_signer,
+                    warn_above,
+                    gas_limit,
+                    "ERC-1271 verification needed more gas than expected"
+                );
+            }
+            verified
         }
         Err(e) => Err(e),
     }
@@ -470,12 +443,9 @@ mod tests {
         assert!(matches!(err, Erc1271Error::WrongMagic(..)));
     }
 
-    /// Single-budget default: `warn_above == limit`, so no second attempt is made and each
-    /// test asserts against exactly one mocked response.
-    const TEST_GAS: Erc1271GasBudget = Erc1271GasBudget {
-        limit: 100_000,
-        warn_above: 100_000,
-    };
+    /// At the warn threshold, so no second attempt is made and each test asserts against
+    /// exactly one mocked response.
+    const TEST_GAS: u64 = ERC1271_GAS_WARN_THRESHOLD;
 
     /// Build a JSON-RPC error payload that mimics what an Ethereum node sends when the call
     /// reverts: a message containing "revert" plus a `data` field whose string value parses
@@ -521,11 +491,8 @@ mod tests {
         assert!(matches!(err, Erc1271Error::EmptyRevert(_)), "got {err:?}");
     }
 
-    /// Probe budget below the cap, so the fallback engages.
-    const HEADROOM_GAS: Erc1271GasBudget = Erc1271GasBudget {
-        limit: 250_000,
-        warn_above: 100_000,
-    };
+    /// Above the warn threshold, so the fallback engages.
+    const HEADROOM_GAS: u64 = 250_000;
 
     /// The probe fails in some shape and the full budget returns magic: the wallet is accepted,
     /// and reported as having needed more than the threshold.
@@ -539,7 +506,7 @@ mod tests {
         returndata[..4].copy_from_slice(&ERC1271_MAGIC_VALUE);
         asserter.push_success(&returndata);
 
-        let accepted = verify_signature(
+        verify_signature(
             &provider,
             Address::from([0xDE; 20]),
             B256::from([0u8; 32]),
@@ -548,7 +515,6 @@ mod tests {
         )
         .await
         .expect("the full budget decides");
-        assert_eq!(accepted, Erc1271Accepted::AboveWarnThreshold);
     }
 
     #[tokio::test]

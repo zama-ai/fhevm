@@ -7435,6 +7435,7 @@ dependencies = [
  "alloy",
  "fhevm_gateway_bindings",
  "thiserror 2.0.18",
+ "tracing",
 ]
 
 [[package]]

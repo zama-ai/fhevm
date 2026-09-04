@@ -18,8 +18,7 @@ use std::str::FromStr;
 use std::time::Duration;
 use tracing::warn;
 use user_decryption_signature::{
-    compute_user_decrypt_digest, default_user_decrypt_domain, verify_signature, Erc1271Accepted,
-    Erc1271Error, Erc1271GasBudget, ERC1271_GAS_WARN_THRESHOLD,
+    compute_user_decrypt_digest, default_user_decrypt_domain, verify_signature, Erc1271Error,
 };
 
 /// Outcome of a failed pre-check.
@@ -125,21 +124,11 @@ impl UserDecryptSignaturePreChecker {
                 user_address,
                 digest,
                 signature.as_ref(),
-                Erc1271GasBudget::capped_at(self.erc1271_gas_limit),
+                self.erc1271_gas_limit,
             )
             .await
             {
-                Ok(Erc1271Accepted::AboveWarnThreshold) => {
-                    warn!(
-                        signer = %user_address,
-                        chain_id,
-                        warn_above = ERC1271_GAS_WARN_THRESHOLD,
-                        gas_limit = self.erc1271_gas_limit,
-                        "ERC-1271 verification needed more gas than expected"
-                    );
-                    return Ok(());
-                }
-                Ok(_) => return Ok(()),
+                Ok(()) => return Ok(()),
                 // Retry what is not proof of a bad signature: transport failures, and
                 // reasonless reverts, which an under-gassed call produces too.
                 Err(e @ (Erc1271Error::Transport(_) | Erc1271Error::EmptyRevert(_))) => {
@@ -219,6 +208,7 @@ mod tests {
     use crate::core::event::{HandleEntry, RequestValiditySeconds};
     use alloy::primitives::Bytes;
     use alloy::providers::mock::Asserter;
+    use user_decryption_signature::ERC1271_GAS_WARN_THRESHOLD;
 
     const TEST_CHAIN_ID: u64 = 8009;
 
