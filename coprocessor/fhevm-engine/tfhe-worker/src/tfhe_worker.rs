@@ -978,6 +978,144 @@ mod operand_boundary_mask_tests {
         Ok(())
     }
 
+    /// An internal producer's verdict lands on the allowed consumer that its
+    /// failure actually blocks.
+    ///
+    /// The listener stores a non-allowed row with `is_completed = TRUE` -- its
+    /// output is never persisted, so there is nothing to complete -- and the
+    /// stamping UPDATE only touches pending rows. So the producer's own row
+    /// cannot carry a verdict, and relaxing that guard would not help: all three
+    /// demotion predicates require `is_completed = FALSE` too. Without
+    /// propagation nothing accrues an attempt count, the allowed consumer defers
+    /// as MissingInputs (which upload ignores by design), and the transaction
+    /// re-executes at poll cadence forever.
+    ///
+    /// This seeds the row shape the LISTENER produces, which is the whole point:
+    /// the demotion test alongside uses `is_completed = false`, a real state for
+    /// allowed work but not the one an internal producer is ever stored in, so it
+    /// could not have caught this.
+    #[tokio::test]
+    async fn internal_producer_verdict_lands_on_its_allowed_consumer(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let db = setup_test_db(ImportMode::None).await?;
+        let pool = PgPoolOptions::new()
+            .max_connections(2)
+            .connect(db.db_url())
+            .await?;
+
+        let producer = handle(0x51);
+        let consumer = handle(0x52);
+        let transaction_id = handle(0x53);
+        // The internal producer, exactly as the listener writes it.
+        sqlx::query(
+            r#"
+            INSERT INTO computations (
+                output_handle, dependencies, fhe_operation, is_scalar,
+                transaction_id, is_allowed, is_completed, schedule_order,
+                host_chain_id, operand_boundary_mask
+            ) VALUES ($1, '{}', 0, false, $2, false, true, NOW(), 1, $3)
+            "#,
+        )
+        .bind(&producer)
+        .bind(&transaction_id)
+        .bind(vec![0_u8; OPERAND_BOUNDARY_MASK_BYTES])
+        .execute(&pool)
+        .await?;
+        // Its allowed consumer: pending, and depending on the producer.
+        sqlx::query(
+            r#"
+            INSERT INTO computations (
+                output_handle, dependencies, fhe_operation, is_scalar,
+                transaction_id, is_allowed, is_completed, schedule_order,
+                host_chain_id, operand_boundary_mask
+            ) VALUES ($1, $2, 0, false, $3, true, false, NOW(), 1, $4)
+            "#,
+        )
+        .bind(&consumer)
+        .bind(vec![producer.clone()])
+        .bind(&transaction_id)
+        .bind(vec![0_u8; OPERAND_BOUNDARY_MASK_BYTES])
+        .execute(&pool)
+        .await?;
+
+        let mut locks = dependence_chain::LockMngr::new_with_conf(
+            Uuid::new_v4(),
+            pool.clone(),
+            30,
+            true, // locking disabled: this test is about the verdict, not leases
+            None,
+            None,
+            None,
+            3,
+        );
+        let panic_error =
+            std::io::Error::other(format!("SchedulerError::{RETRYABLE_STAMP_MARKER}(sigsegv)"));
+
+        async fn row_state(
+            trx: &mut sqlx::Transaction<'_, Postgres>,
+            output_handle: &[u8],
+        ) -> Result<(bool, i16, Option<String>), sqlx::Error> {
+            sqlx::query_as::<_, (bool, i16, Option<String>)>(
+                "SELECT is_error, error_retry_count, error_message FROM computations
+                 WHERE output_handle = $1",
+            )
+            .bind(output_handle)
+            .fetch_one(trx.as_mut())
+            .await
+        }
+
+        let mut trx = pool.begin().await?;
+        let first = set_computation_error(
+            &producer,
+            &transaction_id,
+            &panic_error,
+            true,
+            &mut trx,
+            &mut locks,
+        )
+        .await?;
+        assert!(
+            first,
+            "recording the verdict on the consumer is a state change"
+        );
+
+        let (producer_errored, _, _) = row_state(&mut trx, &producer).await?;
+        assert!(
+            !producer_errored,
+            "the producer's own row still cannot carry it -- that is the premise"
+        );
+        let (consumer_errored, count, message) = row_state(&mut trx, &consumer).await?;
+        assert!(
+            consumer_errored,
+            "the allowed consumer must carry the verdict"
+        );
+        assert_eq!(count, 0, "a fresh verdict starts at zero");
+        assert!(
+            message.unwrap_or_default().contains(RETRYABLE_STAMP_MARKER),
+            "the producer's class must travel with it, or the consumer is condemned \
+             for a transient fault"
+        );
+
+        // And it climbs, so demotion is reachable -- without reporting progress,
+        // which would suppress the parking that paces a repeating failure.
+        for attempt in 1..=3_i16 {
+            let repeated = set_computation_error(
+                &producer,
+                &transaction_id,
+                &panic_error,
+                true,
+                &mut trx,
+                &mut locks,
+            )
+            .await?;
+            assert!(!repeated, "attempt {attempt}: a repeat is not progress");
+            let (_, count, _) = row_state(&mut trx, &consumer).await?;
+            assert_eq!(count, attempt, "attempt {attempt}: the count must advance");
+        }
+        trx.commit().await?;
+        Ok(())
+    }
+
     /// A recurring retryable stamp advances its attempt count without ever
     /// reporting progress and without ever becoming a verdict.
     ///
@@ -3707,6 +3845,86 @@ mod terminal_verdict_tests {
 }
 
 #[tracing::instrument(skip_all)]
+/// Records a verdict on the allowed, pending rows that transitively depend on
+/// `output_handle` within the same transaction.
+///
+/// Used when the handle's own row cannot carry it -- an internal producer is
+/// stored `is_completed = TRUE`, which the stamping UPDATE deliberately skips.
+/// The dependency walk is transitive because an internal producer may feed
+/// another internal producer before reaching anything allowed, and it is scoped
+/// to the transaction because `dependencies` names transaction-local operands;
+/// a cross-transaction consumer is served by the dead-producer drain instead.
+///
+/// Rows outside the dependency closure are left alone: a transaction can hold
+/// independent work that this failure does not make unsatisfiable, and a
+/// terminal stamp is permanent.
+async fn propagate_error_to_dependents<'a>(
+    output_handle: &[u8],
+    transaction_id: &[u8],
+    err_string: &str,
+    trx: &mut sqlx::Transaction<'a, Postgres>,
+) -> Result<bool, CoprocessorError> {
+    let rows = query!(
+        "
+        WITH RECURSIVE closure AS (
+            SELECT c.output_handle
+            FROM computations c
+            WHERE c.transaction_id = $2
+              AND $1 = ANY(c.dependencies)
+            UNION
+            SELECT c.output_handle
+            FROM computations c
+            JOIN closure d ON d.output_handle = ANY(c.dependencies)
+            WHERE c.transaction_id = $2
+        )
+        UPDATE computations AS c
+        SET is_error = true,
+            error_message = $3,
+            error_retry_count = CASE
+                WHEN NOT old.is_error THEN 0
+                ELSE LEAST(old.error_retry_count + 1, 32767)::smallint
+            END
+        FROM computations AS old, closure
+        WHERE old.output_handle = c.output_handle
+          AND old.transaction_id = c.transaction_id
+          AND c.output_handle = closure.output_handle
+          AND c.transaction_id = $2
+          -- Only rows the work window selects and the demotion predicate reads.
+          AND c.is_allowed = TRUE
+          AND c.is_completed = false
+          -- Same one-way rule as the direct stamp: a terminal verdict is never
+          -- overwritten, and a repeat of the same retryable one only counts.
+          AND (c.is_error = false OR c.error_message LIKE '%' || $4 || '%')
+        RETURNING (
+            NOT old.is_error
+            OR $3 NOT LIKE '%' || $4 || '%'
+        ) AS \"state_changed!\"
+        ",
+        output_handle,
+        transaction_id,
+        err_string,
+        RETRYABLE_STAMP_MARKER,
+    )
+    .fetch_all(trx.as_mut())
+    .await?;
+    // Progress means a state TRANSITION, exactly as the direct stamp defines it:
+    // a fresh verdict, or a terminal one superseding a retryable. A repeat of the
+    // same retryable failure only advances the counter, and reporting it as
+    // progress would reset `no_progress_cycles` every cycle and suppress the
+    // parking that paces a perpetually failing producer.
+    let transitioned = rows.iter().any(|row| row.state_changed);
+    let affected = rows.len() as u64;
+    if affected > 0 {
+        warn!(
+            target: "tfhe_worker",
+            output_handle = %format!("0x{}", hex::encode(output_handle)),
+            dependents = affected,
+            "producer row cannot carry a verdict; recorded it on its allowed dependents"
+        );
+    }
+    Ok(transitioned)
+}
+
 async fn set_computation_error<'a>(
     output_handle: &[u8],
     transaction_id: &[u8],
@@ -3787,8 +4005,33 @@ async fn set_computation_error<'a>(
     )
     .fetch_optional(trx.as_mut())
     .await?
-    .map(|row| row.state_changed)
-    .unwrap_or(false);
+    .map(|row| row.state_changed);
+    // `None` means the UPDATE matched nothing, and for an INTERNAL producer that
+    // is the normal outcome rather than an anomaly: the listener stores a
+    // non-allowed row with `is_completed = TRUE` -- its output is never
+    // persisted, so there is nothing to complete -- and the UPDATE above only
+    // touches pending rows.
+    //
+    // Leaving it there would make the verdict unrecordable. Nothing accrues
+    // `error_retry_count`, so the row never demotes; its allowed consumer comes
+    // back as MissingInputs, which the upload path ignores by design; and the
+    // transaction re-executes at poll cadence forever. Relaxing the guard would
+    // not help either, because all three demotion predicates require
+    // `is_completed = FALSE` as well.
+    //
+    // So the verdict is recorded where it CAN live: on the allowed, still-pending
+    // rows of this transaction that depend on the handle, transitively. Those are
+    // the rows the work window selects and the demotion predicate reads, and they
+    // are genuinely unsatisfiable -- their producer cannot be computed. The class
+    // travels with it, so a retryable producer failure gives its consumers a
+    // retryable stamp that accrues and demotes, and a terminal one condemns them
+    // as the dead-producer drain already would for a stampable producer.
+    let stamped = match stamped {
+        Some(state_changed) => state_changed,
+        None => {
+            propagate_error_to_dependents(output_handle, transaction_id, &err_string, trx).await?
+        }
+    };
     // the chain's root-cause error_message for those would inflate error
     // metrics and bury the first, most informative message.
     if stamped {
