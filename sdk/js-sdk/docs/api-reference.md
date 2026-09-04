@@ -146,7 +146,8 @@ readonly protocolVersion: ProtocolVersionResolution;
 | `generateTransportKeyPair`          |      |         |   ✅    |  ✅  |
 | `decryptPublicValue(s)`             |  ✅  |   ✅    |   ✅    |  ✅  |
 | `decryptPublicValuesWithSignatures` |  ✅  |   ✅    |   ✅    |  ✅  |
-| `signDecryptionPermit`              |  ✅  |   ✅    |   ✅    |  ✅  |
+| `signLegacyDecryptionPermit` / `signUnifiedDecryptionPermit` | ✅ | ✅ | ✅ | ✅ |
+| `signDecryptionPermit` (`@deprecated`, alias for `signLegacyDecryptionPermit`) | ✅ | ✅ | ✅ | ✅ |
 | `serialize`/`parse` permit + key    |  ✅  |   ✅    |   ✅    |  ✅  |
 | `fetchFheEncryptionKeyBytes`        |  ✅  |   ✅    |   ✅    |  ✅  |
 
@@ -154,7 +155,9 @@ The `canDecrypt*` permission checks are not client methods. `canDecryptValue`,
 `canDecryptValues`, and `canDecryptValuesFromPairs` come from
 [`@fhevm/sdk/actions/decrypt`](actions.md); `canDecryptPublicValue` and
 `canDecryptPublicValues` come from [`@fhevm/sdk/actions/base`](actions.md). Import
-them and pass the client as the first argument.
+them and pass the client as the first argument. `canUseUnifiedDecryptionPermit`
+and the `createUnsigned*DecryptionPermitEip712` builders are likewise standalone
+actions only, from [`@fhevm/sdk/actions/base`](actions.md) — see below.
 
 ## Encryption methods
 
@@ -266,7 +269,8 @@ canDecryptPublicValues(fhevm, parameters: { readonly encryptedValues: readonly E
 See [Decryption](decryption.md).
 
 ```ts
-signDecryptionPermit(parameters: {
+// V1 — protocol v13 and below. Works against every deployment.
+signLegacyDecryptionPermit(parameters: {
   readonly contractAddresses: readonly string[];
   readonly startTimestamp: number;
   readonly durationSeconds: number;
@@ -276,12 +280,44 @@ signDecryptionPermit(parameters: {
   readonly transportKeyPair: TransportKeyPair;
 }): Promise<SignedDecryptionPermit>;
 
-// synchronous:
-serializeTransportKeyPair(parameters: { readonly transportKeyPair: TransportKeyPair }): {
+// V2 — protocol v14 and above. Requires SDK protocol API v0.14.0+ and a chain
+// whose KMSVerifier/ProtocolConfig support the unified extraData v2. Same
+// parameter shape as signLegacyDecryptionPermit.
+signUnifiedDecryptionPermit(parameters: SignLegacyDecryptionPermitParameters): Promise<SignedDecryptionPermit>;
+
+/** @deprecated alias for signLegacyDecryptionPermit. */
+signDecryptionPermit(parameters: SignLegacyDecryptionPermitParameters): Promise<SignedDecryptionPermit>;
+
+// standalone only (`@fhevm/sdk/actions/base`) — reports whether the connected
+// relayer supports the V2 unified permit route before you sign one.
+canUseUnifiedDecryptionPermit(fhevm, parameters?: {
+  readonly options?: { readonly auth?: Auth | undefined } | undefined;
+}): Promise<boolean>;
+
+// standalone only (`@fhevm/sdk/actions/base`) — build the raw EIP-712 typed
+// data without signing it, e.g. to hand off to an external signing flow.
+createUnsignedLegacyDecryptionPermitEip712(fhevm, parameters: {
+  readonly contractAddresses: readonly string[];
+  readonly startTimestamp: number;
+  readonly durationSeconds: number;
+  readonly delegatorAddress?: string | undefined;
+  readonly transportKeyPair: TransportKeyPair;
+}): Promise<Eip712Like>;
+createUnsignedUnifiedDecryptionPermitEip712(fhevm, parameters: {
+  readonly contractAddresses: readonly string[];
+  readonly startTimestamp: number;
+  readonly durationSeconds: number;
+  readonly signerAddress: string;
+  readonly transportKeyPair: TransportKeyPair;
+}): Promise<Eip712Like>;
+
+// async — both resolve the client's protocol context before serializing:
+serializeTransportKeyPair(parameters: { readonly transportKeyPair: TransportKeyPair }): Promise<{
   publicKey: BytesHex;
   privateKey: BytesHex;
-};
-serializeSignedDecryptionPermit(parameters: { readonly signedPermit: SignedDecryptionPermit }): {
+  tkmsVersion?: string;
+}>;
+serializeSignedDecryptionPermit(parameters: { readonly signedPermit: SignedDecryptionPermit }): Promise<{
   readonly version: number;
   readonly eip712: Eip712Like;
   readonly signature: string;
@@ -289,7 +325,11 @@ serializeSignedDecryptionPermit(parameters: { readonly signedPermit: SignedDecry
   readonly delegatorAddress?: string | undefined;
 };
 
-parseTransportKeyPair(parameters: { readonly publicKey: string; readonly privateKey: string }): Promise<TransportKeyPair>;
+parseTransportKeyPair(parameters: {
+  readonly publicKey: string;
+  readonly privateKey: string;
+  readonly tkmsVersion?: string | undefined;
+}): Promise<TransportKeyPair>;
 parseSignedDecryptionPermit(parameters: {
   readonly serializedPermit: { readonly version: number; readonly eip712: Eip712Like; readonly signature: string; readonly signerAddress: string; readonly delegatorAddress?: string | undefined };
   readonly transportKeyPair: TransportKeyPair;
@@ -329,9 +369,14 @@ decryptPublicValuesWithSignatures(fhevm, parameters);
 canDecryptPublicValue(fhevm, parameters);
 canDecryptPublicValues(fhevm, parameters);
 fetchEncryptedValues(fhevm, parameters);
+canUseUnifiedDecryptionPermit(fhevm, parameters?);
+createUnsignedLegacyDecryptionPermitEip712(fhevm, parameters);
+signLegacyDecryptionPermit(fhevm, parameters);
+createUnsignedUnifiedDecryptionPermitEip712(fhevm, parameters);
+signUnifiedDecryptionPermit(fhevm, parameters);
 
 // @fhevm/sdk/actions/chain
-signDecryptionPermit(fhevm, parameters);
+signDecryptionPermit(fhevm, parameters); // @deprecated, alias for signLegacyDecryptionPermit
 serializeSignedDecryptionPermit(fhevm, parameters);
 parseSignedDecryptionPermit(fhevm, parameters);
 serializeTransportKeyPair(fhevm, parameters);
@@ -351,6 +396,8 @@ Exported from `@fhevm/sdk/chains`. See [Chains](chains.md).
 ```ts
 const mainnet: FhevmChain; // id 1
 const sepolia: FhevmChain; // id 11155111
+const polygon: FhevmChain; // id 137
+const polygonAmoy: FhevmChain; // id 80002
 
 function defineFhevmChain<const chain extends FhevmChain>(chain: chain): chain;
 
@@ -416,6 +463,18 @@ type RelayerCommonOptions = {
   readonly signal?: AbortSignal | undefined;
   readonly timeout?: number | undefined;
 };
+```
+
+`Auth` (and its variants) are exported from `@fhevm/sdk/types`. Zama's hosted
+relayer accepts only `ApiKeyHeader` (the default `x-api-key` header); a
+self-hosted relayer may accept any of the three:
+
+```ts
+type Auth = AuthBearerToken | AuthApiKeyHeader | AuthApiKeyCookie;
+type AuthBearerToken = { type: 'BearerToken'; token: string };
+type AuthApiKeyHeader = { type: 'ApiKeyHeader'; header?: string; value: string }; // header defaults to 'x-api-key'
+type AuthApiKeyCookie = { type: 'ApiKeyCookie'; cookie?: string; value: string }; // cookie defaults to 'x-api-key'
+type AuthType = Auth['type'];
 ```
 
 Per-operation option types add an `onProgress?` callback:
