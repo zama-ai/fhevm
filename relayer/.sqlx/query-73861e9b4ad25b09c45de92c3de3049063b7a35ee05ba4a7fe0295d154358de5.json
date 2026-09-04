@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT int_job_id, req, req_status as \"req_status!: ReqStatus\", updated_at\n            FROM user_decrypt_req\n            WHERE req_status IN ('queued'::req_status, 'processing'::req_status, 'tx_in_flight'::req_status)\n            ORDER BY created_at ASC\n            ",
+  "query": "\n            SELECT int_job_id, req, req_type as \"req_type!: UserDecryptReqType\", req_status as \"req_status!: ReqStatus\", updated_at\n            FROM user_decrypt_req\n            WHERE req_status IN ('queued'::req_status, 'processing'::req_status, 'tx_in_flight'::req_status)\n            ORDER BY created_at ASC\n            ",
   "describe": {
     "columns": [
       {
@@ -15,6 +15,22 @@
       },
       {
         "ordinal": 2,
+        "name": "req_type!: UserDecryptReqType",
+        "type_info": {
+          "Custom": {
+            "name": "user_decrypt_req_type",
+            "kind": {
+              "Enum": [
+                "user_decrypt",
+                "delegated_user_decrypt",
+                "unified"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 3,
         "name": "req_status!: ReqStatus",
         "type_info": {
           "Custom": {
@@ -34,7 +50,7 @@
         }
       },
       {
-        "ordinal": 3,
+        "ordinal": 4,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
@@ -46,8 +62,9 @@
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "f41630b5b74e19e8b3c015e1dd495aa610ac2121952b0483419f18bad343141e"
+  "hash": "73861e9b4ad25b09c45de92c3de3049063b7a35ee05ba4a7fe0295d154358de5"
 }
