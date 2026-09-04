@@ -1565,11 +1565,14 @@ jobs:
       - name: Combine e2e reports
         id: e2e_report_combined
         if: env.BLUE_GREEN == 'true' && env.AUTOMATED_TESTS == 'true'
+        env:
+          REPORT_BLUE: ${{ steps.e2e_report.outputs.report_path }}
+          REPORT_GREEN: ${{ steps.e2e_report_green.outputs.report_path }}
         run: |
           combined=$(mktemp --suffix=.md)
-          cat "${{ steps.e2e_report.outputs.report_path }}" > "${combined}"
+          cat "${REPORT_BLUE}" > "${combined}"
           echo >> "${combined}"
-          cat "${{ steps.e2e_report_green.outputs.report_path }}" >> "${combined}"
+          cat "${REPORT_GREEN}" >> "${combined}"
           echo "report_path=${combined}" >> "$GITHUB_OUTPUT"
 
       - name: Comment e2e results on PR
