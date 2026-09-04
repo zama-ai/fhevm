@@ -1,5 +1,5 @@
 import type { FhevmRuntimeConfig } from '../../core/types/coreFhevmRuntime.js';
-import { cloneModuleVersions, moduleVersionsAreEqual } from '../../core/runtimeConfig-p.js';
+import { authsAreEqual, cloneModuleVersions, moduleVersionsAreEqual } from '../../core/runtimeConfig-p.js';
 
 let viemFhevmRuntimeConfig: FhevmRuntimeConfig | undefined;
 
@@ -31,7 +31,8 @@ export function setFhevmRuntimeConfig(config: FhevmRuntimeConfig): void {
     viemFhevmRuntimeConfig.wasmAssetLoadMode !== config.wasmAssetLoadMode ||
     !moduleVersionsAreEqual(viemFhevmRuntimeConfig.moduleVersions, config.moduleVersions) ||
     viemFhevmRuntimeConfig.singleThread !== config.singleThread ||
-    viemFhevmRuntimeConfig.numberOfThreads !== config.numberOfThreads
+    viemFhevmRuntimeConfig.numberOfThreads !== config.numberOfThreads ||
+    !authsAreEqual(viemFhevmRuntimeConfig.auth, config.auth)
   ) {
     throw new Error(
       'FhevmRuntime config has already been set and cannot be changed. ' +
