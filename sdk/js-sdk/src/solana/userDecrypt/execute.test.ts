@@ -100,8 +100,7 @@ describe('the link inputs a permit pins', () => {
       userPubkey: fields.userPubkey,
       hostChainId: PERMIT_CHAIN_ID,
       verifyingProgramId: fields.verifyingProgramId,
-      kmsContextId: identity(0x33),
-      kmsEpochId: identity(0x44),
+      extraData: routing(),
       handles,
       transportKey: fields.transportKey,
     });

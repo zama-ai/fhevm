@@ -8,7 +8,7 @@
 //
 // The records do the work. Four accepted ones pin the link this SDK computes against the link the KMS
 // computes. Ten divergence records each mutate one bound field and carry the different link that
-// mutation produces — a response signed over the reference link is refused for every one of them. Nine
+// mutation produces — a response signed over the reference link is refused for every one of them. Seven
 // construction rejects are inputs the checked construction refuses outright. And two foreign-scheme
 // records carry links from another scheme version, which this one must never reproduce.
 
@@ -44,8 +44,7 @@ interface LinkerRecord {
   readonly declared_chain_id_decimal?: string;
   readonly receiver_id: string;
   readonly verifying_program_id: string;
-  readonly kms_context_id: string;
-  readonly kms_epoch_id: string;
+  readonly extra_data: string;
   readonly handles: readonly string[];
   readonly transport_key: string;
   readonly scheme_tag: string;
@@ -81,8 +80,7 @@ function inputsOf(record: LinkerRecord): SolanaUserDecryptLinkInputs {
     // that disagreement, so the declared one is what goes in.
     hostChainId: BigInt(record.declared_chain_id_decimal ?? record.chain_id_decimal),
     verifyingProgramId: hexToBytes(`0x${record.verifying_program_id}`),
-    kmsContextId: hexToBytes(`0x${record.kms_context_id}`),
-    kmsEpochId: hexToBytes(`0x${record.kms_epoch_id}`),
+    extraData: hexToBytes(`0x${record.extra_data}`),
     handles: record.handles.map((handle) => hexToBytes(`0x${handle}`)),
     transportKey: hexToBytes(`0x${transportKey}`),
   };
@@ -161,17 +159,19 @@ describe('the link this SDK computes', () => {
 // so no test reaches the comparison through a full verification; what is pinned instead is the
 // bytes this side brings to it.
 describe('the request half of the link contract', () => {
-  it('carries the signed KMS route: the version byte over the link inputs, byte for byte', () => {
+  it('carries the signed KMS route: the permit’s extra_data, byte for byte', () => {
     const half = solanaUserDecryptRequestHalf(inputsOf(reference));
-    expect(half.extra_data).toBe(`02${reference.kms_context_id}${reference.kms_epoch_id}`);
+    // The reference route is the versioned routing envelope: the version byte over two ids.
+    expect(reference.extra_data).toMatch(/^02[0-9a-f]{128}$/);
+    expect(half.extra_data).toBe(reference.extra_data);
   });
 
   it('follows a changed route byte in the client inputs — the route is the client’s, not an echo', () => {
     const inputs = inputsOf(reference);
-    const mutated = inputs.kmsContextId.map((byte, index) => (index === 0 ? byte ^ 0x01 : byte));
-    const half = solanaUserDecryptRequestHalf({ ...inputs, kmsContextId: mutated });
-    expect(half.extra_data).not.toBe(`02${reference.kms_context_id}${reference.kms_epoch_id}`);
-    expect(half.extra_data.slice(2)).toBe(`${bytesToHex(mutated).slice(2)}${reference.kms_epoch_id}`);
+    const mutated = inputs.extraData.map((byte, index) => (index === 1 ? byte ^ 0x01 : byte));
+    const half = solanaUserDecryptRequestHalf({ ...inputs, extraData: mutated });
+    expect(half.extra_data).not.toBe(reference.extra_data);
+    expect(half.extra_data).toBe(bytesToHex(mutated).slice(2));
   });
 
   it('zeroes the EVM-shaped fields and carries the handles in request order', () => {
@@ -182,9 +182,14 @@ describe('the request half of the link contract', () => {
     expect(half.ciphertext_handles).toEqual(reference.handles);
   });
 
-  it('refuses ids of a width the routing version does not admit', () => {
-    const inputs = inputsOf(reference);
-    expect(() => solanaUserDecryptRequestHalf({ ...inputs, kmsEpochId: new Uint8Array(31) })).toThrow();
+  // The request half rewrites nothing: an empty extra_data is carried as empty, and the emptied
+  // record's link — a different valid link, not a rejection — is what the blob computes for it.
+  it('carries an empty extra_data as empty, and the link follows', async () => {
+    const emptied = fixture.records.find((record) => record.name === 'emptied-extra-data');
+    if (emptied === undefined) throw new Error('the linker vector set carries no emptied-extra-data record');
+    expect(emptied.extra_data).toBe('');
+    expect(solanaUserDecryptRequestHalf(inputsOf(emptied)).extra_data).toBe('');
+    expect(bytesToHex(await solanaUserDecryptLink(inputsOf(emptied))).slice(2)).toBe(emptied.link);
   });
 });
 
@@ -278,8 +283,8 @@ describe('the KMS route rule', () => {
     chainId: 31337n,
     verifyingContract: gatewayContract as `0x${string}`,
   } as const;
-  /** The signed KMS route of the reference request: the version byte over its context and epoch. */
-  const referenceRoute = `0x02${reference.kms_context_id}${reference.kms_epoch_id}` as `0x${string}`;
+  /** The signed KMS route of the reference request: its extra_data, the version byte over two ids. */
+  const referenceRoute = `0x${reference.extra_data}` as `0x${string}`;
 
   const concat = (...parts: readonly Uint8Array[]): Uint8Array => {
     const out = new Uint8Array(parts.reduce((length, part) => length + part.length, 0));
@@ -400,13 +405,14 @@ describe('the KMS route rule', () => {
     );
   });
 
-  // The same mutation, request side: the client's signed epoch differs by one byte, the share is
-  // the untouched reference one. The verification rebuilds the route from the client's own inputs,
-  // so the same rule refuses it — a response cannot bring its own route.
+  // The same mutation, request side: the client's signed route differs by one byte (the first byte
+  // of the epoch id), the share is the untouched reference one. The verification takes the route
+  // from the client's own inputs, so the same rule refuses it — a response cannot bring its own
+  // route.
   it('one changed route byte in the client inputs refuses the untouched share', async () => {
     const inputs = inputsOf(reference);
-    const mutatedEpoch = inputs.kmsEpochId.map((byte, index) => (index === 0 ? byte ^ 0x01 : byte));
-    await expect(verifyWith({ ...inputs, kmsEpochId: mutatedEpoch }, shareOver(referenceRoute))).rejects.toThrow(
+    const mutatedRoute = inputs.extraData.map((byte, index) => (index === 33 ? byte ^ 0x01 : byte));
+    await expect(verifyWith({ ...inputs, extraData: mutatedRoute }, shareOver(referenceRoute))).rejects.toThrow(
       /the KMS node signature on the response from party 1 is not valid/,
     );
   });

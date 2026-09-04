@@ -40,6 +40,7 @@ jobs:
               - solana/programs/zama-host/**
               - solana/programs/confidential-token/**
               - solana/crates/zama-solana-acl/**
+              - solana/crates/zama-solana-transaction/**
   cargo-tests:
     name: coprocessor-cargo-test/${{ matrix.service }}
     needs: check-changes
@@ -82,6 +83,9 @@ jobs:
             runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64
           - service: host-listener
             package: host-listener
+            # The Solana listener binary requires both features; without them the Solana
+            # modules are not compiled at all, so this leg would test half the crate.
+            features: solana-grpc,solana-reconstruct
             needs_localstack: false
             needs_foundry: true
             # Larger disk: coverage build of host-listener plus the restored cargo
@@ -145,6 +149,7 @@ jobs:
         SQLX_OFFLINE: 'true'
         TEST_GLOBAL_LOCALSTACK: ${{ matrix.needs_localstack && '1' || '0' }}
         TEST_PACKAGE: ${{ matrix.package }}
+        TEST_FEATURES: ${{ matrix.features || '' }}
         IS_MERGE_QUEUE: ${{ startsWith(github.head_ref, 'mergify/merge-queue/') && '1' || '0' }}
       run: |
         # Merge queue: leave unset so supported_types() defaults to full matrix.
@@ -153,7 +158,7 @@ jobs:
           export TFHE_WORKER_EVENT_TYPE_MATRIX=local
         fi
         cargo llvm-cov clean --workspace --profile coverage
-        cargo llvm-cov test -p "$TEST_PACKAGE" --profile coverage
+        cargo llvm-cov test -p "$TEST_PACKAGE" ${TEST_FEATURES:+--features "$TEST_FEATURES"} --profile coverage
       working-directory: coprocessor/fhevm-engine
 
     - name: Export LCOV coverage data

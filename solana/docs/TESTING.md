@@ -117,50 +117,6 @@ Each of those roots hid a real break at least once. The grep sweeps in
 `scripts/dead-surface-check.sh` cover some of the same trees, but grep does not
 typecheck — a root can be swept and still never compiled.
 
-### Native unit coverage
-
-CI publishes component-level native Rust line coverage. Run the same measurement locally with:
-
-```bash
-cargo llvm-cov \
-  --workspace \
-  --exclude zama-solana-runtime-tests \
-  --exclude zama-solana-test-kit \
-  --json \
-  --summary-only \
-  --output-path /tmp/solana-native-coverage.json
-```
-
-This is intentionally an informational signal without a coverage floor. Mollusk executes the
-programs from prebuilt SBF artifacts, not the instrumented native libraries, so it cannot attribute
-runtime execution to the program instruction source. Including `zama-solana-runtime-tests` or
-`zama-solana-test-kit` would instead count the Rust test harness and make the total look healthier
-without measuring more on-chain code. Use the component table to find native unit-test gaps, and use the Mollusk suites to
-validate account, CPI, PDA, ACL, event, and persistence behavior.
-
-The report includes inline `#[cfg(test)]` modules that live in instrumented source files. Their
-lines can raise a component percentage, so the table is a gap-finding signal rather than a measure
-of product-code coverage.
-
-The host-listener and relayer live in separate workspaces and are not folded into this number. Their
-Solana modules need separately scoped reports in their own workflows; combining their package-wide
-coverage with this workspace would not produce a meaningful floor.
-
-The adapters live in sibling workspaces and need offline SQLx metadata (no live DB):
-
-```bash
-cd ../kms-connector            && SQLX_OFFLINE=true cargo test -p kms-worker solana_ -- --nocapture
-cd ../coprocessor/fhevm-engine && SQLX_OFFLINE=true cargo check -p host-listener
-cd ../coprocessor/fhevm-engine && SQLX_OFFLINE=true cargo test -p host-listener solana_adapter::tests::
-cd ../coprocessor/fhevm-engine && SQLX_OFFLINE=true cargo test -p host-listener --features solana-reconstruct solana_reconstruct::
-cd ../coprocessor/fhevm-engine && SQLX_OFFLINE=true cargo test --profile local -p fhevm-engine-common --test real_tfhe_conformance
-cd ../solana-proof-service     && make test
-```
-
-> Note on a green test run: the suites print many `Program ... failed: custom program error: 0x...`
-> lines. Those are **negative tests** asserting expected reverts, not test failures. The
-> authoritative signal is the `test result: ok` summary lines and the process exit code.
-
 ## Scenario layer (SDK-driven e2e)
 
 Lives in `test-suite/fhevm/e2e/` — a small harness plus scenario files. Since fhevm-internal#1876

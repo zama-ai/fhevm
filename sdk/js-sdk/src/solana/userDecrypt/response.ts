@@ -27,14 +27,13 @@ import initSolanaTkms, {
   new_server_id_addr,
   new_solana_client,
   process_user_decryption_resp_solana_from_js,
-} from '../../wasm/tkms/kms_lib.v0.15.0-0-solana.024279f8.js';
-import { tkmsWasmBase64 } from '../../wasm/tkms/kms_lib_bg.v0.15.0-0-solana.024279f8.wasm.base64.js';
+} from '../../wasm/tkms/kms_lib.v0.15.0-0-solana.0ead5f74.js';
+import { tkmsWasmBase64 } from '../../wasm/tkms/kms_lib_bg.v0.15.0-0-solana.0ead5f74.wasm.base64.js';
 import { bytes32ToHandle } from '../../core/handle/FhevmHandle.js';
 import { bytesToHexNo0x, isBytes32 } from '../../core/base/bytes.js';
 import { isomorphicCompileWasmFromBase64 } from '../../core/base/wasm.js';
 import { remove0x } from '../../core/base/string.js';
 import { toChecksummedAddress } from '../../core/base/address.js';
-import { PERMIT_KMS_ROUTING_VERSION, encodeSolanaKmsRouting } from '../permit/index.js';
 
 /**
  * The EIP-55 form of a configured EVM address, for the blob's checksum-validating parser.
@@ -130,10 +129,13 @@ export interface SolanaUserDecryptLinkInputs {
   readonly hostChainId: bigint;
   /** The 32-byte program id the permit was signed for. */
   readonly verifyingProgramId: Uint8Array;
-  /** The signed KMS context id. */
-  readonly kmsContextId: Uint8Array;
-  /** The signed KMS epoch id. */
-  readonly kmsEpochId: Uint8Array;
+  /**
+   * The request's `extra_data`, verbatim: the KMS routing envelope the permit signed, in its wire
+   * form. The link binds these bytes as they are — the KMS never parses them — so what goes in
+   * here must be the exact bytes the request carried, rebuilt from the signed permit and never
+   * copied from a response.
+   */
+  readonly extraData: Uint8Array;
   /** The requested handles, in the order the request carried them — position is part of the link. */
   readonly handles: readonly Uint8Array[];
   /** The serialized transport key, in full: the link commits to the key, not to its fingerprint. */
@@ -169,14 +171,30 @@ export async function solanaUserDecryptLink(inputs: SolanaUserDecryptLinkInputs)
   // Marshaling and nothing else: the one canonical link computation lives in the blob, and a
   // second copy here would be a link rule that agrees today and drifts tomorrow.
   return compute_solana_user_decrypt_link_from_js(
-    inputs.userPubkey,
-    inputs.hostChainId,
-    inputs.verifyingProgramId,
-    inputs.kmsContextId,
-    inputs.kmsEpochId,
+    solanaRequestFieldsWasmArg(inputs),
     inputs.handles.map((handle) => bytesToHexNo0x(handle)),
     inputs.transportKey,
+    inputs.extraData,
   );
+}
+
+/**
+ * The Solana-owned request fields in the blob's named shape: identities as hex strings and the
+ * chain id as a decimal string. A Solana chain id sets bit 63 and does not fit a JS number, and
+ * the blob refuses a Number in that field rather than rounding it into a different chain.
+ *
+ * @param inputs - The client's own fields.
+ */
+function solanaRequestFieldsWasmArg(inputs: SolanaUserDecryptLinkInputs): {
+  readonly user_pubkey: string;
+  readonly host_chain_id: string;
+  readonly verifying_program_id: string;
+} {
+  return {
+    user_pubkey: bytesToHexNo0x(inputs.userPubkey),
+    host_chain_id: inputs.hostChainId.toString(),
+    verifying_program_id: bytesToHexNo0x(inputs.verifyingProgramId),
+  };
 }
 
 /**
@@ -185,16 +203,16 @@ export async function solanaUserDecryptLink(inputs: SolanaUserDecryptLinkInputs)
  *
  * The EVM-shaped fields are zeroed, not read on this path: the recipient is the raw ed25519 key
  * passed alongside, and the link is the Solana binding computed from the explicit arguments plus
- * the handles and transport key here. The KMS route is not one of the zeroed fields: the blob
- * compares it against the route the response carries before any signature is checked, so it must
- * be the exact bytes the permit signed — rebuilt from the signed link inputs, never copied from
- * the response, or the comparison would be the response agreeing with itself.
+ * the handles, transport key and extra_data here. The extra_data is not one of the zeroed fields:
+ * the link binds it and the blob compares it against the route the response carries before any
+ * signature is checked, so it must be the exact bytes the permit signed — rebuilt from the signed
+ * permit, never copied from the response, or the comparison would be the response agreeing with
+ * itself.
  *
  * Exported so it can be pinned directly: the committed vectors carry no signcrypted shares, so no
  * test reaches the blob's route comparison through a full verification.
  *
  * @param link - The client's own request fields.
- * @throws SolanaPermitError - If the ids are not the widths the routing version admits.
  */
 export function solanaUserDecryptRequestHalf(link: SolanaUserDecryptLinkInputs): {
   readonly signature: undefined;
@@ -210,13 +228,7 @@ export function solanaUserDecryptRequestHalf(link: SolanaUserDecryptLinkInputs):
     enc_key: bytesToHexNo0x(link.transportKey),
     ciphertext_handles: link.handles.map((handle) => bytesToHexNo0x(handle)),
     eip712_verifying_contract: '0x0000000000000000000000000000000000000000',
-    extra_data: bytesToHexNo0x(
-      encodeSolanaKmsRouting({
-        version: PERMIT_KMS_ROUTING_VERSION,
-        kmsContextId: link.kmsContextId,
-        kmsEpochId: link.kmsEpochId,
-      }),
-    ),
+    extra_data: bytesToHexNo0x(link.extraData),
   };
 }
 
@@ -274,11 +286,7 @@ export async function verifySolanaUserDecryptResponse(response: {
   const plaintexts = process_user_decryption_resp_solana_from_js(
     client,
     request,
-    response.link.userPubkey,
-    response.link.hostChainId,
-    response.link.verifyingProgramId,
-    response.link.kmsContextId,
-    response.link.kmsEpochId,
+    solanaRequestFieldsWasmArg(response.link),
     aggResp,
     response.keyPair.publicKey,
     response.keyPair.secretKey,

@@ -787,8 +787,15 @@ where
         if let Some(user_decrypt_data) = user_decrypt_data {
             let client_address = user_decrypt_data.client_address;
             let enc_key = user_decrypt_data.public_key.to_vec();
-            let solana_pubkey = user_decrypt_data.solana_pubkey;
-            let solana_verifying_program_id = user_decrypt_data.solana_verifying_program_id;
+            let signing_metadata = user_decrypt_data
+                .solana
+                .map(|solana| {
+                    vec![kms_grpc::kms::v1::SigningMetadata::solana(
+                        solana.user_pubkey.to_vec(),
+                        solana.verifying_program_id.to_vec(),
+                    )]
+                })
+                .unwrap_or_default();
             let user_decryption_request = UserDecryptionRequest {
                 request_id,
                 client_address,
@@ -799,8 +806,8 @@ where
                 extra_data: kms_extra_data,
                 epoch_id: parsed_extra_data.epoch_id.map(u256_to_request_id),
                 context_id: parsed_extra_data.context_id.map(u256_to_request_id),
-                solana_pubkey,
-                solana_verifying_program_id,
+                signing_metadata,
+                signing_schemes: vec![],
             };
 
             Ok(user_decryption_request.into())
@@ -813,6 +820,7 @@ where
                 extra_data: kms_extra_data,
                 epoch_id: parsed_extra_data.epoch_id.map(u256_to_request_id),
                 context_id: parsed_extra_data.context_id.map(u256_to_request_id),
+                signing_schemes: vec![],
             };
             Ok(public_decryption_request.into())
         }
@@ -869,11 +877,17 @@ pub struct UserDecryptionExtraData {
     /// The checksummed EVM user address. Empty for Solana requests.
     pub client_address: String,
     pub public_key: Bytes,
-    /// The exact Solana user identity (RFC-021). Unset for EVM requests.
-    pub solana_pubkey: Option<Vec<u8>>,
-    /// The program id of the Solana host deployment the permit is signed for. Unset for EVM
-    /// requests.
-    pub solana_verifying_program_id: Option<Vec<u8>>,
+    /// The Solana half of the request's `SigningMetadata` envelope: the exact 32-byte ed25519
+    /// user identity (RFC-021) and the ZamaHost program id of the deployment. Unset for EVM
+    /// requests, whose envelope list stays empty.
+    pub solana: Option<SolanaSigningMetadata>,
+}
+
+/// What the KMS `SigningMetadata` envelope carries for a Solana request.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SolanaSigningMetadata {
+    pub user_pubkey: [u8; 32],
+    pub verifying_program_id: [u8; 32],
 }
 
 impl UserDecryptionExtraData {
@@ -881,8 +895,7 @@ impl UserDecryptionExtraData {
         Self {
             client_address: user_address.to_checksum(None),
             public_key,
-            solana_pubkey: None,
-            solana_verifying_program_id: None,
+            solana: None,
         }
     }
 
@@ -896,8 +909,10 @@ impl UserDecryptionExtraData {
         Self {
             client_address: String::new(),
             public_key,
-            solana_pubkey: Some(identity.to_vec()),
-            solana_verifying_program_id: Some(verifying_program_id.to_vec()),
+            solana: Some(SolanaSigningMetadata {
+                user_pubkey: identity,
+                verifying_program_id,
+            }),
         }
     }
 }
@@ -2053,8 +2068,7 @@ mod tests {
         let data = UserDecryptionExtraData::new(address, Bytes::from_static(&[0x22]));
 
         assert_eq!(data.client_address, address.to_checksum(None));
-        assert_eq!(data.solana_pubkey, None);
-        assert_eq!(data.solana_verifying_program_id, None);
+        assert_eq!(data.solana, None);
     }
 
     #[test]
@@ -2065,8 +2079,13 @@ mod tests {
             UserDecryptionExtraData::new_solana(identity, Bytes::from_static(&[0x44]), program_id);
 
         assert!(data.client_address.is_empty());
-        assert_eq!(data.solana_pubkey, Some(identity.to_vec()));
-        assert_eq!(data.solana_verifying_program_id, Some(program_id.to_vec()));
+        assert_eq!(
+            data.solana,
+            Some(SolanaSigningMetadata {
+                user_pubkey: identity,
+                verifying_program_id: program_id,
+            })
+        );
     }
 
     #[tokio::test]
