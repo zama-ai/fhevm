@@ -4,6 +4,7 @@ pub mod middleware;
 pub mod openapi;
 pub mod retry_after;
 pub mod server;
+pub mod user_decrypt_wait;
 pub mod utils;
 
 // Re-export key types and functions for direct access
