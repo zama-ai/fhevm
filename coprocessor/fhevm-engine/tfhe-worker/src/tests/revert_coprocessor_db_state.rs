@@ -1,8 +1,8 @@
+use crate::tests::shared_db::cloned_test_db;
 use fhevm_engine_common::tfhe_ops::current_ciphertext_version;
-use serial_test::serial;
 use sqlx::PgPool;
 use test_harness::db_utils::revert_coprocessor_db_state_sql;
-use test_harness::instance::{setup_test_db, ImportMode};
+use test_harness::instance::ImportMode;
 
 const CHAIN_A: i64 = 100;
 const CHAIN_B: i64 = 200;
@@ -248,9 +248,8 @@ async fn count_handle(pool: &PgPool, query: &str, handle: &[u8]) -> i64 {
 }
 
 #[tokio::test]
-#[serial(db)]
 async fn test_revert_deletes_data_after_block_n() {
-    let db = setup_test_db(ImportMode::None).await.expect("setup db");
+    let db = cloned_test_db(ImportMode::None).await.expect("setup db");
     let pool = PgPool::connect(db.db_url()).await.unwrap();
 
     setup_chains(&pool).await;
@@ -386,9 +385,8 @@ async fn test_revert_deletes_data_after_block_n() {
 }
 
 #[tokio::test]
-#[serial(db)]
 async fn test_revert_preserves_other_chain_data() {
-    let db = setup_test_db(ImportMode::None).await.expect("setup db");
+    let db = cloned_test_db(ImportMode::None).await.expect("setup db");
     let pool = PgPool::connect(db.db_url()).await.unwrap();
 
     setup_chains(&pool).await;
@@ -489,9 +487,8 @@ async fn test_revert_preserves_other_chain_data() {
 }
 
 #[tokio::test]
-#[serial(db)]
 async fn test_revert_no_op_when_no_data_above_block_n() {
-    let db = setup_test_db(ImportMode::None).await.expect("setup db");
+    let db = cloned_test_db(ImportMode::None).await.expect("setup db");
     let pool = PgPool::connect(db.db_url()).await.unwrap();
 
     setup_chains(&pool).await;
@@ -626,9 +623,8 @@ async fn test_revert_no_op_when_no_data_above_block_n() {
 }
 
 #[tokio::test]
-#[serial(db)]
 async fn test_revert_preserves_shared_ciphertexts() {
-    let db = setup_test_db(ImportMode::None).await.expect("setup db");
+    let db = cloned_test_db(ImportMode::None).await.expect("setup db");
     let pool = PgPool::connect(db.db_url()).await.unwrap();
 
     setup_chains(&pool).await;
@@ -749,9 +745,8 @@ async fn test_revert_preserves_shared_ciphertexts() {
 }
 
 #[tokio::test]
-#[serial(db)]
 async fn test_revert_fails_for_nonexistent_chain() {
-    let db = setup_test_db(ImportMode::None).await.expect("setup db");
+    let db = cloned_test_db(ImportMode::None).await.expect("setup db");
     let pool = PgPool::connect(db.db_url()).await.unwrap();
 
     setup_chains(&pool).await;
@@ -763,9 +758,8 @@ async fn test_revert_fails_for_nonexistent_chain() {
 }
 
 #[tokio::test]
-#[serial(db)]
 async fn test_revert_fails_for_zero_block_number() {
-    let db = setup_test_db(ImportMode::None).await.expect("setup db");
+    let db = cloned_test_db(ImportMode::None).await.expect("setup db");
     let pool = PgPool::connect(db.db_url()).await.unwrap();
 
     setup_chains(&pool).await;
@@ -779,9 +773,8 @@ async fn test_revert_fails_for_zero_block_number() {
 }
 
 #[tokio::test]
-#[serial(db)]
 async fn test_revert_fails_for_negative_block_number() {
-    let db = setup_test_db(ImportMode::None).await.expect("setup db");
+    let db = cloned_test_db(ImportMode::None).await.expect("setup db");
     let pool = PgPool::connect(db.db_url()).await.unwrap();
 
     setup_chains(&pool).await;
@@ -795,9 +788,8 @@ async fn test_revert_fails_for_negative_block_number() {
 }
 
 #[tokio::test]
-#[serial(db)]
 async fn test_revert_fails_on_key_rotation() {
-    let db = setup_test_db(ImportMode::None).await.expect("setup db");
+    let db = cloned_test_db(ImportMode::None).await.expect("setup db");
     let pool = PgPool::connect(db.db_url()).await.unwrap();
 
     setup_chains(&pool).await;
@@ -883,9 +875,8 @@ async fn insert_bridged_handle(pool: &PgPool, chain_id: i64, block_number: i64, 
 /// bridged block is past the revert point, while leaving earlier blocks and
 /// other chains untouched.
 #[tokio::test]
-#[serial(db)]
 async fn test_revert_deletes_bridged_ciphertext_without_computation() {
-    let db = setup_test_db(ImportMode::None).await.expect("setup db");
+    let db = cloned_test_db(ImportMode::None).await.expect("setup db");
     let pool = PgPool::connect(db.db_url()).await.unwrap();
 
     setup_chains(&pool).await;
