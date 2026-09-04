@@ -665,7 +665,7 @@ async fn setup_with(configure: impl FnOnce(Config) -> Config) -> anyhow::Result<
     });
 
     let base_url = format!("http://{}", config.http_endpoint);
-    let endpoint = Endpoint::from_config(config).await?;
+    let (endpoint, _state) = Endpoint::from_config(config).await?;
     let cancel_token = CancellationToken::new();
     let task = tokio::spawn(endpoint.start(cancel_token.clone()));
     test_instance.wait_for_log("HTTP server listening at").await;
