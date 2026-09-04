@@ -17,6 +17,10 @@
 # -----------------------------------------------------------------------------
 # Shared configuration across all coprocessor components
 commonConfig:
+  # Keep production Blue on legacy material during a compressed-key migration.
+  # Fresh and GPU deployments must disable this safeguard explicitly.
+  forceLegacyServerKey: true
+
   # Database connection components. Each field accepts either a literal `value` or a
   # `valueFrom` block (secretKeyRef or configMapKeyRef). Leave unset to inject nothing.
   databaseUser: {}

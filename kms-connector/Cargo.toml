@@ -18,6 +18,7 @@ kms-connector-api.path = "crates/api"
 endpoint.path = "crates/endpoint"
 gw-listener.path = "crates/gw-listener"
 kms-worker.path = "crates/kms-worker"
+proxy.path = "crates/proxy"
 tx-sender.path = "crates/tx-sender"
 connector-utils.path = "crates/utils"
 fhevm_gateway_bindings = { path = "../gateway-contracts/rust_bindings", default-features = false }

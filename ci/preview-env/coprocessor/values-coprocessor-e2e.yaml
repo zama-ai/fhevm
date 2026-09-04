@@ -21,6 +21,7 @@
 #   helm upgrade --install coprocessor oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/coprocessor \
 #     -n <namespace> -f this-file
 commonConfig:
+  forceLegacyServerKey: false
   databaseUser: {value: "zama"}
   databasePassword: {value: "zama"}
   databaseEndpoint: {value: "postgres-coprocessor:5432"}

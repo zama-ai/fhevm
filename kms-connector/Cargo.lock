@@ -1765,7 +1765,7 @@ dependencies = [
  "aws-smithy-async",
  "aws-smithy-runtime-api",
  "aws-smithy-types",
- "h2 0.4.14",
+ "h2 0.4.16",
  "http 1.4.0",
  "hyper",
  "hyper-rustls",
@@ -3513,9 +3513,9 @@ dependencies = [
 
 [[package]]
 name = "h2"
-version = "0.4.14"
+version = "0.4.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "171fefbc92fe4a4de27e0698d6a5b392d6a0e333506bc49133760b3bcf948733"
+checksum = "a9f37a958b41b3b19ee2707c06439c0e9e547e847223eb791ecb0cb821c65e27"
 dependencies = [
  "atomic-waker",
  "bytes",
@@ -3740,7 +3740,7 @@ dependencies = [
  "bytes",
  "futures-channel",
  "futures-core",
- "h2 0.4.14",
+ "h2 0.4.16",
  "http 1.4.0",
  "http-body 1.0.1",
  "httparse",
@@ -5204,6 +5204,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3e36c2f31e0a47f9280fb347ef5e461ffcd2c52dd520d8e216b52f93b0b0d7d6"
 dependencies = [
  "thiserror 1.0.69",
+]
+
+[[package]]
+name = "proxy"
+version = "0.15.0"
+dependencies = [
+ "anyhow",
+ "connector-utils",
+ "humantime-serde",
+ "serde",
+ "tokio",
+ "tokio-util",
+ "tracing",
 ]
 
 [[package]]
@@ -7223,7 +7236,7 @@ dependencies = [
  "axum",
  "base64",
  "bytes",
- "h2 0.4.14",
+ "h2 0.4.16",
  "http 1.4.0",
  "http-body 1.0.1",
  "http-body-util",

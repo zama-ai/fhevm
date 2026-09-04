@@ -176,6 +176,7 @@ async fn poller_catches_up_to_safe_tip(
         dependence_cross_block: false,
         dependent_ops_max_per_chain: 0,
         gcs_mode: false,
+        disable_synthetic_ops: false,
         canonical_protocol_config_chain_id: Some(chain_id.as_u64()),
     };
 

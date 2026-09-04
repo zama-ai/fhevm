@@ -246,6 +246,7 @@ async fn setup_with_block_time(
         dependent_ops_max_per_chain: 0,
         timeout_request_websocket: 30,
         stack_version: false,
+        disable_synthetic_ops: false,
     };
     let health_check_url = format!("http://127.0.0.1:{}", args.health_port);
 
@@ -415,6 +416,7 @@ async fn ingest_dependent_burst_seeded(
             dependence_cross_block: true,
             dependent_ops_max_per_chain,
             is_protocol_config_listener: true,
+            disable_synthetic_ops: false,
         },
     )
     .await?;
@@ -751,6 +753,7 @@ async fn test_slow_lane_cross_block_sustained_below_cap_stays_fast_locally(
                 dependence_cross_block: true,
                 dependent_ops_max_per_chain: cap,
                 is_protocol_config_listener: true,
+                disable_synthetic_ops: false,
             },
         )
         .await?;
@@ -1369,6 +1372,7 @@ async fn test_only_catchup_loop_requires_negative_start_at_block(
         dependent_ops_max_per_chain: 0,
         timeout_request_websocket: 30,
         stack_version: false,
+        disable_synthetic_ops: false,
     };
 
     let result = main(args).await;

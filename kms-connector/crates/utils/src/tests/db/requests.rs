@@ -301,11 +301,12 @@ pub async fn insert_rand_prep_keygen_request(
 
     sqlx::query!(
         "INSERT INTO prep_keygen_requests(
-            prep_keygen_id, params_type, extra_data, otlp_context, created_at, already_sent, status
+            prep_keygen_id, params_type, existing_key_id, extra_data, otlp_context, created_at, already_sent, status
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7)",
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
         prep_keygen_request_id.as_le_slice(),
         params_type as ParamsTypeDb,
+        U256::ZERO.as_le_slice(),
         extra_data.to_vec() as Vec<u8>,
         bc2wrap::serialize(&PropagationContext::empty())?,
         Utc::now(),
@@ -318,6 +319,7 @@ pub async fn insert_rand_prep_keygen_request(
     Ok(PrepKeygenRequest {
         prepKeygenId: prep_keygen_request_id,
         paramsType: params_type as u8,
+        existingKeyId: U256::ZERO,
         extraData: extra_data.into(),
     })
 }
@@ -333,11 +335,12 @@ pub async fn insert_rand_keygen_request(
 
     sqlx::query!(
         "INSERT INTO keygen_requests(
-            prep_keygen_id, key_id, extra_data, created_at, otlp_context, already_sent, status
+            prep_keygen_id, key_id, existing_key_id, extra_data, created_at, otlp_context, already_sent, status
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING",
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT DO NOTHING",
         prep_key_id.as_le_slice(),
         key_id.as_le_slice(),
+        U256::ZERO.as_le_slice(),
         extra_data.to_vec() as Vec<u8>,
         Utc::now(),
         bc2wrap::serialize(&PropagationContext::empty())?,
@@ -350,6 +353,7 @@ pub async fn insert_rand_keygen_request(
     Ok(KeygenRequest {
         prepKeygenId: prep_key_id,
         keyId: key_id,
+        existingKeyId: U256::ZERO,
         extraData: extra_data.into(),
     })
 }

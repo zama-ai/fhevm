@@ -30,11 +30,12 @@ function banner(cmd, index, total, startTime) {
 
 const commands = [
   'npm run clean',
+  'npm run audit:sdk',
+  'npm run licenses:check',
   'export BUILD_PROFILE=prod ; npm run codegen:loaders',
   'npm run prettier:check',
   'npm run prettier:ext',
   'npm run lint',
-  'npm run licenses:check',
   'npm run test:unit',
   'export BUILD_PROFILE=dev  ; npm run codegen:loaders && npm run build:cjs && npm run build:esm && npm run build:types && npm run build:tests',
   'npm run clean',
