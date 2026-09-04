@@ -1,4 +1,9 @@
-import { validateEslintConfigs, validatePrettierConfigs, validateScripts } from '../base/checks/scripts.ts';
+import {
+  validateConfigContainment,
+  validateEslintConfigs,
+  validatePrettierConfigs,
+  validateScripts,
+} from '../base/checks/scripts.ts';
 import type { CheckCommand } from '../base/command.ts';
 import { loadPackages } from '../base/npm.ts';
 
@@ -11,6 +16,7 @@ export const checkScripts: CheckCommand = (context) => {
       ...validateScripts(packages),
       ...validatePrettierConfigs(context.workspaceRoot, packages),
       ...validateEslintConfigs(packages),
+      ...validateConfigContainment(packages),
     ],
   };
 };

@@ -1,5 +1,6 @@
 {
   "name": "@fhevm/hardhat-plugin-v3-dev",
+  "version": "0.0.0",
   "description": "Dev package for the hardhat v3 fhevm plugin. Never published. The published package is ./pkg.",
   "private": true,
   "type": "module",

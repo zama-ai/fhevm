@@ -1,0 +1,24 @@
+{
+  "name": "@fhevm/hardhat-template-v3-dev",
+  "version": "0.0.0",
+  "description": "Dev owner for the Hardhat v3 FHEVM template. Never published. The template project is ./pkg.",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "clean": "rm -rf ./broadcast ./cache ./out && npm run clean:pkg",
+    "clean:pkg": "rm -rf ./pkg/artifacts ./pkg/cache ./pkg/coverage ./pkg/dist ./pkg/ignition/deployments ./pkg/*.tsbuildinfo",
+    "compile": "npm run compile --prefix ./pkg",
+    "fmt": "npm run prettier:write && npm run forge:fmt",
+    "fmt:check": "npm run prettier:check && npm run forge:fmt:check",
+    "forge:fmt": "forge fmt pkg/contracts",
+    "forge:fmt:check": "forge fmt --check pkg/contracts",
+    "forge:lint": "forge lint",
+    "lint": "npm run lint --prefix ./pkg && npm run forge:lint",
+    "prettier:check": "npm run prettier:check --prefix ./pkg",
+    "prettier:write": "npm run prettier:write --prefix ./pkg",
+    "test": "npm run test --prefix ./pkg"
+  }
+}

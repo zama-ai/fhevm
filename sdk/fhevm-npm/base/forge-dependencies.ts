@@ -189,7 +189,12 @@ const defaultForgeCommandRunner: ForgeCommandRunner = {
 };
 
 function parseForgeDependencies(value: unknown, pkg: LoadedPackage): Readonly<Record<string, string>> {
-  if (!isRecord(value) || !isRecord(value.dependencies)) {
+  if (!isRecord(value)) {
+    throw new Error(`${pkg.key}: forge config --json did not return an object`);
+  }
+  // Forge reports `dependencies: null` for a valid project with no Soldeer dependencies.
+  if (value.dependencies === null || value.dependencies === undefined) return {};
+  if (!isRecord(value.dependencies)) {
     throw new Error(`${pkg.key}: forge config --json did not return a dependencies object`);
   }
   const dependencies: Record<string, string> = {};

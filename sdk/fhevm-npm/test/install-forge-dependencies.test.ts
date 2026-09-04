@@ -24,7 +24,7 @@ test('discovers manifest packages with effective Forge dependencies', () => {
     const runner: ForgeCommandRunner = {
       readConfig(directory) {
         return {
-          dependencies: directory.endsWith('/with-dependencies') ? { 'forge-std': '1.11.0' } : {},
+          dependencies: directory.endsWith('/with-dependencies') ? { 'forge-std': '1.11.0' } : null,
         };
       },
       install() {

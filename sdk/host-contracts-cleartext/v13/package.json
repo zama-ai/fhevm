@@ -1,6 +1,6 @@
 {
   "name": "@fhevm/host-contracts-cleartext-v13-dev",
-  "version": "0.13.0",
+  "version": "0.0.0",
   "description": "Dev package for @fhevm/host-contracts-cleartext. Never published. The published package is ./pkg.",
   "private": true,
   "type": "module",
@@ -71,7 +71,7 @@
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",
     "@eslint/js": "^10.0.1",
-    "@fhevm/host-contracts-cleartext-v12-dev": "0.12.0",
+    "@fhevm/host-contracts-cleartext-v12-dev": "0.0.0",
     "@fhevm/sdk-common-dev": "0.0.0",
     "@fhevm/sdk-vendored-dev": "0.0.0",
     "@openzeppelin/contracts": "5.1.0",

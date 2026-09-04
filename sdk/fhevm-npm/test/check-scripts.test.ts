@@ -6,6 +6,7 @@ import test from 'node:test';
 
 import {
   prettierTargetsSolidity,
+  validateConfigContainment,
   validateEslintConfigs,
   validatePrettierConfigs,
   validateScripts,
@@ -474,6 +475,71 @@ test('requires Forge scripts directly on a non-published package containing Soli
         rule: 'package-scripts',
         packageKey: './e2e',
         message: "package must define a non-empty 'forge:lint' script for package './e2e' containing Solidity",
+      },
+    ],
+  );
+});
+
+test('requires Forge scripts on the adjacent -dev owner of a workspace-native pkg template', () => {
+  const owner = loadedPackage(
+    './template',
+    { kind: 'internal-consumer', name: '@scope/template-dev', private: true, member: true },
+    {
+      name: '@scope/template-dev',
+      private: true,
+      scripts: {
+        clean: 'npm run clean --prefix ./pkg',
+        fmt: 'npm run prettier:write',
+        'fmt:check': 'npm run prettier:check',
+        lint: 'npm run lint --prefix ./pkg',
+        'prettier:check': 'npm run prettier:check --prefix ./pkg',
+        'prettier:write': 'npm run prettier:write --prefix ./pkg',
+      },
+    },
+  );
+  const template = loadedPackage(
+    './template/pkg',
+    { kind: 'internal-consumer', name: 'template-dev', private: true, member: true },
+    {
+      name: 'template-dev',
+      private: true,
+      scripts: {
+        clean: 'rm -rf dist',
+        lint: 'eslint .',
+        'prettier:check': 'prettier --check .',
+        'prettier:write': 'prettier --write .',
+      },
+    },
+  );
+
+  const violations = validateScripts(
+    [owner, template],
+    () => true,
+    (pkg) => pkg.key === template.key,
+  );
+
+  assert.deepEqual(
+    violations.filter((violation) => violation.rule === '5.1.4'),
+    [],
+  );
+  assert.deepEqual(
+    violations.filter((violation) => violation.rule === 'package-scripts'),
+    [
+      {
+        rule: 'package-scripts',
+        packageKey: './template',
+        message: "package must define a non-empty 'forge:fmt' script for package './template/pkg' containing Solidity",
+      },
+      {
+        rule: 'package-scripts',
+        packageKey: './template',
+        message:
+          "package must define a non-empty 'forge:fmt:check' script for package './template/pkg' containing Solidity",
+      },
+      {
+        rule: 'package-scripts',
+        packageKey: './template',
+        message: "package must define a non-empty 'forge:lint' script for package './template/pkg' containing Solidity",
       },
     ],
   );
@@ -1012,6 +1078,60 @@ test("requires the exact 'prettier.config.js' filename and a reference to the wo
         message: "'prettier.config.js' must contain: export { default } from '../prettier.base.mjs';",
       },
     ],
+  );
+});
+
+test('forbids portable package configs from importing workspace files', () => {
+  const owner = loadedPackage(
+    './template',
+    { kind: 'internal-consumer', name: '@scope/template-dev', private: true, member: true },
+    { name: '@scope/template-dev', private: true },
+  );
+  const template = loadedPackage(
+    './template/pkg',
+    { kind: 'internal-consumer', name: 'template-dev', private: true, member: true },
+    {
+      name: 'template-dev',
+      private: true,
+      type: 'module',
+      scripts: { 'prettier:check': 'prettier --check .' },
+    },
+  );
+  const published = publishedPackage({ distribution: ['mirror'] });
+  const listFiles = (directory: string): readonly string[] => {
+    if (directory === '/workspace/template/pkg') return ['prettier.config.js'];
+    if (directory === '/workspace/library/pkg') return ['eslint.config.js'];
+    return [];
+  };
+  const escapingContents = new Map([
+    ['/workspace/template/pkg/prettier.config.js', "export { default } from '../../../prettier.base.mjs';\n"],
+    ['/workspace/library/pkg/eslint.config.js', "export { default } from '../../eslint.base.mjs';\n"],
+  ]);
+
+  assert.deepEqual(
+    validateConfigContainment([owner, template, published], (file) => escapingContents.get(file), listFiles),
+    [
+      {
+        rule: 'package-config-containment',
+        packageKey: './template/pkg',
+        message:
+          "'prettier.config.js' imports '../../../prettier.base.mjs', which resolves outside the portable package",
+      },
+      {
+        rule: 'package-config-containment',
+        packageKey: './library/pkg',
+        message: "'eslint.config.js' imports '../../eslint.base.mjs', which resolves outside the portable package",
+      },
+    ],
+  );
+
+  assert.deepEqual(
+    validateConfigContainment(
+      [owner, template, published],
+      () => "import eslint from '@eslint/js'; export default eslint.configs.recommended;\n",
+      listFiles,
+    ),
+    [],
   );
 });
 

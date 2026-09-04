@@ -3,6 +3,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 import type { Violation } from '../diagnostics.ts';
 import { forgeArtifactDirectories, memoizedForgeConfigReader } from '../forge-config.ts';
+import { collectModuleSpecifiers, packageNameFromSpecifier } from '../imports.ts';
 import { consumerModuleKinds } from '../module-kind.ts';
 import { type LoadedPackage, dependencyDeclarations } from '../npm.ts';
 
@@ -80,8 +81,9 @@ export function validateScripts(
   for (const pkg of packages.filter((candidate) =>
     ['dev', 'shared-helper', 'internal-consumer'].includes(candidate.inventory.kind),
   )) {
-    requireScript(pkg, 'fmt', '5.1.4', 'private workspace hygiene');
-    requireScript(pkg, 'fmt:check', '5.1.4', 'private workspace hygiene');
+    const formatOwner = adjacentDevOwnerOf(pkg, packagesByKey) ?? pkg;
+    requireScript(formatOwner, 'fmt', '5.1.4', 'private workspace hygiene');
+    requireScript(formatOwner, 'fmt:check', '5.1.4', 'private workspace hygiene');
     requireScript(pkg, 'lint', '5.1.4', 'private workspace hygiene');
     requireScript(pkg, 'prettier:check', '5.1.4', 'private workspace hygiene');
     requireScript(pkg, 'prettier:write', '5.1.4', 'private workspace hygiene');
@@ -243,6 +245,11 @@ export function validateScripts(
       const owners = ownersByPublishedKey.get(pkg.key) ?? [];
       if (owners.length !== 1 || owners[0] === undefined) continue;
       owner = owners[0];
+    } else {
+      // A workspace-native template can exist before its distribution channel and mirror destination
+      // are known. Its adjacent -dev package still owns repository tooling, exactly like a published
+      // payload's dev owner; do not force Forge scripts into the template users will eventually receive.
+      owner = adjacentDevOwnerOf(pkg, packagesByKey) ?? pkg;
     }
     requireScript(owner, 'forge:fmt', 'package-scripts', `package '${pkg.key}' containing Solidity`);
     requireScript(owner, 'forge:fmt:check', 'package-scripts', `package '${pkg.key}' containing Solidity`);
@@ -490,6 +497,15 @@ function isMirrorOnlyOwner(pkg: LoadedPackage, packages: readonly LoadedPackage[
   return payload !== undefined && isMirrorOnly(payload);
 }
 
+function adjacentDevOwnerOf(
+  pkg: LoadedPackage,
+  packagesByKey: ReadonlyMap<string, LoadedPackage>,
+): LoadedPackage | undefined {
+  if (!pkg.key.endsWith('/pkg')) return undefined;
+  const candidate = packagesByKey.get(pkg.key.slice(0, -'/pkg'.length));
+  return candidate?.packageJson.name?.endsWith('-dev') === true ? candidate : undefined;
+}
+
 export function validatePrettierConfigs(
   workspaceRoot: string,
   packages: readonly LoadedPackage[],
@@ -498,6 +514,7 @@ export function validatePrettierConfigs(
   listDirectories: (directory: string) => readonly string[] = directoryDirectoryNames,
 ): readonly Violation[] {
   const violations: Violation[] = [];
+  const packagesByKey = new Map(packages.map((pkg) => [pkg.key, pkg]));
 
   for (const pkg of packages) {
     const scripts = pkg.packageJson.scripts ?? {};
@@ -550,6 +567,19 @@ export function validatePrettierConfigs(
 
     if (!usesPrettier || pkg.inventory.kind === 'published' || isMirrorOnlyOwner(pkg, packages)) continue;
 
+    if (adjacentDevOwnerOf(pkg, packagesByKey) !== undefined) {
+      const configFile = join(pkg.directory, 'prettier.config.js');
+      const contents = readTextFile(configFile);
+      if (contents === undefined) {
+        violations.push({
+          rule: '5.1.6',
+          packageKey: pkg.key,
+          message: "workspace-native pkg template must contain a self-contained 'prettier.config.js'",
+        });
+      }
+      continue;
+    }
+
     const expectedImport = relative(pkg.directory, join(workspaceRoot, 'prettier.base.mjs')).split(sep).join('/');
     const normalizedImport = expectedImport.startsWith('.') ? expectedImport : `./${expectedImport}`;
     const configFile = join(pkg.directory, 'prettier.config.js');
@@ -574,6 +604,59 @@ export function validatePrettierConfigs(
         packageKey: pkg.key,
         message: `'prettier.config.js' must contain: ${expectedStatement}`,
       });
+    }
+  }
+
+  return violations;
+}
+
+export function validateConfigContainment(
+  packages: readonly LoadedPackage[],
+  readTextFile: (file: string) => string | undefined = existingTextFile,
+  listFiles: (directory: string) => readonly string[] = directoryFileNames,
+): readonly Violation[] {
+  const violations: Violation[] = [];
+  const packagesByKey = new Map(packages.map((pkg) => [pkg.key, pkg]));
+  const workspacePackageNames = new Set(
+    packages
+      .filter((pkg) => ['dev', 'shared-helper', 'internal-consumer', 'workspace-root'].includes(pkg.inventory.kind))
+      .map((pkg) => pkg.packageJson.name)
+      .filter((name): name is string => name !== undefined),
+  );
+
+  for (const pkg of packages) {
+    const portablePayload = pkg.inventory.kind === 'published' || adjacentDevOwnerOf(pkg, packagesByKey) !== undefined;
+    if (!portablePayload) continue;
+
+    const configFiles = listFiles(pkg.directory)
+      .filter((file) => isPrettierConfigFileName(file) || isEslintConfigFileName(file))
+      .sort();
+    for (const configFile of configFiles) {
+      const absoluteConfigFile = join(pkg.directory, configFile);
+      const contents = readTextFile(absoluteConfigFile);
+      if (contents === undefined) continue;
+
+      for (const specifier of collectModuleSpecifiers(contents, absoluteConfigFile)) {
+        const workspacePackageName = packageNameFromSpecifier(specifier);
+        if (workspacePackageName !== undefined && workspacePackageNames.has(workspacePackageName)) {
+          violations.push({
+            rule: 'package-config-containment',
+            packageKey: pkg.key,
+            message: `'${configFile}' imports workspace-only package '${workspacePackageName}'`,
+          });
+          continue;
+        }
+
+        if (!specifier.startsWith('.') && !isAbsolute(specifier)) continue;
+        const target = resolve(dirname(absoluteConfigFile), specifier);
+        const relativeTarget = relative(pkg.directory, target);
+        if (relativeTarget !== '..' && !relativeTarget.startsWith(`..${sep}`) && !isAbsolute(relativeTarget)) continue;
+        violations.push({
+          rule: 'package-config-containment',
+          packageKey: pkg.key,
+          message: `'${configFile}' imports '${specifier}', which resolves outside the portable package`,
+        });
+      }
     }
   }
 

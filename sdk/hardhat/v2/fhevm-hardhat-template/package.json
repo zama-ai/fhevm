@@ -1,6 +1,6 @@
 {
   "name": "@fhevm/hardhat-template-v2-dev",
-  "version": "0.4.2",
+  "version": "0.0.0",
   "description": "Dev owner for the mirrored fhevm-hardhat-template. Never published. The mirrored copy is ./pkg.",
   "private": true,
   "type": "module",

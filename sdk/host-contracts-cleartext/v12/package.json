@@ -1,6 +1,6 @@
 {
   "name": "@fhevm/host-contracts-cleartext-v12-dev",
-  "version": "0.12.0",
+  "version": "0.0.0",
   "description": "Dev package for @fhevm/host-contracts-cleartext. Never published. The published package is ./pkg.",
   "private": true,
   "type": "module",

@@ -53,10 +53,13 @@ Every manifest entry also declares two capabilities independent of `kind`: `type
 `browser` states whether browser execution is supported. `kind` describes ownership and publication; these fields
 describe runtime compatibility.
 
-### 1.2 Version of a private package
+### 1.2 Version of a private development package
 
-**1.2.1 Every private package sets `"version": "0.0.0"`.** Nothing resolves one by range — a member links it by name
-— so any other number is a claim nobody verifies and everybody has to keep in step with a release it does not have.
+**1.2.1 Every private development package named `…-dev` sets `"version": "0.0.0"`.** This applies to manifest kinds
+`dev`, `shared-helper`, and `internal-consumer`. Nothing resolves these packages by a published release range — a
+workspace member links them by name — so any other number is a claim nobody verifies and everybody has to keep in
+step with a release that does not exist. `fhevm-npm check-names` enforces this fixed version together with the private
+development naming boundary.
 
 ## 2. Topology
 
@@ -88,6 +91,8 @@ workspace, changing resolution for every package under it before anyone reviews 
 
 **2.1.2 A dev owner stores its published payload in `pkg/`.** The dev-owner root is private and holds scripts, config
 and tests; `pkg/` holds only what ships. Packing the dev-owner root publishes the development package by mistake.
+In particular, a `published` package never declares `forge:fmt` or `forge:lint`, including when it is mirror-only:
+the Forge scripts and `foundry.toml` belong to the corresponding `dev` owner.
 
 ```jsonc
 // ✅ Delegates to the manifest-aware CLI: the payload comes from this owner's publishedRelPath, and
@@ -358,9 +363,10 @@ duplicate the pin in `.foundry-version` files.
 sdk/some-package/.foundry-version
 ```
 
-**4.1.3 Every Foundry project inherits the shared formatting policy.** Its `foundry.toml` declares `extends` for
-`sdk/foundry.base.toml`; `check-foundry` compares every project's effective `[fmt]` values with the shared file.
-Package-specific `[fmt].ignore` values are exempt.
+**4.1.3 Every Foundry project inherits the shared formatting policy.** A package declaring a non-empty `forge:fmt`
+script has a `foundry.toml` in the same directory. Every `foundry.toml` declares `[profile.default].extends` for
+`sdk/foundry.base.toml`; `check-foundry` verifies that ownership and compares every project's effective `[fmt]`
+values with the shared file. Package-specific `[fmt].ignore` values are exempt.
 
 ```toml
 # ✅ Package-local paths and compiler settings remain local; formatting policy is inherited.
@@ -477,8 +483,9 @@ directory-local metadata; installable behavior belongs in a real package.
 
 ### 5.1 Naming and the private boundary
 
-**5.1.1 Private packages are named `…-dev` and set `"private": true`.** The field is what npm enforces; the suffix is
-what makes a leak visible at the import site, and machine-checkable without packing anything.
+**5.1.1 Private development packages are named `…-dev` and set `"private": true`.** The field is what npm enforces;
+the suffix is what makes a leak visible at the import site, and machine-checkable without packing anything. Their
+fixed `"version": "0.0.0"` is specified by 1.2.1; `fhevm-npm check-names` checks all three properties.
 
 **5.1.2 Nothing under `pkg/` imports a `…-dev` package.** That import ships a specifier no consumer can resolve. This
 is the one guarantee a tarball install used to hold alone, and 5.1.1 is what makes it a grep.
