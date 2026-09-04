@@ -132,6 +132,9 @@ jobs:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: relayer_db
+          # 8 tests at once, each holding several pooled connections, overruns Postgres' default
+          # of 100. dev/docker-compose.yaml sets 500 for the same reason.
+          POSTGRES_INITDB_ARGS: "-c max_connections=200"
         ports:
           - 5432
         options: >-
