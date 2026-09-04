@@ -370,6 +370,9 @@ macro_rules! binary_operands_test {
     ($name:ident, $ty:expr, $filter:expr) => {
         #[tokio::test]
         async fn $name() -> Result<(), Box<dyn std::error::Error>> {
+            if !supported_types().contains(&$ty) {
+                return Ok(());
+            }
             run_binary_operands_events(&[$ty], $filter).await
         }
     };
@@ -900,6 +903,9 @@ macro_rules! cast_events_test {
     ($name:ident, $ty:expr) => {
         #[tokio::test]
         async fn $name() -> Result<(), Box<dyn std::error::Error>> {
+            if !supported_types().contains(&$ty) {
+                return Ok(());
+            }
             run_cast_events(&[$ty]).await
         }
     };

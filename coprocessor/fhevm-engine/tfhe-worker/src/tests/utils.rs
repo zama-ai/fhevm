@@ -6,6 +6,7 @@ use fhevm_engine_common::drift_revert::WatcherTimeouts;
 use fhevm_engine_common::telemetry::MetricsConfig;
 use fhevm_engine_common::tfhe_ops::current_ciphertext_version;
 use fhevm_engine_common::types::SupportedFheCiphertexts;
+use sqlx::{Connection, PgConnection};
 use std::collections::BTreeMap;
 use std::time::Duration;
 use test_harness::db_utils::setup_test_key;
@@ -21,8 +22,8 @@ enum TestDb {
     /// A container this test alone owns; see `setup_test_app_dedicated_db`.
     /// Boxed because it is much larger than the other variants.
     Dedicated(Box<testcontainers::ContainerAsync<testcontainers::GenericImage>>),
-    /// A database the developer pointed us at.
-    External,
+    /// A database the developer pointed us at. The lock preserves serial execution.
+    External { _lock: PgConnection },
 }
 
 pub struct TestInstance {
@@ -54,7 +55,7 @@ impl TestInstance {
     pub fn db_docker_id(&self) -> Option<String> {
         match &self._db {
             TestDb::Dedicated(container) => Some(container.id().to_string()),
-            TestDb::Cloned { .. } | TestDb::External => None,
+            TestDb::Cloned { .. } | TestDb::External { .. } => None,
         }
     }
 
@@ -88,12 +89,19 @@ pub async fn setup_test_app_dedicated_db() -> Result<TestInstance, Box<dyn std::
 }
 
 const LOCAL_DB_URL: &str = "postgresql://postgres:postgres@127.0.0.1:5432/coprocessor";
+const LOCAL_DB_ADVISORY_LOCK: i64 = 0x6c6f_6361_6c64_6201;
 
 async fn setup_test_app_existing_db() -> Result<TestInstance, Box<dyn std::error::Error>> {
+    let mut lock = PgConnection::connect(LOCAL_DB_URL).await?;
+    sqlx::query("SELECT pg_advisory_lock($1)")
+        .bind(LOCAL_DB_ADVISORY_LOCK)
+        .execute(&mut lock)
+        .await?;
+
     let (app_close_channel, rx) = tokio::sync::watch::channel(false);
     let health_check_port = start_coprocessor(rx, LOCAL_DB_URL).await;
     Ok(TestInstance {
-        _db: TestDb::External,
+        _db: TestDb::External { _lock: lock },
         app_close_channel: Some(app_close_channel),
         db_url: LOCAL_DB_URL.to_string(),
         health_check_port,

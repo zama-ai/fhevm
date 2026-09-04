@@ -26,8 +26,8 @@ async fn test_fetch_latest_uses_cache_without_selecting_key_blobs(
 
     let expected = cache.fetch_latest_from_pool(&admin_pool).await?;
 
-    let role = format!("key_meta_reader_{}", rand::random::<u32>());
-    let password = "key_meta_reader_password";
+    let role = format!("key_meta_reader_{}", rand::random::<u64>());
+    let password = format!("{:032x}", rand::random::<u128>());
     sqlx::query(&format!("CREATE ROLE {role} LOGIN PASSWORD '{password}'"))
         .execute(&admin_pool)
         .await?;
@@ -48,10 +48,24 @@ async fn test_fetch_latest_uses_cache_without_selecting_key_blobs(
 
     let limited_pool = PgPoolOptions::new()
         .max_connections(2)
-        .connect(&db_url_for_role(db.db_url(), &role, password))
+        .connect(&db_url_for_role(db.db_url(), &role, &password))
         .await?;
 
-    let cached = cache.fetch_latest_from_pool(&limited_pool).await?;
+    let cached = cache.fetch_latest_from_pool(&limited_pool).await;
+    limited_pool.close().await;
+    sqlx::query(&format!("DROP OWNED BY {role}"))
+        .execute(&admin_pool)
+        .await?;
+    sqlx::query(&format!(
+        "REVOKE CONNECT ON DATABASE \"{db_name}\" FROM {role}"
+    ))
+    .execute(&admin_pool)
+    .await?;
+    sqlx::query(&format!("DROP ROLE {role}"))
+        .execute(&admin_pool)
+        .await?;
+
+    let cached = cached?;
     assert_eq!(cached.key_id, expected.key_id);
     assert_eq!(cached.sequence_number, expected.sequence_number);
 

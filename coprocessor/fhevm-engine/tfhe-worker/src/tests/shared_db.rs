@@ -16,6 +16,10 @@ const POSTGRES_PORT: u16 = 5432;
 const FIXTURE_CONTAINER: &str = "tfhe-worker-test-pg";
 const FIXTURE_PORT: u16 = 55432;
 
+const TEST_DB_PREFIX: &str = "tfhe_worker_test_";
+const TEST_DB_MARKER: &str = "fhevm:tfhe-worker:test-database";
+const TEMPLATE_MARKER_PREFIX: &str = "fhevm:tfhe-worker:test-template";
+
 fn fixture_url() -> String {
     format!("postgresql://postgres:postgres@127.0.0.1:{FIXTURE_PORT}/postgres")
 }
@@ -99,11 +103,21 @@ async fn server() -> Result<&'static SharedServer, BoxError> {
 
 fn template_name(mode: &ImportMode) -> &'static str {
     match mode {
-        ImportMode::SkipMigrations => "tmpl_bare",
-        ImportMode::None => "tmpl_migrated",
-        ImportMode::WithKeysNoSns => "tmpl_keys_no_sns",
-        ImportMode::WithAllKeys => "tmpl_keys_all",
+        ImportMode::SkipMigrations => "tfhe_worker_tmpl_bare",
+        ImportMode::None => "tfhe_worker_tmpl_migrated",
+        ImportMode::WithKeysNoSns => "tfhe_worker_tmpl_keys_no_sns",
+        ImportMode::WithAllKeys => "tfhe_worker_tmpl_keys_all",
     }
+}
+
+fn template_marker() -> Result<String, BoxError> {
+    let metadata = std::fs::metadata(std::env::current_exe()?)?;
+    let modified = metadata.modified()?.duration_since(std::time::UNIX_EPOCH)?;
+    Ok(format!(
+        "{TEMPLATE_MARKER_PREFIX}:{}:{}",
+        metadata.len(),
+        modified.as_nanos()
+    ))
 }
 
 fn with_database(admin_url: &str, db_name: &str) -> Result<String, BoxError> {
@@ -136,11 +150,16 @@ static KEY_TESTS: Semaphore = Semaphore::const_new(MAX_CONCURRENT_KEY_TESTS);
 
 /// Reclaims databases no test holds a lock on. Runs before each clone.
 async fn sweep_orphans(conn: &mut PgConnection) -> Result<(), BoxError> {
-    let names: Vec<String> =
-        sqlx::query_scalar(r"SELECT datname FROM pg_database WHERE datname LIKE 'test\_%'")
-            .fetch_all(&mut *conn)
-            .await
-            .unwrap_or_default();
+    let names: Vec<String> = sqlx::query_scalar(
+        "SELECT datname FROM pg_database \
+         WHERE datname LIKE $1 \
+           AND shobj_description(oid, 'pg_database') = $2",
+    )
+    .bind(format!("{TEST_DB_PREFIX}%"))
+    .bind(TEST_DB_MARKER)
+    .fetch_all(&mut *conn)
+    .await
+    .unwrap_or_default();
 
     let mut reclaimed = 0usize;
     for name in names {
@@ -170,50 +189,58 @@ async fn sweep_orphans(conn: &mut PgConnection) -> Result<(), BoxError> {
     Ok(())
 }
 
-/// `None` if absent, else whether the import finished.
-async fn template_state(conn: &mut PgConnection, name: &str) -> Result<Option<bool>, BoxError> {
-    let found: Option<bool> =
-        sqlx::query_scalar("SELECT datistemplate FROM pg_database WHERE datname = $1")
-            .bind(name)
-            .fetch_optional(&mut *conn)
-            .await?;
+/// `None` if absent, else whether the import finished and its ownership marker.
+async fn template_state(
+    conn: &mut PgConnection,
+    name: &str,
+) -> Result<Option<(bool, Option<String>)>, BoxError> {
+    let found = sqlx::query_as(
+        "SELECT datistemplate, shobj_description(oid, 'pg_database') \
+         FROM pg_database WHERE datname = $1",
+    )
+    .bind(name)
+    .fetch_optional(&mut *conn)
+    .await?;
     Ok(found)
 }
 
-/// Imports the template unless it exists. The lock is in Postgres because each test is
-/// a separate process.
-async fn ensure_template(admin_url: &str, mode: &ImportMode) -> Result<String, BoxError> {
-    let template = template_name(mode);
-
-    let mut conn = PgConnection::connect(admin_url).await?;
-    sqlx::query("SELECT pg_advisory_lock($1)")
-        .bind(TEMPLATE_ADVISORY_LOCK)
-        .execute(&mut conn)
+async fn comment_database(
+    conn: &mut PgConnection,
+    name: &str,
+    marker: &str,
+) -> Result<(), BoxError> {
+    conn.execute(format!(r#"COMMENT ON DATABASE "{name}" IS '{marker}'"#).as_str())
         .await?;
-
-    let result = seed_template_locked(admin_url, mode, template, &mut conn).await;
-
-    sqlx::query("SELECT pg_advisory_unlock($1)")
-        .bind(TEMPLATE_ADVISORY_LOCK)
-        .execute(&mut conn)
-        .await?;
-    conn.close().await?;
-
-    result.map(|()| template.to_string())
+    Ok(())
 }
 
 async fn seed_template_locked(
     admin_url: &str,
     mode: &ImportMode,
     template: &str,
+    marker: &str,
     conn: &mut PgConnection,
 ) -> Result<(), BoxError> {
     match template_state(conn, template).await? {
-        Some(true) => return Ok(()),
-        Some(false) => {
-            warn!(template, "Discarding half-seeded template database");
+        Some((true, Some(found))) if found == marker => return Ok(()),
+        Some((_, Some(found))) if found.starts_with(TEMPLATE_MARKER_PREFIX) => {
+            warn!(template, "Discarding stale test template database");
+            conn.execute(
+                format!(
+                    "UPDATE pg_database SET datistemplate = false, datallowconn = false \
+                     WHERE datname = '{template}'"
+                )
+                .as_str(),
+            )
+            .await?;
             conn.execute(format!(r#"DROP DATABASE IF EXISTS "{template}" WITH (FORCE)"#).as_str())
                 .await?;
+        }
+        Some(_) => {
+            return Err(format!(
+                "refusing to replace database {template}: test-template marker is missing"
+            )
+            .into());
         }
         None => {}
     }
@@ -221,6 +248,7 @@ async fn seed_template_locked(
     info!(template, "Seeding test template database (once per server)");
     conn.execute(format!(r#"CREATE DATABASE "{template}""#).as_str())
         .await?;
+    comment_database(conn, template, marker).await?;
 
     let template_url = with_database(admin_url, template)?;
     {
@@ -268,7 +296,7 @@ async fn seed_template_locked(
 }
 
 fn unique_db_name() -> String {
-    format!("test_{:016x}", rand::random::<u64>())
+    format!("{TEST_DB_PREFIX}{:016x}", rand::random::<u64>())
 }
 
 /// A database of the caller's own. The first call imports, the rest copy.
@@ -286,21 +314,42 @@ async fn cloned_test_db_inner(mode: ImportMode) -> Result<ClonedDb, BoxError> {
     };
 
     let server = server().await?;
-    let template = ensure_template(&server.admin_url, &mode).await?;
+    let template = template_name(&mode);
+    let marker = template_marker()?;
     let db_name = unique_db_name();
 
     let mut owner = PgConnection::connect(&server.admin_url).await?;
     let _ = sweep_orphans(&mut owner).await;
 
-    // Before the database exists, or another sweep could see it unlocked and drop it.
-    sqlx::query("SELECT pg_advisory_lock(hashtext($1))")
-        .bind(&db_name)
+    // Keep the template stable until this clone finishes. The lock is in Postgres
+    // because nextest runs every test in a separate process.
+    sqlx::query("SELECT pg_advisory_lock($1)")
+        .bind(TEMPLATE_ADVISORY_LOCK)
         .execute(&mut owner)
         .await?;
 
-    owner
-        .execute(format!(r#"CREATE DATABASE "{db_name}" TEMPLATE "{template}""#).as_str())
-        .await?;
+    let clone_result = async {
+        seed_template_locked(&server.admin_url, &mode, template, &marker, &mut owner).await?;
+
+        // Before the database exists, or another sweep could see it unlocked and drop it.
+        sqlx::query("SELECT pg_advisory_lock(hashtext($1))")
+            .bind(&db_name)
+            .execute(&mut owner)
+            .await?;
+
+        owner
+            .execute(format!(r#"CREATE DATABASE "{db_name}" TEMPLATE "{template}""#).as_str())
+            .await?;
+        comment_database(&mut owner, &db_name, TEST_DB_MARKER).await
+    }
+    .await;
+
+    let unlock_result = sqlx::query("SELECT pg_advisory_unlock($1)")
+        .bind(TEMPLATE_ADVISORY_LOCK)
+        .execute(&mut owner)
+        .await;
+    clone_result?;
+    unlock_result?;
 
     let db_url = with_database(&server.admin_url, &db_name)?;
     info!(db_name, "Cloned test database from {template}");
