@@ -55,6 +55,20 @@ pub type ChainHash = TransactionHash;
 pub type OperandBoundaryMask = [u8; 32];
 pub const OPERAND_BOUNDARY_MASK_BYTES: usize = 32;
 
+/// Seals dropped because the database says the producer is discharged. The seal
+/// is derived state, so this is the half of convergence that shrinks it; a
+/// refresh that only ever grew the set left retired producers sealed until the
+/// LRU happened to evict them, and every continuation of one kept opening a
+/// chain of its own.
+static SEALED_CHAIN_DISCHARGES_TOTAL: LazyLock<prometheus::IntCounter> =
+    LazyLock::new(|| {
+        prometheus::register_int_counter!(
+            "coprocessor_host_listener_sealed_chain_discharges_total",
+            "Producer seals removed because the database reports them discharged"
+        )
+        .unwrap()
+    });
+
 static SLOW_LANE_MARKED_CHAINS_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(
     || {
         register_int_counter_vec!(
@@ -472,6 +486,68 @@ impl Database {
         )
         .fetch_all(&pool)
         .await?;
+        // The seal is DERIVED, so a refresh has to be able to shrink it. Only
+        // adding meant a producer that another process retired -- or whose
+        // child discharged -- stayed sealed here until the LRU evicted it by
+        // chance, and `dependence_chains` kept splitting its continuations into
+        // fresh chains for as long as it did. The doc above promises both
+        // halves converge; this is the half that was missing.
+        //
+        // Removal is driven by POSITIVE evidence, not by absence from the query
+        // above: that query is bounded by the cache size, so a still-sealing
+        // producer outside the most-recent N is missing from it for a reason
+        // that has nothing to do with discharge. Dropping a live seal is the
+        // dangerous direction -- it lets a continuation absorb into a producer
+        // whose child is still gated, which is what sealing exists to prevent
+        // -- so this asks the database which of the seals we actually hold are
+        // discharged, and removes only those.
+        let held: Vec<Vec<u8>> = {
+            let sealed = sealed_chains.read().await;
+            sealed.iter().map(|(hash, _)| hash.to_vec()).collect()
+        };
+        let discharged = if held.is_empty() {
+            vec![]
+        } else {
+            sqlx::query_scalar!(
+                r#"
+                SELECT p.dependence_chain_id AS "id!"
+                FROM unnest($1::bytea[]) AS p(dependence_chain_id)
+                WHERE NOT EXISTS (
+                    SELECT 1
+                    FROM dependence_chain parent
+                    JOIN dependence_chain child
+                      ON child.dependence_chain_id = ANY(parent.dependents)
+                    WHERE parent.dependence_chain_id = p.dependence_chain_id
+                      AND parent.status <> 'processed'
+                      AND child.dependency_count > 0
+                )
+                "#,
+                &held,
+            )
+            .fetch_all(&pool)
+            .await?
+        };
+
+        // One critical section, removals first: the insert below re-seals
+        // anything the query pair saw as still gating. A producer newly gated
+        // between the two queries is by construction freshly updated, so it
+        // sorts to the top of the most-recent query and is re-added here in the
+        // same pass.
+        let mut removed = 0_usize;
+        {
+            let mut sealed = sealed_chains.write().await;
+            for row in &discharged {
+                if let Ok(hash) = ChainHash::try_from(row.as_slice()) {
+                    if sealed.pop(&hash).is_some() {
+                        removed += 1;
+                    }
+                }
+            }
+        }
+        if removed > 0 {
+            SEALED_CHAIN_DISCHARGES_TOTAL.inc_by(removed as u64);
+            debug!(removed, "dropped discharged producer seals");
+        }
         Ok(Self::seal_rows_oldest_first(sealed_chains, rows).await)
     }
 
@@ -2834,6 +2910,8 @@ fn fhe_mul_div_factor2_is_scalar(scalar_byte: &ScalarByte) -> bool {
 #[cfg(test)]
 mod sealed_chain_tests {
     use super::*;
+    use serial_test::serial;
+    use test_harness::instance::ImportMode;
 
     fn guard(capacity: usize) -> SealedChainGuard {
         Arc::new(RwLock::new(lru::LruCache::new(
@@ -2843,6 +2921,81 @@ mod sealed_chain_tests {
 
     fn hash(last: u8) -> ChainHash {
         ChainHash::from([last; 32])
+    }
+
+    /// A refresh must drop a seal whose producer another process discharged.
+    ///
+    /// The seal is derived, and the module documents both halves of that
+    /// convergence: a child that discharges stops sealing its parent, and a
+    /// retired parent has its dependents pruned. Only the growing half was
+    /// implemented — the refresh inserted what the query returned and never
+    /// removed anything — so a producer discharged elsewhere stayed sealed here
+    /// until the LRU evicted it by chance, and until then every continuation of
+    /// it opened a chain of its own.
+    #[tokio::test]
+    #[serial(db)]
+    async fn refresh_drops_a_seal_after_a_remote_discharge() {
+        let instance = test_harness::instance::setup_test_db(ImportMode::None)
+            .await
+            .expect("test database");
+        let pool = Arc::new(RwLock::new(
+            sqlx::postgres::PgPoolOptions::new()
+                .max_connections(2)
+                .connect(instance.db_url.as_str())
+                .await
+                .expect("pool"),
+        ));
+        let parent = hash(0xB1);
+        let child = hash(0xB2);
+        {
+            let pool = pool.read().await.clone();
+            // The parent gates the child, so the parent is sealed.
+            sqlx::query(
+                "INSERT INTO dependence_chain
+                     (dependence_chain_id, status, last_updated_at,
+                      block_timestamp, block_height, dependency_count, dependents)
+                 VALUES ($1, 'updated', NOW(), NOW(), 1, 0, $2),
+                        ($3, 'updated', NOW(), NOW(), 1, 1, '{}')",
+            )
+            .bind(parent.as_slice())
+            .bind(vec![child.to_vec()])
+            .bind(child.as_slice())
+            .execute(&pool)
+            .await
+            .expect("seed chains");
+        }
+
+        let sealed = guard(8);
+        let restored = Database::try_reload_sealed_chains(&pool, &sealed, 8)
+            .await
+            .expect("first refresh");
+        assert_eq!(restored, 1, "a parent gating a child must be sealed");
+        assert!(
+            sealed.read().await.peek(&parent).is_some(),
+            "the gating parent must be in the local set"
+        );
+
+        // Another process discharges the child. Nothing tells this listener.
+        {
+            let pool = pool.read().await.clone();
+            sqlx::query(
+                "UPDATE dependence_chain SET dependency_count = 0
+                 WHERE dependence_chain_id = $1",
+            )
+            .bind(child.as_slice())
+            .execute(&pool)
+            .await
+            .expect("discharge child");
+        }
+
+        Database::try_reload_sealed_chains(&pool, &sealed, 8)
+            .await
+            .expect("second refresh");
+        assert!(
+            sealed.read().await.peek(&parent).is_none(),
+            "a refresh must drop the seal once the database says the producer \
+             is discharged, or its continuations keep splitting forever"
+        );
     }
 
     /// The reconstruction query returns newest-first, and `put` marks what it
