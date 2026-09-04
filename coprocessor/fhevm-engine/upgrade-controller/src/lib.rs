@@ -1113,15 +1113,150 @@ async fn delete_bcs_chain_leftovers(
     Ok(())
 }
 
+/// Delete every pre-start (below `start_block`) row green wrote into `gcs.*`, so the
+/// green-wins merge cannot overwrite canonical pre-snapshot state in `public`.
+///
+/// Green's listeners tail the chain before activation and its poller lags the realtime
+/// listener, so pre-start blocks keep landing in `gcs` after the controller's one-shot
+/// prune of `gcs.computations` at activation (the ingest gate in the host-listener stops
+/// the FHE rows once the proposal is known, but not the blocks ingested before that).
+/// Green then re-derives those handles with its own byte form. [`merge_gcs_table`] has
+/// no block filter, so any such row left in `gcs` would replace blue's canonical
+/// ciphertext, digest and computation rows at cutover - rows whose digests are already
+/// published on-chain. Mirror image of [`delete_bcs_chain_leftovers`]: blue's in-window
+/// rows go, green's pre-window rows go, and the merge decides the window.
+///
+/// Statement order is load-bearing, as in the BCS delete: the by-handle deletes reach
+/// their rows through `gcs.computations`, so that table is cleared last, and its
+/// dependence chains are handed to `cutover_touched_chains` for
+/// [`cleanup_orphaned_dependence_chains`].
+async fn delete_gcs_pre_start_leftovers(tx: &mut Transaction<'_, Postgres>) -> Result<(), Error> {
+    let rows: Vec<(i64, i64)> = sqlx::query_as(
+        "SELECT host_chain_id, start_block FROM upgrade_state
+          WHERE stack_role = 'GCS' AND start_block IS NOT NULL
+          ORDER BY host_chain_id",
+    )
+    .fetch_all(&mut **tx)
+    .await?;
+    if rows.is_empty() {
+        warn!(
+            "delete_gcs_pre_start_leftovers: no host-chain rows found in upgrade_state — skipping"
+        );
+        return Ok(());
+    }
+    for (chain_id, start_block) in rows {
+        // By-handle tables first: reached through the computation rows deleted below.
+        for handle_table in CIPHERTEXT_TABLES.iter().chain(["ciphertext_digest"].iter()) {
+            for comp_table in COMPUTATION_TABLES {
+                let sql = format!(
+                    "DELETE FROM {GCS_SCHEMA_QUOTED}.{handle_table} h
+                      USING {GCS_SCHEMA_QUOTED}.{comp_table} comp
+                      WHERE h.handle = comp.output_handle
+                        AND comp.host_chain_id = $1 AND comp.block_number < $2"
+                );
+                let deleted = sqlx::query(&sql)
+                    .bind(chain_id)
+                    .bind(start_block)
+                    .execute(&mut **tx)
+                    .await?
+                    .rows_affected();
+                info!(
+                    host_chain_id = chain_id,
+                    start_block,
+                    handle_table,
+                    comp_table,
+                    deleted,
+                    "delete_gcs_pre_start_leftovers: deleted pre-start gcs rows by handle"
+                );
+            }
+        }
+        for pbs_table in PBS_COMPUTATION_TABLES {
+            let sql = format!(
+                "DELETE FROM {GCS_SCHEMA_QUOTED}.{pbs_table} p
+                  WHERE p.host_chain_id = $1 AND p.block_number < $2"
+            );
+            let deleted = sqlx::query(&sql)
+                .bind(chain_id)
+                .bind(start_block)
+                .execute(&mut **tx)
+                .await?
+                .rows_affected();
+            info!(
+                host_chain_id = chain_id,
+                start_block,
+                pbs_table,
+                deleted,
+                "delete_gcs_pre_start_leftovers: deleted pre-start gcs pbs rows"
+            );
+        }
+        // Block-scoped bookkeeping keyed by (host_chain_id | chain_id, block_number).
+        for (table, chain_col) in [
+            ("allowed_handles", "host_chain_id"),
+            ("host_chain_blocks_valid", "chain_id"),
+            ("transactions", "chain_id"),
+        ] {
+            let sql = format!(
+                "DELETE FROM {GCS_SCHEMA_QUOTED}.{table}
+                  WHERE {chain_col} = $1 AND block_number < $2"
+            );
+            let deleted = sqlx::query(&sql)
+                .bind(chain_id)
+                .bind(start_block)
+                .execute(&mut **tx)
+                .await?
+                .rows_affected();
+            info!(
+                host_chain_id = chain_id,
+                start_block,
+                table,
+                deleted,
+                "delete_gcs_pre_start_leftovers: deleted pre-start gcs block-scoped rows"
+            );
+        }
+        for comp_table in COMPUTATION_TABLES {
+            let sql = format!(
+                "WITH deleted AS (
+                     DELETE FROM {GCS_SCHEMA_QUOTED}.{comp_table} c
+                      WHERE c.host_chain_id = $1 AND c.block_number < $2
+                     RETURNING c.dependence_chain_id
+                 ),
+                 touched AS (
+                     INSERT INTO cutover_touched_chains (dependence_chain_id)
+                     SELECT DISTINCT dependence_chain_id FROM deleted
+                      WHERE dependence_chain_id IS NOT NULL
+                     ON CONFLICT DO NOTHING
+                 )
+                 SELECT COUNT(*) FROM deleted"
+            );
+            let deleted: i64 = sqlx::query_scalar(&sql)
+                .bind(chain_id)
+                .bind(start_block)
+                .fetch_one(&mut **tx)
+                .await?;
+            info!(
+                host_chain_id = chain_id,
+                start_block,
+                comp_table,
+                deleted,
+                "delete_gcs_pre_start_leftovers: deleted pre-start gcs computation rows"
+            );
+        }
+    }
+    Ok(())
+}
+
 /// Undo everything blue wrote inside the upgrade windows, so the merge decides what
 /// survives instead of blue's head start.
 ///
-/// The complete BCS revert, in one place:
-///   1. create `cutover_touched_chains`, which [`delete_bcs_chain_leftovers`] fills with
-///      the dependence chains of the computations it deletes;
+/// The complete revert, in one place:
+///   1. create `cutover_touched_chains`, which [`delete_bcs_chain_leftovers`] and
+///      [`delete_gcs_pre_start_leftovers`] fill with the dependence chains of the
+///      computations they delete;
 ///   2. delete each host chain's in-window rows;
 ///   3. delete the gateway/input side's leftovers;
-///   4. drop the dependence chains no computation needs any more, blue's or green's.
+///   4. delete green's pre-window rows, so the merge cannot overwrite canonical
+///      pre-snapshot state;
+///   5. drop the dependence chains no computation needs any more, blue's or green's.
 ///
 /// **Must run inside the cutover transaction and before [`merge_gcs_table`].** These
 /// deletes are unguarded, so after the merge they would wipe the rows it just brought
@@ -1137,6 +1272,7 @@ async fn revert_bcs_state(tx: &mut Transaction<'_, Postgres>) -> Result<(), Erro
 
     delete_bcs_chains_leftovers(tx).await?;
     delete_bcs_gw_leftovers(tx).await?;
+    delete_gcs_pre_start_leftovers(tx).await?;
     cleanup_orphaned_dependence_chains(tx).await?;
     Ok(())
 }
@@ -1247,6 +1383,11 @@ async fn delete_bcs_gw_leftovers(tx: &mut Transaction<'_, Postgres>) -> Result<(
         rows_deleted = deleted_input_handles,
         "delete_bcs_gw_leftovers: deleted BCS-leftover ciphertexts and input_handles"
     );
+
+    // verify_proofs
+    sqlx::query("TRUNCATE TABLE public.verify_proofs")
+        .execute(&mut **tx)
+        .await?;
 
     Ok(())
 }
@@ -1855,11 +1996,18 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
         "cutover: preserved txn_is_sent for already-committed handles"
     );
 
-    // 7. Drop the gcs schema (and everything in it) now that its data has been
-    //    merged back into public.
-    let drop_sql = format!("DROP SCHEMA {GCS_SCHEMA_QUOTED} CASCADE");
-    sqlx::query(&drop_sql).execute(&mut *tx).await?;
-    info!(schema = GCS_SCHEMA_QUOTED, "dropped gcs schema");
+    // 7. Rename the gcs schema to "pre-cutover" instead of dropping it, so the
+    //    dry-run data stays inspectable while the versioned name is freed for the
+    //    next upgrade. Drop any prior snapshot first so the rename never collides.
+    sqlx::query("DROP SCHEMA IF EXISTS \"pre-cutover\" CASCADE")
+        .execute(&mut *tx)
+        .await?;
+    let rename_sql = format!("ALTER SCHEMA {GCS_SCHEMA_QUOTED} RENAME TO \"pre-cutover\"");
+    sqlx::query(&rename_sql).execute(&mut *tx).await?;
+    info!(
+        schema = GCS_SCHEMA_QUOTED,
+        "cutover: renamed gcs schema to pre-cutover"
+    );
 
     // 8. Flip every chain's FSM row.
     sqlx::query!(
@@ -2356,11 +2504,24 @@ pub async fn handle_unanimity_consensus(
             .execute(pool)
             .await?;
             if set.rows_affected() > 0 {
+                // Look up the anchored block's state_hash for visibility (e.g. to
+                // spot consensus reached on the empty-block hash). GCS_SCHEMA_QUOTED:
+                // during the dry-run the hash lives in the gcs schema.
+                let anchor_state_hash: String = sqlx::query_scalar::<_, String>(&format!(
+                    "SELECT state_hash FROM {GCS_SCHEMA_QUOTED}.state_hash
+                      WHERE chain_id = $1 AND block_number = $2"
+                ))
+                .bind(payload.chain_id)
+                .bind(payload.block_height)
+                .fetch_optional(pool)
+                .await?
+                .unwrap_or_else(|| "unknown".to_string());
                 info!(
                     chain_id = payload.chain_id,
                     block_height = payload.block_height,
                     start_block = start,
                     end_block = end,
+                    state_hash = %anchor_state_hash,
                     proposal_id = %hex_encode(&payload.proposal_id),
                     "event_unanimity_consensus: host-track unanimity — host_consensus_reached set for chain"
                 );
@@ -3709,6 +3870,129 @@ mod tests {
             leftover_counts(&pool, ingested).await,
             [1, 1, 1],
             "a handle GCS ingested must be restored by the merge"
+        );
+    }
+
+    /// Cutover must not let green's *pre-start* rows overwrite canonical state. Green's
+    /// listeners tail the chain before activation, so a pre-snapshot handle (block 90 <
+    /// `start_block` 100) can sit in `gcs.*` with green's own byte form next to blue's
+    /// canonical copy in `public`. The green-wins merge has no block filter, so
+    /// `delete_gcs_pre_start_leftovers` has to clear those rows first: blue's bytes
+    /// survive for the pre-start handle, while an in-window green handle still merges.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn cutover_deletes_gcs_pre_start_leftovers() {
+        let (_instance, pool) = test_pool().await;
+        create_gcs_schema(&pool).await.expect("create gcs schema");
+        seed_gcs_row(&pool, "UpgradeAuthorized", "in_progress").await; // start=100, chain=1
+
+        let pre_start = &[0xCCu8; 32][..]; // block 90: canonical in public, backfilled in gcs
+        let in_window = &[0xDDu8; 32][..]; // block 150: green's own dry-run output
+
+        // Blue's canonical pre-start rows (ciphertext byte 0x00).
+        seed_bcs_handle(&pool, pre_start, 90, 0x00).await;
+
+        // Green's copies: the pre-start handle re-derived with different bytes (0x01),
+        // plus a regular in-window handle.
+        for (handle, block) in [(pre_start, 90_i64), (in_window, 150_i64)] {
+            let seed_gcs = format!(
+                "INSERT INTO {GCS_SCHEMA_QUOTED}.computations
+                    (output_handle, dependencies, fhe_operation,
+                     is_scalar, is_completed, host_chain_id, block_number)
+                 VALUES ($1, ARRAY[]::bytea[], 0, false, TRUE, 1, $2)"
+            );
+            sqlx::query(&seed_gcs)
+                .bind(handle)
+                .bind(block)
+                .execute(&pool)
+                .await
+                .expect("seed gcs computation");
+            let seed_gcs_ct = format!(
+                "INSERT INTO {GCS_SCHEMA_QUOTED}.ciphertexts
+                    (handle, ciphertext, ciphertext_version, ciphertext_type)
+                 VALUES ($1, $2, 0, 0)"
+            );
+            sqlx::query(&seed_gcs_ct)
+                .bind(handle)
+                .bind(&[0x01u8][..])
+                .execute(&pool)
+                .await
+                .expect("seed gcs ciphertext");
+            let seed_gcs_pbs = format!(
+                "INSERT INTO {GCS_SCHEMA_QUOTED}.pbs_computations
+                    (handle, is_completed, host_chain_id, block_number)
+                 VALUES ($1, TRUE, 1, $2)"
+            );
+            sqlx::query(&seed_gcs_pbs)
+                .bind(handle)
+                .bind(block)
+                .execute(&pool)
+                .await
+                .expect("seed gcs pbs_computation");
+            let seed_gcs_allowed = format!(
+                "INSERT INTO {GCS_SCHEMA_QUOTED}.allowed_handles
+                    (handle, account_address, event_type, host_chain_id, block_number)
+                 VALUES ($1, '0xabc', 0, 1, $2)"
+            );
+            sqlx::query(&seed_gcs_allowed)
+                .bind(handle)
+                .bind(block)
+                .execute(&pool)
+                .await
+                .expect("seed gcs allowed_handle");
+        }
+
+        execute_cutover(&pool).await.expect("cutover succeeds");
+
+        // Pre-start handle: blue's rows are intact and green's copy did not overwrite them.
+        assert_eq!(
+            leftover_counts(&pool, pre_start).await,
+            [1, 1, 1],
+            "canonical pre-start rows must survive cutover"
+        );
+        let (ct_bytes,): (Vec<u8>,) =
+            sqlx::query_as("SELECT ciphertext FROM ciphertexts WHERE handle = $1")
+                .bind(pre_start)
+                .fetch_one(&pool)
+                .await
+                .expect("pre-start ciphertext");
+        assert_eq!(
+            ct_bytes,
+            vec![0x00],
+            "green's pre-start re-derivation must not replace blue's canonical bytes"
+        );
+
+        // In-window handle: green's rows merge as before.
+        assert_eq!(
+            leftover_counts(&pool, in_window).await,
+            [1, 1, 1],
+            "green's in-window rows must still be merged"
+        );
+
+        // `allowed_handles` is duplicated but never merged (no conflict columns), so the
+        // delete is checked on the green schema itself, kept as "pre-cutover" by cutover:
+        // the pre-start row is gone, the in-window row is untouched.
+        let allowed_in_gcs = |handle: &'static [u8]| {
+            let pool = pool.clone();
+            async move {
+                let (count,): (i64,) = sqlx::query_as(
+                    "SELECT COUNT(*) FROM \"pre-cutover\".allowed_handles WHERE handle = $1",
+                )
+                .bind(handle)
+                .fetch_one(&pool)
+                .await
+                .expect("gcs allowed count");
+                count
+            }
+        };
+        assert_eq!(
+            allowed_in_gcs(pre_start).await,
+            0,
+            "green's pre-start allowed_handles row must be deleted before the merge"
+        );
+        assert_eq!(
+            allowed_in_gcs(in_window).await,
+            1,
+            "green's in-window allowed_handles row must be left alone"
         );
     }
 

@@ -42,9 +42,10 @@ async fn insert_state_hash(
     chain_id: i64,
     block_number: i64,
     hash: &str,
+    schema: &str,
 ) -> Result<HashInsert, sqlx::Error> {
     let affected = sqlx::query(&format!(
-        "INSERT INTO {GCS_SCHEMA_QUOTED}.state_hash (chain_id, block_number, state_hash)
+        "INSERT INTO {schema}.state_hash (chain_id, block_number, state_hash)
          VALUES ($1, $2, $3) ON CONFLICT (chain_id, block_number) DO NOTHING"
     ))
     .bind(chain_id)
@@ -70,6 +71,7 @@ async fn compute_and_insert_gcs(
     start: i64,
     end: i64,
     batch_limit: i64,
+    schema: &str,
 ) -> anyhow::Result<()> {
     // This is the write path, so both the pending-scan read and the INSERT
     // explicitly qualify the versioned GCS schema (`GCS_SCHEMA_QUOTED`, e.g.
@@ -92,12 +94,12 @@ async fn compute_and_insert_gcs(
         r#"
         SELECT b.chain_id, b.block_number,
                bool_and(b.fhe_event_count = 0) AS is_empty
-          FROM {GCS_SCHEMA_QUOTED}.host_chain_blocks_valid b
+          FROM {schema}.host_chain_blocks_valid b
          WHERE b.chain_id = $1
            AND b.block_number BETWEEN $2 AND $3
            AND b.block_status = 'finalized'
            AND NOT EXISTS (
-               SELECT 1 FROM {GCS_SCHEMA_QUOTED}.state_hash sh
+               SELECT 1 FROM {schema}.state_hash sh
                 WHERE sh.chain_id = b.chain_id AND sh.block_number = b.block_number)
          GROUP BY b.chain_id, b.block_number
          ORDER BY b.block_number
@@ -119,10 +121,10 @@ async fn compute_and_insert_gcs(
         let hash = if is_empty {
             Some(EMPTY_BLOCK_STATE_HASH.to_string())
         } else {
-            compute_gcs_hash(tx, chain_id, block_number).await?
+            compute_gcs_hash(tx, chain_id, block_number, schema).await?
         };
         let Some(hash) = hash else { continue };
-        match insert_state_hash(tx, chain_id, block_number, &hash).await? {
+        match insert_state_hash(tx, chain_id, block_number, &hash, schema).await? {
             HashInsert::Wrote => info!(chain_id, block_number, "gcs.state_hash inserted"),
             HashInsert::Noop => {}
         }
@@ -143,12 +145,13 @@ async fn compute_gcs_hash(
     tx: &mut Transaction<'_, Postgres>,
     chain_id: i64,
     block_number: i64,
+    schema: &str,
 ) -> anyhow::Result<Option<String>> {
     let sql = format!(
         r#"
         WITH bc AS (
             SELECT output_handle, tenant_id, is_completed
-              FROM {GCS_SCHEMA_QUOTED}.computations
+              FROM {schema}.computations
              WHERE host_chain_id = $1 AND block_number = $2 AND is_error = false
         ),
         v AS (SELECT 1 FROM bc HAVING bool_and(is_completed))
@@ -158,7 +161,7 @@ async fn compute_gcs_hash(
             'hex'
         ) AS state_hash
           FROM v CROSS JOIN bc
-          JOIN {GCS_SCHEMA_QUOTED}.ciphertexts ct
+          JOIN {schema}.ciphertexts ct
             ON ct.tenant_id = bc.tenant_id AND ct.handle = bc.output_handle
         "#
     );
@@ -227,7 +230,7 @@ async fn compute_and_insert_gw_input_hashes(
         let Some(hash) = compute_gw_input_hash(tx, block_number).await? else {
             continue;
         };
-        match insert_state_hash(tx, gw_chain_id, block_number, &hash).await? {
+        match insert_state_hash(tx, gw_chain_id, block_number, &hash, GCS_SCHEMA_QUOTED).await? {
             HashInsert::Wrote => {
                 info!(
                     gw_chain_id,
@@ -321,34 +324,54 @@ async fn upload_pending_state_hashes(
     my_bucket: &str,
     batch_limit: i64,
 ) -> anyhow::Result<()> {
-    let pending = sqlx::query!(
+    // Only upload state_hashes for ELIGIBLE blocks: a block carrying at least one
+    // non-trivial, successful FHE op (fhe_operation <> trivialEncrypt). Empty and
+    // trivial-only blocks are vacuous — their ciphertexts are deterministic across
+    // operators regardless of GCS compute correctness — so publishing their
+    // state_hash for consensus lets a chain anchor on a block that never exercised
+    // GCS compute. Withholding them forces consensus onto real work (e.g. the
+    // synthetic op). query_as (runtime) so the opcode constant can be interpolated
+    // and no .sqlx cache entry is needed.
+    let sql = format!(
         r#"
-        SELECT sh.chain_id AS "chain_id!", sh.block_number AS "block_number!",
-               sh.state_hash AS "state_hash!", b.block_hash AS "block_hash!"
+        SELECT sh.chain_id, sh.block_number, sh.state_hash, b.block_hash
           FROM state_hash sh
           JOIN host_chain_blocks_valid b
             ON b.chain_id = sh.chain_id AND b.block_number = sh.block_number
            AND b.block_status = 'finalized'
          WHERE sh.s3_uploaded_at IS NULL
+           -- Never publish the empty-block hash. This is the decisive gate:
+           -- empty blocks AND the synthetic block (whose hash is empty until its
+           -- FheAdd is computed, yet carries a non-trivial computation) both hash
+           -- to EMPTY_BLOCK_STATE_HASH, so consensus must not anchor on them.
+           AND sh.state_hash <> '{empty}'
+           -- Also exclude trivial-only blocks (non-empty but vacuous hash).
+           AND EXISTS (
+               SELECT 1 FROM computations c
+                WHERE c.host_chain_id = sh.chain_id
+                  AND c.block_number = sh.block_number
+                  AND c.is_error = false
+                  AND c.fhe_operation <> {opcode})
          ORDER BY sh.chain_id, sh.block_number
          LIMIT $1
         "#,
-        batch_limit,
-    )
-    .fetch_all(pool)
-    .await?;
+        empty = EMPTY_BLOCK_STATE_HASH,
+        opcode = crate::FHE_TRIVIAL_ENCRYPT_OPCODE,
+    );
+    let pending: Vec<(i64, i64, String, Vec<u8>)> =
+        sqlx::query_as(&sql).bind(batch_limit).fetch_all(pool).await?;
 
     for row in pending {
-        let chain_id = row.chain_id;
-        let block_number = row.block_number;
-        let bytes = match hex::decode(&row.state_hash) {
+        let chain_id = row.0;
+        let block_number = row.1;
+        let bytes = match hex::decode(&row.2) {
             Ok(b) => b,
             Err(e) => {
                 warn!(chain_id, block_number, error = %e, "malformed state_hash hex in DB; skipping row");
                 continue;
             }
         };
-        let block_hash_hex = format!("0x{}", hex::encode(&row.block_hash));
+        let block_hash_hex = format!("0x{}", hex::encode(&row.3));
         let key = state_hash_key(chain_id, block_number);
         match s3
             .put_object()
@@ -501,7 +524,7 @@ async fn compute_and_upload_state_hashes(
     // are not produced because they would never be uploaded or consumed.
     if let Some((_, _, windows)) = crate::active_upgrade_windows(&mut *tx).await? {
         for (chain_id, start, end) in windows {
-            compute_and_insert_gcs(&mut tx, chain_id, start, end, batch_limit).await?;
+            compute_and_insert_gcs(&mut tx, chain_id, start, end, batch_limit, GCS_SCHEMA_QUOTED).await?;
         }
 
         // Gateway-inputs track: only once the GCS gw-listener has a watermark and
@@ -512,6 +535,19 @@ async fn compute_and_upload_state_hashes(
         ) {
             compute_and_insert_gw_input_hashes(&mut tx, gw_chain_id, gw_start, gw_tip, batch_limit)
                 .await?;
+        }
+    } else {
+        // LOCAL CHANGE: keep computing gcs.state_hash AFTER cutover, when there is
+        // no active upgrade window. Hash every finalized, not-yet-hashed block for
+        // each host chain against the retained gcs schema. compute_and_insert_gcs
+        // skips already-hashed blocks (NOT EXISTS) and is bounded by batch_limit,
+        // so a full [0, i64::MAX] range is safe and idempotent.
+        let chain_rows = sqlx::query("SELECT chain_id FROM public.host_chains ORDER BY chain_id")
+            .fetch_all(&mut *tx)
+            .await?;
+        for row in chain_rows {
+            let chain_id: i64 = row.try_get("chain_id")?;
+            compute_and_insert_gcs(&mut tx, chain_id, 0, i64::MAX, batch_limit, "public").await?;
         }
     }
     tx.commit().await?;
