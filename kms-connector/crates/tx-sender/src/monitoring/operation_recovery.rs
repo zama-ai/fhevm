@@ -59,6 +59,7 @@ async fn fail_expired_decryptions(db_pool: &Pool<Postgres>, expiry: &PgInterval)
              WHERE status IN ('pending', 'under_process') AND created_at < NOW() - $1"
         );
         match sqlx::query(&query).bind(*expiry).execute(db_pool).await {
+            Ok(result) if result.rows_affected() == 0 => (),
             Ok(result) => info!(
                 "Marked {} expired rows in {table} as failed",
                 result.rows_affected()
@@ -84,6 +85,7 @@ async fn unlock_stuck_operations(
             .execute(db_pool)
             .await
         {
+            Ok(result) if result.rows_affected() == 0 => (),
             Ok(result) => info!("Unlocked {} stuck rows in {table}", result.rows_affected()),
             Err(e) => error!("Failed to unlock stuck rows in {table}: {e}"),
         }

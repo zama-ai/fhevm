@@ -51,9 +51,24 @@ impl fmt::Display for TransactionType {
     }
 }
 
+/// Outcome of the compare-and-set that claims the tx-in-flight transition: at most one caller
+/// among concurrent sends for one job proceeds. The race it arbitrates: the sweep's claim
+/// resets a `tx_in_flight` row to `processing` and re-dispatches it, with no way to tell
+/// whether the previous owner's send is still executing. Within one pod the CAS separates the
+/// two; across pods the row's `owner_epoch` fence does. Neither stops the old pod's send
+/// itself - that duplicate is absorbed downstream (see `on_tx_in_flight`'s callers).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TxClaimOutcome {
+    /// This caller won the claim: it owns the row and must send the transaction.
+    Claimed,
+    /// Another actor already claimed the row; this caller must not send.
+    ClaimLost,
+}
+
 #[async_trait::async_trait]
 pub trait TxLifecycleHooks: Send + Sync {
-    async fn on_tx_in_flight(&self, job_id: &JobId) -> Result<(), EventProcessingError>;
+    async fn on_tx_in_flight(&self, job_id: &JobId)
+        -> Result<TxClaimOutcome, EventProcessingError>;
 
     async fn on_receipt_received(
         &self,
@@ -100,6 +115,19 @@ impl TransactionHelper {
 
         metrics::transaction::transaction_broadcast(tx_metric_type);
         let transaction_start_time = Instant::now();
+
+        // Claim before any RPC work, not just before the send: `on_failure` accepts a row in
+        // `processing` or `tx_in_flight`, so a loser whose gas estimation failed after a late
+        // claim could mark the winner's row `failure` while its transaction is live on chain.
+        match hook.on_tx_in_flight(&job_id).await? {
+            TxClaimOutcome::Claimed => {}
+            TxClaimOutcome::ClaimLost => {
+                // The hook impl already logged it.
+                metrics::transaction::transaction_claim_lost(tx_metric_type);
+                return Ok(());
+            }
+        }
+
         let request = match self
             .tx_engine
             .prepare_transaction(&job_id, target, calldata_bytes, None)
@@ -115,9 +143,6 @@ impl TransactionHelper {
                 return Err(EventProcessingError::from(error));
             }
         };
-
-        // updating tx with tx_in_flight status.
-        hook.on_tx_in_flight(&job_id).await?;
 
         let receipt = match self
             .tx_engine

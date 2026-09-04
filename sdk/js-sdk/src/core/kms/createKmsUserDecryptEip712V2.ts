@@ -2,6 +2,7 @@ import type { ErrorMetadataParams } from '../base/errors/ErrorBase.js';
 import type { KmsUserDecryptEip712V2 } from '../types/kms.js';
 import type { BytesHex } from '../types/primitives.js';
 import type { KmsUserDecryptEip712V2Message } from '../types/kms.js';
+import type { KmsExtraData } from '../types/kms-p.js';
 import {
   addressToChecksummedAddress,
   assertIsAddress,
@@ -10,13 +11,18 @@ import {
   assertRecordChecksummedAddressArrayProperty,
 } from '../base/address.js';
 import { assertIsKmsEip712Domain, createKmsEip712Domain } from './createKmsEip712Domain.js';
-import { asBytesHex, assertIsBytesHex, assertRecordBytesHexProperty, bytesToHexLarge } from '../base/bytes.js';
+import { asBytesHex, assertRecordBytesHexProperty, bytesToHexLarge } from '../base/bytes.js';
 import { isDeepEqual } from '../base/object.js';
 import { assertRecordNonNullableProperty } from '../base/record.js';
 import { assertRecordStringProperty, ensure0x } from '../base/string.js';
 import { assertIsUint256, assertIsUint64, assertIsUintString, MAX_UINT256 } from '../base/uint.js';
-import { assertIsKmsExtraData } from './kmsExtraData.js';
 import { kmsUserDecryptEip712V2Types } from './kmsUserDecryptEip712V2Types.js';
+import {
+  assertIsKmsExtraData,
+  assertIsKmsExtraDataBytesHex,
+  createKmsExtraDataFromBytesHex,
+  EXTRA_DATA_V2,
+} from './kmsExtraData-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -28,7 +34,7 @@ export type CreateKmsUserDecryptEip712V2Parameters = {
   readonly allowedContracts: readonly string[];
   readonly startTimestamp: number | bigint;
   readonly durationSeconds: bigint;
-  readonly extraData: string;
+  readonly extraData: KmsExtraData;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -56,8 +62,16 @@ export function createKmsUserDecryptEip712V2(
   assertIsAddressArray(allowedContracts, {});
   assertIsUint256(startTimestamp, {});
   assertIsUint256(durationSeconds, {});
-  assertIsBytesHex(extraData, {});
   assertIsKmsExtraData(extraData, {});
+
+  // A unified (V2) EIP-712 only exists on protocol >= v0.14. Reject the older
+  // v0/v1 encodings; accept v2 and any newer (or unknown/future) version — an
+  // unknown version is assumed to be newer than v2 and forwarded to the chain.
+  if (extraData.lt(EXTRA_DATA_V2)) {
+    throw new Error(
+      `createKmsUserDecryptEip712V2: a unified (V2) EIP-712 requires a v2 or later extraData, got version ${extraData.version}.`,
+    );
+  }
 
   const checksummedUserAddress = addressToChecksummedAddress(userAddress);
   const checksummedContractAddresses = allowedContracts.map(addressToChecksummedAddress);
@@ -79,7 +93,7 @@ export function createKmsUserDecryptEip712V2(
       allowedContracts: checksummedContractAddresses,
       startTimestamp: startTimestamp.toString(),
       durationSeconds: durationSeconds.toString(),
-      extraData,
+      extraData: extraData.bytesHex,
     } satisfies KmsUserDecryptEip712V2Message,
   };
 
@@ -131,7 +145,15 @@ function _assertIsKmsUserDecryptEip712V2Message(
   assertRecordStringProperty(msg, 'startTimestamp' satisfies keyof MessageType, msgName, options);
   assertRecordStringProperty(msg, 'durationSeconds' satisfies keyof MessageType, msgName, options);
   assertRecordBytesHexProperty(msg, 'extraData' satisfies keyof MessageType, msgName, options);
-  assertIsKmsExtraData(msg.extraData, options);
+  assertIsKmsExtraDataBytesHex(msg.extraData, options);
+  // A unified (V2) permit must carry a v2-or-later extraData; reject only the
+  // older v0/v1 encodings. A newer (or unknown/future) version is accepted.
+  const extraData = createKmsExtraDataFromBytesHex(msg.extraData);
+  if (extraData.lt(EXTRA_DATA_V2)) {
+    throw new Error(
+      `${msgName}.extraData: a unified (V2) permit requires a v2 or later extraData, got version ${extraData.version}.`,
+    );
+  }
   assertIsUintString(msg.startTimestamp, { max: MAX_UINT256 });
   assertIsUintString(msg.durationSeconds, { max: MAX_UINT256 });
 }

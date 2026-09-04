@@ -1,11 +1,7 @@
-use anyhow::anyhow;
 use fhevm_engine_common::chain_id::ChainId;
-use std::str::FromStr;
+use fhevm_engine_common::zk_aux::{assemble_aux_data, assemble_solana_aux_data};
 
-/// EVM auxiliary layout: 3 x 20-byte address + 32-byte chain id.
-const SIZE_EVM: usize = 92;
-/// Solana (RFC-021) auxiliary layout: 3 x 32-byte bytes32 identity + 32-byte chain id.
-const SIZE_SOLANA: usize = 128;
+pub(crate) use fhevm_engine_common::zk_aux::parse_bytes32;
 
 /// ZkData is the data that is used to generate the ZKPs
 #[derive(Debug, Clone)]
@@ -20,63 +16,31 @@ impl ZkData {
     /// Assembles the auxiliary data the input ZK proof is bound to.
     ///
     /// The prover (client SDK) and this verifier must agree on the layout byte
-    /// for byte, or proof verification fails. The host chain type selects it:
-    /// EVM hosts use 20-byte addresses (92 bytes total), Solana hosts use RFC-021
-    /// bytes32 identities (128 bytes total). The chain id is always the trailing
+    /// for byte, or proof verification fails. Both layouts live in
+    /// [`fhevm_engine_common::zk_aux`] so the verifier and the synthetic-input
+    /// prover cannot drift. The host chain type selects it: EVM hosts use
+    /// 20-byte addresses (92 bytes total), Solana hosts use RFC-021 bytes32
+    /// identities (128 bytes total). The chain id is always the trailing
     /// 32-byte big-endian word and carries the chain-type high bit verbatim.
     pub fn assemble(&self) -> anyhow::Result<Vec<u8>> {
         if self.chain_id.is_solana_host() {
-            self.assemble_solana()
+            assemble_solana_aux_data(
+                &self.contract_address,
+                &self.user_address,
+                &self.acl_contract_address,
+                self.chain_id,
+            )
+            .map(|data| data.to_vec())
         } else {
-            self.assemble_evm()
+            assemble_aux_data(
+                &self.contract_address,
+                &self.user_address,
+                &self.acl_contract_address,
+                self.chain_id,
+            )
+            .map(|data| data.to_vec())
         }
     }
-
-    /// `contract_addr(20) || user_addr(20) || acl_contract_addr(20) || chain_id(32)`.
-    fn assemble_evm(&self) -> anyhow::Result<Vec<u8>> {
-        let mut data = Vec::with_capacity(SIZE_EVM);
-        data.extend_from_slice(
-            alloy_primitives::Address::from_str(&self.contract_address)?.as_slice(),
-        );
-        data.extend_from_slice(alloy_primitives::Address::from_str(&self.user_address)?.as_slice());
-        data.extend_from_slice(
-            alloy_primitives::Address::from_str(&self.acl_contract_address)?.as_slice(),
-        );
-        data.extend_from_slice(&self.chain_id_word());
-        debug_assert_eq!(data.len(), SIZE_EVM);
-        Ok(data)
-    }
-
-    /// `contract(32) || user(32) || acl(32) || chain_id(32)`, where the three
-    /// identities are RFC-021 bytes32 host addresses (0x-prefixed 32-byte hex).
-    fn assemble_solana(&self) -> anyhow::Result<Vec<u8>> {
-        let mut data = Vec::with_capacity(SIZE_SOLANA);
-        data.extend_from_slice(&parse_bytes32(&self.contract_address)?);
-        data.extend_from_slice(&parse_bytes32(&self.user_address)?);
-        data.extend_from_slice(&parse_bytes32(&self.acl_contract_address)?);
-        data.extend_from_slice(&self.chain_id_word());
-        debug_assert_eq!(data.len(), SIZE_SOLANA);
-        Ok(data)
-    }
-
-    /// Chain id as a 32-byte big-endian word, preserving the chain-type high bit.
-    fn chain_id_word(&self) -> [u8; 32] {
-        alloy_primitives::U256::from(self.chain_id.as_u64()).to_be_bytes()
-    }
-}
-
-/// Parses a Solana `bytes32` host identity from either encoding it appears in:
-/// the `0x`-prefixed hex form carried verbatim by gateway events (contract and
-/// user identities), or the base58 form an on-chain Solana program id is stored
-/// as in `host_chains` (the ACL identity). Both encode the same 32 bytes; the
-/// `0x` prefix is the discriminator.
-pub(crate) fn parse_bytes32(value: &str) -> anyhow::Result<[u8; 32]> {
-    let bytes = match value.strip_prefix("0x") {
-        Some(hex_str) => alloy_primitives::hex::decode(hex_str)?,
-        None => bs58::decode(value).into_vec()?,
-    };
-    <[u8; 32]>::try_from(bytes.as_slice())
-        .map_err(|_| anyhow!("expected a 32-byte identity, got {} bytes", bytes.len()))
 }
 
 #[cfg(test)]
@@ -84,6 +48,12 @@ mod tests {
     use super::*;
     use alloy_primitives::hex;
     use fhevm_engine_common::chain_id::SOLANA_CHAIN_TYPE_BIT;
+    use fhevm_engine_common::zk_aux::{SOLANA_ZK_AUX_DATA_SIZE, ZK_AUX_DATA_SIZE};
+
+    /// EVM auxiliary layout: 3 x 20-byte address + 32-byte chain id.
+    const SIZE_EVM: usize = ZK_AUX_DATA_SIZE;
+    /// Solana (RFC-021) auxiliary layout: 3 x 32-byte bytes32 identity + 32-byte chain id.
+    const SIZE_SOLANA: usize = SOLANA_ZK_AUX_DATA_SIZE;
 
     #[test]
     fn test_assemble_valid_addresses() {

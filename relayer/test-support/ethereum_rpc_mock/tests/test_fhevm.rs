@@ -16,7 +16,7 @@ use alloy::{
 };
 use ethereum_rpc_mock::{
     fhevm::{Decryption, FhevmMockWrapper, InputVerification, UserDecryptKind},
-    test_utils::{create_test_wallet, get_free_port},
+    test_utils::create_test_wallet,
     MockConfig, MockServer,
 };
 use futures::StreamExt;
@@ -133,9 +133,8 @@ async fn create_public_decrypt_transaction(
 
 #[tokio::test]
 async fn test_input_proof_response() {
-    let port = get_free_port().unwrap();
     let server = MockServer::new(MockConfig {
-        port,
+        port: 0,
         chain_id: 1337,
         ..MockConfig::new()
     });
@@ -150,6 +149,7 @@ async fn test_input_proof_response() {
         );
 
     let handle = server.clone().start().await.unwrap();
+    let port = handle.port();
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
     let provider = ProviderBuilder::new()
@@ -223,9 +223,8 @@ async fn test_input_proof_response() {
 
 #[tokio::test]
 async fn test_input_proof_reject() {
-    let port = get_free_port().unwrap();
     let server = MockServer::new(MockConfig {
-        port,
+        port: 0,
         chain_id: 1337,
         ..MockConfig::new()
     });
@@ -235,6 +234,7 @@ async fn test_input_proof_reject() {
         .on_input_proof_error(USER_ADDRESS, proof_data.clone(), 1);
 
     let handle = server.clone().start().await.unwrap();
+    let port = handle.port();
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
     let provider = ProviderBuilder::new()
@@ -280,9 +280,8 @@ async fn test_input_proof_reject() {
 
 #[tokio::test]
 async fn test_input_proof_revert() {
-    let port = get_free_port().unwrap();
     let server = MockServer::new(MockConfig {
-        port,
+        port: 0,
         chain_id: 1337,
         ..MockConfig::new()
     });
@@ -292,6 +291,7 @@ async fn test_input_proof_revert() {
         .on_input_proof_revert(expected_error);
 
     let handle = server.clone().start().await.unwrap();
+    let port = handle.port();
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
     let provider = ProviderBuilder::new()
@@ -333,9 +333,8 @@ async fn test_input_proof_revert() {
 
 #[tokio::test]
 async fn test_user_decrypt_error() {
-    let port = get_free_port().unwrap();
     let server = MockServer::new(MockConfig {
-        port,
+        port: 0,
         chain_id: 1337,
         ..MockConfig::new()
     });
@@ -346,6 +345,7 @@ async fn test_user_decrypt_error() {
         .on_user_decrypt_error(UserDecryptKind::Direct, vec![handle], USER_ADDRESS);
 
     let server_handle = server.clone().start().await.unwrap();
+    let port = server_handle.port();
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
     let provider = ProviderBuilder::new()
@@ -384,9 +384,8 @@ async fn test_user_decrypt_error() {
 
 #[tokio::test]
 async fn test_user_decrypt_revert() {
-    let port = get_free_port().unwrap();
     let server = MockServer::new(MockConfig {
-        port,
+        port: 0,
         chain_id: 1337,
         ..MockConfig::new()
     });
@@ -396,6 +395,7 @@ async fn test_user_decrypt_revert() {
         .on_user_decrypt_revert(UserDecryptKind::Direct, expected_error);
 
     let handle = server.clone().start().await.unwrap();
+    let port = handle.port();
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
     let provider = ProviderBuilder::new()
@@ -437,9 +437,8 @@ async fn test_user_decrypt_revert() {
 
 #[tokio::test]
 async fn test_public_decrypt_response() {
-    let port = get_free_port().unwrap();
     let server = MockServer::new(MockConfig {
-        port,
+        port: 0,
         chain_id: 1337,
         ..MockConfig::new()
     });
@@ -456,6 +455,7 @@ async fn test_public_decrypt_response() {
         );
 
     let server_handle = server.clone().start().await.unwrap();
+    let port = server_handle.port();
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
     let provider = ProviderBuilder::new()
@@ -529,9 +529,8 @@ async fn test_public_decrypt_response() {
 
 #[tokio::test]
 async fn test_public_decrypt_error() {
-    let port = get_free_port().unwrap();
     let server = MockServer::new(MockConfig {
-        port,
+        port: 0,
         chain_id: 1337,
         ..MockConfig::new()
     });
@@ -543,6 +542,7 @@ async fn test_public_decrypt_error() {
         .on_public_decrypt_error(vec![handle1, handle2]);
 
     let server_handle = server.clone().start().await.unwrap();
+    let port = server_handle.port();
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
     let provider = ProviderBuilder::new()
@@ -588,9 +588,8 @@ async fn test_public_decrypt_error() {
 
 #[tokio::test]
 async fn test_public_decrypt_revert() {
-    let port = get_free_port().unwrap();
     let server = MockServer::new(MockConfig {
-        port,
+        port: 0,
         chain_id: 1337,
         ..MockConfig::new()
     });
@@ -600,6 +599,7 @@ async fn test_public_decrypt_revert() {
         .on_public_decrypt_revert(expected_error);
 
     let handle = server.clone().start().await.unwrap();
+    let port = handle.port();
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
     let provider = ProviderBuilder::new()

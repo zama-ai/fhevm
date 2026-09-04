@@ -20,20 +20,20 @@ We should organize those tests as follow:
 - Each test consist to load a given WASM and use that wasm
   - kms: load kms wasm and call generate key pair
   - tfhe: load pre-existing pubkey/crs pairs (keys are located in sdk/js-sdk/test/keys)
-  - you can use the coexistence test located sdk/js-sdk/test/browser/pages/smoke-coexistence.html as a good starting point
+  - you can use the coexistence test located sdk/js-sdk/test/browser-smoke/pages/smoke-coexistence.html as a good starting point
   - each test should load multiple concurrent wasm versions + 1 cleartext runtime version. The idea is to make sure multiple FHEVM runtimes can safely coexist
 
 ### Non-negotiable constraints
 
 1. **Existing tests are frozen.** Never alter any existing test except those in
-   `test/browser-next`. `test/browser` and the others run fine and are the
+   `test/browser-next`. `test/browser-smoke` and the others run fine and are the
    _reference_. The new architecture is **additive**; if we later migrate the old
    tests onto it, that's a separate, explicit step — not part of this work.
 2. **Public API is frozen.** Do not add to / change the SDK's public API to make a
    test pass. If a test genuinely needs a private function, **manage a way to
    import the private function from the SDK** — and only as a **last resort**
    (first try to express it with existing public actions/clients).
-3. **The coexistence test is the model.** `test/browser/.../smoke-coexistence.ts`
+3. **The coexistence test is the model.** `test/browser-smoke/.../smoke-coexistence.ts`
    (multi-version modules + multi-chain + real proof building, incl. an expected
    forward-incompat failure) is the shape every platform's "real" test should take
    — not a minimal init smoke.
@@ -57,7 +57,7 @@ We should organize those tests as follow:
 
 ## Current state — what already exists
 
-`test/browser` (Vite + Playwright; chromium/firefox/webkit) is the **reference
+`test/browser-smoke` (Vite + Playwright; chromium/firefox/webkit) is the **reference
 implementation** and already covers a large slice of the cube for the
 plain-browser platform. `test/browser-next` exists but is only a minimal CSR
 smoke today.
@@ -76,7 +76,7 @@ smoke today.
 | **mobile browsers**                                                               | ❌     | —                                                                 |
 
 **Reference model (frozen — do not edit):**
-`test/browser/scripts/multiWasmHarness.ts` + `smoke-coexistence.ts` (runtime setup,
+`test/browser-smoke/scripts/multiWasmHarness.ts` + `smoke-coexistence.ts` (runtime setup,
 concurrent multi-version init, threads/readiness assertions, `test/keys` loading,
 ZK-proof build + assertions, module×key compatibility matrix). Chunk 0 writes a
 _new_ core modeled on these — it does not refactor them. Note they are DOM-coupled
@@ -85,7 +85,7 @@ builders), which the new core must handle differently (no DOM; internals via the
 managed private path) to run server-side and against the packed artifact.
 
 The uncovered axes (❌ above) are the **real new work**; the chunks below target
-them rather than re-proving what `test/browser` already covers.
+them rather than re-proving what `test/browser-smoke` already covers.
 
 ---
 
@@ -161,7 +161,7 @@ Chunk 3  Add other platforms on top of the core                       ← cheap 
 
 ### Chunk 0 — New DOM-agnostic core (modeled on the coexistence test)
 
-`test/browser/.../multiWasmHarness.ts` + `smoke-coexistence.ts` are the **model**,
+`test/browser-smoke/.../multiWasmHarness.ts` + `smoke-coexistence.ts` are the **model**,
 but they are **frozen** (constraint #1) — do **not** refactor them. Write a _new_
 deps-free core (`test/shared/`) that reproduces the coexistence shape:
 
@@ -220,7 +220,7 @@ Reuse Chunk 0's core; per platform only the bundler/loader/exec wiring differs:
 `browser-mobile`, `vite`, `esbuild`, `electron`, `node-server` (long-running,
 multi-chain). Each is a self-contained folder with its **own** `package.json`;
 nothing is shared except the deps-free core and `test/keys`. The existing
-`test/browser` is **left untouched** (constraint #1) — a later, separate step may
+`test/browser-smoke` is **left untouched** (constraint #1) — a later, separate step may
 migrate it onto the core, but that is out of scope here.
 
 ---
@@ -327,7 +327,7 @@ test/
   and RUNS the TKMS wasm via `generateTransportKeyPair`, and the
   `@fhevm/sdk/viem|ethers/cleartext` mock runtime (encrypt + transport keypair),
   each as its own cell, both libs. Green. ✅
-- **`browser-next/dod.sh`**: data-driven **26-cell** matrix (encrypt, coexist,
+- **`browser-next/run-tests.sh`**: data-driven **26-cell** matrix (encrypt, coexist,
   ssr-node/edge/mixed, wasm-load ×4 modes, module kms/cleartext) over
   viem/ethers × st/mt±coop. Extensive CLI: `--index`, `--spec`, `--lib`,
   `--mt/--st`, `--coop/--no-coop`, `--wasm-load`, `--module`, `--list`, plus
@@ -376,8 +376,8 @@ is pinned to `browser-next`).
 
 - **Chunk 3 — other platforms.** Reuse Chunk 0's platform-agnostic core
   (`test/infra/`); per platform only the bundler/loader/exec wiring differs. Each
-  platform mirrors `browser-next/` (its own app + `dod.sh`), shares `test/infra/`,
-  and `test/browser` stays untouched. Recommended order:
+  platform mirrors `browser-next/` (its own app + `run-tests.sh`), shares `test/infra/`,
+  and `test/browser-smoke` stays untouched. Recommended order:
   - **`vite`** first — highest-signal contrast to Turbopack (different bundler +
     WASM-asset story: `?url`/`?init`, a `__raw_wasm` middleware), exactly where
     bundler-specific SDK bugs hide. The parent `zama-fhe/sdk` repo's `test-vite`

@@ -41,6 +41,7 @@ COPY listener ./listener
 COPY coprocessor/fhevm-engine ./coprocessor/fhevm-engine
 COPY coprocessor/proto ./coprocessor/proto
 COPY gateway-contracts/rust_bindings ./gateway-contracts/rust_bindings
+COPY host-contracts/rust_bindings ./host-contracts/rust_bindings
 COPY shared/ciphertext-attestation ./shared/ciphertext-attestation
 COPY solana/Cargo.toml ./solana/Cargo.toml
 COPY solana/crates ./solana/crates

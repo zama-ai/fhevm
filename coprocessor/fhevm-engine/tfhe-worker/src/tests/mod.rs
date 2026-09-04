@@ -6,6 +6,7 @@ mod errors;
 mod event_helpers;
 mod health_check;
 mod inputs;
+mod materialization;
 mod migrations;
 mod operators_from_events;
 mod random;

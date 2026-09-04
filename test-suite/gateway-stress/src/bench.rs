@@ -26,6 +26,14 @@ pub struct BenchAverageResult {
     pub std_deviation_latency: f64,
     #[serde(serialize_with = "f64_precision_two_serialize")]
     pub std_deviation_throughput: f64,
+    // Latency percentiles are the primary signal for concurrency work: a serial worst-case
+    // check pipeline shows up in the tail (p95/p99), not in the mean.
+    #[serde(serialize_with = "f64_precision_two_serialize")]
+    pub p50_latency: f64,
+    #[serde(serialize_with = "f64_precision_two_serialize")]
+    pub p95_latency: f64,
+    #[serde(serialize_with = "f64_precision_two_serialize")]
+    pub p99_latency: f64,
 }
 
 impl BenchAverageResult {
@@ -36,6 +44,9 @@ impl BenchAverageResult {
         let average_throughput = mean(&throughput_res);
         let std_deviation_latency = std_deviation(&latency_res);
         let std_deviation_throughput = std_deviation(&throughput_res);
+        let p50_latency = percentile(&latency_res, 50.0);
+        let p95_latency = percentile(&latency_res, 95.0);
+        let p99_latency = percentile(&latency_res, 99.0);
 
         Self {
             parallel_requests: input.parallel_requests,
@@ -45,6 +56,9 @@ impl BenchAverageResult {
             average_throughput,
             std_deviation_latency,
             std_deviation_throughput,
+            p50_latency,
+            p95_latency,
+            p99_latency,
         }
     }
 }
@@ -104,4 +118,23 @@ pub fn std_deviation(data: &[f64]) -> f64 {
         / (len as f64);
 
     variance.sqrt()
+}
+
+/// Returns the `p`-th percentile (0..=100) of `data`, using linear interpolation between the two
+/// closest ranks. With a single measure it returns that measure.
+pub fn percentile(data: &[f64], p: f64) -> f64 {
+    assert!(!data.is_empty());
+    assert!((0.0..=100.0).contains(&p));
+
+    let mut sorted = data.to_vec();
+    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    if sorted.len() == 1 {
+        return sorted[0];
+    }
+
+    let rank = p / 100.0 * (sorted.len() - 1) as f64;
+    let lower = rank.floor() as usize;
+    let upper = rank.ceil() as usize;
+    let weight = rank - lower as f64;
+    sorted[lower] * (1.0 - weight) + sorted[upper] * weight
 }

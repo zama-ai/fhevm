@@ -15,3 +15,13 @@ updates:
       interval: "weekly"
     # Set to 0 to prevent version updates (i.e. require only security updates)
     open-pull-requests-limit: 0
+  - package-ecosystem: "npm"
+    directory: "/sdk/js-sdk"
+    # Check for updates every Monday
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    # Wait 7 days after a version is published before proposing it, so a
+    # compromised release has time to be caught and pulled upstream.
+    cooldown:
+      default-days: 7

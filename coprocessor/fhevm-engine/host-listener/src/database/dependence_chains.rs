@@ -510,6 +510,8 @@ mod tests {
             log_index: Some(
                 COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst),
             ),
+            operand_boundary_mask: None,
+            is_executor_minted: true,
         })
     }
 

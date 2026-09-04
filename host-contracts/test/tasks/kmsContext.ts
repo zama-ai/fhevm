@@ -13,7 +13,7 @@ import {
 } from '../../tasks/kmsContext';
 import { getRequiredEnvVar } from '../../tasks/utils/loadVariables';
 import type { ProtocolConfig } from '../../types';
-import { deployFreshProtocolConfigProxy } from './taskHelpers';
+import { buildSingleKeyAndCrsActivationPayload, deployFreshProtocolConfigProxy } from './taskHelpers';
 
 const PROTOCOL_CONFIG_ENV_VAR = 'PROTOCOL_CONFIG_CONTRACT_ADDRESS';
 
@@ -136,12 +136,37 @@ describe('KMS context tasks', function () {
       expect(decoded[3][0][0]).to.equal('0xaa');
     });
 
-    it('derives the new context id as current + 1 from a live ProtocolConfig', async function () {
+    it('derives the new context id as the allocation counter + 1 from a live ProtocolConfig', async function () {
       const proxyAddress = await deployFreshProtocolConfigProxy(deployer, defaultNodes(), DEFAULT_THRESHOLDS);
       const protocolConfig = (await ethers.getContractAt('ProtocolConfig', proxyAddress)) as unknown as ProtocolConfig;
-      const currentContextId = await protocolConfig.getCurrentKmsContextId();
+      const allocationCounter = await protocolConfig.getCurrentKmsContextIdCounter();
 
-      expect(await predictNewKmsContextId(hre, proxyAddress)).to.equal(currentContextId + 1n);
+      expect(await predictNewKmsContextId(hre, proxyAddress)).to.equal(allocationCounter + 1n);
+    });
+
+    it('predicts from the allocation counter, staying ahead of the activation pointer during an in-flight switch', async function () {
+      const proxyAddress = await deployFreshProtocolConfigProxy(deployer, defaultNodes(), DEFAULT_THRESHOLDS);
+      const protocolConfig = (await ethers.getContractAt('ProtocolConfig', proxyAddress)) as unknown as ProtocolConfig;
+
+      // Define a new context so the allocation counter advances while the activation pointer stays put.
+      // This leaves the switch in-flight (PENDING), so the counter runs ahead of the pointer.
+      const newNodes = [
+        makeNode('0x00000000000000000000000000000000000C1111', '0x00000000000000000000000000000000000C2222', 0),
+        makeNode('0x00000000000000000000000000000000000C3333', '0x00000000000000000000000000000000000C4444', 1),
+      ];
+      setKmsEnv(newNodes, { publicDecryption: 1, userDecryption: 1, kmsGen: 1, mpc: 1 });
+      process.env[PROTOCOL_CONFIG_ENV_VAR] = proxyAddress;
+      await run('task:defineNewKmsContextAndEpoch', {});
+
+      const allocationCounter = await protocolConfig.getCurrentKmsContextIdCounter();
+      const activationPointer = await protocolConfig.getCurrentKmsContextId();
+      expect(allocationCounter).to.be.greaterThan(activationPointer);
+
+      // The prediction must track the allocation counter, not the activation pointer. Reverting the
+      // production fix to the activation pointer makes this assertion fail.
+      const predicted = await predictNewKmsContextId(hre, proxyAddress);
+      expect(predicted).to.equal(allocationCounter + 1n);
+      expect(predicted).to.be.greaterThan(activationPointer + 1n);
     });
 
     it('broadcasts the switch with the deployer key (no-DAO path) leaving a PENDING context', async function () {
@@ -298,14 +323,27 @@ describe('KMS context tasks', function () {
       return epochId;
     }
 
-    async function confirmActivation(epochId: bigint, txSenders: Signer[]): Promise<void> {
-      for (const txSender of txSenders) {
+    // `signers` are the new-context signer accounts, parallel to `txSenders` (same index = same node).
+    // The signature must recover to the signer while msg.sender is the tx-sender; they are distinct accounts.
+    async function confirmActivation(
+      contextId: bigint,
+      epochId: bigint,
+      txSenders: Signer[],
+      signers: Signer[],
+    ): Promise<void> {
+      for (let i = 0; i < txSenders.length; i++) {
         const asTxSender = (await ethers.getContractAt(
           'ProtocolConfig',
           proxyAddress,
-          txSender,
+          txSenders[i],
         )) as unknown as ProtocolConfig;
-        await (await asTxSender.confirmEpochActivation(epochId, [], [])).wait();
+        const { keys, crsList } = await buildSingleKeyAndCrsActivationPayload(
+          signers[i],
+          proxyAddress,
+          contextId,
+          epochId,
+        );
+        await (await asTxSender.confirmEpochActivation(epochId, keys, crsList)).wait();
       }
     }
 
@@ -383,7 +421,7 @@ describe('KMS context tasks', function () {
     it('reports fully live once the epoch is activated', async function () {
       const contextId = await defineSwitch();
       const epochId = await confirmCreation(contextId, [...newTxSenders, oldTxSenders[0]]);
-      await confirmActivation(epochId!, newTxSenders);
+      await confirmActivation(contextId, epochId!, newTxSenders, newSigners);
 
       const result = await inspectKmsContextSwitch(hre, proxyAddress, 0);
       expect(result.flow).to.equal('idle');
@@ -408,6 +446,69 @@ describe('KMS context tasks', function () {
       expect(aborted.flow).to.equal('context-switch');
       expect(aborted.aborted).to.equal(true);
       expect(aborted.abortReason).to.equal('context-destroyed');
+    });
+
+    it('reports a rotation opened after an aborted switch', async function () {
+      // Destroying a context does not rewind the allocation counter, so it stays ahead of the active
+      // context pointer with nothing in flight. A check on the counter alone would keep reporting the
+      // dead switch and never see the rotation opened afterwards.
+      const contextId = await defineSwitch();
+      await (await (await asOwner()).destroyKmsContext(contextId)).wait();
+      expect(await protocolConfig.getCurrentKmsContextIdCounter()).to.be.greaterThan(
+        await protocolConfig.getCurrentKmsContextId(),
+      );
+
+      const receipt = await (await (await asOwner()).defineNewEpochForCurrentKmsContext()).wait();
+      const epochId = parseEventArg(receipt!, 'NewKmsEpoch', 'epochId');
+
+      const result = await inspectKmsContextSwitch(hre, proxyAddress, 0);
+      expect(result.flow).to.equal('same-set-rotation');
+      expect(result.pendingEpochId).to.equal(epochId);
+      // Same-set resharing keeps the committee, so the old signers are the expected confirmers.
+      expect(result.epochSignersOutstanding).to.have.lengthOf(oldSigners.length);
+    });
+
+    it('reports a pending switch whose defining event is outside the scanned range', async function () {
+      const contextId = await defineSwitch();
+
+      // Scan a window that starts after the NewKmsContext event, so a purely event-based monitor
+      // would see nothing. The allocation-counter check must still surface the in-flight switch.
+      const defineBlock = await ethers.provider.getBlockNumber();
+      await ethers.provider.send('evm_mine', []);
+      const scanFromBlock = defineBlock + 1;
+
+      const result = await inspectKmsContextSwitch(hre, proxyAddress, scanFromBlock);
+      expect(result.flow).to.equal('context-switch');
+      expect(result.pendingContextId).to.equal(contextId);
+      expect(result.contextState).to.equal('PENDING');
+      expect(result.aborted).to.equal(false);
+      // Cached previous-committee target (3 old nodes, mpc = 2 -> n - t = 1), read authoritatively.
+      expect(result.previousTxSenderThreshold).to.equal(1);
+      // The new committee comes from the out-of-range event, so it is not reconstructable.
+      expect(result.newSigners).to.equal(undefined);
+    });
+
+    it('reports the same quorum result as the contract after lowering the previous context MPC threshold', async function () {
+      const previousContextId = await protocolConfig.getCurrentKmsContextId();
+      const contextId = await defineSwitch();
+
+      // Lower the previous context's live MPC threshold after the switch was defined. Recomputing the
+      // (n - t) target from live reads would now give 3 - 1 = 2. The value cached at define time stays 1.
+      await (await (await asOwner()).updateMpcThresholdForContext(previousContextId, 1)).wait();
+      expect(await protocolConfig.getMpcThresholdForContext(previousContextId)).to.equal(1n);
+      expect(await protocolConfig.getContextCreationPreviousTxSenderThreshold(contextId)).to.equal(1n);
+
+      // All new tx senders + exactly one previous tx sender: enough for the cached target of 1, so the
+      // contract reaches the creation quorum (CREATED). A recomputed target of 2 would read as stuck.
+      const epochId = await confirmCreation(contextId, [...newTxSenders, oldTxSenders[0]]);
+      expect(epochId, 'creation quorum should emit NewKmsEpoch').to.not.be.undefined;
+
+      const result = await inspectKmsContextSwitch(hre, proxyAddress, 0);
+      expect(result.contextState).to.equal('CREATED');
+      expect(result.previousTxSenderThreshold).to.equal(1);
+      expect(result.previousConfirmationCount).to.equal(1);
+      expect(result.contextCreationQuorumReached).to.equal(true);
+      expect(result.stuckBelowPreviousThreshold).to.equal(false);
     });
   });
 });

@@ -110,6 +110,16 @@ describe('GatewayConfig', function () {
     return { ...fixtureData, kmsNodes, coprocessors, custodians };
   }
 
+  // ERC-7201 base slot of GatewayConfigStorage, from the GATEWAY_CONFIG_STORAGE_LOCATION constant
+  // in GatewayConfig.sol, plus the index of `priorityCoprocessorTxSender` in the struct.
+  const GATEWAY_CONFIG_STORAGE_LOCATION = BigInt('0x86d3070a8993f6b209bee6185186d38a07fce8bbd97c750d934451b72f35b400');
+  const DEPRECATED_PRIORITY_SLOT = hre.ethers.toBeHex(GATEWAY_CONFIG_STORAGE_LOCATION + 36n, 32);
+
+  async function readDeprecatedPrioritySlot(proxyAddress: string): Promise<string> {
+    const raw = await hre.ethers.provider.getStorage(proxyAddress, DEPRECATED_PRIORITY_SLOT);
+    return hre.ethers.getAddress(hre.ethers.dataSlice(raw, 12));
+  }
+
   describe('Deployment', function () {
     let gatewayConfig: GatewayConfig;
     let inputVerification: InputVerification;
@@ -210,106 +220,40 @@ describe('GatewayConfig', function () {
     });
 
     it('Should expose the GatewayConfig version', async function () {
-      expect(await gatewayConfig.getVersion()).to.equal('GatewayConfig v0.7.0');
+      expect(await gatewayConfig.getVersion()).to.equal('GatewayConfig v0.8.0');
     });
 
-    it('Should set Zama as priority during the Phase 1 to Phase 2 reinitialization', async function () {
+    it('Should clear a set priority coprocessor slot during the upgrade', async function () {
       const gatewayConfigPhase1 = await deployGatewayConfigPhase1Proxy();
-      const zamaTxSender = coprocessors[0].txSenderAddress;
+      const proxyAddress = await gatewayConfigPhase1.getAddress();
 
-      expect(await gatewayConfigPhase1.getCoprocessorTxSenders()).to.deep.equal([zamaTxSender]);
-      expect(await gatewayConfigPhase1.getCoprocessorMajorityThreshold()).to.equal(1);
+      // Simulate the deployed state where priority mode is still active. The feature is gone, so
+      // nothing can write the slot anymore: plant it directly. If DEPRECATED_PRIORITY_SLOT were
+      // wrong, reinitializeV9 would not clear it and this test would fail.
+      await hre.network.provider.send('hardhat_setStorageAt', [
+        proxyAddress,
+        DEPRECATED_PRIORITY_SLOT,
+        hre.ethers.zeroPadValue(coprocessors[0].txSenderAddress, 32),
+      ]);
+      expect(await readDeprecatedPrioritySlot(proxyAddress)).to.equal(coprocessors[0].txSenderAddress);
 
-      await inputVerification.connect(pauser).pause();
-
-      const upgradedGatewayConfig = await hre.upgrades.upgradeProxy(gatewayConfigPhase1, newGatewayConfigFactory, {
-        call: {
-          fn: 'reinitializeV8',
-          args: [zamaTxSender],
-        },
+      await hre.upgrades.upgradeProxy(gatewayConfigPhase1, newGatewayConfigFactory, {
+        call: { fn: 'reinitializeV9' },
       });
 
-      expect(await upgradedGatewayConfig.getPriorityCoprocessorTxSender()).to.equal(zamaTxSender);
-    });
-
-    it('Should register partners after Zama priority is active', async function () {
-      const gatewayConfigPhase1 = await deployGatewayConfigPhase1Proxy();
-      const zamaTxSender = coprocessors[0].txSenderAddress;
-
-      await inputVerification.connect(pauser).pause();
-
-      const upgradedGatewayConfig = await hre.upgrades.upgradeProxy(gatewayConfigPhase1, newGatewayConfigFactory, {
-        call: {
-          fn: 'reinitializeV8',
-          args: [zamaTxSender],
-        },
-      });
-
-      await upgradedGatewayConfig.connect(owner).updateCoprocessors(coprocessors, coprocessorThreshold);
-
-      expect(await upgradedGatewayConfig.getCoprocessorTxSenders()).to.deep.equal(
-        coprocessors.map((coprocessor) => coprocessor.txSenderAddress),
-      );
-      expect(await upgradedGatewayConfig.getCoprocessorMajorityThreshold()).to.equal(coprocessorThreshold);
-      expect(await upgradedGatewayConfig.getPriorityCoprocessorTxSender()).to.equal(zamaTxSender);
-    });
-
-    it('Should allow reinitialization without priority while InputVerification is not paused', async function () {
-      const gatewayConfigPhase1 = await deployGatewayConfigPhase1Proxy();
-      expect(await inputVerification.paused()).to.be.false;
-
-      const upgradedGatewayConfig = await hre.upgrades.upgradeProxy(gatewayConfigPhase1, newGatewayConfigFactory, {
-        call: {
-          fn: 'reinitializeV8',
-          args: [ZeroAddress],
-        },
-      });
-
-      expect(await upgradedGatewayConfig.getPriorityCoprocessorTxSender()).to.equal(ZeroAddress);
-    });
-
-    it('Should set priority during reinitialization while InputVerification is not paused', async function () {
-      const gatewayConfigPhase1 = await deployGatewayConfigPhase1Proxy();
-      expect(await inputVerification.paused()).to.be.false;
-
-      const upgradedGatewayConfig = await hre.upgrades.upgradeProxy(gatewayConfigPhase1, newGatewayConfigFactory, {
-        call: {
-          fn: 'reinitializeV8',
-          args: [coprocessors[0].txSenderAddress],
-        },
-      });
-
-      expect(await upgradedGatewayConfig.getPriorityCoprocessorTxSender()).to.equal(coprocessors[0].txSenderAddress);
-    });
-
-    it('Should revert when reinitializing with an unregistered priority coprocessor transaction sender', async function () {
-      const gatewayConfigPhase1 = await deployGatewayConfigPhase1Proxy();
-      await inputVerification.connect(pauser).pause();
-
-      await expect(
-        hre.upgrades.upgradeProxy(gatewayConfigPhase1, newGatewayConfigFactory, {
-          call: {
-            fn: 'reinitializeV8',
-            args: [fakeTxSender.address],
-          },
-        }),
-      )
-        .to.be.revertedWithCustomError(gatewayConfig, 'PriorityCoprocessorTxSenderNotRegistered')
-        .withArgs(fakeTxSender.address);
+      // The upgrade disables priority mode on its own, without relying on a prior ops call.
+      expect(await readDeprecatedPrioritySlot(proxyAddress)).to.equal(ZeroAddress);
     });
 
     it('Should revert when reinitializing a second time (reinitializer guard)', async function () {
       const gatewayConfigPhase1 = await deployGatewayConfigPhase1Proxy();
       const upgradedGatewayConfig = await hre.upgrades.upgradeProxy(gatewayConfigPhase1, newGatewayConfigFactory, {
-        call: {
-          fn: 'reinitializeV8',
-          args: [ZeroAddress],
-        },
+        call: { fn: 'reinitializeV9' },
       });
 
-      // reinitializeV8 is no longer owner-gated: the atomic upgradeToAndCall is authorized by
+      // reinitializeV9 is not owner-gated: the atomic upgradeToAndCall is authorized by
       // _authorizeUpgrade, and the reinitializer guard prevents any later re-invocation.
-      await expect(upgradedGatewayConfig.connect(owner).reinitializeV8(ZeroAddress)).to.be.revertedWithCustomError(
+      await expect(upgradedGatewayConfig.connect(owner).reinitializeV9()).to.be.revertedWithCustomError(
         gatewayConfig,
         'InvalidInitialization',
       );
@@ -1216,80 +1160,6 @@ describe('GatewayConfig', function () {
             expect(await gatewayConfig.isCoprocessorTxSender(coprocessorTxSender)).to.be.false;
             expect(await gatewayConfig.getCoprocessor(coprocessorTxSender)).to.deep.equal(toValues(nullCoprocessor));
           }
-        });
-
-        it('Should set and remove the priority coprocessor transaction sender', async function () {
-          const priorityTxSender = coprocessorTxSenders[0].address;
-
-          const setTx = await gatewayConfig.connect(owner).setPriorityCoprocessorTxSender(priorityTxSender);
-          await expect(setTx).to.emit(gatewayConfig, 'UpdatePriorityCoprocessorTxSender').withArgs(priorityTxSender);
-          expect(await gatewayConfig.getPriorityCoprocessorTxSender()).to.equal(priorityTxSender);
-
-          const removeTx = await gatewayConfig.connect(owner).removePriorityCoprocessorTxSender();
-          await expect(removeTx).to.emit(gatewayConfig, 'UpdatePriorityCoprocessorTxSender').withArgs(ZeroAddress);
-          expect(await gatewayConfig.getPriorityCoprocessorTxSender()).to.equal(ZeroAddress);
-        });
-
-        it('Should revert when setting an unregistered priority coprocessor transaction sender', async function () {
-          await expect(gatewayConfig.connect(owner).setPriorityCoprocessorTxSender(fakeTxSender.address))
-            .to.be.revertedWithCustomError(gatewayConfig, 'PriorityCoprocessorTxSenderNotRegistered')
-            .withArgs(fakeTxSender.address);
-        });
-
-        it('Should revert when setting the priority coprocessor because the sender is not the owner', async function () {
-          await expect(gatewayConfig.connect(fakeOwner).setPriorityCoprocessorTxSender(coprocessorTxSenders[0].address))
-            .to.be.revertedWithCustomError(gatewayConfig, 'OwnableUnauthorizedAccount')
-            .withArgs(fakeOwner.address);
-        });
-
-        it('Should revert when removing the priority coprocessor because the sender is not the owner', async function () {
-          await gatewayConfig.connect(owner).setPriorityCoprocessorTxSender(coprocessorTxSenders[0].address);
-
-          await expect(gatewayConfig.connect(fakeOwner).removePriorityCoprocessorTxSender())
-            .to.be.revertedWithCustomError(gatewayConfig, 'OwnableUnauthorizedAccount')
-            .withArgs(fakeOwner.address);
-        });
-
-        it('Should set the priority coprocessor while InputVerification is not paused', async function () {
-          await inputVerification.connect(owner).unpause();
-
-          await gatewayConfig.connect(owner).setPriorityCoprocessorTxSender(coprocessorTxSenders[0].address);
-          expect(await gatewayConfig.getPriorityCoprocessorTxSender()).to.equal(coprocessorTxSenders[0].address);
-        });
-
-        it('Should remove the priority coprocessor while InputVerification is not paused', async function () {
-          await gatewayConfig.connect(owner).setPriorityCoprocessorTxSender(coprocessorTxSenders[0].address);
-          await inputVerification.connect(owner).unpause();
-
-          await gatewayConfig.connect(owner).removePriorityCoprocessorTxSender();
-          expect(await gatewayConfig.getPriorityCoprocessorTxSender()).to.equal(ZeroAddress);
-        });
-
-        it('Should revert when removing the priority coprocessor through a coprocessor update', async function () {
-          const priorityTxSender = coprocessorTxSenders[0].address;
-          await gatewayConfig.connect(owner).setPriorityCoprocessorTxSender(priorityTxSender);
-
-          await expect(gatewayConfig.connect(owner).updateCoprocessors(coprocessors.slice(1), 1))
-            .to.be.revertedWithCustomError(gatewayConfig, 'PriorityCoprocessorNotInNewCoprocessors')
-            .withArgs(priorityTxSender);
-        });
-
-        it('Should revert when rotating the active priority coprocessor signer through a coprocessor update', async function () {
-          const priorityTxSender = coprocessorTxSenders[0].address;
-          const currentPrioritySigner = coprocessorSigners[0].address;
-          const newPrioritySigner = newSignerAddress;
-          await gatewayConfig.connect(owner).setPriorityCoprocessorTxSender(priorityTxSender);
-
-          const updatedCoprocessors = [...coprocessors];
-          updatedCoprocessors[0] = {
-            txSenderAddress: priorityTxSender,
-            signerAddress: newPrioritySigner,
-            s3BucketUrl: updatedCoprocessors[0].s3BucketUrl,
-          };
-
-          await expect(gatewayConfig.connect(owner).updateCoprocessors(updatedCoprocessors, coprocessorThreshold))
-            .to.be.revertedWithCustomError(gatewayConfig, 'PriorityCoprocessorSignerChanged')
-            .withArgs(priorityTxSender, currentPrioritySigner, newPrioritySigner);
         });
 
         it('Should revert because the sender is not the owner', async function () {

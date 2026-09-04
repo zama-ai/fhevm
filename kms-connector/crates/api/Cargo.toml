@@ -1,0 +1,26 @@
+[package]
+name = "kms-connector-api"
+description = "Relayer ↔ KMS Connector v1 HTTP interface"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+version.workspace = true
+
+# Dependencies are deliberately NOT workspace-inherited. The workspace pins exact versions
+# (`=x.y.z`), and workspace inheritance would export those pins to every external consumer
+# of this interface crate (i.e. the relayer). This would force them to align their alloy/serde
+# stack with the connector, which would be cumbersome.
+[dependencies]
+alloy = { version = "2", default-features = false, features = [
+    "serde",
+    "sol-types",
+] }
+serde = { version = "1", default-features = false, features = [
+    "derive",
+    "std",
+] }
+strum = { version = "0.28", default-features = false, features = ["derive"] }
+
+[dev-dependencies]
+serde_json = { version = "1", default-features = false, features = ["std"] }

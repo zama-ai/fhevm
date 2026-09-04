@@ -1,4 +1,5 @@
 import type { Auth } from '../../../types/auth.js';
+import type { Logger } from '../../../types/logger.js';
 import type {
   RelayerApiError,
   RelayerAsyncRequestState,
@@ -110,6 +111,11 @@ type RelayerAsyncRequestParams = {
   payload: Record<string, unknown>;
   timeoutInSeconds?: number | undefined;
   throwErrorIfNoRetryAfter?: boolean | undefined;
+  // Off by default: the EVM relayer reports `readiness_check_timed_out` as a terminal 503, so the
+  // job is dead and retrying would poll forever. Solana decryptions opt in because their relayer
+  // returns the same label while KMS material is still indexing, and a later attempt can succeed.
+  retryOnReadinessCheckTimeout?: boolean | undefined;
+  logger?: Logger | undefined;
   options?:
     | RelayerInputProofOptions
     | RelayerUserDecryptOptions
@@ -120,6 +126,7 @@ type RelayerAsyncRequestParams = {
 
 export class RelayerAsyncRequest {
   private readonly _debug: boolean;
+  private readonly _logger: Logger | undefined;
   private _fetchMethod: 'GET' | 'POST' | undefined;
   private _elapsed: number;
   private _jobId: string | undefined;
@@ -155,6 +162,7 @@ export class RelayerAsyncRequest {
   private _requestStartTimestamp: number | undefined;
   private _requestGlobalTimeoutID: ReturnType<typeof setTimeout> | undefined;
   private readonly _throwErrorIfNoRetryAfter: boolean;
+  private readonly _retryOnReadinessCheckTimeout: boolean;
 
   // Warning: the following condition should always stand!
   // DEFAULT_RETRY_AFTER_MS >= MINIMUM_RETRY_AFTER_MS
@@ -207,6 +215,7 @@ export class RelayerAsyncRequest {
     this._url = params.url;
     this._payload = params.payload;
     this._debug = params.options?.debug === true;
+    this._logger = params.logger;
     this._fhevmAuth = params.options?.auth;
     this._customHeaders = normalizeHeaders(params.options?.headers);
     this._onProgress = params.options?.onProgress as typeof this._onProgress;
@@ -225,6 +234,7 @@ export class RelayerAsyncRequest {
     this._requestGlobalTimeoutID = undefined;
     this._terminateReason = undefined;
     this._throwErrorIfNoRetryAfter = params.throwErrorIfNoRetryAfter ?? false;
+    this._retryOnReadinessCheckTimeout = params.retryOnReadinessCheckTimeout ?? false;
     this._requestMaxDurationInMs = params.options?.timeout ?? RelayerAsyncRequest.DEFAULT_GLOBAL_REQUEST_TIMEOUT_MS;
 
     this._trace(
@@ -600,6 +610,10 @@ export class RelayerAsyncRequest {
 
           const retryAfterMs = this._getRetryAfterHeaderValueInMs(response);
 
+          this._logger?.warn?.(
+            `[RelayerAsyncRequest] Throttled (429) on ${this._url} (operation=${this._relayerOperation}, retryCount=${this._retryCount}). Retrying in ${retryAfterMs}ms.`,
+          );
+
           // Async onProgress callback
           this._postAsyncOnProgressCallback({
             type: 'throttled',
@@ -669,7 +683,7 @@ export class RelayerAsyncRequest {
             });
           }
 
-          if (bodyJson.error.label === 'readiness_check_timed_out') {
+          if (this._retryOnReadinessCheckTimeout && bodyJson.error.label === 'readiness_check_timed_out') {
             await this._setRetryAfterTimeout(this._getRetryAfterHeaderValueInMs(response));
             continue;
           }
@@ -683,6 +697,10 @@ export class RelayerAsyncRequest {
         default: {
           // Use TS compiler + `never` to guarantee the switch integrity
           const throwUnsupportedStatus = (unsupportedStatus: never): never => {
+            this._logger?.error?.(
+              `[RelayerAsyncRequest] Unsupported POST response status ${String(unsupportedStatus)} on ${this._url} (operation=${this._relayerOperation})`,
+              undefined,
+            );
             throw new RelayerResponseStatusError({
               fetchMethod: 'POST',
               status: unsupportedStatus,
@@ -1055,7 +1073,7 @@ export class RelayerAsyncRequest {
             });
           }
 
-          if (bodyJson.error.label === 'readiness_check_timed_out') {
+          if (this._retryOnReadinessCheckTimeout && bodyJson.error.label === 'readiness_check_timed_out') {
             await this._setRetryAfterTimeout(this._getRetryAfterHeaderValueInMs(response));
             continue;
           }
@@ -1069,6 +1087,10 @@ export class RelayerAsyncRequest {
         default: {
           // Use TS compiler + `never` to guarantee the switch integrity
           const throwUnsupportedStatus = (unsupportedStatus: never): never => {
+            this._logger?.error?.(
+              `[RelayerAsyncRequest] Unsupported GET response status ${String(unsupportedStatus)} on ${this._url} (operation=${this._relayerOperation}, jobId=${this.jobId})`,
+              undefined,
+            );
             throw new RelayerResponseStatusError({
               fetchMethod: 'GET',
               status: unsupportedStatus,
@@ -1200,6 +1222,10 @@ export class RelayerAsyncRequest {
       if (attempts >= this._fetchRetries) {
         throw fetchError;
       }
+
+      this._logger?.warn?.(
+        `[RelayerAsyncRequest] Fetch to ${this._url} failed (attempt ${attempts}/${this._fetchRetries}, operation=${this._relayerOperation}): ${formatFetchErrorMetaMessages(fetchError).join('. ')}. Retrying.`,
+      );
 
       // Wait before retry using state-machine-aware timeout
       // This allows cancellation to interrupt the delay
@@ -1401,6 +1427,10 @@ export class RelayerAsyncRequest {
       this._assert(!this._state.canceled, '!this._state.canceled');
     }
 
+    this._logger?.warn?.(
+      `[RelayerAsyncRequest] Request aborted on ${this._url} (reason=${String(signal.reason)}, operation=${this._relayerOperation}, jobId=${this._jobId})`,
+    );
+
     this._postAsyncOnProgressCallback({
       type: 'abort',
       url: this._url,
@@ -1568,6 +1598,11 @@ export class RelayerAsyncRequest {
 
     this._state.timeout = true;
 
+    this._logger?.error?.(
+      `[RelayerAsyncRequest] Request timed out on ${this._url} (operation=${this._relayerOperation}, jobId=${this._jobId}, retryCount=${this._retryCount}, timeoutMs=${this._requestMaxDurationInMs})`,
+      undefined,
+    );
+
     this._postAsyncOnProgressCallback({
       type: 'timeout',
       url: this._url,
@@ -1666,6 +1701,10 @@ export class RelayerAsyncRequest {
    * @throws {RelayerResponseStatusError} Always throws.
    */
   private _throwUnexpectedStatusError(status: number, surfacedMessage?: string): never {
+    this._logger?.error?.(
+      `[RelayerAsyncRequest] Unexpected HTTP status ${status} on ${this._url} (operation=${this._relayerOperation}, jobId=${this._jobId})${surfacedMessage !== undefined ? `: ${surfacedMessage}` : ''}`,
+      undefined,
+    );
     throw new RelayerResponseStatusError({
       fetchMethod: this._fetchMethod as unknown as RelayerFetchMethod,
       status,
@@ -1703,6 +1742,11 @@ export class RelayerAsyncRequest {
   }): never {
     // Clone
     const clonedRelayerApiError = JSON.parse(JSON.stringify(params.relayerApiError)) as RelayerApiError;
+
+    this._logger?.error?.(
+      `[RelayerAsyncRequest] Relayer API error on ${this._url} (status=${params.status}, operation=${this._relayerOperation}, jobId=${this._jobId}, retryCount=${this._retryCount}): label=${params.relayerApiError.label}, message=${params.relayerApiError.message}`,
+      undefined,
+    );
 
     const args: RelayerProgressFailed<RelayerPostOperation> = {
       type: 'failed',
@@ -1753,6 +1797,10 @@ export class RelayerAsyncRequest {
    * @throws {RelayerRequestInternalError}
    */
   private _throwInternalError(message: string): never {
+    this._logger?.error?.(
+      `[RelayerAsyncRequest] Internal error on ${this._url} (operation=${this._relayerOperation}): ${message}`,
+      undefined,
+    );
     throw new RelayerRequestInternalError({
       operation: this._relayerOperation,
       url: this._url,
@@ -1768,6 +1816,10 @@ export class RelayerAsyncRequest {
    */
   private _throwMaxRetryError(params: { fetchMethod: 'GET' | 'POST' }): never {
     const elapsed = this._jobIdTimestamp !== undefined ? Date.now() - this._jobIdTimestamp : 0;
+    this._logger?.error?.(
+      `[RelayerAsyncRequest] Max retry count exceeded on ${this._url} (${params.fetchMethod}, operation=${this._relayerOperation}, jobId=${this._jobId}, retryCount=${this._retryCount}, elapsed=${elapsed}ms).`,
+      undefined,
+    );
     throw new RelayerMaxRetryError({
       operation: this._relayerOperation,
       url: this._url,
@@ -1788,6 +1840,10 @@ export class RelayerAsyncRequest {
     cause: InvalidPropertyError;
     bodyJson: string;
   }): never {
+    this._logger?.error?.(
+      `[RelayerAsyncRequest] Unexpected response body on ${this._url} (status=${params.status}, operation=${this._relayerOperation}, jobId=${this._jobId}): ${params.bodyJson}`,
+      params.cause,
+    );
     throw new RelayerResponseInvalidBodyError({
       ...params,
       fetchMethod: this._fetchMethod as unknown as RelayerFetchMethod,
@@ -1805,6 +1861,10 @@ export class RelayerAsyncRequest {
    * @throws {RelayerFetchError} Always throws.
    */
   private _throwFetchError(params: { message: string; cause: unknown }): never {
+    this._logger?.error?.(
+      `[RelayerAsyncRequest] ${params.message} (url=${this._url}, operation=${this._relayerOperation}, jobId=${this._jobId}, retryCount=${this._retryCount})`,
+      params.cause,
+    );
     throw new RelayerFetchError({
       ...params,
       elapsed: this._elapsed,
@@ -1849,5 +1909,6 @@ export class RelayerAsyncRequest {
     if (this._debug) {
       console.log(`[RelayerAsyncRequest]:${functionName}: ${message}`);
     }
+    this._logger?.debug?.(`[RelayerAsyncRequest]:${functionName}: ${message}`);
   }
 }

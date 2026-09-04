@@ -32,7 +32,8 @@ export type SlotChainConfig = {
     readonly acl: string;
     readonly inputVerifier: string;
     readonly kmsVerifier: string;
-    readonly protocolConfig: string;
+    /** Omitted on pre-v0.13 deployments — ProtocolConfig doesn't exist there. */
+    readonly protocolConfig?: string | undefined;
   };
   readonly gateway: {
     readonly id: number;

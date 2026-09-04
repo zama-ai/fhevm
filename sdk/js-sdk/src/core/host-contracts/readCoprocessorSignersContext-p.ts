@@ -1,6 +1,7 @@
 import type { ChecksummedAddress } from '../types/primitives.js';
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
 import type { CoprocessorSignersContext } from '../types/coprocessorSignersContext.js';
+import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
 import { createCoprocessorSignersContext } from './CoprocessorSignersContext-p.js';
 import { getCoprocessorContextSignersAndThreshold } from './getCoprocessorContextSignersAndThreshold-p.js';
 
@@ -14,6 +15,7 @@ type Context = {
 
 type Parameters = {
   readonly address: ChecksummedAddress;
+  readonly fhevmContext: FhevmClientFrozenContext;
 };
 
 type ReturnType = CoprocessorSignersContext;

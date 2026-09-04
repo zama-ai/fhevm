@@ -101,14 +101,7 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
         uint32[] memory dstEids,
         uint64[] memory dstChainIds
     ) internal returns (ConfidentialBridge proxy) {
-        address emptyImpl = address(new EmptyUUPSProxy());
-        DeployableERC1967Proxy raw = new DeployableERC1967Proxy(
-            emptyImpl,
-            abi.encodeCall(EmptyUUPSProxy.initialize, ())
-        );
-        address proxyAddr = address(raw);
-
-        address bridgeImpl = address(new ConfidentialBridge(lzEndpoint));
+        (address proxyAddr, address bridgeImpl) = _prepBridgeProxy(lzEndpoint);
 
         vm.prank(owner);
         EmptyUUPSProxy(proxyAddr).upgradeToAndCall(
@@ -116,6 +109,20 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
             abi.encodeCall(ConfidentialBridge.initializeFromEmptyProxy, (dstEids, dstChainIds))
         );
         proxy = ConfidentialBridge(payable(proxyAddr));
+    }
+
+    /// @dev Prepares a fresh empty UUPS proxy and a ConfidentialBridge implementation for
+    ///      `lzEndpoint` but does NOT initialize it, so a test can invoke
+    ///      `initializeFromEmptyProxy` itself — used to assert initializer-time reverts,
+    ///      which would otherwise be buried inside {_deployBridgeProxy}.
+    function _prepBridgeProxy(address lzEndpoint) internal returns (address proxyAddr, address bridgeImpl) {
+        address emptyImpl = address(new EmptyUUPSProxy());
+        DeployableERC1967Proxy raw = new DeployableERC1967Proxy(
+            emptyImpl,
+            abi.encodeCall(EmptyUUPSProxy.initialize, ())
+        );
+        proxyAddr = address(raw);
+        bridgeImpl = address(new ConfidentialBridge(lzEndpoint));
     }
 
     /// @dev Convenience: grant `account` persistent allowance on `handle` by
@@ -184,6 +191,109 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
         vm.prank(owner);
         srcBridge.setDstChainId(DST_EID, 99);
         assertEq(srcBridge.getDstChainId(DST_EID), 99);
+    }
+
+    ////////////////////////////////////////////////////////////////////////////////
+    // Initializer dstEid → dstChainId seeding validation
+    ////////////////////////////////////////////////////////////////////////////////
+
+    /// @dev Seeding several distinct endpoint ids registers each pair and leaves the map
+    ///      readable via {getDstChainId}.
+    function test_Initializer_SeedsMultipleDistinctEids() public {
+        uint32[] memory dstEids = new uint32[](3);
+        uint64[] memory dstChainIds = new uint64[](3);
+        dstEids[0] = 10;
+        dstEids[1] = 20;
+        dstEids[2] = 30;
+        dstChainIds[0] = 111;
+        dstChainIds[1] = 222;
+        dstChainIds[2] = 333;
+
+        ConfidentialBridge bridge = _deployBridgeProxy(endpoints[SRC_EID], dstEids, dstChainIds);
+
+        assertEq(bridge.getDstChainId(10), 111);
+        assertEq(bridge.getDstChainId(20), 222);
+        assertEq(bridge.getDstChainId(30), 333);
+    }
+
+    /// @dev A zero `dstChainId` is the unset sentinel; seeding it is rejected so the map
+    ///      never holds an entry that reads as unregistered while having emitted DstChainIdSet.
+    function test_Initializer_RevertsOnZeroDstChainId() public {
+        uint32[] memory dstEids = new uint32[](1);
+        uint64[] memory dstChainIds = new uint64[](1);
+        dstEids[0] = DST_EID;
+        dstChainIds[0] = 0;
+
+        (address proxyAddr, address bridgeImpl) = _prepBridgeProxy(endpoints[SRC_EID]);
+        vm.prank(owner);
+        vm.expectRevert(abi.encodeWithSelector(ConfidentialBridge.ZeroDstChainIdInInitializer.selector, DST_EID));
+        EmptyUUPSProxy(proxyAddr).upgradeToAndCall(
+            bridgeImpl,
+            abi.encodeCall(ConfidentialBridge.initializeFromEmptyProxy, (dstEids, dstChainIds))
+        );
+    }
+
+    /// @dev A repeated endpoint id is rejected so a later pair cannot silently overwrite an
+    ///      earlier one during seeding.
+    function test_Initializer_RevertsOnDuplicateDstEid() public {
+        uint32[] memory dstEids = new uint32[](2);
+        uint64[] memory dstChainIds = new uint64[](2);
+        dstEids[0] = 10;
+        dstEids[1] = 10;
+        dstChainIds[0] = 111;
+        dstChainIds[1] = 222;
+
+        (address proxyAddr, address bridgeImpl) = _prepBridgeProxy(endpoints[SRC_EID]);
+        vm.prank(owner);
+        vm.expectRevert(abi.encodeWithSelector(ConfidentialBridge.DuplicateDstEidInInitializer.selector, uint32(10)));
+        EmptyUUPSProxy(proxyAddr).upgradeToAndCall(
+            bridgeImpl,
+            abi.encodeCall(ConfidentialBridge.initializeFromEmptyProxy, (dstEids, dstChainIds))
+        );
+    }
+
+    /// @dev The zero-chain-id guard is evaluated before the duplicate guard for a given
+    ///      entry: a repeated eid whose second pairing is 0 reverts with the zero-chain-id error.
+    function test_Initializer_ZeroChainIdCheckPrecedesDuplicateCheck() public {
+        uint32[] memory dstEids = new uint32[](2);
+        uint64[] memory dstChainIds = new uint64[](2);
+        dstEids[0] = 10;
+        dstEids[1] = 10;
+        dstChainIds[0] = 111;
+        dstChainIds[1] = 0;
+
+        (address proxyAddr, address bridgeImpl) = _prepBridgeProxy(endpoints[SRC_EID]);
+        vm.prank(owner);
+        vm.expectRevert(abi.encodeWithSelector(ConfidentialBridge.ZeroDstChainIdInInitializer.selector, uint32(10)));
+        EmptyUUPSProxy(proxyAddr).upgradeToAndCall(
+            bridgeImpl,
+            abi.encodeCall(ConfidentialBridge.initializeFromEmptyProxy, (dstEids, dstChainIds))
+        );
+    }
+
+    /// @dev Mismatched seed array lengths are rejected up-front.
+    function test_Initializer_RevertsOnArrayLengthMismatch() public {
+        uint32[] memory dstEids = new uint32[](2);
+        uint64[] memory dstChainIds = new uint64[](1);
+        dstEids[0] = 10;
+        dstEids[1] = 20;
+        dstChainIds[0] = 111;
+
+        (address proxyAddr, address bridgeImpl) = _prepBridgeProxy(endpoints[SRC_EID]);
+        vm.prank(owner);
+        vm.expectRevert(
+            abi.encodeWithSelector(ConfidentialBridge.DstChainIdArrayLengthMismatch.selector, uint256(2), uint256(1))
+        );
+        EmptyUUPSProxy(proxyAddr).upgradeToAndCall(
+            bridgeImpl,
+            abi.encodeCall(ConfidentialBridge.initializeFromEmptyProxy, (dstEids, dstChainIds))
+        );
+    }
+
+    /// @dev Empty seed arrays are valid: the bridge initializes with no registered pairs.
+    function test_Initializer_AllowsEmptySeed() public {
+        ConfidentialBridge bridge = _deployBridgeProxy(endpoints[SRC_EID], new uint32[](0), new uint64[](0));
+        assertEq(bridge.getDstChainId(DST_EID), 0);
     }
 
     ////////////////////////////////////////////////////////////////////////////////
@@ -289,9 +399,6 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
         bytes32 h = _makeHandle(0);
         bytes32[] memory handleList = new bytes32[](1);
         handleList[0] = h;
-        // Allow the handle so the ACL guard passes and the zero-compose-gas guard in
-        // `_buildOptions` (reached via `_dispatch`) is what reverts.
-        _allow(h, srcApp);
 
         vm.prank(srcApp);
         vm.expectRevert(HandlesSender.ZeroLzComposeGas.selector);

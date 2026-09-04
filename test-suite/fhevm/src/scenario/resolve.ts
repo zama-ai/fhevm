@@ -753,9 +753,6 @@ export const resolveBlueGreenScenario = (
   filePath: string,
   input: BlueGreenScenario,
 ): ResolvedBlueGreenScenario => {
-  if ((input.hostChains?.length ?? 1) > 1) {
-    throw new Error("blue-green scenarios support exactly one host chain");
-  }
   const bcs: ResolvedBlueGreenScenarioFleet = {
     source: normalizeSource(input.bcs?.source),
     env: { ...(input.bcs?.env ?? {}) },

@@ -20,6 +20,7 @@ use crate::cmd::block_history::BlockSummary;
 use crate::contracts::TfheContract;
 use crate::contracts::TfheContract::TfheContractEvents;
 use crate::database::dependence_chains::dependence_chains;
+use crate::database::ingest::populate_operand_boundary_masks;
 use crate::database::tfhe_event_propagate::{
     ClearConst, Database, Handle, LogTfhe, Transaction, TransactionHash,
 };
@@ -167,6 +168,7 @@ pub async fn insert_solana_records(
 ) -> Result<SolanaIngestStats, SqlxError> {
     let (mut tfhe_logs, material_requests) =
         normalize_solana_records_for_db(records, transaction_id, block);
+    populate_operand_boundary_masks(&mut tfhe_logs)?;
     let mut inserted_rows = 0;
 
     let chains =
@@ -188,7 +190,6 @@ pub async fn insert_solana_records(
                 &handles,
                 Some(transaction_id.to_vec()),
                 block.block_number,
-                &block.block_hash,
             )
             .await?
         {
@@ -247,6 +248,11 @@ pub fn to_log_tfhe(
         tx_depth_size: 0,
         dependence_chain: transaction_id,
         log_index: Some(log_index),
+        // Every reconstructed host op ran on-chain in this signature. Operand
+        // origin bits are derived afterwards by `populate_operand_boundary_masks`,
+        // the same walk the EVM ingest path uses.
+        operand_boundary_mask: None,
+        is_executor_minted: true,
     }
 }
 
@@ -797,6 +803,8 @@ mod tests {
         assert_eq!(log.block_timestamp, block_timestamp);
         assert!(log.is_allowed);
         assert_eq!(log.log_index, Some(7));
+        assert!(log.is_executor_minted);
+        assert!(log.operand_boundary_mask.is_none());
     }
 
     #[test]

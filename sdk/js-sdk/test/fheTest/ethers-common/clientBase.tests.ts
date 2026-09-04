@@ -64,7 +64,8 @@ export function defineClientBaseTests(parameters: {
       expect(typeof client.decryptPublicValue).toBe('function');
       expect(typeof client.decryptPublicValues).toBe('function');
       expect(typeof client.decryptPublicValuesWithSignatures).toBe('function');
-      expect(typeof client.signDecryptionPermit).toBe('function');
+      expect(typeof client.signLegacyDecryptionPermit).toBe('function');
+      expect(typeof client.signUnifiedDecryptionPermit).toBe('function');
       expect(typeof client.parseTransportKeyPair).toBe('function');
       expect(typeof client.fetchFheEncryptionKeyBytes).toBe('function');
     });

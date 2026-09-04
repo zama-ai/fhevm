@@ -13,7 +13,7 @@ use crate::{
         arbitrum::{
             bindings::Decryption,
             transaction::{
-                helper::{TransactionHelper, TransactionType, TxResult},
+                helper::{TransactionHelper, TransactionType, TxClaimOutcome, TxResult},
                 tx_throttler::{DynTxHook, GatewayTxTask, TxThrottlingSender},
                 TxLifecycleHooks,
             },
@@ -23,6 +23,7 @@ use crate::{
     },
     host::{extra_data::parse_context_id_from_extra_data, ThresholdResolver},
     logging::UserDecryptStep,
+    metrics,
     orchestrator::{
         traits::{Event, EventHandler},
         ContentHasher, Orchestrator,
@@ -37,7 +38,7 @@ use crate::{
         repositories::user_decrypt_repo::{ShareCompletionOutcome, UserDecryptRepository},
     },
 };
-use alloy::primitives::{Address, Bytes, FixedBytes, TxHash, U256};
+use alloy::primitives::{Address, Bytes, TxHash, U256};
 use alloy::sol_types::SolEvent;
 use async_trait::async_trait;
 use std::sync::Arc;
@@ -98,7 +99,8 @@ impl GatewayHandler {
                 UserDecryptEventId::ReadinessCheckPassed.into(),
                 UserDecryptEventId::ReadinessCheckTimedOut.into(),
                 UserDecryptEventId::ReadinessCheckFailed.into(),
-                GatewayChainEventId::EventLogRcvd.into(),
+                GatewayChainEventId::UserDecryptionResponse.into(),
+                GatewayChainEventId::UserDecryptionResponseThresholdReached.into(),
             ],
             handler.clone() as Arc<dyn EventHandler<RelayerEvent>>,
         );
@@ -165,39 +167,21 @@ impl EventHandler<RelayerEvent> for GatewayHandler {
                 }
             },
 
-            RelayerEventData::GatewayChain(GatewayChainEventData::EventLogRcvd {
+            RelayerEventData::GatewayChain(GatewayChainEventData::UserDecryptionResponse {
                 ref log,
                 tx_hash,
             }) => {
-                if let Some(topic0) = log.topic0() {
-                    let topic0_fixed = FixedBytes::<32>::from_slice(topic0.as_slice());
-                    let individual_response_topic =
-                        Decryption::UserDecryptionResponse::SIGNATURE_HASH;
-                    let consensus_topic = self.get_consensus_event_topic();
-
-                    match topic0_fixed {
-                        topic if topic == individual_response_topic => {
-                            debug!("Observed gateway user-decrypt share response");
-                            self.decode_share_from_log(log, event.clone(), *tx_hash)
-                                .await
-                        }
-                        topic if topic == consensus_topic => {
-                            debug!("Observed gateway user-decrypt consensus response");
-                            self.update_consensus_hash(log, event.clone(), *tx_hash)
-                                .await;
-                            return;
-                        }
-                        _ => {
-                            debug!(
-                                "Ignoring event: received topic {:?}, expected individual {:?} or consensus {:?}",
-                                topic0_fixed, individual_response_topic, consensus_topic
-                            );
-                            return;
-                        }
-                    }
-                } else {
-                    return;
-                }
+                debug!("Observed gateway user-decrypt share response");
+                self.decode_share_from_log(log, event.clone(), *tx_hash)
+                    .await
+            }
+            RelayerEventData::GatewayChain(
+                GatewayChainEventData::UserDecryptionResponseThresholdReached { ref log, tx_hash },
+            ) => {
+                debug!("Observed gateway user-decrypt consensus response");
+                self.update_consensus_hash(log, event.clone(), *tx_hash)
+                    .await;
+                return;
             }
             _ => return,
         };
@@ -462,7 +446,10 @@ impl GatewayHandler {
                                     .contains("Request not found when threshold reached")
                                 {
                                     if attempt == retry_config.max_retries {
-                                        debug!(
+                                        metrics::increment_unmatched_gateway_event(
+                                            "user_decryption_response",
+                                        );
+                                        info!(
                                             step = %UserDecryptStep::GwEventRetrying,
                                             gw_reference_id = %user_decryption_id,
                                             max_retries = retry_config.max_retries,
@@ -740,7 +727,10 @@ impl GatewayHandler {
                     );
                 }
                 Ok(None) => {
-                    debug!(
+                    metrics::increment_unmatched_gateway_event(
+                        "user_decryption_response_threshold_reached",
+                    );
+                    info!(
                         gw_reference_id = %user_decryption_id,
                         "No request matched consensus event; event ignored"
                     );
@@ -752,11 +742,6 @@ impl GatewayHandler {
         } else {
             error!("UserDecryptionResponseThresholdReached event missing decryption_id topic");
         }
-    }
-
-    /// Returns event signature hash for UserDecryptionResponseThresholdReached event.
-    fn get_consensus_event_topic(&self) -> FixedBytes<32> {
-        Decryption::UserDecryptionResponseThresholdReached::SIGNATURE_HASH
     }
 
     /// Updates database status to "processing" after readiness check passes.
@@ -826,7 +811,7 @@ impl GatewayHandler {
             }
 
             EventProcessingError::ThresholdResolutionFailed(ref reason) => {
-                // Share arrives via EventLogRcvd — no DB state to update, drop the share.
+                // Share arrives via UserDecryptionResponse — no DB state to update, drop the share.
                 error!(
                     job_id = %event.job_id,
                     reason = %reason,
@@ -956,15 +941,28 @@ impl GatewayHandler {
 
 #[async_trait]
 impl TxLifecycleHooks for GatewayHandler {
-    async fn on_tx_in_flight(&self, job_id: &JobId) -> Result<(), EventProcessingError> {
-        self.user_decrypt_repo
+    async fn on_tx_in_flight(
+        &self,
+        job_id: &JobId,
+    ) -> Result<TxClaimOutcome, EventProcessingError> {
+        let rows_affected = self
+            .user_decrypt_repo
             .update_status_to_tx_in_flight(&job_id[..])
             .await
-            .map(|_| ())
             .map_err(|e| EventProcessingError::SqlOperationFailed {
                 operation: "user_decrypt.update_status_to_tx_in_flight".to_string(),
                 reason: e.to_string(),
-            })
+            })?;
+
+        if rows_affected == 0 {
+            info!(
+                int_job_id = %job_id,
+                "Tx-in-flight claim did not apply for user decrypt request, skipping send"
+            );
+            return Ok(TxClaimOutcome::ClaimLost);
+        }
+
+        Ok(TxClaimOutcome::Claimed)
     }
 
     async fn on_receipt_received(

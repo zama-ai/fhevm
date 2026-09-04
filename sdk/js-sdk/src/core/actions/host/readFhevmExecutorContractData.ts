@@ -2,7 +2,7 @@ import type { HostContractVersion } from '../../types/hostContract.js';
 import type { FhevmExecutorContractData } from '../../types/coprocessor.js';
 import type { Fhevm } from '../../types/coreFhevmClient.js';
 import type { ChecksummedAddress, Uint8Number } from '../../types/primitives.js';
-import { assertIsChecksummedAddress } from '../../base/address.js';
+import { assertIsAddress, assertIsChecksummedAddress } from '../../base/address.js';
 import { executeWithBatching } from '../../base/promise.js';
 import { isUint8 } from '../../base/uint.js';
 import { createFhevmExecutorContractData } from '../../host-contracts/FhevmExecutorContractData-p.js';
@@ -12,6 +12,7 @@ import { getHcuLimitAddress } from '../../host-contracts/getHcuLimitAddress-p.js
 import { assertIsHostContractVersionOf } from '../../host-contracts/HostContractVersion-p.js';
 import { getHostContractVersion } from '../../host-contracts/HostContractVersion-p.js';
 import { getInputVerifierAddress } from '../../host-contracts/getInputVerifierAddress-p.js';
+import { initPublicAction } from '../../runtime/CoreFhevm-p.js';
 
 export type ReadFhevmExecutorContractDataParameters = {
   readonly address: ChecksummedAddress;
@@ -23,6 +24,10 @@ export async function readFhevmExecutorContractData(
   parameters: ReadFhevmExecutorContractDataParameters,
 ): Promise<ReadFhevmExecutorContractDataReturnType> {
   const fhevmExecutorAddress = parameters.address;
+  assertIsAddress(fhevmExecutorAddress, {});
+
+  // no context needed
+  await initPublicAction(fhevm);
 
   ////////////////////////////////////////////////////////////////////////////
   //

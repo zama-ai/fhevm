@@ -61,10 +61,20 @@ jobs:
           cache-targets: true
           cache-all-crates: true
 
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@a37010ded18ff788be4440302bd6830b1ae50d8b # v2.68.25
+        with:
+          tool: cargo-nextest
+
       - name: Format
         working-directory: relayer
         # Use the Makefile target so local and CI run the exact same check.
         run: make fmt
+
+      - name: Every test file belongs to a test group
+        working-directory: relayer
+        # A test file that no group selects is a file CI never runs.
+        run: make test-groups-check
 
       - name: Build for tests (no rpc mock)
         working-directory: relayer
@@ -168,6 +178,11 @@ jobs:
           cache-targets: true
           cache-all-crates: true
 
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@a37010ded18ff788be4440302bd6830b1ae50d8b # v2.68.25
+        with:
+          tool: cargo-nextest
+
       - name: Install SQLx CLI
         run: |
           if ! command -v sqlx &> /dev/null; then
@@ -183,6 +198,17 @@ jobs:
         working-directory: relayer/relayer-migrate
         run: sqlx migrate run
 
+      - name: Offline query data matches the migrations
+        # The steps above compile with SQLX_OFFLINE, which trusts .sqlx instead of
+        # checking it, so stale data would pass every other check in this workflow.
+        working-directory: relayer
+        env:
+          SQLX_OFFLINE: false
+        # DATABASE_URL is passed on the command line because the Makefile derives its
+        # own default from the compose file, which would otherwise win over the
+        # service's port.
+        run: make sqlx-check DATABASE_URL="$DATABASE_URL"
+
       - name: Run tests
         working-directory: relayer
-        run: RUST_BACKTRACE=full make test-run
+        run: RUST_BACKTRACE=full make test-integration

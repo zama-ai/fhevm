@@ -33,6 +33,9 @@ pub mod sign;
 /// over similar-looking inputs.
 pub const DOMAIN_TAG: [u8; 8] = *b"FHEVMCTA";
 
+/// Ceiling on the serialized size of an SNS ciphertext in bytes.
+pub const MAX_SNS_CIPHERTEXT_SERIALIZED_SIZE: u64 = 66 * 1024 * 1024;
+
 /// S3 user-defined metadata key that carries the JSON-serialized
 /// [`CiphertextAttestation`] on every ciphertext object.
 ///
@@ -43,6 +46,28 @@ pub const S3_METADATA_ATTESTATION_KEY: &str = "ct-attestation";
 /// S3 user-defined metadata header that carries the JSON-serialized
 /// [`CiphertextAttestation`] on every ciphertext object.
 pub const S3_METADATA_ATTESTATION_HEADER: &str = "x-amz-meta-ct-attestation";
+
+/// Key prefix of ct128 (SNS) ciphertext objects in Coprocessor buckets.
+pub const S3_CT128_KEY_PREFIX: &str = "ct128";
+
+/// Key prefix of compressed ct64 ciphertext objects in Coprocessor buckets.
+pub const S3_CT64_KEY_PREFIX: &str = "ct64";
+
+/// S3 key of a ct128 (SNS) ciphertext object: `ct128/{hex(handle)}/{context_id}`.
+pub fn s3_ct128_key(handle: &[u8], coprocessor_context_id: U256) -> String {
+    format!(
+        "{S3_CT128_KEY_PREFIX}/{}/{coprocessor_context_id}",
+        hex::encode(handle)
+    )
+}
+
+/// S3 key of a compressed ct64 ciphertext object: `ct64/{hex(handle)}/{context_id}`.
+pub fn s3_ct64_key(handle: &[u8], coprocessor_context_id: U256) -> String {
+    format!(
+        "{S3_CT64_KEY_PREFIX}/{}/{coprocessor_context_id}",
+        hex::encode(handle)
+    )
+}
 
 /// Versioned encoding of the attestation. The version byte is part of the signed
 /// payload, so a stripped or downgraded `version` field flips signature recovery

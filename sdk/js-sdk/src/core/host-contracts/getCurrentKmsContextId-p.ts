@@ -2,7 +2,6 @@ import type { ChecksummedAddress, Uint256BigInt } from '../types/primitives.js';
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
 import { getCurrentKmsContextIdAbi } from './abi-fragments/fragments.js';
 import { getTrustedClient } from '../runtime/CoreFhevm-p.js';
-import { getHostContractVersion, isVersionStrictlyBefore } from './HostContractVersion-p.js';
 import { assertIsUint256 } from '../base/uint.js';
 import { CACHE_TTL_15MIN, createCachedFetch } from '../base/cachedFetch.js';
 
@@ -45,14 +44,8 @@ export function getCurrentKmsContextId(
   return cachedGetCurrentKmsContextId.execute(context, parameters);
 }
 
+// getCurrentKmsContextId has been introduced in protocol v0.12.0 (KMSVerifier v0.2.0)
 async function _getCurrentKmsContextId(context: Context, parameters: Parameters): Promise<ReturnType> {
-  const kmsVerifierVersion = await getHostContractVersion(context, { address: parameters.kmsVerifierAddress });
-
-  // getCurrentKmsContextId has been introduced in protocol v0.12.0 (KMSVerifier v0.2.0)
-  if (isVersionStrictlyBefore(kmsVerifierVersion, { major: 0, minor: 2 })) {
-    return 0n as Uint256BigInt;
-  }
-
   const trustedClient = getTrustedClient(context);
 
   const res = await context.runtime.ethereum.readContract(trustedClient, {

@@ -27,7 +27,7 @@ use connector_utils::types::solana_extra_data::{
     encode_solana_extra_data_context_only, encode_solana_extra_data_mmr_proof,
 };
 use kms_worker::core::event_processor::{
-    ProcessingError,
+    ProcessingErrorKind,
     solana_public_decrypt::{SolanaHost, check_solana_handles_public_decrypt},
 };
 use kms_worker::core::solana::snapshot::RpcHostStateReader;
@@ -162,7 +162,7 @@ async fn a_public_leaf_does_not_authorize_the_handle_that_replaced_it() {
         .expect_err("a PublicDecryptLeaf for the old handle must not authorize its successor");
     // The proof was built at the live leaf count, so the mismatch is classified as a view that
     // may still converge — retried, never granted.
-    assert!(matches!(err, ProcessingError::Recoverable(_)), "got: {err}");
+    assert_eq!(err.kind, ProcessingErrorKind::Recoverable, "got: {err}");
 }
 
 #[tokio::test]
@@ -178,7 +178,7 @@ async fn a_historical_leaf_does_not_authorize_public_decrypt() {
     let err = check_solana_handles_public_decrypt(&host, &[h(30)], &carrier)
         .await
         .expect_err("a historical-access leaf must not prove public-ness");
-    assert!(matches!(err, ProcessingError::Recoverable(_)), "got: {err}");
+    assert_eq!(err.kind, ProcessingErrorKind::Recoverable, "got: {err}");
 }
 
 #[test]
@@ -209,10 +209,11 @@ async fn a_carrier_of_another_version_yields_no_proof() {
             .await
             .expect_err("a carrier of another version must not yield a proof");
         match err {
-            ProcessingError::Irrecoverable(e) => assert!(
-                e.to_string()
+            err if err.kind == ProcessingErrorKind::Irrecoverable => assert!(
+                err.source
+                    .to_string()
                     .contains("requires a PublicDecryptLeaf MMR proof"),
-                "got: {e}"
+                "got: {err}"
             ),
             other => panic!("a missing proof must be terminal, got: {other:?}"),
         }
@@ -232,10 +233,10 @@ async fn the_public_path_accepts_only_its_own_mode_byte() {
         .await
         .expect_err("the public path must reject the historical mode byte");
     match err {
-        ProcessingError::Irrecoverable(e) => {
+        err if err.kind == ProcessingErrorKind::Irrecoverable => {
             assert!(
-                e.to_string().contains("requires MMR proof mode"),
-                "got: {e}"
+                err.source.to_string().contains("requires MMR proof mode"),
+                "got: {err}"
             )
         }
         other => panic!("a wrong mode byte must be terminal, got: {other:?}"),
@@ -255,10 +256,11 @@ async fn a_public_decrypt_request_without_a_proof_refuses_explicitly() {
             .await
             .expect_err("public decrypt without a proof must refuse, not consult a live flag");
         match err {
-            ProcessingError::Irrecoverable(e) => assert!(
-                e.to_string()
+            err if err.kind == ProcessingErrorKind::Irrecoverable => assert!(
+                err.source
+                    .to_string()
                     .contains("requires a PublicDecryptLeaf MMR proof"),
-                "got: {e}"
+                "got: {err}"
             ),
             other => panic!("a proofless public decrypt must be terminal, got: {other:?}"),
         }
@@ -276,8 +278,11 @@ async fn public_decrypt_authorizes_one_handle_per_request() {
         .await
         .expect_err("a public decrypt names exactly one handle");
     match err {
-        ProcessingError::Irrecoverable(e) => {
-            assert!(e.to_string().contains("exactly one handle"), "got: {e}")
+        err if err.kind == ProcessingErrorKind::Irrecoverable => {
+            assert!(
+                err.source.to_string().contains("exactly one handle"),
+                "got: {err}"
+            )
         }
         other => panic!("a multi-handle public decrypt must be terminal, got: {other:?}"),
     }

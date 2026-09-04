@@ -15,7 +15,7 @@ use crate::{Config, ExecutionError};
 use aws_sdk_s3::Client;
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::db_keys::DbKeyId;
-use fhevm_engine_common::gcs_activation::GCS_NOT_ACTIVATED;
+use fhevm_engine_common::gcs_activation::{GCS_GATE_RECHECK, GCS_NOT_ACTIVATED};
 use fhevm_engine_common::healthz_server::{HealthCheckService, HealthStatus, Version};
 use fhevm_engine_common::pg_pool::PostgresPoolManager;
 use fhevm_engine_common::pg_pool::ServiceError;
@@ -238,10 +238,10 @@ pub(crate) async fn run_loop(
 
         // GCS gating: park while the dry-run flag is unset (pre-activation or after rollback). No-op for BCS.
         if mode.gcs_mode() && start_block_state.load(Ordering::SeqCst) == GCS_NOT_ACTIVATED {
-            debug!("GCS not activated (or rolled back); sns-worker paused, re-checking shortly");
+            info!("GCS not activated (or rolled back); sns-worker paused, re-checking shortly");
             tokio::select! {
                 _ = token.cancelled() => return Ok(()),
-                _ = tokio::time::sleep(Duration::from_secs(5)) => {}
+                _ = tokio::time::sleep(GCS_GATE_RECHECK) => {}
             }
             continue;
         }

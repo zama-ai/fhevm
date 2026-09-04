@@ -28,6 +28,7 @@ npx tsx ./test-run.ts
 
 - This example uses the **viem adapter** (`@fhevm/sdk/viem`). The API is identical to the ethers adapter — only the import path and provider type differ.
 - The viem adapter uses `PublicClient<Transport, Chain>` instead of ethers' `ContractRunner`.
+- Await **`client.ready`** (an alias for `client.init()`) once after creating the client. It resolves the protocol versions and loads the WASM; `encryptValues`, `generateTransportKeyPair`, and `decryptValue` throw if it hasn't run. (`decryptPublicValues` is the exception — it works without it.)
 - EIP-712 signing uses `walletClient.signTypedData()` instead of ethers' `wallet.signTypedData()`.
 - The **E2E transport key pair** is generated locally and never leaves the client. Only the corresponding public key is shared (embedded in the EIP-712 permit).
 - The **Zama Protocol** processes decryption requests and returns encrypted shares that only the holder of the transport key pair can decrypt.

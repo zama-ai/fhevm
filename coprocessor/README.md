@@ -277,7 +277,7 @@ Options:
       --log-level <LOG_LEVEL>
           [default: INFO]
       --gas-limit-overprovision-percent <GAS_LIMIT_OVERPROVISION_PERCENT>
-          [default: 120]
+          [default: 300]
       --graceful-shutdown-timeout <GRACEFUL_SHUTDOWN_TIMEOUT>
           [default: 8s]
       --service-name <SERVICE_NAME>

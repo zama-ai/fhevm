@@ -23,7 +23,7 @@ import {HandlesReceiver} from "./HandlesReceiver.sol";
  *         host contracts: an `EmptyUUPSProxy*` proxy is deployed first, then upgraded
  *         to this implementation via `initializeFromEmptyProxy(...)`. The LayerZero
  *         endpoint is set as an immutable in the implementation's constructor; the
- *         proxy's storage holds the `_dstChainIdForEid` map (ERC-7201 namespaced in
+ *         proxy's storage holds the `dstChainIdForEid` map (ERC-7201 namespaced in
  *         `HandlesSender`) and the OApp peers map (ERC-7201 namespaced in
  *         `OAppCoreUpgradeable`).
  *
@@ -45,6 +45,17 @@ import {HandlesReceiver} from "./HandlesReceiver.sol";
 contract ConfidentialBridge is UUPSUpgradeableEmptyProxy, ACLOwnable, HandlesSender, HandlesReceiver {
     /// @notice Returned when `dstEids` and `dstChainIds` initializer arrays differ in length.
     error DstChainIdArrayLengthMismatch(uint256 dstEidsLength, uint256 dstChainIdsLength);
+
+    /// @notice Returned when the initializer's `dstEids` array contains a repeated endpoint id,
+    ///         which would otherwise silently overwrite an earlier pairing.
+    /// @param dstEid The endpoint id that appears more than once.
+    error DuplicateDstEidInInitializer(uint32 dstEid);
+
+    /// @notice Returned when the initializer is given a `dstChainId` of 0, the unset sentinel:
+    ///         seeding it would store an entry that reads as unregistered while still emitting
+    ///         {DstChainIdSet}.
+    /// @param dstEid The endpoint id paired with the zero chain id.
+    error ZeroDstChainIdInInitializer(uint32 dstEid);
 
     /// @notice Returned when {transferOwnership} or {renounceOwnership} is called.
     /// @dev    The bridge owner is bound to the ACL owner; it cannot be moved locally.
@@ -113,6 +124,8 @@ contract ConfidentialBridge is UUPSUpgradeableEmptyProxy, ACLOwnable, HandlesSen
             revert DstChainIdArrayLengthMismatch(dstEids.length, dstChainIds.length);
         }
         for (uint256 i = 0; i < dstEids.length; i++) {
+            if (dstChainIds[i] == 0) revert ZeroDstChainIdInInitializer(dstEids[i]);
+            if (getDstChainId(dstEids[i]) != 0) revert DuplicateDstEidInInitializer(dstEids[i]);
             _setDstChainId(dstEids[i], dstChainIds[i]);
         }
     }

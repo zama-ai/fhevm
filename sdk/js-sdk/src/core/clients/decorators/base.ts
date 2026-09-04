@@ -43,7 +43,17 @@ import {
   type DecryptPublicValuesWithSignaturesParameters,
   type DecryptPublicValuesWithSignaturesReturnType,
 } from '../../actions/base/decryptPublicValuesWithSignatures.js';
-import { ensureResolvedProtocolVersion } from '../../runtime/resolveFhevmVersions-p.js';
+import { ensureFrozenContext } from '../../frozenContext/ensureFrozenContext-p.js';
+import {
+  signLegacyDecryptionPermit,
+  type SignLegacyDecryptionPermitParameters,
+  type SignLegacyDecryptionPermitReturnType,
+} from '../../actions/base/signLegacyDecryptionPermit.js';
+import {
+  signUnifiedDecryptionPermit,
+  type SignUnifiedDecryptionPermitParameters,
+  type SignUnifiedDecryptionPermitReturnType,
+} from '../../actions/base/signUnifiedDecryptionPermit.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -123,13 +133,38 @@ export type BaseActions = {
   /**
    * Signs a decryption permit.
    *
+   * @deprecated Will be deprecated in the next version. Use
+   * {@link signLegacyDecryptionPermit} instead, which pins the V1 permit shape
+   * and stays stable across SDK protocol-API upgrades.
+   */
+  readonly signDecryptionPermit: (parameters: SignDecryptionPermitParameters) => Promise<SignedDecryptionPermit>;
+  /**
+   * Signs a legacy decryption permit.
+   *
    * - Without `delegatorAddress`: Alice signs to decrypt her own encrypted values.
    * - With `delegatorAddress`: Bob signs to decrypt values belonging to `delegatorAddress` (Alice),
    *   after Alice has granted permission via `FHE.delegateUserDecryption()` on-chain.
    *
    * Inspect `isDelegated` on the returned permit to distinguish the two cases.
    */
-  readonly signDecryptionPermit: (parameters: SignDecryptionPermitParameters) => Promise<SignedDecryptionPermit>;
+  readonly signLegacyDecryptionPermit: (
+    parameters: SignLegacyDecryptionPermitParameters,
+  ) => Promise<SignLegacyDecryptionPermitReturnType>;
+  /**
+   * Signs a unified decryption permit (V2).
+   *
+   * Requires an SDK on protocol API v0.14.0+ and a chain whose KMSVerifier/ProtocolConfig
+   * support the unified extraData v2 — throws if the connected chain has not yet upgraded.
+   *
+   * - Without `delegatorAddress`: Alice signs to decrypt her own encrypted values.
+   * - With `delegatorAddress`: Bob signs to decrypt values belonging to `delegatorAddress` (Alice),
+   *   after Alice has granted permission via `FHE.delegateUserDecryption()` on-chain.
+   *
+   * Inspect `isDelegated` on the returned permit to distinguish the two cases.
+   */
+  readonly signUnifiedDecryptionPermit: (
+    parameters: SignUnifiedDecryptionPermitParameters,
+  ) => Promise<SignUnifiedDecryptionPermitReturnType>;
   /** Deserializes a previously serialized e2e transport key pair back into a usable key pair. */
   readonly parseTransportKeyPair: (
     parameters: ParseTransportKeyPairParameters,
@@ -137,11 +172,11 @@ export type BaseActions = {
   /** Serializes an e2e transport key pair to hex strings for storage. */
   readonly serializeTransportKeyPair: (
     parameters: SerializeTransportKeyPairParameters,
-  ) => SerializeTransportKeyPairReturnType;
+  ) => Promise<SerializeTransportKeyPairReturnType>;
   /** Serializes a signed decryption permit to a plain object for storage or transmission. */
   readonly serializeSignedDecryptionPermit: (
     parameters: SerializeSignedDecryptionPermitParameters,
-  ) => SerializeSignedDecryptionPermitReturnType;
+  ) => Promise<SerializeSignedDecryptionPermitReturnType>;
   /** Parses and verifies a previously serialized signed decryption permit. */
   readonly parseSignedDecryptionPermit: (
     parameters: ParseSignedDecryptionPermitParameters,
@@ -160,6 +195,8 @@ function _baseActions(fhevm: Fhevm<FhevmChain>): BaseActions {
     decryptPublicValues: (parameters) => decryptPublicValues(fhevm, parameters),
     decryptPublicValuesWithSignatures: (parameters) => decryptPublicValuesWithSignatures(fhevm, parameters),
     signDecryptionPermit: (parameters) => signDecryptionPermit(fhevm, parameters),
+    signLegacyDecryptionPermit: (parameters) => signLegacyDecryptionPermit(fhevm, parameters),
+    signUnifiedDecryptionPermit: (parameters) => signUnifiedDecryptionPermit(fhevm, parameters),
     parseTransportKeyPair: (parameters) => parseTransportKeyPair(fhevm, parameters),
     serializeTransportKeyPair: (parameters) => serializeTransportKeyPair(fhevm, parameters),
     serializeSignedDecryptionPermit: (parameters) => serializeSignedDecryptionPermit(fhevm, parameters),
@@ -171,7 +208,8 @@ function _baseActions(fhevm: Fhevm<FhevmChain>): BaseActions {
 ////////////////////////////////////////////////////////////////////////////////
 
 async function _initBase(fhevm: FhevmBase<FhevmChain>): Promise<void> {
-  await ensureResolvedProtocolVersion(fhevm);
+  // Resolve the frozen version basis once and cache it on the client.
+  await ensureFrozenContext(fhevm);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

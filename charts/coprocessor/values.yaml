@@ -214,10 +214,12 @@ dbMigration:
   # ConfigMaps/Secrets (for example the IAM DB auth RDS CA ConfigMap), which
   # would not exist yet during a hook on fresh installs or first enablement.
   #
-  # Wave-1 upgrades still require the migration to complete before service
-  # Deployments roll; see RUNBOOK-wave1-block-scope.md. Infra may opt into a
-  # hook only if every Job dependency is pre-existing or rendered as an earlier
-  # hook with a lower hook weight.
+  # The wave1 *_branch shadow tables are deprecated in v0.15 (no v0.15 binary
+  # reads or writes them) but are only dropped by a v0.16 migration; see
+  # coprocessor/fhevm-engine/db-migration/DEPRECATIONS.md. This release
+  # therefore needs no ordering between the migration Job and the service
+  # Deployments. Infra may opt into a hook only if every Job dependency is
+  # pre-existing or rendered as an earlier hook with a lower hook weight.
   annotations: {}
   # annotations:
   #   "helm.sh/hook": "pre-upgrade"
@@ -1194,9 +1196,10 @@ snsWorker:
 
   # Component-specific configuration
   config:
-    # S3 bucket name for ciphertext storage (ct64 and ct128). Rendered as the
-    # S3_BUCKET_NAME env var and referenced by --bucket-name-ct64 /
-    # --bucket-name-ct128. Accepts `value` or `valueFrom`
+    # S3 bucket name for ciphertext storage. Both ct64 and ct128 objects live in
+    # this single bucket, under their `ct64/` and `ct128/` key prefixes.
+    # Rendered as the S3_BUCKET_NAME env var and referenced by --bucket-name.
+    # Accepts `value` or `valueFrom`
     # (secretKeyRef/configMapKeyRef). Leave unset to inject nothing.
     # Example:
     #   s3BucketName:
@@ -1446,7 +1449,7 @@ txSender:
   #     --provider-retry-interval=4s
   #     --health-check-timeout=4s
   #     --log-level=INFO
-  #     --gas-limit-overprovision-percent=120
+  #     --gas-limit-overprovision-percent=300  # default covers the quorum-completing addCiphertextMaterial
   #     --graceful-shutdown-timeout=8s
   #     --service-name=txn-sender
   #     --metric-host-txn-latency=0.1:60.0:0.1

@@ -145,11 +145,7 @@ export class ConsensusWatchdog {
 
   private async pollCiphertextEvents(fromBlock: number, toBlock: number): Promise<CiphertextPollResult> {
     const [submissions, consensuses] = await Promise.all([
-      this.ciphertextCommits.queryFilter(
-        this.ciphertextCommits.filters.AddCiphertextMaterial(),
-        fromBlock,
-        toBlock,
-      ),
+      this.ciphertextCommits.queryFilter(this.ciphertextCommits.filters.AddCiphertextMaterial(), fromBlock, toBlock),
       this.ciphertextCommits.queryFilter(
         this.ciphertextCommits.filters.AddCiphertextMaterialConsensus(),
         fromBlock,
@@ -206,11 +202,7 @@ export class ConsensusWatchdog {
         fromBlock,
         toBlock,
       ),
-      this.inputVerification!.queryFilter(
-        this.inputVerification!.filters.VerifyProofResponse(),
-        fromBlock,
-        toBlock,
-      ),
+      this.inputVerification!.queryFilter(this.inputVerification!.filters.VerifyProofResponse(), fromBlock, toBlock),
     ]);
 
     const pendingProofs = this.clonePendingProofs();
@@ -316,7 +308,10 @@ export class ConsensusWatchdog {
         proofId,
         {
           firstSeenAt: pending.firstSeenAt,
-          submissions: pending.submissions.map((submission) => ({ ...submission, ctHandles: [...submission.ctHandles] })),
+          submissions: pending.submissions.map((submission) => ({
+            ...submission,
+            ctHandles: [...submission.ctHandles],
+          })),
         },
       ]),
     );
@@ -420,7 +415,9 @@ export const mochaHooks = {
       console.warn('[consensus-watchdog] INPUT_VERIFICATION_ADDRESS not set, skipping proof monitoring');
     }
 
-    console.log(`[consensus-watchdog] Starting — gateway=${gatewayRpcUrl} ciphertextCommits=${ciphertextCommitsAddress}`);
+    console.log(
+      `[consensus-watchdog] Starting — gateway=${gatewayRpcUrl} ciphertextCommits=${ciphertextCommitsAddress}`,
+    );
     watchdog = new ConsensusWatchdog(gatewayRpcUrl, ciphertextCommitsAddress, inputVerificationAddress);
     await watchdog.start();
   },

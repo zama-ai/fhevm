@@ -55,6 +55,7 @@ export async function fetchDelegatedUserDecrypt(
     url,
     payload: relayerPayload,
     options,
+    logger: relayerClient.runtime.config.logger,
   });
 
   const result: FetchDelegatedUserDecryptResult = (await request.run()) as FetchDelegatedUserDecryptResult;

@@ -172,10 +172,70 @@ async function activateNewKmsContext(
       epochId = createdEvent.epochId;
     }
   }
-  for (const signer of epochActivationConfirmers) {
-    const txConfirmEpoch = await protocolConfig.connect(signer).confirmEpochActivation(epochId, [], []);
+  const allSigners = await ethers.getSigners();
+  for (const txSender of epochActivationConfirmers) {
+    const node = nodes.find((n) => n.txSenderAddress === txSender.address);
+    const signerAccount = allSigners.find((s) => s.address === node.signerAddress);
+    const { keys, crsList } = await buildEpochAttestations(protocolConfig, signerAccount, contextId, epochId);
+    const txConfirmEpoch = await protocolConfig.connect(txSender).confirmEpochActivation(epochId, keys, crsList);
     await txConfirmEpoch.wait();
   }
+}
+
+// An empty `keys` or `crsList` reverts with EmptyEpochActivationAttestation, so supply one self-signed
+// attestation of each. confirmEpochActivation checks only that the signature recovers to the node signer, so
+// the constant ids need not exist in KMSGeneration, and every signer produces the same dataHash for quorum.
+async function buildEpochAttestations(protocolConfig: any, signerAccount: any, contextId: bigint, epochId: bigint) {
+  const domain = {
+    name: 'ProtocolConfig',
+    version: '1',
+    chainId: (await ethers.provider.getNetwork()).chainId,
+    verifyingContract: await protocolConfig.getAddress(),
+  };
+  const keygenTypes = {
+    KeygenVerification: [
+      { name: 'prepKeygenId', type: 'uint256' },
+      { name: 'keyId', type: 'uint256' },
+      { name: 'keyDigests', type: 'KeyDigest[]' },
+      { name: 'extraData', type: 'bytes' },
+    ],
+    KeyDigest: [
+      { name: 'keyType', type: 'uint8' },
+      { name: 'digest', type: 'bytes' },
+    ],
+  };
+  const crsgenTypes = {
+    CrsgenVerification: [
+      { name: 'crsId', type: 'uint256' },
+      { name: 'maxBitLength', type: 'uint256' },
+      { name: 'crsDigest', type: 'bytes' },
+      { name: 'extraData', type: 'bytes' },
+    ],
+  };
+  const keyId = (4n << 248n) + 1n; // KEY_COUNTER_BASE + 1
+  const prepKeygenId = (3n << 248n) + 1n; // PREP_KEYGEN_COUNTER_BASE + 1
+  const keyDigests = [{ keyType: 0, digest: '0x01020304' }];
+  const crsId = (5n << 248n) + 1n; // CRS_COUNTER_BASE + 1
+  const maxBitLength = 4096n;
+  const crsDigest = '0x01020304';
+  // extraData mirrors abi.encodePacked(EXTRA_DATA_V2, contextId, epochId) with EXTRA_DATA_V2 = 0x02.
+  const extraData = ethers.solidityPacked(['uint8', 'uint256', 'uint256'], [2, contextId, epochId]);
+  const signature = await signerAccount.signTypedData(domain, keygenTypes, {
+    prepKeygenId,
+    keyId,
+    keyDigests,
+    extraData,
+  });
+  const crsSignature = await signerAccount.signTypedData(domain, crsgenTypes, {
+    crsId,
+    maxBitLength,
+    crsDigest,
+    extraData,
+  });
+  return {
+    keys: [{ prepKeygenId, keyId, keyDigests, signature }],
+    crsList: [{ crsId, maxBitLength, crsDigest, signature: crsSignature }],
+  };
 }
 
 function findEventArgs(protocolConfig: any, receipt: any, eventName: string): any {

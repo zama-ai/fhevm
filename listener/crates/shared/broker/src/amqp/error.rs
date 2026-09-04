@@ -40,7 +40,7 @@ pub enum ConsumerError {
     QueueDeclaration {
         queue: String,
         #[source]
-        source: lapin::Error,
+        source: Box<lapin::Error>,
     },
 
     #[error("queue binding failed for '{queue}' to '{exchange}': {source}")]
@@ -48,21 +48,21 @@ pub enum ConsumerError {
         queue: String,
         exchange: String,
         #[source]
-        source: lapin::Error,
+        source: Box<lapin::Error>,
     },
 
     #[error("exchange declaration failed for '{exchange}': {source}")]
     ExchangeDeclaration {
         exchange: String,
         #[source]
-        source: lapin::Error,
+        source: Box<lapin::Error>,
     },
 
     #[error("consumer registration failed for '{consumer_tag}': {source}")]
     ConsumerRegistration {
         consumer_tag: String,
         #[source]
-        source: lapin::Error,
+        source: Box<lapin::Error>,
     },
 
     #[error("message acknowledgement failed: {0}")]

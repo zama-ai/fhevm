@@ -21,7 +21,19 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       # - ./create-database.sql:/docker-entrypoint-initdb.d/create-database.sql
-    command: ["postgres", "-c", "shared_preload_libraries=pg_cron", "-c", "cron.database_name=relayer_db"]
+    # Headroom for parallel test runs: each concurrent test holds about three
+    # connections, so the ceiling bounds `make test-integration TEST_THREADS=N`.
+    shm_size: 256mb
+    command:
+      [
+        "postgres",
+        "-c",
+        "shared_preload_libraries=pg_cron",
+        "-c",
+        "cron.database_name=relayer_db",
+        "-c",
+        "max_connections=500",
+      ]
 
 networks:
   relayer-network:

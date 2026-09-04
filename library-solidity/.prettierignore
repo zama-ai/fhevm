@@ -6,8 +6,10 @@ artifacts
 build
 cache
 coverage
+dependencies
 dist
 node_modules
+out
 types
 
 # files

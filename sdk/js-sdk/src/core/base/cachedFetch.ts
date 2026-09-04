@@ -69,8 +69,8 @@ type CachedFetchResult<TContext, TParams, TResult> = {
    *
    * @example
    * ```ts
-   * cached.clear();                              // evict all settled entries
-   * cached.clear({ includeInflight: true });     // evict everything
+   * cached.clear();                             // evict all settled entries
+   * cached.clear({ includeInflight: true });    // evict everything
    * cached.clear({ key: 'uid:0xABC' });         // evict one settled entry
    * cached.clear({ key: 'uid:0xABC', includeInflight: true }); // evict one entry regardless
    * ```

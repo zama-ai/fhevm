@@ -5,8 +5,12 @@ import type {
   EncodePackedReturnType,
   EncodeParameters,
   EncodeReturnType,
+  EthCallParameters,
+  EthCallResult,
   EthereumModuleFactory,
   GetChainIdReturnType,
+  HashTypedDataParameters,
+  HashTypedDataReturnType,
   TrustedClient,
   ReadContractParameters,
   RecoverTypedDataAddressParameters,
@@ -17,10 +21,10 @@ import type {
 } from '../../core/modules/ethereum/types.js';
 import type { ethers as EthersT } from 'ethers';
 import type { TypedDataField } from 'ethers';
-import type { BytesHex } from '../../core/types/primitives.js';
+import type { Bytes32Hex, BytesHex } from '../../core/types/primitives.js';
 import { asChecksummedAddress } from '../../core/base/address.js';
-import { AbiCoder, solidityPacked, verifyTypedData } from 'ethers';
-import { getEthersContract, getNetwork } from './utils.js';
+import { AbiCoder, TypedDataEncoder, solidityPacked, verifyTypedData } from 'ethers';
+import { getEthersContract, getEthersProvider, getNetwork } from './utils.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 // encodePacked
@@ -79,6 +83,26 @@ export function decode(parameters: DecodeParameters): DecodeReturnType {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// hashTypedData
+////////////////////////////////////////////////////////////////////////////////
+
+export function hashTypedData(parameters: HashTypedDataParameters): HashTypedDataReturnType {
+  const { primaryType, types, domain, message } = parameters;
+
+  // ethers rejects EIP712Domain in the types map and expects a single primary
+  // struct; mirror recoverTypedDataAddress/signTypedData by filtering to it.
+  const primaryTypeFields = types[primaryType];
+  if (primaryTypeFields === undefined) {
+    throw new Error(`Primary type "${primaryType}" not found in types`);
+  }
+  const typesToHash: Record<string, TypedDataField[]> = {
+    [primaryType]: primaryTypeFields,
+  };
+
+  return TypedDataEncoder.hash(domain, typesToHash, message) as Bytes32Hex;
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // readContract
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -89,6 +113,35 @@ export async function readContract(
   const contract = getEthersContract<EthersT.Contract>(hostPublicClient, parameters.address, parameters.abi);
   const result = (await contract.getFunction(parameters.functionName).staticCall(...parameters.args)) as unknown;
   return result;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// call (raw eth_call / STATICCALL)
+////////////////////////////////////////////////////////////////////////////////
+
+export async function call(
+  hostPublicClient: TrustedClient<EthersT.ContractRunner>,
+  parameters: EthCallParameters,
+): Promise<EthCallResult> {
+  const provider = getEthersProvider(hostPublicClient);
+  try {
+    const data = await provider.call({
+      to: parameters.to,
+      data: parameters.data,
+      ...(parameters.gas !== undefined ? { gasLimit: parameters.gas } : {}),
+    });
+    // ethers' `Provider.call` always resolves to a hex string ('0x' for empty).
+    return { success: true, data: data as BytesHex };
+  } catch (err) {
+    // ethers tags a clean EVM revert as CALL_EXCEPTION — a definitive rejection.
+    // Anything else is transport-level and rethrown so the precautionary caller
+    // can degrade gracefully.
+    if (typeof err === 'object' && err !== null && (err as { code?: unknown }).code === 'CALL_EXCEPTION') {
+      const reason = err instanceof Error ? err.message : 'isValidSignature call reverted';
+      return { success: false, reason };
+    }
+    throw err;
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -157,9 +210,11 @@ export const ethereumModule: EthereumModuleFactory = () => {
       encode,
       encodePacked,
       recoverTypedDataAddress,
+      hashTypedData,
       signTypedData,
       getChainId,
       readContract,
+      call,
     }),
   });
 };

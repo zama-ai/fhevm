@@ -54,7 +54,7 @@ interface IConfidentialBridge {
         uint64 lzComposeGas
     ) external view returns (MessagingFeeLZ memory fee);
 
-    function getDstChainId(uint32 dstEid) external view returns (uint256);
+    function getDstChainId(uint32 dstEid) external view returns (uint64);
 }
 
 /**

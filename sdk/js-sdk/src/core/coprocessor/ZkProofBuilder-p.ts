@@ -17,6 +17,7 @@ import type {
 } from '../types/primitives.js';
 import type { SolanaZkProof } from './SolanaZkProof-p.js';
 import type { TfheVersion } from '../../wasm/tfhe/TfheApi.js';
+import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
 import { assert } from '../base/errors/InternalError.js';
 import { isUint64 } from '../base/uint.js';
 import { asBytesHex } from '../base/bytes.js';
@@ -27,13 +28,14 @@ import { createTypedValue, TypedValueArrayBuilder } from '../base/typedValue.js'
 import { toZkProof } from './ZkProof-p.js';
 import { encryptionBitsFromFheType, fheTypeNameFromTypeName } from '../handle/FheType.js';
 import { fetchFheEncryptionKeyWasm } from '../key/fetchFheEncryptionKey.js';
+import { createFhevmClientFrozenContext } from '../frozenContext/fhevmClientFrozenContext-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
 type Context = {
   readonly chain: FhevmChain;
   readonly runtime: WithEncrypt;
-  readonly tfheVersion: TfheVersion;
+  readonly tfheVersion?: TfheVersion;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -147,10 +149,12 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
       contractAddress,
       userAddress,
       extraData,
+      fhevmContext,
     }: {
       readonly contractAddress: string;
       readonly userAddress: string;
       readonly extraData: string;
+      readonly fhevmContext: FhevmClientFrozenContext;
     },
   ): Promise<ZkProof> {
     const {
@@ -158,7 +162,7 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
       aclContractAddress,
       ciphertextWithZkProof,
       extraData: finalExtraData,
-    } = await this.#encodeAndProve(context, contractAddress, userAddress, asBytesHex(extraData));
+    } = await this.#encodeAndProve(context, contractAddress, userAddress, asBytesHex(extraData), fhevmContext);
 
     if (isSolanaHostChainId(chainId)) {
       throw new ZkProofError({
@@ -187,7 +191,7 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
    * type inside `buildInputProofMetaData`) and the returned proof type differ.
    */
   public async buildSolana(
-    context: Context,
+    context: Context & { readonly tfheVersion: TfheVersion },
     {
       contractAddress,
       userAddress,
@@ -203,6 +207,7 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
       contractAddress,
       userAddress,
       asBytesHex('0x00'),
+      createFhevmClientFrozenContext({ tfheVersion: context.tfheVersion }),
     );
 
     if (!isSolanaHostChainId(chainId)) {
@@ -239,14 +244,14 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
     contractAddress: string,
     userAddress: string,
     extraData: BytesHex,
+    fhevmContext: FhevmClientFrozenContext,
   ): Promise<{
     readonly chainId: bigint | number;
     readonly aclContractAddress: string;
     readonly ciphertextWithZkProof: Uint8Array;
     readonly extraData: BytesHex;
   }> {
-    // Fetch the FheEncryptionKey (in wasm format) from the global cache.
-    const fheEncryptionKeyWasm = await fetchFheEncryptionKeyWasm(context, {});
+    const fheEncryptionKeyWasm = await fetchFheEncryptionKeyWasm(context, { fhevmContext });
 
     if (this.#totalBits === 0) {
       throw new ZkProofError({
@@ -283,7 +288,7 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
         fheEncryptionKey: fheEncryptionKeyWasm,
         metaData,
         extraData: asBytesHex(extraData),
-        tfheVersion: context.tfheVersion,
+        tfheVersion: fhevmContext.tfheVersion,
       });
 
     return {
@@ -334,9 +339,10 @@ export async function createZkProof(
     readonly contractAddress: ChecksummedAddress;
     readonly userAddress: ChecksummedAddress;
     readonly extraData: BytesHex;
+    readonly fhevmContext: FhevmClientFrozenContext;
   },
 ): Promise<ZkProof> {
-  const { contractAddress, userAddress, values, extraData } = parameters;
+  const { contractAddress, userAddress, values, extraData, fhevmContext } = parameters;
 
   const builder = new ZkProofBuilderImpl(PRIVATE_TOKEN, {
     ciphertextCapacity: TFHE_ZKPROOF_CIPHERTEXT_CAPACITY,
@@ -351,6 +357,7 @@ export async function createZkProof(
     contractAddress,
     userAddress,
     extraData,
+    fhevmContext,
   });
 
   return zkProof;

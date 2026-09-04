@@ -33,7 +33,7 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
      */
     string private constant CONTRACT_NAME = 'CiphertextCommits';
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 5;
+    uint256 private constant MINOR_VERSION = 6;
     uint256 private constant PATCH_VERSION = 0;
 
     /**
@@ -42,7 +42,7 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
      * This constant does not represent the number of time a specific contract have been upgraded,
      * as a contract deployed from version VX will have a REINITIALIZER_VERSION > 2.
      */
-    uint64 private constant REINITIALIZER_VERSION = 6;
+    uint64 private constant REINITIALIZER_VERSION = 7;
 
     /**
      * @notice The contract's variable storage struct (@dev see ERC-7201)
@@ -84,8 +84,9 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
         /// @notice The coprocessor context ID associated to the add ciphertext
         mapping(bytes32 addCiphertextHash => uint256 contextId) addCiphertextContextId;
         /// @notice The priority coprocessor transaction sender that finalized a handle.
-        /// @dev Raw sender arrays can include non-priority submissions before or after finalization.
-        ///      When set, public outputs expose the singleton priority result for this handle.
+        /// @dev Deprecated. Never written again, but still read so handles finalized under the removed
+        ///      priority coprocessor feature keep reporting the single sender their consensus event
+        ///      carries. See {_getAddCiphertextMaterialConsensusTxSenders}.
         mapping(bytes32 ctHandle => address coprocessorTxSenderAddress) priorityConsensusTxSender;
     }
 
@@ -110,11 +111,11 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
     function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {}
 
     /**
-     * @notice Re-initializes the contract from V4.
+     * @notice Re-initializes the contract from V5.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV5() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    function reinitializeV6() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /**
      * @notice See {ICiphertextCommits-addCiphertextMaterial}.
@@ -163,35 +164,29 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
 
         // Send the event if and only if the consensus is reached in the current response call.
         // This means a "late" response will not be reverted, just ignored and no event will be emitted
-        if (!$.isCiphertextMaterialAdded[ctHandle]) {
-            bool finalizedByPriority = msg.sender == GATEWAY_CONFIG.getPriorityCoprocessorTxSender();
-            if (
-                finalizedByPriority ||
-                (GATEWAY_CONFIG.getPriorityCoprocessorTxSender() == address(0) &&
-                    _isConsensusReached($.addCiphertextHashCounters[addCiphertextHash]))
-            ) {
-                $.ciphertextDigests[ctHandle] = ciphertextDigest;
-                $.snsCiphertextDigests[ctHandle] = snsCiphertextDigest;
-                $.keyIds[ctHandle] = keyId;
+        if (
+            !$.isCiphertextMaterialAdded[ctHandle] &&
+            _isConsensusReached($.addCiphertextHashCounters[addCiphertextHash])
+        ) {
+            $.ciphertextDigests[ctHandle] = ciphertextDigest;
+            $.snsCiphertextDigests[ctHandle] = snsCiphertextDigest;
+            $.keyIds[ctHandle] = keyId;
 
-                // A ciphertext handle should only be added once, ever
-                $.isCiphertextMaterialAdded[ctHandle] = true;
+            // A ciphertext handle should only be added once, ever
+            $.isCiphertextMaterialAdded[ctHandle] = true;
 
-                // Public getters receive a handle, but raw sender lists are stored by material hash.
-                // Pin the handle to the material hash that actually finalized.
-                $.ctHandleConsensusHash[ctHandle] = addCiphertextHash;
-                if (finalizedByPriority) {
-                    $.priorityConsensusTxSender[ctHandle] = msg.sender;
-                }
+            // A "late" valid coprocessor could still see its transaction sender address be added to
+            // the list after consensus. This variable is here to be able to retrieve this list later
+            // by only knowing the handle, since a consensus can only happen once per handle
+            $.ctHandleConsensusHash[ctHandle] = addCiphertextHash;
 
-                emit AddCiphertextMaterialConsensus(
-                    ctHandle,
-                    keyId,
-                    ciphertextDigest,
-                    snsCiphertextDigest,
-                    _getAddCiphertextMaterialConsensusTxSenders($, ctHandle)
-                );
-            }
+            emit AddCiphertextMaterialConsensus(
+                ctHandle,
+                keyId,
+                ciphertextDigest,
+                snsCiphertextDigest,
+                $.coprocessorTxSenderAddresses[addCiphertextHash]
+            );
         }
     }
 
@@ -224,6 +219,8 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
                 revert CiphertextMaterialNotFound(ctHandles[i]);
             }
 
+            // Get the unique hash associated to the handle and use it to get the list of coprocessor
+            // transaction sender address that were involved in the consensus
             address[] memory coprocessorTxSenderAddresses = _getAddCiphertextMaterialConsensusTxSenders(
                 $,
                 ctHandles[i]
@@ -263,6 +260,8 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
                 revert CiphertextMaterialNotFound(ctHandles[i]);
             }
 
+            // Get the unique hash associated to the handle and use it to get the list of coprocessor
+            // transaction sender address that were involved in the consensus
             address[] memory coprocessorTxSenderAddresses = _getAddCiphertextMaterialConsensusTxSenders(
                 $,
                 ctHandles[i]
@@ -342,9 +341,12 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
 
     /**
      * @notice Returns the coprocessor transaction senders exposed as consensus participants.
-     * @dev In priority mode, the raw sender list can include non-priority submissions. The priority
-     *      marker records that this handle finalized through priority mode, so public outputs stay
-     *      aligned with the singleton consensus event.
+     * @dev The raw sender list keeps growing after finalization, since a "late" valid coprocessor
+     *      still gets appended to it. Handles finalized under the removed priority coprocessor
+     *      feature reached consensus through a single sender, which is what their
+     *      `AddCiphertextMaterialConsensus` event carries, so the deprecated marker is still read to
+     *      keep these views consistent with it. The marker is never written again, so handles
+     *      finalized since fall through to the raw list.
      */
     function _getAddCiphertextMaterialConsensusTxSenders(
         CiphertextCommitsStorage storage $,
@@ -357,6 +359,7 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
             return txSenders;
         }
 
+        // The hash remains the default value (0x0) until the consensus is reached.
         bytes32 addCiphertextHash = $.ctHandleConsensusHash[ctHandle];
         return $.coprocessorTxSenderAddresses[addCiphertextHash];
     }

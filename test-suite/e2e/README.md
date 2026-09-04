@@ -40,6 +40,20 @@ Run via the fhevm-cli profiles `erc1271-user-decryption`,
 `standard`) — see `test-suite/fhevm/README.md` — or directly with
 `npx hardhat test --grep "<describe title>" --network staging`.
 
+## Operator edge-case suite
+
+Limit-case coverage for the arithmetic, shift, rotate and cast operators:
+overshift, div/rem boundaries and the `DivisionByZero()` revert, over/underflow
+wrapping, and narrowing-cast truncation.
+
+Expected values live in `test/fhevmOperations/shiftSemantics.ts`. Shift
+semantics change in tfhe-rs >= 1.7.0, so flip `OVERSHIFT_RETURNS_ZERO` there in
+the same change as the engine version bump.
+
+```shell
+./fhevm-cli test operators --grep "edge cases" --verbose
+```
+
 ## Smoke runner (inputFlow)
 
 Runs a single on-chain smoke flow (input + add42 + decrypt) using Hardhat as a runtime
@@ -87,6 +101,7 @@ Post-success cleanup will attempt to cancel any remaining pending transactions, 
 cleanup step do not fail the smoke run.
 
 To derive signer addresses from a mnemonic (for funding):
+
 ```shell
 # Using Foundry's cast
 cast wallet address --mnemonic "your mnemonic here" --mnemonic-index 0

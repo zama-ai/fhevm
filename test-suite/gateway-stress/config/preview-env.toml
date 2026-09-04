@@ -1,0 +1,65 @@
+# The contract allowed for user decryption on user_ct_handles
+allowed_contract = "0x5FbDB2315678afecb367f032d93F642f64180aa3"
+
+# The time during which the tool will send request bursts to the Gateway/Connectors' DBs
+# Format documentation: https://docs.rs/humantime/latest/humantime/
+tests_duration = "500ms"
+
+# The time to wait between two request bursts
+# Format documentation: https://docs.rs/humantime/latest/humantime/
+tests_interval = "1s"
+
+# The number of parallel requests to send to the Gateway/Connectors' DBs, at each interval
+parallel_requests = 1
+
+# If requests burst must be sent sequentially only when the previous one has been completed
+# Defaults to false, if set to true, then `tests_interval` is ignored
+# sequential = false
+
+# The ciphertexts to use for public decryptions
+[[public_ct]]
+# The handle used of the ciphertext
+handle = "0x207ce7b7e464a3cc33a8426f7e3edeef9bbbc8888bff00000000000030390500"
+
+# The ciphertexts to use for user decryptions
+[[user_ct]]
+# The handle used of the ciphertext
+handle = "0x2ba383e55ad5b728293550c4985946422eaa162d4dff00000000000030390500"
+
+# Configuration section for stress test using the Gateway chain
+[blockchain]
+# Gateway HTTP RPC URL endpoint (required)
+gateway_url = "http://anvil-gateway-anvil-node:8546"
+
+# Chain ID for the Host network (required)
+host_chain_id = 12345
+
+# Chain ID for the Gateway network (required)
+gateway_chain_id = 54321
+
+# Address of the Decryption contract (required)
+decryption_address = "0x5FC8d32690cc91D4c39d9d3abcBD16989F875707"
+
+# Wallet's private key as a hex string (funded deployer account on the Gateway chain)
+private_key = "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+
+
+# Configuration section for stress test using the Connectors' DBs
+[database]
+# The URLs of the Connectors' DBs (one per KMS-connector party in the four-party-threshold-kms scenario)
+urls = [
+    "postgresql://zama:zama@postgres-connector-1:5432/connector",
+    "postgresql://zama:zama@postgres-connector-2:5432/connector",
+    "postgresql://zama:zama@postgres-connector-3:5432/connector",
+    "postgresql://zama:zama@postgres-connector-4:5432/connector",
+]
+
+# The pool size for each connection to a Connector's DB
+pool_size = 10
+
+# The timeout for the connection to a Connector's DB
+connection_timeout = "30s"
+
+# The number of requests to insert in one insertion query (should be smaller than the
+# `events_batch_size` setting of the KMS Workers)
+insertion_chunk_size = 10

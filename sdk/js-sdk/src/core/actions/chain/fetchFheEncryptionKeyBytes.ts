@@ -4,6 +4,7 @@ import type { FhevmChain } from '../../types/fhevmChain.js';
 import type { FheEncryptionKeyBytes } from '../../types/fheEncryptionKey.js';
 import type { RelayerKeyUrlOptions } from '../../types/relayer.js';
 import { fetchFheEncryptionKeyBytes as fetchFheEncryptionKeyBytes_ } from '../../key/fetchFheEncryptionKeyBytes.js';
+import { initPublicAction } from '../../runtime/CoreFhevm-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -20,5 +21,6 @@ export async function fetchFheEncryptionKeyBytes(
   fhevm: Fhevm<FhevmChain, FhevmRuntime, OptionalNativeClient>,
   parameters?: FetchFheEncryptionKeyBytesParameters,
 ): Promise<FetchFheEncryptionKeyBytesReturnType> {
-  return fetchFheEncryptionKeyBytes_(fhevm, parameters);
+  const fhevmContext = await initPublicAction(fhevm);
+  return fetchFheEncryptionKeyBytes_(fhevm, { ...parameters, fhevmContext });
 }

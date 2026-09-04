@@ -17,6 +17,14 @@ pub(crate) static VERIFY_PROOF_FAIL_COUNTER: LazyLock<IntCounter> = LazyLock::ne
     .unwrap()
 });
 
+pub(crate) static VERIFY_PROOF_REPLAY_COUNTER: LazyLock<IntCounter> = LazyLock::new(|| {
+    register_int_counter!(
+        "coprocessor_gw_listener_verify_proof_replay_counter",
+        "Number of Gateway-accepted input proofs scheduled for local replay"
+    )
+    .unwrap()
+});
+
 pub(crate) static GET_BLOCK_NUM_SUCCESS_COUNTER: LazyLock<IntCounter> = LazyLock::new(|| {
     register_int_counter!(
         "coprocessor_gw_listener_get_block_num_success_counter",

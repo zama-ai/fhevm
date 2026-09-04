@@ -3,7 +3,9 @@ pub mod types;
 pub mod user;
 
 pub use public::{init_public_decryption_response_listener, public_decryption_burst};
-pub use user::{init_user_decryption_response_listener, user_decryption_burst};
+pub use user::{
+    init_user_decryption_response_listener, user_decryption_burst, user_decryption_v2_burst,
+};
 
 use crate::blockchain::manager::AppProvider;
 use alloy::{

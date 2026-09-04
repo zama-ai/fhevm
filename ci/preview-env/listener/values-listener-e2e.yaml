@@ -24,18 +24,15 @@
 #
 # OPEN VERIFICATION POINTS (this producer path is new to the preview; validate
 # on the first multi-run and adjust here, NOT in the chart):
-#   - listener-core image tag (LISTENER_VERSION in the workflow) must be a
-#     published tag compatible with the coprocessor host_listener_consumer
-#     version (COPROCESSOR_VERSION); the broker payload format has to match.
 #   - anvil must support the block_fetcher RPC the listener uses
 #     (eth_getBlockReceipts for the default `block_receipts` fetcher).
 #   - the broker topic keying (chain_id 12345) must match the consumer's
 #     --chain-id (12345) so published events are actually consumed.
 image:
   repository: hub.zama.org/ghcr/zama-ai/fhevm/listener/listener-core
-  # Pinned to the tag zama-zws/gitops's eth-listener runs (values-zws-dev.yaml).
-  # Overridable via the LISTENER_VERSION workflow env. Chart appVersion (0.1.0)
-  # is the fallback if left empty, but that tag may not exist in the ghcr mirror.
+  # The workflow ALWAYS --set-string overrides this tag, resolved like every
+  # other fhevm image (same commit as the coprocessor consumer, so the broker
+  # payload format matches by construction). Manual-helm default only.
   tag: "cc8fc16-dev"
   pullPolicy: IfNotPresent
 

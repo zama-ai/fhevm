@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO computations (\n            output_handle,\n            dependencies,\n            fhe_operation,\n            is_scalar,\n            dependence_chain_id,\n            transaction_id,\n            host_chain_id,\n            block_number\n        )\n        VALUES\n            ($1, $2, $3, FALSE, $4, $5, $6, $7),\n            ($8, $9, $3, FALSE, $10, $11, $6, $7),\n            ($12, $13, $3, FALSE, $14, $15, $6, $16)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "ByteaArray",
+        "Int2",
+        "Bytea",
+        "Bytea",
+        "Int8",
+        "Int8",
+        "Bytea",
+        "ByteaArray",
+        "Bytea",
+        "Bytea",
+        "Bytea",
+        "ByteaArray",
+        "Bytea",
+        "Bytea",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c1cf07faee00b73b8aa1dbe7929f23b31c89526eaf2ea49493ebfdee6c390d79"
+}

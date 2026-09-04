@@ -89,3 +89,9 @@ because some runtimes expose a stub that throws), and otherwise inflates with a
 bundled, dependency-free pure-JS inflater. This keeps the small compressed payload
 working on older browsers and other runtimes that lack a working `DecompressionStream`
 — no consumer action required.
+
+## Related
+
+- [Runtime configuration](runtime-configuration.md) — threading, COOP/COEP, and WASM asset loading.
+- [Clients](clients.md) — the client factories that load these WASM modules.
+- [Architecture](architecture.md) — the runtime and module design behind the loaders.

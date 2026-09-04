@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { base58 } from '@scure/base';
 
+import { createFhevmClientFrozenContext } from '../../core/frozenContext/fhevmClientFrozenContext-p.js';
 import { submitInputProof } from './submitInputProof.js';
 
 const CHAIN_ID = (1n << 63n) | 12345n;
@@ -54,12 +55,20 @@ function succeeded(handles: readonly InputHandle[]): Response {
   });
 }
 
-function context(): { readonly runtime: FhevmRuntime; readonly solanaChain: ReturnType<typeof solanaChain> } {
+function context(): {
+  readonly runtime: FhevmRuntime;
+  readonly solanaChain: ReturnType<typeof solanaChain>;
+  readonly fhevmContext: ReturnType<typeof createFhevmClientFrozenContext>;
+} {
   const runtime = {
     config: { auth: { type: 'ApiKeyHeader', value: 'test-key' } },
     relayer: { fetchCoprocessorSignatures },
   } as unknown as FhevmRuntime;
-  return { runtime, solanaChain: solanaChain() };
+  return {
+    runtime,
+    solanaChain: solanaChain(),
+    fhevmContext: createFhevmClientFrozenContext({}),
+  };
 }
 
 function solanaChain() {

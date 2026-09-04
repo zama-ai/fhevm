@@ -273,9 +273,11 @@ async fn gcs_bridge_does_not_fall_back_to_public() {
     insert_ready_pair(&pool, &src, &dst).await;
     sqlx::query(
         "INSERT INTO upgrade_state
-            (stack_role, state, status, proposal_id, version, start_block, end_block, updated_at)
-         VALUES ('GCS', 'UpgradeActivated', 'in_progress', '\\x02', 'v0.15', 1, 2, NOW())
-         ON CONFLICT (stack_role) DO UPDATE
+            (stack_role, state, status, proposal_id, version,
+             start_block, end_block, host_chain_id, updated_at)
+         VALUES ('GCS', 'UpgradeActivated', 'in_progress', '\\x02', 'v0.15',
+                 1, 2, 1, NOW())
+         ON CONFLICT (stack_role, host_chain_id) DO UPDATE
          SET state = EXCLUDED.state, status = EXCLUDED.status",
     )
     .execute(&pool)

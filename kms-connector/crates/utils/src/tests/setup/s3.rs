@@ -3,7 +3,9 @@ use alloy::{
     primitives::{B256, U256},
     signers::local::PrivateKeySigner,
 };
-use ciphertext_attestation::{CiphertextAttestationPayload, CiphertextFormat, Version};
+use ciphertext_attestation::{
+    CiphertextAttestationPayload, CiphertextFormat, S3_CT128_KEY_PREFIX, Version,
+};
 use std::{path::PathBuf, str::FromStr};
 use testcontainers::{
     ContainerAsync, GenericImage, ImageExt,
@@ -22,7 +24,7 @@ pub const MINIO_SECRET_KEY: &str = "fhevm-access-secret-key";
 pub const S3_CT_HANDLE: &str = "5a88e7aa46f312ff70df6e84c85eb40cdfd42b18a9ff00000000000030390500";
 pub const S3_CT_DIGEST: &str = "3a002df21130bda55f78d4403a73007a797f4a888174a620bbffc9052a045239";
 
-pub const S3_CT_BUCKET: &str = "ct128";
+pub const S3_CT_BUCKET: &str = "copro";
 const COPROCESSOR_CONTEXT_ID: U256 = U256::ONE;
 
 /// The `keyId` bound by the test ciphertext attestation. On-chain `SnsCiphertextMaterial`
@@ -84,7 +86,7 @@ impl S3Instance {
             mc anonymous set public myminio/kms-public &&
             mc anonymous set public myminio/{S3_CT_BUCKET} &&
             mc cp /data/{S3_CT_DIGEST} --attr \"ct-attestation='{attestation}'\" \
-                myminio/{S3_CT_BUCKET}/{S3_CT_HANDLE}/{COPROCESSOR_CONTEXT_ID}",
+                myminio/{S3_CT_BUCKET}/{S3_CT128_KEY_PREFIX}/{S3_CT_HANDLE}/{COPROCESSOR_CONTEXT_ID}",
             self.url
         );
 

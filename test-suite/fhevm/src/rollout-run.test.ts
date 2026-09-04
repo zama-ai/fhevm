@@ -3,9 +3,17 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { receiptJsonlPath, receiptMarkdownPath, requireDockerSnapshot } from "./commands/rollout-receipt";
+import {
+  diagnosticLogArgs,
+  diagnosticLogOutput,
+  kmsConnectorPartyIds,
+  receiptJsonlPath,
+  receiptMarkdownPath,
+  requireDockerSnapshot,
+} from "./commands/rollout-receipt";
 import {
   type RolloutRunContext,
+  createRolloutContext,
   loadRolloutRunbook,
   matchesExpectedTestFailure,
   runRolloutRunbook,
@@ -72,6 +80,10 @@ const fakeContext = () => {
     async upgradeRuntimeGroup(group, options = {}) {
       calls.push(`upgrade:${group}:${options.lockFile ?? ""}`);
     },
+    async resolveVersionLock(name, options) {
+      calls.push(`resolve-lock:${name}:${options.versions.CORE_VERSION ?? ""}`);
+      return `/tmp/${name}.lock.json`;
+    },
     async writeVersionLock(name, options) {
       calls.push(`lock:${name}:${options.versions.RELAYER_VERSION ?? ""}`);
       return `/tmp/${name}.lock.json`;
@@ -102,7 +114,9 @@ describe("rollout runbook", () => {
   });
 
   test("loads the checked-in v0.12 to v0.13 runbook", async () => {
-    await expect(loadRolloutRunbook(path.join(CLI_DIR, "rollouts/v0.12-to-v0.13/run.ts"))).resolves.toBeFunction();
+    await expect(
+      loadRolloutRunbook(path.join(CLI_DIR, "rollouts/v0.12-to-v0.13-protocol-upgrade/run.ts")),
+    ).resolves.toBeFunction();
   });
 
   test("executes runbook helpers in code order", async () => {
@@ -154,6 +168,35 @@ describe("rollout runbook", () => {
     });
   });
 
+  test("derives extracted rollout locks from one resolved target snapshot", async () => {
+    await withTempStateDir(async () => {
+      const first = presetBundle("latest-main", "abcdef0", "latest-main-abcdef0.json");
+      const second = presetBundle("latest-main", "1234567", "latest-main-1234567.json");
+      let resolveCalls = 0;
+      const context = createRolloutContext(undefined, {
+        async previewBundle() {
+          resolveCalls += 1;
+          return resolveCalls === 1 ? first : second;
+        },
+      });
+      const { resolveVersionLock } = context;
+
+      const baselineFile = await resolveVersionLock("00-baseline", {
+        versions: { CORE_VERSION: "v0.13.10" },
+      });
+      const targetFile = await resolveVersionLock("01-target", {
+        versions: { CORE_VERSION: "v0.13.20" },
+      });
+      const baseline = await readJson<VersionBundle>(baselineFile);
+      const target = await readJson<VersionBundle>(targetFile);
+
+      expect(resolveCalls).toBe(1);
+      expect(baseline.env.CORE_VERSION).toBe("v0.13.10");
+      expect(target.env.CORE_VERSION).toBe("v0.13.20");
+      expect({ ...target.env, CORE_VERSION: baseline.env.CORE_VERSION } as Record<string, string>).toEqual(baseline.env);
+    });
+  });
+
   test("writes a rollout receipt with applied lock deltas", async () => {
     await withTempStateDir(async (stateDir) => {
       const first = path.join(stateDir, "rollout", "00-baseline.lock.json");
@@ -197,6 +240,45 @@ describe("rollout runbook", () => {
         containers: [{ image: "image", imageId: "sha256:id", name: "kms-core", state: "running" }],
       }),
     ).not.toThrow();
+  });
+
+  test("bounds diagnostic logs while retaining the last hour", () => {
+    expect(diagnosticLogArgs("kms-core")).toEqual([
+      "docker",
+      "logs",
+      "--since",
+      "1h",
+      "--tail",
+      "10000",
+      "kms-core",
+    ]);
+  });
+
+  test("filters exporter noise before bounding diagnostic logs", () => {
+    const output = diagnosticLogOutput(
+      ["root cause", ...Array.from({ length: 2100 }, () => "BatchSpanProcessor.ExportError")].join("\n"),
+      "",
+      2,
+    );
+    expect(output).toBe("root cause");
+
+    const bounded = diagnosticLogOutput(["first", "second", "third", "last"].join("\n"), "", 2);
+    expect(bounded).toContain("first");
+    expect(bounded).toContain("last");
+    expect(bounded.split("\n")).toHaveLength(3);
+  });
+
+  test("discovers the exact connector databases from partial Docker state", () => {
+    expect(kmsConnectorPartyIds(["kms-connector-db-migration"])).toEqual([1]);
+    expect(
+      kmsConnectorPartyIds([
+        "kms-connector-4-db-migration",
+        "kms-connector-db-migration",
+        "kms-connector-3-db-migration",
+        "kms-connector-4-db-migration",
+        "kms-connector-3-kms-worker",
+      ]),
+    ).toEqual([1, 3, 4]);
   });
 
   test("records a failed required Docker snapshot before rejecting it", async () => {

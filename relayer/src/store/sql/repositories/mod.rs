@@ -1,4 +1,4 @@
-pub mod block_number_repo;
+pub mod chain_cursor_repo;
 pub mod cron_task;
 pub mod expiry_repo;
 pub mod health;
@@ -18,10 +18,11 @@ use crate::{
         timeout_repo::TimeoutRepository,
     },
 };
-use block_number_repo::BlockNumberRepository;
+use chain_cursor_repo::ChainCursorRepository;
 use input_proof_repo::InputProofRepository;
 use public_decrypt_repo::PublicDecryptRepository;
 use std::{sync::Arc, time::Duration};
+use tokio_util::sync::CancellationToken;
 use tracing::warn;
 use user_decrypt_repo::UserDecryptRepository;
 
@@ -33,7 +34,7 @@ pub struct Repositories {
     pub input_proof: Arc<InputProofRepository>,
     pub public_decrypt: Arc<PublicDecryptRepository>,
     pub user_decrypt: Arc<UserDecryptRepository>,
-    pub block_number: Arc<BlockNumberRepository>,
+    pub chain_cursor: Arc<ChainCursorRepository>,
     pub timeout_repo: Arc<TimeoutRepository>,
     pub expiry_repo: Arc<ExpiryRepository>,
 
@@ -52,7 +53,7 @@ impl Repositories {
             input_proof: Arc::new(InputProofRepository::new((*pg_client).clone())),
             public_decrypt: Arc::new(PublicDecryptRepository::new((*pg_client).clone())),
             user_decrypt: Arc::new(UserDecryptRepository::new((*pg_client).clone())),
-            block_number: Arc::new(BlockNumberRepository::new((*pg_client).clone())),
+            chain_cursor: Arc::new(ChainCursorRepository::new((*pg_client).clone())),
             timeout_repo: Arc::new(TimeoutRepository::new(
                 (*pg_client).clone(),
                 config.cron.clone(),
@@ -73,15 +74,21 @@ impl Repositories {
 
     /// Register background workers with the orchestrator for proper lifecycle management.
     /// The timeout worker always starts; the expiry worker only starts when enabled.
+    /// `shutdown` stops the workers and their panic-restart supervisor loops.
     pub async fn register_background_workers(
         &self,
         orchestrator: &Arc<Orchestrator>,
         cron_config: crate::config::settings::CronConfig,
+        shutdown: CancellationToken,
     ) -> anyhow::Result<()> {
         orchestrator
             .spawn_task_and_wait_ready(
                 "timeout_worker",
-                create_timeout_worker_future((*self.pg_client).clone(), cron_config.clone()),
+                create_timeout_worker_future(
+                    (*self.pg_client).clone(),
+                    cron_config.clone(),
+                    shutdown.clone(),
+                ),
                 async { Ok(()) }, // Ready immediately
             )
             .await?;
@@ -97,7 +104,11 @@ impl Repositories {
             orchestrator
                 .spawn_task_and_wait_ready(
                     "expiry_worker",
-                    create_expiry_worker_future((*self.pg_client).clone(), cron_config.clone()),
+                    create_expiry_worker_future(
+                        (*self.pg_client).clone(),
+                        cron_config.clone(),
+                        shutdown,
+                    ),
                     async { Ok(()) }, // Ready immediately
                 )
                 .await?;

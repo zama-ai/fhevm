@@ -139,6 +139,8 @@ async fn connect_options_for_database_url_with(
     }
 }
 
+/// URL with an IAM token embedded, for the `resolve_database_url` binary only.
+/// To connect, use [`connect_options_for_database_url`] instead.
 pub async fn resolve_runtime_database_url(
     database_url: &DatabaseURL,
 ) -> Result<String, DatabaseConnectionError> {

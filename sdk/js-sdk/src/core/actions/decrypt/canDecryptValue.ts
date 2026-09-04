@@ -6,6 +6,7 @@ import type { EncryptedValueLike } from '../../types/encryptedTypes.js';
 import { canDecryptValuesFromPairs as canDecryptValuesFromPairs_ } from '../../host-contracts/canDecryptValuesFromPairs.js';
 import { addressToChecksummedAddress, assertIsAddress } from '../../base/address.js';
 import { assertIsEncryptedValueLike, toFhevmHandle } from '../../handle/FhevmHandle.js';
+import { initPublicAction } from '../../runtime/CoreFhevm-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -81,6 +82,9 @@ export async function canDecryptValue(
 
   assertIsAddress(contractAddress, {});
   assertIsEncryptedValueLike(encryptedValue, { subject: `encryptedValue` });
+
+  // context is not needed
+  await initPublicAction(fhevm);
 
   const results = await canDecryptValuesFromPairs_(fhevm, {
     ...rest,

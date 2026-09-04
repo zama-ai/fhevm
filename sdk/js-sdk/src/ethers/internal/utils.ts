@@ -30,6 +30,33 @@ export async function getNetwork(hostPublicClient: TrustedClient<EthersT.Contrac
   throw new Error('Cannot get network: client is neither a Provider nor a ContractRunner with a provider.');
 }
 
+/**
+ * Get an ethers `Provider` from an unknown client.
+ * Supports a `Provider` directly, or a `ContractRunner` that carries one.
+ */
+export function getEthersProvider(hostPublicClient: TrustedClient<EthersT.ContractRunner>): EthersT.Provider {
+  const runner = trustedClientToEthersContractRunner(hostPublicClient);
+
+  if ((runner as unknown) === undefined || (runner as unknown) === null) {
+    throw new Error('Cannot get provider: client is null or undefined.');
+  }
+
+  const runnerRecord = runner as unknown as Record<string, unknown>;
+  if (
+    typeof runner === 'object' &&
+    typeof runnerRecord.call === 'function' &&
+    typeof runnerRecord.getNetwork === 'function'
+  ) {
+    return runner as unknown as EthersT.Provider;
+  }
+
+  if (runner.provider != null) {
+    return runner.provider;
+  }
+
+  throw new Error('Cannot get provider: client is neither a Provider nor a ContractRunner with a provider.');
+}
+
 // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-parameters
 export function getEthersContract<C>(
   hostPublicClient: TrustedClient<EthersT.ContractRunner>,

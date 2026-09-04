@@ -1,5 +1,6 @@
 use crate::decryption::types::DecryptionType;
-use clap::{Args, Parser, Subcommand, command};
+use alloy::primitives::U256;
+use clap::{Args, Parser, Subcommand};
 use std::{path::PathBuf, str::FromStr, time::Duration};
 
 #[derive(Parser)]
@@ -26,6 +27,14 @@ pub struct Cli {
     #[arg(short, long)]
     #[clap(value_parser = humantime::parse_duration)]
     pub interval: Option<Duration>,
+
+    /// Sets the initial value of the decryption id counter (DB path only).
+    ///
+    /// Accepts a decimal or `0x`-prefixed hexadecimal `U256`. Defaults to a very high value to
+    /// avoid colliding with ids that could be used in the testing environment.
+    #[arg(long)]
+    #[clap(value_parser = U256::from_str)]
+    pub id_counter_start: Option<U256>,
 
     #[command(subcommand)]
     pub subcommand: Subcommands,

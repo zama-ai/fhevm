@@ -6,6 +6,7 @@ use alloy::{eips::BlockId, primitives::U256, providers::Provider};
 use anyhow::anyhow;
 use connector_utils::types::extra_data::ExtraData;
 use fhevm_host_bindings::protocol_config::ProtocolConfig::{self, ProtocolConfigInstance};
+use kms_connector_api::ErrorCode;
 use sqlx::{Pool, Postgres, types::chrono::Utc};
 use tracing::{info, warn};
 
@@ -50,6 +51,7 @@ impl<P: Provider> ContextManager for DbContextManager<P> {
             LocalCheck::Valid => Ok(()),
             LocalCheck::Destroyed => Err(RequestCheckError::irrecoverable(
                 RequestCheckKind::KmsContext,
+                ErrorCode::KmsContextDestroyed,
                 anyhow!(
                     "Context #{context_id}{} has been destroyed",
                     epoch_id
@@ -143,6 +145,7 @@ impl<P: Provider> DbContextManager<P> {
         if !context_valid {
             return Err(RequestCheckError::recoverable(
                 RequestCheckKind::KmsContext,
+                ErrorCode::KmsContextInvalid,
                 anyhow!("Context #{context_id} is not valid on-chain (yet?)"),
             ));
         }
@@ -166,6 +169,7 @@ impl<P: Provider> DbContextManager<P> {
         if !epoch_valid {
             return Err(RequestCheckError::recoverable(
                 RequestCheckKind::KmsContext,
+                ErrorCode::KmsContextInvalid,
                 anyhow!("Epoch #{epoch_id} of context #{context_id} is not active on-chain (yet?)"),
             ));
         }

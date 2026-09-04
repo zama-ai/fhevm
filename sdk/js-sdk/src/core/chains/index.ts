@@ -5,5 +5,6 @@ export { defineFhevmChain } from './utils.js';
 export { defineFhevmSolanaChain } from './utilsSolana.js';
 
 export { mainnet } from './definitions/mainnet.js';
-export { polygonAmoy } from './definitions/polygonAmoy.js';
 export { sepolia } from './definitions/sepolia.js';
+export { polygon } from './definitions/polygon.js';
+export { polygonAmoy } from './definitions/polygonAmoy.js';

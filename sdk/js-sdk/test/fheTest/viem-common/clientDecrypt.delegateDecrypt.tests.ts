@@ -171,7 +171,7 @@ export function defineClientDecryptDelegateDecryptTests(parameters: {
         const keyPair = await client.generateTransportKeyPair();
 
         // Bob signs a delegated permit to decrypt Alice's handles
-        const signedPermit = await client.signDecryptionPermit({
+        const legacySignedPermit = await client.signLegacyDecryptionPermit({
           transportKeyPair: keyPair,
           contractAddresses: [config.fheTestAddress],
           durationSeconds: 24 * 3600,
@@ -181,15 +181,17 @@ export function defineClientDecryptDelegateDecryptTests(parameters: {
           delegatorAddress: config.alice.account.address,
         });
 
-        expect(signedPermit).toBeDefined();
-        const [major, minor] = client.protocolVersion!.version.split('.').map(Number);
-        const expectedPermitVersion = major! * 1000 + minor! < 14 ? 1 : 2;
-        expect(signedPermit.version).toBe(expectedPermitVersion);
+        expect(legacySignedPermit).toBeDefined();
+        expect(legacySignedPermit.version).toBe(1);
         const expectedPrimaryType =
-          signedPermit.version === 1 ? 'DelegatedUserDecryptRequestVerification' : 'UserDecryptRequestVerification';
-        expect(signedPermit.eip712.primaryType).toBe(expectedPrimaryType);
-        expect(signedPermit.signerAddress.toLowerCase()).toBe(config.bob.account.address.toLowerCase());
-        expect(signedPermit.encryptedDataOwnerAddress.toLowerCase()).toBe(config.alice.account.address.toLowerCase());
+          legacySignedPermit.version === 1
+            ? 'DelegatedUserDecryptRequestVerification'
+            : 'UserDecryptRequestVerification';
+        expect(legacySignedPermit.eip712.primaryType).toBe(expectedPrimaryType);
+        expect(legacySignedPermit.signerAddress.toLowerCase()).toBe(config.bob.account.address.toLowerCase());
+        expect(legacySignedPermit.encryptedDataOwnerAddress.toLowerCase()).toBe(
+          config.alice.account.address.toLowerCase(),
+        );
       });
 
       // ┌─────────────────────────────────────────────────────────────────────┐
@@ -233,7 +235,7 @@ export function defineClientDecryptDelegateDecryptTests(parameters: {
           await client.ready;
 
           const transportKeyPair = await client.generateTransportKeyPair();
-          const bobSignedPermit = await client.signDecryptionPermit({
+          const bobSignedPermit = await client.signLegacyDecryptionPermit({
             transportKeyPair: transportKeyPair,
             contractAddresses: [config.fheTestAddress],
             durationSeconds: 24 * 3600,
@@ -307,7 +309,7 @@ export function defineClientDecryptDelegateDecryptTests(parameters: {
         await bobClient.ready;
 
         const bobKeyPair = await bobClient.generateTransportKeyPair();
-        const bobSignedPermit = await bobClient.signDecryptionPermit({
+        const bobSignedPermit = await bobClient.signLegacyDecryptionPermit({
           transportKeyPair: bobKeyPair,
           contractAddresses: [config.fheTestAddress],
           durationSeconds: 24 * 3600,

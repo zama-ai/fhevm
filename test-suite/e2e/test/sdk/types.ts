@@ -1,17 +1,17 @@
-import type { Signer } from "ethers";
+import type { Signer } from 'ethers';
 
 export interface SdkInstance {
   get supportsWildcard(): boolean;
 
   getUserDecryptErrorMessage(parameters: {
-    readonly type: "user-unauthorized" | "user-equal-contract" | "contract-unauthorized" | "permit-expired";
+    readonly type: 'user-unauthorized' | 'user-equal-contract' | 'contract-unauthorized' | 'permit-expired';
     readonly signer: Signer & { readonly address: string };
     readonly handle?: string | undefined;
     readonly contractAddress?: string | undefined;
   }): string;
 
   getDelegatedUserDecryptErrorMessage(parameters: {
-    readonly type: "revocation" | "contract-unauthorized" | "permit-expired" | "delegation-does-not-exist";
+    readonly type: 'revocation' | 'contract-unauthorized' | 'permit-expired' | 'delegation-does-not-exist';
     readonly signer: Signer & { readonly address: string };
     readonly handle?: string | undefined;
     readonly contractAddress?: string | undefined;
@@ -57,18 +57,18 @@ export interface SdkInstance {
 }
 
 type AuthBearerToken = {
-  __type: "BearerToken";
+  __type: 'BearerToken';
   token: string;
 };
 
 type AuthApiKeyHeader = {
-  __type: "ApiKeyHeader";
+  __type: 'ApiKeyHeader';
   header?: string;
   value: string;
 };
 
 type AuthApiKeyCookie = {
-  __type: "ApiKeyCookie";
+  __type: 'ApiKeyCookie';
   cookie?: string;
   value: string;
 };
@@ -85,14 +85,14 @@ export type EncryptedInputResult = {
 };
 
 export type TypedValue =
-  | { readonly type: "bool"; readonly value: boolean | number | bigint }
-  | { readonly type: "uint8"; readonly value: number | bigint }
-  | { readonly type: "uint16"; readonly value: number | bigint }
-  | { readonly type: "uint32"; readonly value: number | bigint }
-  | { readonly type: "uint64"; readonly value: number | bigint }
-  | { readonly type: "uint128"; readonly value: number | bigint }
-  | { readonly type: "uint256"; readonly value: number | bigint }
-  | { readonly type: "address"; readonly value: string };
+  | { readonly type: 'bool'; readonly value: boolean | number | bigint }
+  | { readonly type: 'uint8'; readonly value: number | bigint }
+  | { readonly type: 'uint16'; readonly value: number | bigint }
+  | { readonly type: 'uint32'; readonly value: number | bigint }
+  | { readonly type: 'uint64'; readonly value: number | bigint }
+  | { readonly type: 'uint128'; readonly value: number | bigint }
+  | { readonly type: 'uint256'; readonly value: number | bigint }
+  | { readonly type: 'address'; readonly value: string };
 
 export type SdkEncryptedInput = {
   addBool(value: boolean | number | bigint): SdkEncryptedInput;

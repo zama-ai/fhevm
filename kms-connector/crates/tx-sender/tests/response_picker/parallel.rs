@@ -1,7 +1,10 @@
 use alloy::primitives::U256;
-use connector_utils::tests::{
-    db::responses::{TestResponseType, insert_rand_response},
-    setup::TestInstanceBuilder,
+use connector_utils::{
+    tests::{
+        db::responses::{TestResponseType, insert_rand_response},
+        setup::TestInstanceBuilder,
+    },
+    types::db::RequestSource,
 };
 use rstest::rstest;
 use sqlx::{Pool, Postgres};
@@ -25,10 +28,22 @@ async fn test_parallel_response_picking(
     let test_instance = TestInstanceBuilder::db_setup().await?;
     let mut response_picker = init_response_picker(test_instance.db().clone()).await?;
 
-    let insert_response0 =
-        insert_rand_response(test_instance.db(), response_type, Some(U256::ZERO), None).await?;
-    let insert_response1 =
-        insert_rand_response(test_instance.db(), response_type, Some(U256::ONE), None).await?;
+    let insert_response0 = insert_rand_response(
+        test_instance.db(),
+        response_type,
+        Some(U256::ZERO),
+        None,
+        RequestSource::OnChain,
+    )
+    .await?;
+    let insert_response1 = insert_rand_response(
+        test_instance.db(),
+        response_type,
+        Some(U256::ONE),
+        None,
+        RequestSource::OnChain,
+    )
+    .await?;
 
     info!("Picking two {response_type}...");
     let responses0 = response_picker.pick_responses().await?;

@@ -100,7 +100,7 @@ impl TryFrom<(RequestId, Response<UserDecryptionResponse>)> for KmsGrpcResponse 
 /// Most requests only yield an acknowledgement (`Empty`). Context destruction additionally
 /// returns the list of epochs destroyed as a side effect, which the caller invalidates locally.
 #[derive(Clone, Debug, PartialEq)]
-pub enum SendResponse {
+pub enum KmsSendResponse {
     /// The send was acknowledged, with no meaningful payload to act on.
     Empty,
     /// Epoch IDs destroyed as part of a context destruction, to be invalidated locally.

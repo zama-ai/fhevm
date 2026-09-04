@@ -13,53 +13,40 @@
 // - Restart with working gateway mock
 // - Verify all requests complete successfully
 //
-// IMPORTANT: Run tests sequentially to avoid database conflicts:
-//   cargo test --test recovery_test -- --test-threads=1
+// Each test owns an isolated database schema and its own mock servers, so they can run in
+// parallel with each other and with the rest of the suite.
 
 mod common;
 
 use anyhow::{bail, Context};
 
 use alloy::primitives::{Address, Bytes, B256};
-use alloy::sol_types::SolCall;
-use common::utils::{host_acl_multicall_allow_response, random_handle};
-use ethereum_rpc_mock::{
-    fhevm::{FhevmMockWrapper, UserDecryptKind},
-    MockConfig, MockServer, MockServerHandle, Response, SubscriptionTarget, UsageLimit,
+use common::test_schema::TestSchema;
+use common::utils::{
+    http_port_of, random_handle, spawn_relayer, wire_settings_to_mocks, GatewayMock, HostMock,
+    TEST_CONFIG_PATH,
 };
-use fhevm_host_bindings::acl::ACL;
+use ethereum_rpc_mock::{fhevm::UserDecryptKind, SubscriptionTarget};
 use fhevm_relayer::config::settings::{Settings, StorageConfig};
-use fhevm_relayer::run_fhevm_relayer;
 use fhevm_relayer::store::sql::repositories::Repositories;
 use fhevm_relayer::tracing::init_tracing_once;
 use serde_json::json;
-use sqlx::postgres::PgPoolOptions;
-use std::net::TcpListener;
 use std::slice;
 use std::str::FromStr;
 use std::time::Duration;
-use tempfile::TempDir;
-use tokio::sync::oneshot;
 use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 
-// Contract addresses used by mocks
-const DECRYPTION_ADDR: &str = "0xB8Ae44365c45A7C5256b14F607CaE23BC040c354";
-const INPUT_VERIFICATION_ADDR: &str = "0xe61cff9c581c7c91aef682c2c10e8632864339ab";
-
 /// Test setup with two gateway mocks - one broken, one working
 struct RecoveryTestSetup {
-    broken_gateway_port: u16,
-    working_gateway_port: u16,
-    host_port: u16,
-    host_server: MockServer,
-    broken_gateway: FhevmMockWrapper,
-    working_gateway: FhevmMockWrapper,
-    _broken_handle: MockServerHandle,
-    _working_handle: MockServerHandle,
-    _host_handle: MockServerHandle,
+    /// Kept stuck on purpose: its readiness switch and its silence about response events are what
+    /// strand a request at the status under test.
+    broken_gateway: GatewayMock,
+    working_gateway: GatewayMock,
+    host: HostMock,
+    /// Outlives the relayer restart — the requests recovery has to pick up live here.
+    test_schema: TestSchema,
     http_port: Option<u16>,
-    settings_rx: Option<oneshot::Receiver<Settings>>,
     cancellation_token: CancellationToken,
     relayer_task: Option<tokio::task::JoinHandle<()>>,
     storage_settings: Option<StorageConfig>,
@@ -67,78 +54,32 @@ struct RecoveryTestSetup {
 
 impl RecoveryTestSetup {
     async fn new() -> anyhow::Result<Self> {
-        let broken_port = get_free_port()?;
-        let working_port = get_free_port()?;
-        let host_port = get_free_port()?;
+        let test_schema = TestSchema::new().await?;
+
+        // Settings are only read here for the contract addresses the host mock answers on; each
+        // relayer start loads its own copy and wires it to the mocks.
+        let settings = Settings::new(Some(TEST_CONFIG_PATH.to_string()))
+            .expect("Failed to load configuration");
+        init_tracing_once(&settings.log);
+
+        let host = HostMock::start(&settings).await?;
+        let broken_gateway = GatewayMock::start().await?;
+        let working_gateway = GatewayMock::start().await?;
 
         tracing::info!(
-            "Setting up recovery test - broken gateway: {}, working gateway: {}, host: {}",
-            broken_port,
-            working_port,
-            host_port
+            "Setting up recovery test - broken gateway: {}, working gateway: {}, host: {}, schema: {}",
+            broken_gateway.port,
+            working_gateway.port,
+            host.port,
+            test_schema.schema_name()
         );
-
-        let decryption_addr: Address = DECRYPTION_ADDR.parse().expect("Invalid decryption address");
-        let input_verification_addr: Address = INPUT_VERIFICATION_ADDR
-            .parse()
-            .expect("Invalid input verification address");
-
-        // Create and start host chain mock server (ACL registered after settings load)
-        let host_config = MockConfig {
-            port: host_port,
-            ..MockConfig::new()
-        };
-        let host_server = MockServer::new(host_config);
-        let host_server_clone = host_server.clone();
-        let host_handle = host_server
-            .start()
-            .await
-            .context("Failed to start host mock server")?;
-
-        // Create broken gateway mock server
-        let broken_config = MockConfig {
-            port: broken_port,
-            ..MockConfig::new()
-        };
-        let broken_server = MockServer::new(broken_config);
-        let broken_gateway = FhevmMockWrapper::new(
-            broken_server.clone(),
-            decryption_addr,
-            input_verification_addr,
-        );
-        let broken_handle = broken_server
-            .start()
-            .await
-            .context("Failed to start broken gateway")?;
-
-        // Create working gateway mock server
-        let working_config = MockConfig {
-            port: working_port,
-            ..MockConfig::new()
-        };
-        let working_server = MockServer::new(working_config);
-        let working_gateway = FhevmMockWrapper::new(
-            working_server.clone(),
-            decryption_addr,
-            input_verification_addr,
-        );
-        let working_handle = working_server
-            .start()
-            .await
-            .context("Failed to start working gateway")?;
 
         Ok(Self {
-            broken_gateway_port: broken_port,
-            working_gateway_port: working_port,
-            host_port,
-            host_server: host_server_clone,
             broken_gateway,
             working_gateway,
-            _broken_handle: broken_handle,
-            _working_handle: working_handle,
-            _host_handle: host_handle,
+            host,
+            test_schema,
             http_port: None,
-            settings_rx: None,
             cancellation_token: CancellationToken::new(),
             relayer_task: None,
             storage_settings: None,
@@ -150,77 +91,29 @@ impl RecoveryTestSetup {
         gateway_port: u16,
         modify_config: impl FnOnce(&mut Settings),
     ) -> anyhow::Result<()> {
-        let temp_config_dir = TempDir::new()?;
-        let temp_config_path = temp_config_dir.path().join("test_config.yaml");
-        std::fs::copy("tests/relayer-test-config.yaml", &temp_config_path)
-            .context("Failed to copy config file")?;
-
-        let mut settings = Settings::new(Some(temp_config_path.to_string_lossy().to_string()))
+        let mut settings = Settings::new(Some(TEST_CONFIG_PATH.to_string()))
             .expect("Failed to load configuration");
 
-        init_tracing_once(&settings.log);
-
-        // Configure with specified gateway
-        settings.http.endpoint = Some("0.0.0.0:0".to_string());
-        settings.gateway.blockchain_rpc.http_url = format!("http://localhost:{}", gateway_port);
-        settings.gateway.blockchain_rpc.read_http_url =
-            format!("http://localhost:{}", gateway_port);
-        settings.metrics.endpoint = "0.0.0.0:0".to_string();
-
-        // Update listener pool URLs to use the mock server
-        let ws_url = format!("ws://localhost:{}", gateway_port);
-        for listener in &mut settings.gateway.listener_pool.listeners {
-            listener.url = ws_url.clone();
-        }
-
-        // Wire host chain URLs to the host mock server
-        for hc in &mut settings.host_chains {
-            hc.url = format!("http://localhost:{}", self.host_port);
-        }
-
-        // Wire protocol_config URL to the host mock server
-        settings.protocol_config.ethereum_http_rpc_url =
-            format!("http://localhost:{}", self.host_port);
-
-        // Register default ACL allow-all pattern on host mock
-        register_host_acl_allow_all(&self.host_server, &settings.host_chains);
-
-        // Store storage settings for DB access
-        self.storage_settings = Some(settings.storage.clone());
+        wire_settings_to_mocks(
+            &mut settings,
+            self.host.port,
+            gateway_port,
+            self.test_schema.database_url(),
+        );
 
         // Apply custom config modifications
         modify_config(&mut settings);
 
-        let (settings_tx, settings_rx) = oneshot::channel::<Settings>();
-        self.settings_rx = Some(settings_rx);
+        // Store storage settings for DB access
+        self.storage_settings = Some(settings.storage.clone());
 
-        let relayer_token = self.cancellation_token.clone();
-
-        let task_handle = tokio::spawn(async move {
-            match run_fhevm_relayer(settings, relayer_token, Some(settings_tx)).await {
-                Ok(()) => tracing::debug!("Relayer service exited normally"),
-                Err(e) => tracing::error!("Relayer service error: {}", e),
-            }
-        });
-
+        let (task_handle, updated_settings) =
+            spawn_relayer(settings, self.cancellation_token.clone()).await?;
         self.relayer_task = Some(task_handle);
 
-        let updated_settings = self
-            .settings_rx
-            .take()
-            .context("Settings receiver not available")?
-            .await
-            .context("Failed to receive settings from relayer")?;
-
-        if let Some(endpoint) = updated_settings.http.endpoint {
-            let port = endpoint
-                .split(':')
-                .next_back()
-                .and_then(|p| p.parse::<u16>().ok())
-                .context("Failed to parse HTTP port")?;
-            self.http_port = Some(port);
-            tracing::info!("Relayer HTTP server running on port {}", port);
-        }
+        let port = http_port_of(&updated_settings)?;
+        self.http_port = Some(port);
+        tracing::info!("Relayer HTTP server running on port {}", port);
 
         Ok(())
     }
@@ -247,7 +140,7 @@ impl RecoveryTestSetup {
     /// Configure broken gateway for 'queued' status:
     /// - Readiness check fails, so requests stay in queued
     fn configure_for_queued_stuck(&self) {
-        self.broken_gateway.set_readiness_failure();
+        self.broken_gateway.fhevm.set_readiness_failure();
         tracing::info!("Broken gateway configured for 'queued' stuck - readiness fails");
     }
 
@@ -256,7 +149,7 @@ impl RecoveryTestSetup {
     /// - Transaction is accepted but no response event is emitted
     fn configure_for_processing_stuck(&self, _handles: &[String]) {
         // Set readiness to pass so requests can leave queued status
-        self.broken_gateway.set_readiness_success();
+        self.broken_gateway.fhevm.set_readiness_success();
 
         // DON'T register any event patterns - this keeps transactions pending
         // without any events being emitted, so requests stay in 'processing' status
@@ -272,7 +165,7 @@ impl RecoveryTestSetup {
     #[allow(dead_code)]
     fn configure_for_tx_in_flight_stuck(&self, _handles: &[String]) {
         // Set readiness to pass so requests can leave queued status
-        self.broken_gateway.set_readiness_success();
+        self.broken_gateway.fhevm.set_readiness_success();
 
         // DON'T register any event patterns - this keeps transactions pending
         // without any events being emitted, so requests stay in 'processing' or 'tx_in_flight' status
@@ -284,7 +177,7 @@ impl RecoveryTestSetup {
 
     /// Configure working gateway to complete any request
     fn configure_working_gateway(&self, handles: &[String]) {
-        self.working_gateway.set_readiness_success();
+        self.working_gateway.fhevm.set_readiness_success();
 
         let b256_handles: Vec<B256> = handles
             .iter()
@@ -293,7 +186,7 @@ impl RecoveryTestSetup {
 
         if !b256_handles.is_empty() {
             let values: Vec<u64> = (0..b256_handles.len()).map(|i| i as u64 + 42).collect();
-            self.working_gateway.on_public_decrypt_success(
+            self.working_gateway.fhevm.on_public_decrypt_success(
                 b256_handles.clone(),
                 values,
                 SubscriptionTarget::All,
@@ -301,7 +194,7 @@ impl RecoveryTestSetup {
 
             let dummy_address =
                 Address::from_str("0x1234567890123456789012345678901234567890").unwrap();
-            self.working_gateway.on_user_decrypt_success(
+            self.working_gateway.fhevm.on_user_decrypt_success(
                 UserDecryptKind::Direct,
                 b256_handles,
                 dummy_address,
@@ -312,7 +205,7 @@ impl RecoveryTestSetup {
         let dummy_address =
             Address::from_str("0x1234567890123456789012345678901234567890").unwrap();
         let proof_data = Bytes::from(b"valid_proof");
-        self.working_gateway.on_input_proof_success(
+        self.working_gateway.fhevm.on_input_proof_success(
             dummy_address,
             proof_data,
             10,
@@ -339,82 +232,15 @@ impl RecoveryTestSetup {
             .await
             .context("Failed to create repositories")
     }
-}
 
-fn get_free_port() -> anyhow::Result<u16> {
-    let listener = TcpListener::bind("127.0.0.1:0")?;
-    let port = listener.local_addr()?.port();
-    drop(listener);
-    Ok(port)
-}
+    /// Stop the relayer and drop the test schema.
+    async fn shutdown(mut self) {
+        self.shutdown_relayer().await;
 
-/// Extract the number of calls encoded in a multicall calldata.
-fn extract_multicall_count(input: &Bytes) -> usize {
-    if input.len() < 68 {
-        return 0;
+        if let Err(e) = self.test_schema.cleanup().await {
+            tracing::error!("Failed to cleanup test schema: {}", e);
+        }
     }
-    let len_bytes: [u8; 8] = input[60..68].try_into().unwrap_or([0u8; 8]);
-    usize::try_from(u64::from_be_bytes(len_bytes)).unwrap_or(0)
-}
-
-/// Register default ACL allow-all multicall pattern on the host mock server
-/// using the ACL address from config.
-fn register_host_acl_allow_all(
-    host_server: &MockServer,
-    host_chains: &[fhevm_relayer::config::settings::HostChainConfig],
-) {
-    // Recovery tests use public decrypt (1 handle → 1 call).
-    let count = 1;
-    let response_bytes = host_acl_multicall_allow_response(count);
-    let multicall_selector = ACL::multicallCall::SELECTOR;
-
-    for hc in host_chains {
-        let acl_address =
-            Address::from_str(&hc.acl_address).expect("Invalid ACL address in config");
-        let response = response_bytes.clone();
-
-        host_server.on_call(
-            move |params| {
-                params.to == acl_address
-                    && params.input.len() >= 4
-                    && params.input[0..4] == multicall_selector
-                    && extract_multicall_count(&params.input) == count
-            },
-            Response::call_success(response),
-            UsageLimit::Unlimited,
-        );
-    }
-}
-
-/// Clean up all incomplete requests from the database to start with a clean state
-async fn cleanup_incomplete_requests() -> anyhow::Result<()> {
-    // Use the same database URL as the config
-    let database_url = "postgresql://postgres:postgres@localhost:5433/relayer_db";
-
-    let pool = PgPoolOptions::new()
-        .max_connections(1)
-        .connect(database_url)
-        .await
-        .context("Failed to connect to database")?;
-
-    // Delete all incomplete requests
-    sqlx::query("DELETE FROM public_decrypt_req WHERE req_status IN ('queued', 'processing', 'tx_in_flight', 'receipt_received')")
-        .execute(&pool)
-        .await
-        .context("Failed to delete incomplete public decrypt requests")?;
-
-    sqlx::query("DELETE FROM user_decrypt_req WHERE req_status IN ('queued', 'processing', 'tx_in_flight', 'receipt_received')")
-        .execute(&pool)
-        .await
-        .context("Failed to delete incomplete user decrypt requests")?;
-
-    sqlx::query("DELETE FROM input_proof_req WHERE req_status IN ('queued', 'processing', 'tx_in_flight', 'receipt_received')")
-        .execute(&pool)
-        .await
-        .context("Failed to delete incomplete input proof requests")?;
-
-    tracing::info!("Cleaned up all incomplete requests from database");
-    Ok(())
 }
 
 // Request sending helpers
@@ -571,11 +397,6 @@ async fn wait_for_completion(
 async fn test_recovery_from_processing_status() {
     tracing::info!("=== Test: Recovery from Processing Status ===");
 
-    // Clean up any leftover incomplete requests from previous test runs
-    cleanup_incomplete_requests()
-        .await
-        .expect("Failed to cleanup database");
-
     let mut setup = RecoveryTestSetup::new()
         .await
         .expect("Failed to create test setup");
@@ -587,7 +408,7 @@ async fn test_recovery_from_processing_status() {
     // Phase 2: Start relayer with broken gateway
     tracing::info!("Phase 1: Starting relayer with broken gateway");
     setup
-        .start_relayer_with_gateway(setup.broken_gateway_port, |settings| {
+        .start_relayer_with_gateway(setup.broken_gateway.port, |settings| {
             // High retry limits so requests don't fail, just keep waiting
             settings.gateway.tx_engine.retry.max_attempts = 100;
             settings.gateway.tx_engine.retry.retry_interval_ms = 100;
@@ -643,7 +464,7 @@ async fn test_recovery_from_processing_status() {
     setup.configure_working_gateway(&[handle1]);
 
     setup
-        .start_relayer_with_gateway(setup.working_gateway_port, |_| {})
+        .start_relayer_with_gateway(setup.working_gateway.port, |_| {})
         .await
         .expect("Failed to start relayer with working gateway");
 
@@ -670,6 +491,8 @@ async fn test_recovery_from_processing_status() {
         .await
         .expect("Recovery failed to complete request");
 
+    setup.shutdown().await;
+
     tracing::info!("✓ Test passed: Public decrypt request recovered from processing status");
 }
 
@@ -689,11 +512,6 @@ async fn test_recovery_from_processing_status() {
 async fn test_recovery_from_queued_status() {
     tracing::info!("=== Test: Recovery from Queued Status ===");
 
-    // Clean up any leftover incomplete requests from previous test runs
-    cleanup_incomplete_requests()
-        .await
-        .expect("Failed to cleanup database");
-
     let mut setup = RecoveryTestSetup::new()
         .await
         .expect("Failed to create test setup");
@@ -705,7 +523,7 @@ async fn test_recovery_from_queued_status() {
     // Phase 2: Start relayer with broken gateway (readiness fails)
     tracing::info!("Phase 1: Starting relayer with broken gateway (readiness fails)");
     setup
-        .start_relayer_with_gateway(setup.broken_gateway_port, |settings| {
+        .start_relayer_with_gateway(setup.broken_gateway.port, |settings| {
             // High retry limits so requests don't fail, just keep retrying readiness
             settings
                 .gateway
@@ -769,7 +587,7 @@ async fn test_recovery_from_queued_status() {
     setup.configure_working_gateway(&[handle1]);
 
     setup
-        .start_relayer_with_gateway(setup.working_gateway_port, |_| {})
+        .start_relayer_with_gateway(setup.working_gateway.port, |_| {})
         .await
         .expect("Failed to start relayer with working gateway");
 
@@ -795,6 +613,8 @@ async fn test_recovery_from_queued_status() {
     wait_for_completion(&setup.http_url(), our_requests, Duration::from_secs(15))
         .await
         .expect("Recovery failed to complete request");
+
+    setup.shutdown().await;
 
     tracing::info!("✓ Test passed: Public decrypt request recovered from queued status");
 }
@@ -822,11 +642,6 @@ async fn test_recovery_from_queued_status() {
 async fn test_recovery_from_tx_in_flight_status() {
     tracing::info!("=== Test: Recovery from TxInFlight Status ===");
 
-    // Clean up any leftover incomplete requests from previous test runs
-    cleanup_incomplete_requests()
-        .await
-        .expect("Failed to cleanup database");
-
     let mut setup = RecoveryTestSetup::new()
         .await
         .expect("Failed to create test setup");
@@ -840,7 +655,7 @@ async fn test_recovery_from_tx_in_flight_status() {
         "Phase 1: Starting relayer with broken gateway (transactions sent but no response)"
     );
     setup
-        .start_relayer_with_gateway(setup.broken_gateway_port, |settings| {
+        .start_relayer_with_gateway(setup.broken_gateway.port, |settings| {
             // High retry limits so requests don't fail, just keep waiting
             settings.gateway.tx_engine.retry.max_attempts = 100;
             settings.gateway.tx_engine.retry.retry_interval_ms = 100;
@@ -894,7 +709,7 @@ async fn test_recovery_from_tx_in_flight_status() {
     setup.configure_working_gateway(&[handle1]);
 
     setup
-        .start_relayer_with_gateway(setup.working_gateway_port, |_| {})
+        .start_relayer_with_gateway(setup.working_gateway.port, |_| {})
         .await
         .expect("Failed to start relayer with working gateway");
 
@@ -920,6 +735,8 @@ async fn test_recovery_from_tx_in_flight_status() {
     wait_for_completion(&setup.http_url(), our_requests, Duration::from_secs(15))
         .await
         .expect("Recovery failed to complete request");
+
+    setup.shutdown().await;
 
     tracing::info!("✓ Test passed: Public decrypt request recovered from tx_in_flight status");
 }

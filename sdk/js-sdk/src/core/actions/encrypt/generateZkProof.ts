@@ -5,7 +5,8 @@ import type { ZkProof } from '../../types/zkProof-p.js';
 import type { BytesHex } from '../../types/primitives.js';
 import { createTypedValue } from '../../base/typedValue.js';
 import { createZkProofBuilder } from '../../coprocessor/ZkProofBuilder-p.js';
-import { asFhevmWithTfheVersion } from '../../runtime/CoreFhevm-p.js';
+import { resolveRawValueTypeName } from '../../handle/FheType.js';
+import { initPublicAction } from '../../runtime/CoreFhevm-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -28,14 +29,15 @@ export async function generateZkProof(
 
   const builder = createZkProofBuilder();
   for (const value of values) {
-    builder.addTypedValue(createTypedValue(value));
+    builder.addTypedValue(createTypedValue({ type: resolveRawValueTypeName(value.type), value: value.value }));
   }
 
-  const f = asFhevmWithTfheVersion(fhevm);
+  const fhevmContext = await initPublicAction(fhevm);
 
-  return builder.build(f, {
+  return builder.build(fhevm, {
     contractAddress,
     userAddress,
     extraData: hardCodedExtraData,
+    fhevmContext,
   });
 }

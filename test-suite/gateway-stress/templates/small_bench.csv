@@ -7,3 +7,7 @@ parallel_requests;number_of_measures;decryption_type
 5;2;user
 10;2;user
 50;2;user
+1;2;user_v2
+5;2;user_v2
+10;2;user_v2
+50;2;user_v2

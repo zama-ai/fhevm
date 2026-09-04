@@ -1,7 +1,6 @@
 import type { FhevmRuntime } from '../../../types/coreFhevmRuntime.js';
 import type {
   DecryptAndReconstructParameters,
-  //DecryptAndReconstructUserParameters,
   DecryptModuleFactory,
   DeserializeTkmsPrivateKeyParameters,
   GenerateTkmsPrivateKeyParameters,
@@ -9,8 +8,6 @@ import type {
   GetTkmsPublicKeyHexParameters,
   InitTkmsModuleParameters,
   SerializeTkmsPrivateKeyParameters,
-  //UserDecryptModuleFactory,
-  //UserDecryptModuleParameters,
   VerifyTkmsPrivateKeyParameters,
 } from '../types.js';
 import {
@@ -46,35 +43,3 @@ export const decryptModule: DecryptModuleFactory = (runtime: FhevmRuntime) => {
     }),
   });
 };
-
-//////////////////////////////////////////////////////////////////////////////
-// userDecryptModule
-//////////////////////////////////////////////////////////////////////////////
-
-// export const userDecryptModule: UserDecryptModuleFactory = (
-//   runtime: FhevmRuntime,
-//   parameters: UserDecryptModuleParameters,
-// ) => {
-//   const { privateKey } = parameters;
-//   return Object.freeze({
-//     userDecrypt: Object.freeze({
-//       initTkmsModule: async () => {
-//         await initTkmsModule(runtime);
-//       },
-//       getTkmsModuleInfo: () => getTkmsModuleInfo(),
-//       decryptAndReconstruct: (args: DecryptAndReconstructUserParameters) =>
-//         decryptAndReconstruct(runtime, {
-//           ...args,
-//           tkmsPrivateKey: privateKey,
-//         }),
-//       getTkmsPublicKeyHex: () =>
-//         getTkmsPublicKeyHex(runtime, {
-//           tkmsPrivateKey: privateKey,
-//         }),
-//       serializeTkmsPrivateKey: () =>
-//         serializeTkmsPrivateKey(runtime, {
-//           tkmsPrivateKey: privateKey,
-//         }),
-//     }),
-//   });
-// };

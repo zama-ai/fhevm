@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE verify_proofs\n             SET verified = NULL,\n                 verified_at = NOW(),\n                 handles = $2,\n                 retry_count = 0,\n                 last_error = NULL,\n                 last_retry_at = NULL\n             WHERE zk_proof_id = $1\n               AND verified IS DISTINCT FROM TRUE\n               AND (verified = FALSE OR handles IS NULL)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6d3b59617e8d7342bb05a4d708110a0c65fee1dbdde34506124d6d01012a0832"
+}

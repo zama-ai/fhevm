@@ -55,6 +55,7 @@ pub enum KeyType {
     Server,
     #[default]
     Public,
+    CompressedKeySet = 3,
 }
 
 impl TryFrom<u8> for KeyType {
@@ -65,6 +66,8 @@ impl TryFrom<u8> for KeyType {
             Ok(Self::Server)
         } else if value == Self::Public as u8 {
             Ok(Self::Public)
+        } else if value == Self::CompressedKeySet as u8 {
+            Ok(Self::CompressedKeySet)
         } else {
             Err(anyhow!("Invalid KeyType value: {value}"))
         }
@@ -78,6 +81,7 @@ impl FromStr for KeyType {
         match s {
             "ServerKey" => Ok(Self::Server),
             "PublicKey" => Ok(Self::Public),
+            "CompressedXofKeySet" => Ok(Self::CompressedKeySet),
             _ => Err(anyhow!("Invalid KeyType value: {s}")),
         }
     }
@@ -97,6 +101,24 @@ impl From<KeyDigestDbItem> for KeyDigest {
             keyType: value.key_type as u8,
             digest: value.digest.into(),
         }
+    }
+}
+
+/// Struct representing the `request_source` enum in the database.
+#[derive(sqlx::Type, Copy, Clone, Debug, Default, PartialEq, Eq)]
+#[sqlx(type_name = "request_source", rename_all = "lowercase")]
+pub enum RequestSource {
+    #[default]
+    OnChain,
+    Http,
+}
+
+impl Display for RequestSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::OnChain => "onchain",
+            Self::Http => "http",
+        })
     }
 }
 

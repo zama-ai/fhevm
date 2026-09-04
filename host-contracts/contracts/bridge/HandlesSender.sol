@@ -17,9 +17,10 @@ import {BridgeEvents} from "./BridgeEvents.sol";
  *         handle list to the destination chain via `_lzSend`.
  *
  * @dev    Abstract: the {ConfidentialBridge} concrete contract derives from this and
- *         from {HandlesReceiver}, and is the only deployed contract. The OApp endpoint
- *         and ownership are initialized by the derived initializer — this contract
- *         intentionally provides none.
+ *         from {HandlesReceiver}, and is the only deployed contract. The OApp endpoint is
+ *         set as an immutable by the derived constructor; the delegate is seeded by the
+ *         derived initializer and ownership is resolved via the {owner} override — this
+ *         contract intentionally provides none.
  *
  * @dev    The handle list is passed explicitly by the caller (not extracted from the
  *         payload) so the payload encoding stays fully under the source app's control.
@@ -178,10 +179,6 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
         uint64 dstChainId = _getHandlesSenderStorage().dstChainIdForEid[dstEid];
         if (dstChainId == 0) revert UnknownDstEid(dstEid);
 
-        // Check ACL allowance for every handle up-front so we revert before paying the
-        // LayerZero native fee on misconfigured calls.
-        _checkAllAllowed(handleList);
-
         receipt = _dispatch(dstEid, dstApp, payload, handleList, lzComposeGas);
 
         // Emit BridgeHandle once the LayerZero-assigned GUID is finalized. The
@@ -294,7 +291,7 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
     /**
      * @notice Returns the destination chain id registered for `dstEid`, or 0 if unset.
      */
-    function getDstChainId(uint32 dstEid) external view virtual returns (uint256) {
+    function getDstChainId(uint32 dstEid) public view virtual returns (uint64) {
         return _getHandlesSenderStorage().dstChainIdForEid[dstEid];
     }
 
@@ -359,9 +356,13 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
 
     /**
      * @dev LayerZero send dispatch, extracted so `send` does not carry `message`,
-     *      `finalOptions`, and `fee` into the event-emission phase. `msg.sender` is
-     *      preserved across internal calls and used as the source app in the encoded
-     *      message and as the native-fee refund address.
+     *      `finalOptions`, and `fee` into the event-emission phase. Builds the options
+     *      (rejecting a zero `lzComposeGas`), runs the per-handle ACL check, then quotes
+     *      and sends. Ordering the ACL check after `_buildOptions` lets a zero-gas call
+     *      fail fast before the loop, and keeping it before `_lzSend` ensures no LayerZero
+     *      native fee is paid on a misconfigured call. `msg.sender` is preserved across
+     *      internal calls and used as the source app in the encoded message and as the
+     *      native-fee refund address.
      * @dev    The wire-format `srcApp` field is bytes32 (declared so on the receive side
      *      too) for forward-compat with non-EVM source chains. For EVM sources the
      *      `bytes32(uint256(uint160(msg.sender)))` cast produces byte-identical
@@ -381,6 +382,9 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
             uint64(payload.length),
             lzComposeGas
         );
+
+        _checkAllAllowed(handleList);
+
         bytes32 srcApp = bytes32(uint256(uint160(msg.sender)));
         bytes memory message = abi.encode(srcApp, dstApp, payload, handleList);
         MessagingFee memory fee = _quote(dstEid, message, finalOptions, false);

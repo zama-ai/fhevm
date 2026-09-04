@@ -10,21 +10,19 @@ use crate::{
         EVENT_LISTENER_POLLING, init_public_decryption_response_listener,
         init_user_decryption_response_listener, public::PublicDecryptThresholdEvent,
         public_decryption_burst, types::DecryptionType, user::UserDecryptThresholdEvent,
-        user_decryption_burst,
+        user_decryption_burst, user_decryption_v2_burst,
     },
 };
 use alloy::{
     network::EthereumWallet,
-    primitives::Address,
     providers::{
         Identity, ProviderBuilder, RootProvider,
-        fillers::{ChainIdFiller, JoinFill, WalletFiller},
+        fillers::{ChainIdFiller, FillProvider, JoinFill, WalletFiller},
     },
 };
 use anyhow::anyhow;
 use fhevm_gateway_bindings::decryption::Decryption::{self, DecryptionInstance};
 use futures::Stream;
-use gateway_sdk::{FhevmSdk, FhevmSdkBuilder};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use std::sync::{Arc, Once};
 use tokio::{
@@ -35,12 +33,10 @@ use tokio::{
 use tracing::{Instrument, info};
 
 /// The provider used to interact with the Gateway.
-pub type AppProvider = NonceManagedProvider<
-    JoinFill<
-        JoinFill<JoinFill<Identity, ChainIdFiller>, FillersWithoutNonceManagement>,
-        WalletFiller<EthereumWallet>,
-    >,
-    RootProvider,
+pub type AppProvider = NonceManagedProvider<FillProvider<AppFillers, RootProvider>>;
+type AppFillers = JoinFill<
+    JoinFill<JoinFill<Identity, ChainIdFiller>, FillersWithoutNonceManagement>,
+    WalletFiller<EthereumWallet>,
 >;
 
 /// A struct used to perform the load/stress testing of the Gateway.
@@ -53,9 +49,6 @@ pub struct GatewayTestManager {
 
     /// The wallet used to send the requests to the Gateway.
     wallet: Wallet,
-
-    /// The fhevm rust sdk used to compute the EIP712 for UserDecryptions.
-    sdk: Arc<FhevmSdk>,
 }
 
 impl GatewayTestManager {
@@ -85,21 +78,10 @@ impl GatewayTestManager {
         info!("Successfully connected to the Gateway");
         let decryption_contract = Decryption::new(blockchain_config.decryption_address, provider);
 
-        let sdk = Arc::new(
-            FhevmSdkBuilder::new()
-                .with_gateway_chain_id(blockchain_config.gateway_chain_id)
-                .with_decryption_contract(&blockchain_config.decryption_address.to_string())
-                .with_acl_contract(&Address::ZERO.to_string())
-                .with_input_verification_contract(&Address::ZERO.to_string())
-                .with_host_chain_id(blockchain_config.host_chain_id)
-                .build()?,
-        );
-
         Ok(Self {
             decryption_contract,
             config,
             wallet,
-            sdk,
         })
     }
 
@@ -144,7 +126,15 @@ impl GatewayTestManager {
                     burst_index,
                     self.config.clone(),
                     self.decryption_contract.clone(),
-                    Arc::clone(&self.sdk),
+                    self.wallet.address(),
+                    user_response_listener.clone(),
+                    requests_pb,
+                    responses_pb,
+                )),
+                DecryptionType::UserV2 => burst_tasks.spawn(user_decryption_v2_burst(
+                    burst_index,
+                    self.config.clone(),
+                    self.decryption_contract.clone(),
                     self.wallet.address(),
                     user_response_listener.clone(),
                     requests_pb,
@@ -164,7 +154,7 @@ impl GatewayTestManager {
         let elapsed = session_start.elapsed().as_secs_f64();
         let handle_batch_size = match args.decryption_type {
             DecryptionType::Public => self.config.public_ct.len() as u32,
-            DecryptionType::User => self.config.user_ct.len() as u32,
+            DecryptionType::User | DecryptionType::UserV2 => self.config.user_ct.len() as u32,
         };
         let total_decryption =
             self.config.parallel_requests * handle_batch_size * (burst_index - 1) as u32;
@@ -261,7 +251,18 @@ impl GatewayTestManager {
                         *burst_index,
                         config.clone(),
                         self.decryption_contract.clone(),
-                        Arc::clone(&self.sdk),
+                        self.wallet.address(),
+                        user_response_listener.clone(),
+                        requests_pb,
+                        responses_pb,
+                    )
+                    .await
+                }
+                DecryptionType::UserV2 => {
+                    user_decryption_v2_burst(
+                        *burst_index,
+                        config.clone(),
+                        self.decryption_contract.clone(),
                         self.wallet.address(),
                         user_response_listener.clone(),
                         requests_pb,

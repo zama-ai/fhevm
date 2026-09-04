@@ -11,6 +11,8 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::{fmt, future::Future};
 use tokio::sync::{mpsc, RwLock, Semaphore};
+use tokio_util::sync::CancellationToken;
+use tokio_util::task::TaskTracker;
 use tracing::{error, info, instrument, warn};
 
 /// Queue information for ETA computation (concurrency-based throttler)
@@ -151,6 +153,8 @@ pub struct ReadinessWorker<T> {
     tracker: Arc<RwLock<IndexMap<String, ()>>>,
     // Replaces TPS: Limits how many tasks can run concurrently
     max_parallelism: usize,
+    // Per-check tasks, each holding its `OwnedSemaphorePermit`.
+    detached_tasks: TaskTracker,
 }
 
 impl<T> ReadinessSender<T>
@@ -162,6 +166,7 @@ where
         capacity: usize,
         capacity_safety_margin: usize,
         max_parallelism: usize,
+        detached_tasks: TaskTracker,
     ) -> (Self, ReadinessWorker<T>) {
         let (sender, receiver) = mpsc::channel(capacity);
         let tracker = Arc::new(RwLock::new(IndexMap::new()));
@@ -182,6 +187,7 @@ where
             receiver,
             tracker,
             max_parallelism,
+            detached_tasks,
         };
 
         (sender, worker)
@@ -275,7 +281,12 @@ impl<T> ReadinessWorker<T>
 where
     T: ReadinessItem + Send + Sync + 'static,
 {
-    pub async fn run_consumer<F, Fut>(mut self, processor: F)
+    /// Driven from `shutdown`, not channel closure: the sender halves never drop on their own.
+    ///
+    /// Checks in flight are cancelled, unlike transaction sends. A check is a pure external
+    /// read, so cancelling costs a repeat at the next start; running on could write a terminal
+    /// status recovery cannot pick up.
+    pub async fn run_consumer<F, Fut>(mut self, shutdown: CancellationToken, processor: F)
     where
         F: Fn(T) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = ()> + Send + 'static,
@@ -290,17 +301,40 @@ where
         let semaphore = Arc::new(Semaphore::new(self.max_parallelism));
         let processor = Arc::new(processor);
 
-        while let Some(item) = self.receiver.recv().await {
+        loop {
+            let item = tokio::select! {
+                item = self.receiver.recv() => match item {
+                    Some(item) => item,
+                    None => {
+                        info!("Readiness Worker stopping (All producers dropped).");
+                        break;
+                    }
+                },
+                _ = shutdown.cancelled() => {
+                    info!("Readiness Worker stopping (shutdown).");
+                    break;
+                }
+            };
+
             let id = item.get_id();
 
             // Acquire Permit (Limits Concurrency)
             // This will Wait (Async) if we have reached max_parallelism active tasks.
             // We use acquire_owned to move the permit into the spawned task.
-            let permit = match semaphore.clone().acquire_owned().await {
-                Ok(p) => p,
-                Err(_) => {
-                    // Semaphore closed, shouldn't happen unless we shutdown explicitly.
-                    error!("CRITICAL: Readiness Semaphore closed. Should never happens if not shutting down.");
+            //
+            // Raced against `shutdown` because the checks call providers with no request
+            // timeout, so a stalled endpoint can hold every permit indefinitely.
+            let permit = tokio::select! {
+                acquired = semaphore.clone().acquire_owned() => match acquired {
+                    Ok(p) => p,
+                    Err(_) => {
+                        // Semaphore closed, shouldn't happen unless we shutdown explicitly.
+                        error!("CRITICAL: Readiness Semaphore closed. Should never happens if not shutting down.");
+                        break;
+                    }
+                },
+                _ = shutdown.cancelled() => {
+                    info!(id = %id, "Readiness Worker stopping (shutdown while waiting for a free permit); item left queued for recovery.");
                     break;
                 }
             };
@@ -313,20 +347,18 @@ where
                 metrics::queue::decrement_queue_size(self.readiness_type.as_metrics_type());
             }
 
-            // Process (Isolated)
+            // Process (Isolated), under the same token that stops this loop.
             let proc_clone = processor.clone();
+            let check_shutdown = shutdown.clone();
 
-            tokio::spawn(async move {
-                // Do the work
-                proc_clone(item).await;
+            self.detached_tasks.spawn(async move {
+                check_shutdown.run_until_cancelled(proc_clone(item)).await;
 
                 // CRITICAL: Permit is dropped here automatically.
                 // This releases the slot for the next task in the queue.
                 drop(permit);
             });
         }
-
-        info!("Readiness Worker stopping (All producers dropped).");
     }
 }
 
@@ -372,14 +404,19 @@ mod tests {
     #[tokio::test]
     async fn test_fifo_ordering() {
         init_metrics_once();
-        let (sender, worker) =
-            ReadinessSender::<MockTask>::new(ReadinessThrottlingType::UserDecrypt, 10, 0, 100);
+        let (sender, worker) = ReadinessSender::<MockTask>::new(
+            ReadinessThrottlingType::UserDecrypt,
+            10,
+            0,
+            100,
+            TaskTracker::new(),
+        );
         let processed = Arc::new(Mutex::new(Vec::new()));
         let processed_clone = processed.clone();
 
         tokio::spawn(async move {
             worker
-                .run_consumer(move |task| {
+                .run_consumer(CancellationToken::new(), move |task| {
                     let p = processed_clone.clone();
                     async move {
                         p.lock().unwrap().push(task.id);
@@ -401,8 +438,13 @@ mod tests {
     #[tokio::test]
     async fn test_deduplication() {
         init_metrics_once();
-        let (sender, _worker) =
-            ReadinessSender::<MockTask>::new(ReadinessThrottlingType::UserDecrypt, 10, 0, 100);
+        let (sender, _worker) = ReadinessSender::<MockTask>::new(
+            ReadinessThrottlingType::UserDecrypt,
+            10,
+            0,
+            100,
+            TaskTracker::new(),
+        );
 
         sender.push(MockTask { id: "A".into() }).await.unwrap();
         sender.push(MockTask { id: "A".into() }).await.unwrap();
@@ -414,8 +456,13 @@ mod tests {
     #[tokio::test]
     async fn test_queue_full() {
         init_metrics_once();
-        let (sender, _worker) =
-            ReadinessSender::<MockTask>::new(ReadinessThrottlingType::UserDecrypt, 1, 0, 100);
+        let (sender, _worker) = ReadinessSender::<MockTask>::new(
+            ReadinessThrottlingType::UserDecrypt,
+            1,
+            0,
+            100,
+            TaskTracker::new(),
+        );
 
         assert!(sender.push(MockTask { id: "1".into() }).await.is_ok());
 
@@ -434,6 +481,7 @@ mod tests {
             100,
             0,
             max_parallelism,
+            TaskTracker::new(),
         );
 
         // Counter tracks currently ACTIVE tasks
@@ -445,7 +493,7 @@ mod tests {
 
         tokio::spawn(async move {
             worker
-                .run_consumer(move |_| {
+                .run_consumer(CancellationToken::new(), move |_| {
                     let ac = ac.clone();
                     let ms = ms.clone();
                     async move {
@@ -504,8 +552,13 @@ mod tests {
     async fn test_readiness_headroom() {
         init_metrics_once();
         // Capacity = 10, Safety = 2 -> Soft Limit = 8
-        let (sender, worker) =
-            ReadinessSender::<MockTask>::new(ReadinessThrottlingType::UserDecrypt, 10, 2, 100);
+        let (sender, worker) = ReadinessSender::<MockTask>::new(
+            ReadinessThrottlingType::UserDecrypt,
+            10,
+            2,
+            100,
+            TaskTracker::new(),
+        );
 
         for i in 0..8 {
             sender
@@ -524,8 +577,70 @@ mod tests {
 
         // Drain
         tokio::spawn(async move {
-            worker.run_consumer(|_| async {}).await;
+            worker
+                .run_consumer(CancellationToken::new(), |_| async {})
+                .await;
         });
         sleep(Duration::from_millis(100)).await;
+    }
+
+    // --- Test 6: Shutdown While Waiting For A Permit ---
+    // Needs the default current-thread runtime: on a multi-threaded one the worker could be
+    // parked at the top of the loop, passing the test for free.
+    #[tokio::test]
+    async fn test_shutdown_while_waiting_for_permit() {
+        init_metrics_once();
+        // Max Parallelism = 1, so item "2" cannot get a permit until item "1" releases one.
+        let (sender, worker) = ReadinessSender::<MockTask>::new(
+            ReadinessThrottlingType::UserDecrypt,
+            10,
+            0,
+            1,
+            TaskTracker::new(),
+        );
+
+        let shutdown = CancellationToken::new();
+        let first_holds_permit = Arc::new(tokio::sync::Notify::new());
+        let second_processed = Arc::new(AtomicUsize::new(0));
+
+        let first_holds_permit_clone = first_holds_permit.clone();
+        let second_processed_clone = second_processed.clone();
+        let shutdown_clone = shutdown.clone();
+
+        let handle = tokio::spawn(async move {
+            worker
+                .run_consumer(shutdown_clone, move |task| {
+                    let first_holds_permit = first_holds_permit_clone.clone();
+                    let second_processed = second_processed_clone.clone();
+                    async move {
+                        if task.id == "1" {
+                            first_holds_permit.notify_one();
+                            // Stands in for a check whose unbounded RPC call has stalled.
+                            std::future::pending::<()>().await;
+                        } else {
+                            second_processed.fetch_add(1, Ordering::Relaxed);
+                        }
+                    }
+                })
+                .await;
+        });
+
+        sender.push(MockTask { id: "1".into() }).await.unwrap();
+        sender.push(MockTask { id: "2".into() }).await.unwrap();
+
+        // Item "2" is now parked on `acquire_owned().await` behind a holder that never
+        // releases.
+        first_holds_permit.notified().await;
+
+        shutdown.cancel();
+
+        // Must return promptly: shutdown observed at the permit, not only at the loop top.
+        tokio::time::timeout(Duration::from_secs(2), handle)
+            .await
+            .expect("run_consumer did not stop when shutdown fired while a permit was held")
+            .unwrap();
+
+        // Never handed a permit, so its row is left `queued` as if never dequeued.
+        assert_eq!(second_processed.load(Ordering::Relaxed), 0);
     }
 }

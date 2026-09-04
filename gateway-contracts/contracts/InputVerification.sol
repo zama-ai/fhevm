@@ -175,16 +175,13 @@ contract InputVerification is
         /// @notice The coprocessor context ID associated to the input verification request
         mapping(uint256 zkProofId => uint256 contextId) inputVerificationContextId;
         /// @notice The priority coprocessor transaction sender that finalized proof verification.
-        /// @dev Raw responder arrays keep every valid sender, including non-priority senders that
-        ///      submitted before or after finalization. When set, this freezes the exposed
-        ///      consensus result to a singleton priority sender, even if the global priority
-        ///      configuration later changes.
+        /// @dev Deprecated. Never written again, but still read by {getVerifyProofConsensusTxSenders}
+        ///      so proofs finalized under the removed priority coprocessor feature keep reporting the
+        ///      single sender their event carries.
         mapping(uint256 zkProofId => address coprocessorTxSenderAddress) priorityVerifyProofConsensusTxSender;
         /// @notice The priority coprocessor transaction sender that finalized proof rejection.
-        /// @dev Raw responder arrays keep every valid sender, including non-priority senders that
-        ///      submitted before or after finalization. When set, this freezes the exposed
-        ///      consensus result to a singleton priority sender, even if the global priority
-        ///      configuration later changes.
+        /// @dev Deprecated. Never written again, but still read by {getRejectProofConsensusTxSenders},
+        ///      see above.
         mapping(uint256 zkProofId => address coprocessorTxSenderAddress) priorityRejectProofConsensusTxSender;
         // ----------------------------------------------------------------------------------------------
         // Solana (RFC-021) host state variables (appended; preserves the ERC-7201 storage layout):
@@ -218,7 +215,7 @@ contract InputVerification is
     }
 
     /**
-     * @notice Re-initializes the contract from V4 (Solana RFC-021 input-verification path).
+     * @notice Re-initializes the contract from V5 (includes the Solana RFC-021 input-verification path).
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
@@ -317,26 +314,23 @@ contract InputVerification is
             revert VerifyProofNotRequested(zkProofId);
         }
 
-        bytes32 digest;
-        address signerAddress;
-        {
-            // Retrieve stored ZK Proof verification request inputs.
-            ZKProofInput memory zkProofInput = $.zkProofInputs[zkProofId];
+        // Retrieve stored ZK Proof verification request inputs.
+        ZKProofInput memory zkProofInput = $.zkProofInputs[zkProofId];
 
-            // Compute the digest of the CiphertextVerification structure.
-            digest = _hashCiphertextVerification(
-                CiphertextVerification(
-                    ctHandles,
-                    zkProofInput.userAddress,
-                    zkProofInput.contractAddress,
-                    zkProofInput.contractChainId,
-                    extraData
-                )
-            );
+        // Initialize the CiphertextVerification structure for the signature validation.
+        CiphertextVerification memory ciphertextVerification = CiphertextVerification(
+            ctHandles,
+            zkProofInput.userAddress,
+            zkProofInput.contractAddress,
+            zkProofInput.contractChainId,
+            extraData
+        );
 
-            // Recover the signer address from the signature,
-            signerAddress = ECDSA.recover(digest, signature);
-        }
+        // Compute the digest of the CiphertextVerification structure.
+        bytes32 digest = _hashCiphertextVerification(ciphertextVerification);
+
+        // Recover the signer address from the signature,
+        address signerAddress = ECDSA.recover(digest, signature);
 
         // Check that the signer is a coprocessor signer, and that it corresponds to the transaction
         // sender of the same coprocessor.
@@ -362,29 +356,20 @@ contract InputVerification is
         // Make sure the proof has neither been verified nor rejected yet: this prevents "lazy"
         // coprocessors to be able to send both a verification and a rejection response by waiting for
         // a coprocessor threshold decrement before sending some responses.
-        if (!$.verifiedZKProofs[zkProofId] && !$.rejectedZKProofs[zkProofId]) {
-            (bool canFinalize, bool finalizedByPriority) = _canFinalizeCoprocessorConsensus(
-                msg.sender,
-                currentSignatures.length
-            );
-            if (canFinalize) {
-                $.verifiedZKProofs[zkProofId] = true;
+        if (
+            !$.verifiedZKProofs[zkProofId] &&
+            !$.rejectedZKProofs[zkProofId] &&
+            _isConsensusReached(currentSignatures.length)
+        ) {
+            $.verifiedZKProofs[zkProofId] = true;
 
-                // A "late" valid coprocessor could still see its transaction sender address be added to
-                // the list after consensus. This storage variable is here to be able to retrieve this list
-                // later by only knowing the zkProofId, since a consensus can only happen once per proof
-                // verification request.
-                $.verifyProofConsensusDigest[zkProofId] = digest;
-                if (finalizedByPriority) {
-                    $.priorityVerifyProofConsensusTxSender[zkProofId] = msg.sender;
+            // A "late" valid coprocessor could still see its transaction sender address be added to
+            // the list after consensus. This storage variable is here to be able to retrieve this list
+            // later by only knowing the zkProofId, since a consensus can only happen once per proof
+            // verification request.
+            $.verifyProofConsensusDigest[zkProofId] = digest;
 
-                    bytes[] memory prioritySignatures = new bytes[](1);
-                    prioritySignatures[0] = signature;
-                    emit VerifyProofResponse(zkProofId, ctHandles, prioritySignatures);
-                } else {
-                    emit VerifyProofResponse(zkProofId, ctHandles, currentSignatures);
-                }
-            }
+            emit VerifyProofResponse(zkProofId, ctHandles, currentSignatures);
         }
     }
 
@@ -448,26 +433,24 @@ contract InputVerification is
         emit VerifyProofResponseCall(zkProofId, ctHandles, signature, msg.sender, extraData);
 
         // Send the event if and only if the consensus is reached in the current response call.
-        // Shares the priority-sender finalization path with the EVM `verifyProofResponse`, so a
-        // Solana-originated request is indistinguishable downstream from an EVM one.
-        if (!$.verifiedZKProofs[zkProofId] && !$.rejectedZKProofs[zkProofId]) {
-            (bool canFinalize, bool finalizedByPriority) = _canFinalizeCoprocessorConsensus(
-                msg.sender,
-                currentSignatures.length
-            );
-            if (canFinalize) {
-                $.verifiedZKProofs[zkProofId] = true;
-                $.verifyProofConsensusDigest[zkProofId] = digest;
-                if (finalizedByPriority) {
-                    $.priorityVerifyProofConsensusTxSender[zkProofId] = msg.sender;
+        // This means a "late" response will not be reverted, just ignored and no event will be emitted
+        // Make sure the proof has neither been verified nor rejected yet: this prevents "lazy"
+        // coprocessors to be able to send both a verification and a rejection response by waiting for
+        // a coprocessor threshold decrement before sending some responses.
+        if (
+            !$.verifiedZKProofs[zkProofId] &&
+            !$.rejectedZKProofs[zkProofId] &&
+            _isConsensusReached(currentSignatures.length)
+        ) {
+            $.verifiedZKProofs[zkProofId] = true;
 
-                    bytes[] memory prioritySignatures = new bytes[](1);
-                    prioritySignatures[0] = signature;
-                    emit VerifyProofResponse(zkProofId, ctHandles, prioritySignatures);
-                } else {
-                    emit VerifyProofResponse(zkProofId, ctHandles, currentSignatures);
-                }
-            }
+            // A "late" valid coprocessor could still see its transaction sender address be added to
+            // the list after consensus. This storage variable is here to be able to retrieve this list
+            // later by only knowing the zkProofId, since a consensus can only happen once per proof
+            // verification request.
+            $.verifyProofConsensusDigest[zkProofId] = digest;
+
+            emit VerifyProofResponse(zkProofId, ctHandles, currentSignatures);
         }
     }
 
@@ -509,19 +492,14 @@ contract InputVerification is
         // Make sure the proof has neither been verified nor rejected yet: this prevents "lazy"
         // coprocessors to be able to send both a verification and a rejection response by waiting for
         // a coprocessor threshold decrement before sending some responses.
-        if (!$.verifiedZKProofs[zkProofId] && !$.rejectedZKProofs[zkProofId]) {
-            (bool canFinalize, bool finalizedByPriority) = _canFinalizeCoprocessorConsensus(
-                msg.sender,
-                $.rejectedProofResponseCounter[zkProofId]
-            );
-            if (canFinalize) {
-                $.rejectedZKProofs[zkProofId] = true;
-                if (finalizedByPriority) {
-                    $.priorityRejectProofConsensusTxSender[zkProofId] = msg.sender;
-                }
+        if (
+            !$.verifiedZKProofs[zkProofId] &&
+            !$.rejectedZKProofs[zkProofId] &&
+            _isConsensusReached($.rejectedProofResponseCounter[zkProofId])
+        ) {
+            $.rejectedZKProofs[zkProofId] = true;
 
-                emit RejectProofResponse(zkProofId);
-            }
+            emit RejectProofResponse(zkProofId);
         }
     }
 
@@ -548,14 +526,22 @@ contract InputVerification is
     function getVerifyProofConsensusTxSenders(uint256 zkProofId) external view virtual returns (address[] memory) {
         InputVerificationStorage storage $ = _getInputVerificationStorage();
 
+        // Proofs verified while the priority coprocessor feature was active reached consensus through
+        // a single sender, and the emitted `VerifyProofResponse` carries that sender's signature
+        // alone. The historical marker is read to keep this getter consistent with that event. It is
+        // never written again, so proofs verified since the feature was removed fall through to the
+        // raw responder list built under threshold consensus.
         address priorityConsensusTxSender = $.priorityVerifyProofConsensusTxSender[zkProofId];
         if (priorityConsensusTxSender != address(0)) {
-            // Keep the getter aligned with the singleton event payload emitted in priority mode.
             address[] memory txSenders = new address[](1);
             txSenders[0] = priorityConsensusTxSender;
             return txSenders;
         }
 
+        // Get the unique digest associated to the ZK Proof verification request in order to retrieve the
+        // list of coprocessor transaction sender address that were involved in the consensus for a
+        // proof verification.
+        // This digest remains the default value (0x0) until the consensus is reached.
         bytes32 consensusDigest = $.verifyProofConsensusDigest[zkProofId];
 
         return $.verifyProofConsensusTxSenders[zkProofId][consensusDigest];
@@ -567,9 +553,10 @@ contract InputVerification is
     function getRejectProofConsensusTxSenders(uint256 zkProofId) external view virtual returns (address[] memory) {
         InputVerificationStorage storage $ = _getInputVerificationStorage();
 
+        // See {getVerifyProofConsensusTxSenders}: the historical marker keeps rejections finalized
+        // under the priority coprocessor feature aligned with their emitted event.
         address priorityConsensusTxSender = $.priorityRejectProofConsensusTxSender[zkProofId];
         if (priorityConsensusTxSender != address(0)) {
-            // Keep the getter aligned with the singleton consensus result exposed in priority mode.
             address[] memory txSenders = new address[](1);
             txSenders[0] = priorityConsensusTxSender;
             return txSenders;
@@ -675,21 +662,6 @@ contract InputVerification is
     function _isConsensusReached(uint256 coprocessorCounter) internal view virtual returns (bool) {
         uint256 consensusThreshold = GATEWAY_CONFIG.getCoprocessorMajorityThreshold();
         return coprocessorCounter >= consensusThreshold;
-    }
-
-    /**
-     * @notice Returns whether a coprocessor response can finalize consensus.
-     */
-    function _canFinalizeCoprocessorConsensus(
-        address coprocessorTxSender,
-        uint256 coprocessorCounter
-    ) internal view virtual returns (bool canFinalize, bool finalizedByPriority) {
-        address priorityCoprocessorTxSender = GATEWAY_CONFIG.getPriorityCoprocessorTxSender();
-        if (priorityCoprocessorTxSender != address(0)) {
-            finalizedByPriority = coprocessorTxSender == priorityCoprocessorTxSender;
-            return (finalizedByPriority, finalizedByPriority);
-        }
-        return (_isConsensusReached(coprocessorCounter), false);
     }
 
     /**

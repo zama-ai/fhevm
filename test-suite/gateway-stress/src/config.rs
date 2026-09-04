@@ -15,6 +15,8 @@ pub struct Config {
     pub tests_interval: Duration,
     #[serde(default)]
     pub sequential: bool,
+    #[serde(default = "default_id_counter_start")]
+    pub id_counter_start: U256,
     #[serde(default)]
     pub blockchain: Option<BlockchainConfig>,
     #[serde(default)]
@@ -24,7 +26,6 @@ pub struct Config {
 #[derive(Clone, Debug, Deserialize)]
 pub struct CiphertextConfig {
     pub handle: FixedBytes<32>,
-    pub digest: FixedBytes<32>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -43,8 +44,6 @@ pub struct DatabaseConfig {
     pub pool_size: u32,
     #[serde(with = "humantime_serde", default = "default_db_connection_timeout")]
     pub connection_timeout: Duration,
-    pub key_id: U256,
-    pub copro_tx_sender_addr: Address,
     pub insertion_chunk_size: usize,
 }
 
@@ -56,6 +55,12 @@ impl Config {
         let config = settings.try_deserialize()?;
         Ok(config)
     }
+}
+
+// Default starting value of the decryption id counter: a very high value (3/4 of `U256::MAX`) to
+// avoid colliding with ids that could legitimately be used in the testing environment.
+fn default_id_counter_start() -> U256 {
+    (U256::MAX / U256::from(4)) * U256::from(3)
 }
 
 fn default_pool_size() -> u32 {

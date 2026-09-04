@@ -31,7 +31,7 @@ export interface KmsLibApi {
 }
 
 // Default version
-export type TkmsVersion = '0.13.10' | '0.13.20-0';
+export type TkmsVersion = '0.13.10' | '0.13.20-0' | '0.14.0-1';
 
 export type TkmsWasmBase64 = {
   readonly tkmsWasmBase64: string;

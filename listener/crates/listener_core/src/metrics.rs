@@ -82,6 +82,55 @@ pub fn describe_metrics() {
         "Wall-clock time to fetch and publish a single catchup sub-range (one `range-catchup` message)"
     );
 
+    // ── Finality ────────────────────────────────────────────────────────
+    describe_counter!(
+        "listener_finality_iterations_total",
+        Unit::Count,
+        "Total finality loop iterations (stall detection: rate should be > 0 when finality is active)"
+    );
+    describe_gauge!(
+        "listener_final_tip_block_number",
+        Unit::Count,
+        "Latest final block number in the database (final_blocks tip)"
+    );
+    describe_gauge!(
+        "listener_final_height_block_number",
+        Unit::Count,
+        "Latest final block number reported by the RPC node (finalized tag or head - finality_depth)"
+    );
+    describe_histogram!(
+        "listener_finality_range_fetch_duration_seconds",
+        Unit::Seconds,
+        "Wall-clock time to fetch, publish, and insert an entire final block range"
+    );
+    describe_gauge!(
+        "listener_finality_active",
+        Unit::Count,
+        "Whether the finality flow is enabled for this chain (1 = active, 0 = inactive)"
+    );
+
+    // ── Final catchup ───────────────────────────────────────────────────
+    describe_counter!(
+        "listener_final_catchup_iterations_total",
+        Unit::Count,
+        "Total CatchupPayloads received on the principal `final-catchup` queue (orchestrator invocations)"
+    );
+    describe_counter!(
+        "listener_final_catchup_skipped_above_head_total",
+        Unit::Count,
+        "Final catchup orchestrator skips: block_start was above the current final height"
+    );
+    describe_counter!(
+        "listener_final_catchup_subranges_total",
+        Unit::Count,
+        "Total sub-ranges fanned out by the final catchup orchestrator onto `range-final-catchup`"
+    );
+    describe_histogram!(
+        "listener_final_catchup_range_duration_seconds",
+        Unit::Seconds,
+        "Wall-clock time to fetch and publish a single final catchup sub-range (one `range-final-catchup` message)"
+    );
+
     // ── Error classification ────────────────────────────────────────────
     describe_counter!(
         "listener_transient_errors_total",
@@ -149,6 +198,18 @@ pub fn init_gauges(chain_id: u64) {
 
     metrics::gauge!(
         "listener_chain_height_block_number",
+        "chain_id" => chain_id_str.clone()
+    )
+    .set(0.0);
+
+    metrics::gauge!(
+        "listener_final_tip_block_number",
+        "chain_id" => chain_id_str.clone()
+    )
+    .set(0.0);
+
+    metrics::gauge!(
+        "listener_final_height_block_number",
         "chain_id" => chain_id_str
     )
     .set(0.0);
@@ -201,6 +262,28 @@ pub fn init_counters(chain_id: u64) {
     .increment(0);
     metrics::counter!(
         "listener_catchup_subranges_total",
+        "chain_id" => chain_id_str.clone()
+    )
+    .increment(0);
+
+    // Finality counters — single `chain_id` label.
+    metrics::counter!(
+        "listener_finality_iterations_total",
+        "chain_id" => chain_id_str.clone()
+    )
+    .increment(0);
+    metrics::counter!(
+        "listener_final_catchup_iterations_total",
+        "chain_id" => chain_id_str.clone()
+    )
+    .increment(0);
+    metrics::counter!(
+        "listener_final_catchup_skipped_above_head_total",
+        "chain_id" => chain_id_str.clone()
+    )
+    .increment(0);
+    metrics::counter!(
+        "listener_final_catchup_subranges_total",
         "chain_id" => chain_id_str
     )
     .increment(0);

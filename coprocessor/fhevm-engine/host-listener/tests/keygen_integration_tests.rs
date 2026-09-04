@@ -11,7 +11,6 @@ use alloy::{
     providers::{Provider, ProviderBuilder, WsConnect},
     rpc::types::Filter,
     signers::local::PrivateKeySigner,
-    sol,
 };
 use async_trait::async_trait;
 use fhevm_engine_common::chain_id::ChainId;
@@ -34,20 +33,17 @@ use tokio_util::bytes::{self, Bytes};
 use tracing::{info, Level};
 use tracing_subscriber::fmt::{writer::MakeWriterExt, MakeWriter};
 
-sol!(
-    #[sol(rpc)]
-    KMSGenerationMock,
-    "artifacts/KMSGenerationTest.sol/KMSGenerationTest.json"
-);
+mod common;
+use common::{
+    activate_crs_request, activate_key_request, RawLog, KEY_BYTES, TEST_KEY_ID,
+};
 
 static TEST_LOGS: OnceLock<Arc<RwLock<String>>> = OnceLock::new();
 
 const TEST_CHAIN_ID: u64 = 12345;
-const TEST_KEY_ID: u64 = 16;
 const RETRY_EVENT_TO_DB: u64 = 3;
 const RETRY_DELAY: Duration = Duration::from_millis(100);
 const MATERIALIZER_ACTIVATION_STEPS: usize = 2;
-const MATERIALIZED_KEY_BYTES: &[u8] = b"key_bytes";
 
 #[derive(Clone)]
 struct TestLogs {
@@ -230,11 +226,11 @@ async fn has_public_key_gen(
             .await?;
         if !rows.is_empty() {
             let pks_key: Vec<u8> = rows[0].try_get("pks_key")?;
-            if pks_key == MATERIALIZED_KEY_BYTES {
+            if pks_key == KEY_BYTES {
                 return Ok(true);
             } else {
                 info!(
-                    "Found public key for key_id {}, but it does not match materialized key bytes {} vs {MATERIALIZED_KEY_BYTES:?}",
+                    "Found public key for key_id {}, but it does not match materialized key bytes {} vs {KEY_BYTES:?}",
                     key_id,
                     String::from_utf8_lossy(&pks_key)
                 );
@@ -274,7 +270,7 @@ async fn has_server_key_gen(
             .await?;
         if !rows.is_empty() {
             let sks_key: Vec<u8> = rows[0].try_get("sks_key")?;
-            if sks_key == MATERIALIZED_KEY_BYTES {
+            if sks_key == KEY_BYTES {
                 return Ok(true);
             }
         }
@@ -312,7 +308,7 @@ async fn has_crs_gen(
             .await?;
         if !rows.is_empty() {
             let crs: Vec<u8> = rows[0].try_get("crs")?;
-            if crs == MATERIALIZED_KEY_BYTES {
+            if crs == KEY_BYTES {
                 return Ok(true);
             }
         }
@@ -341,7 +337,7 @@ impl AwsS3ClientMocked {
         let key_bytes = if bad_content {
             Bytes::from_static(b"bad_key_bytes")
         } else {
-            Bytes::from_static(MATERIALIZED_KEY_BYTES)
+            Bytes::from_static(KEY_BYTES)
         };
 
         for (index, bucket) in buckets.iter().enumerate() {
@@ -358,7 +354,9 @@ impl AwsS3ClientMocked {
                 // /CompressedXofKeySet/<id>.
                 let prefix = match key_type {
                     KeyType::PublicKey => "/PublicKey",
-                    KeyType::ServerKey => "/CompressedXofKeySet",
+                    KeyType::ServerKey | KeyType::CompressedKeySet => {
+                        "/CompressedXofKeySet"
+                    }
                 };
                 let full_key =
                     format!("PUB-p1{}/{}", prefix, key_id_to_aws_key(key_id));
@@ -367,7 +365,7 @@ impl AwsS3ClientMocked {
 
             let crs_key = format!("PUB/CRS/{}", key_id_to_aws_key(key_id));
             bucket_objects_for_bucket
-                .insert(crs_key, Bytes::from_static(MATERIALIZED_KEY_BYTES));
+                .insert(crs_key, Bytes::from_static(KEY_BYTES));
         }
 
         Self {
@@ -566,14 +564,14 @@ async fn keygen_ok_simple() -> anyhow::Result<()> {
         .await?;
     let aws_s3_client =
         AwsS3ClientMocked::new(&buckets, &key_types, key_id, false, false);
-    let kms_generation = KMSGenerationMock::deploy(&provider).await?;
+    let kms_generation = RawLog::deploy(&provider).await?;
 
     assert!(has_not_public_key(&env.db_pool, key_id).await?);
     assert!(has_not_server_key(&env.db_pool, key_id).await?);
     assert!(has_not_crs(&env.db_pool, key_id).await?);
 
     let receipt = provider
-        .send_transaction(kms_generation.keygen(1).into_transaction_request())
+        .send_transaction(activate_key_request(&kms_generation))
         .await?
         .get_receipt()
         .await?;
@@ -595,7 +593,7 @@ async fn keygen_ok_simple() -> anyhow::Result<()> {
     assert!(has_server_key(&env.db_pool, key_id).await?);
 
     let receipt = provider
-        .send_transaction(kms_generation.crsgen().into_transaction_request())
+        .send_transaction(activate_crs_request(&kms_generation))
         .await?
         .get_receipt()
         .await?;
@@ -634,18 +632,18 @@ async fn keygen_idempotent_replay() -> anyhow::Result<()> {
         .await?;
     let aws_s3_client =
         AwsS3ClientMocked::new(&buckets, &key_types, key_id, false, false);
-    let kms_generation = KMSGenerationMock::deploy(&provider).await?;
+    let kms_generation = RawLog::deploy(&provider).await?;
     let chain_id = ChainId::try_from(TEST_CHAIN_ID)?;
 
     let keygen_receipt = provider
-        .send_transaction(kms_generation.keygen(1).into_transaction_request())
+        .send_transaction(activate_key_request(&kms_generation))
         .await?
         .get_receipt()
         .await?;
     let keygen_block = keygen_receipt.block_hash.expect("block hash");
 
     let crsgen_receipt = provider
-        .send_transaction(kms_generation.crsgen().into_transaction_request())
+        .send_transaction(activate_crs_request(&kms_generation))
         .await?
         .get_receipt()
         .await?;
@@ -843,14 +841,14 @@ async fn keygen_compromised_key_records_last_error() -> anyhow::Result<()> {
         .await?;
     let aws_s3_client =
         AwsS3ClientMocked::new(&buckets, &key_types, key_id, true, false);
-    let kms_generation = KMSGenerationMock::deploy(&provider).await?;
+    let kms_generation = RawLog::deploy(&provider).await?;
     let chain_id = ChainId::try_from(TEST_CHAIN_ID)?;
 
     assert!(has_not_public_key(&env.db_pool, key_id).await?);
     assert!(has_not_server_key(&env.db_pool, key_id).await?);
 
     let receipt = provider
-        .send_transaction(kms_generation.keygen(1).into_transaction_request())
+        .send_transaction(activate_key_request(&kms_generation))
         .await?
         .get_receipt()
         .await?;
@@ -903,14 +901,14 @@ async fn keygen_bad_key_or_bucket() -> anyhow::Result<()> {
         .await?;
     let aws_s3_client =
         AwsS3ClientMocked::new(&buckets, &key_types, key_id, false, true);
-    let kms_generation = KMSGenerationMock::deploy(&provider).await?;
+    let kms_generation = RawLog::deploy(&provider).await?;
     let chain_id = ChainId::try_from(TEST_CHAIN_ID)?;
 
     assert!(has_not_public_key(&env.db_pool, key_id).await?);
     assert!(has_not_server_key(&env.db_pool, key_id).await?);
 
     let receipt = provider
-        .send_transaction(kms_generation.keygen(1).into_transaction_request())
+        .send_transaction(activate_key_request(&kms_generation))
         .await?
         .get_receipt()
         .await?;

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE verify_proofs\n             SET handles = NULL\n             WHERE zk_proof_id = $1 AND verified = FALSE",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "25ce0c249a0be75a5685929a34fe871a3a9f409192e06311faa809529cda87d4"
+}

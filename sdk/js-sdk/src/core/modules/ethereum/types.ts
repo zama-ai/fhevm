@@ -1,5 +1,5 @@
 import type { TrustedValue } from '../../base/trustedValue.js';
-import type { Bytes65Hex, BytesHex, ChecksummedAddress, Uint256 } from '../../types/primitives.js';
+import type { Bytes32Hex, Bytes65Hex, BytesHex, ChecksummedAddress, Uint256 } from '../../types/primitives.js';
 import type { Prettify } from '../../types/utils.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -35,6 +35,58 @@ export type RecoverTypedDataAddressReturnType = ChecksummedAddress;
 
 export type RecoverTypedDataAddressModuleFunction = {
   recoverTypedDataAddress(parameters: RecoverTypedDataAddressParameters): Promise<RecoverTypedDataAddressReturnType>;
+};
+
+////////////////////////////////////////////////////////////////////////////////
+// hashTypedData
+////////////////////////////////////////////////////////////////////////////////
+
+export type HashTypedDataParameters = Readonly<{
+  domain: RecoverTypedDataAddressParameters['domain'];
+  types: Record<string, Array<{ name: string; type: string }>>;
+  primaryType: string;
+  message: Record<string, unknown>;
+}>;
+
+/** The EIP-712 digest (`bytes32`) that a signer signs. */
+export type HashTypedDataReturnType = Bytes32Hex;
+
+export type HashTypedDataModuleFunction = {
+  hashTypedData(parameters: HashTypedDataParameters): HashTypedDataReturnType;
+};
+
+////////////////////////////////////////////////////////////////////////////////
+// call (raw eth_call / STATICCALL)
+////////////////////////////////////////////////////////////////////////////////
+
+export type EthCallParameters = Readonly<{
+  readonly to: ChecksummedAddress;
+  readonly data: BytesHex;
+  /** Optional gas cap for the call. */
+  readonly gas?: bigint | undefined;
+}>;
+
+/**
+ * Outcome of a raw `eth_call`.
+ *
+ * - `{ success: true }` — the node returned (possibly empty) returndata. A no-code
+ *   address yields empty `0x` data, mirroring EVM `STATICCALL` semantics.
+ * - `{ success: false }` — the call reverted cleanly at the EVM level. This is a
+ *   *definitive* on-chain rejection (distinct from a transport-level failure,
+ *   which the adapter rethrows so the caller can degrade gracefully).
+ */
+export type EthCallResult =
+  | { readonly success: true; readonly data: BytesHex }
+  | { readonly success: false; readonly reason: string };
+
+export type CallModuleFunction = {
+  /**
+   * Performs a raw `eth_call` (STATICCALL semantics) and returns the raw
+   * returndata. Reverts are surfaced as `{ success: false }`; transport-level
+   * errors (network, timeout, rate limit, …) are thrown so callers can decide
+   * whether to fail or degrade.
+   */
+  call(hostPublicClient: TrustedClient, parameters: EthCallParameters): Promise<EthCallResult>;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -139,8 +191,10 @@ export type ReadContractModuleFunction = {
 
 export type EthereumModule = Prettify<
   RecoverTypedDataAddressModuleFunction &
+    HashTypedDataModuleFunction &
     SignTypedDataModuleFunction &
     ReadContractModuleFunction &
+    CallModuleFunction &
     EncodeModuleFunction &
     EncodePackedModuleFunction &
     DecodeModuleFunction &

@@ -156,7 +156,7 @@ describe('ZkProofBuilder', () => {
     const context = makeMockContext({ aclAddress: '0x0' });
 
     await expect(builder.build(context, { contractAddress, userAddress, extraData: '0x00' })).rejects.toThrow(
-      new ZkProofError({ message: 'Invalid ACL address: 0x0' }),
+      new ZkProofError({ message: 'Invalid ACL contract address: 0x0' }),
     );
   });
 

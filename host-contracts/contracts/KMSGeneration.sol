@@ -869,6 +869,9 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         address signerAddress,
         address txSenderAddress
     ) internal view virtual {
+        // This signer check requires an `Active` context. The other reads this contract makes on
+        // `PROTOCOL_CONFIG` accept any live context. Both gates agree today because every request
+        // pins its context from `getCurrentKmsContextAndEpoch`, which returns the active context.
         if (!PROTOCOL_CONFIG.isKmsSignerForContext(contextId, signerAddress)) {
             revert NotKmsSigner(signerAddress);
         }

@@ -200,6 +200,14 @@ export function logWasmBuildSummary(context) {
   console.log(`[${context.scriptName}]   KMS versions:  ${context.kmsVersions.join(', ') || '(none)'}`);
 }
 
+// Auto-generated base64-encoded WASM payloads (e.g. tfhe_bg.wasm.base64.js,
+// kms_lib_bg.wasm.base64.js). These are giant data-only files with no logic to
+// step through, so a sourcemap for them is pure dead weight in the published
+// package.
+export function isWasmBase64DataRel(rel) {
+  return /_bg\.wasm\.base64\.js$/.test(rel);
+}
+
 export function walk(dir, out = []) {
   for (const e of readdirSync(dir)) {
     const p = join(dir, e);

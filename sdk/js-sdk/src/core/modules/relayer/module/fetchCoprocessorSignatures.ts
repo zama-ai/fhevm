@@ -37,6 +37,7 @@ export async function fetchCoprocessorSignatures(
     url,
     payload: inputProofPayload,
     options,
+    logger: relayerClient.runtime.config.logger,
   });
 
   const result = (await request.run()) as FetchInputProofResult;

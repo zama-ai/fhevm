@@ -13,7 +13,7 @@ copy Turbopack bundled was the pre-fix build, so MT init still failed with:
 ```
 
 `npm run build` / `npm run test` were green throughout, because neither reinstalls
-the tarball into `browser-next` (its `test:browser` step does not cover the Next
+the tarball into `browser-next` (its `test:browser-smoke` step does not cover the Next
 platform), and single-thread mode never spawns a worker.
 
 ## Root cause

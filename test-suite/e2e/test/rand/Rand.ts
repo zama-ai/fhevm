@@ -1,4 +1,3 @@
-import type { PublicDecryptResults } from '@zama-fhe/relayer-sdk/node';
 import { expect } from 'chai';
 import { ethers, network } from 'hardhat';
 
@@ -25,7 +24,7 @@ describe('Rand', function () {
       const txn = await this.rand.generateBool();
       await txn.wait();
       const valueHandle = (await this.rand.valueb()) as `0x${string}`;
-      const res: PublicDecryptResults = await this.instances.alice.publicDecrypt([valueHandle]);
+      const res = await this.instances.alice.publicDecrypt([valueHandle]);
       const value = res.clearValues[valueHandle];
       expect(typeof value).to.eq('boolean');
       values.push(value as boolean);

@@ -26,16 +26,12 @@ fn get_test_chains() -> Vec<RpcTarget> {
     vec![
         // Using only chains with generous rate limits for free tiers
         RpcTarget {
-            name: "Zama Gateway Testnet",
-            url: "https://rpc-zama-testnet-0.t.conduit.xyz",
+            name: "Ethereum Mainnet",
+            url: "https://ethereum-rpc.publicnode.com",
         },
         RpcTarget {
-            name: "Optimism",
-            url: "https://mainnet.optimism.io",
-        },
-        RpcTarget {
-            name: "Base",
-            url: "https://mainnet.base.org",
+            name: "Polygon PoS",
+            url: "https://polygon-rpc.com",
         },
     ]
 }
@@ -110,7 +106,8 @@ async fn test_fetcher_clone() {
         url: "https://rpc-zama-testnet-0.t.conduit.xyz",
     };
 
-    let provider = SemEvmRpcProvider::new(target.url.to_string(), 5).expect("Provider creation");
+    let provider =
+        SemEvmRpcProvider::new(target.url.to_string(), 5, false, 64).expect("Provider creation");
     let master_token = CancellationToken::new();
 
     // Create one fetcher with shared cancellation token
@@ -162,7 +159,8 @@ async fn test_fetcher_clone_shared_cancellation() {
         url: "https://rpc-zama-testnet-0.t.conduit.xyz",
     };
 
-    let provider = SemEvmRpcProvider::new(target.url.to_string(), 5).expect("Provider creation");
+    let provider =
+        SemEvmRpcProvider::new(target.url.to_string(), 5, false, 64).expect("Provider creation");
     let master_token = CancellationToken::new();
 
     // Create fetcher with shared cancellation token
@@ -207,7 +205,7 @@ async fn test_strategy1_block_receipts_by_number_all_chains() {
     for target in get_test_chains() {
         info!("Testing {}...", target.name);
 
-        let provider = match SemEvmRpcProvider::new(target.url.to_string(), 5) {
+        let provider = match SemEvmRpcProvider::new(target.url.to_string(), 5, false, 64) {
             Ok(p) => p,
             Err(e) => {
                 info!("  [SKIP] {}: Provider creation failed: {}", target.name, e);
@@ -260,7 +258,7 @@ async fn test_strategy1_block_receipts_by_hash_all_chains() {
     for target in get_test_chains() {
         info!("Testing {}...", target.name);
 
-        let provider = match SemEvmRpcProvider::new(target.url.to_string(), 5) {
+        let provider = match SemEvmRpcProvider::new(target.url.to_string(), 5, false, 64) {
             Ok(p) => p,
             Err(e) => {
                 info!("  [SKIP] {}: Provider creation failed: {}", target.name, e);
@@ -323,7 +321,7 @@ async fn test_strategy2_batch_receipts_by_number_all_chains() {
     for target in get_test_chains() {
         info!("Testing {}...", target.name);
 
-        let provider = match SemEvmRpcProvider::new(target.url.to_string(), 5) {
+        let provider = match SemEvmRpcProvider::new(target.url.to_string(), 5, false, 64) {
             Ok(p) => p,
             Err(e) => {
                 info!("  [SKIP] {}: Provider creation failed: {}", target.name, e);
@@ -376,7 +374,7 @@ async fn test_strategy2_batch_receipts_by_hash_all_chains() {
     for target in get_test_chains() {
         info!("Testing {}...", target.name);
 
-        let provider = match SemEvmRpcProvider::new(target.url.to_string(), 5) {
+        let provider = match SemEvmRpcProvider::new(target.url.to_string(), 5, false, 64) {
             Ok(p) => p,
             Err(e) => {
                 info!("  [SKIP] {}: Provider creation failed: {}", target.name, e);
@@ -447,7 +445,7 @@ async fn test_strategy2_batch_receipts_by_hash_all_chains() {
 //         url: "https://ethereum-rpc.publicnode.com",
 //     };
 //
-//     let provider = match SemEvmRpcProvider::new(target.url.to_string(), 10) {
+//     let provider = match SemEvmRpcProvider::new(target.url.to_string(), 10, false, 64) {
 //         Ok(p) => p,
 //         Err(e) => {
 //             info!("  [SKIP] Provider creation failed: {}", e);
@@ -505,7 +503,7 @@ async fn test_strategy3_chunked_batch_by_hash() {
         url: "https://ethereum-rpc.publicnode.com",
     };
 
-    let provider = match SemEvmRpcProvider::new(target.url.to_string(), 10) {
+    let provider = match SemEvmRpcProvider::new(target.url.to_string(), 10, false, 64) {
         Ok(p) => p,
         Err(e) => {
             info!("  [SKIP] Provider creation failed: {}", e);
@@ -681,7 +679,7 @@ async fn test_strategy5_sequential_receipts_by_number() {
 
     info!("Testing {}...", target.name);
 
-    let provider = match SemEvmRpcProvider::new(target.url.to_string(), 5) {
+    let provider = match SemEvmRpcProvider::new(target.url.to_string(), 5, false, 64) {
         Ok(p) => p,
         Err(e) => {
             info!("  [SKIP] {}: Provider creation failed: {}", target.name, e);
@@ -726,7 +724,7 @@ async fn test_strategy5_sequential_receipts_by_hash() {
 
     info!("Testing {}...", target.name);
 
-    let provider = match SemEvmRpcProvider::new(target.url.to_string(), 5) {
+    let provider = match SemEvmRpcProvider::new(target.url.to_string(), 5, false, 64) {
         Ok(p) => p,
         Err(e) => {
             info!("  [SKIP] {}: Provider creation failed: {}", target.name, e);
@@ -783,7 +781,7 @@ async fn test_strategy5_sequential_with_transactions() {
 
     info!("Testing {}...", target.name);
 
-    let provider = match SemEvmRpcProvider::new(target.url.to_string(), 5) {
+    let provider = match SemEvmRpcProvider::new(target.url.to_string(), 5, false, 64) {
         Ok(p) => p,
         Err(e) => {
             info!("  [SKIP] {}: Provider creation failed: {}", target.name, e);
@@ -836,7 +834,8 @@ async fn test_cancellation_immediate() {
         url: "https://ethereum-rpc.publicnode.com",
     };
 
-    let provider = SemEvmRpcProvider::new(target.url.to_string(), 5).expect("Provider creation");
+    let provider =
+        SemEvmRpcProvider::new(target.url.to_string(), 5, false, 64).expect("Provider creation");
 
     let cancel_token = CancellationToken::new();
 
@@ -877,7 +876,8 @@ async fn test_cancellation_during_fetch() {
         url: "https://ethereum-rpc.publicnode.com",
     };
 
-    let provider = SemEvmRpcProvider::new(target.url.to_string(), 5).expect("Provider creation");
+    let provider =
+        SemEvmRpcProvider::new(target.url.to_string(), 5, false, 64).expect("Provider creation");
 
     let cancel_token = CancellationToken::new();
     let cancel_token_clone = cancel_token.clone();
@@ -928,7 +928,7 @@ async fn test_cancellation_during_fetch() {
 //         url: "https://ethereum-rpc.publicnode.com",
 //     };
 //
-//     let provider = SemEvmRpcProvider::new(target.url.to_string(), 5).expect("Provider creation");
+//     let provider = SemEvmRpcProvider::new(target.url.to_string(), 5, false, 64).expect("Provider creation");
 //
 //     let height = provider.get_block_number().await.expect("Block number");
 //     let target_block = height.saturating_sub(10);
@@ -1007,7 +1007,7 @@ async fn test_verification_enabled() {
     for target in verification_chains {
         info!("Testing {}...", target.name);
 
-        let provider = match SemEvmRpcProvider::new(target.url.to_string(), 5) {
+        let provider = match SemEvmRpcProvider::new(target.url.to_string(), 5, false, 64) {
             Ok(p) => p,
             Err(e) => {
                 info!("  [SKIP] {}: Provider creation failed: {}", target.name, e);
@@ -1068,7 +1068,8 @@ async fn test_retry_eventually_succeeds() {
         url: "https://ethereum-rpc.publicnode.com",
     };
 
-    let provider = SemEvmRpcProvider::new(target.url.to_string(), 5).expect("Provider creation");
+    let provider =
+        SemEvmRpcProvider::new(target.url.to_string(), 5, false, 64).expect("Provider creation");
 
     let fetcher = EvmBlockFetcher::new(provider).with_retry_interval(Duration::from_millis(100));
 
@@ -1108,6 +1109,8 @@ async fn test_retry_with_timeout() {
     let provider = SemEvmRpcProvider::new(
         "http://localhost:9999".to_string(), // Non-existent RPC
         5,
+        false,
+        64,
     )
     .expect("Provider creation");
 
@@ -1152,7 +1155,8 @@ async fn test_fetched_block_methods() {
         url: "https://ethereum-rpc.publicnode.com",
     };
 
-    let provider = SemEvmRpcProvider::new(target.url.to_string(), 5).expect("Provider creation");
+    let provider =
+        SemEvmRpcProvider::new(target.url.to_string(), 5, false, 64).expect("Provider creation");
 
     let height = provider.get_block_number().await.expect("Block number");
     let target_block = height.saturating_sub(10);
@@ -1205,7 +1209,8 @@ async fn test_empty_block() {
         url: "https://ethereum-rpc.publicnode.com",
     };
 
-    let provider = SemEvmRpcProvider::new(target.url.to_string(), 5).expect("Provider creation");
+    let provider =
+        SemEvmRpcProvider::new(target.url.to_string(), 5, false, 64).expect("Provider creation");
 
     let fetcher = EvmBlockFetcher::new(provider).with_retry_interval(Duration::from_millis(100));
 

@@ -9,6 +9,7 @@ import { readFhevmExecutorContractData } from './readFhevmExecutorContractData.j
 import { readInputVerifierContractData } from './readInputVerifierContractData.js';
 import { readKmsVerifierContractData } from './readKmsVerifierContractData.js';
 import { resolveChainId } from './resolveChainId.js';
+import { initPublicAction } from '../../runtime/CoreFhevm-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 // resolveFhevmConfig
@@ -29,7 +30,7 @@ export type ResolveFhevmConfigParameters = {
       readonly hcuLimit?: OptionalChainContract | undefined;
       readonly inputVerifier?: OptionalChainContract | undefined;
       readonly kmsVerifier: { readonly address: string };
-      readonly protocolConfig: OptionalChainContract | undefined;
+      readonly protocolConfig?: OptionalChainContract | undefined;
     };
     readonly gateway?:
       | {
@@ -70,6 +71,9 @@ export async function resolveFhevmConfig(
   if (protocolConfigAddress !== undefined) {
     assertIsAddress(protocolConfigAddress, {});
   }
+
+  // no context needed
+  await initPublicAction(fhevm);
 
   const id: Uint64BigInt = await resolveChainId(fhevm, parameters);
   const fhevmExecutorData = await _resolveFhevmExecutor(fhevm, parameters.fhevm.contracts);

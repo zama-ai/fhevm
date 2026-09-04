@@ -3,6 +3,7 @@ import type { FhevmSolanaChain } from '../../core/types/fhevmSolanaChain.js';
 import type { FetchInputProofResult, RelayerInputProofOptions } from '../../core/types/relayer.js';
 import type { ZkProof } from '../../core/types/zkProof-p.js';
 import type { SolanaZkProof } from '../../core/types/zkProof-p.js';
+import type { FhevmClientFrozenContext } from '../../core/types/fhevmClientFrozenContext-p.js';
 import { hexToBytes32 } from '../../core/base/bytes.js';
 import { InputProofError } from '../../core/errors/InputProofError.js';
 import { assertHandleArrayEquals } from '../../core/handle/FhevmHandle.js';
@@ -21,6 +22,7 @@ export type SolanaSubmitInputProofResult = FetchInputProofResult;
 type SolanaSubmitInputProofContext = {
   readonly runtime: FhevmRuntime;
   readonly solanaChain: FhevmSolanaChain;
+  readonly fhevmContext: FhevmClientFrozenContext;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -77,7 +79,7 @@ export async function submitInputProof(
       client: {},
       options: { batchRpcCalls: false },
     } as unknown as Parameters<FhevmRuntime['relayer']['fetchCoprocessorSignatures']>[0],
-    { payload: { zkProof: relayerProof }, options: relayerOptions },
+    { payload: { zkProof: relayerProof }, options: relayerOptions, fhevmContext: fhevm.fhevmContext },
   );
 
   assertHandleArrayEquals(result.handles, expectedHandles, {

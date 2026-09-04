@@ -5,14 +5,10 @@ use crate::common::validation_helper::{
     expect_v2_malformed_json, expect_v2_missing_field, expect_v2_validation_error, test_endpoint,
     test_endpoint_raw_body, with_invalid_field,
 };
-use alloy::primitives::{Address, Bytes};
 use ethereum_rpc_mock::Response;
 use fhevm_relayer::http::endpoints::v2::types::error::ApiResponseStatus;
-use fhevm_relayer::http::endpoints::v2::types::input_proof::{
-    InputProofPostResponseJson, InputProofStatusResponseJson,
-};
+use fhevm_relayer::http::endpoints::v2::types::input_proof::InputProofPostResponseJson;
 use fhevm_relayer::http::validation_messages as constants_validation;
-use rand::{rng, RngExt};
 use rstest::rstest;
 use serde_json::json;
 use tempfile::TempDir;
@@ -40,91 +36,9 @@ mod constants {
 }
 
 mod helpers {
-    use super::*;
-    use crate::common::utils;
-
-    pub fn v2_input_proof_post_url(setup: &TestSetup) -> String {
-        format!("http://localhost:{}/v2/input-proof", setup.http_port)
-    }
-
-    pub fn v2_input_proof_get_url(setup: &TestSetup, job_id: &str) -> String {
-        format!(
-            "http://localhost:{}/v2/input-proof/{}",
-            setup.http_port, job_id
-        )
-    }
-
-    pub fn random_address() -> Address {
-        utils::random_address()
-    }
-
-    pub fn random_bytes() -> Bytes {
-        let mut rng = rng();
-        let len = rng.random_range(4..32);
-        let bytes: Vec<u8> = (0..len).map(|_| rng.random()).collect();
-        Bytes::from(bytes)
-    }
-
-    pub fn create_input_proof_payload(setup: &TestSetup) -> (serde_json::Value, Address, Bytes) {
-        let contract_address = random_address();
-        let user_address = random_address();
-        let ciphertext_data = random_bytes();
-
-        let payload = json!({
-            "contractChainId": setup.settings.gateway.blockchain_rpc.chain_id.to_string(),
-            "contractAddress": format!("{:?}", contract_address),
-            "userAddress": format!("{:?}", user_address),
-            "ciphertextWithInputVerification": hex::encode(&ciphertext_data),
-            "extraData": constants::EXTRA_DATA
-        });
-
-        (payload, user_address, ciphertext_data)
-    }
-
-    /// Submit POST request and return job_id
-    pub async fn submit_request(setup: &TestSetup, payload: &serde_json::Value) -> String {
-        let response = reqwest::Client::new()
-            .post(v2_input_proof_post_url(setup))
-            .header("Content-Type", "application/json")
-            .timeout(std::time::Duration::from_secs(10))
-            .json(payload)
-            .send()
-            .await
-            .expect("Failed to send POST request");
-
-        assert_eq!(response.status(), reqwest::StatusCode::ACCEPTED);
-        let post_response: InputProofPostResponseJson = response
-            .json()
-            .await
-            .expect("Failed to parse POST response");
-        assert_eq!(post_response.status, ApiResponseStatus::Queued);
-        post_response.result.job_id
-    }
-
-    /// Poll GET endpoint until terminal state, return (status, body)
-    pub async fn poll_until_terminal(
-        setup: &TestSetup,
-        job_id: &str,
-    ) -> (reqwest::StatusCode, InputProofStatusResponseJson) {
-        let client = reqwest::Client::new();
-        for _ in 0..10 {
-            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-            let response = client
-                .get(v2_input_proof_get_url(setup, job_id))
-                .timeout(std::time::Duration::from_secs(10))
-                .send()
-                .await
-                .expect("Failed to send GET request");
-
-            let status = response.status();
-            if status != reqwest::StatusCode::ACCEPTED {
-                let body: InputProofStatusResponseJson =
-                    response.json().await.expect("Failed to parse GET response");
-                return (status, body);
-            }
-        }
-        panic!("Request did not reach terminal state in time");
-    }
+    // The v2 POST → poll lifecycle and payload builders live in
+    // `common::flows` so the listener-redundancy suite can drive this flow too.
+    pub use crate::common::flows::input_proof::*;
 }
 
 #[tokio::test]

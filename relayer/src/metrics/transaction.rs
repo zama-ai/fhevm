@@ -144,6 +144,21 @@ pub fn transaction_broadcast(transaction_type: TransactionType) {
         .inc();
 }
 
+/// Call when a dequeued send is skipped because the tx-in-flight claim did not apply
+/// (another actor already owns the row). Balances the gauge `transaction_broadcast`
+/// incremented before the claim was attempted. Deliberately does not touch
+/// `transaction_total` or the duration histogram: this is an expected, benign outcome, not a
+/// completed transaction and not a failure.
+pub fn transaction_claim_lost(transaction_type: TransactionType) {
+    let metrics = TRANSACTION_METRICS
+        .get()
+        .expect("Transaction metrics not initialized");
+    metrics
+        .in_flight_transactions
+        .with_label_values(&[transaction_type.to_string().as_str()])
+        .dec();
+}
+
 pub fn transaction_confirmed(transaction_type: TransactionType, duration_millis: f64) {
     let metrics = TRANSACTION_METRICS
         .get()

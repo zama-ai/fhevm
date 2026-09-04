@@ -1637,7 +1637,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
             }
 
             _adjustAndCheckFheTransactionLimitOneOp(opHCU, caller, factor1, result);
-        } else {
+        } else if (scalarByte == FHE_MUL_DIV_FACTOR2_ENCRYPTED) {
             if (resultType == FheType.Uint8) {
                 opHCU = 524000;
             } else if (resultType == FheType.Uint16) {
@@ -1651,6 +1651,8 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
             }
 
             _adjustAndCheckFheTransactionLimitTwoOps(opHCU, caller, factor1, factor2, result);
+        } else {
+            revert OnlyScalarOperationsAreSupported();
         }
     }
 

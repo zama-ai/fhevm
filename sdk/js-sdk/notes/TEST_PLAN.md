@@ -5,7 +5,7 @@ Test plan:
 - it must run against /Users/alex/src/me/zama-ai/fhevm/sdk/js-sdk/test/scripts/localstack-restart.sh
 - if the localstack is running, no need to restart it because it is very long
 - the test suite should use playwright and I should be able to run this test suite in a browser page.
-- there is an existing model in ./test/browser
+- there is an existing model in ./test/browser-smoke
 - each test should use FHETest
 - each test should perform an encrypt/decrypt round-trip as already done in existing fheTest files
 - each test should use a fresh page because it is not possible to run multiple FhevmRuntimes in the single page instance

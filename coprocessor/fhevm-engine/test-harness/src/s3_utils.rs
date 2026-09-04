@@ -46,8 +46,14 @@ pub async fn assert_key_exists(
     );
 }
 
-/// Asserts that the number of objects in S3 matches the expected count
-pub async fn assert_object_count(client: Client, bucket: &String, expected_count: i32) {
+/// Asserts that the number of objects in S3 under an optional key prefix matches the expected
+/// count.
+pub async fn assert_object_count(
+    client: Client,
+    bucket: &String,
+    key_prefix: Option<&str>,
+    expected_count: i32,
+) {
     let max_keys = 100_000;
 
     assert!(
@@ -60,22 +66,26 @@ pub async fn assert_object_count(client: Client, bucket: &String, expected_count
     let result = client
         .list_objects()
         .set_max_keys(Some(max_keys))
+        .set_prefix(key_prefix.map(str::to_owned))
         .bucket(bucket)
         .send()
         .await
         .expect("Failed to list objects in S3 bucket");
 
     tracing::info!(
-        "Found {} objects in S3 bucket: {}",
+        "Found {} objects in S3 bucket: {} (prefix: {:?})",
         result.contents().len(),
-        bucket
+        bucket,
+        key_prefix
     );
 
     assert_eq!(
         result.contents().len(),
         expected_count as usize,
-        "Expected {} ct objects in S3 bucket, found {}",
+        "Expected {} ct objects in S3 bucket {} (prefix: {:?}), found {}",
         expected_count,
+        bucket,
+        key_prefix,
         result.contents().len()
     );
 }

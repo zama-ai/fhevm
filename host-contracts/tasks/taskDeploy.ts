@@ -1,22 +1,17 @@
 import { HardhatUpgrades } from '@openzeppelin/hardhat-upgrades';
 import dotenv from 'dotenv';
-import { Wallet } from 'ethers';
+import { type TransactionResponse, Wallet } from 'ethers';
 import fs from 'fs';
 import { task, types } from 'hardhat/config';
 import type { HardhatEthersHelpers, HardhatRuntimeEnvironment, TaskArguments } from 'hardhat/types';
 import path from 'path';
 
-import {
-  type CanonicalSnapshot,
-  buildCanonicalUpgradeProposal,
-  buildSnapshotArtifact,
-  parseSnapshotArtifact,
-  readCanonicalSnapshot,
-} from './protocolConfigMirror';
+import { buildCanonicalUpgradeProposal, readCanonicalSnapshot } from './protocolConfigMirror';
 import { assertContractMatchesVersionPrefix } from './utils/contractVersion';
 import { formatError } from './utils/formatError';
 import { CRS_COUNTER_BASE, KEY_COUNTER_BASE } from './utils/kmsGenerationConstants';
 import { getRequiredEnvVar } from './utils/loadVariables';
+import { buildCanonicalSnapshotEnv, readCanonicalSnapshotFromEnv } from './utils/protocolConfigCanonicalEnv';
 import { executeUpgradeProposal, printUpgradeProposal, verifyProposalImplementation } from './utils/upgradeProposal';
 
 const ADDRESSES_DIR = path.join(__dirname, '../addresses');
@@ -85,33 +80,17 @@ task('task:deployAllHostContracts')
   )
   .addOptionalParam(
     'protocolConfigSource',
-    "How to initialize ProtocolConfig: 'fresh' (default) calls initializeFromEmptyProxy with env-driven KMS nodes/thresholds; 'canonical' mirrors the canonical chain's ProtocolConfig via task:deployProtocolConfigFromCanonical (non-canonical hosts only).",
+    "How to initialize ProtocolConfig: 'fresh' (default) calls initializeFromEmptyProxy with env-driven KMS nodes/thresholds; 'canonical' mirrors the canonical chain's ProtocolConfig via task:deployProtocolConfigFromCanonical (non-canonical hosts only), configured through the CANONICAL_* snapshot env variables.",
     'fresh',
-    types.string,
-  )
-  .addOptionalParam(
-    'canonicalRpcUrl',
-    'RPC URL of the canonical host chain. Required with --protocol-config-source canonical.',
-    undefined,
-    types.string,
-  )
-  .addOptionalParam(
-    'canonicalProtocolConfigAddress',
-    "Address of the canonical chain's ProtocolConfig. Required with --protocol-config-source canonical.",
-    undefined,
     types.string,
   )
   .setAction(async function (
     {
       withKmsGeneration,
       protocolConfigSource,
-      canonicalRpcUrl,
-      canonicalProtocolConfigAddress,
     }: {
       withKmsGeneration: boolean;
       protocolConfigSource: string;
-      canonicalRpcUrl?: string;
-      canonicalProtocolConfigAddress?: string;
     },
     hre,
   ) {
@@ -128,11 +107,8 @@ task('task:deployAllHostContracts')
           '--protocol-config-source canonical seeds a non-canonical replica; it cannot be combined with --with-kms-generation true.',
         );
       }
-      if (!(canonicalRpcUrl && canonicalProtocolConfigAddress)) {
-        throw new Error(
-          '--protocol-config-source canonical requires --canonical-rpc-url and --canonical-protocol-config-address.',
-        );
-      }
+      // Fail before the clean/compile sequence rather than at the mirror step, which runs last.
+      readCanonicalSnapshotFromEnv();
     }
 
     if (process.env.SOLIDITY_COVERAGE !== 'true') {
@@ -151,7 +127,7 @@ task('task:deployAllHostContracts')
     await hre.run('task:deployACL');
     await hre.run('task:deployFHEVMExecutor');
     if (protocolConfigSource === 'canonical') {
-      await hre.run('task:deployProtocolConfigFromCanonical', { canonicalRpcUrl, canonicalProtocolConfigAddress });
+      await hre.run('task:deployProtocolConfigFromCanonical');
     } else {
       await hre.run('task:deployProtocolConfig');
     }
@@ -462,7 +438,31 @@ task('task:deployPauserSet').setAction(async function (_, hre) {
 // ConfidentialBridge
 ////////////////////////////////////////////////////////////////////////////////
 
-task('task:deployBridge').setAction(async function (_, { ethers, upgrades }) {
+// Reads the LayerZero endpoint immutable back off a deployed ConfidentialBridge (a proxy after an
+// executed upgrade, or a freshly prepared implementation) and asserts it matches the address we
+// intended to wire. The endpoint is baked into the implementation's constructor as an immutable, so
+// this is the only way to confirm a stale or mistyped LZ_ENDPOINT_ADDRESS did not silently wire the
+// bridge to an unintended endpoint.
+export async function assertBridgeEndpointImmutable(
+  hre: HardhatRuntimeEnvironment,
+  bridgeAddress: string,
+  expectedEndpoint: string,
+  label: string,
+) {
+  const { ethers } = hre;
+  const bridge = await ethers.getContractAt('ConfidentialBridge', bridgeAddress);
+  const actualEndpoint = String(await bridge.endpoint());
+  if (ethers.getAddress(actualEndpoint) !== ethers.getAddress(expectedEndpoint)) {
+    throw new Error(
+      `${label}: LayerZero endpoint immutable mismatch. Expected ${expectedEndpoint}, but ${bridgeAddress} ` +
+        `reports ${actualEndpoint}. Check LZ_ENDPOINT_ADDRESS and redeploy the implementation.`,
+    );
+  }
+  console.log(`${label}: verified LayerZero endpoint immutable = ${actualEndpoint} at ${bridgeAddress}.`);
+}
+
+task('task:deployBridge').setAction(async function (_, hre) {
+  const { ethers, upgrades } = hre;
   const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
 
@@ -507,7 +507,7 @@ task('task:deployBridge').setAction(async function (_, { ethers, upgrades }) {
   const newImplem = await ethers.getContractFactory('ConfidentialBridge', deployer);
 
   const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
-  await upgrades.upgradeProxy(proxy, newImplem, {
+  const receipt = await upgrades.upgradeProxy(proxy, newImplem, {
     constructorArgs: [lzEndpoint],
     // - constructor / state-variable-immutable: LayerZero's `OAppCoreUpgradeable`
     //   stores the endpoint as an immutable in the implementation's constructor.
@@ -517,6 +517,10 @@ task('task:deployBridge').setAction(async function (_, { ethers, upgrades }) {
     unsafeAllow: ['constructor', 'state-variable-immutable', 'missing-initializer-call'],
     call: { fn: 'initializeFromEmptyProxy', args: [[], []] },
   });
+  await (receipt as unknown as { deployTransaction: TransactionResponse }).deployTransaction.wait();
+  // Confirm the endpoint immutable baked into the freshly deployed implementation matches the
+  // address we intended, reading it back off the now-upgraded proxy.
+  await assertBridgeEndpointImmutable(hre, proxyAddress, lzEndpoint, '[task:deployBridge]');
   console.log(`ConfidentialBridge upgraded at ${proxyAddress} (lzEndpoint=${lzEndpoint})`);
 });
 
@@ -742,107 +746,62 @@ task('task:deployProtocolConfig').setAction(async function (_, hre) {
 });
 
 // DAO path for initializing a non-canonical ProtocolConfig replica from the canonical chain
-// (Ethereum). Consumes a reviewed task:exportCanonicalProtocolConfig artifact — not a live RPC
-// read — so the DAO executes exactly the state its signers reproduced and diffed. Devnet
-// equivalent: task:deployProtocolConfigFromCanonical.
+// (Ethereum). Reads the reviewed snapshot from the CANONICAL_* env variables, so the DAO executes
+// exactly the state its signers reproduced and diffed. Devnet equivalent:
+// task:deployProtocolConfigFromCanonical.
 task(
   'task:prepareDeployProtocolConfigFromCanonical',
   'Deploys a ProtocolConfig implementation and prints DAO upgrade calldata from a reviewed canonical snapshot artifact',
 )
-  .addParam(
-    'snapshot',
-    'Path to the reviewed task:exportCanonicalProtocolConfig artifact to encode into the DAO payload.',
-    undefined,
-    types.string,
-  )
   .addOptionalParam(
     'verifyContract',
     'Verify new implementation on Etherscan (for eg if deploying on Sepolia or Mainnet)',
     true,
     types.boolean,
   )
-  .setAction(async function ({ snapshot: snapshotPath, verifyContract }, hre) {
+  .setAction(async function ({ verifyContract }, hre) {
+    const snapshot = readCanonicalSnapshotFromEnv();
     const parsedEnv = readHostEnv();
     const proxyAddress = parsedEnv.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
     // The bootstrap task may have updated addresses/FHEVMHostAddresses.sol, so rebuild.
     await hre.run('compile:specific', { contract: 'contracts' });
-    const snapshot = parseSnapshotArtifact(fs.readFileSync(snapshotPath, 'utf-8'));
     const preparedUpgrade = await buildCanonicalUpgradeProposal(hre, { snapshot, proxyAddress });
 
     printUpgradeProposal(preparedUpgrade);
     if (verifyContract) {
-      await verifyProposalImplementation(hre, preparedUpgrade, 'contracts/ProtocolConfig.sol:ProtocolConfig');
+      await verifyProposalImplementation(hre, preparedUpgrade);
     }
     return preparedUpgrade;
   });
 
-// Initializes the local (non-canonical) ProtocolConfig replica from the canonical chain's current
-// KMS context — from a reviewed export artifact (--snapshot) or a live block-pinned RPC read.
+// Initializes the local (non-canonical) ProtocolConfig replica from the canonical chain's KMS
+// context, as read by readCanonicalSnapshotFromEnv.
 task(
   'task:deployProtocolConfigFromCanonical',
-  "Upgrades the existing ProtocolConfig proxy from the canonical chain's state (reviewed snapshot artifact, or live read).",
-)
-  .addOptionalParam(
-    'snapshot',
-    'Path to a reviewed task:exportCanonicalProtocolConfig artifact to apply. When set, canonical RPC access is not needed and exactly the reviewed state is deployed.',
-    undefined,
-    types.string,
-  )
-  .addOptionalParam(
-    'canonicalRpcUrl',
-    'RPC URL of the canonical host chain to read the current ProtocolConfig state from. Required without --snapshot.',
-    undefined,
-    types.string,
-  )
-  .addOptionalParam(
-    'canonicalProtocolConfigAddress',
-    'Address of the ProtocolConfig contract on the canonical host chain. Required without --snapshot.',
-    undefined,
-    types.string,
-  )
-  .setAction(async function (
-    {
-      snapshot: snapshotPath,
-      canonicalRpcUrl,
-      canonicalProtocolConfigAddress,
-    }: { snapshot?: string; canonicalRpcUrl?: string; canonicalProtocolConfigAddress?: string },
-    hre,
-  ) {
-    if (!snapshotPath && !(canonicalRpcUrl && canonicalProtocolConfigAddress)) {
-      throw new Error(
-        'Pass either --snapshot <artifact.json> (reviewed export) or both --canonical-rpc-url and --canonical-protocol-config-address (live read).',
-      );
-    }
+  "Upgrades the existing ProtocolConfig proxy from the canonical chain's reviewed snapshot artifact.",
+).setAction(async function (_, hre) {
+  // Read the snapshot before the compile below, so a misconfigured environment fails immediately.
+  console.log('Applying the reviewed canonical snapshot from the CANONICAL_* env variables.');
+  const snapshot = readCanonicalSnapshotFromEnv();
 
-    // ProtocolConfig embeds aclAdd from addresses/FHEVMHostAddresses.sol at compile time; a stale
-    // artifact would deploy bytecode authorized against the wrong ACL (same as FromMigration).
-    await hre.run('compile:specific', { contract: 'contracts' });
-    const parsedEnv = readHostEnv();
-    const secondaryProxyAddress = parsedEnv.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
+  // ProtocolConfig embeds aclAdd from addresses/FHEVMHostAddresses.sol at compile time; a stale
+  // artifact would deploy bytecode authorized against the wrong ACL (same as FromMigration).
+  await hre.run('compile:specific', { contract: 'contracts' });
+  const parsedEnv = readHostEnv();
+  const secondaryProxyAddress = parsedEnv.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
 
-    let snapshot: CanonicalSnapshot;
-    if (snapshotPath) {
-      console.log(`Applying reviewed canonical snapshot from ${snapshotPath}.`);
-      snapshot = parseSnapshotArtifact(fs.readFileSync(snapshotPath, 'utf-8'));
-    } else {
-      snapshot = await readCanonicalSnapshot(hre, {
-        canonicalProvider: new hre.ethers.JsonRpcProvider(canonicalRpcUrl),
-        canonicalProtocolConfigAddress: canonicalProtocolConfigAddress as string,
-      });
-    }
+  // Same prepare step as the DAO path (task:prepareDeployProtocolConfigFromCanonical), then
+  // execute the produced payload directly: devnet runs byte-identical calldata to what the DAO
+  // would sign.
+  const prepared = await buildCanonicalUpgradeProposal(hre, { snapshot, proxyAddress: secondaryProxyAddress });
+  await executeUpgradeProposal(hre, prepared);
 
-    // Same prepare step as the DAO path (task:prepareDeployProtocolConfigFromCanonical), then
-    // execute the produced payload directly: devnet runs byte-identical calldata to what the DAO
-    // would sign.
-    const prepared = await buildCanonicalUpgradeProposal(hre, { snapshot, proxyAddress: secondaryProxyAddress });
-    await executeUpgradeProposal(hre, prepared);
-
-    // On interval-mining networks, upgradeProxy can return before the tx is mined.
-    await waitForTaskReady(hre, 'task:assertProtocolConfigReady');
-    console.log(
-      `ProtocolConfig code set successfully at ${secondaryProxyAddress}, mirroring canonical chain ${snapshot.canonicalChainId} context ${snapshot.currentKmsContextId} epoch ${snapshot.currentEpochId} (block ${snapshot.blockNumber}) with ${snapshot.kmsNodes.length} KMS nodes.`,
-    );
-  });
+  // On interval-mining networks, upgradeProxy can return before the tx is mined.
+  await waitForTaskReady(hre, 'task:assertProtocolConfigReady');
+  console.log(
+    `ProtocolConfig code set successfully at ${secondaryProxyAddress}, mirroring canonical chain ${snapshot.canonicalChainId} context ${snapshot.currentKmsContextId} epoch ${snapshot.currentEpochId} (block ${snapshot.blockNumber}) with ${snapshot.kmsNodes.length} KMS nodes.`,
+  );
+});
 
 // Reads the canonical ProtocolConfig context at a pinned block and writes a JSON snapshot, without
 // deploying anything. DAO signers re-run this at the same block and diff the snapshot against
@@ -889,12 +848,13 @@ task(
       blockNumber,
     });
 
-    const artifact = buildSnapshotArtifact(snapshot, canonicalProtocolConfigAddress);
-    fs.writeFileSync(out, JSON.stringify(artifact, null, 2));
+    // `export` holds the snapshot as a flat KEY=value map, which is what the apply tasks read.
+    const output = { export: buildCanonicalSnapshotEnv(snapshot) };
+    fs.writeFileSync(out, JSON.stringify(output, null, 2));
     console.log(
       `Canonical ProtocolConfig snapshot written to ${out}: chain ${snapshot.canonicalChainId}, block ${snapshot.blockNumber}, context ${snapshot.currentKmsContextId}, epoch ${snapshot.currentEpochId}, ${snapshot.kmsNodes.length} KMS nodes.`,
     );
-    return artifact;
+    return output;
   });
 
 ////////////////////////////////////////////////////////////////////////////////

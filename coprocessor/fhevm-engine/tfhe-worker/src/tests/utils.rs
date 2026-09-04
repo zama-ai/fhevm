@@ -72,6 +72,7 @@ async fn setup_test_app_existing_db() -> Result<TestInstance, Box<dyn std::error
 async fn start_coprocessor(rx: Receiver<bool>, db_url: &str) -> u16 {
     let health_check_port = test_harness::localstack::pick_free_port();
     let args: Args = Args {
+        max_batch_ttl_secs: 300,
         run_bg_worker: true,
         worker_polling_interval_ms: 1000,
         bridge_polling_interval_ms: 1000,
@@ -98,6 +99,7 @@ async fn start_coprocessor(rx: Receiver<bool>, db_url: &str) -> u16 {
         processed_dcid_ttl_sec: 0,
         dcid_max_no_progress_cycles: 2,
         dcid_ignore_dependency_count_threshold: 100,
+        dcid_stale_gate_age_secs: 300.0,
         // Heavy FHE tests can saturate a test Postgres instance for tens of seconds;
         // relax the watcher's production-tuned thresholds so fail-fast doesn't trip
         // on slow polls during the test workload.

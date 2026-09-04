@@ -41,6 +41,40 @@ Enabled via `telemetry.enabled: true` in config.
 |--------|------|--------|-------------|
 | `listener_publish_errors_total` | Counter | `chain_id` | Failures when publishing block events to the broker. Incremented per failed publish attempt (after broker-level retries are exhausted). |
 
+### Catchup (live flow)
+
+| Metric | Type | Labels | Description |
+|--------|------|--------|-------------|
+| `listener_catchup_iterations_total` | Counter | `chain_id` | CatchupPayloads received on the principal `catchup` queue (orchestrator invocations). |
+| `listener_catchup_skipped_above_head_total` | Counter | `chain_id` | Orchestrator skips: `block_start` was above the current chain head. |
+| `listener_catchup_subranges_total` | Counter | `chain_id` | Sub-ranges fanned out by the orchestrator onto `range-catchup`. |
+| `listener_catchup_range_duration_seconds` | Histogram | `chain_id` | Wall-clock time to fetch and publish a single catchup sub-range. |
+
+### Finality
+
+| Metric | Type | Labels | Description |
+|--------|------|--------|-------------|
+| `listener_finality_iterations_total` | Counter | `chain_id` | Finality loop iterations. Stall detection: the rate should be > 0 whenever the flow is active. |
+| `listener_final_tip_block_number` | Gauge | `chain_id` | Latest final block number in the database (`final_blocks` tip). |
+| `listener_final_height_block_number` | Gauge | `chain_id` | Latest final block number reported by the RPC node (finalized tag or `head - finality_depth`). Difference with the tip = finality lag in blocks. |
+| `listener_finality_range_fetch_duration_seconds` | Histogram | `chain_id` | Wall-clock time to fetch, publish, and insert an entire final block range. |
+| `listener_finality_active` | Gauge | `chain_id` | Whether the finality flow is enabled for this chain (1 = active, 0 = inactive). Distinguishes "off" from "stalled". |
+
+### Final Catchup
+
+| Metric | Type | Labels | Description |
+|--------|------|--------|-------------|
+| `listener_final_catchup_iterations_total` | Counter | `chain_id` | CatchupPayloads received on the principal `final-catchup` queue (orchestrator invocations). |
+| `listener_final_catchup_skipped_above_head_total` | Counter | `chain_id` | Orchestrator skips: `block_start` was above the current final height. |
+| `listener_final_catchup_subranges_total` | Counter | `chain_id` | Sub-ranges fanned out by the orchestrator onto `range-final-catchup`. |
+| `listener_final_catchup_range_duration_seconds` | Histogram | `chain_id` | Wall-clock time to fetch and publish a single final catchup sub-range. |
+
+The finality flows also feed the shared metrics: block fetches count toward
+`listener_block_fetch_duration_seconds`, `get_final_block_number` calls appear
+in the RPC metrics, errors flow through the classification counters, and the
+finality queues (`fetch-final-block`, `clean-final-blocks`, `final-catchup`,
+`range-final-catchup`) are registered with the broker queue-depth poller.
+
 ### Error Classification
 
 | Metric | Type | Labels | Description |

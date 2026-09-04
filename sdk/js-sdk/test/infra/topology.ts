@@ -118,8 +118,16 @@ export function anvilSpecs(): AnvilSpec[] {
   }));
 }
 
-/** Per-slot chain config (addresses) served at `/<slot>/config`. */
-function slotChainConfig(chainId: number, mnemonic: string): SlotChainConfig {
+/** Per-slot chain config (addresses) served at `/<slot>/config`.
+ *
+ * `protocolConfig` is only included for the current (v13) profile: it doesn't
+ * exist on the legacy (v12) deploy, whose nonce layout stops at `hcuLimit`
+ * (nonce 6) — nonce 7 there is the `CleartextACL` *implementation* contract
+ * deployed by the proxy-upgrade pass, not ProtocolConfig. Including it
+ * unconditionally would have the SDK read that implementation's
+ * `getVersion()` (which returns "ACL v...") and fail the
+ * `assertIsHostContractVersionOf(..., 'ProtocolConfig')` check. */
+function slotChainConfig(chainId: number, mnemonic: string, foundryProfile: FoundryProfile): SlotChainConfig {
   const h = deriveFhevmHostAddresses(mnemonic);
   return {
     chainId,
@@ -127,7 +135,7 @@ function slotChainConfig(chainId: number, mnemonic: string): SlotChainConfig {
       acl: h.acl,
       inputVerifier: h.inputVerifier,
       kmsVerifier: h.kmsVerifier,
-      protocolConfig: h.protocolConfig,
+      ...(foundryProfile === CURRENT_SLOT ? { protocolConfig: h.protocolConfig } : {}),
     },
     gateway: {
       id: GATEWAY_CHAIN_ID,
@@ -148,7 +156,7 @@ export function gatewayConfig(): GatewayConfig {
     slots[t.slot] = {
       keyFilePath: resolve(dir, t.keyFile),
       rpcUrl: `http://127.0.0.1:${String(t.port)}`,
-      chainConfig: slotChainConfig(t.chainId, slotMnemonic(t)),
+      chainConfig: slotChainConfig(t.chainId, slotMnemonic(t), t.foundryProfile),
     };
   }
 
@@ -163,7 +171,7 @@ export function gatewayConfig(): GatewayConfig {
     slots[OLD_MODULE_NEW_KEY_SLOT] = {
       keyFilePath: resolve(dir, current.keyFile),
       rpcUrl: `http://127.0.0.1:${String(legacy.port)}`,
-      chainConfig: slotChainConfig(legacy.chainId, slotMnemonic(legacy)),
+      chainConfig: slotChainConfig(legacy.chainId, slotMnemonic(legacy), legacy.foundryProfile),
     };
   }
 

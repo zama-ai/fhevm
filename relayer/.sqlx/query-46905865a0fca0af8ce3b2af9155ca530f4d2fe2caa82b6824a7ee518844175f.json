@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                WITH deleted_reqs AS (\n                    DELETE FROM user_decrypt_req\n                    WHERE updated_at < NOW() - make_interval(secs => $1)\n                      AND req_status IN ('completed'::req_status, 'timed_out'::req_status, 'failure'::req_status)\n                    RETURNING gw_reference_id\n                ),\n                deleted_shares AS (\n                    DELETE FROM user_decrypt_share\n                    WHERE gw_reference_id IN (\n                        SELECT gw_reference_id FROM deleted_reqs WHERE gw_reference_id IS NOT NULL\n                    )\n                    RETURNING 1 AS deleted\n                )\n                SELECT\n                    (SELECT COUNT(*) FROM deleted_reqs) as \"reqs!\",\n                    (SELECT COUNT(*) FROM deleted_shares) as \"shares!\"\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "reqs!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "shares!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Float8"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "46905865a0fca0af8ce3b2af9155ca530f4d2fe2caa82b6824a7ee518844175f"
+}

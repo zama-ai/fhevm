@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE dependence_chain SET status = 'processed' WHERE dependence_chain_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "052cb7ba28829df40c001d6804b423b93ff1b23087531dd1a793448f57b7146f"
+}

@@ -81,7 +81,7 @@ contract SmartWalletWithDelegation is E2ECoprocessorConfig {
     }
 
     /// @notice Returns the current cheat public euint64.
-    function getCheatPublicUint64() external view returns(euint64) {
+    function getCheatPublicUint64() external view returns (euint64) {
         return cheatPublicUint64;
     }
 }

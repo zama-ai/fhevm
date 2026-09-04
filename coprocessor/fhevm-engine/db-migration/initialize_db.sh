@@ -27,8 +27,20 @@ fi
 
 REMOVE_TENANTS_PREVIOUS_VERSION=20260120102002
 
+# Timestamp all output (UTC, second precision — %N is GNU-only)
+# so a migration run can be timed from the logs.
+log() {
+  printf '%s %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*"
+}
+
+# Usage: `cmd 2>&1 | log_stream`. pipefail keeps cmd failures fatal.
+log_stream() {
+  local line
+  while IFS= read -r line || [[ -n "$line" ]]; do log "$line"; done
+}
+
 run_sql() {
-  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "$1"
+  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "$1" 2>&1 | log_stream
 }
 
 precreate_index() {
@@ -59,14 +71,14 @@ precreate_index() {
 
   case "$index_state" in
     valid)
-      echo "Skipping valid pre-created index $index_name"
+      log "Skipping valid pre-created index $index_name"
       ;;
     missing)
-      echo "Creating pre-upgrade index $index_name"
+      log "Creating pre-upgrade index $index_name"
       run_sql "$create_sql"
       ;;
     *)
-      echo "Index $index_name exists but is invalid; drop it before rerunning pre-upgrade migrations."
+      log "Index $index_name exists but is invalid; drop it before rerunning pre-upgrade migrations."
       exit 1
       ;;
   esac
@@ -74,8 +86,8 @@ precreate_index() {
 
 insert_host_chain_row() {
   local chain_id="$1" name="$2" acl="$3"
-  echo "  INSERT host_chains chain_id=$chain_id name=$name acl=$acl"
-  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c \
+  log "  INSERT host_chains chain_id=$chain_id name=$name acl=$acl"
+  run_sql \
     "INSERT INTO host_chains (chain_id, name, acl_contract_address) \
      VALUES ('$chain_id', '$name', '$acl') \
      ON CONFLICT (chain_id) DO NOTHING;"
@@ -96,11 +108,11 @@ seed_host_chains() {
   # No jq dependency: keeps the runtime image (Chainguard postgres) minimal.
   local count="${HOST_CHAINS_COUNT:-0}"
   if [[ "$count" -eq 0 ]]; then
-    echo "HOST_CHAINS_COUNT is 0 or unset; skipping host_chains seeding."
+    log "HOST_CHAINS_COUNT is 0 or unset; skipping host_chains seeding."
     return 0
   fi
 
-  echo "Seeding host_chains: $count entries"
+  log "Seeding host_chains: $count entries"
   local i
   for ((i = 0; i < count; i++)); do
     local id_var="HOST_CHAIN_${i}_ID"
@@ -110,19 +122,20 @@ seed_host_chains() {
     local name="${!name_var:-}"
     local acl="${!acl_var:-}"
     if [[ -z "$chain_id" || -z "$name" || -z "$acl" ]]; then
-      echo "Error: host_chains entry $i is missing one or more of $id_var, $name_var, $acl_var."
-      echo "  Check that the chart wired chainId, name, and a literal/valueFrom ACL for this chain."
+      log "Error: host_chains entry $i is missing one or more of $id_var, $name_var, $acl_var."
+      log "  Check that the chart wired chainId, name, and a literal/valueFrom ACL for this chain."
       exit 1
     fi
     insert_host_chain_row "$chain_id" "$name" "$acl"
   done
 
-  echo "host_chains seeding completed."
+  log "host_chains seeding completed."
 }
 
 run_remove_tenants_prerequisites() {
-  echo "Running online migrations before remove_tenants..."
-  sqlx migrate run --source "$MIGRATION_DIR" --target-version $REMOVE_TENANTS_PREVIOUS_VERSION || { echo "Failed to run migrations."; exit 1; }
+  log "Running online migrations before remove_tenants..."
+  sqlx migrate run --source "$MIGRATION_DIR" --target-version $REMOVE_TENANTS_PREVIOUS_VERSION 2>&1 | log_stream \
+    || { log "Failed to run migrations."; exit 1; }
 
   # These indexes are required by remove_tenants-era tenant-free queries. Build
   # them concurrently while 0.11 services are still running; the blocking
@@ -151,7 +164,7 @@ run_block_scope_materialization_wave1_prerequisites() {
   # CREATE INDEX takes a SHARE lock that blocks block ingestion for the whole build.
   # Build it CONCURRENTLY here, while existing services keep running, so the
   # in-migration CREATE INDEX IF NOT EXISTS later no-ops.
-  echo "Pre-creating block-scope materialization (wave1) ancestry index concurrently..."
+  log "Pre-creating block-scope materialization (wave1) ancestry index concurrently..."
 
   # parent_hash is metadata-only (constant NULL default) and must exist before
   # the concurrent index build. Idempotent: no-op if the column already exists.
@@ -163,10 +176,10 @@ run_block_scope_materialization_wave1_prerequisites() {
      ON host_chain_blocks_valid (chain_id, parent_hash);"
 }
 
-echo "-------------- Start database initilaization --------------"
+log "-------------- Start database initialization --------------"
 
-echo "Creating database..."
-sqlx database create || { echo "Failed to create database."; exit 1; }
+log "Creating database..."
+sqlx database create 2>&1 | log_stream || { log "Failed to create database."; exit 1; }
 
 # The wave1 squash (#2848) shipped an in-place edit of the already-applied
 # migration 20260616120000_bridge_tables.sql; this tree restores the original
@@ -177,7 +190,7 @@ sqlx database create || { echo "Failed to create database."; exit 1; }
 # restored file's; a strict no-op everywhere else, including fresh databases
 # and databases that applied the original #2734 file.
 repair_bridge_tables_migration_checksum() {
-  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "
+  run_sql "
     DO \$\$
     BEGIN
       IF to_regclass('_sqlx_migrations') IS NOT NULL THEN
@@ -187,10 +200,10 @@ repair_bridge_tables_migration_checksum() {
           AND checksum = decode('7f80a69bd35610c02950bbc253ac1c34c006217d242f17cd23f23e4fb990d94009587c4fc3fbd8b5ba042f17f0d09810', 'hex');
       END IF;
     END
-    \$\$;" || { echo "Failed to repair bridge_tables migration checksum."; exit 1; }
+    \$\$;" || { log "Failed to repair bridge_tables migration checksum."; exit 1; }
 }
 
-echo "Running migrations..."
+log "Running migrations..."
 if [ "${RUN_MIGRATIONS_UNTIL_REMOVE_TENANTS:-}" = "true" ]; then
   # Partial migrations — the host_chains table doesn't exist yet on this path,
   # so do not attempt to seed.
@@ -202,8 +215,8 @@ elif [ "${RUN_BLOCK_SCOPE_WAVE1_PREREQUISITES:-}" = "true" ]; then
   run_block_scope_materialization_wave1_prerequisites
 else
   repair_bridge_tables_migration_checksum
-  sqlx migrate run --source "$MIGRATION_DIR" || { echo "Failed to run migrations."; exit 1; }
+  sqlx migrate run --source "$MIGRATION_DIR" 2>&1 | log_stream || { log "Failed to run migrations."; exit 1; }
   seed_host_chains
 fi
 
-echo "Database initialization completed successfully."
+log "Database initialization completed successfully in $((SECONDS / 60))m$((SECONDS % 60))s."

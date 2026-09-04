@@ -80,6 +80,7 @@ const chainIds = {
   zwsDev: 1337,
   sepolia: 11155111,
   mainnet: 1,
+  polygon: 137,
   polygonAmoy: 80002,
   localCoprocessorL1: 123456,
   localCoprocessorL2: 654321,
@@ -127,6 +128,15 @@ function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
         jsonRpcUrl = 'https://eth.llamarpc.com'; // placeholder for config validation
       }
       break;
+    case 'polygon':
+      jsonRpcUrl = process.env.POLYGON_RPC_URL || vars.get('POLYGON_RPC_URL', '') || process.env.RPC_URL;
+      if (!jsonRpcUrl) {
+        if (shouldWarn) {
+          throw new Error('POLYGON_RPC_URL (or RPC_URL) is required for polygon network');
+        }
+        jsonRpcUrl = 'https://polygon-rpc.com'; // placeholder for config validation
+      }
+      break;
     case 'polygonAmoy':
       jsonRpcUrl = process.env.POLYGON_AMOY_RPC_URL || vars.get('POLYGON_AMOY_RPC_URL', '') || process.env.RPC_URL;
       if (!jsonRpcUrl) {
@@ -163,13 +173,17 @@ function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
     default:
       throw new Error(`unsupported chain: ${chain}`);
   }
+  const chainId =
+    chain === 'staging' && process.env.CHAIN_ID_HOST
+      ? Number(process.env.CHAIN_ID_HOST)
+      : chainIds[chain];
   return {
     accounts: {
       count: NUM_ACCOUNTS,
       mnemonic,
       path: "m/44'/60'/0'/0",
     },
-    chainId: chainIds[chain],
+    chainId,
     url: jsonRpcUrl,
   };
 }
@@ -205,6 +219,7 @@ const config: HardhatUserConfig = {
     zwsDev: getChainConfig('zwsDev'),
     sepolia: getChainConfig('sepolia'),
     mainnet: getChainConfig('mainnet'),
+    polygon: getChainConfig('polygon'),
     polygonAmoy: getChainConfig('polygonAmoy'),
     localNative: getChainConfig('localNative'),
     localCoprocessor: getChainConfig('localCoprocessor'),

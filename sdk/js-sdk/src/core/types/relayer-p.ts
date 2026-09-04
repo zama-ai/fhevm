@@ -114,8 +114,10 @@ export type FetchUserDecryptPayloadV2 = {
     // Hex encoded bytes with 0x prefix. Default: 0x00
     readonly extraData: BytesHex;
   };
-  // Hex encoded signature with 0x prefix.
-  readonly signature: Bytes65Hex;
+  // Hex encoded signature with 0x prefix. Variable length: a 65-byte EOA ECDSA
+  // signature, an ERC-1271 smart-contract-wallet blob, or the empty `0x`
+  // pre-approved-hash flow. The relayer /v3 route forwards it verbatim.
+  readonly signature: BytesHex;
 };
 
 export type FetchDelegatedUserDecryptPayload = {
@@ -168,10 +170,6 @@ export type RelayerFailureStatus = 400 | 401 | 404 | 429 | 500 | 503;
 export type RelayerPostResponseStatus =
   | NonEmptyExtract<RelayerSuccessStatus, 202>
   | NonEmptyExtract<RelayerFailureStatus, 400 | 401 | 429 | 500 | 503>;
-
-// export type RelayerPostResponse =
-//   | RelayerResponseFailed
-//   | RelayerPostResponse202Queued;
 
 // GET:  200 | 202 | 400 | 401 | 404 | 500 | 503
 export type RelayerGetResponseStatus =

@@ -1,15 +1,95 @@
 use anyhow::Result;
+use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
-use tokio::task::JoinSet;
-use tokio_util::sync::CancellationToken;
-use tracing::{info, instrument};
+use tokio::task::{AbortHandle, Id, JoinSet};
+use tokio::time::timeout;
+use tracing::{info, instrument, warn};
 
-/// Internal task manager for orchestrator - handles background task lifecycle
-/// Uses tokio::sync::Mutex for async-friendly access to the shared JoinSet
+/// A `JoinSet` cannot name what it holds, so names and abort handles sit beside it - a task
+/// that outlasts the drain is worth naming in the log. One mutex covers both.
+#[derive(Default)]
+struct TrackedTasks {
+    joinset: JoinSet<()>,
+    tasks: HashMap<Id, (String, AbortHandle)>,
+}
+
+impl TrackedTasks {
+    /// Aborts one at a time rather than calling `shutdown()`, to keep the names of the tasks
+    /// that did not stop.
+    async fn drain(&mut self, budget: Duration) {
+        let mut pending: HashSet<Id> = self.tasks.keys().copied().collect();
+        let total = pending.len();
+
+        if total == 0 {
+            info!("No tasks to drain");
+            return;
+        }
+
+        let start = Instant::now();
+        let Self { joinset, tasks } = self;
+        let drained = timeout(budget, async {
+            while !pending.is_empty() {
+                let Some(result) = joinset.join_next_with_id().await else {
+                    break;
+                };
+                let id = match result {
+                    Ok((id, ())) => id,
+                    Err(join_error) => join_error.id(),
+                };
+                pending.remove(&id);
+                tasks.remove(&id);
+            }
+        })
+        .await
+        .is_ok();
+
+        if drained {
+            info!(
+                elapsed = ?start.elapsed(),
+                tasks = total,
+                "Tasks drained"
+            );
+        } else {
+            let stuck: Vec<&str> = pending
+                .iter()
+                .filter_map(|id| tasks.get(id).map(|(name, _)| name.as_str()))
+                .collect();
+            warn!(
+                ?budget,
+                remaining = stuck.len(),
+                tasks = ?stuck,
+                "Drain timeout, aborting stuck tasks"
+            );
+            for id in &pending {
+                if let Some((_, handle)) = tasks.remove(id) {
+                    handle.abort();
+                }
+            }
+        }
+    }
+
+    /// The drain leaves nothing behind, so anything found here escaped every predicate.
+    async fn finish(&mut self) {
+        if !self.tasks.is_empty() {
+            let stuck: Vec<&str> = self.tasks.values().map(|(name, _)| name.as_str()).collect();
+            warn!(
+                remaining = stuck.len(),
+                tasks = ?stuck,
+                "Tasks left tracked after the drain, aborting"
+            );
+        }
+        self.joinset.shutdown().await;
+        self.tasks.clear();
+    }
+}
+
+/// Internal task manager for orchestrator - handles background task lifecycle.
+/// Uses tokio::sync::Mutex for async-friendly access to the shared JoinSet.
 pub(crate) struct TaskManager {
-    tasks: Mutex<JoinSet<()>>,
+    tasks: Mutex<TrackedTasks>,
     is_shutting_down: AtomicBool,
 }
 
@@ -22,7 +102,7 @@ impl Default for TaskManager {
 impl TaskManager {
     pub(crate) fn new() -> Self {
         Self {
-            tasks: Mutex::new(JoinSet::new()),
+            tasks: Mutex::new(TrackedTasks::default()),
             is_shutting_down: AtomicBool::new(false),
         }
     }
@@ -51,7 +131,10 @@ impl TaskManager {
             ));
         }
 
-        tasks.spawn(task_future);
+        let abort_handle = tasks.joinset.spawn(task_future);
+        tasks
+            .tasks
+            .insert(abort_handle.id(), (name.to_string(), abort_handle));
         drop(tasks); // Release mutex before waiting for readiness
 
         // Wait for it to be ready
@@ -62,29 +145,20 @@ impl TaskManager {
         Ok(())
     }
 
-    /// Wait for shutdown signal and gracefully shutdown all tasks
-    #[instrument(skip_all)]
-    pub(crate) async fn run_until_shutdown(&self, shutdown_token: CancellationToken) -> Result<()> {
-        info!("Waiting for shutdown signal...");
-        shutdown_token.cancelled().await;
+    pub(crate) async fn begin_shutdown(&self) {
+        // The guard is the point: a spawn reads this flag under the same lock.
+        let _guard = self.tasks.lock().await;
+        self.is_shutting_down.store(true, Ordering::Release);
+    }
 
-        info!("Shutdown signal received, stopping all tasks...");
+    pub(crate) async fn drain_tasks(&self, budget: Duration) {
+        let mut tasks = self.tasks.lock().await;
+        tasks.drain(budget).await;
+    }
 
-        // Take ownership of all tasks while holding the mutex
-        // We set the shutdown flag first so any new spawn attempts will fail
-        // Then we take the tasks out so we can shut them down without holding the lock
-        // (holding the lock during shutdown could cause deadlocks if tasks try to interact with TaskManager)
-        let mut tasks = {
-            let mut task_guard = self.tasks.lock().await;
-            self.is_shutting_down.store(true, Ordering::Release);
-            std::mem::take(&mut *task_guard) // Take tasks, leave empty JoinSet behind
-        };
-
-        // Now shut down all the tasks without holding the mutex
-        tasks.shutdown().await;
-
-        info!("All tasks stopped successfully");
-        Ok(())
+    pub(crate) async fn finish_drain(&self) {
+        let mut tasks = self.tasks.lock().await;
+        tasks.finish().await;
     }
 }
 
@@ -92,7 +166,6 @@ impl TaskManager {
 mod tests {
     use super::*;
     use std::sync::Arc;
-    use std::time::Duration;
     use tokio::time::sleep;
 
     #[tokio::test]
@@ -125,25 +198,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_shutdown_prevents_new_spawns() {
-        let task_manager = TaskManager::new();
-        let shutdown_token = CancellationToken::new();
+        let task_manager = Arc::new(TaskManager::new());
 
-        // Start shutdown in background
-        let shutdown_token_clone = shutdown_token.clone();
-        let task_manager_clone = Arc::new(task_manager);
-        let shutdown_handle = tokio::spawn({
-            let task_manager = task_manager_clone.clone();
-            async move { task_manager.run_until_shutdown(shutdown_token_clone).await }
-        });
+        task_manager.begin_shutdown().await;
 
-        // Cancel immediately to trigger shutdown
-        shutdown_token.cancel();
-
-        // Wait for shutdown to start
-        sleep(Duration::from_millis(10)).await;
-
-        // Try to spawn a task after shutdown has started
-        let result = task_manager_clone
+        let result = task_manager
             .spawn_task_and_wait_ready("should_fail", async {}, async { Ok(()) })
             .await;
 
@@ -152,15 +211,11 @@ mod tests {
             result.unwrap_err().to_string().contains("shutting down"),
             "Error should mention shutdown"
         );
-
-        // Cleanup
-        shutdown_handle.await.unwrap().unwrap();
     }
 
     #[tokio::test]
-    async fn test_shutdown_completes_successfully() {
+    async fn test_drain_completes_successfully() {
         let task_manager = Arc::new(TaskManager::new());
-        let shutdown_token = CancellationToken::new();
 
         // Spawn a simple task
         let spawn_result = task_manager
@@ -176,14 +231,9 @@ mod tests {
 
         assert!(spawn_result.is_ok(), "Task should spawn successfully");
 
-        // Trigger shutdown - should complete without hanging
-        shutdown_token.cancel();
-        let shutdown_result = task_manager.run_until_shutdown(shutdown_token).await;
-
-        assert!(
-            shutdown_result.is_ok(),
-            "Shutdown should complete successfully"
-        );
+        task_manager.begin_shutdown().await;
+        task_manager.drain_tasks(Duration::from_secs(5)).await;
+        task_manager.finish_drain().await;
     }
 
     #[tokio::test]
@@ -191,7 +241,7 @@ mod tests {
         let task_manager = Arc::new(TaskManager::new());
 
         // Manually set the shutdown flag to test the specific behavior
-        task_manager.is_shutting_down.store(true, Ordering::Release);
+        task_manager.begin_shutdown().await;
 
         // Try to spawn a task - this should always fail
         let result = task_manager
@@ -205,6 +255,74 @@ mod tests {
         assert!(
             result.unwrap_err().to_string().contains("shutting down"),
             "Error should mention shutdown"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_drain_allows_slow_cooperative_task_to_complete() {
+        let task_manager = Arc::new(TaskManager::new());
+        let completed = Arc::new(AtomicBool::new(false));
+        let completed_clone = completed.clone();
+        let shutdown_token = tokio_util::sync::CancellationToken::new();
+        let token_for_task = shutdown_token.clone();
+
+        // This task ignores the cancellation signal for a while, simulating
+        // in-flight work that should be allowed to finish rather than aborted.
+        task_manager
+            .spawn_task_and_wait_ready(
+                "slow_cooperative_task",
+                async move {
+                    token_for_task.cancelled().await;
+                    sleep(Duration::from_millis(50)).await;
+                    completed_clone.store(true, Ordering::Release);
+                },
+                async { Ok(()) },
+            )
+            .await
+            .unwrap();
+
+        shutdown_token.cancel();
+        task_manager.begin_shutdown().await;
+        task_manager.drain_tasks(Duration::from_secs(5)).await;
+
+        assert!(
+            completed.load(Ordering::Acquire),
+            "Task should be allowed to complete during the drain window instead of being aborted"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_drain_aborts_task_that_ignores_cancellation() {
+        let task_manager = Arc::new(TaskManager::new());
+        let completed = Arc::new(AtomicBool::new(false));
+        let completed_clone = completed.clone();
+
+        // This task never observes any cancellation signal, so it must be
+        // aborted once its phase's drain timeout elapses.
+        task_manager
+            .spawn_task_and_wait_ready(
+                "stuck_task",
+                async move {
+                    sleep(Duration::from_secs(60)).await;
+                    completed_clone.store(true, Ordering::Release);
+                },
+                async { Ok(()) },
+            )
+            .await
+            .unwrap();
+
+        task_manager.begin_shutdown().await;
+        // Short drain timeout so the test stays fast.
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            task_manager.drain_tasks(Duration::from_millis(20)),
+        )
+        .await
+        .expect("drain_tasks should not hang past its budget");
+
+        assert!(
+            !completed.load(Ordering::Acquire),
+            "Stuck task should have been aborted, not allowed to complete"
         );
     }
 }

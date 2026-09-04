@@ -190,6 +190,20 @@ snsWorker:
   # the same namespace. Without it, the AWS SDK has no credentials at all -
   # "Failed to check bucket existence" / "dispatch failure".
   serviceAccountName: coprocessor
+  # HEAD sns-worker images sign ciphertext attestations and REQUIRE a PrivateKey
+  # signer - they abort startup with "Private key is required for PrivateKey
+  # signer" when none is wired (the chart default wallet.enabled=false leaves it
+  # unset). Mirrors the docker-compose reference topology
+  # (test-suite/fhevm/docker-compose/coprocessor-docker-compose.yml:
+  # --signer-type=private-key --private-key=${TX_SENDER_PRIVATE_KEY}) - the SAME
+  # coprocessor key txSender uses (both the tx-sender and attestation signer are
+  # the one on-chain COPROCESSOR_SIGNER_ADDRESS_<i-1> identity). secret.value is
+  # overridden per party via --set-string in preview-env-deploy.yml; the
+  # placeholder below (account #4, matching txSender.wallet) keeps this file
+  # valid standalone.
+  wallet:
+    enabled: true
+    secret: {value: "0x47e179ec197488593b187f80a00eb0da91f1b9d0b13f8733639f19c30a34926a"}
   config:
     # Chart default is empty (see charts/coprocessor/values.yaml's
     # snsWorker.config.s3BucketName comment) - matches zama-zws/gitops's

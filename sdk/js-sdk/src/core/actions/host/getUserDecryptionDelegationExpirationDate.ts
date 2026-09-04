@@ -2,6 +2,7 @@ import type { Fhevm } from '../../types/coreFhevmClient.js';
 import type { Uint64BigInt } from '../../types/primitives.js';
 import { addressToChecksummedAddress, assertIsAddress } from '../../base/address.js';
 import { getUserDecryptionDelegationExpirationDate as getUserDecryptionDelegationExpirationDate_ } from '../../host-contracts/getUserDecryptionDelegationExpirationDate.js';
+import { initPublicAction } from '../../runtime/CoreFhevm-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -26,6 +27,9 @@ export async function getUserDecryptionDelegationExpirationDate(
   assertIsAddress(delegate, {});
   assertIsAddress(delegator, {});
   assertIsAddress(contractAddress, {});
+
+  // no context needed
+  await initPublicAction(fhevm);
 
   return getUserDecryptionDelegationExpirationDate_(fhevm, {
     address: addressToChecksummedAddress(address),

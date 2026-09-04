@@ -46,7 +46,7 @@ pub(crate) async fn insert_key_activation_event(
     let digest_server = activation
         .keyDigests
         .iter()
-        .filter(|d| d.keyType == 0)
+        .filter(|d| d.keyType == 0 || d.keyType == 3)
         .map(|d| d.digest.to_vec())
         .next();
     let digest_public = activation

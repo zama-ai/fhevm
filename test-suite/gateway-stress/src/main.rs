@@ -4,12 +4,13 @@ mod cli;
 mod config;
 mod db;
 mod decryption;
+mod eip712;
 
 use crate::{
     blockchain::GatewayTestManager,
     cli::{Cli, Subcommands},
     config::Config,
-    db::manager::DatabaseTestManager,
+    db::manager::{DatabaseTestManager, ensure_db_supported},
 };
 use clap::Parser;
 use std::process::ExitCode;
@@ -42,6 +43,7 @@ async fn run() -> anyhow::Result<()> {
             test_manager.decryption_benchmark(args).await?
         }
         Subcommands::Db(args) => {
+            ensure_db_supported(args.decryption_type)?;
             let test_manager = DatabaseTestManager::connect(config).await?;
             test_manager.stress_test(args).await?
         }
@@ -66,6 +68,9 @@ fn update_config_from_cli(config: &mut Config, cli: &Cli) {
     }
     if let Some(interval) = cli.interval {
         config.tests_interval = interval;
+    }
+    if let Some(id_counter_start) = cli.id_counter_start {
+        config.id_counter_start = id_counter_start;
     }
 }
 

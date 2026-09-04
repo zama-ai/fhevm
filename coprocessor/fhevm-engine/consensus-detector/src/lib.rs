@@ -10,7 +10,9 @@
 //!
 //!   * **host chain** — for each finalized, fully-computed, *non-trivial* block
 //!     in `[start_block, end_block]` (one carrying a real FHE op, not only
-//!     `trivialEncrypt`), poll every operator's per-block state-hash blob.
+//!     `trivialEncrypt`), poll every operator's per-block state-hash blob. A chain
+//!     that finalizes the window with no non-trivial op anchors on any block
+//!     (readiness); at least one non-trivial anchor is still required across chains.
 //!   * **Gateway inputs** — likewise for each sealed Gateway block carrying
 //!     re-randomized ZK-proof input ciphertexts.
 //!
@@ -26,7 +28,8 @@
 //! it (RFC 021).
 //!
 //! `unanimity_consensus` is consumed only by the upgrade-controller, which
-//! authorizes cutover once BOTH tracks have anchored.
+//! authorizes cutover once every host track and the Gateway track have anchored,
+//! with at least one host anchor on a non-trivial block.
 //!
 //! **Timeout.** If a track is still un-anchored `commitment_timeout` after `end_block`,
 //! `unanimity_consensus_timeout` is emitted (and re-emitted each pass) until the
@@ -139,6 +142,7 @@ pub struct NewBlockPayload {
 #[derive(Debug, Clone, Serialize)]
 struct UnanimityPayload<'a> {
     proposal_id: &'a [u8],
+    proposal_block: i64,
     chain_id: i64,
     block_height: i64,
     block_hash: &'a str,
@@ -239,34 +243,65 @@ fn all_slots_filled(slots: &[Option<Vec<u8>>]) -> bool {
     !slots.is_empty() && slots.iter().all(Option::is_some)
 }
 
-/// Returns `(proposal_id, start_block, end_block)` for the active GCS dry-run.
-/// `None` otherwise. Scoped to `stack_role = 'GCS'` because BCS also stays
-/// `status='in_progress'` during the upgrade and doesn't own the replay window.
-pub(crate) async fn active_upgrade_window<'e, E>(
-    executor: E,
-) -> Result<Option<(Vec<u8>, i64, i64)>, Error>
+/// An upgrade attempt and its per-chain windows:
+/// `(proposal_id, proposal_block, [(chain_id, start, end), ...])`.
+pub(crate) type HostWindows = (Vec<u8>, i64, Vec<(i64, i64, i64)>);
+
+/// Returns the complete per-chain window set for the active GCS dry-run.
+/// `None` otherwise. Proposal-level fields must agree across every row.
+pub(crate) async fn active_upgrade_windows<'e, E>(executor: E) -> Result<Option<HostWindows>, Error>
 where
     E: Executor<'e, Database = Postgres>,
 {
-    type ActiveWindowRow = (String, Option<Vec<u8>>, Option<i64>, Option<i64>);
-    let row: Option<ActiveWindowRow> = sqlx::query_as(
-        "SELECT state, proposal_id, start_block, end_block FROM upgrade_state
-          WHERE stack_role = 'GCS' AND status = 'in_progress'",
+    type ActiveWindowRow = (
+        String,
+        Option<Vec<u8>>,
+        Option<i64>,
+        i64,
+        Option<i64>,
+        Option<i64>,
+    );
+    let rows: Vec<ActiveWindowRow> = sqlx::query_as(
+        "SELECT state, proposal_id, proposal_block,
+                host_chain_id, start_block, end_block
+           FROM upgrade_state
+          WHERE stack_role = 'GCS' AND status = 'in_progress'
+          ORDER BY host_chain_id",
     )
-    .fetch_optional(executor)
+    .fetch_all(executor)
     .await?;
 
-    let Some((state, proposal_id, start_block, end_block)) = row else {
+    let Some((state, proposal_id, proposal_block, _, _, _)) = rows.first() else {
         return Ok(None);
     };
     if !matches!(state.as_str(), "UpgradeActivated" | "DryRunStarted") {
         debug!(state = %state, "GCS not in UpgradeActivated/DryRunStarted — ignoring");
         return Ok(None);
     }
-    Ok(proposal_id
-        .zip(start_block)
-        .zip(end_block)
-        .map(|((proposal_id, start), end)| (proposal_id, start, end)))
+    let (Some(proposal_id), Some(proposal_block)) = (proposal_id.as_ref(), *proposal_block) else {
+        return Err(Error::Payload(
+            "active GCS proposal is missing proposal_id or proposal_block".to_owned(),
+        ));
+    };
+
+    let mut windows = Vec::with_capacity(rows.len());
+    for (row_state, row_id, row_block, chain_id, start, end) in &rows {
+        if row_state != state
+            || row_id.as_deref() != Some(proposal_id.as_slice())
+            || *row_block != Some(proposal_block)
+        {
+            return Err(Error::Payload(
+                "active GCS upgrade_state rows do not describe one proposal".to_owned(),
+            ));
+        }
+        let (Some(start), Some(end)) = (*start, *end) else {
+            return Err(Error::Payload(format!(
+                "active GCS chain {chain_id} is missing its evaluation window"
+            )));
+        };
+        windows.push((*chain_id, start, end));
+    }
+    Ok(Some((proposal_id.clone(), proposal_block, windows)))
 }
 
 /// Per-track eager consensus state. We only need ONE unanimous block to anchor
@@ -279,6 +314,8 @@ struct ConsensusTrack {
     chain_id: i64,
     /// The anchored block once unanimity is reached; `None` until then.
     anchored: Option<i64>,
+    /// Whether the anchor block carried a non-trivial FHE op.
+    anchored_nontrivial: bool,
     partial: HashMap<i64, Vec<Option<Vec<u8>>>>,
     /// Blocks we've already logged a divergence warning for. State hashes are
     /// deterministic per block, so a divergence is permanent — warn once per
@@ -291,6 +328,7 @@ impl ConsensusTrack {
         Self {
             chain_id,
             anchored: None,
+            anchored_nontrivial: false,
             partial: HashMap::new(),
             divergence_warned: HashSet::new(),
         }
@@ -299,6 +337,7 @@ impl ConsensusTrack {
     /// Clear state for a fresh upgrade window.
     fn reset(&mut self) {
         self.anchored = None;
+        self.anchored_nontrivial = false;
         self.partial.clear();
         self.divergence_warned.clear();
     }
@@ -312,6 +351,7 @@ async fn poll_track(
     urls: &[String],
     track: &mut ConsensusTrack,
     candidates: &[i64],
+    nontrivial: bool,
 ) -> Result<(), Error> {
     if track.anchored.is_some() || urls.is_empty() {
         return Ok(());
@@ -336,6 +376,7 @@ async fn poll_track(
             );
             // consensus_pass emits (and re-emits) the anchor; here we just record it.
             track.anchored = Some(block);
+            track.anchored_nontrivial = nontrivial;
             track.partial.clear();
             return Ok(());
         }
@@ -368,18 +409,23 @@ async fn host_consensus_candidates(
     host_chain_id: i64,
     start: i64,
     end: i64,
+    require_nontrivial: bool,
 ) -> Result<Vec<i64>, Error> {
+    let nontrivial = if require_nontrivial {
+        format!(
+            "AND EXISTS (SELECT 1 FROM {GCS_SCHEMA_QUOTED}.computations c
+                 WHERE c.host_chain_id = sh.chain_id AND c.block_number = sh.block_number
+                   AND c.is_error = false AND c.fhe_operation <> {FHE_TRIVIAL_ENCRYPT_OPCODE})"
+        )
+    } else {
+        String::new()
+    };
     let sql = format!(
         "SELECT sh.block_number
            FROM {GCS_SCHEMA_QUOTED}.state_hash sh
           WHERE sh.chain_id = $1
             AND sh.block_number >= $2 AND sh.block_number <= $3
-            AND EXISTS (
-                SELECT 1 FROM {GCS_SCHEMA_QUOTED}.computations c
-                 WHERE c.host_chain_id = sh.chain_id
-                   AND c.block_number = sh.block_number
-                   AND c.is_error = false
-                   AND c.fhe_operation <> {FHE_TRIVIAL_ENCRYPT_OPCODE})
+            {nontrivial}
           ORDER BY sh.block_number
           LIMIT {MAX_ANCHOR_CANDIDATES}"
     );
@@ -392,37 +438,41 @@ async fn host_consensus_candidates(
     Ok(rows.into_iter().map(|(b,)| b).collect())
 }
 
-/// True once finalized blocks reach `end_block`.
-async fn host_reached_end_block(
-    pool: &Pool<Postgres>,
-    host_chain_id: i64,
-    end_block: i64,
-) -> Result<bool, Error> {
+/// Latest finalized GCS host-chain block for `host_chain_id`, or -1 if none.
+async fn gcs_host_watermark(pool: &Pool<Postgres>, host_chain_id: i64) -> Result<i64, Error> {
     let sql = format!(
         "SELECT COALESCE(
                   (SELECT MAX(block_number) FROM {GCS_SCHEMA_QUOTED}.host_chain_blocks_valid
                     WHERE chain_id = $1 AND block_status = 'finalized'),
                   -1
-                ) >= $2"
+                )"
     );
-    let (reached,): (bool,) = sqlx::query_as(&sql)
+    let (watermark,): (i64,) = sqlx::query_as(&sql)
         .bind(host_chain_id)
-        .bind(end_block)
         .fetch_one(pool)
         .await?;
-    Ok(reached)
+    Ok(watermark)
 }
 
-/// Host chain id of the active GCS upgrade (set by upgrade-controller on
-/// activation). `None` when unset — host consensus is skipped until it appears.
-async fn active_host_chain_id(pool: &Pool<Postgres>) -> Result<Option<i64>, Error> {
-    let row: Option<(Option<i64>,)> = sqlx::query_as(
-        "SELECT host_chain_id FROM upgrade_state
-          WHERE stack_role = 'GCS' AND status = 'in_progress'",
-    )
-    .fetch_optional(pool)
-    .await?;
-    Ok(row.and_then(|(v,)| v))
+/// True once every block in `[start, end]` has a `state_hash`: counts the hashes and
+/// compares to the window size, so a gap below a hashed block still fails.
+async fn gcs_window_fully_hashed(
+    pool: &Pool<Postgres>,
+    host_chain_id: i64,
+    start: i64,
+    end: i64,
+) -> Result<bool, Error> {
+    let sql = format!(
+        "SELECT (SELECT COUNT(*) FROM {GCS_SCHEMA_QUOTED}.state_hash
+                  WHERE chain_id = $1 AND block_number BETWEEN $2 AND $3) >= ($3 - $2 + 1)"
+    );
+    let (ok,): (bool,) = sqlx::query_as(&sql)
+        .bind(host_chain_id)
+        .bind(start)
+        .bind(end)
+        .fetch_one(pool)
+        .await?;
+    Ok(ok)
 }
 
 /// Timeout state machine for the tracked window.
@@ -434,46 +484,115 @@ enum WindowTimeout {
 }
 
 struct WindowState {
-    /// The proposal and window currently being tracked.
-    tracked_window: Option<(Vec<u8>, i64, i64)>,
+    /// Tracked proposal + per-chain window set; a change resets every track.
+    tracked_window: Option<HostWindows>,
     timeout: WindowTimeout,
+    /// Stall detection: `chain_id -> (watermark, last-advance instant)`; reset with the window set.
+    host_progress: HashMap<i64, (i64, Instant)>,
 }
 
-/// One consensus pass over both tracks. Reads the active window, resets track
-/// state when the window changes or closes (so a prior upgrade's anchors never
-/// carry over), then polls the host and Gateway candidates. Re-emits each
-/// anchored track's `unanimity_consensus`, and `unanimity_consensus_timeout` once
-/// past the deadline, every pass until the window closes.
+/// Returns true if the timeout clock should start: either every chain finished its
+/// window, or one chain made no progress for `commitment_timeout` (a stuck listener
+/// that would otherwise leave the upgrade running forever). Also updates each chain's
+/// recorded progress.
+fn should_arm_timeout(
+    windows: &[(i64, i64, i64)],
+    watermarks: &HashMap<i64, i64>,
+    progress: &mut HashMap<i64, (i64, Instant)>,
+    now: Instant,
+    commitment_timeout: Duration,
+) -> bool {
+    let mut all_reached = true;
+    let mut stalled = false;
+    for &(chain_id, _start, end) in windows {
+        let watermark = watermarks.get(&chain_id).copied().unwrap_or(-1);
+        let entry = progress.entry(chain_id).or_insert((watermark, now));
+        if watermark > entry.0 {
+            *entry = (watermark, now);
+        }
+        if watermark < end {
+            all_reached = false;
+            stalled |= now.duration_since(entry.1) >= commitment_timeout;
+        }
+    }
+    all_reached || stalled
+}
+
+/// Host side is ready: every chain anchored and at least one anchor is non-trivial.
+fn host_consensus_ready(host_tracks: &HashMap<i64, ConsensusTrack>) -> bool {
+    !host_tracks.is_empty()
+        && host_tracks.values().all(|t| t.anchored.is_some())
+        && host_tracks.values().any(|t| t.anchored_nontrivial)
+}
+
+/// `(chain_id, block)` anchors to notify: host anchors only once `host_consensus_ready`
+/// holds, plus the Gateway anchor whenever it is set.
+fn unanimity_notifications(
+    host_tracks: &HashMap<i64, ConsensusTrack>,
+    gateway: &ConsensusTrack,
+) -> Vec<(i64, i64)> {
+    let mut out = Vec::new();
+    if host_consensus_ready(host_tracks) {
+        for t in host_tracks.values() {
+            if let Some(block) = t.anchored {
+                out.push((t.chain_id, block));
+            }
+        }
+    }
+    if let Some(block) = gateway.anchored {
+        out.push((gateway.chain_id, block));
+    }
+    out
+}
+
+/// One pass over every host-chain track plus the Gateway track: resets tracks on
+/// a window-set change, polls each chain's + the Gateway's candidates, re-emits
+/// anchors, and — once every host chain hit end_block without unanimity — emits a
+/// single timeout past the deadline.
 async fn consensus_pass(
     pool: &Pool<Postgres>,
     http: &reqwest::Client,
     s3_urls: &Arc<RwLock<Vec<String>>>,
-    host: &mut ConsensusTrack,
+    host_tracks: &mut HashMap<i64, ConsensusTrack>,
     gateway: &mut ConsensusTrack,
     window_state: &mut WindowState,
     commitment_timeout: Duration,
 ) -> Result<(), Error> {
-    let window = active_upgrade_window(pool).await?;
-    if window_state.tracked_window != window {
-        host.reset();
+    let active = active_upgrade_windows(pool).await?;
+    if window_state.tracked_window != active {
+        // Window set changed: reset all tracks + timeout so no prior anchor carries over.
+        host_tracks.clear();
         gateway.reset();
-        // Reset the timeout for the new proposal or window.
         window_state.timeout = WindowTimeout::NotArmed;
-        window_state.tracked_window = window.clone();
+        window_state.host_progress.clear();
+        window_state.tracked_window = active.clone();
     }
-    let Some((proposal_id, start, end)) = window else {
+    let Some((proposal_id, proposal_block, windows)) = active else {
         return Ok(());
     };
 
-    // Snapshot the URL list so both tracks see a stable operator set this pass.
+    // Snapshot the URL list so every track sees a stable operator set this pass.
     let urls = s3_urls.read().await.clone();
 
-    // Host track: needs the host chain id (set by upgrade-controller).
-    if host.anchored.is_none() {
-        if let Some(host_chain_id) = active_host_chain_id(pool).await? {
-            host.chain_id = host_chain_id;
-            let candidates = host_consensus_candidates(pool, host_chain_id, start, end).await?;
-            poll_track(http, &urls, host, &candidates).await?;
+    // Host tracks: one per chain window, each anchoring independently.
+    for &(chain_id, start, end) in &windows {
+        let track = host_tracks
+            .entry(chain_id)
+            .or_insert_with(|| ConsensusTrack::new(chain_id));
+        if track.anchored.is_none() {
+            let candidates = host_consensus_candidates(pool, chain_id, start, end, true).await?;
+            poll_track(http, &urls, track, &candidates, true).await?;
+            // No FHE op in the whole window: let this chain anchor on any block so it
+            // doesn't block the upgrade. Require every window block hashed (no gap), so a
+            // finalized-but-unfinished non-trivial block can't be mistaken for quiet.
+            if track.anchored.is_none()
+                && candidates.is_empty()
+                && gcs_window_fully_hashed(pool, chain_id, start, end).await?
+            {
+                let readiness =
+                    host_consensus_candidates(pool, chain_id, start, end, false).await?;
+                poll_track(http, &urls, track, &readiness, false).await?;
+            }
         }
     }
 
@@ -485,68 +604,93 @@ async fn consensus_pass(
         ) {
             let candidates =
                 pending_gw_consensus_blocks(pool, gateway.chain_id, gw_start, gw_tip).await?;
-            poll_track(http, &urls, gateway, &candidates).await?;
+            poll_track(http, &urls, gateway, &candidates, true).await?;
         }
     }
 
-    // Re-emit each anchor every pass so a controller that missed the NOTIFY still latches.
-    for track in [&*host, &*gateway] {
-        if let Some(block) = track.anchored {
-            notify_unanimity(
-                pool,
-                UNANIMITY_CONSENSUS_CHANNEL,
-                &proposal_id,
-                &NewBlockPayload {
-                    chain_id: track.chain_id,
-                    block_height: block,
-                    block_hash: String::new(),
-                },
-            )
-            .await?;
-        }
+    // Re-emit each anchor every pass so a controller that missed the NOTIFY still
+    // latches. Host anchors are withheld until host_consensus_ready holds (all host
+    // anchored + >=1 non-trivial), so the controller can't cut over on an all-quiet
+    // fleet; the Gateway anchor is independent.
+    for (chain_id, block) in unanimity_notifications(host_tracks, gateway) {
+        notify_unanimity(
+            pool,
+            UNANIMITY_CONSENSUS_CHANNEL,
+            &proposal_id,
+            proposal_block,
+            &NewBlockPayload {
+                chain_id,
+                block_height: block,
+                block_hash: String::new(),
+            },
+        )
+        .await?;
     }
 
-    // If we reached the last block but didn't agree in time, give up so the
-    // upgrade can be rerun.
-    let both_anchored = host.anchored.is_some() && gateway.anchored.is_some();
+    // One global deadline, armed once every host chain reached its end_block
+    // without agreeing, so the upgrade can be rerun.
+    let all_host_anchored =
+        !host_tracks.is_empty() && host_tracks.values().all(|t| t.anchored.is_some());
+    let both_anchored = host_consensus_ready(host_tracks) && gateway.anchored.is_some();
     if !both_anchored {
+        let max_end = windows.iter().map(|&(_, _, end)| end).max().unwrap_or(0);
         match window_state.timeout {
-            // Arm once we reach end_block (chain_id is 0 until then).
-            WindowTimeout::NotArmed
-                if host.chain_id != 0
-                    && host_reached_end_block(pool, host.chain_id, end).await? =>
-            {
-                window_state.timeout = WindowTimeout::Armed(Instant::now() + commitment_timeout);
-                info!(
-                    host_chain_id = host.chain_id,
-                    end_block = end,
-                    timeout_secs = commitment_timeout.as_secs(),
-                    "host chain reached end_block without unanimity — arming consensus timeout"
-                );
+            WindowTimeout::NotArmed => {
+                let mut watermarks = HashMap::with_capacity(windows.len());
+                for &(chain_id, _, _) in &windows {
+                    watermarks.insert(chain_id, gcs_host_watermark(pool, chain_id).await?);
+                }
+                let now = Instant::now();
+                if should_arm_timeout(
+                    &windows,
+                    &watermarks,
+                    &mut window_state.host_progress,
+                    now,
+                    commitment_timeout,
+                ) {
+                    window_state.timeout = WindowTimeout::Armed(now + commitment_timeout);
+                    info!(
+                        chains = windows.len(),
+                        max_end_block = max_end,
+                        timeout_secs = commitment_timeout.as_secs(),
+                        "arming consensus timeout (all chains reached end_block, or a host listener stalled)"
+                    );
+                }
             }
             // Still armed past the deadline — (re)emit the timeout.
             WindowTimeout::Armed(deadline) if Instant::now() >= deadline => {
+                let mut unanchored: Vec<i64> = host_tracks
+                    .iter()
+                    .filter(|(_, t)| t.anchored.is_none())
+                    .map(|(&c, _)| c)
+                    .collect();
+                unanchored.sort_unstable();
+                if gateway.anchored.is_none() {
+                    unanchored.push(gateway.chain_id);
+                }
                 warn!(
-                    host_chain_id = host.chain_id,
-                    start_block = start,
-                    end_block = end,
-                    host_anchored = host.anchored.is_some(),
+                    chains = windows.len(),
+                    max_end_block = max_end,
+                    all_host_anchored,
+                    nontrivial_anchored = host_tracks.values().any(|t| t.anchored_nontrivial),
                     gateway_anchored = gateway.anchored.is_some(),
-                    "consensus timeout elapsed without both-track unanimity — emitting event_unanimity_consensus_timeout"
+                    unanchored_chains = ?unanchored,
+                    "consensus timeout elapsed without unanimity on all tracks — emitting event_unanimity_consensus_timeout"
                 );
                 notify_unanimity(
                     pool,
                     UNANIMITY_CONSENSUS_TIMEOUT_CHANNEL,
                     &proposal_id,
+                    proposal_block,
                     &NewBlockPayload {
-                        chain_id: host.chain_id,
-                        block_height: end,
+                        chain_id: unanchored.first().copied().unwrap_or(0),
+                        block_height: max_end,
                         block_hash: String::new(),
                     },
                 )
                 .await?;
             }
-            WindowTimeout::NotArmed | WindowTimeout::Armed(_) => {}
+            WindowTimeout::Armed(_) => {}
         }
     }
 
@@ -557,10 +701,12 @@ async fn notify_unanimity(
     pool: &Pool<Postgres>,
     channel: &str,
     proposal_id: &[u8],
+    proposal_block: i64,
     payload: &NewBlockPayload,
 ) -> Result<(), Error> {
     let body = serde_json::to_string(&UnanimityPayload {
         proposal_id,
+        proposal_block,
         chain_id: payload.chain_id,
         block_height: payload.block_height,
         block_hash: &payload.block_hash,
@@ -727,15 +873,15 @@ where
     listener.listen_all(channels).await?;
     info!(?channels, "listening for notifications");
 
-    // Per-track eager consensus state. Host chain id is discovered from
-    // upgrade_state each pass (starts unknown); the Gateway track is keyed by the
-    // provider-resolved gw_chain_id.
-    let mut host_track = ConsensusTrack::new(0);
+    // One host track per chain, discovered from upgrade_state each pass;
+    // the Gateway track is keyed by the provider-resolved gw_chain_id.
+    let mut host_tracks: HashMap<i64, ConsensusTrack> = HashMap::new();
     let mut gateway_track = ConsensusTrack::new(gw_chain_id);
     // Tracked window + its timeout state.
     let mut window_state = WindowState {
         tracked_window: None,
         timeout: WindowTimeout::NotArmed,
+        host_progress: HashMap::new(),
     };
 
     // The consensus poll cadence: re-attempt S3 every commitment_poll_interval,
@@ -752,7 +898,7 @@ where
                     &pool,
                     &http,
                     &s3_urls,
-                    &mut host_track,
+                    &mut host_tracks,
                     &mut gateway_track,
                     &mut window_state,
                     config.commitment_timeout,
@@ -810,6 +956,147 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const CT: Duration = Duration::from_secs(60);
+
+    const GW: i64 = 54321;
+
+    fn track(chain_id: i64, anchored: Option<i64>, nontrivial: bool) -> ConsensusTrack {
+        let mut t = ConsensusTrack::new(chain_id);
+        t.anchored = anchored;
+        t.anchored_nontrivial = nontrivial;
+        t
+    }
+
+    #[test]
+    fn host_ready_needs_all_anchored_and_one_nontrivial() {
+        assert!(host_consensus_ready(&HashMap::from([
+            (1, track(1, Some(5), false)),
+            (2, track(2, Some(9), true)),
+        ])));
+        assert!(!host_consensus_ready(&HashMap::from([
+            (1, track(1, Some(5), false)),
+            (2, track(2, Some(7), false)),
+        ])));
+        assert!(!host_consensus_ready(&HashMap::from([
+            (1, track(1, Some(5), true)),
+            (2, track(2, None, false)),
+        ])));
+        assert!(!host_consensus_ready(&HashMap::new()));
+    }
+
+    #[test]
+    fn unanimity_notifications_gate_hosts_on_nontrivial() {
+        let gateway = track(GW, Some(500), true);
+        let sorted = |mut v: Vec<(i64, i64)>| {
+            v.sort_unstable();
+            v
+        };
+
+        // 2 chains, 0 FHE ops (both empty), 1 GW input -> only GW notified -> NO cutover.
+        let all_quiet =
+            HashMap::from([(1, track(1, Some(5), false)), (2, track(2, Some(6), false))]);
+        assert_eq!(
+            unanimity_notifications(&all_quiet, &gateway),
+            vec![(GW, 500)]
+        );
+
+        // 2 chains, 1 FHE op (chain 2), chain 1 empty, 1 GW input -> all notified -> cutover.
+        let mixed = HashMap::from([(1, track(1, Some(5), false)), (2, track(2, Some(6), true))]);
+        assert_eq!(
+            sorted(unanimity_notifications(&mixed, &gateway)),
+            vec![(1, 5), (2, 6), (GW, 500)]
+        );
+
+        // 1 chain, 0 FHE ops (empty), 1 GW input -> only GW notified -> NO cutover.
+        let single_quiet = HashMap::from([(1, track(1, Some(5), false))]);
+        assert_eq!(
+            unanimity_notifications(&single_quiet, &gateway),
+            vec![(GW, 500)]
+        );
+        // 1 chain, 1 FHE op, 1 GW input -> host + GW notified -> cutover.
+        let single_nt = HashMap::from([(1, track(1, Some(5), true))]);
+        assert_eq!(
+            sorted(unanimity_notifications(&single_nt, &gateway)),
+            vec![(1, 5), (GW, 500)]
+        );
+    }
+
+    #[test]
+    fn arm_timeout_when_all_chains_reached_end_block() {
+        let windows = vec![(1, 0, 100), (2, 0, 200)];
+        let watermarks = HashMap::from([(1, 100), (2, 200)]);
+        let mut progress = HashMap::new();
+        assert!(should_arm_timeout(
+            &windows,
+            &watermarks,
+            &mut progress,
+            Instant::now(),
+            CT
+        ));
+    }
+
+    #[test]
+    fn wait_while_a_chain_is_below_end_and_recently_seen() {
+        let windows = vec![(1, 0, 100), (2, 0, 200)];
+        let watermarks = HashMap::from([(1, 100), (2, 150)]);
+        let mut progress = HashMap::new();
+        assert!(!should_arm_timeout(
+            &windows,
+            &watermarks,
+            &mut progress,
+            Instant::now(),
+            CT
+        ));
+    }
+
+    #[test]
+    fn progressing_chain_never_stalls() {
+        let windows = vec![(1, 0, 100)];
+        let mut progress = HashMap::new();
+        let t0 = Instant::now();
+        // Below end_block, first observation → wait.
+        assert!(!should_arm_timeout(
+            &windows,
+            &HashMap::from([(1, 40)]),
+            &mut progress,
+            t0,
+            CT
+        ));
+        // Advanced after commitment_timeout — progress refreshes, so not stalled.
+        assert!(!should_arm_timeout(
+            &windows,
+            &HashMap::from([(1, 70)]),
+            &mut progress,
+            t0 + CT + Duration::from_secs(1),
+            CT,
+        ));
+    }
+
+    #[test]
+    fn stalled_listener_arms_after_commitment_timeout() {
+        // Chain 1 reached end_block; chain 2's GCS watermark is frozen below it.
+        let windows = vec![(1, 0, 100), (2, 0, 100)];
+        let watermarks = HashMap::from([(1, 100), (2, 40)]);
+        let mut progress = HashMap::new();
+        let t0 = Instant::now();
+        // First observation: not yet stalled.
+        assert!(!should_arm_timeout(
+            &windows,
+            &watermarks,
+            &mut progress,
+            t0,
+            CT
+        ));
+        // Still frozen commitment_timeout later → stalled listener → arm.
+        assert!(should_arm_timeout(
+            &windows,
+            &watermarks,
+            &mut progress,
+            t0 + CT + Duration::from_millis(1),
+            CT,
+        ));
+    }
 
     #[test]
     fn parses_new_block_payload() {

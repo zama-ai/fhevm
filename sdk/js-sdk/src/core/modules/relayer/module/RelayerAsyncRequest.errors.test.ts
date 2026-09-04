@@ -101,4 +101,32 @@ describe('RelayerAsyncRequest auth/edge error surfacing', () => {
       expect(err.message).not.toContain('Forbidden');
     }
   });
+
+  //////////////////////////////////////////////////////////////////////////////
+  // 503 readiness_check_timed_out
+  //////////////////////////////////////////////////////////////////////////////
+
+  it('503 readiness_check_timed_out is terminal unless the request opts into retrying it', async () => {
+    // The EVM relayer keeps answering the same 503 once the readiness check has timed out, so the
+    // default must surface the error instead of polling a dead job forever (the confidential-bridge
+    // e2e suite relies on this to detect a handle that is not publicly decryptable yet).
+    mockFetchStatus(
+      503,
+      JSON.stringify({
+        status: 'failed',
+        error: { label: 'readiness_check_timed_out', message: 'ciphertext never became ready' },
+      }),
+    );
+
+    try {
+      await newRequest().run();
+      expect.unreachable();
+    } catch (e) {
+      expect(e).toBeInstanceOf(RelayerResponseApiError);
+      const err = e as RelayerResponseApiError;
+      expect(err.status).toBe(503);
+      expect(err.relayerApiError.label).toBe('readiness_check_timed_out');
+    }
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
 });

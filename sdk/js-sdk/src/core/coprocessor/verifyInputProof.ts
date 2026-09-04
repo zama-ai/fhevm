@@ -2,6 +2,7 @@ import type { FhevmChain } from '../types/fhevmChain.js';
 import type { InputProof, VerifiedInputProof } from '../types/inputProof.js';
 import type { ChecksummedAddress } from '../types/primitives.js';
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
+import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
 import { InputProofError } from '../errors/InputProofError.js';
 import { verifyHandlesCoprocessorSignatures } from './verifyHandlesCoprocessorSignatures.js';
 
@@ -20,6 +21,7 @@ type Parameters = {
     readonly userAddress: ChecksummedAddress;
     readonly contractAddress: ChecksummedAddress;
   };
+  readonly fhevmContext: FhevmClientFrozenContext;
 };
 
 type ReturnType = VerifiedInputProof;
@@ -44,6 +46,7 @@ export async function verifyInputProof(context: Context, parameters: Parameters)
     handles: parameters.inputProof.inputHandles,
     userAddress: signedHandleAccess.userAddress,
     contractAddress: signedHandleAccess.contractAddress,
+    fhevmContext: parameters.fhevmContext,
   });
 
   return parameters.inputProof as VerifiedInputProof;

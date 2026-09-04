@@ -22,7 +22,7 @@ task('task:deployAllHostContracts')
     'withKmsGeneration',
     'Whether to deploy canonical-host-only KMSGeneration. Required: true for canonical host, false for non-canonical host.',
     undefined,
-    types.boolean
+    types.boolean,
   )
   .setAction(async function ({ withKmsGeneration }: { withKmsGeneration: boolean }, hre) {
     if (process.env.SOLIDITY_COVERAGE !== 'true') {
@@ -92,7 +92,7 @@ task('task:deployEmptyUUPSProxies')
     'withKmsGeneration',
     'Whether to deploy the canonical-host-only KMSGeneration proxy. Required: true for canonical host, false for non-canonical host.',
     undefined,
-    types.boolean
+    types.boolean,
   )
   .setAction(async function ({ withKmsGeneration }: { withKmsGeneration: boolean }, { ethers, upgrades, run }) {
     // Compile the EmptyUUPS proxy contract for ACL
@@ -288,7 +288,7 @@ task('task:deployInputVerifier')
     'useAddress',
     'Use addresses instead of private keys env variables for kms signers',
     true,
-    types.boolean
+    types.boolean,
   )
   .setAction(async function (taskArguments: TaskArguments, { ethers, upgrades }) {
     const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');

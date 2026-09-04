@@ -6,7 +6,8 @@ const { ethers } = require('ethers');
 const fs = require('fs');
 
 const mnemonic = ethers.Mnemonic.fromPhrase(
-  'test test test test test test test test test test test junk',
+  process.env.MNEMONIC ||
+    'test test test test test test test test test test test junk',
 );
 const n = parseInt(process.env.COUNT, 10);
 const offset = parseInt(process.env.HD_OFFSET, 10);
