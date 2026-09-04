@@ -38,8 +38,8 @@ never bundled:
 | ---------------------------- | ------------------------------------------------------------------------ |
 | `@fhevm/sdk/actions/encrypt` | `encryptValue`, `encryptValues`, `generateZkProof`                        |
 | `@fhevm/sdk/actions/decrypt` | `decryptValue`, `decryptValues`, `decryptValuesFromPairs`, `generateTransportKeyPair`, `canDecryptValue`, `canDecryptValues`, `canDecryptValuesFromPairs` |
-| `@fhevm/sdk/actions/base`    | `decryptPublicValue`, `decryptPublicValues`, `decryptPublicValuesWithSignatures`, `canDecryptPublicValue`, `canDecryptPublicValues`, `fetchEncryptedValues` |
-| `@fhevm/sdk/actions/chain`   | `signDecryptionPermit`, `serializeSignedDecryptionPermit`, `parseSignedDecryptionPermit`, `serializeTransportKeyPair`, `parseTransportKeyPair`, `fetchFheEncryptionKeyBytes` |
+| `@fhevm/sdk/actions/base`    | `decryptPublicValue`, `decryptPublicValues`, `decryptPublicValuesWithSignatures`, `canDecryptPublicValue`, `canDecryptPublicValues`, `fetchEncryptedValues`, `signLegacyDecryptionPermit`, `signUnifiedDecryptionPermit`, `canUseUnifiedDecryptionPermit`, `createUnsignedLegacyDecryptionPermitEip712`, `createUnsignedUnifiedDecryptionPermitEip712` |
+| `@fhevm/sdk/actions/chain`   | `signDecryptionPermit` (`@deprecated`), `serializeSignedDecryptionPermit`, `parseSignedDecryptionPermit`, `serializeTransportKeyPair`, `parseTransportKeyPair`, `fetchFheEncryptionKeyBytes` |
 | `@fhevm/sdk/actions/host`    | `resolveFhevmConfig`, `isAllowedForDecryption`, `persistAllowed`          |
 
 ## Encrypt actions
@@ -89,12 +89,18 @@ These need no cryptography WASM, matching the fact that public decryption works
 on every client. `fetchEncryptedValues` takes a `ZkProof` and returns
 `{ encryptedValues, inputProof }` — the proof-verification half of encryption.
 
-## Chain actions (permits, keys, serialization)
+## Permit actions
+
+`signLegacyDecryptionPermit` (V1, works everywhere) and
+`signUnifiedDecryptionPermit` (V2, protocol v14+) live in `actions/base`, not
+`actions/chain` — check `canUseUnifiedDecryptionPermit` first if you need to
+pick between them at runtime. See
+[Decryption → sign a decryption permit](decryption.md#step-2--sign-a-decryption-permit).
 
 ```ts
-import { signDecryptionPermit, serializeSignedDecryptionPermit } from '@fhevm/sdk/actions/chain';
+import { signLegacyDecryptionPermit } from '@fhevm/sdk/actions/base';
 
-const permit = await signDecryptionPermit(client, {
+const permit = await signLegacyDecryptionPermit(client, {
   transportKeyPair,
   contractAddresses: [contractAddress],
   startTimestamp: Math.floor(Date.now() / 1000),
@@ -102,12 +108,25 @@ const permit = await signDecryptionPermit(client, {
   signerAddress,
   signer,
 });
+```
 
-const serialized = serializeSignedDecryptionPermit(client, { signedPermit: permit });
+`createUnsignedLegacyDecryptionPermitEip712` / `createUnsignedUnifiedDecryptionPermitEip712`
+build the same EIP-712 typed data without signing it, for handing off to an
+external signing flow. `signDecryptionPermit` still exists in `actions/chain`
+but is `@deprecated` — an alias for `signLegacyDecryptionPermit`.
+
+## Chain actions (keys, serialization)
+
+```ts
+import { serializeSignedDecryptionPermit, serializeTransportKeyPair } from '@fhevm/sdk/actions/chain';
+
+const serialized = await serializeSignedDecryptionPermit(client, { signedPermit: permit });
+const serializedKeyPair = await serializeTransportKeyPair(client, { transportKeyPair });
 ```
 
 `serializeSignedDecryptionPermit` and `serializeTransportKeyPair` are
-**synchronous**; every other action returns a `Promise`.
+**asynchronous** — both resolve the client's protocol context before
+serializing.
 
 ## Host actions (on-chain reads)
 
