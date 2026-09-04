@@ -4,7 +4,6 @@ use crate::tests::event_helpers::{
 };
 use host_listener::contracts::TfheContract;
 use host_listener::contracts::TfheContract::TfheContractEvents;
-use serial_test::serial;
 
 /// Under the minted-in-transaction handle discriminant, a consumer's
 /// representation is pinned by its handle: operands minted in the consuming
@@ -19,7 +18,6 @@ use serial_test::serial;
 /// deterministic trivial encrypts persist byte-identical ciphertexts from
 /// either transaction.
 #[tokio::test]
-#[serial(db)]
 async fn boundary_and_local_sourcing_both_compute_and_persist(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let EventHarness {
