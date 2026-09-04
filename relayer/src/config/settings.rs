@@ -453,10 +453,9 @@ impl DispatcherLockConfig {
                 self.idle_session_timeout, self.holder_heartbeat_interval
             )));
         }
-        // A standby idles for a whole poll interval between try-locks, so the same bound reaps
-        // it too. Nothing reconnects the lock's connection: every later try-lock then fails on
-        // a closed socket and the pod exits through `exit_after_consecutive_failures` instead
-        // of ever taking over.
+        // Defensive since the bound moved to acquisition: only a pod that has held the lock
+        // carries the GUC, and none returns to polling. A value under the poll interval still
+        // describes a session Postgres would reap between two try-locks, so it stays rejected.
         if self.idle_session_timeout <= self.standby_poll_interval {
             return Err(AppConfigError::Config(format!(
                 "dispatcher_lock.idle_session_timeout ({:?}) must be greater than \
