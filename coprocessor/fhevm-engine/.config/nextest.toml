@@ -18,6 +18,14 @@ fhe-keys = { max-threads = 4 }
 filter = 'test(/^tests::dependence_chain::/)'
 # These use one-second lock handoff timeouts and must run without other test processes.
 threads-required = "num-test-threads"
+# Run them first. They need the whole machine, so a long test already running blocks them.
+priority = 40
+
+[[profile.default.overrides]]
+# Start the slowest tests first so the cheap ones fill in around them, instead of the
+# long u256 case queueing behind seven others for an `fhe-keys` slot.
+filter = 'test(/_muldivrem_u(128|160|256)$/) or test(/cast_from_u(512|1024|2048)$/)'
+priority = 20
 
 [[profile.default.overrides]]
 # The two `*_split_*` checks are pure computation with no database, so they are
