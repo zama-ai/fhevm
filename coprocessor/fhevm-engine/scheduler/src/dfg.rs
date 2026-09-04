@@ -20,7 +20,7 @@ use daggy::{
     },
     Dag, NodeIndex,
 };
-use fhevm_engine_common::types::{Handle, SupportedFheCiphertexts, SupportedFheOperations};
+use fhevm_engine_common::types::{Handle, SupportedFheOperations};
 
 pub struct ExecNode {
     df_nodes: Vec<NodeIndex>,
@@ -185,7 +185,7 @@ pub fn build_component_nodes(
                 // to the canonical ciphertext fetch below.
                 DFGTaskInput::BoundaryDependence(_)
                 | DFGTaskInput::Value(_)
-                | DFGTaskInput::Compressed(_) => {}
+                | DFGTaskInput::Compressed(..) => {}
             }
         }
         let node_idx = graph.add_node((op.is_allowed, index)).index();
@@ -262,7 +262,7 @@ impl ComponentNode {
                         // choice. Always expose it for canonical sourcing.
                         self.inputs.entry(dh.clone()).or_insert(None);
                     }
-                    DFGTaskInput::Value(_) | DFGTaskInput::Compressed(_) => {}
+                    DFGTaskInput::Value(_) | DFGTaskInput::Compressed(..) => {}
                 }
             }
             self.results.push(op.output_handle.clone());
@@ -615,7 +615,7 @@ impl OpNode {
     fn check_ready_inputs(&mut self, ct_map: &mut HashMap<Handle, Option<DFGTxInput>>) -> bool {
         for i in self.inputs.iter_mut() {
             match i {
-                DFGTaskInput::Value(_) | DFGTaskInput::Compressed(_) => continue,
+                DFGTaskInput::Value(_) | DFGTaskInput::Compressed(..) => continue,
                 DFGTaskInput::LocalDependence(d) => {
                     error!(target: "scheduler", handle = ?hex::encode(d),
                            "transaction-local dependence reached execution without local producer");
@@ -624,20 +624,35 @@ impl OpNode {
                 DFGTaskInput::BoundaryDependence(d) => {
                     let resolved = match ct_map.get(d) {
                         Some(Some(DFGTxInput::Value((val, _)))) => {
-                            // A transaction-level input is a value that
-                            // crossed the transaction boundary, and the
-                            // canonical cross-transaction representation is
-                            // the persisted compressed form. A raw ciphertext
-                            // here would make the consumer's bytes depend on
-                            // which node/pass produced it.
-                            if !matches!(val, SupportedFheCiphertexts::Scalar(_)) {
+                            // CONSENSUS INVARIANT: a transaction-level value
+                            // input must be the DECOMPRESSED CANONICAL FORM of
+                            // the handle's persisted bytes — byte-identical to
+                            // what any consumer would reconstruct itself. A raw
+                            // working value injected here would make the
+                            // consumer's bytes depend on which node or pass
+                            // produced it, which is a consensus divergence.
+                            //
+                            // This variant has NO constructor in either build
+                            // configuration: boundary operands enter the graph
+                            // compressed and are decompressed in the executor,
+                            // which memoizes ct(h) per partition rather than
+                            // materializing raw values here. The arm is
+                            // therefore unreachable by construction and the
+                            // check is free — it exists so that if a future
+                            // change starts injecting transaction-level raw
+                            // values, on either backend, this says so instead
+                            // of silently changing consumers' bytes.
+                            if !matches!(
+                                val,
+                                fhevm_engine_common::types::SupportedFheCiphertexts::Scalar(_)
+                            ) {
                                 error!(target: "scheduler", { handle = ?hex::encode(&self.result_handle) },
                                        "Consensus risk: non-scalar raw ciphertext crossing a transaction boundary");
                             }
                             DFGTaskInput::Value(val.clone())
                         }
                         Some(Some(DFGTxInput::Compressed((cct, _)))) => {
-                            DFGTaskInput::Compressed(cct.clone())
+                            DFGTaskInput::Compressed(d.clone(), cct.clone())
                         }
                         _ => return false,
                     };

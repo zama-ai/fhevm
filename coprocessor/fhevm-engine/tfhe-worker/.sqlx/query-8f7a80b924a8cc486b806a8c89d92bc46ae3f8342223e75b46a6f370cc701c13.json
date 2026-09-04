@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE dependence_chain\n         SET status = 'updated', last_updated_at = NOW()\n         WHERE dependence_chain_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8f7a80b924a8cc486b806a8c89d92bc46ae3f8342223e75b46a6f370cc701c13"
+}

@@ -176,6 +176,38 @@ run_block_scope_materialization_wave1_prerequisites() {
      ON host_chain_blocks_valid (chain_id, parent_hash);"
 }
 
+precreate_dcid_acquisition_index() {
+  # Pre-upgrade step for the batched-DCID work acquisition rollout.
+  #
+  # Migration 20260814120000 builds idx_computations_pending_dcid_schedule on
+  # `computations`, the hottest table in the pipeline. A plain CREATE INDEX
+  # takes a SHARE lock for the whole heap scan, stalling host-listener ingest
+  # and every worker. It cannot be CONCURRENTLY inside the migration: the
+  # migration images and coprocessor CI pin sqlx-cli 0.7.2, which has no
+  # `no_tx` support and wraps every migration in a transaction.
+  #
+  # So build it here instead, against the live database, before the migration
+  # runs; its CREATE INDEX IF NOT EXISTS then no-ops. precreate_index hard
+  # -fails on an INVALID leftover from an interrupted concurrent build, which
+  # a bare CREATE INDEX IF NOT EXISTS would silently skip forever.
+  #
+  # Guarded on the table existing: on a fresh database `computations` is
+  # created by a later migration and the in-migration build is instant anyway.
+  local has_table
+  has_table=$(psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -Atc \
+    "SELECT to_regclass('public.computations') IS NOT NULL;")
+  if [ "$has_table" != "t" ]; then
+    log "Skipping DCID acquisition index pre-creation (computations not created yet)"
+    return 0
+  fi
+
+  log "Pre-creating the DCID acquisition index concurrently..."
+  precreate_index "idx_computations_pending_dcid_schedule" \
+    "CREATE INDEX CONCURRENTLY idx_computations_pending_dcid_schedule \
+     ON computations (dependence_chain_id, schedule_order) \
+     WHERE is_completed = false AND is_allowed = true;"
+}
+
 log "-------------- Start database initialization --------------"
 
 log "Creating database..."
@@ -215,6 +247,7 @@ elif [ "${RUN_BLOCK_SCOPE_WAVE1_PREREQUISITES:-}" = "true" ]; then
   run_block_scope_materialization_wave1_prerequisites
 else
   repair_bridge_tables_migration_checksum
+  precreate_dcid_acquisition_index
   sqlx migrate run --source "$MIGRATION_DIR" 2>&1 | log_stream || { log "Failed to run migrations."; exit 1; }
   seed_host_chains
 fi

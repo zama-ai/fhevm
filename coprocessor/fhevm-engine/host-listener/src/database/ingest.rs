@@ -97,7 +97,7 @@ fn refuse_mask_derivation(reason: &'static str) -> sqlx::Error {
     sqlx::Error::Protocol(reason.into())
 }
 
-fn populate_operand_boundary_masks(
+pub(crate) fn populate_operand_boundary_masks(
     logs: &mut [LogTfhe],
 ) -> Result<(), sqlx::Error> {
     let mask_bearing = |log: &LogTfhe| tfhe_result_handle(&log.event).is_some();
@@ -633,6 +633,8 @@ pub async fn ingest_block_logs(
     let chains = dependence_chains(
         &mut tfhe_event_log,
         &db.dependence_chain,
+        &db.consumed_boundaries,
+        &db.sealed_chains,
         options.dependence_by_connexity,
         options.dependence_cross_block,
     )
@@ -1338,8 +1340,15 @@ pub async fn synthesize_finalized_fallback_grants(
     let block_timestamp = logs[0].block_timestamp;
     // Dependency-free singletons: connexity/cross-block grouping options
     // cannot change the outcome, so neither flag is threaded through here.
-    let chains =
-        dependence_chains(&mut logs, &db.dependence_chain, false, false).await;
+    let chains = dependence_chains(
+        &mut logs,
+        &db.dependence_chain,
+        &db.consumed_boundaries,
+        &db.sealed_chains,
+        false,
+        false,
+    )
+    .await;
     for log in &logs {
         let dst_handle = tfhe_result_handle(&log.event)
             .expect("synthetic TrivialEncrypt has a result handle");
@@ -1600,6 +1609,7 @@ mod tests {
                 .iter()
                 .map(|dep| FixedBytes::<32>::from([*dep; 32]))
                 .collect(),
+            outer_boundary_handles: vec![],
             dependents: vec![],
             allowed_handle: vec![],
             size: 1,
