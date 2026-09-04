@@ -117,10 +117,9 @@ async fn test_fetch_latest_refreshes_cache_after_key_rotation(
 }
 
 #[tokio::test]
-#[serial(db)]
 #[cfg(not(feature = "gpu"))]
 async fn test_force_legacy_ignores_compressed_material() -> Result<(), Box<dyn std::error::Error>> {
-    let db = setup_test_db(ImportMode::WithKeysNoSns).await?;
+    let db = cloned_test_db(ImportMode::WithKeysNoSns).await?;
     let pool = PgPoolOptions::new().connect(db.db_url()).await?;
     sqlx::query("UPDATE keys SET compressed_xof_keyset = $1")
         .bind(vec![0_u8])
@@ -144,10 +143,9 @@ fn test_force_legacy_is_rejected_by_gpu_workers() {
 }
 
 #[tokio::test]
-#[serial(db)]
 async fn test_default_preserves_compressed_first_selection(
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let db = setup_test_db(ImportMode::WithKeysNoSns).await?;
+    let db = cloned_test_db(ImportMode::WithKeysNoSns).await?;
     let pool = PgPoolOptions::new().connect(db.db_url()).await?;
     sqlx::query("UPDATE keys SET compressed_xof_keyset = $1")
         .bind(vec![0_u8])
@@ -166,11 +164,10 @@ async fn test_default_preserves_compressed_first_selection(
 }
 
 #[tokio::test]
-#[serial(db)]
 #[cfg(not(feature = "gpu"))]
 async fn test_default_falls_back_to_legacy_when_compressed_material_is_missing(
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let db = setup_test_db(ImportMode::WithKeysNoSns).await?;
+    let db = cloned_test_db(ImportMode::WithKeysNoSns).await?;
     let pool = PgPoolOptions::new().connect(db.db_url()).await?;
     sqlx::query("UPDATE keys SET compressed_xof_keyset = NULL")
         .execute(&pool)
@@ -183,10 +180,9 @@ async fn test_default_falls_back_to_legacy_when_compressed_material_is_missing(
 }
 
 #[tokio::test]
-#[serial(db)]
 #[cfg(feature = "gpu")]
 async fn test_default_rejects_legacy_fallback_on_gpu() -> Result<(), Box<dyn std::error::Error>> {
-    let db = setup_test_db(ImportMode::WithKeysNoSns).await?;
+    let db = cloned_test_db(ImportMode::WithKeysNoSns).await?;
     let pool = PgPoolOptions::new().connect(db.db_url()).await?;
     sqlx::query("UPDATE keys SET compressed_xof_keyset = NULL")
         .execute(&pool)
