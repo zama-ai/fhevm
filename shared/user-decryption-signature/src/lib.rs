@@ -62,6 +62,8 @@ pub enum Erc1271Error {
         "ERC-1271 isValidSignature reverted or returned malformed data for userAddress {0}: {1}"
     )]
     Rejected(Address, String),
+    #[error("ERC-1271 isValidSignature reverted with no reason for userAddress {0}")]
+    EmptyRevert(Address),
     #[error("RPC transport error during ERC-1271 verification: {0}")]
     Transport(String),
 }
@@ -115,7 +117,8 @@ fn try_ecrecover(digest: &B256, signature: &[u8]) -> Option<Address> {
 ///   outcome, slightly inaccurate error message; not worth a second RPC to disambiguate.
 /// - returndata length 1..32 → `Rejected` (non-compliant ABI return);
 /// - leading bytes don't match magic → `WrongMagic`;
-/// - `isValidSignature` call reverted → `Rejected`;
+/// - `isValidSignature` reverted with a reason → `Rejected`;
+/// - `isValidSignature` reverted with no reason → `EmptyRevert` (ambiguous, retryable);
 /// - any other RPC-layer error → `Transport`.
 async fn check_erc1271_signature<P: Provider>(
     provider: &P,
@@ -136,11 +139,18 @@ async fn check_erc1271_signature<P: Provider>(
     let returndata = provider.call(tx).await.map_err(|err| match err {
         RpcError::ErrorResp(e) => {
             if let Some(revert_data) = e.as_revert_data() {
-                // A revert is interpreted as an invalid signature
-                Erc1271Error::Rejected(
-                    addr,
-                    format!("isValidSignature call reverted: {revert_data}"),
-                )
+                // Empty `data` still counts as revert data to `as_revert_data`, but says
+                // nothing about why: an under-gassed call, a nested call into an address with
+                // no code, and a wallet reverting silently all look like this. Only a reason
+                // makes the rejection deterministic.
+                if revert_data.is_empty() {
+                    Erc1271Error::EmptyRevert(addr)
+                } else {
+                    Erc1271Error::Rejected(
+                        addr,
+                        format!("isValidSignature call reverted: {revert_data}"),
+                    )
+                }
             } else {
                 Erc1271Error::Transport(e.to_string())
             }
@@ -275,7 +285,7 @@ mod tests {
         let gateway = Address::from([0xCA; 20]);
         let (signer, _, digest, sig) = signed_payload(gateway);
 
-        verify_signature(&provider, signer.address(), digest, &sig, 100_000)
+        verify_signature(&provider, signer.address(), digest, &sig, TEST_GAS)
             .await
             .unwrap();
 
@@ -297,7 +307,7 @@ mod tests {
 
         asserter.push_success(&Bytes::default());
 
-        let err = verify_signature(&provider, claimed, digest, &sig, 100_000)
+        let err = verify_signature(&provider, claimed, digest, &sig, TEST_GAS)
             .await
             .unwrap_err();
         assert!(matches!(err, Erc1271Error::EoaMismatchNoCode(_)));
@@ -312,7 +322,7 @@ mod tests {
 
         asserter.push_success(&Bytes::default());
 
-        let err = verify_signature(&provider, claimed, digest, &[], 100_000)
+        let err = verify_signature(&provider, claimed, digest, &[], TEST_GAS)
             .await
             .unwrap_err();
         assert!(matches!(err, Erc1271Error::EmptySigOnEoa(_)));
@@ -331,7 +341,7 @@ mod tests {
         returndata[..4].copy_from_slice(&ERC1271_MAGIC_VALUE);
         asserter.push_success(&returndata);
 
-        verify_signature(&provider, claimed, digest, &sig, 100_000)
+        verify_signature(&provider, claimed, digest, &sig, TEST_GAS)
             .await
             .unwrap();
     }
@@ -347,11 +357,14 @@ mod tests {
         // 32 bytes of zeros — wrong magic
         asserter.push_success(&[0u8; 32]);
 
-        let err = verify_signature(&provider, claimed, digest, &sig, 100_000)
+        let err = verify_signature(&provider, claimed, digest, &sig, TEST_GAS)
             .await
             .unwrap_err();
         assert!(matches!(err, Erc1271Error::WrongMagic(..)));
     }
+
+    /// Gas cap passed to the verifier, matching the shipped default.
+    const TEST_GAS: u64 = 250_000;
 
     /// Build a JSON-RPC error payload that mimics what an Ethereum node sends when the call
     /// reverts: a message containing "revert" plus a `data` field whose string value parses
@@ -373,10 +386,28 @@ mod tests {
 
         asserter.push_failure(revert_payload("0xdeadbeef"));
 
-        let err = verify_signature(&provider, claimed, digest, &sig, 100_000)
+        let err = verify_signature(&provider, claimed, digest, &sig, TEST_GAS)
             .await
             .unwrap_err();
         assert!(matches!(err, Erc1271Error::Rejected(_, _)));
+    }
+
+    #[tokio::test]
+    async fn erc1271_empty_revert_is_not_a_definitive_rejection() {
+        // `data: "0x"` is what a node returns for an under-gassed call. `as_revert_data`
+        // accepts it, so only the emptiness check keeps it out of `Rejected`.
+        let asserter = Asserter::new();
+        let provider = mock_provider(asserter.clone());
+        let claimed = Address::from([0xDE; 20]);
+        let digest = B256::from([0u8; 32]);
+        let sig = vec![0x11_u8; 65];
+
+        asserter.push_failure(revert_payload("0x"));
+
+        let err = verify_signature(&provider, claimed, digest, &sig, TEST_GAS)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, Erc1271Error::EmptyRevert(_)), "got {err:?}");
     }
 
     #[tokio::test]
@@ -391,7 +422,7 @@ mod tests {
 
         asserter.push_failure_msg("rate limit exceeded");
 
-        let err = verify_signature(&provider, claimed, digest, &sig, 100_000)
+        let err = verify_signature(&provider, claimed, digest, &sig, TEST_GAS)
             .await
             .unwrap_err();
         assert!(matches!(err, Erc1271Error::Transport(_)));
@@ -408,7 +439,7 @@ mod tests {
         // Only 4 bytes returned — a non-compliant fallback function
         asserter.push_success(&ERC1271_MAGIC_VALUE);
 
-        let err = verify_signature(&provider, claimed, digest, &sig, 100_000)
+        let err = verify_signature(&provider, claimed, digest, &sig, TEST_GAS)
             .await
             .unwrap_err();
         assert!(matches!(err, Erc1271Error::Rejected(_, _)));
@@ -426,7 +457,7 @@ mod tests {
         returndata[..4].copy_from_slice(&ERC1271_MAGIC_VALUE);
         asserter.push_success(&returndata);
 
-        verify_signature(&provider, claimed, digest, &[], 100_000)
+        verify_signature(&provider, claimed, digest, &[], TEST_GAS)
             .await
             .unwrap();
     }
@@ -444,7 +475,7 @@ mod tests {
         returndata[..4].copy_from_slice(&ERC1271_MAGIC_VALUE);
         asserter.push_success(&returndata);
 
-        verify_signature(&provider, claimed, digest, &sig, 100_000)
+        verify_signature(&provider, claimed, digest, &sig, TEST_GAS)
             .await
             .unwrap();
     }

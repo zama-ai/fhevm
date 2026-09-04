@@ -28,7 +28,7 @@ keyurl:
 
 # User-decryption signature check. Gas cap for the ERC-1271 isValidSignature static call.
 user_decrypt_signature_check:
-  erc1271_gas_limit: 100000
+  erc1271_gas_limit: 250000
 
 gateway:
   blockchain_rpc:
