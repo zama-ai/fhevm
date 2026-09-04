@@ -233,7 +233,10 @@ kubectl delete namespace <namespace>
   checkout, and every push to `main`/`release/*` tags every image with that
   commit's short SHA, so unbuilt components resolve from your base commit. Check
   the run summary's **Images** table: each row shows the tag *and* where it came
-  from (`built`, `base-sha`, `dispatch-override`).
+  from (`built`, `base-sha`, `dispatch-override`). Blue-green GCS workers are
+  the exception: they publish as `<sha>-gcs0.15.0` so they do not overwrite the
+  baseline `<sha>` image.
+
 - **Unresolvable ⇒ the run fails.** If GHCR has pruned the base commit's tags and
   nothing turns up within 50 commits, `resolve-tags` fails instead of quietly
   deploying something older. Rebase onto a newer base commit, or pass an explicit
