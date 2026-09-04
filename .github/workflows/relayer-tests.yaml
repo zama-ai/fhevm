@@ -132,9 +132,6 @@ jobs:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: relayer_db
-          # 8 tests at once, each holding several pooled connections, overruns Postgres' default
-          # of 100. dev/docker-compose.yaml sets 500 for the same reason.
-          POSTGRES_INITDB_ARGS: "-c max_connections=200"
         ports:
           - 5432
         options: >-
@@ -214,4 +211,6 @@ jobs:
 
       - name: Run tests
         working-directory: relayer
-        run: RUST_BACKTRACE=full make test-integration
+        # The Makefile assigns DATABASE_URL with `:=` from the compose file, beating the
+        # environment. dispatch_gate_test reads it for a database-wide advisory lock.
+        run: RUST_BACKTRACE=full make test-integration DATABASE_URL="$DATABASE_URL"
