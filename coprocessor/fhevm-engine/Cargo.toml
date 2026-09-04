@@ -126,3 +126,11 @@ opt-level = 1
 lto = false
 debug = 1
 codegen-units = 16
+
+# Dependencies at full optimization even under coverage. Coverage is only
+# reported for workspace crates, and the CI test runtime is dominated by FHE
+# compute inside tfhe & friends — at opt-level 1 that made the tfhe-worker
+# test job exceed 2 hours. Workspace crates stay at opt-level 1 for fast
+# compiles; dependency builds are cached by Cargo.lock in CI.
+[profile.coverage.package."*"]
+opt-level = 3
