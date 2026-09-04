@@ -182,7 +182,7 @@ describe('the request half of the link contract', () => {
     expect(half.ciphertext_handles).toEqual(reference.handles);
   });
 
-  // The request half reframes nothing: an empty extra_data is carried as empty, and the emptied
+  // The request half rewrites nothing: an empty extra_data is carried as empty, and the emptied
   // record's link — a different valid link, not a rejection — is what the blob computes for it.
   it('carries an empty extra_data as empty, and the link follows', async () => {
     const emptied = fixture.records.find((record) => record.name === 'emptied-extra-data');
