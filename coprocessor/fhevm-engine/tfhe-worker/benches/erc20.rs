@@ -1774,6 +1774,9 @@ async fn run_main_block_unpaced_traffic(
         // long-lived benchmark chain must not be demoted mid-run.
         dependent_ops_max_per_chain: 0,
         is_protocol_config_listener: false,
+        // Only consulted in GCS mode, which this bench does not use; `false`
+        // matches every other caller rather than implying a difference.
+        disable_synthetic_ops: false,
     };
     let mut ingest_db = listener_db.clone();
     // Real wall-clock block timestamps: the worker's processed-chain cleanup
