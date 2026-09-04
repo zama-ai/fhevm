@@ -1,27 +1,27 @@
-{{- if .Values.tfheWorker.enabled -}}
-{{- $disabled := default (list) .Values.tfheWorker.disabledArgs -}}
+{{- if .Values.upgradeController.enabled -}}
+{{- $disabled := default (list) .Values.upgradeController.disabledArgs -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   labels:
-    app: coprocessor-tfhe-worker
-    app.kubernetes.io/name: {{ include "tfheWorkerName" . }}
-  name: {{ include "tfheWorkerName" . }}
+    app: coprocessor-upgrade-controller
+    app.kubernetes.io/name: {{ include "upgradeControllerName" . }}
+  name: {{ include "upgradeControllerName" . }}
 spec:
-  replicas: {{ .Values.tfheWorker.replicas }}
+  replicas: {{ .Values.upgradeController.replicas }}
   selector:
     matchLabels:
-      app: coprocessor-tfhe-worker
+      app: coprocessor-upgrade-controller
       {{- include "coprocessor.extraSelectorLabels" . | nindent 6 }}
-  {{- if .Values.tfheWorker.updateStrategy }}
+  {{- if .Values.upgradeController.updateStrategy }}
   strategy:
-    {{- toYaml .Values.tfheWorker.updateStrategy | nindent 4 }}
+    {{- toYaml .Values.upgradeController.updateStrategy | nindent 4 }}
   {{- end }}
   template:
     metadata:
       labels:
-        app: coprocessor-tfhe-worker
-        app.kubernetes.io/name: {{ include "tfheWorkerName" . }}
+        app: coprocessor-upgrade-controller
+        app.kubernetes.io/name: {{ include "upgradeControllerName" . }}
         {{- include "coprocessor.extraSelectorLabels" . | nindent 8 }}
         {{- with .Values.commonConfig.stackVersion }}
         app.kubernetes.io/version: {{ . | quote }}
@@ -29,7 +29,7 @@ spec:
         {{- with .Values.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
-        {{- with .Values.tfheWorker.podLabels }}
+        {{- with .Values.upgradeController.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
       {{- with .Values.podAnnotations }}
@@ -40,29 +40,29 @@ spec:
       imagePullSecrets:
         - name: registry-credentials
       restartPolicy: Always
-      {{- with .Values.tfheWorker.nodeSelector }}
+      {{- with .Values.upgradeController.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.tfheWorker.affinity }}
+      {{- with .Values.upgradeController.affinity }}
       affinity:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.tfheWorker.tolerations }}
+      {{- with .Values.upgradeController.tolerations }}
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- if .Values.tfheWorker.serviceAccountName }}
-      serviceAccountName: {{ .Values.tfheWorker.serviceAccountName }}
+      {{- if .Values.upgradeController.serviceAccountName }}
+      serviceAccountName: {{ .Values.upgradeController.serviceAccountName }}
       {{- end }}
       containers:
-        - name: coprocessor-tfhe-worker
-          image: {{ .Values.tfheWorker.image.name }}:{{ .Values.tfheWorker.image.tag }}
-          command: ["tfhe_worker"]
+        - name: coprocessor-upgrade-controller
+          image: {{ .Values.upgradeController.image.name }}:{{ .Values.upgradeController.image.tag }}
+          command: ["upgrade-controller"]
           {{- if .Values.commonConfig.stackVersionProbe.enabled }}
           startupProbe:
             exec:
-              command: ["tfhe_worker", "--stack-version"]
+              command: ["upgrade-controller", "--stack-version"]
             periodSeconds: {{ .Values.commonConfig.stackVersionProbe.periodSeconds | default 10 }}
             failureThreshold: {{ .Values.commonConfig.stackVersionProbe.failureThreshold | default 30 }}
           {{- end }}
@@ -70,20 +70,10 @@ spec:
             {{- if not (has "database-url" $disabled) }}
             - --database-url=$(DATABASE_URL)
             {{- end }}
-            {{- if not (has "metrics-addr" $disabled) }}
-            - --metrics-addr=0.0.0.0:{{ .Values.tfheWorker.ports.metrics }}
-            {{- end }}
-            {{- if not (has "health-check-port" $disabled) }}
-            - --health-check-port={{ .Values.tfheWorker.ports.healthcheck }}
-            {{- end }}
-            {{- with .Values.tfheWorker.extraArgs }}
+            {{- with .Values.upgradeController.extraArgs }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
           env:
-            {{- if .Values.commonConfig.forceLegacyServerKey }}
-            - name: FORCE_LEGACY_SERVER_KEY
-              value: "true"
-            {{- end }}
             {{- with .Values.commonConfig.databaseUser }}
             - name: DATABASE_USER
               {{- if .value }}
@@ -133,38 +123,32 @@ spec:
             {{- include "coprocessor.databaseSslRootCertEnv" . | nindent 12 }}
             {{- end }}
             {{- end }}
-          {{- if default .Values.commonConfig.tracing.enabled .Values.tfheWorker.tracing.enabled }}
+          {{- if default .Values.commonConfig.tracing.enabled .Values.upgradeController.tracing.enabled }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ .Values.commonConfig.tracing.endpoint | quote }}
             - name: OTEL_SERVICE_NAME
-              value: {{ .Values.tfheWorker.tracing.service | quote }}
+              value: {{ .Values.upgradeController.tracing.service | quote }}
           {{- end }}
           {{- with .Values.commonConfig.env }}
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          {{- with .Values.tfheWorker.env }}
+          {{- with .Values.upgradeController.env }}
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          ports:
-            {{- range $portName, $portValue := .Values.tfheWorker.ports }}
-            - name: {{ $portName }}
-              containerPort: {{ $portValue }}
-              protocol: TCP
-            {{- end }}
           resources:
             requests:
-              cpu: {{ .Values.tfheWorker.resources.requests.cpu | default "100m" }}
-              memory: {{ .Values.tfheWorker.resources.requests.memory | default "256Mi" }}
+              cpu: {{ .Values.upgradeController.resources.requests.cpu | default "100m" }}
+              memory: {{ .Values.upgradeController.resources.requests.memory | default "256Mi" }}
             limits:
-              cpu: {{ .Values.tfheWorker.resources.limits.cpu | default "500m" }}
-              memory: {{ .Values.tfheWorker.resources.limits.memory | default "512Mi" }}
-          {{- if and .Values.tfheWorker.probes .Values.tfheWorker.probes.liveness.enabled }}
+              cpu: {{ .Values.upgradeController.resources.limits.cpu | default "500m" }}
+              memory: {{ .Values.upgradeController.resources.limits.memory | default "512Mi" }}
+          {{- if and .Values.upgradeController.probes .Values.upgradeController.probes.liveness.enabled }}
           livenessProbe:
-            {{- toYaml (omit .Values.tfheWorker.probes.liveness "enabled") | nindent 12 }}
+            {{- toYaml (omit .Values.upgradeController.probes.liveness "enabled") | nindent 12 }}
           {{- end }}
-          {{- if and .Values.tfheWorker.probes .Values.tfheWorker.probes.readiness.enabled }}
+          {{- if and .Values.upgradeController.probes .Values.upgradeController.probes.readiness.enabled }}
           readinessProbe:
-            {{- toYaml (omit .Values.tfheWorker.probes.readiness "enabled") | nindent 12 }}
+            {{- toYaml (omit .Values.upgradeController.probes.readiness "enabled") | nindent 12 }}
           {{- end }}
           {{- if eq (include "coprocessor.databaseSslRootCertMountEnabled" .) "true" }}
           {{- include "coprocessor.databaseSslRootCertVolumeMount" . | nindent 10 }}

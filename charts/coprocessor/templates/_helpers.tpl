@@ -1,3 +1,24 @@
+{{/*
+Optional extra matchLabels so two releases of this chart can coexist in one
+namespace (RFC-021 BCS + GCS). Empty by default so existing Deployments keep
+their immutable selectors. Preview-env sets e.g. fhevm.zama.ai/fleet=bcs.
+*/}}
+{{- define "coprocessor.extraSelectorLabels" -}}
+{{- range $k, $v := (.Values.commonConfig.extraSelectorLabels | default dict) }}
+{{ $k }}: {{ $v | quote }}
+{{- end }}
+{{- end -}}
+
+{{- define "upgradeControllerName" -}}
+{{- $default := printf "%s-%s" .Release.Name "upgrade-controller" }}
+{{- default $default .Values.upgradeController.nameOverride | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{- define "consensusDetectorName" -}}
+{{- $default := printf "%s-%s" .Release.Name "consensus-detector" }}
+{{- default $default .Values.consensusDetector.nameOverride | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
 {{- define "tfheWorkerName" -}}
 {{- $tfheWorkerNameDefault := printf "%s-%s" .Release.Name "tfhe-worker" }}
 {{- default $tfheWorkerNameDefault .Values.tfheWorker.nameOverride | trunc 63 | trimSuffix "-" -}}

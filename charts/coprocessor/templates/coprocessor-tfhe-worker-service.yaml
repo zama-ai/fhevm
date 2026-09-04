@@ -17,5 +17,6 @@ spec:
   selector:
     app: coprocessor-tfhe-worker
     app.kubernetes.io/name: {{ include "tfheWorkerName" . }}
+    {{- include "coprocessor.extraSelectorLabels" . | nindent 4 }}
   type: ClusterIP
 {{- end }}

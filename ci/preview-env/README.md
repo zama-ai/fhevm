@@ -48,6 +48,8 @@ ci/preview-env/
 │   └── values-gateway-add-host-chains-polygon-e2e.yaml # contracts overlay, register Polygon (80002) (deploy_polygon)
 ├── coprocessor/
 │   ├── values-coprocessor-e2e.yaml        # coprocessor overlay (one release per party: coprocessor-<i>)
+│   ├── values-coprocessor-bcs-e2e.yaml    # RFC-021 BCS overlay (pinned 0.14.0, extraSelectorLabels)
+│   ├── values-coprocessor-gcs-e2e.yaml    # RFC-021 GCS overlay (0.15.0 + upgrade-controller / consensus-detector)
 │   ├── values-coprocessor-polygon-e2e.yaml # additive multichain overlay: adds the Polygon chains[] consumer (deploy_polygon)
 │   ├── values-coprocessor-poller-e2e.yaml # coprocessor overlay, poller-only release: S3 key/CRS download -> keys/crs tables (coprocessor-poller-<i>)
 │   ├── values-coprocessor-poller-polygon-e2e.yaml # additive multichain overlay: adds the Polygon poller (deploy_polygon)
@@ -180,11 +182,12 @@ Access is `kubectl port-forward` from the dev laptop (Tailscale up, namespace
 admin via `coprocessor-dev-access`/`kms-dev-access`) — see
 [`101-preview-env.md`](./101-preview-env.md#observe-your-environment).
 
-## `use_blockchain_dev`: shared Geth + Nitro (dispatch-only)
+## `use_blockchain_dev`: shared Geth + Nitro
 
-`preview-env-deploy.yml` accepts `use_blockchain_dev=true` on **workflow_dispatch
-only** (PR labels always stay on Anvil). That skips `anvil-host` / `anvil-gateway`
-and points the stack at the shared `blockchain-dev` namespace:
+`preview-env-deploy.yml` accepts `use_blockchain_dev=true` on **workflow_dispatch**,
+and the `preview-env-blue-green` PR label forces the same path (plain e2e labels
+stay on Anvil). That skips `anvil-host` / `anvil-gateway` and points the stack at
+the shared `blockchain-dev` namespace:
 
 | Chain | Node | In-cluster RPC | Chain ID |
 |-------|------|----------------|----------|
@@ -270,7 +273,27 @@ self-contained `hostListener`. Per party `i`:
 
 > Resource caveat: each coprocessor party's `tfhe`/`sns` workers request substantial
 > CPU/memory on the `coprocessor` nodepool, so `nb_coprocessor` > 1 multiplies the
-> cluster capacity needed. Default stays `1`.
+> cluster capacity needed. Default stays `1`. Blue-green doubles the worker fleets
+> again (BCS + GCS per party).
+
+## N-party consensus vs RFC-021 blue-green
+
+These are different models. `nb_coprocessor > 1` is N-party unless you opt into blue-green.
+
+| Model | Meaning | How to enable |
+| --- | --- | --- |
+| **N-party consensus** | N on-chain identities (wallet, S3, Postgres). Gateway `NUM_COPROCESSORS=N`. | `nb_coprocessor` in `{1,2,3,5}` |
+| **Blue-green (RFC-021)** | **Two fleets of the same identity**: BCS (live `v0.14.0-7`) + GCS (HEAD compiled as `0.15.0`), shared DB/S3/wallet. Cutover is `ProtocolConfig.proposeCoprocessorUpgrade` then off-chain unanimity of all N operators. | PR label `preview-env-blue-green` (deploys, forces N=2) or dispatch `nb_coprocessor=2-blue-green` |
+
+Blue-green does **not** register 2N gateway slots. Per party the preview keeps one listener, one Redis, one poller; BCS and GCS `hostListenerConsumer`s share that broker. GCS also runs `upgrade-controller` and `consensus-detector`. Incompatible with `deploy_polygon` and with `nb_coprocessor=1`.
+
+With `automated_tests` (or the `preview-env-e2e-tests` label) the cutover is
+driven by in-window e2e traffic: propose **after** the relayer is ready, hold
+`consensus-detector` at 0 so unanimity cannot fire mid-suite, run the e2e DAG
+while GCS is in `DryRunStarted` (CI asserts `"gcs-<version>".computations > 0`
+on every party), scale the detector back up, wait for
+`versioning=v0.15`, then run the same DAG again on green. A deploy without
+auto-tests still proposes and waits for `DryRunStarted` only.
 
 ## Multichain: second Polygon host chain (`deploy_polygon`)
 

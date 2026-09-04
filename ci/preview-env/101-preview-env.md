@@ -30,6 +30,7 @@ new push re-deploys it fresh (an in-flight run is cancelled).
 | --- | --- |
 | `preview-env-e2e` | Deploy the stack, **building fresh images from the PR branch** first (only changed components; the rest resolve to the base commit's images). In-repo charts (`charts/*`) install straight from the checkout. |
 | `preview-env-e2e-tests` | Same, **and** auto-run the e2e test DAG, posting a pass/fail report back to the PR. Deploys the env on its own. |
+| `preview-env-blue-green` | Deploy [RFC-021](https://github.com/zama-ai/tech-spec/pull/443) BCS+GCS on each party (forces `nb_coprocessor=2`) **on shared `blockchain-dev`** (not Anvil). Enough on its own. Combined with `preview-env-e2e-tests`: propose after the relayer is up, hold `consensus-detector` so the first e2e stays on blue (`DryRunStarted`, assert GCS `computations > 0`), then enable the detector, wait for `versioning=v0.15`, and run e2e again on green. Incompatible with `deploy_polygon`. |
 
 On PRs, images are **always** built fresh from the branch - there is no
 pinned-only PR path (use a `workflow_dispatch` run with `build_images=false`
@@ -65,8 +66,10 @@ Key inputs (all have sensible defaults — you rarely set more than a couple):
   default; see [Observe your environment](#observe-your-environment)).
 **Topology**
 - `nb_kms_core` — number of KMS parties (default `4`).
-- `nb_coprocessor` — number of independent coprocessor stacks (default `1`).
-  `> 1` multiplies cluster capacity — see the resource caveat in `README.md`.
+- `nb_coprocessor` — number of independent coprocessor **identities** (default
+  `1`). `2` is two-party consensus (one fleet each), **not** blue-green.
+  `2-blue-green` is RFC-021 (BCS+GCS on each of two parties). `3`/`5` stay
+  N-party only. See `README.md`.
 - `deploy_polygon` — also add a second Polygon Amoy (`80002`) host chain (default
   `false`). Fresh local anvil, reuses the ETH KMS key; roughly doubles the
   host-side stack. With `automated_tests` on it also runs a Polygon e2e suite.
@@ -75,8 +78,9 @@ Key inputs (all have sensible defaults — you rarely set more than a couple):
 - `use_blockchain_dev` — skip per-namespace Anvil and connect to the shared
   `blockchain-dev` Geth (host chain id `1337`) + Nitro (gateway `412346`).
   Generates a unique mnemonic, funds the derived wallets from the in-cluster
-  faucets, and still deploys **this preview's own contracts**. Dispatch-only
-  (PR labels stay on Anvil). After teardown the contracts remain on the shared
+  faucets, and still deploys **this preview's own contracts**. The
+  `preview-env-blue-green` PR label forces this on (plain `preview-env-e2e`
+  labels stay on Anvil). After teardown the contracts remain on the shared
   chain. Do not combine with `deploy_polygon`.
 
 **Versions** — three kinds:
@@ -171,6 +175,9 @@ kubectl port-forward -n <namespace> svc/jaeger 16686:16686    # http://localhost
 - **With auto-tests** (`preview-env-e2e-tests` label or `automated_tests=true`):
   the workflow runs the e2e DAG for both `@fhevm/sdk` and `@zama-fhe/relayer-sdk`
   and posts a per-test pass/fail table to the PR comment / run summary.
+  Combined with `preview-env-blue-green`, that DAG runs **twice**: once during
+  `DryRunStarted` (BCS live; CI asserts each party's `"gcs-0.15.0".computations`
+  is non-empty) and once after cutover (`versioning=v0.15`, GCS live).
 - **Without:** the stack is deployed with an idle test-suite Job — run tests
   yourself against the namespace, or re-label with `preview-env-e2e-tests`.
 
@@ -226,7 +233,10 @@ kubectl delete namespace <namespace>
   checkout, and every push to `main`/`release/*` tags every image with that
   commit's short SHA, so unbuilt components resolve from your base commit. Check
   the run summary's **Images** table: each row shows the tag *and* where it came
-  from (`built`, `base-sha`, `dispatch-override`).
+  from (`built`, `base-sha`, `dispatch-override`). Blue-green GCS workers are
+  the exception: they publish as `<sha>-gcs0.15.0` so they do not overwrite the
+  baseline `<sha>` image.
+
 - **Unresolvable ⇒ the run fails.** If GHCR has pruned the base commit's tags and
   nothing turns up within 50 commits, `resolve-tags` fails instead of quietly
   deploying something older. Rebase onto a newer base commit, or pass an explicit
@@ -243,10 +253,9 @@ kubectl delete namespace <namespace>
   workers/Postgres/S3). Keep it `1` unless you're specifically testing multi-party.
 - **Manual (dispatch) envs never auto-destroy** — run **preview-env-destroy** with
   the namespace to clean up (see [Destroy an environment](#destroy-an-environment)).
-- **`use_blockchain_dev` is dispatch-only.** PR labels always deploy Anvil.
-  Faucet-funded wallets are unique per run. The namespace is
-  `fhevm-ci-<actor>-<run-id-base36>` (read it from the run summary).
-  Destroying the namespace does **not** remove contracts from the shared
-  Geth/Nitro — they stay on `blockchain-dev` (see explorers
+- **`use_blockchain_dev` on dispatch, or via `preview-env-blue-green`.** Plain
+  `preview-env-e2e` / `-tests` labels stay on Anvil. Faucet-funded wallets are
+  unique per run. Destroying the namespace does **not** remove contracts from
+  the shared Geth/Nitro — they stay on `blockchain-dev` (see explorers
   `host-explorer-blockchain-dev` / `gateway-explorer-blockchain-dev`).
   Automated tests use Hardhat network `zwsDev` (live path: HCU cheat tests skip).
