@@ -196,20 +196,26 @@ impl InputProofGatewayHandler {
             hook: DynTxHook(Arc::new(self.clone())),
         };
 
+        let job_id = task.job_id;
         info!(
             step = %InputProofStep::TxQueued,
-            int_job_id = %task.job_id,
+            int_job_id = %job_id,
             "Enqueuing input proof request to tx throttler"
         );
 
-        // PUSH TO QUEUE
-        // Catch error from here and pass the request to failure.
-        // This case MUST never happen on this flow.
-        // The request should never be injected in the system, and bounced after the cache check if the queue is full.
+        // A full queue here ends the request in `failure` on its first attempt. The intake
+        // bouncer is what keeps that unreachable, so reaching it means the bouncer's capacity
+        // no longer matches the throttler's.
         match self.tx_throttler.push(task).await {
             Ok(()) => {}
             Err(e) => match e {
                 EventProcessingError::QueueFull => {
+                    error!(
+                        alert = true,
+                        int_job_id = %job_id,
+                        queue = "input_proof_tx",
+                        "Transaction queue full past the intake bouncer"
+                    );
                     return Err(EventProcessingError::ProtocolOverload(
                         "Relayer is full, retry later.".to_string(),
                     ));
