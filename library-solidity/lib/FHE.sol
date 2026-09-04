@@ -73,6 +73,12 @@ library FHE {
     /// @notice Returned if the sender is not allowed to use the handle.
     error SenderNotAllowedToUseHandle(bytes32 handle, address sender);
 
+    /// @notice Returned if the handle cannot be used as an external handle.
+    /// @dev Reverted when the handle's type byte does not match the expected `FheType`, or when the handle's
+    /// input index is `0xff`, a reserved value that never identifies a user input.
+    /// @param handle Handle that failed the external handle checks.
+    error InvalidExternalHandle(bytes32 handle);
+
     /// @notice This event is emitted when public decryption has been successfully verified.
     event PublicDecryptionVerified(bytes32[] handlesList, bytes abiEncodedCleartexts);
 
@@ -82,6 +88,20 @@ library FHE {
      */
     function setCoprocessor(CoprocessorConfig memory coprocessorConfig) internal {
         Impl.setCoprocessor(coprocessorConfig);
+    }
+
+    /**
+     * @dev Checks if `handle` is of type `expectedType` and if its internal input index is valid
+     */
+    function _checkExternalHandle(bytes32 handle, FheType expectedType) private pure {
+        // Check handle type using uint8 comparison to avoid type cast panic and
+        // revert with a proper error instead
+        if (uint8(handle[30]) != uint8(expectedType)) revert InvalidExternalHandle(handle);
+
+        // Check handle index
+        uint256 indexHandle = (uint256(handle) & 0x0000000000000000000000000000000000000000ff00000000000000000000) >>
+            80;
+        if (indexHandle > 254) revert InvalidExternalHandle(handle);
     }
 
     /**
@@ -8499,6 +8519,7 @@ library FHE {
             if (inputBytes32 == 0) {
                 return asEbool(false);
             }
+            _checkExternalHandle(inputBytes32, FheType.Bool);
             if (!Impl.isAllowed(inputBytes32, msg.sender)) revert SenderNotAllowedToUseHandle(inputBytes32, msg.sender);
             return ebool.wrap(inputBytes32);
         }
@@ -8525,6 +8546,7 @@ library FHE {
             if (inputBytes32 == 0) {
                 return asEuint8(0);
             }
+            _checkExternalHandle(inputBytes32, FheType.Uint8);
             if (!Impl.isAllowed(inputBytes32, msg.sender)) revert SenderNotAllowedToUseHandle(inputBytes32, msg.sender);
             return euint8.wrap(inputBytes32);
         }
@@ -8551,6 +8573,7 @@ library FHE {
             if (inputBytes32 == 0) {
                 return asEuint16(0);
             }
+            _checkExternalHandle(inputBytes32, FheType.Uint16);
             if (!Impl.isAllowed(inputBytes32, msg.sender)) revert SenderNotAllowedToUseHandle(inputBytes32, msg.sender);
             return euint16.wrap(inputBytes32);
         }
@@ -8577,6 +8600,7 @@ library FHE {
             if (inputBytes32 == 0) {
                 return asEuint32(0);
             }
+            _checkExternalHandle(inputBytes32, FheType.Uint32);
             if (!Impl.isAllowed(inputBytes32, msg.sender)) revert SenderNotAllowedToUseHandle(inputBytes32, msg.sender);
             return euint32.wrap(inputBytes32);
         }
@@ -8603,6 +8627,7 @@ library FHE {
             if (inputBytes32 == 0) {
                 return asEuint64(0);
             }
+            _checkExternalHandle(inputBytes32, FheType.Uint64);
             if (!Impl.isAllowed(inputBytes32, msg.sender)) revert SenderNotAllowedToUseHandle(inputBytes32, msg.sender);
             return euint64.wrap(inputBytes32);
         }
@@ -8629,6 +8654,7 @@ library FHE {
             if (inputBytes32 == 0) {
                 return asEuint128(0);
             }
+            _checkExternalHandle(inputBytes32, FheType.Uint128);
             if (!Impl.isAllowed(inputBytes32, msg.sender)) revert SenderNotAllowedToUseHandle(inputBytes32, msg.sender);
             return euint128.wrap(inputBytes32);
         }
@@ -8655,6 +8681,7 @@ library FHE {
             if (inputBytes32 == 0) {
                 return asEaddress(address(0));
             }
+            _checkExternalHandle(inputBytes32, FheType.Uint160);
             if (!Impl.isAllowed(inputBytes32, msg.sender)) revert SenderNotAllowedToUseHandle(inputBytes32, msg.sender);
             return eaddress.wrap(inputBytes32);
         }
@@ -8681,6 +8708,7 @@ library FHE {
             if (inputBytes32 == 0) {
                 return asEuint256(0);
             }
+            _checkExternalHandle(inputBytes32, FheType.Uint256);
             if (!Impl.isAllowed(inputBytes32, msg.sender)) revert SenderNotAllowedToUseHandle(inputBytes32, msg.sender);
             return euint256.wrap(inputBytes32);
         }
