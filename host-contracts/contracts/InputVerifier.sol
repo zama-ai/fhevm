@@ -110,7 +110,7 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain
     uint256 private constant MAJOR_VERSION = 0;
 
     /// @notice Minor version of the contract.
-    uint256 private constant MINOR_VERSION = 2;
+    uint256 private constant MINOR_VERSION = 3;
 
     /// @notice Patch version of the contract.
     uint256 private constant PATCH_VERSION = 0;
@@ -124,7 +124,7 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain
 
     /// Constant used for making sure the version number used in the `reinitializer` modifier is
     /// identical between `initializeFromEmptyProxy` and the `reinitializeVX` method
-    uint64 private constant REINITIALIZER_VERSION = 3;
+    uint64 private constant REINITIALIZER_VERSION = 4;
 
     /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.InputVerifier")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant INPUT_VERIFIER_STORAGE_LOCATION =
@@ -153,17 +153,11 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain
     }
 
     /**
-     * @notice Re-initializes the contract from V1.
-     * @dev Define a `reinitializeVX` function once the contract needs to be upgraded.
+     * @notice Re-initializes the contract from V2.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV2(
-        address[] memory newSignersSet,
-        uint256 threshold
-    ) public virtual reinitializer(REINITIALIZER_VERSION) {
-        defineNewContext(newSignersSet, threshold);
-    }
+    function reinitializeV3() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /**
      * @notice          Sets a new context (i.e. new set of unique signers and new threshold).
@@ -292,12 +286,10 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain
                 listHandles[i] = element;
             }
 
+            /// @dev The length check above guarantees the signature and extraData copies stay within inputProof.
             bytes[] memory signatures = new bytes[](numSigners);
-            for (uint256 j = 0; j < numSigners; j++) {
-                signatures[j] = new bytes(65);
-                for (uint256 i = 0; i < 65; i++) {
-                    signatures[j][i] = inputProof[2 + 32 * numHandles + 65 * j + i];
-                }
+            for (uint256 i = 0; i < numSigners; i++) {
+                signatures[i] = _sliceBytes(inputProof, 2 + 32 * numHandles + 65 * i, 65);
             }
 
             CiphertextVerification memory ctVerif;
@@ -307,12 +299,7 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain
             ctVerif.contractChainId = block.chainid;
 
             /// @dev Extract the extraData from the inputProof.
-            uint256 extraDataSize = inputProof.length - extraDataOffset;
-            ctVerif.extraData = new bytes(extraDataSize);
-
-            for (uint i = 0; i < extraDataSize; i++) {
-                ctVerif.extraData[i] = inputProof[extraDataOffset + i];
-            }
+            ctVerif.extraData = _sliceBytes(inputProof, extraDataOffset, inputProofLen - extraDataOffset);
 
             _verifyEIP712(ctVerif, signatures);
 
@@ -322,9 +309,11 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain
             uint8 numHandles = uint8(inputProof[0]);
             /// @dev We know inputProof is non-empty since it has been previously cached.
             if (numHandles <= indexHandle || indexHandle > 254) revert InvalidIndex();
+            /// @dev The proof cache is keyed on the full inputProof bytes, so a cache hit means these
+            ///      bytes already passed the length checks and the handle read below is in bounds.
             uint256 element;
-            for (uint256 j = 0; j < 32; j++) {
-                element |= uint256(uint8(inputProof[2 + indexHandle * 32 + j])) << (8 * (31 - j));
+            assembly {
+                element := mload(add(inputProof, add(34, mul(indexHandle, 32))))
             }
             if (element != result) revert InvalidInputHandle();
         }
@@ -386,6 +375,19 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain
                     Strings.toString(PATCH_VERSION)
                 )
             );
+    }
+
+    /// @dev Returns a copy of the size bytes of data starting at offset.
+    ///      The caller must have checked that the range lies within data.
+    function _sliceBytes(
+        bytes memory data,
+        uint256 offset,
+        uint256 size
+    ) internal pure virtual returns (bytes memory slice) {
+        slice = new bytes(size);
+        assembly {
+            mcopy(add(slice, 32), add(add(data, 32), offset), size)
+        }
     }
 
     function _cacheProof(bytes32 proofKey) internal virtual {
@@ -485,8 +487,8 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain
      * @param maxIndex  The biggest index to take into account from the array - assumed to be less or equal to keys.length.
      */
     function _cleanTransientHashMap(address[] memory keys, uint256 maxIndex) internal virtual {
-        for (uint256 j = 0; j < maxIndex; j++) {
-            _tstore(keys[j], 0);
+        for (uint256 i = 0; i < maxIndex; i++) {
+            _tstore(keys[i], 0);
         }
     }
 

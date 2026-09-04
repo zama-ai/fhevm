@@ -101,7 +101,7 @@ describe('Upgrades', function () {
       unsafeAllow: ['missing-initializer'],
     });
     await kms.waitForDeployment();
-    expect(await kms.getVersion()).to.equal('KMSVerifier v0.4.0');
+    expect(await kms.getVersion()).to.equal('KMSVerifier v0.5.0');
 
     const domain = Array.from(await kms.eip712Domain());
     expect(domain.slice(1, 5)).to.deep.equal(['Decryption', '1', BigInt(chainIDSource), verifyingContractSource]);
@@ -110,7 +110,7 @@ describe('Upgrades', function () {
     const kms2 = await upgrades.upgradeProxy(kms, kmsFactoryUpgraded);
     await kms2.waitForDeployment();
     expect(await kms2.getAddress()).to.equal(kmsAddress);
-    expect(await kms2.getVersion()).to.equal('KMSVerifier v0.4.0');
+    expect(await kms2.getVersion()).to.equal('KMSVerifier v0.5.0');
     expect(Array.from(await kms2.eip712Domain())).to.deep.equal(domain);
   });
 
