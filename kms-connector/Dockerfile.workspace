@@ -92,7 +92,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
 # =============================================================================
 # Stage 2a: gw-listener runtime
 # =============================================================================
-FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0 AS gw-listener
+FROM cgr.dev/zama.ai/glibc-dynamic:16.2.0 AS gw-listener
 
 COPY --from=builder /etc/group /etc/group
 COPY --from=builder /etc/passwd /etc/passwd
@@ -108,7 +108,7 @@ HEALTHCHECK --start-period=5s --interval=1m --timeout=3s --retries=3 \
 # =============================================================================
 # Stage 2b: kms-worker runtime
 # =============================================================================
-FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0 AS kms-worker
+FROM cgr.dev/zama.ai/glibc-dynamic:16.2.0 AS kms-worker
 
 COPY --from=builder /etc/group /etc/group
 COPY --from=builder /etc/passwd /etc/passwd
@@ -124,7 +124,7 @@ HEALTHCHECK --start-period=5s --interval=1m --timeout=3s --retries=3 \
 # =============================================================================
 # Stage 2c: tx-sender runtime
 # =============================================================================
-FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0 AS tx-sender
+FROM cgr.dev/zama.ai/glibc-dynamic:16.2.0 AS tx-sender
 
 COPY --from=builder /etc/group /etc/group
 COPY --from=builder /etc/passwd /etc/passwd
@@ -140,7 +140,7 @@ HEALTHCHECK --start-period=5s --interval=1m --timeout=3s --retries=3 \
 # =============================================================================
 # Stage 2d: endpoint runtime
 # =============================================================================
-FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0 AS endpoint
+FROM cgr.dev/zama.ai/glibc-dynamic:16.2.0 AS endpoint
 
 COPY --from=builder /etc/group /etc/group
 COPY --from=builder /etc/passwd /etc/passwd
