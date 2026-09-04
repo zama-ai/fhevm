@@ -9,12 +9,14 @@ use crate::{
     core::event::{
         ApiCategory, ApiVersion, InputProofEventData, InputProofRequest, PublicDecryptEventData,
         PublicDecryptRequest, RelayerEvent, RelayerEventData, UserDecryptEventData,
-        UserDecryptRequest,
     },
     core::job_id::JobId,
     metrics,
     orchestrator::Orchestrator,
-    store::sql::{models::req_status_enum_model::ReqStatus, repositories::Repositories},
+    store::sql::{
+        models::req_status_enum_model::ReqStatus,
+        models::user_decrypt_req_model::from_stored_value, repositories::Repositories,
+    },
 };
 use anyhow::Context;
 use std::sync::Arc;
@@ -215,7 +217,7 @@ async fn recover_user_decrypt_requests(
         .await
         .context("Failed to query incomplete user decrypt requests")?;
 
-    requests.sort_by_key(|(_, _, status, _)| match status {
+    requests.sort_by_key(|(_, _, _, status, _)| match status {
         ReqStatus::TxInFlight => 0,
         ReqStatus::Processing => 1,
         ReqStatus::Queued => 2,
@@ -224,13 +226,14 @@ async fn recover_user_decrypt_requests(
 
     let mut recovered = 0;
 
-    for (int_job_id, req_json, status, _updated_at) in requests {
-        let request = match serde_json::from_value::<UserDecryptRequest>(req_json.clone()) {
+    for (int_job_id, req_json, req_type, status, _updated_at) in requests {
+        let request = match from_stored_value(req_type, req_json) {
             Ok(r) => r,
             Err(e) => {
                 error!(
                     alert = true,
                     error = %e,
+                    ?req_type,
                     "Failed to deserialize UserDecryptRequest in recovery, skipping"
                 );
                 continue;
