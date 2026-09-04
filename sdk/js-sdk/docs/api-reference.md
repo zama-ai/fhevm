@@ -286,11 +286,12 @@ serializeSignedDecryptionPermit(parameters: { readonly signedPermit: SignedDecry
   readonly eip712: Eip712Like;
   readonly signature: string;
   readonly signerAddress: string;
+  readonly delegatorAddress?: string | undefined;
 };
 
 parseTransportKeyPair(parameters: { readonly publicKey: string; readonly privateKey: string }): Promise<TransportKeyPair>;
 parseSignedDecryptionPermit(parameters: {
-  readonly serializedPermit: { readonly version: number; readonly eip712: Eip712Like; readonly signature: string; readonly signerAddress: string };
+  readonly serializedPermit: { readonly version: number; readonly eip712: Eip712Like; readonly signature: string; readonly signerAddress: string; readonly delegatorAddress?: string | undefined };
   readonly transportKeyPair: TransportKeyPair;
 }): Promise<SignedDecryptionPermit>;
 

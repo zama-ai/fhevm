@@ -15,6 +15,7 @@ export type ParseSignedDecryptionPermitParameters = {
     readonly eip712: Eip712Like;
     readonly signature: string;
     readonly signerAddress: string;
+    readonly delegatorAddress?: string | undefined;
   };
   /** The transport key pair that was used when signing the permit. */
   readonly transportKeyPair: TransportKeyPair;

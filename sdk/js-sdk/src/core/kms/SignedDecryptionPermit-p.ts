@@ -64,6 +64,7 @@ export function serializeSignedDecryptionPermitToJSON(permit: SignedDecryptionPe
       eip712: Eip712Like;
       signature: string;
       signerAddress: string;
+      delegatorAddress?: string | undefined;
     } {
   assertIsSignedDecryptionPermit(permit, {});
 
@@ -88,6 +89,7 @@ export function serializeSignedDecryptionPermitToJSON(permit: SignedDecryptionPe
     eip712: _toJsonSafeEip712(permit.eip712),
     signature: permit.signature,
     signerAddress: permit.signerAddress,
+    delegatorAddress: permit.isDelegated ? permit.encryptedDataOwnerAddress : undefined,
   };
 }
 
