@@ -1,7 +1,7 @@
 {
   "name": "@fhevm/hardhat-plugin-v2-dev",
   "version": "0.0.0",
-  "description": "HARNESS for @fhevm/hardhat-plugin. Never published. The payload is ./pkg.",
+  "description": "Dev package for @fhevm/hardhat-plugin. Never published. The payload is ./pkg.",
   "private": true,
   "type": "module",
   "engines": {
