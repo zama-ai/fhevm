@@ -170,6 +170,58 @@ Common fields: `timeout`, `signal` (an `AbortSignal`), `headers`, `fetchRetries`
 `fetchRetryDelayInMilliseconds`, and `onProgress`. See
 [API reference](api-reference.md#relayer-options) for the full set.
 
+## Deterministic encryption
+
+By default, encrypting the same value twice produces a different
+`encryptedValue` and `inputProof` each time — the underlying proof draws its
+nonce from a CSPRNG. Pass an optional `seed` (at least 16 bytes) to make
+encryption deterministic instead: the same `seed` plus the same `value`
+always reproduce the same underlying ciphertext bytes.
+
+```ts
+const seed = new Uint8Array(16); // at least 16 bytes; fill with your own entropy
+
+const encrypted = await client.encryptValue({
+  contractAddress,
+  userAddress,
+  value: { type: 'uint64', value: 100n },
+  seed,
+});
+
+// Re-encrypting the same value with the same seed yields the same result
+const encrypted2 = await client.encryptValue({
+  contractAddress,
+  userAddress,
+  value: { type: 'uint64', value: 100n },
+  seed,
+});
+
+encrypted.encryptedValue === encrypted2.encryptedValue; // true
+```
+
+{% hint style="danger" %}
+**`seed` reuse creates a plaintext-equality oracle that spans contracts.**
+The randomness for the packed ciphertext is derived from `seed` alone —
+`contractAddress`, `userAddress`, and the rest of the proof metadata are only
+folded in as associated data that binds the *proof*, not the ciphertext
+bytes. Concretely, encrypting the same value with the same `seed` under two
+different contracts (or two different users) produces byte-identical
+ciphertext output. Anyone observing the two on-chain input ciphertexts can
+tell the underlying plaintexts are equal, even without decrypting either
+one — across contract and user boundaries, not just within one call site.
+
+Only reuse a `seed` when that reproducibility is exactly what you want (e.g.
+deterministic test fixtures, idempotent retries of the same input). Never
+reuse a `seed` for values you intend to keep confidential from each other —
+generate a fresh, unpredictable seed per distinct plaintext otherwise.
+{% endhint %}
+
+`seed` requires a TFHE module version that supports seeded proof building
+(`'1.6.2'` or later). Select it explicitly via `moduleVersions.tfhe` if your
+chain would otherwise resolve an older version — see
+[Runtime configuration](runtime-configuration.md) and
+[API reference](api-reference.md#runtime-config).
+
 ## What happens under the hood
 
 `encryptValues` runs a two-step pipeline you normally never see:
@@ -192,5 +244,7 @@ offline and submit it later), use the standalone actions `generateZkProof` (from
 - [Types](types.md) — the encrypted-value and typed-value type system.
 - [Actions](actions.md) — the standalone `generateZkProof` (encrypt) / `fetchEncryptedValues` (base) functions.
 - [Error handling](error-handling.md) — `EncryptionError`, `ZkProofError`, `TooManyHandlesError`.
+- [API reference](api-reference.md#encryption-methods) — full `encryptValue(s)` signatures, including `seed`.
+- [Runtime configuration](runtime-configuration.md) — select the TFHE module version (`moduleVersions.tfhe`) that seeded encryption requires.
 ```
 
