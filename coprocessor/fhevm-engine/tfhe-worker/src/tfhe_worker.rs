@@ -978,6 +978,125 @@ mod operand_boundary_mask_tests {
         Ok(())
     }
 
+    /// A scalar operand whose bytes equal the failed handle is not a dependency.
+    ///
+    /// `computations.dependencies` stores encrypted operand handles and plain
+    /// scalar values in one array, so a byte-equality search over it cannot tell
+    /// the two apart -- and the boundary mask cannot either, since only encrypted
+    /// positions are visited when it is derived, leaving a scalar position
+    /// indistinguishable from an operand minted in this transaction. An earlier
+    /// version of this propagation walked that column and condemned an
+    /// independent scalar operation permanently, for a producer it never
+    /// consumed.
+    ///
+    /// The dependent set now comes from the dataflow graph's typed edges, so the
+    /// scalar row is simply not in it. This pins that: the blocked consumer is
+    /// stamped and the scalar-alias row is left alone.
+    #[tokio::test]
+    async fn a_scalar_equal_to_the_failed_handle_is_not_condemned(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let db = setup_test_db(ImportMode::None).await?;
+        let pool = PgPoolOptions::new()
+            .max_connections(2)
+            .connect(db.db_url())
+            .await?;
+
+        let producer = handle(0x61);
+        let consumer = handle(0x62);
+        let scalar_user = handle(0x63);
+        let transaction_id = handle(0x64);
+
+        // The internal producer, as the listener stores it: not allowed, and
+        // therefore completed.
+        sqlx::query(
+            r#"
+            INSERT INTO computations (
+                output_handle, dependencies, fhe_operation, is_scalar,
+                transaction_id, is_allowed, is_completed, schedule_order,
+                host_chain_id, operand_boundary_mask
+            ) VALUES ($1, '{}', 0, false, $2, false, true, NOW(), 1, $3)
+            "#,
+        )
+        .bind(&producer)
+        .bind(&transaction_id)
+        .bind(vec![0_u8; OPERAND_BOUNDARY_MASK_BYTES])
+        .execute(&pool)
+        .await?;
+        // A real consumer, and an independent op whose SCALAR value happens to
+        // equal the producer's handle. Both list the same bytes in
+        // `dependencies`; only the first is a dependency.
+        for (out, is_scalar) in [(&consumer, false), (&scalar_user, true)] {
+            sqlx::query(
+                r#"
+                INSERT INTO computations (
+                    output_handle, dependencies, fhe_operation, is_scalar,
+                    transaction_id, is_allowed, is_completed, schedule_order,
+                    host_chain_id, operand_boundary_mask
+                ) VALUES ($1, $2, 0, $3, $4, true, false, NOW(), 1, $5)
+                "#,
+            )
+            .bind(out)
+            .bind(vec![producer.clone()])
+            .bind(is_scalar)
+            .bind(&transaction_id)
+            .bind(vec![0_u8; OPERAND_BOUNDARY_MASK_BYTES])
+            .execute(&pool)
+            .await?;
+        }
+
+        let mut locks = dependence_chain::LockMngr::new_with_conf(
+            Uuid::new_v4(),
+            pool.clone(),
+            30,
+            true,
+            None,
+            None,
+            None,
+            3,
+        );
+        let panic_error =
+            std::io::Error::other(format!("SchedulerError::{RETRYABLE_STAMP_MARKER}(sigsegv)"));
+
+        // What the graph reports: the consumer only. The scalar user has no edge
+        // from the producer, because a scalar is a value, not a dependence.
+        let blocked = vec![consumer.clone()];
+
+        let mut trx = pool.begin().await?;
+        set_computation_error(
+            &producer,
+            &transaction_id,
+            &panic_error,
+            true,
+            &blocked,
+            &mut trx,
+            &mut locks,
+        )
+        .await?;
+
+        async fn errored(
+            trx: &mut sqlx::Transaction<'_, Postgres>,
+            output_handle: &[u8],
+        ) -> Result<bool, sqlx::Error> {
+            sqlx::query_scalar::<_, bool>(
+                "SELECT is_error FROM computations WHERE output_handle = $1",
+            )
+            .bind(output_handle)
+            .fetch_one(trx.as_mut())
+            .await
+        }
+        assert!(
+            errored(&mut trx, &consumer).await?,
+            "the real consumer must carry the verdict"
+        );
+        assert!(
+            !errored(&mut trx, &scalar_user).await?,
+            "an independent scalar operation must never be condemned for a \
+             producer it does not consume"
+        );
+        trx.commit().await?;
+        Ok(())
+    }
+
     /// An internal producer's verdict lands on the allowed consumer that its
     /// failure actually blocks.
     ///
@@ -1070,6 +1189,8 @@ mod operand_boundary_mask_tests {
             &transaction_id,
             &panic_error,
             true,
+            // What the graph reports for this shape: the producer's only consumer.
+            std::slice::from_ref(&consumer),
             &mut trx,
             &mut locks,
         )
@@ -1104,6 +1225,7 @@ mod operand_boundary_mask_tests {
                 &transaction_id,
                 &panic_error,
                 true,
+                std::slice::from_ref(&consumer),
                 &mut trx,
                 &mut locks,
             )
@@ -1169,6 +1291,7 @@ mod operand_boundary_mask_tests {
             &transaction_id,
             &panic_error,
             true,
+            &[],
             &mut trx,
             &mut locks,
         )
@@ -1200,6 +1323,7 @@ mod operand_boundary_mask_tests {
                 &transaction_id,
                 &panic_error,
                 true,
+                &[],
                 &mut trx,
                 &mut locks,
             )
@@ -1278,6 +1402,7 @@ mod operand_boundary_mask_tests {
                 &transaction_id,
                 &panic_error,
                 true,
+                &[],
                 &mut trx,
                 &mut locks
             )
@@ -1289,6 +1414,7 @@ mod operand_boundary_mask_tests {
                 &transaction_id,
                 &dead_input,
                 false,
+                &[],
                 &mut trx,
                 &mut locks
             )
@@ -2881,6 +3007,9 @@ WHERE c.transaction_id IN (
                     // row: an unknown opcode or a bad operand type fails
                     // identically forever.
                     false,
+                    // These rows are pending, so the direct stamp lands; there is
+                    // nothing to fall back to.
+                    &[],
                     trx,
                     deps_chain_mngr,
                 )
@@ -3572,11 +3701,16 @@ async fn upload_transaction_graph_results<'a>(
                 // than one batch would otherwise count as no-progress
                 // cycles and park the chain mid-drain.
                 let retryable = !is_terminal_verdict(cerr.downcast_ref::<CoprocessorError>());
+                // From the typed graph, for the case where the handle's own row
+                // cannot carry the verdict (an internal producer is stored
+                // completed). Computed here because this is where the graph is.
+                let blocked = tx_graph.allowed_dependents(&result.transaction_id, &result.handle);
                 res |= set_computation_error(
                     &result.handle,
                     &result.transaction_id,
                     &*cerr,
                     retryable,
+                    &blocked,
                     trx,
                     deps_mngr,
                 )
@@ -3845,38 +3979,29 @@ mod terminal_verdict_tests {
 }
 
 #[tracing::instrument(skip_all)]
-/// Records a verdict on the allowed, pending rows that transitively depend on
-/// `output_handle` within the same transaction.
+/// Records a verdict on the allowed rows a failed producer blocks.
 ///
 /// Used when the handle's own row cannot carry it -- an internal producer is
 /// stored `is_completed = TRUE`, which the stamping UPDATE deliberately skips.
-/// The dependency walk is transitive because an internal producer may feed
-/// another internal producer before reaching anything allowed, and it is scoped
-/// to the transaction because `dependencies` names transaction-local operands;
-/// a cross-transaction consumer is served by the dead-producer drain instead.
 ///
-/// Rows outside the dependency closure are left alone: a transaction can hold
-/// independent work that this failure does not make unsatisfiable, and a
-/// terminal stamp is permanent.
+/// `dependents` comes from the dataflow graph, not from a search over
+/// `computations.dependencies`. That column holds encrypted operand handles and
+/// plain scalar values in one array, so byte-equality over it condemns an
+/// independent scalar operation whose value happens to equal the failed handle;
+/// the boundary mask cannot separate the two either, since only encrypted
+/// positions are visited when it is derived. The graph's edges are typed, so
+/// only real consumers appear here.
 async fn propagate_error_to_dependents<'a>(
-    output_handle: &[u8],
+    dependents: &[Vec<u8>],
     transaction_id: &[u8],
     err_string: &str,
     trx: &mut sqlx::Transaction<'a, Postgres>,
 ) -> Result<bool, CoprocessorError> {
+    if dependents.is_empty() {
+        return Ok(false);
+    }
     let rows = query!(
         "
-        WITH RECURSIVE closure AS (
-            SELECT c.output_handle
-            FROM computations c
-            WHERE c.transaction_id = $2
-              AND $1 = ANY(c.dependencies)
-            UNION
-            SELECT c.output_handle
-            FROM computations c
-            JOIN closure d ON d.output_handle = ANY(c.dependencies)
-            WHERE c.transaction_id = $2
-        )
         UPDATE computations AS c
         SET is_error = true,
             error_message = $3,
@@ -3884,10 +4009,10 @@ async fn propagate_error_to_dependents<'a>(
                 WHEN NOT old.is_error THEN 0
                 ELSE LEAST(old.error_retry_count + 1, 32767)::smallint
             END
-        FROM computations AS old, closure
+        FROM computations AS old
         WHERE old.output_handle = c.output_handle
           AND old.transaction_id = c.transaction_id
-          AND c.output_handle = closure.output_handle
+          AND c.output_handle = ANY($1)
           AND c.transaction_id = $2
           -- Only rows the work window selects and the demotion predicate reads.
           AND c.is_allowed = TRUE
@@ -3900,7 +4025,7 @@ async fn propagate_error_to_dependents<'a>(
             OR $3 NOT LIKE '%' || $4 || '%'
         ) AS \"state_changed!\"
         ",
-        output_handle,
+        dependents,
         transaction_id,
         err_string,
         RETRYABLE_STAMP_MARKER,
@@ -3913,23 +4038,26 @@ async fn propagate_error_to_dependents<'a>(
     // progress would reset `no_progress_cycles` every cycle and suppress the
     // parking that paces a perpetually failing producer.
     let transitioned = rows.iter().any(|row| row.state_changed);
-    let affected = rows.len() as u64;
-    if affected > 0 {
+    if !rows.is_empty() {
         warn!(
             target: "tfhe_worker",
-            output_handle = %format!("0x{}", hex::encode(output_handle)),
-            dependents = affected,
+            transaction_id = %format!("0x{}", hex::encode(transaction_id)),
+            dependents = rows.len(),
             "producer row cannot carry a verdict; recorded it on its allowed dependents"
         );
     }
     Ok(transitioned)
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn set_computation_error<'a>(
     output_handle: &[u8],
     transaction_id: &[u8],
     cerr: &(dyn std::error::Error + Send + Sync),
     retryable: bool,
+    // Allowed handles this failure blocks, from the dataflow graph. Consulted
+    // only when the handle's own row cannot carry the verdict.
+    dependents: &[Vec<u8>],
     trx: &mut sqlx::Transaction<'a, Postgres>,
     deps_mngr: &mut dependence_chain::LockMngr,
 ) -> Result<bool, CoprocessorError> {
@@ -4028,9 +4156,7 @@ async fn set_computation_error<'a>(
     // as the dead-producer drain already would for a stampable producer.
     let stamped = match stamped {
         Some(state_changed) => state_changed,
-        None => {
-            propagate_error_to_dependents(output_handle, transaction_id, &err_string, trx).await?
-        }
+        None => propagate_error_to_dependents(dependents, transaction_id, &err_string, trx).await?,
     };
     // the chain's root-cause error_message for those would inflate error
     // metrics and bury the first, most informative message.

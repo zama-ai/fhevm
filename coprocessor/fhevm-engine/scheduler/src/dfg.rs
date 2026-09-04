@@ -576,6 +576,57 @@ impl DFComponentGraph {
         }
         Ok(())
     }
+    /// The allowed handles of `transaction_id` that transitively depend on
+    /// `handle`, read from the dataflow graph rather than inferred from stored
+    /// operand bytes.
+    ///
+    /// The distinction is not academic. `computations.dependencies` holds
+    /// encrypted operand handles AND plain scalar values in one array, so a
+    /// byte-equality search over it cannot tell a dependency from a scalar whose
+    /// value happens to equal a handle -- and an operand's boundary bit cannot
+    /// separate them either, because only ENCRYPTED positions are visited when
+    /// the mask is derived, leaving a scalar position indistinguishable from an
+    /// operand minted in this transaction. Here the edges are typed: they exist
+    /// because one op consumes another's output.
+    ///
+    /// Returns allowed handles only, since those are the rows a verdict can be
+    /// recorded on, and skips the starting handle itself.
+    pub fn allowed_dependents(&self, transaction_id: &[u8], handle: &[u8]) -> Vec<Handle> {
+        let Some((_, tx)) = self
+            .graph
+            .node_references()
+            .find(|(_, tx)| tx.transaction_id.as_slice() == transaction_id)
+        else {
+            return vec![];
+        };
+        let inner = &tx.graph.graph;
+        let Some(start) = inner
+            .node_references()
+            .find(|(_, node)| node.result_handle.as_slice() == handle)
+            .map(|(index, _)| index)
+        else {
+            return vec![];
+        };
+        let mut seen = std::collections::HashSet::new();
+        let mut stack = vec![start];
+        let mut out = vec![];
+        while let Some(current) = stack.pop() {
+            for edge in inner.edges_directed(current, Direction::Outgoing) {
+                let next = edge.target();
+                if !seen.insert(next) {
+                    continue;
+                }
+                if let Some(node) = inner.node_weight(next) {
+                    if node.is_allowed {
+                        out.push(node.result_handle.clone());
+                    }
+                }
+                stack.push(next);
+            }
+        }
+        out
+    }
+
     pub fn get_results(&mut self) -> Vec<DFGTxResult> {
         std::mem::take(&mut self.results)
     }
