@@ -46,6 +46,16 @@ pub struct DFGOp {
     pub fhe_op: SupportedFheOperations,
     pub inputs: Vec<DFGTaskInput>,
     pub is_allowed: bool,
+    /// Whether this worker OWNS the row: its chain is the one under lease.
+    ///
+    /// Distinct from `is_allowed`, and not derivable from it. `is_allowed` says
+    /// the output is persisted and visible to consumers, so it is already
+    /// `owned && row.is_allowed` by the time it reaches here -- an internal
+    /// producer we own is `is_owned` without being `is_allowed`, and a foreign
+    /// row loaded as a recompute-only producer is neither. Error retention has
+    /// to key on ownership: an owned internal producer has a row of ours to
+    /// stamp, a foreign one does not.
+    pub is_owned: bool,
 }
 impl Default for DFGOp {
     fn default() -> Self {
@@ -54,6 +64,7 @@ impl Default for DFGOp {
             fhe_op: SupportedFheOperations::FheTrivialEncrypt,
             inputs: vec![],
             is_allowed: false,
+            is_owned: false,
         }
     }
 }
@@ -276,6 +287,7 @@ impl ComponentNode {
                     (op.fhe_op as i16).into(),
                     std::mem::take(&mut op.inputs),
                     op.is_allowed,
+                    op.is_owned,
                 )
                 .index();
             if index != node_idx {
@@ -602,6 +614,7 @@ pub struct OpNode {
     result_handle: Handle,
     inputs: Vec<DFGTaskInput>,
     is_allowed: bool,
+    is_owned: bool,
 }
 impl std::fmt::Debug for OpNode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -669,18 +682,21 @@ pub struct DFGraph {
     pub graph: Dag<OpNode, OpEdge>,
 }
 impl DFGraph {
+    #[allow(clippy::too_many_arguments)]
     pub fn add_node(
         &mut self,
         rh: Handle,
         opcode: i32,
         inputs: Vec<DFGTaskInput>,
         is_allowed: bool,
+        is_owned: bool,
     ) -> NodeIndex {
         self.graph.add_node(OpNode {
             opcode,
             result_handle: rh,
             inputs,
             is_allowed,
+            is_owned,
         })
     }
     pub fn add_dependence(
@@ -833,11 +849,13 @@ mod tests {
     }
 
     fn op(output: u8, input: DFGTaskInput, is_allowed: bool) -> DFGOp {
+        // Owned: these fixtures stand in for rows under this worker's lease.
         DFGOp {
             output_handle: handle(output),
             fhe_op: SupportedFheOperations::FheNot,
             inputs: vec![input],
             is_allowed,
+            is_owned: true,
         }
     }
 
@@ -937,6 +955,7 @@ mod tests {
                 fhe_op: SupportedFheOperations::FheNot,
                 inputs: vec![DFGTaskInput::BoundaryDependence(handle(0xC0))],
                 is_allowed: false,
+                is_owned: true,
             },
         ];
 

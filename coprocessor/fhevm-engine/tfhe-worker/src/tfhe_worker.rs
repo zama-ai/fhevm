@@ -3074,6 +3074,12 @@ fn prepare_transaction_ops(
             // row says: results, persistence and completion belong to the
             // chain that owns them.
             is_allowed: owned && w.is_allowed,
+            // Kept separate from the line above, because the two answer
+            // different questions. That one decides whether the output is
+            // persisted; this one decides whether a failure of this node has a
+            // row of OURS to stamp. An internal producer under our lease is
+            // owned without being allowed, and its errors have to survive.
+            is_owned: owned,
         });
         if owned && w.is_allowed {
             // Only account for owned allowed rows to avoid the reorg case
