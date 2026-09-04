@@ -245,6 +245,21 @@ impl UserDecryptRepository {
 
         let record = result?;
 
+        // Re-anchor both status gauges on counted values. They are otherwise seeded once at
+        // startup and moved by inc/dec, which only fire on the pod that ran the transition - so a
+        // pod that is not the dispatcher drifts further from the truth the longer it runs. This
+        // lands before the increment below, so the new row is still counted exactly once.
+        metrics::set_req_status_count(
+            metrics::RequestType::UserDecrypt,
+            ReqStatus::Queued,
+            record.readiness_queue_size,
+        );
+        metrics::set_req_status_count(
+            metrics::RequestType::UserDecrypt,
+            ReqStatus::Processing,
+            record.tx_queue_size,
+        );
+
         // Match on the state and return appropriate enum variant
         let insert_result = match (record.is_inserted, record.req_status) {
             (true, _) => {
