@@ -392,8 +392,8 @@ impl
         }
     }
 
-    // TODO: Add gas bump. A bump reports `replacement transaction underpriced` itself, so it
-    // needs its own branch below rather than the nonce walk's.
+    // TODO: Add gas bump, in a branch of its own: a bump reports `transaction underpriced`
+    // itself, which the release branch below claims.
     // TODO: Match all those errors code, and make a triage accordingly: https://ethereum-json-rpc.com/errors + Combine with parsing error message for get a clear triage.
     pub async fn send_raw_transaction_sync_with_retries(
         &self,
@@ -403,7 +403,6 @@ impl
         let pending_receipt: AnyTransactionReceipt;
         let start_time = Instant::now();
         let mut retries = 0;
-        let mut nonces_walked = 0;
 
         loop {
             // Before the first send too: a pod that lost the lock while queued would draw from
@@ -411,7 +410,6 @@ impl
             if !self.gate.is_open() {
                 info!(
                     int_job_id = %job_id,
-                    nonces_walked,
                     "Dispatch gate closed during send, leaving the row for the successor"
                 );
                 return Err(GatewayTxnError::GateClosed);
@@ -497,14 +495,6 @@ impl
                     self.nonce_manager
                         .confirm_nonce(self.sender_address(), nonce)
                         .await;
-                    if nonces_walked > 0 {
-                        warn!(
-                            int_job_id = %job_id,
-                            nonces_walked,
-                            nonce,
-                            "Sent past nonces a peer still holds"
-                        );
-                    }
                     pending_receipt = receipt;
                     break; // Exit the loop on success.
                 }
@@ -521,11 +511,8 @@ impl
                             if response_error_string.contains("nonce too low")
                                 || response_error_string.contains("already known")
                             {
-                                metrics::track_engine_error(
-                                    metrics::TransactionErrorType::NonceOccupied,
-                                );
-                                nonces_walked += 1;
-                                debug!(
+                                metrics::track_engine_error(metrics::TransactionErrorType::Nonce);
+                                warn!(
                                     int_job_id = %job_id,
                                     step = %TxEngineStep::TxRetrying,
                                     nonce = tx.nonce,
@@ -535,35 +522,18 @@ impl
                                 self.nonce_manager
                                     .confirm_nonce(self.sender_address(), nonce)
                                     .await;
-                            } else if response_error_string
-                                .contains("replacement transaction underpriced")
+                            } else if response_error_string.contains("transaction underpriced")
+                                || response_error_string.contains("nonce too high")
                             {
-                                // The expected path at gate-open: step past the predecessor's
-                                // mempool. Retiring advances the counter; releasing would draw
-                                // the same nonce again, gaps being preferred over the
-                                // high-water mark.
-                                metrics::track_engine_error(
-                                    metrics::TransactionErrorType::NonceOccupied,
-                                );
-                                nonces_walked += 1;
-                                debug!(
-                                    int_job_id = %job_id,
-                                    step = %TxEngineStep::TxRetrying,
-                                    nonce = tx.nonce,
-                                    error = %err_msg,
-                                    "Nonce held by a pending transaction"
-                                );
-                                self.nonce_manager
-                                    .confirm_nonce(self.sender_address(), nonce)
-                                    .await;
-                            } else if response_error_string.contains("nonce too high") {
+                                // An underpriced or too-high nonce is still undecided: the chain
+                                // has yet to say which transaction takes it.
                                 metrics::track_engine_error(metrics::TransactionErrorType::Nonce);
                                 warn!(
                                     int_job_id = %job_id,
                                     step = %TxEngineStep::TxRetrying,
                                     nonce = tx.nonce,
                                     error = %err_msg,
-                                    "Nonce too high"
+                                    "Nonce unusable, releasing"
                                 );
                                 self.nonce_manager
                                     .release_nonce(self.sender_address(), nonce)

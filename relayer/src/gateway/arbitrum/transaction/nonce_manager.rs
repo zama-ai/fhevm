@@ -208,8 +208,8 @@ mod tests {
         manager
     }
 
-    /// The contrast the send triage relies on: a confirmed (retired) nonce is never drawn
-    /// again, a released one is drawn next.
+    /// The contrast the send triage relies on: a mined nonce is retired, an undecided one goes
+    /// back in the pool and is drawn next.
     #[tokio::test]
     async fn confirmed_nonce_is_retired_released_nonce_is_redrawn() {
         let address = Address::ZERO;
