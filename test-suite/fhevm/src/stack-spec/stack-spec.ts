@@ -41,6 +41,7 @@ export type StackSpec = {
   versions: VersionBundle;
   kmsCoreVersionByNodeId?: State["kmsCoreVersionByNodeId"];
   overrides: State["overrides"];
+  e2ePublicRuntime: boolean;
   topology: Topology;
   hostChains: HostChainScenario[];
   coprocessor?: ResolvedCoprocessorScenario;
@@ -111,6 +112,7 @@ const stackSpecFromResolved = (input: {
   versions: VersionBundle;
   kmsCoreVersionByNodeId?: State["kmsCoreVersionByNodeId"];
   overrides: State["overrides"];
+  e2ePublicRuntime?: boolean;
   scenario: ResolvedScenario;
   requiresGitHub: boolean;
 }): StackSpec => {
@@ -123,6 +125,7 @@ const stackSpecFromResolved = (input: {
       origin: bg.origin === "file" ? "file" : "default",
       name: bg.name,
       description: bg.description,
+      // Blue-green keeps its existing versioned scheduling semantics.  The
       hostChains: bg.hostChains,
       sourcePath: bg.sourcePath,
       topology: bg.topology,
@@ -140,6 +143,7 @@ const stackSpecFromResolved = (input: {
       versions: input.versions,
       kmsCoreVersionByNodeId: input.kmsCoreVersionByNodeId,
       overrides: input.overrides,
+      e2ePublicRuntime: input.e2ePublicRuntime ?? false,
       topology: bg.topology,
       hostChains: bg.hostChains,
       coprocessor: bcsAsCoprocessor,
@@ -153,6 +157,7 @@ const stackSpecFromResolved = (input: {
     versions: input.versions,
     kmsCoreVersionByNodeId: input.kmsCoreVersionByNodeId,
     overrides: input.overrides,
+    e2ePublicRuntime: input.e2ePublicRuntime ?? false,
     topology: topologyFromScenario(input.scenario),
     hostChains: input.scenario.hostChains,
     coprocessor: input.scenario,
@@ -162,7 +167,7 @@ const stackSpecFromResolved = (input: {
 
 /** Rebuilds a stack spec from persisted state. */
 export const stackSpecForState = (
-  state: Pick<State, "requiresGitHub" | "target" | "versions" | "kmsCoreVersionByNodeId" | "overrides" | "scenario">,
+  state: Pick<State, "requiresGitHub" | "target" | "versions" | "kmsCoreVersionByNodeId" | "overrides" | "e2ePublicRuntime" | "scenario">,
 ): StackSpec =>
   stackSpecFromResolved({
     requiresGitHub: state.requiresGitHub ?? true,
@@ -170,5 +175,6 @@ export const stackSpecForState = (
     versions: state.versions,
     kmsCoreVersionByNodeId: state.kmsCoreVersionByNodeId,
     overrides: state.overrides,
+    e2ePublicRuntime: state.e2ePublicRuntime,
     scenario: state.scenario,
   });

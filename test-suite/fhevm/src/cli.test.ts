@@ -132,12 +132,29 @@ describe("cli", () => {
     expect(output).toContain("[TESTNAME]");
   });
 
-  test("prints upgrade help with version-lock flags", async () => {
+  test("prints upgrade help with version-lock and explicit KMS E2E adoption flags", async () => {
     const result = await execCli(["upgrade", "--help"]);
     const output = normalizeCliOutput(result.stdout);
     expect(result.code).toBe(0);
     expect(output).toContain("fhevm-cli upgrade");
     expect(output).toContain("--lock-file");
+    expect(output).toContain("--adopt-local-override");
+    expect(output).toContain("--e2e-public-runtime");
+  });
+
+  test("fails closed when KMS E2E adoption flags are incomplete or target another group", async () => {
+    const incomplete = await execCli(["upgrade", "kms-connector", "--adopt-local-override"]);
+    expect(incomplete.code).toBe(1);
+    expect(incomplete.stderr).toContain("requires both --adopt-local-override and --e2e-public-runtime");
+
+    const wrongGroup = await execCli([
+      "upgrade",
+      "coprocessor",
+      "--adopt-local-override",
+      "--e2e-public-runtime",
+    ]);
+    expect(wrongGroup.code).toBe(1);
+    expect(wrongGroup.stderr).toContain("supported only with `fhevm-cli upgrade kms-connector`");
   });
 
   test("prints rollout help with run and receipt subcommands", async () => {
@@ -334,6 +351,21 @@ describe("cli", () => {
         reset: false,
       }),
     ).toEqual(["target=latest-supported"]);
+  });
+
+  test("resume rejects a fresh public-runtime override so the persisted image base remains reproducible", () => {
+    expect(
+      resumeOptionConflicts(persistedState("latest-supported"), {
+        requestedTarget: undefined,
+        sha: undefined,
+        lockFile: undefined,
+        scenarioPath: undefined,
+        overrides: [],
+        allowSchemaMismatch: false,
+        e2ePublicRuntime: true,
+        reset: false,
+      }),
+    ).toEqual(["--e2e-public-runtime"]);
   });
 
   test("resume hint is suppressed for explicit fresh-stack flags", () => {
