@@ -1,7 +1,9 @@
-use crate::core::{Config, ResponseListener, Waiters, http};
+use crate::{
+    core::{Config, ResponseListener, Waiters, http},
+    monitoring::health::State,
+};
 use anyhow::anyhow;
 use connector_utils::conn::connect_to_db;
-use sqlx::{Pool, Postgres};
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
@@ -9,31 +11,40 @@ use tracing::{error, info};
 /// The `Endpoint` service: the `v1` HTTP decryption interface of the KMS Connector.
 pub struct Endpoint {
     config: Arc<Config>,
-    db_pool: Pool<Postgres>,
-    waiters: Arc<Waiters>,
+    app_state: http::AppState,
     response_listener: ResponseListener,
 }
 
 impl Endpoint {
-    pub async fn from_config(config: Config) -> anyhow::Result<Self> {
+    /// Creates the `Endpoint` from its configuration, and the `State` used to monitor it.
+    pub async fn from_config(config: Config) -> anyhow::Result<(Self, State)> {
         let db_pool = connect_to_db(&config.database_url, config.database_pool_size).await?;
         let waiters = Arc::new(Waiters::new());
         let response_listener = ResponseListener::connect(&db_pool, waiters.clone()).await?;
 
-        Ok(Self {
-            config: Arc::new(config),
+        let config = Arc::new(config);
+        let app_state = http::AppState::new(Arc::clone(&config), db_pool.clone(), waiters);
+        let state = State::new(
             db_pool,
-            waiters,
+            config.http_endpoint,
+            Arc::clone(&app_state.in_flight_limiter),
+            config.max_in_flight_decryptions,
+            config.healthcheck_timeout,
+        );
+
+        let endpoint = Self {
+            config,
+            app_state,
             response_listener,
-        })
+        };
+        Ok((endpoint, state))
     }
 
     /// Starts the HTTP server and response listener.
     pub async fn start(self, cancel_token: CancellationToken) -> anyhow::Result<()> {
         info!("Starting Endpoint");
 
-        let state = http::AppState::new(Arc::clone(&self.config), self.db_pool, self.waiters);
-        let server = http::run_server(state, self.config.http_endpoint)?;
+        let server = http::run_server(self.app_state, self.config.http_endpoint)?;
         info!("HTTP server listening at: {}", self.config.http_endpoint);
         let server_handle = server.handle();
 
