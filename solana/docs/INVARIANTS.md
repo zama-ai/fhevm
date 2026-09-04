@@ -307,7 +307,9 @@ ID…).
     today none are allowlisted. Token accounts allow only `ImmutableOwner`.
 57. **[HOLDS]** Frozen underlying token accounts cannot wrap, confidential-transfer, burn, or
     redeem. Transfer checks both owners' associated token accounts (`from_ata`/`to_ata`); burn
-    checks the burner's (`owner_ata`). Uninitialized at that ATA address is treated as not frozen.
+    checks the burner's (`owner_ata`). Uninitialized at that ATA address is treated as not frozen,
+    so the mirror does not reach a holder with no canonical ATA (funded by confidential transfer
+    only) or one who closed and recreated an empty frozen ATA; see DD-045 and fhevm-internal#1981.
     Wrap and redeem keep checking the
     accounts they actually move. Cancel-pending-burn is not freeze-gated. Token-2022 transfer-fee, transfer-hook,
     non-transferable, and confidential-transfer behavior cannot be inherited
