@@ -287,6 +287,3 @@ dispatcher_lock:
     # Interval between the holder's scans for requests nobody is driving, and so the delay
     # before such a request is picked up.
     interval: "500ms"
-    # Dispatchers that may pick one request up before it is failed. Counts failovers, not
-    # retries.
-    max_attempts: 5
