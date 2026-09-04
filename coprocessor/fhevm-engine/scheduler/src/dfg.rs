@@ -334,6 +334,13 @@ pub struct DFComponentGraph {
     pub produced: HashMap<Handle, Vec<(NodeIndex, Handle)>>,
     pub results: Vec<DFGTxResult>,
     deferred_dependences: Vec<(NodeIndex, NodeIndex, Handle)>,
+    /// Allowed dependents of every owned internal producer, keyed by
+    /// `(transaction_id, producer handle)`. Taken by
+    /// [`Self::snapshot_blocked_dependents`] BEFORE scheduling, because the
+    /// scheduler moves each transaction's inner graph out of its node at
+    /// dispatch (`std::mem::take`) and never puts it back, so after
+    /// `schedule()` the edges this needs no longer exist here.
+    blocked_dependents: Option<HashMap<(Handle, Handle), Vec<Handle>>>,
 }
 impl DFComponentGraph {
     pub fn build(&mut self, nodes: &mut Vec<ComponentNode>) -> Result<()> {
@@ -591,7 +598,20 @@ impl DFComponentGraph {
     ///
     /// Returns allowed handles only, since those are the rows a verdict can be
     /// recorded on, and skips the starting handle itself.
+    ///
+    /// After [`Self::snapshot_blocked_dependents`] this answers from the
+    /// snapshot, which is the only form that survives scheduling: the
+    /// scheduler takes each transaction's inner graph out of its node when it
+    /// dispatches the partition, so a walk over `tx.graph` after `schedule()`
+    /// sees an empty graph and finds nothing. Before a snapshot it walks the
+    /// live graph, which is what the graph-construction tests exercise.
     pub fn allowed_dependents(&self, transaction_id: &[u8], handle: &[u8]) -> Vec<Handle> {
+        if let Some(snapshot) = &self.blocked_dependents {
+            return snapshot
+                .get(&(transaction_id.to_vec(), handle.to_vec()))
+                .cloned()
+                .unwrap_or_default();
+        }
         let Some((_, tx)) = self
             .graph
             .node_references()
@@ -599,14 +619,46 @@ impl DFComponentGraph {
         else {
             return vec![];
         };
-        let inner = &tx.graph.graph;
-        let Some(start) = inner
+        let Some(start) = tx
+            .graph
+            .graph
             .node_references()
             .find(|(_, node)| node.result_handle.as_slice() == handle)
             .map(|(index, _)| index)
         else {
             return vec![];
         };
+        Self::allowed_dependents_from(&tx.graph, start)
+    }
+
+    /// Record, for every owned internal producer in every transaction, the
+    /// allowed handles its failure blocks. Call this once the graph is fully
+    /// built and BEFORE handing it to the scheduler.
+    ///
+    /// Only owned, non-allowed producers are indexed. An allowed producer's own
+    /// row is pending and carries its verdict directly; a foreign row's
+    /// verdicts belong to the chain that owns it and are never reported here.
+    /// An internal producer is the case the fallback exists for: the listener
+    /// stores it `is_completed = TRUE`, so nothing of its own can be stamped
+    /// and the verdict has to land on the allowed rows downstream of it.
+    pub fn snapshot_blocked_dependents(&mut self) {
+        let mut snapshot: HashMap<(Handle, Handle), Vec<Handle>> = HashMap::new();
+        for (_, tx) in self.graph.node_references() {
+            for (index, node) in tx.graph.graph.node_references() {
+                if !node.is_owned || node.is_allowed {
+                    continue;
+                }
+                snapshot.insert(
+                    (tx.transaction_id.clone(), node.result_handle.clone()),
+                    Self::allowed_dependents_from(&tx.graph, index),
+                );
+            }
+        }
+        self.blocked_dependents = Some(snapshot);
+    }
+
+    fn allowed_dependents_from(graph: &DFGraph, start: NodeIndex) -> Vec<Handle> {
+        let inner = &graph.graph;
         let mut seen = std::collections::HashSet::new();
         let mut stack = vec![start];
         let mut out = vec![];
@@ -1004,6 +1056,75 @@ mod tests {
             !attributed.contains(&first_tid),
             "the other transaction's row must not be stamped for a failure it \
              did not have; got {attributed:?}"
+        );
+    }
+
+    /// The blocked-dependents answer must survive scheduling.
+    ///
+    /// The scheduler `std::mem::take`s every dispatched transaction's inner
+    /// graph and never restores it, so a walk over the live graph after
+    /// `schedule()` returns nothing -- which silently disabled the fallback
+    /// that records an internal producer's verdict on its allowed consumers.
+    /// The snapshot is taken before dispatch; this simulates the take and
+    /// checks the answer is unchanged.
+    #[test]
+    fn blocked_dependents_survive_the_scheduler_taking_the_graph() {
+        let transaction_id = handle(0x11);
+        let boundary = handle(0xA0);
+        let operations = vec![
+            // Internal producer P = f(boundary); allowed C1 = f(P); allowed
+            // C2 = f(C1) (transitive); allowed U = f(boundary), unrelated.
+            op(
+                0x01,
+                DFGTaskInput::BoundaryDependence(boundary.clone()),
+                false,
+            ),
+            op(0x02, DFGTaskInput::LocalDependence(handle(0x01)), true),
+            op(0x03, DFGTaskInput::LocalDependence(handle(0x02)), true),
+            op(0x04, DFGTaskInput::BoundaryDependence(boundary), true),
+        ];
+        let (mut components, _) =
+            build_component_nodes(operations, &transaction_id).expect("valid transaction graph");
+        let mut graph = DFComponentGraph::default();
+        graph.build(&mut components).expect("component graph");
+
+        let expected = {
+            let mut live = graph.allowed_dependents(&transaction_id, &handle(0x01));
+            live.sort();
+            live
+        };
+        assert_eq!(
+            expected,
+            vec![handle(0x02), handle(0x03)],
+            "the live walk is the reference: both transitive allowed \
+             consumers, not the unrelated allowed op, not the producer"
+        );
+
+        graph.snapshot_blocked_dependents();
+
+        // What `schedule_coarse_grain` does to every dispatched transaction.
+        for tx in graph.graph.node_weights_mut() {
+            let _ = std::mem::take(&mut tx.graph);
+            let _ = std::mem::take(&mut tx.inputs);
+        }
+
+        let mut after = graph.allowed_dependents(&transaction_id, &handle(0x01));
+        after.sort();
+        assert_eq!(
+            after, expected,
+            "the answer after dispatch must equal the pre-dispatch walk"
+        );
+        assert!(
+            graph
+                .allowed_dependents(&transaction_id, &handle(0x02))
+                .is_empty(),
+            "an allowed producer carries its own verdict and is not indexed"
+        );
+        assert!(
+            graph
+                .allowed_dependents(&handle(0x99), &handle(0x01))
+                .is_empty(),
+            "an unknown transaction has no blocked dependents"
         );
     }
 

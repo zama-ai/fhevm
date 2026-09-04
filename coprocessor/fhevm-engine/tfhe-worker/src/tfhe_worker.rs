@@ -3545,6 +3545,15 @@ async fn build_transaction_graph_and_execute<'a>(
         #[cfg(not(feature = "gpu"))]
         let _ = gpu_streams_per_device;
 
+        // Index, per owned internal producer, the allowed rows its failure
+        // blocks -- NOW, while every transaction's inner graph is still in
+        // its node. The scheduler moves those graphs out at dispatch and
+        // never restores them, so the same walk after `schedule()` finds an
+        // empty graph and returns nothing; `upload_transaction_graph_results`
+        // then has nowhere to record an internal producer's verdict and the
+        // transaction re-executes at poll cadence forever.
+        tx_graph.snapshot_blocked_dependents();
+
         // Schedule computations in parallel as dependences allow
         tfhe::set_server_key(keys.sks.clone());
         let mut sched = Scheduler::new(
@@ -3703,7 +3712,8 @@ async fn upload_transaction_graph_results<'a>(
                 let retryable = !is_terminal_verdict(cerr.downcast_ref::<CoprocessorError>());
                 // From the typed graph, for the case where the handle's own row
                 // cannot carry the verdict (an internal producer is stored
-                // completed). Computed here because this is where the graph is.
+                // completed). Answered from the snapshot taken before
+                // `schedule()`: the inner graphs are gone by now.
                 let blocked = tx_graph.allowed_dependents(&result.transaction_id, &result.handle);
                 res |= set_computation_error(
                     &result.handle,
