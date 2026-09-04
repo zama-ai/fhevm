@@ -1309,7 +1309,7 @@ pub(crate) async fn rearm_demoted_chains_limited(
               -- NO comparison against the demote threshold, deliberately.
               -- Demotion is not persisted: it is inferred as
               -- `retryable && error_retry_count >= <current threshold>`. Read
-              -- the same way here, the sweep stops recognising work it retired
+              -- the same way here, the sweep stops recognizing work it retired
               -- under a LOWER threshold -- raise 3 to 5 and a row demoted at 3
               -- matches neither the window (`count < 5`, but its chain is
               -- already processed and unowned, so acquisition cannot reach it)
