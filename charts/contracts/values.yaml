@@ -26,7 +26,7 @@ scDeploy:
 
   image:
     name: ghcr.io/zama-ai/fhevm/host-contracts
-    tag: v0.13.0
+    tag: v0.14.0
 
   # ConfigMap to store deployed contract addresses
   configmap:
@@ -82,8 +82,10 @@ scDeploy:
       value: ""
 
     # -------------------------------------------------------------------------
-    # ProtocolConfig (KMS node identity, context, thresholds)
+    # ProtocolConfig (KMS node full metadata and thresholds)
     # -------------------------------------------------------------------------
+    # Since 0.14.0, all per-node fields below are required (used by the fresh
+    # deploy and by task:upgradeProtocolConfig reinitializeV2).
     - name: NUM_KMS_NODES
       value: 13
 
@@ -100,6 +102,29 @@ scDeploy:
     - name: KMS_NODE_STORAGE_URL_x
       value: ""
 
+    # KMS core party id (contiguous, 1..NUM_KMS_NODES)
+    - name: KMS_NODE_PARTY_ID_x
+      value: ""
+
+    - name: KMS_NODE_MPC_IDENTITY_x
+      value: ""
+
+    - name: KMS_NODE_CA_CERT_x
+      value: ""
+
+    - name: KMS_NODE_STORAGE_PREFIX_x
+      value: ""
+
+    # KMS software attestation, shared by all nodes
+    - name: KMS_SOFTWARE_VERSION
+      value: ""
+
+    # JSON array, e.g. '[{"pcr0":"0x..","pcr1":"0x..","pcr2":"0x.."}]'
+    - name: KMS_PCR_VALUES
+      value: ""
+
+    # Thresholds are only read on fresh deploy; task:upgradeProtocolConfig
+    # (reinitializeV2) infers them from storage.
     - name: PUBLIC_DECRYPTION_THRESHOLD
       value: 7
     - name: USER_DECRYPTION_THRESHOLD
@@ -133,6 +158,21 @@ scDeploy:
     # Coprocessor signer addresses, indexed from 0 up to NUM_COPROCESSORS - 1
     - name: COPROCESSOR_SIGNER_ADDRESS_x
       value: ""
+
+    # -------------------------------------------------------------------------
+    # ConfidentialBridge (LayerZero, optional since 0.14.0)
+    # -------------------------------------------------------------------------
+    # LayerZero V2 endpoint on the host chain. When unset (or pointing to an
+    # address without code on the hardhat network), the deploy pins the bridge
+    # proxy to the null address and task:deployBridge no-ops. On live networks,
+    # a set-but-codeless LZ_ENDPOINT_ADDRESS fails the deploy.
+    - name: LZ_ENDPOINT_ADDRESS
+      value: ""
+
+    # Set to "true" to provision the empty bridge proxy before the LayerZero
+    # endpoint exists (task:deployBridge can then upgrade it later).
+    # - name: PROVISION_BRIDGE_PROXY
+    #   value: "true"
 
   resources:
     requests:
@@ -168,7 +208,13 @@ scDeploy:
     # Deploy all host contracts, including KMSGeneration. KMSGeneration belongs
     # only on the canonical host chain in the multi-chain model.
     # See host-contracts/README.md#host-deployment-role.
+    # Since 0.14.0 this also runs task:deployBridge as the final step (no-op
+    # unless LZ_ENDPOINT_ADDRESS is configured, see the bridge env block above).
     - npx hardhat task:deployAllHostContracts --with-kms-generation true
+
+    # Non-canonical host chains instead mirror the canonical ProtocolConfig
+    # ('migration' source was removed in 0.14.0):
+    # - npx hardhat task:deployAllHostContracts --with-kms-generation false --protocol-config-source canonical --canonical-rpc-url <url> --canonical-protocol-config-address <address>
 
     # Add pausers to the host contracts
     - npx hardhat task:addHostPausers
@@ -184,32 +230,76 @@ scUpgrade:
   enabled: false
 
   # Configuration for old contracts (used during upgrade process)
+  # Set the tag to the version currently deployed on the target chain: the
+  # initContainer copies its contracts to /app/oldContracts, referenced by the
+  # --current-implementation flags below.
   oldContracts:
     image:
       name: ghcr.io/zama-ai/fhevm/host-contracts
-      tag: v0.10.0
+      tag: v0.13.1
 
   # Note: The upgrade process uses the new contracts image from scDeploy.image
 
-  # Upgrade commands executed during contract upgrade
+  # Upgrade commands executed during contract upgrade.
+  #
+  # Only upgrade contracts whose implementation changed in the release: every
+  # task:upgradeX calls the new reinitializeVX, so re-running it on a contract
+  # whose REINITIALIZER_VERSION did not bump reverts with InvalidInitialization.
+  # Reference lists below are for 0.13.1 -> 0.14.0.
+  #
+  # Common optional flags: --use-internal-proxy-address true (resolve proxies
+  # from the mounted addresses/ dir instead of env), --verify-contract false
+  # (skip block explorer verification).
   upgradeCommands:
-    # Example upgrade command (uncomment and modify as needed)
-    # - npx hardhat task:upgradeACL
-
     # =========================================================================
     # ==========================  GATEWAY =====================================
     # =========================================================================
-    - npx hardhat task:upgradeGatewayConfig
-
-    - npx hardhat task:upgradeDecryption
-
-    - npx hardhat task:upgradeKMSGeneration
+    # Decryption is the only gateway contract changed in 0.14.0
+    # (reinitializer 6 -> 7, reinitializeV6 takes no arguments).
+    - npx hardhat task:upgradeDecryption --current-implementation oldContracts/Decryption.sol:Decryption --new-implementation contracts/Decryption.sol:Decryption
 
     # =========================================================================
     # ==========================  HOST    =====================================
     # =========================================================================
-    - npx hardhat task:upgradeKMSVerifier
+    # InputVerifier and PauserSet are unchanged in 0.14.0: do not upgrade them.
+    # The 0.13.x MIGRATION_* env block and the task:*FromMigration /
+    # task:assertKmsMigrationSucceeded tasks were removed in 0.14.0.
 
+    # reinitializeV2 requires the per-node KMS_NODE_* env vars plus
+    # KMS_SOFTWARE_VERSION and KMS_PCR_VALUES (thresholds read from storage).
+    - npx hardhat task:upgradeProtocolConfig --current-implementation oldContracts/ProtocolConfig.sol:ProtocolConfig --new-implementation contracts/ProtocolConfig.sol:ProtocolConfig
+
+    # Canonical host chain only (KMSGeneration is not deployed elsewhere).
+    - npx hardhat task:upgradeKMSGeneration --current-implementation oldContracts/KMSGeneration.sol:KMSGeneration --new-implementation contracts/KMSGeneration.sol:KMSGeneration
+
+    - npx hardhat task:upgradeKMSVerifier --current-implementation oldContracts/KMSVerifier.sol:KMSVerifier --new-implementation contracts/KMSVerifier.sol:KMSVerifier
+
+    - npx hardhat task:upgradeHCULimit --current-implementation oldContracts/HCULimit.sol:HCULimit --new-implementation contracts/HCULimit.sol:HCULimit
+
+    - npx hardhat task:upgradeFHEVMExecutor --current-implementation oldContracts/FHEVMExecutor.sol:FHEVMExecutor --new-implementation contracts/FHEVMExecutor.sol:FHEVMExecutor
+
+    - npx hardhat task:upgradeACL --current-implementation oldContracts/ACL.sol:ACL --new-implementation contracts/ACL.sol:ACL
+
+# -----------------------------------------------------------------------------
+# KMS context switch (0.14.0, operational — not part of deploy/upgrade)
+# -----------------------------------------------------------------------------
+# New tasks to rotate the KMS committee, driven by the post-switch committee's
+# KMS_* env vars and the new KMS_CONTEXT_ID.
+#
+# Host (ProtocolConfig), broadcast with the deployer key (devnet/test path):
+# - task:defineNewKmsContextAndEpoch            new committee, args from KMS_* env vars
+# - task:defineNewEpochForCurrentKmsContext     same-set epoch rotation, no args
+# DAO variants (print Aragon proposal calldata, never broadcast; the first one
+# also prints the newContextId to use as the gateway proposal's KMS_CONTEXT_ID):
+# - task:buildDefineNewKmsContextAndEpochCalldata
+# - task:buildDefineNewEpochForCurrentKmsContextCalldata
+# Monitor progress (read-only): task:kmsContextSwitchStatus [--from-block N]
+#
+# Gateway (GatewayConfig.updateKmsContext):
+# - task:updateKmsContext                       broadcast (devnet/test path)
+# - task:buildUpdateKmsContextProposal          DAO variant, never broadcasts
+# Note the gateway tasks use KMS_NODE_IP_ADDRESS_x / KMS_GENERATION_THRESHOLD,
+# while the host tasks use KMS_NODE_IP_x / KMS_GEN_THRESHOLD.
 
 # -----------------------------------------------------------------------------
 # Node Placement Configuration
