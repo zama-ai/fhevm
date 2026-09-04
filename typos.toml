@@ -40,6 +40,12 @@ extend-exclude = [
     # canon four implementations consume, so they cannot be reworded.
     "solana/test-fixtures/permit/permit_v1.json",
 
+    # Vendored linker vector set: copied byte for byte from the kms repo by
+    # sdk/js-sdk/scripts/regen-tkms-wasm.sh and checked against its own SHA-256
+    # on both sides, so a wording fix here would break the digest. Spelling is
+    # fixed at the source (kms core/grpc/tests/solana_linker_vectors.rs).
+    "solana/test-fixtures/user-decrypt/solana_linker_v1.json",
+
     # Protocol buffers (generated)
     "proto/",
 
