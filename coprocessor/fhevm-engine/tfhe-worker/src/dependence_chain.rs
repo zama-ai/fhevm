@@ -263,8 +263,17 @@ impl LockMngr {
                     SELECT dependence_chain_id, schedule_priority, last_updated_at,
                            'expired_lock' AS match_reason
                     FROM dependence_chain
-                    WHERE lock_expires_at < NOW()  -- Work-stealing of expired locks
-                      AND dependency_count = 0     -- No pending dependencies
+                    -- Work-stealing of expired locks. No dependency_count
+                    -- predicate, deliberately: a lease exists only because a
+                    -- worker acquired the chain -- through the gate, the
+                    -- stale-gate repair, or the no-progress escalation, which
+                    -- bypasses the gate and leaves the count as it found it.
+                    -- Requiring count = 0 here left an escalated chain whose
+                    -- owner parked it or died reachable by NOTHING: the repair
+                    -- needs an unowned row, the sweep needs 'processed', and
+                    -- the listener's refresh touches neither worker_id nor the
+                    -- count.
+                    WHERE lock_expires_at < NOW()
                       AND dependence_chain_id <> ALL($4)
                     ORDER BY schedule_priority ASC, last_updated_at ASC
                     LIMIT ($3::bigint) * 2
@@ -281,7 +290,7 @@ impl LockMngr {
                 JOIN ranked ON ranked.dependence_chain_id = dc.dependence_chain_id
                 WHERE (
                         (dc.status = 'updated' AND dc.worker_id IS NULL AND dc.dependency_count = 0)
-                    OR  (dc.lock_expires_at < NOW() AND dc.dependency_count = 0)
+                    OR  dc.lock_expires_at < NOW()
                 )
                 ORDER BY ranked.schedule_priority ASC, ranked.last_updated_at ASC -- highest priority first
                 FOR UPDATE OF dc SKIP LOCKED   -- Ensure no other worker is currently trying to lock it
@@ -343,6 +352,16 @@ impl LockMngr {
     /// dependency_count as reorgs can lead to incorrect counts and
     /// set of dependents until we add block hashes to transaction
     /// hashes to uniquely identify transactions.
+    ///
+    /// The gate's bookkeeping is left INTACT: if the gate is live, its
+    /// producers still owe the chain their decrements and must find the count
+    /// they armed. What makes bypassing safe to leave behind is the stealing
+    /// arm of `acquire_next_locks`, which does not look at the count either:
+    /// a lapsed lease is proof that some worker already acquired the chain --
+    /// through the gate, the repair path, or this escalation -- so a chain
+    /// parked or orphaned after an early lock is reclaimed like any other.
+    /// (Requiring `dependency_count = 0` there stranded exactly these chains:
+    /// owned, lapsed and gated, they matched no acquisition predicate at all.)
     /// Returns the dependence_chain_id if a lock was acquired
     pub async fn acquire_early_lock(
         &mut self,

@@ -18,6 +18,13 @@
 -- rewritten alongside to evaluate the two arms as separately ordered,
 -- LIMITed scans, which is what lets each arm use its own index.
 --
+-- The stealing arm no longer requires `dependency_count = 0`, so neither does
+-- this predicate. A lease exists only because a worker acquired the chain --
+-- through the gate, the stale-gate repair, or the no-progress escalation that
+-- bypasses the gate and leaves the count intact -- and a lapsed lease must be
+-- reclaimable whatever the count says: an escalated chain whose owner parked
+-- it or died otherwise matched no acquisition predicate at all.
+--
 -- idx_dependence_chain_unlock is left in place; unused indexes are dropped
 -- in a later release once production counters confirm they are idle.
 --
@@ -25,4 +32,4 @@
 -- CREATE INDEX is fine here (no CONCURRENTLY, no pre-creation step).
 CREATE INDEX IF NOT EXISTS idx_dependence_chain_expired_lease
 ON dependence_chain (lock_expires_at, schedule_priority, last_updated_at)
-WHERE dependency_count = 0 AND lock_expires_at IS NOT NULL;
+WHERE lock_expires_at IS NOT NULL;

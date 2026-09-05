@@ -1286,6 +1286,107 @@ async fn test_acquire_stale_gated_lock_recovers_stranded_chain() {
     assert_eq!(row.dependency_count, 0);
 }
 
+/// The no-progress escalation (`acquire_early_lock`) bypasses the gate and
+/// leaves its bookkeeping intact. The chain it takes must still be reclaimable
+/// once its owner parks it or dies: 'processing', lapsed lease, count > 0 used
+/// to match neither acquisition arm (both required count = 0), nor the repair
+/// path (unowned rows only), nor the sweep ('processed' only) -- a permanent
+/// wedge. The stealing arm therefore ignores the count: a lease is proof of a
+/// prior legitimate acquisition.
+#[tokio::test]
+#[serial(db)]
+async fn test_lapsed_early_locked_chain_is_stealable_with_its_gate_intact() {
+    let instance = setup().await;
+    let pool = PgPoolOptions::new()
+        .max_connections(2)
+        .connect(instance.db_url())
+        .await
+        .expect("Failed to connect to the database");
+
+    let gated_id = vec![0x0E_u8];
+    sqlx::query!(
+        r#"
+        INSERT INTO dependence_chain
+            (dependence_chain_id, status, last_updated_at, block_timestamp, block_height,
+             schedule_priority, dependency_count)
+        VALUES ($1, 'updated', NOW() - INTERVAL '10 minutes', NOW(), 1, 0, 2)
+        "#,
+        gated_id,
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let mut escalated = LockMngr::new_with_conf(
+        Uuid::new_v4(),
+        pool.clone(),
+        3600,
+        false,
+        None,
+        None,
+        None,
+        3,
+    );
+    let (acquired, reason) = escalated.acquire_early_lock().await.unwrap();
+    assert_eq!(acquired, Some(gated_id.clone()));
+    assert_eq!(reason, LockingReason::UpdatedUnowned);
+    let count: i32 = sqlx::query_scalar!(
+        r#"SELECT dependency_count AS "count!" FROM dependence_chain WHERE dependence_chain_id = $1"#,
+        gated_id
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        count, 2,
+        "the escalation bypasses the gate but leaves its bookkeeping for the producers"
+    );
+
+    // The owner parks the chain (or dies): the row stays 'processing' with
+    // its lease, which then lapses.
+    escalated.park_current_lock();
+    sqlx::query!(
+        "UPDATE dependence_chain SET lock_expires_at = NOW() - INTERVAL '1 second'
+         WHERE dependence_chain_id = $1",
+        gated_id
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    // Any other worker steals it through the ordinary acquisition path.
+    let mut other = LockMngr::new_with_conf(
+        Uuid::new_v4(),
+        pool.clone(),
+        3600,
+        false,
+        None,
+        None,
+        None,
+        3,
+    );
+    let stolen: Vec<_> = other
+        .acquire_next_locks(4)
+        .await
+        .unwrap()
+        .into_iter()
+        .filter_map(|(id, reason)| id.map(|id| (id, reason)))
+        .collect();
+    assert_eq!(
+        stolen,
+        vec![(gated_id.clone(), LockingReason::ExpiredLock)],
+        "a lapsed early-locked chain must be stealable, not stranded"
+    );
+    let count: i32 = sqlx::query_scalar!(
+        r#"SELECT dependency_count AS "count!" FROM dependence_chain WHERE dependence_chain_id = $1"#,
+        gated_id
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(count, 2, "stealing does not touch the gate either");
+}
+
 /// dependency_count > 0 is a LIVE same-block gate while a producer chain is
 /// still pending: the repair path must not bypass it (e.g. during catchup,
 /// where block-derived last_updated_at makes every chain look old).
