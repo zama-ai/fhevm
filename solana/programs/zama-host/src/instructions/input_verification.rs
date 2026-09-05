@@ -20,7 +20,7 @@ use crate::{
 /// config sanity, per-handle metadata, selected-handle match, and `secp256k1_recover` of the
 /// signers against the registered coprocessor signer set at the configured threshold. Success
 /// means a quorum signed this blob; the caller is responsible for the contract bind
-/// (`attestation.contract_address == compute_subject`). Used by the `fhe_execute`
+/// (`attestation.contract_address` must be the execution's application program). Used by the `fhe_execute`
 /// `VerifiedInput` operand, which carries the whole attestation — taking it as one value keeps
 /// the two 32-byte identities and two slices unswappable at the call site.
 pub(crate) fn verify_input_attestation(

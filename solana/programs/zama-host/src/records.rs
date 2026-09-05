@@ -17,8 +17,6 @@ pub struct FheBinaryOp {
     pub version: u8,
     /// Binary operator.
     pub op: FheBinaryOpCode,
-    /// Compute subject that passed ACL checks.
-    pub subject: [u8; 32],
     /// Left-hand operand handle.
     pub lhs: [u8; 32],
     /// Right-hand operand handle or scalar bytes.
@@ -36,8 +34,6 @@ pub struct FheTernaryOp {
     pub version: u8,
     /// Ternary operator.
     pub op: FheTernaryOpCode,
-    /// Compute subject that passed ACL checks.
-    pub subject: [u8; 32],
     /// Encrypted control handle.
     pub control: [u8; 32],
     /// Handle selected when `control` is true.
@@ -53,8 +49,6 @@ pub struct FheTernaryOp {
 pub struct TrivialEncrypt {
     /// Record schema version.
     pub version: u8,
-    /// Subject associated with the created handle.
-    pub subject: [u8; 32],
     /// Plaintext encoded into the handle.
     pub plaintext: [u8; 32],
     /// FHE type byte embedded in the handle.
@@ -68,8 +62,6 @@ pub struct TrivialEncrypt {
 pub struct FheRand {
     /// Record schema version.
     pub version: u8,
-    /// Subject associated with the random handle.
-    pub subject: [u8; 32],
     /// Host-derived random seed for this step.
     pub seed: [u8; 16],
     /// FHE type byte.
@@ -83,8 +75,6 @@ pub struct FheRand {
 pub struct FheRandBounded {
     /// Record schema version.
     pub version: u8,
-    /// Subject associated with the random handle.
-    pub subject: [u8; 32],
     /// Exclusive upper bound encoded as a 256-bit big-endian integer.
     pub upper_bound: [u8; 32],
     /// Host-derived random seed for this step.
@@ -102,8 +92,6 @@ pub struct FheUnaryOp {
     pub version: u8,
     /// Unary operator.
     pub op: FheUnaryOpCode,
-    /// Compute subject that passed ACL checks.
-    pub subject: [u8; 32],
     /// Operand handle.
     pub operand: [u8; 32],
     /// Output handle verified by the host formula.
@@ -115,8 +103,6 @@ pub struct FheUnaryOp {
 pub struct FheSum {
     /// Record schema version.
     pub version: u8,
-    /// Compute subject that passed ACL checks.
-    pub subject: [u8; 32],
     /// Input operand handles.
     pub operands: Vec<[u8; 32]>,
     /// FHE type of all operands and the output.
@@ -130,8 +116,6 @@ pub struct FheSum {
 pub struct FheIsIn {
     /// Record schema version.
     pub version: u8,
-    /// Compute subject that passed ACL checks.
-    pub subject: [u8; 32],
     /// Value handle being tested.
     pub value: [u8; 32],
     /// Set of handles to test against.
@@ -147,8 +131,6 @@ pub struct FheIsIn {
 pub struct FheMulDiv {
     /// Record schema version.
     pub version: u8,
-    /// Compute subject that passed ACL checks.
-    pub subject: [u8; 32],
     /// First factor handle.
     pub factor1: [u8; 32],
     /// Second factor handle or scalar bytes.

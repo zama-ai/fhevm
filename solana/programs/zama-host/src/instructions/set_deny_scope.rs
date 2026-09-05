@@ -1,16 +1,16 @@
-//! Creates and updates grant deny-list records.
+//! Creates and updates application deny-list records.
 
 use anchor_lang::prelude::*;
 
 use super::common::*;
 use crate::event_cpi::emit_event_cpi;
-use crate::events::DenySubjectUpdatedEvent;
+use crate::events::DenyScopeUpdatedEvent;
 use crate::{errors::ZamaHostError, state::*};
 
 /// Accounts for creating or updating a deny-list record.
 #[derive(Accounts)]
 #[event_cpi]
-pub struct SetDenySubject<'info> {
+pub struct SetDenyScope<'info> {
     /// Pays rent if the deny-list PDA must be created.
     #[account(mut)]
     pub payer: Signer<'info>,
@@ -21,24 +21,30 @@ pub struct SetDenySubject<'info> {
     pub host_config: Account<'info, HostConfig>,
     /// CHECK: created or overwritten after canonical deny-list PDA validation.
     #[account(mut)]
-    pub deny_subject_record: UncheckedAccount<'info>,
+    pub deny_scope_record: UncheckedAccount<'info>,
     /// System program used for account creation.
     pub system_program: Program<'info, System>,
 }
 
-/// Creates or updates the deny-list state for `subject`.
-pub fn set_deny_subject(ctx: Context<SetDenySubject>, subject: Pubkey, denied: bool) -> Result<()> {
+/// Creates or updates the deny-list state for the application `(program, scope)`.
+pub fn set_deny_scope(
+    ctx: Context<SetDenyScope>,
+    program: Pubkey,
+    scope: [u8; 32],
+    denied: bool,
+) -> Result<()> {
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
     assert_admin(&ctx.accounts.host_config, &ctx.accounts.admin)?;
-    let (expected, bump) = deny_subject_address(subject);
+    let app = AppScope { program, scope };
+    let (expected, bump) = deny_scope_address(app);
     require_keys_eq!(
         expected,
-        ctx.accounts.deny_subject_record.key(),
+        ctx.accounts.deny_scope_record.key(),
         ZamaHostError::DenyRecordMismatch
     );
 
-    let info = ctx.accounts.deny_subject_record.to_account_info();
-    let current = current_deny_status(&info, subject, bump)?;
+    let info = ctx.accounts.deny_scope_record.to_account_info();
+    let current = current_deny_status(&info, app, bump)?;
     if current.unwrap_or(false) == denied {
         return Ok(());
     }
@@ -47,24 +53,26 @@ pub fn set_deny_subject(ctx: Context<SetDenySubject>, subject: Pubkey, denied: b
         &ctx.accounts.payer.to_account_info(),
         &info,
         &ctx.accounts.system_program.to_account_info(),
-        8 + DenySubjectRecord::SPACE,
-        &[DENY_SUBJECT_SEED, subject.as_ref(), &[bump]],
+        8 + DenyScopeRecord::SPACE,
+        &[DENY_SCOPE_SEED, program.as_ref(), &scope, &[bump]],
     )?;
 
     write_account(
         &info,
-        &DenySubjectRecord {
-            subject,
+        &DenyScopeRecord {
+            program,
+            scope,
             denied,
             bump,
         },
     )?;
     emit_event_cpi(
         &ctx.accounts.event_authority,
-        &DenySubjectUpdatedEvent {
+        &DenyScopeUpdatedEvent {
             version: EVENT_VERSION,
-            deny_subject_record: ctx.accounts.deny_subject_record.key(),
-            subject,
+            deny_scope_record: ctx.accounts.deny_scope_record.key(),
+            program,
+            scope,
             denied,
             updated_slot: Clock::get()?.slot,
         },
@@ -72,19 +80,21 @@ pub fn set_deny_subject(ctx: Context<SetDenySubject>, subject: Pubkey, denied: b
     Ok(())
 }
 
-fn current_deny_status(info: &AccountInfo, subject: Pubkey, bump: u8) -> Result<Option<bool>> {
+fn current_deny_status(info: &AccountInfo, app: AppScope, bump: u8) -> Result<Option<bool>> {
     if is_uninitialized_pda_account(info, ZamaHostError::DenyRecordMismatch)? {
         return Ok(None);
     }
     require_keys_eq!(*info.owner, crate::ID, ZamaHostError::DenyRecordMismatch);
     require!(
-        info.data_len() == 8 + DenySubjectRecord::SPACE,
+        info.data_len() == 8 + DenyScopeRecord::SPACE,
         ZamaHostError::DenyRecordMismatch
     );
     let data = info.try_borrow_data()?;
     let mut data_slice: &[u8] = &data;
-    let record = DenySubjectRecord::try_deserialize(&mut data_slice)?;
-    require_keys_eq!(record.subject, subject, ZamaHostError::DenyRecordMismatch);
-    require!(record.bump == bump, ZamaHostError::DenyRecordMismatch);
+    let record = DenyScopeRecord::try_deserialize(&mut data_slice)?;
+    require!(
+        record.program == app.program && record.scope == app.scope && record.bump == bump,
+        ZamaHostError::DenyRecordMismatch
+    );
     Ok(Some(record.denied))
 }

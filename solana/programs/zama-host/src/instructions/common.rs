@@ -9,8 +9,8 @@ use anchor_lang::solana_program::{
 use crate::{
     errors::ZamaHostError,
     state::{
-        assert_handle_for_chain, deny_subject_address, encrypted_value_address,
-        host_config_address, DenySubjectRecord, EncryptedValue, HostConfig,
+        assert_handle_for_chain, deny_scope_address, host_config_address, AppScope,
+        DenyScopeRecord, EncryptedValue, HostConfig,
     },
 };
 use crate::{events::HostConfigUpdatedEvent, state::EVENT_VERSION};
@@ -184,38 +184,21 @@ pub(super) fn check_hcu_ordering(total: u64, depth: u64) -> Result<()> {
     Ok(())
 }
 
-pub(super) fn assert_output_acl_metadata(
-    encrypted_value_account_authority: Pubkey,
-    account: Pubkey,
-    subjects: &[Pubkey],
-) -> Result<()> {
-    require_keys_eq!(
-        encrypted_value_account_authority,
-        account,
-        ZamaHostError::EncryptedValueAccountAuthorityMismatch
-    );
-    require!(
-        !subjects.is_empty() && subjects.len() <= zama_solana_acl::MAX_ENCRYPTED_VALUE_SUBJECTS,
-        ZamaHostError::EncryptedValueSubjectCapacityExceeded
-    );
-    require!(
-        subjects.iter().all(|subject| *subject != Pubkey::default()),
-        ZamaHostError::SubjectNotAllowed
-    );
-    for (index, subject) in subjects.iter().enumerate() {
+/// The keys a persistent write allows on its new handle: none may be the zero key and none may
+/// repeat, so every sealed leaf names a distinct real grantee.
+pub(super) fn assert_allow_keys(keys: &[Pubkey]) -> Result<()> {
+    for (index, key) in keys.iter().enumerate() {
+        require!(*key != Pubkey::default(), ZamaHostError::InvalidAllowKey);
         require!(
-            !subjects
-                .iter()
-                .skip(index + 1)
-                .any(|later| later == subject),
-            ZamaHostError::SubjectNotAllowed
+            !keys[index + 1..].contains(key),
+            ZamaHostError::InvalidAllowKey
         );
     }
     Ok(())
 }
 
-/// Decodes an `EncryptedValue` and checks it is program-owned and the
-/// canonical PDA for its stored `(domain, encrypted_value_account_authority, label)` triple.
+/// Decodes an `EncryptedValue` and checks it is program-owned and the canonical PDA for its
+/// stored `(program, encrypted_value_account_authority, scope, label)`.
 pub(super) fn read_canonical_encrypted_value(info: &AccountInfo) -> Result<EncryptedValue> {
     require_keys_eq!(
         *info.owner,
@@ -225,7 +208,7 @@ pub(super) fn read_canonical_encrypted_value(info: &AccountInfo) -> Result<Encry
     let data = info.try_borrow_data()?;
     let mut slice: &[u8] = &data;
     let value = EncryptedValue::try_deserialize(&mut slice)?;
-    let (expected, expected_bump) = encrypted_value_address(value.encrypted_value_id());
+    let (expected, expected_bump) = value.canonical_address();
     require_keys_eq!(
         info.key(),
         expected,
@@ -238,59 +221,36 @@ pub(super) fn read_canonical_encrypted_value(info: &AccountInfo) -> Result<Encry
     Ok(value)
 }
 
-/// Persistent input authorization over an already-decoded canonical `EncryptedValue` (the
-/// caller's decode-once cache owns the decode): `handle` must be its *current* handle (for this
-/// chain), and `subject` must be a current allowed member.
-pub(super) fn assert_encrypted_value_subject_allowed(
+/// A persistent operand names the value's *current* handle (for this chain). Authority
+/// admission is settled in preflight; this is the state half of the read.
+pub(super) fn assert_current_handle(
     value: &EncryptedValue,
     handle: [u8; 32],
     chain_id: u64,
-    subject: Pubkey,
 ) -> Result<()> {
     assert_handle_for_chain(value.current_handle, chain_id)?;
     require!(
         value.current_handle == handle,
         ZamaHostError::PreviousStateMismatch
     );
-    require!(
-        value.subject_index(subject).is_some(),
-        ZamaHostError::SubjectNotFound
-    );
     Ok(())
 }
 
-/// Deny-list gate for one newly granted subject outside `fhe_execute`: locates the
-/// subject's canonical deny record among `remaining_accounts` and applies the
-/// same check the persistent-output path runs through its account table. With the
-/// deny list disabled no witness is required.
-pub(super) fn check_added_subject_not_denied(
+pub(super) fn check_scope_not_denied(
     config: &HostConfig,
-    subject: Pubkey,
-    remaining_accounts: &[AccountInfo],
-) -> Result<()> {
-    if !config.grant_deny_list_enabled {
-        return Ok(());
-    }
-    let (expected, _) = deny_subject_address(subject);
-    let info = remaining_accounts
-        .iter()
-        .find(|account| account.key() == expected)
-        .ok_or_else(|| error!(ZamaHostError::DenyRecordMissing))?;
-    check_grant_not_denied_info(config, subject, Some(info))
-}
-
-pub(super) fn check_grant_not_denied(
-    config: &HostConfig,
-    subject: Pubkey,
+    app: AppScope,
     deny_record: Option<&UncheckedAccount>,
 ) -> Result<()> {
     let info = deny_record.map(|account| account.to_account_info());
-    check_grant_not_denied_info(config, subject, info.as_ref())
+    check_scope_not_denied_info(config, app, info.as_ref())
 }
 
-pub(super) fn check_grant_not_denied_info(
+/// Deny-list gate for an application: with the list enabled, its canonical deny record must be
+/// supplied and must not mark it denied (an uninitialized record means "never denied"). With
+/// the list disabled no record may be passed.
+pub(super) fn check_scope_not_denied_info(
     config: &HostConfig,
-    subject: Pubkey,
+    app: AppScope,
     deny_record: Option<&AccountInfo>,
 ) -> Result<()> {
     if !config.grant_deny_list_enabled {
@@ -298,7 +258,7 @@ pub(super) fn check_grant_not_denied_info(
         return Ok(());
     }
     let info = deny_record.ok_or_else(|| error!(ZamaHostError::DenyRecordMissing))?;
-    let (expected, expected_bump) = deny_subject_address(subject);
+    let (expected, expected_bump) = deny_scope_address(app);
     require_keys_eq!(info.key(), expected, ZamaHostError::DenyRecordMismatch);
 
     if is_uninitialized_pda_account(info, ZamaHostError::DenyRecordMismatch)? {
@@ -306,17 +266,16 @@ pub(super) fn check_grant_not_denied_info(
     }
     require_keys_eq!(*info.owner, crate::ID, ZamaHostError::DenyRecordMismatch);
     require!(
-        info.data_len() == 8 + DenySubjectRecord::SPACE,
+        info.data_len() == 8 + DenyScopeRecord::SPACE,
         ZamaHostError::DenyRecordMismatch
     );
     let mut data: &[u8] = &info.try_borrow_data()?;
-    let record = DenySubjectRecord::try_deserialize(&mut data)?;
+    let record = DenyScopeRecord::try_deserialize(&mut data)?;
     require!(
-        record.bump == expected_bump,
+        record.bump == expected_bump && record.program == app.program && record.scope == app.scope,
         ZamaHostError::DenyRecordMismatch
     );
-    require_keys_eq!(record.subject, subject, ZamaHostError::DenyRecordMismatch);
-    require!(!record.denied, ZamaHostError::SubjectDenied);
+    require!(!record.denied, ZamaHostError::ScopeDenied);
     Ok(())
 }
 
@@ -520,6 +479,22 @@ mod tests {
         let info = AccountInfo::new(&key, false, false, &mut lamports, &mut data, &owner, false);
 
         assert!(!is_uninitialized_pda_account(&info, ZamaHostError::DenyRecordMismatch).unwrap());
+    }
+
+    #[test]
+    fn allow_keys_reject_zero_and_duplicates_and_accept_empty() {
+        let a = Pubkey::new_unique();
+        let b = Pubkey::new_unique();
+        assert!(assert_allow_keys(&[]).is_ok());
+        assert!(assert_allow_keys(&[a, b]).is_ok());
+        assert_eq!(
+            assert_allow_keys(&[a, Pubkey::default()]).unwrap_err(),
+            error!(ZamaHostError::InvalidAllowKey)
+        );
+        assert_eq!(
+            assert_allow_keys(&[a, b, a]).unwrap_err(),
+            error!(ZamaHostError::InvalidAllowKey)
+        );
     }
 
     // ---- ordering invariant, expressed in (total, depth) terms ----

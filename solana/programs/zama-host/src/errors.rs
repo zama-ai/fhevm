@@ -70,18 +70,22 @@ pub enum ZamaHostError {
     #[msg("bounded random upper bound is invalid")]
     InvalidRandomUpperBound,
     /// The signer for an output does not match the encrypted value account authority the
-    /// execution declared for it.
-    #[msg("signer does not match the declared encrypted value account authority")]
+    /// execution declared for it, or a persistent operand's authority did not sign.
+    #[msg("signer does not match the encrypted value account authority")]
     EncryptedValueAccountAuthorityMismatch,
+    /// A create's authority seeds do not derive the declared authority under the declared
+    /// program: the authority is not that program's PDA.
+    #[msg("encrypted value authority is not a PDA of the declared program")]
+    EncryptedValueAuthorityNotProgramPda,
     /// A deny-list witness is required but was not supplied.
     #[msg("deny-list witness account is required")]
     DenyRecordMissing,
     /// A deny-list witness is not canonical or has invalid contents.
     #[msg("deny-list account does not match the canonical PDA")]
     DenyRecordMismatch,
-    /// The grant authority is denied by the configured deny-list.
-    #[msg("grant authority subject is deny-listed")]
-    SubjectDenied,
+    /// The application `(program, scope)` is denied: it can neither compute nor allow.
+    #[msg("application scope is deny-listed")]
+    ScopeDenied,
     /// A delegation account is not the canonical PDA for its tuple.
     #[msg("delegation record does not match the canonical PDA")]
     DelegationPdaMismatch,
@@ -115,15 +119,14 @@ pub enum ZamaHostError {
     /// An fhe_execute persistent output account already exists.
     #[msg("fhe_execute persistent output ACL record already exists")]
     FheExecuteOutputAlreadyInitialized,
-    /// An execution containing a rand step must declare at least one persistent output,
-    /// which anchors the compulsorily fresh rand seed (fhevm-internal#1853 W4).
-    #[msg("fhe_execute rand step requires a persistent output in the execution")]
-    FheExecuteRandRequiresPersistentOutput,
+    /// An execution containing a rand step did not pass the host's rand nonce account.
+    #[msg("fhe_execute rand step requires the rand nonce account")]
+    FheExecuteRandNonceMissing,
     /// A KMS context was defined with a duplicate signer address.
     #[msg("KMS context signer set contains a duplicate address")]
     DuplicateKmsSigner,
-    /// The coprocessor-attested contract does not match the `fhe_execute` compute subject.
-    #[msg("attested contract address does not match the fhe_execute compute subject")]
+    /// The coprocessor-attested contract does not match the execution's application program.
+    #[msg("attested contract address does not match the execution's program")]
     InputBindContractMismatch,
     /// An `fhe_execute` execution's summed HCU exceeds `max_hcu_per_tx` (or the running sum overflowed).
     #[msg("FHE op total HCU exceeds the per-transaction limit")]
@@ -141,33 +144,22 @@ pub enum ZamaHostError {
     #[msg("attested contract chain id does not match the host chain id")]
     AttestationChainIdMismatch,
     // ---- EncryptedValue ACL model ----
-    /// An `EncryptedValue` account is not the canonical PDA for its encrypted value ID.
+    /// An `EncryptedValue` account is not the canonical PDA for its identity seeds.
     #[msg("encrypted value account does not match the canonical PDA")]
     EncryptedValuePdaMismatch,
     /// An `EncryptedValue` account has an unexpected owner or discriminator.
     #[msg("encrypted value account is not a valid EncryptedValue account")]
     EncryptedValueAccountInvalid,
-    /// A subject list would exceed `MAX_ENCRYPTED_VALUE_SUBJECTS`.
-    #[msg("encrypted value subject capacity exceeded")]
-    EncryptedValueSubjectCapacityExceeded,
-    /// `previous_handle`/`previous_subjects` did not match the account's current state.
-    #[msg("encrypted value previous state does not match the account")]
+    /// The declared previous handle did not match the account's current handle: a create on an
+    /// existing value, an update on a fresh one, or an update built on stale state.
+    #[msg("encrypted value previous handle does not match the account")]
     PreviousStateMismatch,
     /// `make_handle_public` named a handle that is not the account's current handle.
     #[msg("encrypted value public handle does not match the account")]
     EncryptedValuePublicHandleMismatch,
-    /// The caller subject is not allowed by the encrypted value.
-    #[msg("encrypted value subject is not allowed")]
-    SubjectNotAllowed,
-    /// The caller subject is not a current member of the encrypted value.
-    #[msg("encrypted value subject is not a current member")]
-    SubjectNotFound,
-    /// Persistent `EncryptedValue` creation was requested with an empty subject list.
-    #[msg("encrypted value must be created with at least one subject")]
-    EncryptedValueEmptySubjects,
-    /// `remove_subject` would leave the encrypted value with no current subjects.
-    #[msg("encrypted value must retain at least one subject")]
-    EncryptedValueLastSubject,
+    /// An allowed key is the zero key or repeats another key of the same output.
+    #[msg("encrypted value allowed key is invalid")]
+    InvalidAllowKey,
     /// The MMR peaks/leaf-count invariant was violated.
     #[msg("encrypted value MMR state is inconsistent")]
     EncryptedValueMmrInconsistent,
@@ -213,13 +205,15 @@ pub enum ZamaHostError {
     )]
     InvalidChainTypeBit,
 
-    /// Under a finite `hcu_block_cap_per_app`, an execution that binds no persistent input, no verified
-    /// input, and no persistent output leaves `compute_subject` a free variable: the caller could
-    /// churn fresh subjects to mint fresh per-slot meters and evade the cap (fhevm-internal#1744).
-    /// Such an execution is also value-less — its transient outputs create no ACL leaf and are
-    /// undecryptable — so it is rejected outright.
-    #[msg("FHE execution anchors no persistent/verified binding under a finite HCU block cap")]
+    /// Under a finite `hcu_block_cap_per_app`, an execution that reads or writes no persistent
+    /// value has no application identity to meter. Such an execution is also value-less — its
+    /// transient outputs create no ACL leaf and are undecryptable — so it is rejected outright.
+    #[msg("FHE execution touches no persistent value under a finite HCU block cap")]
     FheExecuteUnanchoredUnderBlockCap,
+    /// The persistent values one execution reads and writes belong to different applications;
+    /// one execution is metered against exactly one `(program, scope)`.
+    #[msg("FHE execution mixes values of different application scopes")]
+    FheExecuteMixedScopes,
 
     // ---- stateless public-decrypt verifier (verify_public_decrypt, fhevm-internal#1704) ----
     /// The supplied KMS context account is destroyed, is not the canonical PDA for the id the

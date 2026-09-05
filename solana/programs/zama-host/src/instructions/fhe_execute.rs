@@ -1,17 +1,17 @@
 //! Evaluates ordered instruction-local FHE executions.
 //!
-//! Three signers cover three distinct authorities, and they are only sometimes the same key:
-//! `payer` funds rent for persistent output ACL records; `compute_subject` is the identity that
-//! must be allowed on every persistent encrypted input, and doubles as the HCU metering key;
-//! `encrypted_value_account_authority` is the account that authorizes persistent output ACL
-//! metadata. A CPI caller typically signs `compute_subject` and
-//! `encrypted_value_account_authority` with its own PDAs while forwarding a user wallet as `payer`.
+//! Two signers cover two authorities, and they are only sometimes the same key: `payer` funds rent
+//! for persistent output accounts; `encrypted_value_account_authority` is the default authority
+//! that signs for persistent values read and written. Every persistent value an execution touches
+//! is admitted by its own authority's signature — found among the default signer and the signing
+//! remaining accounts — and nothing else: an application program signs for its PDAs by CPI and
+//! forwards a user wallet as `payer`.
 
 use anchor_lang::prelude::*;
 
 use super::common::*;
 use super::encrypted_value::{
-    append_public_decrypt_leaf, grow_account_if_needed, update_encrypted_value,
+    append_public_decrypt_leaf, grow_account_if_needed, seal_allow_leaves,
 };
 use super::input_verification::verify_input_attestation;
 use crate::{
@@ -33,7 +33,7 @@ mod walk;
 use account_table::ExecutionAccountTable;
 use event_transport::{emit_execution_random_seeds, emit_public_outputs_produced};
 use preflight::preflight_execution;
-use walk::{walk_steps, ExecutionHandleContext};
+use walk::{walk_steps, ExecutionHandleContext, RandContext};
 
 /// Accounts for one composed, instruction-local fhe_execute.
 ///
@@ -42,39 +42,43 @@ use walk::{walk_steps, ExecutionHandleContext};
 #[derive(Accounts)]
 #[event_cpi]
 pub struct FheExecute<'info> {
-    /// Pays rent for any persistent output ACL records.
+    /// Pays rent for any persistent output accounts.
     #[account(mut)]
     pub payer: Signer<'info>,
-    /// Compute subject that must be allowed on persistent encrypted inputs.
-    pub compute_subject: Signer<'info>,
-    /// Default authority signer: signs for every persistent output that does not name an authority
-    /// of its own. An output that sets `authority_index` points at a remaining account instead, and
-    /// that account must sign and must equal the authority the output declares.
+    /// Default authority signer: admits every persistent value read or written that does not name
+    /// an authority of its own. An output that sets `authority_index` points at a remaining account
+    /// instead, and that account must sign and must equal the authority the output declares; an
+    /// operand's authority may likewise be any signing remaining account.
     pub encrypted_value_account_authority: Signer<'info>,
     /// Singleton config PDA. Read-only: the cap is read from here, but the writable per-slot
     /// counter is the separate `hcu_block_meter`, never this singleton — so the hot path takes no
     /// write lock on the config.
     #[account(seeds = [HOST_CONFIG_SEED], bump = host_config.bump)]
     pub host_config: Account<'info, HostConfig>,
-    /// System program used for persistent output ACL creation.
+    /// System program used for persistent output creation.
     pub system_program: Program<'info, System>,
-    /// Per-`compute_subject` HCU block meter (written once in the execution `charge`). The HCU PDAs
-    /// (`hcu_block_meter`, `hcu_trusted_app_record`) key on `compute_subject` — the mandatory signed
-    /// caller identity already used for ACL admission — so no caller can rotate a fresh signer to
-    /// mint a fresh per-slot meter. Untrusted subjects in the metering band MUST supply this meter;
-    /// trusted subjects and the unrestricted default omit it. An `UncheckedAccount` because it may
-    /// be uninitialized (lazy-created) and is validated manually.
+    /// Per-application HCU block meter (written once in the execution `charge`). The HCU PDAs
+    /// (`hcu_block_meter`, `hcu_trusted_app_record`) key on the `(program, scope)` of the
+    /// persistent values the execution touches — an identity the program proved when it created
+    /// them, so no caller can rotate a fresh signer to mint a fresh per-slot meter. Untrusted
+    /// applications in the metering band MUST supply this meter; trusted applications and the
+    /// unrestricted default omit it. An `UncheckedAccount` because it may be uninitialized
+    /// (lazy-created) and is validated manually.
     #[account(mut)]
     pub hcu_block_meter: Option<UncheckedAccount<'info>>,
-    /// Trust witness (read-only), keyed on `compute_subject`. Present + program-owned +
+    /// Trust witness (read-only), keyed on `(program, scope)`. Present + program-owned +
     /// `trusted == true` ⇒ bypass the cap; absent (`None`) ⇒ untrusted, fall through to the meter;
     /// present-but-malformed ⇒ reject.
     pub hcu_trusted_app_record: Option<UncheckedAccount<'info>>,
+    /// The host's rand nonce, consumed and incremented by an execution that contains a rand step.
+    /// Required exactly then, and refused otherwise so no execution write-locks it for nothing.
+    #[account(mut, seeds = [RAND_NONCE_SEED], bump = rand_nonce.bump)]
+    pub rand_nonce: Option<Account<'info, RandNonce>>,
 }
 
 /// Runs one ordered FHE execution, with instruction-local transient outputs.
 pub fn fhe_execute<'info>(
-    ctx: Context<'info, FheExecute<'info>>,
+    mut ctx: Context<'info, FheExecute<'info>>,
     args: FheExecuteArgs,
 ) -> Result<()> {
     assert_not_paused(&ctx.accounts.host_config)?;
@@ -86,12 +90,21 @@ pub fn fhe_execute<'info>(
         usize::from(args.account_count) == ctx.remaining_accounts.len(),
         ZamaHostError::FheExecuteAccountCountMismatch
     );
+    let rand_nonce = consume_rand_nonce(&mut ctx, &args)?;
     // The account table owns every remaining-accounts invariant for the execution:
     // duplicate rejection (at construction), the used-account bitmap (marked in
     // preflight, asserted before execution mutates state), persistent-output
     // claims, and output-PDA derivation.
     let mut account_table = ExecutionAccountTable::new(ctx.remaining_accounts)?;
-    preflight_execution(&mut account_table, &ctx, &args)?;
+    // Preflight also settles the execution's application identity: the one `(program, scope)`
+    // every persistent value it reads or writes belongs to. Metering, the deny list and rand
+    // seeds all key on it.
+    let app = preflight_execution(&mut account_table, &ctx, &args)?;
+    if let Some(app) = app {
+        let host_config = &ctx.accounts.host_config;
+        let deny_record = account_table.deny_record(host_config.grant_deny_list_enabled, app)?;
+        check_scope_not_denied_info(host_config, app, deny_record)?;
+    }
 
     // HCU metering: one pure pass over the execution, enforcing the per-execution total + in-execution depth
     // caps against the canonical host_config limits (u64::MAX = unlimited). The same total then feeds the
@@ -105,83 +118,62 @@ pub fn fhe_execute<'info>(
         host_config.max_hcu_depth_per_tx,
     )?;
 
-    let subject = ctx.accounts.compute_subject.key();
     let clock = Clock::get()?;
     let previous_bank_hash = previous_bank_hash(clock.slot)?;
-    let persistent_anchor_bytes = collect_persistent_anchor_bytes(&mut account_table, &args)?;
     let handle_context = ExecutionHandleContext {
         derivation: HandleDerivationContext {
             chain_id: ctx.accounts.host_config.chain_id,
             previous_bank_hash,
             unix_timestamp: clock.unix_timestamp,
         },
-        compute_subject: subject,
-        persistent_anchor_bytes: &persistent_anchor_bytes,
+        rand: rand_nonce.map(|nonce| RandContext {
+            nonce,
+            app: app.unwrap_or_default(),
+        }),
     };
     let random_seeds = collect_execution_random_seeds(&args, &handle_context);
-    block_cap::charge(&ctx, execution.total, clock.slot)?;
+    block_cap::charge(&ctx, app, execution.total, clock.slot)?;
     // Execution is the single walk: it validates each step as it mutates. A failure mid-execution
     // leaves partial writes behind only until the runtime reverts the transaction, which discards
     // every account write — so no validate-only pre-pass is needed for atomicity. The event CPI
     // stays last so no event describes state that did not commit.
     let created_public_outputs =
-        execute_steps(&mut account_table, &ctx, &args, subject, &handle_context)?;
+        execute_steps(&mut account_table, &ctx, &args, app, &handle_context)?;
     emit_execution_random_seeds(&ctx, random_seeds)?;
     emit_public_outputs_produced(&ctx, created_public_outputs)?;
     Ok(())
 }
 
-/// The step's declared output, shared by preflight rules and anchor collection.
-pub(in crate::instructions) fn step_output(step: &FheExecuteStep) -> &FheExecuteOutput {
-    match step {
-        FheExecuteStep::Binary { output, .. }
-        | FheExecuteStep::Ternary { output, .. }
-        | FheExecuteStep::TrivialEncrypt { output, .. }
-        | FheExecuteStep::Rand { output, .. }
-        | FheExecuteStep::Unary { output, .. }
-        | FheExecuteStep::RandBounded { output, .. }
-        | FheExecuteStep::Sum { output, .. }
-        | FheExecuteStep::IsIn { output, .. }
-        | FheExecuteStep::MulDiv { output, .. } => output,
-    }
-}
-
-/// Flattens the execution's persistent-write anchor from live account state. Each entry is
-/// `(account key, create/update tag, current handle, leaf count)` in wire order.
-/// `leaf_count` advances whenever an outgoing handle is sealed, so returning to an
-/// earlier content-addressed handle cannot replay a previous random seed.
-fn collect_persistent_anchor_bytes(
-    table: &mut ExecutionAccountTable<'_, '_>,
+/// Takes the host's rand nonce for this execution and advances it, when the execution has a rand
+/// step. The account is required exactly then: a rand execution without it cannot derive a fresh
+/// seed, and a non-rand execution that passes it would serialize on it for nothing.
+fn consume_rand_nonce(
+    ctx: &mut Context<'_, FheExecute<'_>>,
     args: &FheExecuteArgs,
-) -> Result<Vec<u8>> {
-    let mut anchor_bytes = Vec::with_capacity(args.steps.len() * 73);
-    for step in &args.steps {
-        if let FheExecuteOutput::StoredValue {
-            output_encrypted_value_index,
-            ..
-        } = step_output(step)
-        {
-            let index = u16::from(*output_encrypted_value_index);
-            let account = table.account(index)?;
-            anchor_bytes.extend_from_slice(account.key().as_ref());
-            if account.owner == &crate::ID {
-                let value = table.canonical_encrypted_value(index)?;
-                anchor_bytes.push(1);
-                anchor_bytes.extend_from_slice(&value.current_handle);
-                anchor_bytes.extend_from_slice(&value.leaf_count.to_le_bytes());
-            } else {
-                anchor_bytes.push(0);
-                anchor_bytes.extend_from_slice(&[0; 32]);
-                anchor_bytes.extend_from_slice(&0u64.to_le_bytes());
-            }
+) -> Result<Option<u64>> {
+    let has_rand = args.steps.iter().any(|step| {
+        matches!(
+            step,
+            FheExecuteStep::Rand { .. } | FheExecuteStep::RandBounded { .. }
+        )
+    });
+    match (ctx.accounts.rand_nonce.as_mut(), has_rand) {
+        (Some(rand_nonce), true) => {
+            let nonce = rand_nonce.nonce;
+            rand_nonce.nonce = nonce
+                .checked_add(1)
+                .ok_or(ZamaHostError::InvalidFheExecuteAccount)?;
+            Ok(Some(nonce))
         }
+        (None, true) => Err(error!(ZamaHostError::FheExecuteRandNonceMissing)),
+        (Some(_), false) => Err(error!(ZamaHostError::InvalidFheExecuteAccount)),
+        (None, false) => Ok(None),
     }
-    Ok(anchor_bytes)
 }
 
 fn collect_execution_random_seeds(
     args: &FheExecuteArgs,
-    handle_context: &ExecutionHandleContext<'_>,
+    handle_context: &ExecutionHandleContext,
 ) -> Vec<FheExecuteRandomSeed> {
     args.steps
         .iter()
@@ -204,15 +196,15 @@ fn execute_steps<'a, 'info>(
     table: &mut ExecutionAccountTable<'a, 'info>,
     ctx: &Context<'info, FheExecute<'info>>,
     args: &FheExecuteArgs,
-    subject: Pubkey,
-    handle_context: &ExecutionHandleContext<'_>,
+    app: Option<AppScope>,
+    handle_context: &ExecutionHandleContext,
 ) -> Result<Vec<ProducedPublicOutput>> {
     let mut execution = ExecutionState {
         table,
         dictionary: &args.dictionary,
         produced: Vec::with_capacity(args.steps.len()),
         created_public_outputs: Vec::new(),
-        subject,
+        app,
         chain_id: handle_context.derivation.chain_id,
         host_config: ctx.accounts.host_config.as_ref(),
     };
@@ -221,17 +213,19 @@ fn execute_steps<'a, 'info>(
 }
 
 /// The single walk's state: resolves operands through the shared account table
-/// (which preflight already validated for coverage), validates and creates or
-/// updates persistent outputs, and buffers produced-public lifecycle records.
-/// The operand resolvers driving these methods live with the step match in
-/// [`walk`].
+/// (which preflight already validated for coverage and authority signatures),
+/// validates and creates or updates persistent outputs, and buffers
+/// produced-public lifecycle records. The operand resolvers driving these
+/// methods live with the step match in [`walk`].
 struct ExecutionState<'t, 'a, 'info> {
     table: &'t mut ExecutionAccountTable<'a, 'info>,
     /// The execution's interned constant dictionary ([`FheExecuteArgs::dictionary`]).
     dictionary: &'t [[u8; 32]],
     produced: Vec<ProducedValue>,
     created_public_outputs: Vec<ProducedPublicOutput>,
-    subject: Pubkey,
+    /// The application every persistent value of the execution belongs to; `None` when the
+    /// execution touches none.
+    app: Option<AppScope>,
     chain_id: u64,
     host_config: &'t HostConfig,
 }
@@ -248,11 +242,10 @@ impl<'info> ExecutionState<'_, '_, 'info> {
         encrypted_value_index: u16,
     ) -> Result<ResolvedOperand> {
         let chain_id = self.chain_id;
-        let subject = self.subject;
         let value = self
             .table
             .canonical_encrypted_value(encrypted_value_index)?;
-        assert_encrypted_value_subject_allowed(value, handle, chain_id, subject)?;
+        assert_current_handle(value, handle, chain_id)?;
         Ok(ResolvedOperand::encrypted(handle))
     }
 
@@ -313,35 +306,47 @@ fn accept_execution_output<'info>(
         FheExecuteOutput::StoredValue {
             output_encrypted_value_index,
             output_authority_index,
-            output_domain_index,
-            output_account_index,
+            output_program_index,
+            output_authority_key_index,
+            output_scope_index,
             output_label_index,
-            output_subject_indexes,
-            previous_state,
+            output_authority_seeds,
+            output_allow_indexes,
+            previous_handle_index,
             make_public,
         } => {
-            let output_domain = crate::state::dictionary_key(dictionary, *output_domain_index)?;
-            let output_authority = crate::state::dictionary_key(dictionary, *output_account_index)?;
-            let output_label = crate::state::dictionary_bytes(dictionary, *output_label_index)?;
-            let output_subjects = resolve_dictionary_subjects(dictionary, output_subject_indexes)?;
-            let encrypted_value_account_authority = persistent_output_authority(
+            let declared = DeclaredOutput {
+                app: AppScope {
+                    program: dictionary_key(dictionary, *output_program_index)?,
+                    scope: dictionary_bytes(dictionary, *output_scope_index)?,
+                },
+                authority: dictionary_key(dictionary, *output_authority_key_index)?,
+                label: dictionary_bytes(dictionary, *output_label_index)?,
+                authority_seeds: output_authority_seeds,
+                allows: resolve_dictionary_keys(dictionary, output_allow_indexes)?,
+                previous_handle: previous_handle_index
+                    .map(|index| dictionary_bytes(dictionary, index))
+                    .transpose()?,
+                make_public: *make_public,
+            };
+            let authority = persistent_output_authority(
                 table,
                 ctx,
                 output_authority_index.map(u16::from),
-                output_authority,
+                declared.authority,
             )?;
+            require_keys_eq!(
+                authority.key(),
+                declared.authority,
+                ZamaHostError::EncryptedValueAccountAuthorityMismatch
+            );
             let encrypted_value = bind_execution_output(
                 ctx,
                 table,
+                dictionary,
                 u16::from(*output_encrypted_value_index),
                 result,
-                encrypted_value_account_authority.key(),
-                output_domain,
-                output_authority,
-                output_label,
-                &output_subjects,
-                previous_state,
-                *make_public,
+                &declared,
             )?;
             make_public.then(|| ProducedPublicOutput {
                 step_index: op_index,
@@ -355,13 +360,26 @@ fn accept_execution_output<'info>(
     Ok(created_public_output)
 }
 
-fn resolve_dictionary_subjects(dictionary: &[[u8; 32]], indexes: &[u8]) -> Result<Vec<Pubkey>> {
+/// A persistent output's declaration, resolved out of the dictionary.
+struct DeclaredOutput<'a> {
+    app: AppScope,
+    authority: Pubkey,
+    label: [u8; 32],
+    authority_seeds: &'a [PdaSeed],
+    allows: Vec<Pubkey>,
+    previous_handle: Option<[u8; 32]>,
+    make_public: bool,
+}
+
+fn resolve_dictionary_keys(dictionary: &[[u8; 32]], indexes: &[u8]) -> Result<Vec<Pubkey>> {
     indexes
         .iter()
-        .map(|index| crate::state::dictionary_key(dictionary, *index))
+        .map(|index| dictionary_key(dictionary, *index))
         .collect()
 }
 
+/// The signer that admits a persistent output: the named remaining account, or the default
+/// authority signer.
 fn persistent_output_authority<'info>(
     table: &ExecutionAccountTable<'_, 'info>,
     ctx: &Context<'info, FheExecute<'info>>,
@@ -422,38 +440,24 @@ impl ResolvedOperand {
 }
 
 #[inline(never)]
-#[allow(clippy::too_many_arguments)]
 fn bind_execution_output<'info>(
     ctx: &Context<'info, FheExecute<'info>>,
     table: &mut ExecutionAccountTable<'_, 'info>,
+    dictionary: &[[u8; 32]],
     output_encrypted_value_index: u16,
     result: [u8; 32],
-    encrypted_value_account_authority: Pubkey,
-    output_domain: Pubkey,
-    output_authority: Pubkey,
-    output_encrypted_value_label: [u8; 32],
-    output_subjects: &[Pubkey],
-    previous_state: &Option<PreviousState>,
-    make_public: bool,
+    declared: &DeclaredOutput<'_>,
 ) -> Result<Pubkey> {
-    assert_output_acl_metadata(
-        encrypted_value_account_authority,
-        output_authority,
-        output_subjects,
-    )?;
+    assert_allow_keys(&declared.allows)?;
 
     let output_info = table.account(output_encrypted_value_index)?;
-    let output_pda = table.expected_output_pda(
-        output_domain,
-        output_authority,
-        output_encrypted_value_label,
-    );
+    let output_pda = table.expected_output_pda(declared.app, declared.authority, declared.label);
     require_keys_eq!(
         output_info.key(),
         output_pda.key,
         ZamaHostError::EncryptedValuePdaMismatch
     );
-    // One write per account per execution — this is what anchors the rand seed (#1853 W4).
+    // One write per account per execution: the read-after-write operand rule relies on it.
     table.claim_persistent_output(output_info.key())?;
     // Explicit on the update path; `create_pda_strict` enforces it on create.
     require!(
@@ -461,157 +465,111 @@ fn bind_execution_output<'info>(
         ZamaHostError::InvalidFheExecuteAccount
     );
 
-    if output_info.owner == &crate::ID {
-        // Update: the execution's declared previous state must match the stored
-        // state exactly, so indexers can reconstruct the appended MMR leaves
-        // from instruction data alone. `output_subjects` may replace the audience.
+    let mut value = if output_info.owner == &crate::ID {
+        // Update: the declared previous handle must be the stored one, so an execution built on
+        // stale state fails instead of overwriting a newer handle, and indexers replay the write
+        // from instruction data alone. The stored program was proven on create and the canonical
+        // address check above binds the declared identity to it, so seeds are not re-proven.
+        require!(
+            declared.authority_seeds.is_empty(),
+            ZamaHostError::InvalidFheExecuteAccount
+        );
         let mut value = table.take_canonical_encrypted_value(output_encrypted_value_index)?;
-        validate_persistent_output_previous_state(&value, previous_state)?;
-        if output_subjects
-            .iter()
-            .any(|subject| !value.subjects.contains(subject))
-        {
-            check_grant_authority_not_denied(
-                &ctx.accounts.host_config,
-                table,
-                encrypted_value_account_authority,
-            )?;
-        }
-        check_new_grants_not_denied(
-            &ctx.accounts.host_config,
-            table,
-            &value.subjects,
-            output_subjects,
+        require!(
+            declared.previous_handle == Some(value.current_handle),
+            ZamaHostError::PreviousStateMismatch
+        );
+        value.current_handle = result;
+        value
+    } else {
+        // Create: nothing to replace, and the authority must be proven a PDA of the declared
+        // program, or another program could claim this `(program, scope)` for its own values.
+        require!(
+            declared.previous_handle.is_none(),
+            ZamaHostError::PreviousStateMismatch
+        );
+        assert_authority_is_program_pda(
+            dictionary,
+            declared.authority_seeds,
+            declared.app.program,
+            declared.authority,
         )?;
-        update_encrypted_value(output_info, &mut value, result)?;
-        // Seal the outgoing audience into historical leaves first (above), then replace
-        // to the new set — every added subject cleared the deny-list check above.
-        value.subjects = output_subjects.to_vec();
-        // Created-public opt-in: after the outgoing handle's historical leaves, seal a
-        // public-decrypt leaf for the NEW current handle (leaf order: historical(old)
-        // per subject FIRST, then public(new) LAST). Same commitment as
-        // `make_handle_public`; the single realloc below covers the extra peak.
-        if make_public {
-            append_public_decrypt_leaf(output_info, &mut value, result)?;
+        EncryptedValue {
+            program: declared.app.program,
+            encrypted_value_account_authority: declared.authority,
+            scope: declared.app.scope,
+            label: declared.label,
+            current_handle: result,
+            leaf_count: 0,
+            peaks: Vec::new(),
+            bump: output_pda.bump,
         }
-        let space = 8 + EncryptedValue::space(value.subjects.len(), value.peaks.len());
+    };
+    // Leaf order: one historical-access leaf per allowed key on the NEW handle, in declared
+    // order, then the public leaf last. Byte-identical to what the coprocessor recomputes from the
+    // instruction and to `make_handle_public`.
+    seal_allow_leaves(output_info, &mut value, result, &declared.allows)?;
+    if declared.make_public {
+        append_public_decrypt_leaf(output_info, &mut value, result)?;
+    }
+    let space = 8 + EncryptedValue::space(value.peaks.len());
+    if output_info.owner == &crate::ID {
         grow_account_if_needed(
             &ctx.accounts.payer.to_account_info(),
             output_info,
             &ctx.accounts.system_program.to_account_info(),
             space,
         )?;
-        write_account(output_info, &value)?;
     } else {
-        // Create: a fresh encrypted value account has no previous state to reconstruct. It is normally
-        // not created public-decryptable; `make_public` is the documented opt-in relaxation
-        // (DD-036), sealing a public-decrypt leaf for the new handle at leaf index 0.
-        require!(
-            previous_state.is_none(),
-            ZamaHostError::PreviousStateMismatch
-        );
-        if !output_subjects.is_empty() {
-            check_grant_authority_not_denied(
-                &ctx.accounts.host_config,
-                table,
-                encrypted_value_account_authority,
-            )?;
-        }
-        check_new_grants_not_denied(&ctx.accounts.host_config, table, &[], output_subjects)?;
-        let mut value = EncryptedValue {
-            domain: output_domain,
-            encrypted_value_account_authority: output_authority,
-            label: output_encrypted_value_label,
-            current_handle: result,
-            subjects: output_subjects.to_vec(),
-            leaf_count: 0,
-            peaks: Vec::new(),
-            bump: output_pda.bump,
-        };
-        if make_public {
-            append_public_decrypt_leaf(output_info, &mut value, result)?;
-        }
         create_pda_strict(
             &ctx.accounts.payer.to_account_info(),
             output_info,
             &ctx.accounts.system_program.to_account_info(),
-            8 + EncryptedValue::space(value.subjects.len(), value.peaks.len()),
+            space,
             &[
                 zama_solana_acl::ENCRYPTED_VALUE_SEED,
-                output_pda.encrypted_value_id.as_ref(),
+                declared.app.program.as_ref(),
+                declared.authority.as_ref(),
+                &declared.app.scope,
+                &declared.label,
                 &[output_pda.bump],
             ],
         )?;
-        write_account(output_info, &value)?;
     }
+    write_account(output_info, &value)?;
     Ok(output_info.key())
 }
 
-/// Deny-list gate for the authority performing a real subject grant. Persistent updates that keep
-/// or reduce the audience are settlement/state transitions, not grants, so denial must not block
-/// them (in particular, it must not trap a pending burn).
-fn check_grant_authority_not_denied(
-    host_config: &HostConfig,
-    table: &ExecutionAccountTable<'_, '_>,
+/// Proves `authority` is a PDA of `program`: the declared seeds (bump last) must derive it. This
+/// is what makes `(program, scope)` unforgeable — only `program` can sign for such an authority.
+fn assert_authority_is_program_pda(
+    dictionary: &[[u8; 32]],
+    seeds: &[PdaSeed],
+    program: Pubkey,
     authority: Pubkey,
 ) -> Result<()> {
-    let deny_record = table.deny_record(host_config.grant_deny_list_enabled, authority)?;
-    check_grant_not_denied_info(host_config, authority, deny_record)
-}
-
-/// Update execution validation against an existing encrypted value account. The execution's
-/// declared `previous_state` must equal the stored state exactly, so indexers
-/// reconstruct the appended MMR leaves from instruction data alone. The
-/// audience (`output_subjects`) is NOT constrained to the stored set: an update
-/// may explicitly replace it — the outgoing audience is sealed into historical
-/// leaves before the new set replaces it, and every added subject passes the
-/// grant deny-list via [`check_new_grants_not_denied`].
-pub(super) fn validate_persistent_output_previous_state(
-    value: &EncryptedValue,
-    previous_state: &Option<PreviousState>,
-) -> Result<()> {
-    let Some(previous) = previous_state else {
-        return Err(error!(ZamaHostError::PreviousStateMismatch));
-    };
-    require!(
-        previous.handle == value.current_handle,
-        ZamaHostError::PreviousStateMismatch
-    );
-    require!(
-        previous.subjects.as_slice() == value.subjects.as_slice(),
-        ZamaHostError::PreviousStateMismatch
-    );
-    Ok(())
-}
-
-/// Deny-list gate for persistent-output subject grants: every subject present in
-/// `output_subjects` but absent from `stored_subjects` is a new grant and must
-/// clear the grant deny-list (pass `&[]` on the create path, where every output
-/// subject is new). Respects `grant_deny_list_enabled`; the deny record for each
-/// added subject is located by canonical derived address through the table.
-fn check_new_grants_not_denied(
-    host_config: &HostConfig,
-    table: &ExecutionAccountTable<'_, '_>,
-    stored_subjects: &[Pubkey],
-    output_subjects: &[Pubkey],
-) -> Result<()> {
-    if !host_config.grant_deny_list_enabled {
-        return Ok(());
+    let mut resolved: Vec<&[u8]> = Vec::with_capacity(seeds.len());
+    for seed in seeds {
+        resolved.push(match seed {
+            PdaSeed::Interned { index } => dictionary
+                .get(*index as usize)
+                .ok_or_else(|| error!(ZamaHostError::FheExecuteDictionaryIndexOutOfBounds))?,
+            PdaSeed::Literal { bytes } => bytes,
+        });
     }
-    for subject in output_subjects {
-        if stored_subjects.contains(subject) {
-            continue;
-        }
-        let deny_record = table.deny_record(host_config.grant_deny_list_enabled, *subject)?;
-        check_grant_not_denied_info(host_config, *subject, deny_record)?;
-    }
+    let derived = Pubkey::create_program_address(&resolved, &program)
+        .map_err(|_| error!(ZamaHostError::EncryptedValueAuthorityNotProgramPda))?;
+    require_keys_eq!(
+        derived,
+        authority,
+        ZamaHostError::EncryptedValueAuthorityNotProgramPda
+    );
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use anchor_lang::AccountSerialize;
 
     /// Doc-sync guard (the `resource_bounds_match_liveness_doc` pattern): EVM_PARITY.md's
     /// FHEVMExecutor row quotes `MAX_FHE_EXECUTION_STEPS=32`; a change here must update that row in
@@ -624,196 +582,44 @@ mod tests {
         );
     }
 
-    fn encrypted_value_account(handle: [u8; 32], subjects: &[Pubkey]) -> EncryptedValue {
-        EncryptedValue {
-            domain: Pubkey::default(),
-            encrypted_value_account_authority: Pubkey::default(),
-            label: [0; 32],
-            current_handle: handle,
-            subjects: subjects.to_vec(),
-            leaf_count: 0,
-            peaks: Vec::new(),
-            bump: 0,
-        }
-    }
-
-    fn deny_enabled_config() -> HostConfig {
-        HostConfig {
-            admin: Pubkey::default(),
-            chain_id: 0,
-            gateway_chain_id: 0,
-            input_verification_contract: [0; 20],
-            coprocessor_signers: [[0; 20]; HostConfig::MAX_COPROCESSOR_SIGNERS],
-            coprocessor_signer_count: 0,
-            coprocessor_threshold: 0,
-            decryption_contract: [0; 20],
-            current_kms_context_id: [0u8; 32],
-            paused: false,
-            grant_deny_list_enabled: true,
-            max_hcu_per_tx: u64::MAX,
-            max_hcu_depth_per_tx: u64::MAX,
-            hcu_block_cap_per_app: u64::MAX,
-            updated_slot: 0,
-            bump: 0,
-        }
-    }
-
-    fn grants(subjects: &[Pubkey]) -> Vec<Pubkey> {
-        subjects.to_vec()
-    }
-
-    fn persistent_anchor_at_leaf_count(leaf_count: u64) -> Vec<u8> {
-        let mut value = encrypted_value_account([9; 32], &[Pubkey::new_from_array([1; 32])]);
-        value.domain = Pubkey::new_from_array([2; 32]);
-        value.encrypted_value_account_authority = Pubkey::new_from_array([3; 32]);
-        value.label = [7; 32];
-        value.leaf_count = leaf_count;
-        let (key, bump) = encrypted_value_address(value.encrypted_value_id());
-        value.bump = bump;
-
-        let mut lamports = 1_000_000;
-        let mut data = vec![0; 8 + EncryptedValue::space(value.subjects.len(), 0)];
-        value.try_serialize(&mut &mut data[..]).unwrap();
-        let owner = crate::ID;
-        let account = AccountInfo::new(&key, false, true, &mut lamports, &mut data, &owner, false);
-        let accounts = [account];
-        let mut table = ExecutionAccountTable::new(&accounts).unwrap();
-        let args = FheExecuteArgs {
-            account_count: 1,
-            dictionary: Vec::new(),
-            steps: vec![FheExecuteStep::Rand {
-                fhe_type: 5,
-                output: FheExecuteOutput::StoredValue {
-                    output_encrypted_value_index: 0,
-                    output_authority_index: None,
-                    output_domain_index: 0,
-                    output_account_index: 0,
-                    output_label_index: 0,
-                    output_subject_indexes: Vec::new(),
-                    previous_state: Some(PreviousState {
-                        handle: value.current_handle,
-                        subjects: value.subjects,
-                    }),
-                    make_public: false,
-                },
-            }],
-        };
-        collect_persistent_anchor_bytes(&mut table, &args).unwrap()
-    }
-
     #[test]
-    fn persistent_anchor_changes_when_handle_cycles_to_a_later_leaf_count() {
-        assert_ne!(
-            persistent_anchor_at_leaf_count(1),
-            persistent_anchor_at_leaf_count(3)
-        );
-    }
+    fn authority_pda_proof_accepts_the_programs_pda_and_nothing_else() {
+        let program = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+        let (authority, bump) =
+            Pubkey::find_program_address(&[b"token-account", mint.as_ref()], &program);
+        let dictionary = [mint.to_bytes()];
+        let seeds = [
+            PdaSeed::Literal {
+                bytes: b"token-account".to_vec(),
+            },
+            PdaSeed::Interned { index: 0 },
+            PdaSeed::Literal { bytes: vec![bump] },
+        ];
+        assert!(assert_authority_is_program_pda(&dictionary, &seeds, program, authority).is_ok());
 
-    #[test]
-    fn persistent_output_previous_state_accepts_exact_previous_match() {
-        let subjects = vec![Pubkey::new_unique(), Pubkey::new_unique()];
-        let value = encrypted_value_account([9; 32], &subjects);
-        assert!(validate_persistent_output_previous_state(
-            &value,
-            &Some(PreviousState {
-                handle: [9; 32],
-                subjects,
-            }),
-        )
-        .is_ok());
-    }
-
-    #[test]
-    fn persistent_output_previous_state_rejects_previous_mismatch() {
-        let subjects = vec![Pubkey::new_unique()];
-        let value = encrypted_value_account([9; 32], &subjects);
-        // Wrong previous handle.
-        assert!(validate_persistent_output_previous_state(
-            &value,
-            &Some(PreviousState {
-                handle: [8; 32],
-                subjects: subjects.clone(),
-            }),
-        )
-        .is_err());
-        // Wrong previous subjects.
-        assert!(validate_persistent_output_previous_state(
-            &value,
-            &Some(PreviousState {
-                handle: [9; 32],
-                subjects: vec![Pubkey::new_unique()],
-            }),
-        )
-        .is_err());
-        // Missing previous state on an existing encrypted value account (create shape on update).
-        assert!(validate_persistent_output_previous_state(&value, &None).is_err());
-    }
-
-    #[test]
-    fn persistent_output_previous_state_ignores_output_audience() {
-        // Validation pins only the outgoing state (`previous_state`); it no
-        // longer constrains the new audience, so an update may replace `output_subjects`.
-        let subjects = vec![Pubkey::new_unique()];
-        let value = encrypted_value_account([9; 32], &subjects);
-        assert!(validate_persistent_output_previous_state(
-            &value,
-            &Some(PreviousState {
-                handle: [9; 32],
-                subjects,
-            }),
-        )
-        .is_ok());
-    }
-
-    #[test]
-    fn assert_output_acl_metadata_rejects_empty_and_over_cap_replacements() {
-        let account = Pubkey::new_unique();
-        // An empty replacement set is rejected, mirroring remove_subject's last-subject rule.
-        assert!(assert_output_acl_metadata(account, account, &[]).is_err());
-        // A replacement set above MAX_ENCRYPTED_VALUE_SUBJECTS (8) is rejected.
-        let over_cap = grants(
-            &(0..=zama_solana_acl::MAX_ENCRYPTED_VALUE_SUBJECTS)
-                .map(|_| Pubkey::new_unique())
-                .collect::<Vec<_>>(),
-        );
-        assert!(assert_output_acl_metadata(account, account, &over_cap).is_err());
-    }
-
-    #[test]
-    fn update_added_denied_subject_is_rejected() {
-        let stored = vec![Pubkey::new_unique()];
-        let added = Pubkey::new_unique();
-        let replacement = grants(&[stored[0], added]);
-        let (record_key, bump) = deny_subject_address(added);
-
-        let mut lamports = 1_000_000u64;
-        let mut data = vec![0u8; 8 + crate::state::DenySubjectRecord::SPACE];
-        crate::state::DenySubjectRecord {
-            subject: added,
-            denied: true,
-            bump,
-        }
-        .try_serialize(&mut &mut data[..])
-        .unwrap();
-        let owner = crate::ID;
-        let record = AccountInfo::new(
-            &record_key,
-            false,
-            false,
-            &mut lamports,
-            &mut data,
-            &owner,
-            false,
-        );
-        let remaining = [record];
-        let table = ExecutionAccountTable::new(&remaining).unwrap();
-
-        let config = deny_enabled_config();
-
-        // A stored subject that stays put needs no record; only `added` is checked, and it is denied.
+        // The same seeds under another program derive another address: the authority is not
+        // that program's PDA.
         assert_eq!(
-            check_new_grants_not_denied(&config, &table, &stored, &replacement).unwrap_err(),
-            error!(ZamaHostError::SubjectDenied)
+            assert_authority_is_program_pda(&dictionary, &seeds, Pubkey::new_unique(), authority)
+                .unwrap_err(),
+            error!(ZamaHostError::EncryptedValueAuthorityNotProgramPda)
+        );
+        // A wallet with no seeds at all is not a PDA of anything.
+        assert!(
+            assert_authority_is_program_pda(&dictionary, &[], program, Pubkey::new_unique())
+                .is_err()
+        );
+        // An interned seed past the dictionary fails as a dictionary error.
+        assert_eq!(
+            assert_authority_is_program_pda(
+                &dictionary,
+                &[PdaSeed::Interned { index: 1 }],
+                program,
+                authority
+            )
+            .unwrap_err(),
+            error!(ZamaHostError::FheExecuteDictionaryIndexOutOfBounds)
         );
     }
 }

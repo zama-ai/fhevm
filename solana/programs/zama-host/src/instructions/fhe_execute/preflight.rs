@@ -1,3 +1,8 @@
+//! Whole-execution checks that run before any state mutates: every remaining account and every
+//! dictionary entry is referenced, every persistent operand's authority signed, every persistent
+//! value belongs to one application, and that application's deny record is present when the
+//! deny list is on. Returns the application identity the rest of the execution keys on.
+
 use super::account_table::ExecutionAccountTable;
 use super::*;
 
@@ -5,159 +10,13 @@ pub(super) fn preflight_execution<'info>(
     table: &mut ExecutionAccountTable<'_, 'info>,
     ctx: &Context<'info, FheExecute<'info>>,
     args: &FheExecuteArgs,
-) -> Result<()> {
-    assert_execution_pins_or_persists_under_cap(
-        args,
-        ctx.accounts.host_config.hcu_block_cap_per_app,
-    )?;
-    assert_rand_steps_anchor_persistent_output(args)?;
-    preflight_execution_accounts(
-        table,
-        args,
-        ctx.accounts.encrypted_value_account_authority.key(),
-        ctx.accounts.host_config.grant_deny_list_enabled,
-    )
-}
-
-/// Rejects the value-less persist-nothing execution class under a finite block cap (fhevm-internal#1744).
-///
-/// The per-slot HCU meter keys on the signed `compute_subject`. A persistent input requires the
-/// subject to be an allowed ACL subject, and a verified input requires it to equal the attested
-/// contract, so either operand pins the subject — the caller cannot swap in a fresh key without
-/// losing input access. An execution with neither pinning operand and no persistent output persists nothing
-/// and verifies nothing: `compute_subject` is a free variable AND the execution produces nothing of
-/// value (its transient outputs create no ACL leaf and are undecryptable). That class is what the
-/// keypair-churn bypass rode, so it is rejected before compute.
-///
-/// A persistent OUTPUT is allowed through here, but note it does NOT pin the subject: output binding
-/// authorizes against `encrypted_value_account_authority`, never `compute_subject`. So creating or
-/// updating a throwaway encrypted value account still lets a caller swap the subject for a fresh
-/// per-slot meter — that vector
-/// remains open, but is rent-bounded (~one `HcuBlockMeter` PDA rent per swap) rather than free,
-/// and closing it fully needs a registered app identity (the issue's Option 2, deferred). The
-/// allowance is kept because it is also the legitimate trivial-encrypt/`Rand` -> persistent-output
-/// bootstrap/mint path. The deactivated cap (`u64::MAX`, the ship default) short-circuits, so
-/// behavior is unchanged wherever a finite cap is not deployed.
-fn assert_execution_pins_or_persists_under_cap(
-    args: &FheExecuteArgs,
-    hcu_block_cap_per_app: u64,
-) -> Result<()> {
-    if hcu_block_cap_per_app == u64::MAX {
-        return Ok(());
-    }
-    require!(
-        args.steps.iter().any(step_pins_or_persists),
-        ZamaHostError::FheExecuteUnanchoredUnderBlockCap
-    );
-    Ok(())
-}
-
-/// Rejects an execution containing a rand step but no persistent output (fhevm-internal#1853 W4).
-///
-/// Rand seeds are anchored to the execution's persistent-write anchor — the live account identity
-/// and version of every persistent output — so a rand step needs at least one
-/// persistent output for the seed to be compulsorily fresh. The excluded class is provably
-/// useless: an all-transient execution has no ACL records, no decrypt path, and no `make_public`,
-/// so its randomness is unobservable by everyone including the author.
-fn assert_rand_steps_anchor_persistent_output(args: &FheExecuteArgs) -> Result<()> {
-    let has_rand = args.steps.iter().any(|step| {
-        matches!(
-            step,
-            FheExecuteStep::Rand { .. } | FheExecuteStep::RandBounded { .. }
-        )
-    });
-    if !has_rand {
-        return Ok(());
-    }
-    require!(
-        args.steps
-            .iter()
-            .any(|step| output_persists(super::step_output(step))),
-        ZamaHostError::FheExecuteRandRequiresPersistentOutput
-    );
-    Ok(())
-}
-
-/// True for an operand that pins `compute_subject`: a persistent ACL input (the subject must be an
-/// allowed subject) or a verified input (the subject must equal the attested contract). Exhaustive
-/// so a future operand variant must classify itself rather than default to "does not pin".
-fn operand_pins_subject(operand: &FheExecuteOperand) -> bool {
-    match operand {
-        FheExecuteOperand::StoredValue { .. } | FheExecuteOperand::VerifiedInput { .. } => true,
-        FheExecuteOperand::EarlierStep { .. } | FheExecuteOperand::Scalar { .. } => false,
-    }
-}
-
-/// True for an output that persists persistent state. Exhaustive so a future output variant must
-/// classify itself rather than default to "does not persist".
-fn output_persists(output: &FheExecuteOutput) -> bool {
-    match output {
-        FheExecuteOutput::StoredValue { .. } => true,
-        FheExecuteOutput::Transient => false,
-    }
-}
-
-/// True when a step carries a subject-pinning operand or a persistent output.
-fn step_pins_or_persists(step: &FheExecuteStep) -> bool {
-    let (output, operand_pins) = match step {
-        FheExecuteStep::Binary {
-            lhs, rhs, output, ..
-        } => (
-            output,
-            operand_pins_subject(lhs) || operand_pins_subject(rhs),
-        ),
-        FheExecuteStep::Ternary {
-            control,
-            if_true,
-            if_false,
-            output,
-            ..
-        } => (
-            output,
-            operand_pins_subject(control)
-                || operand_pins_subject(if_true)
-                || operand_pins_subject(if_false),
-        ),
-        FheExecuteStep::TrivialEncrypt { output, .. }
-        | FheExecuteStep::Rand { output, .. }
-        | FheExecuteStep::RandBounded { output, .. } => (output, false),
-        FheExecuteStep::Unary {
-            operand, output, ..
-        } => (output, operand_pins_subject(operand)),
-        FheExecuteStep::Sum {
-            operands, output, ..
-        } => (output, operands.iter().any(operand_pins_subject)),
-        FheExecuteStep::IsIn {
-            value, set, output, ..
-        } => (
-            output,
-            operand_pins_subject(value) || set.iter().any(operand_pins_subject),
-        ),
-        FheExecuteStep::MulDiv {
-            factor1,
-            factor2,
-            output,
-            ..
-        } => (
-            output,
-            operand_pins_subject(factor1) || operand_pins_subject(factor2),
-        ),
-    };
-    operand_pins || output_persists(output)
-}
-
-fn preflight_execution_accounts(
-    table: &mut ExecutionAccountTable<'_, '_>,
-    args: &FheExecuteArgs,
-    encrypted_value_account_authority: Pubkey,
-    deny_list_enabled: bool,
-) -> Result<()> {
+) -> Result<Option<AppScope>> {
     let mut preflight = Preflight {
         table,
         dictionary: &args.dictionary,
         dictionary_used: vec![false; args.dictionary.len()],
-        encrypted_value_account_authority,
-        deny_list_enabled,
+        encrypted_value_account_authority: ctx.accounts.encrypted_value_account_authority.key(),
+        app: None,
         persistent_outputs_written: Vec::with_capacity(MAX_FHE_EXECUTION_STEPS),
     };
     for (index, step) in args.steps.iter().enumerate() {
@@ -169,18 +28,25 @@ fn preflight_execution_accounts(
         preflight.dictionary_used.iter().all(|used| *used),
         ZamaHostError::FheExecuteDictionaryEntryUnreferenced
     );
-    preflight.table.assert_all_used()
+    if let Some(app) = preflight.app {
+        preflight
+            .table
+            .mark_deny_record(ctx.accounts.host_config.grant_deny_list_enabled, app)?;
+    }
+    preflight.table.assert_all_used()?;
+    Ok(preflight.app)
 }
 
 /// Marks every account the execution references into the shared table so
 /// [`ExecutionAccountTable::assert_all_used`] can reject dangling accounts before
-/// any pass mutates state.
+/// any pass mutates state, and folds the application identity.
 struct Preflight<'t, 'a, 'info> {
     table: &'t mut ExecutionAccountTable<'a, 'info>,
     dictionary: &'t [[u8; 32]],
     dictionary_used: Vec<bool>,
     encrypted_value_account_authority: Pubkey,
-    deny_list_enabled: bool,
+    /// The `(program, scope)` of every persistent value seen so far; a second one is an error.
+    app: Option<AppScope>,
     /// Persistent accounts written by completed earlier steps. Operands are checked
     /// before the current step's output is recorded, so read-then-update in one
     /// step remains valid.
@@ -200,19 +66,21 @@ impl Preflight<'_, '_, '_> {
         Ok(entry)
     }
 
-    fn mark_output_authority(&mut self, authority_index: Option<u8>) -> Result<Pubkey> {
-        match authority_index {
-            Some(index) => {
-                let authority = self.table.account(u16::from(index))?.key();
-                self.table.mark(u16::from(index))?;
-                Ok(authority)
-            }
-            None => Ok(self.encrypted_value_account_authority),
+    fn mark_output_authority(&mut self, authority_index: Option<u8>) -> Result<()> {
+        if let Some(index) = authority_index {
+            self.table.mark(u16::from(index))?;
         }
+        Ok(())
     }
 
-    fn mark_deny_record(&mut self, subject: Pubkey) -> Result<()> {
-        self.table.mark_deny_record(self.deny_list_enabled, subject)
+    /// Folds one persistent value's application into the execution's: the first one is adopted,
+    /// every later one must match (one execution, one meter).
+    fn fold_app(&mut self, app: AppScope) -> Result<()> {
+        match self.app {
+            None => self.app = Some(app),
+            Some(current) => require!(current == app, ZamaHostError::FheExecuteMixedScopes),
+        }
+        Ok(())
     }
 }
 
@@ -241,16 +109,15 @@ fn preflight_step(
             preflight_encrypted_operand(if_false, step_index, preflight)?;
             preflight_output(output, preflight)?;
         }
-        FheExecuteStep::TrivialEncrypt { output, .. } | FheExecuteStep::Rand { output, .. } => {
+        FheExecuteStep::TrivialEncrypt { output, .. }
+        | FheExecuteStep::Rand { output, .. }
+        | FheExecuteStep::RandBounded { output, .. } => {
             preflight_output(output, preflight)?;
         }
         FheExecuteStep::Unary {
             operand, output, ..
         } => {
             preflight_encrypted_operand(operand, step_index, preflight)?;
-            preflight_output(output, preflight)?;
-        }
-        FheExecuteStep::RandBounded { output, .. } => {
             preflight_output(output, preflight)?;
         }
         FheExecuteStep::Sum {
@@ -309,15 +176,25 @@ fn preflight_encrypted_operand(
             encrypted_value_index,
         } => {
             preflight.mark_dictionary(*handle_index)?;
-            let key = preflight
-                .table
-                .account(u16::from(*encrypted_value_index))?
-                .key();
+            let index = u16::from(*encrypted_value_index);
+            let key = preflight.table.account(index)?.key();
             require!(
                 !preflight.persistent_outputs_written.contains(&key),
                 ZamaHostError::FheExecutePersistentOperandWrittenEarlier
             );
-            preflight.table.mark(u16::from(*encrypted_value_index))?;
+            preflight.table.mark(index)?;
+            // Reading a value is admitted by its authority's signature, and the value carries the
+            // application it belongs to. Decoded once here; the walk reuses the cached decode.
+            let value = preflight.table.canonical_encrypted_value(index)?;
+            let authority = value.encrypted_value_account_authority;
+            let app = AppScope {
+                program: value.program,
+                scope: value.scope,
+            };
+            preflight
+                .table
+                .mark_signer(authority, preflight.encrypted_value_account_authority)?;
+            preflight.fold_app(app)?;
         }
         FheExecuteOperand::EarlierStep { producer_index } => {
             require!(
@@ -344,45 +221,35 @@ fn preflight_output(
         FheExecuteOutput::StoredValue {
             output_encrypted_value_index,
             output_authority_index,
-            output_domain_index,
-            output_account_index,
+            output_program_index,
+            output_authority_key_index,
+            output_scope_index,
             output_label_index,
-            output_subject_indexes,
-            previous_state,
+            output_authority_seeds,
+            output_allow_indexes,
+            previous_handle_index,
             ..
         } => {
-            let output_key = preflight
-                .table
-                .account(u16::from(*output_encrypted_value_index))?
-                .key();
-            preflight
-                .table
-                .mark(u16::from(*output_encrypted_value_index))?;
-            preflight.mark_dictionary(*output_domain_index)?;
-            preflight.mark_dictionary(*output_account_index)?;
+            let index = u16::from(*output_encrypted_value_index);
+            let output_key = preflight.table.account(index)?.key();
+            preflight.table.mark(index)?;
+            let program = Pubkey::new_from_array(preflight.mark_dictionary(*output_program_index)?);
+            preflight.mark_dictionary(*output_authority_key_index)?;
+            let scope = preflight.mark_dictionary(*output_scope_index)?;
             preflight.mark_dictionary(*output_label_index)?;
-            let authority = preflight.mark_output_authority(*output_authority_index)?;
-            // Every newly granted subject is deny-checked in the bind pass; mark
-            // their deny records here so finish() accounts for them. On an update
-            // the new set is `output_subjects \ previous_state.subjects` from
-            // instruction data alone — a lying previous state is rejected later
-            // with PreviousStateMismatch, so trusting it for account-marking is
-            // safe. On a create (`None` previous) every output subject is a new grant.
-            let mut adds_subject = false;
-            for subject_index in output_subject_indexes {
-                let subject = Pubkey::new_from_array(preflight.mark_dictionary(*subject_index)?);
-                let is_new_grant = match previous_state {
-                    Some(previous) => !previous.subjects.contains(&subject),
-                    None => true,
-                };
-                if is_new_grant {
-                    adds_subject = true;
-                    preflight.mark_deny_record(subject)?;
+            preflight.mark_output_authority(*output_authority_index)?;
+            for seed in output_authority_seeds {
+                if let PdaSeed::Interned { index } = seed {
+                    preflight.mark_dictionary(*index)?;
                 }
             }
-            if adds_subject {
-                preflight.mark_deny_record(authority)?;
+            for allow_index in output_allow_indexes {
+                preflight.mark_dictionary(*allow_index)?;
             }
+            if let Some(index) = previous_handle_index {
+                preflight.mark_dictionary(*index)?;
+            }
+            preflight.fold_app(AppScope { program, scope })?;
             preflight.persistent_outputs_written.push(output_key);
         }
     }
@@ -392,85 +259,65 @@ fn preflight_output(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn unused_remaining_account_fails_preflight() {
-        // One persistent operand, two passed accounts: the dangling second account
-        // must fail the whole-execution all-used check.
-        let args = execution(vec![FheExecuteStep::Binary {
-            op: FheBinaryOpCode::Add,
-            lhs: FheExecuteOperand::StoredValue {
-                handle_index: 0,
-                encrypted_value_index: 0,
-            },
-            rhs: FheExecuteOperand::Scalar { value_index: 1 },
-            output_fhe_type: 5,
-            output: FheExecuteOutput::Transient,
-        }]);
-        let accounts = vec![
-            test_account(Pubkey::new_unique()),
-            test_account(Pubkey::new_unique()),
-        ];
-        let mut table = ExecutionAccountTable::new(&accounts).unwrap();
-
-        assert!(
-            preflight_execution_accounts(&mut table, &args, Pubkey::new_unique(), false).is_err()
-        );
-    }
-
-    #[test]
-    fn persistent_operand_cannot_alias_an_account_written_by_an_earlier_step() {
-        let args = execution(vec![
-            FheExecuteStep::TrivialEncrypt {
-                plaintext: [0; 32],
-                fhe_type: 5,
-                output: persistent_output(),
-            },
-            FheExecuteStep::Binary {
-                op: FheBinaryOpCode::Add,
-                lhs: FheExecuteOperand::StoredValue {
-                    handle_index: 0,
-                    encrypted_value_index: 0,
-                },
-                rhs: FheExecuteOperand::Scalar { value_index: 1 },
-                output_fhe_type: 5,
-                output: FheExecuteOutput::Transient,
-            },
-        ]);
-        let accounts = vec![test_account(Pubkey::new_unique())];
-        let mut table = ExecutionAccountTable::new(&accounts).unwrap();
-
-        assert!(
-            preflight_execution_accounts(&mut table, &args, Pubkey::new_unique(), false).is_err()
-        );
-    }
-
-    #[test]
-    fn persistent_operand_may_update_its_account_in_the_same_step() {
-        let args = execution(vec![FheExecuteStep::Binary {
-            op: FheBinaryOpCode::Add,
-            lhs: FheExecuteOperand::StoredValue {
-                handle_index: 0,
-                encrypted_value_index: 0,
-            },
-            rhs: FheExecuteOperand::Scalar { value_index: 1 },
-            output_fhe_type: 5,
-            output: persistent_output(),
-        }]);
-        let accounts = vec![test_account(Pubkey::new_unique())];
-        let mut table = ExecutionAccountTable::new(&accounts).unwrap();
-
-        assert!(
-            preflight_execution_accounts(&mut table, &args, Pubkey::new_unique(), false).is_ok()
-        );
-    }
+    use anchor_lang::AccountSerialize;
 
     fn test_account(key: Pubkey) -> AccountInfo<'static> {
+        signer_account(key, false)
+    }
+
+    fn signer_account(key: Pubkey, is_signer: bool) -> AccountInfo<'static> {
         let key = Box::leak(Box::new(key));
         let lamports = Box::leak(Box::new(0));
         let data = Box::leak(Vec::new().into_boxed_slice());
         let owner = Box::leak(Box::new(System::id()));
-        AccountInfo::new(key, false, false, lamports, data, owner, false)
+        AccountInfo::new(key, is_signer, false, lamports, data, owner, false)
+    }
+
+    /// A canonical stored value of `app` controlled by `authority`, with `[1; 32]` as its handle.
+    fn stored_value(app: AppScope, authority: Pubkey) -> AccountInfo<'static> {
+        let mut value = EncryptedValue {
+            program: app.program,
+            encrypted_value_account_authority: authority,
+            scope: app.scope,
+            label: [9; 32],
+            current_handle: [1; 32],
+            leaf_count: 0,
+            peaks: Vec::new(),
+            bump: 0,
+        };
+        let (key, bump) = value.canonical_address();
+        value.bump = bump;
+        let mut data = Vec::new();
+        value.try_serialize(&mut data).unwrap();
+        AccountInfo::new(
+            Box::leak(Box::new(key)),
+            false,
+            true,
+            Box::leak(Box::new(0)),
+            Box::leak(data.into_boxed_slice()),
+            Box::leak(Box::new(crate::ID)),
+            false,
+        )
+    }
+
+    fn app(tag: u8) -> AppScope {
+        AppScope {
+            program: Pubkey::new_from_array([tag; 32]),
+            scope: [tag; 32],
+        }
+    }
+
+    fn read_step(encrypted_value_index: u8) -> FheExecuteStep {
+        FheExecuteStep::Binary {
+            op: FheBinaryOpCode::Add,
+            lhs: FheExecuteOperand::StoredValue {
+                handle_index: 0,
+                encrypted_value_index,
+            },
+            rhs: FheExecuteOperand::Scalar { value_index: 1 },
+            output_fhe_type: 5,
+            output: FheExecuteOutput::Transient,
+        }
     }
 
     fn execution(steps: Vec<FheExecuteStep>) -> FheExecuteArgs {
@@ -481,120 +328,60 @@ mod tests {
         }
     }
 
-    fn trivial_local() -> FheExecuteStep {
-        FheExecuteStep::TrivialEncrypt {
-            plaintext: [0; 32],
-            fhe_type: 5,
-            output: FheExecuteOutput::Transient,
+    /// Runs the account half of preflight with `default_authority` as the context signer.
+    fn run(
+        accounts: &[AccountInfo<'static>],
+        args: &FheExecuteArgs,
+        default_authority: Pubkey,
+    ) -> Result<Option<AppScope>> {
+        let mut table = ExecutionAccountTable::new(accounts).unwrap();
+        let mut preflight = Preflight {
+            table: &mut table,
+            dictionary: &args.dictionary,
+            dictionary_used: vec![false; args.dictionary.len()],
+            encrypted_value_account_authority: default_authority,
+            app: None,
+            persistent_outputs_written: Vec::new(),
+        };
+        for (index, step) in args.steps.iter().enumerate() {
+            preflight_step(step, index, &mut preflight)?;
         }
-    }
-
-    fn persistent_output() -> FheExecuteOutput {
-        FheExecuteOutput::StoredValue {
-            output_encrypted_value_index: 0,
-            output_authority_index: None,
-            output_domain_index: 0,
-            output_account_index: 0,
-            output_label_index: 1,
-            output_subject_indexes: Vec::new(),
-            previous_state: None,
-            make_public: false,
-        }
-    }
-
-    fn verified_input() -> FheExecuteOperand {
-        FheExecuteOperand::VerifiedInput {
-            attestation: Box::new(CoprocessorInputAttestation {
-                input_handle: [0; 32],
-                ct_handles: Vec::new(),
-                handle_index: 0,
-                user_address: [0; 32],
-                contract_address: [0; 32],
-                contract_chain_id: 0,
-                extra_data: Vec::new(),
-                signatures: Vec::new(),
-            }),
-        }
+        let app = preflight.app;
+        preflight.table.assert_all_used()?;
+        Ok(app)
     }
 
     #[test]
-    fn rand_step_without_persistent_output_is_rejected() {
-        // Unconditional (unlike the cap-gated persist-nothing rule): the rand seed is anchored
-        // to the execution's persistent writes, so an all-transient rand execution has no seed anchor.
-        let args = execution(vec![FheExecuteStep::Rand {
-            fhe_type: 5,
-            output: FheExecuteOutput::Transient,
-        }]);
-        assert!(assert_rand_steps_anchor_persistent_output(&args).is_err());
+    fn unused_remaining_account_fails_preflight() {
+        // One persistent operand, two passed accounts: the dangling second account
+        // must fail the whole-execution all-used check.
+        let authority = Pubkey::new_unique();
+        let accounts = vec![
+            stored_value(app(1), authority),
+            test_account(Pubkey::new_unique()),
+        ];
+        assert!(run(&accounts, &execution(vec![read_step(0)]), authority).is_err());
     }
 
     #[test]
-    fn rand_step_with_persistent_output_anywhere_in_batch_is_accepted() {
-        // The persistent output may be the rand step's own or any other step's.
-        let own = execution(vec![FheExecuteStep::Rand {
-            fhe_type: 5,
-            output: persistent_output(),
-        }]);
-        assert!(assert_rand_steps_anchor_persistent_output(&own).is_ok());
-
-        let elsewhere = execution(vec![
-            FheExecuteStep::Rand {
-                fhe_type: 5,
-                output: FheExecuteOutput::Transient,
-            },
+    fn persistent_operand_cannot_alias_an_account_written_by_an_earlier_step() {
+        let authority = Pubkey::new_unique();
+        let args = execution(vec![
             FheExecuteStep::TrivialEncrypt {
                 plaintext: [0; 32],
                 fhe_type: 5,
                 output: persistent_output(),
             },
+            read_step(0),
         ]);
-        assert!(assert_rand_steps_anchor_persistent_output(&elsewhere).is_ok());
+        let accounts = vec![stored_value(app(1), authority)];
+        assert!(run(&accounts, &args, authority).is_err());
     }
 
     #[test]
-    fn batch_without_rand_needs_no_persistent_output() {
-        assert!(
-            assert_rand_steps_anchor_persistent_output(&execution(vec![trivial_local()])).is_ok()
-        );
-    }
-
-    const FINITE_CAP: u64 = 500_000;
-
-    #[test]
-    fn deactivated_cap_never_rejects_persist_nothing_batch() {
-        // u64::MAX (ship default) short-circuits: behavior is unchanged where the cap is not deployed.
-        assert!(assert_execution_pins_or_persists_under_cap(
-            &execution(vec![trivial_local()]),
-            u64::MAX
-        )
-        .is_ok());
-    }
-
-    #[test]
-    fn finite_cap_rejects_persist_nothing_batch() {
-        assert!(assert_execution_pins_or_persists_under_cap(
-            &execution(vec![trivial_local()]),
-            FINITE_CAP
-        )
-        .is_err());
-    }
-
-    #[test]
-    fn finite_cap_accepts_persistent_output_batch() {
-        // The trivial-encrypt -> persistent-output bootstrap/mint path stays legal.
-        let step = FheExecuteStep::TrivialEncrypt {
-            plaintext: [0; 32],
-            fhe_type: 5,
-            output: persistent_output(),
-        };
-        assert!(
-            assert_execution_pins_or_persists_under_cap(&execution(vec![step]), FINITE_CAP).is_ok()
-        );
-    }
-
-    #[test]
-    fn finite_cap_accepts_persistent_input_batch() {
-        let step = FheExecuteStep::Binary {
+    fn persistent_operand_may_update_its_account_in_the_same_step() {
+        let authority = Pubkey::new_unique();
+        let args = execution(vec![FheExecuteStep::Binary {
             op: FheBinaryOpCode::Add,
             lhs: FheExecuteOperand::StoredValue {
                 handle_index: 0,
@@ -602,25 +389,186 @@ mod tests {
             },
             rhs: FheExecuteOperand::Scalar { value_index: 1 },
             output_fhe_type: 5,
-            output: FheExecuteOutput::Transient,
-        };
-        assert!(
-            assert_execution_pins_or_persists_under_cap(&execution(vec![step]), FINITE_CAP).is_ok()
+            output: persistent_output(),
+        }]);
+        let accounts = vec![stored_value(app(1), authority)];
+        assert!(run(&accounts, &args, authority).is_ok());
+    }
+
+    /// Reading a value needs its authority's signature: the default context signer admits it,
+    /// so does a signing remaining account, and nothing else does.
+    #[test]
+    fn persistent_operand_is_admitted_by_its_authority_signature_only() {
+        let authority = Pubkey::new_unique();
+        let args = execution(vec![read_step(0)]);
+
+        let by_default_signer = vec![stored_value(app(1), authority)];
+        assert_eq!(
+            run(&by_default_signer, &args, authority).unwrap(),
+            Some(app(1))
+        );
+
+        let by_remaining_signer = vec![
+            stored_value(app(1), authority),
+            signer_account(authority, true),
+        ];
+        assert!(run(&by_remaining_signer, &args, Pubkey::new_unique()).is_ok());
+
+        let authority_present_but_not_signing = vec![
+            stored_value(app(1), authority),
+            signer_account(authority, false),
+        ];
+        assert_eq!(
+            run(
+                &authority_present_but_not_signing,
+                &args,
+                Pubkey::new_unique()
+            )
+            .unwrap_err(),
+            error!(ZamaHostError::EncryptedValueAccountAuthorityMismatch)
+        );
+
+        let nobody = vec![stored_value(app(1), authority)];
+        assert_eq!(
+            run(&nobody, &args, Pubkey::new_unique()).unwrap_err(),
+            error!(ZamaHostError::EncryptedValueAccountAuthorityMismatch)
+        );
+    }
+
+    /// One execution, one application: values of two scopes cannot be mixed, whether the second
+    /// comes from another operand or from a declared output.
+    #[test]
+    fn values_of_two_scopes_cannot_share_an_execution() {
+        let authority = Pubkey::new_unique();
+        let two_reads = execution(vec![read_step(0), read_step(1)]);
+        let same_scope = vec![
+            stored_value(app(1), authority),
+            stored_value(app(1), Pubkey::new_unique()),
+        ];
+        // The second value's authority did not sign, so use one authority for both.
+        let same_scope = vec![same_scope.into_iter().next().unwrap(), {
+            let mut value = EncryptedValue {
+                program: app(1).program,
+                encrypted_value_account_authority: authority,
+                scope: app(1).scope,
+                label: [8; 32],
+                current_handle: [1; 32],
+                leaf_count: 0,
+                peaks: Vec::new(),
+                bump: 0,
+            };
+            let (key, bump) = value.canonical_address();
+            value.bump = bump;
+            let mut data = Vec::new();
+            value.try_serialize(&mut data).unwrap();
+            AccountInfo::new(
+                Box::leak(Box::new(key)),
+                false,
+                true,
+                Box::leak(Box::new(0)),
+                Box::leak(data.into_boxed_slice()),
+                Box::leak(Box::new(crate::ID)),
+                false,
+            )
+        }];
+        assert_eq!(
+            run(&same_scope, &two_reads, authority).unwrap(),
+            Some(app(1))
+        );
+
+        let mixed = vec![
+            stored_value(app(1), authority),
+            stored_value(app(2), authority),
+        ];
+        assert_eq!(
+            run(&mixed, &two_reads, authority).unwrap_err(),
+            error!(ZamaHostError::FheExecuteMixedScopes)
+        );
+
+        // Output declared for scope 2 while reading scope 1: dictionary entry 2 is the program
+        // and scope of the output.
+        let mut args = execution(vec![FheExecuteStep::Binary {
+            op: FheBinaryOpCode::Add,
+            lhs: FheExecuteOperand::StoredValue {
+                handle_index: 0,
+                encrypted_value_index: 0,
+            },
+            rhs: FheExecuteOperand::Scalar { value_index: 1 },
+            output_fhe_type: 5,
+            output: FheExecuteOutput::StoredValue {
+                output_encrypted_value_index: 1,
+                output_authority_index: None,
+                output_program_index: 2,
+                output_authority_key_index: 2,
+                output_scope_index: 2,
+                output_label_index: 1,
+                output_authority_seeds: Vec::new(),
+                output_allow_indexes: Vec::new(),
+                previous_handle_index: None,
+                make_public: false,
+            },
+        }]);
+        args.dictionary.push([2; 32]);
+        let accounts = vec![
+            stored_value(app(1), authority),
+            test_account(Pubkey::new_unique()),
+        ];
+        assert_eq!(
+            run(&accounts, &args, authority).unwrap_err(),
+            error!(ZamaHostError::FheExecuteMixedScopes)
         );
     }
 
     #[test]
-    fn finite_cap_accepts_verified_input_transient_batch() {
-        // A verified input pins the subject (attested contract must equal it), so a transient-output
-        // execution that carries one is anchored and not persist-nothing.
-        let step = FheExecuteStep::Unary {
-            op: FheUnaryOpCode::Not,
-            operand: verified_input(),
+    fn transient_only_execution_has_no_application() {
+        let args = execution(vec![FheExecuteStep::Binary {
+            op: FheBinaryOpCode::Add,
+            lhs: FheExecuteOperand::EarlierStep { producer_index: 0 },
+            rhs: FheExecuteOperand::Scalar { value_index: 1 },
             output_fhe_type: 5,
             output: FheExecuteOutput::Transient,
+        }]);
+        // Step 0 referencing itself as an earlier step is rejected; use a trivial first.
+        let args = FheExecuteArgs {
+            steps: vec![
+                FheExecuteStep::TrivialEncrypt {
+                    plaintext: [0; 32],
+                    fhe_type: 5,
+                    output: FheExecuteOutput::Transient,
+                },
+                args.steps[0].clone(),
+            ],
+            dictionary: vec![[1; 32], [2; 32]],
+            account_count: 0,
         };
-        assert!(
-            assert_execution_pins_or_persists_under_cap(&execution(vec![step]), FINITE_CAP).is_ok()
-        );
+        // Dictionary entry 0 is unreferenced here; only the account half is under test.
+        let mut table = ExecutionAccountTable::new(&[]).unwrap();
+        let mut preflight = Preflight {
+            table: &mut table,
+            dictionary: &args.dictionary,
+            dictionary_used: vec![false; 2],
+            encrypted_value_account_authority: Pubkey::new_unique(),
+            app: None,
+            persistent_outputs_written: Vec::new(),
+        };
+        for (index, step) in args.steps.iter().enumerate() {
+            preflight_step(step, index, &mut preflight).unwrap();
+        }
+        assert_eq!(preflight.app, None);
+    }
+
+    fn persistent_output() -> FheExecuteOutput {
+        FheExecuteOutput::StoredValue {
+            output_encrypted_value_index: 0,
+            output_authority_index: None,
+            output_program_index: 0,
+            output_authority_key_index: 0,
+            output_scope_index: 0,
+            output_label_index: 1,
+            output_authority_seeds: Vec::new(),
+            output_allow_indexes: Vec::new(),
+            previous_handle_index: None,
+            make_public: false,
+        }
     }
 }

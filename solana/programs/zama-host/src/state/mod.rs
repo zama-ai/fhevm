@@ -15,23 +15,25 @@ use solana_sysvar::get_sysvar;
 use crate::constants::{COMPUTATION_DOMAIN_SEPARATOR, COMPUTED_HANDLE_MARKER};
 use crate::errors::ZamaHostError;
 
-pub mod deny_subject_record;
+pub mod deny_scope_record;
 pub mod encrypted_value;
 pub mod hcu_block_meter;
 pub mod hcu_trusted_app_record;
 pub mod host_config;
 pub mod kms_context;
 pub mod permit_invalidation;
+pub mod rand_nonce;
 mod type_gate;
 pub mod user_decryption_delegation;
 
-pub use deny_subject_record::*;
+pub use deny_scope_record::*;
 pub use encrypted_value::*;
 pub use hcu_block_meter::*;
 pub use hcu_trusted_app_record::*;
 pub use host_config::*;
 pub use kms_context::*;
 pub use permit_invalidation::*;
+pub use rand_nonce::*;
 pub(crate) use type_gate::assert_reduction_count;
 pub use type_gate::{
     assert_binary_operand_types, assert_is_in_operand_types, assert_mul_div_operand_types,
@@ -62,7 +64,7 @@ pub struct InitializeHostConfigArgs {
     pub coprocessor_threshold: u8,
     /// EVM `Decryption` contract address (EIP-712 verifying contract for KMS certs).
     pub decryption_contract: [u8; 20],
-    /// Whether persistent grants must include a deny-list witness.
+    /// Whether computing and allowing require the application's deny-list witness.
     pub grant_deny_list_enabled: bool,
 }
 
@@ -148,15 +150,15 @@ pub struct FheExecuteArgs {
     /// instruction data so stateless indexers can validate account references without the
     /// transaction envelope (DD-033 self-description).
     pub account_count: u8,
-    /// Interned 32-byte constant dictionary: operand handles, scalar values, ACL domain keys,
-    /// encrypted value account authority keys, encrypted value labels, and output subjects. Steps
+    /// Interned 32-byte constant dictionary: operand handles, scalar values, output programs,
+    /// authorities, scopes, labels, previous handles, allowed keys and PDA seed parts. Steps
     /// reference entries by `u8` index, so a value repeated across steps is paid for once (the
     /// compiled-message / constant-dictionary encoding; fhevm-internal#1853 W7).
     ///
     /// The entries stay raw `[u8; 32]` on purpose, and must not become an enum of typed
     /// variants. Interning is what makes the encoding small, and it only works across roles:
-    /// the same 32 bytes can be an operand handle in one step and an output subject in
-    /// another, and both steps then share one entry. A typed dictionary would need one entry
+    /// the same 32 bytes can be an operand handle in one step and the previous handle of an
+    /// update in another, and both steps then share one entry. A typed dictionary would need one entry
     /// per role, which grows the packet and buys nothing — the step that reads an index
     /// already knows which role it is asking for, and `dictionary_key` /
     /// `dictionary_bytes` are where that reading happens. Types belong at the ends of the
@@ -321,7 +323,7 @@ pub struct CoprocessorInputAttestation {
 pub enum FheExecuteOperand {
     /// A value read out of persistent ACL state: a canonical `EncryptedValue` account in
     /// `remaining_accounts` whose current handle matches the interned one. Admission is the
-    /// caller's subject membership on that account.
+    /// signature of the value's authority, found among the execution's signers.
     StoredValue {
         /// Dictionary index of the handle expected as the encrypted value's current handle.
         handle_index: u8,
@@ -353,17 +355,20 @@ pub enum FheExecuteOperand {
     },
 }
 
-/// The replaced state a persistent-output update declares: the stored handle
-/// and the exact stored subject set, together (making a half-declared previous
-/// state unrepresentable). Validated against the account, and carried in
-/// instruction data so indexers reconstruct the appended MMR leaves without
-/// reading the account.
+/// One seed of the authority PDA a create proves, so the host can check the authority belongs
+/// to the declared program. The bump is the last seed, as a one-byte literal.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
-pub struct PreviousState {
-    /// The handle being replaced (`current_handle` at the time of the update).
-    pub handle: [u8; 32],
-    /// The exact stored subject set being replaced.
-    pub subjects: Vec<Pubkey>,
+pub enum PdaSeed {
+    /// A 32-byte seed already in the dictionary (a mint, an owner, the program itself).
+    Interned {
+        /// Dictionary index.
+        index: u8,
+    },
+    /// Any other seed bytes: a tag such as `b"token-account"`, or the bump.
+    Literal {
+        /// The seed bytes, at most 32.
+        bytes: Vec<u8>,
+    },
 }
 
 /// Output policy for a composed fhe_execute operation.
@@ -372,7 +377,7 @@ pub enum FheExecuteOutput {
     /// The result stays inside the current `fhe_execute` scope; no persistent ACL record.
     Transient,
     /// The result is bound into persistent ACL state: the `EncryptedValue` account PDA is created
-    /// when absent, or replaced when it exists.
+    /// when absent, or its handle replaced when it exists.
     StoredValue {
         /// Index into `remaining_accounts` for the output `EncryptedValue` PDA.
         output_encrypted_value_index: u8,
@@ -383,29 +388,30 @@ pub enum FheExecuteOutput {
         /// context. `Some(index)` requires that remaining account to be a signer
         /// and to match the declared output authority.
         output_authority_index: Option<u8>,
-        /// Dictionary index of the ACL domain key for the output encrypted value account.
-        output_domain_index: u8,
-        /// Dictionary index of the encrypted value account authority declared for the output
-        /// encrypted value account.
-        output_account_index: u8,
-        /// Dictionary index of the encrypted value label for the output encrypted value account.
+        /// Dictionary index of the application program the output value belongs to.
+        output_program_index: u8,
+        /// Dictionary index of the encrypted value account authority declared for the output.
+        output_authority_key_index: u8,
+        /// Dictionary index of the program-declared scope of the output value.
+        output_scope_index: u8,
+        /// Dictionary index of the encrypted value label for the output.
         output_label_index: u8,
-        /// Dictionary indexes of the subjects on the output encrypted value account. On create these
-        /// are the initial subjects; on update they become the new audience, which may rotate
-        /// away from the stored set (the outgoing audience is sealed into
-        /// historical leaves first; added subjects pass the grant deny-list).
-        output_subject_indexes: Vec<u8>,
-        /// Replaced state: `None` on create, the stored handle and exact stored
-        /// subject set on update. Carried in instruction data so indexers can
-        /// reconstruct the appended MMR leaves without reading the account;
-        /// validated against the account.
-        previous_state: Option<PreviousState>,
-        /// When true, the newly bound handle is created publicly decryptable: after
-        /// writing it as `current_handle`, a public-decrypt leaf is appended for
-        /// the new handle (byte-identical to `make_handle_public`). Carried in
-        /// instruction data so indexers reconstruct that leaf without reading the
-        /// account. This is the opt-in relaxation of the "created encrypted value accounts cannot
-        /// be created public" invariant (DD-036).
+        /// On create, the seeds proving the authority is a PDA of the program (bump last). The
+        /// host recomputes the address and refuses a create whose authority another program
+        /// controls. Empty on update: the stored program was proven when the value was created,
+        /// and the canonical address check binds the declared program to it.
+        output_authority_seeds: Vec<PdaSeed>,
+        /// Dictionary indexes of the keys allowed to decrypt the NEW handle, sealed as one
+        /// historical-access leaf each, in this order, right after the handle is written. Empty
+        /// is legal: nobody can decrypt that handle.
+        output_allow_indexes: Vec<u8>,
+        /// Dictionary index of the handle being replaced: `None` on create, the stored current
+        /// handle on update (validated against the account, so an execution built on stale state
+        /// fails instead of overwriting a newer handle).
+        previous_handle_index: Option<u8>,
+        /// When true, the new handle is sealed publicly decryptable after its allow leaves
+        /// (byte-identical to `make_handle_public`). Carried in instruction data so indexers
+        /// reconstruct that leaf without reading the account (DD-036).
         make_public: bool,
     },
 }
@@ -510,19 +516,38 @@ pub fn kms_context_address(context_id: [u8; 32]) -> (Pubkey, u8) {
     Pubkey::find_program_address(&[KMS_CONTEXT_SEED, &context_id], &crate::ID)
 }
 
-/// Returns the canonical deny-list address for a subject.
-pub fn deny_subject_address(subject: Pubkey) -> (Pubkey, u8) {
-    Pubkey::find_program_address(&[DENY_SUBJECT_SEED, subject.as_ref()], &crate::ID)
+/// The application identity every host policy keys on: the program that proved it controls a
+/// value's authority, and the scope that program declared for it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct AppScope {
+    pub program: Pubkey,
+    pub scope: [u8; 32],
 }
 
-/// Returns the canonical HCU trust-registry record address for a compute subject.
-pub fn hcu_trusted_app_address(app: Pubkey) -> (Pubkey, u8) {
-    Pubkey::find_program_address(&[HCU_TRUSTED_APP_SEED, app.as_ref()], &crate::ID)
+impl AppScope {
+    fn address(&self, prefix: &[u8]) -> (Pubkey, u8) {
+        Pubkey::find_program_address(&[prefix, self.program.as_ref(), &self.scope], &crate::ID)
+    }
 }
 
-/// Returns the canonical per-subject HCU block meter address for a compute subject.
-pub fn hcu_block_meter_address(app: Pubkey) -> (Pubkey, u8) {
-    Pubkey::find_program_address(&[HCU_BLOCK_METER_SEED, app.as_ref()], &crate::ID)
+/// Returns the canonical deny-list address for an application.
+pub fn deny_scope_address(app: AppScope) -> (Pubkey, u8) {
+    app.address(DENY_SCOPE_SEED)
+}
+
+/// Returns the canonical HCU trust-registry record address for an application.
+pub fn hcu_trusted_app_address(app: AppScope) -> (Pubkey, u8) {
+    app.address(HCU_TRUSTED_APP_SEED)
+}
+
+/// Returns the canonical HCU block meter address for an application.
+pub fn hcu_block_meter_address(app: AppScope) -> (Pubkey, u8) {
+    app.address(HCU_BLOCK_METER_SEED)
+}
+
+/// Returns the canonical singleton random-seed nonce address.
+pub fn rand_nonce_address() -> (Pubkey, u8) {
+    Pubkey::find_program_address(&[RAND_NONCE_SEED], &crate::ID)
 }
 
 /// Returns the canonical permit-invalidation watermark address for a user.
@@ -668,15 +693,13 @@ pub fn computed_eval_trivial_handle(
 
 /// Derives the compulsorily fresh seed for an instruction-local execution random handle.
 ///
-/// Freshness is anchored, never caller-advised: `persistent_anchor_bytes` is the execution's
-/// persistent-write anchor — every persistent output's live account identity and version
-/// concatenated in wire order. The host-observed MMR leaf count prevents a handle cycle
-/// from replaying an earlier anchor.
-/// `compute_subject` separates concurrent executions of different signers in the same slot;
-/// `op_index` separates rand steps within one execution; slot entropy separates slots.
+/// Freshness is anchored, never caller-advised: `rand_nonce` is the host's global counter,
+/// consumed by this execution and never seen again, so two executions in one slot cannot share
+/// a seed. `op_index` separates rand steps within one execution; slot entropy separates slots;
+/// the application identity binds the seed to the values it will land in.
 pub fn computed_eval_rand_seed(
-    compute_subject: Pubkey,
-    persistent_anchor_bytes: &[u8],
+    rand_nonce: u64,
+    app: AppScope,
     op_index: u16,
     ctx: &HandleDerivationContext,
 ) -> [u8; 16] {
@@ -688,11 +711,13 @@ pub fn computed_eval_rand_seed(
     let chain_id_bytes = chain_id.to_be_bytes();
     let op_index_bytes = op_index.to_be_bytes();
     let timestamp_bytes = unix_timestamp.to_be_bytes();
+    let nonce_bytes = rand_nonce.to_be_bytes();
     let hash = keccak_hashv(&[
         b"FHE_eval_seed",
-        compute_subject.as_ref(),
-        persistent_anchor_bytes,
+        &nonce_bytes,
         &op_index_bytes,
+        app.program.as_ref(),
+        &app.scope,
         crate::ID.as_ref(),
         &chain_id_bytes,
         &previous_bank_hash,

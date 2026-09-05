@@ -1,9 +1,9 @@
-//! Creates and updates HCU trust-registry records (per-`compute_subject` block-cap bypass).
+//! Creates and updates HCU trust-registry records (per-application block-cap bypass).
 //!
-//! Mirrors `set_deny_subject`, but inverted: absence means "untrusted" (metered), and only an
-//! admin-created, program-owned record with `trusted == true` bypasses the cap. The `app` key is a
-//! `compute_subject` — the signed caller identity the block cap meters. A subject cannot self-trust
-//! — the write is admin-gated.
+//! Mirrors `set_deny_scope`, but inverted: absence means "untrusted" (metered), and only an
+//! admin-created, program-owned record with `trusted == true` bypasses the cap. The application is
+//! the `(program, scope)` the block cap meters. An application cannot self-trust — the write is
+//! admin-gated.
 
 use anchor_lang::prelude::*;
 
@@ -24,21 +24,23 @@ pub struct SetHcuAppTrusted<'info> {
     /// Singleton config PDA.
     #[account(seeds = [HOST_CONFIG_SEED], bump = host_config.bump)]
     pub host_config: Account<'info, HostConfig>,
-    /// CHECK: created or overwritten after canonical ("hcu-trusted", app) PDA validation.
+    /// CHECK: created or overwritten after canonical ("hcu-trusted", program, scope) PDA validation.
     #[account(mut)]
     pub hcu_trusted_app_record: UncheckedAccount<'info>,
     /// System program used for account creation.
     pub system_program: Program<'info, System>,
 }
 
-/// Creates or updates the trust state for `app`.
+/// Creates or updates the trust state for the application `(program, scope)`.
 pub fn set_hcu_app_trusted(
     ctx: Context<SetHcuAppTrusted>,
-    app: Pubkey,
+    program: Pubkey,
+    scope: [u8; 32],
     trusted: bool,
 ) -> Result<()> {
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
     assert_admin(&ctx.accounts.host_config, &ctx.accounts.admin)?;
+    let app = AppScope { program, scope };
     let (expected, bump) = hcu_trusted_app_address(app);
     require_keys_eq!(
         expected,
@@ -57,16 +59,25 @@ pub fn set_hcu_app_trusted(
         &info,
         &ctx.accounts.system_program.to_account_info(),
         8 + HcuTrustedAppRecord::SPACE,
-        &[HCU_TRUSTED_APP_SEED, app.as_ref(), &[bump]],
+        &[HCU_TRUSTED_APP_SEED, program.as_ref(), &scope, &[bump]],
     )?;
 
-    write_account(&info, &HcuTrustedAppRecord { app, trusted, bump })?;
+    write_account(
+        &info,
+        &HcuTrustedAppRecord {
+            program,
+            scope,
+            trusted,
+            bump,
+        },
+    )?;
     emit_event_cpi(
         &ctx.accounts.event_authority,
         &HcuAppTrustUpdatedEvent {
             version: EVENT_VERSION,
             hcu_trusted_app_record: ctx.accounts.hcu_trusted_app_record.key(),
-            app,
+            program,
+            scope,
             trusted,
             updated_slot: Clock::get()?.slot,
         },
@@ -75,8 +86,8 @@ pub fn set_hcu_app_trusted(
 }
 
 /// Reads the current trust flag for `app`: `None` when the record is absent (system-owned + empty),
-/// otherwise the stored `trusted` after validating owner / length / PDA app / bump.
-fn current_trusted_status(info: &AccountInfo, app: Pubkey, bump: u8) -> Result<Option<bool>> {
+/// otherwise the stored `trusted` after validating owner / length / PDA identity / bump.
+fn current_trusted_status(info: &AccountInfo, app: AppScope, bump: u8) -> Result<Option<bool>> {
     if is_uninitialized_pda_account(info, ZamaHostError::HcuTrustedAppRecordMismatch)? {
         return Ok(None);
     }
@@ -92,9 +103,8 @@ fn current_trusted_status(info: &AccountInfo, app: Pubkey, bump: u8) -> Result<O
     let data = info.try_borrow_data()?;
     let mut data_slice: &[u8] = &data;
     let record = HcuTrustedAppRecord::try_deserialize(&mut data_slice)?;
-    require_keys_eq!(record.app, app, ZamaHostError::HcuTrustedAppRecordMismatch);
     require!(
-        record.bump == bump,
+        record.program == app.program && record.scope == app.scope && record.bump == bump,
         ZamaHostError::HcuTrustedAppRecordMismatch
     );
     Ok(Some(record.trusted))

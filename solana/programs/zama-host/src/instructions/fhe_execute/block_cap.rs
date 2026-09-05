@@ -1,7 +1,8 @@
-//! Stateful per-app, per-slot HCU block cap for [`super::fhe_execute`].
+//! Stateful per-application, per-slot HCU block cap for [`super::fhe_execute`].
 //!
-//! Unlike the pure per-execution meter in [`super::hcu`], the block cap touches accounts (the per-app
-//! `HcuBlockMeter`) and a sysvar-derived slot, so it lives here rather than inside the pure walk.
+//! Unlike the pure per-execution meter in [`super::hcu`], the block cap touches accounts (the
+//! per-application `HcuBlockMeter`) and a sysvar-derived slot, so it lives here rather than inside
+//! the pure walk.
 //!
 //! [`charge`] is one resolve→assert→(create/reset)→write sequence with a single meter read. It
 //! runs after the pure per-execution meter and before the walk: `execution_total` is pure over the
@@ -9,13 +10,13 @@
 //! record, and a failure mid-walk reverts the meter write along with everything else.
 //!
 //! Cap sentinels: `u64::MAX` = unrestricted (short-circuit, touch nothing), `0` = ban untrusted
-//! apps (trusted still bypass), otherwise the metering band.
+//! applications (trusted still bypass), otherwise the metering band.
 //!
-//! The metered identity is the `compute_subject` — the mandatory signed caller identity already
-//! used for ACL admission (the `msg.sender` analog), never `payer` and never `encrypted_value_account_authority`
-//! (an output-ACL role that degenerates to a per-user key). Metering the already-signed
-//! `compute_subject` means no caller can rotate a fresh signer to mint a fresh per-slot meter: the
-//! same subject that authorizes the execution's encrypted inputs is the one whose usage accumulates.
+//! The metered identity is the `(program, scope)` of the persistent values the execution reads
+//! and writes — proven by the program when it created them, never a free signer — so no caller
+//! can rotate a fresh key to mint a fresh per-slot meter. An execution that touches no persistent
+//! value has no identity to meter and is rejected under a finite cap; it is also value-less, since
+//! its transient outputs create no leaf and are undecryptable.
 
 use anchor_lang::prelude::*;
 
@@ -23,7 +24,7 @@ use super::super::common::{create_pda_if_needed, is_uninitialized_pda_account, w
 use super::FheExecute;
 use crate::errors::ZamaHostError;
 use crate::state::{
-    hcu_block_meter_address, hcu_trusted_app_address, HcuBlockMeter, HcuTrustedAppRecord,
+    hcu_block_meter_address, hcu_trusted_app_address, AppScope, HcuBlockMeter, HcuTrustedAppRecord,
     HCU_BLOCK_METER_SEED,
 };
 
@@ -31,6 +32,7 @@ use crate::state::{
 /// arithmetic (overflow fails closed), lazy-create/reset, write once.
 pub(super) fn charge<'info>(
     ctx: &Context<'info, FheExecute<'info>>,
+    app: Option<AppScope>,
     execution_total: u64,
     slot: u64,
 ) -> Result<()> {
@@ -39,7 +41,7 @@ pub(super) fn charge<'info>(
     if cap == u64::MAX {
         return Ok(());
     }
-    let app = ctx.accounts.compute_subject.key();
+    let app = app.ok_or(ZamaHostError::FheExecuteUnanchoredUnderBlockCap)?;
     // A well-formed trusted witness bypasses the cap entirely — even under a ban.
     if resolve_trusted(ctx, app)? {
         return Ok(());
@@ -48,7 +50,8 @@ pub(super) fn charge<'info>(
     if cap == 0 {
         return Err(error!(ZamaHostError::HcuBlockLimitExceeded));
     }
-    // Metering band: an untrusted app must supply its meter (fail closed, never silently un-metered).
+    // Metering band: an untrusted application must supply its meter (fail closed, never silently
+    // un-metered).
     let meter = ctx
         .accounts
         .hcu_block_meter
@@ -69,12 +72,18 @@ pub(super) fn charge<'info>(
         &info,
         &ctx.accounts.system_program.to_account_info(),
         8 + HcuBlockMeter::SPACE,
-        &[HCU_BLOCK_METER_SEED, app.as_ref(), &[bump]],
+        &[
+            HCU_BLOCK_METER_SEED,
+            app.program.as_ref(),
+            &app.scope,
+            &[bump],
+        ],
     )?;
     write_account(
         &info,
         &HcuBlockMeter {
-            app,
+            program: app.program,
+            scope: app.scope,
             last_seen_slot: slot,
             used_hcu: projected,
             bump,
@@ -88,7 +97,7 @@ pub(super) fn charge<'info>(
 /// - present, program-owned, canonical PDA, `trusted == true` ⇒ bypass;
 /// - present, program-owned, canonical PDA, `trusted == false` ⇒ untrusted (fall through);
 /// - present but wrong PDA / owner / layout ⇒ `HcuTrustedAppRecordMismatch`.
-fn resolve_trusted<'info>(ctx: &Context<'info, FheExecute<'info>>, app: Pubkey) -> Result<bool> {
+fn resolve_trusted<'info>(ctx: &Context<'info, FheExecute<'info>>, app: AppScope) -> Result<bool> {
     let Some(witness) = ctx.accounts.hcu_trusted_app_record.as_ref() else {
         return Ok(false);
     };
@@ -99,7 +108,7 @@ fn resolve_trusted<'info>(ctx: &Context<'info, FheExecute<'info>>, app: Pubkey) 
         expected,
         ZamaHostError::HcuTrustedAppRecordMismatch
     );
-    // Present but never created is benign: the app is simply untrusted (metered).
+    // Present but never created is benign: the application is simply untrusted (metered).
     if is_uninitialized_pda_account(&info, ZamaHostError::HcuTrustedAppRecordMismatch)? {
         return Ok(false);
     }
@@ -116,10 +125,9 @@ fn resolve_trusted<'info>(ctx: &Context<'info, FheExecute<'info>>, app: Pubkey) 
     let mut data_slice: &[u8] = &data;
     let record = HcuTrustedAppRecord::try_deserialize(&mut data_slice)?;
     require!(
-        record.bump == expected_bump,
+        record.bump == expected_bump && record.program == app.program && record.scope == app.scope,
         ZamaHostError::HcuTrustedAppRecordMismatch
     );
-    require_keys_eq!(record.app, app, ZamaHostError::HcuTrustedAppRecordMismatch);
     Ok(record.trusted)
 }
 
@@ -128,11 +136,11 @@ fn resolve_trusted<'info>(ctx: &Context<'info, FheExecute<'info>>, app: Pubkey) 
 /// `charge` tries to create it. A non-program-owned account (uninitialized / system-owned /
 /// squatted) is then treated as `0` — `charge`'s lazy-create
 /// rejects a squatter. A program-owned meter is validated
-/// (owner / length / recorded app / bump) before any field is read, then lazy-reset: a
+/// (owner / length / recorded application / bump) before any field is read, then lazy-reset: a
 /// `last_seen_slot` other than the current slot means `0` for this execution.
 fn meter_used_for_slot(
     info: &AccountInfo,
-    app: Pubkey,
+    app: AppScope,
     expected: Pubkey,
     bump: u8,
     slot: u64,
@@ -148,8 +156,10 @@ fn meter_used_for_slot(
     let data = info.try_borrow_data()?;
     let mut data_slice: &[u8] = &data;
     let record = HcuBlockMeter::try_deserialize(&mut data_slice)?;
-    require_keys_eq!(record.app, app, ZamaHostError::HcuBlockMeterMismatch);
-    require!(record.bump == bump, ZamaHostError::HcuBlockMeterMismatch);
+    require!(
+        record.program == app.program && record.scope == app.scope && record.bump == bump,
+        ZamaHostError::HcuBlockMeterMismatch
+    );
     Ok(if record.last_seen_slot != slot {
         0
     } else {

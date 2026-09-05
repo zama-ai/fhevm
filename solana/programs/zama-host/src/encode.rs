@@ -2,7 +2,7 @@
 //! build — enable the `encode` feature to use it.
 //!
 //! Public API surface: off-chain callers assembling `fhe_execute` payloads — `runtime-tests`'
-//! Mollusk suites intern their step constants and subject lists through this one dictionary
+//! Mollusk suites intern their step constants and allow lists through this one dictionary
 //! implementation instead of carrying copies.
 
 use anchor_lang::prelude::Pubkey;
@@ -28,12 +28,9 @@ impl ExecutionDictionary {
         self.intern(key.to_bytes())
     }
 
-    /// Interns each subject key, returning their dictionary indexes in order.
-    pub fn intern_subjects(&mut self, subjects: impl IntoIterator<Item = Pubkey>) -> Vec<u8> {
-        subjects
-            .into_iter()
-            .map(|subject| self.intern_key(subject))
-            .collect()
+    /// Interns each key, returning their dictionary indexes in order.
+    pub fn intern_keys(&mut self, keys: impl IntoIterator<Item = Pubkey>) -> Vec<u8> {
+        keys.into_iter().map(|key| self.intern_key(key)).collect()
     }
 
     /// The finished dictionary, in interning order — the `dictionary` field of `FheExecuteArgs`.

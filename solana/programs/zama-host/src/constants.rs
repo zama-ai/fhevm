@@ -16,12 +16,14 @@ pub const SOLANA_POC_CHAIN_ID: u64 = SOLANA_CHAIN_TYPE_BIT | 12345;
 pub use zama_solana_acl::HOST_CONFIG_SEED;
 /// Seed prefix for KMS context PDAs (one per `kmsContextId`, mirroring ProtocolConfig).
 pub const KMS_CONTEXT_SEED: &[u8] = b"kms-context";
-/// Seed prefix for grant deny-list records.
-pub const DENY_SUBJECT_SEED: &[u8] = b"deny-subject";
-/// Seed prefix for HCU trust-registry records (per-app block-cap bypass).
+/// Seed prefix for application `(program, scope)` deny-list records.
+pub const DENY_SCOPE_SEED: &[u8] = b"deny-scope";
+/// Seed prefix for HCU trust-registry records (per-application block-cap bypass).
 pub const HCU_TRUSTED_APP_SEED: &[u8] = b"hcu-trusted";
-/// Seed prefix for per-app HCU block meter PDAs.
+/// Seed prefix for per-application HCU block meter PDAs.
 pub const HCU_BLOCK_METER_SEED: &[u8] = b"hcu-block-meter";
+/// Seed of the singleton random-seed nonce PDA.
+pub const RAND_NONCE_SEED: &[u8] = b"rand-nonce";
 /// Seed prefix for per-user permit-invalidation watermark records.
 pub const PERMIT_INVALIDATION_SEED: &[u8] = b"permit-invalidation";
 /// Seed prefix for user-decryption delegation records — the shared crate's constant, so the

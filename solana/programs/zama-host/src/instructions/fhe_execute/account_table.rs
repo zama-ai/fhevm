@@ -5,9 +5,9 @@
 //! the execution references and [`ExecutionAccountTable::assert_all_used`] rejects
 //! dangling accounts before any pass touches state, so later passes access by
 //! index without their own bookkeeping. Persistent-output claims (one write per
-//! account per execution), deny-record location by canonical derived address, and
-//! output-PDA derivation also live here, so the invariants of the execution's
-//! account handling exist in exactly one place.
+//! account per execution), authority-signer lookup, deny-record location by
+//! canonical derived address, and output-PDA derivation also live here, so the
+//! invariants of the execution's account handling exist in exactly one place.
 
 use super::*;
 
@@ -21,22 +21,21 @@ pub(super) struct ExecutionAccountTable<'a, 'info> {
     /// no derived PDAs: the single walk derives each output PDA exactly once.)
     persistent_outputs_claimed: Vec<Pubkey>,
     /// Decode-once cache for canonical `EncryptedValue`s, parallel to `accounts`.
-    /// Each decode allocates the full subject and peak vectors on the never-freeing
-    /// bump heap, and one execution reads the same account from up to three places
-    /// (anchor collection, operand admission, the output write). Boxed so an empty
-    /// slot costs a pointer, not the ~200-byte struct: an unboxed
-    /// `Vec<Option<EncryptedValue>>` sized to the account list measurably lowered
-    /// the all-created-public heap boundary, which never decodes at all.
+    /// Each decode allocates the peak vector on the never-freeing bump heap, and one
+    /// execution reads the same account from up to three places (preflight admission,
+    /// operand resolution, the output write). Boxed so an empty slot costs a pointer,
+    /// not the ~180-byte struct: an unboxed `Vec<Option<EncryptedValue>>` sized to the
+    /// account list measurably lowered the all-created-public heap boundary, which never
+    /// decodes at all.
     decoded_encrypted_values: Vec<Option<Box<EncryptedValue>>>,
 }
 
-/// Result of deriving a persistent output's canonical address: the PDA, its bump,
-/// and the encrypted value ID that seeds it (needed again as a signer seed on create).
+/// Result of deriving a persistent output's canonical address: the PDA and its bump (needed
+/// again as a signer seed on create).
 #[derive(Clone, Copy)]
 pub(super) struct OutputPda {
     pub key: Pubkey,
     pub bump: u8,
-    pub encrypted_value_id: [u8; 32],
 }
 
 impl<'a, 'info> ExecutionAccountTable<'a, 'info> {
@@ -109,18 +108,34 @@ impl<'a, 'info> ExecutionAccountTable<'a, 'info> {
         Ok(())
     }
 
-    /// Locates the deny record for `subject` by its canonical derived address
+    /// Requires `authority` to have signed the execution: as the default context signer, or as a
+    /// signing remaining account (which is then marked used). Anything else — the authority
+    /// absent, or present without signing — is a refusal.
+    pub(super) fn mark_signer(&mut self, authority: Pubkey, default_signer: Pubkey) -> Result<()> {
+        if authority == default_signer {
+            return Ok(());
+        }
+        let index = self
+            .accounts
+            .iter()
+            .position(|account| account.key() == authority && account.is_signer)
+            .ok_or_else(|| error!(ZamaHostError::EncryptedValueAccountAuthorityMismatch))?;
+        self.used[index] = true;
+        Ok(())
+    }
+
+    /// Locates the deny record for `app` by its canonical derived address
     /// (never by caller-supplied index). `Ok(None)` when the deny list is
     /// disabled; missing record under an enabled list fails the execution.
     pub(super) fn deny_record(
         &self,
         deny_list_enabled: bool,
-        subject: Pubkey,
+        app: AppScope,
     ) -> Result<Option<&'a AccountInfo<'info>>> {
         if !deny_list_enabled {
             return Ok(None);
         }
-        let (expected, _) = deny_subject_address(subject);
+        let (expected, _) = deny_scope_address(app);
         self.accounts
             .iter()
             .find(|account| account.key() == expected)
@@ -132,12 +147,12 @@ impl<'a, 'info> ExecutionAccountTable<'a, 'info> {
     pub(super) fn mark_deny_record(
         &mut self,
         deny_list_enabled: bool,
-        subject: Pubkey,
+        app: AppScope,
     ) -> Result<()> {
         if !deny_list_enabled {
             return Ok(());
         }
-        let (expected, _) = deny_subject_address(subject);
+        let (expected, _) = deny_scope_address(app);
         let Some(index) = self
             .accounts
             .iter()
@@ -153,25 +168,17 @@ impl<'a, 'info> ExecutionAccountTable<'a, 'info> {
     /// one place output-PDA derivation lives.
     pub(super) fn expected_output_pda(
         &self,
-        domain: Pubkey,
-        account: Pubkey,
-        encrypted_value_label: [u8; 32],
+        app: AppScope,
+        authority: Pubkey,
+        label: [u8; 32],
     ) -> OutputPda {
-        let encrypted_value_id = zama_solana_acl::derive_encrypted_value_id(
-            domain.to_bytes(),
-            account.to_bytes(),
-            encrypted_value_label,
-        );
-        let (key, bump) = encrypted_value_address(encrypted_value_id);
-        OutputPda {
-            key,
-            bump,
-            encrypted_value_id,
-        }
+        let (key, bump) = encrypted_value_address(app.program, authority, app.scope, label);
+        OutputPda { key, bump }
     }
 
     /// Claims a persistent output account for this execution; a second claim of the same account is
-    /// rejected. One write per account per execution is what makes a rand seed unrepeatable (#1853 W4).
+    /// rejected. One write per account per execution keeps the decode cache and the read-after-write
+    /// rule sound.
     pub(super) fn claim_persistent_output(&mut self, key: Pubkey) -> Result<()> {
         require!(
             !self.persistent_outputs_claimed.contains(&key),
@@ -229,20 +236,20 @@ mod tests {
     }
 
     /// A canonical encrypted value account: program-owned, PDA-addressed for its own
-    /// `(domain, authority, label)` triple, with the discriminator `read_canonical_encrypted_value`
+    /// identity seeds, with the discriminator `read_canonical_encrypted_value`
     /// checks. Returns the account and the value serialized into it.
     fn canonical_value_account(tag: u8) -> (AccountInfo<'static>, EncryptedValue) {
         let mut value = EncryptedValue {
-            domain: Pubkey::new_unique(),
+            program: Pubkey::new_unique(),
             encrypted_value_account_authority: Pubkey::new_unique(),
+            scope: [tag; 32],
             label: [tag; 32],
             current_handle: [tag; 32],
-            subjects: vec![Pubkey::new_unique()],
             leaf_count: 0,
             peaks: Vec::new(),
             bump: 0,
         };
-        let (key, bump) = encrypted_value_address(value.encrypted_value_id());
+        let (key, bump) = value.canonical_address();
         value.bump = bump;
         let mut data = Vec::new();
         value.try_serialize(&mut data).expect("serializes");
@@ -302,7 +309,7 @@ mod tests {
         let mut table = ExecutionAccountTable::new(&accounts).unwrap();
         let taken = table.take_canonical_encrypted_value(0).unwrap();
         assert_eq!(taken.current_handle, original.current_handle);
-        assert_eq!(taken.subjects, original.subjects);
+        assert_eq!(taken.program, original.program);
     }
 
     #[test]
@@ -318,14 +325,32 @@ mod tests {
     fn output_pda_derivation_is_input_bound() {
         let accounts: Vec<AccountInfo> = Vec::new();
         let table = ExecutionAccountTable::new(&accounts).unwrap();
-        let domain = Pubkey::new_unique();
-        let app = Pubkey::new_unique();
-        let first = table.expected_output_pda(domain, app, [1; 32]);
+        let app = AppScope {
+            program: Pubkey::new_unique(),
+            scope: [3; 32],
+        };
+        let authority = Pubkey::new_unique();
+        let first = table.expected_output_pda(app, authority, [1; 32]);
         // Identical declaration inputs derive the identical address.
-        let again = table.expected_output_pda(domain, app, [1; 32]);
+        let again = table.expected_output_pda(app, authority, [1; 32]);
         assert_eq!(first.key, again.key);
         // Any changed declaration input derives a different address.
-        let other = table.expected_output_pda(domain, app, [2; 32]);
-        assert_ne!(first.key, other.key);
+        assert_ne!(
+            first.key,
+            table.expected_output_pda(app, authority, [2; 32]).key
+        );
+        assert_ne!(
+            first.key,
+            table
+                .expected_output_pda(
+                    AppScope {
+                        scope: [4; 32],
+                        ..app
+                    },
+                    authority,
+                    [1; 32]
+                )
+                .key
+        );
     }
 }

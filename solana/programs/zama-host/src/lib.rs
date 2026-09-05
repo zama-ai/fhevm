@@ -6,9 +6,9 @@
 //! Gateway/KMS request must verify.
 //!
 //! The program intentionally keeps app semantics outside this crate. App
-//! programs, such as `confidential-token`, decide which encrypted value account authorities and
-//! labels they authorize, then call this program by CPI to create or verify
-//! host-owned ACL state.
+//! programs, such as `confidential-token`, decide which encrypted value account authorities,
+//! scopes and labels they authorize and which keys each write allows, then call this program by
+//! CPI to create or verify host-owned ACL state.
 
 // Anchor macros generate framework-shaped code that trips rustc/Clippy checks.
 #![allow(unexpected_cfgs)]
@@ -134,21 +134,26 @@ pub mod zama_host {
         instructions::set_hcu_block_cap_per_app(ctx, value)
     }
 
-    /// Registers or clears an app's block-cap bypass in the HCU trust registry (admin-only).
+    /// Registers or clears an application's block-cap bypass in the HCU trust registry
+    /// (admin-only). The application is a `(program, scope)`.
     pub fn set_hcu_app_trusted(
         ctx: Context<SetHcuAppTrusted>,
-        app: Pubkey,
+        program: Pubkey,
+        scope: [u8; 32],
         trusted: bool,
     ) -> Result<()> {
-        instructions::set_hcu_app_trusted(ctx, app, trusted)
+        instructions::set_hcu_app_trusted(ctx, program, scope, trusted)
     }
 
-    pub fn set_deny_subject(
-        ctx: Context<SetDenySubject>,
-        subject: Pubkey,
+    /// Denies or re-admits an application `(program, scope)`: a denied application can neither
+    /// compute nor allow (admin-only).
+    pub fn set_deny_scope(
+        ctx: Context<SetDenyScope>,
+        program: Pubkey,
+        scope: [u8; 32],
         denied: bool,
     ) -> Result<()> {
-        instructions::set_deny_subject(ctx, subject, denied)
+        instructions::set_deny_scope(ctx, program, scope, denied)
     }
 
     pub fn delegate_for_user_decryption(
@@ -186,20 +191,8 @@ pub mod zama_host {
 
     // ---- EncryptedValue ACL model ----
 
-    pub fn allow_subjects(
-        ctx: Context<AllowEncryptedValueSubjects>,
-        subjects: Vec<Pubkey>,
-    ) -> Result<()> {
-        instructions::allow_subjects(ctx, subjects)
-    }
-
-    pub fn remove_subject(
-        ctx: Context<RemoveEncryptedValueSubject>,
-        subject: Pubkey,
-    ) -> Result<()> {
-        instructions::remove_subject(ctx, subject)
-    }
-
+    /// Seals the value's current handle as publicly decryptable. Every other allow happens
+    /// inline on the `fhe_execute` write that produces the handle.
     pub fn make_handle_public(
         ctx: Context<MakeEncryptedValueHandlePublic>,
         handle: [u8; 32],

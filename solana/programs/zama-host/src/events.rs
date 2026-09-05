@@ -2,7 +2,7 @@
 //! and which one it gets depends on whether an off-chain component has to be able to query it (DD-044).
 //!
 //! - **Emitted, always, through the event CPI** (`crate::event_cpi`). Two groups qualify. The admin and
-//!   config lifecycle — `HostConfig*`, `*KmsContext*`, `DenySubjectUpdated`, `HcuAppTrustUpdated` —
+//!   config lifecycle — `HostConfig*`, `*KmsContext*`, `DenyScopeUpdated`, `HcuAppTrustUpdated` —
 //!   because an admin change is a protocol-level fact a component must be able to read without
 //!   replaying instruction data to find it. And `FheExecuteRandomSeedsEvent` plus
 //!   `PublicOutputsProducedEvent`, which carry the only data an indexer cannot recompute from
@@ -44,7 +44,7 @@ pub struct PublicOutputsProducedEvent {
 pub struct FheExecuteRandomSeed {
     /// Zero-based step index within the execution.
     pub step_index: u16,
-    /// Seed derived from live persistent account state.
+    /// Seed derived from the consumed host rand nonce and slot entropy.
     pub seed: [u8; 16],
 }
 
@@ -68,7 +68,7 @@ pub struct HostConfigUpdatedEvent {
     pub admin: Pubkey,
     /// Current pause state.
     pub paused: bool,
-    /// Current grant deny-list gate.
+    /// Current deny-list gate.
     pub grant_deny_list_enabled: bool,
     /// Current max total HCU per `fhe_execute` execution (`u64::MAX` = unlimited).
     pub max_hcu_per_tx: u64,
@@ -104,31 +104,35 @@ pub struct KmsContextDestroyedEvent {
     pub kms_context_id: [u8; 32],
 }
 
-/// Emitted when a subject deny-list record is updated.
+/// Emitted when an application deny-list record is updated.
 #[event]
-pub struct DenySubjectUpdatedEvent {
+pub struct DenyScopeUpdatedEvent {
     /// Event schema version.
     pub version: u8,
     /// Canonical deny-list record PDA.
-    pub deny_subject_record: Pubkey,
-    /// Subject controlled by the deny-list record.
-    pub subject: Pubkey,
-    /// Whether the subject is denied for grant-authority use.
+    pub deny_scope_record: Pubkey,
+    /// The application program governed by the record.
+    pub program: Pubkey,
+    /// The program-declared scope governed by the record.
+    pub scope: [u8; 32],
+    /// Whether the application is denied.
     pub denied: bool,
     /// Slot in which this update was applied.
     pub updated_slot: u64,
 }
 
-/// Emitted when an app's HCU block-cap trust registry entry is updated.
+/// Emitted when an application's HCU block-cap trust registry entry is updated.
 #[event]
 pub struct HcuAppTrustUpdatedEvent {
     /// Event schema version.
     pub version: u8,
     /// Canonical trust-registry record PDA.
     pub hcu_trusted_app_record: Pubkey,
-    /// The compute subject governed by the record.
-    pub app: Pubkey,
-    /// Whether the app bypasses the per-app block cap.
+    /// The application program governed by the record.
+    pub program: Pubkey,
+    /// The program-declared scope governed by the record.
+    pub scope: [u8; 32],
+    /// Whether the application bypasses the per-app block cap.
     pub trusted: bool,
     /// Slot in which this update was applied.
     pub updated_slot: u64,

@@ -8,22 +8,24 @@
 
 use super::*;
 
-/// Per-execution slot entropy, identity, and rand anchor shared by every handle derivation.
-pub(super) struct ExecutionHandleContext<'a> {
+/// Per-execution slot entropy and rand anchor shared by every handle derivation.
+pub(super) struct ExecutionHandleContext {
     pub derivation: HandleDerivationContext,
-    /// Signed caller identity folded into rand seeds (never into deterministic handles).
-    pub compute_subject: Pubkey,
-    /// The execution's persistent-write anchor: every persistent output's live account
-    /// identity, current handle, and MMR leaf count in wire order
-    /// (see [`computed_eval_rand_seed`]).
-    pub persistent_anchor_bytes: &'a [u8],
+    /// Present exactly when the execution has a rand step (see [`computed_eval_rand_seed`]).
+    pub rand: Option<RandContext>,
+}
+
+/// What a rand seed is anchored to: the consumed host nonce and the application identity.
+pub(super) struct RandContext {
+    pub nonce: u64,
+    pub app: AppScope,
 }
 
 // Persistent and instruction-local outputs derive the identical handle, and identical
 // computations collide by design: deterministic handles are content-addressed
 // (op/operands/type + slot entropy, no salt), matching EVM `FHEVMExecutor`. Only
-// rand seeds carry uniqueness — signer identity plus the persistent-write anchor.
-impl ExecutionHandleContext<'_> {
+// rand seeds carry uniqueness — the consumed host nonce.
+impl ExecutionHandleContext {
     fn binary_result(
         &self,
         op: FheBinaryOpCode,
@@ -57,13 +59,14 @@ impl ExecutionHandleContext<'_> {
         computed_eval_trivial_handle(plaintext, fhe_type, &self.derivation)
     }
 
+    /// Only called for rand steps, and `fhe_execute` refuses a rand step without the nonce
+    /// account before the walk starts, so the anchor is always present here.
     pub(super) fn rand_seed(&self, op_index: u16) -> [u8; 16] {
-        computed_eval_rand_seed(
-            self.compute_subject,
-            self.persistent_anchor_bytes,
-            op_index,
-            &self.derivation,
-        )
+        let rand = self
+            .rand
+            .as_ref()
+            .expect("rand steps consume the nonce before the walk");
+        computed_eval_rand_seed(rand.nonce, rand.app, op_index, &self.derivation)
     }
 
     fn unary_result(&self, op: FheUnaryOpCode, operand: [u8; 32], output_fhe_type: u8) -> [u8; 32] {
@@ -127,11 +130,16 @@ impl ExecutionState<'_, '_, '_> {
             FheExecuteOperand::VerifiedInput { attestation } => {
                 // EVM `fromExternal` parity: only the attested contract may consume the input.
                 // Enforced here (the `msg.sender` analog) — not by constraining derived outputs.
-                // `subject` is the execution's `compute_subject`; a copied attestation is useless
-                // unless the caller can sign as `contract_address`.
+                // The contract is the execution's application program, proven through the
+                // persistent values it reads or writes; a copied attestation is useless to
+                // anyone who cannot sign for that program's values.
+                let program = self
+                    .app
+                    .map(|app| app.program)
+                    .ok_or(ZamaHostError::InputBindContractMismatch)?;
                 require_keys_eq!(
                     Pubkey::new_from_array(attestation.contract_address),
-                    self.subject,
+                    program,
                     ZamaHostError::InputBindContractMismatch
                 );
                 self.resolve_verified_input_operand(attestation)
@@ -159,7 +167,7 @@ pub(super) fn walk_steps<'info>(
     execution: &mut ExecutionState<'_, '_, 'info>,
     ctx: &Context<'info, FheExecute<'info>>,
     args: &FheExecuteArgs,
-    handle_context: &ExecutionHandleContext<'_>,
+    handle_context: &ExecutionHandleContext,
 ) -> Result<()> {
     for (index, step) in args.steps.iter().enumerate() {
         let op_index = index as u16;
