@@ -44,10 +44,6 @@ struct Args {
     #[arg(long = "program-id", alias = "acl-program-id")]
     program_id: String,
 
-    /// Coprocessor host-chain id recorded against ingested handles.
-    #[arg(long)]
-    host_chain_id: i64,
-
     /// Dependence-chain cache size.
     #[arg(long, default_value_t = DEFAULT_DEPENDENCE_CACHE_SIZE)]
     dependence_cache_size: u16,
@@ -77,18 +73,9 @@ async fn main() -> Result<()> {
 
     let program_id = Pubkey::from_str(&args.program_id)
         .with_context(|| format!("invalid program id {}", args.program_id))?;
-    // Solana host IDs set the RFC-021 high bit and arrive through CLI as the equivalent signed i64;
-    // canonical-u64 conversion intentionally preserves that bit pattern.
-    let database_chain_id =
-        ChainId::from_canonical_u64(args.host_chain_id as u64);
-    let db = Database::new(
-        &args.database_url,
-        database_chain_id,
-        args.dependence_cache_size,
-    )
-    .await
-    .context("connect coprocessor database")?;
 
+    // The deployment's HostConfig is the one source of the chain id: it derives handles and
+    // names the database partition they are filed under, so the two can never disagree.
     let rpc = RpcClient::new_with_timeout_and_commitment(
         args.url.clone(),
         SOLANA_RPC_REQUEST_TIMEOUT,
@@ -106,6 +93,14 @@ async fn main() -> Result<()> {
         chain_id = host_config_chain_id,
         "auto-detected handle-derivation params from confirmed HostConfig"
     );
+
+    let db = Database::new(
+        &args.database_url,
+        ChainId::from_canonical_u64(host_config_chain_id),
+        args.dependence_cache_size,
+    )
+    .await
+    .context("connect coprocessor database")?;
 
     let cancel = CancellationToken::new();
     let signal_cancel = cancel.clone();

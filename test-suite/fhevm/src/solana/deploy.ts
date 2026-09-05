@@ -339,7 +339,6 @@ const startHostListener = async (parameters: {
       VALIDATOR_RPC_URL,
       "--program-id",
       parameters.zamaHostId,
-      `--host-chain-id=${SOLANA_HOST_CHAIN_ID_I64}`,
     ],
     { stdin: "ignore", stdout: logFd, stderr: logFd },
   );
