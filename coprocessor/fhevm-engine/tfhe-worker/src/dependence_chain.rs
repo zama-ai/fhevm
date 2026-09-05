@@ -229,7 +229,9 @@ impl LockMngr {
         }
 
         let started_at = SystemTime::now();
-        let row = sqlx::query_as::<_, DatabaseChainLock>(
+        let held_ids = self.get_current_lock_ids();
+        let row = sqlx::query_as!(
+            DatabaseChainLock,
             r#"
             WITH ranked AS (
                 -- Two index-ordered arms, each already cut to a small
@@ -254,7 +256,7 @@ impl LockMngr {
                       AND dependency_count = 0     -- No pending dependencies
                       AND dependence_chain_id <> ALL($4)
                     ORDER BY schedule_priority ASC, last_updated_at ASC
-                    LIMIT $3 * 2
+                    LIMIT ($3::bigint) * 2
                 )
                 UNION ALL
                 (
@@ -265,7 +267,7 @@ impl LockMngr {
                       AND dependency_count = 0     -- No pending dependencies
                       AND dependence_chain_id <> ALL($4)
                     ORDER BY schedule_priority ASC, last_updated_at ASC
-                    LIMIT $3 * 2
+                    LIMIT ($3::bigint) * 2
                 )
             ),
             candidate AS (
@@ -283,7 +285,7 @@ impl LockMngr {
                 )
                 ORDER BY ranked.schedule_priority ASC, ranked.last_updated_at ASC -- highest priority first
                 FOR UPDATE OF dc SKIP LOCKED   -- Ensure no other worker is currently trying to lock it
-                LIMIT $3
+                LIMIT $3::bigint
             )
             UPDATE dependence_chain AS dc
             SET
@@ -293,13 +295,22 @@ impl LockMngr {
                 lock_expires_at = NOW() + make_interval(secs => $2)
             FROM candidate
             WHERE dc.dependence_chain_id = candidate.dependence_chain_id
-            RETURNING dc.*, candidate.match_reason;
+            RETURNING
+                dc.dependence_chain_id,
+                dc.worker_id,
+                dc.lock_acquired_at AS "lock_acquired_at: DateTime<Utc>",
+                dc.lock_expires_at AS "lock_expires_at: DateTime<Utc>",
+                dc.last_updated_at AS "last_updated_at: DateTime<Utc>",
+                dc.block_height,
+                dc.block_timestamp AS "block_timestamp: DateTime<Utc>",
+                dc.schedule_priority,
+                candidate.match_reason AS "match_reason!"
         "#,
+            self.worker_id,
+            self.lock_ttl_sec as f64,
+            i64::from(limit.max(1)),
+            &held_ids,
         )
-        .bind(self.worker_id)
-        .bind(self.lock_ttl_sec)
-        .bind(limit.max(1))
-        .bind(self.get_current_lock_ids())
         .fetch_all(&self.pool)
         .await?;
 
@@ -342,7 +353,8 @@ impl LockMngr {
         }
 
         let started_at = SystemTime::now();
-        let row = sqlx::query_as::<_, DatabaseChainLock>(
+        let row = sqlx::query_as!(
+            DatabaseChainLock,
             r#"
             WITH candidate AS (
                 SELECT dependence_chain_id, 'updated_unowned' AS match_reason, dependency_count
@@ -363,11 +375,20 @@ impl LockMngr {
                 lock_expires_at = NOW() + make_interval(secs => $2)
             FROM candidate
             WHERE dc.dependence_chain_id = candidate.dependence_chain_id
-            RETURNING dc.*, candidate.match_reason, candidate.dependency_count;
+            RETURNING
+                dc.dependence_chain_id,
+                dc.worker_id,
+                dc.lock_acquired_at AS "lock_acquired_at: DateTime<Utc>",
+                dc.lock_expires_at AS "lock_expires_at: DateTime<Utc>",
+                dc.last_updated_at AS "last_updated_at: DateTime<Utc>",
+                dc.block_height,
+                dc.block_timestamp AS "block_timestamp: DateTime<Utc>",
+                dc.schedule_priority,
+                candidate.match_reason AS "match_reason!"
         "#,
+            self.worker_id,
+            self.lock_ttl_sec as f64,
         )
-        .bind(self.worker_id)
-        .bind(self.lock_ttl_sec)
         .fetch_optional(&self.pool)
         .await?;
 
@@ -432,7 +453,8 @@ impl LockMngr {
         self.last_stale_probe_at = Some(now);
 
         let started_at = SystemTime::now();
-        let row = sqlx::query_as::<_, DatabaseChainLock>(
+        let row = sqlx::query_as!(
+            DatabaseChainLock,
             r#"
             WITH candidate AS (
                 SELECT dependence_chain_id, 'stale_gate_repair' AS match_reason
@@ -464,12 +486,21 @@ impl LockMngr {
                 dependency_count = 0    -- what ground truth established above
             FROM candidate
             WHERE dc.dependence_chain_id = candidate.dependence_chain_id
-            RETURNING dc.*, candidate.match_reason;
+            RETURNING
+                dc.dependence_chain_id,
+                dc.worker_id,
+                dc.lock_acquired_at AS "lock_acquired_at: DateTime<Utc>",
+                dc.lock_expires_at AS "lock_expires_at: DateTime<Utc>",
+                dc.last_updated_at AS "last_updated_at: DateTime<Utc>",
+                dc.block_height,
+                dc.block_timestamp AS "block_timestamp: DateTime<Utc>",
+                dc.schedule_priority,
+                candidate.match_reason AS "match_reason!"
         "#,
+            self.worker_id,
+            self.lock_ttl_sec as f64,
+            min_age_secs,
         )
-        .bind(self.worker_id)
-        .bind(self.lock_ttl_sec)
-        .bind(min_age_secs)
         .fetch_optional(&self.pool)
         .await?;
 

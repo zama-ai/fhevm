@@ -9,6 +9,7 @@ use std::sync::{Once, OnceLock};
 use tokio::task::JoinSet;
 
 #[cfg(feature = "bench")]
+#[cfg(feature = "bench")]
 pub mod benchmark_exact_tuples;
 pub mod bridge;
 pub mod daemon_cli;

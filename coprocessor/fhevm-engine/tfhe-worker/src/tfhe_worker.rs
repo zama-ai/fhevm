@@ -111,7 +111,7 @@ pub(crate) const GPU_RESERVATION_LEASE_FRACTION: f32 = 0.8;
 ///
 /// Substring matching is admittedly coarse, and it is now load-bearing in
 /// five places (this constant, the two work-window queries,
-/// `release_completed_locks` and [`DEAD_PRODUCER_PREDICATE`]). A dedicated
+/// `release_completed_locks` and [`query_dead_boundary_handles`]). A dedicated
 /// error-class column is the follow-up; until then, every one of those five
 /// sites must be changed together.
 pub(crate) const RETRYABLE_STAMP_MARKER: &str = "RETRYABLE";
@@ -2592,20 +2592,20 @@ async fn query_ciphertexts<'a>(
     let mut ciphertext_map: HashMap<Vec<u8>, (i16, Vec<u8>)> =
         HashMap::with_capacity(cts_to_query.len());
 
-    let rows: Vec<(Vec<u8>, Vec<u8>, i16)> = sqlx::query_as(
+    let rows = sqlx::query!(
         "SELECT handle, ciphertext, ciphertext_type
          FROM ciphertexts
          WHERE handle = ANY($1::BYTEA[])",
+        cts_to_query,
     )
-    .bind(cts_to_query)
     .fetch_all(trx.as_mut())
     .await
     .map_err(|err| {
         error!(target: "tfhe_worker", { error = %err }, "error while querying ciphertexts");
         err
     })?;
-    for (handle, ciphertext, ciphertext_type) in rows {
-        let _ = ciphertext_map.insert(handle, (ciphertext_type, ciphertext));
+    for row in rows {
+        let _ = ciphertext_map.insert(row.handle, (row.ciphertext_type, row.ciphertext));
     }
 
     if gcs_mode {
@@ -2713,28 +2713,25 @@ async fn query_ciphertexts<'a>(
     Ok(ciphertext_map)
 }
 
-/// The definition of a terminally DEAD handle, shared verbatim (alias `c`)
-/// by the schema-local and the GCS pre-cutover fallback queries so the two
-/// verdicts cannot drift. Dead iff at least one producer row carries a
-/// TERMINAL error stamp (a retryable panic stamp — see
-/// [`RETRYABLE_STAMP_MARKER`] — is not terminal) and NO row could still
-/// deliver bytes: a completed row already has published bytes (including
-/// legacy completed-and-stamped contradiction rows, which the heal never
-/// touches), a live allowed row may still produce them, and a non-allowed
-/// row never persists so it cannot satisfy a consumer either. Deadness
-/// always requires an actual error: merely-absent producers keep deferring.
-const DEAD_PRODUCER_PREDICATE: &str = "bool_or(c.is_error AND NOT c.is_completed \
-        AND (c.error_message IS NULL OR c.error_message NOT LIKE '%RETRYABLE%')) \
-     AND bool_and(NOT c.is_allowed OR (c.is_error AND NOT c.is_completed \
-        AND (c.error_message IS NULL OR c.error_message NOT LIKE '%RETRYABLE%')))";
-
 /// Boundary dependency handles whose bytes can never exist: every producer
-/// row is terminally errored (see [`DEAD_PRODUCER_PREDICATE`]). Consumers of
-/// these must drain terminally instead of deferring as missing inputs
-/// forever. Handles produced by a live (non-errored) row in this window are
-/// excluded — the batch may still deliver them, and if the producer errors
-/// instead its stamps are seen by the next cycle's check (an all-errored
-/// producer contributes no ops, so its handle leaves the window).
+/// row is terminally errored. Consumers of these must drain terminally
+/// instead of deferring as missing inputs forever. Handles produced by a
+/// live (non-errored) row in this window are excluded — the batch may still
+/// deliver them, and if the producer errors instead its stamps are seen by
+/// the next cycle's check (an all-errored producer contributes no ops, so
+/// its handle leaves the window).
+///
+/// The definition of a terminally DEAD handle is spelled out identically
+/// (alias `c`) in the schema-local query and in the GCS pre-cutover fallback
+/// query below, so that both stay compile-time checked; keep the two copies
+/// identical. Dead iff at least one producer row carries a TERMINAL error
+/// stamp (a retryable panic stamp — see [`RETRYABLE_STAMP_MARKER`] — is not
+/// terminal) and NO row could still deliver bytes: a completed row already
+/// has published bytes (including legacy completed-and-stamped contradiction
+/// rows, which the heal never touches), a live allowed row may still produce
+/// them, and a non-allowed row never persists so it cannot satisfy a
+/// consumer either. Deadness always requires an actual error: merely-absent
+/// producers keep deferring.
 async fn query_dead_boundary_handles<'a>(
     trx: &mut sqlx::Transaction<'a, Postgres>,
     the_work: &[WorkItem],
@@ -2758,23 +2755,25 @@ async fn query_dead_boundary_handles<'a>(
     }
     let mut dead: HashSet<Vec<u8>> = HashSet::new();
     let mut seen: HashSet<Vec<u8>> = HashSet::new();
-    let local_query = format!(
-        "SELECT c.output_handle, ({DEAD_PRODUCER_PREDICATE}) AS dead
+    // Dead-producer predicate: see the function docs; identical in both
+    // queries of this function.
+    for row in sqlx::query!(
+        "SELECT c.output_handle,
+                (bool_or(c.is_error AND NOT c.is_completed
+                        AND (c.error_message IS NULL OR c.error_message NOT LIKE '%RETRYABLE%'))
+                 AND bool_and(NOT c.is_allowed OR (c.is_error AND NOT c.is_completed
+                        AND (c.error_message IS NULL OR c.error_message NOT LIKE '%RETRYABLE%')))) AS dead
          FROM computations c
          WHERE c.output_handle = ANY($1::BYTEA[])
-         GROUP BY c.output_handle"
-    );
-    for row in sqlx::query(&local_query)
-        .bind(&candidates)
-        .fetch_all(trx.as_mut())
-        .await?
+         GROUP BY c.output_handle",
+        &candidates,
+    )
+    .fetch_all(trx.as_mut())
+    .await?
     {
-        use sqlx::Row;
-        let handle: Vec<u8> = row.get("output_handle");
-        let is_dead: Option<bool> = row.get("dead");
-        seen.insert(handle.clone());
-        if is_dead.unwrap_or(false) {
-            dead.insert(handle);
+        seen.insert(row.output_handle.clone());
+        if row.dead.unwrap_or(false) {
+            dead.insert(row.output_handle);
         }
     }
     // GCS mode: `computations` resolves to gcs.computations, created empty
@@ -2795,24 +2794,25 @@ async fn query_dead_boundary_handles<'a>(
             // backfilled): those producers are never judged dead, so their
             // consumers defer — fail-safe, at worst the pre-existing
             // deferral behavior for ancient history.
-            let fallback_query = format!(
-                "SELECT c.output_handle, ({DEAD_PRODUCER_PREDICATE}) AS dead
+            for row in sqlx::query!(
+                "SELECT c.output_handle,
+                        (bool_or(c.is_error AND NOT c.is_completed
+                        AND (c.error_message IS NULL OR c.error_message NOT LIKE '%RETRYABLE%'))
+                 AND bool_and(NOT c.is_allowed OR (c.is_error AND NOT c.is_completed
+                        AND (c.error_message IS NULL OR c.error_message NOT LIKE '%RETRYABLE%')))) AS dead
                  FROM public.computations c
                  JOIN public.upgrade_state us
                    ON us.stack_role = 'GCS' AND us.host_chain_id = c.host_chain_id
                  WHERE c.output_handle = ANY($1::BYTEA[])
                    AND c.block_number < us.start_block
-                 GROUP BY c.output_handle"
-            );
-            for row in sqlx::query(&fallback_query)
-                .bind(&unseen)
-                .fetch_all(trx.as_mut())
-                .await?
+                 GROUP BY c.output_handle",
+                &unseen,
+            )
+            .fetch_all(trx.as_mut())
+            .await?
             {
-                use sqlx::Row;
-                let is_dead: Option<bool> = row.get("dead");
-                if is_dead.unwrap_or(false) {
-                    dead.insert(row.get("output_handle"));
+                if row.dead.unwrap_or(false) {
+                    dead.insert(row.output_handle);
                 }
             }
         }
