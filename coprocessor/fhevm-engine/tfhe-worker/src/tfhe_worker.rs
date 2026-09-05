@@ -116,6 +116,20 @@ pub(crate) const GPU_RESERVATION_LEASE_FRACTION: f32 = 0.8;
 /// sites must be changed together.
 pub(crate) const RETRYABLE_STAMP_MARKER: &str = "RETRYABLE";
 
+/// Row cap of the adaptive window's per-chain lateral scan, as rows per
+/// transaction of the chain's share: a chain is walked oldest-first for at
+/// most `share × this` pending rows before its transactions are ranked.
+///
+/// The cap is what bounds the query -- without it a deep backlog chain is
+/// read in full on every cycle -- and it is safe in the direction that
+/// matters: every transaction whose first row lies within the cap is ranked
+/// exactly (the walk is in schedule order, so a first appearance IS the
+/// transaction's earliest row), and a transaction beyond it is simply not
+/// offered this cycle. A chain only contributes fewer than `share`
+/// transactions when its first `share` transactions together span more than
+/// `share × this` rows, i.e. when they average more rows than this.
+pub(crate) const ADAPTIVE_WINDOW_ROWS_PER_TRANSACTION: i64 = 64;
+
 fn stamp_is_retryable(error_message: Option<&str>) -> bool {
     error_message.is_some_and(|m| m.contains(RETRYABLE_STAMP_MARKER))
 }
@@ -787,6 +801,169 @@ mod operand_boundary_mask_tests {
         .fetch_one(&pool)
         .await?;
         assert_eq!(status, "processing");
+        Ok(())
+    }
+
+    /// The adaptive window gives every held chain its transaction share,
+    /// whatever the chains' depths, and stays bounded per chain.
+    ///
+    /// Three chains, oldest first: `wide` (one 200-row transaction), `deep`
+    /// (300 two-row transactions) and `shallow` (3 one-row transactions).
+    /// With a 6-transaction window over 3 chains the share is 2. `deep` and
+    /// `shallow` each contribute exactly 2 transactions; `wide` contributes
+    /// its single transaction -- its only transaction begins within the
+    /// per-chain row cap, so the cap costs it nothing -- for 5 in total.
+    /// Without per-chain bounding `deep`'s oldest rows would fill the window.
+    #[tokio::test]
+    async fn adaptive_window_shares_the_batch_across_held_chains(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let db = setup_test_db(ImportMode::None).await?;
+        let pool = PgPoolOptions::new()
+            .max_connections(4)
+            .connect(db.db_url())
+            .await?;
+
+        fn tagged(tag: u8, index: u16) -> Vec<u8> {
+            let mut out = vec![tag; 32];
+            out[1..3].copy_from_slice(&index.to_be_bytes());
+            out
+        }
+        let wide_chain = tagged(0x31, 0);
+        let deep_chain = tagged(0x32, 0);
+        let shallow_chain = tagged(0x33, 0);
+        for (chain, age_secs) in [
+            (&wide_chain, 300_f64),
+            (&deep_chain, 200_f64),
+            (&shallow_chain, 100_f64),
+        ] {
+            sqlx::query(
+                "INSERT INTO dependence_chain (dependence_chain_id, status, last_updated_at)
+                 VALUES ($1, 'updated', NOW() - make_interval(secs => $2))",
+            )
+            .bind(chain)
+            .bind(age_secs)
+            .execute(&pool)
+            .await?;
+        }
+        // Every row is a valid boundary consumer of an absent producer, so
+        // the window admits it and execution would defer it -- the shape of
+        // a pending backlog, which is all this test is about.
+        let wide_tx = tagged(0xA1, 0);
+        for row in 0..200_u16 {
+            seed_computation(
+                &pool,
+                &tagged(0x41, row),
+                vec![tagged(0x40, row)],
+                mask_with_bits(&[0]),
+                Some(&wide_chain),
+                &wide_tx,
+                3000 - i64::from(row),
+            )
+            .await;
+        }
+        for tx in 0..300_u16 {
+            for row in 0..2_u16 {
+                seed_computation(
+                    &pool,
+                    &tagged(0x51, tx * 2 + row),
+                    vec![tagged(0x50, tx * 2 + row)],
+                    mask_with_bits(&[0]),
+                    Some(&deep_chain),
+                    &tagged(0xA2, tx),
+                    2000 - i64::from(tx * 2 + row),
+                )
+                .await;
+            }
+        }
+        for tx in 0..3_u16 {
+            seed_computation(
+                &pool,
+                &tagged(0x61, tx),
+                vec![tagged(0x60, tx)],
+                mask_with_bits(&[0]),
+                Some(&shallow_chain),
+                &tagged(0xA3, tx),
+                1000 - i64::from(tx),
+            )
+            .await;
+        }
+
+        use clap::Parser;
+        let mut args = crate::daemon_cli::Args::parse_from([
+            "tfhe-worker",
+            "--work-items-batch-size",
+            "6",
+            "--dependence-chains-per-batch",
+            "3",
+        ]);
+        args.database_url = Some(db.db_url().to_owned().into());
+        assert!(
+            args.dcid_adaptive_batch_execution,
+            "adaptive window is the default"
+        );
+        let health_check = crate::health_check::HealthCheck::new(
+            db.db_url().to_owned().into(),
+            Duration::from_secs(300),
+        );
+        let mut locks = dependence_chain::LockMngr::new_with_conf(
+            Uuid::new_v4(),
+            pool.clone(),
+            30,
+            false,
+            None,
+            None,
+            None,
+            3,
+        );
+        let mut no_progress_cycles = 0;
+        let mut cooldown = DeferredTransactionCooldown::new();
+
+        let mut trx = pool.begin().await?;
+        let (nodes, _, more) = query_for_work(
+            &args,
+            &health_check,
+            &mut trx,
+            &mut locks,
+            &mut no_progress_cycles,
+            &mut cooldown,
+            false,
+        )
+        .await?;
+        trx.commit().await?;
+        assert!(more, "the window found work");
+        assert_eq!(
+            locks.get_current_lock_ids().len(),
+            3,
+            "all three chains are held, or the share is not what this asserts"
+        );
+
+        let mut per_chain = std::collections::BTreeMap::<u8, Vec<Vec<u8>>>::new();
+        for node in &nodes {
+            per_chain
+                .entry(node.transaction_id[0])
+                .or_default()
+                .push(node.transaction_id.clone());
+        }
+        assert_eq!(
+            per_chain.get(&0xA1).map(Vec::len),
+            Some(1),
+            "the wide chain offers its only transaction"
+        );
+        assert_eq!(
+            per_chain.get(&0xA2).map(Vec::len),
+            Some(2),
+            "the deep chain is bounded to its share, not the whole window"
+        );
+        assert_eq!(
+            per_chain.get(&0xA3).map(Vec::len),
+            Some(2),
+            "the shallow chain gets its share despite being the youngest"
+        );
+        assert_eq!(nodes.len(), 5);
+        // Within a chain the share goes to the OLDEST transactions.
+        let mut deep: Vec<_> = per_chain[&0xA2].clone();
+        deep.sort();
+        assert_eq!(deep, vec![tagged(0xA2, 0), tagged(0xA2, 1)]);
         Ok(())
     }
 
@@ -2787,7 +2964,23 @@ async fn query_for_work<'a>(
     // batching bounds each acquired DCID to an equal transaction share, then
     // fills the existing global work window in schedule order. This ensures a
     // large chain cannot keep every smaller ready chain out of the next graph.
+    // Every locked variant is bounded PER CHAIN. A held set is walked as
+    // `unnest($1) CROSS JOIN LATERAL (...)`, and each lateral is one
+    // index-ordered scan of `idx_computations_pending_dcid_schedule`
+    // (dependence_chain_id, schedule_order) that stops after its LIMIT. The
+    // previous shape filtered `dependence_chain_id = ANY($1)` over the union of
+    // the held chains' pending rows and sorted that union before the LIMIT, so
+    // a batch holding deep backlogs read, anti-joined and sorted every pending
+    // row of every held chain on every cycle -- measured at 4.2 s per cycle
+    // (adaptive) and 313 ms (normal) for 20 chains × 5k pending rows, against
+    // 15 ms and 7 ms for the lateral shapes below on the same data.
+    //
+    // The result sets are unchanged for the normal window: the global oldest
+    // LIMIT rows are contained in the union of each chain's oldest LIMIT rows.
+    // The lockless fallback keeps the historical global query.
     let the_work = if adaptive_batch_execution {
+        let share =
+            dcid_transaction_share(transaction_batch_size, dependence_chain_ids.len(), true);
         sqlx::query_as!(
             WorkItem,
             "
@@ -2807,76 +3000,150 @@ FROM computations c
 WHERE c.transaction_id IN (
     SELECT deduped.transaction_id
     FROM (
-      -- Collapse to one row per transaction before the LIMIT. The ranking
-      -- below is per (dependence chain, transaction), so a transaction whose
-      -- rows a fork-exposed database retained under a second chain is ranked
-      -- once per chain and would otherwise spend the window's LIMIT on
-      -- duplicates of itself. Ordering keeps the earliest of its ranks, which
-      -- is the same anchor the non-adaptive query uses.
+      -- Collapse to one row per transaction before the LIMIT: a transaction
+      -- whose rows a fork-exposed database retained under a second chain is
+      -- ranked once per chain and would otherwise spend the window's LIMIT on
+      -- duplicates of itself. Ordering keeps the earliest of its ranks, the
+      -- same anchor the non-adaptive query uses.
       SELECT
-        adaptive_schedule_order.transaction_id,
-        MIN(adaptive_schedule_order.schedule_order) AS schedule_order
+        ranked.transaction_id,
+        MIN(ranked.schedule_order) AS schedule_order
       FROM (
+        -- Rank each chain's transactions by first appearance in schedule
+        -- order. The lateral walks the chain oldest-first, so the first row
+        -- seen for a transaction carries its MIN(schedule_order), and
+        -- DENSE_RANK over that first appearance is the per-chain transaction
+        -- rank -- exact for every transaction that begins within the lateral's
+        -- row cap. A chain whose first `share` transactions do not all begin
+        -- within the cap contributes fewer transactions this cycle, never a
+        -- wrong one; see ADAPTIVE_WINDOW_ROWS_PER_TRANSACTION for the cap.
         SELECT
-          dependence_chain_id,
-          transaction_id,
-          MIN(schedule_order) AS schedule_order,
-          ROW_NUMBER() OVER (
-            PARTITION BY dependence_chain_id
-            ORDER BY MIN(schedule_order), transaction_id
+          first_seen.dependence_chain_id,
+          first_seen.transaction_id,
+          first_seen.schedule_order,
+          DENSE_RANK() OVER (
+            PARTITION BY first_seen.dependence_chain_id
+            ORDER BY first_seen.first_order, first_seen.transaction_id
           ) AS dcid_transaction_rank
+        FROM (
+          SELECT
+            d.dependence_chain_id,
+            l.transaction_id,
+            l.schedule_order,
+            MIN(l.schedule_order) OVER (
+              PARTITION BY d.dependence_chain_id, l.transaction_id
+            ) AS first_order
+          FROM unnest($1::bytea[]) AS d(dependence_chain_id)
+          CROSS JOIN LATERAL (
+            SELECT transaction_id, schedule_order
+            FROM computations
+            WHERE dependence_chain_id = d.dependence_chain_id
+              AND is_completed = FALSE
+              AND is_allowed = TRUE
+              -- A retryable stamp stays selectable until it has spent its
+              -- attempts for this lane pass; past the threshold the row is
+              -- DEMOTED and the slow sweep re-arms it with the count reset.
+              -- Not terminal: the stamp is untouched and the row still pending.
+              AND (is_error = FALSE
+                   OR (error_message LIKE '%' || $4 || '%'
+                       AND ($5::smallint IS NULL OR error_retry_count < $5)))
+              -- DEMOTION IS TRANSACTION-SCOPED, because selection is: the
+              -- outer query loads every row of a selected transaction, so a
+              -- pending sibling would drag a demoted row back in forever, and
+              -- since the sibling defers rather than errors it would also keep
+              -- the chain out of 'processed', beyond the sweep's reach.
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM computations demoted
+                  WHERE demoted.transaction_id = computations.transaction_id
+                    AND demoted.is_completed = FALSE
+                    AND demoted.is_error = TRUE
+                    AND demoted.error_message LIKE '%' || $4 || '%'
+                    AND $5::smallint IS NOT NULL
+                    AND demoted.error_retry_count >= $5
+              )
+            ORDER BY schedule_order ASC
+            LIMIT $6
+          ) AS l
+        ) AS first_seen
+      ) AS ranked
+      WHERE ranked.dcid_transaction_rank <= $2
+      GROUP BY ranked.transaction_id
+    ) AS deduped
+    ORDER BY deduped.schedule_order ASC, deduped.transaction_id ASC
+    LIMIT $3
+)
+  -- Like the other windows: load ALL rows of the selected transactions,
+  -- fork-retained siblings included; ownership is re-applied in code, which
+  -- turns rows of other chains into recompute-only producers excluded from
+  -- results, persistence and completion.
+            ",
+            dcid_filter.as_deref(),
+            share as i64,
+            transaction_batch_size as i64,
+            RETRYABLE_STAMP_MARKER,
+            demote_threshold,
+            i64::from(share).saturating_mul(ADAPTIVE_WINDOW_ROWS_PER_TRANSACTION),
+        )
+        .fetch_all(trx.as_mut())
+        .instrument(s_work.clone())
+        .await
+    } else if let Some(dcids) = dcid_filter.as_deref() {
+        sqlx::query_as!(
+            WorkItem,
+            "
+SELECT
+  c.output_handle,
+  c.dependencies,
+  c.fhe_operation,
+  c.is_scalar,
+  c.is_allowed,
+  c.is_error,
+  c.error_message,
+  c.transaction_id,
+  c.schedule_order,
+  c.operand_boundary_mask,
+  c.dependence_chain_id
+FROM computations c
+WHERE c.transaction_id IN (
+    SELECT DISTINCT oldest.transaction_id
+    FROM (
+      SELECT l.transaction_id, l.schedule_order
+      FROM unnest($1::bytea[]) AS d(dependence_chain_id)
+      CROSS JOIN LATERAL (
+        SELECT transaction_id, schedule_order
         FROM computations
-        WHERE is_completed = FALSE
-          -- A retryable stamp stays selectable until it has spent its
-          -- attempts for this lane pass; past the threshold the row is
-          -- DEMOTED and the slow sweep re-arms it with the count reset.
-          -- Not terminal: the stamp is untouched and the row still pending.
+        WHERE dependence_chain_id = d.dependence_chain_id
+          AND is_completed = FALSE
+          AND is_allowed = TRUE
+          -- Same demotion bound as the adaptive query above.
           AND (is_error = FALSE
-               OR (error_message LIKE '%' || $5 || '%'
-                   AND ($6::smallint IS NULL OR error_retry_count < $6)))
-          -- DEMOTION IS TRANSACTION-SCOPED, because selection is. The outer
-          -- query loads every row of a selected transaction, so excluding a
-          -- demoted row here and not its transaction achieves nothing: a
-          -- pending sibling keeps the transaction selectable and drags the
-          -- demoted row back in to be retried, forever. Worse, that sibling
-          -- is never stamped -- it defers on the missing input rather than
-          -- erroring -- so it keeps the chain out of `processed` too, and the
-          -- slow sweep only ever looks at processed chains. Demotion, the
-          -- retirement it enables and the sweep that undoes it were all
-          -- unreachable for this shape.
+               OR (error_message LIKE '%' || $3 || '%'
+                   AND ($4::smallint IS NULL OR error_retry_count < $4)))
+          -- Transaction-scoped, exactly as in the adaptive query above.
           AND NOT EXISTS (
               SELECT 1
               FROM computations demoted
               WHERE demoted.transaction_id = computations.transaction_id
                 AND demoted.is_completed = FALSE
                 AND demoted.is_error = TRUE
-                AND demoted.error_message LIKE '%' || $5 || '%'
-                AND $6::smallint IS NOT NULL
-                AND demoted.error_retry_count >= $6
+                AND demoted.error_message LIKE '%' || $3 || '%'
+                AND $4::smallint IS NOT NULL
+                AND demoted.error_retry_count >= $4
           )
-          AND is_allowed = TRUE
-          AND ($1::bytea[] IS NULL OR dependence_chain_id = ANY($1))
-          -- Same lockless-fallback fairness clause as the non-adaptive
-          -- query below: deferred transactions sit out their cooldown.
-          AND NOT (transaction_id = ANY($4::bytea[]))
-        GROUP BY dependence_chain_id, transaction_id
-      ) AS adaptive_schedule_order
-      WHERE adaptive_schedule_order.dcid_transaction_rank <= $2
-      GROUP BY adaptive_schedule_order.transaction_id
-    ) AS deduped
-    ORDER BY deduped.schedule_order ASC, deduped.transaction_id ASC
-    LIMIT $3
+        ORDER BY schedule_order ASC
+        LIMIT $2
+      ) AS l
+      ORDER BY l.schedule_order ASC
+      LIMIT $2
+    ) AS oldest
 )
-  -- Like the non-adaptive query below: load ALL rows of the selected
-  -- transactions, fork-retained siblings included; ownership is re-applied
-  -- in code, which turns rows of other chains into recompute-only
-  -- producers excluded from results, persistence and completion.
+  -- The transaction-id expansion deliberately loads ALL rows of a selected
+  -- transaction, including rows a fork-exposed DB retained under another
+  -- chain; ownership is re-applied in code (see the adaptive query above).
             ",
-            dcid_filter.as_deref(),
-            dcid_transaction_share(transaction_batch_size, dependence_chain_ids.len(), true,)
-                as i64,
+            dcids,
             transaction_batch_size as i64,
-            &cooled_transactions,
             RETRYABLE_STAMP_MARKER,
             demote_threshold,
         )
@@ -2884,10 +3151,11 @@ WHERE c.transaction_id IN (
         .instrument(s_work.clone())
         .await
     } else {
+        // Lockless fallback (`--disable-dcid-locking`): the historical global
+        // oldest-first window over every pending transaction.
         sqlx::query_as!(
             WorkItem,
             "
--- Acquire all computations from a transaction set
 SELECT
   c.output_handle,
   c.dependencies,
@@ -2910,8 +3178,8 @@ WHERE c.transaction_id IN (
       WHERE is_completed = FALSE
         -- Same demotion bound as the adaptive query above.
         AND (is_error = FALSE
-             OR (error_message LIKE '%' || $4 || '%'
-                 AND ($5::smallint IS NULL OR error_retry_count < $5)))
+             OR (error_message LIKE '%' || $3 || '%'
+                 AND ($4::smallint IS NULL OR error_retry_count < $4)))
         -- Transaction-scoped, exactly as in the adaptive query above.
         AND NOT EXISTS (
             SELECT 1
@@ -2919,19 +3187,17 @@ WHERE c.transaction_id IN (
             WHERE demoted.transaction_id = computations.transaction_id
               AND demoted.is_completed = FALSE
               AND demoted.is_error = TRUE
-              AND demoted.error_message LIKE '%' || $4 || '%'
-              AND $5::smallint IS NOT NULL
-              AND demoted.error_retry_count >= $5
+              AND demoted.error_message LIKE '%' || $3 || '%'
+              AND $4::smallint IS NOT NULL
+              AND demoted.error_retry_count >= $4
         )
         AND is_allowed = TRUE
-        AND ($1::bytea[] IS NULL OR dependence_chain_id = ANY($1))
         -- Lockless fallback fairness: transactions this worker deferred
         -- stay out of the window for a cooldown, or they would occupy the
-        -- oldest-first window forever and starve younger work. Empty with
-        -- DCID locking enabled, where the chain is parked instead.
-        AND NOT (transaction_id = ANY($3::bytea[]))
+        -- oldest-first window forever and starve younger work.
+        AND NOT (transaction_id = ANY($2::bytea[]))
       ORDER BY schedule_order ASC
-      LIMIT $2
+      LIMIT $1
     ) as c_schedule_order
   )
   -- The transaction-id expansion deliberately loads ALL rows of a selected
@@ -2943,7 +3209,6 @@ WHERE c.transaction_id IN (
   -- must be recomputed, never read back through the persisted round-trip —
   -- and are excluded from results, persistence and completion.
         ",
-            dcid_filter.as_deref(),
             transaction_batch_size as i64,
             &cooled_transactions,
             RETRYABLE_STAMP_MARKER,
