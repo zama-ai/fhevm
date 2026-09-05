@@ -167,7 +167,12 @@ pub fn recover_evm_address(digest: &[u8; 32], signature: &[u8; 65]) -> Option<[u
 }
 
 /// True iff at least `threshold` DISTINCT signatures recover to addresses in `signer_set`.
-/// Mirrors the EVM verifiers' recover -> in-set -> unique >= threshold discipline.
+///
+/// Signatures that fail to recover or recover to an address outside `signer_set` are ignored
+/// rather than failing the check. This is a deliberate divergence from the EVM `InputVerifier`
+/// and `KMSVerifier`, which revert on any unknown signer: an outsider signature cannot raise
+/// the count, so skipping it costs nothing in safety and keeps an otherwise valid packet live
+/// (for example one still carrying a signature from a signer rotated out of the set).
 pub fn verify_threshold(
     digest: &[u8; 32],
     signatures: &[[u8; 65]],

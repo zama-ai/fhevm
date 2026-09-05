@@ -183,7 +183,11 @@ connector's canonical-PDA + MMR-proof verification (DD-032; materiality now live
    `eip712::verify_threshold` — EVM `InputVerifier` parity, replacing the former single-signer /
    threshold-1 path. Admin-gated rotation via `set_coprocessor_signers`. Remaining forward work is the
    gateway-sync authority + the real proof/transciphering service behind the attestation
-   (FUTURE_DESIGN §1), not the trust model.
+   (FUTURE_DESIGN §1), not the trust model. One intentional divergence: `verify_threshold`
+   ignores signatures that recover to an address outside the signer set, where the EVM
+   `InputVerifier`/`KMSVerifier` revert on any unknown signer. An outsider signature cannot
+   raise the distinct-in-set count, so the threshold is enforced identically; skipping keeps a
+   packet live across signer rotation instead of failing it (fhevm-internal#1888, won't fix).
 2. **No host-side test/mock bypass remains.** The former `mock_input_verified_and_bind` input
    short-circuit, admin toggles, zero creation-entropy fallback, and event-only `test_emit_*`
    instructions were removed entirely (DD-014).
