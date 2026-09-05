@@ -8,15 +8,15 @@
 //! one-byte slip reads a live switch as off with every length and discriminator guard still
 //! passing.
 //!
-//! The layout mirrors `zama-host`'s `HostConfig` (a fixed 301-byte account: 8-byte Anchor
-//! discriminator + 293-byte body) and is pinned against the program's own serializer by the
+//! The layout mirrors `zama-host`'s `HostConfig` (a fixed 325-byte account: 8-byte Anchor
+//! discriminator + 317-byte body) and is pinned against the program's own serializer by the
 //! host's `shared_crate_decoder_reads_what_the_program_serializes` state test, which feeds
 //! `try_serialize` output through this decoder with `paused` and its neighboring flag set to
 //! *different* values, so exactly the slip described above fails there.
 //!
 //! Only what an off-chain reader acts on is decoded. Everything ahead of `paused` is walked past
 //! by width and everything after it by the length check, which is what makes an inserted or
-//! widened field a refusal here rather than a silent misread: the account stops being 301 bytes
+//! widened field a refusal here rather than a silent misread: the account stops being 325 bytes
 //! the moment the program's layout moves, and [`AclError::BadAccountData`] is what a
 //! reader sees. That couples the release order in one direction — a program carrying a new
 //! `HostConfig` field must not ship before the readers that decode it — and never the reverse.
@@ -33,7 +33,7 @@ const MAX_COPROCESSOR_SIGNERS: usize = 8;
 /// Everything the singleton stores ahead of `paused`: the admin, the two chain ids, the input
 /// verification contract, the fixed-capacity coprocessor signer set with its count and threshold,
 /// the decryption contract, and the current KMS context id.
-const PAUSED_OFFSET: usize = 32 + 8 + 8 + 20 + (MAX_COPROCESSOR_SIGNERS * 20) + 1 + 1 + 20 + 8;
+const PAUSED_OFFSET: usize = 32 + 8 + 8 + 20 + (MAX_COPROCESSOR_SIGNERS * 20) + 1 + 1 + 20 + 32;
 /// Everything the singleton stores after `paused` and before its bump: the deny-list flag, the
 /// three HCU knobs, and the update slot.
 const BUMP_OFFSET: usize = PAUSED_OFFSET + 1 + 1 + 8 + 8 + 8 + 8;

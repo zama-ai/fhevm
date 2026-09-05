@@ -157,7 +157,7 @@ mod tests {
             coprocessor_signer_count: 1,
             coprocessor_threshold: 1,
             decryption_contract: [8u8; 20],
-            current_kms_context_id: 33,
+            current_kms_context_id: [33u8; 32],
             paused,
             grant_deny_list_enabled,
             max_hcu_per_tx: 44,
