@@ -1,4 +1,4 @@
-// Loads the Solana PoC image tags from the single source of truth (../../solana-images.env)
+// Loads the Solana kms-core image tag from the single source of truth (../../solana-images.env)
 // so TS call sites and the shell bring-up (clean-e2e.sh) cannot drift. See FI#1546.
 import { readFileSync } from "node:fs";
 
@@ -22,11 +22,7 @@ function required(key: string): string {
   return v;
 }
 
-/** Solana PoC image tags — the only place these are defined. */
+/** Solana kms-core image tag — the only place it is defined. */
 export const solanaImages = {
   CORE_VERSION: required("CORE_VERSION"),
-  CONNECTOR_GW_LISTENER_VERSION: required("CONNECTOR_GW_LISTENER_VERSION"),
-  CONNECTOR_KMS_WORKER_VERSION: required("CONNECTOR_KMS_WORKER_VERSION"),
-  RELAYER_IMAGE_REPOSITORY: required("RELAYER_IMAGE_REPOSITORY"),
-  RELAYER_VERSION: required("RELAYER_VERSION"),
 } as const;

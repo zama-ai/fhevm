@@ -1,7 +1,7 @@
 //! The Solana vertical at the worker boundary: a LiteSVM confidential transfer is reconstructed
 //! off-chain, propagated into a disposable migrated Postgres, computed by the REAL TFHE worker,
 //! and decrypted — the one test that crosses from Solana transaction metadata all the way to
-//! cleartexts without a deployed stack. CI runs it in solana-e2e's `worker-vertical` job; the
+//! cleartexts without a deployed stack. No CI lane runs it (see solana/docs/TESTING.md); the
 //! scenario suite covers the same arc live, but only this test pins the reconstruct-to-worker
 //! seam against real ciphertexts.
 //!
@@ -94,7 +94,7 @@ type SeededCiphertext = ([u8; 32], i16, Vec<u8>);
 
 #[tokio::test]
 #[serial(db)]
-#[ignore = "needs the anchor-built programs, Docker, and the LFS test keys; solana-e2e's worker-vertical job runs it"]
+#[ignore = "needs the anchor-built programs, Docker, and the LFS test keys; run it by hand, see solana/docs/TESTING.md"]
 async fn confidential_transfer_reconstructs_computes_and_decrypts(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let harness = setup_event_harness().await?;

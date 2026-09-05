@@ -338,14 +338,10 @@ trap - EXIT
 ( cd "$ROOT" && npm ci --workspace=@fhevm/sdk-dev --workspace=@fhevm/sdk --include-workspace-root=false )
 ( cd "$FHEVM" && node --input-type=module -e "await import('@fhevm/sdk/solana')" )
 ( cd "$FHEVM" && bun -e "await import('@fhevm/sdk/solana')" )
-# NOTE: relayer + kms-connector + solana-proof-service must run feature/solana
-# worktree code (via --override), NOT the pinned 4f42734 baseline images: the
-# prebuilt kms-connector at that tag rejects the generated Solana host_chains
-# config ("missing field acl_address") — its config schema predates the
-# optional-acl_address change the config generator (src/generate/solana.ts)
-# assumes. Dropping these --overrides breaks clean-e2e unless
-# SOLANA_E2E_LOCK_PINS points them at branch-published feature/solana images
-# instead. `--override solana-proof-service` rebuilds the standalone proof
+# NOTE: relayer + kms-connector + solana-proof-service run the worktree code (via --override).
+# SOLANA_E2E_LOCK_PINS can point relayer and kms-connector at the branch-published
+# `feature-solana-<sha>` images instead (see select-overrides.sh); solana-proof-service is
+# always built from source. `--override solana-proof-service` rebuilds the standalone proof
 # image so a stale `:local` / `:fhevm-local` tag cannot outlive HEAD.
 
 # 3. The Solana side-stack (fresh geyser validator + program deploy, the typed zama-host bootstrap,
