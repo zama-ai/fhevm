@@ -413,9 +413,6 @@ fn canonical(result: anchor_lang::Result<()>, context: &str) -> Result<(), Strin
 }
 
 fn type_bits(fhe_type: u8) -> Result<usize, String> {
-    // The host's type gate decides what is supported, so an unshipped type fails with the host's
-    // error, not an oracle-only message.
-    canonical(assert_supported_fhe_type(fhe_type), "fhe type")?;
     match fhe_type {
         0 => Ok(1),
         2 => Ok(8),
@@ -423,7 +420,12 @@ fn type_bits(fhe_type: u8) -> Result<usize, String> {
         4 => Ok(32),
         5 => Ok(64),
         6 => Ok(128),
-        _ => Err(format!("supported FHE type {fhe_type} has no width row")),
+        _ => {
+            // Operands are widened before the host's own gate runs, so an unshipped type must
+            // fail here with the host's error rather than an oracle-only message.
+            canonical(assert_supported_fhe_type(fhe_type), "fhe type")?;
+            unreachable!("the host admits an FHE type the oracle has no width for: {fhe_type}")
+        }
     }
 }
 

@@ -13,9 +13,9 @@
 //!   (`create_account`; the three-step transfer/allocate/assign path is only the pre-funded
 //!   squat fallback), plus one event CPI per event kind the execution emits. The floor below
 //!   is what the transaction is guaranteed to spend even in the minimal production wrapper —
-//!   one app instruction invoking `fhe_execute` once; an execution whose floor exceeds the
-//!   limit cannot land in any transaction, and the builder rejects the step that crosses it
-//!   with [`FheExecutionBuildError::ExceedsInstructionTraceLimit`].
+//!   one app instruction invoking `fhe_execute` once. With one CPI per create the floor of the
+//!   largest admitted execution sits well under the limit, so the builder does not gate on it;
+//!   [`MAX_PERSISTENT_CREATES`] is the cap that binds.
 //! - **CPI packet size.** The runtime rejects any CPI whose instruction data exceeds
 //!   [`CPI_INSTRUCTION_DATA_LIMIT`] bytes, and an `fhe_execute` packet always travels by CPI —
 //!   a transaction itself carries at most 1,232 bytes, so no full-size packet can be submitted
@@ -89,11 +89,12 @@ pub const CPIS_PER_PERSISTENT_CREATE: usize = 1;
 /// first execution under a finite block cap (the squat/meter path, not the common-path create).
 pub const CPIS_PER_SQUAT_CREATE: usize = 3;
 
-/// Persistent creates one execution can carry. The common-path floor no longer binds this at
-/// 20 — `instruction_trace_floor(20, true, true)` sits well under
-/// [`TRANSACTION_INSTRUCTION_TRACE_LIMIT`] — so the SDK still caps public creates here because
-/// the host heap binds around 20. Event kinds only spend remaining headroom; they never move
-/// this cap.
+/// Persistent creates one execution can carry: an SDK policy cap, not a derived wall. The
+/// instruction trace no longer binds it (`instruction_trace_floor(20, true, true)` is 24 of
+/// 64) and the host heap walls measured in `runtime-tests/tests/fhe_execute_boundary.rs` sit
+/// on either side of it depending on audience width (16 shared-audience public creates, 22
+/// all-created-public). Twenty keeps the common shapes inside every wall the host has; raise
+/// it only with a new boundary sweep.
 pub const MAX_PERSISTENT_CREATES: usize = 20;
 
 /// The instructions a transaction is guaranteed to execute for one `fhe_execute` invocation in

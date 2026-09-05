@@ -92,16 +92,9 @@ pub enum FheExecutionBuildError {
     /// builder's own budget ([`ExceedsBuildHeapBudget`](Self::ExceedsBuildHeapBudget)) holds
     /// every admitted shape inside the fixed 32 KB region, which cannot be raised (DD-046).
     TooManySteps,
-    /// The step's persistent creates and events would push the transaction past Solana's
-    /// 64-instruction trace even in the minimal wrapper — one app instruction invoking
-    /// `fhe_execute` once — so the execution could never land. The common path is one system
-    /// CPI per created output; see [`instruction_trace_floor`].
-    ExceedsInstructionTraceLimit,
     /// The execution would create more persistent accounts than
-    /// [`MAX_PERSISTENT_CREATES`](crate::cost::MAX_PERSISTENT_CREATES) (20). That is the
-    /// heap/product cap, not the instruction-trace cap: the common-path floor at 20 creates
-    /// sits well under the 64-instruction trace. Split the creates across executions, or
-    /// update existing accounts instead.
+    /// [`MAX_PERSISTENT_CREATES`](crate::cost::MAX_PERSISTENT_CREATES) (20), the SDK's policy
+    /// cap. Split the creates across executions, or update existing accounts instead.
     ExceedsPersistentCreateLimit,
     /// The serialized `fhe_execute` packet exceeds the 10 KiB the runtime allows a CPI to
     /// carry ([`CPI_INSTRUCTION_DATA_LIMIT`]), and the packet always travels by CPI — so the

@@ -1,3 +1,5 @@
+mod evm_parity;
+
 use super::*;
 use crate::state::{
     CoprocessorInputAttestation, FheBinaryOpCode, FheExecuteOperand, FheExecuteOutput,
@@ -145,15 +147,7 @@ fn binary_op_hcu_covers_every_validated_combination() {
                     )
                     .is_ok();
                     if validated {
-                        let priced = if matches!(
-                            op,
-                            FheBinaryOpCode::Eq
-                                | FheBinaryOpCode::Ne
-                                | FheBinaryOpCode::Ge
-                                | FheBinaryOpCode::Gt
-                                | FheBinaryOpCode::Le
-                                | FheBinaryOpCode::Lt
-                        ) {
+                        let priced = if is_comparison(op) {
                             binary_op_hcu(op, operand_ty, scalar)
                         } else {
                             binary_op_hcu(op, ty, scalar)
@@ -200,7 +194,10 @@ fn trivial_encrypt_hcu_covers_every_validated_type() {
 
 #[test]
 fn rand_hcu_covers_every_validated_rand_and_bounded_rand_type() {
-    use crate::state::{assert_supported_bounded_rand_type, assert_supported_fhe_type};
+    use crate::state::{assert_supported_fhe_type, assert_valid_bounded_rand_upper_bound};
+    // 2 is a power of two inside every bounded-rand width, so only the type decides.
+    let mut two = [0u8; 32];
+    two[31] = 2;
     for ty in ALL_FHE_TYPE_PROBES {
         if assert_supported_fhe_type(ty).is_ok() {
             assert!(
@@ -208,7 +205,7 @@ fn rand_hcu_covers_every_validated_rand_and_bounded_rand_type() {
                 "validated rand type {ty} has no cost row"
             );
         }
-        if assert_supported_bounded_rand_type(ty).is_ok() {
+        if assert_valid_bounded_rand_upper_bound(two, ty).is_ok() {
             assert!(
                 rand_bounded_hcu(ty).is_ok(),
                 "validated bounded-rand type {ty} has no cost row"
@@ -353,196 +350,6 @@ fn cost_rows_are_representative_and_evm_ordered() {
     assert!(sum_hcu(EU64, 1).unwrap() > 0);
 }
 
-/// The EVM cost tables this module ports, read from the monorepo so a change on either side
-/// fails this test instead of drifting.
-const HCU_LIMIT_SOL: &str =
-    include_str!("../../../../../../../host-contracts/contracts/HCULimit.sol");
-
-/// One `opHCU = N` cell of a `checkHCUFor*` function: which function, which `scalarByte`
-/// branch, which FHE type, and for the reductions which `n <= K` bucket (`None` is the
-/// trailing `else`).
-struct SolCell {
-    op: String,
-    scalar: bool,
-    ty: u8,
-    bucket: Option<usize>,
-    hcu: u64,
-}
-
-/// `Some(Some(ty))` when the line names a type Solana ships, `Some(None)` when it names one it
-/// does not (euint4, euint160, euint256), `None` when the line names no type.
-fn sol_type(line: &str) -> Option<Option<u8>> {
-    let idx = line.find("FheType.")?;
-    let name: String = line[idx + "FheType.".len()..]
-        .chars()
-        .take_while(|c| c.is_alphanumeric())
-        .collect();
-    Some(match name.as_str() {
-        "Bool" => Some(0),
-        "Uint8" => Some(2),
-        "Uint16" => Some(3),
-        "Uint32" => Some(4),
-        "Uint64" => Some(5),
-        "Uint128" => Some(6),
-        _ => None,
-    })
-}
-
-fn number_after<'a>(line: &'a str, marker: &str) -> Option<&'a str> {
-    let start = line.find(marker)? + marker.len();
-    let digits: &str = &line[start..];
-    let end = digits
-        .find(|c: char| !c.is_ascii_digit())
-        .unwrap_or(digits.len());
-    Some(&digits[..end])
-}
-
-fn parse_hcu_limit_sol() -> Vec<SolCell> {
-    let mut cells = Vec::new();
-    for chunk in HCU_LIMIT_SOL.split("function checkHCUFor").skip(1) {
-        let op = chunk[..chunk.find('(').unwrap()].to_string();
-        // Div and Rem accept only the scalar form (`if (scalarByte != 0x01) revert`).
-        let mut scalar = chunk.contains("scalarByte !=");
-        let mut scalar_if_depth: Option<i32> = None;
-        let mut depth = 0i32;
-        let mut ty: Option<u8> = None;
-        for line in chunk.lines() {
-            let line = line.trim();
-            // `if (scalarByte == 0x01) {` opens the scalar branch; MulDiv spells both branches out
-            // (`FHE_MUL_DIV_FACTOR2_SCALAR` / `_ENCRYPTED`); a bare `} else {` at the same depth
-            // is the ciphertext branch or the unsupported revert.
-            if line.contains("scalarByte ==") {
-                scalar = !line.contains("_ENCRYPTED");
-                scalar_if_depth = Some(depth.min(scalar_if_depth.unwrap_or(depth)));
-            } else if line == "} else {" && scalar_if_depth == Some(depth - 1) {
-                scalar = false;
-            }
-            if let Some(mapped) = sol_type(line) {
-                ty = mapped;
-            }
-            if let Some(hcu) = number_after(line, "opHCU = ") {
-                if let Some(ty) = ty {
-                    let bucket = number_after(line, "n <= ").map(|k| k.parse().unwrap());
-                    cells.push(SolCell {
-                        op: op.clone(),
-                        scalar,
-                        ty,
-                        bucket,
-                        hcu: hcu.parse().unwrap(),
-                    });
-                }
-            }
-            depth += line.matches('{').count() as i32 - line.matches('}').count() as i32;
-        }
-    }
-    cells
-}
-
-fn sol_binary_name(op: FheBinaryOpCode) -> String {
-    match op {
-        FheBinaryOpCode::And => "FheBitAnd".to_string(),
-        FheBinaryOpCode::Or => "FheBitOr".to_string(),
-        FheBinaryOpCode::Xor => "FheBitXor".to_string(),
-        other => format!("Fhe{other:?}"),
-    }
-}
-
-#[test]
-fn cost_rows_match_evm_hculimit_sol() {
-    let cells = parse_hcu_limit_sol();
-    let sol = |op: &str, scalar: bool, ty: u8, n: usize| -> Option<u64> {
-        let matching = || {
-            cells
-                .iter()
-                .filter(|c| c.op == op && c.scalar == scalar && c.ty == ty)
-        };
-        let mut buckets: Vec<(usize, u64)> = matching()
-            .filter_map(|c| c.bucket.map(|k| (k, c.hcu)))
-            .collect();
-        buckets.sort_unstable();
-        buckets
-            .into_iter()
-            .find(|(k, _)| n <= *k)
-            .map(|(_, hcu)| hcu)
-            .or_else(|| matching().find(|c| c.bucket.is_none()).map(|c| c.hcu))
-    };
-    let mut checked = 0usize;
-    let mut check = |what: String, ours: Result<u64>, theirs: Option<u64>| match (ours.ok(), theirs)
-    {
-        (Some(a), Some(b)) => {
-            assert_eq!(a, b, "{what}: Solana {a} vs HCULimit.sol {b}");
-            checked += 1;
-        }
-        (None, None) => {}
-        (a, b) => panic!("{what}: Solana {a:?} vs HCULimit.sol {b:?}"),
-    };
-    for ty in 0..N as u8 {
-        for op in ALL_BINARY_OPS {
-            for scalar in [false, true] {
-                check(
-                    format!("{op:?} ty{ty} scalar={scalar}"),
-                    binary_op_hcu(op, ty, scalar),
-                    sol(&sol_binary_name(op), scalar, ty, 0),
-                );
-            }
-        }
-        for (op, name) in [
-            (FheUnaryOpCode::Neg, "FheNeg"),
-            (FheUnaryOpCode::Not, "FheNot"),
-            (FheUnaryOpCode::Cast, "Cast"),
-        ] {
-            check(
-                format!("{op:?} ty{ty}"),
-                unary_op_hcu(op, ty),
-                sol(name, false, ty, 0),
-            );
-        }
-        check(
-            format!("IfThenElse ty{ty}"),
-            ternary_op_hcu(FheTernaryOpCode::IfThenElse, ty),
-            sol("IfThenElse", false, ty, 0),
-        );
-        check(
-            format!("TrivialEncrypt ty{ty}"),
-            trivial_encrypt_hcu(ty),
-            sol("TrivialEncrypt", false, ty, 0),
-        );
-        check(
-            format!("Rand ty{ty}"),
-            rand_hcu(ty),
-            sol("FheRand", false, ty, 0),
-        );
-        check(
-            format!("RandBounded ty{ty}"),
-            rand_bounded_hcu(ty),
-            sol("FheRandBounded", false, ty, 0),
-        );
-        for scalar in [false, true] {
-            check(
-                format!("MulDiv ty{ty} scalar={scalar}"),
-                mul_div_hcu(ty, scalar),
-                sol("FheMulDiv", scalar, ty, 0),
-            );
-        }
-        for n in [1usize, 10, 11, 30, 31, 60, 61, 100] {
-            check(
-                format!("Sum ty{ty} n{n}"),
-                sum_hcu(ty, n),
-                sol("FheSum", false, ty, n),
-            );
-            check(
-                format!("IsIn ty{ty} n{n}"),
-                is_in_hcu(ty, n),
-                sol("FheIsIn", false, ty, n),
-            );
-        }
-    }
-    assert!(
-        checked > 250,
-        "parsed only {checked} shared cells from HCULimit.sol"
-    );
-}
-
 #[test]
 fn meter_comparison_prices_operand_width_not_ebool() {
     let steps = vec![
@@ -561,15 +368,9 @@ fn meter_comparison_prices_operand_width_not_ebool() {
     assert_eq!(m.total, expected);
 }
 
-fn typed_handle(fhe_type: u8) -> [u8; 32] {
-    let mut handle = [0u8; 32];
-    handle[30] = fhe_type;
-    handle
-}
-
 #[test]
 fn meter_comparison_prices_dictionary_and_verified_input_width() {
-    let handle = typed_handle(EU64);
+    let handle = handle_of(EU64);
     let stored = FheExecuteStep::Binary {
         op: FheBinaryOpCode::Ge,
         lhs: FheExecuteOperand::StoredValue {

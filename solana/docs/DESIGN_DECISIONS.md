@@ -233,8 +233,8 @@ enforces `attestation.contract_address == compute_subject` (whatever signer cons
 msg.sender analog for the contract bind. The PDA convention is **app policy** — apps MUST bind
 attestations to their compute-authority PDA, and MUST check the attested `user_address` themselves.
 An observer who sees another user's verified input can replay it if the app skips that check.
-Confidential-token
-checks the attested user equals the token account owner. Per-state-account (per-mint) scoping is
+Confidential-token checks the attested user equals the token account owner. Per-state-account
+(per-mint) scoping is
 deliberate and finer-grained than EVM's per-contract binding.
 
 **Derived outputs are NOT tainted by the input attestation.** Once verified, the input is an ordinary
@@ -2173,8 +2173,8 @@ Why not ship an allocator:
    default for the PoC, revisit only with benchmarks. No benchmark showing a real app blocked on
    heap after the fhevm-internal#1872 copy reductions exists.
 2. The current failure modes are good: every ceiling the app can hit at build time is a typed
-   error — `TooManySteps` at the host's one step cap, `ExceedsInstructionTraceLimit` where a
-   created output's CPIs could no longer fit any transaction, `ExceedsCpiInstructionDataLimit`
+   error — `TooManySteps` at the host's one step cap, `ExceedsPersistentCreateLimit` at the
+   SDK's create cap, `ExceedsCpiInstructionDataLimit`
    where the packet outgrows what a CPI may carry, and `ExceedsBuildHeapBudget` where the
    builder's own byte tally — build, packet, and the invoke-side account tables together,
    proven equal to a counting allocator across the shape frontier in `heap_budget/` — says

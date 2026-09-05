@@ -23,41 +23,50 @@ pub fn parse_context_id_from_extra_data(extra_data: &[u8]) -> Result<U256, Extra
         return Ok(U256::ZERO);
     };
 
-    match version {
+    let expected = match version {
         // 0x00 is the legacy/default marker — use static threshold
-        0x00 => Ok(U256::ZERO),
-        EXTRA_DATA_V1_VERSION => {
-            // Host `extract_kms_context_id` requires v1 to be exactly 33 bytes.
-            if extra_data.len() != EXTRA_DATA_V1_LENGTH {
-                return Err(ExtraDataError::WrongLength {
-                    version,
-                    len: extra_data.len(),
-                    expected: EXTRA_DATA_V1_LENGTH,
-                });
-            }
-            let bytes: [u8; 32] = extra_data[1..33]
-                .try_into()
-                .expect("slice is exactly 32 bytes");
-            Ok(U256::from_be_bytes(bytes))
+        0x00 => return Ok(U256::ZERO),
+        // Host `extract_kms_context_id` requires v1 to be exactly 33 bytes.
+        EXTRA_DATA_V1_VERSION => ExpectedLength::Exactly(EXTRA_DATA_V1_LENGTH),
+        EXTRA_DATA_V2_VERSION => ExpectedLength::AtLeast(EXTRA_DATA_V2_LENGTH),
+        EXTRA_DATA_SOLANA_VERSION => ExpectedLength::AtLeast(EXTRA_DATA_SOLANA_MIN_LENGTH),
+        _ => return Err(ExtraDataError::UnsupportedVersion(version)),
+    };
+    let len = extra_data.len();
+    if !expected.admits(len) {
+        return Err(ExtraDataError::BadLength {
+            version,
+            len,
+            expected,
+        });
+    }
+    let bytes: [u8; 32] = extra_data[1..33]
+        .try_into()
+        .expect("length checked above");
+    Ok(U256::from_be_bytes(bytes))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExpectedLength {
+    Exactly(usize),
+    AtLeast(usize),
+}
+
+impl ExpectedLength {
+    fn admits(self, len: usize) -> bool {
+        match self {
+            Self::Exactly(n) => len == n,
+            Self::AtLeast(n) => len >= n,
         }
-        EXTRA_DATA_V2_VERSION | EXTRA_DATA_SOLANA_VERSION => {
-            let min_len = match version {
-                EXTRA_DATA_V2_VERSION => EXTRA_DATA_V2_LENGTH,
-                _ => EXTRA_DATA_SOLANA_MIN_LENGTH,
-            };
-            if extra_data.len() < min_len {
-                return Err(ExtraDataError::TooShort {
-                    version,
-                    len: extra_data.len(),
-                    expected: min_len,
-                });
-            }
-            let bytes: [u8; 32] = extra_data[1..33]
-                .try_into()
-                .expect("slice is exactly 32 bytes");
-            Ok(U256::from_be_bytes(bytes))
+    }
+}
+
+impl std::fmt::Display for ExpectedLength {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Exactly(n) => write!(f, "exactly {n}"),
+            Self::AtLeast(n) => write!(f, "at least {n}"),
         }
-        _ => Err(ExtraDataError::UnsupportedVersion(version)),
     }
 }
 
@@ -66,18 +75,11 @@ pub enum ExtraDataError {
     #[error("Unsupported extra_data version: 0x{0:02x}")]
     UnsupportedVersion(u8),
 
-    #[error("extra_data too short for v{version:#04x}: {len} bytes, expected at least {expected}")]
-    TooShort {
+    #[error("extra_data bad length for v{version:#04x}: {len} bytes, expected {expected}")]
+    BadLength {
         version: u8,
         len: usize,
-        expected: usize,
-    },
-
-    #[error("extra_data wrong length for v{version:#04x}: {len} bytes, expected {expected}")]
-    WrongLength {
-        version: u8,
-        len: usize,
-        expected: usize,
+        expected: ExpectedLength,
     },
 }
 

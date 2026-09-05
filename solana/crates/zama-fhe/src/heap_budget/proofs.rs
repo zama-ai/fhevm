@@ -7,9 +7,7 @@ use anchor_lang::prelude::Pubkey;
 use zama_host::MAX_FHE_EXECUTION_STEPS;
 
 use crate::builder::FheExecutionBuilder;
-use crate::cost::{
-    instruction_trace_floor, MAX_PERSISTENT_CREATES, TRANSACTION_INSTRUCTION_TRACE_LIMIT,
-};
+use crate::cost::MAX_PERSISTENT_CREATES;
 use crate::{
     Domain, Encrypted, EncryptedValueId, EncryptedValueLabel,
     ExecutionEncryptedValueAccountAuthority, FheExecution, Output, Scalar, Uint, Uint64Handle,
@@ -39,8 +37,8 @@ fn the_builder_admits_what_the_host_heap_cannot_hold() {
             panic!("{creates} shared-audience public creates should build: {error:?}")
         });
     }
-    // One past the heap/product cap is where the app-side ceilings finally stop the shape — the gap
-    // is exactly the 16–20 band, not open-ended.
+    // One past the cap is where the app-side ceilings finally stop the shape — the gap is
+    // exactly the 17–20 band, not open-ended.
     assert_eq!(
         FheExecution::build(
             ExecutionEncryptedValueAccountAuthority::new(Pubkey::new_unique()),
@@ -181,13 +179,6 @@ fn the_tally_never_crosses_the_budget_even_transiently() {
 #[test]
 fn the_heap_tally_matches_a_counting_allocator_for_every_admitted_shape() {
     // The ceilings that define "admitted" hold where this file assumes they do.
-    // Trace no longer binds at MAX_PERSISTENT_CREATES (one CPI per create); heap does.
-    assert!(
-        instruction_trace_floor(MAX_PERSISTENT_CREATES, true, true)
-            < TRANSACTION_INSTRUCTION_TRACE_LIMIT,
-        "MAX_PERSISTENT_CREATES is stale against the trace model"
-    );
-    assert_eq!(MAX_PERSISTENT_CREATES, 20);
     let mut admitted = 0;
     for (name, build) in frontier_shapes() {
         let Ok(shape) = try_measure(name, build) else {
@@ -225,8 +216,7 @@ fn the_shapes_past_each_ceiling_are_rejected_with_their_own_error() {
         )
         .unwrap_err()
     };
-    // The 21st create is the SDK cap (`MAX_PERSISTENT_CREATES`); heap binds public creates
-    // around 20, and the common-path floor no longer trips the instruction-trace limit.
+    // The 21st create is the SDK cap (`MAX_PERSISTENT_CREATES`).
     assert_eq!(
         build(Box::new(persist_shape(
             PersistKind::Create,

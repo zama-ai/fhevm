@@ -404,12 +404,12 @@ not when the threat model changes.
     see #61.)
     - **Steps** — the host's `MAX_FHE_EXECUTION_STEPS`, the one step ceiling,
       on-chain and off (`TooManySteps`).
-    - **Instruction trace** — three system CPIs per created output plus the
-      event CPIs, checked per step against the transaction's 64-instruction
-      trace including the app wrapper instruction; at most 20 creates fit one
-      execution (`ExceedsInstructionTraceLimit`). The boundary sweep
-      `fhe_execute_boundary/all_private_creates` asserts the measured wall
-      sits exactly one wrapper instruction past this cap (21 top-level).
+    - **Persistent creates** — at most `MAX_PERSISTENT_CREATES` (20) per
+      execution (`ExceedsPersistentCreateLimit`), the SDK's policy cap. Each
+      create is one system CPI on the common host path, so the transaction's
+      64-instruction trace no longer binds; the boundary sweep
+      `fhe_execute_boundary/all_private_creates` asserts the cap sits inside
+      the measured host wall (`WallPin::BuilderCapCoversWall`).
     - **CPI packet** — the serialized packet is counted exactly at `finish`
       and held under the 10 KiB a CPI may carry; an `fhe_execute` packet
       always travels by CPI because a transaction itself carries at most

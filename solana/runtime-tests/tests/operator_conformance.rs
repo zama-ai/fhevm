@@ -246,22 +246,6 @@ mod edges {
         );
     }
     #[test]
-    fn unary_cast_u256_to_u8_is_unsupported() {
-        let mut input = [0xff; 32];
-        input[31] = 0x2a;
-        let operand = handle(1, 8);
-        expect_error(
-            args(vec![FheExecuteStep::Unary {
-                op: FheUnaryOpCode::Cast,
-                operand: persistent(operand),
-                output_fhe_type: 2,
-                output: local_output(),
-            }]),
-            HashMap::from([(operand, TypedClearValue::from_be_bytes(8, input))]),
-            "UnsupportedFheType",
-        );
-    }
-    #[test]
     fn sum_u8_wraps() {
         run_sum(2, 250, 10, 4);
     }
@@ -338,15 +322,6 @@ mod edges {
         );
     }
     #[test]
-    fn is_in_u160_is_unsupported() {
-        let value = handle(1, 7);
-        expect_error(
-            args(vec![is_in_step(persistent(value), vec![], 7)]),
-            HashMap::from([(value, typed(7, 1))]),
-            "UnsupportedFheType",
-        );
-    }
-    #[test]
     fn rand_then_bounded_rand_preserves_deterministic_output_order() {
         let execution = args(vec![
             FheExecuteStep::Rand {
@@ -361,85 +336,44 @@ mod edges {
         assert_eq!([first[0].fhe_type, first[1].fhe_type], [6, 2]);
         assert!(u64::from_be_bytes(first[1].value[24..].try_into().unwrap()) < 16);
     }
-    #[test]
-    fn binary_eq_u160_is_unsupported() {
-        let high = handle(1, 7);
-        let zero = handle(2, 7);
-        expect_error(
-            args(vec![binary(
-                FheBinaryOpCode::Eq,
-                persistent(high),
-                persistent(zero),
-                0,
-            )]),
-            HashMap::from([(high, typed(7, 1)), (zero, typed(7, 0))]),
-            "UnsupportedFheType",
-        );
-    }
-    #[test]
-    fn binary_ne_u256_is_unsupported() {
-        let lhs = handle(1, 8);
-        let rhs = handle(2, 8);
-        expect_error(
-            args(vec![binary(
-                FheBinaryOpCode::Ne,
-                persistent(lhs),
-                persistent(rhs),
-                0,
-            )]),
-            HashMap::from([(lhs, typed(8, 1)), (rhs, typed(8, 2))]),
-            "UnsupportedFheType",
-        );
-    }
-    #[test]
-    fn binary_rotr_u256_is_unsupported() {
-        let one = handle(1, 8);
-        expect_error(
-            args(vec![binary(
-                FheBinaryOpCode::Rotr,
-                persistent(one),
-                scalar(be(1)),
-                8,
-            )]),
-            HashMap::from([(one, typed(8, 1))]),
-            "UnsupportedFheType",
-        );
-    }
-    #[test]
-    fn binary_eq_u256_is_unsupported() {
-        let lhs = handle(1, 8);
-        let rhs = handle(2, 8);
-        expect_error(
-            args(vec![binary(
-                FheBinaryOpCode::Eq,
-                persistent(lhs),
-                persistent(rhs),
-                0,
-            )]),
-            HashMap::from([(lhs, typed(8, 1)), (rhs, typed(8, 1))]),
-            "UnsupportedFheType",
-        );
-    }
-    #[test]
-    fn unary_not_u256_is_unsupported() {
-        let operand = handle(1, 8);
-        expect_error(
-            args(vec![FheExecuteStep::Unary {
-                op: FheUnaryOpCode::Not,
-                operand: persistent(operand),
-                output_fhe_type: 8,
-                output: local_output(),
-            }]),
-            HashMap::from([(operand, typed(8, 1))]),
-            "UnsupportedFheType",
-        );
-    }
 }
 
 mod rejected {
     use super::*;
     mod closed_world {
         use super::*;
+        /// The oracle widens operands before the host's own gate runs, so an unshipped width
+        /// (euint160, euint256) must fail with the host's error on both sides of a conformance
+        /// case.
+        #[test]
+        fn oracle_rejects_unshipped_widths_with_the_host_error() {
+            let u160 = handle(1, 7);
+            let u256 = handle(2, 8);
+            let inputs = HashMap::from([(u160, typed(7, 1)), (u256, typed(8, 1))]);
+            // Operands intern into the dictionary `args` drains, so each step is built inside
+            // its own `args` call.
+            let steps: [&dyn Fn() -> FheExecuteStep; 6] = [
+                &|| binary(FheBinaryOpCode::Eq, persistent(u160), persistent(u160), 0),
+                &|| binary(FheBinaryOpCode::Ne, persistent(u256), persistent(u256), 0),
+                &|| binary(FheBinaryOpCode::Rotr, persistent(u256), scalar(be(1)), 8),
+                &|| FheExecuteStep::Unary {
+                    op: FheUnaryOpCode::Not,
+                    operand: persistent(u256),
+                    output_fhe_type: 8,
+                    output: local_output(),
+                },
+                &|| FheExecuteStep::Unary {
+                    op: FheUnaryOpCode::Cast,
+                    operand: persistent(u256),
+                    output_fhe_type: 2,
+                    output: local_output(),
+                },
+                &|| is_in_step(persistent(u160), vec![], 7),
+            ];
+            for step in steps {
+                expect_error(args(vec![step()]), inputs.clone(), "UnsupportedFheType");
+            }
+        }
         #[test]
         fn binary_unary_and_ternary_admission_is_closed_world() {
             for op in binary_ops() {

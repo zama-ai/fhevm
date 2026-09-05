@@ -10,17 +10,14 @@
 //! that region three times — building, serializing the packet, and assembling the CPI account
 //! tables in `FheExecution::invoke` — and the budget below charges all three.
 //!
-//! An execution `build` returns is one whose *app-side* instruction fits: five ceilings make
+//! An execution `build` returns is one whose *app-side* instruction fits: four ceilings make
 //! every wall the builder can see a typed rejection instead of a runtime abort, each an exact
 //! function of the shape:
 //!
 //! - **Steps** — the host's `MAX_FHE_EXECUTION_STEPS`, the one step ceiling
 //!   ([`FheExecutionBuildError::TooManySteps`]), gated in [`FheExecutionBuilder::commit_step`].
-//! - **Instruction trace** — one system CPI per created output on the common path plus the event
-//!   CPIs, checked per step against the transaction's 64-instruction trace
-//!   ([`FheExecutionBuildError::ExceedsInstructionTraceLimit`]).
-//! - **Persistent creates** — at most [`crate::cost::MAX_PERSISTENT_CREATES`] (20); that is the
-//!   heap/product cap, not the trace cap
+//! - **Persistent creates** — at most [`crate::cost::MAX_PERSISTENT_CREATES`] (20), the SDK's
+//!   policy cap; with one system CPI per create the instruction trace no longer binds
 //!   ([`FheExecutionBuildError::ExceedsPersistentCreateLimit`]).
 //! - **CPI packet** — the serialized packet must fit the 10 KiB a CPI may carry, counted
 //!   exactly at `finish` ([`FheExecutionBuildError::ExceedsCpiInstructionDataLimit`]).
@@ -90,9 +87,8 @@ pub struct FheExecutionBuilder<'id> {
     /// (rather than inline in the operand) so `Operand` stays `Copy`.
     pub(crate) verified_inputs: TalliedVec<CoprocessorInputAttestation>,
     /// Persistent outputs committed so far that create their account — one system CPI each on
-    /// the common host path, which is what [`crate::cost::instruction_trace_floor`] charges against
-    /// the transaction's instruction trace. The SDK still caps these at
-    /// [`crate::cost::MAX_PERSISTENT_CREATES`] because the host heap binds around 20.
+    /// the common host path, which is what [`crate::cost::instruction_trace_floor`] charges.
+    /// Capped at [`crate::cost::MAX_PERSISTENT_CREATES`].
     pub(crate) persistent_creates: usize,
     /// Persistent outputs committed so far that update an existing account.
     pub(crate) persistent_updates: usize,
@@ -238,24 +234,10 @@ impl<'id> FheExecutionBuilder<'id> {
                     step,
                     FheExecuteStep::Rand { .. } | FheExecuteStep::RandBounded { .. }
                 );
-                // Heap, not the instruction trace, binds public creates around 20. The SDK still
-                // refuses the 21st create here so `MAX_PERSISTENT_CREATES` remains the public cap
-                // even though the common-path floor no longer hits the trace limit at 20.
                 if *persistent_creates + usize::from(creates_account)
                     > crate::cost::MAX_PERSISTENT_CREATES
                 {
                     return Err(FheExecutionBuildError::ExceedsPersistentCreateLimit);
-                }
-                // Every created output costs the transaction one CPI on the common host path, so
-                // the instruction-trace floor is still checked per step against the cheapest
-                // wrapper.
-                let floor = crate::cost::instruction_trace_floor(
-                    *persistent_creates + usize::from(creates_account),
-                    *has_rand_step || is_rand,
-                    *has_public_output || makes_public,
-                );
-                if floor > crate::cost::TRANSACTION_INSTRUCTION_TRACE_LIMIT {
-                    return Err(FheExecutionBuildError::ExceedsInstructionTraceLimit);
                 }
                 // Push while Drop still rolls intern tables. `steps` / `produced_types` are
                 // not borrowed by lowering; the budget is.

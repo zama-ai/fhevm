@@ -19,7 +19,7 @@ pub mod contracts;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use anchor_lang::solana_program::bpf_loader_upgradeable;
+use anchor_lang::solana_program::bpf_loader_upgradeable::{self, UpgradeableLoaderState};
 use anchor_lang::{
     prelude::system_program, AccountDeserialize, AccountSerialize, AnchorDeserialize,
     Discriminator, InstructionData, ToAccountMetas,
@@ -446,21 +446,18 @@ pub fn canonical_test_context_id(n: u8) -> [u8; 32] {
     id
 }
 
-/// Fabricated BPF upgradeable `ProgramData` whose upgrade authority is `upgrade_authority`.
-/// Address matches `bpf_loader_upgradeable::get_program_data_address(&host::ID)`.
-pub fn program_data_account(upgrade_authority: Pubkey) -> (Pubkey, Account) {
-    let address =
-        Pubkey::find_program_address(&[host::ID.as_ref()], &bpf_loader_upgradeable::id()).0;
-    let mut data = Vec::with_capacity(45);
-    data.extend_from_slice(&3u32.to_le_bytes());
-    data.extend_from_slice(&0u64.to_le_bytes());
-    data.push(1);
-    data.extend_from_slice(upgrade_authority.as_ref());
+/// The host program's BPF upgradeable `ProgramData` account at its canonical address, with
+/// `upgrade_authority` as the upgrade authority (`None` for a finalized program).
+pub fn program_data_account(upgrade_authority: Option<Pubkey>) -> (Pubkey, Account) {
+    let state = UpgradeableLoaderState::ProgramData {
+        slot: 0,
+        upgrade_authority_address: upgrade_authority,
+    };
     (
-        address,
+        bpf_loader_upgradeable::get_program_data_address(&host::ID),
         Account {
             lamports: 1_000_000_000,
-            data,
+            data: bincode::serialize(&state).expect("ProgramData serializes"),
             owner: bpf_loader_upgradeable::id(),
             executable: false,
             rent_epoch: 0,

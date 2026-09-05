@@ -118,16 +118,7 @@ pub fn assert_binary_operand_types(
     Ok(())
 }
 
-pub(crate) fn assert_supported_bounded_rand_type(fhe_type: u8) -> Result<()> {
-    require!(
-        bounded_rand_type_bits(fhe_type).is_some(),
-        ZamaHostError::UnsupportedFheType
-    );
-    Ok(())
-}
-
 pub fn assert_valid_bounded_rand_upper_bound(upper_bound: [u8; 32], fhe_type: u8) -> Result<()> {
-    assert_supported_bounded_rand_type(fhe_type)?;
     let max_bits = bounded_rand_type_bits(fhe_type).ok_or(ZamaHostError::UnsupportedFheType)?;
     let bit_index =
         power_of_two_bit_index(upper_bound).ok_or(ZamaHostError::InvalidRandomUpperBound)?;
@@ -181,20 +172,11 @@ pub fn assert_unary_operand_type(
         }
         FheUnaryOpCode::Not => {
             require!(
-                is_supported_fhe_type(operand_type),
-                ZamaHostError::UnsupportedFheType
-            );
-            require!(
                 operand_type == output_fhe_type,
                 ZamaHostError::BinaryOperandTypeMismatch
             );
         }
         FheUnaryOpCode::Cast => {
-            // Cast input set: Bool | Uint8..Uint128 (no eaddress/Uint160). Solana host max is euint128.
-            require!(
-                is_supported_fhe_type(operand_type),
-                ZamaHostError::UnsupportedFheType
-            );
             // Cast reinterprets to a different type; a same-type cast is rejected (EVM InvalidType).
             require!(
                 operand_type != output_fhe_type,
@@ -262,7 +244,7 @@ pub fn assert_mul_div_operand_types(
     output_fhe_type: u8,
 ) -> Result<()> {
     require!(
-        matches!(output_fhe_type, 2..=5),
+        is_mul_div_fhe_type(output_fhe_type),
         ZamaHostError::UnsupportedFheType
     );
     require!(
@@ -308,6 +290,12 @@ pub fn is_supported_uint_fhe_type(fhe_type: u8) -> bool {
     matches!(fhe_type, 2..=6)
 }
 
+/// `FheMulDiv` output types: euint8..euint64. The product of two euint128 factors would need a
+/// 256-bit intermediate, so euint128 is excluded (EVM `HCULimit.checkHCUForFheMulDiv`).
+pub fn is_mul_div_fhe_type(fhe_type: u8) -> bool {
+    matches!(fhe_type, 2..=5)
+}
+
 /// Whether a big-endian scalar is zero once truncated to `fhe_type`'s width (EVM `_isScalarZeroForType`).
 pub fn scalar_is_zero_for_type(scalar: [u8; 32], fhe_type: u8) -> bool {
     let width = match fhe_type {
@@ -316,7 +304,7 @@ pub fn scalar_is_zero_for_type(scalar: [u8; 32], fhe_type: u8) -> bool {
         4 => 4,  // Uint32
         5 => 8,  // Uint64
         6 => 16, // Uint128
-        _ => 32, // unsupported for division: fall back to the whole buffer (fail closed)
+        _ => 32, // unreachable: the output-type gate ran first; scan the whole buffer
     };
     scalar[32 - width..].iter().all(|byte| *byte == 0)
 }
