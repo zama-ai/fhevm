@@ -1,23 +1,27 @@
-//! Shared encrypted-value ACL core for the Zama Solana port (RFC-024).
+//! Shared encrypted-value ACL core for the Zama Solana port (RFC 035).
 //!
-//! The single source of truth — used identically by the on-chain `zama-host`
-//! program, the standalone `solana-proof-service`, and the off-chain KMS connector — for the
-//! `EncryptedValue` account layout, its Merkle Mountain Range history, the leaf
-//! commitments, the encrypted value ID derivation, and the decrypt-authorization rules.
-//! Sharing this crate makes the host↔KMS lockstep type-level instead of a
-//! convention checked by tests.
+//! The single source of truth — used identically by the on-chain `zama-host` program, the
+//! coprocessor's leaf indexer, and the off-chain KMS connector — for the `EncryptedValue`
+//! account layout, its PDA seeds, its Merkle Mountain Range history, the leaf commitments, and
+//! the decrypt-authorization rules. Sharing this crate makes the host↔KMS lockstep type-level
+//! instead of a convention checked by tests.
 //!
-//! Deliberately solana-version-agnostic (pure `borsh` + `sha2`, pubkeys as raw
-//! `[u8; 32]`) so the on-chain programs (solana 3.x) and the connector
-//! (solana 2.x) can share it. PDA derivation stays on each side; this crate
-//! provides the seed and the `encrypted_value_id`.
+//! Deliberately solana-version-agnostic (pure `borsh` + hashing, pubkeys as raw `[u8; 32]`) so
+//! the on-chain programs and the connector can share it. PDA derivation stays on each side; this
+//! crate provides the exact seed list through [`encrypted_value_seeds`].
 //!
-//! Public API surface: the verifier side. The KMS connector, the proof service, and any
+//! Hashing: leaf commitments and MMR nodes use keccak256, the hash the EVM ACL (RFC 034) uses,
+//! so the two chains share one leaf encoding and one proof verifier. Anchor account
+//! discriminators stay sha256 because Anchor defines them that way.
+//!
+//! Public API surface: the verifier side. The KMS connector, the coprocessor indexer, and any
 //! third-party verifier reconstruct and check `EncryptedValue` state through these exports, so a
 //! predicate with no caller in this repository is still doing real work for them.
 
 #[cfg(not(target_os = "solana"))]
 use sha2::{Digest as _, Sha256};
+#[cfg(not(target_os = "solana"))]
+use sha3::Keccak256;
 
 pub mod delegation;
 pub use delegation::{
@@ -41,10 +45,8 @@ pub use mmr::{
     MmrProof, MAX_MMR_PEAKS,
 };
 
-/// PDA seed for an encrypted value account: `[ENCRYPTED_VALUE_SEED, encrypted_value_id]`.
+/// First PDA seed of an encrypted value account; the full list is [`encrypted_value_seeds`].
 pub const ENCRYPTED_VALUE_SEED: &[u8] = b"encrypted-value";
-/// Upper bound on persistent subjects, for write-side validation.
-pub const MAX_ENCRYPTED_VALUE_SUBJECTS: usize = 8;
 
 const HISTORICAL_ACCESS_LEAF_PREFIX: &[u8] = b"ZAMA_HIST_ACCESS_LEAF_V1";
 const PUBLIC_DECRYPT_LEAF_PREFIX: &[u8] = b"ZAMA_PUBLIC_DECRYPT_LEAF_V1";
@@ -56,44 +58,34 @@ pub enum AclError {
     BadAccountData,
     MmrInconsistent,
     MmrPeakCapacityExceeded,
-    SubjectCapacityExceeded,
-    HandleMismatch,
-    SubjectMissing,
     HistoricalProofInvalid,
     PublicDecryptProofInvalid,
 }
 
-/// Current authorization state and compact history for one encrypted value account.
+/// One persistent encrypted value: who owns it, which handle is current, and the peaks of the
+/// MMR that fingerprints every decrypt permission ever sealed on it.
 ///
-/// Authorization membership is flat (`subjects` is binary membership with no
-/// roles). Subject-list mutation (`allow_subjects` / `remove_subject`) requires
-/// the signer to equal `EncryptedValue.encrypted_value_account_authority` — the same authority gate
-/// as persistent create/update. Decrypt subjects are not co-admins; apps that use a PDA as the
-/// encrypted value account authority rotate auditors by CPI + `invoke_signed` as that PDA.
-/// Confidential-token provides wrappers for token-account and total-supply values.
-/// `make_handle_public` is gated by encrypted value account authority (see INVARIANTS.md #11b).
-///
-/// One account per encrypted value, reused across every handle update. The on-chain
-/// account is `realloc`-grown and never shrunk, so its byte size tracks the
-/// high-water mark of `peaks` plus `subjects` (`subjects` may be replaced rather than
-/// only grow); a current-only encrypted value account (`leaf_count == 0`) stays tiny and pays
-/// nothing for history.
+/// Compute on the value is authorized by the authority's signature and nothing else; decrypt is
+/// authorized off-chain by a leaf proof against `peaks`. The account stores nothing about who
+/// may decrypt. It is `realloc`-grown by one peak at a time and never shrunk.
 #[derive(borsh::BorshSerialize, borsh::BorshDeserialize, Clone, Debug, Default, PartialEq, Eq)]
 pub struct EncryptedValue {
-    /// App-level ACL domain, such as a confidential token mint.
-    pub domain: [u8; 32],
-    /// The account that controls this encrypted value: it must sign to create it, update its
-    /// handle, or replace its subject list — including out-of-band `allow_subjects` /
-    /// `remove_subject` (decrypt subjects are not co-admins). For a token balance this is the
-    /// token account itself.
+    /// The application program this value belongs to. Verified by the host on every write:
+    /// `encrypted_value_account_authority` must be a PDA of `program`, so only that program can
+    /// sign for it. Never taken on the caller's word.
+    pub program: [u8; 32],
+    /// The account that controls this encrypted value: a PDA of `program` that must sign to
+    /// create it or update its handle. For a token balance this is the token account itself.
     pub encrypted_value_account_authority: [u8; 32],
-    /// The encrypted value label: the third component of the encrypted value ID, naming which
-    /// encrypted value of the authority this is.
+    /// Program-declared scope inside `program`'s namespace — the mint for the token program.
+    /// Trustworthy only as the pair `(program, scope)`: another program cannot forge the
+    /// `program` half. The pair is the application identity for HCU metering, the deny list and
+    /// permit scoping.
+    pub scope: [u8; 32],
+    /// Which of the authority's values this is.
     pub label: [u8; 32],
     /// Current encrypted value identifier (the live handle).
     pub current_handle: [u8; 32],
-    /// Current persistent subjects (binary membership; no role flags).
-    pub subjects: Vec<[u8; 32]>,
     /// Number of MMR leaves appended; `0` means no history.
     pub leaf_count: u64,
     /// MMR peaks, oldest mountain first (`popcount(leaf_count)` entries).
@@ -103,54 +95,41 @@ pub struct EncryptedValue {
 }
 
 impl EncryptedValue {
-    /// The encrypted value account's encrypted value ID — its PDA seed. Derived, never stored.
-    pub fn encrypted_value_id(&self) -> [u8; 32] {
-        derive_encrypted_value_id(
-            self.domain,
-            self.encrypted_value_account_authority,
-            self.label,
+    /// The account's PDA seeds, recomputed from its own fields. A verifier derives the address
+    /// from these and refuses a well-formed account found anywhere else.
+    pub fn seeds(&self) -> [&[u8]; 5] {
+        encrypted_value_seeds(
+            &self.program,
+            &self.encrypted_value_account_authority,
+            &self.scope,
+            &self.label,
         )
     }
 
-    /// Whether `subject` is a current persistent member.
-    pub fn is_subject(&self, subject: [u8; 32]) -> bool {
-        self.subjects.contains(&subject)
-    }
-
-    /// Full on-chain account size (8-byte discriminator + borsh body) for an encrypted value account
-    /// with `subjects_len` subjects and `peaks_len` peaks. Used to `init`/`realloc`.
-    pub fn account_size(subjects_len: usize, peaks_len: usize) -> usize {
-        // disc + (domain+authority+label+handle) + subjects(vec) + leaf_count + peaks(vec) + bump
-        8 + (32 * 4) + (4 + 32 * subjects_len) + 8 + (4 + 32 * peaks_len) + 1
+    /// Full on-chain account size (8-byte discriminator + borsh body) with `peaks_len` peaks.
+    /// Used to `init`/`realloc`.
+    pub fn account_size(peaks_len: usize) -> usize {
+        // disc + (program+authority+scope+label+handle) + leaf_count + peaks(vec) + bump
+        8 + (32 * 5) + 8 + (4 + 32 * peaks_len) + 1
     }
 }
 
-/// Byte-exact body layout of `zama-host`'s on-chain `EncryptedValue` account.
-#[derive(borsh::BorshSerialize, borsh::BorshDeserialize, Clone, Debug, PartialEq, Eq)]
-struct OnChainEncryptedValue {
-    domain: [u8; 32],
-    encrypted_value_account_authority: [u8; 32],
-    label: [u8; 32],
-    current_handle: [u8; 32],
-    subjects: Vec<[u8; 32]>,
-    leaf_count: u64,
-    peaks: Vec<[u8; 32]>,
-    bump: u8,
-}
-
-impl OnChainEncryptedValue {
-    fn to_shared(&self) -> EncryptedValue {
-        EncryptedValue {
-            domain: self.domain,
-            encrypted_value_account_authority: self.encrypted_value_account_authority,
-            label: self.label,
-            current_handle: self.current_handle,
-            subjects: self.subjects.clone(),
-            leaf_count: self.leaf_count,
-            peaks: self.peaks.clone(),
-            bump: self.bump,
-        }
-    }
+/// The exact PDA seed list of an encrypted value account: a constant tag then four fixed-width
+/// fields, in this order, with no intermediate hash — so there is exactly one way to build it
+/// and two seed lists can never concatenate to the same bytes.
+pub fn encrypted_value_seeds<'a>(
+    program: &'a [u8; 32],
+    encrypted_value_account_authority: &'a [u8; 32],
+    scope: &'a [u8; 32],
+    label: &'a [u8; 32],
+) -> [&'a [u8]; 5] {
+    [
+        ENCRYPTED_VALUE_SEED,
+        program,
+        encrypted_value_account_authority,
+        scope,
+        label,
+    ]
 }
 
 /// The Anchor-style 8-byte account discriminator, `sha256("account:EncryptedValue")[..8]`.
@@ -161,32 +140,16 @@ pub fn encrypted_value_discriminator() -> [u8; 8] {
     disc
 }
 
-/// Decodes `zama-host`'s real on-chain account layout and projects it to the
-/// shared ACL/MMR type.
+/// Decodes `zama-host`'s real on-chain account layout: discriminator, then the borsh body of
+/// [`EncryptedValue`], which is the on-chain layout by construction (the program's own pin test
+/// serializes with Anchor and decodes with this function).
 pub fn decode_on_chain_account(data: &[u8]) -> Result<EncryptedValue, AclError> {
     if data.len() < 8 || data[..8] != encrypted_value_discriminator() {
         return Err(AclError::BadDiscriminator);
     }
     let mut body = &data[8..];
-    let decoded = <OnChainEncryptedValue as borsh::BorshDeserialize>::deserialize(&mut body)
-        .map_err(|_| AclError::BadAccountData)?;
-    Ok(decoded.to_shared())
-}
-
-/// The app-controlled encrypted value ID for one encrypted field — the encrypted value account's PDA
-/// seed. (The sha256 tag string keeps its historical `value-key` spelling: it is preimage bytes.)
-/// Contains app metadata, not the opaque handle, so the address is predeclarable.
-pub fn derive_encrypted_value_id(
-    domain: [u8; 32],
-    encrypted_value_account_authority: [u8; 32],
-    encrypted_value_label: [u8; 32],
-) -> [u8; 32] {
-    sha256(&[
-        b"zama-encrypted-value-key-v1",
-        &domain,
-        &encrypted_value_account_authority,
-        &encrypted_value_label,
-    ])
+    <EncryptedValue as borsh::BorshDeserialize>::deserialize(&mut body)
+        .map_err(|_| AclError::BadAccountData)
 }
 
 #[cfg(not(target_os = "solana"))]
@@ -203,20 +166,35 @@ pub(crate) fn sha256(parts: &[&[u8]]) -> [u8; 32] {
     solana_sha256_hasher::hashv(parts).to_bytes()
 }
 
-/// Commitment for `HistoricalAccessLeaf { encrypted_value_account, leaf_index, handle, subject }`.
-/// `leaf_index` is bound in so a leaf cannot be replayed at a different position.
+#[cfg(not(target_os = "solana"))]
+pub(crate) fn keccak256(parts: &[&[u8]]) -> [u8; 32] {
+    let mut hasher = Keccak256::new();
+    for part in parts {
+        hasher.update(part);
+    }
+    hasher.finalize().into()
+}
+
+#[cfg(target_os = "solana")]
+pub(crate) fn keccak256(parts: &[&[u8]]) -> [u8; 32] {
+    solana_keccak_hasher::hashv(parts).to_bytes()
+}
+
+/// Commitment for `HistoricalAccessLeaf { encrypted_value_account, leaf_index, handle, key }`:
+/// one `allow` of `key` on `handle`. `leaf_index` is bound in so a leaf cannot be replayed at a
+/// different position.
 pub fn historical_access_leaf_commitment(
     encrypted_value_account: [u8; 32],
     leaf_index: u64,
     handle: [u8; 32],
-    subject: [u8; 32],
+    key: [u8; 32],
 ) -> [u8; 32] {
-    sha256(&[
+    keccak256(&[
         HISTORICAL_ACCESS_LEAF_PREFIX,
         &encrypted_value_account,
         &leaf_index.to_be_bytes(),
         &handle,
-        &subject,
+        &key,
     ])
 }
 
@@ -226,7 +204,7 @@ pub fn public_decrypt_leaf_commitment(
     leaf_index: u64,
     handle: [u8; 32],
 ) -> [u8; 32] {
-    sha256(&[
+    keccak256(&[
         PUBLIC_DECRYPT_LEAF_PREFIX,
         &encrypted_value_account,
         &leaf_index.to_be_bytes(),
@@ -234,37 +212,18 @@ pub fn public_decrypt_leaf_commitment(
     ])
 }
 
-/// Current decrypt: `handle` is the live handle and `subject` is a current member. No proof.
-pub fn authorize_current(
-    value: &EncryptedValue,
-    handle: [u8; 32],
-    subject: [u8; 32],
-) -> Result<(), AclError> {
-    if value.current_handle != handle {
-        return Err(AclError::HandleMismatch);
-    }
-    if !value.is_subject(subject) {
-        return Err(AclError::SubjectMissing);
-    }
-    Ok(())
-}
-
-/// Historical decrypt: a valid historical-access MMR proof is the authorization;
-/// the subject is bound into the proven leaf, so it survives membership changes.
-/// A current-only encrypted value account (`leaf_count == 0`) has no provable history, so this fails.
+/// User decrypt: a valid historical-access MMR proof is the authorization, for the current
+/// handle and for an old one alike. The key is bound into the proven leaf. A value with no
+/// leaves (`leaf_count == 0`) has nobody allowed on it, so this fails.
 pub fn authorize_historical(
     encrypted_value_account: [u8; 32],
     value: &EncryptedValue,
     handle: [u8; 32],
-    subject: [u8; 32],
+    key: [u8; 32],
     proof: &MmrProof,
 ) -> Result<(), AclError> {
-    let commitment = historical_access_leaf_commitment(
-        encrypted_value_account,
-        proof.leaf_index,
-        handle,
-        subject,
-    );
+    let commitment =
+        historical_access_leaf_commitment(encrypted_value_account, proof.leaf_index, handle, key);
     verify_leaf(value, commitment, proof, AclError::HistoricalProofInvalid)
 }
 
@@ -307,27 +266,23 @@ mod tests {
         [tag; 32]
     }
 
-    /// Doc-sync guard for `docs/MMR_ACL_MVP.md` "Resource Bounds And Liveness":
-    /// the stranding-impossible argument quotes these exact numbers, so a change
-    /// here must update that section (and the liveness audit) in the same PR.
+    /// Doc-sync guard for `docs/MMR_ACL_MVP.md` "Resource Bounds And Liveness": the
+    /// stranding-impossible argument quotes these exact numbers, so a change here must update
+    /// that section in the same PR.
     #[test]
     fn resource_bounds_match_liveness_doc() {
-        assert_eq!(
-            MAX_ENCRYPTED_VALUE_SUBJECTS, 8,
-            "MMR_ACL_MVP.md liveness section"
-        );
         assert_eq!(MAX_MMR_PEAKS, 64, "MMR_ACL_MVP.md liveness section");
-        // account_size = 153 + 32·subjects + 32·peaks; max = 2457 bytes, forever.
-        assert_eq!(EncryptedValue::account_size(0, 0), 153);
+        // account_size = 181 + 32·peaks; max = 2229 bytes, forever.
+        assert_eq!(EncryptedValue::account_size(0), 181);
         assert_eq!(
-            EncryptedValue::account_size(MAX_ENCRYPTED_VALUE_SUBJECTS, MAX_MMR_PEAKS),
-            2457,
+            EncryptedValue::account_size(MAX_MMR_PEAKS),
+            2229,
             "max account must stay « Solana's 10240-byte realloc cap"
         );
     }
 
     /// A test encrypted value account that maintains its own leaf list so it can build proofs,
-    /// mirroring an off-chain proof service.
+    /// mirroring the coprocessor indexer.
     #[derive(Default)]
     struct EncryptedValueAccount {
         value: EncryptedValue,
@@ -336,15 +291,13 @@ mod tests {
     }
 
     impl EncryptedValueAccount {
-        fn new(handle: [u8; 32], subjects: &[[u8; 32]]) -> Self {
-            let account = h(0xAC);
+        fn new(handle: [u8; 32]) -> Self {
             Self {
                 value: EncryptedValue {
                     current_handle: handle,
-                    subjects: subjects.to_vec(),
                     ..Default::default()
                 },
-                account,
+                account: h(0xAC),
                 leaves: Vec::new(),
             }
         }
@@ -359,21 +312,18 @@ mod tests {
             self.leaves.push(commitment);
         }
 
-        /// Mirrors a persistent output being updated: one historical leaf per current
-        /// subject for the outgoing handle, then the overwrite.
-        fn update(&mut self, new_handle: [u8; 32]) {
-            let previous = self.value.current_handle;
-            for i in 0..self.value.subjects.len() {
+        /// Mirrors a write: the handle is overwritten, then one leaf per allowed key on it.
+        fn update(&mut self, new_handle: [u8; 32], allows: &[[u8; 32]]) {
+            self.value.current_handle = new_handle;
+            for key in allows {
                 let idx = self.value.leaf_count;
-                let c = historical_access_leaf_commitment(
+                self.append(historical_access_leaf_commitment(
                     self.account,
                     idx,
-                    previous,
-                    self.value.subjects[i],
-                );
-                self.append(c);
+                    new_handle,
+                    *key,
+                ));
             }
-            self.value.current_handle = new_handle;
         }
 
         fn make_public(&mut self) {
@@ -388,42 +338,24 @@ mod tests {
     }
 
     #[test]
-    fn current_and_rejections() {
+    fn a_leaf_authorizes_its_key_on_its_handle_only() {
         let owner = h(1);
-        let l = EncryptedValueAccount::new(h(10), &[owner]);
-        assert!(authorize_current(&l.value, h(10), owner).is_ok());
-        assert_eq!(
-            authorize_current(&l.value, h(10), h(2)),
-            Err(AclError::SubjectMissing)
-        );
-        assert_eq!(
-            authorize_current(&l.value, h(99), owner),
-            Err(AclError::HandleMismatch)
-        );
-    }
-
-    #[test]
-    fn post_update_then_historical_proof() {
-        let owner = h(1);
-        let mut l = EncryptedValueAccount::new(h(10), &[owner]);
-        l.update(h(11));
-        assert_eq!(
-            authorize_current(&l.value, h(10), owner),
-            Err(AclError::HandleMismatch)
-        );
-        assert!(authorize_current(&l.value, h(11), owner).is_ok());
-        let proof = l.proof(0);
-        assert!(authorize_historical(l.account, &l.value, h(10), owner, &proof).is_ok());
-        assert!(authorize_historical(l.account, &l.value, h(10), h(2), &proof).is_err());
-        assert!(authorize_historical(l.account, &l.value, h(99), owner, &proof).is_err());
+        let mut l = EncryptedValueAccount::new(h(10));
+        l.update(h(10), &[owner]);
+        l.update(h(11), &[owner]);
+        let old = l.proof(0);
+        let new = l.proof(1);
+        assert!(authorize_historical(l.account, &l.value, h(10), owner, &old).is_ok());
+        assert!(authorize_historical(l.account, &l.value, h(11), owner, &new).is_ok());
+        assert!(authorize_historical(l.account, &l.value, h(10), h(2), &old).is_err());
+        assert!(authorize_historical(l.account, &l.value, h(11), owner, &old).is_err());
     }
 
     #[test]
     fn exact_public_no_roll_forward() {
-        let owner = h(1);
-        let mut l = EncryptedValueAccount::new(h(10), &[owner]);
+        let mut l = EncryptedValueAccount::new(h(10));
         l.make_public();
-        l.update(h(11));
+        l.update(h(11), &[]);
         let proof = l.proof(0);
         assert!(authorize_public(l.account, &l.value, h(10), &proof).is_ok());
         assert_eq!(
@@ -433,40 +365,47 @@ mod tests {
     }
 
     #[test]
-    fn no_history_rejects_proofs_but_current_works() {
-        let owner = h(1);
-        let l = EncryptedValueAccount::new(h(10), &[owner]);
+    fn a_value_nobody_was_allowed_on_cannot_be_decrypted() {
+        let l = EncryptedValueAccount::new(h(10));
         assert_eq!(l.value.leaf_count, 0);
-        assert!(authorize_current(&l.value, h(10), owner).is_ok());
         let empty = MmrProof::default();
-        assert!(authorize_historical(l.account, &l.value, h(10), owner, &empty).is_err());
+        assert!(authorize_historical(l.account, &l.value, h(10), h(1), &empty).is_err());
         assert!(authorize_public(l.account, &l.value, h(10), &empty).is_err());
-    }
-
-    fn encode_on_chain(value: &EncryptedValue) -> Vec<u8> {
-        let on_chain = OnChainEncryptedValue {
-            domain: value.domain,
-            encrypted_value_account_authority: value.encrypted_value_account_authority,
-            label: value.label,
-            current_handle: value.current_handle,
-            subjects: value.subjects.clone(),
-            leaf_count: value.leaf_count,
-            peaks: value.peaks.clone(),
-            bump: value.bump,
-        };
-        let mut data = encrypted_value_discriminator().to_vec();
-        data.extend_from_slice(&borsh::to_vec(&on_chain).unwrap());
-        data
     }
 
     #[test]
     fn on_chain_account_decoder_reads_layout() {
-        let subjects = [h(1), h(2), h(3), h(4)];
-        let mut l = EncryptedValueAccount::new(h(10), &subjects);
+        let mut l = EncryptedValueAccount::new(h(10));
+        l.value.program = h(0x50);
+        l.value.encrypted_value_account_authority = h(0x51);
+        l.value.scope = h(0x52);
+        l.value.label = h(0x53);
+        l.value.bump = 254;
+        l.update(h(10), &[h(1), h(2)]);
         l.make_public();
-        let data = encode_on_chain(&l.value);
+        let mut data = encrypted_value_discriminator().to_vec();
+        data.extend_from_slice(&borsh::to_vec(&l.value).unwrap());
+        assert_eq!(
+            data.len(),
+            EncryptedValue::account_size(l.value.peaks.len())
+        );
 
         let decoded = decode_on_chain_account(&data).unwrap();
         assert_eq!(decoded, l.value);
+        assert_eq!(
+            decoded.seeds(),
+            [
+                ENCRYPTED_VALUE_SEED,
+                &h(0x50)[..],
+                &h(0x51)[..],
+                &h(0x52)[..],
+                &h(0x53)[..]
+            ]
+        );
+        data[0] ^= 1;
+        assert_eq!(
+            decode_on_chain_account(&data),
+            Err(AclError::BadDiscriminator)
+        );
     }
 }

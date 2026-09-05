@@ -3,10 +3,11 @@
 //! The live `EncryptedValue` account stores only the MMR *peaks* and the leaf
 //! count; full inclusion proofs are reconstructed off-chain and verified here —
 //! and, identically, on-chain and in the KMS, since this is the single shared
-//! implementation. SHA-256 with domain separation; leaf and node prefixes
-//! differ so a leaf can never be reinterpreted as an internal node.
+//! implementation. keccak256 with domain separation (the EVM ACL's hash, so both chains
+//! share one proof verifier); leaf and node prefixes differ so a leaf can never be
+//! reinterpreted as an internal node.
 
-use crate::{sha256, AclError};
+use crate::{keccak256, AclError};
 
 const LEAF_PREFIX: &[u8] = b"ZAMA_MMR_LEAF_V1";
 const NODE_PREFIX: &[u8] = b"ZAMA_MMR_NODE_V1";
@@ -21,7 +22,8 @@ const NODE_PREFIX: &[u8] = b"ZAMA_MMR_NODE_V1";
 pub const MAX_MMR_PEAKS: usize = u64::BITS as usize;
 
 /// An inclusion proof: the authentication path from a leaf up to its mountain's
-/// peak. Rides in on a decrypt request. `siblings.len()` equals the mountain height.
+/// peak. Fetched by the KMS connector from the coprocessor. `siblings.len()` equals the
+/// mountain height.
 #[derive(borsh::BorshSerialize, borsh::BorshDeserialize, Clone, Debug, PartialEq, Eq, Default)]
 pub struct MmrProof {
     pub leaf_index: u64,
@@ -30,12 +32,12 @@ pub struct MmrProof {
 
 /// Hashes a leaf commitment into its MMR leaf node.
 pub fn mmr_leaf_node(commitment: &[u8; 32]) -> [u8; 32] {
-    sha256(&[LEAF_PREFIX, commitment])
+    keccak256(&[LEAF_PREFIX, commitment])
 }
 
 /// Hashes two child nodes into their MMR parent node.
 pub fn mmr_node(left: &[u8; 32], right: &[u8; 32]) -> [u8; 32] {
-    sha256(&[NODE_PREFIX, left, right])
+    keccak256(&[NODE_PREFIX, left, right])
 }
 
 /// Appends one leaf commitment to the running peaks (oldest mountain first),
@@ -112,7 +114,7 @@ pub fn mmr_verify(
 }
 
 /// Off-chain helper: recompute the full peak set for an ordered leaf list, by an
-/// independent stack-fold from [`mmr_append`]. Used by clients/proof services/tests.
+/// independent stack-fold from [`mmr_append`]. Used by the coprocessor indexer and tests.
 pub fn mmr_peaks_from_leaves(leaves: &[[u8; 32]]) -> Vec<[u8; 32]> {
     let mut stack: Vec<([u8; 32], u32)> = Vec::new();
     for leaf in leaves {
@@ -220,11 +222,11 @@ mod tests {
     }
 
     #[test]
-    fn hash_is_sha256() {
-        // Pin the hash function: a leaf node is SHA-256(LEAF_PREFIX ‖ commitment).
-        use sha2::{Digest as _, Sha256};
+    fn hash_is_keccak256() {
+        // Pin the hash function: a leaf node is keccak256(LEAF_PREFIX ‖ commitment).
+        use sha3::{Digest as _, Keccak256};
         let commitment = [7u8; 32];
-        let mut hasher = Sha256::new();
+        let mut hasher = Keccak256::new();
         hasher.update(b"ZAMA_MMR_LEAF_V1");
         hasher.update(commitment);
         let expected: [u8; 32] = hasher.finalize().into();
