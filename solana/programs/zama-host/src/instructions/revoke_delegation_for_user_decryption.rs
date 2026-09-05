@@ -10,7 +10,8 @@ use crate::{errors::ZamaHostError, state::*};
 pub struct RevokeDelegationForUserDecryption<'info> {
     /// Delegator that owns the delegation.
     pub delegator: Signer<'info>,
-    /// Singleton config PDA.
+    /// Singleton config PDA. Carried for the account list the clients already build, and pinned to
+    /// the canonical singleton by its seeds; no flag on it gates this instruction.
     #[account(seeds = [HOST_CONFIG_SEED], bump = host_config.bump)]
     pub host_config: Account<'info, HostConfig>,
     /// Delegation record to revoke.
@@ -19,11 +20,16 @@ pub struct RevokeDelegationForUserDecryption<'info> {
 }
 
 /// Marks an existing user-decryption delegation as revoked.
+///
+/// Deliberately not pause-gated, unlike granting. Revoking is the delegator's abort, and a lever
+/// the operator can switch off is not the delegator's lever — the same reasoning `revoke_permits`
+/// records. The asymmetry is what makes pause coherent: a paused host stops the Connector from
+/// serving user decryptions (its authorization reads `HostConfig.paused`), and existing grants
+/// would otherwise stay frozen in place with no way for their delegator to withdraw them.
 pub fn revoke_delegation_for_user_decryption(
     ctx: Context<RevokeDelegationForUserDecryption>,
 ) -> Result<()> {
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
-    assert_not_paused(&ctx.accounts.host_config)?;
     let clock = Clock::get()?;
     require_keys_eq!(
         ctx.accounts.delegator.key(),

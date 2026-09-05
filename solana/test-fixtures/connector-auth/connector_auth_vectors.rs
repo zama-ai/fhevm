@@ -240,6 +240,9 @@ pub mod rule {
     pub const WATERMARK_RECORD_INVALID: &str = "watermark-record-invalid";
     /// The signed KMS pair is not servable. The class distinguishes why.
     pub const KMS_PAIR_UNSERVABLE: &str = "kms-pair-unservable";
+    /// The operator has paused the host, or its config singleton is not readable at the
+    /// deployment's address.
+    pub const HOST_PAUSED: &str = "host-paused";
     /// The request names no handles.
     pub const EMPTY_HANDLES: &str = "empty-handles";
     /// The request names more handles than one atomic account snapshot can cover.
@@ -302,6 +305,7 @@ pub mod rule {
         PERMIT_INVALIDATED,
         WATERMARK_RECORD_INVALID,
         KMS_PAIR_UNSERVABLE,
+        HOST_PAUSED,
         EMPTY_HANDLES,
         TOO_MANY_HANDLES,
         ACCESS_PROOF_MALFORMED,

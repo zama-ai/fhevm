@@ -43,6 +43,7 @@ use kms_worker::core::solana::{
     failure::{AuthorizationFailure, FailureClass as ConnectorClass},
     handle_binding::HandleBindingFailure,
     kms_pair::{KmsPairFailure, KmsPairValidator},
+    pause::PauseFailure,
     pipeline::{AuthorizationContext, authorize_request},
     request::{
         MAX_REQUEST_HANDLES, RequestFormError, SolanaHandleEntryWire, SolanaUserDecryptRequest,
@@ -738,6 +739,21 @@ fn deployment_and_permit_state_scenarios() -> Vec<Scenario> {
                 watermark_key,
                 invalidation_account(Wallet::new(9).pubkey(), DEFAULT_START),
             ),
+    ));
+
+    let (_, _, _, paused_request, paused_world) = reference_direct();
+    out.push(Scenario::rejected(
+        "host-paused",
+        "The operator paused the host. User decryption is served entirely by the Connector, so the \
+         pause switch reaches it only through this rule — without it a paused deployment would keep \
+         releasing plaintext while refusing every on-chain write. Transient: the permit and the \
+         handles survive the pause, so the same request authorizes once the operator lifts it.",
+        "direct-current",
+        "the deployment's config singleton carries paused = true",
+        rule::HOST_PAUSED,
+        FailureClass::Transient,
+        paused_request,
+        paused_world.paused(),
     ));
 
     let (_, _, _, destroyed_request, destroyed_world) = reference_direct();
@@ -1631,6 +1647,13 @@ fn rule_name(failure: &AuthorizationFailure) -> &'static str {
         },
         AuthorizationFailure::KmsPair(_) => rule::KMS_PAIR_UNSERVABLE,
         AuthorizationFailure::Snapshot(_) => panic!("a record carries one observation"),
+        AuthorizationFailure::Pause(pause) => match pause {
+            PauseFailure::Paused
+            | PauseFailure::Absent { .. }
+            | PauseFailure::ForeignOwner { .. }
+            | PauseFailure::NotAHostConfig { .. } => rule::HOST_PAUSED,
+            PauseFailure::Snapshot(_) => panic!("a record carries one observation"),
+        },
         AuthorizationFailure::EncryptedValueAccount { source, .. } => match source {
             EncryptedValueAccountFailure::Absent { .. } => rule::ENCRYPTED_VALUE_ACCOUNT_ABSENT,
             EncryptedValueAccountFailure::ForeignOwner { .. } => {

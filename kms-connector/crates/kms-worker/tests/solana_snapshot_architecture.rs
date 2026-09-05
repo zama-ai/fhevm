@@ -218,9 +218,9 @@ async fn a_delegated_entry_plans_both_of_its_delegation_rows() {
     );
     assert_eq!(
         second.len(),
-        // the invalidation record, two encrypted value accounts, one app row per app, one wildcard
-        // row for both
-        1 + 2 + 2 + 1,
+        // the config singleton, the invalidation record, two encrypted value accounts, one app row
+        // per app, one wildcard row for both
+        1 + 1 + 2 + 2 + 1,
         "the wildcard row is per delegator, so a second app adds an app row and no second wildcard"
     );
     assert_eq!(reader.call_count(), 2, "still two reads, never a third");
@@ -228,8 +228,8 @@ async fn a_delegated_entry_plans_both_of_its_delegation_rows() {
 
 /// There is no scan in the authorization path: the first read's key set is a pure function of the
 /// request and the deployment, which is what "known before the first read" means operationally. The
-/// set is exactly the signer's invalidation record plus one encrypted value account per named
-/// encrypted value account.
+/// set is exactly the deployment's config singleton, the signer's invalidation record and one
+/// encrypted value account per named encrypted value account.
 #[tokio::test]
 async fn every_account_key_is_planned_before_the_first_read() {
     let (wallet, encrypted_value_account, handle) = direct_scenario();
@@ -276,8 +276,8 @@ async fn repeated_encrypted_value_accounts_are_read_once() {
 
     assert_eq!(
         planned.len(),
-        2,
-        "a request naming one encrypted value account twice plans the encrypted value account once, beside the watermark"
+        3,
+        "a request naming one encrypted value account twice plans the encrypted value account once, beside the config singleton and the watermark"
     );
 }
 

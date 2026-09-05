@@ -60,6 +60,8 @@ pub mod failure;
 pub mod handle_binding;
 /// KMS context/epoch servability.
 pub mod kms_pair;
+/// The host pause switch.
+pub mod pause;
 /// The authorization pipeline.
 pub mod pipeline;
 /// The normalized request and its strict decoding.

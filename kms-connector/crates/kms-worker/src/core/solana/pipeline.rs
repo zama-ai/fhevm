@@ -11,6 +11,7 @@
 //!   → if any entry is delegated: resolve its encrypted value account to learn its
 //!     authority, then READ again with the delegation records added — that read is the
 //!     deciding observation and the first read's values are discarded
+//!   → host pause switch
 //!   → invalidation watermark
 //!   → per entry: encrypted value account → its authority → handle binding → scope
 //!   → per delegated entry: delegation freshness
@@ -47,6 +48,7 @@ use super::handle_binding::{
     HandleBindingFailure, check_handle_binding, classify_inclusion_failure,
 };
 use super::kms_pair::KmsPairValidator;
+use super::pause::check_not_paused;
 use super::request::{RequestFormError, SolanaUserDecryptRequest};
 use super::scope::check_scope;
 use super::snapshot::{HostSnapshot, HostStateReader, plan_first_read, plan_second_read};
@@ -209,10 +211,10 @@ where
         .validate_pair(kms_context_id.as_bytes(), kms_epoch_id.as_bytes())
         .await?;
 
-    // The reads. The first covers the signer's invalidation record and one account per named
-    // encrypted value account; a delegated entry then needs a second, because its record's address
-    // is a function of an authority only its encrypted value account can
-    // supply.
+    // The reads. The first covers the deployment's config singleton, the signer's invalidation
+    // record and one account per named encrypted value account; a delegated entry then needs a
+    // second, because its record's address is a function of an authority only its encrypted value
+    // account can supply.
     let first_keys = plan_first_read(request, context.deployment);
     let first = reader.read_accounts(&first_keys).await?;
     let delegation_keys = discover_delegation_keys(&first, program_id, signer, request)?;
@@ -228,6 +230,9 @@ where
     };
 
     // Everything below is evaluated against that one observation, and nothing below reads state.
+    // The pause switch comes first because it is a fact about the deployment rather than about any
+    // entry: a paused host releases no plaintext at all, so there is nothing per handle to decide.
+    check_not_paused(&observation, program_id)?;
     let watermark = read_watermark(&observation, program_id, signer)?;
     check_not_invalidated(permit.start_timestamp(), watermark)?;
 
