@@ -186,7 +186,7 @@ fn reference_direct() -> (
     let request = RequestBuilder::new(&wallet)
         .direct_current(&encrypted_value_account, live)
         .wire();
-    let world = World::at_slot(OBSERVED_SLOT)
+    let world = World::running_at_slot(OBSERVED_SLOT)
         .with_encrypted_value_account(&encrypted_value_account)
         .with_watermark(wallet.pubkey(), 0);
     (wallet, encrypted_value_account, live, request, world)
@@ -210,7 +210,7 @@ fn reference_delegated() -> (
     let request = RequestBuilder::new(&signer)
         .delegated_current(&encrypted_value_account, live, delegator.pubkey())
         .wire();
-    let world = World::at_slot(OBSERVED_SLOT)
+    let world = World::running_at_slot(OBSERVED_SLOT)
         .with_encrypted_value_account(&encrypted_value_account)
         .with_watermark(signer.pubkey(), 0)
         .with_delegation(&delegation);
@@ -289,7 +289,7 @@ fn accepting_scenarios() -> Vec<Scenario> {
                 wildcard_delegator.pubkey(),
             )
             .wire(),
-        World::at_slot(OBSERVED_SLOT)
+        World::running_at_slot(OBSERVED_SLOT)
             .with_encrypted_value_account(&wildcard_encrypted_value_account)
             .with_watermark(wildcard_signer.pubkey(), 0)
             .with_delegation(&wildcard_row),
@@ -304,7 +304,7 @@ fn accepting_scenarios() -> Vec<Scenario> {
         RequestBuilder::new(&wallet)
             .historical(&encrypted_value_account, sealed, wallet.pubkey(), &proof, 1)
             .wire(),
-        World::at_slot(OBSERVED_SLOT)
+        World::running_at_slot(OBSERVED_SLOT)
             .with_encrypted_value_account(&encrypted_value_account)
             .with_watermark(wallet.pubkey(), 0),
     ));
@@ -332,7 +332,7 @@ fn accepting_scenarios() -> Vec<Scenario> {
                 claimed_before_append,
             )
             .wire(),
-        World::at_slot(OBSERVED_SLOT)
+        World::running_at_slot(OBSERVED_SLOT)
             .with_encrypted_value_account(&drifted)
             .with_watermark(wallet.pubkey(), 0),
     ));
@@ -354,7 +354,7 @@ fn accepting_scenarios() -> Vec<Scenario> {
             .permit(PermitBuilder::new(wallet.pubkey()).permissive())
             .direct_current(&permissive_encrypted_value_account, permissive_handle)
             .wire(),
-        World::at_slot(OBSERVED_SLOT)
+        World::running_at_slot(OBSERVED_SLOT)
             .with_encrypted_value_account(&permissive_encrypted_value_account)
             .with_watermark(wallet.pubkey(), 0),
     ));
@@ -370,7 +370,7 @@ fn accepting_scenarios() -> Vec<Scenario> {
             .direct_current(&repeated_encrypted_value_account, repeated)
             .direct_current(&repeated_encrypted_value_account, repeated)
             .wire(),
-        World::at_slot(OBSERVED_SLOT)
+        World::running_at_slot(OBSERVED_SLOT)
             .with_encrypted_value_account(&repeated_encrypted_value_account)
             .with_watermark(wallet.pubkey(), 0),
     ));
@@ -438,7 +438,7 @@ fn accepting_scenarios() -> Vec<Scenario> {
                 second_delegator.pubkey(),
             )
             .wire(),
-        World::at_slot(OBSERVED_SLOT)
+        World::running_at_slot(OBSERVED_SLOT)
             .with_encrypted_value_account(&own_encrypted_value_account)
             .with_encrypted_value_account(&encrypted_value_account_a)
             .with_encrypted_value_account(&encrypted_value_account_b)
@@ -500,7 +500,7 @@ fn accepting_scenarios() -> Vec<Scenario> {
                 delegator.pubkey(),
             )
             .wire(),
-        World::at_slot(OBSERVED_SLOT)
+        World::running_at_slot(OBSERVED_SLOT)
             .with_encrypted_value_account(&encrypted_value_account_here)
             .with_encrypted_value_account(&encrypted_value_account_elsewhere)
             .with_watermark(signer.pubkey(), 0)
@@ -512,7 +512,7 @@ fn accepting_scenarios() -> Vec<Scenario> {
     // large enough that the read plan covers many accounts at once.
     const MANY_HANDLES: u16 = 32;
     let mut many_builder = RequestBuilder::new(&wallet);
-    let mut many_world = World::at_slot(OBSERVED_SLOT).with_watermark(wallet.pubkey(), 0);
+    let mut many_world = World::running_at_slot(OBSERVED_SLOT).with_watermark(wallet.pubkey(), 0);
     for index in 0..MANY_HANDLES {
         let mut label = LABEL;
         label[0..2].copy_from_slice(&index.to_be_bytes());
@@ -547,7 +547,7 @@ fn accepting_scenarios() -> Vec<Scenario> {
             let _ = (absent_live, &absent_encrypted_value_account);
             absent_request
         },
-        World::at_slot(OBSERVED_SLOT).with_encrypted_value_account(&absent_encrypted_value_account),
+        World::running_at_slot(OBSERVED_SLOT).with_encrypted_value_account(&absent_encrypted_value_account),
     ));
     let _ = absent_wallet;
 
@@ -563,7 +563,7 @@ fn accepting_scenarios() -> Vec<Scenario> {
          as. An implementation that reads it any other way sells a terminal denial of a user's \
          every request for the price of one transfer.",
         prefunded_request,
-        World::at_slot(OBSERVED_SLOT)
+        World::running_at_slot(OBSERVED_SLOT)
             .with_encrypted_value_account(&prefunded_encrypted_value_account)
             .with_account(prefunded_key, prefunded_account()),
     ));
@@ -578,7 +578,7 @@ fn accepting_scenarios() -> Vec<Scenario> {
             RequestBuilder::new(&weak_wallet)
                 .direct_current(&weak_encrypted_value_account, weak_live)
                 .wire(),
-            World::at_slot(OBSERVED_SLOT)
+            World::running_at_slot(OBSERVED_SLOT)
                 .with_encrypted_value_account(&weak_encrypted_value_account)
                 .with_watermark(weak_wallet.pubkey(), revocation_before_the_start),
         )
@@ -628,7 +628,7 @@ fn deployment_and_permit_state_scenarios() -> Vec<Scenario> {
             .permit(PermitBuilder::new(wallet.pubkey()).deployment_pair(PROGRAM_ID, other_chain))
             .direct_current(&other_chain_encrypted_value_account, other_chain_handle)
             .wire(),
-        World::at_slot(OBSERVED_SLOT)
+        World::running_at_slot(OBSERVED_SLOT)
             .with_encrypted_value_account(&other_chain_encrypted_value_account)
             .with_watermark(wallet.pubkey(), 0),
     ));
@@ -669,7 +669,7 @@ fn deployment_and_permit_state_scenarios() -> Vec<Scenario> {
         RequestBuilder::new(&wallet)
             .direct_current(&elsewhere_encrypted_value_account, elsewhere)
             .wire(),
-        World::at_slot(OBSERVED_SLOT)
+        World::running_at_slot(OBSERVED_SLOT)
             .with_encrypted_value_account(&elsewhere_encrypted_value_account)
             .with_watermark(wallet.pubkey(), 0),
     ));
@@ -715,7 +715,7 @@ fn deployment_and_permit_state_scenarios() -> Vec<Scenario> {
         rule::PERMIT_INVALIDATED,
         FailureClass::Terminal,
         invalidated_request,
-        World::at_slot(OBSERVED_SLOT)
+        World::running_at_slot(OBSERVED_SLOT)
             .with_encrypted_value_account(&invalidated_encrypted_value_account)
             .with_watermark(Wallet::new(1).pubkey(), DEFAULT_START + 1),
     ));
@@ -733,7 +733,7 @@ fn deployment_and_permit_state_scenarios() -> Vec<Scenario> {
         rule::WATERMARK_RECORD_INVALID,
         FailureClass::Terminal,
         foreign_record_request,
-        World::at_slot(OBSERVED_SLOT)
+        World::running_at_slot(OBSERVED_SLOT)
             .with_encrypted_value_account(&foreign_record_encrypted_value_account)
             .with_account(
                 watermark_key,
@@ -850,7 +850,7 @@ fn request_form_scenarios() -> Vec<Scenario> {
 
     let (proof_encrypted_value_account, sealed, proof) =
         replaced_encrypted_value_account(0x90, wallet.pubkey());
-    let proof_world = World::at_slot(OBSERVED_SLOT)
+    let proof_world = World::running_at_slot(OBSERVED_SLOT)
         .with_encrypted_value_account(&proof_encrypted_value_account)
         .with_watermark(wallet.pubkey(), 0);
 
@@ -937,7 +937,7 @@ fn encrypted_value_account_scenarios() -> Vec<Scenario> {
         rule::ENCRYPTED_VALUE_ACCOUNT_ABSENT,
         FailureClass::Transient,
         request.clone(),
-        World::at_slot(OBSERVED_SLOT).with_watermark(wallet.pubkey(), 0),
+        World::running_at_slot(OBSERVED_SLOT).with_watermark(wallet.pubkey(), 0),
     ));
 
     let mut foreign_owner = encrypted_value_account.account();
@@ -951,7 +951,7 @@ fn encrypted_value_account_scenarios() -> Vec<Scenario> {
         rule::ENCRYPTED_VALUE_ACCOUNT_FOREIGN_OWNER,
         FailureClass::Terminal,
         request.clone(),
-        World::at_slot(OBSERVED_SLOT)
+        World::running_at_slot(OBSERVED_SLOT)
             .with_account(encrypted_value_account.account_key, foreign_owner)
             .with_watermark(wallet.pubkey(), 0),
     ));
@@ -967,7 +967,7 @@ fn encrypted_value_account_scenarios() -> Vec<Scenario> {
         rule::ENCRYPTED_VALUE_ACCOUNT_WRONG_TYPE,
         FailureClass::Terminal,
         request.clone(),
-        World::at_slot(OBSERVED_SLOT)
+        World::running_at_slot(OBSERVED_SLOT)
             .with_account(encrypted_value_account.account_key, delegation.account())
             .with_watermark(wallet.pubkey(), 0),
     ));
@@ -986,7 +986,7 @@ fn encrypted_value_account_scenarios() -> Vec<Scenario> {
         rule::ENCRYPTED_VALUE_ACCOUNT_MALFORMED,
         FailureClass::Terminal,
         request.clone(),
-        World::at_slot(OBSERVED_SLOT)
+        World::running_at_slot(OBSERVED_SLOT)
             .with_account(encrypted_value_account.account_key, truncated)
             .with_watermark(wallet.pubkey(), 0),
     ));
@@ -1007,7 +1007,7 @@ fn encrypted_value_account_scenarios() -> Vec<Scenario> {
         rule::ENCRYPTED_VALUE_ID_MISMATCH,
         FailureClass::Terminal,
         request,
-        World::at_slot(OBSERVED_SLOT)
+        World::running_at_slot(OBSERVED_SLOT)
             .with_account(encrypted_value_account.account_key, another_app.account())
             .with_watermark(wallet.pubkey(), 0),
     ));
@@ -1031,7 +1031,7 @@ fn encrypted_value_account_scenarios() -> Vec<Scenario> {
         RequestBuilder::new(&wallet)
             .direct_current(&unsigned_domain_encrypted_value_account, unsigned_domain_handle)
             .wire(),
-        World::at_slot(OBSERVED_SLOT)
+        World::running_at_slot(OBSERVED_SLOT)
             .with_encrypted_value_account(&unsigned_domain_encrypted_value_account)
             .with_watermark(wallet.pubkey(), 0),
     ));
@@ -1058,7 +1058,7 @@ fn handle_binding_scenarios() -> Vec<Scenario> {
         RequestBuilder::new(&wallet)
             .direct_current(&moved_on, replaced)
             .wire(),
-        World::at_slot(OBSERVED_SLOT)
+        World::running_at_slot(OBSERVED_SLOT)
             .with_encrypted_value_account(&moved_on)
             .with_watermark(wallet.pubkey(), 0),
     ));
@@ -1077,14 +1077,14 @@ fn handle_binding_scenarios() -> Vec<Scenario> {
         RequestBuilder::new(&wallet)
             .direct_current(&others_encrypted_value_account, live)
             .wire(),
-        World::at_slot(OBSERVED_SLOT)
+        World::running_at_slot(OBSERVED_SLOT)
             .with_encrypted_value_account(&others_encrypted_value_account)
             .with_watermark(wallet.pubkey(), 0),
     ));
 
     let (sealed_encrypted_value_account, sealed, _) =
         replaced_encrypted_value_account(0xb0, wallet.pubkey());
-    let sealed_world = World::at_slot(OBSERVED_SLOT)
+    let sealed_world = World::running_at_slot(OBSERVED_SLOT)
         .with_encrypted_value_account(&sealed_encrypted_value_account)
         .with_watermark(wallet.pubkey(), 0);
 
@@ -1175,7 +1175,7 @@ fn handle_binding_scenarios() -> Vec<Scenario> {
                     substituted.encrypted_value.leaf_count,
                 )
                 .wire(),
-            World::at_slot(OBSERVED_SLOT)
+            World::running_at_slot(OBSERVED_SLOT)
                 .with_encrypted_value_account(&substituted)
                 .with_watermark(wallet.pubkey(), 0),
         ));
@@ -1203,7 +1203,7 @@ fn handle_binding_scenarios() -> Vec<Scenario> {
                 public_encrypted_value_account.encrypted_value.leaf_count,
             )
             .wire(),
-        World::at_slot(OBSERVED_SLOT)
+        World::running_at_slot(OBSERVED_SLOT)
             .with_encrypted_value_account(&public_encrypted_value_account)
             .with_watermark(wallet.pubkey(), 0),
     ));
@@ -1230,7 +1230,7 @@ fn handle_binding_scenarios() -> Vec<Scenario> {
         RequestBuilder::new(&wallet)
             .historical(&merging, merged, wallet.pubkey(), &stale_proof, claimed)
             .wire(),
-        World::at_slot(OBSERVED_SLOT)
+        World::running_at_slot(OBSERVED_SLOT)
             .with_encrypted_value_account(&merging)
             .with_watermark(wallet.pubkey(), 0),
     ));
@@ -1262,7 +1262,7 @@ fn handle_binding_scenarios() -> Vec<Scenario> {
                 ahead.encrypted_value.leaf_count,
             )
             .wire(),
-        World::at_slot(OBSERVED_SLOT)
+        World::running_at_slot(OBSERVED_SLOT)
             .with_encrypted_value_account(&behind)
             .with_watermark(wallet.pubkey(), 0),
     ));
@@ -1275,7 +1275,7 @@ fn delegation_scenarios() -> Vec<Scenario> {
     let (signer, delegator, encrypted_value_account, live, delegation, request, world) =
         reference_delegated();
     let base_world = || {
-        World::at_slot(OBSERVED_SLOT)
+        World::running_at_slot(OBSERVED_SLOT)
             .with_encrypted_value_account(&encrypted_value_account)
             .with_watermark(signer.pubkey(), 0)
     };
@@ -1446,7 +1446,7 @@ fn delegation_scenarios() -> Vec<Scenario> {
                 delegator.pubkey(),
             )
             .wire(),
-        World::at_slot(OBSERVED_SLOT)
+        World::running_at_slot(OBSERVED_SLOT)
             .with_encrypted_value_account(&sentinel_encrypted_value_account)
             .with_watermark(signer.pubkey(), 0)
             .with_delegation(&sentinel_wildcard_row),

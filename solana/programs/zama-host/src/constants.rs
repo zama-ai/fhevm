@@ -11,8 +11,9 @@ pub const SOLANA_CHAIN_TYPE_BIT: u64 = 1 << 63;
 /// config. Carries the RFC-021 chain-type high bit so it satisfies the
 /// repository-wide invariant that every Solana host chain id sets bit 63.
 pub const SOLANA_POC_CHAIN_ID: u64 = SOLANA_CHAIN_TYPE_BIT | 12345;
-/// Seed for the singleton host config PDA.
-pub const HOST_CONFIG_SEED: &[u8] = b"host-config";
+/// Seed for the singleton host config PDA — the shared crate's constant, so the program and the
+/// off-chain readers of the pause switch cannot drift on the seed.
+pub use zama_solana_acl::HOST_CONFIG_SEED;
 /// Seed prefix for KMS context PDAs (one per `kmsContextId`, mirroring ProtocolConfig).
 pub const KMS_CONTEXT_SEED: &[u8] = b"kms-context";
 /// Seed prefix for grant deny-list records.

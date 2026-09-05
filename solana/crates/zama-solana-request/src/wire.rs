@@ -58,15 +58,9 @@ use zama_solana_permit::PermitWireFields;
 /// reached it anyway. Two copies of this constant would be two different caps the day one of
 /// them moved.
 ///
-/// The connector's read now also carries the deployment's `HostConfig` singleton, which is what
-/// makes the host pause switch reach user decryption without a round trip of its own (invariant
-/// #36). That is one key per request however many entries it names, so the arithmetic is
-/// `3 * N + 2 <= 100` and the saturating cap is 32, not 33 — a request of 33 entries, every one
-/// delegated by a different delegator, needs 101 accounts in one read and is refused by the RPC
-/// rather than by a rule. The number stays 33 here because it is pinned on the Gateway
-/// (`Decryption.sol`'s `MAX_SOLANA_USER_DECRYPT_HANDLES`) and in the browser SDK; lowering it is a
-/// Gateway-side change, and admitting a request the Gateway charged for and then refusing it
-/// locally is the one thing this cap must not do.
+/// The connector's first read carries the deployment's `HostConfig` singleton as well, so the
+/// pause switch costs no round trip of its own; it is dropped from the deciding read, which keeps
+/// that worst case at exactly the hundred above.
 pub const MAX_REQUEST_HANDLES: usize = 33;
 
 /// Upper bound on the sibling list of an access proof accepted from an untrusted request,

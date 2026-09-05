@@ -43,7 +43,7 @@ use zama_solana_acl::{MmrProof, historical_access_leaf_commitment};
 fn resolved(
     encrypted_value_account: &EncryptedValueAccountFixture,
 ) -> ResolvedEncryptedValueAccount {
-    let world = World::at_slot(1).with_encrypted_value_account(encrypted_value_account);
+    let world = World::running_at_slot(1).with_encrypted_value_account(encrypted_value_account);
     let snapshot = world
         .read(&SnapshotKeys::new([encrypted_value_account.account_key]))
         .expect("the world reads");
@@ -510,7 +510,7 @@ async fn a_verifying_proof_is_accepted_whatever_count_the_request_claims() {
             nonsense_count,
         )
         .typed();
-    let world = World::at_slot(100)
+    let world = World::running_at_slot(100)
         .with_encrypted_value_account(&encrypted_value_account)
         .with_watermark(wallet.pubkey(), 0);
     let reader = ScriptedReader::constant(world);
@@ -546,7 +546,7 @@ async fn a_failed_inclusion_is_classified_by_the_claimed_count() {
             claimed_count,
         )
         .typed();
-    let world = World::at_slot(100)
+    let world = World::running_at_slot(100)
         .with_encrypted_value_account(&encrypted_value_account)
         .with_watermark(wallet.pubkey(), 0);
     let reader = ScriptedReader::constant(world);

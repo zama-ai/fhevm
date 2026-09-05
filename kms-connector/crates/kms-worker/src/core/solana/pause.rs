@@ -5,10 +5,14 @@
 //! Connector — so nothing on chain can stop it, and without this rule a paused host would keep
 //! releasing plaintext while refusing every write.
 //!
-//! The switch is read from the deciding observation, like every other state rule, and it is
-//! evaluated before any per-entry work: a paused host is a fact about the deployment, not about a
-//! handle, and reporting it per entry would say one request failed thirty-three times for one
-//! reason.
+//! It is evaluated on the first read, ahead of every per-entry rule — delegation discovery
+//! included — and before a delegated request takes its second read, so a paused host costs one
+//! round trip rather than two and never reports a pause as a finding about some handle. That is one
+//! observation earlier than every other state rule, and deliberately: pause is an operator action
+//! on a deployment, not an authorization record about a handle, so it is not part of the coherent
+//! per-entry picture the deciding snapshot exists to give. Keeping it off the second read is also
+//! what keeps the worst-case delegated read inside the account budget `MAX_REQUEST_HANDLES` is
+//! derived from.
 //!
 //! Refusing while paused is transient. The permit, the delegation records and the handles are all
 //! untouched by a pause, so the same request authorizes unchanged once the operator lifts it.
@@ -16,36 +20,21 @@
 //! What pause deliberately does not stop is the user's own levers: permit revocation and
 //! delegation revocation stay open on the host program while paused, because a lever the operator
 //! can switch off is not the user's lever.
+//!
+//! The layout is not read here. `zama_solana_acl::decode_host_config` is the one byte-level
+//! reading of the singleton, shared with the program that writes it and pinned against its
+//! serializer on the host side, so this module derives an address, checks an owner, decodes, and
+//! reads one flag.
 
 use super::snapshot::{HostSnapshot, SnapshotError};
-use crate::core::solana_acl::{
-    SolanaPubkeyBytes, anchor_account_discriminator, host_config_address,
-};
-
-/// On-chain account name the singleton's discriminator is the hash of.
-const HOST_CONFIG_ACCOUNT: &str = "HostConfig";
-/// Length of the leading account discriminator.
-const DISCRIMINATOR_LEN: usize = 8;
-/// Upper bound on registered coprocessor signers, which fixes the width of the signer array.
-const MAX_COPROCESSOR_SIGNERS: usize = 8;
-/// Everything the singleton stores ahead of `paused`: the admin, the two chain ids, the input
-/// verification contract, the fixed-capacity coprocessor signer set with its count and threshold,
-/// the decryption contract, and the current KMS context id.
-const PAUSED_INDEX: usize =
-    DISCRIMINATOR_LEN + 32 + 8 + 8 + 20 + (MAX_COPROCESSOR_SIGNERS * 20) + 1 + 1 + 20 + 8;
-/// Everything the singleton stores after `paused` and before its bump: the deny-list flag, the
-/// three HCU knobs, and the update slot.
-const BUMP_INDEX: usize = PAUSED_INDEX + 1 + 1 + 8 + 8 + 8 + 8;
-/// The singleton's exact serialized length. `HostConfig` is fixed-size and is never realloc-grown,
-/// so a longer or shorter account is a different layout rather than a grown one.
-const HOST_CONFIG_LEN: usize = BUMP_INDEX + 1;
+use crate::core::solana_acl::{SolanaPubkeyBytes, host_config_address};
+use zama_solana_acl::decode_host_config;
 
 /// Refuses the request when the deployment's `HostConfig` says the host is paused.
 ///
-/// The singleton's contents are checked against the address they were read from — discriminator,
-/// exact length, canonical bump — rather than trusted. Reading a pause flag out of a foreign
-/// layout would silently disarm the switch, which is the one failure this rule exists to prevent,
-/// so anything that is not the singleton is a refusal and never a `false`.
+/// Anything that is not the deployment's own singleton is a refusal and never a `false`: reading
+/// a pause flag out of an absent account or a foreign layout is the one failure this rule exists
+/// to prevent.
 pub fn check_not_paused(
     snapshot: &HostSnapshot,
     program_id: SolanaPubkeyBytes,
@@ -68,22 +57,19 @@ pub fn check_not_paused(
         });
     }
 
-    let data = &account.data;
     let not_a_config = || PauseFailure::NotAHostConfig { account_key };
-    if data.len() != HOST_CONFIG_LEN
-        || data.get(..DISCRIMINATOR_LEN)
-            != Some(&anchor_account_discriminator(HOST_CONFIG_ACCOUNT)[..])
-        || data.get(BUMP_INDEX) != Some(&canonical_bump)
-    {
+    let config = decode_host_config(&account.data).map_err(|_| not_a_config())?;
+    // The stored bump has to be the canonical one for this address. Not an attacker check — only
+    // the owning program can write these bytes, and the address was derived here — but a
+    // singleton whose bump is not the one this derivation produces is not the singleton this
+    // reader reads.
+    if config.bump != canonical_bump {
         return Err(not_a_config());
     }
-
-    match data.get(PAUSED_INDEX) {
-        Some(0) => Ok(()),
-        Some(1) => Err(PauseFailure::Paused),
-        // Borsh writes a bool as exactly 0 or 1; anything else is not the layout being read here.
-        _ => Err(not_a_config()),
+    if config.paused {
+        return Err(PauseFailure::Paused);
     }
+    Ok(())
 }
 
 /// Why the pause rule refused a request, or could not be evaluated.
@@ -108,8 +94,8 @@ pub enum PauseFailure {
         /// The deployment's program id.
         expected: SolanaPubkeyBytes,
     },
-    /// The account is host-owned but is not the config singleton: wrong length, wrong
-    /// discriminator, a bump other than the canonical one, or a `paused` byte that is not a bool.
+    /// The account is host-owned but is not the config singleton: the shared decoder refused it,
+    /// or it stores a bump other than the canonical one for its address.
     #[error("account {account_key:?} is not a decodable host config")]
     NotAHostConfig {
         /// The address that was read.

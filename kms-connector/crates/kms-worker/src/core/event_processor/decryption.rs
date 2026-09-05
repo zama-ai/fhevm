@@ -1778,33 +1778,6 @@ mod tests {
         }
     }
 
-    /// The deployment's `HostConfig` singleton as the host program would write it, with the pause
-    /// switch off. Built byte for byte here rather than through the program's serializer: this
-    /// module tree decodes the layout, and the fixture is the foreign implementation of it.
-    fn running_host_config(program_id: [u8; 32], chain_id: u64) -> Vec<u8> {
-        use crate::core::solana_acl::{anchor_account_discriminator, host_config_address};
-
-        let (_, bump) = host_config_address(program_id);
-        let mut data = anchor_account_discriminator("HostConfig").to_vec();
-        data.extend_from_slice(&[0x33; 32]); // admin
-        data.extend_from_slice(&chain_id.to_le_bytes());
-        data.extend_from_slice(&0u64.to_le_bytes()); // gateway chain id
-        data.extend_from_slice(&[0; 20]); // input verification contract
-        data.extend_from_slice(&[0; 8 * 20]); // coprocessor signer set
-        data.push(0); // coprocessor signer count
-        data.push(0); // coprocessor threshold
-        data.extend_from_slice(&[0; 20]); // decryption contract
-        data.extend_from_slice(&0u64.to_le_bytes()); // current kms context id
-        data.push(0); // paused
-        data.push(0); // grant deny list enabled
-        data.extend_from_slice(&u64::MAX.to_le_bytes()); // max hcu per tx
-        data.extend_from_slice(&u64::MAX.to_le_bytes()); // max hcu depth per tx
-        data.extend_from_slice(&u64::MAX.to_le_bytes()); // hcu block cap per app
-        data.extend_from_slice(&0u64.to_le_bytes()); // updated slot
-        data.push(bump);
-        data
-    }
-
     /// Runs one Solana user-decryption request through `check_user_decryption_request_v3`
     /// against a fully authorizing on-chain snapshot, and returns the outcome together with the
     /// victim's signed transport key.
@@ -1831,7 +1804,8 @@ mod tests {
         use ring::signature::{Ed25519KeyPair, KeyPair};
         use solana_pubkey::Pubkey;
         use zama_solana_acl::{
-            EncryptedValue, derive_encrypted_value_id, encrypted_value_discriminator,
+            EncryptedValue, HostConfigRecord, derive_encrypted_value_id,
+            encrypted_value_discriminator,
         };
         use zama_solana_permit::{
             Identity, KmsRouting, PermitFields, PermitWireFields, TRANSPORT_KEY_LEN, build_envelope,
@@ -1928,7 +1902,11 @@ mod tests {
         // A mock Solana RPC serving the one authorizing read: the deployment's config singleton
         // (running, not paused), the signer's invalidation record (never revoked → `null`), then
         // the program-owned encrypted value account.
-        let host_config_data = running_host_config(PROGRAM_ID, CHAIN_ID);
+        let (_, host_config_bump) = crate::core::solana_acl::host_config_address(PROGRAM_ID);
+        let host_config_data = zama_solana_acl::encode_host_config(&HostConfigRecord {
+            paused: false,
+            bump: host_config_bump,
+        });
         let deployment =
             DeploymentIdentity::resolve(PROGRAM_ID, CHAIN_ID).expect("fixture deployment resolves");
         let first_keys = plan_first_read(

@@ -237,10 +237,13 @@ ID…).
     the production-shaped host instructions (`fhe_execute`, the ACL writes,
     `make_handle_public`, `delegate_for_user_decryption`, and the token
     cash-out paths of 11f), and connector user decryption — the KMS connector's
-    authorization reads the `HostConfig` PDA in the same account snapshot as
-    the rest of host state and refuses while paused (transiently: the same
-    request authorizes once the pause is lifted). One switch, on the host, and
-    no gateway-side pause is involved.
+    authorization reads the `HostConfig` PDA in the account read it already
+    makes and refuses while paused (transiently: the same request authorizes
+    once the pause is lifted). One switch, on the host, and no gateway-side
+    pause is involved. The connector decodes the singleton through
+    `zama-solana-acl`'s shared decoder, the same crate the program's own
+    `shared_crate_decoder_reads_what_the_program_serializes` test pins against
+    its serializer, so the switch cannot be disarmed by layout drift.
     User abort levers stay open while paused, deliberately: `revoke_permits`
     takes no config account at all, and `revoke_delegation_for_user_decryption`
     is not pause-gated. The asymmetry is the point — a pause stops the

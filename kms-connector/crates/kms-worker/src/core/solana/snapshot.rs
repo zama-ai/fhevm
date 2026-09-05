@@ -255,19 +255,35 @@ pub fn plan_first_read(
     )
 }
 
-/// Plans the second read: the first read's key set, unchanged, plus the delegation records whose
-/// addresses the discovery read has just made computable.
+/// Plans the second read: the first read's key set minus the config singleton, plus the delegation
+/// records whose addresses the discovery read has just made computable.
 ///
 /// The first set is carried over because the second read is the one every rule is evaluated
 /// against, so it has to hold the encrypted value accounts and the invalidation record too — not in
 /// order to compare the two reads, which this path deliberately does not do (see the module
 /// documentation). Starting from `first` is what makes the coverage a property of this function
 /// rather than a discipline of its callers.
+///
+/// The one key dropped is the config singleton, and it is dropped because it is already spent: the
+/// pause switch is decided on the first read ([`super::pause`]), which is the only rule that does
+/// not wait for the deciding observation. Carrying it anyway would cost the read an account it no
+/// longer uses, and the worst-case delegated request — three accounts per entry plus the signer's
+/// invalidation record — is sized to saturate the RPC's hundred-account limit exactly.
 pub fn plan_second_read(
     first: &SnapshotKeys,
+    deployment: &super::deployment::DeploymentIdentity,
     delegation_keys: impl IntoIterator<Item = SolanaPubkeyBytes>,
 ) -> SnapshotKeys {
-    SnapshotKeys::new(first.as_slice().iter().copied().chain(delegation_keys))
+    let (host_config_key, _) =
+        crate::core::solana_acl::host_config_address(deployment.program_id());
+    SnapshotKeys::new(
+        first
+            .as_slice()
+            .iter()
+            .copied()
+            .filter(|key| key != &host_config_key)
+            .chain(delegation_keys),
+    )
 }
 
 /// Builds the JSON-RPC `getMultipleAccounts` body, pinned to `confirmed` commitment and

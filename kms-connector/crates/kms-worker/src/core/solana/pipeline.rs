@@ -8,10 +8,10 @@
 //!   → deployment identity and chain-id agreement
 //!   → KMS pair servability
 //!   → READ host state
+//!   → host pause switch, from that first read
 //!   → if any entry is delegated: resolve its encrypted value account to learn its
 //!     authority, then READ again with the delegation records added — that read is the
 //!     deciding observation and the first read's values are discarded
-//!   → host pause switch
 //!   → invalidation watermark
 //!   → per entry: encrypted value account → its authority → handle binding → scope
 //!   → per delegated entry: delegation freshness
@@ -28,6 +28,11 @@
 //! an encrypted value account has been read, and the earlier read is a discovery step whose values decide
 //! nothing (see [`super::snapshot`]). The two are held to their order and nothing else: a
 //! deciding read older than the discovery read is refused as the lagging node it is, transiently.
+//!
+//! The pause switch is the one exception, and it is not an authorization rule: it says whether
+//! this Connector serves user decryptions at all. Reading it on the first read stops a paused
+//! host before the second round trip and keeps the singleton off the deciding read, whose worst
+//! case is sized to the RPC's account limit exactly (see [`super::pause`]).
 //!
 //! Once a request is accepted nothing re-reads state for it. A later handle update, subject
 //! rotation or delegation revocation do not affect it: the normalized request, its linker and
@@ -217,11 +222,16 @@ where
     // account can supply.
     let first_keys = plan_first_read(request, context.deployment);
     let first = reader.read_accounts(&first_keys).await?;
+    // The one rule decided on the first read. A paused host releases no plaintext at all, so
+    // refusing here costs a delegated request its second round trip instead of spending it to
+    // reach the same answer — and the config singleton then leaves the second read, which is
+    // sized to the account budget without it.
+    check_not_paused(&first, program_id)?;
     let delegation_keys = discover_delegation_keys(&first, program_id, signer, request)?;
     let observation = if delegation_keys.is_empty() {
         first
     } else {
-        let second_keys = plan_second_read(&first_keys, delegation_keys);
+        let second_keys = plan_second_read(&first_keys, context.deployment, delegation_keys);
         let second = reader.read_accounts(&second_keys).await?;
         // The one condition on the pair of reads, and it is ordering rather than agreement: a
         // deciding read behind the discovery read would report grants the discovery read saw as
@@ -230,9 +240,6 @@ where
     };
 
     // Everything below is evaluated against that one observation, and nothing below reads state.
-    // The pause switch comes first because it is a fact about the deployment rather than about any
-    // entry: a paused host releases no plaintext at all, so there is nothing per handle to decide.
-    check_not_paused(&observation, program_id)?;
     let watermark = read_watermark(&observation, program_id, signer)?;
     check_not_invalidated(permit.start_timestamp(), watermark)?;
 

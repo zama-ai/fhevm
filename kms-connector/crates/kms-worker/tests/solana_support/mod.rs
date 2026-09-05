@@ -30,8 +30,9 @@ use solana_pubkey::Pubkey;
 use std::collections::BTreeMap;
 use std::sync::Mutex;
 use zama_solana_acl::{
-    EncryptedValue, MmrProof, derive_encrypted_value_id, encrypted_value_discriminator,
-    historical_access_leaf_commitment, mmr_append, mmr_build_proof, public_decrypt_leaf_commitment,
+    EncryptedValue, HOST_CONFIG_SEED, HostConfigRecord, MmrProof, derive_encrypted_value_id,
+    encode_host_config, encrypted_value_discriminator, historical_access_leaf_commitment,
+    mmr_append, mmr_build_proof, public_decrypt_leaf_commitment,
 };
 use zama_solana_permit::{
     Identity, KmsRouting, PermitFields, PermitWireFields, Signature, TRANSPORT_KEY_LEN,
@@ -560,37 +561,17 @@ impl DelegationFixture {
 /// taken from the code under test.
 pub fn host_config_address() -> (SolanaPubkeyBytes, u8) {
     let (address, bump) =
-        Pubkey::find_program_address(&[b"host-config"], &Pubkey::new_from_array(PROGRAM_ID));
+        Pubkey::find_program_address(&[HOST_CONFIG_SEED], &Pubkey::new_from_array(PROGRAM_ID));
     (address.to_bytes(), bump)
 }
 
-/// The config singleton as the host program would write it, with every field but `paused` left at
-/// a value no rule reads. The body is built byte for byte rather than through the program's own
-/// serializer: the point of the layout pin is that the Connector decodes a foreign implementation's
-/// bytes.
+/// The config singleton as the host program would write it, through the shared crate's own
+/// encoder — the inverse of the decoder under test, so no field table is restated here.
 pub fn host_config_account(paused: bool) -> SnapshotAccount {
     let (_, bump) = host_config_address();
-    let mut data =
-        kms_worker::core::solana_acl::anchor_account_discriminator("HostConfig").to_vec();
-    data.extend_from_slice(&[0x33; 32]); // admin
-    data.extend_from_slice(&CHAIN_ID.to_le_bytes());
-    data.extend_from_slice(&0u64.to_le_bytes()); // gateway chain id
-    data.extend_from_slice(&[0; 20]); // input verification contract
-    data.extend_from_slice(&[0; 8 * 20]); // coprocessor signer set
-    data.push(0); // coprocessor signer count
-    data.push(0); // coprocessor threshold
-    data.extend_from_slice(&[0; 20]); // decryption contract
-    data.extend_from_slice(&0u64.to_le_bytes()); // current kms context id
-    data.push(paused as u8);
-    data.push(0); // grant deny list enabled
-    data.extend_from_slice(&u64::MAX.to_le_bytes()); // max hcu per tx
-    data.extend_from_slice(&u64::MAX.to_le_bytes()); // max hcu depth per tx
-    data.extend_from_slice(&u64::MAX.to_le_bytes()); // hcu block cap per app
-    data.extend_from_slice(&0u64.to_le_bytes()); // updated slot
-    data.push(bump);
     SnapshotAccount {
         owner: PROGRAM_ID,
-        data,
+        data: encode_host_config(&HostConfigRecord { paused, bump }),
     }
 }
 
@@ -642,7 +623,8 @@ pub struct World {
 impl World {
     /// A world at `slot` holding a running host: the config singleton is present and unpaused, so
     /// a scenario that says nothing about pause is a scenario in which pause is not the subject.
-    pub fn at_slot(slot: u64) -> Self {
+    /// Named for what it holds rather than for the slot, because it is not empty.
+    pub fn running_at_slot(slot: u64) -> Self {
         let mut accounts = BTreeMap::new();
         let (key, _) = host_config_address();
         accounts.insert(key, host_config_account(false));

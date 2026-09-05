@@ -143,4 +143,48 @@ mod tests {
         cfg.try_serialize(&mut buf).unwrap();
         assert_eq!(buf.len(), 8 + HostConfig::SPACE);
     }
+
+    /// A singleton with every field this program writes, for the shared-decoder pin below.
+    /// `paused` and `grant_deny_list_enabled` are deliberately opposite: they are adjacent
+    /// `bool`s, so a one-byte offset slip in a reader reads the pause switch off the wrong flag,
+    /// and that is exactly what a length-and-discriminator guard cannot catch.
+    fn config(paused: bool, grant_deny_list_enabled: bool) -> HostConfig {
+        HostConfig {
+            admin: Pubkey::new_unique(),
+            chain_id: 11,
+            gateway_chain_id: 22,
+            input_verification_contract: [7u8; 20],
+            coprocessor_signers: pack_coprocessor_signers(&[[9u8; 20]]),
+            coprocessor_signer_count: 1,
+            coprocessor_threshold: 1,
+            decryption_contract: [8u8; 20],
+            current_kms_context_id: 33,
+            paused,
+            grant_deny_list_enabled,
+            max_hcu_per_tx: 44,
+            max_hcu_depth_per_tx: 55,
+            hcu_block_cap_per_app: 66,
+            updated_slot: 77,
+            bump: 254,
+        }
+    }
+
+    /// The shared crate's decoder — the one byte-level reading the KMS connector trusts to see
+    /// the pause switch — reads back exactly what this program's serializer writes. Both
+    /// polarities are checked, so a reader that landed on `grant_deny_list_enabled` instead of
+    /// `paused` fails here rather than serving plaintext from a paused host.
+    #[test]
+    fn shared_crate_decoder_reads_what_the_program_serializes() {
+        for (paused, grant_deny_list_enabled) in [(true, false), (false, true)] {
+            let record = config(paused, grant_deny_list_enabled);
+            let mut serialized = Vec::new();
+            record.try_serialize(&mut serialized).expect("serializes");
+
+            let decoded = zama_solana_acl::decode_host_config(&serialized)
+                .expect("the shared decoder accepts the program's bytes");
+
+            assert_eq!(decoded.paused, record.paused);
+            assert_eq!(decoded.bump, record.bump);
+        }
+    }
 }

@@ -64,7 +64,7 @@ async fn authorizing_a_direct_request_reads_host_state_once() {
     let request = RequestBuilder::new(&wallet)
         .direct_current(&encrypted_value_account, handle)
         .typed();
-    let world = World::at_slot(100)
+    let world = World::running_at_slot(100)
         .with_encrypted_value_account(&encrypted_value_account)
         .with_watermark(wallet.pubkey(), 0);
     let reader = ScriptedReader::constant(world);
@@ -95,7 +95,7 @@ async fn authorizing_a_delegated_request_reads_host_state_twice_and_never_more()
     let request = RequestBuilder::new(&signer)
         .delegated_current(&encrypted_value_account, handle, delegator.pubkey())
         .typed();
-    let world = World::at_slot(100)
+    let world = World::running_at_slot(100)
         .with_encrypted_value_account(&encrypted_value_account)
         .with_watermark(signer.pubkey(), 0)
         .with_delegation(&delegation);
@@ -116,9 +116,13 @@ async fn authorizing_a_delegated_request_reads_host_state_twice_and_never_more()
     );
 }
 
-/// The second read re-reads everything the first read saw. That is what makes it a complete
-/// observation on its own: the rules are evaluated against it alone, so an encrypted value account
-/// or an invalidation record missing from it would have to be taken from the discarded read.
+/// The second read re-reads every key the rules are evaluated against. That is what makes it a
+/// complete observation on its own: an encrypted value account or an invalidation record missing
+/// from it would have to be taken from the discarded read.
+///
+/// The one key it does not carry is the config singleton, and it is not an exception to that: the
+/// pause switch is decided on the first read and no rule below the reads looks at it. Its own
+/// property is pinned by `the_deciding_read_drops_the_config_singleton`.
 #[tokio::test]
 async fn the_second_read_carries_over_every_key_of_the_first() {
     let signer = Wallet::new(1);
@@ -129,7 +133,7 @@ async fn the_second_read_carries_over_every_key_of_the_first() {
     let request = RequestBuilder::new(&signer)
         .delegated_current(&encrypted_value_account, handle, delegator.pubkey())
         .typed();
-    let world = World::at_slot(100)
+    let world = World::running_at_slot(100)
         .with_encrypted_value_account(&encrypted_value_account)
         .with_watermark(signer.pubkey(), 0)
         .with_delegation(&delegation);
@@ -142,7 +146,12 @@ async fn the_second_read_carries_over_every_key_of_the_first() {
 
     let first = reader.call(0);
     let second = reader.call(1);
-    for key in first.as_slice() {
+    let (host_config_key, _) = host_config_address();
+    for key in first
+        .as_slice()
+        .iter()
+        .filter(|key| *key != &host_config_key)
+    {
         assert!(
             second.contains(key),
             "the second read dropped a key the first read observed"
@@ -196,7 +205,7 @@ async fn a_delegated_entry_plans_both_of_its_delegation_rows() {
             delegator.pubkey(),
         )
         .typed();
-    let world = World::at_slot(100)
+    let world = World::running_at_slot(100)
         .with_encrypted_value_account(&first_encrypted_value_account)
         .with_encrypted_value_account(&second_encrypted_value_account)
         .with_watermark(signer.pubkey(), 0)
@@ -218,9 +227,9 @@ async fn a_delegated_entry_plans_both_of_its_delegation_rows() {
     );
     assert_eq!(
         second.len(),
-        // the config singleton, the invalidation record, two encrypted value accounts, one app row
-        // per app, one wildcard row for both
-        1 + 1 + 2 + 2 + 1,
+        // the invalidation record, two encrypted value accounts, one app row per app, one wildcard
+        // row for both — and not the config singleton, which the deciding read drops
+        1 + 2 + 2 + 1,
         "the wildcard row is per delegator, so a second app adds an app row and no second wildcard"
     );
     assert_eq!(reader.call_count(), 2, "still two reads, never a third");
@@ -236,7 +245,7 @@ async fn every_account_key_is_planned_before_the_first_read() {
     let request = RequestBuilder::new(&wallet)
         .direct_current(&encrypted_value_account, handle)
         .typed();
-    let world = World::at_slot(100)
+    let world = World::running_at_slot(100)
         .with_encrypted_value_account(&encrypted_value_account)
         .with_watermark(wallet.pubkey(), 0);
     let reader = ScriptedReader::constant(world);
@@ -254,9 +263,54 @@ async fn every_account_key_is_planned_before_the_first_read() {
         "the first read must ask for exactly the planned key set"
     );
     let (watermark_key, _) = invalidation_address(wallet.pubkey());
+    let (host_config_key, _) = host_config_address();
     assert!(
-        planned.contains(&watermark_key) && planned.contains(&encrypted_value_account.account_key),
-        "the plan covers the signer's invalidation record and the named encrypted value account"
+        planned.contains(&watermark_key)
+            && planned.contains(&encrypted_value_account.account_key)
+            && planned.contains(&host_config_key),
+        "the plan covers the config singleton, the signer's invalidation record and the named \
+         encrypted value account"
+    );
+    assert_eq!(
+        reader.call_count(),
+        1,
+        "the pause switch rides the read the request already makes"
+    );
+}
+
+/// The config singleton is the one key the deciding read drops: the pause switch was spent on the
+/// first read, and carrying the account into the second would cost the read an account it no
+/// longer uses. That single key is the difference between the worst-case delegated read
+/// saturating the RPC's hundred-account limit and exceeding it.
+#[tokio::test]
+async fn the_deciding_read_drops_the_config_singleton() {
+    let signer = Wallet::new(1);
+    let delegator = Wallet::new(2);
+    let handle = handle(0x29, FHE_TYPE_UINT64);
+    let encrypted_value_account = EncryptedValueAccountFixture::new(handle, &[delegator.pubkey()]);
+    let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), 100);
+    let request = RequestBuilder::new(&signer)
+        .delegated_current(&encrypted_value_account, handle, delegator.pubkey())
+        .typed();
+    let world = World::running_at_slot(100)
+        .with_encrypted_value_account(&encrypted_value_account)
+        .with_watermark(signer.pubkey(), 0)
+        .with_delegation(&delegation);
+    let reader = ScriptedReader::constant(world);
+    let deployment = deployment();
+
+    authorize_request(&reader, &ServableKmsPair, context(&deployment), &request)
+        .await
+        .expect("a live delegation authorizes a delegated entry");
+
+    let (host_config_key, _) = host_config_address();
+    assert!(
+        reader.call(0).contains(&host_config_key),
+        "the switch is read on the first read"
+    );
+    assert!(
+        !reader.call(1).contains(&host_config_key),
+        "and is not carried into the deciding read, which is sized without it"
     );
 }
 
@@ -296,7 +350,7 @@ async fn a_slot_change_between_the_two_reads_does_not_fail_the_request() {
     let request = RequestBuilder::new(&signer)
         .delegated_current(&encrypted_value_account, handle, delegator.pubkey())
         .typed();
-    let world = World::at_slot(100)
+    let world = World::running_at_slot(100)
         .with_encrypted_value_account(&encrypted_value_account)
         .with_watermark(signer.pubkey(), 0)
         .with_delegation(&delegation);
@@ -329,7 +383,7 @@ async fn a_deciding_read_older_than_the_discovery_read_is_refused_transiently() 
         .delegated_current(&encrypted_value_account, handle, delegator.pubkey())
         .typed();
     // The same state throughout: the only difference between the reads is which node answered.
-    let world = World::at_slot(100)
+    let world = World::running_at_slot(100)
         .with_encrypted_value_account(&encrypted_value_account)
         .with_watermark(signer.pubkey(), 0)
         .with_delegation(&delegation);
@@ -365,7 +419,7 @@ async fn two_reads_at_the_same_slot_authorize() {
     let request = RequestBuilder::new(&signer)
         .delegated_current(&encrypted_value_account, handle, delegator.pubkey())
         .typed();
-    let world = World::at_slot(100)
+    let world = World::running_at_slot(100)
         .with_encrypted_value_account(&encrypted_value_account)
         .with_watermark(signer.pubkey(), 0)
         .with_delegation(&delegation);
@@ -388,10 +442,18 @@ async fn two_reads_at_the_same_slot_authorize() {
 #[test]
 fn the_ordering_gate_compares_the_two_reads_and_nothing_else() {
     let keys = SnapshotKeys::new([[7; 32]]);
-    let discovery = World::at_slot(100).read(&keys).expect("the world reads");
-    let ahead = World::at_slot(101).read(&keys).expect("the world reads");
-    let level = World::at_slot(100).read(&keys).expect("the world reads");
-    let behind = World::at_slot(99).read(&keys).expect("the world reads");
+    let discovery = World::running_at_slot(100)
+        .read(&keys)
+        .expect("the world reads");
+    let ahead = World::running_at_slot(101)
+        .read(&keys)
+        .expect("the world reads");
+    let level = World::running_at_slot(100)
+        .read(&keys)
+        .expect("the world reads");
+    let behind = World::running_at_slot(99)
+        .read(&keys)
+        .expect("the world reads");
 
     assert_eq!(
         ahead
@@ -434,11 +496,11 @@ async fn the_deciding_state_of_a_delegated_request_is_the_second_reads() {
     let mut replaced = encrypted_value_account.clone();
     replaced.update(handle_on_chain(0x24, FHE_TYPE_UINT64, CHAIN_ID));
 
-    let first = World::at_slot(100)
+    let first = World::running_at_slot(100)
         .with_encrypted_value_account(&encrypted_value_account)
         .with_watermark(signer.pubkey(), 0)
         .with_delegation(&delegation);
-    let second = World::at_slot(101)
+    let second = World::running_at_slot(101)
         .with_encrypted_value_account(&replaced)
         .with_watermark(signer.pubkey(), 0)
         .with_delegation(&delegation);
@@ -552,7 +614,7 @@ fn a_missing_account_is_an_absence_in_the_snapshot_not_a_read_failure() {
 fn an_account_that_was_never_planned_cannot_be_read_from_the_snapshot() {
     let planned = [7; 32];
     let never_planned: SolanaPubkeyBytes = [8; 32];
-    let snapshot = World::at_slot(1)
+    let snapshot = World::running_at_slot(1)
         .with_account(
             planned,
             SnapshotAccount {
@@ -627,7 +689,7 @@ async fn an_accepted_request_records_its_observation_point() {
     let request = RequestBuilder::new(&wallet)
         .direct_current(&encrypted_value_account, handle)
         .typed();
-    let world = World::at_slot(9_000)
+    let world = World::running_at_slot(9_000)
         .with_encrypted_value_account(&encrypted_value_account)
         .with_watermark(wallet.pubkey(), 0);
     let reader = ScriptedReader::constant(world);

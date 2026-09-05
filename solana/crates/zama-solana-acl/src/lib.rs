@@ -24,6 +24,11 @@ pub use delegation::{
     decode_user_decryption_delegation, UserDecryptionDelegationRecord, DELEGATION_SEED,
     USER_DECRYPTION_DELEGATION_DISCRIMINATOR, WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY,
 };
+pub mod host_config;
+pub use host_config::{
+    decode_host_config, encode_host_config, HostConfigRecord, HOST_CONFIG_DISCRIMINATOR,
+    HOST_CONFIG_SEED,
+};
 pub mod encrypted_value_account;
 pub use encrypted_value_account::{
     build_proof_from_events, build_verified_proof_from_events, reconstruct,

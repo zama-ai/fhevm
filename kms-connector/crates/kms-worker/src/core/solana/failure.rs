@@ -236,9 +236,18 @@ impl SnapshotError {
 impl PauseFailure {
     /// A pause is lifted by the operator, and the permit, the delegations and the handles all
     /// survive it untouched — the same request authorizes from a later observation, which is what
-    /// transient means. A singleton that was not observed is transient for the ordinary reason: a
-    /// read that produced nothing says nothing. An account of the wrong shape at the singleton's
+    /// transient means. An account of the wrong shape or the wrong owner at the singleton's
     /// address is host state no retry repairs.
+    ///
+    /// `Absent` is transient too, and that is a choice rather than an oversight: the singleton is
+    /// written once at deployment and never closed, so its absence usually means this Connector
+    /// is pointed at a program that has no host state — a misconfiguration that will retry
+    /// forever. Terminal would surface that faster and is the wrong trade anyway, because the
+    /// other way absence arises is a reader that has fallen behind, and killing valid requests
+    /// over one lagging endpoint is the failure this file refuses everywhere else
+    /// ([`DelegationFailure::Absent`], [`SnapshotError::DecidingReadOlderThanDiscovery`]). The
+    /// misconfiguration is diagnosable without spending a request: every request fails on this
+    /// one rule, which no ordinary lag produces.
     pub fn class(&self) -> FailureClass {
         match self {
             Self::Paused | Self::Absent { .. } => FailureClass::Transient,
