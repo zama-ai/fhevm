@@ -1236,7 +1236,7 @@
         {
           "name": "user_token_account",
           "docs": [
-            "validated by the token CPI."
+            "so the refund can only land with the quitting user, never back on the batch account."
           ],
           "writable": true
         },
