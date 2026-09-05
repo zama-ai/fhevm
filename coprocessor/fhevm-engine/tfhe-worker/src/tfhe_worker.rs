@@ -4126,9 +4126,17 @@ mod gpu_reservation_error_tests {
 fn is_terminal_verdict(error: Option<&CoprocessorError>) -> bool {
     match error {
         Some(CoprocessorError::SchedulerError(scheduler_error)) => match scheduler_error {
-            // A dependence cycle is a property of the ingested edges and does
-            // not change under re-execution.
-            SchedulerError::CyclicDependence => true,
+            // NOT a verdict. The on-chain dependence graph is acyclic, so a
+            // detected cycle is never a fact about the operands: the
+            // cross-transaction kind is a BATCH-COMPOSITION artifact (a
+            // same-block alias whose original minter is absent from this
+            // batch -- `resolve_dependences` defers those members itself and
+            // no longer reports this variant), and any other kind is an
+            // internal inconsistency that re-execution may not reproduce.
+            // Classifying it terminal condemned, on one coprocessor,
+            // transactions every other coprocessor computed -- a consensus
+            // divergence seen in production.
+            SchedulerError::CyclicDependence => false,
             // MissingLocalProducer is NOT a verdict on the operands. The
             // scenario that produces it — a listener/worker skew where one
             // binary's operand-mask derivation disagrees with the other's
@@ -4255,7 +4263,10 @@ mod terminal_verdict_tests {
                 "device pressure".to_string()
             ))
         )));
-        assert!(is_terminal_verdict(Some(
+        // A dependence cycle is never on-chain state: the cross-transaction
+        // kind depends on which transactions share a batch, so it must never
+        // condemn (it did, in production).
+        assert!(!is_terminal_verdict(Some(
             &CoprocessorError::SchedulerError(SchedulerError::CyclicDependence)
         )));
     }

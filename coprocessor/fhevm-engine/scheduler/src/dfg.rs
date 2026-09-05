@@ -419,33 +419,53 @@ impl DFComponentGraph {
                 sccs.push(scc.to_vec());
             }
         });
-        if !sccs.is_empty() {
-            for scc in sccs {
-                error!(target: "scheduler", { cycle_size = ?scc.len() },
-		       "Dependence cycle detected");
-                for idx in scc {
-                    let idx = digraph
-                        .node_weight(idx)
-                        .ok_or(SchedulerError::DataflowGraphError)?;
-                    let tx = self
-                        .graph
-                        .node_weight_mut(*idx)
-                        .ok_or(SchedulerError::DataflowGraphError)?;
-                    tx.is_uncomputable = true;
-                    error!(target: "scheduler", { transaction_id = ?hex::encode(tx.transaction_id.clone()) },
-		       "Transaction is part of a dependence cycle");
-                    for (_, op) in tx.graph.graph.node_references() {
-                        self.results.push(DFGTxResult {
-                            transaction_id: tx.transaction_id.clone(),
-                            handle: op.result_handle.to_vec(),
-                            compressed_ct: Err(SchedulerError::CyclicDependence.into()),
-                        });
-                    }
+        // A cross-transaction cycle is an artifact of BATCH COMPOSITION, never
+        // a fact about the chain: the on-chain dependence graph is acyclic,
+        // and these edges only exist between the transactions that happen to
+        // share this graph. The reproducible shape is a same-block alias --
+        // t0 mints h1, t1 consumes h1, t2 consumes t1's output and re-mints
+        // h1 (same op, operands and boundary bits, so the same handle). With
+        // t0 present, h1 has two in-batch producers and draws no edge. With
+        // t0 absent -- demoted, deferred, or simply not selected -- t2 is
+        // h1's only in-batch producer, and t1 <-> t2 closes a cycle that
+        // exists on no other coprocessor.
+        //
+        // So the members are DEFERRED, exactly as a consumer whose producer
+        // is merely absent is: marked uncomputable, reported as
+        // MissingInputs (which upload leaves unstamped), and their edges
+        // dropped so the rest of the batch still executes. They come back
+        // once the missing producer's bytes are in `ciphertexts`, at which
+        // point the edge is never drawn. Stamping them -- and CyclicDependence
+        // used to be a TERMINAL stamp -- condemned two transactions on one
+        // coprocessor that every other one computed.
+        let mut in_cycle: HashSet<NodeIndex> = HashSet::new();
+        for scc in sccs {
+            warn!(target: "scheduler", { cycle_size = ?scc.len() },
+                  "cross-transaction dependence cycle from batch composition; deferring its transactions");
+            for idx in scc {
+                let idx = digraph
+                    .node_weight(idx)
+                    .ok_or(SchedulerError::DataflowGraphError)?;
+                in_cycle.insert(*idx);
+                let tx = self
+                    .graph
+                    .node_weight_mut(*idx)
+                    .ok_or(SchedulerError::DataflowGraphError)?;
+                tx.is_uncomputable = true;
+                warn!(target: "scheduler", { transaction_id = ?hex::encode(tx.transaction_id.clone()) },
+                      "transaction deferred: part of a batch-composition dependence cycle");
+                for (_, op) in tx.graph.graph.node_references() {
+                    self.results.push(DFGTxResult {
+                        transaction_id: tx.transaction_id.clone(),
+                        handle: op.result_handle.to_vec(),
+                        compressed_ct: Err(SchedulerError::MissingInputs.into()),
+                    });
                 }
             }
-            return Err(SchedulerError::CyclicDependence.into());
         }
-        for (producer, consumer) in remaining.iter() {
+        for (producer, consumer) in remaining.iter().filter(|(producer, consumer)| {
+            !in_cycle.contains(producer) && !in_cycle.contains(consumer)
+        }) {
             if self.graph.add_edge(*producer, *consumer, ()).is_err() {
                 let prod = self
                     .graph
@@ -1125,6 +1145,117 @@ mod tests {
                 .allowed_dependents(&handle(0x99), &handle(0x01))
                 .is_empty(),
             "an unknown transaction has no blocked dependents"
+        );
+    }
+
+    fn op_multi(output: Handle, inputs: Vec<DFGTaskInput>, is_allowed: bool) -> DFGOp {
+        DFGOp {
+            output_handle: output,
+            fhe_op: SupportedFheOperations::FheNot,
+            inputs,
+            is_allowed,
+            is_owned: true,
+        }
+    }
+
+    fn component(ops: Vec<DFGOp>, tid: &Handle) -> ComponentNode {
+        let (mut components, _) = build_component_nodes(ops, tid).expect("valid transaction graph");
+        assert_eq!(components.len(), 1, "one execution unit per transaction");
+        components.pop().expect("component")
+    }
+
+    fn bd(h: &Handle) -> DFGTaskInput {
+        DFGTaskInput::BoundaryDependence(h.clone())
+    }
+
+    /// A cross-transaction cycle is a batch-composition artifact and must
+    /// DEFER its members, never condemn them.
+    ///
+    /// Same-block alias: t0 mints h1; t1 consumes h1 -> h3; t2 consumes h3
+    /// and re-mints h1. With t0 in the graph h1 has two in-batch producers
+    /// and draws no edge. With t0 absent (demoted, deferred, not selected)
+    /// t2 is h1's only in-batch producer and t1 <-> t2 is a cycle on THIS
+    /// coprocessor only. The members must come back as MissingInputs, which
+    /// upload leaves unstamped, and an unrelated transaction in the same
+    /// batch must still be schedulable.
+    #[test]
+    fn cross_transaction_cycle_defers_its_members_instead_of_condemning_them() {
+        let (t0, t1, t2, t9) = (handle(0x00), handle(0x11), handle(0x22), handle(0x99));
+        let (x, h1, h3, h4, h9) = (
+            handle(0xF0),
+            handle(0x01),
+            handle(0x03),
+            handle(0x04),
+            handle(0x09),
+        );
+        let t1_ops = || vec![op_multi(h3.clone(), vec![bd(&h1)], true)];
+        let t2_ops = || {
+            vec![
+                op_multi(h4.clone(), vec![bd(&h3)], true),
+                op_multi(h1.clone(), vec![bd(&x)], true),
+            ]
+        };
+        let t9_ops = || vec![op_multi(h9.clone(), vec![bd(&x)], true)];
+
+        // With the original minter present: two foreign producers of h1, no
+        // edge, no cycle, nothing reported.
+        let mut nodes = vec![
+            component(vec![op_multi(h1.clone(), vec![bd(&x)], true)], &t0),
+            component(t1_ops(), &t1),
+            component(t2_ops(), &t2),
+        ];
+        let mut graph = DFComponentGraph::default();
+        graph.build(&mut nodes).expect("component graph");
+        graph
+            .resolve_dependences(&HashSet::new())
+            .expect("two foreign producers of h1 draw no edge");
+        assert!(graph.get_results().is_empty());
+
+        // Without it: the false cycle defers t1 and t2, and t9 still runs.
+        let mut nodes = vec![
+            component(t1_ops(), &t1),
+            component(t2_ops(), &t2),
+            component(t9_ops(), &t9),
+        ];
+        let mut graph = DFComponentGraph::default();
+        graph.build(&mut nodes).expect("component graph");
+        graph
+            .resolve_dependences(&HashSet::new())
+            .expect("a batch-composition cycle is not an error of the batch");
+
+        let mut deferred: Vec<(Handle, Handle)> = vec![];
+        for result in graph.get_results() {
+            let Err(error) = result.compressed_ct else {
+                panic!("cycle members carry no bytes");
+            };
+            assert!(
+                matches!(
+                    error.downcast_ref::<SchedulerError>(),
+                    Some(SchedulerError::MissingInputs)
+                ),
+                "cycle members must be DEFERRED (MissingInputs), never stamped: {error}"
+            );
+            deferred.push((result.handle, result.transaction_id));
+        }
+        deferred.sort();
+        let mut expected = vec![(h3, t1.clone()), (h4, t2.clone()), (h1, t2.clone())];
+        expected.sort();
+        assert_eq!(deferred, expected, "every op of both cycle members defers");
+
+        for (_, tx) in graph.graph.node_references() {
+            let in_cycle = tx.transaction_id == t1 || tx.transaction_id == t2;
+            assert_eq!(
+                tx.is_uncomputable,
+                in_cycle,
+                "only the cycle members are skipped; {:?} must {} run",
+                hex::encode(&tx.transaction_id),
+                if in_cycle { "not" } else { "still" }
+            );
+        }
+        assert_eq!(
+            graph.graph.edge_count(),
+            0,
+            "edges touching a deferred member are dropped, not added"
         );
     }
 
