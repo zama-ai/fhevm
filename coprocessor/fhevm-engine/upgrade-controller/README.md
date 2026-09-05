@@ -23,7 +23,7 @@ Expected result:
 ```text
  singleton | stack_version | consensus_version |          updated_at
 -----------+---------------+-------------------+-------------------------------
- t         | v0.14         |                 0 | 2026-07-02 05:40:42.664428+00
+ t         | v0.14         |                 1 | 2026-07-02 05:40:42.664428+00
 (1 row)
 ```
 
@@ -178,5 +178,5 @@ Expected result:
 coprocessor# select * from versioning;
  singleton | stack_version | consensus_version |          updated_at
 -----------+---------------+-------------------+------------------------------
- t         | v0.15.0       |                 1 | 2026-07-02 08:31:39.03538+00
+ t         | v0.15.0       |                 2 | 2026-07-02 08:31:39.03538+00
 ```

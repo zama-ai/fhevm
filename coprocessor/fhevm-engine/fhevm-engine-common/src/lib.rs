@@ -56,7 +56,7 @@ pub const HANDLE_VERSION: i16 = 0;
 //   - randomization changes
 //   - the scheduling logic changes
 // Leave it as is for every other release, which then rolls out without a cutover.
-pub const CONSENSUS_PROTOCOL_VERSION: u32 = 1;
+pub const CONSENSUS_PROTOCOL_VERSION: u32 = 2;
 
 /// If `--stack-version` appears in the process arguments, prints the
 /// compiled-in coprocessor [`STACK_VERSION`] to stdout and exits with status 0.
