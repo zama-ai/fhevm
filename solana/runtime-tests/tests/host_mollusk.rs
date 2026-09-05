@@ -4947,8 +4947,9 @@ fn mollusk_fhe_execute_finite_cap_allows_input_free_persistent_output_bootstrap(
         .context
         .process_and_validate_instruction(&ix, &[Check::success()]);
     read_encrypted_value(&fixture.context, output_value);
-    // The persistent execution WAS metered onto the compute subject (a single euint64 TrivialEncrypt).
-    const TRIVIAL_ENCRYPT_EUINT64_HCU: u64 = 900;
+    // The persistent execution WAS metered onto the compute subject (a single euint64 TrivialEncrypt,
+    // 32 HCU in HCULimit.sol `checkHCUForTrivialEncrypt`).
+    const TRIVIAL_ENCRYPT_EUINT64_HCU: u64 = 32;
     let meter = read_hcu_block_meter(&fixture.context, meter_pda).expect("meter created");
     assert_eq!(meter.app, fixture.block_cap_app());
     assert_eq!(meter.used_hcu, TRIVIAL_ENCRYPT_EUINT64_HCU);

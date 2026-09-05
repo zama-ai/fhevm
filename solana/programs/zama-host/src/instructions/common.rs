@@ -378,10 +378,10 @@ pub(super) fn create_pda_if_needed<'info>(
 /// predictable for several PDAs (the HCU block meter, ACL permission/record accounts), so a
 /// third party can pre-fund the address with a bare `transfer` before the program first creates
 /// it. `create_account` refuses any non-zero-lamport target (`AccountAlreadyInUse`), which would
-/// let that donation permanently block creation — a griefing DoS. The three-step transfer-shortfall
-/// + `allocate` + `assign` path is the squat fallback only: an attacker can only add lamports
-/// (they cannot sign for the PDA to `allocate`/`assign` it), and `allocate`/`assign` ignore the
-/// balance. Returns the rent-exempt minimum so callers can assert `lamports() >= rent`.
+/// let that donation permanently block creation — a griefing DoS. The three-step path (transfer
+/// the shortfall, `allocate`, `assign`) is the squat fallback only: an attacker can only add
+/// lamports (they cannot sign for the PDA to `allocate`/`assign` it), and `allocate`/`assign`
+/// ignore the balance. Returns the rent-exempt minimum so callers can assert `lamports() >= rent`.
 fn fund_allocate_assign<'info>(
     payer: &AccountInfo<'info>,
     account: &AccountInfo<'info>,

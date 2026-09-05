@@ -196,8 +196,9 @@ connector's canonical-PDA + MMR-proof verification (DD-032; materiality now live
    (`max_hcu_per_tx` / `max_hcu_depth_per_tx`, `u64::MAX` = off) and the Solana compute budget.
    There is no EVM-style *global* per-block `HCULimit` aggregating across all apps; the per-app
    cap is the Solana analog. Per-op costs are the EVM `HCULimit.sol` tables through euint128
-   (types 7/8 have no rows); limits ship disabled (`u64::MAX` = unrestricted). Relevant to
-   DoS/cost-bounding.
+   (types 7/8 have no rows); a unit test parses that Solidity file and checks every shared cell in
+   both directions, so neither side can drift silently. Limits ship disabled (`u64::MAX` =
+   unrestricted). Relevant to DoS/cost-bounding.
 4. **On-chain disclosure/redemption uses secp256k1 KMS-cert verification.** Both call the stateless
    host `verify_public_decrypt` verifier and have no request-witness accounts. Disclosure is
    idempotent; redemption additionally consumes the token account's single `PendingBurn`, so payout

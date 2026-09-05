@@ -168,6 +168,8 @@ const NOT: [u32; N] = [2, 0, 9, 16, 32, 63, 130];
 const CAST: [u32; N] = [32, 0, 32, 32, 32, 32, 32];
 const TRIVIAL: [u32; N] = [32, 0, 32, 32, 32, 32, 32];
 const RAND: [u32; N] = [19_000, 0, 23_000, 23_000, 24_000, 24_000, 25_000];
+// `checkHCUForFheRandBounded` has no ebool row.
+const RAND_BOUNDED: [u32; N] = [0, 0, 23_000, 23_000, 24_000, 24_000, 25_000];
 
 // Types 5 and 6 share the last two buckets (n>30 is one cost; no distinct n<=60 vs else).
 const SUM: ReductionCosts = ReductionCosts {
@@ -243,6 +245,10 @@ pub(super) fn trivial_encrypt_hcu(fhe_type: u8) -> Result<u64> {
 
 pub(super) fn rand_hcu(fhe_type: u8) -> Result<u64> {
     lookup(&RAND, fhe_type)
+}
+
+pub(super) fn rand_bounded_hcu(fhe_type: u8) -> Result<u64> {
+    lookup(&RAND_BOUNDED, fhe_type)
 }
 
 pub(super) fn mul_div_hcu(fhe_type: u8, factor2_scalar: bool) -> Result<u64> {
@@ -382,7 +388,9 @@ pub(super) fn meter_execution(
                 let depth = operand_depth(operand, &step_depths);
                 (cost, depth, *output_fhe_type)
             }
-            FheExecuteStep::RandBounded { fhe_type, .. } => (rand_hcu(*fhe_type)?, 0, *fhe_type),
+            FheExecuteStep::RandBounded { fhe_type, .. } => {
+                (rand_bounded_hcu(*fhe_type)?, 0, *fhe_type)
+            }
             FheExecuteStep::Sum {
                 operands, fhe_type, ..
             } => {
