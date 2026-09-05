@@ -186,7 +186,7 @@ export type QuitAsyncInput<
   joinComputeSigner: Address<TAccountJoinComputeSigner>;
   /** validated by the token CPI and pinned below. */
   batchJoinTokenAccount: Address<TAccountBatchJoinTokenAccount>;
-  /** validated by the token CPI. */
+  /** so the refund can only land with the quitting user, never back on the batch account. */
   userTokenAccount: Address<TAccountUserTokenAccount>;
   batchBalanceValue: Address<TAccountBatchBalanceValue>;
   userBalanceValue: Address<TAccountUserBalanceValue>;
@@ -481,7 +481,7 @@ export type QuitInput<
   joinComputeSigner: Address<TAccountJoinComputeSigner>;
   /** validated by the token CPI and pinned below. */
   batchJoinTokenAccount: Address<TAccountBatchJoinTokenAccount>;
-  /** validated by the token CPI. */
+  /** so the refund can only land with the quitting user, never back on the batch account. */
   userTokenAccount: Address<TAccountUserTokenAccount>;
   batchBalanceValue: Address<TAccountBatchBalanceValue>;
   userBalanceValue: Address<TAccountUserBalanceValue>;
@@ -744,7 +744,7 @@ export type ParsedQuitInstruction<
     joinComputeSigner: TAccountMetas[10];
     /** validated by the token CPI and pinned below. */
     batchJoinTokenAccount: TAccountMetas[11];
-    /** validated by the token CPI. */
+    /** so the refund can only land with the quitting user, never back on the batch account. */
     userTokenAccount: TAccountMetas[12];
     batchBalanceValue: TAccountMetas[13];
     userBalanceValue: TAccountMetas[14];
