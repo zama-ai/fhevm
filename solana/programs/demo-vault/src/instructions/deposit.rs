@@ -33,10 +33,12 @@ pub struct Deposit<'info> {
     /// Vault token account whose balance is the total assets under management.
     #[account(mut)]
     pub vault_token_account: Box<Account<'info, TokenAccount>>,
-    /// Depositor's share token account (destination for minted shares).
+    /// Depositor's share token account (destination for minted shares). Pinned to the signer:
+    /// a client cannot redirect the credit to a third party.
     #[account(
         mut,
         constraint = depositor_shares.mint == share_mint.key() @ DemoVaultError::MintMismatch,
+        constraint = depositor_shares.owner == depositor.key() @ DemoVaultError::OwnerMismatch,
     )]
     pub depositor_shares: Box<Account<'info, TokenAccount>>,
     /// SPL token program.

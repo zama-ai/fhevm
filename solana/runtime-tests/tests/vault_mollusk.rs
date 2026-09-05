@@ -656,6 +656,68 @@ fn mollusk_deposit_wrong_mint_token_account_rejects() {
 }
 
 #[test]
+fn mollusk_deposit_credit_to_third_party_rejects() {
+    let fixture = VaultFixture::new();
+    let depositor = Pubkey::new_unique();
+    let someone_else = Pubkey::new_unique();
+    let depositor_underlying = Pubkey::new_unique();
+    let third_party_shares = Pubkey::new_unique();
+
+    let mut accounts = fixture.accounts(0, 0);
+    accounts.insert(depositor, system_account(1_000_000_000));
+    accounts.insert(
+        depositor_underlying,
+        spl_token_account(fixture.underlying_mint, depositor, 1_000),
+    );
+    // Right mint, wrong owner: the signer's debit would credit someone else's shares.
+    accounts.insert(
+        third_party_shares,
+        spl_token_account(fixture.share_mint, someone_else, 0),
+    );
+    let context = mollusk().with_context(accounts);
+
+    let ix = deposit_ix(
+        &fixture,
+        depositor,
+        depositor_underlying,
+        third_party_shares,
+        1_000,
+    );
+    context.process_and_validate_instruction(
+        &ix,
+        &[vault_error(vault::DemoVaultError::OwnerMismatch)],
+    );
+}
+
+#[test]
+fn mollusk_withdraw_credit_to_third_party_rejects() {
+    let fixture = VaultFixture::new();
+    let owner = Pubkey::new_unique();
+    let someone_else = Pubkey::new_unique();
+    let owner_shares = Pubkey::new_unique();
+    let third_party_underlying = Pubkey::new_unique();
+
+    let mut accounts = fixture.accounts(1_000, 1_000);
+    accounts.insert(owner, system_account(1_000_000_000));
+    accounts.insert(
+        owner_shares,
+        spl_token_account(fixture.share_mint, owner, 1_000),
+    );
+    // Right mint, wrong owner: the signer's burn would pay out to someone else.
+    accounts.insert(
+        third_party_underlying,
+        spl_token_account(fixture.underlying_mint, someone_else, 0),
+    );
+    let context = mollusk().with_context(accounts);
+
+    let ix = withdraw_ix(&fixture, owner, owner_shares, third_party_underlying, 100);
+    context.process_and_validate_instruction(
+        &ix,
+        &[vault_error(vault::DemoVaultError::OwnerMismatch)],
+    );
+}
+
+#[test]
 fn mollusk_withdraw_foreign_share_mint_rejects() {
     let fixture = VaultFixture::new();
     let foreign = VaultFixture::new();
