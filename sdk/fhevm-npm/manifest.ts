@@ -73,6 +73,24 @@ const tarballsPolicySchema = z
   })
   .strict();
 
+/**
+ * One multi-generation package family: which dev package is V(N), the current generation every consumer
+ * depends on, and which is V(N-1), kept only so V(N)'s upgrade path from it can be built and tested.
+ * Keyed by the family's directory below sdk/ (`host-contracts-cleartext`). Cross-entry rules — both
+ * values exist, are `dev` packages, live under the family directory, and differ — are in the manifest
+ * refinement, because they need `packages`.
+ */
+const generationPairSchema = z
+  .object({
+    current: z.string().regex(PACKAGE_KEY, 'must be a canonical sdk-relative package key'),
+    previous: z.string().regex(PACKAGE_KEY, 'must be a canonical sdk-relative package key').optional(),
+  })
+  .strict();
+
+const generationsSchema = z
+  .record(z.string().regex(UNPREFIXED_PATH, 'a family is a safe directory path below sdk/'), generationPairSchema)
+  .refine((families) => Object.keys(families).length > 0, 'must name at least one package family');
+
 const packageJsonFieldNamesSchema = z
   .array(z.string().regex(/^[A-Za-z][A-Za-z0-9._-]*$/, 'must be a top-level package.json field name'))
   .superRefine(uniqueStrings);
@@ -247,6 +265,7 @@ const npmManifestSchema = z
     dependencies: dependencyPolicySchema.optional(),
     foundry: foundryPolicySchema.optional(),
     tarballs: tarballsPolicySchema.optional(),
+    generations: generationsSchema.optional(),
     packageJson: packageJsonPolicySchema,
     packages: z.record(
       z.string().regex(PACKAGE_KEY, 'must be a canonical sdk-relative package key'),
@@ -260,6 +279,28 @@ const npmManifestSchema = z
       issue(context, ['packages', '.'], 'the workspace-root entry is required');
     } else if (root.kind !== 'workspace-root') {
       issue(context, ['packages', '.', 'kind'], 'the . entry must have kind workspace-root');
+    }
+
+    for (const [family, pair] of Object.entries(manifest.generations ?? {})) {
+      const roles: readonly (readonly ['current' | 'previous', string | undefined])[] = [
+        ['current', pair.current],
+        ['previous', pair.previous],
+      ];
+      for (const [role, key] of roles) {
+        if (key === undefined) continue;
+        const entry = manifest.packages[key];
+        if (entry === undefined) {
+          issue(context, ['generations', family, role], `'${key}' is not a manifest package`);
+        } else if (entry.kind !== 'dev') {
+          issue(context, ['generations', family, role], `'${key}' is not a dev package (kind: ${entry.kind})`);
+        }
+        if (!key.startsWith(`./${family}/`)) {
+          issue(context, ['generations', family, role], `'${key}' does not live under ./${family}/`);
+        }
+      }
+      if (pair.previous !== undefined && pair.previous === pair.current) {
+        issue(context, ['generations', family, 'previous'], 'the previous generation must differ from the current one');
+      }
     }
 
     for (const [key, entry] of Object.entries(manifest.packages)) {

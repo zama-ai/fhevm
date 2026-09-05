@@ -333,6 +333,66 @@ package, never siblings or children. An exception naming no declared dependency 
 "devDependencies": { "legacy-linter": "^1.0.0" }
 ```
 
+### 3.4 Depending across generations
+
+Some package families exist in several **generations** side by side: `host-contracts-cleartext/v12` and
+`host-contracts-cleartext/v13` are two dev packages whose payloads share one published name. Exactly two are live
+at any time. `npm-manifest.json#generations` names them per family: `current` is V(N), the generation every consumer
+depends on; `previous` is V(N-1), kept only so V(N)'s upgrade path from it can be built and tested. The developer
+sets up the generation directories and edits every pin; the validator only reads and reports.
+
+**3.4.1 A dependency on a generation family targets V(N); only V(N) may also depend on V(N-1).** Any package of the
+family (the dev package, its payload, its consumers) counts as that generation. A `file:` spec is resolved by
+directory; a version spec by name, and when the name is shared by several generations the spec must be the exact
+version of one of them, otherwise the validator cannot tell which generation is meant. A generation may always depend
+on itself. Every other edge into the family — a consumer on V(N-1), anyone on a generation that is neither — fails.
+The rule also covers a dependency no committed `package.json` declares: the spec the Hardhat template mirror patch
+injects into the rendered template is resolved as if the template package had declared it.
+
+```jsonc
+// ✅ In hardhat/v3/plugin/pkg: the current generation's payload.
+"@fhevm/host-contracts-cleartext": "file:../../../../host-contracts-cleartext/v13/pkg"
+
+// ✅ In host-contracts-cleartext/v13 (V(N)): the previous generation, for the upgrade e2e.
+"devDependencies": { "@fhevm/host-contracts-cleartext-v12-dev": "0.0.0" }
+
+// ❌ In hardhat/v3/plugin/pkg: a consumer on V(N-1). When v14 arrives this is the pin that is forgotten.
+"@fhevm/host-contracts-cleartext": "file:../../../../host-contracts-cleartext/v12/pkg"
+
+// ❌ In common: nothing outside V(N) may depend on V(N-1).
+"devDependencies": { "@fhevm/host-contracts-cleartext-v12-dev": "0.0.0" }
+
+// ❌ A range over a name two generations share: which payload is meant cannot be read off the spec.
+"@fhevm/host-contracts-cleartext": "^0.13.0"
+```
+
+**3.4.2 A vendored destination under a generation family sits in a live generation.** `common-vendored/manifest.json`
+names its destinations as plain paths; every one below the family directory must be under V(N) or V(N-1). A path
+under a retired generation is the entry a rotation forgets, and the validator names it. The two live generations
+receive the same files today; that they both do is declared twice on purpose, not derived.
+
+```jsonc
+// ✅ Both live generations, listed explicitly.
+{ "to": "host-contracts-cleartext/v13/pkg/ts", "files": ["cleartext-config.ts"] }
+{ "to": "host-contracts-cleartext/v12/pkg/ts", "files": ["cleartext-config.ts"] }
+
+// ❌ After v12 is retired: the path names a generation the manifest no longer lists.
+{ "to": "host-contracts-cleartext/v12/pkg/ts", "files": ["cleartext-config.ts"] }
+```
+
+**3.4.3 `cleartext-config.json#appliesTo.generations` names exactly the live generations.** The generator writes a
+face into `host-contracts-cleartext/<gen>/` for every listed key, so the list must equal V(N) and V(N-1) by directory
+basename. A retired key makes the generator write into a directory that no longer exists; a live generation missing
+from the list receives no face, and `check-cleartext-config` cannot miss a face it was never told to expect.
+
+```jsonc
+// ✅ With generations.current = ./host-contracts-cleartext/v13 and previous = ./host-contracts-cleartext/v12
+"appliesTo": { "generations": ["v12", "v13"] }
+
+// ❌ v11 is retired, and v13 — live — would get no face.
+"appliesTo": { "generations": ["v11", "v12"] }
+```
+
 ## 4. Where a version lives
 
 Which rules apply depends on the kind of package, as named in § 1.1.

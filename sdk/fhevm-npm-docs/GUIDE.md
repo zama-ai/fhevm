@@ -8,7 +8,7 @@ plus `build`, the everyday sweep.
 make build                  # THE everyday command: fmt-check, then lint, then compile — everything,
                             # gated, each step run once
 make compile                # artifacts only, in dependency order (no gates, no forge, no generation)
-make test-cleartext-v12     # checks + compile + one package's tests (same shape: test-cleartext-v13,
+make test-cleartext-v-prev  # checks + compile + one package's tests (same shape: test-cleartext-v-cur,
                             # test-hh-v2-plugin, test-hh-v2-template, test-hh-v2-e2e)
 make lint                   # every package's lint, compiling what each lint needs first
 make fmt                    # rewrite formatting everywhere (fmt-check verifies without writing)
@@ -186,7 +186,7 @@ not just churn:
 
 ```sh
 make build
-make test-cleartext-v12 test-cleartext-v13
+make test-cleartext-v-prev test-cleartext-v-cur
 make ci           # the full gate, now that the tree is committed
 ```
 

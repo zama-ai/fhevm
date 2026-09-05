@@ -20,6 +20,7 @@ node ./fhevm-npm.ts check-tsconfig-paths
 node ./fhevm-npm.ts check-tsc-mode
 node ./fhevm-npm.ts check-commit-scope
 node ./fhevm-npm.ts check-cleartext-config
+node ./fhevm-npm.ts check-generations
 node ./fhevm-npm.ts sync-fhevm-chains --latest
 node ./fhevm-npm.ts check-fhevm-chains-origin
 node ./fhevm-npm.ts generate-chain-constants

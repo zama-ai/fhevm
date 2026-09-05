@@ -27,7 +27,7 @@ import {
   pad,
   readJson,
   readJsonl,
-  run,
+  runLogged,
   sameAddress,
   say,
   sleep,
@@ -98,8 +98,14 @@ export type Options = {
 
   /** The live stack being upgraded (see ExistingAddresses). Empty for a deploy. */
   readonly existing: ExistingAddresses;
+  /** Where each `existing` role came from: 'manifest', 'config', or the flag that set it. */
+  readonly existingSource: Readonly<Record<string, string>>;
+  /** The previous generation's manifest, when one was given. Seeds `existing` at the lowest precedence. */
+  readonly previousManifest: PreviousManifest | null;
   /** Path to the KMS migration seed, or null to reconstruct it from the live stack plus defaults. */
   readonly migrationPath: string | null;
+  /** Directory containing the previous generation's ABIs for the before/after getter survey. */
+  readonly previousAbiDir: string | null;
   /**
    * Cleartext handles already recorded in the live `CleartextDB`, whose values must survive the upgrade.
    *
@@ -133,6 +139,10 @@ export type ConfigFile = {
   readonly existing?: ExistingAddresses;
   /** Upgrade only: path to the KMS migration seed. */
   readonly migration?: string;
+  /** Upgrade only: previous generation ABI directory. */
+  readonly previousAbiDir?: string;
+  /** Upgrade only: the previous generation's sealed manifest, seeding the nine addresses above. */
+  readonly previousManifest?: string;
   /** Upgrade only: handles whose cleartext values must survive. */
   readonly handles?: readonly string[];
 };
@@ -159,6 +169,8 @@ export type CliArgs = {
   /** Upgrade only. Merged over the config file's `existing` block, so a single address can be overridden. */
   existing: Record<string, string>;
   migrationPath: string | null;
+  previousAbiDir: string | null;
+  previousManifestPath: string | null;
   handles: string[];
 };
 
@@ -304,6 +316,8 @@ export const CONFIG_KEYS: readonly string[] = [
   'git',
   'existing',
   'migration',
+  'previousAbiDir',
+  'previousManifest',
   'handles',
 ];
 
@@ -359,13 +373,32 @@ export const ANVIL_ADMIN_INDEX = 1;
  * manifest and the generated `addresses.sol` use, so a value read here can be written straight out
  * without a second naming convention to keep in step.
  *
- * Deliberately supplied rather than read from a previous manifest: a stack may have been deployed by the
- * nonce path, by an older revision, or by someone else, and requiring a manifest this tooling happened to
- * write would make the upgrade unusable exactly when it matters. The cost is that a typo bakes into the
- * new implementations, which is why every entry is validated against the live chain before anything is
- * computed.
+ * Never REQUIRED to come from a previous manifest: a stack may have been deployed by the nonce path, by
+ * an older revision, or by someone else, and a tool that only upgrades what it deployed itself is
+ * unusable exactly when it matters. `--previous-manifest` is therefore a seed and not a source — it
+ * fills these in when one exists, and loses to both the config file and the flags.
+ *
+ * However they arrive, a typo bakes into the new implementations, which is why every entry is validated
+ * against the live chain before anything is computed.
  */
 export type ExistingAddresses = Readonly<Record<string, string>>;
+
+/**
+ * A previous generation's sealed manifest, read and cross-checked.
+ *
+ * `deployer` and `admin` are carried for the banner only. Asserting them would be wrong: ownership can
+ * legitimately have moved through the offer/accept path since the deploy, and the upgrade's own verify
+ * is what establishes who owns the stack now.
+ */
+export type PreviousManifest = {
+  readonly path: string;
+  readonly chainId: number;
+  readonly deploymentId: string;
+  readonly deployer: string | null;
+  readonly admin: string | null;
+  /** Only the EXISTING_ROLES keys. A deploy manifest also names roles an upgrade must not be given. */
+  readonly address: ExistingAddresses;
+};
 
 /** The role names an upgrade must be given, in the order the help and the banner list them. */
 export const EXISTING_ROLES: readonly string[] = [
@@ -392,6 +425,68 @@ export const EXISTING_FLAGS: Readonly<Record<string, string>> = {
   '--pauser-set': 'PAUSER_SET_ADDRESS',
   '--acl-owner': 'ACL_OWNER',
 };
+
+/** `ACL_ADDRESS` -> `--acl`. The reverse of EXISTING_FLAGS, for messages that name what to pass. */
+export function existingFlagFor(role: string): string {
+  return Object.entries(EXISTING_FLAGS).find(([, r]) => r === role)?.[0] ?? `--${role.toLowerCase()}`;
+}
+
+/**
+ * Read a previous generation's manifest, and refuse one that is not this deployment's.
+ *
+ * A manifest from a different stack names addresses that are all real and all wrong, and they get baked
+ * into the new implementations' creation code — the one failure mode this flag adds over typing the nine
+ * flags. It is also the one a manifest can answer about itself, so deploymentId is checked here, before
+ * anything touches a node. The chain half is checkPreviousManifest, which needs one.
+ *
+ * Missing roles are NOT an error: the config file and the flags layer over this, and validateExisting is
+ * what decides whether the nine ended up complete.
+ */
+export function loadPreviousManifest(path: string, deploymentId: string): PreviousManifest {
+  if (!existsSync(path)) fail(`Error: no manifest at ${path} (--previous-manifest).`);
+  const raw = readJson<Manifest>(path);
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+    fail(`Error: ${path} is not a JSON object (--previous-manifest).`);
+  }
+
+  if (typeof raw.chainId !== 'number' || typeof raw.deploymentId !== 'string' || raw.deploymentId === '') {
+    fail(
+      `Error: ${path} is missing chainId or deploymentId.`,
+      '       Both are what make a manifest checkable rather than merely readable, so a file without',
+      '       them is not accepted as one. Pass the nine addresses as flags instead.',
+    );
+  }
+
+  if (raw.deploymentId !== deploymentId) {
+    fail(
+      'Error: --previous-manifest is not this deployment.',
+      `         manifest deploymentId  ${raw.deploymentId}`,
+      `         --deployment-id        ${deploymentId}`,
+      '',
+      '       A manifest from a different stack names nine live addresses that are all real and all',
+      '       wrong. Point at the deploy that produced the stack you are upgrading.',
+    );
+  }
+
+  const address: Record<string, string> = {};
+  for (const role of EXISTING_ROLES) {
+    const value = raw.address?.[role];
+    if (value === undefined || value === '') continue;
+    if (!/^0x[0-9a-fA-F]{40}$/.test(value)) {
+      fail(`Error: ${path} has a malformed ${role}: ${value}`);
+    }
+    address[role] = value;
+  }
+
+  return {
+    path,
+    chainId: raw.chainId,
+    deploymentId: raw.deploymentId,
+    deployer: raw.deployer ?? null,
+    admin: raw.admin ?? null,
+    address,
+  };
+}
 
 /**
  * How a stage signs: a forge keystore account, or an index into the public anvil mnemonic.
@@ -479,6 +574,8 @@ export function parseCliArgs(flow: Flow, argv: readonly string[]): CliArgs {
     verbose: false,
     existing: {},
     migrationPath: null,
+    previousAbiDir: null,
+    previousManifestPath: null,
     handles: [],
   };
 
@@ -561,6 +658,14 @@ export function parseCliArgs(flow: Flow, argv: readonly string[]): CliArgs {
         break;
       case '--migration':
         cli.migrationPath = need(i, a);
+        i += 1;
+        break;
+      case '--previous-abi-dir':
+        cli.previousAbiDir = need(i, a);
+        i += 1;
+        break;
+      case '--previous-manifest':
+        cli.previousManifestPath = need(i, a);
         i += 1;
         break;
       case '--handle':
@@ -689,7 +794,7 @@ export function resolveOptions(flow: Flow, cli: CliArgs, cfg: ConfigFile, config
   let signer: Signer | null = null;
   if (account !== '') {
     signer = { kind: 'keystore', account };
-  } else if (flow.needsChain(stage)) {
+  } else if (flow.needsDeployerKey(stage)) {
     if (!isAnvil(rpcUrl)) {
       fail(
         missing('--account', 'account'),
@@ -703,6 +808,10 @@ export function resolveOptions(flow: Flow, cli: CliArgs, cfg: ConfigFile, config
         '         --account my-deployer',
       );
     }
+    signer = { kind: 'anvil', index: ANVIL_DEPLOYER_INDEX };
+  } else if (flow.needsChain(stage) && isAnvil(rpcUrl)) {
+    // Preserve the unattended local rehearsal for stages sent by anvil's admin account, without
+    // turning a read-only or external-admin stage on a real chain into a deployer-key requirement.
     signer = { kind: 'anvil', index: ANVIL_DEPLOYER_INDEX };
   }
 
@@ -724,6 +833,27 @@ export function resolveOptions(flow: Flow, cli: CliArgs, cfg: ConfigFile, config
   }
   if (admin === '') fail(missing('--admin', 'admin'));
   if (deploymentId === '') fail(missing('--deployment-id', 'deploymentId'));
+
+  // The live stack, lowest layer first: a previous manifest, then the config file, then the flags.
+  // A flag someone typed must never lose to a file, and the manifest is a convenience over typing nine
+  // of them — so it sits at the bottom. existingSource records which layer won each role, because a
+  // sealed address is only auditable if the seal says where it came from.
+  const previousManifestPath = cli.previousManifestPath ?? cfg.previousManifest ?? null;
+  const previousManifest =
+    previousManifestPath === null ? null : loadPreviousManifest(previousManifestPath, deploymentId);
+
+  const existing: Record<string, string> = {};
+  const existingSource: Record<string, string> = {};
+  const layer = (source: (role: string) => string, addresses: Readonly<Record<string, string>>): void => {
+    for (const [role, address] of Object.entries(addresses)) {
+      if (address === '') continue;
+      existing[role] = address;
+      existingSource[role] = source(role);
+    }
+  };
+  layer(() => 'manifest', previousManifest?.address ?? {});
+  layer(() => 'config', cfg.existing ?? {});
+  layer(existingFlagFor, cli.existing);
 
   // A dry run of `all` would be theater: nothing is sent, so stage 2 simulates against a chain where
   // stage 1 never happened, and every later stage reports blocked on a precondition a real run would
@@ -756,10 +886,12 @@ export function resolveOptions(flow: Flow, cli: CliArgs, cfg: ConfigFile, config
     verbose: cli.verbose,
     configPath,
 
-    // Upgrade inputs. CLI merged OVER the config file, so one address can be overridden without editing
-    // the file. Empty for a deploy, which derives every address it needs.
-    existing: { ...(cfg.existing ?? {}), ...cli.existing },
+    // Upgrade inputs. Empty for a deploy, which derives every address it needs.
+    existing,
+    existingSource,
+    previousManifest,
     migrationPath: cli.migrationPath ?? cfg.migration ?? null,
+    previousAbiDir: cli.previousAbiDir ?? cfg.previousAbiDir ?? null,
     handles: cli.handles.length > 0 ? cli.handles : (cfg.handles ?? []),
   };
 }
@@ -1101,6 +1233,42 @@ export function probeFinality(ctx: Ctx): string {
 ////////////////////////////////////////////////////////////////////////////////
 
 /**
+ * The half of the --previous-manifest cross-check that needs a chain.
+ *
+ * loadPreviousManifest already refused a manifest from another deployment; this refuses one from
+ * another chain. The id alone cannot catch that: the same deploymentId on a testnet and on mainnet is
+ * the NORMAL case, and those two stacks have different addresses.
+ */
+function checkPreviousManifest(ctx: Ctx): void {
+  const previous = ctx.opt.previousManifest;
+  if (previous === null) return;
+
+  if (String(previous.chainId) !== ctx.chainId) {
+    fail(
+      'Error: --previous-manifest was written on a different chain.',
+      `         manifest chainId  ${String(previous.chainId)}`,
+      `         --rpc-url says    ${ctx.chainId}`,
+      '',
+      `       ${previous.path}`,
+    );
+  }
+}
+
+/** The --previous-manifest lines of the preflight banner: what it was, and how much of it was used. */
+function previousManifestLines(ctx: Ctx): string[] {
+  const previous = ctx.opt.previousManifest;
+  if (previous === null) return [];
+  const supplied = Object.keys(previous.address).length;
+  return [
+    `  previous         ${previous.path}`,
+    `                   chain ${String(previous.chainId)}, id ${previous.deploymentId}, ` +
+      `${String(supplied)}/${String(EXISTING_ROLES.length)} roles, sealed by ${previous.deployer ?? '-'}`,
+  ];
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+/**
  * Quantified before starting rather than discovered at send time.
  *
  * Deploying via the factory pays initcode as CALLDATA (16 gas per non-zero byte), and the
@@ -1112,8 +1280,11 @@ export function preflight(ctx: Ctx): void {
 
   ctx.chainId = captureOrFail('cast', ['chain-id', '--rpc-url', ctx.opt.rpcUrl]);
   checkChainAllowed(ctx);
+  checkPreviousManifest(ctx);
   checkOutDirIdentity(ctx);
-  if (ctx.flow.needsDeployerKey(ctx.opt.stage)) checkAdminAccount(ctx);
+  if (ctx.flow.needsDeployerKey(ctx.opt.stage) || ctx.opt.adminAccount !== null || ctx.opt.stage === 'materialize') {
+    checkAdminAccount(ctx);
+  }
   checkFactory(ctx);
 
   const finalized = probeFinality(ctx);
@@ -1130,6 +1301,7 @@ export function preflight(ctx: Ctx): void {
     `  deploymentId     ${ctx.opt.deploymentId} @ v${FHEVM_VERSION}`,
     `  out dir          ${ctx.outDir}`,
     `  config           ${ctx.opt.configPath ?? '(none - all arguments on the command line)'}`,
+    ...previousManifestLines(ctx),
     '',
   );
 }
@@ -1146,6 +1318,22 @@ export function headBlock(ctx: Ctx): number {
 
 export function finalizedBlock(ctx: Ctx): number {
   return Number(captureOrFail('cast', ['block-number', 'finalized', '--rpc-url', ctx.opt.rpcUrl]));
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * The newest block this run treats as settled: `finalized` when the chain serves it, otherwise
+ * `--confirmations` behind the head. Every chain read that decides something is taken at or before it.
+ */
+export function settledBlock(ctx: Ctx): number {
+  return ctx.useFinality ? finalizedBlock(ctx) : Math.max(0, headBlock(ctx) - ctx.opt.confirmations);
+}
+
+/** Does `address` hold code as of `block`? A create is settled when this holds at `settledBlock`. */
+export function hasCodeAt(ctx: Ctx, address: string, block: number): boolean {
+  const r = capture('cast', ['code', address, '--block', String(block), '--rpc-url', ctx.opt.rpcUrl]);
+  return r.ok && r.stdout !== '' && r.stdout !== '0x';
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1492,7 +1680,13 @@ export function reportTxLine(e: JournalEntry): string {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export async function broadcast(ctx: Ctx, target: string, signer?: Signer, sender?: string): Promise<void> {
+export async function broadcast(
+  ctx: Ctx,
+  target: string,
+  signer?: Signer,
+  sender?: string,
+  extraEnv?: NodeJS.ProcessEnv,
+): Promise<void> {
   const from = sender ?? ctx.deployer;
   const key = signer ?? ctx.opt.signer;
   if (key === null) {
@@ -1522,9 +1716,10 @@ export async function broadcast(ctx: Ctx, target: string, signer?: Signer, sende
     const env = {
       ...scriptEnv(ctx),
       ...generatedConfigEnv(ctx),
+      ...extraEnv,
       FHEVM_MIN_BLOCK: String(ctx.opt.minBlockOverride ?? 0),
     };
-    const code = run('forge', [...base, '--sender', from], env);
+    const code = await runLogged('forge', [...base, '--sender', from], env);
     if (code !== 0) process.exit(code);
     return;
   }
@@ -1537,7 +1732,12 @@ export async function broadcast(ctx: Ctx, target: string, signer?: Signer, sende
   const minBlock = ctx.opt.minBlockOverride ?? ctx.nextMinBlock;
   await waitForBlock(ctx, minBlock);
 
-  const env = { ...scriptEnv(ctx), ...generatedConfigEnv(ctx), FHEVM_MIN_BLOCK: String(minBlock) };
+  const env = {
+    ...scriptEnv(ctx),
+    ...generatedConfigEnv(ctx),
+    ...extraEnv,
+    FHEVM_MIN_BLOCK: String(minBlock),
+  };
 
   // --slow: one transaction at a time, waiting for each receipt. The two hard edges (impl₁ before
   // the ACL proxy, impl₃ before the rest) are satisfied by nonce ordering alone, but --slow turns a
@@ -1545,7 +1745,11 @@ export async function broadcast(ctx: Ctx, target: string, signer?: Signer, sende
   //
   // The exit code is captured rather than thrown, so the journal is written even when the stage
   // dies. A half-finished stage is the case the audit trail exists for.
-  const code = run('forge', [...base, ...forgeSignerArgs(key), '--sender', from, '--slow', '--broadcast'], env);
+  const code = await runLogged(
+    'forge',
+    [...base, ...forgeSignerArgs(key), '--sender', from, '--slow', '--broadcast'],
+    env,
+  );
 
   recordJournal(ctx, target);
   if (code !== 0) {

@@ -7,13 +7,31 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const pluginDirectory = dirname(dirname(import.meta.filename));
-const workspaceRoot = resolve(pluginDirectory, '../../..');
 const templateDirectory = resolve(pluginDirectory, '../fhevm-hardhat-template/pkg');
-const hostOwnerDirectory = resolve(workspaceRoot, 'host-contracts-cleartext/v13');
+// The host-contracts generation this plugin builds against is whatever plugin/pkg pins — the one
+// declaration `fhevm-npm check-generations` already holds to V(N) — so it is read from there, never
+// repeated here. The pin is a `file:` path because the host contracts live in another installation root
+// (rule 3.1.1); its target is the payload, and the dev owner that compiles it is the parent directory.
+const hostPayloadDirectory = resolveHostPayloadDirectory();
+const hostOwnerDirectory = dirname(hostPayloadDirectory);
 const candidates = {
   '@fhevm/hardhat-plugin': resolve(pluginDirectory, 'pkg'),
-  '@fhevm/host-contracts-cleartext': resolve(hostOwnerDirectory, 'pkg'),
+  '@fhevm/host-contracts-cleartext': hostPayloadDirectory,
 } as const;
+
+function resolveHostPayloadDirectory(): string {
+  const packageJsonPath = resolve(pluginDirectory, 'pkg', 'package.json');
+  const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8')) as {
+    dependencies?: Record<string, string>;
+  };
+  const spec = packageJson.dependencies?.['@fhevm/host-contracts-cleartext'];
+  const requirement =
+    `${packageJsonPath}: '@fhevm/host-contracts-cleartext' must be a dependency pinned by a file: path ` +
+    `(the host contracts live in another installation root, so npm cannot link them by version); got ${String(spec)}`;
+  if (spec === undefined) throw new Error(requirement);
+  if (!spec.startsWith('file:')) throw new Error(requirement);
+  return resolve(pluginDirectory, 'pkg', spec.slice('file:'.length));
+}
 const excludedTemplateRoots = new Set([
   '.git',
   'artifacts',

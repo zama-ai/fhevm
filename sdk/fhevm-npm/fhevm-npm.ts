@@ -24,6 +24,7 @@ import { checkFhevmChainsOrigin } from './commands/check-fhevm-chains-origin.ts'
 import { checkVendoredOrigin } from './commands/check-vendored-origin.ts';
 import { syncFhevmChains } from './commands/sync-fhevm-chains.ts';
 import { checkWorkspaces } from './commands/check-workspaces.ts';
+import { checkGenerations } from './commands/check-generations.ts';
 import { generateChainConstantsCommand } from './commands/generate-chain-constants.ts';
 import { generateCleartextConfigCommand } from './commands/generate-cleartext-config.ts';
 import { generateExportsCommand } from './commands/generate-exports.ts';
@@ -54,6 +55,7 @@ const commands: Readonly<Record<CommandName, CheckCommand>> = {
   'check-tsc-mode': checkTscMode,
   'check-commit-scope': checkCommitScope,
   'check-cleartext-config': checkCleartextConfig,
+  'check-generations': checkGenerations,
 };
 
 async function main(): Promise<void> {

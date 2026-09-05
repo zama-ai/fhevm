@@ -298,3 +298,153 @@ rm -rf create2-deploy/.out-anvil
 ```
 
 Restart anvil (step 3) to discard the chain too, then go to step 4.
+
+## v12 → v13 upgrade rehearsal
+
+For the operator's checklist — commands only, in order — see [UPGRADE_RUNBOOK.md](UPGRADE_RUNBOOK.md).
+
+The automated cross-generation rehearsal is the shortest authoritative example:
+
+```sh
+cd sdk/host-contracts-cleartext/v13
+npm run test:create2-e2e
+```
+
+It starts a dedicated anvil, deploys v12 with `../v12/create2-deploy/deploy-testnet.ts`, creates a
+`trivialEncrypt` handle, passes the nine v12 manifest addresses as CLI inputs to
+`upgrade-testnet.ts`, and verifies the v13 versions, the two new CREATE2 proxies, the preserved handle,
+all 54 zero-argument v12 getter readings, ownership, pausers, and forbidden-event absence.
+
+For a manual run, start anvil in one terminal and deploy v12 from a second:
+
+```sh
+anvil --silent
+```
+
+```sh
+cd sdk/host-contracts-cleartext/v12
+node create2-deploy/deploy-testnet.ts \
+  --config create2-deploy/anvil-config.json \
+  --out-dir .out-v12-for-v13 \
+  --deployment-id anvil-rehearsal \
+  --stage all
+```
+
+Point the upgrade at the manifest v12 just sealed, rather than retyping its nine addresses:
+
+```json
+{
+  "rpcUrl": "http://127.0.0.1:8545",
+  "deploymentId": "anvil-rehearsal",
+  "outDir": ".out-upgrade-anvil",
+  "confirmations": 0,
+  "finality": false,
+  "git": false,
+  "previousAbiDir": "../v12/pkg/abi",
+  "previousManifest": "../v12/create2-deploy/.out-v12-for-v13/manifest.json"
+}
+```
+
+`previousManifest` (or `--previous-manifest PATH`) seeds the nine `existing` roles from the deploy that
+produced the live stack. It is cross-checked before anything else: its `chainId` must be this chain and
+its `deploymentId` must be the `deploymentId` above, because a manifest from a different stack names
+addresses that are all real and all wrong. Neither check has an override.
+
+It is also the LOWEST precedence source. An `existing` block in this file overrides it per role, and
+`--acl` and friends override both, so a single address can be corrected without editing anything. A
+stack deployed by the nonce path, by an older revision, or by someone else has no such manifest — give
+those nine addresses directly instead:
+
+```json
+  "existing": {
+    "ACL_ADDRESS": "0x…",
+    "FHEVM_EXECUTOR_ADDRESS": "0x…",
+    "KMS_VERIFIER_ADDRESS": "0x…",
+    "INPUT_VERIFIER_ADDRESS": "0x…",
+    "HCU_LIMIT_ADDRESS": "0x…",
+    "CLEARTEXT_ARITHMETIC_ADDRESS": "0x…",
+    "CLEARTEXT_DB_ADDRESS": "0x…",
+    "PAUSER_SET_ADDRESS": "0x…",
+    "ACL_OWNER": "0x…"
+  }
+```
+
+Either way `validating the live stack` tags each address with where it came from — `[manifest]`,
+`[config]`, or the flag that set it.
+
+Then run from v13, reusing the v12 deployment id:
+
+```sh
+cd ../v13
+node create2-deploy/upgrade-testnet.ts \
+  --config create2-deploy/upgrade.config.json \
+  --stage all \
+  --handle 0xHANDLE
+```
+
+`--handle` must identify data created before `compute`; without it the verifier reports that existing DB
+data survival was not proven. On a non-anvil chain, `--account` signs the CREATE2 transactions and
+`--admin-account` signs the atomic `ACLOwner.upgrade`.
+
+### One stage at a time, with the gate
+
+This is the run-book for a stack that matters. Every stage is separately runnable and idempotent, and the
+two read-only checks are where a human reads before deciding:
+
+```sh
+U="node create2-deploy/upgrade-testnet.ts --config create2-deploy/upgrade.config.json"
+$U --stage compute                 # validates the nine addresses, snapshots, seals
+git add -f create2-deploy/.out-*/manifest.json create2-deploy/.out-*/addresses.sol && git commit -m seal && git push
+$U --stage creates                 # ten CREATE2s, each gated on getCode
+$U --stage precheck                # READ THIS. Fresh recompile; every FAIL line, not just the first
+$U --stage rehearse                # the exact calldata on an anvil fork of the chain, then verify on the fork
+$U --stage materialize             # runs precheck again, then the one atomic call
+$U --stage verify                  # waits for depth + finality, then the three layers
+$U --stage verify --min-block N    # later, at greater depth — compare the two verify-report.json
+```
+
+`precheck` and `verify` recompile into `<out-dir>/build-check` so the seal is re-derived from the current
+checkout rather than from the build that produced it. `--no-build` checks against the sealed build
+instead; use it only when solc is unavailable.
+
+### Watching it, and reading it back
+
+Each stage announces its steps as `▸ step` and closes them as `✔ step (took, block)`. `--stage all` prints
+the plan first. Afterwards:
+
+```sh
+$U --stage progress                # every step, when, how long, at which block — no node needed
+$U --stage status                  # what the chain says is done and what is blocked
+$U --stage log                     # every transaction sent
+ls create2-deploy/.out-*/logs/     # one full transcript per invocation, forge output included
+```
+
+### If it is interrupted
+
+Re-run the same command. `--stage all` skips `compute` once any sealed create has code on chain (asked of
+the chain, so a run killed before it wrote its journal resumes too), sends only the creates that are
+missing, waits until every create is settled — finalized, or `--confirmations` deep — before the gate and
+the atomic call, and after a materialize that already landed it reports so at every stage and finishes
+with `verify`. `verify` waits until the materialize block itself is settled; if that transaction was
+reorged out it says so, and `--stage materialize` is safe to send again. `--stage compute` refuses once
+anything is on chain; a fresh start is a new `--deployment-id` and `--out-dir`.
+
+`rehearse` needs `anvil` on the PATH and an RPC that serves `eth_getLogs` and state at head; it writes
+its own `journal.jsonl` and `verify-report.json` under `<out-dir>/rehearsal/` so nothing it records can be
+mistaken for the real run. Its last line names the fork block and the exact payload digest that passed.
+
+### When the admin is a multisig
+
+Run `--stage rehearse` first: it applies the payload the multisig is about to sign, as the impersonated
+admin, on a fork, and proves the result verifies. Then run `--stage materialize` without `--admin-account`. After the gate passes it writes
+`materialize-calldata.txt` and prints the target, a zero value, the calldata and its `keccak256`. The
+gate printed the same digest, derived from the build rather than from the file — **the two must match, and
+the digest the wallet shows for the signed payload must match both.** Then:
+
+```sh
+$U --stage status                  # materialize: done — all seven implementation slots match the seal
+$U --stage verify                  # records the multisig's transaction in the journal as an observation
+```
+
+`verify` finds the multisig's transaction through the seven `Upgraded` events, requires them all in one
+transaction, and writes it to `journal.jsonl` as an observed step D, since no local receipt exists.

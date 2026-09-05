@@ -67,6 +67,30 @@
         }
       }
     },
+    "generations": {
+      "type": "object",
+      "description": "Which generation of a multi-generation package family is current, V(N), and which is its predecessor, V(N-1). Keyed by the family's directory below sdk/ (e.g. host-contracts-cleartext). Exactly two generations are live at any time: V(N) is the one every consumer depends on, V(N-1) exists only so V(N)'s upgrade path from it can be built and tested.",
+      "$comment": "Shape only. The TypeScript validator additionally requires both values to be inventory entries of kind dev living under the family directory, and distinct.",
+      "minProperties": 1,
+      "additionalProperties": false,
+      "patternProperties": {
+        "^(?!\\.{1,2}(?:/|$))[A-Za-z0-9._-]+(?:/(?!\\.{1,2}(?:/|$))[A-Za-z0-9._-]+)*$": {
+          "type": "object",
+          "required": ["current"],
+          "additionalProperties": false,
+          "properties": {
+            "current": {
+              "$ref": "#/$defs/packageKey",
+              "description": "V(N): the dev package of the current generation, e.g. ./host-contracts-cleartext/v13."
+            },
+            "previous": {
+              "$ref": "#/$defs/packageKey",
+              "description": "V(N-1): the dev package of the previous generation, e.g. ./host-contracts-cleartext/v12. Omitted for a family with a single generation."
+            }
+          }
+        }
+      }
+    },
     "packageJson": {
       "type": "object",
       "description": "Required and excluded package.json fields, selected by manifest package kind.",

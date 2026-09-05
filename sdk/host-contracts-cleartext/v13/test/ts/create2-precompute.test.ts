@@ -52,7 +52,7 @@ import {
 const PACKAGE_ROOT = join(import.meta.dirname, '..', '..');
 
 /** Resolved by the coordinator against `create2-deploy/`, the only directory forge may write to. */
-const OUT_DIR_ARG = '.out-create2-precompute';
+const OUT_DIR_ARG = '.out-test-create2-precompute';
 const OUT_DIR_ABS = join(PACKAGE_ROOT, 'create2-deploy', OUT_DIR_ARG);
 
 /**

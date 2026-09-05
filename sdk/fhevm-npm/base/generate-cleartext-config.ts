@@ -51,6 +51,14 @@ type CleartextConfig = {
 };
 
 const CONFIG_FILE = 'cleartext-config.json';
+
+/** The generation family the per-generation faces are written into: `host-contracts-cleartext/<gen>/…`. */
+export const CLEARTEXT_CONFIG_FAMILY = 'host-contracts-cleartext';
+
+/** The `appliesTo.generations` list, for the check that compares it with npm-manifest.json#generations. */
+export function cleartextConfigGenerations(workspaceRoot: string): readonly string[] {
+  return loadCleartextConfig(join(workspaceRoot, CONFIG_FILE)).generations;
+}
 const TS_FACE_PATH = ['common-vendored', 'src', 'cleartext-config.ts'];
 
 export function generateCleartextConfig(
@@ -69,7 +77,7 @@ export function generateCleartextConfig(
 export function renderCleartextConfigFaces(workspaceRoot: string): readonly RenderedOutput[] {
   const config = loadCleartextConfig(join(workspaceRoot, CONFIG_FILE));
   const generation = (gen: string, ...segments: readonly string[]): string =>
-    join(workspaceRoot, 'host-contracts-cleartext', gen, ...segments);
+    join(workspaceRoot, CLEARTEXT_CONFIG_FAMILY, gen, ...segments);
 
   return [
     { path: join(workspaceRoot, ...TS_FACE_PATH), content: renderTsFace(config.constants) },

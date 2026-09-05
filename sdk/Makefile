@@ -48,8 +48,15 @@ SHELL := /usr/bin/env bash -eu -o pipefail
 
 DIR_COMMON           := common
 DIR_COMMON_VENDORED  := common-vendored
-DIR_V12              := host-contracts-cleartext/v12
-DIR_V13              := host-contracts-cleartext/v13
+# The cleartext generation pair, V(N) and V(N-1), is decided ONCE in npm-manifest.json#generations
+# (FHEVM_NPM_RULES.md section 3.4) and read here rather than repeated. Plain `node -p` on the JSON: no
+# dependencies, so it works before `make install`. `check-generations` is what validates the pair.
+manifest-generation  = $(patsubst ./%,%,$(shell node -p "require('./npm-manifest.json').generations?.['host-contracts-cleartext']?.$(1) ?? ''"))
+DIR_CLEARTEXT_V_PREV := $(call manifest-generation,previous)
+DIR_CLEARTEXT_V_CUR  := $(call manifest-generation,current)
+ifneq ($(words $(DIR_CLEARTEXT_V_PREV) $(DIR_CLEARTEXT_V_CUR)),2)
+$(error cannot read npm-manifest.json#generations.host-contracts-cleartext (previous/current); run ./fhevm-npm-cli check-generations)
+endif
 DIR_HH_V2            := hardhat/v2
 DIR_HH_V3            := hardhat/v3
 DIR_HH_V2_PLUGIN     := hardhat/v2/plugin
@@ -73,8 +80,14 @@ FHEVM_NPM_ARGS       ?=
 # `npm run -w <name>` resolves from anywhere in the workspace, so recipes never cd.
 W_COMMON             := @fhevm/sdk-common-dev
 W_VENDORED           := @fhevm/sdk-vendored-dev
-W_V12                := @fhevm/host-contracts-cleartext-v12-dev
-W_V13                := @fhevm/host-contracts-cleartext-v13-dev
+# Each generation's `-dev` workspace name is read from its own package.json, so it cannot drift from the
+# directory the manifest points at.
+package-name         = $(shell node -p "require('./$(1)/package.json').name" 2>/dev/null)
+W_CLEARTEXT_V_PREV   := $(call package-name,$(DIR_CLEARTEXT_V_PREV))
+W_CLEARTEXT_V_CUR    := $(call package-name,$(DIR_CLEARTEXT_V_CUR))
+ifneq ($(words $(W_CLEARTEXT_V_PREV) $(W_CLEARTEXT_V_CUR)),2)
+$(error a cleartext generation named by npm-manifest.json#generations has no readable package.json name ($(DIR_CLEARTEXT_V_PREV), $(DIR_CLEARTEXT_V_CUR)))
+endif
 W_HH_V2_PLUGIN       := @fhevm/hardhat-plugin-v2-dev
 W_HH_V2_E2E          := @fhevm/hardhat-plugin-v2-e2e-dev
 W_HH_V2_TEMPLATE     := @fhevm/hardhat-template-v2-dev
@@ -119,7 +132,7 @@ help: ## List the targets
 	  | awk -F'\t' '{ \
 	      if (NR > 1 && $$1 != group) print ""; \
 	      group = $$1; \
-	      printf "  \033[36m%-22s\033[0m %s\n", $$2, $$3; \
+	      printf "  \033[36m%-25s\033[0m %s\n", $$2, $$3; \
 	    }'
 
 compile: compile-hh-v2-e2e compile-hh-v2-template compile-hh-v3-e2e compile-hh-v3-template ## Compile every package, in dependency order
@@ -133,7 +146,7 @@ build: ## fmt-check, then lint, then compile — everything, gated
 
 lint: lint-shared lint-cleartext lint-hh-v2 lint-hh-v3 lint-npm-cli ## Lint every package
 
-test: test-cleartext-v12 test-cleartext-v13 test-hh-v2-plugin test-hh-v2-template test-hh-v2-e2e test-hh-v3-plugin test-hh-v3-template test-hh-v3-e2e ## Run package tests only; this is not the full validation workflow (use: 'make ci' instead)
+test: test-cleartext-v-prev test-cleartext-v-cur test-hh-v2-plugin test-hh-v2-template test-hh-v2-e2e test-hh-v3-plugin test-hh-v3-template test-hh-v3-e2e ## Run package tests only; this is not the full validation workflow (use: 'make ci' instead)
 
 check: check-npm-cli ## Run pre-build checks, build, then post-build checks
 
@@ -146,8 +159,8 @@ check-pre: check-npm-cli-pre-build ## Run all checks that do not require build o
 generate: ## Write every generated file (then commit the result)
 	$(call run,$(W_VENDORED),generate)
 	$(MAKE) sync-common-vendored
-	$(call run,$(W_V12),generate)
-	$(call run,$(W_V13),generate)
+	$(call run,$(W_CLEARTEXT_V_PREV),generate)
+	$(call run,$(W_CLEARTEXT_V_CUR),generate)
 
 # Each package's `fmt` owns what formatting means there (prettier, plus forge fmt where it has
 # Solidity). fhevm-npm is a non-member `-w` cannot reach — the one named workspace-level exception.
@@ -155,8 +168,8 @@ generate: ## Write every generated file (then commit the result)
 fmt: ## Rewrite formatting everywhere
 	$(call run,$(W_COMMON),fmt)
 	$(call run,$(W_VENDORED),fmt)
-	$(call run,$(W_V12),fmt)
-	$(call run,$(W_V13),fmt)
+	$(call run,$(W_CLEARTEXT_V_PREV),fmt)
+	$(call run,$(W_CLEARTEXT_V_CUR),fmt)
 	$(call run-hh-v2,$(W_HH_V2_PLUGIN),fmt)
 	$(call run-hh-v2,$(W_HH_V2_TEMPLATE),fmt)
 	$(call run-hh-v2,$(W_HH_V2_E2E),fmt)
@@ -167,8 +180,8 @@ fmt: ## Rewrite formatting everywhere
 fmt-check: ## Verify formatting everywhere
 	$(call run,$(W_COMMON),fmt:check)
 	$(call run,$(W_VENDORED),fmt:check)
-	$(call run,$(W_V12),fmt:check)
-	$(call run,$(W_V13),fmt:check)
+	$(call run,$(W_CLEARTEXT_V_PREV),fmt:check)
+	$(call run,$(W_CLEARTEXT_V_CUR),fmt:check)
 	$(call run-hh-v2,$(W_HH_V2_PLUGIN),fmt:check)
 	$(call run-hh-v2,$(W_HH_V2_TEMPLATE),fmt:check)
 	$(call run-hh-v2,$(W_HH_V2_E2E),fmt:check)
@@ -287,7 +300,7 @@ rebuild: ## Clean everything, then compile from scratch (no gates — use 'build
 
 # Reverse dependency order — dependents before their dependencies — so nothing is ever cleaned while
 # something downstream of it is still expected to be usable. The template goes first because it consumes
-# the plugin, which consumes v13.
+# the plugin, which consumes V(N).
 #
 # Note the template's own `clean` deliberately does NOT delegate to `pkg`'s: upstream's version ends by
 # running `npm run typechain`, and a clean that regenerates would need the plugin it just helped remove.
@@ -306,8 +319,8 @@ clean: clean-scratch ## Remove every package's build output and the tooling's sc
 	$(call run-hh-v2,$(W_HH_V2_TEMPLATE),clean)
 	$(call run-hh-v2,$(W_HH_V2_E2E),clean)
 	$(call run-hh-v2,$(W_HH_V2_PLUGIN),clean)
-	$(call run,$(W_V13),clean)
-	$(call run,$(W_V12),clean)
+	$(call run,$(W_CLEARTEXT_V_CUR),clean)
+	$(call run,$(W_CLEARTEXT_V_PREV),clean)
 	$(call run,$(W_VENDORED),clean)
 	$(call run,$(W_COMMON),clean)
 	rm -rf ./tarballs
@@ -355,8 +368,8 @@ endef
 clean-generated: ## Delete every regenerable file, to prove `make generate` reproduces them from nothing
 	$(call require-spotless-worktree)
 	$(call run,$(W_VENDORED),clean:generated)
-	$(call run,$(W_V12),clean:generated)
-	$(call run,$(W_V13),clean:generated)
+	$(call run,$(W_CLEARTEXT_V_PREV),clean:generated)
+	$(call run,$(W_CLEARTEXT_V_CUR),clean:generated)
 	@echo "Deleted. Run 'make generate' - a spotless 'git status' proves the generators reproduce everything."
 
 # `make graph` answers "what would this build, and why", without running anything.
@@ -370,20 +383,20 @@ graph: ## Print the dependency graph for TARGET (default: compile)
 ########################################################################################################
 # Build graph
 #
-# v12 -> v13 -> plugin -> e2e. Each edge is a real consumption of the previous package's BUILD OUTPUT:
-# v13 devDepends on v12, plugin/pkg imports @fhevm/host-contracts-cleartext (= v13/pkg), and e2e imports
+# V(N-1) -> V(N) -> plugin -> e2e. Each edge is a real consumption of the previous package's BUILD OUTPUT:
+# V(N) devDepends on V(N-1), plugin/pkg imports @fhevm/host-contracts-cleartext (= V(N)'s pkg), and e2e imports
 # both @fhevm/hardhat-plugin (= plugin/pkg) and @fhevm/host-contracts-cleartext.
 ########################################################################################################
 
-.PHONY: compile-package compile-cleartext-v12 compile-cleartext-v13 compile-hh-v2-plugin compile-hh-v2-template
+.PHONY: compile-package compile-cleartext-v-prev compile-cleartext-v-cur compile-hh-v2-plugin compile-hh-v2-template
 .PHONY: compile-hh-v2-e2e compile-hh-v3-plugin compile-hh-v3-template compile-hh-v3-e2e
 
 # Public bridge for tools that discover a package by manifest path while keeping this file authoritative
 # for the actual build graph. Unknown packages fail instead of silently bypassing Make with `npm run build`.
 compile-package: ## Compile PACKAGE and its prerequisites
 	+@case "$(PACKAGE)" in \
-	  "./$(DIR_V12)") target=compile-cleartext-v12 ;; \
-	  "./$(DIR_V13)") target=compile-cleartext-v13 ;; \
+	  "./$(DIR_CLEARTEXT_V_PREV)") target=compile-cleartext-v-prev ;; \
+	  "./$(DIR_CLEARTEXT_V_CUR)") target=compile-cleartext-v-cur ;; \
 	  "./$(DIR_HH_V2_PLUGIN)") target=compile-hh-v2-plugin ;; \
 	  "./$(DIR_HH_V2_TEMPLATE)") target=compile-hh-v2-template ;; \
 	  "./$(DIR_HH_V2_E2E)") target=compile-hh-v2-e2e ;; \
@@ -394,20 +407,20 @@ compile-package: ## Compile PACKAGE and its prerequisites
 	esac; \
 	$(MAKE) --no-print-directory "$$target"
 
-compile-cleartext-v12: check-npm-cli-pre-build ## Compile host-contracts-cleartext/v12
-	@echo "==> compile $(DIR_V12)"
-	$(call run,$(W_V12),compile)
+compile-cleartext-v-prev: check-npm-cli-pre-build ## Compile the previous cleartext generation, V(N-1)
+	@echo "==> compile $(DIR_CLEARTEXT_V_PREV)"
+	$(call run,$(W_CLEARTEXT_V_PREV),compile)
 
-compile-cleartext-v13: compile-cleartext-v12 ## Compile host-contracts-cleartext/v13
-	@echo "==> compile $(DIR_V13)"
-	$(call run,$(W_V13),compile)
+compile-cleartext-v-cur: compile-cleartext-v-prev ## Compile the current cleartext generation, V(N)
+	@echo "==> compile $(DIR_CLEARTEXT_V_CUR)"
+	$(call run,$(W_CLEARTEXT_V_CUR),compile)
 
-compile-hh-v2-plugin: compile-cleartext-v13 ## Compile the Hardhat v2 plugin
+compile-hh-v2-plugin: compile-cleartext-v-cur ## Compile the Hardhat v2 plugin
 	@echo "==> compile $(DIR_HH_V2_PLUGIN)"
 	$(call run-hh-v2,$(W_HH_V2_PLUGIN),compile)
 
 # Like its v2 sibling: plugin/pkg imports @fhevm/host-contracts-cleartext/ts, whose types are build output.
-compile-hh-v3-plugin: compile-cleartext-v13 ## Compile the Hardhat v3 plugin
+compile-hh-v3-plugin: compile-cleartext-v-cur ## Compile the Hardhat v3 plugin
 	@echo "==> compile $(DIR_HH_V3_PLUGIN)"
 	$(call run-hh-v3,$(W_HH_V3_PLUGIN),compile)
 
@@ -452,6 +465,7 @@ check-npm-cli-pre-build: # Internal: run fhevm-npm checks that do not require ge
 	$(call run-fhevm-npm,check-ownership)
 	$(call run-fhevm-npm,check-package-json)
 	$(call run-fhevm-npm,check-dependencies)
+	$(call run-fhevm-npm,check-generations)
 	$(call run-fhevm-npm,check-scripts)
 	$(call run-fhevm-npm,check-tsc-mode)
 	$(call run-fhevm-npm,check-lockfiles)
@@ -488,8 +502,8 @@ check-npm-cli-post-build: compile-hh-v2-e2e compile-hh-v2-template # Internal: c
 .PHONY: check-post
 
 check-post: check-npm-cli-post-build ## Checks that require a generated and built tree
-	$(call run,$(W_V12),check)
-	$(call run,$(W_V13),check)
+	$(call run,$(W_CLEARTEXT_V_PREV),check)
+	$(call run,$(W_CLEARTEXT_V_CUR),check)
 	$(call run-hh-v2,$(W_HH_V2_PLUGIN),check)
 
 ########################################################################################################
@@ -500,12 +514,12 @@ check-post: check-npm-cli-post-build ## Checks that require a generated and buil
 ########################################################################################################
 
 .PHONY: lint-shared lint-cleartext lint-hh-v2
-.PHONY: lint-common lint-common-vendored lint-cleartext-v12 lint-cleartext-v13
+.PHONY: lint-common lint-common-vendored lint-cleartext-v-prev lint-cleartext-v-cur
 .PHONY: lint-hh-v2-plugin lint-hh-v2-template lint-hh-v2-e2e lint-hh-v3 lint-hh-v3-plugin lint-hh-v3-template lint-hh-v3-e2e lint-npm-cli
 
 lint-shared: lint-common lint-common-vendored
 
-lint-cleartext: lint-cleartext-v12 lint-cleartext-v13
+lint-cleartext: lint-cleartext-v-prev lint-cleartext-v-cur
 
 lint-hh-v2: lint-hh-v2-plugin lint-hh-v2-template lint-hh-v2-e2e
 
@@ -517,13 +531,13 @@ lint-common: ## Lint common
 lint-common-vendored: ## Lint common-vendored
 	$(call run,$(W_VENDORED),lint)
 
-lint-cleartext-v12: compile-cleartext-v12 ## Lint cleartext v12 (needs its own generated sources)
-	$(call run,$(W_V12),lint)
+lint-cleartext-v-prev: compile-cleartext-v-prev ## Lint the previous cleartext generation, V(N-1) (needs its own generated sources)
+	$(call run,$(W_CLEARTEXT_V_PREV),lint)
 
-lint-cleartext-v13: compile-cleartext-v13 ## Lint cleartext v13
-	$(call run,$(W_V13),lint)
+lint-cleartext-v-cur: compile-cleartext-v-cur ## Lint the current cleartext generation, V(N)
+	$(call run,$(W_CLEARTEXT_V_CUR),lint)
 
-lint-hh-v2-plugin: compile-cleartext-v13 ## Lint the Hardhat v2 plugin (its types resolve through v13/pkg)
+lint-hh-v2-plugin: compile-cleartext-v-cur ## Lint the Hardhat v2 plugin (its types resolve through V(N)'s pkg)
 	$(call run-hh-v2,$(W_HH_V2_PLUGIN),lint)
 
 lint-hh-v2-template: compile-hh-v2-plugin ## Lint the mirrored Hardhat v2 template against the built plugin
@@ -532,7 +546,7 @@ lint-hh-v2-template: compile-hh-v2-plugin ## Lint the mirrored Hardhat v2 templa
 lint-hh-v2-e2e: compile-hh-v2-plugin ## Lint Hardhat v2 e2e (self-provides typechain; needs the built plugin)
 	$(call run-hh-v2,$(W_HH_V2_E2E),lint)
 
-lint-hh-v3-plugin: compile-cleartext-v13 ## Lint the Hardhat v3 plugin (its types resolve through v13/pkg)
+lint-hh-v3-plugin: compile-cleartext-v-cur ## Lint the Hardhat v3 plugin (its types resolve through V(N)'s pkg)
 	$(call run-hh-v3,$(W_HH_V3_PLUGIN),lint)
 
 lint-hh-v3-template: compile-hh-v3-plugin ## Lint the Hardhat v3 template against the built plugin
@@ -553,14 +567,14 @@ lint-npm-cli: ## Typecheck and test the fhevm-npm CLI
 # silently rebuilds hides what it costs. `make ci` is the one-liner that orders the whole thing.
 ########################################################################################################
 
-.PHONY: test-cleartext-v12 test-cleartext-v13 test-hh-v2-plugin test-hh-v2-template test-hh-v3-plugin test-hh-v3-template
+.PHONY: test-cleartext-v-prev test-cleartext-v-cur test-hh-v2-plugin test-hh-v2-template test-hh-v3-plugin test-hh-v3-template
 .PHONY: test-hh-v2-e2e test-hh-v2-e2e-anvil test-hh-v3-e2e test-hh-v3-e2e-anvil test-consumer test-consumer-ci clean-scratch
 
-test-cleartext-v12: compile-cleartext-v12 ## Cleartext v12 unit + forge + harness tests (self-provides ./out)
-	$(call run,$(W_V12),test)
+test-cleartext-v-prev: compile-cleartext-v-prev ## Previous cleartext generation, V(N-1): unit + forge + harness tests (self-provides ./out)
+	$(call run,$(W_CLEARTEXT_V_PREV),test)
 
-test-cleartext-v13: compile-cleartext-v13 ## Cleartext v13 unit + forge + harness tests (self-provides ./out)
-	$(call run,$(W_V13),test)
+test-cleartext-v-cur: compile-cleartext-v-cur ## Current cleartext generation, V(N): unit + forge + harness tests (self-provides ./out)
+	$(call run,$(W_CLEARTEXT_V_CUR),test)
 
 test-hh-v2-plugin: compile-hh-v2-plugin ## Hardhat v2 plugin tests
 	$(call run-hh-v2,$(W_HH_V2_PLUGIN),test)
@@ -591,8 +605,8 @@ test-hh-v2-e2e-anvil: compile-hh-v2-e2e ## Hardhat v2 e2e tests against a local 
 # Separate tier: packs and installs each payload into a temp project and runs its suite. Minutes, not
 # seconds, so it is deliberately not part of `make test`.
 test-consumer: clean-scratch compile-hh-v2-template compile-hh-v3-plugin ## Install each published payload as a real consumer
-	$(call run-fhevm-npm,test-consumer ./host-contracts-cleartext/v12 --build-linked-dependencies --run)
-	$(call run-fhevm-npm,test-consumer ./host-contracts-cleartext/v13 --build-linked-dependencies --run)
+	$(call run-fhevm-npm,test-consumer ./$(DIR_CLEARTEXT_V_PREV) --build-linked-dependencies --run)
+	$(call run-fhevm-npm,test-consumer ./$(DIR_CLEARTEXT_V_CUR) --build-linked-dependencies --run)
 	$(call run-fhevm-npm,test-consumer ./hardhat/v2/fhevm-hardhat-template/pkg --build-linked-dependencies --run)
 	$(call run-hh-v2,$(W_HH_V2_PLUGIN),test:consumer)
 	$(call run-hh-v3,$(W_HH_V3_PLUGIN),test:consumer)
@@ -602,8 +616,8 @@ test-consumer: clean-scratch compile-hh-v2-template compile-hh-v3-plugin ## Inst
 # publish-mirror RENDER, which regenerates a public lockfile. Until that lands, this leg still proves a
 # fresh consumer install + test of the template against the live workspace payloads.
 test-consumer-ci: clean-scratch compile-hh-v2-template compile-hh-v3-plugin ## Run every consumer from its committed lockfile (template: fresh resolve, see comment)
-	$(call run-fhevm-npm,test-consumer ./host-contracts-cleartext/v12 --build-linked-dependencies --run --ci)
-	$(call run-fhevm-npm,test-consumer ./host-contracts-cleartext/v13 --build-linked-dependencies --run --ci)
+	$(call run-fhevm-npm,test-consumer ./$(DIR_CLEARTEXT_V_PREV) --build-linked-dependencies --run --ci)
+	$(call run-fhevm-npm,test-consumer ./$(DIR_CLEARTEXT_V_CUR) --build-linked-dependencies --run --ci)
 	$(call run-fhevm-npm,test-consumer ./hardhat/v2/fhevm-hardhat-template/pkg --build-linked-dependencies --run)
 	$(call run-hh-v2,$(W_HH_V2_PLUGIN),test:consumer)
 	$(call run-fhevm-npm,test-consumer ./hardhat/v3/plugin --build-linked-dependencies --run --ci)

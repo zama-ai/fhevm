@@ -22,6 +22,7 @@ export const commandNames = [
   'check-tsc-mode',
   'check-commit-scope',
   'check-cleartext-config',
+  'check-generations',
 ] as const;
 export type CommandName = (typeof commandNames)[number];
 
@@ -197,6 +198,12 @@ Prerequisite:
     .description('Check workspace membership and published-name uniqueness.')
     .action(() => {
       selected = 'check-workspaces';
+    });
+  program
+    .command('check-generations')
+    .description('Check that every dependency on a generation family targets V(N); only V(N) may depend on V(N-1).')
+    .action(() => {
+      selected = 'check-generations';
     });
   program
     .command('check-ownership')

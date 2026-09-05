@@ -12,6 +12,12 @@
   "tarballs": {
     "relPath": "./tarballs"
   },
+  "generations": {
+    "host-contracts-cleartext": {
+      "current": "./host-contracts-cleartext/v13",
+      "previous": "./host-contracts-cleartext/v12"
+    }
+  },
   "packageJson": {
     "published": {
       "required": ["name", "version", "description", "license", "repository"],

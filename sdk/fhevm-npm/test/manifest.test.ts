@@ -186,6 +186,72 @@ test('accepts a non-. workspace-root (an installation-root cluster) and its memb
   assert.equal(manifest.packages['./hardhat/v2/plugin/pkg']?.memberOf, './hardhat/v2');
 });
 
+const generationRoot = {
+  kind: 'workspace-root',
+  type: 'esm',
+  browser: false,
+  name: 'workspace',
+  private: true,
+  member: false,
+} as const;
+
+function generationDev(gen: string) {
+  return {
+    kind: 'dev',
+    type: 'esm',
+    browser: false,
+    name: `@scope/family-${gen}-dev`,
+    private: true,
+    member: true,
+    publishedRelPath: `./family/${gen}/pkg`,
+  } as const;
+}
+
+test('accepts a generations block naming V(N) and V(N-1) dev packages of one family', () => {
+  const manifest = parseNpmManifest({
+    generations: { family: { current: './family/v13', previous: './family/v12' } },
+    packageJson: { published: { required: ['name'], excluded: ['private'] } },
+    packages: {
+      '.': generationRoot,
+      './family/v12': generationDev('v12'),
+      './family/v13': generationDev('v13'),
+    },
+  });
+  assert.deepEqual(manifest.generations, { family: { current: './family/v13', previous: './family/v12' } });
+
+  const single = parseNpmManifest({
+    generations: { family: { current: './family/v13' } },
+    packageJson: { published: { required: ['name'], excluded: ['private'] } },
+    packages: { '.': generationRoot, './family/v13': generationDev('v13') },
+  });
+  assert.equal(single.generations?.family?.previous, undefined);
+});
+
+test('rejects a generations block that does not name two distinct dev packages of the family', () => {
+  const base = {
+    packageJson: { published: { required: ['name'], excluded: ['private'] } },
+    packages: {
+      '.': generationRoot,
+      './family/v12': generationDev('v12'),
+      './family/v13': generationDev('v13'),
+      './family/v13/pkg': { kind: 'published', type: 'esm', browser: false, name: '@scope/family', member: true },
+      './elsewhere': generationDev('v13'),
+    },
+  };
+  const cases: readonly [Record<string, unknown>, RegExp][] = [
+    [{}, /at least one package family/],
+    [{ family: {} }, /current/],
+    [{ family: { current: './family/v14' } }, /not a manifest package/],
+    [{ family: { current: './family/v13/pkg' } }, /not a dev package/],
+    [{ family: { current: './elsewhere' } }, /does not live under \.\/family\//],
+    [{ family: { current: './family/v13', previous: './family/v13' } }, /must differ/],
+    [{ family: { current: './family/v13', previous: './family/v12', next: './family/v14' } }, /next/],
+  ];
+  for (const [generations, message] of cases) {
+    assert.throws(() => parseNpmManifest({ ...base, generations }), message);
+  }
+});
+
 test('rejects bad memberOf declarations', () => {
   const base = {
     packageJson: { published: { required: ['name'], excluded: ['private'] } },
