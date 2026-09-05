@@ -292,7 +292,7 @@ pub fn is_supported_uint_fhe_type(fhe_type: u8) -> bool {
 
 /// `FheMulDiv` output types: euint8..euint64. The product of two euint128 factors would need a
 /// 256-bit intermediate, so euint128 is excluded (EVM `HCULimit.checkHCUForFheMulDiv`).
-pub fn is_mul_div_fhe_type(fhe_type: u8) -> bool {
+fn is_mul_div_fhe_type(fhe_type: u8) -> bool {
     matches!(fhe_type, 2..=5)
 }
 
