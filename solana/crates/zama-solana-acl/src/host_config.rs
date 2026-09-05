@@ -11,7 +11,7 @@
 //! The layout mirrors `zama-host`'s `HostConfig` (a fixed 301-byte account: 8-byte Anchor
 //! discriminator + 293-byte body) and is pinned against the program's own serializer by the
 //! host's `shared_crate_decoder_reads_what_the_program_serializes` state test, which feeds
-//! `try_serialize` output through this decoder with `paused` and its neighbouring flag set to
+//! `try_serialize` output through this decoder with `paused` and its neighboring flag set to
 //! *different* values, so exactly the slip described above fails there.
 //!
 //! Only what an off-chain reader acts on is decoded. Everything ahead of `paused` is walked past

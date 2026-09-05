@@ -726,7 +726,8 @@
         {
           "name": "host_config",
           "docs": [
-            "Singleton config PDA."
+            "Singleton config PDA. Carried for the account list the clients already build, and pinned to",
+            "the canonical singleton by its seeds; no flag on it gates this instruction."
           ],
           "pda": {
             "seeds": [
