@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                WITH decrements AS (\n                    SELECT dependent_id, count(*) AS n\n                    FROM unnest($1::bytea[]) AS dependent_id\n                    GROUP BY dependent_id\n                ),\n                updated AS (\n                    UPDATE dependence_chain AS dc\n                    SET dependency_count = GREATEST(dc.dependency_count - decrements.n, 0)\n                    FROM decrements\n                    WHERE dc.dependence_chain_id = decrements.dependent_id\n                    RETURNING dc.dependency_count\n                )\n                SELECT EXISTS (\n                    SELECT 1 FROM updated WHERE dependency_count = 0\n                ) AS \"dependent_became_ready!\"\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "dependent_became_ready!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "ByteaArray"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "4ef5b59a5e65de0035e680be0668cdbaf6cc9036b65315049d6a00f35434e044"
+}

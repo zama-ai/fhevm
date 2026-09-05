@@ -1,0 +1,73 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH ranked AS (\n                -- Two index-ordered arms, each already cut to a small\n                -- prefix, instead of one OR over the table. The planner\n                -- cannot serve an OR of two differently-indexed arms in\n                -- ORDER BY ... LIMIT form: it fell back to scanning every\n                -- dependency_count = 0 entry and sorting the whole pending\n                -- set per call (40 ms and 6k buffers at 300k chains on a\n                -- seeded database; 137k index tuples per call in\n                -- production). Each arm below is an ordered walk of its own\n                -- partial index that stops after the prefix.\n                --\n                -- The prefix is twice the requested count so that rows the\n                -- outer lock skips (held by another worker) still leave\n                -- enough to fill the request in the common case.\n                (\n                    SELECT dependence_chain_id, schedule_priority, last_updated_at,\n                           'updated_unowned' AS match_reason\n                    FROM dependence_chain\n                    WHERE status = 'updated'       -- Marked as updated by host-listener\n                      AND worker_id IS NULL        -- Ensure no other workers own it\n                      AND dependency_count = 0     -- No pending dependencies\n                      AND dependence_chain_id <> ALL($4)\n                    ORDER BY schedule_priority ASC, last_updated_at ASC\n                    LIMIT ($3::bigint) * 2\n                )\n                UNION ALL\n                (\n                    SELECT dependence_chain_id, schedule_priority, last_updated_at,\n                           'expired_lock' AS match_reason\n                    FROM dependence_chain\n                    -- Work-stealing of expired locks. No dependency_count\n                    -- predicate, deliberately: a lease exists only because a\n                    -- worker acquired the chain -- through the gate, the\n                    -- stale-gate repair, or the no-progress escalation, which\n                    -- bypasses the gate and leaves the count as it found it.\n                    -- Requiring count = 0 here left an escalated chain whose\n                    -- owner parked it or died reachable by NOTHING: the repair\n                    -- needs an unowned row, the sweep needs 'processed', and\n                    -- the listener's refresh touches neither worker_id nor the\n                    -- count.\n                    WHERE lock_expires_at < NOW()\n                      AND dependence_chain_id <> ALL($4)\n                    ORDER BY schedule_priority ASC, last_updated_at ASC\n                    LIMIT ($3::bigint) * 2\n                )\n            ),\n            candidate AS (\n                -- Lock the winners in global order and re-check the\n                -- predicate on the locked row version, as the single-scan\n                -- shape did: a row released or re-armed between the arm\n                -- scan and the lock is dropped here rather than acquired\n                -- on stale terms.\n                SELECT dc.dependence_chain_id, ranked.match_reason\n                FROM dependence_chain dc\n                JOIN ranked ON ranked.dependence_chain_id = dc.dependence_chain_id\n                WHERE (\n                        (dc.status = 'updated' AND dc.worker_id IS NULL AND dc.dependency_count = 0)\n                    OR  dc.lock_expires_at < NOW()\n                )\n                ORDER BY ranked.schedule_priority ASC, ranked.last_updated_at ASC -- highest priority first\n                FOR UPDATE OF dc SKIP LOCKED   -- Ensure no other worker is currently trying to lock it\n                LIMIT $3::bigint\n            )\n            UPDATE dependence_chain AS dc\n            SET\n                worker_id = $1,\n                status = 'processing',\n                lock_acquired_at = NOW(),\n                lock_expires_at = NOW() + make_interval(secs => $2)\n            FROM candidate\n            WHERE dc.dependence_chain_id = candidate.dependence_chain_id\n            RETURNING\n                dc.dependence_chain_id,\n                dc.worker_id,\n                dc.lock_acquired_at AS \"lock_acquired_at: DateTime<Utc>\",\n                dc.lock_expires_at AS \"lock_expires_at: DateTime<Utc>\",\n                dc.last_updated_at AS \"last_updated_at: DateTime<Utc>\",\n                dc.block_height,\n                dc.block_timestamp AS \"block_timestamp: DateTime<Utc>\",\n                dc.schedule_priority,\n                candidate.match_reason AS \"match_reason!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "dependence_chain_id",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "worker_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "lock_acquired_at: DateTime<Utc>",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "lock_expires_at: DateTime<Utc>",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 4,
+        "name": "last_updated_at: DateTime<Utc>",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 5,
+        "name": "block_height",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "block_timestamp: DateTime<Utc>",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 7,
+        "name": "schedule_priority",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 8,
+        "name": "match_reason!",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Float8",
+        "Int8",
+        "ByteaArray"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      true,
+      false,
+      true,
+      true,
+      false,
+      null
+    ]
+  },
+  "hash": "6cb70688ac584ca4e3731404a17397ee2b9c90ff43569c7ad423128dc5c8d7bd"
+}

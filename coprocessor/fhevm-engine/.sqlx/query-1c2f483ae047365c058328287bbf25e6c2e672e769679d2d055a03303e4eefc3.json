@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE dependence_chain SET dependents = ARRAY[]::bytea[] WHERE dependence_chain_id = ANY($1) AND dependents <> ARRAY[]::bytea[]",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "ByteaArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1c2f483ae047365c058328287bbf25e6c2e672e769679d2d055a03303e4eefc3"
+}

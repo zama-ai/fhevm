@@ -1,0 +1,87 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\nSELECT\n  c.output_handle,\n  c.dependencies,\n  c.fhe_operation,\n  c.is_scalar,\n  c.is_allowed,\n  c.is_error,\n  c.error_message,\n  c.transaction_id,\n  c.schedule_order,\n  c.operand_boundary_mask,\n  c.dependence_chain_id\nFROM computations c\nWHERE c.transaction_id IN (\n    SELECT deduped.transaction_id\n    FROM (\n      -- Collapse to one row per transaction before the LIMIT: a transaction\n      -- whose rows a fork-exposed database retained under a second chain is\n      -- ranked once per chain and would otherwise spend the window's LIMIT on\n      -- duplicates of itself. Ordering keeps the earliest of its ranks, the\n      -- same anchor the non-adaptive query uses.\n      SELECT\n        ranked.transaction_id,\n        MIN(ranked.schedule_order) AS schedule_order\n      FROM (\n        -- Rank each chain's transactions by first appearance in schedule\n        -- order. The lateral walks the chain oldest-first, so the first row\n        -- seen for a transaction carries its MIN(schedule_order), and\n        -- DENSE_RANK over that first appearance is the per-chain transaction\n        -- rank -- exact for every transaction that begins within the lateral's\n        -- row cap. A chain whose first `share` transactions do not all begin\n        -- within the cap contributes fewer transactions this cycle, never a\n        -- wrong one; see ADAPTIVE_WINDOW_ROWS_PER_TRANSACTION for the cap.\n        SELECT\n          first_seen.dependence_chain_id,\n          first_seen.transaction_id,\n          first_seen.schedule_order,\n          DENSE_RANK() OVER (\n            PARTITION BY first_seen.dependence_chain_id\n            ORDER BY first_seen.first_order, first_seen.transaction_id\n          ) AS dcid_transaction_rank\n        FROM (\n          SELECT\n            d.dependence_chain_id,\n            l.transaction_id,\n            l.schedule_order,\n            MIN(l.schedule_order) OVER (\n              PARTITION BY d.dependence_chain_id, l.transaction_id\n            ) AS first_order\n          FROM unnest($1::bytea[]) AS d(dependence_chain_id)\n          CROSS JOIN LATERAL (\n            SELECT transaction_id, schedule_order\n            FROM computations\n            WHERE dependence_chain_id = d.dependence_chain_id\n              AND is_completed = FALSE\n              AND is_allowed = TRUE\n              -- A retryable stamp stays selectable until it has spent its\n              -- attempts for this lane pass; past the threshold the row is\n              -- DEMOTED and the slow sweep re-arms it with the count reset.\n              -- Not terminal: the stamp is untouched and the row still pending.\n              AND (is_error = FALSE\n                   OR (error_message LIKE '%' || $4 || '%'\n                       AND ($5::smallint IS NULL OR error_retry_count < $5)))\n              -- DEMOTION IS TRANSACTION-SCOPED, because selection is: the\n              -- outer query loads every row of a selected transaction, so a\n              -- pending sibling would drag a demoted row back in forever, and\n              -- since the sibling defers rather than errors it would also keep\n              -- the chain out of 'processed', beyond the sweep's reach.\n              AND NOT EXISTS (\n                  SELECT 1\n                  FROM computations demoted\n                  WHERE demoted.transaction_id = computations.transaction_id\n                    AND demoted.is_completed = FALSE\n                    AND demoted.is_error = TRUE\n                    AND demoted.error_message LIKE '%' || $4 || '%'\n                    AND $5::smallint IS NOT NULL\n                    AND demoted.error_retry_count >= $5\n              )\n            ORDER BY schedule_order ASC\n            LIMIT $6\n          ) AS l\n        ) AS first_seen\n      ) AS ranked\n      WHERE ranked.dcid_transaction_rank <= $2\n      GROUP BY ranked.transaction_id\n    ) AS deduped\n    ORDER BY deduped.schedule_order ASC, deduped.transaction_id ASC\n    LIMIT $3\n)\n  -- Like the other windows: load ALL rows of the selected transactions,\n  -- fork-retained siblings included; ownership is re-applied in code, which\n  -- turns rows of other chains into recompute-only producers excluded from\n  -- results, persistence and completion.\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "output_handle",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "dependencies",
+        "type_info": "ByteaArray"
+      },
+      {
+        "ordinal": 2,
+        "name": "fhe_operation",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 3,
+        "name": "is_scalar",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 4,
+        "name": "is_allowed",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 5,
+        "name": "is_error",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 6,
+        "name": "error_message",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "transaction_id",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 8,
+        "name": "schedule_order",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 9,
+        "name": "operand_boundary_mask",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 10,
+        "name": "dependence_chain_id",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "ByteaArray",
+        "Int8",
+        "Int8",
+        "Text",
+        "Int2",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "b7739891d05dbafe9f929373523775eae9828424d5561db39da6a3c0ddc79032"
+}

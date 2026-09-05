@@ -244,6 +244,15 @@ export type State = {
   /** Per-party Connector deployment while a threshold KMS rollout is intentionally mixed. */
   kmsConnectorDeploymentByNodeId?: Record<string, KmsConnectorPartyDeployment>;
   overrides: LocalOverride[];
+  /** Local E2E-only escape hatch: build coprocessor images on public Debian bases. */
+  e2ePublicRuntime?: boolean;
+  /**
+   * Crash-safe marker for the explicit in-place public KMS connector runtime
+   * adoption. While set, `up --resume` replays only the connector runtime
+   * replacement (never the normal KMS connector step/migration) and clears the
+   * marker only after readiness plus the post-boot health gate succeed.
+   */
+  e2eKmsConnectorRuntimeAdoptionPending?: boolean;
   scenario: ResolvedScenario;
   scenarioSourcePath?: string;
   discovery?: Discovery;
@@ -259,6 +268,8 @@ export type UpOptions = {
   overrides: LocalOverride[];
   // True when overrides were expanded from --build (all groups) rather than explicit --override flags.
   build?: boolean;
+  /** Use public Debian runtime bases for locally-built coprocessor and KMS connector E2E images only. */
+  e2ePublicRuntime?: boolean;
   scenarioPath?: string;
   // Blue-green only: override `bcs.source` to `{mode: registry, tag: bcsTag}`.
   bcsTag?: string;
