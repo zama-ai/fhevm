@@ -70,7 +70,7 @@
       "max_cpi_instruction_data_bytes": 242
     },
     "redeem_settle": {
-      "compute_units": 294258,
+      "compute_units": 294283,
       "unique_accounts": 35,
       "instruction_data_bytes": 110,
       "cpi_instructions": 14,
@@ -78,7 +78,7 @@
       "max_cpi_instruction_data_bytes": 666
     },
     "settle": {
-      "compute_units": 301716,
+      "compute_units": 301741,
       "unique_accounts": 35,
       "instruction_data_bytes": 110,
       "cpi_instructions": 14,
