@@ -2332,6 +2332,12 @@ async fn tfhe_worker_cycle(
             // release must never become visible ahead of its computation
             // state on another connection.
             trx.commit().await?;
+            // Whether this worker held anything going into the release
+            // decides whether a refill can find anything new. With nothing
+            // held, `query_for_work` has just run the acquisition itself and
+            // come back empty; running it a second time here made every idle
+            // poll cost two acquisition queries per worker.
+            let held_before_release = !dcid_mngr.get_current_lock_ids().is_empty();
             dcid_mngr.release_completed_locks().await?;
             no_progress_cycles = 0;
 
@@ -2343,7 +2349,9 @@ async fn tfhe_worker_cycle(
                 dependence_chain_id = tracing::field::Empty
             );
 
-            let refill_limit = if args.dcid_batch_execution {
+            let refill_limit = if !held_before_release {
+                0
+            } else if args.dcid_batch_execution {
                 (args.dependence_chains_per_batch - dcid_mngr.get_current_lock_ids().len() as i32)
                     .max(0)
             } else {

@@ -231,44 +231,58 @@ impl LockMngr {
         let started_at = SystemTime::now();
         let row = sqlx::query_as::<_, DatabaseChainLock>(
             r#"
-            WITH candidate AS (
-                SELECT dependence_chain_id,
-                    CASE
-                        WHEN status = 'updated' AND worker_id IS NULL
-                            THEN 'updated_unowned'
-                        WHEN lock_expires_at < NOW()
-                            THEN 'expired_lock'
-                        END AS match_reason
-                FROM dependence_chain
-                WHERE
-                    (
-                        (
-                            status = 'updated'      -- Marked as updated by host-listener
-                            AND
-                            worker_id IS NULL       -- Ensure no other workers own it
-                            AND
-                            dependency_count = 0    -- No pending dependencies
-                        )
-                    OR  (
-                            lock_expires_at < NOW()  -- Work-stealing of expired locks
-                            AND
-                            dependency_count = 0     -- No pending dependencies
-                        )
-                )
-                -- Never re-acquire a chain this worker already holds. The
-                -- work-stealing branch above matches on expiry alone, so a
-                -- lease that lapsed while still held in memory is otherwise
-                -- stolen back by its own owner into a SECOND lock-set entry:
-                -- the extend statement then renews one row for two ids and
-                -- reports a permanent, false "Not all locks extended".
+            WITH ranked AS (
+                -- Two index-ordered arms, each already cut to a small
+                -- prefix, instead of one OR over the table. The planner
+                -- cannot serve an OR of two differently-indexed arms in
+                -- ORDER BY ... LIMIT form: it fell back to scanning every
+                -- dependency_count = 0 entry and sorting the whole pending
+                -- set per call (40 ms and 6k buffers at 300k chains on a
+                -- seeded database; 137k index tuples per call in
+                -- production). Each arm below is an ordered walk of its own
+                -- partial index that stops after the prefix.
                 --
-                -- Excluding `worker_id = $1` instead would be wrong. With
-                -- `--worker-id` configured the id is stable across restarts,
-                -- so a chain still stamped with it after a crash could never
-                -- be reclaimed by the only worker that will ever run.
-                AND dependence_chain_id <> ALL($4)
-                ORDER BY schedule_priority ASC, last_updated_at ASC -- highest priority first
-                FOR UPDATE SKIP LOCKED              -- Ensure no other worker is currently trying to lock it
+                -- The prefix is twice the requested count so that rows the
+                -- outer lock skips (held by another worker) still leave
+                -- enough to fill the request in the common case.
+                (
+                    SELECT dependence_chain_id, schedule_priority, last_updated_at,
+                           'updated_unowned' AS match_reason
+                    FROM dependence_chain
+                    WHERE status = 'updated'       -- Marked as updated by host-listener
+                      AND worker_id IS NULL        -- Ensure no other workers own it
+                      AND dependency_count = 0     -- No pending dependencies
+                      AND dependence_chain_id <> ALL($4)
+                    ORDER BY schedule_priority ASC, last_updated_at ASC
+                    LIMIT $3 * 2
+                )
+                UNION ALL
+                (
+                    SELECT dependence_chain_id, schedule_priority, last_updated_at,
+                           'expired_lock' AS match_reason
+                    FROM dependence_chain
+                    WHERE lock_expires_at < NOW()  -- Work-stealing of expired locks
+                      AND dependency_count = 0     -- No pending dependencies
+                      AND dependence_chain_id <> ALL($4)
+                    ORDER BY schedule_priority ASC, last_updated_at ASC
+                    LIMIT $3 * 2
+                )
+            ),
+            candidate AS (
+                -- Lock the winners in global order and re-check the
+                -- predicate on the locked row version, as the single-scan
+                -- shape did: a row released or re-armed between the arm
+                -- scan and the lock is dropped here rather than acquired
+                -- on stale terms.
+                SELECT dc.dependence_chain_id, ranked.match_reason
+                FROM dependence_chain dc
+                JOIN ranked ON ranked.dependence_chain_id = dc.dependence_chain_id
+                WHERE (
+                        (dc.status = 'updated' AND dc.worker_id IS NULL AND dc.dependency_count = 0)
+                    OR  (dc.lock_expires_at < NOW() AND dc.dependency_count = 0)
+                )
+                ORDER BY ranked.schedule_priority ASC, ranked.last_updated_at ASC -- highest priority first
+                FOR UPDATE OF dc SKIP LOCKED   -- Ensure no other worker is currently trying to lock it
                 LIMIT $3
             )
             UPDATE dependence_chain AS dc
