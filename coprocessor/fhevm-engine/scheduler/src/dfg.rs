@@ -69,6 +69,9 @@ impl Default for DFGOp {
     }
 }
 pub type ComponentEdge = ();
+/// A transaction's inner dataflow graph reduced to `(result handle,
+/// is_allowed)` per node; see `DFComponentGraph::blocked_dependents`.
+type ReducedGraph = Dag<(Handle, bool), OpEdge>;
 #[derive(Default)]
 pub struct ComponentNode {
     // Inner dataflow graph
@@ -334,13 +337,17 @@ pub struct DFComponentGraph {
     pub produced: HashMap<Handle, Vec<(NodeIndex, Handle)>>,
     pub results: Vec<DFGTxResult>,
     deferred_dependences: Vec<(NodeIndex, NodeIndex, Handle)>,
-    /// Allowed dependents of every owned internal producer, keyed by
-    /// `(transaction_id, producer handle)`. Taken by
+    /// Per transaction, the inner dataflow graph reduced to
+    /// `(result handle, is_allowed)` per node. Taken by
     /// [`Self::snapshot_blocked_dependents`] BEFORE scheduling, because the
     /// scheduler moves each transaction's inner graph out of its node at
     /// dispatch (`std::mem::take`) and never puts it back, so after
-    /// `schedule()` the edges this needs no longer exist here.
-    blocked_dependents: Option<HashMap<(Handle, Handle), Vec<Handle>>>,
+    /// `schedule()` the edges [`Self::allowed_dependents`] walks no longer
+    /// exist here. A reduced copy of the graph is O(V+E) per transaction and
+    /// answers for EVERY producer, unlike a per-producer list which is
+    /// quadratic on hub-shaped transactions and has to guess which producers
+    /// will need it.
+    blocked_dependents: Option<HashMap<Handle, ReducedGraph>>,
 }
 impl DFComponentGraph {
     pub fn build(&mut self, nodes: &mut Vec<ComponentNode>) -> Result<()> {
@@ -628,8 +635,8 @@ impl DFComponentGraph {
     pub fn allowed_dependents(&self, transaction_id: &[u8], handle: &[u8]) -> Vec<Handle> {
         if let Some(snapshot) = &self.blocked_dependents {
             return snapshot
-                .get(&(transaction_id.to_vec(), handle.to_vec()))
-                .cloned()
+                .get(transaction_id)
+                .map(|reduced| Self::allowed_dependents_in(reduced, handle))
                 .unwrap_or_default();
         }
         let Some((_, tx)) = self
@@ -639,58 +646,59 @@ impl DFComponentGraph {
         else {
             return vec![];
         };
-        let Some(start) = tx
-            .graph
+        Self::allowed_dependents_in(&Self::reduce(&tx.graph), handle)
+    }
+
+    /// Keep, for every transaction, what [`Self::allowed_dependents`] needs
+    /// to answer after scheduling: the inner graph's edges and each node's
+    /// `(result handle, is_allowed)`. Call this once the graph is fully built
+    /// and BEFORE handing it to the scheduler.
+    ///
+    /// Every producer is covered, whatever its `is_allowed`. The fallback
+    /// this serves fires whenever a failed handle's own row cannot carry the
+    /// verdict, and that is not only the internal producer the listener
+    /// stores `is_completed = TRUE`: an ALLOWED producer already persisted in
+    /// an earlier cycle is re-executed as a raw forward for its pending
+    /// consumers, and its direct stamp (`WHERE is_completed = false`) then
+    /// matches nothing either.
+    pub fn snapshot_blocked_dependents(&mut self) {
+        let snapshot = self
             .graph
             .node_references()
-            .find(|(_, node)| node.result_handle.as_slice() == handle)
+            .map(|(_, tx)| (tx.transaction_id.clone(), Self::reduce(&tx.graph)))
+            .collect();
+        self.blocked_dependents = Some(snapshot);
+    }
+
+    fn reduce(graph: &DFGraph) -> ReducedGraph {
+        graph.graph.map(
+            |_, node| (node.result_handle.clone(), node.is_allowed),
+            |_, edge| *edge,
+        )
+    }
+
+    /// The allowed handles transitively downstream of `handle` in a reduced
+    /// graph, excluding `handle` itself.
+    fn allowed_dependents_in(reduced: &ReducedGraph, handle: &[u8]) -> Vec<Handle> {
+        let Some(start) = reduced
+            .node_references()
+            .find(|(_, (result_handle, _))| result_handle.as_slice() == handle)
             .map(|(index, _)| index)
         else {
             return vec![];
         };
-        Self::allowed_dependents_from(&tx.graph, start)
-    }
-
-    /// Record, for every owned internal producer in every transaction, the
-    /// allowed handles its failure blocks. Call this once the graph is fully
-    /// built and BEFORE handing it to the scheduler.
-    ///
-    /// Only owned, non-allowed producers are indexed. An allowed producer's own
-    /// row is pending and carries its verdict directly; a foreign row's
-    /// verdicts belong to the chain that owns it and are never reported here.
-    /// An internal producer is the case the fallback exists for: the listener
-    /// stores it `is_completed = TRUE`, so nothing of its own can be stamped
-    /// and the verdict has to land on the allowed rows downstream of it.
-    pub fn snapshot_blocked_dependents(&mut self) {
-        let mut snapshot: HashMap<(Handle, Handle), Vec<Handle>> = HashMap::new();
-        for (_, tx) in self.graph.node_references() {
-            for (index, node) in tx.graph.graph.node_references() {
-                if !node.is_owned || node.is_allowed {
-                    continue;
-                }
-                snapshot.insert(
-                    (tx.transaction_id.clone(), node.result_handle.clone()),
-                    Self::allowed_dependents_from(&tx.graph, index),
-                );
-            }
-        }
-        self.blocked_dependents = Some(snapshot);
-    }
-
-    fn allowed_dependents_from(graph: &DFGraph, start: NodeIndex) -> Vec<Handle> {
-        let inner = &graph.graph;
         let mut seen = std::collections::HashSet::new();
         let mut stack = vec![start];
         let mut out = vec![];
         while let Some(current) = stack.pop() {
-            for edge in inner.edges_directed(current, Direction::Outgoing) {
+            for edge in reduced.edges_directed(current, Direction::Outgoing) {
                 let next = edge.target();
                 if !seen.insert(next) {
                     continue;
                 }
-                if let Some(node) = inner.node_weight(next) {
-                    if node.is_allowed {
-                        out.push(node.result_handle.clone());
+                if let Some((result_handle, is_allowed)) = reduced.node_weight(next) {
+                    if *is_allowed {
+                        out.push(result_handle.clone());
                     }
                 }
                 stack.push(next);
@@ -1134,11 +1142,11 @@ mod tests {
             after, expected,
             "the answer after dispatch must equal the pre-dispatch walk"
         );
-        assert!(
-            graph
-                .allowed_dependents(&transaction_id, &handle(0x02))
-                .is_empty(),
-            "an allowed producer carries its own verdict and is not indexed"
+        assert_eq!(
+            graph.allowed_dependents(&transaction_id, &handle(0x02)),
+            vec![handle(0x03)],
+            "an allowed producer is covered too: re-executed after an earlier \
+             completion, its own row cannot carry a verdict either"
         );
         assert!(
             graph

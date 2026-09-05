@@ -109,11 +109,13 @@ pub(crate) const GPU_RESERVATION_LEASE_FRACTION: f32 = 0.8;
 /// the operands, so no amount of patience running out turns it into a
 /// verdict.
 ///
-/// Substring matching is admittedly coarse, and it is now load-bearing in
-/// five places (this constant, the two work-window queries,
-/// `release_completed_locks` and [`query_dead_boundary_handles`]). A dedicated
-/// error-class column is the follow-up; until then, every one of those five
-/// sites must be changed together.
+/// Substring matching is admittedly coarse, and it is load-bearing in every
+/// predicate that reads a stamp: the three work-window queries,
+/// `release_completed_locks`, the slow-lane sweep and retention guard in
+/// `dependence_chain.rs`, and both probes in [`query_dead_boundary_handles`].
+/// All of them bind this constant rather than spelling the marker out, so
+/// changing it here changes them together. A dedicated error-class column is
+/// the follow-up.
 pub(crate) const RETRYABLE_STAMP_MARKER: &str = "RETRYABLE";
 
 /// Row cap of the adaptive window's per-chain lateral scan, as rows per
@@ -2760,13 +2762,14 @@ async fn query_dead_boundary_handles<'a>(
     for row in sqlx::query!(
         "SELECT c.output_handle,
                 (bool_or(c.is_error AND NOT c.is_completed
-                        AND (c.error_message IS NULL OR c.error_message NOT LIKE '%RETRYABLE%'))
+                        AND (c.error_message IS NULL OR c.error_message NOT LIKE '%' || $2 || '%'))
                  AND bool_and(NOT c.is_allowed OR (c.is_error AND NOT c.is_completed
-                        AND (c.error_message IS NULL OR c.error_message NOT LIKE '%RETRYABLE%')))) AS dead
+                        AND (c.error_message IS NULL OR c.error_message NOT LIKE '%' || $2 || '%')))) AS dead
          FROM computations c
          WHERE c.output_handle = ANY($1::BYTEA[])
          GROUP BY c.output_handle",
         &candidates,
+        RETRYABLE_STAMP_MARKER,
     )
     .fetch_all(trx.as_mut())
     .await?
@@ -2797,9 +2800,9 @@ async fn query_dead_boundary_handles<'a>(
             for row in sqlx::query!(
                 "SELECT c.output_handle,
                         (bool_or(c.is_error AND NOT c.is_completed
-                        AND (c.error_message IS NULL OR c.error_message NOT LIKE '%RETRYABLE%'))
+                        AND (c.error_message IS NULL OR c.error_message NOT LIKE '%' || $2 || '%'))
                  AND bool_and(NOT c.is_allowed OR (c.is_error AND NOT c.is_completed
-                        AND (c.error_message IS NULL OR c.error_message NOT LIKE '%RETRYABLE%')))) AS dead
+                        AND (c.error_message IS NULL OR c.error_message NOT LIKE '%' || $2 || '%')))) AS dead
                  FROM public.computations c
                  JOIN public.upgrade_state us
                    ON us.stack_role = 'GCS' AND us.host_chain_id = c.host_chain_id
@@ -2807,6 +2810,7 @@ async fn query_dead_boundary_handles<'a>(
                    AND c.block_number < us.start_block
                  GROUP BY c.output_handle",
                 &unseen,
+                RETRYABLE_STAMP_MARKER,
             )
             .fetch_all(trx.as_mut())
             .await?
