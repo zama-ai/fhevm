@@ -37,6 +37,7 @@ pub struct Withdraw<'info> {
     #[account(
         mut,
         constraint = owner_underlying.mint == underlying_mint.key() @ DemoVaultError::MintMismatch,
+        constraint = owner_underlying.owner == owner.key() @ DemoVaultError::OwnerMismatch,
     )]
     pub owner_underlying: Box<Account<'info, TokenAccount>>,
     /// SPL token program.

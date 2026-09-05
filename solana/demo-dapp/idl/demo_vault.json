@@ -105,7 +105,8 @@
         {
           "name": "depositor_shares",
           "docs": [
-            "Depositor's share token account (destination for minted shares)."
+            "Depositor's share token account (destination for minted shares). Pinned to the signer:",
+            "a client cannot redirect the credit to a third party."
           ],
           "writable": true
         },
