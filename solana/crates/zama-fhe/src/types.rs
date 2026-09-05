@@ -136,7 +136,7 @@ impl<T: FheTyped> StoredValue<T> {
             return Err(FheExecutionBuildError::UnsupportedFheType);
         }
         Ok(Self {
-            operand: Operand::persistent(handle, key.address()),
+            operand: Operand::persistent(handle, &key),
             marker: PhantomData,
         })
     }

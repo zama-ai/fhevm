@@ -3,17 +3,22 @@
 use anchor_lang::prelude::Pubkey;
 use std::marker::PhantomData;
 
+use crate::acl::{AppScope, EncryptedValueId};
+
 /// Makes a builder's `'id` lifetime invariant, so no two builders' identities are subtypes of one
 /// another and a value cannot be coerced from one builder into the next. Zero-sized: the identity
 /// exists only in the type checker, which is the point — the runtime tag it replaced was a
 /// compile-time constant on SBF, so on-chain it never caught anything.
 pub(crate) type BuilderIdentity<'id> = PhantomData<fn(&'id ()) -> &'id ()>;
 
-/// Persistent host operand identified by its `EncryptedValue` PDA.
+/// Persistent host operand: its handle and the `EncryptedValue` account holding it, with the
+/// authority whose signature admits the read and the application the value belongs to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct PersistentOperand {
     pub(crate) handle: [u8; 32],
     pub(crate) encrypted_value: Pubkey,
+    pub(crate) encrypted_value_account_authority: Pubkey,
+    pub(crate) app: AppScope,
 }
 
 /// Raw operand used by the lowering implementation.
@@ -40,10 +45,12 @@ pub(crate) enum OperandKind {
 }
 
 impl Operand {
-    pub(crate) fn persistent(handle: [u8; 32], encrypted_value: Pubkey) -> Self {
+    pub(crate) fn persistent(handle: [u8; 32], key: &EncryptedValueId) -> Self {
         Self(OperandKind::Persistent(PersistentOperand {
             handle,
-            encrypted_value,
+            encrypted_value: key.address(),
+            encrypted_value_account_authority: key.encrypted_value_account_authority,
+            app: key.app,
         }))
     }
 

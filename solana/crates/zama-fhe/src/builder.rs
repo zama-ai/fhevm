@@ -33,30 +33,25 @@
 //!   and the never-crosses claim has its own adversarial test there.
 //!
 //! One wall is deliberately *not* typed, because no app-side number can see it: the host's own
-//! CPI frame grows with created outputs times subjects per output, and for shared-audience
-//! `make_public` creates it aborts before the ceilings above do (16 eight-subject public
-//! creates land, the 17th dies host-side, while the app-side ceilings admit 20). That
-//! wall — like the host's heap cost for MMR-mature updates — is pinned by the boundary sweeps
-//! in `runtime-tests/tests/fhe_execute_boundary.rs` and documented in invariant #61;
-//! see `crate::cost`'s module doc for the mechanism. `FheExecution::cost`
-//! reports the exact packet bytes, trace floor, and tallied heap so an app composing a larger
-//! transaction can budget the rest.
+//! CPI frame grows with created outputs times allowed keys per output — and the host's heap cost
+//! for MMR-mature updates — which are pinned by the boundary sweeps in
+//! `runtime-tests/tests/fhe_execute_boundary.rs` and documented in invariant #61; see
+//! `crate::cost`'s module doc for the mechanism. `FheExecution::cost` reports the exact packet
+//! bytes, trace floor, and tallied heap so an app composing a larger transaction can budget the
+//! rest.
 
 use zama_host::{
-    CoprocessorInputAttestation, FheExecuteArgs, FheExecuteOperand, FheExecuteOutput,
+    AppScope, CoprocessorInputAttestation, FheExecuteArgs, FheExecuteOperand, FheExecuteOutput,
     FheExecuteStep, MAX_FHE_EXECUTION_STEPS,
 };
 
 use crate::accounts::{ExecutionAccountMeta, ExecutionEncryptedValueAccountAuthority};
-use crate::acl::Output;
+use crate::acl::{Output, OutputKind};
 use crate::execution::FheExecution;
 use crate::heap_tally::{HeapBudget, TalliedVec};
 use crate::lower::{lower_operand, lower_output, StepTables};
 use crate::operand::{BuilderIdentity, Operand, OperandKind};
-use crate::validate::{
-    validate_encrypted_value_account_authority, validate_lowered_execution,
-    validate_rand_steps_anchor_persistent_output,
-};
+use crate::validate::{validate_encrypted_value_account_authority, validate_lowered_execution};
 use crate::{FheExecutionBuildError, Result};
 
 /// Pubkey-oriented builder for `FheExecuteArgs`.
@@ -79,13 +74,16 @@ pub struct FheExecutionBuilder<'id> {
     pub(crate) persistent_producers: TalliedVec<anchor_lang::prelude::Pubkey>,
     pub(crate) remaining_accounts: TalliedVec<ExecutionAccountMeta>,
     /// Interned 32-byte constant dictionary the lowered steps reference by `u8` index (operand
-    /// handles, scalars, ACL domain keys, encrypted value account authorities, labels, subjects).
-    /// The entries are deliberately untyped so one entry can serve several roles; see
+    /// handles, scalars, programs, authorities, scopes, labels, seeds, allowed keys, previous
+    /// handles). The entries are deliberately untyped so one entry can serve several roles; see
     /// `FheExecuteArgs::dictionary` in zama-host for why typing them would cost packet bytes.
     pub(crate) dictionary: TalliedVec<[u8; 32]>,
     /// Coprocessor attestations backing `VerifiedInput` operands, referenced by index. Held here
     /// (rather than inline in the operand) so `Operand` stays `Copy`.
     pub(crate) verified_inputs: TalliedVec<CoprocessorInputAttestation>,
+    /// The application every persistent value of the execution belongs to, once one has been
+    /// referenced. The host meters, deny-checks and seeds on it, and refuses a second one.
+    pub(crate) app: Option<AppScope>,
     /// Persistent outputs committed so far that create their account — one system CPI each on
     /// the common host path, which is what [`crate::cost::instruction_trace_floor`] charges.
     /// Capped at [`crate::cost::MAX_PERSISTENT_CREATES`].
@@ -107,12 +105,18 @@ pub(crate) struct StepLowering<'b> {
     encrypted_value_account_authority: ExecutionEncryptedValueAccountAuthority,
     pub(crate) tables: StepTables<'b>,
     verified_inputs: &'b [CoprocessorInputAttestation],
+    /// The execution's application as this step sees it; adopted by the builder on commit.
+    app: Option<AppScope>,
 }
 
 impl StepLowering<'_> {
     pub(crate) fn operand(&mut self, operand: Operand) -> Result<FheExecuteOperand> {
+        if let OperandKind::Persistent(persistent) = operand.0 {
+            self.fold_app(persistent.app)?;
+        }
         lower_operand(
             &mut self.tables,
+            self.encrypted_value_account_authority,
             self.steps_len,
             self.verified_inputs,
             operand,
@@ -148,11 +152,25 @@ impl StepLowering<'_> {
     }
 
     pub(crate) fn output(&mut self, output: Output) -> Result<FheExecuteOutput> {
+        if let OutputKind::Persistent(persistent) = &output.0 {
+            self.fold_app(persistent.app())?;
+        }
         lower_output(
             &mut self.tables,
             self.encrypted_value_account_authority,
             output,
         )
+    }
+
+    /// Mirrors the host's one-application rule (`FheExecuteMixedScopes`): the first persistent
+    /// value fixes the execution's application, every later one must match.
+    fn fold_app(&mut self, app: AppScope) -> Result<()> {
+        match self.app {
+            None => self.app = Some(app),
+            Some(current) if current == app => {}
+            Some(_) => return Err(FheExecutionBuildError::MixedScopes),
+        }
+        Ok(())
     }
 }
 
@@ -193,6 +211,7 @@ impl<'id> FheExecutionBuilder<'id> {
             remaining_accounts,
             dictionary,
             verified_inputs,
+            app,
             persistent_creates,
             persistent_updates,
             has_rand_step,
@@ -205,6 +224,7 @@ impl<'id> FheExecutionBuilder<'id> {
             encrypted_value_account_authority: *encrypted_value_account_authority,
             tables: StepTables::open(remaining_accounts, dictionary, persistent_producers, budget),
             verified_inputs,
+            app: *app,
         };
         match lower(&mut lowering) {
             Ok(step) => {
@@ -212,14 +232,14 @@ impl<'id> FheExecutionBuilder<'id> {
                 let creates_account = matches!(
                     output,
                     FheExecuteOutput::StoredValue {
-                        previous_state: None,
+                        previous_handle_index: None,
                         ..
                     }
                 );
                 let updates_account = matches!(
                     output,
                     FheExecuteOutput::StoredValue {
-                        previous_state: Some(_),
+                        previous_handle_index: Some(_),
                         ..
                     }
                 );
@@ -247,6 +267,7 @@ impl<'id> FheExecutionBuilder<'id> {
                 *persistent_updates += usize::from(updates_account);
                 *has_rand_step |= is_rand;
                 *has_public_output |= makes_public;
+                *app = lowering.app;
                 lowering.tables.commit();
                 Ok(op_index)
             }
@@ -277,6 +298,7 @@ impl<'id> FheExecutionBuilder<'id> {
             remaining_accounts: reserved(&mut budget, MAX_FHE_EXECUTION_STEPS),
             dictionary: reserved(&mut budget, 2 * MAX_FHE_EXECUTION_STEPS),
             verified_inputs: TalliedVec::new(),
+            app: None,
             persistent_creates: 0,
             persistent_updates: 0,
             has_rand_step: false,
@@ -295,15 +317,14 @@ impl<'id> FheExecutionBuilder<'id> {
 
     /// Validates the accumulated execution and lowers it to an [`FheExecution`].
     ///
-    /// Mirrors the host preflight checks (non-empty steps, rand steps anchored by a persistent
-    /// output) so a malformed execution fails locally instead of on-chain; the step cap needs no
-    /// re-check because [`commit_step`](Self::commit_step) is the only way steps grow.
+    /// Mirrors the host preflight checks (non-empty steps, one application per execution) so a
+    /// malformed execution fails locally instead of on-chain; the step cap needs no re-check
+    /// because [`commit_step`](Self::commit_step) is the only way steps grow.
     ///
     /// Not mirrored (it depends on the deployed `hcu_block_cap_per_app`, unknown here): under a
-    /// finite block cap the host rejects a persist-nothing execution — one binding no persistent input, no
-    /// verified input, and no persistent output — with `FheExecuteUnanchoredUnderBlockCap`
-    /// (fhevm-internal#1744). Give such an execution a persistent output (the bootstrap/mint path) or a
-    /// verified input if it must run under a finite cap.
+    /// finite block cap the host rejects an execution that touches no persistent value — nothing
+    /// to meter — with `FheExecuteUnanchoredUnderBlockCap` (fhevm-internal#1744). Give such an
+    /// execution a persistent output if it must run under a finite cap.
     pub(crate) fn finish(self) -> Result<FheExecution> {
         validate_encrypted_value_account_authority(self.encrypted_value_account_authority)?;
         if self.steps.is_empty() {
@@ -314,15 +335,15 @@ impl<'id> FheExecutionBuilder<'id> {
             .iter()
             .filter(|meta| meta.requires_dynamic_account())
             .count();
-        let output_authorities = 1 + self
+        let value_authorities = 1 + self
             .remaining_accounts
             .iter()
-            .filter(|meta| meta.requires_output_authority())
+            .filter(|meta| meta.requires_value_authority())
             .count();
         let invoke_heap_bytes = crate::heap_tally::invoke_table_heap_bytes(
             self.remaining_accounts.len(),
             dynamic_accounts,
-            output_authorities,
+            value_authorities,
         );
         let account_count = u8::try_from(self.remaining_accounts.len())
             .map_err(|_| FheExecutionBuildError::TooManyRemainingAccounts)?;
@@ -353,7 +374,6 @@ impl<'id> FheExecutionBuilder<'id> {
             &mut used_accounts[..self.remaining_accounts.len()],
             &mut used_dictionary[..args.dictionary.len()],
         )?;
-        validate_rand_steps_anchor_persistent_output(&args.steps)?;
         let build_heap_bytes = self.budget.total();
         let cost = crate::cost::FheExecutionCost {
             steps: args.steps.len(),
@@ -366,10 +386,12 @@ impl<'id> FheExecutionBuilder<'id> {
             invoke_heap_bytes,
             remaining_accounts: self.remaining_accounts.len(),
             dynamic_accounts,
-            output_authorities,
+            value_authorities,
         };
         Ok(FheExecution {
             encrypted_value_account_authority: self.encrypted_value_account_authority,
+            app: self.app,
+            has_rand_step: self.has_rand_step,
             args,
             remaining_accounts: self.remaining_accounts.into_inner(),
             cost,

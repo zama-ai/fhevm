@@ -13,13 +13,14 @@
 //! those resolved accounts into the exact `zama-host` CPI. That build, resolve,
 //! invoke sequence is the only way the SDK reaches the host: an app program that
 //! knows its signer set up front can write it in three calls, and one that has to
-//! read the built execution first — for its output authorities, or for the subjects it
-//! newly grants — needs the execution in hand anyway.
+//! read the built execution first — for its value authorities, or for the application
+//! whose deny record and meter it must pass — needs the execution in hand anyway.
 //!
 //! The builder intentionally targets the current role-aware host fhe_execute ABI rather
 //! than the older `execute_frame` prototype (RFC-024's name for that sketch). Instruction-local intermediate
 //! values are returned by builder methods as typed transient [`Encrypted`] values;
-//! only [`Output::persistent`] creates ACL state. Binary, ternary, trivial-encrypt,
+//! only [`Output::persistent`] creates ACL state, and it allows the keys that may read the
+//! new handle inline ([`PersistentOutput::allow`]). Binary, ternary, trivial-encrypt,
 //! rand, and verified input steps can be composed in one execution.
 
 #![allow(unexpected_cfgs)]
@@ -43,13 +44,13 @@ mod validate;
 
 pub use accounts::{
     ExecutionAccountPurpose, ExecutionAccountRequirement, ExecutionEncryptedValueAccountAuthority,
-    ExecutionOutputAuthorityRequirement,
+    ExecutionValueAuthorityRequirement,
 };
 #[cfg(feature = "cpi")]
 pub use accounts::{ExecutionAccountResolutionError, ResolvedExecutionAccounts};
 pub use acl::{
-    BoundedU64UpperBound, Domain, EncryptedValueId, EncryptedValueLabel, Output, PersistentOutput,
-    PersistentOutputBinding,
+    AppScope, BoundedU64UpperBound, EncryptedValueId, EncryptedValueLabel, Output,
+    PersistentOutput, PersistentOutputBinding,
 };
 pub use builder::FheExecutionBuilder;
 pub use cost::{
@@ -107,14 +108,14 @@ pub enum FheExecutionBuildError {
     /// at all once the region ran out. The builder tallies every byte it asks the allocator
     /// for and charges the invoke-side account tables up front (both validated byte-for-byte
     /// against a counting allocator), so this fires exactly when the instruction cannot
-    /// survive. Fewer persistent outputs, narrower subject lists, or fewer embedded
+    /// survive. Fewer persistent outputs, shorter allow lists, or fewer embedded
     /// attestations shrink the shape; splitting the work across executions always works.
     ExceedsBuildHeapBudget,
     /// `finish` was called with no steps; the host rejects empty executions.
     EmptySteps,
-    /// `finish` was called on an execution with a rand step but no persistent output;
-    /// the host anchors rand seeds to persistent writes and rejects such executions.
-    RandRequiresPersistentOutput,
+    /// Persistent values of two applications `(program, scope)` in one execution; the host
+    /// meters, deny-checks and seeds one application per execution (`FheExecuteMixedScopes`).
+    MixedScopes,
     /// A scalar was supplied as the left-hand operand. The host invariant is
     /// scalar-RHS-only: the left operand must be an encrypted handle.
     ScalarLhsOperand,
@@ -130,10 +131,10 @@ pub enum FheExecutionBuildError {
     BinaryOperandTypeMismatch,
     /// Ternary operand handle types do not match the selected operator.
     TernaryOperandTypeMismatch,
-    /// A persistent output subject list would be rejected by the host.
-    InvalidSubjects,
-    /// The domain or the authority component of an encrypted value ID is the default pubkey, which
-    /// the host rejects.
+    /// An allowed key is the zero key or repeats another (host parity: `InvalidAllowKey`).
+    InvalidAllowKey,
+    /// The program or the authority component of an encrypted value ID is the default pubkey,
+    /// which can never sign or own a PDA.
     InvalidEncryptedValueId,
     /// The fixed encrypted value account authority is the default pubkey, so it can never sign.
     InvalidEncryptedValueAccountAuthority,

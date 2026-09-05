@@ -6,12 +6,38 @@ use zama_host::{CoprocessorInputAttestation, MAX_FHE_EXECUTION_STEPS};
 
 use crate::builder::FheExecutionBuilder;
 use crate::{
-    Domain, Encrypted, EncryptedValueId, EncryptedValueLabel,
+    AppScope, Encrypted, EncryptedValueId, EncryptedValueLabel,
     ExecutionEncryptedValueAccountAuthority, FheExecution, Output, PersistentOutput, Scalar, Uint,
     Uint64Handle,
 };
 
 use super::harness::balance_handle;
+
+/// The widest allow list the frontier explores per output: the eight-key audience the retired
+/// subject model capped at, kept so the boundary numbers stay comparable across the redesign.
+pub(crate) const WIDE_ALLOW_LIST: usize = 8;
+
+fn fresh_app() -> AppScope {
+    AppScope {
+        program: Pubkey::new_unique(),
+        scope: Pubkey::new_unique().to_bytes(),
+    }
+}
+
+/// `count` distinct allowed keys with `tag` in their first byte.
+fn allow_keys(tag: u8, count: usize) -> impl Iterator<Item = Pubkey> {
+    (0..count).map(move |key| {
+        let mut bytes = [0u8; 32];
+        bytes[0] = tag;
+        bytes[1] = key as u8 + 1;
+        bytes[31] = 1;
+        Pubkey::new_from_array(bytes)
+    })
+}
+
+fn allow_all(output: PersistentOutput, keys: impl Iterator<Item = Pubkey>) -> PersistentOutput {
+    keys.fold(output, PersistentOutput::allow)
+}
 
 /// Whether a persist-heavy shape's outputs create their accounts or update existing ones.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -21,99 +47,35 @@ pub(crate) enum PersistKind {
 }
 
 /// Pre-built app data for a persist-heavy shape: the persistent input the chain starts from and
-/// one ready persistent output per persisting step, each with `subjects_per_output` distinct
-/// subjects so every subject interns its own dictionary entry — the heaviest legal audience.
+/// one ready persistent output per persisting step, each allowing `allows_per_output` distinct
+/// keys so every key interns its own dictionary entry — the heaviest audience per output. A
+/// create carries a three-seed authority proof (tag, 32-byte owner, bump), the token shape.
 pub(crate) fn persist_shape_data(
     kind: PersistKind,
     outputs: usize,
-    subjects_per_output: usize,
+    allows_per_output: usize,
 ) -> (Uint64Handle, Vec<PersistentOutput>) {
     let authority = Pubkey::new_unique();
-    let domain = Domain::new(Pubkey::new_unique());
+    let app = fresh_app();
     let input = Uint64Handle::persistent(
         balance_handle(1),
-        EncryptedValueId::new(domain, authority, EncryptedValueLabel::new([0xfe; 32])),
+        EncryptedValueId::new(app, authority, EncryptedValueLabel::new([0xfe; 32])),
     )
     .expect("input handle");
+    let seed_owner = Pubkey::new_unique();
     let outputs = (0..outputs)
         .map(|index| {
-            let id = EncryptedValueId::new(
-                domain,
-                authority,
-                EncryptedValueLabel::new([index as u8; 32]),
-            );
-            let subjects: Vec<Pubkey> = (0..subjects_per_output)
-                .map(|subject| {
-                    let mut key = [0u8; 32];
-                    key[0] = 0x40 + index as u8;
-                    key[1] = subject as u8 + 1;
-                    key[31] = 1;
-                    Pubkey::new_from_array(key)
-                })
-                .collect();
-            match kind {
-                PersistKind::Create => PersistentOutput::create(id, subjects),
-                PersistKind::Update => {
-                    let current = zama_host::EncryptedValue {
-                        domain: domain.pubkey(),
-                        encrypted_value_account_authority: authority,
-                        label: [index as u8; 32],
-                        current_handle: balance_handle(0xB0 + index as u8),
-                        subjects: subjects.clone(),
-                        leaf_count: 0,
-                        peaks: Vec::new(),
-                        bump: 0,
-                    };
-                    PersistentOutput::update(id, subjects, &current)
+            let id =
+                EncryptedValueId::new(app, authority, EncryptedValueLabel::new([index as u8; 32]));
+            let output = match kind {
+                PersistKind::Create => {
+                    PersistentOutput::create(id, &[b"balance", seed_owner.as_ref(), &[255]])
                 }
-            }
-        })
-        .collect();
-    (input, outputs)
-}
-
-/// A full-depth all-update execution whose outputs share one audience. The shared subjects
-/// intern once in the dictionary, so the build stays cheap — but every update ships its
-/// previous state (handle plus the full subject list) inline in the packet, which is what
-/// makes this the shape that outgrows the CPI data limit before it outgrows the heap budget.
-pub(crate) fn shared_audience_update_shape(
-    outputs: usize,
-    subjects_per_output: usize,
-) -> (Uint64Handle, Vec<PersistentOutput>) {
-    let authority = Pubkey::new_unique();
-    let domain = Domain::new(Pubkey::new_unique());
-    let input = Uint64Handle::persistent(
-        balance_handle(1),
-        EncryptedValueId::new(domain, authority, EncryptedValueLabel::new([0xfe; 32])),
-    )
-    .expect("input handle");
-    let audience: Vec<Pubkey> = (0..subjects_per_output)
-        .map(|subject| {
-            let mut key = [0u8; 32];
-            key[0] = 0x70;
-            key[1] = subject as u8 + 1;
-            key[31] = 1;
-            Pubkey::new_from_array(key)
-        })
-        .collect();
-    let outputs = (0..outputs)
-        .map(|index| {
-            let id = EncryptedValueId::new(
-                domain,
-                authority,
-                EncryptedValueLabel::new([index as u8; 32]),
-            );
-            let current = zama_host::EncryptedValue {
-                domain: domain.pubkey(),
-                encrypted_value_account_authority: authority,
-                label: [index as u8; 32],
-                current_handle: balance_handle(0xB0 + index as u8),
-                subjects: audience.clone(),
-                leaf_count: 0,
-                peaks: Vec::new(),
-                bump: 0,
+                PersistKind::Update => {
+                    PersistentOutput::update(id, balance_handle(0xB0 + index as u8))
+                }
             };
-            PersistentOutput::update(id, audience.clone(), &current)
+            allow_all(output, allow_keys(0x40 + index as u8, allows_per_output))
         })
         .collect();
     (input, outputs)
@@ -205,37 +167,34 @@ pub(crate) fn persist_shape(
     kind: PersistKind,
     steps: usize,
     outputs: usize,
-    subjects: usize,
+    allows: usize,
 ) -> impl for<'id> FnOnce(&mut FheExecutionBuilder<'id>) -> crate::Result<()> {
-    let (input, outputs) = persist_shape_data(kind, outputs, subjects);
+    let (input, outputs) = persist_shape_data(kind, outputs, allows);
     chain_with_outputs(steps, input, outputs)
 }
 
-/// The invariant #61 counterexample shape: `creates` public outputs that all grant the same
-/// eight-subject audience. The shared subjects intern once in the dictionary, so the app-side
-/// ceilings price this shape like a narrow one — while the host materializes the audience per
-/// created account in its own CPI frame.
+/// The invariant #61 counterexample shape: `creates` public outputs that all allow the same
+/// eight keys. The shared keys intern once in the dictionary, so the app-side ceilings price
+/// this shape like a narrow one — while the host seals one leaf per key per created account in
+/// its own CPI frame.
 pub(crate) fn shared_audience_public_creates_shape(
     creates: usize,
 ) -> impl for<'id> FnOnce(&mut FheExecutionBuilder<'id>) -> crate::Result<()> {
     let authority = Pubkey::new_unique();
-    let domain = Domain::new(Pubkey::new_unique());
+    let app = fresh_app();
     let input = Uint64Handle::persistent(
         balance_handle(1),
-        EncryptedValueId::new(domain, authority, EncryptedValueLabel::new([0xfd; 32])),
+        EncryptedValueId::new(app, authority, EncryptedValueLabel::new([0xfd; 32])),
     )
     .expect("input handle");
-    let audience: Vec<Pubkey> = (0..zama_solana_acl::MAX_ENCRYPTED_VALUE_SUBJECTS)
-        .map(|subject| Pubkey::new_from_array([0x60 + subject as u8; 32]))
-        .collect();
     let outputs = (0..creates)
         .map(|index| {
-            let id = EncryptedValueId::new(
-                domain,
-                authority,
-                EncryptedValueLabel::new([index as u8; 32]),
-            );
-            PersistentOutput::create(id, audience.clone()).with_make_public(true)
+            let id =
+                EncryptedValueId::new(app, authority, EncryptedValueLabel::new([index as u8; 32]));
+            allow_all(
+                PersistentOutput::create(id, &[b"balance", &[255]]).make_public(),
+                allow_keys(0x60, WIDE_ALLOW_LIST),
+            )
         })
         .collect();
     chain_with_outputs(MAX_FHE_EXECUTION_STEPS, input, outputs)
@@ -258,10 +217,9 @@ pub(crate) fn reduction_shape(
     operands: usize,
 ) -> impl for<'id> FnOnce(&mut FheExecutionBuilder<'id>) -> crate::Result<()> {
     let authority = Pubkey::new_unique();
-    let domain = Domain::new(Pubkey::new_unique());
     let input = Uint64Handle::persistent(
         balance_handle(2),
-        EncryptedValueId::new(domain, authority, EncryptedValueLabel::new([0xfd; 32])),
+        EncryptedValueId::new(fresh_app(), authority, EncryptedValueLabel::new([0xfd; 32])),
     )
     .expect("input handle");
     move |builder| {

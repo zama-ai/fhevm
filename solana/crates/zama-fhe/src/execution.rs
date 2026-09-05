@@ -2,14 +2,14 @@
 //!
 //! Public API surface: app programs. The requirement accessors
 //! ([`FheExecution::dynamic_account_requirements`],
-//! [`FheExecution::output_authority_requirements`]) are how a caller that assembles the
+//! [`FheExecution::value_authority_requirements`]) are how a caller that assembles the
 //! transaction's account list — an off-chain client or a wrapping instruction — learns which
 //! dynamic accounts the execution needs and in which roles; resolution itself re-reads the
 //! account metas directly.
 
 use anchor_lang::prelude::Pubkey;
 
-use zama_host::{FheExecuteArgs, FheExecuteOutput, FheExecuteStep};
+use zama_host::{AppScope, FheExecuteArgs, FheExecuteOutput, FheExecuteStep};
 
 #[cfg(feature = "cpi")]
 use crate::accounts::{
@@ -17,7 +17,7 @@ use crate::accounts::{
 };
 use crate::accounts::{
     ExecutionAccountMeta, ExecutionAccountRequirement, ExecutionEncryptedValueAccountAuthority,
-    ExecutionOutputAuthorityRequirement,
+    ExecutionValueAuthorityRequirement,
 };
 use crate::builder::FheExecutionBuilder;
 #[cfg(feature = "cpi")]
@@ -34,6 +34,10 @@ use anchor_lang::prelude::AccountInfo;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FheExecution {
     pub(crate) encrypted_value_account_authority: ExecutionEncryptedValueAccountAuthority,
+    /// The application every persistent value belongs to; `None` for a transient-only execution.
+    pub(crate) app: Option<AppScope>,
+    /// Whether the execution has a rand step, and so must carry the host's rand nonce account.
+    pub(crate) has_rand_step: bool,
     pub(crate) args: FheExecuteArgs,
     /// Exact dynamic `remaining_accounts` order referenced by the `u8` indices
     /// inside `args`. Keep this coupled to `args`; `finish` validates every
@@ -100,6 +104,18 @@ impl FheExecution {
         self.encrypted_value_account_authority
     }
 
+    /// The application this execution runs as — the `(program, scope)` of every persistent value
+    /// it reads or writes — or `None` when it touches no persistent value. The host keys its deny
+    /// record, HCU meter and trust record on it, so this is what an app derives those PDAs from.
+    pub fn app(&self) -> Option<AppScope> {
+        self.app
+    }
+
+    /// Whether the invoke must carry the host's rand nonce account (any rand step).
+    pub fn has_rand_step(&self) -> bool {
+        self.has_rand_step
+    }
+
     /// What this execution costs against the transaction ceilings: exact packet bytes, the
     /// guaranteed instruction-trace floor, and the state-dependent worst case. An app composing
     /// a transaction with more than the minimal wrapper budgets its own instructions and CPIs
@@ -120,41 +136,42 @@ impl FheExecution {
     /// Resolves unordered app-supplied accounts into the exact host
     /// `remaining_accounts` order for this execution.
     ///
-    /// `dynamic_accounts` must contain only non-authority execution accounts such as
-    /// persistent input ACLs, permission records, transient sessions, and writable
-    /// persistent output ACL records. `output_authorities` must contain signer
-    /// witnesses for persistent outputs whose authority is not the fixed CPI
+    /// `dynamic_accounts` must contain only non-authority execution accounts: persistent input
+    /// and writable persistent output `EncryptedValue` accounts. `value_authorities` must contain
+    /// signer witnesses for every persistent value whose authority is not the fixed CPI
     /// `encrypted_value_account_authority`.
     pub fn resolve_accounts<'info>(
         &self,
         dynamic_accounts: impl IntoIterator<Item = AccountInfo<'info>>,
-        output_authorities: impl IntoIterator<Item = AccountInfo<'info>>,
+        value_authorities: impl IntoIterator<Item = AccountInfo<'info>>,
     ) -> std::result::Result<ResolvedExecutionAccounts<'info>, ExecutionAccountResolutionError>
     {
-        resolve_execution_accounts(self, dynamic_accounts, output_authorities)
+        resolve_execution_accounts(self, dynamic_accounts, value_authorities)
     }
 
-    pub fn output_authority_requirements(
+    /// Every authority that must sign: the fixed CPI signer first, then each persistent value's
+    /// own authority that differs from it.
+    pub fn value_authority_requirements(
         &self,
-    ) -> impl Iterator<Item = ExecutionOutputAuthorityRequirement> + '_ {
-        std::iter::once(ExecutionOutputAuthorityRequirement {
+    ) -> impl Iterator<Item = ExecutionValueAuthorityRequirement> + '_ {
+        std::iter::once(ExecutionValueAuthorityRequirement {
             pubkey: self.encrypted_value_account_authority.pubkey(),
         })
         .chain(
-            self.additional_output_authorities()
-                .map(|pubkey| ExecutionOutputAuthorityRequirement { pubkey }),
+            self.additional_value_authorities()
+                .map(|pubkey| ExecutionValueAuthorityRequirement { pubkey }),
         )
     }
 
-    pub fn output_authorities(&self) -> impl Iterator<Item = Pubkey> + '_ {
-        self.output_authority_requirements()
+    pub fn value_authorities(&self) -> impl Iterator<Item = Pubkey> + '_ {
+        self.value_authority_requirements()
             .map(|requirement| requirement.pubkey())
     }
 
-    pub fn additional_output_authorities(&self) -> impl Iterator<Item = Pubkey> + '_ {
+    pub fn additional_value_authorities(&self) -> impl Iterator<Item = Pubkey> + '_ {
         self.remaining_accounts
             .iter()
-            .filter(|account| account.requires_output_authority())
+            .filter(|account| account.requires_value_authority())
             .map(|account| account.pubkey)
     }
 
@@ -166,9 +183,9 @@ impl FheExecution {
     /// packet serialized once — an execution is a single-use request, and keeping it borrowable
     /// here would force a deep copy of every step and dictionary entry on the never-freeing
     /// program heap just to set one byte.
-    pub fn invoke<'a, 'info>(
+    pub fn invoke<'info>(
         mut self,
-        accounts: ExecutionCpiAccounts<'a, 'info>,
+        accounts: ExecutionCpiAccounts<'info>,
         resolved_accounts: &ResolvedExecutionAccounts<'info>,
         signer_seeds: &[&[&[u8]]],
     ) -> anchor_lang::prelude::Result<()> {
@@ -178,39 +195,6 @@ impl FheExecution {
             resolved_accounts,
             signer_seeds,
         )
-    }
-
-    /// Subjects this execution newly grants through persistent outputs: every output
-    /// subject on a create, and `output_subjects \ previous_state.subjects` on a
-    /// update that replaces its audience. The host deny-list-checks each of
-    /// these exactly like `allow_subjects`, so an app forwarding deny-record
-    /// witnesses must cover them alongside the grant authority whenever the
-    /// execution actually adds a subject.
-    pub fn newly_granted_subjects(&self) -> Vec<Pubkey> {
-        let mut added = Vec::new();
-        for step in &self.args.steps {
-            let FheExecuteOutput::StoredValue {
-                output_subject_indexes,
-                previous_state,
-                ..
-            } = fhe_execute_step_output(step)
-            else {
-                continue;
-            };
-            for index in output_subject_indexes {
-                // `finish` validated every dictionary index, so resolution cannot fail here.
-                let Ok(subject) = self.args.dictionary_key(*index) else {
-                    continue;
-                };
-                let already_stored = previous_state
-                    .as_ref()
-                    .is_some_and(|previous| previous.subjects.contains(&subject));
-                if !already_stored && !added.contains(&subject) {
-                    added.push(subject);
-                }
-            }
-        }
-        added
     }
 }
 

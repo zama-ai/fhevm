@@ -18,21 +18,28 @@ use crate::accounts::ResolvedExecutionAccounts;
 #[cfg(feature = "cpi")]
 use crate::execution::FheExecution;
 
+/// The fixed accounts of one `fhe_execute` CPI. The per-execution ones — the application's deny
+/// record and the host's rand nonce — are derived from the built execution: `FheExecution::app`
+/// names the `(program, scope)` the deny record is keyed on, `FheExecution::has_rand_step` says
+/// whether the nonce is needed.
 #[cfg(feature = "cpi")]
-pub struct ExecutionCpiAccounts<'a, 'info> {
+pub struct ExecutionCpiAccounts<'info> {
     pub payer: AccountInfo<'info>,
-    pub compute_subject: AccountInfo<'info>,
     pub encrypted_value_account_authority: AccountInfo<'info>,
     pub host_config: AccountInfo<'info>,
-    pub deny_subject_records: &'a [AccountInfo<'info>],
+    /// The application's `DenyScopeRecord`, required while the host's deny list is enabled and
+    /// refused while it is disabled.
+    pub deny_scope_record: Option<AccountInfo<'info>>,
     pub system_program: AccountInfo<'info>,
-    /// Per-`compute_subject` HCU block meter (mut). The host keys the meter on `compute_subject`, so
-    /// untrusted subjects in the metering band supply it; trusted subjects and the unrestricted
-    /// default pass `None`.
+    /// Per-application HCU block meter (mut), keyed on the execution's `(program, scope)`.
+    /// Untrusted applications in the metering band supply it; trusted applications and the
+    /// unrestricted default pass `None`.
     pub hcu_block_meter: Option<AccountInfo<'info>>,
-    /// HCU trust witness (read-only), keyed on `compute_subject`. `Some` + valid ⇒ bypass; `None` ⇒
-    /// untrusted (metered).
+    /// HCU trust witness (read-only), keyed on the execution's `(program, scope)`. `Some` + valid
+    /// ⇒ bypass; `None` ⇒ untrusted (metered).
     pub hcu_trusted_app_record: Option<AccountInfo<'info>>,
+    /// The host's rand nonce (mut), required exactly when the execution has a rand step.
+    pub rand_nonce: Option<AccountInfo<'info>>,
     pub event_authority: AccountInfo<'info>,
     pub program: AccountInfo<'info>,
 }
@@ -52,9 +59,9 @@ impl<'info> ExecutionAccountResolver<'info> for ResolvedExecutionAccounts<'info>
 /// Invokes `zama-host::fhe_execute` with accounts pre-resolved from a [`FheExecution`].
 /// App-facing surface: [`FheExecution::invoke`].
 #[cfg(feature = "cpi")]
-pub(crate) fn invoke_execution_signed_resolved<'a, 'info>(
+pub(crate) fn invoke_execution_signed_resolved<'info>(
     execution: &mut FheExecution,
-    accounts: ExecutionCpiAccounts<'a, 'info>,
+    accounts: ExecutionCpiAccounts<'info>,
     resolved_accounts: &ResolvedExecutionAccounts<'info>,
     signer_seeds: &[&[&[u8]]],
 ) -> anchor_lang::prelude::Result<()> {
@@ -62,9 +69,9 @@ pub(crate) fn invoke_execution_signed_resolved<'a, 'info>(
 }
 
 #[cfg(feature = "cpi")]
-fn invoke_execution_signed_with_resolver<'a, 'info, R>(
+fn invoke_execution_signed_with_resolver<'info, R>(
     execution: &mut FheExecution,
-    accounts: ExecutionCpiAccounts<'a, 'info>,
+    accounts: ExecutionCpiAccounts<'info>,
     resolver: &R,
     signer_seeds: &[&[&[u8]]],
 ) -> anchor_lang::prelude::Result<()>
@@ -76,26 +83,30 @@ where
     {
         return Err(anchor_lang::error::ErrorCode::ConstraintAddress.into());
     }
-    let deny_subject_records = accounts.deny_subject_records;
+    let deny_scope_record = accounts.deny_scope_record;
     let fixed_accounts = zama_host::cpi::accounts::FheExecute {
         payer: accounts.payer,
-        compute_subject: accounts.compute_subject,
         encrypted_value_account_authority: accounts.encrypted_value_account_authority,
         host_config: accounts.host_config,
         system_program: accounts.system_program,
         hcu_block_meter: accounts.hcu_block_meter,
         hcu_trusted_app_record: accounts.hcu_trusted_app_record,
+        rand_nonce: accounts.rand_nonce,
         event_authority: accounts.event_authority,
         program: accounts.program,
     };
-    let (account_metas, account_infos) =
-        fhe_execute_account_tables(&fixed_accounts, execution, resolver, deny_subject_records)?;
+    let (account_metas, account_infos) = fhe_execute_account_tables(
+        &fixed_accounts,
+        execution,
+        resolver,
+        deny_scope_record.as_ref(),
+    )?;
 
-    // The execution self-describes its `remaining_accounts` length (DD-033). Deny-record
-    // witnesses are appended per transaction, so the final count is only known here — stamped in
+    // The execution self-describes its `remaining_accounts` length (DD-033). The deny-record
+    // witness is appended per transaction, so the final count is only known here — stamped in
     // place: `invoke` consumed the execution, so nothing can observe the mutation.
     execution.args.account_count =
-        u8::try_from(execution.remaining_accounts.len() + deny_subject_records.len())
+        u8::try_from(execution.remaining_accounts.len() + usize::from(deny_scope_record.is_some()))
             .map_err(|_| anchor_lang::error::ErrorCode::AccountNotEnoughKeys)?;
 
     let instruction = Instruction {
@@ -119,14 +130,15 @@ pub(crate) fn fhe_execute_account_tables<'info, R>(
     fixed_accounts: &zama_host::cpi::accounts::FheExecute<'info>,
     execution: &FheExecution,
     resolver: &R,
-    deny_subject_records: &[AccountInfo<'info>],
+    deny_scope_record: Option<&AccountInfo<'info>>,
 ) -> anchor_lang::prelude::Result<(Vec<AccountMeta>, Vec<AccountInfo<'info>>)>
 where
     R: ExecutionAccountResolver<'info> + ?Sized,
 {
     let mut account_metas = fixed_accounts.to_account_metas(None);
     let mut account_infos = fixed_accounts.to_account_infos();
-    let dynamic_tail = execution.remaining_accounts.len() + deny_subject_records.len();
+    let dynamic_tail =
+        execution.remaining_accounts.len() + usize::from(deny_scope_record.is_some());
     account_metas.reserve_exact(dynamic_tail);
     account_infos.reserve_exact(dynamic_tail);
     for required in &execution.remaining_accounts {
@@ -141,9 +153,9 @@ where
         account_metas.push(meta);
         account_infos.push(account);
     }
-    for record in deny_subject_records.iter().cloned() {
+    if let Some(record) = deny_scope_record {
         account_metas.push(AccountMeta::new_readonly(record.key(), false));
-        account_infos.push(record);
+        account_infos.push(record.clone());
     }
     Ok((account_metas, account_infos))
 }

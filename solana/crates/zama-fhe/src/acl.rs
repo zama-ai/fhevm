@@ -1,42 +1,21 @@
 //! Persistent-output addressing and ACL policy types.
 //!
-//! Public API surface: app programs. The bounded-randomness constructors and the audience types
-//! are how an app declares who may read a persistent output, so they are exported for callers
-//! outside this repository.
+//! Public API surface: app programs. [`PersistentOutput`] is how an app declares a write — which
+//! account it creates or updates, which keys may read the new handle — so it is exported for
+//! callers outside this repository.
 
 use crate::types::FheType;
 
 use anchor_lang::prelude::Pubkey;
 
-use zama_host::encrypted_value_address;
+use zama_host::{encrypted_value_address, PdaSeed};
 
-use crate::validate::{validate_encrypted_value_id, validate_subjects};
+use crate::validate::{validate_allow_keys, validate_encrypted_value_id};
 use crate::{FheExecutionBuildError, Result};
 
-/// App-level ACL domain of an `EncryptedValue` account, such as a confidential token mint.
-///
-/// A domain and the account it scopes are both plain pubkeys, so the two used to be
-/// interchangeable at every derivation site; this type is what makes swapping them a compile
-/// error instead of a wrong PDA.
-///
-/// `repr(transparent)`, so a domain is passed exactly like the pubkey it wraps. What the wrapper
-/// still costs is the copy its constructor makes: measured across the snapshotted instructions,
-/// between 0 and 16 CU each depending on how the surrounding code inlines it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[repr(transparent)]
-pub struct Domain(Pubkey);
+pub use zama_host::AppScope;
 
-impl Domain {
-    pub const fn new(pubkey: Pubkey) -> Self {
-        Self(pubkey)
-    }
-
-    pub const fn pubkey(self) -> Pubkey {
-        self.0
-    }
-}
-
-/// The encrypted value label: an encrypted value ID's third component.
+/// The encrypted value label: an encrypted value ID's last component.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct EncryptedValueLabel([u8; 32]);
 
@@ -50,14 +29,13 @@ impl EncryptedValueLabel {
     }
 }
 
-/// App-domain key of a stable `EncryptedValue` account.
+/// App-level key of a stable `EncryptedValue` account.
 ///
-/// Addressing is stable per `(domain, encrypted value account authority, encrypted value
-/// label)` — it does not change
-/// on handle updates, unlike the old nonce-keyed ACL records.
+/// Addressing is stable per `(program, encrypted value account authority, scope, label)` — it
+/// does not change on handle updates.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EncryptedValueId {
-    pub(crate) domain: Domain,
+    pub(crate) app: AppScope,
     pub(crate) encrypted_value_account_authority: Pubkey,
     pub(crate) label: EncryptedValueLabel,
     /// The encrypted value account's PDA and bump, derived once at construction: on-chain the
@@ -70,38 +48,29 @@ pub struct EncryptedValueId {
 impl EncryptedValueId {
     /// ```
     /// use anchor_lang::prelude::Pubkey;
-    /// use zama_fhe::{Domain, EncryptedValueId, EncryptedValueLabel};
+    /// use zama_fhe::{AppScope, EncryptedValueId, EncryptedValueLabel};
     ///
+    /// let program = Pubkey::new_unique();
     /// let mint = Pubkey::new_unique();
     /// let token_account = Pubkey::new_unique();
-    /// let id = EncryptedValueId::new(Domain::new(mint), token_account, EncryptedValueLabel::new([1; 32]));
-    /// assert_eq!(id.domain().pubkey(), mint);
+    /// let app = AppScope { program, scope: mint.to_bytes() };
+    /// let id = EncryptedValueId::new(app, token_account, EncryptedValueLabel::new([1; 32]));
+    /// assert_eq!(id.app(), app);
     /// assert_eq!(id.encrypted_value_account_authority(), token_account);
     /// ```
-    ///
-    /// Passing the two pubkeys the other way round does not compile, so a swapped pair can no
-    /// longer address a different encrypted value account than the app meant:
-    ///
-    /// ```compile_fail
-    /// use anchor_lang::prelude::Pubkey;
-    /// use zama_fhe::{Domain, EncryptedValueId, EncryptedValueLabel};
-    ///
-    /// let mint = Pubkey::new_unique();
-    /// let token_account = Pubkey::new_unique();
-    /// EncryptedValueId::new(token_account, Domain::new(mint), EncryptedValueLabel::new([1; 32]));
-    /// ```
     pub fn new(
-        domain: Domain,
+        app: AppScope,
         encrypted_value_account_authority: Pubkey,
         label: EncryptedValueLabel,
     ) -> Self {
-        let (address, bump) = encrypted_value_address(zama_solana_acl::derive_encrypted_value_id(
-            domain.pubkey().to_bytes(),
-            encrypted_value_account_authority.to_bytes(),
+        let (address, bump) = encrypted_value_address(
+            app.program,
+            encrypted_value_account_authority,
+            app.scope,
             label.bytes(),
-        ));
+        );
         Self {
-            domain,
+            app,
             encrypted_value_account_authority,
             label,
             address,
@@ -119,8 +88,10 @@ impl EncryptedValueId {
         self.address
     }
 
-    pub fn domain(&self) -> Domain {
-        self.domain
+    /// The application the value belongs to: the program that controls its authority and the
+    /// scope that program declared. Every host policy (metering, deny list, permits) keys on it.
+    pub fn app(&self) -> AppScope {
+        self.app
     }
 
     pub fn encrypted_value_account_authority(&self) -> Pubkey {
@@ -130,68 +101,67 @@ impl EncryptedValueId {
     pub fn encrypted_value_label(&self) -> EncryptedValueLabel {
         self.label
     }
-
-    pub fn encrypted_value_id(&self) -> [u8; 32] {
-        zama_solana_acl::derive_encrypted_value_id(
-            self.domain.pubkey().to_bytes(),
-            self.encrypted_value_account_authority.to_bytes(),
-            self.label.bytes(),
-        )
-    }
 }
 
-/// Previous on-chain state a persistent output updates. `None` means this bind
-/// is the encrypted value account's first (the `EncryptedValue` PDA is created).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct PreviousEncryptedValueAccountState {
-    pub(crate) handle: [u8; 32],
-    pub(crate) subjects: Vec<Pubkey>,
-}
-
-/// Persistent output descriptor accepted by persistent-only steps such as input bind.
+/// Persistent output descriptor: which `EncryptedValue` account a step writes, and who may read
+/// the handle it produces.
+///
+/// Allowing happens on the write and nowhere else (EVM `FHE.allow` after every state change):
+/// each [`allow`](Self::allow) seals one historical-access leaf for the new handle. A write with
+/// no allows is legal; its handle is then decryptable by nobody until a later write allows.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PersistentOutput {
     key: EncryptedValueId,
-    subjects: Vec<Pubkey>,
-    previous: Option<PreviousEncryptedValueAccountState>,
+    authority_seeds: Vec<PdaSeed>,
+    allows: Vec<Pubkey>,
+    previous_handle: Option<[u8; 32]>,
     make_public: bool,
 }
 
 impl PersistentOutput {
-    /// First bind for an encrypted value account: creates the `EncryptedValue` PDA.
-    pub fn create(key: EncryptedValueId, subjects: Vec<Pubkey>) -> Self {
+    /// First write to an encrypted value account: creates the `EncryptedValue` PDA.
+    ///
+    /// `authority_seeds` are the seeds (bump last) that derive the account's authority under
+    /// the id's program — the same slices the program signs the CPI with. The host re-derives
+    /// the authority from them, which is what makes `(program, scope)` unforgeable.
+    pub fn create(key: EncryptedValueId, authority_seeds: &[&[u8]]) -> Self {
         Self {
             key,
-            subjects,
-            previous: None,
+            authority_seeds: authority_seeds
+                .iter()
+                .map(|seed| PdaSeed::Literal {
+                    bytes: seed.to_vec(),
+                })
+                .collect(),
+            allows: Vec::new(),
+            previous_handle: None,
             make_public: false,
         }
     }
 
-    /// Updates an existing encrypted value account. `current` must be read from
-    /// the on-chain account in the same instruction; the host verifies its
-    /// handle and subjects exactly.
-    pub fn update(
-        key: EncryptedValueId,
-        subjects: Vec<Pubkey>,
-        current: &zama_host::EncryptedValue,
-    ) -> Self {
+    /// Updates an existing encrypted value account. `current_handle` must be the handle the
+    /// account holds when the instruction runs; the host refuses a stale echo, so an execution
+    /// built on outdated state fails instead of overwriting a newer handle.
+    pub fn update(key: EncryptedValueId, current_handle: [u8; 32]) -> Self {
         Self {
             key,
-            subjects,
-            previous: Some(PreviousEncryptedValueAccountState {
-                handle: current.current_handle,
-                subjects: current.subjects.clone(),
-            }),
+            authority_seeds: Vec::new(),
+            allows: Vec::new(),
+            previous_handle: Some(current_handle),
             make_public: false,
         }
     }
 
-    /// Opts this output into being created publicly decryptable: the host seals a
-    /// public-decrypt leaf for the newly bound handle inside the same fhe_execute CPI
-    /// (EVM `unwrap`'s `makePubliclyDecryptable` parity; DD-036).
-    pub fn with_make_public(mut self, make_public: bool) -> Self {
-        self.make_public = make_public;
+    /// Allows `key` to decrypt the handle this write produces.
+    pub fn allow(mut self, key: Pubkey) -> Self {
+        self.allows.push(key);
+        self
+    }
+
+    /// Seals the produced handle publicly decryptable inside the same fhe_execute CPI (EVM
+    /// `makePubliclyDecryptable` parity; DD-036).
+    pub fn make_public(mut self) -> Self {
+        self.make_public = true;
         self
     }
 
@@ -200,7 +170,7 @@ impl PersistentOutput {
     /// never-freeing program heap, the binding they would discard costs real reserve bytes.
     pub fn validate(&self) -> Result<()> {
         validate_encrypted_value_id(&self.key)?;
-        validate_subjects(&self.subjects)
+        validate_allow_keys(&self.allows)
     }
 
     /// Validate first — the rejecting path allocates nothing — then one clone into the moving
@@ -210,32 +180,38 @@ impl PersistentOutput {
         self.clone().into_binding()
     }
 
-    /// [`binding`](Self::binding) for the lowering path, which owns the output: the subject list
-    /// and previous state move instead of being cloned, so lowering a persistent output
-    /// allocates nothing for data the app already built.
+    /// [`binding`](Self::binding) for the lowering path, which owns the output: the seed and
+    /// allow lists move instead of being cloned, so lowering a persistent output allocates
+    /// nothing for data the app already built.
     pub(crate) fn into_binding(self) -> Result<PersistentOutputBinding> {
         self.validate()?;
         Ok(PersistentOutputBinding {
             encrypted_value: self.key.address(),
-            domain: self.key.domain,
+            app: self.key.app,
             encrypted_value_account_authority: self.key.encrypted_value_account_authority,
             label: self.key.label.bytes(),
-            subjects: self.subjects,
-            previous: self.previous,
+            authority_seeds: self.authority_seeds,
+            allows: self.allows,
+            previous_handle: self.previous_handle,
             make_public: self.make_public,
         })
     }
+
+    pub(crate) fn app(&self) -> AppScope {
+        self.key.app
+    }
 }
 
-/// Host-ready metadata for creating or updating a persistent `EncryptedValue` encrypted value account.
+/// Host-ready metadata for creating or updating a persistent `EncryptedValue` account.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PersistentOutputBinding {
     pub(crate) encrypted_value: Pubkey,
-    pub(crate) domain: Domain,
+    pub(crate) app: AppScope,
     pub(crate) encrypted_value_account_authority: Pubkey,
     pub(crate) label: [u8; 32],
-    pub(crate) subjects: Vec<Pubkey>,
-    pub(crate) previous: Option<PreviousEncryptedValueAccountState>,
+    pub(crate) authority_seeds: Vec<PdaSeed>,
+    pub(crate) allows: Vec<Pubkey>,
+    pub(crate) previous_handle: Option<[u8; 32]>,
     pub(crate) make_public: bool,
 }
 
@@ -244,8 +220,8 @@ impl PersistentOutputBinding {
         self.encrypted_value
     }
 
-    pub fn domain(&self) -> Domain {
-        self.domain
+    pub fn app(&self) -> AppScope {
+        self.app
     }
 
     pub fn encrypted_value_account_authority(&self) -> Pubkey {
@@ -256,28 +232,12 @@ impl PersistentOutputBinding {
         self.label
     }
 
-    pub fn subjects(&self) -> &[Pubkey] {
-        &self.subjects
+    pub fn allows(&self) -> &[Pubkey] {
+        &self.allows
     }
 
     pub fn previous_handle(&self) -> Option<[u8; 32]> {
-        self.previous.as_ref().map(|previous| previous.handle)
-    }
-
-    pub fn previous_subjects(&self) -> Option<&[Pubkey]> {
-        self.previous
-            .as_ref()
-            .map(|previous| previous.subjects.as_slice())
-    }
-
-    /// The declared previous state in the host's wire shape (`None` on create).
-    pub fn previous_state(&self) -> Option<zama_host::PreviousState> {
-        self.previous
-            .as_ref()
-            .map(|previous| zama_host::PreviousState {
-                handle: previous.handle,
-                subjects: previous.subjects.clone(),
-            })
+        self.previous_handle
     }
 
     pub fn make_public(&self) -> bool {

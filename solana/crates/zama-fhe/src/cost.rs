@@ -32,14 +32,11 @@
 //! creates; that number can exceed the trace limit) and the cost-snapshot data instead.
 //!
 //! One shape-dependent cost also stays measured rather than typed: the host's own **CPI frame**.
-//! The host CPI runs in a fresh 32 KB heap region of its own, and what it allocates
-//! there scales with created outputs times subjects per output — each created account's
-//! subject table, plus the public-outputs event payload for `make_public` creates. The builder
-//! cannot price that from its side of the CPI boundary: its packet cost interns a shared
-//! audience once in the dictionary, while the host materializes it per created account. The
-//! `subject_heavy_public_creates` boundary sweep in `runtime-tests` pins the measured wall
-//! (16 eight-subject public creates land, 17 abort in the host's CPI frame) where the
-//! builder's typed ceilings alone would admit 20.
+//! The host CPI runs in a fresh 32 KB heap region of its own, and what it allocates there scales
+//! with the persistent values it decodes and the leaves it seals — each allowed key is one MMR
+//! append — plus the public-outputs event payload for `make_public` creates. The builder cannot
+//! price that from its side of the CPI boundary. The boundary sweeps in `runtime-tests` pin the
+//! measured walls.
 //!
 //! Both ceilings are runtime facts of the pinned agave 4.x toolchain, asserted against
 //! measurement by `runtime-tests/tests/fhe_execute_boundary.rs` (`cost_snapshot_solana_ceilings`
@@ -146,9 +143,9 @@ pub struct FheExecutionCost {
     pub remaining_accounts: usize,
     /// Remaining accounts the app must supply as dynamic accounts to `resolve_accounts`.
     pub dynamic_accounts: usize,
-    /// Output-authority witnesses the app must supply to `resolve_accounts` (the fixed
-    /// execution authority plus each per-output authority).
-    pub output_authorities: usize,
+    /// Value-authority witnesses the app must supply to `resolve_accounts` (the fixed
+    /// execution authority plus each persistent value's own authority that differs from it).
+    pub value_authorities: usize,
 }
 
 impl FheExecutionCost {
@@ -216,7 +213,7 @@ mod tests {
             invoke_heap_bytes: 0,
             remaining_accounts: 0,
             dynamic_accounts: 0,
-            output_authorities: 0,
+            value_authorities: 0,
         };
         // The floor: wrapper (2) + one CPI per create (2) + the rand event (1).
         assert_eq!(cost.instruction_trace_floor(), 5);

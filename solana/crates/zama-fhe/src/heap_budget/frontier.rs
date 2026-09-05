@@ -6,22 +6,22 @@ use super::harness::{try_measure, ShapeBuilder};
 use super::shapes::*;
 
 /// Every shape on the exploration frontier, admitted or not: persist kind x output count x
-/// subject width, plus the attestation ladder.
+/// allow-list width, plus the attestation ladder.
 pub(crate) fn frontier_shapes() -> Vec<(String, ShapeBuilder)> {
     let mut shapes: Vec<(String, ShapeBuilder)> = Vec::new();
     for (kind, kind_name) in [
         (PersistKind::Create, "create"),
         (PersistKind::Update, "update"),
     ] {
-        for subjects in [1, 2, 4, 6, 8] {
+        for allows in [1, 2, 4, 6, 8] {
             for outputs in [4, 8, 12, 16, 20, 24, 28, MAX_FHE_EXECUTION_STEPS] {
                 shapes.push((
-                    format!("{kind_name} x{outputs:2} subjects={subjects}"),
+                    format!("{kind_name} x{outputs:2} allows={allows}"),
                     Box::new(persist_shape(
                         kind,
                         MAX_FHE_EXECUTION_STEPS,
                         outputs,
-                        subjects,
+                        allows,
                     )),
                 ));
             }
@@ -54,7 +54,7 @@ pub(crate) fn frontier_shapes() -> Vec<(String, ShapeBuilder)> {
     shapes
 }
 
-/// The full app-side frontier, persist kind x output count x subject width, printed with the
+/// The full app-side frontier, persist kind x output count x allow-list width, printed with the
 /// typed rejection where the builder refuses the shape. This is the exploration companion to
 /// the host-side boundary sweeps in `runtime-tests/tests/fhe_execute_boundary.rs`.
 #[test]
