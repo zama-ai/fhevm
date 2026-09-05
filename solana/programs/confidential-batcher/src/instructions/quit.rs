@@ -48,8 +48,8 @@ pub struct Quit<'info> {
     /// validated by the token CPI and pinned below.
     #[account(mut)]
     pub batch_join_token_account: UncheckedAccount<'info>,
-    /// CHECK: user's confidential token account (refund destination);
-    /// validated by the token CPI.
+    /// CHECK: user's canonical confidential token account (refund destination); pinned below
+    /// so the refund can only land with the quitting user, never back on the batch account.
     #[account(mut)]
     pub user_token_account: UncheckedAccount<'info>,
     /// CHECK: batch's stable balance encrypted value account; replaced by the token CPI.
@@ -106,6 +106,15 @@ pub fn quit<'info>(ctx: Context<'info, Quit<'info>>) -> Result<()> {
     require_keys_eq!(
         ctx.accounts.batch_join_token_account.key(),
         ct::token_account_address(mint_key, batch_authority).0,
+        BatcherError::DerivedAccountMismatch
+    );
+    // A destination equal to the source is a no-op transfer that the token program accepts;
+    // phase 2 would then zero the join while the balance stays on the batch account and is
+    // shared out to everyone else at settle. Pinning the destination to the user's canonical
+    // account rules that out, since the batch authority is a PDA and can never be the signer.
+    require_keys_eq!(
+        ctx.accounts.user_token_account.key(),
+        ct::token_account_address(mint_key, user).0,
         BatcherError::DerivedAccountMismatch
     );
 

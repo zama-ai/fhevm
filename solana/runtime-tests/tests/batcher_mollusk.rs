@@ -1783,6 +1783,45 @@ fn mollusk_redeem_repeat_join_accumulates_and_quit_refunds_exactly() {
     assert_eq!(ledger.u64_at(&context, keys.join_balance_value), 40);
 }
 
+/// A quit whose refund destination is not the user's own token account is refused before
+/// anything moves; the join and the batch balance stay as they were.
+#[test]
+fn mollusk_quit_rejects_refund_destination_that_is_not_the_users_account() {
+    let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
+    let context = mollusk().with_context(fixture.accounts(0, 0));
+    let mut ledger = CleartextLedger::default();
+    fixture.seed_ledger(&mut ledger, (1_000, 0), (2_000, 0), (1_000_000, 0));
+
+    let keys = initialize_and_open_first_batch(&context, &fixture, 0);
+    seed_open_batch_balances(&context, &keys, &mut ledger);
+    run_join(
+        &context,
+        &fixture,
+        &keys,
+        &fixture.alice,
+        &mut ledger,
+        handle_for_chain(41, BALANCE_FHE_TYPE),
+        100,
+    );
+    let pending = keys.pending_join_value(fixture.alice.user);
+
+    // Destination = source: the token transfer would move nothing and the reset would erase
+    // the join, handing Alice's 100 to the other participants at settle.
+    let mut quit = quit_ix(&fixture, &keys, &fixture.alice);
+    let user_join = fixture.user_join(&fixture.alice);
+    for meta in quit.accounts.iter_mut() {
+        if meta.pubkey == user_join.token_account {
+            meta.pubkey = keys.join_token_account;
+        }
+    }
+    context.process_and_validate_instruction(
+        &quit,
+        &[batcher_error(batcher::BatcherError::DerivedAccountMismatch)],
+    );
+    assert_eq!(ledger.u64_at(&context, pending), 100);
+    assert_eq!(ledger.u64_at(&context, keys.join_balance_value), 100);
+}
+
 /// A user who quits before dispatch can still run the (permissionless) claim
 /// after the batch settles on the other participants: their reset encrypted value account
 /// makes the MulDiv produce an encrypted zero, the all-or-zero transfer moves
