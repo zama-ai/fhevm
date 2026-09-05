@@ -1783,12 +1783,8 @@ fn mollusk_redeem_repeat_join_accumulates_and_quit_refunds_exactly() {
     assert_eq!(ledger.u64_at(&context, keys.join_balance_value), 40);
 }
 
-/// A user who quits before dispatch can still run the (permissionless) claim
-/// after the batch settles on the other participants: their reset encrypted value account
-/// makes the MulDiv produce an encrypted zero, the all-or-zero transfer moves
-/// nothing, and the record is marked claimed. Deposit direction only: quit,
-/// claim, and the encrypted value account reset are direction-free shared code (settle's
-/// vault CPI is the sole direction branch), so one direction pins the class.
+/// A quit whose refund destination is not the user's own token account is refused before
+/// anything moves; the join and the batch balance stay as they were.
 #[test]
 fn mollusk_quit_rejects_refund_destination_that_is_not_the_users_account() {
     let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
@@ -1826,6 +1822,12 @@ fn mollusk_quit_rejects_refund_destination_that_is_not_the_users_account() {
     assert_eq!(ledger.u64_at(&context, keys.join_balance_value), 100);
 }
 
+/// A user who quits before dispatch can still run the (permissionless) claim
+/// after the batch settles on the other participants: their reset encrypted value account
+/// makes the MulDiv produce an encrypted zero, the all-or-zero transfer moves
+/// nothing, and the record is marked claimed. Deposit direction only: quit,
+/// claim, and the encrypted value account reset are direction-free shared code (settle's
+/// vault CPI is the sole direction branch), so one direction pins the class.
 #[test]
 fn mollusk_claim_after_quit_pays_zero() {
     let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
