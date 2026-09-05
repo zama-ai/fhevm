@@ -10,6 +10,11 @@ A hex string (calldata) intended for submission as the action of an Aragon DAO p
 
 - The new coprocessor version is built and the release tag is known (e.g. `v0.15.0`).
 - Its `CONSENSUS_PROTOCOL_VERSION` is one above the active `versioning.consensus_version`.
+
+`--software-version` takes the release tag, never the consensus version: `v0.15.0` for the
+v0.14 to v0.15 upgrade, `v0.15.1` for a v0.15 to v0.15.1 one. The consensus version is a
+counter compiled into the binary and is never named in a proposal.
+
 - The wall-clock start time for the dry-run evaluation window has been finalized.
 - The start time is far enough in the future for the DAO to vote first (the `--buffer` value, typically `2h` on mainnet).
 
