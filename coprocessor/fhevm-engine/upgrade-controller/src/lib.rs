@@ -1787,19 +1787,41 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
         warn!("cutover: GCS proposal is not UpgradeAuthorized — skipping (already cut over)");
         return Ok(());
     };
+    let live_stack_version: String =
+        sqlx::query_scalar("SELECT stack_version FROM versioning WHERE singleton = TRUE")
+            .fetch_one(&mut *tx)
+            .await?;
+    // Fail the attempt rather than erroring: the rows are already UpgradeAuthorized,
+    // and only a failed attempt can be replaced by a later proposal.
+    if let Err(reason) = validate_cutover_release(&stack_version, &live_stack_version) {
+        warn!(reason, "proposal cannot cut over; failing the attempt");
+        sqlx::query(
+            "UPDATE upgrade_state
+                SET state = 'PAUSED', status = 'failed',
+                    last_error = $1, updated_at = NOW()
+              WHERE stack_role = 'GCS' AND state = 'UpgradeAuthorized'",
+        )
+        .bind(&reason)
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        return Ok(());
+    }
+    let consensus_version = i64::from(fhevm_engine_common::CONSENSUS_PROTOCOL_VERSION);
 
     // 2. Promote the new stack version inside the cutover tx. This is the
     //    source of truth read by `resolve_gcs_mode` / `reconcile_stack_mode`:
     //    the green stack becomes live and the retired blue stack pauses.
     sqlx::query!(
         "UPDATE public.versioning
-         SET stack_version = $1, updated_at = NOW()
+         SET stack_version = $1, consensus_version = $2, updated_at = NOW()
          WHERE singleton = TRUE",
         stack_version.as_str(),
+        consensus_version,
     )
     .execute(&mut *tx)
     .await?;
-    info!(stack_version, "versioning row updated");
+    info!(stack_version, consensus_version, "versioning row updated");
 
     // 3. Snapshot the handles BCS already committed on-chain: the merge would copy
     //    GCS's `txn_is_sent = false` onto them and the tx-sender would re-broadcast,
@@ -1972,6 +1994,24 @@ async fn retry_cutover(
         attempt += 1;
         delay = delay.saturating_mul(2).min(CUTOVER_RETRY_MAX_DELAY);
     }
+}
+
+/// Check a proposal can cut over: it must name this binary's release, and that
+/// release must be above the active one.
+fn validate_cutover_release(release: &str, live_stack_version: &str) -> Result<(), String> {
+    if !fhevm_engine_common::versioning::binary_matches(release) {
+        return Err(format!(
+            "proposal release {release:?} does not match this service release {:?}",
+            fhevm_engine_common::STACK_VERSION
+        ));
+    }
+    // A pre-0.15 service retires by comparing this value, so it has to move forward.
+    if !fhevm_engine_common::versioning::binary_is_newer_than(live_stack_version) {
+        return Err(format!(
+            "proposal release {release:?} must be above the active {live_stack_version:?}"
+        ));
+    }
+    Ok(())
 }
 
 /// Flip every GCS proposal row to `UpgradeAuthorized` and cut over once every
@@ -2908,6 +2948,8 @@ mod tests {
         .await
         .expect("seed GCS row");
 
+        set_live_versions_behind(&pool).await;
+
         create_gcs_schema(&pool).await.expect("create gcs schema");
 
         // The bug surfaced exactly here: a planning-time ON CONFLICT error.
@@ -2958,6 +3000,21 @@ mod tests {
     }
 
     /// Seed one GCS proposal row with all latches set.
+    /// Put the database where a pre-upgrade one is: an older release, one consensus
+    /// version behind.
+    async fn set_live_versions_behind(pool: &Pool<Postgres>) {
+        let candidate = i64::from(fhevm_engine_common::CONSENSUS_PROTOCOL_VERSION);
+        sqlx::query(
+            "UPDATE versioning
+             SET stack_version = 'v0.14', consensus_version = $1
+             WHERE singleton = TRUE",
+        )
+        .bind(candidate - 1)
+        .execute(pool)
+        .await
+        .expect("set live versions behind");
+    }
+
     async fn seed_gcs_row(pool: &Pool<Postgres>, state: &str, status: &str) {
         sqlx::query(
             r#"
@@ -2967,7 +3024,7 @@ mod tests {
                 host_consensus_reached, gw_consensus_reached, gw_dry_run_started,
                 proposal_block, updated_at
             )
-            VALUES ('GCS', $1, $2, $3, 'v0.15', 100, 200, 1, 1,
+            VALUES ('GCS', $1, $2, $3, $4, 100, 200, 1, 1,
                     TRUE, TRUE, TRUE, 10, NOW())
             ON CONFLICT (stack_role, host_chain_id) DO UPDATE
             SET state = EXCLUDED.state, status = EXCLUDED.status,
@@ -2985,9 +3042,12 @@ mod tests {
         .bind(state)
         .bind(status)
         .bind(&[0x02u8][..])
+        .bind(fhevm_engine_common::STACK_VERSION)
         .execute(pool)
         .await
         .expect("seed GCS row");
+
+        set_live_versions_behind(pool).await;
     }
 
     /// A `gcs` table NOT in `COPROCESSOR_TABLES`: only `DROP SCHEMA … CASCADE`
@@ -3253,6 +3313,8 @@ mod tests {
         .execute(pool)
         .await
         .expect("seed GCS chain row");
+
+        set_live_versions_behind(pool).await;
     }
 
     fn consensus_payload(chain_id: i64, block_height: i64) -> String {

@@ -1,3 +1,4 @@
+pub mod bootstrap_versioning;
 pub mod bridge;
 pub mod chain_id;
 pub mod crs;
@@ -26,40 +27,36 @@ pub mod common {
 
 /// Single source of truth for the coprocessor stack version.
 ///
-/// The fleet-wide stack version. Baseline is the hard-coded value below; only
-/// with the `stack-version-override` feature does it come from the build-time
-/// `BUILD_STACK_VERSION` env (defaulted by build.rs). The blue-green GCS image
-/// builds with the feature + a newer version; release builds omit the feature
-/// and cannot be overridden. Deliberately NOT a crate `CARGO_PKG_VERSION`
-/// (those diverge per-worker across the workspace).
-///
 /// Exposed as a macro (not a `const`) so it embeds inside `concat!` — e.g. the
 /// versioned GCS schema name in `database.rs` — while staying single-sourced.
-/// `env!` keeps the override a compile-time literal.
-#[cfg(feature = "stack-version-override")]
 macro_rules! stack_version {
     () => {
-        env!("BUILD_STACK_VERSION")
-    };
-}
-#[cfg(not(feature = "stack-version-override"))]
-macro_rules! stack_version {
-    () => {
-        "0.14.0"
+        "0.15.0"
     };
 }
 pub(crate) use stack_version;
 
 /// Version string of the coprocessor stack this binary belongs to. Shared by
-/// every service that links this crate, compared against
-/// `versioning.stack_version`, written into the singleton at cutover, and
-/// surfaced in upgrade notifications. The leading-`v` prefix is optional; the
-/// parser in `versioning::parse_version` tolerates its absence.
+/// every service that links this crate, compared against the release a proposal
+/// names, written into the singleton at cutover, and surfaced in upgrade
+/// notifications. The leading-`v` prefix is optional; the parser in
+/// `versioning::parse_version` tolerates its absence.
+///
+/// Change it every release. It never decides blue/green mode.
 pub const STACK_VERSION: &str = stack_version!();
 
 pub const CIPHERTEXT_VERSION: i16 = 0;
 
 pub const HANDLE_VERSION: i16 = 0;
+
+// Decides blue/green mode. Raise it by one when a release changes the results
+// operators must agree on:
+//   - new key parameters
+//   - the GPU feature is turned on
+//   - randomization changes
+//   - the scheduling logic changes
+// Leave it as is for every other release, which then rolls out without a cutover.
+pub const CONSENSUS_PROTOCOL_VERSION: u32 = 1;
 
 /// If `--stack-version` appears in the process arguments, prints the
 /// compiled-in coprocessor [`STACK_VERSION`] to stdout and exits with status 0.
@@ -72,8 +69,7 @@ pub const HANDLE_VERSION: i16 = 0;
 /// `--help`.
 ///
 /// `--version` reports the per-crate `CARGO_PKG_VERSION` (which diverges across
-/// the workspace); `--stack-version` reports the single fleet-wide value used
-/// for blue/green cutover decisions.
+/// the workspace); `--stack-version` reports the single fleet-wide value.
 pub fn handle_stack_version_flag() {
     if std::env::args().any(|arg| arg == "--stack-version") {
         println!("{STACK_VERSION}");

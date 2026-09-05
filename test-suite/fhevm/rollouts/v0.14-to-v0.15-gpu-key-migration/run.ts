@@ -113,7 +113,6 @@ bcs:
 gcs:
   source:
     mode: local
-  stackVersion: "0.15.0"
   deferredStart: true
   env:
     FORCE_LEGACY_SERVER_KEY: "true"

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE public.versioning\n         SET stack_version = $1, consensus_version = $2, updated_at = NOW()\n         WHERE singleton = TRUE",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b85ad3929aec912b013c8a08a76a9e92aec51ae973ef886ac8b520825410dad6"
+}

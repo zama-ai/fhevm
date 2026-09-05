@@ -532,6 +532,37 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
         locallyBuilt ? {} : argPolicy.coprocessorDropFlags,
       );
       adjusted.container_name = serviceName;
+      if (name === "coprocessor-db-migration") {
+        if (isBlueGreen && instance.source.mode === "registry") {
+          // The pinned BCS release creates the database so the seeded versions match
+          // the running BCS binary; the HEAD migration then runs on top.
+          const bcsMigrationName = `${prefix}bcs-db-migration`;
+          const bcsMigration = applyInstanceAdjustments(
+            name,
+            service,
+            envFileValue,
+            instanceEnv,
+            instance,
+            {},
+            {},
+          );
+          bcsMigration.container_name = bcsMigrationName;
+          bcsMigration.image = rewriteImageTag(bcsMigration.image, instance.source.tag);
+          delete bcsMigration.build;
+          if (instance.index > 0 && bcsMigration.depends_on && typeof bcsMigration.depends_on === "object") {
+            bcsMigration.depends_on = rewriteCoprocessorDependsOn(
+              bcsMigration.depends_on as Record<string, unknown>,
+              prefix,
+              clonedServices,
+            );
+          }
+          services[bcsMigrationName] = bcsMigration;
+          adjusted.depends_on = {
+            ...(typeof adjusted.depends_on === "object" ? (adjusted.depends_on as Record<string, unknown>) : {}),
+            [bcsMigrationName]: { condition: "service_completed_successfully" },
+          };
+        }
+      }
       applyCoprocessorSource(adjusted, name, sourceInstance, locallyBuilt);
       if (instance.index > 0 && adjusted.depends_on && typeof adjusted.depends_on === "object") {
         adjusted.depends_on = rewriteCoprocessorDependsOn(
@@ -583,13 +614,8 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
         adjusted.container_name = serviceName;
         applyCoprocessorSource(adjusted, baseName, gcsInstance, locallyBuilt);
         if (locallyBuilt) {
-          adjusted.image = retagLocal(service.image, `gcs-${gcs.stackVersion}`);
-          // GCS compiles the newer stack version (build arg enables the override feature),
-          // so its schema/version are gcs.stackVersion rather than the baseline.
-          adjusted.build = {
-            ...buildSpec,
-            args: { ...(buildSpec.args as Record<string, string> | undefined), BUILD_STACK_VERSION: gcs.stackVersion },
-          };
+          adjusted.image = retagLocal(service.image, "gcs-candidate");
+          adjusted.build = buildSpec;
         }
         if (bcsInstance.index > 0 && adjusted.depends_on && typeof adjusted.depends_on === "object") {
           adjusted.depends_on = rewriteCoprocessorDependsOn(
@@ -834,6 +860,7 @@ const buildExtraCoprocessorListenerOverride = async (
         const cloneName = `${gcsPrefix}${suffix}${chainSuffix}`;
         const baseService = doc.services[baseName];
         if (!baseService) continue;
+        // Local builds use the current command-line flags.
         const buildSpec = localBuildSpecFor("coprocessor", baseName);
         const locallyBuilt = gcs.source.mode === "local" && Boolean(buildSpec);
         const gcsArgPolicy = argPolicyForInstance(compat, gcsInstance);
@@ -849,14 +876,8 @@ const buildExtraCoprocessorListenerOverride = async (
         adjusted.container_name = cloneName;
         applyCoprocessorSource(adjusted, baseName, gcsInstance, locallyBuilt);
         if (locallyBuilt) {
-          adjusted.image = retagLocal(baseService.image, `gcs-${gcs.stackVersion}`);
-          adjusted.build = {
-            ...buildSpec,
-            args: {
-              ...(buildSpec.args as Record<string, string> | undefined),
-              BUILD_STACK_VERSION: gcs.stackVersion,
-            },
-          };
+          adjusted.image = retagLocal(baseService.image, "gcs-candidate");
+          adjusted.build = buildSpec;
         }
         delete adjusted.depends_on;
         services[cloneName] = adjusted;

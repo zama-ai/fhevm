@@ -16,4 +16,3 @@ bcs:
 gcs:
   source:
     mode: local
-  stackVersion: "0.15.0"

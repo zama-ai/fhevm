@@ -1,11 +1,11 @@
-//! Stack-version detection that decides whether a service runs in GCS (green)
+//! Consensus-version detection that decides whether a service runs in GCS (green)
 //! mode, replacing the deprecated `--gcs-mode` CLI flag.
 //!
-//! Each binary is compiled with a [`crate::STACK_VERSION`]. On startup a
-//! service compares it against the live `versioning.stack_version` singleton
-//! row: a binary strictly newer than the live stack is the incoming green
-//! deployment and runs in GCS mode; an equal-or-older binary is the live
-//! (blue) stack and runs normally.
+//! Each binary is compiled with a [`crate::CONSENSUS_PROTOCOL_VERSION`]. On
+//! startup a service compares it against the live `versioning.consensus_version`
+//! singleton row: a binary newer than the live version is the incoming green
+//! deployment and runs in GCS mode; an equal binary is the live (blue) stack and
+//! runs normally; an older one belongs to a retired stack and stops working.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -16,10 +16,10 @@ use sqlx::{Connection, PgConnection, Pool, Postgres, Transaction};
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
-use crate::STACK_VERSION;
+use crate::{CONSENSUS_PROTOCOL_VERSION, STACK_VERSION};
 
 /// pg_notify channel emitted by the upgrade-controller during `execute_cutover`,
-/// inside the same transaction that bumps `versioning.stack_version` (so the
+/// inside the same transaction that bumps `versioning.consensus_version` (so the
 /// notification is atomic with the version change — it is only delivered if the
 /// cutover commits).
 ///
@@ -56,10 +56,21 @@ pub fn binary_matches(live: &str) -> bool {
     parse_version(STACK_VERSION) == parse_version(live)
 }
 
-/// True iff this binary's [`STACK_VERSION`] is strictly older than `live` — i.e.
-/// it belongs to a retired stack that should no longer touch the database.
-pub fn binary_is_older_than(live: &str) -> bool {
-    parse_version(STACK_VERSION) < parse_version(live)
+/// True if this binary's [`CONSENSUS_PROTOCOL_VERSION`] is strictly newer than `live`.
+fn consensus_is_newer_than(live: i64) -> bool {
+    i64::from(CONSENSUS_PROTOCOL_VERSION) > live
+}
+
+/// True if this binary's [`CONSENSUS_PROTOCOL_VERSION`] equals `live`.
+fn consensus_matches(live: i64) -> bool {
+    i64::from(CONSENSUS_PROTOCOL_VERSION) == live
+}
+
+/// True if this binary's [`CONSENSUS_PROTOCOL_VERSION`] is strictly older than
+/// `live` — i.e. it belongs to a retired stack that should no longer touch the
+/// database.
+fn consensus_is_older_than(live: i64) -> bool {
+    i64::from(CONSENSUS_PROTOCOL_VERSION) < live
 }
 
 /// Runtime stack mode, shared between a service's work loop and the
@@ -94,14 +105,14 @@ impl StackMode {
     }
 }
 
-/// Re-read `versioning.stack_version` and apply the cutover transition rules to
+/// Re-read `versioning.consensus_version` and apply the cutover transition rules to
 /// `mode`:
 ///   - binary == live AND currently in GCS mode → leave GCS mode (become live);
 ///   - binary != live AND not in GCS mode → pause into no-op mode;
 ///   - otherwise no change.
 pub async fn reconcile_stack_mode(pool: &Pool<Postgres>, mode: &StackMode) -> anyhow::Result<()> {
-    let row: Option<(String,)> =
-        sqlx::query_as("SELECT stack_version FROM versioning WHERE singleton = TRUE")
+    let row: Option<(i64,)> =
+        sqlx::query_as("SELECT consensus_version FROM versioning WHERE singleton = TRUE")
             .fetch_optional(pool)
             .await?;
     let Some((live,)) = row else {
@@ -109,26 +120,26 @@ pub async fn reconcile_stack_mode(pool: &Pool<Postgres>, mode: &StackMode) -> an
         return Ok(());
     };
 
-    let matches = binary_matches(&live);
+    let matches = consensus_matches(live);
     let gcs_mode = mode.gcs_mode();
     if matches && gcs_mode {
         mode.gcs_mode.store(false, Ordering::SeqCst);
         info!(
-            binary_stack_version = STACK_VERSION,
-            live_stack_version = %live,
-            "stack version matches live; leaving GCS mode (now live stack)"
+            binary_consensus_version = CONSENSUS_PROTOCOL_VERSION,
+            live_consensus_version = live,
+            "consensus version matches live; leaving GCS mode (now live stack)"
         );
     } else if !matches && !gcs_mode {
         mode.paused.store(true, Ordering::SeqCst);
         info!(
-            binary_stack_version = STACK_VERSION,
-            live_stack_version = %live,
-            "stack version no longer matches live; pausing into no-op mode"
+            binary_consensus_version = CONSENSUS_PROTOCOL_VERSION,
+            live_consensus_version = live,
+            "consensus version no longer matches live; pausing into no-op mode"
         );
     } else {
         info!(
-            binary_stack_version = STACK_VERSION,
-            live_stack_version = %live,
+            binary_consensus_version = CONSENSUS_PROTOCOL_VERSION,
+            live_consensus_version = live,
             matches,
             gcs_mode,
             "stack-version-upgraded received; no mode change"
@@ -170,7 +181,7 @@ pub async fn run_stack_version_listener(
 }
 
 /// Decide whether this binary should run in GCS (green) mode by comparing its
-/// compiled-in [`STACK_VERSION`] against the live `versioning.stack_version`
+/// compiled-in [`CONSENSUS_PROTOCOL_VERSION`] against the live `versioning.consensus_version`
 /// row.
 ///
 /// Opens a short-lived connection with the default `public` search_path, so it
@@ -190,38 +201,37 @@ pub async fn resolve_gcs_mode(database_url: &str) -> anyhow::Result<bool> {
     )
     .await?;
     let mut conn = PgConnection::connect_with(&options).await?;
-    let live = live_stack_version(&mut conn).await?;
+    // The versions are not final until setup finishes.
+    let setup_in_progress: bool =
+        sqlx::query_scalar("SELECT to_regclass('public._fhevm_versioning_bootstrap') IS NOT NULL")
+            .fetch_one(&mut conn)
+            .await?;
+    let live = live_consensus_version(&mut conn).await?;
     let _ = conn.close().await;
+    anyhow::ensure!(
+        !setup_in_progress,
+        "database setup is still in progress; retry startup once it completes"
+    );
 
     let live = match live {
         Some(v) => v,
         None => {
             warn!(
-                binary_stack_version = STACK_VERSION,
+                binary_consensus_version = CONSENSUS_PROTOCOL_VERSION,
                 "versioning table is empty or not yet created; defaulting to non-GCS (blue) mode"
             );
             return Ok(false);
         }
     };
 
-    let gcs_mode = binary_is_newer_than(&live);
+    let gcs_mode = consensus_is_newer_than(live);
     info!(
-        binary_stack_version = STACK_VERSION,
-        live_stack_version = %live,
+        binary_consensus_version = CONSENSUS_PROTOCOL_VERSION,
+        live_consensus_version = live,
         gcs_mode,
         "resolved gcs_mode from versioning table"
     );
     Ok(gcs_mode)
-}
-
-/// Error returned by [`begin_guarded_pool`] / [`begin_guarded_conn`] when this
-/// binary belongs to a retired stack — its [`STACK_VERSION`] is strictly older
-/// than the live `versioning.stack_version`.
-#[derive(Debug, thiserror::Error)]
-#[error("stack version {binary} is older than live stack {live}; access denied (retired stack)")]
-pub struct StaleStackError {
-    pub binary: &'static str,
-    pub live: String,
 }
 
 /// Fail unless the GCS schema exists.
@@ -304,31 +314,43 @@ pub async fn wait_for_gcs_schema(database_url: &str, timeout: Duration) -> anyho
     }
 }
 
-/// True if `err` is Postgres `undefined_table` (SQLSTATE 42P01) — i.e. the
-/// `versioning` table does not exist yet (migrations not applied).
-fn is_undefined_table(err: &sqlx::Error) -> bool {
-    matches!(err, sqlx::Error::Database(db) if db.code().as_deref() == Some("42P01"))
+/// Error returned by [`begin_guarded_pool`] / [`begin_guarded_conn`] when this
+/// binary belongs to a retired stack — its [`CONSENSUS_PROTOCOL_VERSION`] is strictly older
+/// than the live `versioning.consensus_version`.
+#[derive(Debug, thiserror::Error)]
+#[error(
+    "consensus version {binary} is older than live stack {live}; access denied (retired stack)"
+)]
+pub struct StaleStackError {
+    pub binary: u32,
+    pub live: i64,
 }
 
-/// Fetch the live stack version singleton, or `None` if the `versioning` row is
+/// True if `err` is Postgres `undefined_table` (SQLSTATE 42P01) or `undefined_column`
+/// (SQLSTATE 42703) - i.e. the `versioning` row is not readable yet (migrations not applied).
+fn is_unmigrated(err: &sqlx::Error) -> bool {
+    matches!(err, sqlx::Error::Database(db) if matches!(db.code().as_deref(), Some("42P01" | "42703")))
+}
+
+/// Fetch the live consensus version singleton, or `None` if the `versioning` row is
 /// absent (fresh/unseeded DB). Shared by the retirement checks below.
 ///
 /// A missing `versioning` *table* (SQLSTATE 42P01) is treated the same as a
 /// missing row — `None`, not an error — so a service that starts before the
 /// db-migration Job has created the table does not fail (see [`resolve_gcs_mode`]
 /// and [`assert_not_retired`], which read this as "unseeded → blue / not-retired").
-async fn live_stack_version(conn: &mut PgConnection) -> Result<Option<String>, sqlx::Error> {
-    let row: Option<(String,)> = match sqlx::query_as(
-        "SELECT stack_version FROM versioning WHERE singleton = TRUE",
+async fn live_consensus_version(conn: &mut PgConnection) -> Result<Option<i64>, sqlx::Error> {
+    let row: Option<(i64,)> = match sqlx::query_as(
+        "SELECT consensus_version FROM versioning WHERE singleton = TRUE",
     )
     .fetch_optional(conn)
     .await
     {
         Ok(row) => row,
-        Err(err) if is_undefined_table(&err) => {
+        Err(err) if is_unmigrated(&err) => {
             warn!(
-                    binary_stack_version = STACK_VERSION,
-                    "versioning table does not exist yet (migrations not applied?); treating as unseeded"
+                    binary_consensus_version = CONSENSUS_PROTOCOL_VERSION,
+                    "versioning row is not readable yet (migrations not applied?); treating as unseeded"
                 );
             None
         }
@@ -337,9 +359,9 @@ async fn live_stack_version(conn: &mut PgConnection) -> Result<Option<String>, s
     Ok(row.map(|(v,)| v))
 }
 
-/// Re-read the live stack version on `conn` and report whether this binary
-/// belongs to a retired stack (its [`STACK_VERSION`] is strictly older than the
-/// live `versioning.stack_version`). A missing `versioning` row is treated as
+/// Re-read the live consensus version on `conn` and report whether this binary
+/// belongs to a retired stack (its [`CONSENSUS_PROTOCOL_VERSION`] is strictly older than the
+/// live `versioning.consensus_version`). A missing `versioning` row is treated as
 /// not-retired, mirroring [`resolve_gcs_mode`]'s permissive default so a
 /// fresh/unseeded DB is not locked out.
 ///
@@ -348,19 +370,19 @@ async fn live_stack_version(conn: &mut PgConnection) -> Result<Option<String>, s
 /// [`reconcile_stack_mode`]. Read it *after* taking the shared cutover lock (see
 /// [`cutover_gate`]) to close the begin-time TOCTOU window.
 pub async fn is_retired(conn: &mut PgConnection) -> Result<bool, sqlx::Error> {
-    Ok(live_stack_version(conn)
+    Ok(live_consensus_version(conn)
         .await?
-        .is_some_and(|live| binary_is_older_than(&live)))
+        .is_some_and(consensus_is_older_than))
 }
 
-/// Re-read the live stack version on `conn` and fail if this binary is strictly
+/// Re-read the live consensus version on `conn` and fail if this binary is strictly
 /// older (a retired stack). A missing `versioning` row is permissive, mirroring
 /// [`resolve_gcs_mode`]'s default, so a fresh/unseeded DB is not locked out.
 async fn assert_not_retired(conn: &mut PgConnection) -> Result<(), sqlx::Error> {
-    if let Some(live) = live_stack_version(conn).await? {
-        if binary_is_older_than(&live) {
+    if let Some(live) = live_consensus_version(conn).await? {
+        if consensus_is_older_than(live) {
             return Err(sqlx::Error::Configuration(Box::new(StaleStackError {
-                binary: STACK_VERSION,
+                binary: CONSENSUS_PROTOCOL_VERSION,
                 live,
             })));
         }
@@ -529,7 +551,10 @@ pub async fn begin_write_guarded_conn(
 
 #[cfg(test)]
 mod tests {
-    use super::parse_version;
+    use super::{
+        consensus_is_newer_than, consensus_is_older_than, consensus_matches, parse_version,
+    };
+    use crate::STACK_VERSION;
 
     #[test]
     fn parses_loose_versions() {
@@ -547,5 +572,42 @@ mod tests {
         assert_eq!(parse_version("v0.14.0"), parse_version("v0.14"));
         assert!(parse_version("v0.14.0") <= parse_version("v0.14.0"));
         assert!(parse_version("v0.13") <= parse_version("v0.14.0"));
+    }
+
+    /// A copy of the released 0.14 comparator. Those services are already deployed and
+    /// decide whether they have been replaced by comparing their own release with what
+    /// cutover stores, so this copy must not be changed.
+    fn released_0_14_parse_version(s: &str) -> (u64, u64, u64) {
+        let s = s.trim();
+        let s = s.strip_prefix(['v', 'V']).unwrap_or(s);
+        let core = s.split(['-', '+']).next().unwrap_or(s);
+        let mut parts = core.split('.').map(|p| p.parse::<u64>().unwrap_or(0));
+        (
+            parts.next().unwrap_or(0),
+            parts.next().unwrap_or(0),
+            parts.next().unwrap_or(0),
+        )
+    }
+
+    #[test]
+    fn what_we_store_replaces_a_0_14_service() {
+        // 0.14 stops working once the stored release is above its own.
+        let deployed = released_0_14_parse_version("0.14.0");
+        assert!(
+            released_0_14_parse_version(STACK_VERSION) > deployed,
+            "{STACK_VERSION} must replace 0.14.0"
+        );
+        // A version it cannot read counts as 0.0.0, which would leave it running.
+        assert_eq!(released_0_14_parse_version("not-a-version"), (0, 0, 0));
+        assert!(released_0_14_parse_version("not-a-version") < deployed);
+    }
+
+    #[test]
+    fn consensus_relationships() {
+        let live = i64::from(crate::CONSENSUS_PROTOCOL_VERSION);
+        assert!(consensus_matches(live));
+        assert!(!consensus_is_newer_than(live) && !consensus_is_older_than(live));
+        assert!(consensus_is_newer_than(live - 1));
+        assert!(consensus_is_older_than(live + 1));
     }
 }
