@@ -8,8 +8,8 @@
 //! observation.
 //!
 //! For a request whose entries are all direct, that last read is also the only one: the encrypted
-//! value accounts are named by their encrypted value IDs and the invalidation record by the signer,
-//! so every key is computable up front.
+//! value accounts are named by their encrypted value IDs, the invalidation record by the signer and
+//! the config singleton by the deployment, so every key is computable up front.
 //!
 //! A delegated entry breaks the up-front part. Its delegation record lives at a PDA seeded by
 //! `(delegator, delegate, encrypted_value_account_authority)`, and the authoritative
@@ -224,18 +224,22 @@ pub trait HostStateReader: Send + Sync {
     ) -> impl Future<Output = Result<HostSnapshot, SnapshotError>> + Send;
 }
 
-/// Plans the first read: the invalidation record of the request signer, plus one encrypted value
-/// account per entry.
+/// Plans the first read: the deployment's config singleton, the invalidation record of the request
+/// signer, and one encrypted value account per entry.
 ///
 /// Pure, and total over any validated request: every key here is derivable from the request and the
 /// deployment alone. There is no scan in the authorization path, so the plan is the complete set of
 /// accounts the direct branch will ever look at.
+///
+/// The config singleton is one key however many entries a request names — it is the deployment's,
+/// not the request's — which is what lets the pause switch be read without a round trip of its own.
 pub fn plan_first_read(
     request: &super::request::SolanaUserDecryptRequest,
     deployment: &super::deployment::DeploymentIdentity,
 ) -> SnapshotKeys {
     let program_id = deployment.program_id();
     let signer = *request.permit().user_pubkey().as_bytes();
+    let (host_config_key, _) = crate::core::solana_acl::host_config_address(program_id);
     let (watermark_key, _) = super::watermark::permit_invalidation_address(program_id, signer);
     let encrypted_value_accounts = request.handles().iter().map(|entry| {
         let (account_key, _) = super::encrypted_value_account::encrypted_value_account_address(
@@ -244,22 +248,42 @@ pub fn plan_first_read(
         );
         account_key
     });
-    SnapshotKeys::new(std::iter::once(watermark_key).chain(encrypted_value_accounts))
+    SnapshotKeys::new(
+        [host_config_key, watermark_key]
+            .into_iter()
+            .chain(encrypted_value_accounts),
+    )
 }
 
-/// Plans the second read: the first read's key set, unchanged, plus the delegation records whose
-/// addresses the discovery read has just made computable.
+/// Plans the second read: the first read's key set minus the config singleton, plus the delegation
+/// records whose addresses the discovery read has just made computable.
 ///
 /// The first set is carried over because the second read is the one every rule is evaluated
 /// against, so it has to hold the encrypted value accounts and the invalidation record too — not in
 /// order to compare the two reads, which this path deliberately does not do (see the module
 /// documentation). Starting from `first` is what makes the coverage a property of this function
 /// rather than a discipline of its callers.
+///
+/// The one key dropped is the config singleton, and it is dropped because it is already spent: the
+/// pause switch is decided on the first read ([`super::pause`]), which is the only rule that does
+/// not wait for the deciding observation. Carrying it anyway would cost the read an account it no
+/// longer uses, and the worst-case delegated request — three accounts per entry plus the signer's
+/// invalidation record — is sized to saturate the RPC's hundred-account limit exactly.
 pub fn plan_second_read(
     first: &SnapshotKeys,
+    deployment: &super::deployment::DeploymentIdentity,
     delegation_keys: impl IntoIterator<Item = SolanaPubkeyBytes>,
 ) -> SnapshotKeys {
-    SnapshotKeys::new(first.as_slice().iter().copied().chain(delegation_keys))
+    let (host_config_key, _) =
+        crate::core::solana_acl::host_config_address(deployment.program_id());
+    SnapshotKeys::new(
+        first
+            .as_slice()
+            .iter()
+            .copied()
+            .filter(|key| key != &host_config_key)
+            .chain(delegation_keys),
+    )
 }
 
 /// Builds the JSON-RPC `getMultipleAccounts` body, pinned to `confirmed` commitment and

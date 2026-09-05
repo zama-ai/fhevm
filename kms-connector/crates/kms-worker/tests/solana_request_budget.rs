@@ -195,7 +195,7 @@ async fn both_occurrences_of_a_duplicate_handle_are_authorized() {
         .direct_current(&encrypted_value_account, repeated)
         .direct_current(&encrypted_value_account, repeated)
         .typed();
-    let world = World::at_slot(100)
+    let world = World::running_at_slot(100)
         .with_encrypted_value_account(&encrypted_value_account)
         .with_watermark(wallet.pubkey(), 0);
     let reader = ScriptedReader::constant(world);

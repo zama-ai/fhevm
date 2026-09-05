@@ -30,8 +30,9 @@ use solana_pubkey::Pubkey;
 use std::collections::BTreeMap;
 use std::sync::Mutex;
 use zama_solana_acl::{
-    EncryptedValue, MmrProof, derive_encrypted_value_id, encrypted_value_discriminator,
-    historical_access_leaf_commitment, mmr_append, mmr_build_proof, public_decrypt_leaf_commitment,
+    EncryptedValue, HOST_CONFIG_SEED, HostConfigRecord, MmrProof, derive_encrypted_value_id,
+    encode_host_config, encrypted_value_discriminator, historical_access_leaf_commitment,
+    mmr_append, mmr_build_proof, public_decrypt_leaf_commitment,
 };
 use zama_solana_permit::{
     Identity, KmsRouting, PermitFields, PermitWireFields, Signature, TRANSPORT_KEY_LEN,
@@ -556,6 +557,24 @@ impl DelegationFixture {
     }
 }
 
+/// The canonical config-singleton address of the fixture deployment, derived here rather than
+/// taken from the code under test.
+pub fn host_config_address() -> (SolanaPubkeyBytes, u8) {
+    let (address, bump) =
+        Pubkey::find_program_address(&[HOST_CONFIG_SEED], &Pubkey::new_from_array(PROGRAM_ID));
+    (address.to_bytes(), bump)
+}
+
+/// The config singleton as the host program would write it, through the shared crate's own
+/// encoder — the inverse of the decoder under test, so no field table is restated here.
+pub fn host_config_account(paused: bool) -> SnapshotAccount {
+    let (_, bump) = host_config_address();
+    SnapshotAccount {
+        owner: PROGRAM_ID,
+        data: encode_host_config(&HostConfigRecord { paused, bump }),
+    }
+}
+
 /// The canonical invalidation-record address for a user, derived here rather than taken from
 /// the code under test.
 pub fn invalidation_address(user: SolanaPubkeyBytes) -> (SolanaPubkeyBytes, u8) {
@@ -602,12 +621,21 @@ pub struct World {
 }
 
 impl World {
-    /// An empty world at `slot`.
-    pub fn at_slot(slot: u64) -> Self {
-        Self {
-            slot,
-            accounts: BTreeMap::new(),
-        }
+    /// A world at `slot` holding a running host: the config singleton is present and unpaused, so
+    /// a scenario that says nothing about pause is a scenario in which pause is not the subject.
+    /// Named for what it holds rather than for the slot, because it is not empty.
+    pub fn running_at_slot(slot: u64) -> Self {
+        let mut accounts = BTreeMap::new();
+        let (key, _) = host_config_address();
+        accounts.insert(key, host_config_account(false));
+        Self { slot, accounts }
+    }
+
+    /// The same world with the host paused.
+    pub fn paused(mut self) -> Self {
+        let (key, _) = host_config_address();
+        self.accounts.insert(key, host_config_account(true));
+        self
     }
 
     /// Places an encrypted value account in the world.

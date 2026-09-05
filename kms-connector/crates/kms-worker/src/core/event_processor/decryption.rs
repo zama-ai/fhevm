@@ -1804,7 +1804,8 @@ mod tests {
         use ring::signature::{Ed25519KeyPair, KeyPair};
         use solana_pubkey::Pubkey;
         use zama_solana_acl::{
-            EncryptedValue, derive_encrypted_value_id, encrypted_value_discriminator,
+            EncryptedValue, HostConfigRecord, derive_encrypted_value_id,
+            encrypted_value_discriminator,
         };
         use zama_solana_permit::{
             Identity, KmsRouting, PermitFields, PermitWireFields, TRANSPORT_KEY_LEN, build_envelope,
@@ -1898,8 +1899,14 @@ mod tests {
             &borsh::to_vec(&encrypted_value).expect("the encrypted value account serializes"),
         );
 
-        // A mock Solana RPC serving the one authorizing read: the signer's invalidation record
-        // (never revoked → `null`), then the program-owned encrypted value account.
+        // A mock Solana RPC serving the one authorizing read: the deployment's config singleton
+        // (running, not paused), the signer's invalidation record (never revoked → `null`), then
+        // the program-owned encrypted value account.
+        let (_, host_config_bump) = crate::core::solana_acl::host_config_address(PROGRAM_ID);
+        let host_config_data = zama_solana_acl::encode_host_config(&HostConfigRecord {
+            paused: false,
+            bump: host_config_bump,
+        });
         let deployment =
             DeploymentIdentity::resolve(PROGRAM_ID, CHAIN_ID).expect("fixture deployment resolves");
         let first_keys = plan_first_read(
@@ -1913,6 +1920,13 @@ mod tests {
             "result": {
                 "context": { "slot": 1 },
                 "value": [
+                    {
+                        "owner": Pubkey::new_from_array(PROGRAM_ID).to_string(),
+                        "data": [BASE64_STANDARD.encode(&host_config_data), "base64"],
+                        "lamports": 1,
+                        "executable": false,
+                        "rentEpoch": 0,
+                    },
                     null,
                     {
                         "owner": Pubkey::new_from_array(PROGRAM_ID).to_string(),

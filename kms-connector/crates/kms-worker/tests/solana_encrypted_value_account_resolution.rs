@@ -57,7 +57,7 @@ fn resolved(
     encrypted_value_account: &EncryptedValueAccountFixture,
 ) -> ResolvedEncryptedValueAccount {
     resolve_from(
-        &World::at_slot(1).with_encrypted_value_account(encrypted_value_account),
+        &World::running_at_slot(1).with_encrypted_value_account(encrypted_value_account),
         encrypted_value_account.encrypted_value_id(),
     )
     .expect("a well-formed encrypted value account resolves")
@@ -85,7 +85,7 @@ fn an_encrypted_value_account_named_by_its_encrypted_value_id_resolves() {
         EncryptedValueAccountFixture::new(handle(0x10, FHE_TYPE_UINT64), &[owner]);
 
     let resolved = resolve_from(
-        &World::at_slot(1).with_encrypted_value_account(&encrypted_value_account),
+        &World::running_at_slot(1).with_encrypted_value_account(&encrypted_value_account),
         encrypted_value_account.encrypted_value_id(),
     )
     .expect("a well-formed encrypted value account resolves");
@@ -106,7 +106,7 @@ fn a_encrypted_value_account_absent_at_the_observation_is_transient() {
     );
 
     let failure = resolve_from(
-        &World::at_slot(1),
+        &World::running_at_slot(1),
         encrypted_value_account.encrypted_value_id(),
     )
     .expect_err("an account that does not exist authorizes nothing");
@@ -137,7 +137,7 @@ fn a_encrypted_value_account_account_owned_by_another_program_is_terminal() {
     impostor.owner = [0xee; 32];
 
     let failure = resolve_from(
-        &World::at_slot(1).with_account(encrypted_value_account.account_key, impostor),
+        &World::running_at_slot(1).with_account(encrypted_value_account.account_key, impostor),
         encrypted_value_account.encrypted_value_id(),
     )
     .expect_err("a foreign program's account is not an encrypted value account");
@@ -169,7 +169,8 @@ fn a_host_owned_account_of_another_type_is_rejected() {
     let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), 100);
 
     let failure = resolve_from(
-        &World::at_slot(1).with_account(encrypted_value_account.account_key, delegation.account()),
+        &World::running_at_slot(1)
+            .with_account(encrypted_value_account.account_key, delegation.account()),
         encrypted_value_account.encrypted_value_id(),
     )
     .expect_err("delegation-record bytes are not an encrypted value account");
@@ -200,7 +201,7 @@ fn an_encrypted_value_account_whose_fields_derive_another_encrypted_value_id_is_
     assert_ne!(foreign.encrypted_value_id(), claimed.encrypted_value_id());
 
     let failure = resolve_from(
-        &World::at_slot(1).with_account(claimed.account_key, foreign.account()),
+        &World::running_at_slot(1).with_account(claimed.account_key, foreign.account()),
         claimed.encrypted_value_id(),
     )
     .expect_err("an encrypted value account must reproduce the identity it was named by");
@@ -228,7 +229,7 @@ fn a_valid_encrypted_value_account_at_another_address_is_never_consulted() {
     );
 
     let failure = resolve_from(
-        &World::at_slot(1).with_encrypted_value_account(&elsewhere),
+        &World::running_at_slot(1).with_encrypted_value_account(&elsewhere),
         named.encrypted_value_id(),
     )
     .expect_err("only the address derived from the claimed identity is read");
@@ -252,7 +253,7 @@ fn trailing_bytes_after_the_encrypted_value_account_body_are_accepted() {
     grown.data.extend_from_slice(&[0; 96]);
 
     let resolved = resolve_from(
-        &World::at_slot(1).with_account(encrypted_value_account.account_key, grown),
+        &World::running_at_slot(1).with_account(encrypted_value_account.account_key, grown),
         encrypted_value_account.encrypted_value_id(),
     )
     .expect("a realloc-grown account resolves");
@@ -283,7 +284,7 @@ fn a_encrypted_value_account_with_a_truncated_body_is_rejected() {
     };
 
     let failure = resolve_from(
-        &World::at_slot(1).with_account(encrypted_value_account.account_key, truncated),
+        &World::running_at_slot(1).with_account(encrypted_value_account.account_key, truncated),
         encrypted_value_account.encrypted_value_id(),
     )
     .expect_err("a body that does not decode is not an encrypted value account");
@@ -309,7 +310,7 @@ fn a_encrypted_value_account_account_holding_only_its_discriminator_is_rejected(
     };
 
     let failure = resolve_from(
-        &World::at_slot(1).with_account(encrypted_value_account.account_key, empty),
+        &World::running_at_slot(1).with_account(encrypted_value_account.account_key, empty),
         encrypted_value_account.encrypted_value_id(),
     )
     .expect_err("a discriminator alone is not an encrypted value account");
@@ -444,7 +445,7 @@ async fn a_foreign_domain_handle_later_in_the_batch_rejects_the_whole_request() 
         .direct_current(&in_scope, in_scope_handle)
         .direct_current(&out_of_scope, out_of_scope_handle)
         .typed();
-    let world = World::at_slot(100)
+    let world = World::running_at_slot(100)
         .with_encrypted_value_account(&in_scope)
         .with_encrypted_value_account(&out_of_scope)
         .with_watermark(wallet.pubkey(), 0);
@@ -480,7 +481,7 @@ async fn a_permissive_permit_does_not_widen_membership() {
         .permit(PermitBuilder::new(wallet.pubkey()).permissive())
         .direct_current(&encrypted_value_account, live)
         .typed();
-    let world = World::at_slot(100)
+    let world = World::running_at_slot(100)
         .with_encrypted_value_account(&encrypted_value_account)
         .with_watermark(wallet.pubkey(), 0);
     let reader = ScriptedReader::constant(world);

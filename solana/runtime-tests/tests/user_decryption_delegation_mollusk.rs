@@ -975,21 +975,25 @@ fn a_record_with_a_non_canonical_bump_is_rejected_on_revocation() {
     );
 }
 
-/// Revocation is pause-gated — pinned as current EVM parity, not endorsed: during a pause
-/// the delegator's only lever over a live delegation is blocked while the Connector keeps
-/// authorizing against existing records. Raised as an open question to both ecosystems; if
-/// revocation is ever exempted from the pause gate, this is the test that changes.
+/// Revocation is not pause-gated, unlike granting. A pause stops the Connector from serving user
+/// decryptions at all, so the delegator's abort has to stay open while it lasts — otherwise a
+/// paused host would freeze live grants in place with no way to withdraw them. Same reasoning as
+/// `revoke_permits`, which carries no config account for exactly this.
 #[test]
-fn a_revocation_while_paused_is_rejected() {
+fn a_revocation_while_paused_succeeds() {
     let actors = actors();
     let existing = live_record(&actors);
     let accounts = revoke_accounts(&actors, record_account(&existing), true);
 
-    mollusk().process_and_validate_instruction(
+    let result = mollusk().process_and_validate_instruction(
         &revoke_ix(actors.delegator, actors.record_key),
         &accounts,
-        &[custom_error(host::errors::ZamaHostError::HostConfigPaused)],
+        &[Check::success()],
     );
+
+    let record = decode_record(&result.get_account(&actors.record_key).expect("record").data);
+    assert!(record.revoked);
+    assert_eq!(record.expiration_slot, 0);
 }
 
 /// The revoke account list is closed too.

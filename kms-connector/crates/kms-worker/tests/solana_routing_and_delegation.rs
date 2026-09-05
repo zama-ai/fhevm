@@ -63,7 +63,7 @@ fn world_with(
     encrypted_value_account: &EncryptedValueAccountFixture,
     signer: SolanaPubkeyBytes,
 ) -> World {
-    World::at_slot(OBSERVED_SLOT)
+    World::running_at_slot(OBSERVED_SLOT)
         .with_encrypted_value_account(encrypted_value_account)
         .with_watermark(signer, 0)
 }
@@ -210,7 +210,7 @@ async fn a_batch_mixes_a_direct_entry_and_two_delegators() {
             second_delegator.pubkey(),
         )
         .typed();
-    let world = World::at_slot(OBSERVED_SLOT)
+    let world = World::running_at_slot(OBSERVED_SLOT)
         .with_encrypted_value_account(&own_encrypted_value_account)
         .with_encrypted_value_account(&first_encrypted_value_account)
         .with_encrypted_value_account(&second_encrypted_value_account)
@@ -956,7 +956,7 @@ fn a_live_authority_specific_row_is_named_as_the_exact_row() {
     let exact = DelegationFixture::live(delegator, delegate, OBSERVED_SLOT);
     let (exact_key, _) = exact.address();
     let (wildcard_key, _) = wildcard_delegation_address(PROGRAM_ID, delegator, delegate);
-    let snapshot = World::at_slot(OBSERVED_SLOT)
+    let snapshot = World::running_at_slot(OBSERVED_SLOT)
         .with_delegation(&exact)
         .read(&SnapshotKeys::new([exact_key, wildcard_key]))
         .expect("both row addresses are in the planned key set");
@@ -983,7 +983,7 @@ fn a_live_wildcard_row_is_named_as_the_wildcard_row() {
     let (wildcard_key, _) = wildcard.address();
     let exact = DelegationFixture::live(delegator, delegate, OBSERVED_SLOT);
     let (exact_key, _) = exact.address();
-    let snapshot = World::at_slot(OBSERVED_SLOT)
+    let snapshot = World::running_at_slot(OBSERVED_SLOT)
         .with_delegation(&wildcard)
         .read(&SnapshotKeys::new([exact_key, wildcard_key]))
         .expect("both row addresses are in the planned key set");
@@ -1011,7 +1011,7 @@ fn with_both_rows_live_the_authority_specific_row_is_the_one_named() {
     let wildcard = DelegationFixture::live_wildcard(delegator, delegate, OBSERVED_SLOT);
     let (exact_key, _) = exact.address();
     let (wildcard_key, _) = wildcard.address();
-    let snapshot = World::at_slot(OBSERVED_SLOT)
+    let snapshot = World::running_at_slot(OBSERVED_SLOT)
         .with_delegation(&exact)
         .with_delegation(&wildcard)
         .read(&SnapshotKeys::new([exact_key, wildcard_key]))
@@ -1133,7 +1133,7 @@ fn a_delegation_key_the_snapshot_never_read_is_an_error_not_a_verdict() {
     let (exact_key, _) = revoked.address();
     // The authority-specific row is dead, so the rule proceeds to the wildcard row — whose key
     // was never planned.
-    let snapshot = World::at_slot(OBSERVED_SLOT)
+    let snapshot = World::running_at_slot(OBSERVED_SLOT)
         .with_delegation(&revoked)
         .read(&SnapshotKeys::new([exact_key]))
         .expect("the planned key is readable");
@@ -1203,7 +1203,7 @@ async fn a_mixed_batch_failure_names_the_entry_whose_delegation_is_dead() {
             second_delegator.pubkey(),
         )
         .typed();
-    let world = World::at_slot(OBSERVED_SLOT)
+    let world = World::running_at_slot(OBSERVED_SLOT)
         .with_encrypted_value_account(&own_encrypted_value_account)
         .with_encrypted_value_account(&first_encrypted_value_account)
         .with_encrypted_value_account(&second_encrypted_value_account)

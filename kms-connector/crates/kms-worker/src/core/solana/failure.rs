@@ -15,6 +15,7 @@ use super::deployment::{DeploymentFailure, DeploymentIdentityError};
 use super::encrypted_value_account::EncryptedValueAccountFailure;
 use super::handle_binding::{HandleBindingFailure, InclusionAction};
 use super::kms_pair::KmsPairFailure;
+use super::pause::PauseFailure;
 use super::request::RequestFormError;
 use super::scope::ScopeFailure;
 use super::snapshot::SnapshotError;
@@ -64,6 +65,9 @@ pub enum AuthorizationFailure {
     /// Host state could not be observed as one point.
     #[error("host state: {0}")]
     Snapshot(#[from] SnapshotError),
+    /// The host is paused, or its config singleton could not be read.
+    #[error("host pause: {0}")]
+    Pause(#[from] PauseFailure),
     /// One entry's encrypted value account could not be resolved.
     #[error("entry {index}: encrypted value account: {source}")]
     EncryptedValueAccount {
@@ -131,6 +135,7 @@ impl AuthorizationFailure {
             Self::Watermark(source) => source.class(),
             Self::KmsPair(source) => source.class(),
             Self::Snapshot(source) => source.class(),
+            Self::Pause(source) => source.class(),
             Self::EncryptedValueAccount { source, .. } => source.class(),
             Self::HandleBinding { source, .. } => source.class(),
             Self::InclusionFailed { action, .. } => action.class(),
@@ -224,6 +229,30 @@ impl SnapshotError {
             | Self::ResponseLengthMismatch { .. }
             | Self::DecidingReadOlderThanDiscovery { .. } => FailureClass::Transient,
             Self::KeyNotInSnapshot { .. } => FailureClass::Terminal,
+        }
+    }
+}
+
+impl PauseFailure {
+    /// A pause is lifted by the operator, and the permit, the delegations and the handles all
+    /// survive it untouched — the same request authorizes from a later observation, which is what
+    /// transient means. An account of the wrong shape or the wrong owner at the singleton's
+    /// address is host state no retry repairs.
+    ///
+    /// `Absent` is transient too, and that is a choice rather than an oversight: the singleton is
+    /// written once at deployment and never closed, so its absence usually means this Connector
+    /// is pointed at a program that has no host state — a misconfiguration that will retry
+    /// forever. Terminal would surface that faster and is the wrong trade anyway, because the
+    /// other way absence arises is a reader that has fallen behind, and killing valid requests
+    /// over one lagging endpoint is the failure this file refuses everywhere else
+    /// ([`DelegationFailure::Absent`], [`SnapshotError::DecidingReadOlderThanDiscovery`]). The
+    /// misconfiguration is diagnosable without spending a request: every request fails on this
+    /// one rule, which no ordinary lag produces.
+    pub fn class(&self) -> FailureClass {
+        match self {
+            Self::Paused | Self::Absent { .. } => FailureClass::Transient,
+            Self::ForeignOwner { .. } | Self::NotAHostConfig { .. } => FailureClass::Terminal,
+            Self::Snapshot(source) => source.class(),
         }
     }
 }

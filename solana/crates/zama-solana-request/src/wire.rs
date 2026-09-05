@@ -57,6 +57,10 @@ use zama_solana_permit::PermitWireFields;
 /// refuses an oversized request before it submits one, and the connector refuses one that
 /// reached it anyway. Two copies of this constant would be two different caps the day one of
 /// them moved.
+///
+/// The connector's first read carries the deployment's `HostConfig` singleton as well, so the
+/// pause switch costs no round trip of its own; it is dropped from the deciding read, which keeps
+/// that worst case at exactly the hundred above.
 pub const MAX_REQUEST_HANDLES: usize = 33;
 
 /// Upper bound on the sibling list of an access proof accepted from an untrusted request,

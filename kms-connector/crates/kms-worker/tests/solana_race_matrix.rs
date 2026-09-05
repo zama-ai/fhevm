@@ -83,7 +83,7 @@ async fn a_handle_update_rejects_a_current_entry_at_the_later_observation() {
         .typed();
 
     let (accepted, reads) = observe(
-        World::at_slot(BEFORE)
+        World::running_at_slot(BEFORE)
             .with_encrypted_value_account(&before)
             .with_watermark(signer.pubkey(), 0),
         &request,
@@ -96,7 +96,7 @@ async fn a_handle_update_rejects_a_current_entry_at_the_later_observation() {
     );
 
     let (outcome, _) = observe(
-        World::at_slot(AFTER)
+        World::running_at_slot(AFTER)
             .with_encrypted_value_account(&after)
             .with_watermark(signer.pubkey(), 0),
         &request,
@@ -128,7 +128,7 @@ async fn a_handle_update_leaves_the_historical_path_open() {
         .typed();
 
     let (outcome, _) = observe(
-        World::at_slot(AFTER)
+        World::running_at_slot(AFTER)
             .with_encrypted_value_account(&after)
             .with_watermark(signer.pubkey(), 0),
         &retry,
@@ -159,7 +159,7 @@ async fn subject_rotation_rejects_a_current_entry_at_the_later_observation() {
         .typed();
 
     let (accepted, reads) = observe(
-        World::at_slot(BEFORE)
+        World::running_at_slot(BEFORE)
             .with_encrypted_value_account(&before)
             .with_watermark(signer.pubkey(), 0),
         &request,
@@ -172,7 +172,7 @@ async fn subject_rotation_rejects_a_current_entry_at_the_later_observation() {
     );
 
     let (outcome, _) = observe(
-        World::at_slot(AFTER)
+        World::running_at_slot(AFTER)
             .with_encrypted_value_account(&after)
             .with_watermark(signer.pubkey(), 0),
         &request,
@@ -204,7 +204,7 @@ async fn subject_rotation_does_not_reach_leaves_sealed_before_it() {
         .typed();
 
     let (outcome, _) = observe(
-        World::at_slot(AFTER)
+        World::running_at_slot(AFTER)
             .with_encrypted_value_account(&after)
             .with_watermark(signer.pubkey(), 0),
         &request,
@@ -235,7 +235,7 @@ async fn delegation_revocation_rejects_its_entry_at_the_later_observation() {
         .typed();
 
     let (accepted, reads) = observe(
-        World::at_slot(BEFORE)
+        World::running_at_slot(BEFORE)
             .with_encrypted_value_account(&encrypted_value_account)
             .with_watermark(signer.pubkey(), 0)
             .with_delegation(&granted),
@@ -249,7 +249,7 @@ async fn delegation_revocation_rejects_its_entry_at_the_later_observation() {
     );
 
     let (outcome, _) = observe(
-        World::at_slot(AFTER)
+        World::running_at_slot(AFTER)
             .with_encrypted_value_account(&encrypted_value_account)
             .with_watermark(signer.pubkey(), 0)
             .with_delegation(&revoked),
@@ -281,7 +281,7 @@ async fn delegation_revocation_does_not_touch_the_direct_branch() {
         .typed();
 
     let (outcome, reads) = observe(
-        World::at_slot(AFTER)
+        World::running_at_slot(AFTER)
             .with_encrypted_value_account(&own_encrypted_value_account)
             .with_watermark(signer.pubkey(), 0)
             .with_delegation(&revoked),
@@ -321,7 +321,7 @@ async fn an_append_that_leaves_the_peak_alone_still_authorizes() {
         .typed();
 
     let (accepted, reads) = observe(
-        World::at_slot(BEFORE)
+        World::running_at_slot(BEFORE)
             .with_encrypted_value_account(&before)
             .with_watermark(signer.pubkey(), 0),
         &request,
@@ -334,7 +334,7 @@ async fn an_append_that_leaves_the_peak_alone_still_authorizes() {
     );
 
     let (outcome, _) = observe(
-        World::at_slot(AFTER)
+        World::running_at_slot(AFTER)
             .with_encrypted_value_account(&after)
             .with_watermark(signer.pubkey(), 0),
         &request,
@@ -371,7 +371,7 @@ async fn an_append_that_merges_the_peak_asks_for_a_rebuilt_proof() {
         .typed();
 
     let (accepted, reads) = observe(
-        World::at_slot(BEFORE)
+        World::running_at_slot(BEFORE)
             .with_encrypted_value_account(&before)
             .with_watermark(signer.pubkey(), 0),
         &request,
@@ -384,7 +384,7 @@ async fn an_append_that_merges_the_peak_asks_for_a_rebuilt_proof() {
     );
 
     let (outcome, _) = observe(
-        World::at_slot(AFTER)
+        World::running_at_slot(AFTER)
             .with_encrypted_value_account(&after)
             .with_watermark(signer.pubkey(), 0),
         &request,
@@ -444,7 +444,7 @@ async fn a_proof_ahead_of_the_observation_is_retryable_and_then_authorized() {
         .typed();
 
     let (outcome, _) = observe(
-        World::at_slot(BEFORE)
+        World::running_at_slot(BEFORE)
             .with_encrypted_value_account(&behind)
             .with_watermark(signer.pubkey(), 0),
         &request,
@@ -468,7 +468,7 @@ async fn a_proof_ahead_of_the_observation_is_retryable_and_then_authorized() {
     assert_eq!(failure.class(), FailureClass::Retryable);
 
     let (outcome, _) = observe(
-        World::at_slot(AFTER)
+        World::running_at_slot(AFTER)
             .with_encrypted_value_account(&caught_up)
             .with_watermark(signer.pubkey(), 0),
         &request,
