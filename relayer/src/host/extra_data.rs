@@ -40,9 +40,7 @@ pub fn parse_context_id_from_extra_data(extra_data: &[u8]) -> Result<U256, Extra
             expected,
         });
     }
-    let bytes: [u8; 32] = extra_data[1..33]
-        .try_into()
-        .expect("length checked above");
+    let bytes: [u8; 32] = extra_data[1..33].try_into().expect("length checked above");
     Ok(U256::from_be_bytes(bytes))
 }
 
