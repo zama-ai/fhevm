@@ -208,6 +208,26 @@ precreate_dcid_acquisition_index() {
      WHERE is_completed = false AND is_allowed = true;"
 }
 
+precreate_pending_dcid_index() {
+  # Pre-upgrade step for migration 20260905120100, same pattern and rationale
+  # as precreate_dcid_acquisition_index above: the index is on `computations`,
+  # the migration cannot build it CONCURRENTLY under sqlx-cli 0.7.2, so build
+  # it here against the live database and let the migration no-op.
+  local has_table
+  has_table=$(psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -Atc \
+    "SELECT to_regclass('public.computations') IS NOT NULL;")
+  if [ "$has_table" != "t" ]; then
+    log "Skipping pending-DCID index pre-creation (computations not created yet)"
+    return 0
+  fi
+
+  log "Pre-creating the pending-DCID index concurrently..."
+  precreate_index "idx_computations_pending_dcid" \
+    "CREATE INDEX CONCURRENTLY idx_computations_pending_dcid \
+     ON computations (dependence_chain_id) \
+     WHERE is_completed = false;"
+}
+
 log "-------------- Start database initialization --------------"
 
 log "Creating database..."
@@ -248,6 +268,7 @@ elif [ "${RUN_BLOCK_SCOPE_WAVE1_PREREQUISITES:-}" = "true" ]; then
 else
   repair_bridge_tables_migration_checksum
   precreate_dcid_acquisition_index
+  precreate_pending_dcid_index
   sqlx migrate run --source "$MIGRATION_DIR" 2>&1 | log_stream || { log "Failed to run migrations."; exit 1; }
   seed_host_chains
 fi
