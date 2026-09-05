@@ -21,5 +21,7 @@ broadcast
 
 # create2-deploy out dirs: one per (chain, deploymentId).
 # The seal inside them IS committed, deliberately and explicitly, with `git add -f` (plan section 9).
+# Test-owned scratch is named .out-test-* (a dir a coordinator writes) or .test-* (any other file).
 .out
 .out-*
+.test-*

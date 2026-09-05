@@ -6,8 +6,9 @@
 // "erasable" subset: no `enum`, no `namespace`, no parameter properties, and relative imports must
 // carry their `.ts` extension. Union types stand in for enums throughout.
 
-import { spawnSync } from 'node:child_process';
+import { type ChildProcess, spawn, spawnSync } from 'node:child_process';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { createServer } from 'node:net';
 import { relative, resolve, sep } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 
@@ -23,15 +24,38 @@ export type CaptureResult = {
 ////////////////////////////////////////////////////////////////////////////////
 
 /** Print an error block to stderr and exit non-zero. Never returns. */
+/**
+ * The transcript: everything printed by this run, and by every child it streams, appended to one file.
+ *
+ * Off until `startTranscript` names a path. A run-book wants the exact output an operator saw, including
+ * a child's `FAIL` lines, on disk rather than in a terminal scrollback that closes.
+ */
+let transcriptPath: string | null = null;
+
+export function startTranscript(path: string): void {
+  transcriptPath = path;
+}
+
+function transcribe(text: string): void {
+  if (transcriptPath === null || text === '') return;
+  appendFileSync(transcriptPath, text.endsWith('\n') ? text : `${text}\n`);
+}
+
 export function fail(...lines: readonly string[]): never {
-  for (const line of lines) console.error(line);
+  for (const line of lines) {
+    console.error(line);
+    transcribe(line);
+  }
   process.exit(1);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
 export function say(...lines: readonly string[]): void {
-  for (const line of lines) console.log(line);
+  for (const line of lines) {
+    console.log(line);
+    transcribe(line);
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -39,7 +63,7 @@ export function say(...lines: readonly string[]): void {
 /** Only the first line is labeled; the rest are indented to align under it. */
 export function warn(...lines: readonly string[]): void {
   lines.forEach((line, i) => {
-    console.log(i === 0 ? `  WARNING: ${line}` : `           ${line}`);
+    say(i === 0 ? `  WARNING: ${line}` : `           ${line}`);
   });
 }
 
@@ -57,6 +81,35 @@ export function run(cmd: string, args: readonly string[], env?: NodeJS.ProcessEn
     env: env ? { ...process.env, ...env } : process.env,
   });
   return r.status ?? 1;
+}
+
+/**
+ * `run`, streaming the child's output live AND into the transcript.
+ *
+ * Async because streaming and capturing at once needs pipes, and a pipe is read as it fills. The exit
+ * code is returned, never thrown on, for the same reason as `run`.
+ */
+export function runLogged(cmd: string, args: readonly string[], env?: NodeJS.ProcessEnv): Promise<number> {
+  return new Promise((resolveCode) => {
+    const child = spawn(cmd, args as string[], {
+      stdio: ['inherit', 'pipe', 'pipe'],
+      env: env ? { ...process.env, ...env } : process.env,
+    });
+    child.stdout.on('data', (chunk: Buffer) => {
+      process.stdout.write(chunk);
+      transcribe(chunk.toString());
+    });
+    child.stderr.on('data', (chunk: Buffer) => {
+      process.stderr.write(chunk);
+      transcribe(chunk.toString());
+    });
+    child.on('error', () => {
+      resolveCode(1);
+    });
+    child.on('close', (code) => {
+      resolveCode(code ?? 1);
+    });
+  });
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -111,6 +164,52 @@ export function hexToNumber(hex: string | null | undefined): number | null {
 
 export function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+/** A TCP port nothing is listening on right now, from the kernel rather than a guess. */
+export function freePort(): Promise<number> {
+  return new Promise((resolvePort, reject) => {
+    const server = createServer();
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address();
+      const port = typeof address === 'object' && address !== null ? address.port : 0;
+      server.close(() => {
+        if (port === 0) reject(new Error('no free port'));
+        else resolvePort(port);
+      });
+    });
+  });
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * Start a long-lived process in the background, silenced, and make sure it dies with this one.
+ *
+ * `stdio: 'ignore'` rather than inherit: a node's log would interleave with the run's own output, and the
+ * caller reads the node through its RPC, not its stdout.
+ */
+export function spawnBackground(cmd: string, args: readonly string[]): ChildProcess {
+  const child = spawn(cmd, args as string[], { stdio: 'ignore' });
+  const kill = (): void => {
+    if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM');
+  };
+  process.once('exit', kill);
+  return child;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+/** Poll `ready` every 200 ms until it holds, or fail after `timeoutMs`. */
+export async function waitUntil(ready: () => boolean, timeoutMs: number, what: string): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!ready()) {
+    if (Date.now() > deadline) fail(`Error: ${what} did not become ready within ${String(timeoutMs)} ms.`);
+    await sleep(200);
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -89,11 +89,20 @@ interface IWiredInputVerifier {
 }
 
 interface IWiredProtocolConfig {
+    function getCurrentKmsContextId() external view returns (uint256);
     function getKmsSigners() external view returns (address[] memory);
     function getPublicDecryptionThreshold() external view returns (uint256);
     function getUserDecryptionThreshold() external view returns (uint256);
     function getKmsGenThreshold() external view returns (uint256);
     function getMpcThreshold() external view returns (uint256);
+}
+
+/// @dev The v12 KMSVerifier's signer surface — the live source the sealed migration must still match at
+///      materialize time. Gone from the proxy after the upgrade, when ProtocolConfig owns these values.
+interface IWiredKMSVerifier {
+    function getKmsSigners() external view returns (address[] memory);
+    function getThreshold() external view returns (uint256);
+    function getCurrentKmsContextId() external view returns (uint256);
 }
 
 interface IACLOwner {

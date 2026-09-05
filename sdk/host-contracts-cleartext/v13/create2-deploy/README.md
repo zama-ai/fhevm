@@ -31,7 +31,9 @@ Read it, decide whether the shape is right, then throw it away and write the rea
 
 | File | Plan section | What it is |
 | --- | --- | --- |
-| [deploy-testnet.ts](deploy-testnet.ts) | §1, §3, §11 | the only coordinator: preflight gates, 3 builds, one forge invocation per stage |
+| [deploy-testnet.ts](deploy-testnet.ts) | §1, §3, §11 | fresh-stack coordinator: preflight gates, 3 builds, one forge invocation per stage |
+| [upgrade-testnet.ts](upgrade-testnet.ts) | upgrade plan §1–§10 | upgrades a supplied live v12 stack without moving ownership or pausers |
+| [UPGRADE_RUNBOOK.md](UPGRADE_RUNBOOK.md) | — | the upgrade as terminal commands, in order, with what "good" looks like at each step |
 | [utils.ts](utils.ts) | — | dependency-free helpers: process running, JSONL, path containment |
 | `deploy.config.json` | — | optional, auto-discovered: the stable arguments, so they aren't retyped |
 | [anvil-config.json](anvil-config.json) | — | ready-made config for the local rehearsal — see GUIDE |
@@ -47,6 +49,13 @@ Read it, decide whether the shape is right, then throw it away and write the rea
 | [script/FhevmAcceptOwnershipAsAdmin.s.sol](script/FhevmAcceptOwnershipAsAdmin.s.sol) | §7 | step F — the admin accepts. The only script **not** sent by the deployer |
 | [script/FhevmStatus.s.sol](script/FhevmStatus.s.sol) | — | what's done, what's left, and why. Read-only, never reverts |
 | [script/FhevmVerify.s.sol](script/FhevmVerify.s.sol) | §7, §11 R1 | the terminal conditions; reverts non-zero if any is unmet |
+| [script/FhevmUpgradeBase.s.sol](script/FhevmUpgradeBase.s.sol) | upgrade plan §5–§6 | the upgrade's 10-create and 7-op role/artifact tables |
+| [script/FhevmComputeUpgradeAddresses.s.sol](script/FhevmComputeUpgradeAddresses.s.sol) | upgrade plan §4 | two-pass computation over the live v12 addresses and two new proxies |
+| [script/FhevmUpgradeCreates.s.sol](script/FhevmUpgradeCreates.s.sol) | upgrade plan §5 | the ten resumable factory CREATE2 calls |
+| [script/FhevmUpgradeChecks.s.sol](script/FhevmUpgradeChecks.s.sol) | — | the upgrade's non-reverting checks, shared by the gate before materialize and the verify after |
+| [script/FhevmPreMaterializeCheck.s.sol](script/FhevmPreMaterializeCheck.s.sol) | — | the gate before the point of no return: build, bytecode, implementation identity, pre-state, migration freshness. Read-only |
+| [script/FhevmMaterializeUpgrade.s.sol](script/FhevmMaterializeUpgrade.s.sol) | upgrade plan §6 | one admin-authorized atomic `ACLOwner.upgrade`, re-asserting the gate's load-bearing subset as `require`s |
+| [script/FhevmVerifyUpgrade.s.sol](script/FhevmVerifyUpgrade.s.sol) | upgrade plan §7 | version, wiring, migration and authority terminal conditions, from a fresh recompile |
 | [script/Interfaces.sol](script/Interfaces.sol) | — | minimal local views so the draft needs only `forge-std` |
 | [script/MaterializeInitData.sol](script/MaterializeInitData.sol) | §10 | step D's initializer payloads, from `LocalHostBootstrap` |
 
@@ -86,6 +95,96 @@ Steps A–F additionally require `FHEVM_MIN_BLOCK` and refuse to start before it
 coordinator derives it per stage as *previous stage's head + `--confirmations`*, and also waits for
 that previous head to **finalize**; for a single manual stage, pass `--min-block N`.
 
+### Upgrading a v12 stack
+
+`upgrade-testnet.ts` has a separate four-stage flow because it preserves the live ACL, executor,
+verifiers, HCU limit, cleartext contracts, `PauserSet`, and `ACLOwner`:
+
+```text
+compute → creates → precheck → rehearse → materialize → verify
+```
+
+`compute` validates the nine supplied addresses, snapshots every zero-argument getter from the v12 ABIs and
+every live proxy's implementation slot, records cleartext handles, and seals the normalized KMS migration.
+`creates` deploys only the two new proxies, their shared empty implementation, and seven v13
+implementations. `precheck` is the read-only gate before the point of no return; `materialize` runs it
+first, always, then makes the one atomic seven-op call as the existing admin. `rehearse` sits between the
+two in `all`: it forks the live chain onto a local anvil, applies the exact prepared calldata as the
+impersonated admin, and runs the full `verify` against the fork — nothing reaches the live chain. `verify` waits for that block
+to be buried and finalized, then checks versions and wiring from a fresh recompile, compares the full
+snapshot and handles, and reads the upgrade's own events back. See
+[How an upgrade is audited](#how-an-upgrade-is-audited).
+
+Use `--account` for the permissionless CREATE2 transactions and `--admin-account` for
+`ACLOwner.upgrade`. If the admin is a contract or multisig, `--stage materialize` writes and prints the
+exact target/value/calldata payload instead. See [GUIDE.md](GUIDE.md#v12--v13-upgrade-rehearsal) for the
+local cross-generation rehearsal and the `existing` config block.
+
+### How an upgrade is audited
+
+An upgrade is one irreversible transaction with a long approach and a long tail. The checks are layered
+so that each layer answers a question the others cannot, and so that the answer never comes from the thing
+being checked:
+
+| when | what | question it answers | independent of |
+| --- | --- | --- | --- |
+| `compute` | nine supplied addresses cross-read off the live stack, each from a **different** contract | are these the stack's own addresses? | the operator's typing |
+| `compute` | snapshot: every v12 zero-arg getter, every live implementation slot, `--handle` values, KMS signers, admin | what was true **before**? | everything that happens later — the seal is the only witness once the upgrade has run |
+| `creates` | each CREATE2 gated on `getCode`, address re-derived from the build | did each create land where the seal said? | the journal |
+| `precheck` | the ten creates re-derive from a **fresh recompile**; runtime code at each equals the artifact's deployed bytecode (only the UUPS `__self` immutable may differ, and must equal the address) | is the code on chain this source's output? | the build that produced the seal |
+| `precheck` | `getVersion()` and the baked wiring getters called **directly on each implementation** | is `IMPL_ACL` actually an ACL, compiled against this stack? | the hand-aligned role/artifact/initializer tables — it asks the code |
+| `precheck` | live implementation slots equal the sealed ones, including the two proxies the op list must not touch | did anyone upgrade under us since the seal? | — |
+| `precheck` | live `KMSVerifier` signers/threshold/context id equal the sealed migration | is the migration still a carry-over, not a replacement? | the day `compute` ran |
+| `precheck` | the op list, decoded, and the `keccak256` of the exact `ACLOwner.upgrade` calldata | is what the wallet shows what this build derives? | the multisig UI |
+| `rehearse` | the exact `materialize-calldata.txt`, applied on an anvil **fork** of the live chain at its head with the admin impersonated, then the full `verify` below run against the fork | does this payload, on this state, leave a stack that passes? | the live chain — a wrong answer costs nothing, and the verify is the same code that runs afterwards |
+| `materialize` | the load-bearing subset of the above as `require`s, evaluated in forge's simulation | — | whether the gate was run |
+| `verify` | Solidity: everything `precheck` checked, plus the seven slots, versions, wiring, `ProtocolConfig` holds the pre-upgrade KMS set and context id, ownership unchanged, nothing pending | did the intended changes happen? | the deploying machine — re-runnable by anyone with source, node and manifest |
+| `verify` | survey: all v12 getters unchanged except an explicit allow-list, which must **all** have changed; `--handle` values unchanged | did anything else change? | a hand-written list of what to check |
+| `verify` | events: exactly one `Upgraded` per re-pointed proxy, to the sealed implementation, all in **one** transaction; none on the untouched two; seven matching `HostUpgraded`; no ownership or pauser event since the seal | was the path between the endpoints straight? | slot values, which cannot see an implementation that ran for a block and was then replaced |
+
+Every step of every stage is announced when it starts and reported when it ends, with its duration and
+the head block, and appended to `progress.jsonl`; `--stage progress` renders that ledger offline. The
+full output of each invocation, forge's included, is kept under `logs/`. Together they are the run-book's
+own record of the intermediate checks, which send no transaction and would otherwise leave no trace.
+
+#### Interruptions and reorgs
+
+Every stage is idempotent and re-running it is the resume path; what makes that safe against a reorg is
+that **nothing that decides anything is read from a block that can still be orphaned**, and **nothing
+that decides anything is read from a local file**:
+
+| moment | what is read | at which block | so that |
+| --- | --- | --- | --- |
+| `compute` snapshot | every getter, slot, signer, handle | one **settled** block | the seal's only witness to "before" cannot be reorged away, and all readings agree with each other |
+| `compute` refusal, and the `all` skip | code at the ten sealed addresses | head | a run killed between sending and journaling still refuses to reseal; the journal is a second witness, not the first |
+| `precheck`, `rehearse`, `materialize` | code at the ten sealed addresses | **settled** — waits until true | the atomic call never builds on a create that could still vanish |
+| `verify` | the `HostUpgraded` block | **settled** — waits until true | a verdict is never read off a block about to be orphaned; a reorged-out materialize reports "not materialized" and `materialize` is safe to re-run |
+| `materialize` after a completed materialize | the seven slots | head | `precheck` says "already materialized", `rehearse` steps aside, the script returns without sending, `verify` runs — a resumed `all` finishes rather than failing |
+
+"Settled" means the `finalized` block when the chain serves the tag, and `--confirmations` behind the head
+with `--no-finality`. The in-memory "previous stage's head plus confirmations" wait is still there; it is
+no longer what the safety rests on.
+
+Two rules make the layers worth having. **Every expectation comes from the seal, the source or a different
+contract** — never from the value under test, which is why `verify` recompiles into an empty `build-check`
+directory rather than reading the build that sealed the manifest. And **`precheck` reports everything,
+`materialize` stops at the first thing**: the gate is for the operator deciding whether to send; the
+`require`s are for the case where nobody ran the gate.
+
+What is **not** proven, and would have to be added to prove it:
+
+- **State keyed by arguments.** The survey reaches zero-argument getters only. ACL permissions
+  (`isAllowed(handle, account)`), delegations and per-account state are unchecked unless a handle-level
+  probe is added; `--handle` covers `CleartextDB.get` and nothing more. A `--probe` that records arbitrary
+  `cast call`s before and requires them equal after is the natural extension.
+- **Behaviour after the upgrade.** `rehearse` proves the upgraded stack passes every read-only check on a
+  fork; nothing sends a transaction *through* the upgraded stack, on the fork or live. Writing a handle
+  through the forked executor and reading it back is the natural extension, and the fork is where to do it.
+- **The rehearsal is a fork, not the chain.** anvil replays state faithfully, but block timestamps, gas
+  accounting and the mempool are its own. A payload that passes on the fork can still fail live for
+  reasons of gas or ordering, which is what `materialize`'s own `require`s and the post-hoc `verify` are for.
+  Verified on anvil forking anvil (`npm run test:create2-e2e`); not yet on an anvil forking a public testnet.
+
 ## Checking a stage before running it
 
 ```sh
@@ -102,6 +201,8 @@ Four read-only views, answering four different questions:
 | `--report` | which **steps** ran, and which transactions did them | journal + manifest |
 | `--stage log` | every transaction, in the order it was sent | journal |
 | `--stage status` | what is **done** and what is **blocked** right now, and why | the chain |
+| `--stage progress` | which **steps** ran, including the read-only checks, when, how long, at which block (upgrade only) | progress ledger |
+| `--stage params` | the init parameters the upgrade sends, decoded: sealed after `compute`, a preview resolved from the live KMSVerifier before (upgrade only) | manifest, else the chain |
 | `--dry-run` | would this stage succeed if I ran it? | the script itself |
 
 `report` and `log` read only local files — no RPC, no keystore, no foundry — which is exactly when
