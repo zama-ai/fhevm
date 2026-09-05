@@ -6,6 +6,7 @@ import {
   getBatchByIndex,
   getJoinRecord,
   tokenAccountAddress,
+  TOKEN_PROGRAM_ADDRESS,
 } from './vault/index.js';
 
 import { BatchStatus, type BatchTarget, type VaultDirection } from './batchTypes';
@@ -84,6 +85,8 @@ const buildClaimInstructions = async (
       batcher: roots.batcher,
       batch: position.batch,
       payoutConfidentialMint: roots.payoutConfidentialMint,
+      payoutUnderlyingMint: roots.payoutUnderlyingMint,
+      tokenProgram: TOKEN_PROGRAM_ADDRESS,
       hostConfig: session.config.hostConfig,
     }),
   );

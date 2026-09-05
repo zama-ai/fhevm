@@ -286,6 +286,15 @@
           ]
         },
         {
+          "name": "payout_underlying_mint"
+        },
+        {
+          "name": "batch_authority_payout_ata"
+        },
+        {
+          "name": "user_payout_ata"
+        },
+        {
           "name": "payout_compute_signer"
         },
         {
@@ -427,6 +436,12 @@
             "Confidential mint whose encrypted total supply the burn decreases."
           ],
           "writable": true
+        },
+        {
+          "name": "join_underlying_mint"
+        },
+        {
+          "name": "batch_authority_ata"
         },
         {
           "name": "join_compute_signer"
@@ -698,6 +713,15 @@
           "docs": [
             "Confidential mint users join batches with."
           ]
+        },
+        {
+          "name": "join_underlying_mint"
+        },
+        {
+          "name": "user_ata"
+        },
+        {
+          "name": "batch_authority_ata"
         },
         {
           "name": "join_compute_signer"
@@ -1189,6 +1213,15 @@
           "docs": [
             "Confidential mint users join batches with."
           ]
+        },
+        {
+          "name": "join_underlying_mint"
+        },
+        {
+          "name": "batch_authority_ata"
+        },
+        {
+          "name": "user_ata"
         },
         {
           "name": "join_compute_signer"

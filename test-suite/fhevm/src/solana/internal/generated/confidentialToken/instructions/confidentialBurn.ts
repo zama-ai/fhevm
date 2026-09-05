@@ -56,6 +56,8 @@ export type ConfidentialBurnInstruction<
   TProgram extends string = typeof CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
   TAccountOwner extends string | AccountMeta<string> = string,
   TAccountMint extends string | AccountMeta<string> = string,
+  TAccountUnderlyingMint extends string | AccountMeta<string> = string,
+  TAccountOwnerAta extends string | AccountMeta<string> = string,
   TAccountTokenAccount extends string | AccountMeta<string> = string,
   TAccountComputeSigner extends string | AccountMeta<string> = string,
   TAccountTotalSupplyAuthority extends string | AccountMeta<string> = string,
@@ -80,6 +82,8 @@ export type ConfidentialBurnInstruction<
         ? WritableSignerAccount<TAccountOwner> & AccountSignerMeta<TAccountOwner>
         : TAccountOwner,
       TAccountMint extends string ? WritableAccount<TAccountMint> : TAccountMint,
+      TAccountUnderlyingMint extends string ? ReadonlyAccount<TAccountUnderlyingMint> : TAccountUnderlyingMint,
+      TAccountOwnerAta extends string ? ReadonlyAccount<TAccountOwnerAta> : TAccountOwnerAta,
       TAccountTokenAccount extends string ? WritableAccount<TAccountTokenAccount> : TAccountTokenAccount,
       TAccountComputeSigner extends string ? ReadonlyAccount<TAccountComputeSigner> : TAccountComputeSigner,
       TAccountTotalSupplyAuthority extends string
@@ -141,6 +145,8 @@ export function getConfidentialBurnInstructionDataCodec(): Codec<
 export type ConfidentialBurnAsyncInput<
   TAccountOwner extends string = string,
   TAccountMint extends string = string,
+  TAccountUnderlyingMint extends string = string,
+  TAccountOwnerAta extends string = string,
   TAccountTokenAccount extends string = string,
   TAccountComputeSigner extends string = string,
   TAccountTotalSupplyAuthority extends string = string,
@@ -161,6 +167,8 @@ export type ConfidentialBurnAsyncInput<
   owner: TransactionSigner<TAccountOwner>;
   /** Confidential mint whose encrypted total supply is decreased. */
   mint: Address<TAccountMint>;
+  underlyingMint: Address<TAccountUnderlyingMint>;
+  ownerAta: Address<TAccountOwnerAta>;
   /** Token account whose balance is decreased. */
   tokenAccount: Address<TAccountTokenAccount>;
   computeSigner?: Address<TAccountComputeSigner>;
@@ -198,6 +206,8 @@ export type ConfidentialBurnAsyncInput<
 export async function getConfidentialBurnInstructionAsync<
   TAccountOwner extends string,
   TAccountMint extends string,
+  TAccountUnderlyingMint extends string,
+  TAccountOwnerAta extends string,
   TAccountTokenAccount extends string,
   TAccountComputeSigner extends string,
   TAccountTotalSupplyAuthority extends string,
@@ -218,6 +228,8 @@ export async function getConfidentialBurnInstructionAsync<
   input: ConfidentialBurnAsyncInput<
     TAccountOwner,
     TAccountMint,
+    TAccountUnderlyingMint,
+    TAccountOwnerAta,
     TAccountTokenAccount,
     TAccountComputeSigner,
     TAccountTotalSupplyAuthority,
@@ -240,6 +252,8 @@ export async function getConfidentialBurnInstructionAsync<
     TProgramAddress,
     TAccountOwner,
     TAccountMint,
+    TAccountUnderlyingMint,
+    TAccountOwnerAta,
     TAccountTokenAccount,
     TAccountComputeSigner,
     TAccountTotalSupplyAuthority,
@@ -264,6 +278,8 @@ export async function getConfidentialBurnInstructionAsync<
   const originalAccounts = {
     owner: { value: input.owner ?? null, isWritable: true },
     mint: { value: input.mint ?? null, isWritable: true },
+    underlyingMint: { value: input.underlyingMint ?? null, isWritable: false },
+    ownerAta: { value: input.ownerAta ?? null, isWritable: false },
     tokenAccount: { value: input.tokenAccount ?? null, isWritable: true },
     computeSigner: { value: input.computeSigner ?? null, isWritable: false },
     totalSupplyAuthority: {
@@ -324,6 +340,8 @@ export async function getConfidentialBurnInstructionAsync<
     accounts: [
       getAccountMeta('owner', accounts.owner),
       getAccountMeta('mint', accounts.mint),
+      getAccountMeta('underlyingMint', accounts.underlyingMint),
+      getAccountMeta('ownerAta', accounts.ownerAta),
       getAccountMeta('tokenAccount', accounts.tokenAccount),
       getAccountMeta('computeSigner', accounts.computeSigner),
       getAccountMeta('totalSupplyAuthority', accounts.totalSupplyAuthority),
@@ -346,6 +364,8 @@ export async function getConfidentialBurnInstructionAsync<
     TProgramAddress,
     TAccountOwner,
     TAccountMint,
+    TAccountUnderlyingMint,
+    TAccountOwnerAta,
     TAccountTokenAccount,
     TAccountComputeSigner,
     TAccountTotalSupplyAuthority,
@@ -367,6 +387,8 @@ export async function getConfidentialBurnInstructionAsync<
 export type ConfidentialBurnInput<
   TAccountOwner extends string = string,
   TAccountMint extends string = string,
+  TAccountUnderlyingMint extends string = string,
+  TAccountOwnerAta extends string = string,
   TAccountTokenAccount extends string = string,
   TAccountComputeSigner extends string = string,
   TAccountTotalSupplyAuthority extends string = string,
@@ -387,6 +409,8 @@ export type ConfidentialBurnInput<
   owner: TransactionSigner<TAccountOwner>;
   /** Confidential mint whose encrypted total supply is decreased. */
   mint: Address<TAccountMint>;
+  underlyingMint: Address<TAccountUnderlyingMint>;
+  ownerAta: Address<TAccountOwnerAta>;
   /** Token account whose balance is decreased. */
   tokenAccount: Address<TAccountTokenAccount>;
   computeSigner: Address<TAccountComputeSigner>;
@@ -424,6 +448,8 @@ export type ConfidentialBurnInput<
 export function getConfidentialBurnInstruction<
   TAccountOwner extends string,
   TAccountMint extends string,
+  TAccountUnderlyingMint extends string,
+  TAccountOwnerAta extends string,
   TAccountTokenAccount extends string,
   TAccountComputeSigner extends string,
   TAccountTotalSupplyAuthority extends string,
@@ -444,6 +470,8 @@ export function getConfidentialBurnInstruction<
   input: ConfidentialBurnInput<
     TAccountOwner,
     TAccountMint,
+    TAccountUnderlyingMint,
+    TAccountOwnerAta,
     TAccountTokenAccount,
     TAccountComputeSigner,
     TAccountTotalSupplyAuthority,
@@ -465,6 +493,8 @@ export function getConfidentialBurnInstruction<
   TProgramAddress,
   TAccountOwner,
   TAccountMint,
+  TAccountUnderlyingMint,
+  TAccountOwnerAta,
   TAccountTokenAccount,
   TAccountComputeSigner,
   TAccountTotalSupplyAuthority,
@@ -488,6 +518,8 @@ export function getConfidentialBurnInstruction<
   const originalAccounts = {
     owner: { value: input.owner ?? null, isWritable: true },
     mint: { value: input.mint ?? null, isWritable: true },
+    underlyingMint: { value: input.underlyingMint ?? null, isWritable: false },
+    ownerAta: { value: input.ownerAta ?? null, isWritable: false },
     tokenAccount: { value: input.tokenAccount ?? null, isWritable: true },
     computeSigner: { value: input.computeSigner ?? null, isWritable: false },
     totalSupplyAuthority: {
@@ -538,6 +570,8 @@ export function getConfidentialBurnInstruction<
     accounts: [
       getAccountMeta('owner', accounts.owner),
       getAccountMeta('mint', accounts.mint),
+      getAccountMeta('underlyingMint', accounts.underlyingMint),
+      getAccountMeta('ownerAta', accounts.ownerAta),
       getAccountMeta('tokenAccount', accounts.tokenAccount),
       getAccountMeta('computeSigner', accounts.computeSigner),
       getAccountMeta('totalSupplyAuthority', accounts.totalSupplyAuthority),
@@ -560,6 +594,8 @@ export function getConfidentialBurnInstruction<
     TProgramAddress,
     TAccountOwner,
     TAccountMint,
+    TAccountUnderlyingMint,
+    TAccountOwnerAta,
     TAccountTokenAccount,
     TAccountComputeSigner,
     TAccountTotalSupplyAuthority,
@@ -588,37 +624,39 @@ export type ParsedConfidentialBurnInstruction<
     owner: TAccountMetas[0];
     /** Confidential mint whose encrypted total supply is decreased. */
     mint: TAccountMetas[1];
+    underlyingMint: TAccountMetas[2];
+    ownerAta: TAccountMetas[3];
     /** Token account whose balance is decreased. */
-    tokenAccount: TAccountMetas[2];
-    computeSigner: TAccountMetas[3];
-    totalSupplyAuthority: TAccountMetas[4];
+    tokenAccount: TAccountMetas[4];
+    computeSigner: TAccountMetas[5];
+    totalSupplyAuthority: TAccountMetas[6];
     /** Stable balance encrypted value account; read for the current handle and replaced by this execution. */
-    balanceValue: TAccountMetas[5];
+    balanceValue: TAccountMetas[7];
     /** Stable total-supply encrypted value account; read for the current handle and replaced by this execution. */
-    totalSupplyValue: TAccountMetas[6];
+    totalSupplyValue: TAccountMetas[8];
     /** account's first burn and replaced after the prior pending burn is settled. */
-    burnedAmountValue: TAccountMetas[7];
+    burnedAmountValue: TAccountMetas[9];
     /** A burn is rejected before execution while this account is already initialized. */
-    pendingBurn: TAccountMetas[8];
-    zamaEventAuthority: TAccountMetas[9];
+    pendingBurn: TAccountMetas[10];
+    zamaEventAuthority: TAccountMetas[11];
     /** ZamaHost program used for FHE operations. */
-    zamaProgram: TAccountMetas[10];
+    zamaProgram: TAccountMetas[12];
     /** ZamaHost config used for handle derivation. */
-    hostConfig: TAccountMetas[11];
+    hostConfig: TAccountMetas[13];
     /** System program used for ACL account creation and the pending-burn PDA. */
-    systemProgram: TAccountMetas[12];
+    systemProgram: TAccountMetas[14];
     /**
      * canonical `["hcu-block-meter", compute_signer]` PDA. Supplied by an untrusted mint under a
      * metering-band cap; omitted when the mint is trusted or the cap is unrestricted.
      */
-    hcuBlockMeter?: TAccountMetas[13] | undefined;
+    hcuBlockMeter?: TAccountMetas[15] | undefined;
     /**
      * canonical `["hcu-trusted", compute_signer]` PDA. Present + valid bypasses the cap; absent
      * means the mint is metered.
      */
-    hcuTrustedAppRecord?: TAccountMetas[14] | undefined;
-    eventAuthority: TAccountMetas[15];
-    program: TAccountMetas[16];
+    hcuTrustedAppRecord?: TAccountMetas[16] | undefined;
+    eventAuthority: TAccountMetas[17];
+    program: TAccountMetas[18];
   };
   data: ConfidentialBurnInstructionData;
 };
@@ -626,10 +664,10 @@ export type ParsedConfidentialBurnInstruction<
 export function parseConfidentialBurnInstruction<TProgram extends string, TAccountMetas extends readonly AccountMeta[]>(
   instruction: Instruction<TProgram> & InstructionWithAccounts<TAccountMetas> & InstructionWithData<ReadonlyUint8Array>,
 ): ParsedConfidentialBurnInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 17) {
+  if (instruction.accounts.length < 19) {
     throw new SolanaError(SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS, {
       actualAccountMetas: instruction.accounts.length,
-      expectedAccountMetas: 17,
+      expectedAccountMetas: 19,
     });
   }
   let accountIndex = 0;
@@ -647,6 +685,8 @@ export function parseConfidentialBurnInstruction<TProgram extends string, TAccou
     accounts: {
       owner: getNextAccount(),
       mint: getNextAccount(),
+      underlyingMint: getNextAccount(),
+      ownerAta: getNextAccount(),
       tokenAccount: getNextAccount(),
       computeSigner: getNextAccount(),
       totalSupplyAuthority: getNextAccount(),

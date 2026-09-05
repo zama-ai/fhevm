@@ -42,7 +42,11 @@ import {
   pendingJoinValueAccount,
   tokenAccountAddress,
 } from './internal/batcherPdas.js';
-import { balanceValueAddress, transferredAmountValueAddress } from './internal/tokenValueAccount.js';
+import {
+  associatedTokenAddress,
+  balanceValueAddress,
+  transferredAmountValueAddress,
+} from './internal/tokenValueAccount.js';
 
 /**
  * Joins a batch with a coprocessor-attested confidential amount of the batcher's join token. This
@@ -68,6 +72,10 @@ export type SolanaVaultJoinParameters = {
   readonly batch: Address;
   /** Confidential mint the batcher joins with (`batcher.join_confidential_mint`). */
   readonly joinConfidentialMint: Address;
+  /** SPL mint wrapped by `joinConfidentialMint`. Freeze checks the join owners' ATAs on this mint. */
+  readonly joinUnderlyingMint: Address;
+  /** Token program that owns `joinUnderlyingMint` (`Tokenkeg` or Token-2022). */
+  readonly tokenProgram: Address;
   readonly hostConfig: Address;
   readonly computeUnitLimit?: number | undefined;
   /** Called after successful simulation and immediately before submission, for persistent recovery journals. */
@@ -145,6 +153,13 @@ export async function joinBatch(
     batcher: parameters.batcher,
     batch: parameters.batch,
     joinConfidentialMint,
+    joinUnderlyingMint: parameters.joinUnderlyingMint,
+    userAta: await associatedTokenAddress(user.address, parameters.joinUnderlyingMint, parameters.tokenProgram),
+    batchAuthorityAta: await associatedTokenAddress(
+      batchAuthority,
+      parameters.joinUnderlyingMint,
+      parameters.tokenProgram,
+    ),
     joinComputeSigner,
     userTokenAccount,
     batchJoinTokenAccount,

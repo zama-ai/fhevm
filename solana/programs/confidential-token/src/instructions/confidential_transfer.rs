@@ -13,6 +13,13 @@ pub struct ConfidentialTransfer<'info> {
     pub payer: Signer<'info>,
     /// Confidential mint.
     pub mint: Box<Account<'info, ConfidentialMint>>,
+    /// CHECK: underlying SPL mint wrapped by `mint`. Token program is this account's owner.
+    pub underlying_mint: UncheckedAccount<'info>,
+    /// CHECK: ATA of `from_account.owner` on `underlying_mint`. Uninitialized → not frozen.
+    pub from_ata: UncheckedAccount<'info>,
+    /// CHECK: ATA of `to_account.owner`. May equal `from_ata` on self-transfer.
+    #[account(dup)]
+    pub to_ata: UncheckedAccount<'info>,
     /// Sender token account.
     #[account(mut)]
     pub from_account: Box<Account<'info, ConfidentialTokenAccount>>,
@@ -80,6 +87,9 @@ impl<'info> ConfidentialTransfer<'info> {
                 .hcu_trusted_app_record
                 .as_ref()
                 .map(|account| account.to_account_info()),
+            underlying_mint: self.underlying_mint.to_account_info(),
+            from_ata: self.from_ata.to_account_info(),
+            to_ata: self.to_ata.to_account_info(),
         }
     }
 }
@@ -153,6 +163,13 @@ pub struct ConfidentialTransferFromValue<'info> {
     pub payer: Signer<'info>,
     /// Confidential mint.
     pub mint: Box<Account<'info, ConfidentialMint>>,
+    /// CHECK: underlying SPL mint wrapped by `mint`. Token program is this account's owner.
+    pub underlying_mint: UncheckedAccount<'info>,
+    /// CHECK: ATA of `from_account.owner` on `underlying_mint`. Uninitialized → not frozen.
+    pub from_ata: UncheckedAccount<'info>,
+    /// CHECK: ATA of `to_account.owner`. May equal `from_ata` on self-transfer.
+    #[account(dup)]
+    pub to_ata: UncheckedAccount<'info>,
     /// Sender token account.
     #[account(mut)]
     pub from_account: Box<Account<'info, ConfidentialTokenAccount>>,
@@ -227,6 +244,9 @@ impl<'info> ConfidentialTransferFromValue<'info> {
                 .hcu_trusted_app_record
                 .as_ref()
                 .map(|account| account.to_account_info()),
+            underlying_mint: self.underlying_mint.to_account_info(),
+            from_ata: self.from_ata.to_account_info(),
+            to_ata: self.to_ata.to_account_info(),
         }
     }
 }

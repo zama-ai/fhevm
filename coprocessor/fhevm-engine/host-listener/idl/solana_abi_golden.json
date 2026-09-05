@@ -116,7 +116,7 @@
       "fixture_len": 225,
       "name": "confidential_burn",
       "program": "confidential_token",
-      "schema_hash": "e99cc12ff4952f793568093519c944de7de0fb3b862b184cea22dc57b49788fa"
+      "schema_hash": "5f41f577512a3553fbd8a69c9584110ce10352a7d2b0c5d18ad00253053a7989"
     },
     {
       "category": "instruction_args",
@@ -124,7 +124,7 @@
       "fixture_len": 8,
       "name": "confidential_burn_from_value",
       "program": "confidential_token",
-      "schema_hash": "ac5c4966a61863dcf5d62860d2256f4033164f8d14b6044dd37ca458f9e60b16"
+      "schema_hash": "cb3fac18ebb9196adaf03ec848eb413d907d00c6a9d0598f851b998c21f00ca5"
     },
     {
       "category": "instruction_args",
@@ -132,7 +132,7 @@
       "fixture_len": 225,
       "name": "confidential_transfer",
       "program": "confidential_token",
-      "schema_hash": "4d2f88b28cb5f6f3e2cfbe9c4c325caa8a5305d8a2b45ff07703238306da0a6c"
+      "schema_hash": "7730fe51ab3da89a5349dedf8608a15392f1412f6a48f404ed4577c3371e6bc0"
     },
     {
       "category": "instruction_args",
@@ -140,7 +140,7 @@
       "fixture_len": 8,
       "name": "confidential_transfer_from_value",
       "program": "confidential_token",
-      "schema_hash": "f4c6c620bd3f755628a2ec0c008d47bdc76c46e849bd12edd6e909469b93d56d"
+      "schema_hash": "f0b554adb2cdffafb3acd1f4c666a2d2bca0655727fd98ded588131e39e175c3"
     },
     {
       "category": "instruction_args",

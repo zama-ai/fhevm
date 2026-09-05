@@ -195,7 +195,11 @@ export const mintSplTo = async (
     readonly baseUnits: bigint;
   },
 ): Promise<Address> => {
-  const ata = await associatedTokenAddress(params.recipient, params.mint);
+  const ata = await associatedTokenAddress(
+    params.recipient,
+    params.mint,
+    SPL_TOKEN_PROGRAM_ADDRESS,
+  );
   await context.sendTransaction(params.authority, [
     createIdempotentAtaInstruction({ payer: params.authority, ata, owner: params.recipient, mint: params.mint }),
     mintToInstruction({ mint: params.mint, destination: ata, authority: params.authority, baseUnits: params.baseUnits }),
@@ -265,6 +269,7 @@ export const wrapUnderlying = async (
       owner: params.owner,
       mint: params.mint,
       underlyingMint: params.underlyingMint,
+      tokenProgram: SPL_TOKEN_PROGRAM_ADDRESS,
       hostConfig: await hostConfigAddress(),
       amount: params.amount,
     }),

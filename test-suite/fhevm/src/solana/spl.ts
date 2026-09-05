@@ -40,11 +40,15 @@ const VAULT_AUTHORITY_SEED = "vault-authority";
 const addressEncoder = getAddressEncoder();
 const encodeAddress = (value: Address): Uint8Array => new Uint8Array(addressEncoder.encode(value));
 
-/** Derives the canonical associated token account for `owner` and SPL `mint` (classic token program). */
-export const associatedTokenAddress = async (owner: Address, mint: Address): Promise<Address> => {
+/** Associated token account for `owner` and SPL `mint` under `tokenProgram`. */
+export const associatedTokenAddress = async (
+  owner: Address,
+  mint: Address,
+  tokenProgram: Address,
+): Promise<Address> => {
   const [ata] = await getProgramDerivedAddress({
     programAddress: ASSOCIATED_TOKEN_PROGRAM_ADDRESS,
-    seeds: [encodeAddress(owner), encodeAddress(SPL_TOKEN_PROGRAM_ADDRESS), encodeAddress(mint)],
+    seeds: [encodeAddress(owner), encodeAddress(tokenProgram), encodeAddress(mint)],
   });
   return ata;
 };
@@ -181,7 +185,11 @@ export const buildVaultUnderlyingEscrowAtaInstruction = async (params: {
   readonly underlyingMint: Address;
 }): Promise<{ readonly escrow: Address; readonly instruction: Instruction }> => {
   const vaultAuthority = await vaultAuthorityAddress(params.tokenProgram, params.confidentialMint);
-  const escrow = await associatedTokenAddress(vaultAuthority, params.underlyingMint);
+  const escrow = await associatedTokenAddress(
+    vaultAuthority,
+    params.underlyingMint,
+    SPL_TOKEN_PROGRAM_ADDRESS,
+  );
   return {
     escrow,
     instruction: createIdempotentAtaInstruction({

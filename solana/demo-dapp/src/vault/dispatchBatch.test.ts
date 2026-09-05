@@ -49,7 +49,12 @@ describe('buildDispatchBatchInstruction', () => {
   const batcher = addr(2);
   const batch = address('Dm6gzuvv47gSSeMyV72nVs9N79AQA7sczD5GBw3XwXHX');
   const joinConfidentialMint = addr(13);
+  const joinUnderlyingMint = addr(14);
   const hostConfig = addr(8);
+  const SPL_TOKEN = address('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
+  const ASSOCIATED_TOKEN = address('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL');
+  const ata = (owner: Address, mint: Address): Promise<Address> =>
+    pda(ASSOCIATED_TOKEN, [base58.decode(owner), base58.decode(SPL_TOKEN), base58.decode(mint)]);
 
   it('derives every non-root account exactly as dispatch.rs validates them', async () => {
     const instruction = await buildDispatchBatchInstruction({
@@ -57,6 +62,8 @@ describe('buildDispatchBatchInstruction', () => {
       batcher,
       batch,
       joinConfidentialMint,
+      joinUnderlyingMint,
+      tokenProgram: SPL_TOKEN,
       hostConfig,
     });
 
@@ -81,6 +88,8 @@ describe('buildDispatchBatchInstruction', () => {
       batch,
       batchAuthority,
       joinConfidentialMint,
+      joinUnderlyingMint,
+      await ata(batchAuthority, joinUnderlyingMint),
       await pda(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, [utf8('fhe-compute'), base58.decode(joinConfidentialMint)]),
       totalSupplyAuthority,
       batchJoinTokenAccount,
@@ -114,16 +123,18 @@ describe('buildDispatchBatchInstruction', () => {
       batcher,
       batch,
       joinConfidentialMint,
+      joinUnderlyingMint,
+      tokenProgram: SPL_TOKEN,
       hostConfig,
     });
     const addresses = instruction.accounts!.map((a) => a.address);
-    expect(addresses[5]).toBe('9Zex4Xc17gawiJNk1pEirBrTx2GsNb5HB6WYgHWWkemQ'); // joinComputeSigner
-    expect(addresses[6]).toBe('W4dfnWqZVyik2iMYeP2jHGDfRJbZxzbXfgysxQS1VYK'); // totalSupplyAuthority
-    expect(addresses[7]).toBe('8iRxqzbzVoCDyN5ruCrtDs3HEJXL6S5khbmijMta8j6z'); // batchJoinTokenAccount
-    expect(addresses[8]).toBe('6L34CwYQLjs4e5sHTjCsoNk5UBZwDtTMkKegf7tRdoM7'); // batchBalanceValue
-    expect(addresses[9]).toBe('D1kRDX4FNzfiFqnJCjX443t7ZgN3jCk2NLtNk93eH8pt'); // totalSupplyValue
-    // addresses[10] = batchBurnedAmountValue; addresses[11] = pendingBurn
-    expect(addresses[12]).toBe('7usNGbH9WupMAsyDeqdUEoKrjisKcgusGjDiju4vNog'); // zamaEventAuthority
-    expect(addresses[15]).toBe('2KQ5N8YEUTk8hQWXBnkGjsvKPzm2rh2nFH6PeoVt7q8U'); // tokenEventAuthority
+    expect(addresses[7]).toBe('9Zex4Xc17gawiJNk1pEirBrTx2GsNb5HB6WYgHWWkemQ'); // joinComputeSigner
+    expect(addresses[8]).toBe('W4dfnWqZVyik2iMYeP2jHGDfRJbZxzbXfgysxQS1VYK'); // totalSupplyAuthority
+    expect(addresses[9]).toBe('8iRxqzbzVoCDyN5ruCrtDs3HEJXL6S5khbmijMta8j6z'); // batchJoinTokenAccount
+    expect(addresses[10]).toBe('6L34CwYQLjs4e5sHTjCsoNk5UBZwDtTMkKegf7tRdoM7'); // batchBalanceValue
+    expect(addresses[11]).toBe('D1kRDX4FNzfiFqnJCjX443t7ZgN3jCk2NLtNk93eH8pt'); // totalSupplyValue
+    // addresses[12] = batchBurnedAmountValue; addresses[13] = pendingBurn
+    expect(addresses[14]).toBe('7usNGbH9WupMAsyDeqdUEoKrjisKcgusGjDiju4vNog'); // zamaEventAuthority
+    expect(addresses[17]).toBe('2KQ5N8YEUTk8hQWXBnkGjsvKPzm2rh2nFH6PeoVt7q8U'); // tokenEventAuthority
   });
 });

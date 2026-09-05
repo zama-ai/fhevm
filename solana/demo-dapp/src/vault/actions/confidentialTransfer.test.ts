@@ -26,6 +26,7 @@ import { base58 } from '@scure/base';
 
 import { confidentialTransfer, type SolanaConfidentialTransferParameters } from './confidentialTransfer.js';
 import { findComputeSignerPda } from '../internal/generated/confidentialToken/pdas/computeSigner.js';
+import { associatedTokenAddress, TOKEN_PROGRAM_ADDRESS } from '../internal/tokenValueAccount.js';
 
 const CHAIN_ID = (1n << 63n) | 12345n;
 const ACL = `0x${'11'.repeat(32)}` as Bytes32Hex;
@@ -77,8 +78,11 @@ async function parameters(overrides: Partial<SolanaConfidentialTransferParameter
     owner,
     feePayer: signer(key(3)),
     mint,
+    underlyingMint: key(9),
+    tokenProgram: TOKEN_PROGRAM_ADDRESS,
     fromAccount: key(4),
     toAccount: key(5),
+    toOwner: key(10),
     fromBalanceValue: key(6),
     toBalanceValue: key(7),
     hostConfig: key(8),
@@ -231,8 +235,17 @@ describe('confidentialTransfer attestation binding', () => {
         { address: key(11), role: AccountRole.READONLY },
       ]);
     }
-    expect(message.instructions[1]!.accounts?.[13]).toEqual({ address: key(8), role: AccountRole.WRITABLE });
-    expect(message.instructions[1]!.accounts?.[14]).toEqual({ address: key(9), role: AccountRole.READONLY });
+    const fromAta = await associatedTokenAddress(params.owner.address, params.underlyingMint, TOKEN_PROGRAM_ADDRESS);
+    const toAta = await associatedTokenAddress(params.toOwner, params.underlyingMint, TOKEN_PROGRAM_ADDRESS);
+    expect(message.instructions[1]!.accounts?.[3]).toEqual({
+      address: params.underlyingMint,
+      role: AccountRole.READONLY,
+    });
+    expect(message.instructions[1]!.accounts?.[4]).toEqual({ address: fromAta, role: AccountRole.READONLY });
+    expect(message.instructions[1]!.accounts?.[5]).toEqual({ address: toAta, role: AccountRole.READONLY });
+    // Freeze ATAs inserted three metas after mint; the HCU pair that used to sit at 13/14 is now 16/17.
+    expect(message.instructions[1]!.accounts?.[16]).toEqual({ address: key(8), role: AccountRole.WRITABLE });
+    expect(message.instructions[1]!.accounts?.[17]).toEqual({ address: key(9), role: AccountRole.READONLY });
   });
 
   it('rejects deny records on the program self-transfer no-op path', async () => {

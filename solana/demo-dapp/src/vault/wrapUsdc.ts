@@ -20,6 +20,8 @@ export type SolanaVaultWrapUsdcParameters = {
   readonly mint: Address;
   /** The underlying SPL mint being escrowed (e.g. mock USDC). */
   readonly underlyingMint: Address;
+  /** Token program that owns `underlyingMint` (`Tokenkeg` or Token-2022). */
+  readonly tokenProgram: Address;
   /** zama-host config PDA used for handle derivation. */
   readonly hostConfig: Address;
   /** Public underlying amount to escrow and rotate into the confidential balance. */
@@ -44,12 +46,13 @@ export async function buildWrapUsdcInstruction(parameters: SolanaVaultWrapUsdcPa
     mint,
     tokenAccount,
     underlyingMint,
-    userUsdc: await associatedTokenAddress(owner.address, underlyingMint),
-    vaultUsdc: await associatedTokenAddress(mintVaultAuthority, underlyingMint),
+    userUsdc: await associatedTokenAddress(owner.address, underlyingMint, parameters.tokenProgram),
+    vaultUsdc: await associatedTokenAddress(mintVaultAuthority, underlyingMint, parameters.tokenProgram),
     balanceValue: await balanceValueAddress(mint, tokenAccount),
     totalSupplyValue: await totalSupplyValueAddress(mint, totalSupplyAuthority),
     zamaEventAuthority: await zamaEventAuthorityAddress(),
     hostConfig: parameters.hostConfig,
+    tokenProgram: parameters.tokenProgram,
     eventAuthority: await tokenEventAuthorityAddress(),
     program: CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
     amount: parameters.amount,

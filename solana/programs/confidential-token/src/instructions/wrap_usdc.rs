@@ -168,8 +168,19 @@ pub fn wrap_usdc<'info>(ctx: Context<'info, WrapUsdc<'info>>, amount: u64) -> Re
         |builder| {
             let encrypted_amount =
                 builder.trivial_encrypt_u64(amount, zama_fhe::Output::transient())?;
-            builder.add(balance, encrypted_amount, balance_output.output())?;
-            builder.add(total_supply, encrypted_amount, total_supply_output.output())?;
+            // EVM `tryIncrease` parity: encrypted add wraps mod 2^64, so clamp the credit to zero
+            // when either balance or total supply cannot take `amount`. Unreachable on a 1:1 SPL
+            // `u64` vault; required before any rate, fee, or extra mint.
+            let max = builder.trivial_encrypt_u64(u64::MAX, zama_fhe::Output::transient())?;
+            let room = builder.sub(max, encrypted_amount, zama_fhe::Output::transient())?;
+            let balance_ok = builder.ge(room, balance, zama_fhe::Output::transient())?;
+            let supply_ok = builder.ge(room, total_supply, zama_fhe::Output::transient())?;
+            let ok = builder.and(balance_ok, supply_ok, zama_fhe::Output::transient())?;
+            let zero = builder.trivial_encrypt_u64(0, zama_fhe::Output::transient())?;
+            let added =
+                builder.if_then_else(ok, encrypted_amount, zero, zama_fhe::Output::transient())?;
+            builder.add(balance, added, balance_output.output())?;
+            builder.add(total_supply, added, total_supply_output.output())?;
             Ok(())
         },
     )

@@ -2,7 +2,7 @@ import type { Address, FetchAccountConfig, Instruction, Rpc, SolanaRpcApi, Trans
 
 import { fetchVault } from './internal/generated/demoVault/accounts/vault.js';
 import { getHarvestInstruction } from './internal/generated/demoVault/instructions/harvest.js';
-import { associatedTokenAddress } from './internal/tokenValueAccount.js';
+import { associatedTokenAddress, TOKEN_PROGRAM_ADDRESS } from './internal/tokenValueAccount.js';
 
 type SolanaRpc = Rpc<SolanaRpcApi>;
 
@@ -39,7 +39,11 @@ export async function buildHarvestInstruction(
     donor: parameters.donor,
     vault: parameters.vault,
     underlyingMint: vault.data.underlyingMint,
-    donorUnderlying: await associatedTokenAddress(parameters.donor.address, vault.data.underlyingMint),
+    donorUnderlying: await associatedTokenAddress(
+      parameters.donor.address,
+      vault.data.underlyingMint,
+      TOKEN_PROGRAM_ADDRESS,
+    ),
     vaultTokenAccount: vault.data.vaultTokenAccount,
     amount: parameters.amount,
   });

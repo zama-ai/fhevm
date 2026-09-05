@@ -9,7 +9,7 @@
 
 import { getProgramDerivedAddress, type Address, type TransactionSigner } from "@solana/kit";
 
-import { associatedTokenAddress } from "./spl";
+import { associatedTokenAddress, SPL_TOKEN_PROGRAM_ADDRESS } from "./spl";
 import {
   getConfidentialBurnInstructionAsync,
   getRedeemBurnedAmountInstructionAsync,
@@ -76,6 +76,7 @@ export const confidentialBurn = async (
   params: {
     readonly owner: TransactionSigner;
     readonly mint: Address;
+    readonly underlyingMint: Address;
     readonly amountAttestation: CoprocessorInputAttestationArgs;
   },
 ): Promise<void> => {
@@ -90,6 +91,12 @@ export const confidentialBurn = async (
   const instruction = await getConfidentialBurnInstructionAsync({
     owner: params.owner,
     mint: params.mint,
+    underlyingMint: params.underlyingMint,
+    ownerAta: await associatedTokenAddress(
+      params.owner.address,
+      params.underlyingMint,
+      SPL_TOKEN_PROGRAM_ADDRESS,
+    ),
     tokenAccount: target.tokenAccount,
     balanceValue,
     totalSupplyValue,
@@ -131,8 +138,16 @@ export const redeemBurnedAmount = async (
     mint: params.mint,
     tokenAccount: target.tokenAccount,
     underlyingMint: params.underlyingMint,
-    vaultUsdc: await associatedTokenAddress(vaultAuthority, params.underlyingMint),
-    destinationUsdc: await associatedTokenAddress(params.owner.address, params.underlyingMint),
+    vaultUsdc: await associatedTokenAddress(
+      vaultAuthority,
+      params.underlyingMint,
+      SPL_TOKEN_PROGRAM_ADDRESS,
+    ),
+    destinationUsdc: await associatedTokenAddress(
+      params.owner.address,
+      params.underlyingMint,
+      SPL_TOKEN_PROGRAM_ADDRESS,
+    ),
     burnedAmountValue: target.burnedAmount.encryptedValueAddress,
     hostConfig: await hostConfigAddress(),
     kmsContext: await kmsContextAddress(),

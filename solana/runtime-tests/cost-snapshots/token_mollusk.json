@@ -6,32 +6,32 @@
   },
   "measurements": {
     "confidential_burn_from_value/direct": {
-      "compute_units": 186100,
-      "unique_accounts": 16,
+      "compute_units": 188546,
+      "unique_accounts": 18,
       "instruction_data_bytes": 8,
       "cpi_instructions": 11,
       "total_cpi_instruction_data_bytes": 1469,
       "max_cpi_instruction_data_bytes": 665
     },
     "confidential_transfer/direct": {
-      "compute_units": 228358,
-      "unique_accounts": 14,
+      "compute_units": 235980,
+      "unique_accounts": 17,
       "instruction_data_bytes": 223,
       "cpi_instructions": 7,
       "total_cpi_instruction_data_bytes": 1878,
       "max_cpi_instruction_data_bytes": 1093
     },
     "confidential_transfer/steady_state": {
-      "compute_units": 236253,
-      "unique_accounts": 14,
+      "compute_units": 243875,
+      "unique_accounts": 17,
       "instruction_data_bytes": 223,
       "cpi_instructions": 5,
       "total_cpi_instruction_data_bytes": 1962,
       "max_cpi_instruction_data_bytes": 1225
     },
     "confidential_transfer_from_value/direct": {
-      "compute_units": 185141,
-      "unique_accounts": 15,
+      "compute_units": 192755,
+      "unique_accounts": 18,
       "instruction_data_bytes": 8,
       "cpi_instructions": 7,
       "total_cpi_instruction_data_bytes": 1484,

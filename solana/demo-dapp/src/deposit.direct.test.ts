@@ -29,6 +29,7 @@ vi.mock('@fhevm/sdk/solana', () => ({
 }));
 
 vi.mock('./vault/index.js', () => ({
+  TOKEN_PROGRAM_ADDRESS: 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
   buildWrapUsdcInstruction: mocks.buildWrap,
   computeSignerAddress: vi.fn().mockResolvedValue('11111111111111111111111111111111'),
   deriveBatchAddresses: vi.fn(),

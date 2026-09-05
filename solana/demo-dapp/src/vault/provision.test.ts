@@ -136,6 +136,7 @@ describe('vault provisioning builders', () => {
       owner: signer(addr(1)),
       mint: addr(2),
       underlyingMint: addr(3),
+      tokenProgram: address('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'),
       hostConfig: HOST_CONFIG,
       amount: 1_000_000n,
     });

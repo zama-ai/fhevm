@@ -53,7 +53,12 @@ describe('buildClaimInstruction', () => {
   const batcher = addr(2);
   const batch = address('Dm6gzuvv47gSSeMyV72nVs9N79AQA7sczD5GBw3XwXHX');
   const payoutConfidentialMint = addr(13);
+  const payoutUnderlyingMint = addr(14);
   const hostConfig = addr(8);
+  const SPL_TOKEN = address('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
+  const ASSOCIATED_TOKEN = address('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL');
+  const ata = (owner: Address, mint: Address): Promise<Address> =>
+    pda(ASSOCIATED_TOKEN, [base58.decode(owner), base58.decode(SPL_TOKEN), base58.decode(mint)]);
 
   it('derives every non-root account exactly as claim.rs validates them', async () => {
     const instruction = await buildClaimInstruction({
@@ -62,6 +67,8 @@ describe('buildClaimInstruction', () => {
       batcher,
       batch,
       payoutConfidentialMint,
+      payoutUnderlyingMint,
+      tokenProgram: SPL_TOKEN,
       hostConfig,
     });
 
@@ -90,6 +97,9 @@ describe('buildClaimInstruction', () => {
       await valueAccountPda(batch, batchAuthority, userLabel('batcher-pending-join', user)),
       await valueAccountPda(batch, batchAuthority, userLabel('batcher-claim-amount', user)),
       payoutConfidentialMint,
+      payoutUnderlyingMint,
+      await ata(batchAuthority, payoutUnderlyingMint),
+      await ata(user, payoutUnderlyingMint),
       await pda(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, [utf8('fhe-compute'), base58.decode(payoutConfidentialMint)]),
       batchPayoutTokenAccount,
       userPayoutTokenAccount,
@@ -122,13 +132,15 @@ describe('buildClaimInstruction', () => {
       batcher,
       batch,
       payoutConfidentialMint,
+      payoutUnderlyingMint,
+      tokenProgram: SPL_TOKEN,
       hostConfig,
     });
     const addresses = instruction.accounts!.map((a) => a.address);
-    expect(addresses[9]).toBe('9Zex4Xc17gawiJNk1pEirBrTx2GsNb5HB6WYgHWWkemQ'); // payoutComputeSigner
-    expect(addresses[10]).toBe('8iRxqzbzVoCDyN5ruCrtDs3HEJXL6S5khbmijMta8j6z'); // batchPayoutTokenAccount
-    expect(addresses[12]).toBe('6L34CwYQLjs4e5sHTjCsoNk5UBZwDtTMkKegf7tRdoM7'); // batchPayoutBalanceValue
-    expect(addresses[15]).toBe('7usNGbH9WupMAsyDeqdUEoKrjisKcgusGjDiju4vNog'); // zamaEventAuthority
-    expect(addresses[18]).toBe('2KQ5N8YEUTk8hQWXBnkGjsvKPzm2rh2nFH6PeoVt7q8U'); // tokenEventAuthority
+    expect(addresses[12]).toBe('9Zex4Xc17gawiJNk1pEirBrTx2GsNb5HB6WYgHWWkemQ'); // payoutComputeSigner
+    expect(addresses[13]).toBe('8iRxqzbzVoCDyN5ruCrtDs3HEJXL6S5khbmijMta8j6z'); // batchPayoutTokenAccount
+    expect(addresses[15]).toBe('6L34CwYQLjs4e5sHTjCsoNk5UBZwDtTMkKegf7tRdoM7'); // batchPayoutBalanceValue
+    expect(addresses[18]).toBe('7usNGbH9WupMAsyDeqdUEoKrjisKcgusGjDiju4vNog'); // zamaEventAuthority
+    expect(addresses[21]).toBe('2KQ5N8YEUTk8hQWXBnkGjsvKPzm2rh2nFH6PeoVt7q8U'); // tokenEventAuthority
   });
 });

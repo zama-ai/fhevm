@@ -57,6 +57,12 @@ pub struct Claim<'info> {
     pub claim_amount_value: UncheckedAccount<'info>,
     /// Confidential mint claims pay out in.
     pub payout_confidential_mint: Box<Account<'info, ct::ConfidentialMint>>,
+    /// CHECK: underlying SPL mint wrapped by `payout_confidential_mint`. Token program is its owner.
+    pub payout_underlying_mint: UncheckedAccount<'info>,
+    /// CHECK: ATA of `batch_authority` on `payout_underlying_mint`. Uninitialized → not frozen.
+    pub batch_authority_payout_ata: UncheckedAccount<'info>,
+    /// CHECK: ATA of `user` on `payout_underlying_mint`. Uninitialized → not frozen.
+    pub user_payout_ata: UncheckedAccount<'info>,
     /// CHECK: payout mint compute-signer PDA; validated by the token CPI.
     pub payout_compute_signer: UncheckedAccount<'info>,
     /// CHECK: batch's confidential payout token account (transfer source);
@@ -185,6 +191,9 @@ pub fn claim<'info>(ctx: Context<'info, Claim<'info>>) -> Result<()> {
             owner: ctx.accounts.batch_authority.to_account_info(),
             payer: ctx.accounts.payer.to_account_info(),
             mint: ctx.accounts.payout_confidential_mint.to_account_info(),
+            underlying_mint: ctx.accounts.payout_underlying_mint.to_account_info(),
+            from_ata: ctx.accounts.batch_authority_payout_ata.to_account_info(),
+            to_ata: ctx.accounts.user_payout_ata.to_account_info(),
             from_account: ctx.accounts.batch_payout_token_account.to_account_info(),
             to_account: ctx.accounts.user_payout_token_account.to_account_info(),
             compute_signer: ctx.accounts.payout_compute_signer.to_account_info(),

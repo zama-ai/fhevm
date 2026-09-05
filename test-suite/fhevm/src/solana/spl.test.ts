@@ -33,7 +33,11 @@ describe("vault underlying-token escrow (the wrap_usdc / redeem_burned_amount va
       underlyingMint: UNDERLYING_MINT,
     });
     const vaultAuthority = await vaultAuthorityAddress(TOKEN_PROGRAM, CONFIDENTIAL_MINT);
-    const expected = await associatedTokenAddress(vaultAuthority, UNDERLYING_MINT);
+    const expected = await associatedTokenAddress(
+      vaultAuthority,
+      UNDERLYING_MINT,
+      SPL_TOKEN_PROGRAM_ADDRESS,
+    );
     expect(escrow).toBe(expected);
     // Golden: pins the vault_authority PDA + ATA derivation the seed must match the program/SDK on.
     expect(vaultAuthority).toBe("G2Pzm1TT4n9vwcViAMGCwH6of9SaLSkPfm25UdtrNfb4" as Address);

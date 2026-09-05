@@ -60,6 +60,9 @@ export type ConfidentialTransferInstruction<
   TAccountOwner extends string | AccountMeta<string> = string,
   TAccountPayer extends string | AccountMeta<string> = string,
   TAccountMint extends string | AccountMeta<string> = string,
+  TAccountUnderlyingMint extends string | AccountMeta<string> = string,
+  TAccountFromAta extends string | AccountMeta<string> = string,
+  TAccountToAta extends string | AccountMeta<string> = string,
   TAccountFromAccount extends string | AccountMeta<string> = string,
   TAccountToAccount extends string | AccountMeta<string> = string,
   TAccountComputeSigner extends string | AccountMeta<string> = string,
@@ -86,6 +89,9 @@ export type ConfidentialTransferInstruction<
         ? WritableSignerAccount<TAccountPayer> & AccountSignerMeta<TAccountPayer>
         : TAccountPayer,
       TAccountMint extends string ? ReadonlyAccount<TAccountMint> : TAccountMint,
+      TAccountUnderlyingMint extends string ? ReadonlyAccount<TAccountUnderlyingMint> : TAccountUnderlyingMint,
+      TAccountFromAta extends string ? ReadonlyAccount<TAccountFromAta> : TAccountFromAta,
+      TAccountToAta extends string ? ReadonlyAccount<TAccountToAta> : TAccountToAta,
       TAccountFromAccount extends string ? WritableAccount<TAccountFromAccount> : TAccountFromAccount,
       TAccountToAccount extends string ? WritableAccount<TAccountToAccount> : TAccountToAccount,
       TAccountComputeSigner extends string ? ReadonlyAccount<TAccountComputeSigner> : TAccountComputeSigner,
@@ -150,6 +156,9 @@ export type ConfidentialTransferAsyncInput<
   TAccountOwner extends string = string,
   TAccountPayer extends string = string,
   TAccountMint extends string = string,
+  TAccountUnderlyingMint extends string = string,
+  TAccountFromAta extends string = string,
+  TAccountToAta extends string = string,
   TAccountFromAccount extends string = string,
   TAccountToAccount extends string = string,
   TAccountComputeSigner extends string = string,
@@ -171,6 +180,9 @@ export type ConfidentialTransferAsyncInput<
   payer: TransactionSigner<TAccountPayer>;
   /** Confidential mint. */
   mint: Address<TAccountMint>;
+  underlyingMint: Address<TAccountUnderlyingMint>;
+  fromAta: Address<TAccountFromAta>;
+  toAta: Address<TAccountToAta>;
   /** Sender token account. */
   fromAccount: Address<TAccountFromAccount>;
   toAccount: Address<TAccountToAccount>;
@@ -207,6 +219,9 @@ export async function getConfidentialTransferInstructionAsync<
   TAccountOwner extends string,
   TAccountPayer extends string,
   TAccountMint extends string,
+  TAccountUnderlyingMint extends string,
+  TAccountFromAta extends string,
+  TAccountToAta extends string,
   TAccountFromAccount extends string,
   TAccountToAccount extends string,
   TAccountComputeSigner extends string,
@@ -227,6 +242,9 @@ export async function getConfidentialTransferInstructionAsync<
     TAccountOwner,
     TAccountPayer,
     TAccountMint,
+    TAccountUnderlyingMint,
+    TAccountFromAta,
+    TAccountToAta,
     TAccountFromAccount,
     TAccountToAccount,
     TAccountComputeSigner,
@@ -249,6 +267,9 @@ export async function getConfidentialTransferInstructionAsync<
     TAccountOwner,
     TAccountPayer,
     TAccountMint,
+    TAccountUnderlyingMint,
+    TAccountFromAta,
+    TAccountToAta,
     TAccountFromAccount,
     TAccountToAccount,
     TAccountComputeSigner,
@@ -273,6 +294,9 @@ export async function getConfidentialTransferInstructionAsync<
     owner: { value: input.owner ?? null, isWritable: false },
     payer: { value: input.payer ?? null, isWritable: true },
     mint: { value: input.mint ?? null, isWritable: false },
+    underlyingMint: { value: input.underlyingMint ?? null, isWritable: false },
+    fromAta: { value: input.fromAta ?? null, isWritable: false },
+    toAta: { value: input.toAta ?? null, isWritable: false },
     fromAccount: { value: input.fromAccount ?? null, isWritable: true },
     toAccount: { value: input.toAccount ?? null, isWritable: true },
     computeSigner: { value: input.computeSigner ?? null, isWritable: false },
@@ -325,6 +349,9 @@ export async function getConfidentialTransferInstructionAsync<
       getAccountMeta('owner', accounts.owner),
       getAccountMeta('payer', accounts.payer),
       getAccountMeta('mint', accounts.mint),
+      getAccountMeta('underlyingMint', accounts.underlyingMint),
+      getAccountMeta('fromAta', accounts.fromAta),
+      getAccountMeta('toAta', accounts.toAta),
       getAccountMeta('fromAccount', accounts.fromAccount),
       getAccountMeta('toAccount', accounts.toAccount),
       getAccountMeta('computeSigner', accounts.computeSigner),
@@ -347,6 +374,9 @@ export async function getConfidentialTransferInstructionAsync<
     TAccountOwner,
     TAccountPayer,
     TAccountMint,
+    TAccountUnderlyingMint,
+    TAccountFromAta,
+    TAccountToAta,
     TAccountFromAccount,
     TAccountToAccount,
     TAccountComputeSigner,
@@ -368,6 +398,9 @@ export type ConfidentialTransferInput<
   TAccountOwner extends string = string,
   TAccountPayer extends string = string,
   TAccountMint extends string = string,
+  TAccountUnderlyingMint extends string = string,
+  TAccountFromAta extends string = string,
+  TAccountToAta extends string = string,
   TAccountFromAccount extends string = string,
   TAccountToAccount extends string = string,
   TAccountComputeSigner extends string = string,
@@ -389,6 +422,9 @@ export type ConfidentialTransferInput<
   payer: TransactionSigner<TAccountPayer>;
   /** Confidential mint. */
   mint: Address<TAccountMint>;
+  underlyingMint: Address<TAccountUnderlyingMint>;
+  fromAta: Address<TAccountFromAta>;
+  toAta: Address<TAccountToAta>;
   /** Sender token account. */
   fromAccount: Address<TAccountFromAccount>;
   toAccount: Address<TAccountToAccount>;
@@ -425,6 +461,9 @@ export function getConfidentialTransferInstruction<
   TAccountOwner extends string,
   TAccountPayer extends string,
   TAccountMint extends string,
+  TAccountUnderlyingMint extends string,
+  TAccountFromAta extends string,
+  TAccountToAta extends string,
   TAccountFromAccount extends string,
   TAccountToAccount extends string,
   TAccountComputeSigner extends string,
@@ -445,6 +484,9 @@ export function getConfidentialTransferInstruction<
     TAccountOwner,
     TAccountPayer,
     TAccountMint,
+    TAccountUnderlyingMint,
+    TAccountFromAta,
+    TAccountToAta,
     TAccountFromAccount,
     TAccountToAccount,
     TAccountComputeSigner,
@@ -466,6 +508,9 @@ export function getConfidentialTransferInstruction<
   TAccountOwner,
   TAccountPayer,
   TAccountMint,
+  TAccountUnderlyingMint,
+  TAccountFromAta,
+  TAccountToAta,
   TAccountFromAccount,
   TAccountToAccount,
   TAccountComputeSigner,
@@ -489,6 +534,9 @@ export function getConfidentialTransferInstruction<
     owner: { value: input.owner ?? null, isWritable: false },
     payer: { value: input.payer ?? null, isWritable: true },
     mint: { value: input.mint ?? null, isWritable: false },
+    underlyingMint: { value: input.underlyingMint ?? null, isWritable: false },
+    fromAta: { value: input.fromAta ?? null, isWritable: false },
+    toAta: { value: input.toAta ?? null, isWritable: false },
     fromAccount: { value: input.fromAccount ?? null, isWritable: true },
     toAccount: { value: input.toAccount ?? null, isWritable: true },
     computeSigner: { value: input.computeSigner ?? null, isWritable: false },
@@ -536,6 +584,9 @@ export function getConfidentialTransferInstruction<
       getAccountMeta('owner', accounts.owner),
       getAccountMeta('payer', accounts.payer),
       getAccountMeta('mint', accounts.mint),
+      getAccountMeta('underlyingMint', accounts.underlyingMint),
+      getAccountMeta('fromAta', accounts.fromAta),
+      getAccountMeta('toAta', accounts.toAta),
       getAccountMeta('fromAccount', accounts.fromAccount),
       getAccountMeta('toAccount', accounts.toAccount),
       getAccountMeta('computeSigner', accounts.computeSigner),
@@ -558,6 +609,9 @@ export function getConfidentialTransferInstruction<
     TAccountOwner,
     TAccountPayer,
     TAccountMint,
+    TAccountUnderlyingMint,
+    TAccountFromAta,
+    TAccountToAta,
     TAccountFromAccount,
     TAccountToAccount,
     TAccountComputeSigner,
@@ -587,35 +641,38 @@ export type ParsedConfidentialTransferInstruction<
     payer: TAccountMetas[1];
     /** Confidential mint. */
     mint: TAccountMetas[2];
+    underlyingMint: TAccountMetas[3];
+    fromAta: TAccountMetas[4];
+    toAta: TAccountMetas[5];
     /** Sender token account. */
-    fromAccount: TAccountMetas[3];
-    toAccount: TAccountMetas[4];
-    computeSigner: TAccountMetas[5];
+    fromAccount: TAccountMetas[6];
+    toAccount: TAccountMetas[7];
+    computeSigner: TAccountMetas[8];
     /**
      * Sender's stable balance `EncryptedValue` encrypted value account; read for the current
      * handle and replaced in place by this execution's CPI.
      */
-    fromBalanceValue: TAccountMetas[6];
+    fromBalanceValue: TAccountMetas[9];
     /** Recipient's stable balance `EncryptedValue` encrypted value account. */
-    toBalanceValue: TAccountMetas[7];
+    toBalanceValue: TAccountMetas[10];
     /** the sender's first transfer, replaced thereafter. */
-    transferredAmountValue: TAccountMetas[8];
-    zamaEventAuthority: TAccountMetas[9];
+    transferredAmountValue: TAccountMetas[11];
+    zamaEventAuthority: TAccountMetas[12];
     /** ZamaHost program used for FHE operations. */
-    zamaProgram: TAccountMetas[10];
+    zamaProgram: TAccountMetas[13];
     /** ZamaHost config used for handle derivation. */
-    hostConfig: TAccountMetas[11];
+    hostConfig: TAccountMetas[14];
     /** System program used for ACL account creation. */
-    systemProgram: TAccountMetas[12];
+    systemProgram: TAccountMetas[15];
     /**
      * canonical `["hcu-block-meter", compute_signer]` PDA. The per-mint HCU block meter — supplied
      * by an untrusted mint under a metering-band cap, omitted otherwise.
      */
-    hcuBlockMeter?: TAccountMetas[13] | undefined;
+    hcuBlockMeter?: TAccountMetas[16] | undefined;
     /** trust witness — present + valid bypasses the cap; absent means untrusted (metered). */
-    hcuTrustedAppRecord?: TAccountMetas[14] | undefined;
-    eventAuthority: TAccountMetas[15];
-    program: TAccountMetas[16];
+    hcuTrustedAppRecord?: TAccountMetas[17] | undefined;
+    eventAuthority: TAccountMetas[18];
+    program: TAccountMetas[19];
   };
   data: ConfidentialTransferInstructionData;
 };
@@ -626,10 +683,10 @@ export function parseConfidentialTransferInstruction<
 >(
   instruction: Instruction<TProgram> & InstructionWithAccounts<TAccountMetas> & InstructionWithData<ReadonlyUint8Array>,
 ): ParsedConfidentialTransferInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 17) {
+  if (instruction.accounts.length < 20) {
     throw new SolanaError(SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS, {
       actualAccountMetas: instruction.accounts.length,
-      expectedAccountMetas: 17,
+      expectedAccountMetas: 20,
     });
   }
   let accountIndex = 0;
@@ -648,6 +705,9 @@ export function parseConfidentialTransferInstruction<
       owner: getNextAccount(),
       payer: getNextAccount(),
       mint: getNextAccount(),
+      underlyingMint: getNextAccount(),
+      fromAta: getNextAccount(),
+      toAta: getNextAccount(),
       fromAccount: getNextAccount(),
       toAccount: getNextAccount(),
       computeSigner: getNextAccount(),

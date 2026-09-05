@@ -25,10 +25,16 @@ describe('generated confidentialTransfer instruction', () => {
     const zamaEvent = key(7);
     const hostConfig = key(8);
     const tokenEvent = key(10);
+    const underlyingMint = key(14);
+    const fromAta = key(15);
+    const toAta = key(15);
     const instruction = await getConfidentialTransferInstructionAsync({
       owner,
       payer,
       mint,
+      underlyingMint,
+      fromAta,
+      toAta,
       fromAccount: aliasedToken,
       toAccount: aliasedToken,
       fromBalanceValue: aliasedBalance,
@@ -54,6 +60,9 @@ describe('generated confidentialTransfer instruction', () => {
       [owner.address, AccountRole.READONLY_SIGNER],
       [payer.address, AccountRole.WRITABLE_SIGNER],
       [mint, AccountRole.READONLY],
+      [underlyingMint, AccountRole.READONLY],
+      [fromAta, AccountRole.READONLY],
+      [toAta, AccountRole.READONLY],
       [aliasedToken, AccountRole.WRITABLE],
       [aliasedToken, AccountRole.WRITABLE],
       [expect.any(String), AccountRole.READONLY],

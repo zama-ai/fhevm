@@ -1445,11 +1445,15 @@ in [`FUTURE_DESIGN.md`](./FUTURE_DESIGN.md); this list is the short index.
   reducing attack surface enough to justify the churn.
 - **Compliance / freeze / TokenInterface (fhevm-internal#1862) — PARTIALLY CLOSED by DD-045.** Product stance:
   no token-owned sanctions list; host deny remains grant-path only; compliance for underlying exit
-  is the SPL freeze authority on the wrapped mint (mockUSDC OK in PoC). Confidential transfers are
-  not freeze-gated today. ATA-like UX is intentional (`token_account_address(mint, owner)` +
+  is the SPL freeze authority on the wrapped mint (mockUSDC OK in PoC). Wrap and redeem freeze-check
+  the SPL accounts they actually move. Confidential transfer and burn use
+  `check_underlying_ata_not_frozen` on each relevant owner's associated token account
+  (`from_ata`/`to_ata`/`owner_ata`); that address must be
+  `get_associated_token_address_with_program_id(owner, mint.underlying_mint, underlying_mint.owner)`.
+  Uninitialized at that address (system-owned, empty) is treated as not frozen. `cancel_pending_burn` is not freeze-gated
+  (no underlying movement). The host grant deny-list is not this check. ATA-like UX is intentional (`token_account_address(mint, owner)` +
   create-for / separate payer; demo get-or-create in `demo-dapp`). `TokenInterface`, classic Token,
-  extension-free Token-2022, fail-closed extension checks, and frozen wrap/redeem tests are shipped.
-  Confidential-transfer freeze policy remains deferred.
+  extension-free Token-2022, fail-closed extension checks, and frozen wrap/transfer/burn/redeem tests are shipped.
 
 ## DD-037: `fhe_execute` Events — `emit_cpi!`-Only, No `emit!` Log Fallback (DD-033 addendum)
 
@@ -2094,7 +2098,40 @@ The wrapper accepts classic Token and extension-free Token-2022 through `TokenIn
 underlying mint's owner selects the token program, and mint/token-account ownership is revalidated on
 every initialize, wrap, and redeem. Token-2022 mint
 extensions fail closed; token accounts permit only `ImmutableOwner`. Frozen source or destination
-accounts cannot cross the wrapper boundary. Supporting transfer fees, hooks, non-transferable tokens,
+accounts cannot cross the wrapper boundary. Confidential transfer and burn also reject a frozen
+associated token account for each relevant owner (`from_ata`/`to_ata`/`owner_ata`). Uninitialized
+at that address is treated as not frozen. Cancel
+does not check freeze. Redeem destination ownership is not required: the confidential token-account
+owner must sign, which is the theft check; `destination_usdc.owner == owner` was only a
+no-unwrap-to-third-party policy and is not enforced.
+
+What this freeze mirror does not reach (fhevm-internal#1981). The issuer's freeze acts on
+SPL token accounts, and the mirror reads the canonical associated token account of each owner. A
+confidential balance is not an SPL account, so two holders escape it:
+
+- A holder who never held the underlying: funds arrive as a confidential transfer from a third party
+  (an exchange paying out directly into the wrapped mint). No canonical ATA exists, absent reads as
+  not frozen, and the issuer has nothing to freeze.
+- A holder who wrapped their entire balance: the canonical ATA is empty, and the issuer freezes an
+  empty account. Classic Token and Token-2022 both allow closing a frozen account with a zero
+  balance, so the holder closes it and recreates it unfrozen. The check only bites while the
+  holder keeps a balance on the ATA.
+
+This is the same account-level semantics the native tokens have: an SPL freeze never reached
+balances held in a program's own accounts either. What is new is that the wrapper is now such a
+program, holding balances the issuer cannot see or freeze. Closing that gap needs a wrapper-level
+freeze authority (a per-owner frozen flag on the confidential token account, settable by an
+authority the issuer holds or delegates), so the issuer and not Zama decides. That is launch work
+under fhevm-internal#1981, outside this PoC, and a product decision recorded there.
+
+Wrap credits use the same saturating `ge → select` pattern as burn debits (`tryIncrease` parity).
+The clamp is unreachable while wrap stays 1:1 with an SPL `u64` vault.
+
+A wrapper/mint pauser with governance unpause, and a mint-wide observer over every handle, remain
+launch work. They are not in this PoC. Host pause and per-account subjects stay as they are.
+Async delegated spend stays out of this program.
+
+Supporting transfer fees, hooks, non-transferable tokens,
 or Token-2022 confidential transfer requires a separate decision because each changes conservation or
 transfer semantics.
 

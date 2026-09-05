@@ -21,7 +21,7 @@ import {
 } from './internal/batcherPdas.js';
 // Confidential-field encrypted value accounts and the SPL associated-token derivation are owned by tokenValueAccount;
 // import them rather than re-declaring the balance/total-supply labels and a second ATA helper here.
-import { associatedTokenAddress, balanceValueAddress, totalSupplyValueAddress } from './internal/tokenValueAccount.js';
+import { associatedTokenAddress, TOKEN_PROGRAM_ADDRESS, balanceValueAddress, totalSupplyValueAddress } from './internal/tokenValueAccount.js';
 
 /**
  * The immutable roots of one batcher's demo topology — the addresses a real integrator (or the
@@ -209,7 +209,11 @@ export async function deriveSettleAccounts(
     joinConfidentialMint: roots.joinConfidentialMint,
     batchJoinTokenAccount: batch.batchJoinTokenAccount,
     joinUnderlyingMint: roots.joinUnderlyingMint,
-    joinMintVaultUnderlying: await associatedTokenAddress(joinMintVaultAuthority, roots.joinUnderlyingMint),
+    joinMintVaultUnderlying: await associatedTokenAddress(
+      joinMintVaultAuthority,
+      roots.joinUnderlyingMint,
+      TOKEN_PROGRAM_ADDRESS,
+    ),
     joinMintVaultAuthority,
     batchBurnedAmountValue: batch.batchBurnedAmountValue,
     pendingBurn: await pendingBurnAddress(roots.joinConfidentialMint, batch.batchJoinTokenAccount),
@@ -221,7 +225,11 @@ export async function deriveSettleAccounts(
     payoutConfidentialMint: roots.payoutConfidentialMint,
     payoutUnderlyingMint: roots.payoutUnderlyingMint,
     batchPayoutTokenAccount: batch.batchPayoutTokenAccount,
-    payoutMintVaultUnderlying: await associatedTokenAddress(payoutMintVaultAuthority, roots.payoutUnderlyingMint),
+    payoutMintVaultUnderlying: await associatedTokenAddress(
+      payoutMintVaultAuthority,
+      roots.payoutUnderlyingMint,
+      TOKEN_PROGRAM_ADDRESS,
+    ),
     payoutMintVaultAuthority,
     payoutComputeSigner,
     payoutTotalSupplyAuthority,

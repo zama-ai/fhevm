@@ -27,6 +27,7 @@ import { base58 } from '@scure/base';
 import { joinBatch, type SolanaVaultJoinParameters } from './joinBatch.js';
 import { findComputeSignerPda } from './internal/generated/confidentialToken/pdas/computeSigner.js';
 import { getJoinInstructionDataDecoder } from './internal/generated/confidentialBatcher/instructions/join.js';
+import { TOKEN_PROGRAM_ADDRESS } from './internal/tokenValueAccount.js';
 
 const CHAIN_ID = (1n << 63n) | 12345n;
 const CANONICAL_ACL = bytesToHex(base58.decode('6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu'));
@@ -74,6 +75,8 @@ async function parameters(overrides: Partial<SolanaVaultJoinParameters> = {}): P
     batcher: key(4),
     batch: key(5),
     joinConfidentialMint,
+    joinUnderlyingMint: key(11),
+    tokenProgram: TOKEN_PROGRAM_ADDRESS,
     hostConfig: key(10),
     ...overrides,
   } satisfies SolanaVaultJoinParameters;

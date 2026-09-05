@@ -38,6 +38,7 @@ import {
   CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
   ZAMA_HOST_PROGRAM_ADDRESS,
 } from '../internal/generated/confidentialToken/programAddress.js';
+import { associatedTokenAddress } from '../internal/tokenValueAccount.js';
 
 const EVENT_AUTHORITY_SEED = new TextEncoder().encode('__event_authority');
 const ENCRYPTED_VALUE_SEED = new TextEncoder().encode('encrypted-value');
@@ -52,8 +53,14 @@ export type SolanaConfidentialTransferParameters = {
   readonly owner: TransactionSigner;
   readonly feePayer: TransactionSigner;
   readonly mint: Address;
+  /** SPL mint wrapped by `mint`. Freeze checks the owners' ATAs on this mint. */
+  readonly underlyingMint: Address;
+  /** Token program that owns `underlyingMint` (`Tokenkeg` or Token-2022). */
+  readonly tokenProgram: Address;
   readonly fromAccount: Address;
   readonly toAccount: Address;
+  /** Recipient owner; used to derive the destination freeze ATA. */
+  readonly toOwner: Address;
   readonly fromBalanceValue: Address;
   readonly toBalanceValue: Address;
   readonly hostConfig: Address;
@@ -129,6 +136,9 @@ export async function confidentialTransfer(
     owner,
     payer: feePayer,
     mint,
+    underlyingMint: parameters.underlyingMint,
+    fromAta: await associatedTokenAddress(owner.address, parameters.underlyingMint, parameters.tokenProgram),
+    toAta: await associatedTokenAddress(parameters.toOwner, parameters.underlyingMint, parameters.tokenProgram),
     fromAccount: parameters.fromAccount,
     toAccount: parameters.toAccount,
     fromBalanceValue: parameters.fromBalanceValue,

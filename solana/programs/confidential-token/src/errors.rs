@@ -151,7 +151,7 @@ pub enum ConfidentialTokenError {
     /// Token-2022 extensions are unsupported unless explicitly allowed by the wrapper.
     #[msg("unsupported Token-2022 extension")]
     UnsupportedToken2022Extension,
-    /// A frozen underlying token account cannot participate in wrap or redeem.
+    /// A frozen underlying token account cannot participate in wrap, transfer, burn, or redeem.
     #[msg("underlying token account is frozen")]
     UnderlyingTokenAccountFrozen,
     /// The disclosed encrypted value account does not match the declared token state field.
@@ -166,4 +166,7 @@ pub enum ConfidentialTokenError {
     /// The encrypted total-supply value is not the canonical mint-scoped account.
     #[msg("encrypted total supply value is not canonical")]
     TotalSupplyValueMismatch,
+    /// Freeze checks bind the owner's associated token account for the wrapped mint.
+    #[msg("underlying associated token account does not match")]
+    UnderlyingAssociatedAccountMismatch,
 }
