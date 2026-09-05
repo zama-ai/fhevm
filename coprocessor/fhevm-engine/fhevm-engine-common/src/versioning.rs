@@ -201,7 +201,8 @@ pub async fn resolve_gcs_mode(database_url: &str) -> anyhow::Result<bool> {
     )
     .await?;
     let mut conn = PgConnection::connect_with(&options).await?;
-    // The versions are not final until setup finishes.
+    // Startup guard so a service never picks its mode from a database that is
+    // still being set up.
     let setup_in_progress: bool =
         sqlx::query_scalar("SELECT to_regclass('public._fhevm_versioning_bootstrap') IS NOT NULL")
             .fetch_one(&mut conn)
