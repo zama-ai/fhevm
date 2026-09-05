@@ -16,10 +16,9 @@ use rand::{rngs::StdRng, RngCore, SeedableRng};
 use solana_sdk::pubkey::Pubkey;
 use zama_host::{
     assert_binary_operand_types, assert_is_in_operand_types, assert_mul_div_operand_types,
-    assert_sum_operand_types, assert_supported_fhe_type, assert_supported_rand_type,
-    assert_unary_operand_type, assert_valid_bounded_rand_upper_bound, handle_fhe_type,
-    FheBinaryOpCode, FheExecuteArgs, FheExecuteOperand, FheExecuteStep, FheTernaryOpCode,
-    FheUnaryOpCode,
+    assert_sum_operand_types, assert_supported_fhe_type, assert_unary_operand_type,
+    assert_valid_bounded_rand_upper_bound, handle_fhe_type, FheBinaryOpCode, FheExecuteArgs,
+    FheExecuteOperand, FheExecuteStep, FheTernaryOpCode, FheUnaryOpCode,
 };
 
 use crate::{
@@ -125,7 +124,7 @@ pub fn evaluate(
                 let control = resolve_encrypted(control, &args.dictionary, inputs, &produced)?;
                 let if_true = resolve_encrypted(if_true, &args.dictionary, inputs, &produced)?;
                 let if_false = resolve_encrypted(if_false, &args.dictionary, inputs, &produced)?;
-                // Mirrors `fhe_execute::assert_ternary_operand_types`; keep the malformed-ternary
+                // Mirrors `assert_ternary_operand_types`; keep the malformed-ternary
                 // cases in `operator_conformance.rs::rejected::ternary` aligned with it.
                 if control.fhe_type != 0
                     || if_true.fhe_type != *output_fhe_type
@@ -157,7 +156,7 @@ pub fn evaluate(
                 ClearValue::new(*fhe_type, value)?
             }
             FheExecuteStep::Rand { fhe_type, .. } => {
-                canonical(assert_supported_rand_type(*fhe_type), "rand")?;
+                canonical(assert_supported_fhe_type(*fhe_type), "rand")?;
                 let mut value = random_biguint(&mut random);
                 if *fhe_type == 0 {
                     value &= BigUint::from(1u8);
@@ -421,9 +420,12 @@ fn type_bits(fhe_type: u8) -> Result<usize, String> {
         4 => Ok(32),
         5 => Ok(64),
         6 => Ok(128),
-        7 => Ok(160),
-        8 => Ok(256),
-        _ => Err(format!("unsupported FHE type {fhe_type}")),
+        _ => {
+            // Operands are widened before the host's own gate runs, so an unshipped type must
+            // fail here with the host's error rather than an oracle-only message.
+            canonical(assert_supported_fhe_type(fhe_type), "fhe type")?;
+            unreachable!("the host admits an FHE type the oracle has no width for: {fhe_type}")
+        }
     }
 }
 

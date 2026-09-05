@@ -171,10 +171,9 @@ pub fn kms_public_decrypt_cert_signed_by(
 
 /// Version-1 `extra_data` committing an explicit KMS context id in `[1..33]` (EVM `_extractContextId`
 /// parity). Used to mint a cert bound to a rotated-out context id.
-pub fn context_extra_data_v1(context_id: u64) -> Vec<u8> {
+pub fn context_extra_data_v1(context_id: [u8; 32]) -> Vec<u8> {
     let mut extra_data = vec![1u8];
-    extra_data.extend_from_slice(&[0u8; 24]);
-    extra_data.extend_from_slice(&context_id.to_be_bytes());
+    extra_data.extend_from_slice(&context_id);
     extra_data
 }
 

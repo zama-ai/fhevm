@@ -22,6 +22,7 @@ pub mod hcu_trusted_app_record;
 pub mod host_config;
 pub mod kms_context;
 pub mod permit_invalidation;
+mod type_gate;
 pub mod user_decryption_delegation;
 
 pub use deny_subject_record::*;
@@ -31,6 +32,14 @@ pub use hcu_trusted_app_record::*;
 pub use host_config::*;
 pub use kms_context::*;
 pub use permit_invalidation::*;
+pub(crate) use type_gate::assert_reduction_count;
+pub use type_gate::{
+    assert_binary_operand_types, assert_is_in_operand_types, assert_mul_div_operand_types,
+    assert_sum_operand_types, assert_supported_fhe_type, assert_ternary_operand_types,
+    assert_unary_operand_type, assert_valid_bounded_rand_upper_bound, binary_output_type_ok,
+    is_supported_fhe_type, is_supported_uint_fhe_type, max_reduction_operands,
+    scalar_is_zero_for_type, unary_output_type_ok,
+};
 pub use user_decryption_delegation::*;
 
 pub use crate::constants::*;
@@ -158,18 +167,28 @@ pub struct FheExecuteArgs {
     pub steps: Vec<FheExecuteStep>,
 }
 
+/// Resolves an interned dictionary entry; an out-of-range index fails the execution.
+pub fn dictionary_bytes(dictionary: &[[u8; 32]], index: u8) -> Result<[u8; 32]> {
+    dictionary
+        .get(index as usize)
+        .copied()
+        .ok_or_else(|| error!(ZamaHostError::FheExecuteDictionaryIndexOutOfBounds))
+}
+
+/// Resolves an interned dictionary entry as a public key.
+pub fn dictionary_key(dictionary: &[[u8; 32]], index: u8) -> Result<Pubkey> {
+    Ok(Pubkey::new_from_array(dictionary_bytes(dictionary, index)?))
+}
+
 impl FheExecuteArgs {
     /// Resolves an interned dictionary entry; an out-of-range index fails the execution.
-    pub fn dictionary_bytes(&self, index: u8) -> anchor_lang::Result<[u8; 32]> {
-        self.dictionary
-            .get(index as usize)
-            .copied()
-            .ok_or_else(|| error!(ZamaHostError::FheExecuteDictionaryIndexOutOfBounds))
+    pub fn dictionary_bytes(&self, index: u8) -> Result<[u8; 32]> {
+        dictionary_bytes(&self.dictionary, index)
     }
 
     /// Resolves an interned dictionary entry as a public key.
-    pub fn dictionary_key(&self, index: u8) -> anchor_lang::Result<Pubkey> {
-        Ok(Pubkey::new_from_array(self.dictionary_bytes(index)?))
+    pub fn dictionary_key(&self, index: u8) -> Result<Pubkey> {
+        dictionary_key(&self.dictionary, index)
     }
 }
 
@@ -481,333 +500,14 @@ pub fn assert_input_handle_metadata(
     Ok(())
 }
 
-pub fn assert_supported_fhe_type(fhe_type: u8) -> Result<()> {
-    require!(
-        is_supported_fhe_type(fhe_type),
-        ZamaHostError::UnsupportedFheType
-    );
-    Ok(())
-}
-
-/// Checks that a binary operation's declared result type matches the shipped operator.
-fn assert_supported_binary_output_type(op: FheBinaryOpCode, fhe_type: u8) -> Result<()> {
-    assert_supported_fhe_type(fhe_type)?;
-    let valid = match op {
-        FheBinaryOpCode::Add
-        | FheBinaryOpCode::Sub
-        | FheBinaryOpCode::Mul
-        | FheBinaryOpCode::Div
-        | FheBinaryOpCode::Rem
-        | FheBinaryOpCode::Min
-        | FheBinaryOpCode::Max => matches!(fhe_type, 2..=6),
-        // Bitwise: EVM allows Bool + Uint8..Uint128 + Uint256.
-        FheBinaryOpCode::And | FheBinaryOpCode::Or | FheBinaryOpCode::Xor => {
-            matches!(fhe_type, 0 | 2..=6 | 8)
-        }
-        // Shifts/rotations: EVM allows Uint8..Uint128 + Uint256.
-        FheBinaryOpCode::Shl
-        | FheBinaryOpCode::Shr
-        | FheBinaryOpCode::Rotl
-        | FheBinaryOpCode::Rotr => matches!(fhe_type, 2..=6 | 8),
-        FheBinaryOpCode::Eq
-        | FheBinaryOpCode::Ne
-        | FheBinaryOpCode::Ge
-        | FheBinaryOpCode::Gt
-        | FheBinaryOpCode::Le
-        | FheBinaryOpCode::Lt => fhe_type == 0,
-    };
-    require!(valid, ZamaHostError::UnsupportedFheType);
-    Ok(())
-}
-
-/// Checks binary operand metadata against the EVM executor's type discipline.
-pub fn assert_binary_operand_types(
-    op: FheBinaryOpCode,
-    lhs: [u8; 32],
-    rhs: [u8; 32],
-    scalar: bool,
-    output_fhe_type: u8,
-) -> Result<()> {
-    assert_supported_binary_output_type(op, output_fhe_type)?;
-    let lhs_type = handle_fhe_type(lhs);
-    match op {
-        // Comparisons produce `ebool`, so the operand type is gated here: Eq/Ne accept Bool..Uint256 while ordered comparisons accept Uint8..Uint128, matching EVM's fheEq/fheGe supportedTypes.
-        FheBinaryOpCode::Eq | FheBinaryOpCode::Ne => {
-            require!(
-                matches!(lhs_type, 0 | 2..=8),
-                ZamaHostError::UnsupportedFheType
-            );
-        }
-        FheBinaryOpCode::Ge | FheBinaryOpCode::Gt | FheBinaryOpCode::Le | FheBinaryOpCode::Lt => {
-            require!(matches!(lhs_type, 2..=6), ZamaHostError::UnsupportedFheType);
-        }
-        // Div/Rem: divisor must be a plaintext scalar (EVM `IsNotScalar`), non-zero after truncation.
-        FheBinaryOpCode::Div | FheBinaryOpCode::Rem => {
-            require!(
-                lhs_type == output_fhe_type,
-                ZamaHostError::BinaryOperandTypeMismatch
-            );
-            require!(scalar, ZamaHostError::DivisorMustBeScalar);
-            require!(
-                !scalar_is_zero_for_type(rhs, lhs_type),
-                ZamaHostError::DivisionByZero
-            );
-        }
-        // Remaining ops: the operand type must equal the (op-gated) output type.
-        FheBinaryOpCode::Add
-        | FheBinaryOpCode::Sub
-        | FheBinaryOpCode::Mul
-        | FheBinaryOpCode::And
-        | FheBinaryOpCode::Or
-        | FheBinaryOpCode::Xor
-        | FheBinaryOpCode::Shl
-        | FheBinaryOpCode::Shr
-        | FheBinaryOpCode::Rotl
-        | FheBinaryOpCode::Rotr
-        | FheBinaryOpCode::Min
-        | FheBinaryOpCode::Max => {
-            require!(
-                lhs_type == output_fhe_type,
-                ZamaHostError::BinaryOperandTypeMismatch
-            );
-        }
-    }
-    if !scalar {
-        require!(
-            handle_fhe_type(rhs) == lhs_type,
-            ZamaHostError::BinaryOperandTypeMismatch
-        );
-    }
-    Ok(())
-}
-
-pub fn assert_supported_rand_type(fhe_type: u8) -> Result<()> {
-    require!(
-        matches!(fhe_type, 0 | 2 | 3 | 4 | 5 | 6 | 8),
-        ZamaHostError::UnsupportedFheType
-    );
-    Ok(())
-}
-
-pub(crate) fn assert_supported_bounded_rand_type(fhe_type: u8) -> Result<()> {
-    require!(
-        bounded_rand_type_bits(fhe_type).is_some(),
-        ZamaHostError::UnsupportedFheType
-    );
-    Ok(())
-}
-
-pub fn assert_valid_bounded_rand_upper_bound(upper_bound: [u8; 32], fhe_type: u8) -> Result<()> {
-    assert_supported_bounded_rand_type(fhe_type)?;
-    let bit_index =
-        power_of_two_bit_index(upper_bound).ok_or(ZamaHostError::InvalidRandomUpperBound)?;
-    if let Some(max_bits) = bounded_rand_type_bits(fhe_type).flatten() {
-        require!(
-            bit_index <= max_bits,
-            ZamaHostError::InvalidRandomUpperBound
-        );
-    }
-    Ok(())
-}
-
-fn assert_supported_unary_output_type(op: FheUnaryOpCode, fhe_type: u8) -> Result<()> {
-    assert_supported_fhe_type(fhe_type)?;
-    let valid = match op {
-        FheUnaryOpCode::Neg => matches!(fhe_type, 2..=6 | 8),
-        FheUnaryOpCode::Not => matches!(fhe_type, 0 | 2..=6 | 8),
-        // EVM `cast` output set: Uint8..Uint128 | Uint256 (no ebool, no eaddress/Uint160).
-        FheUnaryOpCode::Cast => matches!(fhe_type, 2..=6 | 8),
-    };
-    require!(valid, ZamaHostError::UnsupportedFheType);
-    Ok(())
-}
-
-pub fn assert_unary_operand_type(
-    op: FheUnaryOpCode,
-    operand: [u8; 32],
-    output_fhe_type: u8,
-) -> Result<()> {
-    assert_supported_unary_output_type(op, output_fhe_type)?;
-    let operand_type = handle_fhe_type(operand);
-    require!(
-        is_supported_fhe_type(operand_type),
-        ZamaHostError::UnsupportedFheType
-    );
-    match op {
-        FheUnaryOpCode::Neg => {
-            require!(
-                matches!(operand_type, 2..=6 | 8),
-                ZamaHostError::UnsupportedFheType
-            );
-            require!(
-                operand_type == output_fhe_type,
-                ZamaHostError::BinaryOperandTypeMismatch
-            );
-        }
-        FheUnaryOpCode::Not => {
-            require!(
-                matches!(operand_type, 0 | 2..=6 | 8),
-                ZamaHostError::UnsupportedFheType
-            );
-            require!(
-                operand_type == output_fhe_type,
-                ZamaHostError::BinaryOperandTypeMismatch
-            );
-        }
-        FheUnaryOpCode::Cast => {
-            // EVM `cast` input set: Bool | Uint8..Uint128 | Uint256 (no eaddress/Uint160).
-            require!(
-                matches!(operand_type, 0 | 2..=6 | 8),
-                ZamaHostError::UnsupportedFheType
-            );
-            // Cast reinterprets to a different type; a same-type cast is rejected (EVM InvalidType).
-            require!(
-                operand_type != output_fhe_type,
-                ZamaHostError::UnsupportedFheType
-            );
-        }
-    }
-    Ok(())
-}
-
-/// Requires every operand's resolved handle type to equal the declared uint type (2..=6). Like EVM
-/// `fheSum` and the coprocessor, only the maximum operand count is bounded — a zero/single-operand
-/// sum is valid (EVM enforces no minimum).
-pub fn assert_sum_operand_types(operand_handles: &[[u8; 32]], fhe_type: u8) -> Result<()> {
-    require!(matches!(fhe_type, 2..=6), ZamaHostError::UnsupportedFheType);
-    // Cap the operand count at the coprocessor's FheSum limit (transient operands use no accounts).
-    require!(
-        operand_handles.len() <= max_reduction_operands(fhe_type),
-        ZamaHostError::InvalidFheExecuteAccount
-    );
-    for handle in operand_handles {
-        require!(
-            handle_fhe_type(*handle) == fhe_type,
-            ZamaHostError::BinaryOperandTypeMismatch
-        );
-    }
-    Ok(())
-}
-
-/// Requires the value and every set member to share the declared uint type (Uint8..Uint256, 2..=8) —
-/// matching EVM `fheIsIn` and the coprocessor's FheIsIn type gate; `ebool` is excluded. Like EVM,
-/// only the maximum set size is bounded — an empty set is valid (membership is trivially false).
-pub fn assert_is_in_operand_types(
-    value_handle: [u8; 32],
-    set_handles: &[[u8; 32]],
-    fhe_type: u8,
-) -> Result<()> {
-    require!(matches!(fhe_type, 2..=8), ZamaHostError::UnsupportedFheType);
-    // Cap the set size at the coprocessor's FheIsIn limit (its `set_size` bound excludes the value).
-    require!(
-        set_handles.len() <= max_reduction_operands(fhe_type),
-        ZamaHostError::InvalidFheExecuteAccount
-    );
-    require!(
-        handle_fhe_type(value_handle) == fhe_type,
-        ZamaHostError::BinaryOperandTypeMismatch
-    );
-    for handle in set_handles {
-        require!(
-            handle_fhe_type(*handle) == fhe_type,
-            ZamaHostError::BinaryOperandTypeMismatch
-        );
-    }
-    Ok(())
-}
-
-/// MulDiv: factor1 is an encrypted uint8..uint64 (EVM + coprocessor cap at Uint64); factor2 is
-/// either an encrypted operand of the same type or a plaintext scalar; divisor is an always-scalar
-/// plaintext that must be non-zero (EVM DivisionByZero parity).
-pub fn assert_mul_div_operand_types(
-    factor1: [u8; 32],
-    factor2: [u8; 32],
-    factor2_scalar: bool,
-    divisor: [u8; 32],
-    output_fhe_type: u8,
-) -> Result<()> {
-    require!(
-        matches!(output_fhe_type, 2..=5),
-        ZamaHostError::UnsupportedFheType
-    );
-    require!(
-        handle_fhe_type(factor1) == output_fhe_type,
-        ZamaHostError::BinaryOperandTypeMismatch
-    );
-    if !factor2_scalar {
-        require!(
-            handle_fhe_type(factor2) == output_fhe_type,
-            ZamaHostError::BinaryOperandTypeMismatch
-        );
-    }
-    // Divisor must be non-zero once truncated to the operand type (EVM parity).
-    require!(
-        !scalar_is_zero_for_type(divisor, output_fhe_type),
-        ZamaHostError::MulDivDivisorZero
-    );
-    Ok(())
-}
-
-pub(crate) fn is_supported_fhe_type(fhe_type: u8) -> bool {
-    matches!(fhe_type, 0 | 2 | 3 | 4 | 5 | 6 | 7 | 8)
-}
-
-/// Whether a big-endian scalar is zero once truncated to `fhe_type`'s width (EVM `_isScalarZeroForType`).
-fn scalar_is_zero_for_type(scalar: [u8; 32], fhe_type: u8) -> bool {
-    let width = match fhe_type {
-        2 => 1,  // Uint8
-        3 => 2,  // Uint16
-        4 => 4,  // Uint32
-        5 => 8,  // Uint64
-        6 => 16, // Uint128
-        _ => 32, // unsupported for division: fall back to the whole buffer (fail closed)
-    };
-    scalar[32 - width..].iter().all(|byte| *byte == 0)
-}
-
-/// Coprocessor FheSum/FheIsIn max operand count: 100 for narrow types (Uint8..Uint32), 60 for wider.
-fn max_reduction_operands(fhe_type: u8) -> usize {
-    match fhe_type {
-        2..=4 => 100,
-        _ => 60,
-    }
-}
-
-fn bounded_rand_type_bits(fhe_type: u8) -> Option<Option<u16>> {
-    match fhe_type {
-        2 => Some(Some(8)),
-        3 => Some(Some(16)),
-        4 => Some(Some(32)),
-        5 => Some(Some(64)),
-        6 => Some(Some(128)),
-        8 => Some(None),
-        _ => None,
-    }
-}
-
-fn power_of_two_bit_index(value: [u8; 32]) -> Option<u16> {
-    let mut bit_index = None;
-    for (byte_index, byte) in value.iter().enumerate() {
-        if *byte == 0 {
-            continue;
-        }
-        if byte.count_ones() != 1 || bit_index.is_some() {
-            return None;
-        }
-        let bit_in_byte = 7 - byte.leading_zeros() as u16;
-        bit_index = Some(((31 - byte_index) as u16 * 8) + bit_in_byte);
-    }
-    bit_index
-}
-
 /// Returns the canonical singleton host config address.
 pub fn host_config_address() -> (Pubkey, u8) {
     Pubkey::find_program_address(&[HOST_CONFIG_SEED], &crate::ID)
 }
 
 /// Returns the canonical KMS context address for a context id.
-pub fn kms_context_address(context_id: u64) -> (Pubkey, u8) {
-    Pubkey::find_program_address(&[KMS_CONTEXT_SEED, &context_id.to_le_bytes()], &crate::ID)
+pub fn kms_context_address(context_id: [u8; 32]) -> (Pubkey, u8) {
+    Pubkey::find_program_address(&[KMS_CONTEXT_SEED, &context_id], &crate::ID)
 }
 
 /// Returns the canonical deny-list address for a subject.

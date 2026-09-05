@@ -16,9 +16,9 @@
 //!
 //! - **Steps** — the host's `MAX_FHE_EXECUTION_STEPS`, the one step ceiling
 //!   ([`FheExecutionBuildError::TooManySteps`]), gated in [`FheExecutionBuilder::commit_step`].
-//! - **Instruction trace** — three system CPIs per created output plus the event CPIs, checked
-//!   per step against the transaction's 64-instruction trace; at most 20 creates fit
-//!   ([`FheExecutionBuildError::ExceedsInstructionTraceLimit`]).
+//! - **Persistent creates** — at most [`crate::cost::MAX_PERSISTENT_CREATES`] (20), the SDK's
+//!   policy cap; with one system CPI per create the instruction trace no longer binds
+//!   ([`FheExecutionBuildError::ExceedsPersistentCreateLimit`]).
 //! - **CPI packet** — the serialized packet must fit the 10 KiB a CPI may carry, counted
 //!   exactly at `finish` ([`FheExecutionBuildError::ExceedsCpiInstructionDataLimit`]).
 //! - **Build heap** — the builder admits every byte it requests from the allocator against
@@ -34,8 +34,8 @@
 //!
 //! One wall is deliberately *not* typed, because no app-side number can see it: the host's own
 //! CPI frame grows with created outputs times subjects per output, and for shared-audience
-//! `make_public` creates it aborts before the ceilings above do (15 eight-subject public
-//! creates land, the 16th dies host-side, while the app-side ceilings admit 20). That
+//! `make_public` creates it aborts before the ceilings above do (16 eight-subject public
+//! creates land, the 17th dies host-side, while the app-side ceilings admit 20). That
 //! wall — like the host's heap cost for MMR-mature updates — is pinned by the boundary sweeps
 //! in `runtime-tests/tests/fhe_execute_boundary.rs` and documented in invariant #61;
 //! see `crate::cost`'s module doc for the mechanism. `FheExecution::cost`
@@ -86,9 +86,9 @@ pub struct FheExecutionBuilder<'id> {
     /// Coprocessor attestations backing `VerifiedInput` operands, referenced by index. Held here
     /// (rather than inline in the operand) so `Operand` stays `Copy`.
     pub(crate) verified_inputs: TalliedVec<CoprocessorInputAttestation>,
-    /// Persistent outputs committed so far that create their account — three system CPIs each on
-    /// the host, which is what [`crate::cost::instruction_trace_floor`] charges against the
-    /// transaction's instruction trace.
+    /// Persistent outputs committed so far that create their account — one system CPI each on
+    /// the common host path, which is what [`crate::cost::instruction_trace_floor`] charges.
+    /// Capped at [`crate::cost::MAX_PERSISTENT_CREATES`].
     pub(crate) persistent_creates: usize,
     /// Persistent outputs committed so far that update an existing account.
     pub(crate) persistent_updates: usize,
@@ -234,17 +234,10 @@ impl<'id> FheExecutionBuilder<'id> {
                     step,
                     FheExecuteStep::Rand { .. } | FheExecuteStep::RandBounded { .. }
                 );
-                // Every created output costs the transaction three CPIs on the host, so the
-                // instruction trace runs out before the step cap does on create-heavy shapes.
-                // Checked per step against the floor — the count the transaction pays even in
-                // the minimal wrapper — so the step that can never land is the one rejected.
-                let floor = crate::cost::instruction_trace_floor(
-                    *persistent_creates + usize::from(creates_account),
-                    *has_rand_step || is_rand,
-                    *has_public_output || makes_public,
-                );
-                if floor > crate::cost::TRANSACTION_INSTRUCTION_TRACE_LIMIT {
-                    return Err(FheExecutionBuildError::ExceedsInstructionTraceLimit);
+                if *persistent_creates + usize::from(creates_account)
+                    > crate::cost::MAX_PERSISTENT_CREATES
+                {
+                    return Err(FheExecutionBuildError::ExceedsPersistentCreateLimit);
                 }
                 // Push while Drop still rolls intern tables. `steps` / `produced_types` are
                 // not borrowed by lowering; the budget is.

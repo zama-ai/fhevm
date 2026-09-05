@@ -7,6 +7,7 @@ use crate::execution::*;
 use crate::lower::StepTables;
 use crate::operand::*;
 use crate::types::*;
+use crate::validate::{validate_binary_step, validate_unary_step};
 use crate::FheExecutionBuildError;
 use anchor_lang::prelude::Pubkey;
 #[cfg(feature = "cpi")]
@@ -1116,7 +1117,7 @@ fn unary_validation_rejects_same_type_cast_and_bad_operand_types() {
             Output::transient(),
         )
         .is_ok());
-    // ...but casting TO ebool, TO eaddress, or FROM eaddress is rejected.
+    // ...but casting TO ebool, TO type 7, FROM type 7, or FROM/TO type 8 is rejected.
     assert_eq!(
         builder
             .unary_op(
@@ -1129,11 +1130,22 @@ fn unary_validation_rejects_same_type_cast_and_bad_operand_types() {
         FheExecutionBuildError::UnsupportedFheType
     );
     assert_eq!(
+        validate_unary_step(
+            FheUnaryOpCode::Cast,
+            &Operand::persistent(balance_handle(1), Pubkey::new_unique()),
+            7u8,
+            0,
+            |_| None,
+        )
+        .unwrap_err(),
+        FheExecutionBuildError::UnsupportedFheType
+    );
+    assert_eq!(
         builder
             .unary_op(
                 FheUnaryOpCode::Cast,
-                Operand::persistent(balance_handle(1), Pubkey::new_unique()),
-                FheType::ADDRESS,
+                Operand::persistent(typed_handle(3, 7u8), Pubkey::new_unique()),
+                FheType::UINT64,
                 Output::transient(),
             )
             .unwrap_err(),
@@ -1143,17 +1155,25 @@ fn unary_validation_rejects_same_type_cast_and_bad_operand_types() {
         builder
             .unary_op(
                 FheUnaryOpCode::Cast,
-                Operand::persistent(
-                    typed_handle(3, FheType::ADDRESS.byte()),
-                    Pubkey::new_unique()
-                ),
+                Operand::persistent(typed_handle(4, 8u8), Pubkey::new_unique()),
                 FheType::UINT64,
                 Output::transient(),
             )
             .unwrap_err(),
         FheExecutionBuildError::UnsupportedFheType
     );
-    // Neg rejects a Bool operand (EVM fheNeg supportedTypes = Uint8..Uint128 + Uint256).
+    assert_eq!(
+        validate_unary_step(
+            FheUnaryOpCode::Cast,
+            &Operand::persistent(balance_handle(1), Pubkey::new_unique()),
+            8u8,
+            0,
+            |_| None,
+        )
+        .unwrap_err(),
+        FheExecutionBuildError::UnsupportedFheType
+    );
+    // Neg rejects a Bool operand (EVM fheNeg supportedTypes = Uint8..Uint128).
     assert_eq!(
         builder
             .unary_op(
@@ -1219,7 +1239,8 @@ fn div_rem_require_nonzero_scalar_divisor() {
 
 #[test]
 fn builder_exposes_the_host_operator_type_surface() {
-    // The typed builder must express the host's type matrix: bitwise on Bool/Uint256, neg on Uint256, eq on Bool, is_in on Uint160.
+    // The typed builder must express the host's type matrix: bitwise/eq on Bool. Types 7 and 8
+    // are outside the type gate (Solana host max is euint128).
     let auth = Pubkey::new_unique();
     let mut builder = FheExecutionBuilder::new(encrypted_value_account_authority(auth));
 
@@ -1235,25 +1256,6 @@ fn builder_exposes_the_host_operator_type_surface() {
     .unwrap();
     assert!(builder.and(bool_a, bool_b, Output::transient()).is_ok());
 
-    let u256_a = StoredValue::<Bytes256>::persistent(
-        typed_handle(3, FheType::BYTES256.byte()),
-        encrypted_value_id(auth, 3),
-    )
-    .unwrap();
-    let u256_b = StoredValue::<Bytes256>::persistent(
-        typed_handle(4, FheType::BYTES256.byte()),
-        encrypted_value_id(auth, 4),
-    )
-    .unwrap();
-    assert!(builder.xor(u256_a, u256_b, Output::transient()).is_ok());
-
-    let u256_c = StoredValue::<Bytes256>::persistent(
-        typed_handle(5, FheType::BYTES256.byte()),
-        encrypted_value_id(auth, 5),
-    )
-    .unwrap();
-    assert!(builder.neg(u256_c, Output::transient()).is_ok());
-
     let bool_c = StoredValue::<Bool>::persistent(
         typed_handle(6, FheType::BOOL.byte()),
         encrypted_value_id(auth, 6),
@@ -1266,17 +1268,23 @@ fn builder_exposes_the_host_operator_type_surface() {
     .unwrap();
     assert!(builder.eq(bool_c, bool_d, Output::transient()).is_ok());
 
-    let addr_v = StoredValue::<Address>::persistent(
-        typed_handle(8, FheType::ADDRESS.byte()),
-        encrypted_value_id(auth, 8),
-    )
-    .unwrap();
-    let addr_s = StoredValue::<Address>::persistent(
-        typed_handle(9, FheType::ADDRESS.byte()),
-        encrypted_value_id(auth, 9),
-    )
-    .unwrap();
-    assert!(builder.is_in(addr_v, [addr_s], Output::transient()).is_ok());
+    let u256 = Operand::persistent(typed_handle(3, 8u8), Pubkey::new_unique());
+    assert_eq!(
+        validate_binary_step(FheBinaryOpCode::Xor, &u256, &u256, 8u8, 0, |_| None).unwrap_err(),
+        FheExecutionBuildError::UnsupportedFheType
+    );
+    assert_eq!(
+        validate_unary_step(FheUnaryOpCode::Neg, &u256, 8u8, 0, |_| None).unwrap_err(),
+        FheExecutionBuildError::UnsupportedFheType
+    );
+    assert_eq!(
+        FheType::from_host_byte(7u8).unwrap_err(),
+        FheExecutionBuildError::UnsupportedFheType
+    );
+    assert_eq!(
+        FheType::from_host_byte(8u8).unwrap_err(),
+        FheExecutionBuildError::UnsupportedFheType
+    );
 }
 
 #[test]
@@ -1429,12 +1437,25 @@ fn typed_handle_constructor_rejects_mismatched_handle_tag() {
 }
 
 #[test]
-fn rand_rejects_address_type_like_host() {
+fn persistent_rejects_unsupported_handle_type_bytes() {
+    let key = encrypted_value_id(Pubkey::new_unique(), 1);
+    assert_eq!(
+        Uint64Handle::persistent(typed_handle(1, 7u8), key.clone()).unwrap_err(),
+        FheExecutionBuildError::UnsupportedFheType
+    );
+    assert_eq!(
+        Uint64Handle::persistent(typed_handle(1, 8u8), key).unwrap_err(),
+        FheExecutionBuildError::UnsupportedFheType
+    );
+}
+
+#[test]
+fn rand_rejects_unsupported_type_like_host() {
     let mut builder =
         FheExecutionBuilder::new(encrypted_value_account_authority(Pubkey::new_unique()));
-    let error = builder
-        .rand_raw(FheType::ADDRESS, Output::transient())
-        .unwrap_err();
+    let error = builder.rand_raw(7u8, Output::transient()).unwrap_err();
+    assert_eq!(error, FheExecutionBuildError::UnsupportedFheType);
+    let error = builder.rand_raw(8u8, Output::transient()).unwrap_err();
     assert_eq!(error, FheExecutionBuildError::UnsupportedFheType);
 }
 

@@ -38,7 +38,7 @@ pub fn set_hcu_app_trusted(
     trusted: bool,
 ) -> Result<()> {
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
-    assert_admin(&ctx.accounts.host_config, ctx.accounts.admin.key())?;
+    assert_admin(&ctx.accounts.host_config, &ctx.accounts.admin)?;
     let (expected, bump) = hcu_trusted_app_address(app);
     require_keys_eq!(
         expected,
@@ -77,7 +77,7 @@ pub fn set_hcu_app_trusted(
 /// Reads the current trust flag for `app`: `None` when the record is absent (system-owned + empty),
 /// otherwise the stored `trusted` after validating owner / length / PDA app / bump.
 fn current_trusted_status(info: &AccountInfo, app: Pubkey, bump: u8) -> Result<Option<bool>> {
-    if is_uninitialized_pda_account(info)? {
+    if is_uninitialized_pda_account(info, ZamaHostError::HcuTrustedAppRecordMismatch)? {
         return Ok(None);
     }
     require_keys_eq!(

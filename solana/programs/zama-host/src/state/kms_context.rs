@@ -24,8 +24,8 @@ pub struct KmsThresholds {
 /// A KMS context: the signer set + thresholds active under a `context_id`.
 #[account]
 pub struct KmsContext {
-    /// Monotonic context id (mirrors `kmsContextId`).
-    pub context_id: u64,
+    /// Opaque 32-byte context id (mirrors EVM `kmsContextId`). All-zero is reserved (none defined).
+    pub context_id: [u8; 32],
     /// KMS node signer EVM addresses authorized to sign certs in this context.
     pub signers: Vec<[u8; 20]>,
     /// Per-operation signature thresholds.
@@ -39,5 +39,5 @@ pub struct KmsContext {
 impl KmsContext {
     /// Upper bound on KMS nodes per context (bounds account size).
     pub const MAX_SIGNERS: usize = 16;
-    pub const SPACE: usize = 8 + (4 + Self::MAX_SIGNERS * 20) + 4 + 1 + 1;
+    pub const SPACE: usize = 32 + (4 + Self::MAX_SIGNERS * 20) + 4 + 1 + 1;
 }

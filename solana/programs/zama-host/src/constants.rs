@@ -44,7 +44,8 @@ pub use zama_solana_acl::WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY as WILDCARD_
 /// Capacity below this cap is shape-dependent: the all-created-public shape executes at most 20
 /// creates in one instruction, stopped by the fixed 32 KB heap at 21 — which no compute-budget
 /// request can raise (DD-046) — with the transaction's non-extendable 64-entry instruction trace
-/// (each created output issues ~3 CPIs) within one step of the same wall; executions beyond a
+/// (each created output issues 1 CPI on the common `create_account` path, 3 only on the
+/// pre-funded squat fallback) within one step of the same wall; executions beyond a
 /// wall revert cleanly (measured; pinned per shape by the `fhe_execute_boundary/*` snapshot
 /// entries, whose `limited_by` field names the binding axis). Wire
 /// indices (`producer_index`, dictionary and account indices) are `u8`, bounding any future raise

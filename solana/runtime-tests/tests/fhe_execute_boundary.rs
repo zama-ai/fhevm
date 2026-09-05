@@ -486,13 +486,9 @@ enum WallPin {
     /// No app-side model speaks about this shape's wall; the snapshot alone pins it.
     SnapshotOnly,
     /// The builder never admits a create count the host measured as failing: builder cap
-    /// `<= max_ok`. For the one-subject public shape the heap and trace walls sit within one
-    /// step of each other, so the builder's trace cap covers both.
+    /// `<= max_ok`. After the 1-CPI common-path create, private creates reach the host step
+    /// cap; the builder still caps at 20 because public-create host heap binds there.
     BuilderCapCoversWall,
-    /// The tie between the builder's trace model and the measured wall: Mollusk probes the host
-    /// top-level, one instruction short of the app wrapper the builder's floor budgets, so the
-    /// host must run exactly one create past the builder's cap and no further.
-    TraceOneUnderBuilderCap,
     /// Invariant #61's measured half. On this axis pair the wall is the HOST's own CPI frame —
     /// the created accounts' subject tables and the public-outputs event payload grow with
     /// creates x subjects-per-output — and it sits well below the trace cap, which the
@@ -501,7 +497,7 @@ enum WallPin {
     /// shared audience the dictionary interns eight subjects once, so the builder admits the
     /// trace-capped twenty such creates (`the_builder_admits_what_the_host_heap_cannot_hold`
     /// in zama-fhe's `heap_budget/` pins `build()` Ok at 15, 16, and 20) while the host
-    /// survives fifteen. Until the host's side gets its own typed ceiling (or a policy cap on
+    /// survives sixteen. Until the host's side gets its own typed ceiling (or a policy cap on
     /// the public payload), this wall is measured, not typed: the snapshot pins it, and the
     /// boundary matrix is the guidance — fhevm-internal#1872.
     HostHeapGap,
@@ -518,6 +514,11 @@ struct BoundaryShape {
 
 /// The whole frontier as data: every swept shape, its builder, and its pin. The sweeps, the
 /// snapshot, and the printer all walk this one table, so a new axis is one new row.
+///
+/// No row is now limited by `instruction_trace`: the common-path create is one CPI, so 20
+/// creates plus events sit well under 64. That floor is pinned by `zama-fhe`'s
+/// `instruction_trace_floor` unit test; squat creates that would exhaust the trace are a
+/// worst-case number on `FheExecutionCost`, not a swept shape.
 fn boundary_shapes() -> Vec<BoundaryShape> {
     let shape = |profile: &'static str,
                  min_steps: usize,
@@ -538,7 +539,7 @@ fn boundary_shapes() -> Vec<BoundaryShape> {
         shape(
             "fhe_execute_boundary/all_private_creates",
             1,
-            WallPin::TraceOneUnderBuilderCap,
+            WallPin::BuilderCapCoversWall,
             Box::new(|steps| all_private_creates_case(steps, Pubkey::new_from_array([0x36; 32]))),
         ),
         shape(
@@ -610,15 +611,6 @@ fn assert_wall_pin(profile: &str, pin: &WallPin, sweep: &SweptBoundary) {
                 "{profile}: the builder admits {} created-public outputs but the host wall is {}",
                 zama_fhe::MAX_PERSISTENT_CREATES,
                 sweep.max_ok,
-            );
-        }
-        WallPin::TraceOneUnderBuilderCap => {
-            assert_eq!(sweep.limited_by, "instruction_trace", "{profile}");
-            assert_eq!(
-                zama_fhe::MAX_PERSISTENT_CREATES + 1,
-                sweep.max_ok,
-                "{profile}: the measured trace wall no longer sits one wrapper instruction \
-                 past the builder's cap",
             );
         }
         WallPin::HostHeapGap => {
@@ -757,10 +749,11 @@ fn cost_snapshot_solana_ceilings() {
             ceiling(
                 64,
                 false,
-                "every instruction executed in a transaction, top-level plus each CPI; sits \
-                 within one step of the all-created-public shape's heap wall (each created \
-                 output issues ~3 CPIs), and it is shared with the app's own CPIs in the same \
-                 transaction",
+                "every instruction executed in a transaction, top-level plus each CPI; each \
+                 created output issues 1 CPI on the common path (3 on the squat fallback), so \
+                 twenty creates plus both event CPIs spend 24 of the 64 and the heap, not the \
+                 trace, is the binding wall; the trace is shared with the app's own CPIs in the \
+                 same transaction",
             ),
         ),
         (

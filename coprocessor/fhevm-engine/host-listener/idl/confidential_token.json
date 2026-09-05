@@ -3566,10 +3566,15 @@
             "name": "current_kms_context_id",
             "docs": [
               "Active KMS context id (mirrors `ProtocolConfig.getCurrentKmsContextId`). The",
-              "signer set + thresholds live in the `KmsContext` PDA at this id; 0 means none",
-              "defined yet. Updated by `define_kms_context`."
+              "signer set + thresholds live in the `KmsContext` PDA at this id; `[0; 32]` means",
+              "none defined yet. Updated by `define_kms_context`."
             ],
-            "type": "u64"
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
           },
           {
             "name": "paused",
@@ -3639,9 +3644,14 @@
           {
             "name": "context_id",
             "docs": [
-              "Monotonic context id (mirrors `kmsContextId`)."
+              "Opaque 32-byte context id (mirrors EVM `kmsContextId`). All-zero is reserved (none defined)."
             ],
-            "type": "u64"
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
           },
           {
             "name": "signers",

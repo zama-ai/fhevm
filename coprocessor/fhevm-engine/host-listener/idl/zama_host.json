@@ -113,7 +113,7 @@
         {
           "name": "host_config",
           "docs": [
-            "Singleton config PDA; its `current_kms_context_id` is advanced to `context_id`."
+            "Singleton config PDA; its `current_kms_context_id` is set to `context_id`."
           ],
           "writable": true,
           "pda": {
@@ -185,7 +185,12 @@
       "args": [
         {
           "name": "context_id",
-          "type": "u64"
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
         },
         {
           "name": "signers",
@@ -379,7 +384,12 @@
       "args": [
         {
           "name": "context_id",
-          "type": "u64"
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
         }
       ]
     },
@@ -519,9 +529,16 @@
         {
           "name": "admin",
           "docs": [
-            "Initial admin stored in the config."
+            "Initial admin stored in the config. Must be the BPF upgrade authority."
           ],
           "signer": true
+        },
+        {
+          "name": "program_data",
+          "docs": [
+            "Upgradeable loader `ProgramData` for this program; `admin` must be its upgrade authority.",
+            "A finalized program (`upgrade_authority_address == None`) cannot initialize."
+          ]
         },
         {
           "name": "host_config",
@@ -803,6 +820,78 @@
       "args": []
     },
     {
+      "name": "set_admin",
+      "docs": [
+        "Transfers the host admin. Current admin signs; a new keypair co-signs; a new PDA does not."
+      ],
+      "discriminator": [
+        251,
+        163,
+        0,
+        52,
+        91,
+        194,
+        187,
+        92
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "docs": [
+            "Current configured host admin."
+          ],
+          "signer": true
+        },
+        {
+          "name": "host_config",
+          "docs": [
+            "Singleton config PDA."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  115,
+                  116,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "new_admin",
+          "docs": [
+            "The incoming admin. A keypair must co-sign (`is_signer`); a PDA skips co-sign only when",
+            "it is off-curve and already owned by a program (not System), so a mistyped empty key",
+            "cannot become admin."
+          ]
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "new_admin",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
       "name": "set_coprocessor_signers",
       "docs": [
         "Replaces the registered coprocessor signer set + threshold for input attestations",
@@ -958,6 +1047,88 @@
         {
           "name": "denied",
           "type": "bool"
+        }
+      ]
+    },
+    {
+      "name": "set_eip712_domain",
+      "docs": [
+        "Writes the gateway EIP-712 domain fields together. Zeros are legal."
+      ],
+      "discriminator": [
+        159,
+        93,
+        173,
+        20,
+        17,
+        152,
+        133,
+        234
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "docs": [
+            "Configured host admin."
+          ],
+          "signer": true
+        },
+        {
+          "name": "host_config",
+          "docs": [
+            "Singleton config PDA."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  115,
+                  116,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "gateway_chain_id",
+          "type": "u64"
+        },
+        {
+          "name": "input_verification_contract",
+          "type": {
+            "array": [
+              "u8",
+              20
+            ]
+          }
+        },
+        {
+          "name": "decryption_contract",
+          "type": {
+            "array": [
+              "u8",
+              20
+            ]
+          }
         }
       ]
     },
@@ -1542,19 +1713,6 @@
       ]
     },
     {
-      "name": "HostConfigInitializedEvent",
-      "discriminator": [
-        239,
-        145,
-        189,
-        229,
-        100,
-        13,
-        205,
-        241
-      ]
-    },
-    {
       "name": "HostConfigUpdatedEvent",
       "discriminator": [
         91,
@@ -1671,7 +1829,7 @@
     {
       "code": 6012,
       "name": "InvalidKmsContextId",
-      "msg": "KMS context id is not the next sequential id"
+      "msg": "KMS context id must not be the all-zero id"
     },
     {
       "code": 6013,
@@ -3108,10 +3266,15 @@
             "name": "current_kms_context_id",
             "docs": [
               "Active KMS context id (mirrors `ProtocolConfig.getCurrentKmsContextId`). The",
-              "signer set + thresholds live in the `KmsContext` PDA at this id; 0 means none",
-              "defined yet. Updated by `define_kms_context`."
+              "signer set + thresholds live in the `KmsContext` PDA at this id; `[0; 32]` means",
+              "none defined yet. Updated by `define_kms_context`."
             ],
-            "type": "u64"
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
           },
           {
             "name": "paused",
@@ -3166,45 +3329,6 @@
               "PDA bump for `PDA(\"host-config\")`."
             ],
             "type": "u8"
-          }
-        ]
-      }
-    },
-    {
-      "name": "HostConfigInitializedEvent",
-      "docs": [
-        "Emitted when the singleton host config is initialized."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "version",
-            "docs": [
-              "Event schema version."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "config",
-            "docs": [
-              "Host config PDA."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "admin",
-            "docs": [
-              "Configured admin signer."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "chain_id",
-            "docs": [
-              "Host-chain id used by handle derivation."
-            ],
-            "type": "u64"
           }
         ]
       }
@@ -3374,9 +3498,14 @@
           {
             "name": "context_id",
             "docs": [
-              "Monotonic context id (mirrors `kmsContextId`)."
+              "Opaque 32-byte context id (mirrors EVM `kmsContextId`). All-zero is reserved (none defined)."
             ],
-            "type": "u64"
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
           },
           {
             "name": "signers",
@@ -3440,7 +3569,12 @@
             "docs": [
               "The destroyed context id."
             ],
-            "type": "u64"
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
           }
         ]
       }
@@ -3539,7 +3673,12 @@
             "docs": [
               "The new context id."
             ],
-            "type": "u64"
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
           },
           {
             "name": "signers",

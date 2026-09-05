@@ -33,9 +33,9 @@ pub struct HostConfig {
     /// `PublicDecryptVerification` certificates (disclose/redeem).
     pub decryption_contract: [u8; 20],
     /// Active KMS context id (mirrors `ProtocolConfig.getCurrentKmsContextId`). The
-    /// signer set + thresholds live in the `KmsContext` PDA at this id; 0 means none
-    /// defined yet. Updated by `define_kms_context`.
-    pub current_kms_context_id: u64,
+    /// signer set + thresholds live in the `KmsContext` PDA at this id; `[0; 32]` means
+    /// none defined yet. Updated by `define_kms_context`.
+    pub current_kms_context_id: [u8; 32],
     /// Pauses production-shaped host instructions when true.
     pub paused: bool,
     /// Enables deny-list checks for persistent grant authorities.
@@ -70,7 +70,7 @@ impl HostConfig {
         + 1
         + 1
         + 20
-        + 8
+        + 32
         + 1
         + 1
         + 8
@@ -115,9 +115,8 @@ mod tests {
     // many signers are registered.
     #[test]
     fn host_config_space_matches_serialized_len() {
-        // 151 (single-signer layout) - 20 (old `coprocessor_signer`) + 160 (8 * 20 signer array)
-        // + 1 (count) + 1 (threshold) = 293.
-        assert_eq!(HostConfig::SPACE, 293);
+        // 293 (u64 context id) + 24 (current_kms_context_id 8 -> 32) = 317.
+        assert_eq!(HostConfig::SPACE, 317);
 
         let cfg = HostConfig {
             admin: Pubkey::new_unique(),
@@ -128,7 +127,7 @@ mod tests {
             coprocessor_signer_count: 0,
             coprocessor_threshold: 0,
             decryption_contract: [0u8; 20],
-            current_kms_context_id: 0,
+            current_kms_context_id: [0u8; 32],
             paused: false,
             grant_deny_list_enabled: false,
             max_hcu_per_tx: u64::MAX,
@@ -158,7 +157,7 @@ mod tests {
             coprocessor_signer_count: 1,
             coprocessor_threshold: 1,
             decryption_contract: [8u8; 20],
-            current_kms_context_id: 33,
+            current_kms_context_id: [33u8; 32],
             paused,
             grant_deny_list_enabled,
             max_hcu_per_tx: 44,

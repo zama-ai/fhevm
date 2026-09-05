@@ -108,11 +108,12 @@ any persistent output ACL is the app's separate explicit choice, exactly like EV
 The EVM `contractAddress` analog is the consuming program's **compute-authority PDA** — a PDA the
 program signs with via `invoke_signed` (in confidential-token, the `[b"fhe-compute", mint]` compute
 signer), never a user key and never the bare program id (program ids cannot sign). The host only
-enforces `contract_address == compute_subject` (any signer); binding the attestation to that PDA and
-checking the attested `user_address` are **app policy** (confidential-token checks the attested user
-equals the token account owner), mirroring EVM where `userAddress` is attested but the contract
-decides its meaning. Per-state-account (per-mint) scoping is deliberate and finer-grained than EVM's
-per-contract binding.
+enforces `contract_address == compute_subject` (any signer). `user_address` is **not** EVM
+`msg.sender`; binding the attestation to that PDA and checking the attested `user_address` are
+**app policy** (confidential-token checks the attested user
+equals the token account owner). An app that skips that check lets an observer replay another
+user's verified input. Per-state-account (per-mint) scoping is deliberate and finer-grained
+than EVM's per-contract binding.
 
 This mirrors the EVM `InputVerification` coprocessor-threshold model; the gateway counterpart is the
 RFC-021 bytes32 path `InputVerification.verifyProofRequestSolana`. The host-listener reconstruct path

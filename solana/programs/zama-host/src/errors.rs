@@ -45,8 +45,8 @@ pub enum ZamaHostError {
     /// A KMS threshold is zero or exceeds the signer count.
     #[msg("KMS context threshold is invalid")]
     InvalidKmsThreshold,
-    /// A new KMS context id must be the current id plus one (monotonic).
-    #[msg("KMS context id is not the next sequential id")]
+    /// A KMS context id of all zeros is reserved (none defined).
+    #[msg("KMS context id must not be the all-zero id")]
     InvalidKmsContextId,
     /// The current active KMS context cannot be destroyed.
     #[msg("current KMS context cannot be destroyed")]

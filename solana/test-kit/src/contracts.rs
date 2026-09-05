@@ -85,7 +85,6 @@ macro_rules! binary_contract_tests {
                     both_shapes!(u32, $op, 4, 10, 12, 4, $expected);
                     both_shapes!(u64, $op, 5, 10, 12, 5, $expected);
                     both_shapes!(u128, $op, 6, 10, 12, 6, $expected);
-                    both_shapes!(u256, $op, 8, 10, 12, 8, $expected);
                 };
             }
             mod and {
@@ -104,7 +103,6 @@ macro_rules! binary_contract_tests {
                     both_shapes!(u32, $op, 4, $lhs, $rhs, 4, $expected);
                     both_shapes!(u64, $op, 5, $lhs, $rhs, 5, $expected);
                     both_shapes!(u128, $op, 6, $lhs, $rhs, 6, $expected);
-                    both_shapes!(u256, $op, 8, $lhs, $rhs, 8, $expected);
                 };
             }
             mod shl {
@@ -127,8 +125,6 @@ macro_rules! binary_contract_tests {
                     both_shapes!(u32, $op, 4, $lhs, $rhs, 0, $expected);
                     both_shapes!(u64, $op, 5, $lhs, $rhs, 0, $expected);
                     both_shapes!(u128, $op, 6, $lhs, $rhs, 0, $expected);
-                    both_shapes!(u160, $op, 7, $lhs, $rhs, 0, $expected);
-                    both_shapes!(u256, $op, 8, $lhs, $rhs, 0, $expected);
                 };
             }
             mod eq {
@@ -201,7 +197,6 @@ macro_rules! unary_contract_tests {
                     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
                     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
                 ]);
-                unary_case!(u256, zama_host::FheUnaryOpCode::Neg, 8, crate::be(1), 8, [0xff; 32]);
             }
             mod not {
                 unary_case!(bool, zama_host::FheUnaryOpCode::Not, 0, [0xff; 32], 0, [0; 32]);
@@ -210,7 +205,6 @@ macro_rules! unary_contract_tests {
                 unary_case!(u32, zama_host::FheUnaryOpCode::Not, 4, [0xff; 32], 4, [0; 32]);
                 unary_case!(u64, zama_host::FheUnaryOpCode::Not, 5, [0xff; 32], 5, [0; 32]);
                 unary_case!(u128, zama_host::FheUnaryOpCode::Not, 6, [0xff; 32], 6, [0; 32]);
-                unary_case!(u256, zama_host::FheUnaryOpCode::Not, 8, [0xff; 32], 8, [0; 32]);
             }
             mod cast {
                 macro_rules! cast_case {
@@ -224,37 +218,26 @@ macro_rules! unary_contract_tests {
                 cast_case!(bool_to_u32, 0, 4);
                 cast_case!(bool_to_u64, 0, 5);
                 cast_case!(bool_to_u128, 0, 6);
-                cast_case!(bool_to_u256, 0, 8);
                 cast_case!(u8_to_u16, 2, 3);
                 cast_case!(u8_to_u32, 2, 4);
                 cast_case!(u8_to_u64, 2, 5);
                 cast_case!(u8_to_u128, 2, 6);
-                cast_case!(u8_to_u256, 2, 8);
                 cast_case!(u16_to_u8, 3, 2);
                 cast_case!(u16_to_u32, 3, 4);
                 cast_case!(u16_to_u64, 3, 5);
                 cast_case!(u16_to_u128, 3, 6);
-                cast_case!(u16_to_u256, 3, 8);
                 cast_case!(u32_to_u8, 4, 2);
                 cast_case!(u32_to_u16, 4, 3);
                 cast_case!(u32_to_u64, 4, 5);
                 cast_case!(u32_to_u128, 4, 6);
-                cast_case!(u32_to_u256, 4, 8);
                 cast_case!(u64_to_u8, 5, 2);
                 cast_case!(u64_to_u16, 5, 3);
                 cast_case!(u64_to_u32, 5, 4);
                 cast_case!(u64_to_u128, 5, 6);
-                cast_case!(u64_to_u256, 5, 8);
                 cast_case!(u128_to_u8, 6, 2);
                 cast_case!(u128_to_u16, 6, 3);
                 cast_case!(u128_to_u32, 6, 4);
                 cast_case!(u128_to_u64, 6, 5);
-                cast_case!(u128_to_u256, 6, 8);
-                cast_case!(u256_to_u8, 8, 2);
-                cast_case!(u256_to_u16, 8, 3);
-                cast_case!(u256_to_u32, 8, 4);
-                cast_case!(u256_to_u64, 8, 5);
-                cast_case!(u256_to_u128, 8, 6);
             }
         }
     };
@@ -281,8 +264,6 @@ macro_rules! composite_contract_tests {
             case!(u32, 4, 11, 22, 11);
             case!(u64, 5, 11, 22, 11);
             case!(u128, 6, 11, 22, 11);
-            case!(u160, 7, 11, 22, 11);
-            case!(u256, 8, 11, 22, 11);
         }
         mod trivial_encrypt {
             macro_rules! case {
@@ -299,8 +280,6 @@ macro_rules! composite_contract_tests {
             case!(u32, 4, 37);
             case!(u64, 5, 37);
             case!(u128, 6, 37);
-            case!(u160, 7, 37);
-            case!(u256, 8, 37);
         }
         mod sum {
             macro_rules! case {
@@ -341,11 +320,9 @@ macro_rules! composite_contract_tests {
             cases!(u32, 4);
             cases!(u64, 5);
             cases!(u128, 6);
-            cases!(u160, 7);
-            cases!(u256, 8);
             #[test]
-            fn empty_u160() {
-                crate::run_is_in(7, 29, false, 0);
+            fn empty_u64() {
+                crate::run_is_in(5, 29, false, 0);
             }
         }
         mod mul_div {
@@ -383,7 +360,6 @@ macro_rules! composite_contract_tests {
             case!(u32, 4);
             case!(u64, 5);
             case!(u128, 6);
-            case!(u256, 8);
         }
         mod rand_bounded {
             macro_rules! case {
@@ -399,7 +375,6 @@ macro_rules! composite_contract_tests {
             case!(u32, 4);
             case!(u64, 5);
             case!(u128, 6);
-            case!(u256, 8);
         }
     };
 }

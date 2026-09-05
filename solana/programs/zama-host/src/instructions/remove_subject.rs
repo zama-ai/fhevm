@@ -21,6 +21,7 @@ pub struct RemoveEncryptedValueSubject<'info> {
 }
 
 pub fn remove_subject(ctx: Context<RemoveEncryptedValueSubject>, subject: Pubkey) -> Result<()> {
+    assert_no_remaining_accounts(ctx.remaining_accounts)?;
     assert_not_paused(&ctx.accounts.host_config)?;
 
     let info = ctx.accounts.encrypted_value.to_account_info();

@@ -19,6 +19,7 @@ pub mod contracts;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+use anchor_lang::solana_program::bpf_loader_upgradeable::{self, UpgradeableLoaderState};
 use anchor_lang::{
     prelude::system_program, AccountDeserialize, AccountSerialize, AnchorDeserialize,
     Discriminator, InstructionData, ToAccountMetas,
@@ -373,7 +374,7 @@ pub struct HostConfigParams {
     pub admin: Pubkey,
     pub coprocessor_signers: Vec<[u8; 20]>,
     pub coprocessor_threshold: u8,
-    pub current_kms_context_id: u64,
+    pub current_kms_context_id: [u8; 32],
     pub paused: bool,
     pub grant_deny_list_enabled: bool,
 }
@@ -399,7 +400,7 @@ impl HostConfigParams {
             admin,
             coprocessor_signers: vec![UNTRUSTED_COPROCESSOR_SIGNER],
             coprocessor_threshold: 1,
-            current_kms_context_id: 0,
+            current_kms_context_id: [0u8; 32],
             paused: false,
             grant_deny_list_enabled: false,
         }
@@ -438,10 +439,36 @@ pub fn host_config_account(params: &HostConfigParams) -> (Pubkey, Account) {
     )
 }
 
+/// Test KMS context id: 31 zero bytes and last byte `n`. `n = 0` is the reserved all-zero id.
+pub fn canonical_test_context_id(n: u8) -> [u8; 32] {
+    let mut id = [0u8; 32];
+    id[31] = n;
+    id
+}
+
+/// The host program's BPF upgradeable `ProgramData` account at its canonical address, with
+/// `upgrade_authority` as the upgrade authority (`None` for a finalized program).
+pub fn program_data_account(upgrade_authority: Option<Pubkey>) -> (Pubkey, Account) {
+    let state = UpgradeableLoaderState::ProgramData {
+        slot: 0,
+        upgrade_authority_address: upgrade_authority,
+    };
+    (
+        bpf_loader_upgradeable::get_program_data_address(&host::ID),
+        Account {
+            lamports: 1_000_000_000,
+            data: bincode::serialize(&state).expect("ProgramData serializes"),
+            owner: bpf_loader_upgradeable::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    )
+}
+
 /// Builds a fixture `KmsContext` account at its canonical PDA, with every threshold set to
 /// `threshold`.
 pub fn kms_context_account(
-    context_id: u64,
+    context_id: [u8; 32],
     signers: Vec<[u8; 20]>,
     threshold: u8,
 ) -> (Pubkey, Account) {

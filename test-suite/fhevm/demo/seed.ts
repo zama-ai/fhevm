@@ -140,7 +140,7 @@ const main = async (): Promise<void> => {
   const kmsContextAccount = await rpc.getAccountInfo(kmsContext, { encoding: "base64", commitment: "confirmed" }).send();
   if (kmsContextAccount.value === null) {
     throw new Error(
-      `kms-context account ${kmsContext} (context id ${BRINGUP_KMS_CONTEXT_ID}) does not exist on-chain. ` +
+      `kms-context account ${kmsContext} (context id 0x${Buffer.from(BRINGUP_KMS_CONTEXT_ID).toString("hex")}) does not exist on-chain. ` +
         "It is provisioned by the host bring-up (the step that deploys the zama-host program and " +
         "initializes its config + KMS context), NOT by demo:seed. Re-run the host bring-up against " +
         "this validator and confirm it initialized KMS context 1, then re-run demo:seed.",

@@ -1,19 +1,23 @@
-//! Fixtures shared by the host test binaries: `host_mollusk.rs` (behavior) and
-//! `fhe_execute_boundary.rs` (the capacity instrument). Each binary compiles this module into
-//! itself, so a helper used by only one of them is expected.
+//! Fixtures shared by the host test binaries: `host_mollusk.rs` (behavior),
+//! `host_admin_mollusk.rs` (admin setters), and `fhe_execute_boundary.rs` (the capacity
+//! instrument). Each binary compiles this module into itself, so a helper used by only one of
+//! them is expected.
 #![allow(dead_code)]
 
 use anchor_lang::prelude::system_program;
+use anchor_lang::AccountDeserialize;
+use mollusk_svm::MolluskContext;
 use solana_sdk::{
     account::Account,
     instruction::{AccountMeta, Instruction},
     pubkey::Pubkey,
 };
+use std::collections::HashMap;
 use zama_host::encode::ExecutionDictionary;
-use zama_host::{self as host, FheExecuteArgs, FheExecuteOutput, FheExecuteStep};
+use zama_host::{self as host, FheExecuteArgs, FheExecuteOutput, FheExecuteStep, HostConfig};
 use zama_solana_test_kit::{
-    anchor_ix, empty_system_account, event_authority, funded_system_account, label, readonly,
-    system_program_account, writable, HostConfigParams,
+    anchor_ix, empty_system_account, event_authority, funded_system_account, host_svm, label,
+    readonly, system_program_account, writable, HostConfigParams,
 };
 
 pub fn host_config_account_with_flags(
@@ -30,6 +34,30 @@ pub fn host_config_account_with_flags(
 
 pub fn host_config_account(admin: Pubkey) -> (Pubkey, Account) {
     host_config_account_with_flags(admin, false, false)
+}
+
+pub fn mollusk_execute_context(
+    payer: Pubkey,
+    seeded_accounts: Vec<(Pubkey, Account)>,
+) -> MolluskContext<HashMap<Pubkey, Account>> {
+    let mut accounts = HashMap::from([(payer, funded_system_account())]);
+    for (pubkey, account) in seeded_accounts {
+        accounts.insert(pubkey, account);
+    }
+    host_svm().with_context(accounts)
+}
+
+pub fn read_host_config(
+    context: &MolluskContext<HashMap<Pubkey, Account>>,
+    address: Pubkey,
+) -> Option<HostConfig> {
+    let store = context.account_store.borrow();
+    let account = store.get(&address)?;
+    if account.owner != host::id() {
+        return None;
+    }
+    let mut data = account.data.as_slice();
+    HostConfig::try_deserialize(&mut data).ok()
 }
 
 /// Builds an `fhe_execute` instruction. `remaining` accounts are appended in

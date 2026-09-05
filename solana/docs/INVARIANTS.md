@@ -153,9 +153,9 @@ ID…).
     20 shared-audience eight-subject `make_public` creates
     (`the_builder_admits_what_the_host_heap_cannot_hold` in
     `solana/crates/zama-fhe/src/heap_budget/` builds them `Ok`), and the
-    host's measured wall is 15
-    (`fhe_execute_boundary/subject_heavy_public_creates`: the 16th aborts in
-    the host's CPI frame). Executions in the 16–20 band build cleanly and die
+    host's measured wall is 16
+    (`fhe_execute_boundary/subject_heavy_public_creates`: the 17th aborts in
+    the host's CPI frame). Executions in the 17–20 band build cleanly and die
     on-chain with no error. Until this wall gets a typed policy cap or a
     host-side heap model (a design decision tracked in fhevm-internal#1872),
     apps creating many wide-audience public outputs must budget against the
@@ -172,8 +172,11 @@ ID…).
     `verify_public_decrypt`: a KMS threshold certificate **and** an MMR
     inclusion proof that the exact handle was sealed public.
 22. **[HOLDS]** Certificate binding chain: signed extra_data → context id →
-    canonical KmsContext PDA → signer set. Destroying a context invalidates
-    every certificate it issued; rotation alone invalidates none.
+    canonical KmsContext PDA → signer set. Empty or version-0 extra_data
+    selects the current context; version 1 is exactly 33 bytes and carries
+    the 32-byte id; version 3 carries the same 32-byte id and may append an
+    MMR-proof tail. Destroying a context invalidates every certificate it
+    issued; rotation alone invalidates none.
 23. **[ASSUMPTION]** The coprocessor and KMS committees are honest at their
     thresholds, and their EVM signing keys are not compromised.
 24. **[ANTI]** `verify_public_decrypt` provides no act-once/replay protection;
@@ -250,6 +253,8 @@ ID…).
     connector from serving delegated decryptions, so a delegator frozen out of
     revoking would be left with grants they can neither use nor withdraw, and a
     lever the operator can switch off is not the user's lever.
+    While `remove_subject` exists, pause also freezes subject revocation
+    (`remove_subject` calls `assert_not_paused`).
     Not gated: `verify_public_decrypt` (DD-040, already-sealed leaves reveal
     nothing new) and the admin setters, pause included.
 37. **[HOLDS]** HCU enforcement ships disabled (unrestricted defaults) and is
@@ -258,7 +263,14 @@ ID…).
     only on the block cap). When finite, the ordering invariant
     `block cap ≥ max per tx ≥ max depth` is enforced at set time.
 38. **[ASSUMPTION]** The host admin key is a single trusted key. This is a POC:
-    there is no multisig and no timelock.
+    there is no multisig and no timelock. The initial admin must be the BPF
+    upgrade authority (`ProgramData.upgrade_authority_address`). After init,
+    `set_admin` rotates in one instruction: the current admin signs; a new
+    keypair must co-sign; a new PDA skips co-sign only when it is off-curve
+    and already owned by a program (not the System Program), so a mistyped
+    empty key cannot become admin. A program whose upgrade authority has been
+    burned (`upgrade_authority_address == None`) cannot initialize. Production
+    governance is tracked separately (fhevm-internal#1634).
 40. **[HOLDS]** A compute subject cannot self-trust: HCU trust records are
     written only by the admin, live at a PDA derived from the subject they
     trust, and a caller can neither point at another subject's record (address
@@ -392,12 +404,12 @@ not when the threat model changes.
     see #61.)
     - **Steps** — the host's `MAX_FHE_EXECUTION_STEPS`, the one step ceiling,
       on-chain and off (`TooManySteps`).
-    - **Instruction trace** — three system CPIs per created output plus the
-      event CPIs, checked per step against the transaction's 64-instruction
-      trace including the app wrapper instruction; at most 20 creates fit one
-      execution (`ExceedsInstructionTraceLimit`). The boundary sweep
-      `fhe_execute_boundary/all_private_creates` asserts the measured wall
-      sits exactly one wrapper instruction past this cap (21 top-level).
+    - **Persistent creates** — at most `MAX_PERSISTENT_CREATES` (20) per
+      execution (`ExceedsPersistentCreateLimit`), the SDK's policy cap. Each
+      create is one system CPI on the common host path, so the transaction's
+      64-instruction trace no longer binds; the boundary sweep
+      `fhe_execute_boundary/all_private_creates` asserts the cap sits inside
+      the measured host wall (`WallPin::BuilderCapCoversWall`).
     - **CPI packet** — the serialized packet is counted exactly at `finish`
       and held under the 10 KiB a CPI may carry; an `fhe_execute` packet
       always travels by CPI because a transaction itself carries at most
