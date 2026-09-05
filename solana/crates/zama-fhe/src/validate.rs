@@ -3,7 +3,9 @@
 use anchor_lang::prelude::Pubkey;
 
 use zama_host::{
-    FheBinaryOpCode, FheExecuteOperand, FheExecuteOutput, FheExecuteStep, FheUnaryOpCode,
+    binary_output_type_ok, is_supported_fhe_type, is_supported_uint_fhe_type,
+    scalar_is_zero_for_type, unary_output_type_ok, FheBinaryOpCode, FheExecuteOperand,
+    FheExecuteOutput, FheExecuteStep, FheUnaryOpCode,
 };
 
 use crate::accounts::{ExecutionAccountMeta, ExecutionEncryptedValueAccountAuthority};
@@ -315,14 +317,14 @@ where
     let lhs_type = operand_fhe_type(lhs, produced_count, &produced_type)?
         .ok_or(FheExecutionBuildError::ScalarLhsOperand)?;
     match op {
-        // Eq/Ne accept the widest operand set (Bool..Uint256); ordered comparisons Uint8..Uint128.
+        // Eq/Ne accept Bool and Uint8..Uint128; ordered comparisons Uint8..Uint128.
         FheBinaryOpCode::Eq | FheBinaryOpCode::Ne => {
-            if !matches!(lhs_type, 0 | 2..=8) {
+            if !is_supported_fhe_type(lhs_type) {
                 return Err(FheExecutionBuildError::UnsupportedFheType);
             }
         }
         FheBinaryOpCode::Ge | FheBinaryOpCode::Gt | FheBinaryOpCode::Le | FheBinaryOpCode::Lt => {
-            if !matches!(lhs_type, 2..=6) {
+            if !is_supported_uint_fhe_type(lhs_type) {
                 return Err(FheExecutionBuildError::UnsupportedFheType);
             }
         }
@@ -382,13 +384,7 @@ where
     F: Fn(u8) -> Option<u8>,
 {
     validate_supported_fhe_type(output_fhe_type)?;
-    let valid_output = match op {
-        FheUnaryOpCode::Neg => matches!(output_fhe_type, 2..=6 | 8),
-        FheUnaryOpCode::Not => matches!(output_fhe_type, 0 | 2..=6 | 8),
-        // EVM `cast` output set: Uint8..Uint128 | Uint256 (no ebool, no eaddress/Uint160).
-        FheUnaryOpCode::Cast => matches!(output_fhe_type, 2..=6 | 8),
-    };
-    if !valid_output {
+    if !unary_output_type_ok(op, output_fhe_type) {
         return Err(FheExecutionBuildError::UnsupportedFheType);
     }
     let operand_type = operand_fhe_type(operand, produced_count, &produced_type)?
@@ -396,7 +392,7 @@ where
     validate_supported_fhe_type(operand_type)?;
     match op {
         FheUnaryOpCode::Neg => {
-            if !matches!(operand_type, 2..=6 | 8) {
+            if !is_supported_uint_fhe_type(operand_type) {
                 return Err(FheExecutionBuildError::UnsupportedFheType);
             }
             if operand_type != output_fhe_type {
@@ -404,7 +400,7 @@ where
             }
         }
         FheUnaryOpCode::Not => {
-            if !matches!(operand_type, 0 | 2..=6 | 8) {
+            if !is_supported_fhe_type(operand_type) {
                 return Err(FheExecutionBuildError::UnsupportedFheType);
             }
             if operand_type != output_fhe_type {
@@ -412,8 +408,8 @@ where
             }
         }
         FheUnaryOpCode::Cast => {
-            // EVM `cast` input set: Bool | Uint8..Uint128 | Uint256 (no eaddress/Uint160).
-            if !matches!(operand_type, 0 | 2..=6 | 8) {
+            // Cast input set: Bool | Uint8..Uint128 (no eaddress/Uint160). Solana host max is euint128.
+            if !is_supported_fhe_type(operand_type) {
                 return Err(FheExecutionBuildError::UnsupportedFheType);
             }
             // Same-type cast is rejected (EVM InvalidType parity).
@@ -480,73 +476,22 @@ pub(crate) fn validate_supported_binary_output_type(
     output_fhe_type: u8,
 ) -> Result<()> {
     validate_supported_fhe_type(output_fhe_type)?;
-    let valid = match op {
-        FheBinaryOpCode::Add
-        | FheBinaryOpCode::Sub
-        | FheBinaryOpCode::Mul
-        | FheBinaryOpCode::Div
-        | FheBinaryOpCode::Rem
-        | FheBinaryOpCode::Min
-        | FheBinaryOpCode::Max => matches!(output_fhe_type, 2..=6),
-        FheBinaryOpCode::And | FheBinaryOpCode::Or | FheBinaryOpCode::Xor => {
-            matches!(output_fhe_type, 0 | 2..=6 | 8)
-        }
-        FheBinaryOpCode::Shl
-        | FheBinaryOpCode::Shr
-        | FheBinaryOpCode::Rotl
-        | FheBinaryOpCode::Rotr => matches!(output_fhe_type, 2..=6 | 8),
-        FheBinaryOpCode::Eq
-        | FheBinaryOpCode::Ne
-        | FheBinaryOpCode::Ge
-        | FheBinaryOpCode::Gt
-        | FheBinaryOpCode::Le
-        | FheBinaryOpCode::Lt => output_fhe_type == 0,
-    };
-    if !valid {
+    if !binary_output_type_ok(op, output_fhe_type) {
         return Err(FheExecutionBuildError::UnsupportedBinaryOutputType);
     }
     Ok(())
 }
 
 pub(crate) fn validate_supported_fhe_type(fhe_type: u8) -> Result<()> {
-    if matches!(fhe_type, 0 | 2 | 3 | 4 | 5 | 6 | 7 | 8) {
+    if is_supported_fhe_type(fhe_type) {
         Ok(())
     } else {
         Err(FheExecutionBuildError::UnsupportedFheType)
-    }
-}
-
-/// Mirrors the host `scalar_is_zero_for_type` (EVM `_isScalarZeroForType`): zero after width truncation.
-pub(crate) fn scalar_is_zero_for_type(scalar: [u8; 32], fhe_type: u8) -> bool {
-    let width = match fhe_type {
-        2 => 1,
-        3 => 2,
-        4 => 4,
-        5 => 8,
-        6 => 16,
-        _ => 32,
-    };
-    scalar[32 - width..].iter().all(|byte| *byte == 0)
-}
-
-/// Coprocessor max operand count for FheSum / FheIsIn: 100 for narrow types, 60 for wider ones.
-pub(crate) fn max_reduction_operands(fhe_type: u8) -> usize {
-    match fhe_type {
-        2..=4 => 100,
-        _ => 60,
     }
 }
 
 pub(crate) fn validate_uint_fhe_type(fhe_type: u8) -> Result<()> {
-    if matches!(fhe_type, 2..=6) {
-        Ok(())
-    } else {
-        Err(FheExecutionBuildError::UnsupportedFheType)
-    }
-}
-
-pub(crate) fn validate_supported_rand_type(fhe_type: u8) -> Result<()> {
-    if matches!(fhe_type, 0 | 2 | 3 | 4 | 5 | 6 | 8) {
+    if is_supported_uint_fhe_type(fhe_type) {
         Ok(())
     } else {
         Err(FheExecutionBuildError::UnsupportedFheType)

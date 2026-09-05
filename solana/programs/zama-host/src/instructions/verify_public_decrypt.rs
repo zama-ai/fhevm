@@ -45,7 +45,7 @@
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::program::set_return_data;
 
-use super::common::read_canonical_encrypted_value;
+use super::common::{assert_no_remaining_accounts, read_canonical_encrypted_value};
 use crate::{eip712, errors::ZamaHostError, state::*};
 
 /// Anchor-native mirror of `zama_solana_acl::MmrProof` for use as an instruction argument. The
@@ -70,9 +70,8 @@ impl From<MmrInclusionProof> for zama_solana_acl::MmrProof {
 }
 
 /// Typed layout of the `return_data` written by `verify_public_decrypt`, shared with CPI
-/// consumers so nobody hand-computes byte offsets. Borsh of this struct is byte-identical to the
-/// historical hand-packed 72 bytes (`handle ‖ cleartext ‖ context_id` little-endian) — the
-/// runtime-test suite pins the exact bytes — so introducing it changed nothing on the wire.
+/// consumers so nobody hand-computes byte offsets. Borsh of this struct is
+/// `handle ‖ cleartext ‖ context_id` (96 bytes).
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
 pub struct PublicDecryptReturnData {
     /// The exact handle proven publicly decryptable.
@@ -82,7 +81,7 @@ pub struct PublicDecryptReturnData {
     /// The verified KMS context id, letting a caller set its own rotation policy — an
     /// informational consumer accepts any live context, a value-releasing one may demand
     /// `context_id == host_config.current_kms_context_id`.
-    pub context_id: u64,
+    pub context_id: [u8; 32],
 }
 
 /// Accounts for `verify_public_decrypt`. All read-only: a pure verifier reads state and returns a
@@ -106,7 +105,7 @@ pub struct VerifyPublicDecrypt<'info> {
 /// `return_data`.
 ///
 /// `cleartext` is the 32-byte big-endian `uint256` the KMS signs over (today's decrypted result
-/// fits in 32 bytes); `context_id` is the verified id as 8 little-endian bytes; `return_data` is 72
+/// fits in 32 bytes); `context_id` is the verified 32-byte id; `return_data` is 96
 /// bytes, well under the 1024-byte limit.
 pub fn verify_public_decrypt(
     ctx: Context<VerifyPublicDecrypt>,
@@ -116,12 +115,13 @@ pub fn verify_public_decrypt(
     extra_data: Vec<u8>,
     proof: MmrInclusionProof,
 ) -> Result<()> {
+    assert_no_remaining_accounts(ctx.remaining_accounts)?;
     let host_config = &ctx.accounts.host_config;
     let kms_context = &ctx.accounts.kms_context;
     let current_context_id = host_config.current_kms_context_id;
 
     require!(
-        host_config.decryption_contract != [0u8; 20] && current_context_id != 0,
+        host_config.decryption_contract != [0u8; 20] && current_context_id != [0u8; 32],
         ZamaHostError::GatewayVerifierConfigUnset
     );
 
@@ -180,7 +180,7 @@ pub fn verify_public_decrypt(
     };
     // Fixed buffer, not a Vec: this verifier sits on the CPI hot path of disclose_secp,
     // redeem_burned_amount, and (transitively) batcher settle, and heap allocation costs CU.
-    let mut return_bytes = [0u8; 72];
+    let mut return_bytes = [0u8; 96];
     return_data.serialize(&mut return_bytes.as_mut_slice())?;
     set_return_data(&return_bytes);
     Ok(())
@@ -190,24 +190,24 @@ pub fn verify_public_decrypt(
 mod tests {
     use super::*;
 
-    /// Doc-sync guard (the `resource_bounds_match_liveness_doc` pattern): this module's docs and
-    /// DESIGN_DECISIONS.md quote the return_data as exactly 72 bytes laid out
-    /// `handle ‖ cleartext ‖ context_id (LE)`. Borsh of [`PublicDecryptReturnData`] must stay
-    /// byte-identical to that hand-packed layout — CPI consumers parse return_data through the
-    /// struct, and the mollusk suite pins the same bytes end to end.
+    /// Doc-sync guard: this module's docs and DESIGN_DECISIONS.md quote the return_data as
+    /// exactly 96 bytes laid out `handle ‖ cleartext ‖ context_id`. Borsh of
+    /// [`PublicDecryptReturnData`] must stay byte-identical to that layout.
     #[test]
     fn return_data_matches_quoted_layout() {
+        let mut context_id = [0u8; 32];
+        context_id[24..].copy_from_slice(&0x0102_0304_0506_0708u64.to_be_bytes());
         let value = PublicDecryptReturnData {
             handle: [0xAB; 32],
             cleartext: [0xCD; 32],
-            context_id: 0x0102_0304_0506_0708,
+            context_id,
         };
         let mut bytes = Vec::new();
         value.serialize(&mut bytes).unwrap();
-        let mut expected = vec![0u8; 72];
+        let mut expected = vec![0u8; 96];
         expected[..32].copy_from_slice(&[0xAB; 32]);
         expected[32..64].copy_from_slice(&[0xCD; 32]);
-        expected[64..].copy_from_slice(&0x0102_0304_0506_0708u64.to_le_bytes());
+        expected[64..].copy_from_slice(&context_id);
         assert_eq!(bytes, expected);
     }
 }

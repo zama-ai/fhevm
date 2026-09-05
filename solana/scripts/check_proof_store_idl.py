@@ -44,6 +44,7 @@ INTENTIONALLY_IGNORED_INSTRUCTIONS = frozenset(
         "revoke_permits",
         "set_coprocessor_signers",
         "set_deny_subject",
+        "set_eip712_domain",
         "set_grant_deny_list_enabled",
         "set_hcu_app_trusted",
         "set_hcu_block_cap_per_app",
@@ -51,6 +52,7 @@ INTENTIONALLY_IGNORED_INSTRUCTIONS = frozenset(
         "set_max_hcu_depth_per_tx",
         "set_max_hcu_per_tx",
         "verify_public_decrypt",
+        "set_admin",
     }
 )
 

@@ -16,8 +16,6 @@ import {
   getBytesEncoder,
   getStructDecoder,
   getStructEncoder,
-  getU64Decoder,
-  getU64Encoder,
   SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
   SolanaError,
   transformEncoder,
@@ -85,13 +83,13 @@ export type DefineKmsContextInstruction<
 
 export type DefineKmsContextInstructionData = {
   discriminator: ReadonlyUint8Array;
-  contextId: bigint;
+  contextId: ReadonlyUint8Array;
   signers: Array<ReadonlyUint8Array>;
   thresholds: KmsThresholds;
 };
 
 export type DefineKmsContextInstructionDataArgs = {
-  contextId: number | bigint;
+  contextId: ReadonlyUint8Array;
   signers: Array<ReadonlyUint8Array>;
   thresholds: KmsThresholdsArgs;
 };
@@ -100,7 +98,7 @@ export function getDefineKmsContextInstructionDataEncoder(): Encoder<DefineKmsCo
   return transformEncoder(
     getStructEncoder([
       ['discriminator', fixEncoderSize(getBytesEncoder(), 8)],
-      ['contextId', getU64Encoder()],
+      ['contextId', fixEncoderSize(getBytesEncoder(), 32)],
       ['signers', getArrayEncoder(fixEncoderSize(getBytesEncoder(), 20))],
       ['thresholds', getKmsThresholdsEncoder()],
     ]),
@@ -111,7 +109,7 @@ export function getDefineKmsContextInstructionDataEncoder(): Encoder<DefineKmsCo
 export function getDefineKmsContextInstructionDataDecoder(): Decoder<DefineKmsContextInstructionData> {
   return getStructDecoder([
     ['discriminator', fixDecoderSize(getBytesDecoder(), 8)],
-    ['contextId', getU64Decoder()],
+    ['contextId', fixDecoderSize(getBytesDecoder(), 32)],
     ['signers', getArrayDecoder(fixDecoderSize(getBytesDecoder(), 20))],
     ['thresholds', getKmsThresholdsDecoder()],
   ]);
@@ -134,7 +132,7 @@ export type DefineKmsContextAsyncInput<
 > = {
   /** Configured host admin and rent payer for the context account. */
   admin: TransactionSigner<TAccountAdmin>;
-  /** Singleton config PDA; its `current_kms_context_id` is advanced to `context_id`. */
+  /** Singleton config PDA; its `current_kms_context_id` is set to `context_id`. */
   hostConfig?: Address<TAccountHostConfig>;
   /** KMS context PDA created for `context_id`. */
   kmsContext?: Address<TAccountKmsContext>;
@@ -239,7 +237,7 @@ export type DefineKmsContextInput<
 > = {
   /** Configured host admin and rent payer for the context account. */
   admin: TransactionSigner<TAccountAdmin>;
-  /** Singleton config PDA; its `current_kms_context_id` is advanced to `context_id`. */
+  /** Singleton config PDA; its `current_kms_context_id` is set to `context_id`. */
   hostConfig: Address<TAccountHostConfig>;
   /** KMS context PDA created for `context_id`. */
   kmsContext: Address<TAccountKmsContext>;
@@ -332,7 +330,7 @@ export type ParsedDefineKmsContextInstruction<
   accounts: {
     /** Configured host admin and rent payer for the context account. */
     admin: TAccountMetas[0];
-    /** Singleton config PDA; its `current_kms_context_id` is advanced to `context_id`. */
+    /** Singleton config PDA; its `current_kms_context_id` is set to `context_id`. */
     hostConfig: TAccountMetas[1];
     /** KMS context PDA created for `context_id`. */
     kmsContext: TAccountMetas[2];

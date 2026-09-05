@@ -2,8 +2,9 @@ import { describe, expect, test } from "bun:test";
 
 import { generateKeyPairSigner, type Instruction, type TransactionSigner } from "@solana/kit";
 
-import type { GatewayBootstrapInputs } from "./addresses";
+import { BRINGUP_KMS_CONTEXT_ID, type GatewayBootstrapInputs } from "./addresses";
 import { bootstrapZamaHost, kmsCertificateThreshold, lifecycleComposeProject } from "./deploy";
+import { zamaHostProgramDataAddress } from "./fhe-execute";
 import { getDefineKmsContextInstructionDataDecoder } from "./internal/generated/zamaHost/instructions/defineKmsContext";
 import { getInitializeHostConfigInstructionDataDecoder } from "./internal/generated/zamaHost/instructions/initializeHostConfig";
 import { ZAMA_HOST_PROGRAM_ADDRESS } from "./internal/generated/zamaHost/programAddress.js";
@@ -85,6 +86,8 @@ describe("bootstrapZamaHost", () => {
     expect(sent).toHaveLength(2);
     const [[initialize], [defineContext]] = sent;
     expect(initialize.programAddress).toBe(ZAMA_HOST_PROGRAM_ADDRESS);
+    const programData = await zamaHostProgramDataAddress();
+    expect(initialize.accounts?.some((account) => account.address === programData)).toBe(true);
     const initializeData = getInitializeHostConfigInstructionDataDecoder().decode(initialize.data ?? new Uint8Array());
     expect(initializeData.chainId).toBe(9223372036854788153n);
     expect(initializeData.gatewayChainId).toBe(55555n);
@@ -95,7 +98,10 @@ describe("bootstrapZamaHost", () => {
 
     expect(defineContext.programAddress).toBe(ZAMA_HOST_PROGRAM_ADDRESS);
     const defineData = getDefineKmsContextInstructionDataDecoder().decode(defineContext.data ?? new Uint8Array());
-    expect(defineData.contextId).toBe(1n);
+    expect(Buffer.from(defineData.contextId)).toEqual(Buffer.from(BRINGUP_KMS_CONTEXT_ID));
+    expect(Buffer.from(defineData.contextId).toString("hex")).toBe(
+      "0700000000000000000000000000000000000000000000000000000000000001",
+    );
     expect(defineData.signers).toHaveLength(4);
     expect(defineData.thresholds).toEqual({ publicDecryption: 3, userDecryption: 3, kmsGen: 3, mpc: 1 });
   });

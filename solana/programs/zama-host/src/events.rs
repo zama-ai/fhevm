@@ -57,19 +57,6 @@ pub struct FheExecuteRandomSeedsEvent {
     pub seeds: Vec<FheExecuteRandomSeed>,
 }
 
-/// Emitted when the singleton host config is initialized.
-#[event]
-pub struct HostConfigInitializedEvent {
-    /// Event schema version.
-    pub version: u8,
-    /// Host config PDA.
-    pub config: Pubkey,
-    /// Configured admin signer.
-    pub admin: Pubkey,
-    /// Host-chain id used by handle derivation.
-    pub chain_id: u64,
-}
-
 /// Emitted when host config flags change.
 #[event]
 pub struct HostConfigUpdatedEvent {
@@ -99,7 +86,7 @@ pub struct NewKmsContextEvent {
     /// Event schema version.
     pub version: u8,
     /// The new context id.
-    pub kms_context_id: u64,
+    pub kms_context_id: [u8; 32],
     /// KMS node signer EVM addresses authorized in this context.
     pub signers: Vec<[u8; 20]>,
     /// Public-decrypt signature threshold.
@@ -114,7 +101,7 @@ pub struct KmsContextDestroyedEvent {
     /// Event schema version.
     pub version: u8,
     /// The destroyed context id.
-    pub kms_context_id: u64,
+    pub kms_context_id: [u8; 32],
 }
 
 /// Emitted when a subject deny-list record is updated.

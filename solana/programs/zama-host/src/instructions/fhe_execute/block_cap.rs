@@ -100,7 +100,7 @@ fn resolve_trusted<'info>(ctx: &Context<'info, FheExecute<'info>>, app: Pubkey) 
         ZamaHostError::HcuTrustedAppRecordMismatch
     );
     // Present but never created is benign: the app is simply untrusted (metered).
-    if is_uninitialized_pda_account(&info)? {
+    if is_uninitialized_pda_account(&info, ZamaHostError::HcuTrustedAppRecordMismatch)? {
         return Ok(false);
     }
     require_keys_eq!(

@@ -118,9 +118,13 @@ pub(super) fn assert_host_config_shape(config: &Account<HostConfig>) -> Result<(
     Ok(())
 }
 
-pub(super) fn assert_admin(config: &Account<HostConfig>, admin: Pubkey) -> Result<()> {
+pub(super) fn assert_admin(config: &Account<HostConfig>, admin: &Signer) -> Result<()> {
     assert_host_config_shape(config)?;
-    require_keys_eq!(config.admin, admin, ZamaHostError::HostConfigAdminMismatch);
+    require_keys_eq!(
+        config.admin,
+        admin.key(),
+        ZamaHostError::HostConfigAdminMismatch
+    );
     Ok(())
 }
 
@@ -297,7 +301,7 @@ pub(super) fn check_grant_not_denied_info(
     let (expected, expected_bump) = deny_subject_address(subject);
     require_keys_eq!(info.key(), expected, ZamaHostError::DenyRecordMismatch);
 
-    if is_absent_deny_record(info)? {
+    if is_uninitialized_pda_account(info, ZamaHostError::DenyRecordMismatch)? {
         return Ok(());
     }
     require_keys_eq!(*info.owner, crate::ID, ZamaHostError::DenyRecordMismatch);
@@ -316,20 +320,18 @@ pub(super) fn check_grant_not_denied_info(
     Ok(())
 }
 
-pub(super) fn is_absent_deny_record(info: &AccountInfo) -> Result<bool> {
-    if info.owner == &System::id() && info.data_is_empty() {
-        require!(!info.executable, ZamaHostError::DenyRecordMismatch);
-        return Ok(true);
-    }
-    Ok(false)
-}
-
 /// True when a PDA slot is still uninitialized: system-owned and empty. A system-owned empty
-/// account can never be executable, so that combination fails closed. Used by the HCU block-cap
-/// paths to treat an absent optional record as benign (untrusted / not-yet-created).
-pub(super) fn is_uninitialized_pda_account(info: &AccountInfo) -> Result<bool> {
+/// account can never be executable, so that combination fails closed with `error`. Shared by
+/// deny records, HCU witnesses, and permit watermarks — each caller supplies the error that
+/// names its own account.
+pub(super) fn is_uninitialized_pda_account(
+    info: &AccountInfo,
+    error: ZamaHostError,
+) -> Result<bool> {
     if info.owner == &System::id() && info.data_is_empty() {
-        require!(!info.executable, ZamaHostError::PdaCreationMismatch);
+        if info.executable {
+            return Err(error.into());
+        }
         return Ok(true);
     }
     Ok(false)
@@ -370,15 +372,16 @@ pub(super) fn create_pda_if_needed<'info>(
     Ok(())
 }
 
-/// Creates a program-owned PDA at `account` in a way that tolerates a pre-existing lamport balance.
+/// Creates a program-owned PDA at `account`.
 ///
-/// The seeds are predictable for several PDAs (the HCU block meter, ACL permission/record accounts),
-/// so a third party can pre-fund the address with a bare `transfer` before the program first creates
-/// it. `system_instruction::create_account` refuses any non-zero-lamport target (`AccountAlreadyInUse`),
-/// which would let that donation permanently block creation — a griefing DoS. Splitting the fused
-/// primitive into transfer-shortfall + `allocate` + `assign` sidesteps it: an attacker can only add
-/// lamports (they cannot sign for the PDA to `allocate`/`assign` it), and `allocate`/`assign` ignore
-/// the balance. Returns the rent-exempt minimum so callers can assert `lamports() >= rent`.
+/// Common path (`lamports() == 0`): one `create_account` under `invoke_signed`. The seeds are
+/// predictable for several PDAs (the HCU block meter, ACL permission/record accounts), so a
+/// third party can pre-fund the address with a bare `transfer` before the program first creates
+/// it. `create_account` refuses any non-zero-lamport target (`AccountAlreadyInUse`), which would
+/// let that donation permanently block creation — a griefing DoS. The three-step path (transfer
+/// the shortfall, `allocate`, `assign`) is the squat fallback only: an attacker can only add
+/// lamports (they cannot sign for the PDA to `allocate`/`assign` it), and `allocate`/`assign`
+/// ignore the balance. Returns the rent-exempt minimum so callers can assert `lamports() >= rent`.
 fn fund_allocate_assign<'info>(
     payer: &AccountInfo<'info>,
     account: &AccountInfo<'info>,
@@ -387,10 +390,25 @@ fn fund_allocate_assign<'info>(
     seeds: &[&[u8]],
 ) -> Result<u64> {
     let rent = Rent::get()?.minimum_balance(space);
-    // Top up only the shortfall. A donation of `rent` or more makes this a no-op; the surplus is
-    // harmless (the account is simply more-than-rent-exempt). The transfer is authorized by `payer`,
-    // already a transaction signer, so no PDA seeds are needed for it.
     let balance = account.lamports();
+    if balance == 0 {
+        invoke_signed(
+            &system_instruction::create_account(
+                payer.key,
+                account.key,
+                rent,
+                space as u64,
+                &crate::ID,
+            ),
+            &[payer.clone(), account.clone(), system_program.clone()],
+            &[seeds],
+        )?;
+        return Ok(rent);
+    }
+    // Squat fallback: top up only the shortfall. A donation of `rent` or more makes the
+    // transfer a no-op; the surplus is harmless (the account is simply more-than-rent-exempt).
+    // The transfer is authorized by `payer`, already a transaction signer, so no PDA seeds are
+    // needed for it.
     if balance < rent {
         invoke(
             &system_instruction::transfer(payer.key, account.key, rent - balance),
@@ -476,7 +494,7 @@ mod tests {
         let mut data = Vec::new();
         let info = AccountInfo::new(&key, false, false, &mut lamports, &mut data, &owner, false);
 
-        assert!(is_absent_deny_record(&info).unwrap());
+        assert!(is_uninitialized_pda_account(&info, ZamaHostError::DenyRecordMismatch).unwrap());
     }
 
     #[test]
@@ -488,7 +506,7 @@ mod tests {
         let info = AccountInfo::new(&key, false, false, &mut lamports, &mut data, &owner, true);
 
         assert_eq!(
-            is_absent_deny_record(&info).unwrap_err(),
+            is_uninitialized_pda_account(&info, ZamaHostError::DenyRecordMismatch).unwrap_err(),
             error!(ZamaHostError::DenyRecordMismatch)
         );
     }
@@ -501,7 +519,7 @@ mod tests {
         let mut data = Vec::new();
         let info = AccountInfo::new(&key, false, false, &mut lamports, &mut data, &owner, false);
 
-        assert!(!is_absent_deny_record(&info).unwrap());
+        assert!(!is_uninitialized_pda_account(&info, ZamaHostError::DenyRecordMismatch).unwrap());
     }
 
     // ---- ordering invariant, expressed in (total, depth) terms ----
@@ -535,30 +553,39 @@ mod tests {
 
     #[test]
     fn hcu_ordering_unreachable_under_setter_sequences() {
-        // No ordered setter sequence can reach total < depth with both limits finite.
-        // Simulate both setters as guarded mutations over a small value space; the
-        // bad state must never be reachable.
+        // No ordered setter sequence can reach total < depth with both limits finite, nor a
+        // metering-band block cap below a finite total. Simulate the three knobs as guarded
+        // mutations; the bad states must never be reachable.
         let values = [u64::MAX, 1, 5, 10, 20];
         for &a in &values {
             for &b in &values {
                 for &c in &values {
-                    // init state (both unlimited)
-                    let (mut total, mut depth) = (u64::MAX, u64::MAX);
-                    // sequence: set_total(a), set_depth(b), set_total(c)
-                    if check_hcu_ordering(a, depth).is_ok() {
-                        total = a;
+                    for &d in &values {
+                        let (mut total, mut depth, mut cap) = (u64::MAX, u64::MAX, u64::MAX);
+                        if check_hcu_ordering(a, depth).is_ok()
+                            && check_block_cap_ordering(cap, a).is_ok()
+                        {
+                            total = a;
+                        }
+                        if check_hcu_ordering(total, b).is_ok() {
+                            depth = b;
+                        }
+                        if check_block_cap_ordering(c, total).is_ok() {
+                            cap = c;
+                        }
+                        if check_hcu_ordering(d, depth).is_ok()
+                            && check_block_cap_ordering(cap, d).is_ok()
+                        {
+                            total = d;
+                        }
+                        let bad_depth = total != u64::MAX && depth != u64::MAX && total < depth;
+                        let bad_cap =
+                            cap != 0 && cap != u64::MAX && total != u64::MAX && cap < total;
+                        assert!(
+                            !bad_depth && !bad_cap,
+                            "reached unordered finite knobs: total={total} depth={depth} cap={cap}"
+                        );
                     }
-                    if check_hcu_ordering(total, b).is_ok() {
-                        depth = b;
-                    }
-                    if check_hcu_ordering(c, depth).is_ok() {
-                        total = c;
-                    }
-                    let bad = total != u64::MAX && depth != u64::MAX && total < depth;
-                    assert!(
-                        !bad,
-                        "reached finite total<depth: total={total} depth={depth}"
-                    );
                 }
             }
         }

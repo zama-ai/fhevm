@@ -68,7 +68,7 @@ pub mod zama_host {
     /// Defines a new KMS context (mirror of `ProtocolConfig.defineNewKmsContext`).
     pub fn define_kms_context(
         ctx: Context<DefineKmsContext>,
-        context_id: u64,
+        context_id: [u8; 32],
         signers: Vec<[u8; 20]>,
         thresholds: KmsThresholds,
     ) -> Result<()> {
@@ -76,7 +76,10 @@ pub mod zama_host {
     }
 
     /// Destroys a non-current KMS context (mirror of `ProtocolConfig.destroyKmsContext`).
-    pub fn destroy_kms_context(ctx: Context<DestroyKmsContext>, context_id: u64) -> Result<()> {
+    pub fn destroy_kms_context(
+        ctx: Context<DestroyKmsContext>,
+        context_id: [u8; 32],
+    ) -> Result<()> {
         instructions::destroy_kms_context(ctx, context_id)
     }
 
@@ -86,6 +89,26 @@ pub mod zama_host {
 
     pub fn set_grant_deny_list_enabled(ctx: Context<HostAdmin>, enabled: bool) -> Result<()> {
         instructions::set_grant_deny_list_enabled(ctx, enabled)
+    }
+
+    /// Transfers the host admin. Current admin signs; a new keypair co-signs; a new PDA does not.
+    pub fn set_admin(ctx: Context<SetAdmin>, new_admin: Pubkey) -> Result<()> {
+        instructions::set_admin(ctx, new_admin)
+    }
+
+    /// Writes the gateway EIP-712 domain fields together. Zeros are legal.
+    pub fn set_eip712_domain(
+        ctx: Context<HostAdmin>,
+        gateway_chain_id: u64,
+        input_verification_contract: [u8; 20],
+        decryption_contract: [u8; 20],
+    ) -> Result<()> {
+        instructions::set_eip712_domain(
+            ctx,
+            gateway_chain_id,
+            input_verification_contract,
+            decryption_contract,
+        )
     }
 
     /// Replaces the registered coprocessor signer set + threshold for input attestations

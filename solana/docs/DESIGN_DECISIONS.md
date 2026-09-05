@@ -228,12 +228,14 @@ duration of the batch.
 The Solana equivalent is the consuming program's **compute-authority PDA** — a PDA the program signs
 with via `invoke_signed`. In confidential-token this is the `[b"fhe-compute", mint]` compute signer.
 It is never a user key and never the bare program id (program ids cannot sign). The host layer only
-enforces `attestation.contract_address == compute_subject` (whatever signer consumes the input, the
-msg.sender analog); the PDA convention is **app policy** — apps MUST bind attestations to their
-compute-authority PDA, and MUST check the attested `user_address` themselves. Confidential-token
-checks the attested user equals the token account owner. This mirrors EVM, where `userAddress` is
-attested but the contract decides its meaning. Per-state-account (per-mint) scoping is deliberate and
-finer-grained than EVM's per-contract binding.
+enforces `attestation.contract_address == compute_subject` (whatever signer consumes the input).
+`user_address` is **not** EVM `msg.sender`; the host does not interpret it. `compute_subject` is the
+msg.sender analog for the contract bind. The PDA convention is **app policy** — apps MUST bind
+attestations to their compute-authority PDA, and MUST check the attested `user_address` themselves.
+An observer who sees another user's verified input can replay it if the app skips that check.
+Confidential-token checks the attested user equals the token account owner. Per-state-account
+(per-mint) scoping is
+deliberate and finer-grained than EVM's per-contract binding.
 
 **Derived outputs are NOT tainted by the input attestation.** Once verified, the input is an ordinary
 operand; any *persistent* ACL on an input-derived handle is the app's separate, explicit choice at
@@ -753,7 +755,7 @@ Decision:
 
 The VerifierSet subsystem was REMOVED. Witnesses and decrypt trust anchor to a `define_kms_context`
 singleton keyed by `kms_context_id` (`zama_host::kms_context_address(context_id)`, seed
-`[KMS_CONTEXT_SEED, context_id.to_le_bytes()]`; `destroy_kms_context` exists for lifecycle). Decrypt
+`[KMS_CONTEXT_SEED, context_id]` with a 32-byte id; `destroy_kms_context` exists for lifecycle). Decrypt
 and disclosure witnesses pin the `kms_context_id` they were minted under.
 
 Why / what worked:
@@ -1608,8 +1610,8 @@ Decision:
 A new host instruction `verify_public_decrypt` is a CPI-able, stateless verifier. It verifies a KMS
 `PublicDecryptVerification` secp256k1 threshold certificate plus an MMR public-leaf inclusion proof
 (`zama_solana_acl::authorize_public`, exact-handle, no roll-forward) and returns the proven
-`(handle, cleartext, context_id)` via `set_return_data` (72 bytes: `handle ++ cleartext ++
-context_id`, the last 8 bytes the verified context id little-endian, well under the 1024-byte limit). It creates nothing, mutates nothing, emits nothing, and takes no signer — all three accounts
+`(handle, cleartext, context_id)` via `set_return_data` (96 bytes: `handle ++ cleartext ++
+context_id`, the last 32 bytes the verified context id, well under the 1024-byte limit). It creates nothing, mutates nothing, emits nothing, and takes no signer — all three accounts
 (`host_config`, `kms_context`, `encrypted_value`) are read-only. An app CPIs it, asserts the returned
 handle equals the handle it pinned at request time, then applies its own state transition; act-once
 and timeout live in the app's own state machine (a settled flag + deadline), which it needs anyway.
@@ -1654,8 +1656,8 @@ rotation is no longer the revocation boundary, `destroy` is.
    non-destroyed context the cert names (default). Apps that need current-only can compare
    `return_data`'s context id to `host_config.current_kms_context_id` — not wired in the token today.
 
-The verified context id is surfaced in `return_data` (8 little-endian bytes appended after `handle ++
-cleartext`, so 72 bytes total) precisely so a calling program can pick its own policy: an
+The verified context id is surfaced in `return_data` (32 bytes appended after `handle ++
+cleartext`, so 96 bytes total) precisely so a calling program can pick its own policy: an
 informational consumer accepts any live context, while a value-releasing instruction can compare the
 returned id against `host_config.current_kms_context_id` and demand current-only. Confidential-token's
 `disclose_secp` and `redeem_burned_amount` both take the default (accept any live context), matching
@@ -1758,7 +1760,8 @@ option). `HostConfig` gains `coprocessor_signers: [[u8; 20]; MAX_COPROCESSOR_SIG
 fixed-capacity array keeps the singleton's byte layout **pinned** (the account serializes to the same
 size regardless of how many signers are active), and avoids threading a second account through
 `fhe_execute`, which is byte-tight. The cap is 8: comfortably above realistic coprocessor-quorum sizes
-while bounding both the account size (+142 bytes vs the single-signer layout, SPACE 151 -> 293) and
+while bounding both the account size (+142 bytes vs the single-signer layout; current
+`HostConfig::SPACE` is 317 after the 32-byte KMS context id) and
 the worst-case per-attestation recovery cost. Rotation is admin-driven for the PoC via the new
 admin-gated `set_coprocessor_signers` instruction (same admin/pause-neutral pattern as the other
 `set_*` config setters); a gateway-sync authority would drive it from the EVM `GatewayConfig`
@@ -1995,7 +1998,7 @@ Which option an event gets is decided by whether the instruction is administrati
 else. An admin instruction changes a protocol-level setting that off-chain components have to be able
 to query directly, so it emits. Everything else is reconstructed on demand.
 
-The six admin and config events — `HostConfigInitializedEvent`, `HostConfigUpdatedEvent`,
+The five admin and config events — `HostConfigUpdatedEvent`,
 `DenySubjectUpdatedEvent`, `HcuAppTrustUpdatedEvent`, `NewKmsContextEvent`, `KmsContextDestroyedEvent` —
 take the first option. Their eleven instructions gain Anchor's `#[event_cpi]` accounts
 (`event_authority`, `program`), which is a visible ABI change: `initialize_host_config` and
@@ -2003,7 +2006,7 @@ take the first option. Their eleven instructions gain Anchor's `#[event_cpi]` ac
 `set_deny_subject` and `set_hcu_app_trusted` from five to seven, and the six `HostAdmin` config setters
 from two to four.
 
-Note that no in-tree component reads any of the six today; the only off-chain reader of host config
+Note that no in-tree component reads any of the five today; the only off-chain reader of host config
 state reads the account, not an event (`host-listener`'s `parse_host_config`). That is deliberate and is
 not an argument against emitting them: the transport exists because the category calls for it, so that
 a component which needs an admin change does not have to replay instruction data to find one. The test
@@ -2170,8 +2173,8 @@ Why not ship an allocator:
    default for the PoC, revisit only with benchmarks. No benchmark showing a real app blocked on
    heap after the fhevm-internal#1872 copy reductions exists.
 2. The current failure modes are good: every ceiling the app can hit at build time is a typed
-   error — `TooManySteps` at the host's one step cap, `ExceedsInstructionTraceLimit` where a
-   created output's CPIs could no longer fit any transaction, `ExceedsCpiInstructionDataLimit`
+   error — `TooManySteps` at the host's one step cap, `ExceedsPersistentCreateLimit` at the
+   SDK's create cap, `ExceedsCpiInstructionDataLimit`
    where the packet outgrows what a CPI may carry, and `ExceedsBuildHeapBudget` where the
    builder's own byte tally — build, packet, and the invoke-side account tables together,
    proven equal to a counting allocator across the shape frontier in `heap_budget/` — says
@@ -2183,7 +2186,8 @@ Why not ship an allocator:
 3. A bigger heap would buy almost nothing. The `fhe_execute_boundary/*` snapshot entries show the
    walls per execution shape: chain-shaped executions reach the host's step cap without touching
    the heap, and for the all-created-public shape the heap wall (21 steps) and the transaction's
-   non-extendable 64-entry instruction trace (~21, at ~3 CPIs per created output) sit within one
+   non-extendable 64-entry instruction trace (common path: 1 CPI per created output; squat
+   fallback: 3) sit within one
    step of each other — an allocator spending a raised frame would gain that shape at most one
    step before the trace stops it anyway. The one axis a raised frame would genuinely extend —
    persistent updates of MMR-mature values, whose decode cost grows with on-chain state

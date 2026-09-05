@@ -27,8 +27,10 @@ import { certificateCleartext, type PublicDecryptCertificate } from "./public-de
 import { hostConfigAddress, type SolanaProvisioningContext } from "./provision";
 import { vaultModule, sdkVerifyModule } from "./lazy-modules";
 
-/** The zama-host KMS-context PDA for `contextId` (`["kms-context", u64-le id]`). */
-export const kmsContextAddress = async (contextId: bigint = BRINGUP_KMS_CONTEXT_ID): Promise<Address> => {
+/** The zama-host KMS-context PDA for `contextId` (`["kms-context", 32-byte id]`). */
+export const kmsContextAddress = async (
+  contextId: Uint8Array = BRINGUP_KMS_CONTEXT_ID,
+): Promise<Address> => {
   const [kmsContext] = await findKmsContextPda({ contextId });
   return kmsContext;
 };

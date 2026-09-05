@@ -25,8 +25,15 @@ pub fn set_coprocessor_signers(
     threshold: u8,
 ) -> Result<()> {
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
-    assert_admin(&ctx.accounts.host_config, ctx.accounts.admin.key())?;
+    assert_admin(&ctx.accounts.host_config, &ctx.accounts.admin)?;
     let (packed, count) = validate_and_pack_coprocessor_signers(&signers, threshold)?;
+    let config = &ctx.accounts.host_config;
+    if config.coprocessor_signers == packed
+        && config.coprocessor_signer_count == count
+        && config.coprocessor_threshold == threshold
+    {
+        return Ok(());
+    }
     let admin = ctx.accounts.admin.key();
     let config = &mut ctx.accounts.host_config;
     config.coprocessor_signers = packed;

@@ -24,7 +24,7 @@ use super::set_host_pause::HostAdmin;
 /// - Advances `updated_slot` and emits the config-updated event carrying the new cap.
 pub fn set_hcu_block_cap_per_app(ctx: Context<HostAdmin>, value: u64) -> Result<()> {
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
-    assert_admin(&ctx.accounts.host_config, ctx.accounts.admin.key())?;
+    assert_admin(&ctx.accounts.host_config, &ctx.accounts.admin)?;
     if ctx.accounts.host_config.hcu_block_cap_per_app == value {
         return Ok(());
     }

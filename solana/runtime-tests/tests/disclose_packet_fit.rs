@@ -8,7 +8,7 @@ use anchor_lang::prelude::Pubkey;
 use confidential_token as token;
 use solana_sdk::{message::Message, transaction::Transaction};
 use zama_host as host;
-use zama_solana_test_kit::{anchor_ix, event_authority};
+use zama_solana_test_kit::{anchor_ix, canonical_test_context_id, event_authority};
 
 /// Builds a `disclose_secp` transaction carrying `sig_count` signatures and an MMR proof of
 /// `sibling_count` siblings over the real account layout, and returns its bincode-serialized wire
@@ -19,7 +19,7 @@ fn disclose_secp_tx_size(sig_count: usize, sibling_count: usize) -> usize {
     let token_account = Pubkey::new_unique();
     let encrypted_value = Pubkey::new_unique();
     let host_config = host::host_config_address().0;
-    let kms_context = host::kms_context_address(1).0;
+    let kms_context = host::kms_context_address(canonical_test_context_id(1)).0;
     let proof = host::instructions::MmrInclusionProof {
         leaf_index: 0,
         siblings: vec![[0u8; 32]; sibling_count],
@@ -61,7 +61,7 @@ fn redeem_burned_amount_tx_size(sig_count: usize, sibling_count: usize) -> usize
     let owner = Pubkey::new_unique();
     let mint = Pubkey::new_unique();
     let host_config = host::host_config_address().0;
-    let kms_context = host::kms_context_address(1).0;
+    let kms_context = host::kms_context_address(canonical_test_context_id(1)).0;
     let proof = host::instructions::MmrInclusionProof {
         leaf_index: 0,
         siblings: vec![[0u8; 32]; sibling_count],

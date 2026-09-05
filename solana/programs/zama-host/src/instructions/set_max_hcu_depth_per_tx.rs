@@ -21,7 +21,7 @@ use super::set_host_pause::HostAdmin;
 /// - Advances `updated_slot` and emits the config-updated event carrying the new limits.
 pub fn set_max_hcu_depth_per_tx(ctx: Context<HostAdmin>, value: u64) -> Result<()> {
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
-    assert_admin(&ctx.accounts.host_config, ctx.accounts.admin.key())?;
+    assert_admin(&ctx.accounts.host_config, &ctx.accounts.admin)?;
     require!(
         value != 0,
         crate::errors::ZamaHostError::HcuLimitZeroReserved

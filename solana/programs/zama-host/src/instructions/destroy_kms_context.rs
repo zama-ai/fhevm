@@ -1,7 +1,7 @@
 //! Destroys a KMS context (Solana mirror of `ProtocolConfig.destroyKmsContext`).
 //!
-//! Marks a non-current context as destroyed so its signer set can no longer certify
-//! decryptions. The current active context cannot be destroyed. Admin-gated.
+//! Marks a non-current, not-already-destroyed context as destroyed so its signer set can no
+//! longer certify decryptions. The current active context cannot be destroyed. Admin-gated.
 
 use anchor_lang::prelude::*;
 
@@ -13,7 +13,7 @@ use crate::{errors::ZamaHostError, state::*};
 /// Accounts for destroying a KMS context.
 #[derive(Accounts)]
 #[event_cpi]
-#[instruction(context_id: u64)]
+#[instruction(context_id: [u8; 32])]
 pub struct DestroyKmsContext<'info> {
     /// Configured host admin.
     pub admin: Signer<'info>,
@@ -23,19 +23,23 @@ pub struct DestroyKmsContext<'info> {
     /// KMS context PDA being destroyed.
     #[account(
         mut,
-        seeds = [KMS_CONTEXT_SEED, &context_id.to_le_bytes()],
+        seeds = [KMS_CONTEXT_SEED, &context_id],
         bump = kms_context.bump
     )]
     pub kms_context: Account<'info, KmsContext>,
 }
 
 /// Marks a non-current KMS context as destroyed.
-pub fn destroy_kms_context(ctx: Context<DestroyKmsContext>, context_id: u64) -> Result<()> {
+pub fn destroy_kms_context(ctx: Context<DestroyKmsContext>, context_id: [u8; 32]) -> Result<()> {
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
-    assert_admin(&ctx.accounts.host_config, ctx.accounts.admin.key())?;
+    assert_admin(&ctx.accounts.host_config, &ctx.accounts.admin)?;
     require!(
         context_id != ctx.accounts.host_config.current_kms_context_id,
         ZamaHostError::CurrentKmsContextCannotBeDestroyed
+    );
+    require!(
+        !ctx.accounts.kms_context.destroyed,
+        ZamaHostError::InvalidKmsContext
     );
     ctx.accounts.kms_context.destroyed = true;
 

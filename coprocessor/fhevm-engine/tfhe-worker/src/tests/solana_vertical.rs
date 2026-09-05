@@ -336,7 +336,7 @@ fn seed_host_config(svm: &mut LiteSVM, program_id: Pubkey, admin: Pubkey) -> Pub
                 coprocessor_signer_count: 1,
                 coprocessor_threshold: 1,
                 decryption_contract: [0u8; 20],
-                current_kms_context_id: 0,
+                current_kms_context_id: [0u8; 32],
                 paused: false,
                 grant_deny_list_enabled: false,
                 max_hcu_per_tx: u64::MAX,

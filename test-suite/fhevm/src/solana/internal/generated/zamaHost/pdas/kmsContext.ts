@@ -7,15 +7,16 @@
  */
 
 import {
+  fixEncoderSize,
   getBytesEncoder,
   getProgramDerivedAddress,
-  getU64Encoder,
   type Address,
   type ProgramDerivedAddress,
+  type ReadonlyUint8Array,
 } from '@solana/kit';
 
 export type KmsContextSeeds = {
-  contextId: number | bigint;
+  contextId: ReadonlyUint8Array;
 };
 
 export async function findKmsContextPda(
@@ -29,7 +30,7 @@ export async function findKmsContextPda(
     programAddress,
     seeds: [
       getBytesEncoder().encode(new Uint8Array([107, 109, 115, 45, 99, 111, 110, 116, 101, 120, 116])),
-      getU64Encoder().encode(seeds.contextId),
+      fixEncoderSize(getBytesEncoder(), 32).encode(seeds.contextId),
     ],
   });
 }

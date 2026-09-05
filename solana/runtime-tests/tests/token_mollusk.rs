@@ -49,10 +49,11 @@ use zama_solana_test_kit::signing::{
 };
 use zama_solana_test_kit::{
     account_is_system_owned_and_empty, anchor_error_check, anchor_framework_error_check, anchor_ix,
-    cost_snapshot, decode_anchor_event, deny_subject_record_account, encrypted_value_account,
-    event_authority, handle_for_chain, new_encrypted_value, read_account, read_encrypted_value,
-    read_spl_amount, serialized_account, spl_mint_account, spl_token_account, system_account,
-    u256_be, Ctx, HostConfigParams, BALANCE_FHE_TYPE, DECRYPTION_CONTRACT, GATEWAY_CHAIN_ID,
+    canonical_test_context_id, cost_snapshot, decode_anchor_event, deny_subject_record_account,
+    encrypted_value_account, event_authority, handle_for_chain, new_encrypted_value, read_account,
+    read_encrypted_value, read_spl_amount, serialized_account, spl_mint_account, spl_token_account,
+    system_account, u256_be, Ctx, HostConfigParams, BALANCE_FHE_TYPE, DECRYPTION_CONTRACT,
+    GATEWAY_CHAIN_ID,
 };
 
 // ---------------------------------------------------------------------------
@@ -110,13 +111,13 @@ impl TokenLedgerExt for CleartextLedger {
 }
 
 fn host_config_account(admin: Pubkey, coprocessor_signer: [u8; 20]) -> Account {
-    host_config_account_with_flags(admin, &[coprocessor_signer], 1, 0, false)
+    host_config_account_with_flags(admin, &[coprocessor_signer], 1, [0u8; 32], false)
 }
 
 fn host_config_account_with_kms_context(
     admin: Pubkey,
     coprocessor_signer: [u8; 20],
-    current_kms_context_id: u64,
+    current_kms_context_id: [u8; 32],
 ) -> Account {
     host_config_account_with_flags(
         admin,
@@ -134,14 +135,14 @@ fn host_config_account_with_signer_set(
     coprocessor_signers: &[[u8; 20]],
     threshold: u8,
 ) -> Account {
-    host_config_account_with_flags(admin, coprocessor_signers, threshold, 0, false)
+    host_config_account_with_flags(admin, coprocessor_signers, threshold, [0u8; 32], false)
 }
 
 fn host_config_account_with_flags(
     admin: Pubkey,
     coprocessor_signers: &[[u8; 20]],
     coprocessor_threshold: u8,
-    current_kms_context_id: u64,
+    current_kms_context_id: [u8; 32],
     grant_deny_list_enabled: bool,
 ) -> Account {
     zama_solana_test_kit::host_config_account(&HostConfigParams {
@@ -155,7 +156,7 @@ fn host_config_account_with_flags(
 }
 
 fn deny_enabled_host_config_account(admin: Pubkey, coprocessor_signer: [u8; 20]) -> Account {
-    host_config_account_with_flags(admin, &[coprocessor_signer], 1, 0, true)
+    host_config_account_with_flags(admin, &[coprocessor_signer], 1, [0u8; 32], true)
 }
 
 fn read_token_account(context: &Ctx, address: Pubkey) -> token::ConfidentialTokenAccount {
@@ -2318,7 +2319,7 @@ use zama_solana_test_kit::signing::{kms_signing_key, kms_signing_key_n};
 fn kms_public_decrypt_cert_for_context(
     handle: [u8; 32],
     cleartext_amount: u64,
-    context_id: u64,
+    context_id: [u8; 32],
 ) -> (Vec<[u8; 65]>, Vec<u8>) {
     let extra_data = zama_solana_test_kit::signing::context_extra_data_v1(context_id);
     let signatures = zama_solana_test_kit::signing::kms_public_decrypt_cert_signed_by(
@@ -2332,12 +2333,12 @@ fn kms_public_decrypt_cert_for_context(
     (signatures, extra_data)
 }
 
-fn kms_context_account(context_id: u64) -> Account {
+fn kms_context_account(context_id: [u8; 32]) -> Account {
     kms_context_account_with_signers(context_id, &[secp_evm_address(&kms_signing_key())], 1)
 }
 
 /// Like [`kms_context_account`] but marked `destroyed`, for the revocation-lever test.
-fn destroyed_kms_context_account(context_id: u64) -> Account {
+fn destroyed_kms_context_account(context_id: [u8; 32]) -> Account {
     let (_, bump) = host::kms_context_address(context_id);
     Account {
         lamports: 1_000_000_000,
@@ -2362,7 +2363,7 @@ fn destroyed_kms_context_account(context_id: u64) -> Account {
 /// Builds a `KmsContext` account registering `signers` with `public_decryption` threshold set to
 /// `public_threshold` (the other thresholds are pinned to a satisfiable value for the set).
 fn kms_context_account_with_signers(
-    context_id: u64,
+    context_id: [u8; 32],
     signers: &[[u8; 20]],
     public_threshold: u8,
 ) -> Account {
@@ -2587,7 +2588,7 @@ struct BurnRedeemFixture {
     vault_authority: Pubkey,
     vault_usdc: Pubkey,
     destination_usdc: Pubkey,
-    kms_context_id: u64,
+    kms_context_id: [u8; 32],
     kms_context: Pubkey,
     initial_balance: [u8; 32],
     initial_total_supply: [u8; 32],
@@ -2640,7 +2641,7 @@ impl BurnRedeemFixture {
         let vault_authority = token::vault_authority_address(mint).0;
         let vault_usdc = token::vault_token_account_address(mint, underlying_mint, token_program);
         let destination_usdc = Pubkey::new_unique();
-        let kms_context_id = 9;
+        let kms_context_id = canonical_test_context_id(9);
         let kms_context = host::kms_context_address(kms_context_id).0;
         Self {
             owner,
@@ -3411,7 +3412,7 @@ fn mollusk_redeem_accepts_live_rotated_out_kms_context() {
         host_config_account_with_kms_context(
             fixture.owner,
             secp_evm_address(&coprocessor_signing_key()),
-            fixture.kms_context_id + 1,
+            canonical_test_context_id(10),
         ),
     );
     let context = burn_redeem_mollusk().with_context(accounts);
@@ -4402,7 +4403,7 @@ struct DiscloseFixture {
     token_account: Pubkey,
     balance_value: Pubkey,
     amount_value: Pubkey,
-    kms_context_id: u64,
+    kms_context_id: [u8; 32],
     kms_context: Pubkey,
 }
 
@@ -4421,7 +4422,7 @@ impl DiscloseFixture {
             token::encrypted_burned_amount_label(),
         )
         .0;
-        let kms_context_id = 9;
+        let kms_context_id = canonical_test_context_id(9);
         let kms_context = host::kms_context_address(kms_context_id).0;
         Self {
             owner,
@@ -5150,11 +5151,12 @@ fn mollusk_disclose_secp_rejects_cleartext_wider_than_u64() {
 // deleted along with the feature.
 // ===========================================================================
 
-/// Exact HCU cost of the combined transfer execution (`compute_transfer_handles`): `Ge` at ebool
-/// (21_000) + debit `Sub` at euint64 (38_000) + `IfThenElse` at euint64 (45_000) + transferred
-/// `Sub` at euint64 (38_000) + balance-binding scalar `Add` at euint64 (33_250) + credit `Add`
-/// at euint64 (38_000). The `VerifiedInput` amount is an operand, not a step, so it adds no HCU.
-const TRANSFER_BATCH_HCU: u64 = 21_000 + 38_000 + 45_000 + 38_000 + 33_250 + 38_000; // 213_250
+/// Exact HCU cost of the combined transfer execution (`compute_transfer_handles`): `Ge` on
+/// euint64 operands (152_000) + debit `Sub` at euint64 (162_000) + `IfThenElse` at euint64
+/// (55_000) + transferred `Sub` at euint64 (162_000) + balance-binding scalar `Add` at euint64
+/// (133_000) + credit `Add` at euint64 (162_000). The `VerifiedInput` amount is an operand, not
+/// a step, so it adds no HCU. See `zama-host` `HCULimit` tables.
+const TRANSFER_BATCH_HCU: u64 = 152_000 + 162_000 + 55_000 + 162_000 + 133_000 + 162_000; // 826_000
 
 /// The fixture's host config with the per-app block cap overridden to `cap`.
 fn host_config_account_with_block_cap(
@@ -5246,7 +5248,7 @@ fn mollusk_confidential_transfer_metering_band_charges_meter_through_cpi() {
         host_config_account_with_block_cap(
             fixture.owner,
             secp_evm_address(&coprocessor_signing_key()),
-            500_000,
+            2_000_000,
         ),
     );
     let context = mollusk().with_context(accounts);
