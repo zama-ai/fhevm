@@ -1,6 +1,7 @@
 use crate::tests::event_helpers::{
-    allow_handle, decrypt_handles, insert_event, insert_trivial_encrypt, next_handle, scalar_flag,
-    setup_event_harness, wait_until_computed, zero_address, EventHarness,
+    allow_handle, decrypt_handles, insert_event, insert_trivial_encrypt, next_handle,
+    next_handle_with_type, scalar_flag, setup_event_harness, wait_until_computed, zero_address,
+    EventHarness,
 };
 use host_listener::contracts::TfheContract;
 use host_listener::contracts::TfheContract::TfheContractEvents;
@@ -34,15 +35,15 @@ async fn boundary_and_local_sourcing_both_compute_and_persist(
     // Variant ONE: `combined` consumes persisted, allowed boundary inputs
     // produced by a DIFFERENT transaction.
     let produce_tx = next_handle();
-    let boundary_b = next_handle();
-    let boundary_c = next_handle();
+    let boundary_b = next_handle_with_type(5);
+    let boundary_c = next_handle_with_type(5);
     insert_trivial_encrypt(&listener_db, &mut tx, produce_tx, 7, 5, boundary_b, true).await?;
     insert_trivial_encrypt(&listener_db, &mut tx, produce_tx, 5, 5, boundary_c, true).await?;
     allow_handle(&listener_db, &mut tx, &boundary_b).await?;
     allow_handle(&listener_db, &mut tx, &boundary_c).await?;
 
     let storage_tx = next_handle();
-    let combined_from_boundaries = next_handle();
+    let combined_from_boundaries = next_handle_with_type(5);
     insert_event(
         &listener_db,
         &mut tx,
@@ -65,9 +66,9 @@ async fn boundary_and_local_sourcing_both_compute_and_persist(
     // raw working values; on chain its handle folds zero boundary bits and
     // cannot collide with variant ONE's.
     let local_tx = next_handle();
-    let local_b = next_handle();
-    let local_c = next_handle();
-    let combined_locally = next_handle();
+    let local_b = next_handle_with_type(5);
+    let local_c = next_handle_with_type(5);
+    let combined_locally = next_handle_with_type(5);
     insert_trivial_encrypt(&listener_db, &mut tx, local_tx, 7, 5, local_b, true).await?;
     insert_trivial_encrypt(&listener_db, &mut tx, local_tx, 5, 5, local_c, true).await?;
     allow_handle(&listener_db, &mut tx, &local_b).await?;

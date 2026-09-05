@@ -23,9 +23,9 @@ use crate::database::synthetic_ops::{
     SYNTHETIC_BLOCK_OFFSET,
 };
 use crate::database::tfhe_event_propagate::{
-    acl_result_handles, operand_boundary_mask_from_minted, tfhe_result_handle,
-    Chain, ChainHash, Database, Handle as EventHandle, LogTfhe,
-    TransactionHash,
+    acl_result_handles, operand_boundary_mask_from_minted, tfhe_result_handles,
+    uniform_allowed_outputs, Chain, ChainHash, Database, Handle as EventHandle,
+    LogTfhe, TransactionHash,
 };
 use crate::kms_generation::insert_kms_generation_events_tx;
 use crate::kms_generation::metrics::KMS_EVENT_DECODE_FAIL_COUNTER;
@@ -100,7 +100,8 @@ fn refuse_mask_derivation(reason: &'static str) -> sqlx::Error {
 fn populate_operand_boundary_masks(
     logs: &mut [LogTfhe],
 ) -> Result<(), sqlx::Error> {
-    let mask_bearing = |log: &LogTfhe| tfhe_result_handle(&log.event).is_some();
+    let mask_bearing =
+        |log: &LogTfhe| !tfhe_result_handles(&log.event).is_empty();
     for log in logs.iter().filter(|log| mask_bearing(log)) {
         if log.transaction_hash.is_none() {
             return Err(refuse_mask_derivation(
@@ -153,9 +154,7 @@ fn populate_operand_boundary_masks(
         // This happens strictly after the mask above, exactly as the executor
         // computes the preimage before calling `_markMinted`.
         if log.is_executor_minted {
-            if let Some(result) = tfhe_result_handle(&log.event) {
-                minted.insert(result);
-            }
+            minted.extend(tfhe_result_handles(&log.event));
         }
     }
     Ok(())
@@ -426,8 +425,8 @@ pub async fn ingest_block_logs(
                     block_number,
                     block_hash,
                     block_timestamp,
-                    // updated in the next loop and dependence_chains
-                    is_allowed: false,
+                    // Filled in by the loop below.
+                    allowed_outputs: Default::default(),
                     dependence_chain: Default::default(),
                     tx_depth_size: 0,
                     log_index: log.log_index,
@@ -553,11 +552,8 @@ pub async fn ingest_block_logs(
                         block_hash,
                         block_timestamp,
 
-                        // This is a placeholder. The real value can't be known yet
-                        // because the is_allowed set is still being built from
-                        // the rest of the block's logs. It is recomputed for
-                        // every event in the loop right after this one.
-                        is_allowed: false,
+                        // Filled in by the loop below.
+                        allowed_outputs: Default::default(),
 
                         // Placeholders: dependence_chains() (called once the
                         // whole block is scanned) assigns the real dependence
@@ -616,12 +612,10 @@ pub async fn ingest_block_logs(
         }
     }
     for tfhe_log in tfhe_event_log.iter_mut() {
-        tfhe_log.is_allowed =
-            if let Some(result_handle) = tfhe_result_handle(&tfhe_log.event) {
-                is_allowed.contains(&result_handle.to_vec())
-            } else {
-                false
-            };
+        tfhe_log.allowed_outputs = tfhe_result_handles(&tfhe_log.event)
+            .into_iter()
+            .filter(|h| is_allowed.contains(&h.to_vec()))
+            .collect();
     }
 
     // Must happen before dependence grouping and database insertion. The
@@ -1237,6 +1231,7 @@ pub async fn synthesize_finalized_fallback_grants(
         return Ok(());
     }
     let mut logs: Vec<LogTfhe> = Vec::with_capacity(rows.len());
+    let mut dst_handles: Vec<EventHandle> = Vec::with_capacity(rows.len());
     for (row_index, row) in rows.into_iter().enumerate() {
         let dst_handle: Vec<u8> = row.get("dst_handle");
         let plaintext: Vec<u8> = row.get("plaintext");
@@ -1304,15 +1299,17 @@ pub async fn synthesize_finalized_fallback_grants(
         let operand_boundary_mask =
             operand_boundary_mask_from_minted(&data, |_| false)
                 .map_err(sqlx::Error::Protocol)?;
+        let event = alloy::primitives::Log {
+            address: Address::ZERO,
+            data,
+        };
+        dst_handles.push(EventHandle::from(handle_bytes));
         logs.push(LogTfhe {
-            event: alloy::primitives::Log {
-                address: Address::ZERO,
-                data,
-            },
-            transaction_hash,
             // Forced allowed, exactly like inline synthesis: governance
             // ensures the handle is in the ACL.
-            is_allowed: true,
+            allowed_outputs: uniform_allowed_outputs(&event, true),
+            event,
+            transaction_hash,
             block_number: block_number as u64,
             block_hash: *block_hash,
             block_timestamp: PrimitiveDateTime::new(
@@ -1340,9 +1337,7 @@ pub async fn synthesize_finalized_fallback_grants(
     // cannot change the outcome, so neither flag is threaded through here.
     let chains =
         dependence_chains(&mut logs, &db.dependence_chain, false, false).await;
-    for log in &logs {
-        let dst_handle = tfhe_result_handle(&log.event)
-            .expect("synthetic TrivialEncrypt has a result handle");
+    for (log, dst_handle) in logs.iter().zip(&dst_handles) {
         db.insert_tfhe_event(tx, log).await?;
         db.insert_pbs_computations(
             tx,
@@ -1614,13 +1609,14 @@ mod tests {
         log_index: Option<u64>,
         is_executor_minted: bool,
     ) -> LogTfhe {
+        let event = alloy::primitives::Log {
+            address: Address::ZERO,
+            data: event,
+        };
         LogTfhe {
-            event: alloy::primitives::Log {
-                address: Address::ZERO,
-                data: event,
-            },
+            allowed_outputs: uniform_allowed_outputs(&event, true),
+            event,
             transaction_hash: Some(tx),
-            is_allowed: true,
             block_number: 1,
             block_hash: FixedBytes::ZERO,
             block_timestamp: PrimitiveDateTime::MIN,
