@@ -8,6 +8,7 @@ pub mod signature_precheck;
 pub mod sql;
 pub mod status;
 pub mod transaction;
+pub mod user_decrypt;
 
 pub use dispatcher_lock::*;
 pub use http::*;
@@ -18,3 +19,4 @@ pub use signature_precheck::*;
 pub use sql::*;
 pub use status::*;
 pub use transaction::*;
+pub use user_decrypt::*;

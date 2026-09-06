@@ -460,6 +460,7 @@ fn ensure_global_init(settings: &Settings) -> anyhow::Result<&'static Registry> 
                 .retry_after_raw_eta_histogram_bucket
                 .clone(),
         );
+        metrics::init_user_decrypt_metrics(&registry);
 
         registry
     });

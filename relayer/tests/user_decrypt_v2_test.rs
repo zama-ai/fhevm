@@ -3,8 +3,8 @@ mod common;
 use crate::common::utils::{
     assert_retry_after_header_present, create_timeout_test_config, create_user_decrypt_wait_config,
     register_host_acl_allow_all_dynamic, register_host_acl_deny_all,
-    register_host_acl_partial_deny, register_host_acl_rpc_error, TestSetup, TEST_HOST_CHAIN_ID,
-    TEST_HOST_CHAIN_ID_2,
+    register_host_acl_partial_deny, register_host_acl_rpc_error, spare_shares_count_and_sum,
+    TestSetup, TEST_HOST_CHAIN_ID, TEST_HOST_CHAIN_ID_2,
 };
 use crate::common::validation_helper::{
     expect_v2_malformed_json, expect_v2_missing_field, expect_v2_validation_error, test_endpoint,
@@ -1869,6 +1869,11 @@ async fn test_wait_disabled_completes_at_threshold() {
         .await
         .expect("Failed to create test setup");
 
+    // Deltas throughout: the Prometheus registry is a process-global OnceLock.
+    let metrics_endpoint = setup.settings.metrics.endpoint.clone();
+    let (spare_count_before, spare_sum_before) =
+        spare_shares_count_and_sum(&metrics_endpoint).await;
+
     // 9 emitted, target 9: the request is reconstructable as soon as the quorum lands.
     let started = std::time::Instant::now();
     let job_id = helpers::submit_against_mock_committee(&setup, constants::SHARES_THRESHOLD).await;
@@ -1890,6 +1895,14 @@ async fn test_wait_disabled_completes_at_threshold() {
         elapsed
     );
 
+    let (spare_count_after, spare_sum_after) = spare_shares_count_and_sum(&metrics_endpoint).await;
+    assert_eq!(spare_count_after - spare_count_before, 1.0);
+    assert_eq!(
+        spare_sum_after - spare_sum_before,
+        0.0,
+        "Returning exactly the quorum leaves the client no spare"
+    );
+
     setup.shutdown().await;
 }
 
@@ -1904,6 +1917,10 @@ async fn test_wait_window_returns_extra_share() {
     let setup = TestSetup::new_with_config_path(Some(temp_config_path))
         .await
         .expect("Failed to create test setup");
+
+    let metrics_endpoint = setup.settings.metrics.endpoint.clone();
+    let (spare_count_before, spare_sum_before) =
+        spare_shares_count_and_sum(&metrics_endpoint).await;
 
     // 10 emitted, target 10: the boundary where the target is met exactly.
     let started = std::time::Instant::now();
@@ -1925,6 +1942,14 @@ async fn test_wait_window_returns_extra_share() {
         elapsed < std::time::Duration::from_secs(constants::TARGET_REACHED_MAX_SECS),
         "Wait should end on the extra share, not on window expiry, took {:?}",
         elapsed
+    );
+
+    let (spare_count_after, spare_sum_after) = spare_shares_count_and_sum(&metrics_endpoint).await;
+    assert_eq!(spare_count_after - spare_count_before, 1.0);
+    assert_eq!(
+        spare_sum_after - spare_sum_before,
+        1.0,
+        "One share beyond the quorum is one spare"
     );
 
     setup.shutdown().await;
@@ -2000,6 +2025,10 @@ async fn test_wait_window_expiry_returns_quorum() {
         .await
         .expect("Failed to create test setup");
 
+    let metrics_endpoint = setup.settings.metrics.endpoint.clone();
+    let (spare_count_before, spare_sum_before) =
+        spare_shares_count_and_sum(&metrics_endpoint).await;
+
     // 9 emitted, target 11: unreachable, so only the clock can end the wait.
     let started = std::time::Instant::now();
     let job_id = helpers::submit_against_mock_committee(&setup, constants::SHARES_THRESHOLD).await;
@@ -2042,6 +2071,20 @@ async fn test_wait_window_expiry_returns_quorum() {
         elapsed >= std::time::Duration::from_secs(u64::from(constants::WAIT_WINDOW_SHORT_SECS)),
         "Request should have waited out the window, took {:?}",
         elapsed
+    );
+
+    // The zero-tolerance case the operator alerts on. The 202 holds in between must
+    // not have contributed observations of their own.
+    let (spare_count_after, spare_sum_after) = spare_shares_count_and_sum(&metrics_endpoint).await;
+    assert_eq!(
+        spare_count_after - spare_count_before,
+        1.0,
+        "Only the terminal 200 should record an observation"
+    );
+    assert_eq!(
+        spare_sum_after - spare_sum_before,
+        0.0,
+        "An expired window returned the quorum, so the client got no spare"
     );
 
     setup.shutdown().await;

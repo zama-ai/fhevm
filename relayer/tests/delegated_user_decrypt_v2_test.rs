@@ -3,8 +3,8 @@ mod common;
 use crate::common::utils::{
     assert_retry_after_header_present, create_timeout_test_config, create_user_decrypt_wait_config,
     register_host_acl_allow_all_dynamic, register_host_acl_deny_all,
-    register_host_acl_partial_deny, register_host_acl_rpc_error, TestSetup, TEST_HOST_CHAIN_ID,
-    TEST_HOST_CHAIN_ID_2,
+    register_host_acl_partial_deny, register_host_acl_rpc_error, spare_shares_count_and_sum,
+    TestSetup, TEST_HOST_CHAIN_ID, TEST_HOST_CHAIN_ID_2,
 };
 use crate::common::validation_helper::{
     expect_v2_malformed_json, expect_v2_missing_field, expect_v2_validation_error, test_endpoint,
@@ -1683,6 +1683,10 @@ async fn test_delegated_wait_window_returns_extra_share() {
         .await
         .expect("Failed to create test setup");
 
+    let metrics_endpoint = setup.settings.metrics.endpoint.clone();
+    let (spare_count_before, spare_sum_before) =
+        spare_shares_count_and_sum(&metrics_endpoint).await;
+
     // 10 emitted, target 10: the boundary where the target is met exactly.
     let started = std::time::Instant::now();
     let job_id =
@@ -1703,6 +1707,14 @@ async fn test_delegated_wait_window_returns_extra_share() {
         elapsed < std::time::Duration::from_secs(constants::TARGET_REACHED_MAX_SECS),
         "Wait should end on the extra share, not on window expiry, took {:?}",
         elapsed
+    );
+
+    let (spare_count_after, spare_sum_after) = spare_shares_count_and_sum(&metrics_endpoint).await;
+    assert_eq!(spare_count_after - spare_count_before, 1.0);
+    assert_eq!(
+        spare_sum_after - spare_sum_before,
+        1.0,
+        "One share beyond the quorum is one spare"
     );
 
     setup.shutdown().await;

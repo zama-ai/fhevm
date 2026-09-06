@@ -22,7 +22,9 @@ use crate::http::utils::BounceChecker;
 use crate::http::{parse_and_validate, AppResponse};
 use crate::logging::UserDecryptStep;
 use crate::metrics::http::{self as http_metrics, HttpEndpoint, HttpMethod};
-use crate::metrics::{observe_raw_eta_seconds, HttpApiVersion, RetryAfterRequestType};
+use crate::metrics::{
+    observe_raw_eta_seconds, observe_spare_shares, HttpApiVersion, RetryAfterRequestType,
+};
 use crate::orchestrator::{ContentHasher, Orchestrator};
 use crate::readiness::throttler::UserDecryptReadinessTask;
 use crate::store::sql::models::{
@@ -44,7 +46,7 @@ use axum::{
 };
 use chrono::Utc;
 use std::sync::Arc;
-use tracing::{error, info, instrument, span, Level};
+use tracing::{error, info, instrument, span, warn, Level};
 use uuid::Uuid;
 
 pub type UserDecryptResponse = AppResponse<UserDecryptPostResponseJson>;
@@ -750,6 +752,26 @@ impl UserDecryptHandler {
                                 match UserDecryptResponseJson::try_from(response_model) {
                                     Ok(api_response) => {
                                         let status_code = StatusCode::OK;
+
+                                        // Tolerance is `served - threshold`. Recorded on the
+                                        // terminal 200 only: the GET is polled, so the 202
+                                        // holds would measure polling instead.
+                                        let spare_shares =
+                                            collected.saturating_sub(required_threshold as usize);
+                                        observe_spare_shares(
+                                            RetryAfterRequestType::UserDecrypt,
+                                            spare_shares,
+                                        );
+                                        if spare_shares == 0 && additional > 0 {
+                                            warn!(
+                                                request_id = %request_id,
+                                                ext_job_id = %job_id,
+                                                collected,
+                                                required_threshold,
+                                                elapsed_secs,
+                                                "Returned no spare shares despite waiting; the client cannot tolerate a corrupted share"
+                                            );
+                                        }
 
                                         info!(
                                             request_id = %request_id,
