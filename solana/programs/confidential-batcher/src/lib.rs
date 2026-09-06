@@ -119,8 +119,8 @@ pub mod confidential_batcher {
     /// authority authorizes the operation. The burned total is restored to the batch token account
     /// and encrypted total supply, and the batch becomes refund-only so users can retrieve their
     /// recorded joins through `quit`.
-    pub fn cancel_dispatch(
-        ctx: Context<CancelDispatch>,
+    pub fn cancel_dispatch<'info>(
+        ctx: Context<'info, CancelDispatch<'info>>,
         authority_funding_lamports: u64,
     ) -> Result<()> {
         instructions::cancel_dispatch(ctx, authority_funding_lamports)

@@ -496,6 +496,21 @@ pub fn kms_context_account(
     )
 }
 
+/// Builds the host's `RandNonce` account at its canonical PDA, at `nonce`.
+pub fn rand_nonce_account(nonce: u64) -> (Pubkey, Account) {
+    let (address, bump) = host::rand_nonce_address();
+    (
+        address,
+        Account {
+            lamports: 1_000_000_000,
+            data: serialized_account(host::RandNonce { nonce, bump }),
+            owner: host::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    )
+}
+
 /// Builds a `DenyScopeRecord` account for one application at its canonical PDA.
 pub fn deny_scope_record_account(app: host::AppScope, denied: bool) -> (Pubkey, Account) {
     let (record, bump) = host::deny_scope_address(app);

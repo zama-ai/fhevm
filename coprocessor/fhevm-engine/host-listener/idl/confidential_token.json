@@ -11,28 +11,26 @@
   ],
   "instructions": [
     {
-      "name": "allow_token_account_subjects",
+      "name": "allow_balance_viewers",
       "docs": [
-        "Grants subjects on a token-account-scoped encrypted value by CPI to host",
-        "`allow_subjects`, signing as the token-account PDA",
-        "(`EncryptedValue.encrypted_value_account_authority`).",
-        "Owner-authorized; auditors remain decrypt-only subjects (fhevm-internal#1862 #13)."
+        "Re-writes the owner's balance onto a handle the owner and `viewers` may decrypt. Owner",
+        "authorized; the grant covers that handle, the next balance write allows the owner alone."
       ],
       "discriminator": [
-        57,
-        89,
-        32,
-        224,
-        131,
-        12,
-        115,
-        223
+        223,
+        184,
+        34,
+        52,
+        181,
+        16,
+        3,
+        168
       ],
       "accounts": [
         {
           "name": "payer",
           "docs": [
-            "Pays for EncryptedValue realloc growth on the host."
+            "Pays for encrypted value account growth on the host."
           ],
           "writable": true,
           "signer": true
@@ -87,9 +85,9 @@
           }
         },
         {
-          "name": "encrypted_value",
+          "name": "balance_value",
           "docs": [
-            "Encrypted value whose encrypted value account authority must equal `token_account`."
+            "Stable balance encrypted value account; read for the current handle and replaced."
           ],
           "writable": true
         },
@@ -97,8 +95,7 @@
           "name": "host_config"
         },
         {
-          "name": "deny_subject_record",
-          "optional": true
+          "name": "zama_event_authority"
         },
         {
           "name": "zama_program",
@@ -107,11 +104,34 @@
         {
           "name": "system_program",
           "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "hcu_block_meter",
+          "docs": [
+            "canonical `[\"hcu-block-meter\", program, mint]` PDA. Supplied by an untrusted mint under a",
+            "metering-band cap; omitted when the mint is trusted or the cap is unrestricted."
+          ],
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "hcu_trusted_app_record",
+          "docs": [
+            "canonical `[\"hcu-trusted\", program, mint]` PDA. Present + valid bypasses the cap; absent",
+            "means the mint is metered."
+          ],
+          "optional": true
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
         }
       ],
       "args": [
         {
-          "name": "subjects",
+          "name": "viewers",
           "type": {
             "vec": "pubkey"
           }
@@ -119,20 +139,20 @@
       ]
     },
     {
-      "name": "allow_total_supply_subjects",
+      "name": "allow_total_supply_viewers",
       "docs": [
-        "Grants decrypt subjects on the encrypted total supply. The existing mint authority",
-        "authorizes the operation; the total-supply PDA signs the host CPI."
+        "Re-writes the encrypted total supply onto a handle `viewers` may decrypt. The mint",
+        "authority authorizes the operation; the total-supply PDA signs the host CPI."
       ],
       "discriminator": [
-        185,
-        238,
-        101,
-        36,
-        105,
-        179,
-        19,
-        224
+        2,
+        232,
+        54,
+        121,
+        202,
+        154,
+        189,
+        219
       ],
       "accounts": [
         {
@@ -187,7 +207,7 @@
         {
           "name": "total_supply_value",
           "docs": [
-            "Encrypted total-supply value whose subjects are changed."
+            "Encrypted total-supply value; read for the current handle and replaced."
           ],
           "writable": true
         },
@@ -195,8 +215,7 @@
           "name": "host_config"
         },
         {
-          "name": "deny_subject_record",
-          "optional": true
+          "name": "zama_event_authority"
         },
         {
           "name": "zama_program",
@@ -205,11 +224,34 @@
         {
           "name": "system_program",
           "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "hcu_block_meter",
+          "docs": [
+            "canonical `[\"hcu-block-meter\", program, mint]` PDA. Supplied by an untrusted mint under a",
+            "metering-band cap; omitted when the mint is trusted or the cap is unrestricted."
+          ],
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "hcu_trusted_app_record",
+          "docs": [
+            "canonical `[\"hcu-trusted\", program, mint]` PDA. Present + valid bypasses the cap; absent",
+            "means the mint is metered."
+          ],
+          "optional": true
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
         }
       ],
       "args": [
         {
-          "name": "subjects",
+          "name": "viewers",
           "type": {
             "vec": "pubkey"
           }
@@ -244,7 +286,7 @@
         {
           "name": "mint",
           "docs": [
-            "Confidential mint whose compute signer authorizes the balance/supply updates."
+            "Confidential mint whose total supply is re-credited."
           ]
         },
         {
@@ -253,33 +295,6 @@
             "Token account whose balance is re-credited."
           ],
           "writable": true
-        },
-        {
-          "name": "compute_signer",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  102,
-                  104,
-                  101,
-                  45,
-                  99,
-                  111,
-                  109,
-                  112,
-                  117,
-                  116,
-                  101
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "mint"
-              }
-            ]
-          }
         },
         {
           "name": "total_supply_authority",
@@ -391,7 +406,7 @@
         {
           "name": "hcu_block_meter",
           "docs": [
-            "canonical `[\"hcu-block-meter\", compute_signer]` PDA. Supplied by an untrusted mint under a",
+            "canonical `[\"hcu-block-meter\", program, mint]` PDA. Supplied by an untrusted mint under a",
             "metering-band cap; omitted when the mint is trusted or the cap is unrestricted."
           ],
           "writable": true,
@@ -400,7 +415,7 @@
         {
           "name": "hcu_trusted_app_record",
           "docs": [
-            "canonical `[\"hcu-trusted\", compute_signer]` PDA. Present + valid bypasses the cap; absent",
+            "canonical `[\"hcu-trusted\", program, mint]` PDA. Present + valid bypasses the cap; absent",
             "means the mint is metered."
           ],
           "optional": true
@@ -458,33 +473,6 @@
             "Token account whose balance is decreased."
           ],
           "writable": true
-        },
-        {
-          "name": "compute_signer",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  102,
-                  104,
-                  101,
-                  45,
-                  99,
-                  111,
-                  109,
-                  112,
-                  117,
-                  116,
-                  101
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "mint"
-              }
-            ]
-          }
         },
         {
           "name": "total_supply_authority",
@@ -568,7 +556,7 @@
         {
           "name": "hcu_block_meter",
           "docs": [
-            "canonical `[\"hcu-block-meter\", compute_signer]` PDA. Supplied by an untrusted mint under a",
+            "canonical `[\"hcu-block-meter\", program, mint]` PDA. Supplied by an untrusted mint under a",
             "metering-band cap; omitted when the mint is trusted or the cap is unrestricted."
           ],
           "writable": true,
@@ -577,7 +565,7 @@
         {
           "name": "hcu_trusted_app_record",
           "docs": [
-            "canonical `[\"hcu-trusted\", compute_signer]` PDA. Present + valid bypasses the cap; absent",
+            "canonical `[\"hcu-trusted\", program, mint]` PDA. Present + valid bypasses the cap; absent",
             "means the mint is metered."
           ],
           "optional": true
@@ -606,9 +594,9 @@
         "Burns an encrypted amount taken from an existing on-chain `EncryptedValue` (a computed or",
         "received handle) instead of a freshly attested client-side encryption — the burn-side analog",
         "of `confidential_transfer_from_value` (fhevm-internal#1755). The batcher uses this to burn an",
-        "execution's computed encrypted total, then requests the KMS burn certificate. The signing owner",
-        "must be in the amount value's subject set (the token spend gate); the amount is spent",
-        "read-only, and the burned-amount output is created publicly decryptable exactly as in",
+        "execution's computed encrypted total, then requests the KMS burn certificate. The signing",
+        "owner must control the amount value (the token spend gate); the amount is spent read-only,",
+        "and the burned-amount output is created publicly decryptable exactly as in",
         "`confidential_burn`, so `redeem_burned_amount` consumes it unchanged."
       ],
       "discriminator": [
@@ -625,7 +613,7 @@
         {
           "name": "owner",
           "docs": [
-            "Token owner and burn authority. Must be in `amount_value`'s subject set (the spend gate).",
+            "Token owner and burn authority. Must control `amount_value` (the spend gate).",
             "Not `mut`: rent for the burned-amount encrypted value account's first bind is paid by `payer`, so the owner",
             "may be a program PDA (the batcher) that only authorizes the burn via `invoke_signed`."
           ],
@@ -658,33 +646,6 @@
             "Token account whose balance is decreased."
           ],
           "writable": true
-        },
-        {
-          "name": "compute_signer",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  102,
-                  104,
-                  101,
-                  45,
-                  99,
-                  111,
-                  109,
-                  112,
-                  117,
-                  116,
-                  101
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "mint"
-              }
-            ]
-          }
         },
         {
           "name": "total_supply_authority",
@@ -745,12 +706,11 @@
         {
           "name": "amount_value",
           "docs": [
-            "The existing encrypted amount to burn: a computed or received `euint64` handle. Read-only",
-            "persistent operand — never replaced, never consumed. Its address is the canonical PDA of its",
-            "own `(domain, authority, label)` fields, so an encrypted value account from any app may be",
-            "passed here once that app's encrypted value account authority has granted the mint's compute",
-            "subject. `allow_token_account_subjects` applies only to confidential-token-owned values;",
-            "another app must authorize through its own authority path."
+            "The existing encrypted amount to burn: a computed `euint64` handle. Read-only persistent",
+            "operand — never replaced, never consumed. Its address is the canonical PDA of its own",
+            "`(program, authority, scope, label)` fields, so an encrypted value account from any app may",
+            "be passed here when that app's value authority is the signing `owner` (a program PDA",
+            "authorizing through `invoke_signed`), or when it is one of the burner's own token values."
           ]
         },
         {
@@ -779,7 +739,7 @@
         {
           "name": "hcu_block_meter",
           "docs": [
-            "canonical `[\"hcu-block-meter\", compute_signer]` PDA. Supplied by an untrusted mint under a",
+            "canonical `[\"hcu-block-meter\", program, mint]` PDA. Supplied by an untrusted mint under a",
             "metering-band cap; omitted when the mint is trusted or the cap is unrestricted."
           ],
           "writable": true,
@@ -788,7 +748,7 @@
         {
           "name": "hcu_trusted_app_record",
           "docs": [
-            "canonical `[\"hcu-trusted\", compute_signer]` PDA. Present + valid bypasses the cap; absent",
+            "canonical `[\"hcu-trusted\", program, mint]` PDA. Present + valid bypasses the cap; absent",
             "means the mint is metered."
           ],
           "optional": true
@@ -805,7 +765,9 @@
     {
       "name": "confidential_transfer",
       "docs": [
-        "Transfers an encrypted amount by updating the sender and recipient balance handles."
+        "Transfers an encrypted amount by updating the sender and recipient balance handles. A",
+        "recipient program passes `receipt` (plus `receipt_value` and its signing",
+        "`receipt_authority`) to have the transferred amount accumulated into a value of its own."
       ],
       "discriminator": [
         97,
@@ -860,33 +822,6 @@
           "writable": true
         },
         {
-          "name": "compute_signer",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  102,
-                  104,
-                  101,
-                  45,
-                  99,
-                  111,
-                  109,
-                  112,
-                  117,
-                  116,
-                  101
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "mint"
-              }
-            ]
-          }
-        },
-        {
           "name": "from_balance_value",
           "docs": [
             "Sender's stable balance `EncryptedValue` encrypted value account; read for the current",
@@ -934,7 +869,7 @@
         {
           "name": "hcu_block_meter",
           "docs": [
-            "canonical `[\"hcu-block-meter\", compute_signer]` PDA. The per-mint HCU block meter — supplied",
+            "canonical `[\"hcu-block-meter\", program, mint]` PDA. The per-mint HCU block meter — supplied",
             "by an untrusted mint under a metering-band cap, omitted otherwise."
           ],
           "writable": true,
@@ -945,6 +880,22 @@
           "docs": [
             "trust witness — present + valid bypasses the cap; absent means untrusted (metered)."
           ],
+          "optional": true
+        },
+        {
+          "name": "receipt_value",
+          "docs": [
+            "first write, accumulated thereafter. The host checks its canonical address."
+          ],
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "receipt_authority",
+          "docs": [
+            "The recipient program's PDA controlling the receipt, signing through `invoke_signed`."
+          ],
+          "signer": true,
           "optional": true
         },
         {
@@ -962,6 +913,16 @@
               "name": "CoprocessorInputAttestation"
             }
           }
+        },
+        {
+          "name": "receipt",
+          "type": {
+            "option": {
+              "defined": {
+                "name": "TransferReceipt"
+              }
+            }
+          }
         }
       ]
     },
@@ -970,8 +931,8 @@
       "docs": [
         "Transfers an encrypted amount taken from an existing on-chain `EncryptedValue` (a computed or",
         "received handle) instead of a freshly attested client-side encryption — the path that lets a",
-        "contract be the sender of a computed amount (fhevm-internal#1680). The signing owner must be",
-        "in the amount value's subject set (the token spend gate); the amount is spent read-only."
+        "contract be the sender of a computed amount (fhevm-internal#1680). The signing owner must",
+        "control the amount value (the token spend gate); the amount is spent read-only."
       ],
       "discriminator": [
         107,
@@ -987,7 +948,7 @@
         {
           "name": "owner",
           "docs": [
-            "Sender and transfer authority. Must be in `amount_value`'s subject set (the spend gate)."
+            "Sender and transfer authority. Must control `amount_value` (the spend gate)."
           ],
           "signer": true
         },
@@ -1026,33 +987,6 @@
           "writable": true
         },
         {
-          "name": "compute_signer",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  102,
-                  104,
-                  101,
-                  45,
-                  99,
-                  111,
-                  109,
-                  112,
-                  117,
-                  116,
-                  101
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "mint"
-              }
-            ]
-          }
-        },
-        {
           "name": "from_balance_value",
           "docs": [
             "Sender's stable balance `EncryptedValue` encrypted value account; read for the current",
@@ -1077,12 +1011,11 @@
         {
           "name": "amount_value",
           "docs": [
-            "The existing encrypted amount to spend: a computed or received `euint64` handle. Read-only",
-            "persistent operand — never replaced, never consumed. Its address is the canonical PDA of its",
-            "own `(domain, authority, label)` fields, so an encrypted value account from any app may be",
-            "passed here once that app's encrypted value account authority has granted the mint's compute",
-            "subject. `allow_token_account_subjects` applies only to confidential-token-owned values;",
-            "another app must authorize through its own authority path."
+            "The existing encrypted amount to spend: a computed `euint64` handle. Read-only persistent",
+            "operand — never replaced, never consumed. Its address is the canonical PDA of its own",
+            "`(program, authority, scope, label)` fields, so an encrypted value account from any app may",
+            "be passed here when that app's value authority is the signing `owner` (a program PDA",
+            "authorizing through `invoke_signed`), or when it is one of the sender's own token values."
           ]
         },
         {
@@ -1111,7 +1044,7 @@
         {
           "name": "hcu_block_meter",
           "docs": [
-            "canonical `[\"hcu-block-meter\", compute_signer]` PDA. The per-mint HCU block meter — supplied",
+            "canonical `[\"hcu-block-meter\", program, mint]` PDA. The per-mint HCU block meter — supplied",
             "by an untrusted mint under a metering-band cap, omitted otherwise."
           ],
           "writable": true,
@@ -1154,7 +1087,7 @@
         {
           "name": "mint",
           "docs": [
-            "Confidential mint whose ACL domain scopes the disclosed encrypted value account and event."
+            "Confidential mint whose application scopes the disclosed encrypted value account and event."
           ]
         },
         {
@@ -1168,7 +1101,7 @@
           "name": "encrypted_value",
           "docs": [
             "The `EncryptedValue` encrypted value account the disclosed handle belongs to.",
-            "CPI; this handler additionally binds its `domain` to `mint`."
+            "CPI; this handler additionally binds it to one exact token state field of `mint`."
           ]
         },
         {
@@ -1253,7 +1186,7 @@
     {
       "name": "initialize_mint",
       "docs": [
-        "Initializes a confidential mint and records its host ACL domain."
+        "Initializes a confidential mint and creates its zero encrypted total supply."
       ],
       "discriminator": [
         209,
@@ -1293,33 +1226,6 @@
           "docs": [
             "Classic Token or Token-2022 program owning `underlying_mint`."
           ]
-        },
-        {
-          "name": "compute_signer",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  102,
-                  104,
-                  101,
-                  45,
-                  99,
-                  111,
-                  109,
-                  112,
-                  117,
-                  116,
-                  101
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "mint"
-              }
-            ]
-          }
         },
         {
           "name": "total_supply_authority",
@@ -1379,7 +1285,7 @@
         {
           "name": "hcu_block_meter",
           "docs": [
-            "canonical `[\"hcu-block-meter\", compute_signer]` PDA. Supplied by an untrusted mint under a",
+            "canonical `[\"hcu-block-meter\", program, mint]` PDA. Supplied by an untrusted mint under a",
             "metering-band cap; omitted when the mint is trusted or the cap is unrestricted."
           ],
           "writable": true,
@@ -1388,7 +1294,7 @@
         {
           "name": "hcu_trusted_app_record",
           "docs": [
-            "canonical `[\"hcu-trusted\", compute_signer]` PDA. Present + valid bypasses the cap; absent",
+            "canonical `[\"hcu-trusted\", program, mint]` PDA. Present + valid bypasses the cap; absent",
             "means the mint is metered."
           ],
           "optional": true
@@ -1429,8 +1335,8 @@
         {
           "name": "owner",
           "docs": [
-            "Account owner. The canonical token-account PDA, stored owner, and",
-            "encrypted-value ACL audience are all derived from this address."
+            "Account owner. The canonical token-account PDA, stored owner, and the key allowed to",
+            "decrypt the balance are all derived from this address."
           ]
         },
         {
@@ -1438,33 +1344,6 @@
           "docs": [
             "Confidential mint this account belongs to."
           ]
-        },
-        {
-          "name": "compute_signer",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  102,
-                  104,
-                  101,
-                  45,
-                  99,
-                  111,
-                  109,
-                  112,
-                  117,
-                  116,
-                  101
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "mint"
-              }
-            ]
-          }
         },
         {
           "name": "token_account",
@@ -1530,7 +1409,7 @@
         {
           "name": "hcu_block_meter",
           "docs": [
-            "canonical `[\"hcu-block-meter\", compute_signer]` PDA. Supplied by an untrusted mint under a",
+            "canonical `[\"hcu-block-meter\", program, mint]` PDA. Supplied by an untrusted mint under a",
             "metering-band cap; omitted when the mint is trusted or the cap is unrestricted."
           ],
           "writable": true,
@@ -1539,7 +1418,7 @@
         {
           "name": "hcu_trusted_app_record",
           "docs": [
-            "canonical `[\"hcu-trusted\", compute_signer]` PDA. Present + valid bypasses the cap; absent",
+            "canonical `[\"hcu-trusted\", program, mint]` PDA. Present + valid bypasses the cap; absent",
             "means the mint is metered."
           ],
           "optional": true
@@ -1843,8 +1722,8 @@
         {
           "name": "burned_amount_value",
           "docs": [
-            "Burned amount `EncryptedValue` encrypted value account whose handle is redeemed. Bound to the mint/token",
-            "account/owner by `assert_burned_amount_value_account`; its canonical PDA, layout, host ownership,",
+            "Burned amount `EncryptedValue` account whose handle is redeemed. Bound to the mint/token",
+            "account by `assert_burned_amount_value_account`; its canonical PDA, layout, host ownership,",
             "and the exact-handle MMR inclusion proof are validated by the `verify_public_decrypt` CPI."
           ]
         },
@@ -1957,172 +1836,6 @@
       ]
     },
     {
-      "name": "remove_token_account_subject",
-      "docs": [
-        "Removes one subject from a token-account-scoped encrypted value by CPI to host",
-        "`remove_subject`, signing as the token-account PDA",
-        "(`EncryptedValue.encrypted_value_account_authority`)."
-      ],
-      "discriminator": [
-        135,
-        46,
-        109,
-        207,
-        38,
-        36,
-        26,
-        243
-      ],
-      "accounts": [
-        {
-          "name": "owner",
-          "signer": true,
-          "relations": [
-            "token_account"
-          ]
-        },
-        {
-          "name": "mint",
-          "relations": [
-            "token_account"
-          ]
-        },
-        {
-          "name": "token_account",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  116,
-                  111,
-                  107,
-                  101,
-                  110,
-                  45,
-                  97,
-                  99,
-                  99,
-                  111,
-                  117,
-                  110,
-                  116
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "mint"
-              },
-              {
-                "kind": "account",
-                "path": "owner"
-              }
-            ]
-          }
-        },
-        {
-          "name": "encrypted_value",
-          "docs": [
-            "Encrypted value whose encrypted value account authority must equal `token_account`."
-          ],
-          "writable": true
-        },
-        {
-          "name": "host_config"
-        },
-        {
-          "name": "zama_program",
-          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
-        }
-      ],
-      "args": [
-        {
-          "name": "subject",
-          "type": "pubkey"
-        }
-      ]
-    },
-    {
-      "name": "remove_total_supply_subject",
-      "docs": [
-        "Removes one decrypt subject from the encrypted total supply. The existing mint authority",
-        "authorizes the operation; the total-supply PDA signs the host CPI."
-      ],
-      "discriminator": [
-        159,
-        210,
-        247,
-        214,
-        248,
-        17,
-        118,
-        84
-      ],
-      "accounts": [
-        {
-          "name": "authority",
-          "docs": [
-            "Existing confidential mint authority. Governance may own this key later."
-          ],
-          "signer": true,
-          "relations": [
-            "mint"
-          ]
-        },
-        {
-          "name": "mint"
-        },
-        {
-          "name": "total_supply_authority",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  116,
-                  111,
-                  116,
-                  97,
-                  108,
-                  45,
-                  115,
-                  117,
-                  112,
-                  112,
-                  108,
-                  121
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "mint"
-              }
-            ]
-          }
-        },
-        {
-          "name": "total_supply_value",
-          "docs": [
-            "Encrypted total-supply value whose subjects are changed."
-          ],
-          "writable": true
-        },
-        {
-          "name": "host_config"
-        },
-        {
-          "name": "zama_program",
-          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
-        }
-      ],
-      "args": [
-        {
-          "name": "subject",
-          "type": "pubkey"
-        }
-      ]
-    },
-    {
       "name": "wrap_usdc",
       "docs": [
         "Escrows public USDC and updates the confidential balance by `amount`."
@@ -2212,33 +1925,6 @@
           }
         },
         {
-          "name": "compute_signer",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  102,
-                  104,
-                  101,
-                  45,
-                  99,
-                  111,
-                  109,
-                  112,
-                  117,
-                  116,
-                  101
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "mint"
-              }
-            ]
-          }
-        },
-        {
           "name": "total_supply_authority",
           "pda": {
             "seeds": [
@@ -2312,7 +1998,7 @@
         {
           "name": "hcu_block_meter",
           "docs": [
-            "canonical `[\"hcu-block-meter\", compute_signer]` PDA. Supplied by an untrusted mint under a",
+            "canonical `[\"hcu-block-meter\", program, mint]` PDA. Supplied by an untrusted mint under a",
             "metering-band cap; omitted when the mint is trusted or the cap is unrestricted."
           ],
           "writable": true,
@@ -2321,7 +2007,7 @@
         {
           "name": "hcu_trusted_app_record",
           "docs": [
-            "canonical `[\"hcu-trusted\", compute_signer]` PDA. Present + valid bypasses the cap; absent",
+            "canonical `[\"hcu-trusted\", program, mint]` PDA. Present + valid bypasses the cap; absent",
             "means the mint is metered."
           ],
           "optional": true
@@ -2538,203 +2224,193 @@
     },
     {
       "code": 6012,
-      "name": "DomainMismatch",
-      "msg": "Confidential mint ACL domain key is invalid"
-    },
-    {
-      "code": 6013,
-      "name": "ComputeSignerMismatch",
-      "msg": "Compute signer does not match confidential mint"
-    },
-    {
-      "code": 6014,
       "name": "CurrentEncryptedValueMismatch",
       "msg": "current encrypted value does not match token account state"
     },
     {
-      "code": 6015,
+      "code": 6013,
       "name": "AmountHandleTypeMismatch",
       "msg": "transfer amount handle type is invalid"
     },
     {
-      "code": 6016,
+      "code": 6014,
       "name": "AmountAclMismatch",
       "msg": "transfer amount ACL record is invalid"
     },
     {
-      "code": 6017,
+      "code": 6015,
       "name": "AttestationUserMismatch",
       "msg": "attested input user does not match owner"
     },
     {
-      "code": 6018,
+      "code": 6016,
       "name": "AttestationContractMismatch",
-      "msg": "attested input contract does not match compute signer"
+      "msg": "attested input contract does not match the token program"
     },
     {
-      "code": 6019,
-      "name": "AmountSpendSubjectMismatch",
-      "msg": "amount value spender is not in the amount's subject set"
+      "code": 6017,
+      "name": "AmountSpendAuthorityMismatch",
+      "msg": "amount value spender does not control the amount"
     },
     {
-      "code": 6020,
+      "code": 6018,
       "name": "TotalSupplyAuthorityMismatch",
       "msg": "total supply authority does not match mint"
     },
     {
-      "code": 6021,
+      "code": 6019,
       "name": "InvalidKmsCertificate",
       "msg": "KMS public-decrypt certificate is invalid"
     },
     {
-      "code": 6022,
+      "code": 6020,
       "name": "PublicDecryptProofInvalid",
       "msg": "public-decrypt MMR proof is invalid for this encrypted value account"
     },
     {
-      "code": 6023,
+      "code": 6021,
       "name": "GatewayVerifierConfigUnset",
       "msg": "gateway verifier config is not set"
     },
     {
-      "code": 6024,
+      "code": 6022,
       "name": "InvalidKmsContext",
       "msg": "KMS context is not valid for this request"
     },
     {
-      "code": 6025,
+      "code": 6023,
       "name": "RequestWitnessMismatch",
       "msg": "request witness does not match"
     },
     {
-      "code": 6026,
+      "code": 6024,
       "name": "RequestWitnessUnavailable",
       "msg": "request witness is expired or already consumed"
     },
     {
-      "code": 6027,
+      "code": 6025,
       "name": "MaterialCommitmentMismatch",
       "msg": "material commitment witness does not match (retired)"
     },
     {
-      "code": 6028,
+      "code": 6026,
       "name": "PublicDecryptNotReleased",
       "msg": "handle is not released for public decrypt (retired)"
     },
     {
-      "code": 6029,
+      "code": 6027,
       "name": "InvalidFheExecution",
       "msg": "FHE execution is invalid"
     },
     {
-      "code": 6030,
+      "code": 6028,
       "name": "DuplicateFheExecuteAccount",
       "msg": "fhe_execute account list contains a duplicate account"
     },
     {
-      "code": 6031,
+      "code": 6029,
       "name": "UnexpectedFheExecuteAccount",
       "msg": "fhe_execute account list contains an unexpected account"
     },
     {
-      "code": 6032,
+      "code": 6030,
       "name": "MissingFheExecuteAccount",
       "msg": "FHE execution is missing a required dynamic account"
     },
     {
-      "code": 6033,
+      "code": 6031,
       "name": "FheExecuteAccountNotWritable",
       "msg": "fhe_execute dynamic account must be writable"
     },
     {
-      "code": 6034,
+      "code": 6032,
       "name": "DuplicateFheOutputAuthority",
       "msg": "fhe_execute output authority list contains a duplicate authority"
     },
     {
-      "code": 6035,
+      "code": 6033,
       "name": "UnexpectedFheOutputAuthority",
       "msg": "fhe_execute output authority list contains an unexpected authority"
     },
     {
-      "code": 6036,
+      "code": 6034,
       "name": "MissingFheOutputAuthority",
       "msg": "FHE execution is missing a required output authority"
     },
     {
-      "code": 6037,
+      "code": 6035,
       "name": "VerifierReturnDataInvalid",
       "msg": "public-decrypt verifier return data is invalid"
     },
     {
-      "code": 6038,
+      "code": 6036,
       "name": "DisclosedHandleMismatch",
       "msg": "disclosed handle does not match the pinned handle"
     },
     {
-      "code": 6039,
+      "code": 6037,
       "name": "CleartextExceedsEuint64",
       "msg": "certified cleartext exceeds euint64 width"
     },
     {
-      "code": 6040,
+      "code": 6038,
       "name": "PendingBurnAddressMismatch",
       "msg": "pending burn address does not match"
     },
     {
-      "code": 6041,
+      "code": 6039,
       "name": "PendingBurnAlreadyInitialized",
       "msg": "pending burn is already initialized"
     },
     {
-      "code": 6042,
+      "code": 6040,
       "name": "PendingBurnHandleNotCurrent",
       "msg": "pending burn handle is not the burned amount current handle"
     },
     {
-      "code": 6043,
+      "code": 6041,
       "name": "PendingBurnMismatch",
       "msg": "pending burn fields do not match"
     },
     {
-      "code": 6044,
+      "code": 6042,
       "name": "UnderlyingTokenProgramMismatch",
       "msg": "underlying token program does not match"
     },
     {
-      "code": 6045,
+      "code": 6043,
       "name": "UnsupportedToken2022Extension",
       "msg": "unsupported Token-2022 extension"
     },
     {
-      "code": 6046,
+      "code": 6044,
       "name": "UnderlyingTokenAccountFrozen",
       "msg": "underlying token account is frozen"
     },
     {
-      "code": 6047,
+      "code": 6045,
       "name": "DisclosedValueBindingMismatch",
       "msg": "disclosed value does not match its declared token state field"
     },
     {
-      "code": 6048,
+      "code": 6046,
       "name": "EncryptedValueAuthorityMismatch",
       "msg": "encrypted value account authority does not match token account"
     },
     {
-      "code": 6049,
+      "code": 6047,
       "name": "TokenEncryptedValueMismatch",
       "msg": "token encrypted value account is not canonical"
     },
     {
-      "code": 6050,
-      "name": "TotalSupplyValueMismatch",
-      "msg": "encrypted total supply value is not canonical"
-    },
-    {
-      "code": 6051,
+      "code": 6048,
       "name": "UnderlyingAssociatedAccountMismatch",
       "msg": "underlying associated token account does not match"
+    },
+    {
+      "code": 6049,
+      "name": "TransferReceiptMismatch",
+      "msg": "transfer receipt descriptor and accounts must be passed together"
     }
   ],
   "types": [
@@ -2763,6 +2439,9 @@
           },
           {
             "name": "CancelBurn"
+          },
+          {
+            "name": "AllowViewers"
           }
         ]
       }
@@ -3011,20 +2690,6 @@
             "type": "pubkey"
           },
           {
-            "name": "domain",
-            "docs": [
-              "ACL domain key, currently equal to the mint pubkey."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "compute_signer",
-            "docs": [
-              "Program-controlled compute signer PDA."
-            ],
-            "type": "pubkey"
-          },
-          {
             "name": "underlying_mint",
             "docs": [
               "Underlying SPL mint wrapped by this confidential mint."
@@ -3220,7 +2885,7 @@
           {
             "name": "contract_address",
             "docs": [
-              "Attested contract identity — the input's ACL domain key (bytes32)."
+              "Attested contract identity — the application program the input is bound to (bytes32)."
             ],
             "type": {
               "array": [
@@ -3286,42 +2951,51 @@
     {
       "name": "EncryptedValue",
       "docs": [
-        "Canonical ACL + history state for one encrypted value account.",
+        "Canonical state for one encrypted value.",
         "",
-        "PDA: `[ENCRYPTED_VALUE_SEED, encrypted_value_id]` where `encrypted_value_id =",
-        "zama_solana_acl::derive_encrypted_value_id(domain, encrypted_value_account_authority, label)`.",
-        "The account name must stay exactly `EncryptedValue` — Anchor derives the",
-        "discriminator from the type name, and it must match",
-        "`zama_solana_acl::encrypted_value_discriminator()`."
+        "PDA: `[ENCRYPTED_VALUE_SEED, program, encrypted_value_account_authority, scope, label]`.",
+        "The account name must stay exactly `EncryptedValue` — Anchor derives the discriminator from",
+        "the type name, and it must match `zama_solana_acl::encrypted_value_discriminator()`."
       ],
       "type": {
         "kind": "struct",
         "fields": [
           {
-            "name": "domain",
+            "name": "program",
             "docs": [
-              "App-level ACL domain, such as a confidential token mint."
+              "The application program this value belongs to. Proven on create: the authority must be a",
+              "PDA of this program (the create carries the seeds), so no other program can sign for it."
             ],
             "type": "pubkey"
           },
           {
             "name": "encrypted_value_account_authority",
             "docs": [
-              "The account that controls this encrypted value: it must sign to create it, update its",
-              "handle, or replace its subject list — including out-of-band `allow_subjects` /",
-              "`remove_subject` (decrypt subjects are not co-admins). Enforced by address rather than by",
-              "comparing this field — the signer must equal the authority declared in the execution",
-              "(`assert_output_acl_metadata`) and the account written to must be the PDA rederived from",
-              "that declared triple, which is what ties the signer to the stored value on update. For a",
-              "token balance this is the token account itself."
+              "The account that controls this encrypted value: a PDA of `program` that must sign to create",
+              "it, read it into a computation, or update its handle. Enforced by address rather than by",
+              "comparing this field — the signer must equal the authority declared in the execution and",
+              "the account written must be the PDA rederived from the declared four seeds, which is what",
+              "ties the signer to the stored value. For a token balance this is the token account itself."
             ],
             "type": "pubkey"
           },
           {
+            "name": "scope",
+            "docs": [
+              "Program-declared scope within `program` (the mint for the token program).",
+              "`(program, scope)` is the application identity for HCU metering and the deny list."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
             "name": "label",
             "docs": [
-              "The encrypted value label: the third component of the encrypted value ID, naming which",
-              "encrypted value of the authority this is."
+              "Which of the authority's values this is."
             ],
             "type": {
               "array": [
@@ -3340,16 +3014,6 @@
                 "u8",
                 32
               ]
-            }
-          },
-          {
-            "name": "subjects",
-            "docs": [
-              "Current persistent subjects. Membership grants decrypt/compute; subject-list mutation",
-              "requires `encrypted_value_account_authority` (INVARIANT #11)."
-            ],
-            "type": {
-              "vec": "pubkey"
             }
           },
           {
@@ -3407,7 +3071,7 @@
           {
             "name": "mint",
             "docs": [
-              "Confidential mint whose ACL domain scopes the disclosed encrypted value account."
+              "Confidential mint whose application scopes the disclosed encrypted value account."
             ],
             "type": "pubkey"
           },
@@ -3982,6 +3646,76 @@
           },
           {
             "name": "CancelBurn"
+          },
+          {
+            "name": "AllowViewers"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TransferReceipt",
+      "docs": [
+        "How a program receiving a transfer learns the amount it received: the transfer's execution",
+        "also writes `receipt = receipt + transferred` (first time `transferred + 0`) into a value of",
+        "that program, controlled by the PDA it signs the CPI with. A value's authority is the only",
+        "key that may compute on it, so the recipient cannot read `transferred_amount` itself; the",
+        "token program writes the sum into the recipient's own value instead, in the same execution",
+        "that computes it. EVM analog: `FHE.allow(transferred, recipient)` followed by the recipient's",
+        "own `add`."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "program",
+            "docs": [
+              "The recipient program."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "scope",
+            "docs": [
+              "The recipient program's scope for the value."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "label",
+            "docs": [
+              "The value's label under `(program, receipt_authority, scope)`."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "authority_seeds",
+            "docs": [
+              "Seeds (bump last) deriving `receipt_authority` under `program`; proven by the host on",
+              "the first write."
+            ],
+            "type": {
+              "vec": "bytes"
+            }
+          },
+          {
+            "name": "allows",
+            "docs": [
+              "Keys allowed to decrypt the receipt's new handle."
+            ],
+            "type": {
+              "vec": "pubkey"
+            }
           }
         ]
       }

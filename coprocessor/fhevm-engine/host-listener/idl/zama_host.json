@@ -11,82 +11,6 @@
   ],
   "instructions": [
     {
-      "name": "allow_subjects",
-      "discriminator": [
-        186,
-        205,
-        31,
-        20,
-        183,
-        17,
-        5,
-        26
-      ],
-      "accounts": [
-        {
-          "name": "payer",
-          "docs": [
-            "Pays for the account's growth, if any."
-          ],
-          "writable": true,
-          "signer": true
-        },
-        {
-          "name": "authority",
-          "docs": [
-            "Must equal `EncryptedValue.encrypted_value_account_authority` (same gate as",
-            "`fhe_execute` persistent create/update). Subjects alone cannot mutate",
-            "membership — apps that store a PDA in `encrypted_value_account_authority`",
-            "rotate auditors by CPI + `invoke_signed` as that PDA."
-          ],
-          "signer": true
-        },
-        {
-          "name": "encrypted_value",
-          "writable": true
-        },
-        {
-          "name": "host_config",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  104,
-                  111,
-                  115,
-                  116,
-                  45,
-                  99,
-                  111,
-                  110,
-                  102,
-                  105,
-                  103
-                ]
-              }
-            ]
-          }
-        },
-        {
-          "name": "deny_subject_record",
-          "optional": true
-        },
-        {
-          "name": "system_program",
-          "address": "11111111111111111111111111111111"
-        }
-      ],
-      "args": [
-        {
-          "name": "subjects",
-          "type": {
-            "vec": "pubkey"
-          }
-        }
-      ]
-    },
-    {
       "name": "define_kms_context",
       "docs": [
         "Defines a new KMS context (mirror of `ProtocolConfig.defineNewKmsContext`)."
@@ -409,24 +333,18 @@
         {
           "name": "payer",
           "docs": [
-            "Pays rent for any persistent output ACL records."
+            "Pays rent for any persistent output accounts."
           ],
           "writable": true,
           "signer": true
         },
         {
-          "name": "compute_subject",
-          "docs": [
-            "Compute subject that must be allowed on persistent encrypted inputs."
-          ],
-          "signer": true
-        },
-        {
           "name": "encrypted_value_account_authority",
           "docs": [
-            "Default authority signer: signs for every persistent output that does not name an authority",
-            "of its own. An output that sets `authority_index` points at a remaining account instead, and",
-            "that account must sign and must equal the authority the output declares."
+            "Default authority signer: admits every persistent value read or written that does not name",
+            "an authority of its own. An output that sets `authority_index` points at a remaining account",
+            "instead, and that account must sign and must equal the authority the output declares; an",
+            "operand's authority may likewise be any signing remaining account."
           ],
           "signer": true
         },
@@ -461,19 +379,20 @@
         {
           "name": "system_program",
           "docs": [
-            "System program used for persistent output ACL creation."
+            "System program used for persistent output creation."
           ],
           "address": "11111111111111111111111111111111"
         },
         {
           "name": "hcu_block_meter",
           "docs": [
-            "Per-`compute_subject` HCU block meter (written once in the execution `charge`). The HCU PDAs",
-            "(`hcu_block_meter`, `hcu_trusted_app_record`) key on `compute_subject` — the mandatory signed",
-            "caller identity already used for ACL admission — so no caller can rotate a fresh signer to",
-            "mint a fresh per-slot meter. Untrusted subjects in the metering band MUST supply this meter;",
-            "trusted subjects and the unrestricted default omit it. An `UncheckedAccount` because it may",
-            "be uninitialized (lazy-created) and is validated manually."
+            "Per-application HCU block meter (written once in the execution `charge`). The HCU PDAs",
+            "(`hcu_block_meter`, `hcu_trusted_app_record`) key on the `(program, scope)` of the",
+            "persistent values the execution touches — an identity the program proved when it created",
+            "them, so no caller can rotate a fresh signer to mint a fresh per-slot meter. Untrusted",
+            "applications in the metering band MUST supply this meter; trusted applications and the",
+            "unrestricted default omit it. An `UncheckedAccount` because it may be uninitialized",
+            "(lazy-created) and is validated manually."
           ],
           "writable": true,
           "optional": true
@@ -481,11 +400,39 @@
         {
           "name": "hcu_trusted_app_record",
           "docs": [
-            "Trust witness (read-only), keyed on `compute_subject`. Present + program-owned +",
+            "Trust witness (read-only), keyed on `(program, scope)`. Present + program-owned +",
             "`trusted == true` ⇒ bypass the cap; absent (`None`) ⇒ untrusted, fall through to the meter;",
             "present-but-malformed ⇒ reject."
           ],
           "optional": true
+        },
+        {
+          "name": "rand_nonce",
+          "docs": [
+            "The host's rand nonce, consumed and incremented by an execution that contains a rand step.",
+            "Required exactly then, and refused otherwise so no execution write-locks it for nothing."
+          ],
+          "writable": true,
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  97,
+                  110,
+                  100,
+                  45,
+                  110,
+                  111,
+                  110,
+                  99,
+                  101
+                ]
+              }
+            ]
+          }
         },
         {
           "name": "event_authority"
@@ -568,6 +515,33 @@
           }
         },
         {
+          "name": "rand_nonce",
+          "docs": [
+            "The host's single rand nonce, created alongside the config so every rand execution can",
+            "take it from the first slot on."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  97,
+                  110,
+                  100,
+                  45,
+                  110,
+                  111,
+                  110,
+                  99,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "system_program",
           "docs": [
             "System program used for account creation."
@@ -594,6 +568,10 @@
     },
     {
       "name": "make_handle_public",
+      "docs": [
+        "Seals the value's current handle as publicly decryptable. Every other allow happens",
+        "inline on the `fhe_execute` write that produces the handle."
+      ],
       "discriminator": [
         66,
         199,
@@ -613,8 +591,7 @@
         {
           "name": "authority",
           "docs": [
-            "Must equal `EncryptedValue.encrypted_value_account_authority`; decrypt subjects cannot",
-            "publish a handle."
+            "Must equal `EncryptedValue.encrypted_value_account_authority`."
           ],
           "signer": true
         },
@@ -644,6 +621,14 @@
               }
             ]
           }
+        },
+        {
+          "name": "deny_scope_record",
+          "docs": [
+            "The value's application deny record, required while the deny list is enabled: making a",
+            "handle public is an allow, and a denied application cannot allow."
+          ],
+          "optional": true
         },
         {
           "name": "system_program",
@@ -659,64 +644,6 @@
               32
             ]
           }
-        }
-      ]
-    },
-    {
-      "name": "remove_subject",
-      "discriminator": [
-        66,
-        88,
-        46,
-        123,
-        6,
-        107,
-        208,
-        50
-      ],
-      "accounts": [
-        {
-          "name": "authority",
-          "docs": [
-            "Must equal `EncryptedValue.encrypted_value_account_authority` (same gate as",
-            "`fhe_execute` persistent create/update). Subjects alone cannot remove peers —",
-            "apps that store a PDA in `encrypted_value_account_authority` rotate auditors by",
-            "CPI + `invoke_signed` as that PDA."
-          ],
-          "signer": true
-        },
-        {
-          "name": "encrypted_value",
-          "writable": true
-        },
-        {
-          "name": "host_config",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  104,
-                  111,
-                  115,
-                  116,
-                  45,
-                  99,
-                  111,
-                  110,
-                  102,
-                  105,
-                  103
-                ]
-              }
-            ]
-          }
-        }
-      ],
-      "args": [
-        {
-          "name": "subject",
-          "type": "pubkey"
         }
       ]
     },
@@ -968,16 +895,20 @@
       ]
     },
     {
-      "name": "set_deny_subject",
+      "name": "set_deny_scope",
+      "docs": [
+        "Denies or re-admits an application `(program, scope)`: a denied application can neither",
+        "compute nor allow (admin-only)."
+      ],
       "discriminator": [
-        138,
-        202,
-        142,
-        220,
-        246,
-        43,
-        211,
-        160
+        232,
+        0,
+        238,
+        131,
+        14,
+        25,
+        84,
+        57
       ],
       "accounts": [
         {
@@ -1022,7 +953,7 @@
           }
         },
         {
-          "name": "deny_subject_record",
+          "name": "deny_scope_record",
           "writable": true
         },
         {
@@ -1041,8 +972,17 @@
       ],
       "args": [
         {
-          "name": "subject",
+          "name": "program",
           "type": "pubkey"
+        },
+        {
+          "name": "scope",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
         },
         {
           "name": "denied",
@@ -1196,7 +1136,8 @@
     {
       "name": "set_hcu_app_trusted",
       "docs": [
-        "Registers or clears an app's block-cap bypass in the HCU trust registry (admin-only)."
+        "Registers or clears an application's block-cap bypass in the HCU trust registry",
+        "(admin-only). The application is a `(program, scope)`."
       ],
       "discriminator": [
         66,
@@ -1270,8 +1211,17 @@
       ],
       "args": [
         {
-          "name": "app",
+          "name": "program",
           "type": "pubkey"
+        },
+        {
+          "name": "scope",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
         },
         {
           "name": "trusted",
@@ -1659,6 +1609,19 @@
       ]
     },
     {
+      "name": "RandNonce",
+      "discriminator": [
+        75,
+        163,
+        132,
+        129,
+        125,
+        181,
+        151,
+        221
+      ]
+    },
+    {
       "name": "UserDecryptionDelegation",
       "discriminator": [
         37,
@@ -1674,16 +1637,16 @@
   ],
   "events": [
     {
-      "name": "DenySubjectUpdatedEvent",
+      "name": "DenyScopeUpdatedEvent",
       "discriminator": [
-        39,
-        225,
-        169,
-        124,
-        243,
-        67,
-        221,
-        39
+        57,
+        44,
+        121,
+        22,
+        37,
+        40,
+        197,
+        54
       ]
     },
     {
@@ -1869,137 +1832,137 @@
     {
       "code": 6020,
       "name": "EncryptedValueAccountAuthorityMismatch",
-      "msg": "signer does not match the declared encrypted value account authority"
+      "msg": "signer does not match the encrypted value account authority"
     },
     {
       "code": 6021,
+      "name": "EncryptedValueAuthorityNotProgramPda",
+      "msg": "encrypted value authority is not a PDA of the declared program"
+    },
+    {
+      "code": 6022,
       "name": "DenyRecordMissing",
       "msg": "deny-list witness account is required"
     },
     {
-      "code": 6022,
+      "code": 6023,
       "name": "DenyRecordMismatch",
       "msg": "deny-list account does not match the canonical PDA"
     },
     {
-      "code": 6023,
-      "name": "SubjectDenied",
-      "msg": "grant authority subject is deny-listed"
+      "code": 6024,
+      "name": "ScopeDenied",
+      "msg": "application scope is deny-listed"
     },
     {
-      "code": 6024,
+      "code": 6025,
       "name": "DelegationPdaMismatch",
       "msg": "delegation record does not match the canonical PDA"
     },
     {
-      "code": 6025,
+      "code": 6026,
       "name": "InvalidDelegation",
       "msg": "delegation tuple is invalid"
     },
     {
-      "code": 6026,
+      "code": 6027,
       "name": "DelegationRevoked",
       "msg": "delegation has already been revoked"
     },
     {
-      "code": 6027,
+      "code": 6028,
       "name": "DelegationUpdatedInCurrentSlot",
       "msg": "delegation was already updated in the current slot"
     },
     {
-      "code": 6028,
+      "code": 6029,
       "name": "PreviousBankHashUnavailable",
       "msg": "previous bank hash is not available"
     },
     {
-      "code": 6029,
+      "code": 6030,
       "name": "PdaCreationMismatch",
       "msg": "PDA creation target is invalid"
     },
     {
-      "code": 6030,
+      "code": 6031,
       "name": "InvalidFheExecuteOperationCount",
       "msg": "fhe_execute operation count is invalid"
     },
     {
-      "code": 6031,
+      "code": 6032,
       "name": "InvalidFheExecuteAccount",
       "msg": "fhe_execute account reference is invalid"
     },
     {
-      "code": 6032,
+      "code": 6033,
       "name": "FheExecuteEarlierStepMissing",
       "msg": "fhe_execute transient operand is missing"
     },
     {
-      "code": 6033,
+      "code": 6034,
       "name": "FheExecuteDuplicateHandle",
       "msg": "fhe_execute output handle is duplicated"
     },
     {
-      "code": 6034,
+      "code": 6035,
       "name": "FheExecuteOutputAlreadyInitialized",
       "msg": "fhe_execute persistent output ACL record already exists"
     },
     {
-      "code": 6035,
-      "name": "FheExecuteRandRequiresPersistentOutput",
-      "msg": "fhe_execute rand step requires a persistent output in the execution"
+      "code": 6036,
+      "name": "FheExecuteRandNonceMissing",
+      "msg": "fhe_execute rand step requires the rand nonce account"
     },
     {
-      "code": 6036,
+      "code": 6037,
       "name": "DuplicateKmsSigner",
       "msg": "KMS context signer set contains a duplicate address"
     },
     {
-      "code": 6037,
+      "code": 6038,
       "name": "InputBindContractMismatch",
-      "msg": "attested contract address does not match the fhe_execute compute subject"
+      "msg": "attested contract address does not match the execution's program"
     },
     {
-      "code": 6038,
+      "code": 6039,
       "name": "HcuTransactionLimitExceeded",
       "msg": "FHE op total HCU exceeds the per-transaction limit"
     },
     {
-      "code": 6039,
+      "code": 6040,
       "name": "HcuTransactionDepthLimitExceeded",
       "msg": "FHE op depth HCU exceeds the per-transaction depth limit"
     },
     {
-      "code": 6040,
+      "code": 6041,
       "name": "HcuUnknownCost",
       "msg": "no HCU cost is defined for this op / type / scalar combination"
     },
     {
-      "code": 6041,
+      "code": 6042,
       "name": "HcuLimitOrderingInvalid",
       "msg": "HCU limits violate max_hcu_per_tx >= max_hcu_depth_per_tx"
     },
     {
-      "code": 6042,
+      "code": 6043,
       "name": "AttestationChainIdMismatch",
       "msg": "attested contract chain id does not match the host chain id"
     },
     {
-      "code": 6043,
+      "code": 6044,
       "name": "EncryptedValuePdaMismatch",
       "msg": "encrypted value account does not match the canonical PDA"
     },
     {
-      "code": 6044,
+      "code": 6045,
       "name": "EncryptedValueAccountInvalid",
       "msg": "encrypted value account is not a valid EncryptedValue account"
     },
     {
-      "code": 6045,
-      "name": "EncryptedValueSubjectCapacityExceeded",
-      "msg": "encrypted value subject capacity exceeded"
-    },
-    {
       "code": 6046,
       "name": "PreviousStateMismatch",
-      "msg": "encrypted value previous state does not match the account"
+      "msg": "encrypted value previous handle does not match the account"
     },
     {
       "code": 6047,
@@ -2008,166 +1971,156 @@
     },
     {
       "code": 6048,
-      "name": "SubjectNotAllowed",
-      "msg": "encrypted value subject is not allowed"
+      "name": "InvalidAllowKey",
+      "msg": "encrypted value allowed key is invalid"
     },
     {
       "code": 6049,
-      "name": "SubjectNotFound",
-      "msg": "encrypted value subject is not a current member"
-    },
-    {
-      "code": 6050,
-      "name": "EncryptedValueEmptySubjects",
-      "msg": "encrypted value must be created with at least one subject"
-    },
-    {
-      "code": 6051,
-      "name": "EncryptedValueLastSubject",
-      "msg": "encrypted value must retain at least one subject"
-    },
-    {
-      "code": 6052,
       "name": "EncryptedValueMmrInconsistent",
       "msg": "encrypted value MMR state is inconsistent"
     },
     {
-      "code": 6053,
+      "code": 6050,
       "name": "EncryptedValueMmrPeakCapacityExceeded",
       "msg": "encrypted value MMR peak capacity exceeded"
     },
     {
-      "code": 6054,
+      "code": 6051,
       "name": "HcuBlockLimitExceeded",
       "msg": "per-app in-slot HCU exceeds the block cap"
     },
     {
-      "code": 6055,
+      "code": 6052,
       "name": "HcuBlockMeterMissing",
       "msg": "HCU block meter account is required for a metered app"
     },
     {
-      "code": 6056,
+      "code": 6053,
       "name": "HcuBlockMeterMismatch",
       "msg": "HCU block meter account does not match the canonical PDA"
     },
     {
-      "code": 6057,
+      "code": 6054,
       "name": "HcuTrustedAppRecordMismatch",
       "msg": "HCU trusted-app record does not match the canonical PDA"
     },
     {
-      "code": 6058,
+      "code": 6055,
       "name": "HcuBlockCapBelowMaxPerTx",
       "msg": "HCU block cap is below max_hcu_per_tx"
     },
     {
-      "code": 6059,
+      "code": 6056,
       "name": "MulDivDivisorZero",
       "msg": "fheMulDiv divisor must be non-zero"
     },
     {
-      "code": 6060,
+      "code": 6057,
       "name": "DivisorMustBeScalar",
       "msg": "fheDiv/fheRem divisor must be a plaintext scalar"
     },
     {
-      "code": 6061,
+      "code": 6058,
       "name": "DivisionByZero",
       "msg": "fheDiv/fheRem divisor must be non-zero"
     },
     {
-      "code": 6062,
+      "code": 6059,
       "name": "InvalidChainTypeBit",
       "msg": "host chain id must set the Solana chain-type high bit and the gateway chain id must not"
     },
     {
-      "code": 6063,
+      "code": 6060,
       "name": "FheExecuteUnanchoredUnderBlockCap",
-      "msg": "FHE execution anchors no persistent/verified binding under a finite HCU block cap"
+      "msg": "FHE execution touches no persistent value under a finite HCU block cap"
     },
     {
-      "code": 6064,
+      "code": 6061,
+      "name": "FheExecuteMixedScopes",
+      "msg": "FHE execution mixes values of different application scopes"
+    },
+    {
+      "code": 6062,
       "name": "InvalidKmsContext",
       "msg": "KMS context is destroyed or does not match the certificate's committed context"
     },
     {
-      "code": 6065,
+      "code": 6063,
       "name": "InvalidKmsCertificate",
       "msg": "KMS public-decrypt certificate is invalid"
     },
     {
-      "code": 6066,
+      "code": 6064,
       "name": "PublicDecryptProofInvalid",
       "msg": "public-decrypt inclusion proof is invalid"
     },
     {
-      "code": 6067,
+      "code": 6065,
       "name": "EmptyCoprocessorSignerSet",
       "msg": "coprocessor signer set must not be empty"
     },
     {
-      "code": 6068,
+      "code": 6066,
       "name": "TooManyCoprocessorSigners",
       "msg": "coprocessor signer set exceeds the maximum size"
     },
     {
-      "code": 6069,
+      "code": 6067,
       "name": "InvalidCoprocessorThreshold",
       "msg": "coprocessor threshold must be between 1 and the signer count"
     },
     {
-      "code": 6070,
+      "code": 6068,
       "name": "DuplicateCoprocessorSigner",
       "msg": "coprocessor signer set contains a duplicate signer"
     },
     {
-      "code": 6071,
+      "code": 6069,
       "name": "ZeroCoprocessorSigner",
       "msg": "coprocessor signer set contains the zero address"
     },
     {
-      "code": 6072,
+      "code": 6070,
       "name": "ZeroKmsSigner",
       "msg": "KMS signer set contains the zero address"
     },
     {
-      "code": 6073,
+      "code": 6071,
       "name": "PermitInvalidationPdaMismatch",
       "msg": "permit invalidation account is not the canonical account for the signer"
     },
     {
-      "code": 6074,
+      "code": 6072,
       "name": "PermitInvalidationAccountInvalid",
       "msg": "permit invalidation account is not a valid watermark record"
     },
     {
-      "code": 6075,
+      "code": 6073,
       "name": "ClockBeforeEpoch",
       "msg": "clock is before the unix epoch"
     },
     {
-      "code": 6076,
+      "code": 6074,
       "name": "FheExecuteDictionaryIndexOutOfBounds",
       "msg": "fhe_execute dictionary index out of bounds"
     },
     {
-      "code": 6077,
+      "code": 6075,
       "name": "FheExecuteAccountCountMismatch",
       "msg": "fhe_execute declared account count mismatch"
     },
     {
-      "code": 6078,
+      "code": 6076,
       "name": "FheExecutePersistentOperandWrittenEarlier",
       "msg": "fhe_execute persistent operand was written earlier in the execution"
     },
     {
-      "code": 6079,
+      "code": 6077,
       "name": "FheExecuteDictionaryEntryUnreferenced",
       "msg": "fhe_execute dictionary entry is not referenced by any step"
     },
     {
-      "code": 6080,
+      "code": 6078,
       "name": "HcuLimitZeroReserved",
       "msg": "0 is not a valid HCU limit; use u64::MAX for unlimited"
     }
@@ -2230,7 +2183,7 @@
           {
             "name": "contract_address",
             "docs": [
-              "Attested contract identity — the input's ACL domain key (bytes32)."
+              "Attested contract identity — the application program the input is bound to (bytes32)."
             ],
             "type": {
               "array": [
@@ -2271,9 +2224,9 @@
       }
     },
     {
-      "name": "DenySubjectUpdatedEvent",
+      "name": "DenyScopeUpdatedEvent",
       "docs": [
-        "Emitted when a subject deny-list record is updated."
+        "Emitted when an application deny-list record is updated."
       ],
       "type": {
         "kind": "struct",
@@ -2286,23 +2239,35 @@
             "type": "u8"
           },
           {
-            "name": "deny_subject_record",
+            "name": "deny_scope_record",
             "docs": [
               "Canonical deny-list record PDA."
             ],
             "type": "pubkey"
           },
           {
-            "name": "subject",
+            "name": "program",
             "docs": [
-              "Subject controlled by the deny-list record."
+              "The application program governed by the record."
             ],
             "type": "pubkey"
           },
           {
+            "name": "scope",
+            "docs": [
+              "The program-declared scope governed by the record."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
             "name": "denied",
             "docs": [
-              "Whether the subject is denied for grant-authority use."
+              "Whether the application is denied."
             ],
             "type": "bool"
           },
@@ -2407,15 +2372,15 @@
           {
             "name": "dictionary",
             "docs": [
-              "Interned 32-byte constant dictionary: operand handles, scalar values, ACL domain keys,",
-              "encrypted value account authority keys, encrypted value labels, and output subjects. Steps",
+              "Interned 32-byte constant dictionary: operand handles, scalar values, output programs,",
+              "authorities, scopes, labels, previous handles, allowed keys and PDA seed parts. Steps",
               "reference entries by `u8` index, so a value repeated across steps is paid for once (the",
               "compiled-message / constant-dictionary encoding; fhevm-internal#1853 W7).",
               "",
               "The entries stay raw `[u8; 32]` on purpose, and must not become an enum of typed",
               "variants. Interning is what makes the encoding small, and it only works across roles:",
-              "the same 32 bytes can be an operand handle in one step and an output subject in",
-              "another, and both steps then share one entry. A typed dictionary would need one entry",
+              "the same 32 bytes can be an operand handle in one step and the previous handle of an",
+              "update in another, and both steps then share one entry. A typed dictionary would need one entry",
               "per role, which grows the packet and buys nothing — the step that reads an index",
               "already knows which role it is asking for, and `dictionary_key` /",
               "`dictionary_bytes` are where that reading happens. Types belong at the ends of the",
@@ -2553,62 +2518,75 @@
                 }
               },
               {
-                "name": "output_domain_index",
+                "name": "output_program_index",
                 "docs": [
-                  "Dictionary index of the ACL domain key for the output encrypted value account."
+                  "Dictionary index of the application program the output value belongs to."
                 ],
                 "type": "u8"
               },
               {
-                "name": "output_account_index",
+                "name": "output_authority_key_index",
                 "docs": [
-                  "Dictionary index of the encrypted value account authority declared for the output",
-                  "encrypted value account."
+                  "Dictionary index of the encrypted value account authority declared for the output."
+                ],
+                "type": "u8"
+              },
+              {
+                "name": "output_scope_index",
+                "docs": [
+                  "Dictionary index of the program-declared scope of the output value."
                 ],
                 "type": "u8"
               },
               {
                 "name": "output_label_index",
                 "docs": [
-                  "Dictionary index of the encrypted value label for the output encrypted value account."
+                  "Dictionary index of the encrypted value label for the output."
                 ],
                 "type": "u8"
               },
               {
-                "name": "output_subject_indexes",
+                "name": "output_authority_seeds",
                 "docs": [
-                  "Dictionary indexes of the subjects on the output encrypted value account. On create these",
-                  "are the initial subjects; on update they become the new audience, which may rotate",
-                  "away from the stored set (the outgoing audience is sealed into",
-                  "historical leaves first; added subjects pass the grant deny-list)."
-                ],
-                "type": "bytes"
-              },
-              {
-                "name": "previous_state",
-                "docs": [
-                  "Replaced state: `None` on create, the stored handle and exact stored",
-                  "subject set on update. Carried in instruction data so indexers can",
-                  "reconstruct the appended MMR leaves without reading the account;",
-                  "validated against the account."
+                  "On create, the seeds proving the authority is a PDA of the program (bump last). The",
+                  "host recomputes the address and refuses a create whose authority another program",
+                  "controls. Empty on update: the stored program was proven when the value was created,",
+                  "and the canonical address check binds the declared program to it."
                 ],
                 "type": {
-                  "option": {
+                  "vec": {
                     "defined": {
-                      "name": "PreviousState"
+                      "name": "PdaSeed"
                     }
                   }
                 }
               },
               {
+                "name": "output_allow_indexes",
+                "docs": [
+                  "Dictionary indexes of the keys allowed to decrypt the NEW handle, sealed as one",
+                  "historical-access leaf each, in this order, right after the handle is written. Empty",
+                  "is legal: nobody can decrypt that handle."
+                ],
+                "type": "bytes"
+              },
+              {
+                "name": "previous_handle_index",
+                "docs": [
+                  "Dictionary index of the handle being replaced: `None` on create, the stored current",
+                  "handle on update (validated against the account, so an execution built on stale state",
+                  "fails instead of overwriting a newer handle)."
+                ],
+                "type": {
+                  "option": "u8"
+                }
+              },
+              {
                 "name": "make_public",
                 "docs": [
-                  "When true, the newly bound handle is created publicly decryptable: after",
-                  "writing it as `current_handle`, a public-decrypt leaf is appended for",
-                  "the new handle (byte-identical to `make_handle_public`). Carried in",
-                  "instruction data so indexers reconstruct that leaf without reading the",
-                  "account. This is the opt-in relaxation of the \"created encrypted value accounts cannot",
-                  "be created public\" invariant (DD-036)."
+                  "When true, the new handle is sealed publicly decryptable after its allow leaves",
+                  "(byte-identical to `make_handle_public`). Carried in instruction data so indexers",
+                  "reconstruct that leaf without reading the account (DD-036)."
                 ],
                 "type": "bool"
               }
@@ -2635,7 +2613,7 @@
           {
             "name": "seed",
             "docs": [
-              "Seed derived from live persistent account state."
+              "Seed derived from the consumed host rand nonce and slot entropy."
             ],
             "type": {
               "array": [
@@ -3127,7 +3105,7 @@
     {
       "name": "HcuAppTrustUpdatedEvent",
       "docs": [
-        "Emitted when an app's HCU block-cap trust registry entry is updated."
+        "Emitted when an application's HCU block-cap trust registry entry is updated."
       ],
       "type": {
         "kind": "struct",
@@ -3147,16 +3125,28 @@
             "type": "pubkey"
           },
           {
-            "name": "app",
+            "name": "program",
             "docs": [
-              "The compute subject governed by the record."
+              "The application program governed by the record."
             ],
             "type": "pubkey"
           },
           {
+            "name": "scope",
+            "docs": [
+              "The program-declared scope governed by the record."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
             "name": "trusted",
             "docs": [
-              "Whether the app bypasses the per-app block cap."
+              "Whether the application bypasses the per-app block cap."
             ],
             "type": "bool"
           },
@@ -3372,7 +3362,7 @@
           {
             "name": "grant_deny_list_enabled",
             "docs": [
-              "Current grant deny-list gate."
+              "Current deny-list gate."
             ],
             "type": "bool"
           },
@@ -3480,7 +3470,7 @@
           {
             "name": "grant_deny_list_enabled",
             "docs": [
-              "Whether persistent grants must include a deny-list witness."
+              "Whether computing and allowing require the application's deny-list witness."
             ],
             "type": "bool"
           }
@@ -3712,37 +3702,37 @@
       }
     },
     {
-      "name": "PreviousState",
+      "name": "PdaSeed",
       "docs": [
-        "The replaced state a persistent-output update declares: the stored handle",
-        "and the exact stored subject set, together (making a half-declared previous",
-        "state unrepresentable). Validated against the account, and carried in",
-        "instruction data so indexers reconstruct the appended MMR leaves without",
-        "reading the account."
+        "One seed of the authority PDA a create proves, so the host can check the authority belongs",
+        "to the declared program. The bump is the last seed, as a one-byte literal."
       ],
       "type": {
-        "kind": "struct",
-        "fields": [
+        "kind": "enum",
+        "variants": [
           {
-            "name": "handle",
-            "docs": [
-              "The handle being replaced (`current_handle` at the time of the update)."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
+            "name": "Interned",
+            "fields": [
+              {
+                "name": "index",
+                "docs": [
+                  "Dictionary index."
+                ],
+                "type": "u8"
+              }
+            ]
           },
           {
-            "name": "subjects",
-            "docs": [
-              "The exact stored subject set being replaced."
-            ],
-            "type": {
-              "vec": "pubkey"
-            }
+            "name": "Literal",
+            "fields": [
+              {
+                "name": "bytes",
+                "docs": [
+                  "The seed bytes, at most 32."
+                ],
+                "type": "bytes"
+              }
+            ]
           }
         ]
       }
@@ -3811,6 +3801,38 @@
                 }
               }
             }
+          }
+        ]
+      }
+    },
+    {
+      "name": "RandNonce",
+      "docs": [
+        "The host's single random-seed nonce, created next to `HostConfig` by `initialize_host_config`",
+        "and incremented by every `fhe_execute` that contains a rand step. A monotonic host-owned",
+        "counter is a consumed ticket by itself: two executions can never see the same value, so a",
+        "rand seed can never repeat within a slot whatever the rest of the execution looks like.",
+        "",
+        "Kept out of `HostConfig` on purpose: every execution reads the config, and write-locking it",
+        "would serialize them all. Only rand executions take this account, so ordinary writes stay",
+        "parallel and rand executions serialize on one account across applications."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "nonce",
+            "docs": [
+              "Value consumed by the next rand execution."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump for `PDA(\"rand-nonce\")`."
+            ],
+            "type": "u8"
           }
         ]
       }

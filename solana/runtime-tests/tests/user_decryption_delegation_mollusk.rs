@@ -1329,10 +1329,15 @@ fn relayer_fixture_wildcard_row_and_encrypted_value_addresses() {
         "DjwWqTLQmSDxxCEXS8KmJBqvvmjhYTWKGsZyh343cKJJ"
     );
 
-    let (value_address, _) = host::encrypted_value_address([0x55; 32]);
+    let (value_address, _) = host::encrypted_value_address(
+        Pubkey::new_from_array([0x33; 32]),
+        delegator,
+        [0x55; 32],
+        [0x66; 32],
+    );
     assert_eq!(
         value_address.to_string(),
-        "5K29xw8jynL8Vw63cRm6cUeQK1dfs5M2Vx3r5inwos5p"
+        "FzQjUQC1pbszPUZeTUVMzojEBWUFj9yCJy8i2BmFTRKY"
     );
 }
 

@@ -56,8 +56,8 @@ pub struct CancelDispatch<'info> {
 }
 
 /// Restores the dispatched burn and moves the batch into its refund-only state.
-pub fn cancel_dispatch(
-    ctx: Context<CancelDispatch>,
+pub fn cancel_dispatch<'info>(
+    ctx: Context<'info, CancelDispatch<'info>>,
     authority_funding_lamports: u64,
 ) -> Result<()> {
     require!(
@@ -98,31 +98,36 @@ pub fn cancel_dispatch(
 
     let authority = BatchAuthoritySeeds::new(batch, ctx.accounts.batch.authority_bump);
     let authority_seeds = authority.seeds();
-    ct::cpi::cancel_pending_burn(CpiContext::new_with_signer(
-        ctx.accounts.confidential_token_program.key(),
-        ct::cpi::accounts::CancelPendingBurn {
-            owner: ctx.accounts.batch_authority.to_account_info(),
-            mint: ctx.accounts.join_confidential_mint.to_account_info(),
-            token_account: ctx.accounts.batch_join_token_account.to_account_info(),
-            total_supply_authority: ctx.accounts.total_supply_authority.to_account_info(),
-            balance_value: ctx.accounts.batch_balance_value.to_account_info(),
-            total_supply_value: ctx.accounts.total_supply_value.to_account_info(),
-            burned_amount_value: ctx.accounts.batch_burned_amount_value.to_account_info(),
-            pending_burn: ctx.accounts.pending_burn.to_account_info(),
-            host_config: ctx.accounts.host_config.to_account_info(),
-            zama_event_authority: ctx.accounts.zama_event_authority.to_account_info(),
-            zama_program: ctx.accounts.zama_program.to_account_info(),
-            system_program: ctx.accounts.system_program.to_account_info(),
-            hcu_block_meter: None,
-            hcu_trusted_app_record: None,
-            event_authority: ctx
-                .accounts
-                .confidential_token_event_authority
-                .to_account_info(),
-            program: ctx.accounts.confidential_token_program.to_account_info(),
-        },
-        &[&authority_seeds],
-    ))?;
+    ct::cpi::cancel_pending_burn(
+        CpiContext::new_with_signer(
+            ctx.accounts.confidential_token_program.key(),
+            ct::cpi::accounts::CancelPendingBurn {
+                owner: ctx.accounts.batch_authority.to_account_info(),
+                mint: ctx.accounts.join_confidential_mint.to_account_info(),
+                token_account: ctx.accounts.batch_join_token_account.to_account_info(),
+                total_supply_authority: ctx.accounts.total_supply_authority.to_account_info(),
+                balance_value: ctx.accounts.batch_balance_value.to_account_info(),
+                total_supply_value: ctx.accounts.total_supply_value.to_account_info(),
+                burned_amount_value: ctx.accounts.batch_burned_amount_value.to_account_info(),
+                pending_burn: ctx.accounts.pending_burn.to_account_info(),
+                host_config: ctx.accounts.host_config.to_account_info(),
+                zama_event_authority: ctx.accounts.zama_event_authority.to_account_info(),
+                zama_program: ctx.accounts.zama_program.to_account_info(),
+                system_program: ctx.accounts.system_program.to_account_info(),
+                hcu_block_meter: None,
+                hcu_trusted_app_record: None,
+                event_authority: ctx
+                    .accounts
+                    .confidential_token_event_authority
+                    .to_account_info(),
+                program: ctx.accounts.confidential_token_program.to_account_info(),
+            },
+            &[&authority_seeds],
+        )
+        // The join mint's deny record while the host's deny list is on: the restore re-allows
+        // the batch authority on its balance, so the token needs the witness.
+        .with_remaining_accounts(ctx.remaining_accounts.to_vec()),
+    )?;
 
     ctx.accounts.batch.status = BatchStatus::Refunding;
     ctx.accounts.batch.burned_total_handle = [0; 32];

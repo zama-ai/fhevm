@@ -144,6 +144,7 @@ pub(crate) struct TransferOutcome {
     pub(crate) to_encrypted_value: Pubkey,
 }
 
+#[inline(never)]
 pub(crate) fn execute_transfer<'info>(
     accounts: TransferAccounts<'_, 'info>,
     amount_source: TransferAmountSource<'info>,

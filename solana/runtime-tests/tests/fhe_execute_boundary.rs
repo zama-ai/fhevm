@@ -17,7 +17,7 @@ use std::collections::BTreeMap;
 use zama_host::encode::ExecutionDictionary;
 use zama_host::{
     self as host, FheBinaryOpCode, FheExecuteArgs, FheExecuteOperand, FheExecuteOutput,
-    FheExecuteStep, PreviousState,
+    FheExecuteStep,
 };
 use zama_solana_test_kit::{
     cost_snapshot, empty_system_account, encrypted_value_account, event_authority,
@@ -28,8 +28,21 @@ use zama_solana_test_kit::{
 
 mod host_fixtures;
 use host_fixtures::{
-    fhe_execute_ix, host_config_account, persistent_creates_batch, CreatedPublicBatch,
+    fhe_execute_ix, fixture_scope, host_config_account, persistent_creates_batch,
+    sole_value_authority, CreatedPublicBatch,
 };
+
+/// Allow keys per output on the wide-allow shapes. The host caps nothing here — each allow is one
+/// dictionary entry and one sealed leaf — so this is the width the token's widest write (owner,
+/// recipient, viewers) stays well inside of, swept as an axis rather than a limit.
+const WIDE_ALLOW_COUNT: u8 = 8;
+
+/// `count` distinct allow keys starting at `first_byte`, fixed so recorded profiles do not move.
+fn allow_keys(first_byte: u8, count: u8) -> Vec<Pubkey> {
+    (1..=count)
+        .map(|index| Pubkey::new_from_array([first_byte + index; 32]))
+        .collect()
+}
 
 /// Names the wall a failing probe hit, so a boundary sweep can never silently converge on the
 /// wrong limit. `heap` is the SBF abort (`ProgramFailedToComplete`), which also covers panics:
@@ -136,28 +149,26 @@ fn assert_swept_boundary(profile: &str, sweep: &SweptBoundary) {
 
 /// A dependent transient chain closing in one persistent create: every step adds a scalar to the
 /// previous step's transient result. This is the transient-heavy shape `dep-chain` and the
-/// load-smoke scenario drive, and the lightest per-step shape in the matrix.
-fn dependent_chain_case(steps: usize, authority: Pubkey) -> ProbeCase {
+/// load-smoke scenario drive, and the lightest per-step shape in the matrix. The fixed `program`
+/// key doubles as the payer so every recorded address stays put.
+fn dependent_chain_case(steps: usize, program: Pubkey) -> ProbeCase {
     assert!(
         steps >= 2,
         "the chain shape needs a first read and a final persist"
     );
-    let (host_config, host_config_account) = host_config_account(authority);
+    let payer = program;
+    let authority = sole_value_authority(program);
+    let scope = fixture_scope();
+    let (host_config, host_config_account) = host_config_account(payer);
     let balance_handle = handle_for_chain(0x61, 5);
     let (balance_address, balance_value) = new_encrypted_value_account(
-        authority,
-        authority,
+        authority.app(scope),
+        authority.key,
         label("boundary-chain-balance"),
         balance_handle,
-        &[authority],
     );
     let output_label = label("boundary-chain-output");
-    let output_id = zama_solana_acl::derive_encrypted_value_id(
-        authority.to_bytes(),
-        authority.to_bytes(),
-        output_label,
-    );
-    let output_address = host::encrypted_value_address(output_id).0;
+    let output_address = authority.value_address(scope, output_label);
 
     let mut dictionary = ExecutionDictionary::default();
     let one = dictionary.intern(u256_be(1));
@@ -175,16 +186,15 @@ fn dependent_chain_case(steps: usize, authority: Pubkey) -> ProbeCase {
     });
     for index in 1..steps {
         let output = if index == steps - 1 {
-            FheExecuteOutput::StoredValue {
-                output_encrypted_value_index: 1,
-                output_authority_index: None,
-                output_domain_index: dictionary.intern_key(authority),
-                output_account_index: dictionary.intern_key(authority),
-                output_label_index: dictionary.intern(output_label),
-                output_subject_indexes: dictionary.intern_subjects([authority]),
-                previous_state: None,
-                make_public: false,
-            }
+            authority.stored_output(
+                &mut dictionary,
+                1,
+                scope,
+                output_label,
+                &[payer],
+                None,
+                false,
+            )
         } else {
             FheExecuteOutput::Transient
         };
@@ -199,9 +209,8 @@ fn dependent_chain_case(steps: usize, authority: Pubkey) -> ProbeCase {
         });
     }
     let instruction = fhe_execute_ix(
-        authority,
-        authority,
-        authority,
+        payer,
+        authority.key,
         host_config,
         FheExecuteArgs {
             account_count: 0,
@@ -214,7 +223,8 @@ fn dependent_chain_case(steps: usize, authority: Pubkey) -> ProbeCase {
         instruction,
         accounts: vec![
             (system_program::ID, system_program_account()),
-            (authority, funded_system_account()),
+            (payer, funded_system_account()),
+            (authority.key, empty_system_account()),
             (host_config, host_config_account),
             (event_authority(host::id()), Account::default()),
             (balance_address, encrypted_value_account(&balance_value)),
@@ -223,17 +233,18 @@ fn dependent_chain_case(steps: usize, authority: Pubkey) -> ProbeCase {
     }
 }
 
-/// Every step updates its own mature `EncryptedValue` carrying `peak_count` MMR peaks and the
-/// full subject list, so each account decode allocates what the given maturity forces. The leaf
-/// count keeps eight trailing zero bits so the eight seal-appends per account stay cheap — the
-/// shape stresses decode allocation, not MMR merge hashing. Peak count is `popcount(leaf_count)`
-/// — pure on-chain state the builder cannot see, which is why this axis is swept per maturity
-/// instead of enforced at build time.
-fn mature_updates_case(steps: usize, peak_count: u32, authority: Pubkey) -> ProbeCase {
-    let (host_config, host_config_account) = host_config_account(authority);
-    let subjects: Vec<Pubkey> = (1..=zama_solana_acl::MAX_ENCRYPTED_VALUE_SUBJECTS as u8)
-        .map(|index| Pubkey::new_from_array([0x70 + index; 32]))
-        .collect();
+/// Every step updates its own mature `EncryptedValue` carrying `peak_count` MMR peaks and
+/// re-allows the wide allow set, so each account decode allocates what the given maturity forces
+/// and each write seals the widest leaf run. The leaf count keeps eight trailing zero bits so
+/// the appends per account stay cheap — the shape stresses decode allocation, not MMR merge
+/// hashing. Peak count is `popcount(leaf_count)` — pure on-chain state the builder cannot see,
+/// which is why this axis is swept per maturity instead of enforced at build time.
+fn mature_updates_case(steps: usize, peak_count: u32, program: Pubkey) -> ProbeCase {
+    let payer = program;
+    let authority = sole_value_authority(program);
+    let scope = fixture_scope();
+    let (host_config, host_config_account) = host_config_account(payer);
+    let allows = allow_keys(0x70, WIDE_ALLOW_COUNT);
     // `peak_count` one-bits, 8 trailing zeros (cheap appends).
     assert!(
         (1..=55).contains(&peak_count),
@@ -245,14 +256,12 @@ fn mature_updates_case(steps: usize, peak_count: u32, authority: Pubkey) -> Prob
         .collect();
 
     let mut dictionary = ExecutionDictionary::default();
-    let domain_index = dictionary.intern_key(authority);
-    let account_index = dictionary.intern_key(authority);
-    let subject_indexes = dictionary.intern_subjects(subjects.iter().copied());
     let mut update_steps = Vec::with_capacity(steps);
     let mut metas = Vec::with_capacity(steps);
     let mut accounts = vec![
         (system_program::ID, system_program_account()),
-        (authority, funded_system_account()),
+        (payer, funded_system_account()),
+        (authority.key, empty_system_account()),
         (host_config, host_config_account),
         (event_authority(host::id()), Account::default()),
     ];
@@ -260,7 +269,7 @@ fn mature_updates_case(steps: usize, peak_count: u32, authority: Pubkey) -> Prob
         let value_label = label(&format!("boundary-mature-{step_index}"));
         let handle = handle_for_chain(0x80 + step_index as u8, 5);
         let (address, mut value) =
-            new_encrypted_value_account(authority, authority, value_label, handle, &subjects);
+            new_encrypted_value_account(authority.app(scope), authority.key, value_label, handle);
         value.leaf_count = leaf_count;
         value.peaks = peaks.clone();
         metas.push(writable(address));
@@ -268,25 +277,20 @@ fn mature_updates_case(steps: usize, peak_count: u32, authority: Pubkey) -> Prob
         update_steps.push(FheExecuteStep::TrivialEncrypt {
             plaintext: [step_index as u8 + 1; 32],
             fhe_type: 5,
-            output: FheExecuteOutput::StoredValue {
-                output_encrypted_value_index: step_index as u8,
-                output_authority_index: None,
-                output_domain_index: domain_index,
-                output_account_index: account_index,
-                output_label_index: dictionary.intern(value_label),
-                output_subject_indexes: subject_indexes.clone(),
-                previous_state: Some(PreviousState {
-                    handle,
-                    subjects: subjects.clone(),
-                }),
-                make_public: false,
-            },
+            output: authority.stored_output(
+                &mut dictionary,
+                step_index as u8,
+                scope,
+                value_label,
+                &allows,
+                Some(handle),
+                false,
+            ),
         });
     }
     let instruction = fhe_execute_ix(
-        authority,
-        authority,
-        authority,
+        payer,
+        authority.key,
         host_config,
         FheExecuteArgs {
             account_count: 0,
@@ -304,17 +308,29 @@ fn mature_updates_case(steps: usize, peak_count: u32, authority: Pubkey) -> Prob
 /// Every step consumes its own maximum-size verified input: an inline attestation covering
 /// `MAX_INPUT_ATTESTATION_HANDLES` handles with `MAX_INPUT_ATTESTATION_EXTRA_DATA` bytes of extra
 /// data, signed at the fixture threshold of one. Each attestation is decoded and re-verified
-/// (one secp256k1 recovery per signature) in-execution.
-fn attestation_per_step_case(steps: usize, authority: Pubkey) -> ProbeCase {
+/// (one secp256k1 recovery per signature) in-execution. A verified input binds to the
+/// application the execution proves, so the first step reads one persistent value of `program`
+/// to anchor it; every other operand is a scalar.
+fn attestation_per_step_case(steps: usize, program: Pubkey) -> ProbeCase {
+    let payer = program;
+    let authority = sole_value_authority(program);
+    let scope = fixture_scope();
     let signer_key = signing::coprocessor_signing_key();
     let (host_config, host_config_account) =
         zama_solana_test_kit::host_config_account(&HostConfigParams {
             coprocessor_signers: vec![signing::secp_evm_address(&signer_key)],
             coprocessor_threshold: 1,
-            ..HostConfigParams::new(authority)
+            ..HostConfigParams::new(payer)
         });
+    let anchor_handle = handle_for_chain(0x8F, 5);
+    let (anchor_address, anchor_value) = new_encrypted_value_account(
+        authority.app(scope),
+        authority.key,
+        label("boundary-attestation-anchor"),
+        anchor_handle,
+    );
     let mut dictionary = ExecutionDictionary::default();
-    let one = dictionary.intern(u256_be(1));
+    let anchor_handle_index = dictionary.intern(anchor_handle);
     let attestation_steps = (0..steps)
         .map(|step_index| {
             let ct_handles: Vec<[u8; 32]> = (0..host::MAX_INPUT_ATTESTATION_HANDLES)
@@ -329,53 +345,65 @@ fn attestation_per_step_case(steps: usize, authority: Pubkey) -> ProbeCase {
                 ct_handles[0],
                 ct_handles,
                 0,
-                authority,
-                authority,
+                payer,
+                program,
                 vec![0xAB; host::MAX_INPUT_ATTESTATION_EXTRA_DATA],
                 std::slice::from_ref(&signer_key),
             );
+            let rhs = if step_index == 0 {
+                FheExecuteOperand::StoredValue {
+                    handle_index: anchor_handle_index,
+                    encrypted_value_index: 0,
+                }
+            } else {
+                FheExecuteOperand::Scalar {
+                    value_index: dictionary.intern(u256_be(1)),
+                }
+            };
             FheExecuteStep::Binary {
                 op: FheBinaryOpCode::Add,
                 lhs: FheExecuteOperand::VerifiedInput {
                     attestation: Box::new(attestation),
                 },
-                rhs: FheExecuteOperand::Scalar { value_index: one },
+                rhs,
                 output_fhe_type: 5,
                 output: FheExecuteOutput::Transient,
             }
         })
         .collect();
     let instruction = fhe_execute_ix(
-        authority,
-        authority,
-        authority,
+        payer,
+        authority.key,
         host_config,
         FheExecuteArgs {
             account_count: 0,
             dictionary: dictionary.into_entries(),
             steps: attestation_steps,
         },
-        Vec::new(),
+        vec![readonly(anchor_address)],
     );
     ProbeCase {
         instruction,
         accounts: vec![
             (system_program::ID, system_program_account()),
-            (authority, funded_system_account()),
+            (payer, funded_system_account()),
+            (authority.key, empty_system_account()),
             (host_config, host_config_account),
             (event_authority(host::id()), Account::default()),
+            (anchor_address, encrypted_value_account(&anchor_value)),
         ],
     }
 }
 
-fn all_created_public_case(steps: usize, authority: Pubkey) -> ProbeCase {
+fn all_created_public_case(steps: usize, program: Pubkey) -> ProbeCase {
     let all: Vec<usize> = (0..steps).collect();
     persistent_creates_batch(
         steps,
         &all,
-        authority,
+        program,
+        sole_value_authority(program),
         true,
-        std::slice::from_ref(&authority),
+        std::slice::from_ref(&program),
     )
     .into()
 }
@@ -383,62 +411,78 @@ fn all_created_public_case(steps: usize, authority: Pubkey) -> ProbeCase {
 /// Every step writes a plain persistent create (no `make_public`) — the exact shape
 /// `zama-fhe`'s `heap_budget/` measures on the app side, so its host-side wall is on record
 /// next to the app-side byte count that motivates the single step ceiling.
-fn all_private_creates_case(steps: usize, authority: Pubkey) -> ProbeCase {
+fn all_private_creates_case(steps: usize, program: Pubkey) -> ProbeCase {
     let all: Vec<usize> = (0..steps).collect();
     persistent_creates_batch(
         steps,
         &all,
-        authority,
+        program,
+        sole_value_authority(program),
         false,
-        std::slice::from_ref(&authority),
+        std::slice::from_ref(&program),
     )
     .into()
 }
 
 /// Every fourth step persists a created-public output, the rest stay transient — a mid-weight
 /// composite between the chain and all-created-public extremes.
-fn mixed_chain_creates_case(steps: usize, authority: Pubkey) -> ProbeCase {
+fn mixed_chain_creates_case(steps: usize, program: Pubkey) -> ProbeCase {
     let creates: Vec<usize> = (0..steps).step_by(4).collect();
     persistent_creates_batch(
         steps,
         &creates,
-        authority,
+        program,
+        sole_value_authority(program),
         true,
-        std::slice::from_ref(&authority),
+        std::slice::from_ref(&program),
     )
     .into()
 }
 
-/// Every step creates a persistent output with the widest legal audience: eight distinct
-/// subjects, each interning its own dictionary entry and each resolved and stored by the host.
-/// The subject-width axis of the create frontier — the builder's build-heap budget stops this
-/// shape well below the host's own wall.
-fn subject_heavy_creates_case(steps: usize, authority: Pubkey) -> ProbeCase {
+/// Every step creates a persistent output allowed to the wide allow set: eight distinct keys,
+/// each interning its own dictionary entry and each sealed by the host as its own leaf. The
+/// allow-width axis of the create frontier — the builder's build-heap budget stops this shape
+/// well below the host's own wall.
+fn allow_heavy_creates_case(steps: usize, program: Pubkey) -> ProbeCase {
     let all: Vec<usize> = (0..steps).collect();
-    let subjects: Vec<Pubkey> = (1..=zama_solana_acl::MAX_ENCRYPTED_VALUE_SUBJECTS as u8)
-        .map(|index| Pubkey::new_from_array([0x50 + index; 32]))
-        .collect();
-    persistent_creates_batch(steps, &all, authority, false, &subjects).into()
+    let allows = allow_keys(0x50, WIDE_ALLOW_COUNT);
+    persistent_creates_batch(
+        steps,
+        &all,
+        program,
+        sole_value_authority(program),
+        false,
+        &allows,
+    )
+    .into()
 }
 
-/// [`subject_heavy_creates_case`] with every output also made public — the corner where the
-/// widest audience meets the public-outputs event. The one-subject public sweep sits exactly on
-/// the trace-heap boundary with zero margin, so this axis pair is measured rather than
-/// interpolated from the two single-axis sweeps.
-fn subject_heavy_public_creates_case(steps: usize, authority: Pubkey) -> ProbeCase {
+/// [`allow_heavy_creates_case`] with every output also made public — the corner where the widest
+/// allow set meets the public-outputs event. The one-allow public sweep sits exactly on the
+/// trace-heap boundary with zero margin, so this axis pair is measured rather than interpolated
+/// from the two single-axis sweeps.
+fn allow_heavy_public_creates_case(steps: usize, program: Pubkey) -> ProbeCase {
     let all: Vec<usize> = (0..steps).collect();
-    let subjects: Vec<Pubkey> = (1..=zama_solana_acl::MAX_ENCRYPTED_VALUE_SUBJECTS as u8)
-        .map(|index| Pubkey::new_from_array([0x60 + index; 32]))
-        .collect();
-    persistent_creates_batch(steps, &all, authority, true, &subjects).into()
+    let allows = allow_keys(0x60, WIDE_ALLOW_COUNT);
+    persistent_creates_batch(
+        steps,
+        &all,
+        program,
+        sole_value_authority(program),
+        true,
+        &allows,
+    )
+    .into()
 }
 
 /// Every step past the first is a `Sum` over the coprocessor's maximum euint64 operand count,
 /// all referencing the previous step's transient (distinct operands keep the derived handles
 /// distinct) — the operand-width axis: per step the host allocates its operand tables
 /// proportionally and meters every operand's HCU.
-fn reduction_heavy_case(steps: usize, authority: Pubkey) -> ProbeCase {
-    let (host_config, host_config_account) = host_config_account(authority);
+fn reduction_heavy_case(steps: usize, program: Pubkey) -> ProbeCase {
+    let payer = program;
+    let authority = sole_value_authority(program);
+    let (host_config, host_config_account) = host_config_account(payer);
     let mut steps_vec = Vec::with_capacity(steps);
     steps_vec.push(FheExecuteStep::TrivialEncrypt {
         plaintext: [1; 32],
@@ -458,9 +502,8 @@ fn reduction_heavy_case(steps: usize, authority: Pubkey) -> ProbeCase {
         });
     }
     let instruction = fhe_execute_ix(
-        authority,
-        authority,
-        authority,
+        payer,
+        authority.key,
         host_config,
         FheExecuteArgs {
             account_count: 0,
@@ -473,7 +516,8 @@ fn reduction_heavy_case(steps: usize, authority: Pubkey) -> ProbeCase {
         instruction,
         accounts: vec![
             (system_program::ID, system_program_account()),
-            (authority, funded_system_account()),
+            (payer, funded_system_account()),
+            (authority.key, empty_system_account()),
             (host_config, host_config_account),
             (event_authority(host::id()), Account::default()),
         ],
@@ -490,16 +534,16 @@ enum WallPin {
     /// cap; the builder still caps at 20 because public-create host heap binds there.
     BuilderCapCoversWall,
     /// Invariant #61's measured half. On this axis pair the wall is the HOST's own CPI frame —
-    /// the created accounts' subject tables and the public-outputs event payload grow with
-    /// creates x subjects-per-output — and it sits well below the trace cap, which the
-    /// one-subject sweeps could not see. The builder models only the app's CPI frame
-    /// (build + packet + invoke tables), and no app-side number can see this driver: with a
-    /// shared audience the dictionary interns eight subjects once, so the builder admits the
-    /// trace-capped twenty such creates (`the_builder_admits_what_the_host_heap_cannot_hold`
-    /// in zama-fhe's `heap_budget/` pins `build()` Ok at 15, 16, and 20) while the host
-    /// survives sixteen. Until the host's side gets its own typed ceiling (or a policy cap on
-    /// the public payload), this wall is measured, not typed: the snapshot pins it, and the
-    /// boundary matrix is the guidance — fhevm-internal#1872.
+    /// the sealed leaves and the public-outputs event payload grow with creates x
+    /// allows-per-output — and it sits well below the trace cap, which the one-allow sweeps
+    /// could not see. The builder models only the app's CPI frame (build + packet + invoke
+    /// tables), and no app-side number can see this driver: with a shared allow set the
+    /// dictionary interns eight keys once, so the builder admits the trace-capped twenty such
+    /// creates (`the_builder_admits_what_the_host_heap_cannot_hold` in zama-fhe's
+    /// `heap_budget/` pins `build()` Ok at 15, 16, and 20) while the host survives fewer. Until
+    /// the host's side gets its own typed ceiling (or a policy cap on the public payload), this
+    /// wall is measured, not typed: the snapshot pins it, and the boundary matrix is the
+    /// guidance — fhevm-internal#1872.
     HostHeapGap,
 }
 
@@ -543,17 +587,17 @@ fn boundary_shapes() -> Vec<BoundaryShape> {
             Box::new(|steps| all_private_creates_case(steps, Pubkey::new_from_array([0x36; 32]))),
         ),
         shape(
-            "fhe_execute_boundary/subject_heavy_creates",
+            "fhe_execute_boundary/allow_heavy_creates",
             1,
             WallPin::SnapshotOnly,
-            Box::new(|steps| subject_heavy_creates_case(steps, Pubkey::new_from_array([0x37; 32]))),
+            Box::new(|steps| allow_heavy_creates_case(steps, Pubkey::new_from_array([0x37; 32]))),
         ),
         shape(
-            "fhe_execute_boundary/subject_heavy_public_creates",
+            "fhe_execute_boundary/allow_heavy_public_creates",
             1,
             WallPin::HostHeapGap,
             Box::new(|steps| {
-                subject_heavy_public_creates_case(steps, Pubkey::new_from_array([0x3B; 32]))
+                allow_heavy_public_creates_case(steps, Pubkey::new_from_array([0x3B; 32]))
             }),
         ),
         shape(
@@ -616,7 +660,7 @@ fn assert_wall_pin(profile: &str, pin: &WallPin, sweep: &SweptBoundary) {
         WallPin::HostHeapGap => {
             assert_eq!(
                 sweep.limited_by, "heap",
-                "{profile}: the wide-audience public wall moved off the host heap — re-read \
+                "{profile}: the wide-allow public wall moved off the host heap — re-read \
                  the WallPin::HostHeapGap doc",
             );
             // The gap's direction, asserted so it cannot drift silently: the host wall sits
@@ -626,7 +670,7 @@ fn assert_wall_pin(profile: &str, pin: &WallPin, sweep: &SweptBoundary) {
             assert!(
                 sweep.max_ok < zama_fhe::MAX_PERSISTENT_CREATES,
                 "{profile}: the host's CPI frame now holds every builder-admitted \
-                 shared-audience public create ({} measured vs {} admitted) — invariant #61's \
+                 shared-allow public create ({} measured vs {} admitted) — invariant #61's \
                  gap has closed",
                 sweep.max_ok,
                 zama_fhe::MAX_PERSISTENT_CREATES,
@@ -803,14 +847,6 @@ fn cost_snapshot_solana_ceilings() {
                 zama_solana_acl::MAX_MMR_PEAKS as u64,
                 false,
                 "structural: a u64 leaf count can never hold more than 64 peaks",
-            ),
-        ),
-        (
-            "zama/max_encrypted_value_subjects".to_string(),
-            ceiling(
-                zama_solana_acl::MAX_ENCRYPTED_VALUE_SUBJECTS as u64,
-                true,
-                "policy: subjects per encrypted value",
             ),
         ),
     ]);

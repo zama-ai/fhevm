@@ -122,11 +122,11 @@ PINNED_SCHEMAS = [
     ("zama_host", "event", "PublicOutputsProducedEvent", True),
     ("zama_host", "instruction_args", "initialize_host_config", True),
     ("zama_host", "instruction_args", "fhe_execute", True),
-    # The encrypted value account layout is also pinned by `zama-solana-acl`'s codec tests and
-    # `shared_crate_decoder_reads_what_the_program_serializes`; the deny record and the rand nonce
-    # are read by the connector and the indexer.
-    ("zama_host", "account", "EncryptedValue", True),
-    ("zama_host", "account", "DenyScopeRecord", True),
+    # `EncryptedValue` and `DenyScopeRecord` are absent here on purpose: Anchor emits only the
+    # accounts an instruction types, and the host reads both through `UncheckedAccount`. Their
+    # layouts are pinned where they are produced instead: `zama-solana-acl`'s codec tests and
+    # `shared_crate_decoder_reads_what_the_program_serializes` for the value, the host's own
+    # `state` tests for the deny record.
     ("zama_host", "account", "RandNonce", True),
     ("zama_host", "instruction_args", "make_handle_public", True),
     ("zama_host", "instruction_args", "define_kms_context", True),

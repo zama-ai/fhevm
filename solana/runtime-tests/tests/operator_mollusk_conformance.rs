@@ -16,15 +16,18 @@ use solana_sdk::{
     pubkey::Pubkey,
 };
 use zama_host::{
-    self as host, FheBinaryOpCode, FheExecuteArgs, FheExecuteOperand, FheExecuteOutput,
-    FheExecuteStep, FheUnaryOpCode,
+    self as host, AppScope, FheBinaryOpCode, FheExecuteArgs, FheExecuteOperand, FheExecuteOutput,
+    FheExecuteStep, FheUnaryOpCode, PdaSeed,
 };
 use zama_solana_test_kit::oracle::{evaluate, ClearInputs, TypedClearValue};
 use zama_solana_test_kit::{
     anchor_error_check, anchor_ix, empty_system_account, encrypted_value_account, event_authority,
     funded_system_account, handle_for_chain, host_config_account, new_encrypted_value,
-    system_program_account, HostConfigParams,
+    rand_nonce_account, system_program_account, HostConfigParams,
 };
+
+mod host_fixtures;
+use host_fixtures::{fixture_scope, sole_value_authority, ValueAuthority, VALUE_AUTHORITY_SEED};
 
 const PREVIOUS_BANK_HASH: [u8; 32] = [0x44; 32];
 const UNIX_TIMESTAMP: i64 = 0;
@@ -166,10 +169,7 @@ fn random_executes_then_binds_seed_and_type() {
     });
 
     assert_eq!(outcome.only_cleartext().fhe_type, 5);
-    outcome.assert_handle(expected_rand_handle(
-        expected_rand_seed(outcome.compute_subject, outcome.output_address),
-        5,
-    ));
+    outcome.assert_handle(expected_rand_handle(expected_rand_seed(outcome.app), 5));
 }
 
 #[test]
@@ -183,7 +183,7 @@ fn bounded_random_executes_then_binds_bound_into_result_handle() {
     assert!(outcome.only_u64() < 16);
     outcome.assert_handle(expected_rand_bounded_handle(
         be(16),
-        expected_rand_seed(outcome.compute_subject, outcome.output_address),
+        expected_rand_seed(outcome.app),
         5,
     ));
 }
@@ -243,12 +243,17 @@ fn readonly_persistent_output_is_rejected() {
 }
 
 struct ExecutionFlow {
-    authority: Pubkey,
+    payer: Pubkey,
+    /// The application: one value authority PDA of a fresh program, signing for every value it
+    /// reads and writes in `fixture_scope()`.
+    authority: ValueAuthority,
     host_config: Pubkey,
     accounts: Vec<(Pubkey, Account)>,
     remaining: Vec<AccountMeta>,
     cleartext: ClearInputs,
     next_seed: u8,
+    /// The host's rand nonce account, present iff the execution draws randomness.
+    rand_nonce: Option<Pubkey>,
 }
 
 // FheExecution constants (operand handles, scalar values, output ACL metadata) live in the
@@ -287,22 +292,29 @@ fn scalar(value: [u8; 32]) -> FheExecuteOperand {
 impl ExecutionFlow {
     fn new() -> Self {
         INTERNED_DICTIONARY.with(|dictionary| dictionary.borrow_mut().clear());
-        let authority = Pubkey::new_unique();
-        let (host_config, host_config_account) =
-            host_config_account(&HostConfigParams::new(authority));
+        let payer = Pubkey::new_unique();
+        let authority = sole_value_authority(Pubkey::new_unique());
+        let (host_config, host_config_account) = host_config_account(&HostConfigParams::new(payer));
         Self {
+            payer,
             authority,
             host_config,
             accounts: vec![
                 (system_program::ID, system_program_account()),
-                (authority, funded_system_account()),
+                (payer, funded_system_account()),
+                (authority.key, empty_system_account()),
                 (host_config, host_config_account),
                 (event_authority(host::id()), Account::default()),
             ],
             remaining: Vec::new(),
             cleartext: HashMap::new(),
             next_seed: 1,
+            rand_nonce: None,
         }
+    }
+
+    fn app(&self) -> AppScope {
+        self.authority.app(fixture_scope())
     }
 
     fn encrypted(&mut self, fhe_type: u8, plaintext: u64) -> FheExecuteOperand {
@@ -311,13 +323,8 @@ impl ExecutionFlow {
         let handle = handle_for_chain(seed, fhe_type);
         self.cleartext
             .insert(handle, TypedClearValue::from_u64(fhe_type, plaintext));
-        let (address, value) = new_encrypted_value(
-            self.authority,
-            self.authority,
-            [seed; 32],
-            handle,
-            &[self.authority],
-        );
+        let (address, value) =
+            new_encrypted_value(self.app(), self.authority.key, [seed; 32], handle);
         let encrypted_value_index =
             u8::try_from(self.remaining.len()).expect("test accounts fit u8");
         self.remaining
@@ -334,59 +341,64 @@ impl ExecutionFlow {
         self.accounts.last_mut().unwrap().1.owner = system_program::ID;
     }
 
-    fn readonly_persistent_output(&mut self) -> FheExecuteOutput {
-        let label = [99; 32];
-        let encrypted_value_id = zama_solana_acl::derive_encrypted_value_id(
-            self.authority.to_bytes(),
-            self.authority.to_bytes(),
-            label,
-        );
-        let address = host::encrypted_value_address(encrypted_value_id).0;
-        let output_encrypted_value_index =
-            u8::try_from(self.remaining.len()).expect("test accounts fit u8");
-        self.remaining
-            .push(AccountMeta::new_readonly(address, false));
-        self.accounts.push((address, empty_system_account()));
+    /// A create of the authority's value at `label`, allowing the authority itself, backed by
+    /// the empty account at `remaining[output_encrypted_value_index]`.
+    fn stored_output(&self, output_encrypted_value_index: u8, label: [u8; 32]) -> FheExecuteOutput {
         FheExecuteOutput::StoredValue {
             output_encrypted_value_index,
             output_authority_index: None,
-            output_domain_index: intern(self.authority.to_bytes()),
-            output_account_index: intern(self.authority.to_bytes()),
+            output_program_index: intern(self.authority.program.to_bytes()),
+            output_authority_key_index: intern(self.authority.key.to_bytes()),
+            output_scope_index: intern(fixture_scope()),
             output_label_index: intern(label),
-            output_subject_indexes: vec![intern(self.authority.to_bytes())],
-            previous_state: None,
+            output_authority_seeds: vec![
+                PdaSeed::Literal {
+                    bytes: VALUE_AUTHORITY_SEED.to_vec(),
+                },
+                PdaSeed::Interned {
+                    index: intern(self.authority.seed_key.to_bytes()),
+                },
+                PdaSeed::Literal {
+                    bytes: vec![self.authority.bump],
+                },
+            ],
+            output_allow_indexes: vec![intern(self.authority.key.to_bytes())],
+            previous_handle_index: None,
             make_public: false,
         }
     }
 
-    fn writable_persistent_output(&mut self) -> (FheExecuteOutput, Pubkey) {
-        let label = [100; 32];
-        let encrypted_value_id = zama_solana_acl::derive_encrypted_value_id(
-            self.authority.to_bytes(),
-            self.authority.to_bytes(),
-            label,
-        );
-        let address = host::encrypted_value_address(encrypted_value_id).0;
+    fn persistent_output(&mut self, label: [u8; 32], writable: bool) -> (FheExecuteOutput, Pubkey) {
+        let address = self.authority.value_address(fixture_scope(), label);
         let output_encrypted_value_index =
             u8::try_from(self.remaining.len()).expect("test accounts fit u8");
-        self.remaining.push(AccountMeta::new(address, false));
+        let output = self.stored_output(output_encrypted_value_index, label);
+        self.remaining.push(if writable {
+            AccountMeta::new(address, false)
+        } else {
+            AccountMeta::new_readonly(address, false)
+        });
         self.accounts.push((address, empty_system_account()));
-        (
-            FheExecuteOutput::StoredValue {
-                output_encrypted_value_index,
-                output_authority_index: None,
-                output_domain_index: intern(self.authority.to_bytes()),
-                output_account_index: intern(self.authority.to_bytes()),
-                output_label_index: intern(label),
-                output_subject_indexes: vec![intern(self.authority.to_bytes())],
-                previous_state: None,
-                make_public: false,
-            },
-            address,
-        )
+        (output, address)
+    }
+
+    fn readonly_persistent_output(&mut self) -> FheExecuteOutput {
+        self.persistent_output([99; 32], false).0
+    }
+
+    fn writable_persistent_output(&mut self) -> (FheExecuteOutput, Pubkey) {
+        self.persistent_output([100; 32], true)
     }
 
     fn execute(mut self, mut step: FheExecuteStep) -> ExecutionOutcome {
+        if matches!(
+            step,
+            FheExecuteStep::Rand { .. } | FheExecuteStep::RandBounded { .. }
+        ) {
+            let (address, account) = rand_nonce_account(0);
+            self.accounts.push((address, account));
+            self.rand_nonce = Some(address);
+        }
         let (output, output_address) = self.writable_persistent_output();
         *step_output_mut(&mut step) = output;
         let (args, instruction) = self.instruction(step);
@@ -405,8 +417,7 @@ impl ExecutionFlow {
         ExecutionOutcome {
             cleartext,
             output_handle,
-            compute_subject: self.authority,
-            output_address,
+            app: self.app(),
         }
     }
 
@@ -428,13 +439,13 @@ impl ExecutionFlow {
         let mut instruction = anchor_ix(
             host::id(),
             host::accounts::FheExecute {
-                payer: self.authority,
-                compute_subject: self.authority,
-                encrypted_value_account_authority: self.authority,
+                payer: self.payer,
+                encrypted_value_account_authority: self.authority.key,
                 host_config: self.host_config,
                 system_program: system_program::ID,
                 hcu_block_meter: None,
                 hcu_trusted_app_record: None,
+                rand_nonce: self.rand_nonce,
                 event_authority: event_authority(host::id()),
                 program: host::id(),
             },
@@ -448,10 +459,8 @@ impl ExecutionFlow {
 struct ExecutionOutcome {
     cleartext: Vec<TypedClearValue>,
     output_handle: [u8; 32],
-    /// Rand-seed anchor inputs: the signed compute subject and the execution's single
-    /// persistent output (a create, so `previous_handle = [0; 32]`).
-    compute_subject: Pubkey,
-    output_address: Pubkey,
+    /// The application the execution ran as; the rand seed binds to it.
+    app: AppScope,
 }
 
 impl ExecutionOutcome {
@@ -579,22 +588,18 @@ fn expected_is_in_handle(value: [u8; 32], set: &[[u8; 32]], fhe_type: u8) -> [u8
     finish_handle(keccak_hashv(&parts).to_bytes(), 0)
 }
 
-fn expected_rand_seed(compute_subject: Pubkey, output_address: Pubkey) -> [u8; 16] {
-    // The execution's persistent-write anchor: its single persistent output is a create,
-    // so the tag, current handle, and leaf count are zero.
-    let anchor: Vec<u8> = [output_address.as_ref(), &[0], &[0; 32], &0u64.to_le_bytes()].concat();
-    let hash = keccak_hashv(&[
-        b"FHE_eval_seed",
-        compute_subject.as_ref(),
-        &anchor,
-        &0_u16.to_be_bytes(),
-        host::id().as_ref(),
-        &host::SOLANA_POC_CHAIN_ID.to_be_bytes(),
-        &PREVIOUS_BANK_HASH,
-        &UNIX_TIMESTAMP.to_be_bytes(),
-    ])
-    .to_bytes();
-    hash[..16].try_into().unwrap()
+/// The seed of the execution's only rand step: the fixture's fresh nonce account starts at 0.
+fn expected_rand_seed(app: AppScope) -> [u8; 16] {
+    host::computed_eval_rand_seed(
+        0,
+        app,
+        0,
+        &host::HandleDerivationContext {
+            chain_id: host::SOLANA_POC_CHAIN_ID,
+            previous_bank_hash: PREVIOUS_BANK_HASH,
+            unix_timestamp: UNIX_TIMESTAMP,
+        },
+    )
 }
 
 fn expected_rand_handle(seed: [u8; 16], fhe_type: u8) -> [u8; 32] {

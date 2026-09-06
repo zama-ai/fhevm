@@ -8,11 +8,11 @@
   "schemas": [
     {
       "category": "account",
-      "fixture_hex": "3f75c718341eca040101010101010101010101010101010101010101010101010101010101010101020202020202020202020202020202020202020202020202020202020202020203030303030303030303030303030303030303030303030303030303030303030404040404040404040404040404040404040404040404040404040404040404050606060606060606060606060606060606060606060606060606060606060606",
-      "fixture_len": 169,
+      "fixture_hex": "3f75c718341eca0401010101010101010101010101010101010101010101010101010101010101010202020202020202020202020202020202020202020202020202020202020202030404040404040404040404040404040404040404040404040404040404040404",
+      "fixture_len": 105,
       "name": "ConfidentialMint",
       "program": "confidential_token",
-      "schema_hash": "43d6fb586410fe30500fdfa952c62a75bbfcc1bd658e141cd377e20e82551251"
+      "schema_hash": "42ef88c8704da9abf57036aef30faa038d4b8f99979c8de25374cbd4f1a042a0"
     },
     {
       "category": "account",
@@ -88,19 +88,19 @@
     },
     {
       "category": "instruction_args",
-      "fixture_hex": "395920e0830c73df010000000101010101010101010101010101010101010101010101010101010101010101",
+      "fixture_hex": "dfb82234b51003a8010000000101010101010101010101010101010101010101010101010101010101010101",
       "fixture_len": 44,
-      "name": "allow_token_account_subjects",
+      "name": "allow_balance_viewers",
       "program": "confidential_token",
-      "schema_hash": "245dd85d78f40daf1bf087289c6763b6a9e37ab4b11fcb7ad1701731f81eefae"
+      "schema_hash": "0c6470e6a91474674bbf46686e0004ab97fdae1ab2866cfab21e7576ebabbd9f"
     },
     {
       "category": "instruction_args",
-      "fixture_hex": "b9ee652469b313e0010000000101010101010101010101010101010101010101010101010101010101010101",
+      "fixture_hex": "02e83679ca9abddb010000000101010101010101010101010101010101010101010101010101010101010101",
       "fixture_len": 44,
-      "name": "allow_total_supply_subjects",
+      "name": "allow_total_supply_viewers",
       "program": "confidential_token",
-      "schema_hash": "96efa03a72d977f139ed416241879061f2101f758640311435faeff3e37b9d28"
+      "schema_hash": "962b16bae43f25037f739b8a735deaab2a7a35323d3d43dc24b43f61cd001b66"
     },
     {
       "category": "instruction_args",
@@ -108,7 +108,7 @@
       "fixture_len": 8,
       "name": "cancel_pending_burn",
       "program": "confidential_token",
-      "schema_hash": "2a720fef4e394e2ac93868b190cf58ffd5a16e61d073b91aa78de7ccbdf731c6"
+      "schema_hash": "a51b958f62f751e58bc6e6cd30ec8dfae693c945b858702fbc45dedc9383d2e6"
     },
     {
       "category": "instruction_args",
@@ -116,7 +116,7 @@
       "fixture_len": 225,
       "name": "confidential_burn",
       "program": "confidential_token",
-      "schema_hash": "5f41f577512a3553fbd8a69c9584110ce10352a7d2b0c5d18ad00253053a7989"
+      "schema_hash": "c70bf04459c4311469812a4d85540f57941a9a0f403dc1ee9cf7b9c8f501c743"
     },
     {
       "category": "instruction_args",
@@ -124,15 +124,15 @@
       "fixture_len": 8,
       "name": "confidential_burn_from_value",
       "program": "confidential_token",
-      "schema_hash": "cb3fac18ebb9196adaf03ec848eb413d907d00c6a9d0598f851b998c21f00ca5"
+      "schema_hash": "f468e2d0d0cbe7d01da6021ca9ae448bf0360f3584cebd312a7648c87db59102"
     },
     {
       "category": "instruction_args",
-      "fixture_hex": "614f803a86de498f0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f200100000002030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021222305060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20212223244600000000000000030000000708090100000008090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748",
-      "fixture_len": 225,
+      "fixture_hex": "614f803a86de498f0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f200100000002030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021222305060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20212223244600000000000000030000000708090100000008090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748010202020202020202020202020202020202020202020202020202020202020202030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021220405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122230100000003000000050607010000000606060606060606060606060606060606060606060606060606060606060606",
+      "fixture_len": 369,
       "name": "confidential_transfer",
       "program": "confidential_token",
-      "schema_hash": "7730fe51ab3da89a5349dedf8608a15392f1412f6a48f404ed4577c3371e6bc0"
+      "schema_hash": "bd60c7ac4756cabd5ea4bea6f6ef1213cd192d58e8070257d99edd30f7b7fe66"
     },
     {
       "category": "instruction_args",
@@ -140,7 +140,7 @@
       "fixture_len": 8,
       "name": "confidential_transfer_from_value",
       "program": "confidential_token",
-      "schema_hash": "f0b554adb2cdffafb3acd1f4c666a2d2bca0655727fd98ded588131e39e175c3"
+      "schema_hash": "104598ad1852636235d8235afad103b28c3c8aecbc73547a8b1df4cca4ec122d"
     },
     {
       "category": "instruction_args",
@@ -156,7 +156,7 @@
       "fixture_len": 8,
       "name": "initialize_mint",
       "program": "confidential_token",
-      "schema_hash": "5ad168ba8fb9608508844537958ebc6b9216034ab25168d440a9a8bb25fad938"
+      "schema_hash": "b3e3b6fdec3494ea8a79beb3bc65c6a1062be1d17bec4a19dfbfaa2803088277"
     },
     {
       "category": "instruction_args",
@@ -164,7 +164,7 @@
       "fixture_len": 8,
       "name": "initialize_token_account",
       "program": "confidential_token",
-      "schema_hash": "85a90290faa1dfa00e28d6bfe8de8feb7689cea4c96e1de5b65f162719efb8e8"
+      "schema_hash": "b3723182e3f83cce11843eca285ab714d80285507910c20c356b0fb12ec2f0d5"
     },
     {
       "category": "instruction_args",
@@ -192,27 +192,11 @@
     },
     {
       "category": "instruction_args",
-      "fixture_hex": "872e6dcf26241af30101010101010101010101010101010101010101010101010101010101010101",
-      "fixture_len": 40,
-      "name": "remove_token_account_subject",
-      "program": "confidential_token",
-      "schema_hash": "45ab965cb43deeeb719fb27e776c5e7feb7f33b8f5b0df5f4a8e3b9405cd9596"
-    },
-    {
-      "category": "instruction_args",
-      "fixture_hex": "9fd2f7d6f81176540101010101010101010101010101010101010101010101010101010101010101",
-      "fixture_len": 40,
-      "name": "remove_total_supply_subject",
-      "program": "confidential_token",
-      "schema_hash": "0780c30ed4edfe48cdd1a69e22316e64e5b10c1e08bfa5c084d2a4aac4eee4cb"
-    },
-    {
-      "category": "instruction_args",
       "fixture_hex": "58f663fe25b76f0c4100000000000000",
       "fixture_len": 16,
       "name": "wrap_usdc",
       "program": "confidential_token",
-      "schema_hash": "fa877ea13a5237175ce82cdb168b3f5133a94052e46c20804a73e8f6aca3d74b"
+      "schema_hash": "da675af79312078200a20deb709bbd62c452766a43bb13757773d56d8e1b0b27"
     },
     {
       "category": "account",
@@ -231,12 +215,20 @@
       "schema_hash": "6ac55ac9399ccf706259deb7528c6c8159f60277eee30ddd8ec998c8e7702f38"
     },
     {
-      "category": "event",
-      "fixture_hex": "27e1a97cf343dd270102020202020202020202020202020202020202020202020202020202020202020303030303030303030303030303030303030303030303030303030303030303014500000000000000",
-      "fixture_len": 82,
-      "name": "DenySubjectUpdatedEvent",
+      "category": "account",
+      "fixture_hex": "4ba384817db597dd410000000000000002",
+      "fixture_len": 17,
+      "name": "RandNonce",
       "program": "zama_host",
-      "schema_hash": "6c59a49ef1fb2c4c3f4be904a1e223a70dd1655e72a4bfc19d347b3238e78fac"
+      "schema_hash": "1960e6cc5cdebb89893dacef26b4587af058e170e661692cdeb4c8ba1aa9bbc9"
+    },
+    {
+      "category": "event",
+      "fixture_hex": "392c79162528c53601020202020202020202020202020202020202020202020202020202020202020203030303030303030303030303030303030303030303030303030303030303030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20212223014600000000000000",
+      "fixture_len": 114,
+      "name": "DenyScopeUpdatedEvent",
+      "program": "zama_host",
+      "schema_hash": "1efb54bf79610a13de410c4dfc09f8eb0280f9abfd54684c6041c906aa4157d9"
     },
     {
       "category": "event",
@@ -248,11 +240,11 @@
     },
     {
       "category": "event",
-      "fixture_hex": "28ee3720959fee130102020202020202020202020202020202020202020202020202020202020202020303030303030303030303030303030303030303030303030303030303030303014500000000000000",
-      "fixture_len": 82,
+      "fixture_hex": "28ee3720959fee1301020202020202020202020202020202020202020202020202020202020202020203030303030303030303030303030303030303030303030303030303030303030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20212223014600000000000000",
+      "fixture_len": 114,
       "name": "HcuAppTrustUpdatedEvent",
       "program": "zama_host",
-      "schema_hash": "8ab65e2515557a0eb739e56db57d589caa86161905fe1dbfe6134c8e670d32f1"
+      "schema_hash": "4140f12ec0135c24a4281ae48ecbe7e6ce33895aee228277775b69c353ff3056"
     },
     {
       "category": "event",
@@ -288,14 +280,6 @@
     },
     {
       "category": "instruction_args",
-      "fixture_hex": "bacd1f14b711051a010000000101010101010101010101010101010101010101010101010101010101010101",
-      "fixture_len": 44,
-      "name": "allow_subjects",
-      "program": "zama_host",
-      "schema_hash": "9e080c6b9f31e70948cd4d5c5cfa11a059c042d026b6adbb455e6ec2526db58b"
-    },
-    {
-      "category": "instruction_args",
       "fixture_hex": "66e95717aebae9570102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f200100000002030405060708090a0b0c0d0e0f10111213141503040506",
       "fixture_len": 68,
       "name": "define_kms_context",
@@ -324,7 +308,7 @@
       "fixture_len": 59,
       "name": "fhe_execute",
       "program": "zama_host",
-      "schema_hash": "ab98eeff43923cfc9dfc0c71b1e2cc15d9fc2a24dac7ee448342c07bfd6799aa"
+      "schema_hash": "3bdbdf0a10710e26cce6161f6b8300d7c9242d47cb810eac51c0996bf00b606a"
     },
     {
       "category": "instruction_args",
@@ -332,7 +316,7 @@
       "fixture_len": 90,
       "name": "initialize_host_config",
       "program": "zama_host",
-      "schema_hash": "45275bbe5b6962050e54ebfdb9d8cb9d6d927e6f2483749e1896582d99e0841c"
+      "schema_hash": "19188ae31cdaa8a1b904b04142ac8197ae8cc59c32bb92f61dce2195ff0f9d59"
     },
     {
       "category": "instruction_args",
@@ -340,15 +324,7 @@
       "fixture_len": 40,
       "name": "make_handle_public",
       "program": "zama_host",
-      "schema_hash": "6fae3d741684acf284a1aca61596e057ff59472fe04de448ec53b04d3d457a86"
-    },
-    {
-      "category": "instruction_args",
-      "fixture_hex": "42582e7b066bd0320101010101010101010101010101010101010101010101010101010101010101",
-      "fixture_len": 40,
-      "name": "remove_subject",
-      "program": "zama_host",
-      "schema_hash": "5a67dc62566041ac4501acb748245a01f8ee2fa2c7b0bdc05de57bcbf5353cd7"
+      "schema_hash": "08cefbfd24d7defc42ecc41ad0c66a93b75a30311209ed044556f95cb43fe83d"
     },
     {
       "category": "instruction_args",
@@ -384,11 +360,11 @@
     },
     {
       "category": "instruction_args",
-      "fixture_hex": "8aca8edcf62bd3a0010101010101010101010101010101010101010101010101010101010101010101",
-      "fixture_len": 41,
-      "name": "set_deny_subject",
+      "fixture_hex": "e800ee830e195439010101010101010101010101010101010101010101010101010101010101010102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202101",
+      "fixture_len": 73,
+      "name": "set_deny_scope",
       "program": "zama_host",
-      "schema_hash": "ddc2a74840ffcc5eeb2dcb45a7d0981246672811abdb93a9e9225d907e7f7696"
+      "schema_hash": "0c51ad2eda5b1a0ce685bd269598fb6e097ade752a754e69e5129a3186c412ad"
     },
     {
       "category": "instruction_args",
@@ -408,11 +384,11 @@
     },
     {
       "category": "instruction_args",
-      "fixture_hex": "423afa56a47dfc8d010101010101010101010101010101010101010101010101010101010101010101",
-      "fixture_len": 41,
+      "fixture_hex": "423afa56a47dfc8d010101010101010101010101010101010101010101010101010101010101010102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202101",
+      "fixture_len": 73,
       "name": "set_hcu_app_trusted",
       "program": "zama_host",
-      "schema_hash": "e1850b6c12a6951e04948e71fa503b3a4d40a692865b5940a4937f7b55e4c173"
+      "schema_hash": "cd34dd88dd2dae68f3d18fd33faae151ddf072bf5cd066f88ee2435cac9036ab"
     },
     {
       "category": "instruction_args",

@@ -117,6 +117,20 @@ pub fn confidential_transfer<'info>(
     )?;
     let outcome = execute_transfer(accounts, TransferAmountSource::Attested(amount_attestation))?;
     if let Some(outcome) = outcome {
+        emit_transfer_events(&ctx, &outcome)?;
+    }
+    Ok(())
+}
+
+/// The three lifecycle events of a transfer. Kept out of the handler's stack frame: with the receipt
+/// arguments the handler sits at the SBF 4 KiB stack limit, and the event CPIs each stage an
+/// instruction on the stack.
+#[inline(never)]
+fn emit_transfer_events<'info>(
+    ctx: &Context<'info, ConfidentialTransfer<'info>>,
+    outcome: &TransferOutcome,
+) -> Result<()> {
+    {
         emit_cpi!(ConfidentialTransferEvent {
             version: APP_EVENT_VERSION,
             mint: outcome.mint,
