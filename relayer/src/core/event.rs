@@ -10,8 +10,7 @@ use crate::http::endpoints::v3::types::{
 };
 use crate::http::utils::validations::V3_ATTESTATION_TYPE_EIP712_UNIFIED_V1;
 use zama_solana_request::{
-    encode_solana_request, SolanaHandleEntryWire, SolanaUserDecryptRequestWire,
-    MAX_ACCESS_PROOF_SIBLINGS, MAX_REQUEST_HANDLES,
+    encode_solana_request, SolanaHandleEntryWire, SolanaUserDecryptRequestWire, MAX_REQUEST_HANDLES,
 };
 
 use crate::orchestrator::traits::Event;
@@ -546,10 +545,11 @@ pub enum UserDecryptRequest {
     /// `userDecryptionRequest(bytes32[] ctHandles, RequestValiditySeconds, bytes publicKey,
     /// bytes extraData, bytes solanaRequest)` overload.
     /// Everything Solana-specific — the permit fields, the ed25519 signature, and the
-    /// per-handle access evidence — is serialized into the opaque `solana_request` by the
-    /// builder (canonical `0x01 ‖ borsh(body)`); the gateway never reads it, and each KMS
-    /// party's connector decodes it and verifies the signature off-chain. The fields below are
-    /// exactly what the gateway calldata consumes.
+    /// per-handle entries (handle, allowed key, encrypted value account) — is serialized into
+    /// the opaque `solana_request` by the builder (canonical `version ‖ borsh(body)`); the
+    /// gateway never reads it, and each KMS party's connector decodes it, verifies the
+    /// signature off-chain and fetches the allow leaves itself. The fields below are exactly
+    /// what the gateway calldata consumes.
     SolanaSrfc38V1 {
         /// The ciphertext handles, in request order (the gateway's typed `bytes32[]`).
         ct_handles: Vec<U256>,
@@ -559,7 +559,7 @@ pub enum UserDecryptRequest {
         public_key: Bytes,
         /// The signed KMS routing bytes (version `0x02` ‖ contextId ‖ epochId).
         extra_data: Bytes,
-        /// The canonical opaque request blob (`0x01 ‖ borsh(body)`).
+        /// The canonical opaque request blob (`version ‖ borsh(body)`).
         solana_request: Bytes,
     },
 }
@@ -885,7 +885,6 @@ impl TryFrom<SolanaUserDecryptRequestJson> for UserDecryptRequest {
     type Error = anyhow::Error;
 
     fn try_from(value: SolanaUserDecryptRequestJson) -> Result<Self, Self::Error> {
-        use borsh::BorshDeserialize;
         use zama_solana_permit::{
             verify_signature, PermitFields, PermitWireFields, Signature, SIGNATURE_LEN,
         };
@@ -903,10 +902,10 @@ impl TryFrom<SolanaUserDecryptRequestJson> for UserDecryptRequest {
         let permit = PermitWireFields {
             user_pubkey: parse_0x_hex(&payload.user_pubkey, "userPubkey")?,
             transport_key: parse_0x_hex(&payload.transport_key, "transportKey")?,
-            allowed_acl_domain_keys: payload
-                .allowed_acl_domain_keys
+            allowed_scopes: payload
+                .allowed_scopes
                 .iter()
-                .map(|k| parse_0x_hex(k, "allowedAclDomainKeys"))
+                .map(|scope| parse_0x_hex(scope, "allowedScopes"))
                 .collect::<Result<Vec<_>, _>>()?,
             start_timestamp: parse_decimal_u64(
                 &payload.request_validity.start_timestamp,
@@ -967,43 +966,18 @@ impl TryFrom<SolanaUserDecryptRequestJson> for UserDecryptRequest {
         let mut handle_wires = Vec::with_capacity(payload.handles.len());
         for (index, entry) in payload.handles.iter().enumerate() {
             let handle = parse_0x_hex_32(&entry.handle, "handle", index)?;
-            let subject = parse_0x_hex_32(&entry.subject, "subject", index)?;
-            let encrypted_value_id =
-                parse_0x_hex_32(&entry.encrypted_value_id, "encryptedValueId", index)?;
-            let proof_leaf_count = parse_decimal_u64(&entry.proof_leaf_count, "proofLeafCount")?;
-            let access_proof = parse_0x_hex(&entry.access_proof, "accessProof")?;
-
-            // accessProof form check, identical to the connector's decode so the two agree on
-            // which proofs are well-formed: empty = current mode; else a strict borsh MMR proof,
-            // no trailing bytes, at most 64 siblings. The bytes are forwarded verbatim.
-            if !access_proof.is_empty() {
-                let mut remaining = access_proof.as_slice();
-                let proof =
-                    zama_solana_acl::MmrProof::deserialize(&mut remaining).map_err(|_| {
-                        anyhow::anyhow!("entry {index} accessProof does not decode as an MMR proof")
-                    })?;
-                if !remaining.is_empty() {
-                    anyhow::bail!(
-                        "entry {index} accessProof carries {} trailing byte(s)",
-                        remaining.len()
-                    );
-                }
-                if proof.siblings.len() > MAX_ACCESS_PROOF_SIBLINGS {
-                    anyhow::bail!(
-                        "entry {index} accessProof carries {} siblings, exceeding the cap of {}",
-                        proof.siblings.len(),
-                        MAX_ACCESS_PROOF_SIBLINGS
-                    );
-                }
-            }
+            let allowed_key = parse_0x_hex_32(&entry.allowed_key, "allowedKey", index)?;
+            let encrypted_value_account = parse_0x_hex_32(
+                &entry.encrypted_value_account,
+                "encryptedValueAccount",
+                index,
+            )?;
 
             ct_handles.push(U256::from_be_bytes::<32>(handle));
             handle_wires.push(SolanaHandleEntryWire {
                 handle: handle.to_vec(),
-                subject: subject.to_vec(),
-                encrypted_value_id: encrypted_value_id.to_vec(),
-                proof_leaf_count,
-                access_proof,
+                allowed_key: allowed_key.to_vec(),
+                encrypted_value_account: encrypted_value_account.to_vec(),
             });
         }
 
@@ -1406,7 +1380,7 @@ mod tests {
 
     /// A `solana-srfc38-user-decrypt-v1` envelope routes to the host-generic `SolanaSrfc38V1`
     /// variant: the permit passes the typed pre-check, the whole request (permit, signature,
-    /// per-handle evidence) is serialized into the opaque `host_payload`, and the fields the
+    /// per-handle entries) is serialized into the opaque `host_payload`, and the fields the
     /// gateway calldata consumes are derived from the permit — the transport key as `publicKey`,
     /// the signed KMS routing as `extraData`, the handle list as `ctHandles`.
     #[test]
@@ -1431,7 +1405,8 @@ mod tests {
                 assert_eq!(extra_data[0], 0x02);
                 // The whole request is serialized into the opaque blob.
                 assert_eq!(
-                    solana_request[0], 0x01,
+                    solana_request[0],
+                    zama_solana_request::SOLANA_REQUEST_VERSION,
                     "the request blob leads with its version byte"
                 );
                 assert!(solana_request.len() > 1);
@@ -1464,7 +1439,7 @@ mod tests {
         SolanaSrfc38UserDecryptPayloadJson {
             user_pubkey: solana_test_user_pubkey(),
             transport_key: format!("0x{}", "00".repeat(869)),
-            allowed_acl_domain_keys: vec![format!("0x{}", "05".repeat(32))],
+            allowed_scopes: vec![format!("0x{}{}", "05".repeat(32), "06".repeat(32))],
             request_validity: RequestValiditySecondsJson {
                 start_timestamp: "1700000000".to_string(),
                 duration_seconds: "604800".to_string(),
@@ -1474,10 +1449,8 @@ mod tests {
             extra_data: format!("0x02{}{}", "0a".repeat(32), "0b".repeat(32)),
             handles: vec![SolanaHandleJson {
                 handle: format!("0x{}", "11".repeat(32)),
-                subject: solana_test_user_pubkey(),
-                encrypted_value_id: format!("0x{}", "22".repeat(32)),
-                proof_leaf_count: "0".to_string(),
-                access_proof: "0x".to_string(),
+                allowed_key: solana_test_user_pubkey(),
+                encrypted_value_account: format!("0x{}", "22".repeat(32)),
             }],
         }
     }
@@ -1499,10 +1472,10 @@ mod tests {
         let wire = PermitWireFields {
             user_pubkey: hex_field(&payload.user_pubkey),
             transport_key: hex_field(&payload.transport_key),
-            allowed_acl_domain_keys: payload
-                .allowed_acl_domain_keys
+            allowed_scopes: payload
+                .allowed_scopes
                 .iter()
-                .map(|key| hex_field(key))
+                .map(|scope| hex_field(scope))
                 .collect(),
             start_timestamp: payload
                 .request_validity
@@ -1536,17 +1509,15 @@ mod tests {
     }
 
     #[test]
-    fn solana_builder_rejects_a_malformed_access_proof() {
-        // The access-proof form check mirrors the connector's decode: three arbitrary bytes are
-        // not a borsh MMR proof.
+    fn solana_builder_rejects_a_wrong_width_encrypted_value_account() {
+        // Every entry identity is exactly 32 bytes; the connector's decode refuses anything else
+        // and so does this one, before the request costs a gateway transaction.
         let mut payload = valid_solana_payload();
-        payload.handles[0].access_proof = "0xffffff".to_string();
+        payload.handles[0].encrypted_value_account = format!("0x{}", "22".repeat(31));
         let error = UserDecryptRequest::try_from(solana_envelope(payload))
-            .expect_err("a malformed access proof must be rejected");
+            .expect_err("a 31-byte encrypted value account must be rejected");
         assert!(
-            error
-                .to_string()
-                .contains("does not decode as an MMR proof"),
+            error.to_string().contains("encryptedValueAccount"),
             "got: {error}"
         );
     }
@@ -1573,10 +1544,10 @@ mod tests {
         let wire = PermitWireFields {
             user_pubkey: parse_0x_hex(&payload.user_pubkey, "fixture").expect("hex"),
             transport_key: parse_0x_hex(&payload.transport_key, "fixture").expect("hex"),
-            allowed_acl_domain_keys: payload
-                .allowed_acl_domain_keys
+            allowed_scopes: payload
+                .allowed_scopes
                 .iter()
-                .map(|key| parse_0x_hex(key, "fixture").expect("hex"))
+                .map(|scope| parse_0x_hex(scope, "fixture").expect("hex"))
                 .collect(),
             start_timestamp: payload
                 .request_validity

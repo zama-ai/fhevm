@@ -8,7 +8,7 @@
 //!
 //! Nothing here is generated, and nothing is asserted against a hand-copied permit: the permit half
 //! of every record is derived from the permit canon
-//! (`solana/test-fixtures/permit/permit_v1.json`, record `reference-permit-two-domains`) through the
+//! (`solana/test-fixtures/permit/permit_v1.json`, record `reference-permit-two-scopes`) through the
 //! derivation the fixture states, so these records cannot disagree with the canon about a signature.
 //!
 //! Each rejecting record names the layer that must refuse it. The layers are not interchangeable: a
@@ -35,7 +35,7 @@ use validator::Validate;
 const ENVELOPE_SCHEMA: &str = "zama-solana-user-decrypt-envelope/v1";
 
 /// The permit record every envelope record is built on.
-const PERMIT_RECORD: &str = "reference-permit-two-domains";
+const PERMIT_RECORD: &str = "reference-permit-two-scopes";
 
 fn fixture(relative: &str) -> String {
     let path = format!(
@@ -107,12 +107,12 @@ fn permit_half() -> PermitHalf {
         json!(format!("0x{transport_key_hex}")),
     );
     payload.insert(
-        "allowedAclDomainKeys".to_string(),
+        "allowedScopes".to_string(),
         json!(record
             .permit
-            .allowed_acl_domain_keys
+            .allowed_scopes
             .iter()
-            .map(|key| format!("0x{key}"))
+            .map(|scope| format!("0x{scope}"))
             .collect::<Vec<_>>()),
     );
     payload.insert(
@@ -231,7 +231,7 @@ fn every_accepted_record_becomes_a_solana_request() {
                 );
                 assert!(
                     !solana_request.is_empty(),
-                    "{name}: the encoded request carries the permit and the evidence"
+                    "{name}: the encoded request carries the permit and the entries"
                 );
             }
             other => panic!("{name}: converted into the wrong variant: {other:?}"),
@@ -374,26 +374,29 @@ fn the_fixture_exercises_every_layer_it_documents() {
     );
 }
 
-/// Both access modes are represented among the accepted records: an empty proof for current access
-/// and a borsh MMR proof for superseded access. A fixture that lost one of them would still pass
-/// every assertion above while covering half the seam.
+/// Both entry kinds are represented among the accepted records: a direct entry, whose allowed key
+/// is the permit signer, and a delegated one, whose allowed key is another pubkey. A fixture that
+/// lost one of them would still pass every assertion above while covering half the seam.
 #[test]
-fn the_accepted_records_cover_both_access_modes() {
+fn the_accepted_records_cover_direct_and_delegated_entries() {
     let fixture = Fixture::load();
+    let signer = fixture.permit.payload["userPubkey"]
+        .as_str()
+        .expect("the permit names its signer");
 
-    let mut modes = BTreeSet::new();
+    let mut kinds = BTreeSet::new();
     for record in fixture.records("accepted") {
         for entry in record["handles"].as_array().expect("handles is a list") {
-            let proof = entry["accessProof"]
+            let allowed_key = entry["allowedKey"]
                 .as_str()
-                .expect("accessProof is a string");
-            modes.insert(proof == "0x");
+                .expect("allowedKey is a string");
+            kinds.insert(allowed_key == signer);
         }
     }
 
     assert_eq!(
-        modes,
+        kinds,
         BTreeSet::from([true, false]),
-        "the accepted records must carry both an empty and a non-empty access proof"
+        "the accepted records must carry both a direct and a delegated entry"
     );
 }
