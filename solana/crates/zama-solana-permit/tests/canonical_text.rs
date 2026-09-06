@@ -13,7 +13,7 @@
 mod common;
 
 use common::*;
-use zama_solana_permit::{render_canonical_text, PermitFields};
+use zama_solana_permit::{render_canonical_text, PermitFields, MAX_ALLOWED_SCOPES};
 
 // ---------------------------------------------------------------------------
 // Fixture integrity
@@ -31,21 +31,26 @@ fn fixture_user_pubkey_belongs_to_fixture_seed() {
     );
 }
 
-/// The reference permit's two ACL-domain keys are the counterexample pair: byte
-/// order and base58-string order disagree. The happy-path golden therefore only
-/// stays green while the list is ordered by bytes.
+/// The reference permit's two scopes are the counterexample pair: byte order and
+/// base58-string order disagree. The happy-path golden therefore only stays green
+/// while the list is ordered by bytes.
 #[test]
-fn fixture_acl_domain_pair_has_opposite_byte_and_string_order() {
-    let key_43 = bytes32(ACL_DOMAIN_KEY_43_HEX);
-    let key_44 = bytes32(ACL_DOMAIN_KEY_44_HEX);
+fn fixture_scope_pair_has_opposite_byte_and_string_order() {
+    let scope_43 = bytes32(SCOPE_43_HEX);
+    let scope_44 = bytes32(SCOPE_44_HEX);
 
-    assert_eq!(ACL_DOMAIN_KEY_43_BASE58.len(), 43);
-    assert_eq!(ACL_DOMAIN_KEY_44_BASE58.len(), 44);
-    assert!(key_43 < key_44, "the 43-char key must be smaller in bytes");
+    assert_eq!(SCOPE_43_BASE58.len(), 43);
+    assert_eq!(SCOPE_44_BASE58.len(), 44);
     assert!(
-        ACL_DOMAIN_KEY_43_BASE58 > ACL_DOMAIN_KEY_44_BASE58,
-        "the 43-char key must be larger as a string — otherwise this pair proves nothing"
+        scope_43 < scope_44,
+        "the 43-char scope must be smaller in bytes"
     );
+    assert!(
+        SCOPE_43_BASE58 > SCOPE_44_BASE58,
+        "the 43-char scope must be larger as a string — otherwise this pair proves nothing"
+    );
+    let [first, second] = reference_scopes().try_into().expect("two scopes");
+    assert!(first < second, "the reference scopes are in byte order");
 }
 
 // ---------------------------------------------------------------------------
@@ -53,7 +58,7 @@ fn fixture_acl_domain_pair_has_opposite_byte_and_string_order() {
 // ---------------------------------------------------------------------------
 
 /// The reference permit's canonical text, byte for byte.
-const REFERENCE_TEXT: &str = "Zama fhevm Solana user-decrypt permit v1\n\
+const REFERENCE_TEXT: &str = "Zama fhevm Solana user-decrypt permit v2\n\
 User: Dzo7VaLffWBjA59P59wUCbRupUFKLts9BjFeTpM8G2EA\n\
 Verifying program: 6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu\n\
 Chain id: 10037641751006774702\n\
@@ -61,12 +66,12 @@ Transport key (SHAKE-256): CvgsmpoXufMbtBHn3zSjKjn6V2b2tNvrL6HJnZdwWnu4\n\
 KMS context: DcvW9UCt85BDoYYoLtJkXamSPU11M6kF6auXdnu5H3BD\n\
 KMS epoch: 93H5dJNEzmALYsPvnAD4zjKgaHjyqKNNovckD9AoPjK7\n\
 Valid from: 2026-01-01T01:03:00Z for 604800 seconds\n\
-ACL domains (2):\n\
-- zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz\n\
-- 21111111111111111111111111111111111111111111";
+Scopes (2):\n\
+- DzPdAQ429DrG4Bbwi5tu3TvdMPFZVZgCLVZGWMGe9hNV/zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz\n\
+- DzPdAQ429DrG4Bbwi5tu3TvdMPFZVZgCLVZGWMGe9hNV/21111111111111111111111111111111111111111111";
 
-/// The same permit with an empty domain list.
-const PERMISSIVE_TEXT: &str = "Zama fhevm Solana user-decrypt permit v1\n\
+/// The same permit with an empty scope list.
+const PERMISSIVE_TEXT: &str = "Zama fhevm Solana user-decrypt permit v2\n\
 User: Dzo7VaLffWBjA59P59wUCbRupUFKLts9BjFeTpM8G2EA\n\
 Verifying program: 6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu\n\
 Chain id: 10037641751006774702\n\
@@ -74,84 +79,92 @@ Transport key (SHAKE-256): CvgsmpoXufMbtBHn3zSjKjn6V2b2tNvrL6HJnZdwWnu4\n\
 KMS context: DcvW9UCt85BDoYYoLtJkXamSPU11M6kF6auXdnu5H3BD\n\
 KMS epoch: 93H5dJNEzmALYsPvnAD4zjKgaHjyqKNNovckD9AoPjK7\n\
 Valid from: 2026-01-01T01:03:00Z for 604800 seconds\n\
-ACL domains: ALL (permissive)";
+Scopes: ALL (permissive)";
 
 #[test]
 fn render_reference_permit_matches_golden_bytes() {
     let rendered = render_canonical_text(&reference_fields());
 
     assert_eq!(rendered.as_bytes(), REFERENCE_TEXT.as_bytes());
-    assert_eq!(rendered.len(), 534, "reference text length");
+    assert_eq!(
+        rendered.len(),
+        REFERENCE_TEXT.len(),
+        "reference text length"
+    );
 }
 
-/// An empty domain list renders as one line naming the breadth, not as an empty
+/// An empty scope list renders as one line naming the breadth, not as an empty
 /// enumeration block: the human signer has to be able to see that the grant covers
 /// everything.
 #[test]
-fn render_permissive_emits_single_all_domains_line() {
+fn render_permissive_emits_single_all_scopes_line() {
     let rendered = render_canonical_text(&decoded(&permissive_wire()));
 
     assert_eq!(rendered.as_bytes(), PERMISSIVE_TEXT.as_bytes());
     assert!(
-        rendered.ends_with("\nACL domains: ALL (permissive)"),
+        rendered.ends_with("\nScopes: ALL (permissive)"),
         "permissive form must be the final line: {rendered}"
     );
     assert!(
-        !rendered.contains("ACL domains (0)"),
+        !rendered.contains("Scopes (0)"),
         "an empty enumeration block hides the breadth of the grant: {rendered}"
     );
     assert!(
         !rendered.contains("\n- "),
-        "the permissive form has no domain lines: {rendered}"
+        "the permissive form has no scope lines: {rendered}"
     );
 }
 
-/// The enumeration header states the count, and one line per key follows in signed
-/// order.
+/// The enumeration header states the count, and one line per scope follows in signed
+/// order, each showing the program and the scope a signer can look up separately.
 #[test]
-fn render_domain_enumeration_states_count_and_lists_every_key() {
-    for count in 1..=zama_solana_permit::MAX_ACL_DOMAIN_KEYS {
-        let wire = wire_with_domain_count(count);
+fn render_scope_enumeration_states_count_and_lists_every_scope() {
+    for count in 1..=MAX_ALLOWED_SCOPES {
+        let wire = wire_with_scope_count(count);
         let rendered = render_canonical_text(&decoded(&wire));
 
         assert!(
-            rendered.contains(&format!("\nACL domains ({count}):\n")),
-            "missing enumeration header for {count} domains: {rendered}"
+            rendered.contains(&format!("\nScopes ({count}):\n")),
+            "missing enumeration header for {count} scopes: {rendered}"
         );
         assert_eq!(
             rendered.matches("\n- ").count(),
             count,
-            "one line per domain key at count {count}"
+            "one line per scope at count {count}"
         );
 
         // Rendering follows the typed list order, which the decode step has already
         // fixed to ascending byte order.
-        let keys = decoded(&wire).allowed_acl_domain_keys().as_slice().to_vec();
-        let rendered_keys: Vec<&str> = rendered
+        let scopes = decoded(&wire).allowed_scopes().as_slice().to_vec();
+        let rendered_scopes: Vec<&str> = rendered
             .lines()
             .filter_map(|line| line.strip_prefix("- "))
             .collect();
-        assert_eq!(rendered_keys.len(), keys.len());
-        for (key, line) in keys.iter().zip(rendered_keys) {
+        assert_eq!(rendered_scopes.len(), scopes.len());
+        for (scope, line) in scopes.iter().zip(rendered_scopes) {
             assert_eq!(
-                bs58_reference(key.as_bytes()),
+                format!(
+                    "{}/{}",
+                    bs58_reference(scope.program().as_bytes()),
+                    bs58_reference(scope.scope().as_bytes())
+                ),
                 line,
-                "domain line does not match its typed key"
+                "scope line does not match its typed entry"
             );
         }
     }
 }
 
-/// The ten-domain permit is the widest list the protocol admits.
+/// The permit at the maximum scope count is the widest list the protocol admits.
 #[test]
-fn render_ten_domains_enumeration() {
-    let rendered = render_canonical_text(&decoded(&wire_with_domain_count(10)));
+fn render_maximum_scopes_enumeration() {
+    let rendered = render_canonical_text(&decoded(&wire_with_scope_count(MAX_ALLOWED_SCOPES)));
 
-    assert!(rendered.contains("\nACL domains (10):\n"));
-    assert_eq!(rendered.matches("\n- ").count(), 10);
+    assert!(rendered.contains(&format!("\nScopes ({MAX_ALLOWED_SCOPES}):\n")));
+    assert_eq!(rendered.matches("\n- ").count(), MAX_ALLOWED_SCOPES);
     assert!(
         !rendered.ends_with('\n'),
-        "the last domain line carries no line feed"
+        "the last scope line carries no line feed"
     );
 }
 
@@ -248,15 +261,15 @@ fn render_timestamp_is_fixed_width_and_calendar_correct() {
 // Line structure
 // ---------------------------------------------------------------------------
 
-/// Both terminal forms — a last domain line and the permissive line — end without a
+/// Both terminal forms — a last scope line and the permissive line — end without a
 /// line feed. A stray trailing newline is a different signed byte string.
 #[test]
 fn render_final_line_has_no_trailing_newline() {
     for wire in [
         reference_wire(),
         permissive_wire(),
-        wire_with_domain_count(1),
-        wire_with_domain_count(10),
+        wire_with_scope_count(1),
+        wire_with_scope_count(MAX_ALLOWED_SCOPES),
     ] {
         let rendered = render_canonical_text(&decoded(&wire));
         assert!(
@@ -275,7 +288,7 @@ fn render_final_line_has_no_trailing_newline() {
 #[test]
 fn render_line_sequence_is_fixed() {
     let expected_prefixes = [
-        "Zama fhevm Solana user-decrypt permit v1",
+        "Zama fhevm Solana user-decrypt permit v2",
         "User: ",
         "Verifying program: ",
         "Chain id: ",
@@ -283,13 +296,13 @@ fn render_line_sequence_is_fixed() {
         "KMS context: ",
         "KMS epoch: ",
         "Valid from: ",
-        "ACL domains",
+        "Scopes",
     ];
 
     for wire in [
         reference_wire(),
         permissive_wire(),
-        wire_with_domain_count(10),
+        wire_with_scope_count(MAX_ALLOWED_SCOPES),
     ] {
         let rendered = render_canonical_text(&decoded(&wire));
         let lines: Vec<&str> = rendered.lines().collect();
@@ -302,11 +315,11 @@ fn render_line_sequence_is_fixed() {
             );
         }
 
-        let domain_count = decoded(&wire).allowed_acl_domain_keys().as_slice().len();
+        let scope_count = decoded(&wire).allowed_scopes().as_slice().len();
         assert_eq!(
             lines.len(),
-            expected_prefixes.len() + domain_count,
-            "no lines beyond the template plus one per domain: {rendered}"
+            expected_prefixes.len() + scope_count,
+            "no lines beyond the template plus one per scope: {rendered}"
         );
     }
 }
@@ -314,7 +327,11 @@ fn render_line_sequence_is_fixed() {
 /// Line feeds only: no carriage returns anywhere in the canonical bytes.
 #[test]
 fn render_uses_line_feeds_only() {
-    for wire in [reference_wire(), permissive_wire(), worst_case_wire(10)] {
+    for wire in [
+        reference_wire(),
+        permissive_wire(),
+        worst_case_wire(MAX_ALLOWED_SCOPES),
+    ] {
         let rendered = render_canonical_text(&decoded(&wire));
         assert!(!rendered.contains('\r'), "{rendered:?}");
     }
@@ -404,14 +421,8 @@ fn bs58_reference(bytes: &[u8; 32]) -> String {
 fn reference_base58_encoder_agrees_with_known_encodings() {
     // Pins the checker itself against encodings computed elsewhere, including the
     // 43/44-character pair and an all-zero key (leading-zero handling).
-    assert_eq!(
-        bs58_reference(&bytes32(ACL_DOMAIN_KEY_43_HEX)),
-        ACL_DOMAIN_KEY_43_BASE58
-    );
-    assert_eq!(
-        bs58_reference(&bytes32(ACL_DOMAIN_KEY_44_HEX)),
-        ACL_DOMAIN_KEY_44_BASE58
-    );
+    assert_eq!(bs58_reference(&bytes32(SCOPE_43_HEX)), SCOPE_43_BASE58);
+    assert_eq!(bs58_reference(&bytes32(SCOPE_44_HEX)), SCOPE_44_BASE58);
     assert_eq!(bs58_reference(&[0u8; 32]), "1".repeat(32));
     assert_eq!(
         bs58_reference(&bytes32(VERIFYING_PROGRAM_ID_HEX)),

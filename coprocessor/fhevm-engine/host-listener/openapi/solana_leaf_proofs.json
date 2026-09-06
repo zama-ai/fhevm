@@ -113,19 +113,19 @@
             "type": "object",
             "description": "The leaf is recorded. `peaks` and `leafCount` are the record's state the\nproof was built against; the caller verifies against the on-chain account\nand retries when the record is behind the chain (`leafCount` smaller).",
             "required": [
-              "leaf_index",
-              "leaf_count",
+              "leafIndex",
+              "leafCount",
               "peaks",
               "siblings",
               "status"
             ],
             "properties": {
-              "leaf_count": {
+              "leafCount": {
                 "type": "integer",
                 "format": "int64",
                 "minimum": 0
               },
-              "leaf_index": {
+              "leafIndex": {
                 "type": "integer",
                 "format": "int64",
                 "minimum": 0
@@ -155,11 +155,11 @@
             "type": "object",
             "description": "The account is recorded but no such leaf is, at `leafCount` leaves. Either\nit was never sealed or the record has not reached the block that sealed it.",
             "required": [
-              "leaf_count",
+              "leafCount",
               "status"
             ],
             "properties": {
-              "leaf_count": {
+              "leafCount": {
                 "type": "integer",
                 "format": "int64",
                 "minimum": 0

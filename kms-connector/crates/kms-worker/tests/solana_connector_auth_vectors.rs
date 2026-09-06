@@ -45,6 +45,7 @@ use kms_worker::core::solana::{
     kms_pair::{KmsPairFailure, KmsPairValidator},
     pause::PauseFailure,
     pipeline::{AuthorizationContext, authorize_request},
+    proof::{LeafKind, LeafProofOutcome, LeafQuery},
     request::{
         MAX_REQUEST_HANDLES, RequestFormError, SolanaHandleEntryWire, SolanaUserDecryptRequest,
         SolanaUserDecryptRequestWire,
@@ -55,13 +56,13 @@ use kms_worker::core::solana::{
 use kms_worker::core::solana_acl::{SolanaPubkeyBytes, WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY};
 use schema::{
     CONNECTOR_AUTH_VECTOR_SCHEMA, ConnectorAuthVector, ConnectorAuthVectorFile, Deployment,
-    FailureClass, KmsPairStatus, Observation, RecordedAccount, VectorResult, WireHandleEntry,
-    WirePermit, WireRequest, from_hex, rule, to_hex,
+    FailureClass, KmsPairStatus, LeafProofStatus, Observation, RecordedAccount, RecordedLeafProof,
+    VectorResult, WireHandleEntry, WirePermit, WireRequest, from_hex, rule, to_hex,
 };
 use solana_support::*;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
-use zama_solana_acl::{MmrProof, historical_access_leaf_commitment};
+use zama_solana_acl::{historical_access_leaf_commitment, public_decrypt_leaf_commitment};
 use zama_solana_permit::PermitWireFields;
 use zama_solana_request::{decode_solana_request, encode_solana_request};
 
@@ -92,6 +93,9 @@ struct Scenario {
     mutation: Option<&'static str>,
     request: SolanaUserDecryptRequestWire,
     world: World,
+    /// What the coprocessors' leaf record answers. In step with the world unless the scenario is
+    /// about the two disagreeing.
+    record: ProofRecord,
     now: u64,
     kms_pair_status: KmsPairStatus,
 }
@@ -113,6 +117,7 @@ impl Scenario {
             derived_from: None,
             mutation: None,
             request,
+            record: world.record(),
             world,
             now: NOW_INSIDE_WINDOW,
             kms_pair_status: KmsPairStatus::Servable,
@@ -145,6 +150,7 @@ impl Scenario {
             derived_from: Some(derived_from),
             mutation: Some(mutation),
             request,
+            record: world.record(),
             world,
             now: NOW_INSIDE_WINDOW,
             kms_pair_status: KmsPairStatus::Servable,
@@ -161,6 +167,12 @@ impl Scenario {
         self
     }
 
+    /// A leaf record that is not in step with the world.
+    fn with_record(mut self, record: ProofRecord) -> Self {
+        self.record = record;
+        self
+    }
+
     fn recorded_as_acceptable(mut self, comment: &'static str) -> Self {
         self.result = VectorResult::Acceptable;
         self.comment = comment;
@@ -172,7 +184,7 @@ impl Scenario {
 // The set
 // ---------------------------------------------------------------------------
 
-/// The reference direct request: the signer's own live handle, in a signed domain.
+/// The reference direct request: a handle the signer was allowed on, in a signed scope.
 fn reference_direct() -> (
     Wallet,
     EncryptedValueAccountFixture,
@@ -182,9 +194,9 @@ fn reference_direct() -> (
 ) {
     let wallet = Wallet::new(1);
     let live = handle(0x10, FHE_TYPE_UINT64);
-    let encrypted_value_account = EncryptedValueAccountFixture::new(live, &[wallet.pubkey()]);
+    let encrypted_value_account = EncryptedValueAccountFixture::allowing(live, wallet.pubkey());
     let request = RequestBuilder::new(&wallet)
-        .direct_current(&encrypted_value_account, live)
+        .direct(&encrypted_value_account, live)
         .wire();
     let world = World::running_at_slot(OBSERVED_SLOT)
         .with_encrypted_value_account(&encrypted_value_account)
@@ -192,7 +204,7 @@ fn reference_direct() -> (
     (wallet, encrypted_value_account, live, request, world)
 }
 
-/// The reference delegated request: a handle the delegator owns, used by the signer.
+/// The reference delegated request: a handle the delegator was allowed on, used by the signer.
 fn reference_delegated() -> (
     Wallet,
     Wallet,
@@ -205,10 +217,10 @@ fn reference_delegated() -> (
     let signer = Wallet::new(1);
     let delegator = Wallet::new(2);
     let live = handle(0x20, FHE_TYPE_UINT64);
-    let encrypted_value_account = EncryptedValueAccountFixture::new(live, &[delegator.pubkey()]);
+    let encrypted_value_account = EncryptedValueAccountFixture::allowing(live, delegator.pubkey());
     let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), OBSERVED_SLOT);
     let request = RequestBuilder::new(&signer)
-        .delegated_current(&encrypted_value_account, live, delegator.pubkey())
+        .delegated(&encrypted_value_account, live, delegator.pubkey())
         .wire();
     let world = World::running_at_slot(OBSERVED_SLOT)
         .with_encrypted_value_account(&encrypted_value_account)
@@ -225,26 +237,15 @@ fn reference_delegated() -> (
     )
 }
 
-/// An encrypted value account whose handle was replaced once, and the proof of the sealed leaf.
-fn replaced_encrypted_value_account(
-    tag: u8,
-    subject: SolanaPubkeyBytes,
-) -> (EncryptedValueAccountFixture, [u8; 32], MmrProof) {
-    let sealed = handle(tag, FHE_TYPE_UINT64);
-    let mut encrypted_value_account = EncryptedValueAccountFixture::new(sealed, &[subject]);
-    encrypted_value_account.update(handle(tag.wrapping_add(1), FHE_TYPE_UINT64));
-    let proof = encrypted_value_account.proof(0);
-    (encrypted_value_account, sealed, proof)
-}
-
 fn accepting_scenarios() -> Vec<Scenario> {
     let mut out = Vec::new();
 
     let (wallet, _encrypted_value_account, _live, request, world) = reference_direct();
     out.push(Scenario::accepted(
-        "direct-current",
-        "The reference request: the signer names their own live handle, is a current member of its \
-         encrypted value account, and the encrypted value account's domain is in the signed scope.",
+        "direct",
+        "The reference request: the signer names a handle they were allowed on, the leaf record \
+         serves the allow leaf, it verifies against the encrypted value account's peaks, and the \
+         account's (program, scope) is in the signed scopes.",
         request,
         world,
     ));
@@ -252,9 +253,9 @@ fn accepting_scenarios() -> Vec<Scenario> {
     let (_signer, _delegator, _encrypted_value_account, _live, _delegation, request, world) =
         reference_delegated();
     out.push(Scenario::accepted(
-        "delegated-current",
-        "A handle owned by a delegator, used by the signer under a live delegation for the \
-         encrypted value account's authority. The authorized subject is the delegator.",
+        "delegated",
+        "A handle the delegator was allowed on, used by the signer under a live delegation for \
+         the encrypted value account's authority. The allowed key is the delegator.",
         request,
         world,
     ));
@@ -283,7 +284,7 @@ fn accepting_scenarios() -> Vec<Scenario> {
          delegation does. The consequence is part of the rule: revoking the authority-specific \
          row does not stop a delegate who holds this one.",
         RequestBuilder::new(&wildcard_signer)
-            .delegated_current(
+            .delegated(
                 &wildcard_encrypted_value_account,
                 wildcard_live,
                 wildcard_delegator.pubkey(),
@@ -295,64 +296,63 @@ fn accepting_scenarios() -> Vec<Scenario> {
             .with_delegation(&wildcard_row),
     ));
 
-    let (encrypted_value_account, sealed, proof) =
-        replaced_encrypted_value_account(0x30, wallet.pubkey());
+    let sealed = handle(0x30, FHE_TYPE_UINT64);
+    let mut replaced = EncryptedValueAccountFixture::allowing(sealed, wallet.pubkey());
+    replaced.update(handle(0x31, FHE_TYPE_UINT64));
     out.push(Scenario::accepted(
-        "historical-after-handle-update",
-        "The handle has been replaced, and the leaf sealed for the signer at that moment proves \
-         the access. No new wallet signature is involved: proofs live outside the permit.",
+        "allowed-then-handle-replaced",
+        "The handle has been replaced since the signer was allowed on it, and the request still \
+         authorizes: the allow leaf names the handle, and a write to the account seals nothing \
+         about the handles before it. There is no current-handle rule.",
         RequestBuilder::new(&wallet)
-            .historical(&encrypted_value_account, sealed, wallet.pubkey(), &proof, 1)
+            .direct(&replaced, sealed)
             .wire(),
         World::running_at_slot(OBSERVED_SLOT)
-            .with_encrypted_value_account(&encrypted_value_account)
+            .with_encrypted_value_account(&replaced)
             .with_watermark(wallet.pubkey(), 0),
     ));
 
-    // Two handle updates, a proof of the first leaf, then a third update that does not merge
-    // the proof's peak.
+    // The leaf record one append behind the chain, where the append it missed left the proof's
+    // peak alone.
     let first = handle(0x40, FHE_TYPE_UINT64);
-    let mut drifted = EncryptedValueAccountFixture::new(first, &[wallet.pubkey()]);
-    drifted.update(handle(0x41, FHE_TYPE_UINT64));
-    drifted.update(handle(0x42, FHE_TYPE_UINT64));
-    let drifted_proof = drifted.proof(0);
-    let claimed_before_append = drifted.encrypted_value.leaf_count;
-    drifted.update(handle(0x43, FHE_TYPE_UINT64));
-    out.push(Scenario::accepted(
-        "historical-proof-predating-a-non-merging-append",
-        "The proof was built against an earlier leaf count and the append that followed left its \
-         peak alone, so it still verifies. Verification comes first and age alone is not a failure: \
-         rejecting this would fail valid proofs after every write.",
-        RequestBuilder::new(&wallet)
-            .historical(
-                &drifted,
-                first,
-                wallet.pubkey(),
-                &drifted_proof,
-                claimed_before_append,
-            )
-            .wire(),
-        World::running_at_slot(OBSERVED_SLOT)
-            .with_encrypted_value_account(&drifted)
-            .with_watermark(wallet.pubkey(), 0),
-    ));
+    let mut record_state = EncryptedValueAccountFixture::allowing(first, wallet.pubkey());
+    record_state.allow(Wallet::new(2).pubkey());
+    let mut chain_state = record_state.clone();
+    chain_state.allow(Wallet::new(3).pubkey());
+    out.push(
+        Scenario::accepted(
+            "leaf-record-behind-by-a-non-merging-append",
+            "The leaf record has sealed one leaf fewer than the observation shows, and the append \
+             it missed left the proof's peak alone, so the proof it serves still verifies. Age \
+             alone is not a failure: rejecting this would fail every request that raced a write.",
+            RequestBuilder::new(&wallet)
+                .direct(&chain_state, first)
+                .wire(),
+            World::running_at_slot(OBSERVED_SLOT)
+                .with_encrypted_value_account(&chain_state)
+                .with_watermark(wallet.pubkey(), 0),
+        )
+        .with_record(ProofRecord::of(&[&record_state])),
+    );
 
-    let foreign_domain: SolanaPubkeyBytes = [0x61; 32];
+    let foreign_program: SolanaPubkeyBytes = [0x61; 32];
     let permissive_handle = handle(0x50, FHE_TYPE_UINT64);
-    let permissive_encrypted_value_account = EncryptedValueAccountFixture::in_domain(
-        foreign_domain,
+    let mut permissive_encrypted_value_account = EncryptedValueAccountFixture::in_application(
+        foreign_program,
         AUTHORITY,
+        SCOPE,
         LABEL,
         permissive_handle,
-        &[wallet.pubkey()],
     );
+    permissive_encrypted_value_account.allow(wallet.pubkey());
     out.push(Scenario::accepted(
-        "permissive-scope-foreign-domain",
-        "An empty signed domain list is permissive: the domain rule is skipped entirely, so an \
-         encrypted value account of any domain is in scope. Membership still has to hold.",
+        "permissive-scope-foreign-application",
+        "An empty signed scope list is permissive: the scope rule is skipped entirely, so an \
+         encrypted value account of any application is in scope. The allow leaf still has to \
+         exist.",
         RequestBuilder::new(&wallet)
             .permit(PermitBuilder::new(wallet.pubkey()).permissive())
-            .direct_current(&permissive_encrypted_value_account, permissive_handle)
+            .direct(&permissive_encrypted_value_account, permissive_handle)
             .wire(),
         World::running_at_slot(OBSERVED_SLOT)
             .with_encrypted_value_account(&permissive_encrypted_value_account)
@@ -361,14 +361,15 @@ fn accepting_scenarios() -> Vec<Scenario> {
 
     let repeated = handle(0x60, FHE_TYPE_UINT64);
     let repeated_encrypted_value_account =
-        EncryptedValueAccountFixture::new(repeated, &[wallet.pubkey()]);
+        EncryptedValueAccountFixture::allowing(repeated, wallet.pubkey());
     out.push(Scenario::accepted(
         "duplicate-handle",
         "Naming the same handle twice is legal: each occurrence counts toward the budget, is \
-         authorized independently, and is bound at its own position by the response.",
+         authorized independently, and is bound at its own position by the response. The leaf \
+         record is asked once for the one leaf.",
         RequestBuilder::new(&wallet)
-            .direct_current(&repeated_encrypted_value_account, repeated)
-            .direct_current(&repeated_encrypted_value_account, repeated)
+            .direct(&repeated_encrypted_value_account, repeated)
+            .direct(&repeated_encrypted_value_account, repeated)
             .wire(),
         World::running_at_slot(OBSERVED_SLOT)
             .with_encrypted_value_account(&repeated_encrypted_value_account)
@@ -380,32 +381,33 @@ fn accepting_scenarios() -> Vec<Scenario> {
     let first_delegator = Wallet::new(2);
     let second_delegator = Wallet::new(3);
     let own = handle(0x70, FHE_TYPE_UINT64);
-    let own_encrypted_value_account = EncryptedValueAccountFixture::new(own, &[signer.pubkey()]);
-    // Distinct labels give distinct encrypted value IDs and therefore distinct encrypted value
-    // accounts. Note which byte is picked: `LABEL` already begins with `b'b'`, so reaching for that
-    // letter here would silently give this encrypted value account the default one's address, one
-    // account would overwrite the other in the world, and the record would stop being a mixed batch
-    // at all.
+    let own_encrypted_value_account = EncryptedValueAccountFixture::allowing(own, signer.pubkey());
+    // Distinct labels give distinct addresses. Note which byte is picked: `LABEL` already begins
+    // with `b'b'`, so reaching for that letter here would silently give this encrypted value
+    // account the default one's address, one account would overwrite the other in the world, and
+    // the record would stop being a mixed batch at all.
     let mut label_a = LABEL;
     label_a[0] = b'a';
     let mut label_b = LABEL;
     label_b[0] = b'c';
     let handle_a = handle(0x71, FHE_TYPE_UINT64);
     let handle_b = handle(0x72, FHE_TYPE_UINT64);
-    let encrypted_value_account_a = EncryptedValueAccountFixture::in_domain(
-        DOMAIN,
+    let mut encrypted_value_account_a = EncryptedValueAccountFixture::in_application(
+        APP_PROGRAM,
         AUTHORITY,
+        SCOPE,
         label_a,
         handle_a,
-        &[first_delegator.pubkey()],
     );
-    let encrypted_value_account_b = EncryptedValueAccountFixture::in_domain(
-        DOMAIN,
+    encrypted_value_account_a.allow(first_delegator.pubkey());
+    let mut encrypted_value_account_b = EncryptedValueAccountFixture::in_application(
+        APP_PROGRAM,
         AUTHORITY,
+        SCOPE,
         label_b,
         handle_b,
-        &[second_delegator.pubkey()],
     );
+    encrypted_value_account_b.allow(second_delegator.pubkey());
     let delegation_a =
         DelegationFixture::live(first_delegator.pubkey(), signer.pubkey(), OBSERVED_SLOT);
     let delegation_b =
@@ -426,13 +428,13 @@ fn accepting_scenarios() -> Vec<Scenario> {
         "One request freely mixes a direct entry with entries from two different delegators. There \
          is no per-request mode and no separate delegated route.",
         RequestBuilder::new(&signer)
-            .direct_current(&own_encrypted_value_account, own)
-            .delegated_current(
+            .direct(&own_encrypted_value_account, own)
+            .delegated(
                 &encrypted_value_account_a,
                 handle_a,
                 first_delegator.pubkey(),
             )
-            .delegated_current(
+            .delegated(
                 &encrypted_value_account_b,
                 handle_b,
                 second_delegator.pubkey(),
@@ -447,54 +449,59 @@ fn accepting_scenarios() -> Vec<Scenario> {
             .with_delegation(&delegation_b),
     ));
 
-    // The scope a delegation actually has, pinned as behavior rather than left to the reader of
+    // The reach a delegation actually has, pinned as behavior rather than left to the reader of
     // the PDA seeds: one row is keyed by an authority, so it authorizes every value of that
-    // authority — including values in domains the grant never named, because the domain is not a
-    // seed. Same authority, same single row, two domains, both accepted. For the confidential
-    // token program this is the intended scope (its authority PDA is derived from the mint, which
-    // is also the domain, so nothing crosses a mint); an application that reuses one authority
-    // across domains is granting across all of them, and must derive a per-domain authority if it
+    // authority — including values in scopes the grant never named, because the scope is not a
+    // seed. Same authority, same single row, two scopes, both accepted. For the confidential
+    // token program this is the intended reach (its authority PDA is derived from the mint, which
+    // is also the scope, so nothing crosses a mint); an application that reuses one authority
+    // across scopes is granting across all of them, and must derive a per-scope authority if it
     // wants otherwise.
     let signer = Wallet::new(1);
     let delegator = Wallet::new(2);
-    let second_domain: SolanaPubkeyBytes = [0x62; 32];
+    let second_scope: SolanaPubkeyBytes = [0x62; 32];
     let handle_here = handle(0x73, FHE_TYPE_UINT64);
     let handle_elsewhere = handle(0x74, FHE_TYPE_UINT64);
-    // Only the domain differs: the encrypted value id derives from (domain, authority, label), so
-    // one label is enough to give these two accounts different addresses.
-    let encrypted_value_account_here = EncryptedValueAccountFixture::in_domain(
-        DOMAIN,
+    // Only the scope differs: the address derives from (program, authority, scope, label), so one
+    // label is enough to give these two accounts different addresses.
+    let mut encrypted_value_account_here = EncryptedValueAccountFixture::in_application(
+        APP_PROGRAM,
         AUTHORITY,
+        SCOPE,
         LABEL,
         handle_here,
-        &[delegator.pubkey()],
     );
-    let encrypted_value_account_elsewhere = EncryptedValueAccountFixture::in_domain(
-        second_domain,
+    encrypted_value_account_here.allow(delegator.pubkey());
+    let mut encrypted_value_account_elsewhere = EncryptedValueAccountFixture::in_application(
+        APP_PROGRAM,
         AUTHORITY,
+        second_scope,
         LABEL,
         handle_elsewhere,
-        &[delegator.pubkey()],
     );
+    encrypted_value_account_elsewhere.allow(delegator.pubkey());
     assert_ne!(
         encrypted_value_account_here.account_key, encrypted_value_account_elsewhere.account_key,
-        "the two domains must give two accounts, or this proves nothing about domain scope"
+        "the two scopes must give two accounts, or this proves nothing about scope reach"
     );
     let one_row = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), OBSERVED_SLOT);
     out.push(Scenario::accepted(
-        "delegated-one-authority-spans-domains",
-        "A single delegation row authorizes the delegator's values in two different domains: the \
-         row is keyed by (delegator, delegate, encrypted value account authority) and the domain \
-         is not among the PDA's seeds. The signed scope still has to name both domains — that is \
-         the permit's rule, not the delegation's.",
+        "delegated-one-authority-spans-scopes",
+        "A single delegation row authorizes the delegator's values in two different scopes: the \
+         row is keyed by (delegator, delegate, encrypted value account authority) and the scope \
+         is not among the PDA's seeds. The signed scopes still have to name both — that is the \
+         permit's rule, not the delegation's.",
         RequestBuilder::new(&signer)
-            .permit(PermitBuilder::new(signer.pubkey()).scope(&[DOMAIN, second_domain]))
-            .delegated_current(
+            .permit(
+                PermitBuilder::new(signer.pubkey())
+                    .scope(&[(APP_PROGRAM, SCOPE), (APP_PROGRAM, second_scope)]),
+            )
+            .delegated(
                 &encrypted_value_account_here,
                 handle_here,
                 delegator.pubkey(),
             )
-            .delegated_current(
+            .delegated(
                 &encrypted_value_account_elsewhere,
                 handle_elsewhere,
                 delegator.pubkey(),
@@ -518,14 +525,15 @@ fn accepting_scenarios() -> Vec<Scenario> {
         label[0..2].copy_from_slice(&index.to_be_bytes());
         let mut bytes = handle(0x80, FHE_TYPE_UINT64);
         bytes[0..2].copy_from_slice(&index.to_be_bytes());
-        let encrypted_value_account = EncryptedValueAccountFixture::in_domain(
-            DOMAIN,
+        let mut encrypted_value_account = EncryptedValueAccountFixture::in_application(
+            APP_PROGRAM,
             AUTHORITY,
+            SCOPE,
             label,
             bytes,
-            &[wallet.pubkey()],
         );
-        many_builder = many_builder.direct_current(&encrypted_value_account, bytes);
+        encrypted_value_account.allow(wallet.pubkey());
+        many_builder = many_builder.direct(&encrypted_value_account, bytes);
         many_world = many_world.with_encrypted_value_account(&encrypted_value_account);
     }
     out.push(Scenario::accepted(
@@ -537,19 +545,14 @@ fn accepting_scenarios() -> Vec<Scenario> {
         many_world,
     ));
 
-    let (absent_wallet, absent_encrypted_value_account, absent_live, absent_request, _) =
-        reference_direct();
+    let (_, absent_encrypted_value_account, _, absent_request, _) = reference_direct();
     out.push(Scenario::accepted(
         "absent-invalidation-record",
         "A user who has never revoked anything has no invalidation record, and its absence reads as \
          a watermark of zero rather than as a missing initialisation step.",
-        {
-            let _ = (absent_live, &absent_encrypted_value_account);
-            absent_request
-        },
+        absent_request,
         World::running_at_slot(OBSERVED_SLOT).with_encrypted_value_account(&absent_encrypted_value_account),
     ));
-    let _ = absent_wallet;
 
     let (prefunded_wallet, prefunded_encrypted_value_account, _, prefunded_request, _) =
         reference_direct();
@@ -576,7 +579,7 @@ fn accepting_scenarios() -> Vec<Scenario> {
             "future-start-permit-outliving-a-revocation",
             "",
             RequestBuilder::new(&weak_wallet)
-                .direct_current(&weak_encrypted_value_account, weak_live)
+                .direct(&weak_encrypted_value_account, weak_live)
                 .wire(),
             World::running_at_slot(OBSERVED_SLOT)
                 .with_encrypted_value_account(&weak_encrypted_value_account)
@@ -601,13 +604,13 @@ fn deployment_and_permit_state_scenarios() -> Vec<Scenario> {
         "wrong-host-program",
         "A permit signed for another host program authorizes nothing here, even on the right \
          cluster.",
-        "direct-current",
+        "direct",
         "the permit's verifying program id is replaced with another program",
         rule::DEPLOYMENT_PROGRAM_MISMATCH,
         FailureClass::Terminal,
         RequestBuilder::new(&wallet)
             .permit(PermitBuilder::new(wallet.pubkey()).deployment_pair([0x55; 32], CHAIN_ID))
-            .direct_current(&encrypted_value_account, live)
+            .direct(&encrypted_value_account, live)
             .wire(),
         world.clone(),
     ));
@@ -615,18 +618,18 @@ fn deployment_and_permit_state_scenarios() -> Vec<Scenario> {
     let other_chain = SOLANA_CHAIN_TYPE_BIT | 0xdead_beef;
     let other_chain_handle = handle_on_chain(0x11, FHE_TYPE_UINT64, other_chain);
     let other_chain_encrypted_value_account =
-        EncryptedValueAccountFixture::new(other_chain_handle, &[wallet.pubkey()]);
+        EncryptedValueAccountFixture::allowing(other_chain_handle, wallet.pubkey());
     out.push(Scenario::rejected(
         "wrong-host-chain-id",
         "A permit signed for another cluster authorizes nothing here, even under the same program \
          id — which is why the cluster is signed at all.",
-        "direct-current",
+        "direct",
         "the permit's chain id, and the chain id embedded in its handle, name another cluster",
         rule::DEPLOYMENT_CHAIN_ID_MISMATCH,
         FailureClass::Terminal,
         RequestBuilder::new(&wallet)
             .permit(PermitBuilder::new(wallet.pubkey()).deployment_pair(PROGRAM_ID, other_chain))
-            .direct_current(&other_chain_encrypted_value_account, other_chain_handle)
+            .direct(&other_chain_encrypted_value_account, other_chain_handle)
             .wire(),
         World::running_at_slot(OBSERVED_SLOT)
             .with_encrypted_value_account(&other_chain_encrypted_value_account)
@@ -638,18 +641,16 @@ fn deployment_and_permit_state_scenarios() -> Vec<Scenario> {
         "mixed-embedded-chain-ids",
         "Handles of one request must embed one chain id. A mixed batch is refused rather than \
          resolved by taking the first handle as the truth.",
-        "direct-current",
+        "direct",
         "a second entry is appended whose handle embeds another cluster",
         rule::MIXED_EMBEDDED_CHAIN_IDS,
         FailureClass::Terminal,
         RequestBuilder::new(&wallet)
-            .direct_current(&encrypted_value_account, live)
+            .direct(&encrypted_value_account, live)
             .entry(
                 handle_on_chain(0x12, FHE_TYPE_UINT64, foreign_chain),
                 wallet.pubkey(),
-                encrypted_value_account.encrypted_value_id(),
-                0,
-                Vec::new(),
+                encrypted_value_account.account_key,
             )
             .wire(),
         world.clone(),
@@ -657,17 +658,17 @@ fn deployment_and_permit_state_scenarios() -> Vec<Scenario> {
 
     let elsewhere = handle_on_chain(0x13, FHE_TYPE_UINT64, foreign_chain);
     let elsewhere_encrypted_value_account =
-        EncryptedValueAccountFixture::new(elsewhere, &[wallet.pubkey()]);
+        EncryptedValueAccountFixture::allowing(elsewhere, wallet.pubkey());
     out.push(Scenario::rejected(
         "handle-of-another-cluster",
         "Handles agreeing among themselves is not enough: every embedded chain id must equal the \
          signed one, or the request is about another cluster's ciphertexts.",
-        "direct-current",
+        "direct",
         "the entry's handle embeds another cluster while the permit still names this one",
         rule::EMBEDDED_CHAIN_ID_MISMATCH,
         FailureClass::Terminal,
         RequestBuilder::new(&wallet)
-            .direct_current(&elsewhere_encrypted_value_account, elsewhere)
+            .direct(&elsewhere_encrypted_value_account, elsewhere)
             .wire(),
         World::running_at_slot(OBSERVED_SLOT)
             .with_encrypted_value_account(&elsewhere_encrypted_value_account)
@@ -679,7 +680,7 @@ fn deployment_and_permit_state_scenarios() -> Vec<Scenario> {
         Scenario::rejected(
             "expired-permit",
             "The validity window has closed. No later observation makes a permit younger.",
-            "direct-current",
+            "direct",
             "the request is authorized after the permit's window ends",
             rule::WINDOW_EXPIRED,
             FailureClass::Terminal,
@@ -695,7 +696,7 @@ fn deployment_and_permit_state_scenarios() -> Vec<Scenario> {
             "not-yet-valid-permit",
             "The window has not opened. Transient, because this is the one rejection that the \
              passage of time repairs on its own.",
-            "direct-current",
+            "direct",
             "the request is authorized before the permit's window starts",
             rule::WINDOW_NOT_YET_VALID,
             FailureClass::Transient,
@@ -710,7 +711,7 @@ fn deployment_and_permit_state_scenarios() -> Vec<Scenario> {
         "invalidated-permit",
         "The permit started before its signer's last revocation, so it is dead permanently. This is \
          the mechanism behind revoking every outstanding signature with one transaction.",
-        "direct-current",
+        "direct",
         "the signer's invalidation record holds a watermark above the permit's start",
         rule::PERMIT_INVALIDATED,
         FailureClass::Terminal,
@@ -728,7 +729,7 @@ fn deployment_and_permit_state_scenarios() -> Vec<Scenario> {
         "The invalidation record's contents are checked against the address it was read from: a \
          record naming another user is refused rather than read as that user's watermark, and \
          refused rather than read as zero.",
-        "direct-current",
+        "direct",
         "the signer's invalidation address holds a record naming a different user",
         rule::WATERMARK_RECORD_INVALID,
         FailureClass::Terminal,
@@ -748,7 +749,7 @@ fn deployment_and_permit_state_scenarios() -> Vec<Scenario> {
          pause switch reaches it only through this rule — without it a paused deployment would keep \
          releasing plaintext while refusing every on-chain write. Transient: the permit and the \
          handles survive the pause, so the same request authorizes once the operator lifts it.",
-        "direct-current",
+        "direct",
         "the deployment's config singleton carries paused = true",
         rule::HOST_PAUSED,
         FailureClass::Transient,
@@ -766,7 +767,7 @@ fn deployment_and_permit_state_scenarios() -> Vec<Scenario> {
              from one that is not active yet. The request is retried within the attempt budget and \
              never succeeds — inherited behaviour of the pair validation the EVM path shares, not a \
              decision of the Solana path, and fail-closed either way.",
-            "direct-current",
+            "direct",
             "the KMS management state reports the signed epoch as destroyed",
             rule::KMS_PAIR_UNSERVABLE,
             FailureClass::Transient,
@@ -783,7 +784,7 @@ fn deployment_and_permit_state_scenarios() -> Vec<Scenario> {
             "The epoch exists but is not active yet. The reference case of the transient outcome, \
              and the reason the two records around it share both its rule and its class: all three \
              arrive as the same boolean.",
-            "direct-current",
+            "direct",
             "the KMS management state reports the signed epoch as not active yet",
             rule::KMS_PAIR_UNSERVABLE,
             FailureClass::Transient,
@@ -800,7 +801,7 @@ fn deployment_and_permit_state_scenarios() -> Vec<Scenario> {
             "The signed epoch belongs to a different context, so the pair will never be servable — \
              and it is transient for the same reason as the destroyed epoch: the view returns one \
              boolean, and no view exposes the epoch's context on its own.",
-            "direct-current",
+            "direct",
             "the KMS management state reports the signed epoch as belonging to another context",
             rule::KMS_PAIR_UNSERVABLE,
             FailureClass::Transient,
@@ -820,7 +821,7 @@ fn request_form_scenarios() -> Vec<Scenario> {
     out.push(Scenario::rejected(
         "empty-handle-list",
         "A request naming no handles has nothing to authorize and nothing for a response to bind.",
-        "direct-current",
+        "direct",
         "the handle list is emptied",
         rule::EMPTY_HANDLES,
         FailureClass::Terminal,
@@ -830,7 +831,7 @@ fn request_form_scenarios() -> Vec<Scenario> {
 
     let mut past_cap = RequestBuilder::new(&wallet);
     for _ in 0..=MAX_REQUEST_HANDLES {
-        past_cap = past_cap.direct_current(&encrypted_value_account, live);
+        past_cap = past_cap.direct(&encrypted_value_account, live);
     }
     out.push(Scenario::rejected(
         "handle-list-past-the-cap",
@@ -840,84 +841,12 @@ fn request_form_scenarios() -> Vec<Scenario> {
          request at admission, before the fee; the Connector rejects it too, so the snapshot's \
          readability is its own invariant rather than an assumption about the contract upstream. \
          Duplicates count: the cap is on the list, not on the distinct handles in it.",
-        "direct-current",
+        "direct",
         "the live handle is repeated until the list is one entry past the cap",
         rule::TOO_MANY_HANDLES,
         FailureClass::Terminal,
         past_cap.wire(),
         world.clone(),
-    ));
-
-    let (proof_encrypted_value_account, sealed, proof) =
-        replaced_encrypted_value_account(0x90, wallet.pubkey());
-    let proof_world = World::running_at_slot(OBSERVED_SLOT)
-        .with_encrypted_value_account(&proof_encrypted_value_account)
-        .with_watermark(wallet.pubkey(), 0);
-
-    let mut trailing = borsh::to_vec(&proof).expect("a proof serializes");
-    trailing.extend_from_slice(&[0xde, 0xad]);
-    out.push(Scenario::rejected(
-        "access-proof-with-trailing-bytes",
-        "A proof followed by extra bytes is refused — unlike an account followed by extra bytes, \
-         which is legal. Two byte strings for one proof would leave two implementations \
-         disagreeing about whether they hold the same request.",
-        "historical-after-handle-update",
-        "two bytes are appended to the entry's access proof",
-        rule::ACCESS_PROOF_TRAILING_BYTES,
-        FailureClass::Terminal,
-        RequestBuilder::new(&wallet)
-            .entry(
-                sealed,
-                wallet.pubkey(),
-                proof_encrypted_value_account.encrypted_value_id(),
-                1,
-                trailing,
-            )
-            .wire(),
-        proof_world.clone(),
-    ));
-
-    let oversized = MmrProof {
-        leaf_index: 0,
-        siblings: vec![[0; 32]; 65],
-    };
-    out.push(Scenario::rejected(
-        "access-proof-with-too-many-siblings",
-        "The sibling count is bounded by what the tree can produce, so an untrusted request cannot \
-         make the decoder allocate an arbitrary list.",
-        "historical-after-handle-update",
-        "the entry's access proof carries one sibling more than the tree's height ceiling",
-        rule::ACCESS_PROOF_TOO_MANY_SIBLINGS,
-        FailureClass::Terminal,
-        RequestBuilder::new(&wallet)
-            .historical(
-                &proof_encrypted_value_account,
-                sealed,
-                wallet.pubkey(),
-                &oversized,
-                1,
-            )
-            .wire(),
-        proof_world.clone(),
-    ));
-
-    out.push(Scenario::rejected(
-        "malformed-access-proof",
-        "Bytes that are not a proof at all are refused as a form error, before any state is read.",
-        "historical-after-handle-update",
-        "the entry's access proof is replaced with three arbitrary bytes",
-        rule::ACCESS_PROOF_MALFORMED,
-        FailureClass::Terminal,
-        RequestBuilder::new(&wallet)
-            .entry(
-                sealed,
-                wallet.pubkey(),
-                proof_encrypted_value_account.encrypted_value_id(),
-                1,
-                vec![0xff, 0xff, 0xff],
-            )
-            .wire(),
-        proof_world,
     ));
 
     let _ = (encrypted_value_account, live);
@@ -932,7 +861,7 @@ fn encrypted_value_account_scenarios() -> Vec<Scenario> {
         "missing-encrypted-value-account",
         "The encrypted value account does not exist at this observation. Transient by nature: the account \
          may simply not have reached the observed commitment yet.",
-        "direct-current",
+        "direct",
         "the encrypted value account is removed from the observation",
         rule::ENCRYPTED_VALUE_ACCOUNT_ABSENT,
         FailureClass::Transient,
@@ -946,7 +875,7 @@ fn encrypted_value_account_scenarios() -> Vec<Scenario> {
         "encrypted-value-account-owned-by-another-program",
         "Program ownership is the sole trust anchor: an account with impeccable contents under \
          another program's ownership proves nothing.",
-        "direct-current",
+        "direct",
         "the encrypted value account's owner is replaced with another program",
         rule::ENCRYPTED_VALUE_ACCOUNT_FOREIGN_OWNER,
         FailureClass::Terminal,
@@ -962,7 +891,7 @@ fn encrypted_value_account_scenarios() -> Vec<Scenario> {
         "delegation-record-as-encrypted-value-account",
         "A host-owned account of another type is caught by the discriminator rather than by what \
          its bytes happen to mean when read as an encrypted value account.",
-        "direct-current",
+        "direct",
         "the encrypted value account address holds a delegation record instead",
         rule::ENCRYPTED_VALUE_ACCOUNT_WRONG_TYPE,
         FailureClass::Terminal,
@@ -981,7 +910,7 @@ fn encrypted_value_account_scenarios() -> Vec<Scenario> {
         "encrypted-value-account-with-a-truncated-body",
         "A body cut short is not the same thing as a body followed by extra bytes: the first cannot \
          be read, the second is an account with room to spare.",
-        "direct-current",
+        "direct",
         "eight bytes are removed from the end of the encrypted value account",
         rule::ENCRYPTED_VALUE_ACCOUNT_MALFORMED,
         FailureClass::Terminal,
@@ -991,20 +920,16 @@ fn encrypted_value_account_scenarios() -> Vec<Scenario> {
             .with_watermark(wallet.pubkey(), 0),
     ));
 
-    let another_app = EncryptedValueAccountFixture::in_domain(
-        DOMAIN,
-        [0x33; 32],
-        LABEL,
-        live,
-        &[wallet.pubkey()],
-    );
+    let mut another_app =
+        EncryptedValueAccountFixture::in_application(APP_PROGRAM, [0x33; 32], SCOPE, LABEL, live);
+    another_app.allow(wallet.pubkey());
     out.push(Scenario::rejected(
-        "encrypted-value-account-deriving-another-id",
-        "The account's own fields must reproduce the identity that was claimed. This is the \
-         backstop that makes a substituted encrypted value account a rejection rather than a redirection.",
-        "direct-current",
+        "encrypted-value-account-at-another-address",
+        "The account's own fields must derive the address it was read from. This is the backstop \
+         that makes a substituted encrypted value account a rejection rather than a redirection.",
+        "direct",
         "the encrypted value account address holds an encrypted value account of another authority",
-        rule::ENCRYPTED_VALUE_ID_MISMATCH,
+        rule::ENCRYPTED_VALUE_ACCOUNT_ADDRESS_MISMATCH,
         FailureClass::Terminal,
         request,
         World::running_at_slot(OBSERVED_SLOT)
@@ -1012,27 +937,31 @@ fn encrypted_value_account_scenarios() -> Vec<Scenario> {
             .with_watermark(wallet.pubkey(), 0),
     ));
 
-    let unsigned_domain_handle = handle(0x14, FHE_TYPE_UINT64);
-    let unsigned_domain_encrypted_value_account = EncryptedValueAccountFixture::in_domain(
-        [0x62; 32],
+    let unsigned_scope_handle = handle(0x14, FHE_TYPE_UINT64);
+    let mut unsigned_scope_encrypted_value_account = EncryptedValueAccountFixture::in_application(
+        APP_PROGRAM,
         AUTHORITY,
+        [0x62; 32],
         LABEL,
-        unsigned_domain_handle,
-        &[wallet.pubkey()],
+        unsigned_scope_handle,
     );
+    unsigned_scope_encrypted_value_account.allow(wallet.pubkey());
     out.push(Scenario::rejected(
-        "handle-of-an-unsigned-domain",
-        "With a non-empty signed scope, every entry's encrypted value account domain must be in it. The domain \
-         tested is the encrypted value account's — a request has no field for it.",
-        "direct-current",
-        "the entry names an encrypted value account whose domain is outside the signed scope",
-        rule::DOMAIN_NOT_ALLOWED,
+        "handle-of-an-unsigned-scope",
+        "With a non-empty signed scope list, every entry's encrypted value account must have its \
+         (program, scope) in it. The pair tested is the account's — a request has no field for it.",
+        "direct",
+        "the entry names an encrypted value account whose scope is outside the signed scopes",
+        rule::SCOPE_NOT_ALLOWED,
         FailureClass::Terminal,
         RequestBuilder::new(&wallet)
-            .direct_current(&unsigned_domain_encrypted_value_account, unsigned_domain_handle)
+            .direct(
+                &unsigned_scope_encrypted_value_account,
+                unsigned_scope_handle,
+            )
             .wire(),
         World::running_at_slot(OBSERVED_SLOT)
-            .with_encrypted_value_account(&unsigned_domain_encrypted_value_account)
+            .with_encrypted_value_account(&unsigned_scope_encrypted_value_account)
             .with_watermark(wallet.pubkey(), 0),
     ));
 
@@ -1043,79 +972,133 @@ fn handle_binding_scenarios() -> Vec<Scenario> {
     let mut out = Vec::new();
     let wallet = Wallet::new(1);
     let stranger = Wallet::new(9);
-
-    let replaced = handle(0xa0, FHE_TYPE_UINT64);
-    let mut moved_on = EncryptedValueAccountFixture::new(replaced, &[wallet.pubkey()]);
-    moved_on.update(handle(0xa1, FHE_TYPE_UINT64));
-    out.push(Scenario::rejected(
-        "replaced-current-handle",
-        "A current-mode entry whose handle is no longer current fails, and is not quietly answered \
-         with whatever is current instead. The same handle remains reachable as historical access.",
-        "direct-current",
-        "the encrypted value account's current handle moves on before the observation",
-        rule::HANDLE_NOT_CURRENT,
-        FailureClass::Terminal,
-        RequestBuilder::new(&wallet)
-            .direct_current(&moved_on, replaced)
-            .wire(),
+    let watermarked = |encrypted_value_account: &EncryptedValueAccountFixture| {
         World::running_at_slot(OBSERVED_SLOT)
-            .with_encrypted_value_account(&moved_on)
-            .with_watermark(wallet.pubkey(), 0),
-    ));
+            .with_encrypted_value_account(encrypted_value_account)
+            .with_watermark(wallet.pubkey(), 0)
+    };
 
-    let live = handle(0xa2, FHE_TYPE_UINT64);
+    let live = handle(0xa0, FHE_TYPE_UINT64);
     let others_encrypted_value_account =
-        EncryptedValueAccountFixture::new(live, &[stranger.pubkey()]);
+        EncryptedValueAccountFixture::allowing(live, stranger.pubkey());
     out.push(Scenario::rejected(
-        "subject-outside-the-current-members",
-        "Current access requires membership of the encrypted value account's current subject set, and the set is \
-         the account's rather than the request's.",
-        "direct-current",
-        "the encrypted value account's subject set names somebody else",
-        rule::SUBJECT_NOT_A_MEMBER,
+        "key-never-allowed",
+        "The only allow leaf on the handle names somebody else, and the leaf record has the \
+         chain's whole history: the signer was never allowed, and repeating the request changes \
+         nothing.",
+        "direct",
+        "the encrypted value account's allow leaf names another key",
+        rule::NO_ALLOW_LEAF,
         FailureClass::Terminal,
         RequestBuilder::new(&wallet)
-            .direct_current(&others_encrypted_value_account, live)
+            .direct(&others_encrypted_value_account, live)
             .wire(),
-        World::running_at_slot(OBSERVED_SLOT)
-            .with_encrypted_value_account(&others_encrypted_value_account)
-            .with_watermark(wallet.pubkey(), 0),
+        watermarked(&others_encrypted_value_account),
     ));
 
-    let (sealed_encrypted_value_account, sealed, _) =
-        replaced_encrypted_value_account(0xb0, wallet.pubkey());
-    let sealed_world = World::running_at_slot(OBSERVED_SLOT)
-        .with_encrypted_value_account(&sealed_encrypted_value_account)
-        .with_watermark(wallet.pubkey(), 0);
-
+    let replacement = handle(0xa2, FHE_TYPE_UINT64);
+    let mut moved_on =
+        EncryptedValueAccountFixture::allowing(handle(0xa1, FHE_TYPE_UINT64), wallet.pubkey());
+    moved_on.update(replacement);
     out.push(Scenario::rejected(
-        "leaf-index-beyond-the-leaf-count",
-        "A position the encrypted value account does not have is refused before any hashing: there is nothing for \
-         the proof to be a proof of. From the outside this is an inclusion failure like any other, \
-         and it is classified like one — by the leaf count the request claims. Here the claim is \
-         at or above the observed count, which is what a proof service running ahead of this \
-         observation looks like, so the answer is to retry rather than to rebuild.",
-        "historical-after-handle-update",
-        "the proof names a leaf index equal to the observed leaf count",
-        rule::INCLUSION_PROOF_DOES_NOT_VERIFY,
-        FailureClass::Retryable,
+        "handle-never-allowed-to-the-key",
+        "Being allowed on the handle the account used to hold says nothing about the one it holds \
+         now: access is per handle, and each handle needs its own leaf.",
+        "allowed-then-handle-replaced",
+        "the request names the replacement handle, which no leaf allows",
+        rule::NO_ALLOW_LEAF,
+        FailureClass::Terminal,
         RequestBuilder::new(&wallet)
-            .historical(
-                &sealed_encrypted_value_account,
-                sealed,
-                wallet.pubkey(),
-                &MmrProof {
-                    leaf_index: sealed_encrypted_value_account.encrypted_value.leaf_count,
-                    siblings: Vec::new(),
-                },
-                1,
-            )
+            .direct(&moved_on, replacement)
             .wire(),
-        sealed_world.clone(),
+        watermarked(&moved_on),
     ));
 
-    // The four substitutions of the leaf commitment. Each seals a leaf that is genuine except in
-    // one value, and each must fail: together they show all four values are inside the commitment.
+    // The record behind the chain, without the leaf: the allow is on chain and the record has not
+    // sealed it yet.
+    let pending = handle(0xa3, FHE_TYPE_UINT64);
+    let before_the_allow = EncryptedValueAccountFixture::new(pending);
+    let mut after_the_allow = before_the_allow.clone();
+    after_the_allow.allow(wallet.pubkey());
+    out.push(
+        Scenario::rejected(
+            "leaf-record-behind-without-the-leaf",
+            "The observation shows one leaf and the record has sealed none: the record is behind, \
+             and its answer says nothing about the leaf yet. Retryable — the record catches up.",
+            "direct",
+            "the leaf record has not sealed the append that holds the allow leaf",
+            rule::LEAF_RECORD_BEHIND,
+            FailureClass::Retryable,
+            RequestBuilder::new(&wallet)
+                .direct(&after_the_allow, pending)
+                .wire(),
+            watermarked(&after_the_allow),
+        )
+        .with_record(ProofRecord::of(&[&before_the_allow])),
+    );
+
+    let (_, _, _, unknown_request, unknown_world) = reference_direct();
+    out.push(
+        Scenario::rejected(
+            "leaf-record-unknown-account",
+            "The chain has the account and the record has never seen it: the record has not \
+             indexed the account's creation yet. Retryable for the same reason as a record behind.",
+            "direct",
+            "the encrypted value account is unknown to the leaf record",
+            rule::LEAF_RECORD_UNKNOWN_ACCOUNT,
+            FailureClass::Retryable,
+            unknown_request,
+            unknown_world,
+        )
+        .with_record(ProofRecord::default()),
+    );
+
+    let (_, gapped_encrypted_value_account, _, gapped_request, gapped_world) = reference_direct();
+    out.push(
+        Scenario::rejected(
+            "leaf-history-incomplete",
+            "The record's history for the account has a gap it cannot close. It can prove nothing \
+             about the account until rebuilt, and no retry within a request's budget rebuilds it.",
+            "direct",
+            "the leaf record reports its history for the account as incomplete",
+            rule::LEAF_HISTORY_INCOMPLETE,
+            FailureClass::Terminal,
+            gapped_request,
+            gapped_world,
+        )
+        .with_record(ProofRecord::default().incomplete(gapped_encrypted_value_account.account_key)),
+    );
+
+    // The record ahead of the observation: it serves a leaf at a position the account does not
+    // have yet.
+    let early = handle(0xa4, FHE_TYPE_UINT64);
+    let observation_behind = EncryptedValueAccountFixture::new(early);
+    let mut record_ahead = observation_behind.clone();
+    record_ahead.allow(wallet.pubkey());
+    out.push(
+        Scenario::rejected(
+            "leaf-record-ahead-of-the-observation",
+            "The record has sealed a leaf this observation does not have yet. There is nothing for \
+             the proof to be a proof of, and it is refused before any hashing. Retryable: the same \
+             request authorizes once the observation catches up.",
+            "direct",
+            "the observation holds an earlier state than the one the record has sealed",
+            rule::LEAF_RECORD_AHEAD,
+            FailureClass::Retryable,
+            RequestBuilder::new(&wallet)
+                .direct(&record_ahead, early)
+                .wire(),
+            watermarked(&observation_behind),
+        )
+        .with_record(ProofRecord::of(&[&record_ahead])),
+    );
+
+    // The five substitutions of the leaf commitment. Each seals a leaf that is genuine except in
+    // one value — or in its domain — and each must fail: together they show every value is inside
+    // the commitment. The record is in step with the chain and serves the leaf faithfully; it is
+    // the leaf that is wrong.
+    let sealed = handle(0xb0, FHE_TYPE_UINT64);
+    let genuine_account_key = EncryptedValueAccountFixture::new(sealed).account_key;
     for (name, comment, mutation, commitment) in [
         (
             "leaf-commitment-for-another-encrypted-value-account",
@@ -1124,22 +1107,17 @@ fn handle_binding_scenarios() -> Vec<Scenario> {
             historical_access_leaf_commitment([0x99; 32], 0, sealed, wallet.pubkey()),
         ),
         (
-            "leaf-commitment-for-another-subject",
-            "A leaf sealed for another subject authorizes only that subject.",
-            "the sealed leaf commits to another subject",
-            historical_access_leaf_commitment(
-                EncryptedValueAccountFixture::new(sealed, &[wallet.pubkey()]).account_key,
-                0,
-                sealed,
-                stranger.pubkey(),
-            ),
+            "leaf-commitment-for-another-key",
+            "A leaf sealed for another key authorizes only that key.",
+            "the sealed leaf commits to another key",
+            historical_access_leaf_commitment(genuine_account_key, 0, sealed, stranger.pubkey()),
         ),
         (
             "leaf-commitment-for-another-handle",
             "A leaf sealed for another handle authorizes only that handle.",
             "the sealed leaf commits to another handle",
             historical_access_leaf_commitment(
-                EncryptedValueAccountFixture::new(sealed, &[wallet.pubkey()]).account_key,
+                genuine_account_key,
                 0,
                 handle(0xbe, FHE_TYPE_UINT64),
                 wallet.pubkey(),
@@ -1149,123 +1127,58 @@ fn handle_binding_scenarios() -> Vec<Scenario> {
             "leaf-commitment-at-another-position",
             "A leaf whose committed position is not the position it occupies authorizes nothing.",
             "the sealed leaf commits to leaf index one while occupying index zero",
-            historical_access_leaf_commitment(
-                EncryptedValueAccountFixture::new(sealed, &[wallet.pubkey()]).account_key,
-                1,
-                sealed,
-                wallet.pubkey(),
-            ),
+            historical_access_leaf_commitment(genuine_account_key, 1, sealed, wallet.pubkey()),
+        ),
+        (
+            "public-decrypt-leaf-as-allow-leaf",
+            "Public decryptability is a separate flow with its own leaf domain. Its leaf says \
+             nothing about any key and must not double as evidence that one was allowed.",
+            "the sealed leaf is a public-decrypt leaf rather than an allow leaf",
+            public_decrypt_leaf_commitment(genuine_account_key, 0, sealed),
         ),
     ] {
-        let mut substituted = EncryptedValueAccountFixture::new(sealed, &[wallet.pubkey()]);
-        substituted.append(commitment);
+        let mut substituted = EncryptedValueAccountFixture::new(sealed);
+        substituted.append(
+            substituted.allowed_query(sealed, wallet.pubkey()),
+            commitment,
+        );
         out.push(Scenario::rejected(
             name,
             comment,
-            "historical-after-handle-update",
+            "direct",
             mutation,
-            rule::INCLUSION_PROOF_DOES_NOT_VERIFY,
+            rule::LEAF_PROOF_DOES_NOT_VERIFY,
             FailureClass::Retryable,
             RequestBuilder::new(&wallet)
-                .historical(
-                    &substituted,
-                    sealed,
-                    wallet.pubkey(),
-                    &substituted.proof(0),
-                    substituted.encrypted_value.leaf_count,
-                )
+                .direct(&substituted, sealed)
                 .wire(),
-            World::running_at_slot(OBSERVED_SLOT)
-                .with_encrypted_value_account(&substituted)
-                .with_watermark(wallet.pubkey(), 0),
+            watermarked(&substituted),
         ));
     }
 
-    let public_handle = handle(0xc0, FHE_TYPE_UINT64);
-    let mut public_encrypted_value_account =
-        EncryptedValueAccountFixture::new(public_handle, &[wallet.pubkey()]);
-    public_encrypted_value_account.mark_public();
-    public_encrypted_value_account.update(handle(0xc1, FHE_TYPE_UINT64));
-    out.push(Scenario::rejected(
-        "public-decrypt-leaf-as-historical-access",
-        "Public decryptability is a separate flow with its own leaf domain. Its leaf says nothing \
-         about any subject and must not double as evidence that one held the handle.",
-        "historical-after-handle-update",
-        "the proof is of a public-decrypt leaf rather than a historical-access leaf",
-        rule::INCLUSION_PROOF_DOES_NOT_VERIFY,
-        FailureClass::Retryable,
-        RequestBuilder::new(&wallet)
-            .historical(
-                &public_encrypted_value_account,
-                public_handle,
-                wallet.pubkey(),
-                &public_encrypted_value_account.proof(0),
-                public_encrypted_value_account.encrypted_value.leaf_count,
-            )
-            .wire(),
-        World::running_at_slot(OBSERVED_SLOT)
-            .with_encrypted_value_account(&public_encrypted_value_account)
-            .with_watermark(wallet.pubkey(), 0),
-    ));
-
-    // A proof invalidated by an append that merged its peak: claimed count below the observed one.
-    let merged = handle(0xd2, FHE_TYPE_UINT64);
-    let mut merging =
-        EncryptedValueAccountFixture::new(handle(0xd0, FHE_TYPE_UINT64), &[wallet.pubkey()]);
-    merging.update(handle(0xd1, FHE_TYPE_UINT64));
-    merging.update(merged);
-    merging.update(handle(0xd3, FHE_TYPE_UINT64));
-    let stale_proof = merging.proof(2);
-    let claimed = merging.encrypted_value.leaf_count;
-    merging.update(handle(0xd4, FHE_TYPE_UINT64));
-    out.push(Scenario::rejected(
-        "proof-predating-a-merging-append",
-        "The append merged the proof's peak, so the sibling path it carries no longer exists. The \
-         claimed count is below the observed one, which is what tells the client to rebuild rather \
-         than to retry.",
-        "historical-proof-predating-a-non-merging-append",
-        "an append that merges the proof's peak happens before the observation",
-        rule::INCLUSION_PROOF_DOES_NOT_VERIFY,
-        FailureClass::Terminal,
-        RequestBuilder::new(&wallet)
-            .historical(&merging, merged, wallet.pubkey(), &stale_proof, claimed)
-            .wire(),
-        World::running_at_slot(OBSERVED_SLOT)
-            .with_encrypted_value_account(&merging)
-            .with_watermark(wallet.pubkey(), 0),
-    ));
-
-    // The observation behind the proof service: the proof is of state this observation has not seen.
-    let ahead_handle = handle(0xe2, FHE_TYPE_UINT64);
-    let mut behind =
-        EncryptedValueAccountFixture::new(handle(0xe0, FHE_TYPE_UINT64), &[wallet.pubkey()]);
-    behind.update(handle(0xe1, FHE_TYPE_UINT64));
-    behind.update(ahead_handle);
-    let mut ahead = behind.clone();
-    ahead.update(handle(0xe3, FHE_TYPE_UINT64));
-    ahead.update(handle(0xe4, FHE_TYPE_UINT64));
-    out.push(Scenario::rejected(
-        "proof-ahead-of-the-observation",
-        "The proof service observed more state than this observation did. The claimed count is not \
-         below the observed one, so the same request is worth repeating from a later observation — \
-         and will succeed once the view catches up.",
-        "historical-proof-predating-a-non-merging-append",
-        "the observation holds an earlier state than the one the proof was built against",
-        rule::INCLUSION_PROOF_DOES_NOT_VERIFY,
-        FailureClass::Retryable,
-        RequestBuilder::new(&wallet)
-            .historical(
-                &ahead,
-                ahead_handle,
-                wallet.pubkey(),
-                &ahead.proof(1),
-                ahead.encrypted_value.leaf_count,
-            )
-            .wire(),
-        World::running_at_slot(OBSERVED_SLOT)
-            .with_encrypted_value_account(&behind)
-            .with_watermark(wallet.pubkey(), 0),
-    ));
+    // The record behind by the one append that merged the proof's peak: the sibling path it
+    // serves no longer reaches any peak the observation holds.
+    let merged = handle(0xd0, FHE_TYPE_UINT64);
+    let record_before_the_merge = EncryptedValueAccountFixture::allowing(merged, wallet.pubkey());
+    let mut chain_after_the_merge = record_before_the_merge.clone();
+    chain_after_the_merge.allow(stranger.pubkey());
+    out.push(
+        Scenario::rejected(
+            "leaf-record-behind-by-a-merging-append",
+            "The record is one append behind and the append merged the proof's peak, so the \
+             sibling path it serves no longer reaches any peak the observation holds. Retryable: \
+             once the record catches up it serves the longer path, and the same request authorizes.",
+            "leaf-record-behind-by-a-non-merging-append",
+            "the append the record has not sealed merges the leaf's peak",
+            rule::LEAF_PROOF_DOES_NOT_VERIFY,
+            FailureClass::Retryable,
+            RequestBuilder::new(&wallet)
+                .direct(&chain_after_the_merge, merged)
+                .wire(),
+            watermarked(&chain_after_the_merge),
+        )
+        .with_record(ProofRecord::of(&[&record_before_the_merge])),
+    );
 
     out
 }
@@ -1286,7 +1199,7 @@ fn delegation_scenarios() -> Vec<Scenario> {
          nothing standing behind it. Transient, not terminal: a grant confirmed on another RPC \
          is simply not here yet for a reader sitting at an earlier confirmed slot, and refusing \
          it terminally would fail a valid request permanently over ordinary replica lag.",
-        "delegated-current",
+        "delegated",
         "the delegation record is removed from the observation",
         rule::DELEGATION_ABSENT,
         FailureClass::Transient,
@@ -1300,7 +1213,7 @@ fn delegation_scenarios() -> Vec<Scenario> {
         "revoked-delegation",
         "The delegator revoked it. Subsequent requests stop immediately, while the signer's own \
          permit remains valid — two independent levers, one per party.",
-        "delegated-current",
+        "delegated",
         "the delegation record is marked revoked",
         rule::DELEGATION_REVOKED,
         FailureClass::Terminal,
@@ -1313,7 +1226,7 @@ fn delegation_scenarios() -> Vec<Scenario> {
     out.push(Scenario::rejected(
         "expired-delegation",
         "Expiry is measured against the observed slot, not against a local clock.",
-        "delegated-current",
+        "delegated",
         "the delegation's expiration slot falls below the observed slot",
         rule::DELEGATION_EXPIRED,
         FailureClass::Terminal,
@@ -1331,7 +1244,7 @@ fn delegation_scenarios() -> Vec<Scenario> {
          slot is the response's own context slot, so a coherent node cannot produce this, and it \
          reports an incoherent observation rather than a dead grant. A repeat against a coherent \
          node authorizes.",
-        "delegated-current",
+        "delegated",
         "the delegation's last update slot is above the observed slot",
         rule::DELEGATION_NEWER_THAN_OBSERVATION,
         FailureClass::Transient,
@@ -1347,7 +1260,7 @@ fn delegation_scenarios() -> Vec<Scenario> {
         "delegation-record-of-another-tuple",
         "A record sitting at the canonical address while naming a different tuple is refused: the \
          address alone is not taken as proof of what the record says.",
-        "delegated-current",
+        "delegated",
         "the delegation address holds a record naming another delegator",
         rule::DELEGATION_TUPLE_MISMATCH,
         FailureClass::Terminal,
@@ -1362,7 +1275,7 @@ fn delegation_scenarios() -> Vec<Scenario> {
         "The delegate half of the tuple rule: a record at the canonical address delegating to \
          somebody else is refused. Sitting at the address derived from the delegate is not taken \
          as proof of naming them.",
-        "delegated-current",
+        "delegated",
         "the delegation address holds a record naming another delegate",
         rule::DELEGATION_TUPLE_MISMATCH,
         FailureClass::Terminal,
@@ -1376,7 +1289,7 @@ fn delegation_scenarios() -> Vec<Scenario> {
         "delegation-record-owned-by-another-program",
         "Only the host program grants delegations; an account under another program's ownership is \
          not one.",
-        "delegated-current",
+        "delegated",
         "the delegation record's owner is replaced with another program",
         rule::DELEGATION_FOREIGN_OWNER,
         FailureClass::Terminal,
@@ -1388,7 +1301,7 @@ fn delegation_scenarios() -> Vec<Scenario> {
         "encrypted-value-account-record-as-delegation",
         "A host-owned account of another type at the delegation address is caught by its \
          discriminator, the mirror of the same substitution against an encrypted value account.",
-        "delegated-current",
+        "delegated",
         "the delegation address holds an encrypted value account instead",
         rule::DELEGATION_WRONG_ACCOUNT_TYPE,
         FailureClass::Terminal,
@@ -1406,7 +1319,7 @@ fn delegation_scenarios() -> Vec<Scenario> {
         "The delegator holds both an authority-specific row and a wildcard row, and both are revoked. The \
          rejection names both reasons: either row could have authorized this entry on its own, so \
          naming one of them would describe half of the state the delegate has to fix.",
-        "delegated-current",
+        "delegated",
         "both the authority-specific and the wildcard delegation rows are marked revoked",
         rule::DELEGATION_NO_LIVE_GRANT,
         FailureClass::Terminal,
@@ -1420,13 +1333,14 @@ fn delegation_scenarios() -> Vec<Scenario> {
     // name: with it as the account's authority, the authority-specific address derivation lands
     // on the wildcard row itself, so the guard rejects the account before any row is read.
     let sentinel_live = handle(0x2f, FHE_TYPE_UINT64);
-    let sentinel_encrypted_value_account = EncryptedValueAccountFixture::in_domain(
-        DOMAIN,
+    let mut sentinel_encrypted_value_account = EncryptedValueAccountFixture::in_application(
+        APP_PROGRAM,
         WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY,
+        SCOPE,
         LABEL,
         sentinel_live,
-        &[delegator.pubkey()],
     );
+    sentinel_encrypted_value_account.allow(delegator.pubkey());
     let sentinel_wildcard_row =
         DelegationFixture::live_wildcard(delegator.pubkey(), signer.pubkey(), OBSERVED_SLOT);
     out.push(Scenario::rejected(
@@ -1440,7 +1354,7 @@ fn delegation_scenarios() -> Vec<Scenario> {
         rule::ENCRYPTED_VALUE_ACCOUNT_SENTINEL_AUTHORITY,
         FailureClass::Terminal,
         RequestBuilder::new(&signer)
-            .delegated_current(
+            .delegated(
                 &sentinel_encrypted_value_account,
                 sentinel_live,
                 delegator.pubkey(),
@@ -1484,10 +1398,10 @@ fn record_of(scenario: &Scenario) -> ConnectorAuthVector {
             permit: WirePermit {
                 user_pubkey: to_hex(&permit.user_pubkey),
                 transport_key: TRANSPORT_KEY_NAME.to_owned(),
-                allowed_acl_domain_keys: permit
-                    .allowed_acl_domain_keys
+                allowed_scopes: permit
+                    .allowed_scopes
                     .iter()
-                    .map(|key| to_hex(key))
+                    .map(|scope| to_hex(scope))
                     .collect(),
                 start_timestamp: permit.start_timestamp.to_string(),
                 duration_seconds: permit.duration_seconds.to_string(),
@@ -1502,10 +1416,8 @@ fn record_of(scenario: &Scenario) -> ConnectorAuthVector {
                 .iter()
                 .map(|entry| WireHandleEntry {
                     handle: to_hex(&entry.handle),
-                    subject: to_hex(&entry.subject),
-                    encrypted_value_id: to_hex(&entry.encrypted_value_id),
-                    proof_leaf_count: entry.proof_leaf_count.to_string(),
-                    access_proof: to_hex(&entry.access_proof),
+                    allowed_key: to_hex(&entry.allowed_key),
+                    encrypted_value_account: to_hex(&entry.encrypted_value_account),
                 })
                 .collect(),
             // The canonical bytes of the same request: what the gateway event carries
@@ -1528,8 +1440,115 @@ fn record_of(scenario: &Scenario) -> ConnectorAuthVector {
                     data: to_hex(&account.data),
                 })
                 .collect(),
+            leaf_record: distinct_leaf_queries(&scenario.request)
+                .iter()
+                .map(|query| recorded_leaf_proof(query, &scenario.record.answer(query)))
+                .collect(),
         },
     }
+}
+
+/// The leaves a request names, one per distinct (account, handle, key), in first-seen order —
+/// the batch the Connector reads. Entries whose identities are not 32 bytes wide name no leaf;
+/// they are refused as a form error before any read.
+fn distinct_leaf_queries(request: &SolanaUserDecryptRequestWire) -> Vec<LeafQuery> {
+    let mut queries: Vec<LeafQuery> = Vec::new();
+    for entry in &request.handles {
+        let (Ok(handle), Ok(key), Ok(encrypted_value_account)) = (
+            <[u8; 32]>::try_from(entry.handle.as_slice()),
+            <[u8; 32]>::try_from(entry.allowed_key.as_slice()),
+            <[u8; 32]>::try_from(entry.encrypted_value_account.as_slice()),
+        ) else {
+            continue;
+        };
+        let query = LeafQuery {
+            encrypted_value_account,
+            handle,
+            kind: LeafKind::Allowed { key },
+        };
+        if !queries.contains(&query) {
+            queries.push(query);
+        }
+    }
+    queries
+}
+
+fn recorded_leaf_proof(query: &LeafQuery, outcome: &LeafProofOutcome) -> RecordedLeafProof {
+    let LeafKind::Allowed { key } = query.kind else {
+        panic!("user decryption asks only for allow leaves")
+    };
+    let (status, leaf_index, leaf_count, siblings) = match outcome {
+        LeafProofOutcome::Found {
+            leaf_index,
+            leaf_count,
+            siblings,
+        } => (
+            LeafProofStatus::Found,
+            Some(leaf_index.to_string()),
+            Some(leaf_count.to_string()),
+            siblings.iter().map(|sibling| to_hex(sibling)).collect(),
+        ),
+        LeafProofOutcome::NotFound { leaf_count } => (
+            LeafProofStatus::NotFound,
+            None,
+            Some(leaf_count.to_string()),
+            Vec::new(),
+        ),
+        LeafProofOutcome::UnknownAccount => {
+            (LeafProofStatus::UnknownAccount, None, None, Vec::new())
+        }
+        LeafProofOutcome::HistoryIncomplete => {
+            (LeafProofStatus::HistoryIncomplete, None, None, Vec::new())
+        }
+    };
+    RecordedLeafProof {
+        encrypted_value_account: to_hex(&query.encrypted_value_account),
+        handle: to_hex(&query.handle),
+        allowed_key: to_hex(&key),
+        status,
+        leaf_index,
+        leaf_count,
+        siblings,
+    }
+}
+
+/// The inverse of [`recorded_leaf_proof`], for replay.
+fn leaf_record_of(observation: &Observation) -> ProofRecord {
+    let bytes32 = |hex: &str| -> [u8; 32] {
+        from_hex(hex)
+            .expect("hex")
+            .try_into()
+            .expect("a 32-byte identity")
+    };
+    let decimal = |field: &Option<String>| -> u64 {
+        field
+            .as_deref()
+            .expect("a decimal string")
+            .parse()
+            .expect("decimal")
+    };
+    ProofRecord::answering(observation.leaf_record.iter().map(|recorded| {
+        let query = LeafQuery {
+            encrypted_value_account: bytes32(&recorded.encrypted_value_account),
+            handle: bytes32(&recorded.handle),
+            kind: LeafKind::Allowed {
+                key: bytes32(&recorded.allowed_key),
+            },
+        };
+        let outcome = match recorded.status {
+            LeafProofStatus::Found => LeafProofOutcome::Found {
+                leaf_index: decimal(&recorded.leaf_index),
+                leaf_count: decimal(&recorded.leaf_count),
+                siblings: recorded.siblings.iter().map(|hex| bytes32(hex)).collect(),
+            },
+            LeafProofStatus::NotFound => LeafProofOutcome::NotFound {
+                leaf_count: decimal(&recorded.leaf_count),
+            },
+            LeafProofStatus::UnknownAccount => LeafProofOutcome::UnknownAccount,
+            LeafProofStatus::HistoryIncomplete => LeafProofOutcome::HistoryIncomplete,
+        };
+        (query, outcome)
+    }))
 }
 
 fn build_file() -> ConnectorAuthVectorFile {
@@ -1614,11 +1633,6 @@ fn rule_name(failure: &AuthorizationFailure) -> &'static str {
         AuthorizationFailure::Form(form) => match form {
             RequestFormError::EmptyHandles => rule::EMPTY_HANDLES,
             RequestFormError::TooManyHandles { .. } => rule::TOO_MANY_HANDLES,
-            RequestFormError::AccessProofMalformed { .. } => rule::ACCESS_PROOF_MALFORMED,
-            RequestFormError::AccessProofTrailingBytes { .. } => rule::ACCESS_PROOF_TRAILING_BYTES,
-            RequestFormError::AccessProofTooManySiblings { .. } => {
-                rule::ACCESS_PROOF_TOO_MANY_SIBLINGS
-            }
             RequestFormError::Permit(_)
             | RequestFormError::SignatureWidth { .. }
             | RequestFormError::EntryIdentityWidth { .. } => {
@@ -1665,30 +1679,27 @@ fn rule_name(failure: &AuthorizationFailure) -> &'static str {
             EncryptedValueAccountFailure::Malformed { .. } => {
                 rule::ENCRYPTED_VALUE_ACCOUNT_MALFORMED
             }
-            EncryptedValueAccountFailure::EncryptedValueIdMismatch { .. } => {
-                rule::ENCRYPTED_VALUE_ID_MISMATCH
+            EncryptedValueAccountFailure::AddressMismatch { .. } => {
+                rule::ENCRYPTED_VALUE_ACCOUNT_ADDRESS_MISMATCH
             }
             EncryptedValueAccountFailure::SentinelAuthority { .. } => {
                 rule::ENCRYPTED_VALUE_ACCOUNT_SENTINEL_AUTHORITY
             }
             EncryptedValueAccountFailure::Snapshot(_) => panic!("a record carries one observation"),
         },
+        AuthorizationFailure::ProofRead(_) => panic!("a record answers every read"),
         AuthorizationFailure::HandleBinding { source, .. } => match source {
-            HandleBindingFailure::NotCurrentHandle { .. } => rule::HANDLE_NOT_CURRENT,
-            HandleBindingFailure::NotAMember { .. } => rule::SUBJECT_NOT_A_MEMBER,
-            // Both proof outcomes reach a client through `InclusionFailed` below, which is where
-            // they are classified by the claimed leaf count. Seeing one here would mean the
-            // pipeline stopped folding them and the set lost that classification.
-            HandleBindingFailure::LeafIndexOutOfRange { .. }
-            | HandleBindingFailure::ProofDoesNotVerify { .. } => panic!(
-                "an inclusion failure must arrive classified, not as a bare handle-binding failure"
-            ),
+            HandleBindingFailure::NoLeaf { .. } => rule::NO_ALLOW_LEAF,
+            HandleBindingFailure::ProofRecordBehind { .. } => rule::LEAF_RECORD_BEHIND,
+            HandleBindingFailure::AccountUnknownToProofRecord => rule::LEAF_RECORD_UNKNOWN_ACCOUNT,
+            HandleBindingFailure::HistoryIncomplete => rule::LEAF_HISTORY_INCOMPLETE,
+            HandleBindingFailure::LeafIndexOutOfRange { .. } => rule::LEAF_RECORD_AHEAD,
+            HandleBindingFailure::ProofDoesNotVerify { .. } => rule::LEAF_PROOF_DOES_NOT_VERIFY,
             HandleBindingFailure::MmrStateInconsistent => {
                 panic!("internally inconsistent host state is not a class of this set")
             }
         },
-        AuthorizationFailure::InclusionFailed { .. } => rule::INCLUSION_PROOF_DOES_NOT_VERIFY,
-        AuthorizationFailure::Scope { .. } => rule::DOMAIN_NOT_ALLOWED,
+        AuthorizationFailure::Scope { .. } => rule::SCOPE_NOT_ALLOWED,
         AuthorizationFailure::Delegation { source, .. } => match source {
             DelegationFailure::Absent { .. } => rule::DELEGATION_ABSENT,
             DelegationFailure::Revoked => rule::DELEGATION_REVOKED,
@@ -1723,10 +1734,10 @@ async fn replay(record: &ConnectorAuthVector, file: &ConnectorAuthVectorFile) ->
             transport_key: record
                 .transport_key_bytes(file)
                 .expect("the record names a key in the table"),
-            allowed_acl_domain_keys: permit
-                .allowed_acl_domain_keys
+            allowed_scopes: permit
+                .allowed_scopes
                 .iter()
-                .map(|key| from_hex(key).expect("hex"))
+                .map(|scope| from_hex(scope).expect("hex"))
                 .collect(),
             start_timestamp: permit.start_timestamp.parse().expect("decimal"),
             duration_seconds: permit.duration_seconds.parse().expect("decimal"),
@@ -1741,10 +1752,8 @@ async fn replay(record: &ConnectorAuthVector, file: &ConnectorAuthVectorFile) ->
             .iter()
             .map(|entry| SolanaHandleEntryWire {
                 handle: from_hex(&entry.handle).expect("hex"),
-                subject: from_hex(&entry.subject).expect("hex"),
-                encrypted_value_id: from_hex(&entry.encrypted_value_id).expect("hex"),
-                proof_leaf_count: entry.proof_leaf_count.parse().expect("decimal"),
-                access_proof: from_hex(&entry.access_proof).expect("hex"),
+                allowed_key: from_hex(&entry.allowed_key).expect("hex"),
+                encrypted_value_account: from_hex(&entry.encrypted_value_account).expect("hex"),
             })
             .collect(),
     };
@@ -1794,6 +1803,7 @@ async fn replay(record: &ConnectorAuthVector, file: &ConnectorAuthVectorFile) ->
         }
     };
     let reader = ScriptedReader::scripted(vec![world.clone(), world]);
+    let proofs = ScriptedProofReader::constant(leaf_record_of(&record.observation));
     let deployment = deployment();
     let context = AuthorizationContext {
         deployment: &deployment,
@@ -1809,6 +1819,7 @@ async fn replay(record: &ConnectorAuthVector, file: &ConnectorAuthVectorFile) ->
     match authorize_request(
         &reader,
         &DeclaredKmsPair(record.observation.kms_pair_status),
+        &proofs,
         context,
         &request,
     )
@@ -2034,11 +2045,16 @@ fn sixty_four_bit_fields_are_strings_in_the_json() {
                 "observation field '{field}' must be a decimal string"
             );
         }
-        for entry in record["request"]["handles"].as_array().expect("an array") {
-            assert!(
-                entry["proof_leaf_count"].is_string(),
-                "a handle entry's proof leaf count must be a decimal string"
-            );
+        for answer in record["observation"]["leaf_record"]
+            .as_array()
+            .expect("an array")
+        {
+            for field in ["leaf_index", "leaf_count"] {
+                assert!(
+                    answer.get(field).is_none_or(serde_json::Value::is_string),
+                    "leaf record field '{field}' must be a decimal string when present"
+                );
+            }
         }
     }
     assert!(

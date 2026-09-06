@@ -102,7 +102,7 @@ fn signature_over_text_with_reordered_lines_is_rejected() {
     );
 }
 
-/// A wallet that rendered the empty domain list as an empty enumeration block —
+/// A wallet that rendered the empty scope list as an empty enumeration block —
 /// instead of the explicit permissive line — produces a signature no verifier
 /// accepts. That is what keeps the breadth of a permissive grant visible: the
 /// alternative rendering is not merely discouraged, it is unusable.
@@ -110,7 +110,7 @@ fn signature_over_text_with_reordered_lines_is_rejected() {
 fn signature_over_empty_enumeration_instead_of_permissive_line_is_rejected() {
     let fields = decoded(&permissive_wire());
     let canonical = render_canonical_text(&fields);
-    let tampered = canonical.replace("ACL domains: ALL (permissive)", "ACL domains (0):");
+    let tampered = canonical.replace("Scopes: ALL (permissive)", "Scopes (0):");
     assert_ne!(tampered, canonical);
 
     let signature = sign_text_as_wallet(USER_SEED, &tampered);
@@ -157,10 +157,10 @@ fn signature_over_text_with_a_substituted_value_is_rejected() {
             "Valid from: 2026-01-01T01:03:00Z for 604800 seconds",
             "Valid from: 2026-01-01T01:03:00Z for 31536000 seconds",
         ),
-        ("ACL domains (2):", "ACL domains (1):"),
+        ("Scopes (2):", "Scopes (1):"),
         (
-            "Zama fhevm Solana user-decrypt permit v1",
             "Zama fhevm Solana user-decrypt permit v2",
+            "Zama fhevm Solana user-decrypt permit v1",
         ),
     ];
 

@@ -535,13 +535,12 @@ if run_check 3; then
     '' -iE 'compute[ _-]?(subject|signer)|computeSubject|computeSigner|fhe-compute'
   # The ACL "domain" became the application `(program, scope)`. Swept as the ACL sense only:
   # "ACL domain", "mint domain", the `Domain` type, `.domain` fields and `domain_index` wire names.
-  # EIP-712 signing domains and hash domain separation are other senses and never matched. The
-  # permit crate is excluded whole: `acl_domain_key` / "ACL domain key" is the normative field of
-  # the signed permit wire and its vectors, kept on purpose.
+  # EIP-712 signing domains and hash domain separation are other senses and never matched; the
+  # connector's `self.domain` is its EIP-712 domain and is the one `.domain` field excepted. The
+  # permit now signs `allowed_scopes`; nothing in its crate carries the old name.
   check_alias 'domain — say application (program, scope)' kms \
-    'acl_domain_key|acl-domain-key|acl domain key|acl-domain key|allowed_acl_domain_keys|aclDomainKey|allowedAclDomainKeys' \
-    -iE '\bacl[ _-]domains?\b|mint[ _-]domain|self[ _-]domain|Domain::new|zama_fhe::Domain|\bDomain<|domain_index|\.domain\b|domain: Pubkey|\bdomain key' \
-    --exclude-dir=zama-solana-permit
+    'self\.domain|url\.domain\(\)' \
+    -iE '\bacl[ _-]domains?\b|mint[ _-]domain|self[ _-]domain|Domain::new|zama_fhe::Domain|\bDomain<|domain_index|\.domain\b|domain: Pubkey|\bdomain key'
   # The encrypted-value ID components are domain / encrypted_value_account_authority /
   # encrypted_value_label. `acl_domain_key` is NOT swept: it is the normative field name of the signed
   # Solana permit (`allowed_acl_domain_keys` in the user-decryption specification) and of the v3 wire,

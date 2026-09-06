@@ -196,3 +196,9 @@ acl_address = "0x0000000000000000000000000000000000000000"
 # Required for Solana chains and forbidden for EVM chains. Base58 ZamaHost program id expected to
 # own ACL/material witnesses.
 # solana_host_program_id = "11111111111111111111111111111111"
+# Solana chains only: the coprocessors' leaf-proof endpoints (`POST /v1/solana/leaf-proofs`). Each
+# request's leaves are read from every endpoint and the answers merged, so one lagging coprocessor
+# does not fail a request. Empty means no proof can be read and every user decryption fails.
+# solana_proof_endpoints = ["http://localhost:8080"]
+# Bearer key sent to the leaf-proof endpoints (optional).
+# solana_proof_api_key = "change-me"

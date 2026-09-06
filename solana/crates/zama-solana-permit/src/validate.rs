@@ -1,7 +1,7 @@
 //! Strict decoding of the transport form into typed fields.
 //!
 //! Everything checkable without live state is checked here, before any text is
-//! rendered and before any signature is looked at: identity widths, the ACL-domain
+//! rendered and before any signature is looked at: identity widths, the scope widths,
 //! count and ordering, the validity-window bounds, the transport-key length, and
 //! the version and length of the KMS routing field. A permit that survives this
 //! step renders totally — the renderer is not allowed to fail.
@@ -15,9 +15,10 @@
 use crate::{
     error::{IdentityField, PermitError},
     types::{
-        AclDomainKeys, Identity, KmsRouting, PermitFields, PermitWireFields, TransportKey,
-        IDENTITY_LEN, KMS_ROUTING_EXTRA_DATA_LEN, KMS_ROUTING_VERSION_BYTE, MAX_DURATION_SECONDS,
-        MAX_START_TIMESTAMP, MIN_DURATION_SECONDS, TRANSPORT_KEY_LEN,
+        AllowedScopes, ApplicationScope, Identity, KmsRouting, PermitFields, PermitWireFields,
+        TransportKey, IDENTITY_LEN, KMS_ROUTING_EXTRA_DATA_LEN, KMS_ROUTING_VERSION_BYTE,
+        MAX_DURATION_SECONDS, MAX_START_TIMESTAMP, MIN_DURATION_SECONDS, SCOPE_LEN,
+        TRANSPORT_KEY_LEN,
     },
 };
 
@@ -38,11 +39,17 @@ impl PermitFields {
 
         // Widths first, by index, so a malformed entry is named by its position; the
         // count and the ordering are then the list type's own rules.
-        let mut keys = Vec::with_capacity(wire.allowed_acl_domain_keys.len());
-        for (index, key) in wire.allowed_acl_domain_keys.iter().enumerate() {
-            keys.push(decode_identity(key, IdentityField::AclDomainKey(index))?);
+        let mut scopes = Vec::with_capacity(wire.allowed_scopes.len());
+        for (index, entry) in wire.allowed_scopes.iter().enumerate() {
+            let bytes = <[u8; SCOPE_LEN]>::try_from(entry.as_slice()).map_err(|_| {
+                PermitError::ScopeWidth {
+                    index,
+                    len: entry.len(),
+                }
+            })?;
+            scopes.push(ApplicationScope::from_bytes(bytes));
         }
-        let allowed_acl_domain_keys = AclDomainKeys::new(keys)?;
+        let allowed_scopes = AllowedScopes::new(scopes)?;
 
         let start_timestamp = wire.start_timestamp;
         if start_timestamp > MAX_START_TIMESTAMP {
@@ -64,7 +71,7 @@ impl PermitFields {
         Ok(Self::from_validated(
             user_pubkey,
             transport_key,
-            allowed_acl_domain_keys,
+            allowed_scopes,
             start_timestamp,
             duration_seconds,
             verifying_program_id,

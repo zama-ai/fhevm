@@ -27,9 +27,14 @@ pub const IDENTITY_LEN: usize = 32;
 /// digest in permits and linkers (full key only for the encryption itself) would
 /// change this length again — it is a wire representation, not protocol essence.
 pub const TRANSPORT_KEY_LEN: usize = 869;
-/// Upper bound on the signed ACL-domain list. The empty list is also valid and
-/// means permissive.
-pub const MAX_ACL_DOMAIN_KEYS: usize = 10;
+/// A scope entry is exactly this many bytes: the program identity then the scope
+/// identity, with no separator.
+pub const SCOPE_LEN: usize = 2 * IDENTITY_LEN;
+/// Upper bound on the signed scope list. The empty list is also valid and means
+/// permissive. Seven, not ten: a scope line carries two identities, and the widest
+/// admissible permit has to clear-sign inside the 1232-byte wallet ceiling with margin
+/// (see the size-budget suite).
+pub const MAX_ALLOWED_SCOPES: usize = 7;
 /// A permit must be valid for at least one second.
 pub const MIN_DURATION_SECONDS: u64 = 1;
 /// A permit must not be valid for more than 365 days.
@@ -46,9 +51,8 @@ pub const KMS_ROUTING_EXTRA_DATA_LEN: usize = 1 + IDENTITY_LEN + IDENTITY_LEN;
 /// Ed25519 signature length.
 pub const SIGNATURE_LEN: usize = 64;
 
-/// A 32-byte permit identity: a user, a program, an ACL domain, a KMS context or a
-/// KMS epoch. Ordering is byte order, which is the ordering the ACL-domain list
-/// rule is stated in.
+/// A 32-byte permit identity: a user, a program, a scope, a KMS context or a KMS
+/// epoch.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct Identity([u8; IDENTITY_LEN]);
 
@@ -90,41 +94,95 @@ impl core::fmt::Debug for TransportKey {
     }
 }
 
-/// The signed ACL-domain list, carrying its own validity: at most the maximum
-/// count, strictly ascending in byte order, no duplicates. Empty means permissive.
-#[derive(Clone, PartialEq, Eq, Debug)]
-pub struct AclDomainKeys(Vec<Identity>);
+/// One application a permit is scoped to: the program that owns an encrypted value
+/// and the scope that program declared for it (the mint, for the token program). The
+/// pair is the application identity everywhere in the host: only the real program can
+/// produce the `program` half, and `scope` restores the per-application granularity a
+/// program id alone loses.
+///
+/// Ordering is byte order over `program ‖ scope`, which is the ordering the list rule
+/// is stated in.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub struct ApplicationScope([u8; SCOPE_LEN]);
 
-impl AclDomainKeys {
-    /// Checks the count, the strict byte-order ascent and the absence of
-    /// duplicates, and wraps the list. The only constructor.
-    pub fn new(keys: Vec<Identity>) -> Result<Self, PermitError> {
-        if keys.len() > MAX_ACL_DOMAIN_KEYS {
-            return Err(PermitError::TooManyAclDomainKeys { count: keys.len() });
-        }
-        // Strict ascent between neighbors is the whole rule: a list in which every key
-        // exceeds its predecessor cannot repeat a key anywhere, so there is nothing to
-        // check across a distance. Equality is reported as a duplicate rather than as a
-        // failed ascent, because that is the mistake a caller actually made.
-        for index in 1..keys.len() {
-            if keys[index] == keys[index - 1] {
-                return Err(PermitError::DuplicateAclDomainKey { index });
-            }
-            if keys[index] < keys[index - 1] {
-                return Err(PermitError::AclDomainKeysNotAscending { index });
-            }
-        }
-        Ok(Self(keys))
+impl ApplicationScope {
+    /// Pairs a program with one of its scopes.
+    pub fn new(program: Identity, scope: Identity) -> Self {
+        let mut bytes = [0u8; SCOPE_LEN];
+        bytes[..IDENTITY_LEN].copy_from_slice(program.as_bytes());
+        bytes[IDENTITY_LEN..].copy_from_slice(scope.as_bytes());
+        Self(bytes)
     }
 
-    /// The keys, in signed order.
-    pub fn as_slice(&self) -> &[Identity] {
+    /// Wraps the 64 transport bytes. Total by construction: the width rule is enforced
+    /// where a transport value of unknown width is decoded, not here.
+    pub fn from_bytes(bytes: [u8; SCOPE_LEN]) -> Self {
+        Self(bytes)
+    }
+
+    /// The program half.
+    pub fn program(&self) -> Identity {
+        let mut out = [0u8; IDENTITY_LEN];
+        out.copy_from_slice(&self.0[..IDENTITY_LEN]);
+        Identity::new(out)
+    }
+
+    /// The scope half.
+    pub fn scope(&self) -> Identity {
+        let mut out = [0u8; IDENTITY_LEN];
+        out.copy_from_slice(&self.0[IDENTITY_LEN..]);
+        Identity::new(out)
+    }
+
+    /// The underlying bytes, `program ‖ scope`.
+    pub fn as_bytes(&self) -> &[u8; SCOPE_LEN] {
+        &self.0
+    }
+}
+
+/// The signed scope list, carrying its own validity: at most the maximum count,
+/// strictly ascending in byte order, no duplicates. Empty means permissive.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct AllowedScopes(Vec<ApplicationScope>);
+
+impl AllowedScopes {
+    /// Checks the count, the strict byte-order ascent and the absence of
+    /// duplicates, and wraps the list. The only constructor.
+    pub fn new(scopes: Vec<ApplicationScope>) -> Result<Self, PermitError> {
+        if scopes.len() > MAX_ALLOWED_SCOPES {
+            return Err(PermitError::TooManyScopes {
+                count: scopes.len(),
+            });
+        }
+        // Strict ascent between neighbors is the whole rule: a list in which every entry
+        // exceeds its predecessor cannot repeat an entry anywhere, so there is nothing to
+        // check across a distance. Equality is reported as a duplicate rather than as a
+        // failed ascent, because that is the mistake a caller actually made.
+        for index in 1..scopes.len() {
+            if scopes[index] == scopes[index - 1] {
+                return Err(PermitError::DuplicateScope { index });
+            }
+            if scopes[index] < scopes[index - 1] {
+                return Err(PermitError::ScopesNotAscending { index });
+            }
+        }
+        Ok(Self(scopes))
+    }
+
+    /// The scopes, in signed order.
+    pub fn as_slice(&self) -> &[ApplicationScope] {
         &self.0
     }
 
     /// True for a permissive permit.
     pub fn is_permissive(&self) -> bool {
         self.0.is_empty()
+    }
+
+    /// Whether `(program, scope)` is admitted: every pair under a permissive permit, and
+    /// exactly the signed pairs otherwise.
+    pub fn admits(&self, program: &Identity, scope: &Identity) -> bool {
+        self.is_permissive() || self.0.contains(&ApplicationScope::new(*program, *scope))
     }
 }
 
@@ -171,7 +229,7 @@ impl KmsRouting {
 pub struct PermitFields {
     user_pubkey: Identity,
     transport_key: TransportKey,
-    allowed_acl_domain_keys: AclDomainKeys,
+    allowed_scopes: AllowedScopes,
     start_timestamp: u64,
     duration_seconds: u64,
     verifying_program_id: Identity,
@@ -190,9 +248,9 @@ impl PermitFields {
         &self.transport_key
     }
 
-    /// The signed ACL-domain scope; empty means permissive.
-    pub fn allowed_acl_domain_keys(&self) -> &AclDomainKeys {
-        &self.allowed_acl_domain_keys
+    /// The signed `(program, scope)` list; empty means permissive.
+    pub fn allowed_scopes(&self) -> &AllowedScopes {
+        &self.allowed_scopes
     }
 
     /// Start of the validity window, unix seconds.
@@ -226,7 +284,7 @@ impl PermitFields {
     pub(crate) fn from_validated(
         user_pubkey: Identity,
         transport_key: TransportKey,
-        allowed_acl_domain_keys: AclDomainKeys,
+        allowed_scopes: AllowedScopes,
         start_timestamp: u64,
         duration_seconds: u64,
         verifying_program_id: Identity,
@@ -236,7 +294,7 @@ impl PermitFields {
         Self {
             user_pubkey,
             transport_key,
-            allowed_acl_domain_keys,
+            allowed_scopes,
             start_timestamp,
             duration_seconds,
             verifying_program_id,
@@ -258,8 +316,8 @@ pub struct PermitWireFields {
     pub user_pubkey: Vec<u8>,
     /// Claimed transport key of any length.
     pub transport_key: Vec<u8>,
-    /// Claimed ACL-domain keys, in the sender's order.
-    pub allowed_acl_domain_keys: Vec<Vec<u8>>,
+    /// Claimed 64-byte `program ‖ scope` entries, in the sender's order.
+    pub allowed_scopes: Vec<Vec<u8>>,
     /// Claimed validity-window start.
     pub start_timestamp: u64,
     /// Claimed validity-window length.

@@ -10,8 +10,10 @@ use crate::{
             solana_public_decrypt::SolanaHost,
         },
         kms_response_publisher::DbKmsResponsePublisher,
-        solana::{deployment::DeploymentIdentity, snapshot::RpcHostStateReader},
-        solana_v2_fetcher::SolanaV2Fetcher,
+        solana::{
+            deployment::DeploymentIdentity, proof::HttpHostProofReader,
+            snapshot::RpcHostStateReader,
+        },
     },
     monitoring::{
         health::{KmsHealthClient, State},
@@ -330,7 +332,7 @@ async fn register_host_chain_backends(
 
     let mut backends = HashMap::with_capacity(config.host_chains.len());
     // The workspace `reqwest`, not alloy's re-export: alloy now vendors a different major, and
-    // `SolanaV2Fetcher` is typed against the workspace crate.
+    // the Solana readers are typed against the workspace crate.
     let solana_client = ::reqwest::Client::new();
 
     for host_chain in &config.host_chains {
@@ -368,10 +370,20 @@ async fn register_host_chain_backends(
                             host_chain.chain_id
                         )
                     })?;
+                let api_key = host_chain.solana_proof_api_key.clone().ok_or_else(|| {
+                    anyhow!(
+                        "Solana host chain {} requires solana_proof_api_key",
+                        host_chain.chain_id
+                    )
+                })?;
                 HostChainAclBackend::Solana(Box::new(SolanaHost {
                     deployment,
                     reader: RpcHostStateReader::new(host_chain.url.clone(), solana_client.clone()),
-                    fetcher: SolanaV2Fetcher::new(host_chain.url.clone(), solana_client.clone()),
+                    proofs: HttpHostProofReader::new(
+                        &host_chain.solana_proof_endpoints,
+                        api_key,
+                        solana_client.clone(),
+                    ),
                 }))
             }
         };
@@ -413,6 +425,14 @@ fn validate_host_chain_configs(host_chains: &[HostChainConfig]) -> anyhow::Resul
                         host_chain.chain_id
                     ));
                 }
+                if !host_chain.solana_proof_endpoints.is_empty()
+                    || host_chain.solana_proof_api_key.is_some()
+                {
+                    return Err(anyhow!(
+                        "EVM host chain {} must not set solana_proof_endpoints or solana_proof_api_key",
+                        host_chain.chain_id
+                    ));
+                }
             }
             HostChainKind::Solana => {
                 if !has_chain_type_bit {
@@ -430,6 +450,18 @@ fn validate_host_chain_configs(host_chains: &[HostChainConfig]) -> anyhow::Resul
                 if host_chain.acl_address.is_some() {
                     return Err(anyhow!(
                         "Solana host chain {} must not set acl_address",
+                        host_chain.chain_id
+                    ));
+                }
+                if host_chain.solana_proof_endpoints.is_empty() {
+                    return Err(anyhow!(
+                        "Solana host chain {} requires at least one solana_proof_endpoints entry",
+                        host_chain.chain_id
+                    ));
+                }
+                if host_chain.solana_proof_api_key.is_none() {
+                    return Err(anyhow!(
+                        "Solana host chain {} requires solana_proof_api_key",
                         host_chain.chain_id
                     ));
                 }
@@ -459,6 +491,9 @@ mod tests {
                 host_chain.chain_id = SOLANA_CHAIN_TYPE_BIT | chain_id;
                 host_chain.acl_address = None;
                 host_chain.solana_host_program_id = Some([7; 32]);
+                host_chain.solana_proof_endpoints =
+                    vec!["http://coprocessor.test:8080".parse().unwrap()];
+                host_chain.solana_proof_api_key = Some("test-key".to_string());
             }
         }
         host_chain
@@ -546,12 +581,27 @@ mod tests {
         solana_missing_program_id.solana_host_program_id = None;
         let mut solana_with_acl = host_chain(4, HostChainKind::Solana);
         solana_with_acl.acl_address = Some(Address::ZERO);
+        let mut solana_without_proof_endpoint = host_chain(5, HostChainKind::Solana);
+        solana_without_proof_endpoint.solana_proof_endpoints.clear();
+        let mut solana_without_proof_key = host_chain(6, HostChainKind::Solana);
+        solana_without_proof_key.solana_proof_api_key = None;
+        let mut evm_with_proof_key = host_chain(7, HostChainKind::Evm);
+        evm_with_proof_key.solana_proof_api_key = Some("test-key".to_string());
 
         let cases = [
             (evm_missing_acl, "requires acl_address"),
             (evm_with_program_id, "must not set solana_host_program_id"),
             (solana_missing_program_id, "requires solana_host_program_id"),
             (solana_with_acl, "must not set acl_address"),
+            (
+                solana_without_proof_endpoint,
+                "requires at least one solana_proof_endpoints entry",
+            ),
+            (solana_without_proof_key, "requires solana_proof_api_key"),
+            (
+                evm_with_proof_key,
+                "must not set solana_proof_endpoints or solana_proof_api_key",
+            ),
         ];
         for (host_chain, expected) in cases {
             let error = validation_error(&[host_chain]);

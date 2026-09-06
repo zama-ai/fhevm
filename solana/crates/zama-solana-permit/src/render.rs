@@ -6,9 +6,10 @@
 //! its line order is fixed, its final line carries no line feed, integers are
 //! decimal without leading zeros, and the timestamp is rendered to the second.
 //!
-//! An empty ACL-domain list renders as one explicit line naming the permissive
-//! breadth, rather than as an empty enumeration block, so a human signer sees how
-//! wide the grant is.
+//! An empty scope list renders as one explicit line naming the permissive breadth,
+//! rather than as an empty enumeration block, so a human signer sees how wide the
+//! grant is. A scope entry renders as its program and its scope, both base58, joined
+//! by a slash: the two halves a signer can look up separately.
 //!
 //! The text is assembled as a list of lines joined by a single line feed. That is not
 //! a stylistic choice: it is what makes "the final line carries no line feed" a
@@ -17,14 +18,14 @@
 
 use crate::{
     fingerprint::transport_key_fingerprint,
-    types::{Identity, KmsRouting, PermitFields},
+    types::{ApplicationScope, KmsRouting, PermitFields},
 };
 
 /// First line: names the protocol and the version of this text form. A reader who
 /// cannot parse the rest still learns what they were shown.
-const HEADER: &str = "Zama fhevm Solana user-decrypt permit v1";
-/// The one line an empty domain list renders as.
-const PERMISSIVE_DOMAINS_LINE: &str = "ACL domains: ALL (permissive)";
+const HEADER: &str = "Zama fhevm Solana user-decrypt permit v2";
+/// The one line an empty scope list renders as.
+const PERMISSIVE_SCOPES_LINE: &str = "Scopes: ALL (permissive)";
 
 /// Renders the canonical text a wallet signs.
 pub fn render_canonical_text(fields: &PermitFields) -> String {
@@ -67,17 +68,18 @@ pub fn render_canonical_text(fields: &PermitFields) -> String {
         fields.duration_seconds()
     ));
 
-    let domains = fields.allowed_acl_domain_keys();
-    if domains.is_permissive() {
-        lines.push(PERMISSIVE_DOMAINS_LINE.to_string());
+    let scopes = fields.allowed_scopes();
+    if scopes.is_permissive() {
+        lines.push(PERMISSIVE_SCOPES_LINE.to_string());
     } else {
-        lines.push(format!("ACL domains ({}):", domains.as_slice().len()));
-        lines.extend(
-            domains
-                .as_slice()
-                .iter()
-                .map(|key: &Identity| format!("- {}", base58(key.as_bytes()))),
-        );
+        lines.push(format!("Scopes ({}):", scopes.as_slice().len()));
+        lines.extend(scopes.as_slice().iter().map(|entry: &ApplicationScope| {
+            format!(
+                "- {}/{}",
+                base58(entry.program().as_bytes()),
+                base58(entry.scope().as_bytes())
+            )
+        }));
     }
 
     lines.join("\n")

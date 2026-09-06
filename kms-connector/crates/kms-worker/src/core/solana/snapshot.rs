@@ -8,8 +8,8 @@
 //! observation.
 //!
 //! For a request whose entries are all direct, that last read is also the only one: the encrypted
-//! value accounts are named by their encrypted value IDs, the invalidation record by the signer and
-//! the config singleton by the deployment, so every key is computable up front.
+//! value accounts are named by address, the invalidation record by the signer and the config
+//! singleton by the deployment, so every key is computable up front.
 //!
 //! A delegated entry breaks the up-front part. Its delegation record lives at a PDA seeded by
 //! `(delegator, delegate, encrypted_value_account_authority)`, and the authoritative
@@ -26,7 +26,7 @@
 //! in: the delegation address it produced is re-derived from the deciding snapshot's own encrypted
 //! value account inside [`super::delegation::check_delegation`], and an encrypted value account that
 //! resolves at a given address has exactly one `encrypted_value_account_authority`, because that
-//! field is part of the encrypted value ID preimage the address is derived from. A discovery read
+//! field is one of the seeds the address is derived from. A discovery read
 //! that named the wrong record therefore surfaces as a key the deciding snapshot never read,
 //! reported as the key-planning defect it is.
 //!
@@ -42,7 +42,9 @@
 //! the reads remains fine, which is the case that actually happens.
 //!
 //! Reads number exactly one for a direct-only request, exactly two when any entry is delegated, and
-//! never three: nothing after the deciding snapshot reads state at all.
+//! never three: nothing after the deciding snapshot reads chain state at all. The leaf-proof read
+//! that follows ([`super::proof`]) is not an observation of the chain — it fetches sibling paths
+//! that are verified against this snapshot's peaks.
 //!
 //! ## Commitment
 //!
@@ -59,7 +61,7 @@ use std::future::Future;
 use url::Url;
 
 /// The commitment level of every authorization read.
-pub use crate::core::solana_v2_fetcher::SOLANA_COMMITMENT_CONFIRMED;
+pub const SOLANA_COMMITMENT_CONFIRMED: &str = "confirmed";
 
 /// The System program's id, which is the all-zero pubkey. The owner every account has before a
 /// program takes it over, and the one this module reads as "nothing has been written here yet".
@@ -241,13 +243,10 @@ pub fn plan_first_read(
     let signer = *request.permit().user_pubkey().as_bytes();
     let (host_config_key, _) = crate::core::solana_acl::host_config_address(program_id);
     let (watermark_key, _) = super::watermark::permit_invalidation_address(program_id, signer);
-    let encrypted_value_accounts = request.handles().iter().map(|entry| {
-        let (account_key, _) = super::encrypted_value_account::encrypted_value_account_address(
-            program_id,
-            entry.encrypted_value_id(),
-        );
-        account_key
-    });
+    let encrypted_value_accounts = request
+        .handles()
+        .iter()
+        .map(|entry| entry.encrypted_value_account());
     SnapshotKeys::new(
         [host_config_key, watermark_key]
             .into_iter()
@@ -348,11 +347,6 @@ pub fn parse_multiple_accounts_response(
 
 /// Parses one element of the `value` array: `null` is an account that does not exist, which is
 /// an observation and not a failure.
-///
-/// Temporary duplication: the single-account fetcher of the proof-of-concept path
-/// ([`crate::core::solana_v2_fetcher`]) carries the same owner and base64 decoding behind private
-/// helpers. Reusing them would mean editing that module while it is still live, and this series
-/// leaves the old path untouched. Both readers collapse into one when the old path is removed.
 fn parse_account(value: &Value) -> Result<Option<SnapshotAccount>, SnapshotError> {
     if value.is_null() {
         return Ok(None);

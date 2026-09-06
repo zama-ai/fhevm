@@ -1,10 +1,11 @@
 //! Solana user-decryption authorization: permit reconstruction, deployment identity, the
-//! atomic state snapshot, and the per-handle rules.
+//! atomic state snapshot, the leaf-proof read, and the per-handle rules.
 //!
 //! The shape of this module tree is part of the contract, not organization. Every check is
-//! a pure function of `(typed request, snapshot, deployment, now)`, and the only place that
-//! reads host state is [`snapshot`]. Two properties follow from that split, and neither
-//! survives if it is blurred:
+//! a pure function of `(typed request, snapshot, proofs, deployment, now)`; the only place that
+//! reads host state is [`snapshot`], and the only place that reads the coprocessors' leaf
+//! record is [`proof`]. Two properties follow from that split, and neither survives if it is
+//! blurred:
 //!
 //! * race behaviour is testable without a network — a scenario is two snapshot values, not
 //!   two moments in time;
@@ -20,43 +21,21 @@
 //! typed form, canonical text, envelope, signature), the request canon (the
 //! `zama-solana-request` crate — the wire form and the one encoder/decoder the relayer and
 //! this connector share), and the ACL model (the `zama-solana-acl` crate — account layout,
-//! encrypted value IDs, leaf commitments, MMR). None is reimplemented here; this module is
-//! the host policy that consumes all three.
-
-//! # What this module replaces
-//!
-//! The proof-of-concept Solana user-decryption path verified a wallet signature over an ad-hoc
-//! binary preimage, carried its authorization material inside a versioned `extraData` blob, and
-//! authorized exactly one handle per request. All three are replaced here: the signature is the
-//! permit envelope, the material is typed request fields, and a request carries as many handles
-//! as the bit budget allows.
-//!
-//! This module is additive while that path is still wired up, so both exist for the moment and
-//! the old one keeps working. The examples that assert the replaced surface is *gone* — the old
-//! signature verifier, the single-handle restriction, and the delegation verifier that pinned a
-//! counter — belong with the change that deletes it: they would fail by construction until then,
-//! which would make them noise rather than a pin.
-//!
-//! What can be stated now is what the replacements are, and this example is compiled:
-//!
-//! ```
-//! use kms_worker::core::solana::{delegation::check_delegation, pipeline::check_signature};
-//! let _ = check_signature;
-//! let _ = check_delegation;
-//! ```
+//! seeds, leaf commitments, MMR). None is reimplemented here; this module is the host policy
+//! that consumes all three.
 
 /// Delegation-record freshness.
 pub mod delegation;
 /// Deployment identity: which program, which cluster.
 pub mod deployment;
-/// Encrypted value account resolution: presence, ownership, type, identity binding, and the
-/// authority and domain the account carries.
+/// Encrypted value account resolution: presence, ownership, type, address binding, and the
+/// authority and application the account carries.
 pub mod encrypted_value_account;
 /// Parity between the gateway event's typed fields and the signed request they carry.
 pub mod event_parity;
 /// Failure taxonomy and the terminal / transient / retryable classification.
 pub mod failure;
-/// Handle binding: current membership and historical inclusion proofs.
+/// Handle binding: a sealed leaf proven against the account's own peaks.
 pub mod handle_binding;
 /// KMS context/epoch servability.
 pub mod kms_pair;
@@ -64,9 +43,11 @@ pub mod kms_pair;
 pub mod pause;
 /// The authorization pipeline.
 pub mod pipeline;
+/// The leaf-proof reader — the only reader of the coprocessors' record.
+pub mod proof;
 /// The normalized request and its strict decoding.
 pub mod request;
-/// The signed ACL-domain scope.
+/// The signed application scope.
 pub mod scope;
 /// The atomic host-state snapshot — the only reader of chain state.
 pub mod snapshot;

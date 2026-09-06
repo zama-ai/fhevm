@@ -45,7 +45,7 @@ pub struct PermitVectorFile {
     pub vectors: Vec<PermitVector>,
 }
 
-/// The deployment domain shared by the records: which cluster and which program.
+/// The deployment shared by the records: which cluster and which program.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Deployment {
     /// Cluster genesis hash, hex.
@@ -124,8 +124,8 @@ pub struct WirePermit {
     pub user_pubkey: String,
     /// Name of the transport key in the file's `transport_keys` table.
     pub transport_key: String,
-    /// ACL domain keys, hex, in the order signed.
-    pub allowed_acl_domain_keys: Vec<String>,
+    /// Scope entries, each the 64 bytes `program ‖ scope` in hex, in the order signed.
+    pub allowed_scopes: Vec<String>,
     /// Validity-window start, decimal string.
     pub start_timestamp: String,
     /// Validity-window length, decimal string.
@@ -158,12 +158,14 @@ pub struct KmsRoutingRecord {
 pub mod rule {
     /// An identity field was not 32 bytes.
     pub const IDENTITY_WIDTH: &str = "identity-width";
-    /// Too many ACL domain keys.
-    pub const TOO_MANY_ACL_DOMAIN_KEYS: &str = "too-many-acl-domain-keys";
-    /// ACL domain keys not strictly ascending in byte order.
-    pub const ACL_DOMAIN_KEYS_NOT_ASCENDING: &str = "acl-domain-keys-not-ascending";
-    /// A repeated ACL domain key.
-    pub const DUPLICATE_ACL_DOMAIN_KEY: &str = "duplicate-acl-domain-key";
+    /// A scope entry was not 64 bytes.
+    pub const SCOPE_WIDTH: &str = "scope-width";
+    /// Too many scopes.
+    pub const TOO_MANY_SCOPES: &str = "too-many-scopes";
+    /// Scopes not strictly ascending in byte order.
+    pub const SCOPES_NOT_ASCENDING: &str = "scopes-not-ascending";
+    /// A repeated scope.
+    pub const DUPLICATE_SCOPE: &str = "duplicate-scope";
     /// Validity window of zero length or longer than a year.
     pub const DURATION_OUT_OF_RANGE: &str = "duration-out-of-range";
     /// Start beyond the latest representable timestamp.
@@ -182,9 +184,10 @@ pub mod rule {
     /// Every rule name, for coverage checks.
     pub const ALL: &[&str] = &[
         IDENTITY_WIDTH,
-        TOO_MANY_ACL_DOMAIN_KEYS,
-        ACL_DOMAIN_KEYS_NOT_ASCENDING,
-        DUPLICATE_ACL_DOMAIN_KEY,
+        SCOPE_WIDTH,
+        TOO_MANY_SCOPES,
+        SCOPES_NOT_ASCENDING,
+        DUPLICATE_SCOPE,
         DURATION_OUT_OF_RANGE,
         START_TIMESTAMP_OUT_OF_RANGE,
         TRANSPORT_KEY_LENGTH,

@@ -154,6 +154,7 @@ pub enum LeafProof {
     /// The leaf is recorded. `peaks` and `leafCount` are the record's state the
     /// proof was built against; the caller verifies against the on-chain account
     /// and retries when the record is behind the chain (`leafCount` smaller).
+    #[serde(rename_all = "camelCase")]
     Found {
         leaf_index: u64,
         leaf_count: u64,
@@ -163,6 +164,7 @@ pub enum LeafProof {
     },
     /// The account is recorded but no such leaf is, at `leafCount` leaves. Either
     /// it was never sealed or the record has not reached the block that sealed it.
+    #[serde(rename_all = "camelCase")]
     NotFound { leaf_count: u64 },
     /// The record never saw this account.
     UnknownAccount,

@@ -15,7 +15,9 @@
 //!
 //! The instrument is a reader that answers from a scripted world and counts calls. Without it,
 //! "reads state once" is a claim about code that no test can hold to account: the difference
-//! between one read and two is invisible in the outcome and very visible in a race.
+//! between one read and two is invisible in the outcome and very visible in a race. The leaf
+//! record has its own counted reader, for the same reason: the proof read is one batch per
+//! request, repeated once when the record is behind, and never a third time.
 
 mod solana_support;
 
@@ -29,7 +31,7 @@ use kms_worker::core::solana::{
     failure::{AuthorizationFailure, FailureClass},
     handle_binding::{HandleBindingFailure, check_handle_binding},
     pipeline::{AuthorizationContext, authorize_request},
-    request::AccessEvidence,
+    proof::LeafProofOutcome,
     scope::{ScopeFailure, check_scope},
     snapshot::{
         HostSnapshot, SnapshotAccount, SnapshotError, SnapshotKeys, multiple_accounts_request_body,
@@ -45,7 +47,7 @@ use solana_support::*;
 fn direct_scenario() -> (Wallet, EncryptedValueAccountFixture, [u8; 32]) {
     let wallet = Wallet::new(1);
     let handle = handle(0x10, FHE_TYPE_UINT64);
-    let encrypted_value_account = EncryptedValueAccountFixture::new(handle, &[wallet.pubkey()]);
+    let encrypted_value_account = EncryptedValueAccountFixture::allowing(handle, wallet.pubkey());
     (wallet, encrypted_value_account, handle)
 }
 
@@ -62,17 +64,24 @@ fn context<'a>(deployment: &'a DeploymentIdentity) -> AuthorizationContext<'a> {
 async fn authorizing_a_direct_request_reads_host_state_once() {
     let (wallet, encrypted_value_account, handle) = direct_scenario();
     let request = RequestBuilder::new(&wallet)
-        .direct_current(&encrypted_value_account, handle)
+        .direct(&encrypted_value_account, handle)
         .typed();
     let world = World::running_at_slot(100)
         .with_encrypted_value_account(&encrypted_value_account)
         .with_watermark(wallet.pubkey(), 0);
+    let proofs = ScriptedProofReader::constant(world.record());
     let reader = ScriptedReader::constant(world);
     let deployment = deployment();
 
-    authorize_request(&reader, &ServableKmsPair, context(&deployment), &request)
-        .await
-        .expect("a live handle owned by the signer authorizes");
+    authorize_request(
+        &reader,
+        &ServableKmsPair,
+        &proofs,
+        context(&deployment),
+        &request,
+    )
+    .await
+    .expect("a live handle owned by the signer authorizes");
 
     assert_eq!(
         reader.call_count(),
@@ -90,10 +99,11 @@ async fn authorizing_a_delegated_request_reads_host_state_twice_and_never_more()
     let signer = Wallet::new(1);
     let delegator = Wallet::new(2);
     let handle = handle(0x20, FHE_TYPE_UINT64);
-    let encrypted_value_account = EncryptedValueAccountFixture::new(handle, &[delegator.pubkey()]);
+    let encrypted_value_account =
+        EncryptedValueAccountFixture::allowing(handle, delegator.pubkey());
     let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), 100);
     let request = RequestBuilder::new(&signer)
-        .delegated_current(&encrypted_value_account, handle, delegator.pubkey())
+        .delegated(&encrypted_value_account, handle, delegator.pubkey())
         .typed();
     let world = World::running_at_slot(100)
         .with_encrypted_value_account(&encrypted_value_account)
@@ -102,12 +112,19 @@ async fn authorizing_a_delegated_request_reads_host_state_twice_and_never_more()
     // Three worlds are scripted although two reads are expected: a third read would find a
     // world and fail the count assertion below, rather than panicking inside the reader with a
     // less specific message.
+    let proofs = ScriptedProofReader::constant(world.record());
     let reader = ScriptedReader::scripted(vec![world.clone(), world.clone(), world]);
     let deployment = deployment();
 
-    authorize_request(&reader, &ServableKmsPair, context(&deployment), &request)
-        .await
-        .expect("a live delegation authorizes a delegated entry");
+    authorize_request(
+        &reader,
+        &ServableKmsPair,
+        &proofs,
+        context(&deployment),
+        &request,
+    )
+    .await
+    .expect("a live delegation authorizes a delegated entry");
 
     assert_eq!(
         reader.call_count(),
@@ -128,21 +145,29 @@ async fn the_second_read_carries_over_every_key_of_the_first() {
     let signer = Wallet::new(1);
     let delegator = Wallet::new(2);
     let handle = handle(0x21, FHE_TYPE_UINT64);
-    let encrypted_value_account = EncryptedValueAccountFixture::new(handle, &[delegator.pubkey()]);
+    let encrypted_value_account =
+        EncryptedValueAccountFixture::allowing(handle, delegator.pubkey());
     let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), 100);
     let request = RequestBuilder::new(&signer)
-        .delegated_current(&encrypted_value_account, handle, delegator.pubkey())
+        .delegated(&encrypted_value_account, handle, delegator.pubkey())
         .typed();
     let world = World::running_at_slot(100)
         .with_encrypted_value_account(&encrypted_value_account)
         .with_watermark(signer.pubkey(), 0)
         .with_delegation(&delegation);
+    let proofs = ScriptedProofReader::constant(world.record());
     let reader = ScriptedReader::constant(world);
     let deployment = deployment();
 
-    authorize_request(&reader, &ServableKmsPair, context(&deployment), &request)
-        .await
-        .expect("a live delegation authorizes a delegated entry");
+    authorize_request(
+        &reader,
+        &ServableKmsPair,
+        &proofs,
+        context(&deployment),
+        &request,
+    )
+    .await
+    .expect("a live delegation authorizes a delegated entry");
 
     let first = reader.call(0);
     let second = reader.call(1);
@@ -169,37 +194,38 @@ async fn the_second_read_carries_over_every_key_of_the_first() {
 /// the wildcard row only when the authority-specific one is missing would be a third read, and nothing in
 /// this pipeline reads state after the deciding observation.
 ///
-/// Two entries in two apps under one delegator show how the two kinds of row scale: an app row per
-/// app, and one wildcard row however many apps there are, because its address does not mention an
-/// app at all. The batch is also mixed by construction — the first entry is authorized by its app
-/// row, the second only by the wildcard row.
+/// Two entries under two authorities of one delegator show how the two kinds of row scale: an
+/// authority row per authority, and one wildcard row however many authorities there are, because
+/// its address does not mention an authority at all. The batch is also mixed by construction — the
+/// first entry is authorized by its authority row, the second only by the wildcard row.
 #[tokio::test]
 async fn a_delegated_entry_plans_both_of_its_delegation_rows() {
     let signer = Wallet::new(1);
     let delegator = Wallet::new(2);
     let first_handle = handle(0x27, FHE_TYPE_UINT64);
     let second_handle = handle(0x28, FHE_TYPE_UINT64);
-    let other_app: SolanaPubkeyBytes = [0x5a; 32];
+    let other_authority: SolanaPubkeyBytes = [0x5a; 32];
     let mut other_label = LABEL;
     other_label[0] = b'a';
     let first_encrypted_value_account =
-        EncryptedValueAccountFixture::new(first_handle, &[delegator.pubkey()]);
-    let second_encrypted_value_account = EncryptedValueAccountFixture::in_domain(
-        DOMAIN,
-        other_app,
+        EncryptedValueAccountFixture::allowing(first_handle, delegator.pubkey());
+    let mut second_encrypted_value_account = EncryptedValueAccountFixture::in_application(
+        APP_PROGRAM,
+        other_authority,
+        SCOPE,
         other_label,
         second_handle,
-        &[delegator.pubkey()],
     );
+    second_encrypted_value_account.allow(delegator.pubkey());
     let app_row = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), 100);
     let wildcard_row = DelegationFixture::live_wildcard(delegator.pubkey(), signer.pubkey(), 100);
     let request = RequestBuilder::new(&signer)
-        .delegated_current(
+        .delegated(
             &first_encrypted_value_account,
             first_handle,
             delegator.pubkey(),
         )
-        .delegated_current(
+        .delegated(
             &second_encrypted_value_account,
             second_handle,
             delegator.pubkey(),
@@ -211,12 +237,19 @@ async fn a_delegated_entry_plans_both_of_its_delegation_rows() {
         .with_watermark(signer.pubkey(), 0)
         .with_delegation(&app_row)
         .with_delegation(&wildcard_row);
+    let proofs = ScriptedProofReader::constant(world.record());
     let reader = ScriptedReader::constant(world);
     let deployment = deployment();
 
-    authorize_request(&reader, &ServableKmsPair, context(&deployment), &request)
-        .await
-        .expect("one entry stands on its app row, the other on the wildcard row");
+    authorize_request(
+        &reader,
+        &ServableKmsPair,
+        &proofs,
+        context(&deployment),
+        &request,
+    )
+    .await
+    .expect("one entry stands on its app row, the other on the wildcard row");
 
     let second = reader.call(1);
     let (app_key, _) = app_row.address();
@@ -227,10 +260,10 @@ async fn a_delegated_entry_plans_both_of_its_delegation_rows() {
     );
     assert_eq!(
         second.len(),
-        // the invalidation record, two encrypted value accounts, one app row per app, one wildcard
-        // row for both — and not the config singleton, which the deciding read drops
+        // the invalidation record, two encrypted value accounts, one row per authority, one
+        // wildcard row for both — and not the config singleton, which the deciding read drops
         1 + 2 + 2 + 1,
-        "the wildcard row is per delegator, so a second app adds an app row and no second wildcard"
+        "the wildcard row is per delegator, so a second authority adds its row and no second wildcard"
     );
     assert_eq!(reader.call_count(), 2, "still two reads, never a third");
 }
@@ -243,19 +276,26 @@ async fn a_delegated_entry_plans_both_of_its_delegation_rows() {
 async fn every_account_key_is_planned_before_the_first_read() {
     let (wallet, encrypted_value_account, handle) = direct_scenario();
     let request = RequestBuilder::new(&wallet)
-        .direct_current(&encrypted_value_account, handle)
+        .direct(&encrypted_value_account, handle)
         .typed();
     let world = World::running_at_slot(100)
         .with_encrypted_value_account(&encrypted_value_account)
         .with_watermark(wallet.pubkey(), 0);
+    let proofs = ScriptedProofReader::constant(world.record());
     let reader = ScriptedReader::constant(world);
     let deployment = deployment();
 
     let planned = kms_worker::core::solana::snapshot::plan_first_read(&request, &deployment);
 
-    authorize_request(&reader, &ServableKmsPair, context(&deployment), &request)
-        .await
-        .expect("a live handle owned by the signer authorizes");
+    authorize_request(
+        &reader,
+        &ServableKmsPair,
+        &proofs,
+        context(&deployment),
+        &request,
+    )
+    .await
+    .expect("a live handle owned by the signer authorizes");
 
     assert_eq!(
         reader.call(0),
@@ -287,21 +327,29 @@ async fn the_deciding_read_drops_the_config_singleton() {
     let signer = Wallet::new(1);
     let delegator = Wallet::new(2);
     let handle = handle(0x29, FHE_TYPE_UINT64);
-    let encrypted_value_account = EncryptedValueAccountFixture::new(handle, &[delegator.pubkey()]);
+    let encrypted_value_account =
+        EncryptedValueAccountFixture::allowing(handle, delegator.pubkey());
     let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), 100);
     let request = RequestBuilder::new(&signer)
-        .delegated_current(&encrypted_value_account, handle, delegator.pubkey())
+        .delegated(&encrypted_value_account, handle, delegator.pubkey())
         .typed();
     let world = World::running_at_slot(100)
         .with_encrypted_value_account(&encrypted_value_account)
         .with_watermark(signer.pubkey(), 0)
         .with_delegation(&delegation);
+    let proofs = ScriptedProofReader::constant(world.record());
     let reader = ScriptedReader::constant(world);
     let deployment = deployment();
 
-    authorize_request(&reader, &ServableKmsPair, context(&deployment), &request)
-        .await
-        .expect("a live delegation authorizes a delegated entry");
+    authorize_request(
+        &reader,
+        &ServableKmsPair,
+        &proofs,
+        context(&deployment),
+        &request,
+    )
+    .await
+    .expect("a live delegation authorizes a delegated entry");
 
     let (host_config_key, _) = host_config_address();
     assert!(
@@ -321,8 +369,8 @@ async fn the_deciding_read_drops_the_config_singleton() {
 async fn repeated_encrypted_value_accounts_are_read_once() {
     let (wallet, encrypted_value_account, handle) = direct_scenario();
     let request = RequestBuilder::new(&wallet)
-        .direct_current(&encrypted_value_account, handle)
-        .direct_current(&encrypted_value_account, handle)
+        .direct(&encrypted_value_account, handle)
+        .direct(&encrypted_value_account, handle)
         .typed();
     let deployment = deployment();
 
@@ -345,21 +393,29 @@ async fn a_slot_change_between_the_two_reads_does_not_fail_the_request() {
     let signer = Wallet::new(1);
     let delegator = Wallet::new(2);
     let handle = handle(0x22, FHE_TYPE_UINT64);
-    let encrypted_value_account = EncryptedValueAccountFixture::new(handle, &[delegator.pubkey()]);
+    let encrypted_value_account =
+        EncryptedValueAccountFixture::allowing(handle, delegator.pubkey());
     let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), 100);
     let request = RequestBuilder::new(&signer)
-        .delegated_current(&encrypted_value_account, handle, delegator.pubkey())
+        .delegated(&encrypted_value_account, handle, delegator.pubkey())
         .typed();
     let world = World::running_at_slot(100)
         .with_encrypted_value_account(&encrypted_value_account)
         .with_watermark(signer.pubkey(), 0)
         .with_delegation(&delegation);
+    let proofs = ScriptedProofReader::constant(world.record());
     let reader = ScriptedReader::scripted(vec![world.clone(), world.at(101)]);
     let deployment = deployment();
 
-    let authorized = authorize_request(&reader, &ServableKmsPair, context(&deployment), &request)
-        .await
-        .expect("the deciding observation is the second read, not an agreement of the two");
+    let authorized = authorize_request(
+        &reader,
+        &ServableKmsPair,
+        &proofs,
+        context(&deployment),
+        &request,
+    )
+    .await
+    .expect("the deciding observation is the second read, not an agreement of the two");
 
     assert_eq!(
         authorized.observed_slot(),
@@ -377,10 +433,11 @@ async fn a_deciding_read_older_than_the_discovery_read_is_refused_transiently() 
     let signer = Wallet::new(1);
     let delegator = Wallet::new(2);
     let handle = handle(0x25, FHE_TYPE_UINT64);
-    let encrypted_value_account = EncryptedValueAccountFixture::new(handle, &[delegator.pubkey()]);
+    let encrypted_value_account =
+        EncryptedValueAccountFixture::allowing(handle, delegator.pubkey());
     let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), 100);
     let request = RequestBuilder::new(&signer)
-        .delegated_current(&encrypted_value_account, handle, delegator.pubkey())
+        .delegated(&encrypted_value_account, handle, delegator.pubkey())
         .typed();
     // The same state throughout: the only difference between the reads is which node answered.
     let world = World::running_at_slot(100)
@@ -388,11 +445,18 @@ async fn a_deciding_read_older_than_the_discovery_read_is_refused_transiently() 
         .with_watermark(signer.pubkey(), 0)
         .with_delegation(&delegation);
     let reader = ScriptedReader::scripted(vec![world.clone(), world.at(99)]);
+    let proofs = ScriptedProofReader::unreachable();
     let deployment = deployment();
 
-    let failure = authorize_request(&reader, &ServableKmsPair, context(&deployment), &request)
-        .await
-        .expect_err("a deciding read behind the discovery read decides nothing");
+    let failure = authorize_request(
+        &reader,
+        &ServableKmsPair,
+        &proofs,
+        context(&deployment),
+        &request,
+    )
+    .await
+    .expect_err("a deciding read behind the discovery read decides nothing");
 
     assert!(
         matches!(
@@ -414,10 +478,11 @@ async fn two_reads_at_the_same_slot_authorize() {
     let signer = Wallet::new(1);
     let delegator = Wallet::new(2);
     let handle = handle(0x26, FHE_TYPE_UINT64);
-    let encrypted_value_account = EncryptedValueAccountFixture::new(handle, &[delegator.pubkey()]);
+    let encrypted_value_account =
+        EncryptedValueAccountFixture::allowing(handle, delegator.pubkey());
     let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), 100);
     let request = RequestBuilder::new(&signer)
-        .delegated_current(&encrypted_value_account, handle, delegator.pubkey())
+        .delegated(&encrypted_value_account, handle, delegator.pubkey())
         .typed();
     let world = World::running_at_slot(100)
         .with_encrypted_value_account(&encrypted_value_account)
@@ -426,8 +491,9 @@ async fn two_reads_at_the_same_slot_authorize() {
     let deployment = deployment();
 
     let authorized = authorize_request(
-        &ScriptedReader::constant(world),
+        &ScriptedReader::constant(world.clone()),
         &ServableKmsPair,
+        &ScriptedProofReader::constant(world.record()),
         context(&deployment),
         &request,
     )
@@ -479,49 +545,126 @@ fn the_ordering_gate_compares_the_two_reads_and_nothing_else() {
 }
 
 /// The state a delegated request is judged against is the deciding read's, not the discovery
-/// read's. Here the handle is live in the first read and replaced in the second: the entry
-/// claims current access, and it is refused — the earlier, more favorable bytes are gone and
-/// were never a candidate.
+/// read's. Here the first read shows the delegator's allow leaf on the handle and the second read
+/// shows an account on which that leaf was never sealed: the entry is refused, because the
+/// earlier, more favorable peaks are gone and were never a candidate.
 #[tokio::test]
 async fn the_deciding_state_of_a_delegated_request_is_the_second_reads() {
     let signer = Wallet::new(1);
     let delegator = Wallet::new(2);
     let handle = handle(0x23, FHE_TYPE_UINT64);
-    let encrypted_value_account = EncryptedValueAccountFixture::new(handle, &[delegator.pubkey()]);
+    let allowed = EncryptedValueAccountFixture::allowing(handle, delegator.pubkey());
+    let mut never_allowed = EncryptedValueAccountFixture::new(handle);
+    never_allowed.allow(Wallet::new(9).pubkey());
     let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), 100);
     let request = RequestBuilder::new(&signer)
-        .delegated_current(&encrypted_value_account, handle, delegator.pubkey())
+        .delegated(&allowed, handle, delegator.pubkey())
         .typed();
 
-    let mut replaced = encrypted_value_account.clone();
-    replaced.update(handle_on_chain(0x24, FHE_TYPE_UINT64, CHAIN_ID));
-
     let first = World::running_at_slot(100)
-        .with_encrypted_value_account(&encrypted_value_account)
+        .with_encrypted_value_account(&allowed)
         .with_watermark(signer.pubkey(), 0)
         .with_delegation(&delegation);
     let second = World::running_at_slot(101)
-        .with_encrypted_value_account(&replaced)
+        .with_encrypted_value_account(&never_allowed)
         .with_watermark(signer.pubkey(), 0)
         .with_delegation(&delegation);
+    // The record agrees with the deciding read.
+    let proofs = ScriptedProofReader::constant(second.record());
     let reader = ScriptedReader::scripted(vec![first, second]);
     let deployment = deployment();
 
-    let failure = authorize_request(&reader, &ServableKmsPair, context(&deployment), &request)
-        .await
-        .expect_err("the handle is no longer current at the deciding observation");
+    let failure = authorize_request(
+        &reader,
+        &ServableKmsPair,
+        &proofs,
+        context(&deployment),
+        &request,
+    )
+    .await
+    .expect_err("the delegator holds no allow leaf at the deciding observation");
 
     assert!(
         matches!(
             failure,
             AuthorizationFailure::HandleBinding {
                 index: 0,
-                source: HandleBindingFailure::NotCurrentHandle { .. }
+                source: HandleBindingFailure::NoLeaf { .. }
             }
         ),
-        "expected the deciding read's update, got {failure}"
+        "expected the deciding read's peaks to decide, got {failure}"
     );
     assert_eq!(failure.class(), FailureClass::Terminal);
+}
+
+/// The proof read is one batch per request. A record in step with the chain is read once; a
+/// record behind it is read once more, and never a third time — beyond that the request is
+/// rejected retryably and the ordinary attempt budget decides.
+#[tokio::test]
+async fn the_leaf_record_is_read_once_and_once_more_only_when_behind() {
+    let (wallet, encrypted_value_account, handle) = direct_scenario();
+    let request = RequestBuilder::new(&wallet)
+        .direct(&encrypted_value_account, handle)
+        .typed();
+    let world = World::running_at_slot(100)
+        .with_encrypted_value_account(&encrypted_value_account)
+        .with_watermark(wallet.pubkey(), 0);
+    let deployment = deployment();
+
+    let in_step = ScriptedProofReader::constant(world.record());
+    authorize_request(
+        &ScriptedReader::constant(world.clone()),
+        &ServableKmsPair,
+        &in_step,
+        context(&deployment),
+        &request,
+    )
+    .await
+    .expect("a record in step authorizes");
+    assert_eq!(in_step.call_count(), 1, "a record in step is read once");
+
+    // A record that has not yet sealed the allow leaf, then catches up.
+    let behind = ProofRecord::of(&[&EncryptedValueAccountFixture::new(handle)]);
+    let catches_up = ScriptedProofReader::scripted(vec![behind.clone(), world.record()]);
+    authorize_request(
+        &ScriptedReader::constant(world.clone()),
+        &ServableKmsPair,
+        &catches_up,
+        context(&deployment),
+        &request,
+    )
+    .await
+    .expect("the second read finds the leaf");
+    assert_eq!(
+        catches_up.call_count(),
+        2,
+        "a record behind is read once more"
+    );
+
+    // A record that stays behind: two reads, then a retryable rejection, never a third read.
+    let stays_behind = ScriptedProofReader::scripted(vec![behind.clone(), behind]);
+    let failure = authorize_request(
+        &ScriptedReader::constant(world),
+        &ServableKmsPair,
+        &stays_behind,
+        context(&deployment),
+        &request,
+    )
+    .await
+    .expect_err("a record still behind after the retry decides nothing");
+    assert_eq!(
+        stays_behind.call_count(),
+        2,
+        "the retry policy is one repeat, not a loop"
+    );
+    assert!(matches!(
+        failure,
+        AuthorizationFailure::HandleBinding {
+            index: 0,
+            source: HandleBindingFailure::ProofRecordBehind { .. }
+        }
+    ));
+    assert_eq!(failure.class(), FailureClass::Retryable);
 }
 
 /// Every authorization read asks for `confirmed`. A grant observed on a supermajority-confirmed
@@ -637,7 +780,8 @@ fn an_account_that_was_never_planned_cannot_be_read_from_the_snapshot() {
 
 /// Every state-dependent check takes the observation and no way to reach the network. This is
 /// the type-level half of "a request accepted at its observation point is not re-evaluated":
-/// there is no check that *could* re-read, whatever a future caller wanted.
+/// there is no check that *could* re-read, whatever a future caller wanted. The binding rule
+/// takes the record's answer as a value for the same reason: it verifies, it does not fetch.
 ///
 /// The delegation signature is also where the delegation counter used to be. It takes a
 /// snapshot, a program id and three identities — the counter is not a parameter, because
@@ -671,11 +815,11 @@ fn authorization_checks_take_the_observation_and_never_a_reader() {
         &ResolvedEncryptedValueAccount,
         [u8; 32],
         SolanaPubkeyBytes,
-        &AccessEvidence,
+        &LeafProofOutcome,
     ) -> Result<(), HandleBindingFailure> = check_handle_binding;
 
     let _check_scope: fn(
-        &zama_solana_permit::AclDomainKeys,
+        &zama_solana_permit::AllowedScopes,
         &ResolvedEncryptedValueAccount,
     ) -> Result<(), ScopeFailure> = check_scope;
 }
@@ -687,17 +831,24 @@ fn authorization_checks_take_the_observation_and_never_a_reader() {
 async fn an_accepted_request_records_its_observation_point() {
     let (wallet, encrypted_value_account, handle) = direct_scenario();
     let request = RequestBuilder::new(&wallet)
-        .direct_current(&encrypted_value_account, handle)
+        .direct(&encrypted_value_account, handle)
         .typed();
     let world = World::running_at_slot(9_000)
         .with_encrypted_value_account(&encrypted_value_account)
         .with_watermark(wallet.pubkey(), 0);
+    let proofs = ScriptedProofReader::constant(world.record());
     let reader = ScriptedReader::constant(world);
     let deployment = deployment();
 
-    let authorized = authorize_request(&reader, &ServableKmsPair, context(&deployment), &request)
-        .await
-        .expect("a live handle owned by the signer authorizes");
+    let authorized = authorize_request(
+        &reader,
+        &ServableKmsPair,
+        &proofs,
+        context(&deployment),
+        &request,
+    )
+    .await
+    .expect("a live handle owned by the signer authorizes");
 
     assert_eq!(authorized.observed_slot(), 9_000);
     assert_eq!(

@@ -32,8 +32,9 @@ use crate::wire::{SolanaHandleEntryWire, SolanaUserDecryptRequestWire};
 use borsh::{BorshDeserialize, BorshSerialize};
 use zama_solana_permit::PermitWireFields;
 
-/// The one known layout version byte.
-pub const SOLANA_REQUEST_VERSION: u8 = 0x01;
+/// The one known layout version byte. `0x01` carried client-built proofs and encrypted value
+/// IDs; that layout is not decoded.
+pub const SOLANA_REQUEST_VERSION: u8 = 0x02;
 
 /// The borsh body, mirroring [`SolanaUserDecryptRequestWire`] field for field over
 /// primitives. The field order below IS the canonical layout — the borsh-js schema on the
@@ -43,7 +44,7 @@ pub const SOLANA_REQUEST_VERSION: u8 = 0x01;
 struct RequestBody {
     user_pubkey: Vec<u8>,
     transport_key: Vec<u8>,
-    allowed_acl_domain_keys: Vec<Vec<u8>>,
+    allowed_scopes: Vec<Vec<u8>>,
     start_timestamp: u64,
     duration_seconds: u64,
     verifying_program_id: Vec<u8>,
@@ -57,10 +58,8 @@ struct RequestBody {
 #[derive(BorshSerialize, BorshDeserialize)]
 struct RequestBodyEntry {
     handle: Vec<u8>,
-    subject: Vec<u8>,
-    encrypted_value_id: Vec<u8>,
-    proof_leaf_count: u64,
-    access_proof: Vec<u8>,
+    allowed_key: Vec<u8>,
+    encrypted_value_account: Vec<u8>,
 }
 
 impl From<&SolanaUserDecryptRequestWire> for RequestBody {
@@ -76,7 +75,7 @@ impl From<&SolanaUserDecryptRequestWire> for RequestBody {
         let PermitWireFields {
             user_pubkey,
             transport_key,
-            allowed_acl_domain_keys,
+            allowed_scopes,
             start_timestamp,
             duration_seconds,
             verifying_program_id,
@@ -87,7 +86,7 @@ impl From<&SolanaUserDecryptRequestWire> for RequestBody {
         Self {
             user_pubkey: user_pubkey.clone(),
             transport_key: transport_key.clone(),
-            allowed_acl_domain_keys: allowed_acl_domain_keys.clone(),
+            allowed_scopes: allowed_scopes.clone(),
             start_timestamp: *start_timestamp,
             duration_seconds: *duration_seconds,
             verifying_program_id: verifying_program_id.clone(),
@@ -103,18 +102,14 @@ impl From<&SolanaHandleEntryWire> for RequestBodyEntry {
     fn from(entry: &SolanaHandleEntryWire) -> Self {
         let SolanaHandleEntryWire {
             handle,
-            subject,
-            encrypted_value_id,
-            proof_leaf_count,
-            access_proof,
+            allowed_key,
+            encrypted_value_account,
         } = entry;
 
         Self {
             handle: handle.clone(),
-            subject: subject.clone(),
-            encrypted_value_id: encrypted_value_id.clone(),
-            proof_leaf_count: *proof_leaf_count,
-            access_proof: access_proof.clone(),
+            allowed_key: allowed_key.clone(),
+            encrypted_value_account: encrypted_value_account.clone(),
         }
     }
 }
@@ -124,7 +119,7 @@ impl From<RequestBody> for SolanaUserDecryptRequestWire {
         let RequestBody {
             user_pubkey,
             transport_key,
-            allowed_acl_domain_keys,
+            allowed_scopes,
             start_timestamp,
             duration_seconds,
             verifying_program_id,
@@ -138,7 +133,7 @@ impl From<RequestBody> for SolanaUserDecryptRequestWire {
             permit: PermitWireFields {
                 user_pubkey,
                 transport_key,
-                allowed_acl_domain_keys,
+                allowed_scopes,
                 start_timestamp,
                 duration_seconds,
                 verifying_program_id,
@@ -158,18 +153,14 @@ impl From<RequestBodyEntry> for SolanaHandleEntryWire {
     fn from(entry: RequestBodyEntry) -> Self {
         let RequestBodyEntry {
             handle,
-            subject,
-            encrypted_value_id,
-            proof_leaf_count,
-            access_proof,
+            allowed_key,
+            encrypted_value_account,
         } = entry;
 
         Self {
             handle,
-            subject,
-            encrypted_value_id,
-            proof_leaf_count,
-            access_proof,
+            allowed_key,
+            encrypted_value_account,
         }
     }
 }

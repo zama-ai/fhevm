@@ -50,7 +50,7 @@ use zama_solana_request::decode_solana_request;
 #[derive(Clone)]
 pub enum HostChainAclBackend<HP: Provider> {
     Evm(HostRpcClient<HP>),
-    // Boxed: a `SolanaHost` carries a deployment identity plus two RPC clients, far larger than the
+    // Boxed: a `SolanaHost` carries a deployment identity plus two readers, far larger than the
     // EVM variant's contract handle, so keeping it inline would bloat every backend map entry.
     Solana(Box<SolanaHost>),
 }
@@ -580,27 +580,33 @@ where
             deployment: &host.deployment,
             now_unix_seconds: Utc::now().timestamp() as u64,
         };
-        let authorized = authorize_request(&host.reader, &pair_validator, context, &typed_request)
-            .await
-            .map_err(|failure| {
-                let kind = RequestCheckKind::Acl;
-                let message = anyhow!("Solana user-decryption authorization failed: {failure}");
-                match failure.class() {
-                    FailureClass::Terminal => {
-                        RequestCheckError::irrecoverable(kind, ErrorCode::Unprocessable, message)
-                    }
-                    FailureClass::Transient | FailureClass::Retryable => {
-                        RequestCheckError::recoverable(kind, ErrorCode::UpstreamTransient, message)
-                    }
+        let authorized = authorize_request(
+            &host.reader,
+            &pair_validator,
+            &host.proofs,
+            context,
+            &typed_request,
+        )
+        .await
+        .map_err(|failure| {
+            let kind = RequestCheckKind::Acl;
+            let message = anyhow!("Solana user-decryption authorization failed: {failure}");
+            match failure.class() {
+                FailureClass::Terminal => {
+                    RequestCheckError::irrecoverable(kind, ErrorCode::Unprocessable, message)
                 }
-            })?;
+                FailureClass::Transient | FailureClass::Retryable => {
+                    RequestCheckError::recoverable(kind, ErrorCode::UpstreamTransient, message)
+                }
+            }
+        })?;
 
         // The per-entry audit fields live in the pipeline's own log event; this line only says
         // which branches the request exercised.
         let delegated_entries = authorized
             .entries()
             .iter()
-            .filter(|entry| entry.subject != solana_identity)
+            .filter(|entry| entry.allowed_key != solana_identity)
             .count();
         info!(
             "Solana V2 user-decryption authorization passed for {} handles, {} of them delegated!",
@@ -921,8 +927,8 @@ impl UserDecryptionExtraData {
 mod tests {
     use super::*;
     use crate::core::event_processor::ProcessingErrorKind;
+    use crate::core::solana::proof::HttpHostProofReader;
     use crate::core::solana::request::{SolanaHandleEntryWire, SolanaUserDecryptRequestWire};
-    use crate::core::solana_v2_fetcher::SolanaV2Fetcher;
     use alloy::{
         providers::{ProviderBuilder, mock::Asserter},
         rpc::types::Transaction as RpcTransaction,
@@ -1041,8 +1047,12 @@ mod tests {
                         config.host_chains[0].url.clone(),
                         ::reqwest::Client::new(),
                     ),
-                    fetcher: SolanaV2Fetcher::new(
-                        config.host_chains[0].url.clone(),
+                    proofs: HttpHostProofReader::new(
+                        &config.host_chains[0].solana_proof_endpoints,
+                        config.host_chains[0]
+                            .solana_proof_api_key
+                            .clone()
+                            .unwrap_or_default(),
                         ::reqwest::Client::new(),
                     ),
                 })),
@@ -1797,15 +1807,17 @@ mod tests {
         event_extra_data: Option<Bytes>,
     ) -> (Result<UserDecryptionExtraData, RequestCheckError>, Vec<u8>) {
         use crate::core::solana::deployment::DeploymentIdentity;
+        use crate::core::solana::proof::{
+            LEAF_PROOFS_PATH, LeafKind, LeafQuery, leaf_proof_request_body,
+        };
         use crate::core::solana::snapshot::{multiple_accounts_request_body, plan_first_read};
-        use crate::core::solana_encrypted_value_acl::encrypted_value_acl_address;
         use base64::{Engine, engine::general_purpose::STANDARD as BASE64_STANDARD};
         use mocktail::server::MockServer;
         use ring::signature::{Ed25519KeyPair, KeyPair};
         use solana_pubkey::Pubkey;
         use zama_solana_acl::{
-            EncryptedValue, HostConfigRecord, derive_encrypted_value_id,
-            encrypted_value_discriminator,
+            EncryptedValue, HostConfigRecord, encrypted_value_discriminator, encrypted_value_seeds,
+            historical_access_leaf_commitment, mmr_leaf_node,
         };
         use zama_solana_permit::{
             Identity, KmsRouting, PermitFields, PermitWireFields, TRANSPORT_KEY_LEN, build_envelope,
@@ -1814,8 +1826,9 @@ mod tests {
         // The one deployment every fixture is built against, matching what the Solana test backend
         // resolves (`setup_test_processor_inner`: program id `[7; 32]`, chain id from the handle).
         const PROGRAM_ID: [u8; 32] = [7; 32];
-        const DOMAIN: [u8; 32] = [1; 32];
+        const APP_PROGRAM: [u8; 32] = [1; 32];
         const AUTHORITY: [u8; 32] = [2; 32];
+        const SCOPE: [u8; 32] = [3; 32];
         const LABEL: [u8; 32] = *b"balance_________________________";
         const CHAIN_ID: u64 = crate::core::config::SOLANA_CHAIN_TYPE_BIT | 0x0123_4567_89ab_cdef;
         const FHE_TYPE_UINT64: u8 = 5;
@@ -1854,7 +1867,7 @@ mod tests {
         let permit_wire = PermitWireFields {
             user_pubkey: victim_pubkey.to_vec(),
             transport_key: victim_transport_key.clone(),
-            allowed_acl_domain_keys: vec![DOMAIN.to_vec()],
+            allowed_scopes: vec![[APP_PROGRAM, SCOPE].concat()],
             start_timestamp: permit_window.0,
             duration_seconds: permit_window.1,
             verifying_program_id: PROGRAM_ID.to_vec(),
@@ -1868,31 +1881,33 @@ mod tests {
             .as_ref()
             .to_vec();
 
-        let encrypted_value_id = derive_encrypted_value_id(DOMAIN, AUTHORITY, LABEL);
+        // The encrypted value account that authorizes the victim's direct entry: owned by the
+        // program, at the address its own fields derive, with one allow leaf sealed for the victim
+        // on this handle.
+        let (account_key, bump) = Pubkey::find_program_address(
+            &encrypted_value_seeds(&APP_PROGRAM, &AUTHORITY, &SCOPE, &LABEL),
+            &Pubkey::new_from_array(PROGRAM_ID),
+        );
+        let account_key = account_key.to_bytes();
+        let leaf = historical_access_leaf_commitment(account_key, 0, handle, victim_pubkey);
+        let encrypted_value = EncryptedValue {
+            program: APP_PROGRAM,
+            encrypted_value_account_authority: AUTHORITY,
+            scope: SCOPE,
+            label: LABEL,
+            current_handle: handle,
+            leaf_count: 1,
+            peaks: vec![mmr_leaf_node(&leaf)],
+            bump,
+        };
         let wire = SolanaUserDecryptRequestWire {
             permit: permit_wire,
             signature,
             handles: vec![SolanaHandleEntryWire {
                 handle: handle.to_vec(),
-                subject: victim_pubkey.to_vec(),
-                encrypted_value_id: encrypted_value_id.to_vec(),
-                proof_leaf_count: 0,
-                access_proof: Vec::new(),
+                allowed_key: victim_pubkey.to_vec(),
+                encrypted_value_account: account_key.to_vec(),
             }],
-        };
-
-        // The encrypted value account that authorizes the victim's direct current-access entry:
-        // owned by the program, holding this handle live for the victim.
-        let (_, bump) = encrypted_value_acl_address(PROGRAM_ID, encrypted_value_id);
-        let encrypted_value = EncryptedValue {
-            domain: DOMAIN,
-            encrypted_value_account_authority: AUTHORITY,
-            label: LABEL,
-            current_handle: handle,
-            subjects: vec![victim_pubkey],
-            leaf_count: 0,
-            peaks: Vec::new(),
-            bump,
         };
         let mut account_data = encrypted_value_discriminator().to_vec();
         account_data.extend_from_slice(
@@ -1947,6 +1962,32 @@ mod tests {
         server.start().await.expect("the mock RPC starts");
         let rpc_url = server.base_url().expect("the mock RPC has a URL").clone();
 
+        // A mock coprocessor serving the one leaf-proof read: the victim's allow leaf, sole leaf
+        // of the account, whose proof is the empty sibling path.
+        let proof_request_body = leaf_proof_request_body(&[LeafQuery {
+            encrypted_value_account: account_key,
+            handle,
+            kind: LeafKind::Allowed { key: victim_pubkey },
+        }]);
+        let proof_response = serde_json::json!({
+            "proofs": [{ "status": "found", "leafIndex": 0, "leafCount": 1, "siblings": [] }],
+        });
+        let mut proof_server = MockServer::new_http("coprocessor-leaf-proofs");
+        proof_server.mock(move |when, then| {
+            when.post()
+                .path(LEAF_PROOFS_PATH)
+                .json(proof_request_body.clone());
+            then.json(proof_response.clone());
+        });
+        proof_server
+            .start()
+            .await
+            .expect("the mock coprocessor starts");
+        let proof_url = proof_server
+            .base_url()
+            .expect("the mock coprocessor has a URL")
+            .clone();
+
         // The gateway event: the victim's signed permit rides in `hostPayload`; `publicKey` and
         // `requestValidity` carry whatever the caller chose (the unsigned, relayer-controlled
         // fields).
@@ -1966,6 +2007,8 @@ mod tests {
 
         let mut config = Config::default();
         config.host_chains[0].url = rpc_url;
+        config.host_chains[0].solana_proof_endpoints = vec![proof_url];
+        config.host_chains[0].solana_proof_api_key = Some("test-key".to_owned());
         let processor = setup_test_processor_inner(
             Asserter::new(),
             B256::from(handle),
@@ -2119,7 +2162,7 @@ mod tests {
                     error
                         .source
                         .to_string()
-                        .contains("requires a PublicDecryptLeaf MMR proof")
+                        .contains("requires the version-3 extraData")
                 );
             }
             other => panic!("expected Solana public-decrypt rejection, got {other:?}"),

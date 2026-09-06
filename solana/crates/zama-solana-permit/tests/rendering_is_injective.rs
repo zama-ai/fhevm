@@ -19,11 +19,11 @@ mod common;
 use common::*;
 use std::collections::HashMap;
 use zama_solana_permit::{
-    render_canonical_text, KmsRouting, PermitFields, PermitWireFields, MAX_DURATION_SECONDS,
-    MAX_START_TIMESTAMP,
+    render_canonical_text, KmsRouting, PermitFields, PermitWireFields, MAX_ALLOWED_SCOPES,
+    MAX_DURATION_SECONDS, MAX_START_TIMESTAMP,
 };
 
-/// Size of the deterministic sample. Large enough to cover every domain count and
+/// Size of the deterministic sample. Large enough to cover every scope count and
 /// both ends of every bound many times over.
 const SAMPLE: u64 = 1024;
 
@@ -50,17 +50,17 @@ fn rendering_is_total_at_every_corner() {
     for start_timestamp in [0, MAX_START_TIMESTAMP] {
         for duration_seconds in [1, MAX_DURATION_SECONDS] {
             for chain_id in [0, u64::MAX] {
-                for domain_count in [0usize, 1, 10] {
+                for scope_count in [0usize, 1, MAX_ALLOWED_SCOPES] {
                     let wire = PermitWireFields {
                         start_timestamp,
                         duration_seconds,
                         chain_id,
-                        ..wire_with_domain_count(domain_count)
+                        ..wire_with_scope_count(scope_count)
                     };
                     let text = render_canonical_text(&decoded(&wire));
                     assert!(
                         !text.is_empty(),
-                        "corner ({start_timestamp}, {duration_seconds}, {chain_id}, {domain_count}) rendered nothing"
+                        "corner ({start_timestamp}, {duration_seconds}, {chain_id}, {scope_count}) rendered nothing"
                     );
                 }
             }
@@ -285,23 +285,25 @@ fn single_field_mutations(base: &PermitWireFields) -> Vec<(&'static str, PermitW
     epoch.extra_data[33] ^= 1;
     out.push(("kms epoch id", epoch));
 
-    // The domain list: replace its last key with a larger one, keeping the list
-    // ascending, or add a key to a permissive permit (a permissive permit and a scoped
-    // one must not render alike either).
-    let mut domains = base.clone();
-    match domains.allowed_acl_domain_keys.last_mut() {
+    // The scope list: replace its last entry with a larger one, keeping the list
+    // ascending, or add an entry to a permissive permit (a permissive permit and a
+    // scoped one must not render alike either).
+    let mut scopes = base.clone();
+    match scopes.allowed_scopes.last_mut() {
         Some(last) => {
-            let mut key: [u8; 32] = last.clone().try_into().expect("32-byte key");
-            // Raise the key without disturbing the order: the fixture keys leave room
+            // Raise the entry without disturbing the order: the fixture scopes leave room
             // in their final byte.
-            key[31] = key[31].wrapping_add(1);
-            *last = key.to_vec();
+            let end = last.len() - 1;
+            last[end] = last[end].wrapping_add(1);
         }
         None => {
-            domains.allowed_acl_domain_keys = vec![bytes32(ACL_DOMAIN_KEY_43_HEX).to_vec()];
+            scopes.allowed_scopes = vec![scope_entry(
+                bytes32(APP_PROGRAM_ID_HEX),
+                bytes32(SCOPE_43_HEX),
+            )];
         }
     }
-    out.push(("acl domain keys", domains));
+    out.push(("scopes", scopes));
 
     out
 }
@@ -318,7 +320,7 @@ fn the_mutation_set_covers_every_signed_field() {
     for expected in [
         "user pubkey",
         "transport key",
-        "acl domain keys",
+        "scopes",
         "start timestamp",
         "duration",
         "verifying program id",

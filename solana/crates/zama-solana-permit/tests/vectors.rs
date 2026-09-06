@@ -44,7 +44,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use zama_solana_permit::{
     build_envelope, render_canonical_text, verify_signature, IdentityField, PermitError,
-    PermitFields, PermitWireFields, MAX_DURATION_SECONDS, MAX_START_TIMESTAMP,
+    PermitFields, PermitWireFields, MAX_ALLOWED_SCOPES, MAX_DURATION_SECONDS, MAX_START_TIMESTAMP,
 };
 
 /// Setting this rewrites the committed file from the in-memory build.
@@ -66,9 +66,10 @@ fn vector_path() -> PathBuf {
 fn rule_name(error: &PermitError) -> &'static str {
     match error {
         PermitError::IdentityWidth { .. } => rule::IDENTITY_WIDTH,
-        PermitError::TooManyAclDomainKeys { .. } => rule::TOO_MANY_ACL_DOMAIN_KEYS,
-        PermitError::AclDomainKeysNotAscending { .. } => rule::ACL_DOMAIN_KEYS_NOT_ASCENDING,
-        PermitError::DuplicateAclDomainKey { .. } => rule::DUPLICATE_ACL_DOMAIN_KEY,
+        PermitError::ScopeWidth { .. } => rule::SCOPE_WIDTH,
+        PermitError::TooManyScopes { .. } => rule::TOO_MANY_SCOPES,
+        PermitError::ScopesNotAscending { .. } => rule::SCOPES_NOT_ASCENDING,
+        PermitError::DuplicateScope { .. } => rule::DUPLICATE_SCOPE,
         PermitError::DurationOutOfRange { .. } => rule::DURATION_OUT_OF_RANGE,
         PermitError::StartTimestampOutOfRange { .. } => rule::START_TIMESTAMP_OUT_OF_RANGE,
         PermitError::TransportKeyLength { .. } => rule::TRANSPORT_KEY_LENGTH,
@@ -114,10 +115,10 @@ impl Builder {
         WirePermit {
             user_pubkey: to_hex(&wire.user_pubkey),
             transport_key: key_name,
-            allowed_acl_domain_keys: wire
-                .allowed_acl_domain_keys
+            allowed_scopes: wire
+                .allowed_scopes
                 .iter()
-                .map(|key| to_hex(key))
+                .map(|scope| to_hex(scope))
                 .collect(),
             start_timestamp: wire.start_timestamp.to_string(),
             duration_seconds: wire.duration_seconds.to_string(),
@@ -254,41 +255,41 @@ fn sign_wire(wire: &PermitWireFields) -> Signature {
 /// The whole vector set.
 fn build_vector_file() -> PermitVectorFile {
     let mut builder = Builder::new();
-    const REFERENCE: &str = "reference-permit-two-domains";
+    const REFERENCE: &str = "reference-permit-two-scopes";
     const REFERENCE_KEY: &str = "reference-mlkem-512";
 
     // -- accepted ----------------------------------------------------------
 
     builder.accept(
         REFERENCE,
-        "Two ACL domains in byte order. The two keys are the base58 length \
-         counterexample pair: one encodes to 43 characters and the other to 44, so \
-         their byte order is the reverse of their string order. Every other record is \
-         derived from this one.",
+        "Two scopes of one program in byte order. The two scope halves are the base58 \
+         length counterexample pair: one encodes to 43 characters and the other to 44, \
+         so their byte order is the reverse of their string order. Every other record \
+         is derived from this one.",
         REFERENCE_KEY,
         reference_wire(),
     );
 
     builder.accept(
         "permissive-permit",
-        "Empty domain list. The canonical text must state the breadth of the grant on \
+        "Empty scope list. The canonical text must state the breadth of the grant on \
          one explicit line rather than render an empty enumeration block.",
         REFERENCE_KEY,
         permissive_wire(),
     );
 
     builder.accept(
-        "permit-with-one-domain",
+        "permit-with-one-scope",
         "The smallest enumerated list.",
         REFERENCE_KEY,
-        wire_with_domain_count(1),
+        wire_with_scope_count(1),
     );
 
     builder.accept(
-        "permit-with-ten-domains",
+        "permit-with-the-maximum-scopes",
         "The largest admissible list.",
         REFERENCE_KEY,
-        wire_with_domain_count(10),
+        wire_with_scope_count(MAX_ALLOWED_SCOPES),
     );
 
     builder.accept(
@@ -330,11 +331,11 @@ fn build_vector_file() -> PermitVectorFile {
 
     builder.accept(
         "widest-permit",
-        "The largest signed bytes the protocol admits: ten domains, every identity at \
+        "The largest signed bytes the protocol admits: the maximum scope count, every identity at \
          its longest base58 form, the longest chain id and duration, the latest \
          timestamp. Pins the clear-signing budget.",
         "worst-case-mlkem-512",
-        worst_case_wire(10),
+        worst_case_wire(MAX_ALLOWED_SCOPES),
     );
 
     // -- accepted here, decided elsewhere ----------------------------------
@@ -516,15 +517,16 @@ fn build_vector_file() -> PermitVectorFile {
     );
 
     builder.reject(
-        "acl-domain-key-of-wrong-width",
-        "A 31-byte ACL domain key.",
-        rule::IDENTITY_WIDTH,
+        "scope-of-a-bare-identity",
+        "A scope entry of 32 bytes: a program or a scope alone. A scope is the pair, \
+         and a bare identity is a width violation, not a shorthand.",
+        rule::SCOPE_WIDTH,
         REFERENCE,
-        "second ACL domain key truncated to 31 bytes",
+        "second scope truncated to its 32-byte program half",
         REFERENCE_KEY,
         {
             let mut wire = reference_wire();
-            wire.allowed_acl_domain_keys[1] = bytes32(ACL_DOMAIN_KEY_44_HEX)[..31].to_vec();
+            wire.allowed_scopes[1].truncate(32);
             wire
         },
         base_signature,
@@ -532,17 +534,18 @@ fn build_vector_file() -> PermitVectorFile {
     );
 
     builder.reject(
-        "eleven-acl-domains",
-        "One domain past the maximum.",
-        rule::TOO_MANY_ACL_DOMAIN_KEYS,
+        "one-scope-past-the-maximum",
+        "One scope past the maximum.",
+        rule::TOO_MANY_SCOPES,
         REFERENCE,
-        "domain list extended to eleven keys",
+        "scope list extended one entry past the maximum",
         REFERENCE_KEY,
         {
-            let mut keys: Vec<[u8; 32]> = (0..11).map(distinct_domain_key).collect();
-            keys.sort_unstable();
+            let mut scopes: Vec<[u8; 64]> =
+                (0..MAX_ALLOWED_SCOPES + 1).map(distinct_scope).collect();
+            scopes.sort_unstable();
             PermitWireFields {
-                allowed_acl_domain_keys: keys.iter().map(|key| key.to_vec()).collect(),
+                allowed_scopes: scopes.iter().map(|scope| scope.to_vec()).collect(),
                 ..reference_wire()
             }
         },
@@ -551,40 +554,41 @@ fn build_vector_file() -> PermitVectorFile {
     );
 
     builder.reject(
-        "acl-domains-in-base58-string-order",
-        "The reference permit's two domain keys, ordered by their base58 strings \
+        "scopes-in-base58-string-order",
+        "The reference permit's two scopes, ordered by their rendered base58 strings \
          instead of their bytes. This is the natural mistake — it is what sorting the \
          values a user sees produces — and it diverges from byte order exactly when \
          the encodings differ in length.",
-        rule::ACL_DOMAIN_KEYS_NOT_ASCENDING,
+        rule::SCOPES_NOT_ASCENDING,
         REFERENCE,
-        "the two domain keys swapped into base58-string order",
+        "the two scopes swapped into base58-string order",
         REFERENCE_KEY,
-        PermitWireFields {
-            allowed_acl_domain_keys: vec![
-                bytes32(ACL_DOMAIN_KEY_44_HEX).to_vec(),
-                bytes32(ACL_DOMAIN_KEY_43_HEX).to_vec(),
-            ],
-            ..reference_wire()
+        {
+            let mut scopes = reference_scopes();
+            scopes.reverse();
+            PermitWireFields {
+                allowed_scopes: scopes,
+                ..reference_wire()
+            }
         },
         base_signature,
         None,
     );
 
     builder.reject(
-        "duplicate-acl-domain-key",
-        "The same domain key twice. Rejected rather than collapsed: two different \
-         signed lists must never render the same text.",
-        rule::DUPLICATE_ACL_DOMAIN_KEY,
+        "duplicate-scope",
+        "The same scope twice. Rejected rather than collapsed: two different signed \
+         lists must never render the same text.",
+        rule::DUPLICATE_SCOPE,
         REFERENCE,
-        "second domain key replaced by a copy of the first",
+        "second scope replaced by a copy of the first",
         REFERENCE_KEY,
-        PermitWireFields {
-            allowed_acl_domain_keys: vec![
-                bytes32(ACL_DOMAIN_KEY_43_HEX).to_vec(),
-                bytes32(ACL_DOMAIN_KEY_43_HEX).to_vec(),
-            ],
-            ..reference_wire()
+        {
+            let first = reference_scopes()[0].clone();
+            PermitWireFields {
+                allowed_scopes: vec![first.clone(), first],
+                ..reference_wire()
+            }
         },
         base_signature,
         None,
@@ -731,7 +735,7 @@ fn build_vector_file() -> PermitVectorFile {
         description: "Normative vectors for the Solana user-decrypt permit: typed form, \
                       canonical text, envelope and signature. Authorization rules — the \
                       validity window, the revocation watermark, deployment identity, the \
-                      KMS pair and domain scope — are a separate layer and are not \
+                      KMS pair and the scope list — are a separate layer and are not \
                       covered here."
             .to_string(),
         regenerate_with: "bash scripts/update-permit-vectors.sh".to_string(),
@@ -813,11 +817,11 @@ fn wire_of(file: &PermitVectorFile, vector: &PermitVector) -> PermitWireFields {
         transport_key: vector
             .transport_key_bytes(file)
             .expect("the record's transport key is in the table"),
-        allowed_acl_domain_keys: vector
+        allowed_scopes: vector
             .permit
-            .allowed_acl_domain_keys
+            .allowed_scopes
             .iter()
-            .map(|key| from_hex(key).expect("hex"))
+            .map(|scope| from_hex(scope).expect("hex"))
             .collect(),
         start_timestamp: vector.permit.start_timestamp.parse().expect("decimal u64"),
         duration_seconds: vector.permit.duration_seconds.parse().expect("decimal u64"),
@@ -1149,7 +1153,7 @@ fn the_reference_record_carries_the_independently_computed_signature() {
     let reference = file
         .vectors
         .iter()
-        .find(|vector| vector.name == "reference-permit-two-domains")
+        .find(|vector| vector.name == "reference-permit-two-scopes")
         .expect("the reference record");
 
     assert_eq!(reference.signature, REFERENCE_SIGNATURE_HEX);

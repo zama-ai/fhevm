@@ -17,8 +17,8 @@ mod common;
 
 use common::*;
 use zama_solana_permit::{
-    IdentityField, PermitError, PermitFields, PermitWireFields, MAX_ACL_DOMAIN_KEYS,
-    MAX_DURATION_SECONDS, MAX_START_TIMESTAMP, MIN_DURATION_SECONDS, TRANSPORT_KEY_LEN,
+    IdentityField, PermitError, PermitFields, PermitWireFields, MAX_ALLOWED_SCOPES,
+    MAX_DURATION_SECONDS, MAX_START_TIMESTAMP, MIN_DURATION_SECONDS, SCOPE_LEN, TRANSPORT_KEY_LEN,
 };
 
 /// Convenience: decode and expect a specific rejection.
@@ -51,21 +51,29 @@ fn decode_accepts_the_reference_permit() {
     assert_eq!(fields.start_timestamp(), START_TIMESTAMP);
     assert_eq!(fields.duration_seconds(), DURATION_SECONDS);
     assert_eq!(fields.transport_key().as_bytes().len(), TRANSPORT_KEY_LEN);
-    assert_eq!(fields.allowed_acl_domain_keys().as_slice().len(), 2);
-    assert!(!fields.allowed_acl_domain_keys().is_permissive());
+    assert_eq!(fields.allowed_scopes().as_slice().len(), 2);
+    assert!(!fields.allowed_scopes().is_permissive());
+    assert_eq!(
+        fields.allowed_scopes().as_slice()[0].program().as_bytes(),
+        &bytes32(APP_PROGRAM_ID_HEX)
+    );
+    assert_eq!(
+        fields.allowed_scopes().as_slice()[0].scope().as_bytes(),
+        &bytes32(SCOPE_43_HEX)
+    );
 
     let (context, epoch) = kms_routing(&fields);
     assert_eq!(context.as_bytes(), &bytes32(KMS_CONTEXT_ID_HEX));
     assert_eq!(epoch.as_bytes(), &bytes32(KMS_EPOCH_ID_HEX));
 }
 
-/// An empty domain list is well formed, not an error: it is the permissive permit.
+/// An empty scope list is well formed, not an error: it is the permissive permit.
 #[test]
-fn decode_accepts_an_empty_domain_list_as_permissive() {
+fn decode_accepts_an_empty_scope_list_as_permissive() {
     let fields = expect_accepted(&permissive_wire());
 
-    assert!(fields.allowed_acl_domain_keys().is_permissive());
-    assert!(fields.allowed_acl_domain_keys().as_slice().is_empty());
+    assert!(fields.allowed_scopes().is_permissive());
+    assert!(fields.allowed_scopes().as_slice().is_empty());
 }
 
 // ---------------------------------------------------------------------------
@@ -109,201 +117,215 @@ fn decode_rejects_verifying_program_id_of_wrong_width() {
     }
 }
 
-/// A wrong-width domain key is reported with its index, so a caller can say which
-/// entry was malformed.
+/// A wrong-width scope entry is reported with its index, so a caller can say which
+/// entry was malformed. A bare 32-byte identity is the natural mistake and is a width
+/// violation like any other: a scope is a program and a scope, never one alone.
 #[test]
-fn decode_rejects_domain_key_of_wrong_width() {
-    for (index, len) in [(0usize, 31usize), (1, 33), (1, 0)] {
+fn decode_rejects_scope_of_wrong_width() {
+    for (index, len) in [(0usize, 63usize), (1, 65), (1, 0), (0, 32)] {
         let mut wire = reference_wire();
-        wire.allowed_acl_domain_keys[index] = vec![0x33; len];
-        expect_rejected(
-            &wire,
-            PermitError::IdentityWidth {
-                field: IdentityField::AclDomainKey(index),
-                len,
-            },
-        );
+        wire.allowed_scopes[index] = vec![0x33; len];
+        expect_rejected(&wire, PermitError::ScopeWidth { index, len });
     }
 }
 
 // ---------------------------------------------------------------------------
-// Domain count
+// Scope count
 // ---------------------------------------------------------------------------
 
 #[test]
-fn decode_rejects_more_domains_than_permitted() {
-    for count in [MAX_ACL_DOMAIN_KEYS + 1, MAX_ACL_DOMAIN_KEYS + 2, 64] {
-        let mut keys: Vec<[u8; 32]> = (0..count).map(distinct_domain_key).collect();
-        keys.sort_unstable();
+fn decode_rejects_more_scopes_than_permitted() {
+    for count in [MAX_ALLOWED_SCOPES + 1, MAX_ALLOWED_SCOPES + 2, 64] {
+        let mut scopes: Vec<[u8; SCOPE_LEN]> = (0..count).map(distinct_scope).collect();
+        scopes.sort_unstable();
         let wire = PermitWireFields {
-            allowed_acl_domain_keys: keys.iter().map(|key| key.to_vec()).collect(),
+            allowed_scopes: scopes.iter().map(|scope| scope.to_vec()).collect(),
             ..reference_wire()
         };
-        expect_rejected(&wire, PermitError::TooManyAclDomainKeys { count });
+        expect_rejected(&wire, PermitError::TooManyScopes { count });
     }
 }
 
 /// Both ends of the list bound are accepted: the empty list and the maximum count.
 #[test]
-fn decode_accepts_domain_counts_up_to_the_maximum() {
-    for count in 0..=MAX_ACL_DOMAIN_KEYS {
-        let fields = expect_accepted(&wire_with_domain_count(count));
-        assert_eq!(fields.allowed_acl_domain_keys().as_slice().len(), count);
+fn decode_accepts_scope_counts_up_to_the_maximum() {
+    for count in 0..=MAX_ALLOWED_SCOPES {
+        let fields = expect_accepted(&wire_with_scope_count(count));
+        assert_eq!(fields.allowed_scopes().as_slice().len(), count);
     }
 }
 
 // ---------------------------------------------------------------------------
-// Domain ordering
+// Scope ordering
 // ---------------------------------------------------------------------------
 
-/// The required counterexample: the two fixture keys are ascending in byte order and
+/// The required counterexample: the two fixture scopes are ascending in byte order and
 /// descending as base58 strings. Presented in string order, the list must be
 /// rejected.
 ///
 /// This is the one ordering test that cannot be replaced by an easier pair. Sorting
-/// 32-byte keys by their base58 *string* is a natural mistake — it is what you get by
+/// scopes by their rendered *string* is a natural mistake — it is what you get by
 /// sorting the values a user sees — and it agrees with byte order for almost every
 /// pair. It diverges exactly when the encodings differ in length, which is why the
-/// fixture pins a 43-character key against a 44-character one.
+/// fixture pins a 43-character scope half against a 44-character one.
 #[test]
-fn decode_rejects_domains_ordered_by_base58_string_instead_of_bytes() {
+fn decode_rejects_scopes_ordered_by_base58_string_instead_of_bytes() {
+    let mut scopes = reference_scopes();
+    scopes.reverse();
     let string_order = PermitWireFields {
-        allowed_acl_domain_keys: vec![
-            bytes32(ACL_DOMAIN_KEY_44_HEX).to_vec(),
-            bytes32(ACL_DOMAIN_KEY_43_HEX).to_vec(),
-        ],
+        allowed_scopes: scopes,
         ..reference_wire()
     };
 
     // The pair really is the counterexample: string order is the reverse of byte order.
-    assert!(ACL_DOMAIN_KEY_44_BASE58 < ACL_DOMAIN_KEY_43_BASE58);
-    assert!(bytes32(ACL_DOMAIN_KEY_44_HEX) > bytes32(ACL_DOMAIN_KEY_43_HEX));
+    assert!(SCOPE_44_BASE58 < SCOPE_43_BASE58);
+    assert!(bytes32(SCOPE_44_HEX) > bytes32(SCOPE_43_HEX));
 
-    expect_rejected(
-        &string_order,
-        PermitError::AclDomainKeysNotAscending { index: 1 },
-    );
+    expect_rejected(&string_order, PermitError::ScopesNotAscending { index: 1 });
 
-    // The same two keys in byte order are accepted — so the rejection above is about
-    // ordering, not about these keys.
+    // The same two scopes in byte order are accepted — so the rejection above is about
+    // ordering, not about these scopes.
     expect_accepted(&reference_wire());
 }
 
 #[test]
-fn decode_rejects_descending_domain_keys() {
-    let mut keys: Vec<[u8; 32]> = (0..4).map(distinct_domain_key).collect();
-    keys.sort_unstable();
-    keys.reverse();
+fn decode_rejects_descending_scopes() {
+    let mut scopes: Vec<[u8; SCOPE_LEN]> = (0..4).map(distinct_scope).collect();
+    scopes.sort_unstable();
+    scopes.reverse();
     let wire = PermitWireFields {
-        allowed_acl_domain_keys: keys.iter().map(|key| key.to_vec()).collect(),
+        allowed_scopes: scopes.iter().map(|scope| scope.to_vec()).collect(),
         ..reference_wire()
     };
 
-    expect_rejected(&wire, PermitError::AclDomainKeysNotAscending { index: 1 });
+    expect_rejected(&wire, PermitError::ScopesNotAscending { index: 1 });
 }
 
-/// A repeated key is rejected rather than collapsed. Silently deduplicating would
+/// A repeated scope is rejected rather than collapsed. Silently deduplicating would
 /// mean two different signed lists render the same text.
 #[test]
-fn decode_rejects_duplicate_domain_key() {
-    let key = bytes32(ACL_DOMAIN_KEY_43_HEX);
+fn decode_rejects_duplicate_scope() {
+    let scope = scope_entry(bytes32(APP_PROGRAM_ID_HEX), bytes32(SCOPE_43_HEX));
     let wire = PermitWireFields {
-        allowed_acl_domain_keys: vec![key.to_vec(), key.to_vec()],
+        allowed_scopes: vec![scope.clone(), scope],
         ..reference_wire()
     };
 
-    expect_rejected(&wire, PermitError::DuplicateAclDomainKey { index: 1 });
+    expect_rejected(&wire, PermitError::DuplicateScope { index: 1 });
 }
 
 /// A duplicate that is not adjacent is still a duplicate — the rule is about the set,
 /// not about neighbors. Such a list is necessarily also non-ascending, and either
 /// rejection is correct; what matters is that it cannot be accepted.
 #[test]
-fn decode_rejects_a_repeated_key_at_a_distance() {
-    let mut keys: Vec<[u8; 32]> = (0..3).map(distinct_domain_key).collect();
-    keys.sort_unstable();
+fn decode_rejects_a_repeated_scope_at_a_distance() {
+    let mut scopes: Vec<[u8; SCOPE_LEN]> = (0..3).map(distinct_scope).collect();
+    scopes.sort_unstable();
     let wire = PermitWireFields {
-        allowed_acl_domain_keys: vec![
-            keys[0].to_vec(),
-            keys[1].to_vec(),
-            keys[0].to_vec(),
-            keys[2].to_vec(),
+        allowed_scopes: vec![
+            scopes[0].to_vec(),
+            scopes[1].to_vec(),
+            scopes[0].to_vec(),
+            scopes[2].to_vec(),
         ],
         ..reference_wire()
     };
 
     assert!(
         PermitFields::decode(&wire).is_err(),
-        "a list repeating an earlier key must not be accepted"
+        "a list repeating an earlier scope must not be accepted"
     );
 }
 
-/// Ordering is decided by the first differing byte, at either end of the key: keys
-/// that differ only in their last byte are as ordered as keys that differ in their
-/// first.
+/// Ordering is decided by the first differing byte, at either end of the entry and in
+/// either half: entries that differ only in their last scope byte are as ordered as
+/// entries that differ in their first program byte.
 #[test]
-fn decode_accepts_minimally_separated_ascending_keys() {
-    for differing_index in [0usize, 15, 31] {
-        let mut lower = [0x40u8; 32];
+fn decode_accepts_minimally_separated_ascending_scopes() {
+    for differing_index in [0usize, 31, 32, 63] {
+        let mut lower = [0x40u8; SCOPE_LEN];
         let mut higher = lower;
         higher[differing_index] = 0x41;
         lower[differing_index] = 0x40;
 
         let wire = PermitWireFields {
-            allowed_acl_domain_keys: vec![lower.to_vec(), higher.to_vec()],
+            allowed_scopes: vec![lower.to_vec(), higher.to_vec()],
             ..reference_wire()
         };
         let fields = expect_accepted(&wire);
-        assert_eq!(
-            fields.allowed_acl_domain_keys().as_slice()[0].as_bytes(),
-            &lower
-        );
+        assert_eq!(fields.allowed_scopes().as_slice()[0].as_bytes(), &lower);
 
         // The same pair swapped is rejected, so acceptance above was about order.
         let swapped = PermitWireFields {
-            allowed_acl_domain_keys: vec![higher.to_vec(), lower.to_vec()],
+            allowed_scopes: vec![higher.to_vec(), lower.to_vec()],
             ..reference_wire()
         };
-        expect_rejected(
-            &swapped,
-            PermitError::AclDomainKeysNotAscending { index: 1 },
-        );
+        expect_rejected(&swapped, PermitError::ScopesNotAscending { index: 1 });
     }
 }
 
 /// There is one ordering rule, in one place: a consumer that builds the list directly
 /// cannot end up with a laxer one.
 #[test]
-fn validated_domain_list_applies_the_same_rules_as_decoding() {
-    use zama_solana_permit::{AclDomainKeys, Identity};
+fn validated_scope_list_applies_the_same_rules_as_decoding() {
+    use zama_solana_permit::{AllowedScopes, ApplicationScope, Identity};
 
-    let key_43 = Identity::new(bytes32(ACL_DOMAIN_KEY_43_HEX));
-    let key_44 = Identity::new(bytes32(ACL_DOMAIN_KEY_44_HEX));
+    let program = Identity::new(bytes32(APP_PROGRAM_ID_HEX));
+    let scope_43 = ApplicationScope::new(program, Identity::new(bytes32(SCOPE_43_HEX)));
+    let scope_44 = ApplicationScope::new(program, Identity::new(bytes32(SCOPE_44_HEX)));
 
-    assert!(AclDomainKeys::new(vec![]).is_ok(), "permissive is valid");
-    assert!(AclDomainKeys::new(vec![key_43, key_44]).is_ok());
+    assert!(AllowedScopes::new(vec![]).is_ok(), "permissive is valid");
+    assert!(AllowedScopes::new(vec![scope_43, scope_44]).is_ok());
     assert_eq!(
-        AclDomainKeys::new(vec![key_44, key_43]),
-        Err(PermitError::AclDomainKeysNotAscending { index: 1 })
+        AllowedScopes::new(vec![scope_44, scope_43]),
+        Err(PermitError::ScopesNotAscending { index: 1 })
     );
     assert_eq!(
-        AclDomainKeys::new(vec![key_43, key_43]),
-        Err(PermitError::DuplicateAclDomainKey { index: 1 })
+        AllowedScopes::new(vec![scope_43, scope_43]),
+        Err(PermitError::DuplicateScope { index: 1 })
     );
 
-    let too_many: Vec<Identity> = {
-        let mut keys: Vec<[u8; 32]> = (0..MAX_ACL_DOMAIN_KEYS + 1)
-            .map(distinct_domain_key)
-            .collect();
-        keys.sort_unstable();
-        keys.into_iter().map(Identity::new).collect()
+    let too_many: Vec<ApplicationScope> = {
+        let mut scopes: Vec<[u8; SCOPE_LEN]> =
+            (0..MAX_ALLOWED_SCOPES + 1).map(distinct_scope).collect();
+        scopes.sort_unstable();
+        scopes
+            .into_iter()
+            .map(ApplicationScope::from_bytes)
+            .collect()
     };
     assert_eq!(
-        AclDomainKeys::new(too_many),
-        Err(PermitError::TooManyAclDomainKeys {
-            count: MAX_ACL_DOMAIN_KEYS + 1
+        AllowedScopes::new(too_many),
+        Err(PermitError::TooManyScopes {
+            count: MAX_ALLOWED_SCOPES + 1
         })
     );
+}
+
+/// The typed list answers the one question the authorization layer asks of it: is this
+/// `(program, scope)` admitted. Permissive admits everything; a signed list admits the
+/// pairs it names and nothing else — not the program alone, not the scope alone.
+#[test]
+fn validated_scope_list_admits_exactly_its_pairs() {
+    use zama_solana_permit::Identity;
+
+    let program = Identity::new(bytes32(APP_PROGRAM_ID_HEX));
+    let other_program = Identity::new(bytes32(VERIFYING_PROGRAM_ID_HEX));
+    let scope_43 = Identity::new(bytes32(SCOPE_43_HEX));
+    let scope_44 = Identity::new(bytes32(SCOPE_44_HEX));
+    let other_scope = Identity::new([0x55; 32]);
+
+    let scoped = expect_accepted(&reference_wire());
+    let scopes = scoped.allowed_scopes();
+    assert!(scopes.admits(&program, &scope_43));
+    assert!(scopes.admits(&program, &scope_44));
+    assert!(!scopes.admits(&program, &other_scope));
+    assert!(!scopes.admits(&other_program, &scope_43));
+
+    let permissive = expect_accepted(&permissive_wire());
+    assert!(permissive
+        .allowed_scopes()
+        .admits(&other_program, &other_scope));
 }
 
 // ---------------------------------------------------------------------------

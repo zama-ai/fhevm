@@ -1,289 +1,353 @@
-//! The public-decrypt proof carrier, pinned from outside the module that hosts it.
+//! The public-decrypt path, pinned from outside the module that hosts it.
 //!
-//! Solana public decrypt has no live on-chain "is public" flag: public-ness is only provable by a
-//! `PublicDecryptLeaf` MMR proof, and that proof travels in the version-`0x03` `extraData`
-//! container. The container is temporary transport — it exists because the gateway interface has
-//! no typed fields for a public-decrypt proof, and it is due for removal once such fields exist —
-//! but while it exists, it is the only thing standing between a Solana public decrypt and a silent
-//! fail-closed outage.
+//! Solana public decrypt has no live on-chain "is public" flag: public-ness is a `PublicDecryptLeaf`
+//! sealed in the encrypted value account's MMR, and the account holds only the peaks. The request
+//! supplies one thing — which account the handle lives in, carried in the version-`0x03`
+//! `extraData` — and the connector does the rest: it reads the account at `confirmed`, asks the
+//! coprocessors' leaf record for the leaf, and verifies the sibling path against the peaks it
+//! observed. Nothing the requester hands in is a proof, and nothing the record says is trusted
+//! without verifying.
 //!
-//! These assertions were written from the outside on purpose. They used to hold inside the v0
-//! user-decrypt module's own test module, which was deleted with that path — and a test deleted
-//! together with the code it guarded guards nothing. The public-decrypt surface was re-homed to
-//! `event_processor::solana_public_decrypt` instead, so the same properties are pinned here,
-//! through the public entry point and a real RPC round-trip:
-//! a mock `getAccountInfo` endpoint serves the encrypted value account bytes, and
-//! [`check_solana_handles_public_decrypt`] does everything else it does in production.
-//!
-//! Wire bytes are pinned as literals, not as imports of the constants that produce them: if the
-//! carrier version or the proof mode byte is renumbered, or the carrier is torn down without the
-//! public-decrypt path being re-homed first, these tests fail by construction rather than
-//! following the rename.
+//! These assertions run the public entry point over two real HTTP round-trips — a mock
+//! `getMultipleAccounts` endpoint serving the account bytes and a mock leaf-proof route serving
+//! the record's answer — so the transport, the carrier and the rule are exercised together. Wire
+//! bytes are pinned as literals, not as imports of the constants that produce them: if the carrier
+//! version is renumbered, or the leaf-proof route moves, these tests fail by construction rather
+//! than following the rename.
 
 mod solana_support;
 
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64_STANDARD};
-use connector_utils::types::solana_extra_data::{
-    encode_solana_extra_data_context_only, encode_solana_extra_data_mmr_proof,
-};
 use kms_worker::core::event_processor::{
     ProcessingErrorKind,
     solana_public_decrypt::{SolanaHost, check_solana_handles_public_decrypt},
 };
-use kms_worker::core::solana::snapshot::RpcHostStateReader;
-use kms_worker::core::solana_v2_fetcher::SolanaV2Fetcher;
+use kms_worker::core::solana::proof::{HttpHostProofReader, LeafProofOutcome, LeafQuery};
+use kms_worker::core::solana::snapshot::{
+    RpcHostStateReader, SnapshotKeys, multiple_accounts_request_body,
+};
 use mocktail::server::MockServer;
 use solana_pubkey::Pubkey;
-use solana_support::{EncryptedValueAccountFixture, deployment};
-use zama_solana_acl::MmrProof;
+use solana_support::{EncryptedValueAccountFixture, deployment, handle};
 
-/// The `extraData` version byte that carries a public-decrypt proof. A literal, deliberately not
-/// the production constant: this pin is what turns "the carrier was torn down without re-homing
-/// public decrypt" into a readable test failure instead of a silent one.
-const PROOF_CARRIER_VERSION: u8 = 0x03;
+/// The `extraData` version byte of the public-decrypt carrier. A literal, deliberately not the
+/// production constant.
+const CARRIER_VERSION: u8 = 0x03;
 
-/// The mode byte of a public-decrypt proof blob, as the client writes it on the wire.
-const PUBLIC_PROOF_MODE: u8 = 0x02;
+/// The coprocessor route the connector reads leaf proofs from. A literal, for the same reason.
+const LEAF_PROOFS_ROUTE: &str = "/v1/solana/leaf-proofs";
 
-/// The mode byte of a historical-access proof blob — the one mode the public path must refuse.
-const HISTORICAL_PROOF_MODE: u8 = 0x01;
+/// The bearer key the mock coprocessor is configured with.
+const API_KEY: &str = "test-key";
 
-fn h(tag: u8) -> [u8; 32] {
-    [tag; 32]
-}
+/// The FHE type byte of the fixture handles: any type will do, public-ness is per handle.
+const FHE_TYPE_UINT64: u8 = 5;
 
-/// The full proof transport blob: 1-byte mode prefix ‖ Borsh(MmrProof).
-fn proof_blob(mode: u8, proof: &MmrProof) -> Vec<u8> {
-    let mut blob = vec![mode];
-    blob.extend_from_slice(&borsh::to_vec(proof).expect("the fixture proof serializes"));
+/// The carrier as the client builds it: version, context id, the handle's encrypted value account.
+fn carrier(fixture: &EncryptedValueAccountFixture) -> Vec<u8> {
+    let mut blob = vec![CARRIER_VERSION];
+    blob.extend_from_slice(&[0x11; 32]);
+    blob.extend_from_slice(&fixture.account_key);
     blob
 }
 
-/// A carrier whose body is well-formed but whose version byte is not the proof-carrier version.
-fn carrier_with_version(version: u8, valid_carrier: &[u8]) -> Vec<u8> {
-    let mut blob = valid_carrier.to_vec();
-    blob[0] = version;
-    blob
+/// An account whose current handle was made public, then replaced: the public leaf survives
+/// the update because it names the handle, not the slot the handle occupied.
+fn public_then_updated(public: [u8; 32], replacement: [u8; 32]) -> EncryptedValueAccountFixture {
+    let mut fixture = EncryptedValueAccountFixture::new(public);
+    fixture.mark_public();
+    fixture.update(replacement);
+    fixture
 }
 
-/// Starts a mock Solana RPC serving exactly one account: the fixture's encrypted value account,
-/// matched on the byte-exact `getAccountInfo` request the fetcher builds (which pins the account
-/// key, base64 encoding, and confirmed commitment). Returns the server (kept alive by the caller)
-/// and a host wired to it.
-async fn host_serving(fixture: &EncryptedValueAccountFixture) -> (MockServer, SolanaHost) {
+/// What the record answers for one query, as the coprocessor route serializes it.
+fn wire_outcome(outcome: &LeafProofOutcome) -> serde_json::Value {
+    match outcome {
+        LeafProofOutcome::Found {
+            leaf_index,
+            leaf_count,
+            siblings,
+        } => serde_json::json!({
+            "status": "found",
+            "leafIndex": leaf_index,
+            "leafCount": leaf_count,
+            "siblings": siblings.iter().map(alloy::hex::encode).collect::<Vec<_>>(),
+        }),
+        LeafProofOutcome::NotFound { leaf_count } => {
+            serde_json::json!({ "status": "notFound", "leafCount": leaf_count })
+        }
+        LeafProofOutcome::UnknownAccount => serde_json::json!({ "status": "unknownAccount" }),
+        LeafProofOutcome::HistoryIncomplete => {
+            serde_json::json!({ "status": "historyIncomplete" })
+        }
+    }
+}
+
+/// A host whose readers answer nothing: for requests that must be refused before any read. If the
+/// path under test unexpectedly reaches the network, the read fails and the assertions on the
+/// refusal shape catch it.
+async fn host_without_state() -> (MockServer, MockServer, SolanaHost) {
+    let rpc = MockServer::new_http("solana-rpc-empty");
+    rpc.start().await.expect("the mock RPC starts");
+    let coprocessor = MockServer::new_http("coprocessor-empty");
+    coprocessor
+        .start()
+        .await
+        .expect("the mock coprocessor starts");
+    let host = host_bound_to(&rpc, &coprocessor);
+    (rpc, coprocessor, host)
+}
+
+fn host_bound_to(rpc: &MockServer, coprocessor: &MockServer) -> SolanaHost {
+    let client = reqwest::Client::new();
+    SolanaHost {
+        deployment: deployment(),
+        reader: RpcHostStateReader::new(
+            rpc.base_url().expect("the mock RPC has a URL").clone(),
+            client.clone(),
+        ),
+        proofs: HttpHostProofReader::new(
+            &[coprocessor
+                .base_url()
+                .expect("the mock coprocessor has a URL")
+                .clone()],
+            API_KEY.to_owned(),
+            client,
+        ),
+    }
+}
+
+/// Starts a mock Solana RPC serving exactly one account, matched on the byte-exact
+/// `getMultipleAccounts` request the reader builds (which pins the key, base64 encoding and
+/// confirmed commitment), and a mock coprocessor answering `query` with `outcome` exactly,
+/// matched on the byte-exact leaf-proof request. Returns both servers (kept alive by the caller)
+/// and a host wired to them.
+async fn host_answering(
+    fixture: &EncryptedValueAccountFixture,
+    query: LeafQuery,
+    outcome: LeafProofOutcome,
+) -> (MockServer, MockServer, SolanaHost) {
     let account = fixture.account();
-    let response = serde_json::json!({
+    let rpc_response = serde_json::json!({
         "jsonrpc": "2.0",
         "id": 1,
         "result": {
             "context": { "slot": 1 },
-            "value": {
+            "value": [{
                 "owner": Pubkey::new_from_array(account.owner).to_string(),
                 "data": [BASE64_STANDARD.encode(&account.data), "base64"],
                 "lamports": 1,
                 "executable": false,
                 "rentEpoch": 0,
-            },
+            }],
         },
     });
-
-    let mut server = MockServer::new_http("solana-rpc");
-    let request_body = SolanaV2Fetcher::account_info_request_body(&fixture.account_key);
-    server.mock(move |when, then| {
-        when.post().json(request_body.clone());
-        then.json(response.clone());
+    let mut rpc = MockServer::new_http("solana-rpc");
+    let rpc_request = multiple_accounts_request_body(&SnapshotKeys::new([fixture.account_key]));
+    rpc.mock(move |when, then| {
+        when.post().json(rpc_request.clone());
+        then.json(rpc_response.clone());
     });
-    server.start().await.expect("the mock RPC starts");
+    rpc.start().await.expect("the mock RPC starts");
 
-    let host = host_bound_to(&server);
-    (server, host)
-}
-
-/// A host whose RPC answers nothing: for requests that must be refused before any account is
-/// read. If the path under test unexpectedly reaches the network, the fetch fails and the
-/// assertions on the refusal shape catch it.
-async fn host_without_accounts() -> (MockServer, SolanaHost) {
-    let server = MockServer::new_http("solana-rpc-empty");
-    server.start().await.expect("the mock RPC starts");
-    let host = host_bound_to(&server);
-    (server, host)
-}
-
-/// Builds a `SolanaHost` bound to a started mock RPC. Public decrypt only reads through the
-/// single-account `fetcher`; the pipeline `reader` and `deployment` are wired for completeness.
-fn host_bound_to(server: &MockServer) -> SolanaHost {
-    let url = server.base_url().expect("the mock RPC has a URL").clone();
-    SolanaHost {
-        deployment: deployment(),
-        reader: RpcHostStateReader::new(url.clone(), reqwest::Client::new()),
-        fetcher: SolanaV2Fetcher::new(url, reqwest::Client::new()),
-    }
-}
-
-/// An encrypted value account whose first leaf seals public-ness of `sealed`, after which the
-/// value moved on to `successor` — the shape every exact-handle assertion needs.
-fn public_then_updated(sealed: [u8; 32], successor: [u8; 32]) -> EncryptedValueAccountFixture {
-    let mut fixture = EncryptedValueAccountFixture::new(sealed, &[[0x42; 32]]);
-    fixture.mark_public();
-    fixture.update(successor);
-    fixture
-}
-
-fn public_carrier(fixture: &EncryptedValueAccountFixture, blob: Vec<u8>) -> Vec<u8> {
-    encode_solana_extra_data_mmr_proof(
-        [0u8; 32],
-        fixture.encrypted_value_id(),
-        fixture.encrypted_value.leaf_count,
-        &blob,
-    )
-}
-
-#[tokio::test]
-async fn a_public_leaf_authorizes_exactly_its_sealed_handle() {
-    let fixture = public_then_updated(h(20), h(21));
-    let blob = proof_blob(PUBLIC_PROOF_MODE, &fixture.proof(0));
-    let carrier = public_carrier(&fixture, blob);
-    let (_server, host) = host_serving(&fixture).await;
-
-    check_solana_handles_public_decrypt(&host, &[h(20)], &carrier)
+    let proof_request =
+        kms_worker::core::solana::proof::leaf_proof_request_body(std::slice::from_ref(&query));
+    let proof_response = serde_json::json!({ "proofs": [wire_outcome(&outcome)] });
+    let mut coprocessor = MockServer::new_http("coprocessor-leaf-proofs");
+    coprocessor.mock(move |when, then| {
+        when.post()
+            .path(LEAF_PROOFS_ROUTE)
+            .json(proof_request.clone());
+        then.json(proof_response.clone());
+    });
+    coprocessor
+        .start()
         .await
-        .expect("a PublicDecryptLeaf sealed for this handle authorizes it");
+        .expect("the mock coprocessor starts");
+
+    let host = host_bound_to(&rpc, &coprocessor);
+    (rpc, coprocessor, host)
 }
 
-#[tokio::test]
-async fn a_public_leaf_does_not_authorize_the_handle_that_replaced_it() {
-    let fixture = public_then_updated(h(20), h(21));
-    let blob = proof_blob(PUBLIC_PROOF_MODE, &fixture.proof(0));
-    let carrier = public_carrier(&fixture, blob);
-    let (_server, host) = host_serving(&fixture).await;
-
-    let err = check_solana_handles_public_decrypt(&host, &[h(21)], &carrier)
-        .await
-        .expect_err("a PublicDecryptLeaf for the old handle must not authorize its successor");
-    // The proof was built at the live leaf count, so the mismatch is classified as a view that
-    // may still converge — retried, never granted.
-    assert_eq!(err.kind, ProcessingErrorKind::Recoverable, "got: {err}");
-}
-
-#[tokio::test]
-async fn a_historical_leaf_does_not_authorize_public_decrypt() {
-    // No public leaf anywhere: the only sealed leaf is the historical-access one that `update`
-    // wrote for the subject. Presenting it under the public mode byte must not verify.
-    let mut fixture = EncryptedValueAccountFixture::new(h(30), &[[0x42; 32]]);
-    fixture.update(h(31));
-    let blob = proof_blob(PUBLIC_PROOF_MODE, &fixture.proof(0));
-    let carrier = public_carrier(&fixture, blob);
-    let (_server, host) = host_serving(&fixture).await;
-
-    let err = check_solana_handles_public_decrypt(&host, &[h(30)], &carrier)
-        .await
-        .expect_err("a historical-access leaf must not prove public-ness");
-    assert_eq!(err.kind, ProcessingErrorKind::Recoverable, "got: {err}");
-}
-
-#[test]
-fn the_proof_carrier_version_is_pinned_by_literal() {
-    // If this fails, the carrier's version byte changed — or the carrier is gone — while the
-    // public-decrypt path still depends on it. Re-home the proof before touching the container.
-    let carrier = encode_solana_extra_data_mmr_proof([0u8; 32], [9u8; 32], 1, &[0xab]);
+fn irrecoverable_containing(err: kms_worker::core::event_processor::ProcessingError, needle: &str) {
     assert_eq!(
-        carrier[0], PROOF_CARRIER_VERSION,
-        "the public-decrypt proof carrier must keep its version byte"
+        err.kind,
+        ProcessingErrorKind::Irrecoverable,
+        "a wrong request is terminal, got: {err}"
+    );
+    assert!(err.source.to_string().contains(needle), "got: {err}");
+}
+
+#[tokio::test]
+async fn a_public_leaf_the_record_serves_authorizes_the_handle() {
+    let public = handle(0x20, FHE_TYPE_UINT64);
+    let fixture = public_then_updated(public, handle(0x21, FHE_TYPE_UINT64));
+    let query = fixture.public_query(public);
+    let (_rpc, _coprocessor, host) = host_answering(&fixture, query, fixture.outcome(&query)).await;
+
+    check_solana_handles_public_decrypt(&host, &[public], &carrier(&fixture))
+        .await
+        .expect("a public leaf proven against the account's own peaks authorizes");
+}
+
+/// The record's answer is verified, not believed: a well-formed proof of another leaf — here the
+/// allow leaf a key holds on the same handle — does not make the handle public.
+#[tokio::test]
+async fn an_allow_leaf_does_not_prove_public_ness() {
+    let allowed = handle(0x30, FHE_TYPE_UINT64);
+    let mut fixture = EncryptedValueAccountFixture::allowing(allowed, [0x42; 32]);
+    fixture.update(handle(0x31, FHE_TYPE_UINT64));
+    let allow_query = fixture.allowed_query(allowed, [0x42; 32]);
+    // The record answers the public query with the allow leaf's proof.
+    let (_rpc, _coprocessor, host) = host_answering(
+        &fixture,
+        fixture.public_query(allowed),
+        fixture.outcome(&allow_query),
+    )
+    .await;
+
+    let err = check_solana_handles_public_decrypt(&host, &[allowed], &carrier(&fixture))
+        .await
+        .expect_err("an allow leaf must not prove public-ness");
+    assert_eq!(
+        err.kind,
+        ProcessingErrorKind::Recoverable,
+        "a proof that does not verify is a disagreement to retry, got: {err}"
     );
 }
 
+/// No public leaf in a record that has sealed as much history as the chain shows: the handle was
+/// never made public, and no retry changes that.
 #[tokio::test]
-async fn a_carrier_of_another_version_yields_no_proof() {
-    let fixture = public_then_updated(h(20), h(21));
-    let blob = proof_blob(PUBLIC_PROOF_MODE, &fixture.proof(0));
-    let valid_carrier = public_carrier(&fixture, blob);
-    let (_server, host) = host_without_accounts().await;
+async fn a_handle_never_made_public_is_refused_terminally() {
+    let private = handle(0x40, FHE_TYPE_UINT64);
+    let fixture = EncryptedValueAccountFixture::allowing(private, [0x42; 32]);
+    let query = fixture.public_query(private);
+    let (_rpc, _coprocessor, host) = host_answering(&fixture, query, fixture.outcome(&query)).await;
 
-    // A context-only carrier, and a version this connector has never issued: both must refuse
-    // explicitly before reading any account — never parse the body under the wrong layout.
-    let context_only = encode_solana_extra_data_context_only([0u8; 32]);
-    let unknown_version = carrier_with_version(0x09, &valid_carrier);
-
-    for carrier in [context_only, unknown_version] {
-        let err = check_solana_handles_public_decrypt(&host, &[h(20)], &carrier)
-            .await
-            .expect_err("a carrier of another version must not yield a proof");
-        match err {
-            err if err.kind == ProcessingErrorKind::Irrecoverable => assert!(
-                err.source
-                    .to_string()
-                    .contains("requires a PublicDecryptLeaf MMR proof"),
-                "got: {err}"
-            ),
-            other => panic!("a missing proof must be terminal, got: {other:?}"),
-        }
-    }
-}
-
-#[tokio::test]
-async fn the_public_path_accepts_only_its_own_mode_byte() {
-    // The same valid proof of the same public leaf, presented under the historical mode byte:
-    // the public path must refuse on the mode alone, before any verification outcome.
-    let fixture = public_then_updated(h(20), h(21));
-    let blob = proof_blob(HISTORICAL_PROOF_MODE, &fixture.proof(0));
-    let carrier = public_carrier(&fixture, blob);
-    let (_server, host) = host_serving(&fixture).await;
-
-    let err = check_solana_handles_public_decrypt(&host, &[h(20)], &carrier)
+    let err = check_solana_handles_public_decrypt(&host, &[private], &carrier(&fixture))
         .await
-        .expect_err("the public path must reject the historical mode byte");
-    match err {
-        err if err.kind == ProcessingErrorKind::Irrecoverable => {
-            assert!(
-                err.source.to_string().contains("requires MMR proof mode"),
-                "got: {err}"
-            )
-        }
-        other => panic!("a wrong mode byte must be terminal, got: {other:?}"),
-    }
+        .expect_err("a handle nobody made public is not public");
+    irrecoverable_containing(err, "no leaf");
 }
 
+/// A record behind the chain says nothing yet: the read is retried once against the same mock,
+/// and then the request is left to the ordinary attempt budget.
 #[tokio::test]
-async fn a_public_decrypt_request_without_a_proof_refuses_explicitly() {
-    let fixture = public_then_updated(h(20), h(21));
-    let (_server, host) = host_without_accounts().await;
+async fn a_record_behind_the_chain_is_retried_not_refused() {
+    let public = handle(0x50, FHE_TYPE_UINT64);
+    let fixture = public_then_updated(public, handle(0x51, FHE_TYPE_UINT64));
+    let query = fixture.public_query(public);
+    let (_rpc, _coprocessor, host) = host_answering(
+        &fixture,
+        query,
+        LeafProofOutcome::NotFound { leaf_count: 0 },
+    )
+    .await;
 
-    // A well-formed carrier whose proof section is empty: named value, no proof.
-    let empty_proof = public_carrier(&fixture, Vec::new());
+    let err = check_solana_handles_public_decrypt(&host, &[public], &carrier(&fixture))
+        .await
+        .expect_err("a record that has not sealed the leaf yet authorizes nothing yet");
+    assert_eq!(
+        err.kind,
+        ProcessingErrorKind::Recoverable,
+        "a record behind the chain is retried, got: {err}"
+    );
+}
 
-    for carrier in [Vec::new(), empty_proof] {
-        let err = check_solana_handles_public_decrypt(&host, &[h(20)], &carrier)
-            .await
-            .expect_err("public decrypt without a proof must refuse, not consult a live flag");
-        match err {
-            err if err.kind == ProcessingErrorKind::Irrecoverable => assert!(
-                err.source
-                    .to_string()
-                    .contains("requires a PublicDecryptLeaf MMR proof"),
-                "got: {err}"
-            ),
-            other => panic!("a proofless public decrypt must be terminal, got: {other:?}"),
-        }
+#[test]
+fn the_carrier_version_is_pinned_by_literal() {
+    // If this fails, the carrier's version byte changed while the public-decrypt path still
+    // depends on it.
+    let blob = connector_utils::types::solana_extra_data::encode_solana_public_decrypt_extra_data(
+        [0u8; 32], [9u8; 32],
+    );
+    assert_eq!(blob[0], CARRIER_VERSION);
+    assert_eq!(
+        blob.len(),
+        65,
+        "version, context id, account — and nothing else"
+    );
+}
+
+/// A carrier of another version, a carrier of another length, and no carrier at all: each is
+/// refused explicitly before reading any account, and never parsed under the wrong layout.
+#[tokio::test]
+async fn a_malformed_carrier_refuses_before_any_read() {
+    let fixture = public_then_updated(handle(0x60, FHE_TYPE_UINT64), handle(0x61, FHE_TYPE_UINT64));
+    let (_rpc, _coprocessor, host) = host_without_state().await;
+    let valid = carrier(&fixture);
+
+    let mut other_version = valid.clone();
+    other_version[0] = 0x09;
+    let mut context_only = vec![0x01];
+    context_only.extend_from_slice(&[0x11; 32]);
+    let mut trailing = valid.clone();
+    trailing.push(0);
+    let truncated = valid[..valid.len() - 1].to_vec();
+
+    for blob in [Vec::new(), other_version, context_only, trailing, truncated] {
+        let err =
+            check_solana_handles_public_decrypt(&host, &[handle(0x60, FHE_TYPE_UINT64)], &blob)
+                .await
+                .expect_err("a carrier that is not the version-3 layout names no account");
+        irrecoverable_containing(err, "requires the version-3 extraData");
     }
 }
 
 #[tokio::test]
 async fn public_decrypt_authorizes_one_handle_per_request() {
-    let fixture = public_then_updated(h(20), h(21));
-    let blob = proof_blob(PUBLIC_PROOF_MODE, &fixture.proof(0));
-    let carrier = public_carrier(&fixture, blob);
-    let (_server, host) = host_without_accounts().await;
+    let fixture = public_then_updated(handle(0x70, FHE_TYPE_UINT64), handle(0x71, FHE_TYPE_UINT64));
+    let (_rpc, _coprocessor, host) = host_without_state().await;
 
-    let err = check_solana_handles_public_decrypt(&host, &[h(20), h(21)], &carrier)
+    let err = check_solana_handles_public_decrypt(
+        &host,
+        &[handle(0x70, FHE_TYPE_UINT64), handle(0x71, FHE_TYPE_UINT64)],
+        &carrier(&fixture),
+    )
+    .await
+    .expect_err("a public decrypt names exactly one handle");
+    irrecoverable_containing(err, "exactly one handle");
+}
+
+/// The carrier names the account; the account still has to be the host program's. A foreign
+/// account at that address proves nothing, however well-formed.
+#[tokio::test]
+async fn a_carrier_naming_a_foreign_account_is_refused() {
+    let public = handle(0x80, FHE_TYPE_UINT64);
+    let fixture = public_then_updated(public, handle(0x81, FHE_TYPE_UINT64));
+    let mut impostor = fixture.account();
+    impostor.owner = [0xee; 32];
+    let rpc_response = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+            "context": { "slot": 1 },
+            "value": [{
+                "owner": Pubkey::new_from_array(impostor.owner).to_string(),
+                "data": [BASE64_STANDARD.encode(&impostor.data), "base64"],
+                "lamports": 1,
+                "executable": false,
+                "rentEpoch": 0,
+            }],
+        },
+    });
+    let mut rpc = MockServer::new_http("solana-rpc");
+    let rpc_request = multiple_accounts_request_body(&SnapshotKeys::new([fixture.account_key]));
+    rpc.mock(move |when, then| {
+        when.post().json(rpc_request.clone());
+        then.json(rpc_response.clone());
+    });
+    rpc.start().await.expect("the mock RPC starts");
+    let coprocessor = MockServer::new_http("coprocessor-unreached");
+    coprocessor
+        .start()
         .await
-        .expect_err("a public decrypt names exactly one handle");
-    match err {
-        err if err.kind == ProcessingErrorKind::Irrecoverable => {
-            assert!(
-                err.source.to_string().contains("exactly one handle"),
-                "got: {err}"
-            )
-        }
-        other => panic!("a multi-handle public decrypt must be terminal, got: {other:?}"),
-    }
+        .expect("the mock coprocessor starts");
+    let host = host_bound_to(&rpc, &coprocessor);
+
+    let err = check_solana_handles_public_decrypt(&host, &[public], &carrier(&fixture))
+        .await
+        .expect_err("a foreign program's account is not an encrypted value account");
+    irrecoverable_containing(err, "is owned by");
 }

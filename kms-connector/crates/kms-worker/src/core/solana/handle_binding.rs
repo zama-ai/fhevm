@@ -1,191 +1,174 @@
-//! Handle binding: current membership, or an inclusion proof for a replaced handle.
+//! Handle binding: a sealed leaf, proven against the account's own peaks.
 //!
-//! The mode is chosen per entry by the presence of an access proof, and one request freely
-//! mixes both. In either mode the subject whose access is established is the entry's owner —
-//! the signer in the direct branch, the delegator in the delegated one.
+//! Every decrypt permission on an encrypted value is a leaf of the account's MMR — an
+//! `Allowed(key, handle)` leaf for a key, a `Public(handle)` leaf for everyone — and the account
+//! itself holds only the peaks. Binding a handle to a key therefore means: the coprocessors' leaf
+//! record says where the leaf is, and its sibling path hashes up to a peak the connector observed
+//! on chain. The record supplies the path; the chain decides.
 //!
 //! ## Verify first, classify second
 //!
-//! An inclusion proof is verified against the live peaks of the snapshot before anything is
-//! compared for age. An append merges only some peaks, so a proof built against an older leaf
-//! count very often still verifies — and when it does it MUST be accepted. Rejecting on age
-//! would fail valid proofs after every append, which is a denial of service dressed as
-//! strictness.
+//! A proof is verified against the observed peaks before its age is looked at. An append merges
+//! only some peaks, so a proof built against an older leaf count very often still verifies — and
+//! when it does it MUST be accepted. Rejecting on age would fail valid proofs after every append.
 //!
-//! Only once inclusion has actually failed does `proofLeafCount` say anything, and all it
-//! says is which of two actions the client should take: rebuild the proof, or retry later.
-//! It is a request field, it is not authoritative, and it never decides whether a proof is
-//! accepted.
-//!
-//! That last sentence is a property of the signatures here, not a discipline to remember:
-//! [`check_handle_binding`] is not given the claimed count, so no implementation of it can
-//! consult one. The count reaches [`classify_inclusion_failure`] only, and only the pipeline
-//! calls it — after the binding rule has already said no.
+//! Only once the record has *no* proof does its leaf count say anything, and all it says is which
+//! of two things happened: the record has sealed at least as much history as the chain shows and
+//! the leaf is not in it — there is no such permission — or the record is behind and may yet seal
+//! it. The first is terminal, the second is retried.
 
 use super::encrypted_value_account::ResolvedEncryptedValueAccount;
-use super::request::AccessEvidence;
+use super::proof::LeafProofOutcome;
 use crate::core::solana_acl::{HandleBytes, SolanaPubkeyBytes};
-use zama_solana_acl::{AclError, MmrProof, authorize_current, authorize_historical};
+use zama_solana_acl::{AclError, MmrProof, authorize_historical, authorize_public};
 
-/// Establishes that `subject` may decrypt `handle` under this encrypted value account.
+/// Establishes that `allowed_key` may decrypt `handle` under this encrypted value account.
 ///
-/// Takes the resolved encrypted value account — never raw account bytes — so the membership set and
-/// the MMR commitments it reads are the validated ones.
+/// Takes the resolved account — never raw account bytes — so the peaks it verifies against are
+/// the validated ones, and the record's answer for exactly this `(account, handle, key)` leaf.
 pub fn check_handle_binding(
     encrypted_value_account: &ResolvedEncryptedValueAccount,
     handle: HandleBytes,
-    subject: SolanaPubkeyBytes,
-    access: &AccessEvidence,
+    allowed_key: SolanaPubkeyBytes,
+    outcome: &LeafProofOutcome,
 ) -> Result<(), HandleBindingFailure> {
-    match access {
-        AccessEvidence::Current => check_current(encrypted_value_account, handle, subject),
-        AccessEvidence::Historical(proof) => {
-            check_historical(encrypted_value_account, handle, subject, proof)
-        }
-    }
-}
-
-/// Current mode: the named handle is the live one and the subject is in the live subject set.
-fn check_current(
-    encrypted_value_account: &ResolvedEncryptedValueAccount,
-    handle: HandleBytes,
-    subject: SolanaPubkeyBytes,
-) -> Result<(), HandleBindingFailure> {
-    authorize_current(encrypted_value_account.encrypted_value(), handle, subject).map_err(|error| {
-        match error {
-            AclError::HandleMismatch => HandleBindingFailure::NotCurrentHandle {
-                requested: handle,
-                current: encrypted_value_account.encrypted_value().current_handle,
-            },
-            AclError::SubjectMissing => HandleBindingFailure::NotAMember { subject },
-            // Current mode consults no MMR and no proof, so nothing else the shared rule can say
-            // reaches here. Enumerated rather than caught, so a new outcome breaks the build.
-            AclError::MmrInconsistent
-            | AclError::MmrPeakCapacityExceeded
-            | AclError::SubjectCapacityExceeded
-            | AclError::BadDiscriminator
-            | AclError::BadAccountData
-            | AclError::HistoricalProofInvalid
-            | AclError::PublicDecryptProofInvalid => HandleBindingFailure::MmrStateInconsistent,
-        }
+    check_leaf(encrypted_value_account, outcome, |value, proof| {
+        authorize_historical(
+            encrypted_value_account.account_key(),
+            value,
+            handle,
+            allowed_key,
+            proof,
+        )
     })
 }
 
-/// Historical mode: a sealed leaf naming this encrypted value account, position, handle and
-/// subject, proven against the observed peaks.
-fn check_historical(
+/// Establishes that `handle` was made public under this encrypted value account.
+pub fn check_public_binding(
     encrypted_value_account: &ResolvedEncryptedValueAccount,
     handle: HandleBytes,
-    subject: SolanaPubkeyBytes,
-    proof: &MmrProof,
+    outcome: &LeafProofOutcome,
+) -> Result<(), HandleBindingFailure> {
+    check_leaf(encrypted_value_account, outcome, |value, proof| {
+        authorize_public(encrypted_value_account.account_key(), value, handle, proof)
+    })
+}
+
+fn check_leaf(
+    encrypted_value_account: &ResolvedEncryptedValueAccount,
+    outcome: &LeafProofOutcome,
+    verify: impl Fn(&zama_solana_acl::EncryptedValue, &MmrProof) -> Result<(), AclError>,
 ) -> Result<(), HandleBindingFailure> {
     let value = encrypted_value_account.encrypted_value();
+    let live_leaf_count = value.leaf_count;
 
     // An MMR has one peak per set bit of its leaf count. A state that does not is the host
-    // program's own inconsistency, and calling it a proof failure would tell the client to
-    // rebuild a proof against a state no proof can match.
-    if value.peaks.len() != value.leaf_count.count_ones() as usize {
+    // program's own inconsistency, and no proof can match it.
+    if value.peaks.len() != live_leaf_count.count_ones() as usize {
         return Err(HandleBindingFailure::MmrStateInconsistent);
     }
 
-    // A position the encrypted value account does not have is refused before any hashing: there is
-    // nothing for the proof to be a proof of, and the distinction is worth naming in the failure.
-    if proof.leaf_index >= value.leaf_count {
+    let (leaf_index, siblings, record_leaf_count) = match outcome {
+        LeafProofOutcome::Found {
+            leaf_index,
+            leaf_count,
+            siblings,
+        } => (*leaf_index, siblings, *leaf_count),
+        LeafProofOutcome::NotFound { leaf_count } if *leaf_count >= live_leaf_count => {
+            return Err(HandleBindingFailure::NoLeaf {
+                record_leaf_count: *leaf_count,
+                live_leaf_count,
+            });
+        }
+        LeafProofOutcome::NotFound { leaf_count } => {
+            return Err(HandleBindingFailure::ProofRecordBehind {
+                record_leaf_count: *leaf_count,
+                live_leaf_count,
+            });
+        }
+        LeafProofOutcome::UnknownAccount => {
+            return Err(HandleBindingFailure::AccountUnknownToProofRecord);
+        }
+        LeafProofOutcome::HistoryIncomplete => return Err(HandleBindingFailure::HistoryIncomplete),
+    };
+
+    // A position the account does not have is refused before any hashing: there is nothing for
+    // the proof to be a proof of, and the record is ahead of this observation.
+    if leaf_index >= live_leaf_count {
         return Err(HandleBindingFailure::LeafIndexOutOfRange {
-            leaf_index: proof.leaf_index,
-            leaf_count: value.leaf_count,
+            leaf_index,
+            leaf_count: live_leaf_count,
         });
     }
 
-    // Verify first. Age is not a failure — an append merges only some peaks, so an older proof
-    // whose peak survived still verifies, and it must be accepted. Only a proof that genuinely
-    // does not verify is reported, and it carries the observed count and not the claimed one.
-    authorize_historical(
-        encrypted_value_account.account_key(),
-        value,
-        handle,
-        subject,
-        proof,
-    )
-    .map_err(|error| {
-        match error {
-            AclError::HistoricalProofInvalid => HandleBindingFailure::ProofDoesNotVerify {
-                live_leaf_count: value.leaf_count,
-            },
-            AclError::MmrInconsistent | AclError::MmrPeakCapacityExceeded => {
-                HandleBindingFailure::MmrStateInconsistent
+    // Verify first. Age is not a failure — an older proof whose peak survived still verifies,
+    // and it must be accepted. Only a proof that genuinely does not verify is reported.
+    let proof = MmrProof {
+        leaf_index,
+        siblings: siblings.clone(),
+    };
+    verify(value, &proof).map_err(|error| match error {
+        AclError::HistoricalProofInvalid | AclError::PublicDecryptProofInvalid => {
+            HandleBindingFailure::ProofDoesNotVerify {
+                record_leaf_count,
+                live_leaf_count,
             }
-            // The current-mode and decoding outcomes cannot arise from proof verification.
-            AclError::SubjectCapacityExceeded
-            | AclError::BadDiscriminator
-            | AclError::BadAccountData
-            | AclError::HandleMismatch
-            | AclError::SubjectMissing
-            | AclError::PublicDecryptProofInvalid => HandleBindingFailure::MmrStateInconsistent,
+        }
+        AclError::MmrInconsistent | AclError::MmrPeakCapacityExceeded => {
+            HandleBindingFailure::MmrStateInconsistent
+        }
+        // Decoding outcomes cannot arise from proof verification. Enumerated rather than caught,
+        // so a new outcome breaks the build.
+        AclError::BadDiscriminator | AclError::BadAccountData => {
+            HandleBindingFailure::MmrStateInconsistent
         }
     })
 }
 
-/// Classifies an inclusion failure into the action the client should take.
-///
-/// The two counts are diagnostic input to this function and to nothing else: a proof that
-/// verified is accepted whatever they say.
-pub fn classify_inclusion_failure(proof_leaf_count: u64, live_leaf_count: u64) -> InclusionAction {
-    if proof_leaf_count < live_leaf_count {
-        // The proof was built against less history than was observed, and it did not survive
-        // the appends in between: its peak was merged and its sibling path no longer exists.
-        InclusionAction::RebuildProof
-    } else {
-        // Equal counts with disagreeing peaks is fork disagreement rather than staleness, and a
-        // higher claimed count means the proof service is ahead of this observation. Both may
-        // agree at a later one, with the very same proof.
-        InclusionAction::RetryAtLaterSnapshot
-    }
-}
-
-/// What a client should do about a proof that did not verify.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum InclusionAction {
-    /// The proof predates an append that merged its peak: it can never verify again, and a
-    /// fresh proof is needed. Terminal for this request.
-    RebuildProof,
-    /// The proof service observed more state than this snapshot did — it is ahead, or the two
-    /// are on disagreeing confirmed forks. The same proof may verify from a later
-    /// observation.
-    RetryAtLaterSnapshot,
-}
-
-/// Why a handle was not bound to its subject.
+/// Why a handle was not bound.
 #[derive(Clone, PartialEq, Eq, Debug, thiserror::Error)]
 pub enum HandleBindingFailure {
-    /// Current mode: the encrypted value account's current handle is not the one named. The request
-    /// is not silently redirected to whatever is live now — the same handle remains reachable as
-    /// historical access, because replacing a handle seals a leaf for the then-subjects.
-    #[error("encrypted value account's current handle is not the requested one")]
-    NotCurrentHandle {
-        /// The handle the request named.
-        requested: HandleBytes,
-        /// The handle the encrypted value account currently holds.
-        current: HandleBytes,
-    },
-    /// Current mode: the subject is not a member of the encrypted value account's current subject
-    /// set.
-    #[error("subject {subject:?} is not a current member of the encrypted value account")]
-    NotAMember {
-        /// The subject whose access was being established.
-        subject: SolanaPubkeyBytes,
-    },
-    /// Historical mode: the proof did not verify against the snapshot's live peaks.
-    ///
-    /// Carries the observed count, which is state, and not the claimed one, which is a request
-    /// field: turning this into an action is the caller's job precisely because the caller is
-    /// the layer that holds the request.
-    #[error("historical access proof does not verify against the observed peaks")]
-    ProofDoesNotVerify {
-        /// The leaf count observed in the snapshot.
+    /// The record has sealed at least as much history as the chain shows, and no such leaf is in
+    /// it: the permission was never granted.
+    #[error(
+        "no leaf for this key and handle in a record of {record_leaf_count} leaves against \
+         {live_leaf_count} on chain"
+    )]
+    NoLeaf {
+        /// How many leaves the record had sealed.
+        record_leaf_count: u64,
+        /// How many the account shows.
         live_leaf_count: u64,
     },
-    /// Historical mode: the proof names a leaf position the encrypted value account does not have.
+    /// The record has sealed less history than the chain shows and has no such leaf yet.
+    #[error(
+        "the leaf record is behind the chain ({record_leaf_count} leaves against \
+         {live_leaf_count}) and has no such leaf yet"
+    )]
+    ProofRecordBehind {
+        /// How many leaves the record had sealed.
+        record_leaf_count: u64,
+        /// How many the account shows.
+        live_leaf_count: u64,
+    },
+    /// The record has never seen this account, which exists on chain.
+    #[error("the leaf record does not know this encrypted value account")]
+    AccountUnknownToProofRecord,
+    /// The record's history for this account has a gap it cannot close.
+    #[error("the leaf record's history for this encrypted value account is incomplete")]
+    HistoryIncomplete,
+    /// The proof did not verify against the observed peaks.
+    #[error(
+        "leaf proof does not verify against the observed peaks (record {record_leaf_count} \
+         leaves, chain {live_leaf_count})"
+    )]
+    ProofDoesNotVerify {
+        /// How many leaves the record had sealed when it built the proof.
+        record_leaf_count: u64,
+        /// How many the account shows.
+        live_leaf_count: u64,
+    },
+    /// The proof names a leaf position the account does not have.
     #[error("leaf index {leaf_index} is not below the observed leaf count {leaf_count}")]
     LeafIndexOutOfRange {
         /// The position the proof claims.
@@ -193,8 +176,7 @@ pub enum HandleBindingFailure {
         /// The observed count.
         leaf_count: u64,
     },
-    /// The encrypted value account's own MMR state is internally inconsistent, which no retry can
-    /// repair.
+    /// The account's own MMR state is internally inconsistent, which no retry can repair.
     #[error("encrypted value account MMR state is internally inconsistent")]
     MmrStateInconsistent,
 }

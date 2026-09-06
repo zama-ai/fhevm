@@ -16,31 +16,29 @@ mod solana_support;
 
 use kms_worker::core::solana_acl::HandleBytes;
 use solana_support::{
-    DOMAIN, EncryptedValueAccountFixture, FHE_TYPE_UINT64, PermitBuilder, RequestBuilder, Wallet,
-    handle,
+    APP_PROGRAM, EncryptedValueAccountFixture, FHE_TYPE_UINT64, PermitBuilder, RequestBuilder,
+    SCOPE, Wallet, handle,
 };
 use zama_solana_request::{
     SOLANA_REQUEST_VERSION, SolanaRequestDecodeError, SolanaUserDecryptRequestWire,
     check_handle_list_parity, decode_solana_request, encode_solana_request,
 };
 
-/// A reference request exercising the whole width of the wire form: two entries, one
-/// current and one historical (with a real MMR proof), under a scoped permit.
+/// A reference request exercising the whole width of the wire form: two entries, one direct
+/// and one delegated, under a scoped permit.
 fn reference_wire() -> SolanaUserDecryptRequestWire {
     let wallet = Wallet::new(7);
-    let current = handle(10, FHE_TYPE_UINT64);
-    let replaced = handle(11, FHE_TYPE_UINT64);
-    let replacement = handle(12, FHE_TYPE_UINT64);
+    let delegator = Wallet::new(8);
+    let own = handle(10, FHE_TYPE_UINT64);
+    let delegated = handle(11, FHE_TYPE_UINT64);
 
-    let current_account = EncryptedValueAccountFixture::new(current, &[wallet.pubkey()]);
-    let mut historical_account = EncryptedValueAccountFixture::new(replaced, &[wallet.pubkey()]);
-    historical_account.update(replacement);
-    let proof = historical_account.proof(0);
+    let own_account = EncryptedValueAccountFixture::allowing(own, wallet.pubkey());
+    let delegated_account = EncryptedValueAccountFixture::allowing(delegated, delegator.pubkey());
 
     RequestBuilder::new(&wallet)
-        .permit(PermitBuilder::new(wallet.pubkey()).scope(&[DOMAIN]))
-        .direct_current(&current_account, current)
-        .historical(&historical_account, replaced, wallet.pubkey(), &proof, 1)
+        .permit(PermitBuilder::new(wallet.pubkey()).scope(&[(APP_PROGRAM, SCOPE)]))
+        .direct(&own_account, own)
+        .delegated(&delegated_account, delegated, delegator.pubkey())
         .wire()
 }
 
@@ -96,8 +94,8 @@ fn every_wire_field_reaches_the_canonical_bytes() {
     variants.push(("permit.transport_key", wire));
 
     let mut wire = base.clone();
-    wire.permit.allowed_acl_domain_keys[0][0] ^= 1;
-    variants.push(("permit.allowed_acl_domain_keys", wire));
+    wire.permit.allowed_scopes[0][0] ^= 1;
+    variants.push(("permit.allowed_scopes", wire));
 
     let mut wire = base.clone();
     wire.permit.start_timestamp += 1;
@@ -128,20 +126,12 @@ fn every_wire_field_reaches_the_canonical_bytes() {
     variants.push(("entry.handle", wire));
 
     let mut wire = base.clone();
-    wire.handles[0].subject[0] ^= 1;
-    variants.push(("entry.subject", wire));
+    wire.handles[0].allowed_key[0] ^= 1;
+    variants.push(("entry.allowed_key", wire));
 
     let mut wire = base.clone();
-    wire.handles[0].encrypted_value_id[0] ^= 1;
-    variants.push(("entry.encrypted_value_id", wire));
-
-    let mut wire = base.clone();
-    wire.handles[1].proof_leaf_count += 1;
-    variants.push(("entry.proof_leaf_count", wire));
-
-    let mut wire = base.clone();
-    wire.handles[1].access_proof[0] ^= 1;
-    variants.push(("entry.access_proof", wire));
+    wire.handles[1].encrypted_value_account[0] ^= 1;
+    variants.push(("entry.encrypted_value_account", wire));
 
     for (field, variant) in variants {
         let bytes = encode_solana_request(&variant).expect("every variant serializes");
@@ -165,11 +155,11 @@ fn every_wire_field_reaches_the_canonical_bytes() {
 fn a_request_of_an_unknown_version_is_rejected() {
     let mut bytes =
         encode_solana_request(&reference_wire()).expect("the reference wire serializes");
-    bytes[0] = 0x02;
+    bytes[0] = 0x7f;
     assert_eq!(
         decode_solana_request(&bytes),
         Err(SolanaRequestDecodeError::UnknownVersion {
-            version: Some(0x02)
+            version: Some(0x7f)
         })
     );
 

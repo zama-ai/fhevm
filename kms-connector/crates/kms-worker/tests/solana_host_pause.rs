@@ -30,7 +30,7 @@ fn context<'a>(
 fn direct_scenario() -> (Wallet, EncryptedValueAccountFixture, [u8; 32], World) {
     let wallet = Wallet::new(1);
     let handle = handle(0x31, FHE_TYPE_UINT64);
-    let encrypted_value_account = EncryptedValueAccountFixture::new(handle, &[wallet.pubkey()]);
+    let encrypted_value_account = EncryptedValueAccountFixture::allowing(handle, wallet.pubkey());
     let world = World::running_at_slot(100)
         .with_encrypted_value_account(&encrypted_value_account)
         .with_watermark(wallet.pubkey(), 0);
@@ -43,13 +43,15 @@ fn direct_scenario() -> (Wallet, EncryptedValueAccountFixture, [u8; 32], World) 
 async fn a_paused_host_refuses_until_the_switch_is_lifted() {
     let (wallet, encrypted_value_account, handle, running) = direct_scenario();
     let request = RequestBuilder::new(&wallet)
-        .direct_current(&encrypted_value_account, handle)
+        .direct(&encrypted_value_account, handle)
         .typed();
     let deployment = deployment();
 
+    let proofs = ScriptedProofReader::constant(running.record());
     let failure = authorize_request(
         &ScriptedReader::constant(running.clone().paused()),
         &ServableKmsPair,
+        &proofs,
         context(&deployment),
         &request,
     )
@@ -64,6 +66,7 @@ async fn a_paused_host_refuses_until_the_switch_is_lifted() {
     authorize_request(
         &ScriptedReader::constant(running),
         &ServableKmsPair,
+        &proofs,
         context(&deployment),
         &request,
     )
@@ -81,10 +84,11 @@ async fn the_switch_is_read_on_the_first_read_of_a_delegated_request() {
     let signer = Wallet::new(1);
     let delegator = Wallet::new(2);
     let handle = handle(0x32, FHE_TYPE_UINT64);
-    let encrypted_value_account = EncryptedValueAccountFixture::new(handle, &[delegator.pubkey()]);
+    let encrypted_value_account =
+        EncryptedValueAccountFixture::allowing(handle, delegator.pubkey());
     let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), 100);
     let request = RequestBuilder::new(&signer)
-        .delegated_current(&encrypted_value_account, handle, delegator.pubkey())
+        .delegated(&encrypted_value_account, handle, delegator.pubkey())
         .typed();
     let running = World::running_at_slot(100)
         .with_encrypted_value_account(&encrypted_value_account)
@@ -92,10 +96,12 @@ async fn the_switch_is_read_on_the_first_read_of_a_delegated_request() {
         .with_delegation(&delegation);
     let deployment = deployment();
 
+    let proofs = ScriptedProofReader::constant(running.record());
     let paused_first = ScriptedReader::scripted(vec![running.clone().paused(), running.clone()]);
     let failure = authorize_request(
         &paused_first,
         &ServableKmsPair,
+        &proofs,
         context(&deployment),
         &request,
     )
@@ -115,6 +121,7 @@ async fn the_switch_is_read_on_the_first_read_of_a_delegated_request() {
     authorize_request(
         &running_first,
         &ServableKmsPair,
+        &proofs,
         context(&deployment),
         &request,
     )
@@ -130,7 +137,7 @@ async fn the_switch_is_read_on_the_first_read_of_a_delegated_request() {
 async fn a_singleton_this_connector_cannot_read_refuses_rather_than_reading_as_running() {
     let (wallet, encrypted_value_account, handle, running) = direct_scenario();
     let request = RequestBuilder::new(&wallet)
-        .direct_current(&encrypted_value_account, handle)
+        .direct(&encrypted_value_account, handle)
         .typed();
     let (key, _) = host_config_address();
     let deployment = deployment();
@@ -172,6 +179,7 @@ async fn a_singleton_this_connector_cannot_read_refuses_rather_than_reading_as_r
         let outcome = authorize_request(
             &ScriptedReader::constant(world),
             &ServableKmsPair,
+            &ScriptedProofReader::unreachable(),
             context(&deployment),
             &request,
         )

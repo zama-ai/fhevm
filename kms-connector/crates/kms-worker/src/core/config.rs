@@ -171,6 +171,17 @@ pub struct HostChainConfig {
         alias = "solanaHostProgramId"
     )]
     pub solana_host_program_id: Option<SolanaPubkeyBytes>,
+    /// Base URLs of the coprocessors' leaf-proof service, one per coprocessor. Every one is
+    /// asked on each read and the answers are merged.
+    ///
+    /// Required, non-empty, for Solana chains; must be absent for EVM chains.
+    #[serde(default, alias = "solanaProofEndpoints")]
+    pub solana_proof_endpoints: Vec<Url>,
+    /// The bearer key the leaf-proof service expects.
+    ///
+    /// Required for Solana chains; must be absent for EVM chains.
+    #[serde(default, alias = "solanaProofApiKey")]
+    pub solana_proof_api_key: Option<String>,
 }
 
 fn default_host_chain_kind() -> HostChainKind {
@@ -315,6 +326,8 @@ impl Default for Config {
                 chain_kind: HostChainKind::Evm,
                 acl_address: Some(Address::default()),
                 solana_host_program_id: None,
+                solana_proof_endpoints: Vec::new(),
+                solana_proof_api_key: None,
             }],
             kms_core_endpoints: vec!["http://localhost:50051".to_string()],
             grpc_request_retries: default_grpc_request_retries(),
@@ -488,6 +501,8 @@ mod tests {
                     Address::from_str("0x5fbdb2315678afecb367f032d93f642f64180aa3").unwrap(),
                 ),
                 solana_host_program_id: None,
+                solana_proof_endpoints: Vec::new(),
+                solana_proof_api_key: None,
             }]
         );
         assert_eq!(
@@ -599,6 +614,8 @@ mod tests {
                     Address::from_str("0x5fbdb2315678afecb367f032d93f642f64180aa3").unwrap(),
                 ),
                 solana_host_program_id: Some([0; 32]),
+                solana_proof_endpoints: Vec::new(),
+                solana_proof_api_key: None,
             }]
         );
         cleanup_env_vars();

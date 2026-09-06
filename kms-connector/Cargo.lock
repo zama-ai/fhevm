@@ -3098,7 +3098,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3226,6 +3226,15 @@ name = "five8"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a75b8549488b4715defcb0d8a8a1c1c76a80661b5fa106b4ca0e7fce59d7d875"
+dependencies = [
+ "five8_core",
+]
+
+[[package]]
+name = "five8"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "23f76610e969fa1784327ded240f1e28a3fd9520c9cec93b636fcf62dd37f772"
 dependencies = [
  "five8_core",
 ]
@@ -4595,7 +4604,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5848,7 +5857,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5907,7 +5916,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -6456,7 +6465,7 @@ version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b5b96e9f0300fa287b545613f007dfe20043d7812bee255f418c1eb649c93b63"
 dependencies = [
- "five8",
+ "five8 0.2.1",
  "js-sys",
  "solana-atomic-u64",
  "solana-sanitize",
@@ -6468,6 +6477,19 @@ name = "solana-hash"
 version = "4.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0df9b01495ed31100aca97a7f5862d5e19ab1636d60d1a9f02391408dd9dec84"
+dependencies = [
+ "five8 1.0.0",
+]
+
+[[package]]
+name = "solana-keccak-hasher"
+version = "3.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ed1c0d16d6fdeba12291a1f068cdf0d479d9bff1141bf44afd7aa9d485f65ef8"
+dependencies = [
+ "solana-define-syscall 4.0.1",
+ "solana-hash 4.6.0",
+]
 
 [[package]]
 name = "solana-pubkey"
@@ -6476,7 +6498,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9b62adb9c3261a052ca1f999398c388f1daf558a1b492f60a6d9e64857db4ff1"
 dependencies = [
  "curve25519-dalek",
- "five8",
+ "five8 0.2.1",
  "five8_const",
  "getrandom 0.2.17",
  "js-sys",
@@ -6908,7 +6930,7 @@ dependencies = [
  "getrandom 0.4.2",
  "once_cell",
  "rustix",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -8101,7 +8123,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -8517,6 +8539,8 @@ version = "0.1.0"
 dependencies = [
  "borsh",
  "sha2",
+ "sha3 0.10.8",
+ "solana-keccak-hasher",
  "solana-sha256-hasher 3.1.0",
 ]
 

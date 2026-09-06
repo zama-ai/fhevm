@@ -13,9 +13,10 @@
 use super::delegation::DelegationFailure;
 use super::deployment::{DeploymentFailure, DeploymentIdentityError};
 use super::encrypted_value_account::EncryptedValueAccountFailure;
-use super::handle_binding::{HandleBindingFailure, InclusionAction};
+use super::handle_binding::HandleBindingFailure;
 use super::kms_pair::KmsPairFailure;
 use super::pause::PauseFailure;
+use super::proof::ProofReadError;
 use super::request::RequestFormError;
 use super::scope::ScopeFailure;
 use super::snapshot::SnapshotError;
@@ -76,7 +77,10 @@ pub enum AuthorizationFailure {
         /// Why.
         source: EncryptedValueAccountFailure,
     },
-    /// One entry's handle is not bound to its subject.
+    /// The leaf record could not be read at all.
+    #[error("leaf proofs: {0}")]
+    ProofRead(#[from] ProofReadError),
+    /// One entry's handle is not bound to its key.
     #[error("entry {index}: handle binding: {source}")]
     HandleBinding {
         /// Which entry.
@@ -84,26 +88,7 @@ pub enum AuthorizationFailure {
         /// Why.
         source: HandleBindingFailure,
     },
-    /// One entry's access proof did not verify, classified into an action.
-    ///
-    /// A variant of its own rather than a field of [`HandleBindingFailure`]: the classification
-    /// needs the claimed leaf count, which is a request field, and the binding rule is
-    /// deliberately not given request fields. This is the layer where both are in scope.
-    #[error(
-        "entry {index}: access proof does not verify (claimed count {proof_leaf_count}, observed \
-         {live_leaf_count}, action {action:?})"
-    )]
-    InclusionFailed {
-        /// Which entry.
-        index: usize,
-        /// What the client should do about it.
-        action: InclusionAction,
-        /// The count the request claimed the proof was built against.
-        proof_leaf_count: u64,
-        /// The count observed in the snapshot.
-        live_leaf_count: u64,
-    },
-    /// One entry's encrypted value account domain is outside the signed scope.
+    /// One entry's encrypted value account is outside the signed scope.
     #[error("entry {index}: scope: {source}")]
     Scope {
         /// Which entry.
@@ -137,8 +122,8 @@ impl AuthorizationFailure {
             Self::Snapshot(source) => source.class(),
             Self::Pause(source) => source.class(),
             Self::EncryptedValueAccount { source, .. } => source.class(),
+            Self::ProofRead(source) => source.class(),
             Self::HandleBinding { source, .. } => source.class(),
-            Self::InclusionFailed { action, .. } => action.class(),
             Self::Scope { source, .. } => source.class(),
             Self::Delegation { source, .. } => source.class(),
         }
@@ -153,9 +138,6 @@ impl RequestFormError {
             Self::Permit(_)
             | Self::SignatureWidth { .. }
             | Self::EntryIdentityWidth { .. }
-            | Self::AccessProofMalformed { .. }
-            | Self::AccessProofTrailingBytes { .. }
-            | Self::AccessProofTooManySiblings { .. }
             | Self::EmptyHandles
             | Self::TooManyHandles { .. } => FailureClass::Terminal,
         }
@@ -267,40 +249,55 @@ impl EncryptedValueAccountFailure {
             Self::ForeignOwner { .. }
             | Self::WrongAccountType { .. }
             | Self::Malformed { .. }
-            | Self::EncryptedValueIdMismatch { .. }
+            | Self::AddressMismatch { .. }
             | Self::SentinelAuthority { .. } => FailureClass::Terminal,
             Self::Snapshot(source) => source.class(),
         }
     }
 }
 
-impl HandleBindingFailure {
-    /// The two proof outcomes are retryable because both describe an observation that has not
-    /// caught up with the proof: an unverified proof may verify from a later one, and a leaf
-    /// position beyond the observed count may exist at a later one. Handle updates and
-    /// non-membership are decisions about state that will not un-happen, and an inconsistent
-    /// MMR is the host program's own defect.
-    ///
-    /// Both proof outcomes normally reach a client as
-    /// [`AuthorizationFailure::InclusionFailed`], which classifies them with the count the
-    /// request claimed; these arms are what a direct caller of the rule gets.
+impl ProofReadError {
+    /// A read that produced nothing says nothing about any leaf, so it is transient. The exception
+    /// is the oversized batch: that is a defect in this Connector's own planning, and answering
+    /// "try again" would hide it forever.
     pub fn class(&self) -> FailureClass {
         match self {
-            Self::ProofDoesNotVerify { .. } | Self::LeafIndexOutOfRange { .. } => {
-                FailureClass::Retryable
+            Self::Unavailable { .. } | Self::ResponseLengthMismatch { .. } => {
+                FailureClass::Transient
             }
-            Self::NotCurrentHandle { .. }
-            | Self::NotAMember { .. }
-            | Self::MmrStateInconsistent => FailureClass::Terminal,
+            Self::TooManyQueries { .. } => FailureClass::Terminal,
+        }
+    }
+}
+
+impl HandleBindingFailure {
+    /// Terminal are the outcomes that describe a permission that was never granted or a state
+    /// that will not repair itself: a record with at least the chain's history and no leaf in it,
+    /// a record whose history for the account is broken, and an inconsistent on-chain MMR.
+    ///
+    /// Retryable are the disagreements between the record and this observation that are expected
+    /// to converge: a record behind the chain, a record that has not yet seen an account the chain
+    /// has, a proof from a record ahead of this observation, and a proof that does not verify —
+    /// the record and the reader can sit on different confirmed views for a moment, and the
+    /// ordinary attempt budget decides.
+    pub fn class(&self) -> FailureClass {
+        match self {
+            Self::ProofRecordBehind { .. }
+            | Self::AccountUnknownToProofRecord
+            | Self::LeafIndexOutOfRange { .. }
+            | Self::ProofDoesNotVerify { .. } => FailureClass::Retryable,
+            Self::NoLeaf { .. } | Self::HistoryIncomplete | Self::MmrStateInconsistent => {
+                FailureClass::Terminal
+            }
         }
     }
 }
 
 impl ScopeFailure {
-    /// The signed scope is signed: a domain outside it stays outside it.
+    /// The signed scope is signed: an application outside it stays outside it.
     pub fn class(&self) -> FailureClass {
         match self {
-            Self::DomainNotAllowed { .. } => FailureClass::Terminal,
+            Self::ScopeNotAllowed { .. } => FailureClass::Terminal,
         }
     }
 }
@@ -343,16 +340,6 @@ impl DelegationFailure {
                 (exact, _) => exact,
             },
             Self::Snapshot(source) => source.class(),
-        }
-    }
-}
-
-impl InclusionAction {
-    /// The class this action corresponds to. Stated once, so the two mappings cannot drift.
-    pub fn class(&self) -> FailureClass {
-        match self {
-            Self::RebuildProof => FailureClass::Terminal,
-            Self::RetryAtLaterSnapshot => FailureClass::Retryable,
         }
     }
 }

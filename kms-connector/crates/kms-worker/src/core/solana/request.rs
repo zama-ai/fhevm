@@ -6,43 +6,28 @@
 //! cannot hold different opinions about the layout. What is local is the validated type: it
 //! has no public constructor, so "authorize a request nobody validated" is not expressible.
 //!
-//! Two absences are deliberate and are the whole of rule h6 on the request side: no
-//! `encrypted_value_account_authority` field and no `acl_domain` field, in either the wire form or the validated
-//! form. Both are properties of the handle's encrypted value account, and the only way to learn
-//! either is to read and validate that account. A request cannot name them, so a substituted
-//! authority is not a check that can be forgotten — it is a value that does not exist. The
-//! wire half of that guarantee is pinned by the compile-fail pair in `zama-solana-request`.
+//! Three absences are deliberate. No `encrypted_value_account_authority` field and no
+//! `(program, scope)` field, in either the wire form or the validated form: both are properties
+//! of the handle's encrypted value account, and the only way to learn them is to read and
+//! validate that account. A request cannot name them, so a substituted authority is not a check
+//! that can be forgotten — it is a value that does not exist. And no proof: the leaf proof that
+//! binds a key to a handle is fetched from the coprocessor's leaf record by the pipeline and
+//! verified against the account's own peaks. The wire half of these guarantees is pinned by the
+//! compile-fail pair in `zama-solana-request`.
 
 use crate::core::solana_acl::{HandleBytes, SolanaPubkeyBytes};
-use borsh::BorshDeserialize;
-use zama_solana_acl::MmrProof;
 use zama_solana_permit::{PermitFields, Signature};
 
 pub use zama_solana_request::{
-    MAX_ACCESS_PROOF_SIBLINGS, MAX_REQUEST_HANDLES, SolanaHandleEntryWire,
-    SolanaUserDecryptRequestWire,
+    MAX_REQUEST_HANDLES, SolanaHandleEntryWire, SolanaUserDecryptRequestWire,
 };
-
-/// How an entry claims access to its handle. The mode is per entry: one request freely
-/// mixes both.
-#[derive(Clone, PartialEq, Eq, Debug)]
-pub enum AccessEvidence {
-    /// No proof: the handle must be the encrypted value account's current handle and the subject a
-    /// current member.
-    Current,
-    /// An inclusion proof for a replaced handle, verified against the snapshot's live
-    /// peaks.
-    Historical(MmrProof),
-}
 
 /// One validated handle entry.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct SolanaHandleEntry {
     handle: HandleBytes,
-    subject: SolanaPubkeyBytes,
-    encrypted_value_id: [u8; 32],
-    proof_leaf_count: u64,
-    access: AccessEvidence,
+    allowed_key: SolanaPubkeyBytes,
+    encrypted_value_account: SolanaPubkeyBytes,
 }
 
 impl SolanaHandleEntry {
@@ -51,31 +36,22 @@ impl SolanaHandleEntry {
         self.handle
     }
 
-    /// The subject: the pubkey whose encrypted value is being requested. It selects the direct
-    /// or delegated branch — equal to the requester in the first, the delegator in the second —
-    /// and in both it is the access that must be proven.
-    pub fn subject(&self) -> SolanaPubkeyBytes {
-        self.subject
+    /// The key whose allow leaf on the handle authorizes this entry. It selects the direct or
+    /// delegated branch — equal to the requester in the first, the delegator in the second — and
+    /// in both it is the key the leaf must name.
+    pub fn allowed_key(&self) -> SolanaPubkeyBytes {
+        self.allowed_key
     }
 
-    /// The encrypted value account this entry qualifies under.
-    pub fn encrypted_value_id(&self) -> [u8; 32] {
-        self.encrypted_value_id
-    }
-
-    /// The leaf count the proof was built against, for failure classification only.
-    pub fn proof_leaf_count(&self) -> u64 {
-        self.proof_leaf_count
-    }
-
-    /// Current or historical access.
-    pub fn access(&self) -> &AccessEvidence {
-        &self.access
+    /// The encrypted value account this entry qualifies under, as named by the request. Read
+    /// and validated before anything is taken from it.
+    pub fn encrypted_value_account(&self) -> SolanaPubkeyBytes {
+        self.encrypted_value_account
     }
 }
 
 /// A request whose typed form has been validated: identity widths, the permit's own typed
-/// rules, the access-proof form, and a non-empty handle list.
+/// rules, and a non-empty handle list.
 ///
 /// No public constructor: [`SolanaUserDecryptRequest::decode`] is the only way in.
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -90,8 +66,7 @@ impl SolanaUserDecryptRequest {
     ///
     /// Covers the permit's own typed rules (delegated to the permit crate, so the Connector
     /// cannot be softer or stricter than any other verifier), the widths of the entry
-    /// identities, the access-proof form (strict borsh, no trailing bytes, bounded sibling
-    /// count), and a non-empty handle list.
+    /// identities, and a non-empty handle list.
     ///
     /// What it deliberately does not do: verify the signature, or look at any clock or
     /// account. Those are the authorization layer.
@@ -157,21 +132,19 @@ impl SolanaUserDecryptRequest {
     }
 }
 
-/// Validates one entry's identities and its access evidence.
+/// Validates one entry's identities.
 fn decode_entry(
     index: usize,
     entry: &SolanaHandleEntryWire,
 ) -> Result<SolanaHandleEntry, RequestFormError> {
     Ok(SolanaHandleEntry {
         handle: entry_identity(index, EntryField::Handle, &entry.handle)?,
-        subject: entry_identity(index, EntryField::Subject, &entry.subject)?,
-        encrypted_value_id: entry_identity(
+        allowed_key: entry_identity(index, EntryField::AllowedKey, &entry.allowed_key)?,
+        encrypted_value_account: entry_identity(
             index,
-            EntryField::EncryptedValueId,
-            &entry.encrypted_value_id,
+            EntryField::EncryptedValueAccount,
+            &entry.encrypted_value_account,
         )?,
-        proof_leaf_count: entry.proof_leaf_count,
-        access: decode_access_evidence(index, &entry.access_proof)?,
     })
 }
 
@@ -188,38 +161,6 @@ fn entry_identity(
             field,
             len: bytes.len(),
         })
-}
-
-/// Chooses the access mode from the proof bytes: absent is the current-handle claim, present is
-/// a strictly decoded inclusion proof.
-///
-/// Strict means all three of: it decodes, nothing follows it, and its sibling list is within
-/// what the tree can produce. The tail is a rejection here, unlike an account's tail, because
-/// two byte strings for one proof would give two implementations two different answers about
-/// whether they hold the same request.
-fn decode_access_evidence(
-    index: usize,
-    access_proof: &[u8],
-) -> Result<AccessEvidence, RequestFormError> {
-    if access_proof.is_empty() {
-        return Ok(AccessEvidence::Current);
-    }
-    let mut remaining = access_proof;
-    let proof = MmrProof::deserialize(&mut remaining)
-        .map_err(|_| RequestFormError::AccessProofMalformed { index })?;
-    if !remaining.is_empty() {
-        return Err(RequestFormError::AccessProofTrailingBytes {
-            index,
-            trailing: remaining.len(),
-        });
-    }
-    if proof.siblings.len() > MAX_ACCESS_PROOF_SIBLINGS {
-        return Err(RequestFormError::AccessProofTooManySiblings {
-            index,
-            siblings: proof.siblings.len(),
-        });
-    }
-    Ok(AccessEvidence::Historical(proof))
 }
 
 /// Why a request's typed form was rejected.
@@ -244,30 +185,6 @@ pub enum RequestFormError {
         /// The width that arrived.
         len: usize,
     },
-    /// An access proof did not strictly borsh-decode.
-    #[error("entry {index} access proof does not decode as an MMR proof")]
-    AccessProofMalformed {
-        /// Which entry.
-        index: usize,
-    },
-    /// An access proof decoded, but bytes remained. Two byte strings for one proof would
-    /// split deduplication and diagnostics between implementations, so the tail is a
-    /// rejection here — unlike an account's tail, which is legal.
-    #[error("entry {index} access proof carries {trailing} trailing byte(s)")]
-    AccessProofTrailingBytes {
-        /// Which entry.
-        index: usize,
-        /// How many bytes remained.
-        trailing: usize,
-    },
-    /// An access proof carried more siblings than the MMR can produce.
-    #[error("entry {index} access proof carries {siblings} siblings, exceeding the cap")]
-    AccessProofTooManySiblings {
-        /// Which entry.
-        index: usize,
-        /// The count that arrived.
-        siblings: usize,
-    },
     /// The handle list was empty.
     #[error("request names no handles")]
     EmptyHandles,
@@ -284,8 +201,8 @@ pub enum RequestFormError {
 pub enum EntryField {
     /// The ciphertext handle.
     Handle,
-    /// The subject whose encrypted value is requested.
-    Subject,
-    /// The encrypted value account identity.
-    EncryptedValueId,
+    /// The key whose allow leaf authorizes the entry.
+    AllowedKey,
+    /// The encrypted value account address.
+    EncryptedValueAccount,
 }

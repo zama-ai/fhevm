@@ -1,27 +1,13 @@
-//! Solana ACL verification helpers for the KMS connector.
+//! Shared Solana byte types and the host program's account addresses.
 //!
-//! RFC-024 replaced the old keyed-nonce ACL and material-commitment on-chain accounts
-//! with a single `EncryptedValue` encrypted value account (see
-//! [`super::solana_encrypted_value_acl`]): those account types no longer exist on-chain, so the
-//! byte-offset decoders that used to read them were deleted from this module along with them —
-//! decoding them would read garbage from a nonexistent layout, not merely dead code.
-//!
-//! Material commitments (ciphertext digest / key id binding) are no longer an on-chain Solana ACL
-//! concern at all: that check now lives solely in the gateway's `CiphertextCommits` contract,
-//! enforced off-chain in the KMS connector by `ciphertext_attestation::consensus` (see
-//! `event_processor::ciphertext::manager::CiphertextManager`), which every decryption request path
-//! (EVM and Solana alike) already runs before this ACL check. `HandleMaterialCommitmentWitness`
-//! and `verify_material_commitment` are deleted, not reimplemented.
-//!
-//! What remains here: the delegation witness and its layout decoder (a Solana-specific feature
-//! with no `EncryptedValue` equivalent, decoded from the snapshot by [`super::solana::delegation`]),
-//! and the shared pubkey/handle byte types + the verifier that [`super::solana_encrypted_value_acl`]
-//! uses for the current/historical/public decrypt paths. Delegation freshness is decided against
-//! the observed snapshot by [`super::solana::delegation`], not by a standalone verifier here.
+//! Authorization itself lives in [`super::solana`]; this module holds what several of its rules
+//! and the public-decrypt path share — the pubkey and handle aliases, the delegation witness
+//! decoder, and the PDA derivations of the two singleton-shaped records the pipeline reads (the
+//! host config and a delegation row). The encrypted value account's address is derived from its
+//! own fields in [`super::solana::encrypted_value_account`].
 
 use sha2::{Digest, Sha256};
 use solana_pubkey::Pubkey;
-use thiserror::Error;
 
 pub type SolanaPubkeyBytes = [u8; 32];
 pub type HandleBytes = [u8; 32];
@@ -49,69 +35,32 @@ pub struct UserDecryptionDelegationWitness {
     pub record: UserDecryptionDelegationRecord,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct SolanaAclVerifier {
-    pub host_program_id: SolanaPubkeyBytes,
-}
-
-#[derive(Debug, Error, PartialEq, Eq)]
-pub enum SolanaAclVerificationError {
-    #[error("ACL account is not owned by the configured ZamaHost program")]
-    InvalidAccountOwner,
-    #[error("account data length does not match the expected Anchor layout")]
-    AccountDataLengthMismatch,
-    #[error("account discriminator does not match the expected Anchor account type")]
-    AccountDiscriminatorMismatch,
-    #[error("account data contains invalid field values")]
-    InvalidAccountData,
-    #[error("encrypted value account's current_handle does not match the requested handle")]
-    EncryptedValueHandleMismatch,
-    #[error("subject is not a current member of the encrypted value account")]
-    EncryptedValueSubjectMissing,
-    #[error("encrypted value account is not the canonical PDA for its encrypted value ID")]
-    NonCanonicalEncryptedValueAcl,
-    #[error("encrypted value account bump does not match the canonical PDA bump")]
-    EncryptedValueAclBumpMismatch,
-    #[error("historical-access MMR proof failed to verify against the live peaks")]
-    HistoricalAccessProofInvalid,
-    #[error("public-decrypt MMR proof failed to verify against the live peaks")]
-    PublicDecryptProofInvalid,
-    #[error("encrypted value account MMR state (peaks/leaf_count) is internally inconsistent")]
-    MmrStateInconsistent,
-    #[error("domain is outside the signed authorization scope")]
-    DomainNotAllowed,
-}
-
-impl SolanaAclVerifier {
-    pub fn new(host_program_id: SolanaPubkeyBytes) -> Self {
-        Self { host_program_id }
-    }
+/// Why account bytes are not a delegation record.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum DelegationDecodeError {
+    #[error("account discriminator is not the delegation record's")]
+    BadDiscriminator,
+    #[error("delegation record body does not decode")]
+    BadAccountData,
 }
 
 pub fn decode_user_decryption_delegation_witness(
     account_key: SolanaPubkeyBytes,
     owner: SolanaPubkeyBytes,
     data: &[u8],
-) -> Result<UserDecryptionDelegationWitness, SolanaAclVerificationError> {
+) -> Result<UserDecryptionDelegationWitness, DelegationDecodeError> {
     let record =
         zama_solana_acl::decode_user_decryption_delegation(data).map_err(|error| match error {
-            zama_solana_acl::AclError::BadDiscriminator => {
-                SolanaAclVerificationError::AccountDiscriminatorMismatch
-            }
-            zama_solana_acl::AclError::BadAccountData => {
-                SolanaAclVerificationError::InvalidAccountData
-            }
+            zama_solana_acl::AclError::BadDiscriminator => DelegationDecodeError::BadDiscriminator,
+            zama_solana_acl::AclError::BadAccountData => DelegationDecodeError::BadAccountData,
             // The remaining variants belong to the encrypted value account's authorization
             // rules; the delegation decoder cannot produce them, and enumerating them keeps a
             // new one from landing here silently.
             zama_solana_acl::AclError::MmrInconsistent
             | zama_solana_acl::AclError::MmrPeakCapacityExceeded
-            | zama_solana_acl::AclError::SubjectCapacityExceeded
-            | zama_solana_acl::AclError::HandleMismatch
-            | zama_solana_acl::AclError::SubjectMissing
             | zama_solana_acl::AclError::HistoricalProofInvalid
             | zama_solana_acl::AclError::PublicDecryptProofInvalid => {
-                SolanaAclVerificationError::InvalidAccountData
+                DelegationDecodeError::BadAccountData
             }
         })?;
     Ok(UserDecryptionDelegationWitness {
@@ -166,22 +115,16 @@ mod tests {
     const DELEGATE: SolanaPubkeyBytes = [5; 32];
     const OBSERVED_SLOT: u64 = 500;
 
-    fn delegation_for_authority(
-        encrypted_value_account_authority: SolanaPubkeyBytes,
-    ) -> UserDecryptionDelegationWitness {
-        let (account_key, bump) = user_decryption_delegation_address(
-            HOST_PROGRAM_ID,
-            OWNER,
-            DELEGATE,
-            encrypted_value_account_authority,
-        );
+    fn delegation() -> UserDecryptionDelegationWitness {
+        let (account_key, bump) =
+            user_decryption_delegation_address(HOST_PROGRAM_ID, OWNER, DELEGATE, AUTHORITY);
         UserDecryptionDelegationWitness {
             account_key,
             owner: HOST_PROGRAM_ID,
             record: UserDecryptionDelegationRecord {
                 delegator: OWNER,
                 delegate: DELEGATE,
-                encrypted_value_account_authority,
+                encrypted_value_account_authority: AUTHORITY,
                 expiration_slot: OBSERVED_SLOT + 20,
                 delegation_counter: 9,
                 last_update_slot: OBSERVED_SLOT - 1,
@@ -189,10 +132,6 @@ mod tests {
                 bump,
             },
         }
-    }
-
-    fn delegation() -> UserDecryptionDelegationWitness {
-        delegation_for_authority(AUTHORITY)
     }
 
     fn encode_delegation(delegation: &UserDecryptionDelegationWitness) -> Vec<u8> {
@@ -228,7 +167,7 @@ mod tests {
         invalid_bool[revoked_offset] = 2;
         assert_eq!(
             decode_user_decryption_delegation_witness([0; 32], HOST_PROGRAM_ID, &invalid_bool),
-            Err(SolanaAclVerificationError::InvalidAccountData)
+            Err(DelegationDecodeError::BadAccountData)
         );
     }
 }

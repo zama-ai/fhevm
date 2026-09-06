@@ -17,7 +17,7 @@ mod common;
 use common::*;
 use zama_solana_permit::{
     build_envelope, render_canonical_text, verify_signature, PermitError, PermitFields,
-    PermitWireFields, Signature,
+    PermitWireFields, Signature, MAX_ALLOWED_SCOPES,
 };
 
 // ---------------------------------------------------------------------------
@@ -40,7 +40,7 @@ fn envelope_layout_is_the_offchain_message_form() {
     );
     assert_eq!(&envelope[18..50], fields.user_pubkey().as_bytes());
     assert_eq!(&envelope[50..], render_canonical_text(&fields).as_bytes());
-    assert_eq!(envelope.len(), 584);
+    assert_eq!(envelope.len(), 669);
     assert_eq!(
         digest(&envelope),
         bytes32(REFERENCE_ENVELOPE_DIGEST_HEX),
@@ -59,7 +59,7 @@ fn permissive_envelope_matches_its_independent_digest() {
     let fields = decoded(&permissive_wire());
     let envelope = build_envelope(&fields);
 
-    assert_eq!(envelope.len(), 504);
+    assert_eq!(envelope.len(), 499);
     assert_eq!(digest(&envelope), bytes32(PERMISSIVE_ENVELOPE_DIGEST_HEX));
 }
 
@@ -68,7 +68,11 @@ fn permissive_envelope_matches_its_independent_digest() {
 /// structurally disjoint.
 #[test]
 fn envelope_begins_with_the_byte_no_transaction_can_begin_with() {
-    for wire in [reference_wire(), permissive_wire(), worst_case_wire(10)] {
+    for wire in [
+        reference_wire(),
+        permissive_wire(),
+        worst_case_wire(MAX_ALLOWED_SCOPES),
+    ] {
         assert_eq!(build_envelope(&decoded(&wire))[0], 0xff);
     }
 }

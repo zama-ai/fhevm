@@ -2,11 +2,11 @@
 //!
 //! Every constant here is a deliberate choice, not filler:
 //!
-//! * the reference permit's two ACL-domain keys are the base58 length
-//!   counterexample pair — one encodes to 43 characters, the other to 44, and their
-//!   byte order is the opposite of their string order. Baking them into the *happy
-//!   path* means the golden text itself would change if anyone ever sorted the list
-//!   as strings;
+//! * the reference permit's two scopes share a program and differ in their scope
+//!   half, and the two scope halves are the base58 length counterexample pair — one
+//!   encodes to 43 characters, the other to 44, and their byte order is the opposite
+//!   of their string order. Baking them into the *happy path* means the golden text
+//!   itself would change if anyone ever sorted the list as strings;
 //! * the verifying program id is the real host program id, so the golden text looks
 //!   like a permit a wallet would actually be shown;
 //! * the chain id is derived from a fixture genesis hash by a stand-in derivation.
@@ -18,8 +18,8 @@
 
 use zama_solana_permit::{
     Identity, KmsRouting, PermitFields, PermitWireFields, Signature, TransportKey,
-    KMS_ROUTING_VERSION_BYTE, MAX_ACL_DOMAIN_KEYS, MAX_DURATION_SECONDS, MAX_START_TIMESTAMP,
-    TRANSPORT_KEY_LEN,
+    KMS_ROUTING_VERSION_BYTE, MAX_ALLOWED_SCOPES, MAX_DURATION_SECONDS, MAX_START_TIMESTAMP,
+    SCOPE_LEN, TRANSPORT_KEY_LEN,
 };
 
 // ---------------------------------------------------------------------------
@@ -82,25 +82,25 @@ pub const DURATION_SECONDS: u64 = 604_800;
 
 /// Digest of the reference permit's envelope.
 pub const REFERENCE_ENVELOPE_DIGEST_HEX: &str =
-    "110049ad6aec706218ea59c4234642a394c15a1be630edb3efff36fbd718464e";
+    "8b6cf9cfe5de67523d5e9f5b776ae81d483e976f5728a562a26c7b07ce9416f4";
 /// Signature over the reference envelope, from the independent implementation.
 pub const REFERENCE_SIGNATURE_HEX: &str = concat!(
-    "69259422cd12d75a04e39f6dbbce1f07bd45b0657df3cd7c41881dc387b13ec8",
-    "87a106646a50ff9c709544f50c3bb2e8e896e5d25bb8b205c00392458e3d7207"
+    "9a3f07a2c4e9b37ad8373a184dd5f48bb411456d3f698eaa5993576bc87d3661",
+    "1063375a24b999321e77da46d2b464b714c8888db5e4d624f0f53196dd1ad40d"
 );
 /// The same signature with its scalar replaced by `S + L`: a second encoding of the
 /// same signature, which a lax verifier accepts and a strict one rejects.
 pub const NON_CANONICAL_SIGNATURE_HEX: &str = concat!(
-    "69259422cd12d75a04e39f6dbbce1f07bd45b0657df3cd7c41881dc387b13ec8",
-    "7475fcc084b311f546323c98eb3491fde896e5d25bb8b205c00392458e3d7217"
+    "9a3f07a2c4e9b37ad8373a184dd5f48bb411456d3f698eaa5993576bc87d3661",
+    "fd362db73e1cac8af413d2e9b0ae43cc14c8888db5e4d624f0f53196dd1ad41d"
 );
 /// Digest of the permissive permit's envelope.
 pub const PERMISSIVE_ENVELOPE_DIGEST_HEX: &str =
-    "e105f269f644f20c7025bb436b1cfea038f00c76bb215eec6ea25bccc44e96a2";
+    "6162200c92c19a76d857be05c130c9a32c220b604e3babd55e56c95bbe2aab7d";
 /// Signature over the permissive permit's envelope.
 pub const PERMISSIVE_SIGNATURE_HEX: &str = concat!(
-    "15b15779298fceec4cd4bf7201b6871cd03046968014853b471858cdc604360d",
-    "821986ad98c846f22af1b9d34f5816a26fcf70961e2bfdd49b94690527dd5d0e"
+    "02ae45904abcd75fe444b0690a218879220380013c8c43c6b2ed3a74c4b142f2",
+    "006abb83cd8b214bed6379cffb85fb9da2d7aea075de2efc19b2003aa7936b04"
 );
 /// Fingerprint of the reference transport key, computed outside this crate.
 pub const REFERENCE_FINGERPRINT_HEX: &str =
@@ -142,18 +142,34 @@ pub fn digest(bytes: &[u8]) -> [u8; 32] {
     out
 }
 
-/// ACL-domain key whose base58 encoding is 43 characters and sorts *above* its
+/// The application program the reference permit's scopes belong to.
+pub const APP_PROGRAM_ID_HEX: &str =
+    "c0ffee0000000000000000000000000000000000000000000000000000c0ffee";
+/// Scope half whose base58 encoding is 43 characters and sorts *above* its
 /// byte-order successor as a string.
-pub const ACL_DOMAIN_KEY_43_HEX: &str =
-    "0edbafda67ca37188cf28263571f03b9716879e4acc9c514ab6727ffffffffff";
-/// ACL-domain key whose base58 encoding is 44 characters and sorts *below* its
+pub const SCOPE_43_HEX: &str = "0edbafda67ca37188cf28263571f03b9716879e4acc9c514ab6727ffffffffff";
+/// Scope half whose base58 encoding is 44 characters and sorts *below* its
 /// byte-order predecessor as a string.
-pub const ACL_DOMAIN_KEY_44_HEX: &str =
-    "0edbafda67ca37188cf28263571f03b9716879e4acc9c514ab67280000000000";
-/// Base58 of the 43-character key, for the string-order assertions.
-pub const ACL_DOMAIN_KEY_43_BASE58: &str = "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz";
-/// Base58 of the 44-character key.
-pub const ACL_DOMAIN_KEY_44_BASE58: &str = "21111111111111111111111111111111111111111111";
+pub const SCOPE_44_HEX: &str = "0edbafda67ca37188cf28263571f03b9716879e4acc9c514ab67280000000000";
+/// Base58 of the 43-character scope half, for the string-order assertions.
+pub const SCOPE_43_BASE58: &str = "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz";
+/// Base58 of the 44-character scope half.
+pub const SCOPE_44_BASE58: &str = "21111111111111111111111111111111111111111111";
+
+/// One transport scope entry: `program ‖ scope`.
+pub fn scope_entry(program: [u8; 32], scope: [u8; 32]) -> Vec<u8> {
+    let mut out = program.to_vec();
+    out.extend_from_slice(&scope);
+    out
+}
+
+/// The reference permit's two scope entries, in byte order.
+pub fn reference_scopes() -> Vec<Vec<u8>> {
+    vec![
+        scope_entry(bytes32(APP_PROGRAM_ID_HEX), bytes32(SCOPE_43_HEX)),
+        scope_entry(bytes32(APP_PROGRAM_ID_HEX), bytes32(SCOPE_44_HEX)),
+    ]
+}
 
 // ---------------------------------------------------------------------------
 // Byte helpers
@@ -311,15 +327,12 @@ pub fn extra_data(kms_context_id: [u8; 32], kms_epoch_id: [u8; 32]) -> Vec<u8> {
 // Wire fixtures
 // ---------------------------------------------------------------------------
 
-/// The reference permit in transport form: two ACL domains, in byte order.
+/// The reference permit in transport form: two scopes of one program, in byte order.
 pub fn reference_wire() -> PermitWireFields {
     PermitWireFields {
         user_pubkey: bytes32(USER_PUBKEY_HEX).to_vec(),
         transport_key: reference_transport_key(),
-        allowed_acl_domain_keys: vec![
-            bytes32(ACL_DOMAIN_KEY_43_HEX).to_vec(),
-            bytes32(ACL_DOMAIN_KEY_44_HEX).to_vec(),
-        ],
+        allowed_scopes: reference_scopes(),
         start_timestamp: START_TIMESTAMP,
         duration_seconds: DURATION_SECONDS,
         verifying_program_id: bytes32(VERIFYING_PROGRAM_ID_HEX).to_vec(),
@@ -328,38 +341,46 @@ pub fn reference_wire() -> PermitWireFields {
     }
 }
 
-/// The reference permit with an empty ACL-domain list.
+/// The reference permit with an empty scope list.
 pub fn permissive_wire() -> PermitWireFields {
     PermitWireFields {
-        allowed_acl_domain_keys: Vec::new(),
+        allowed_scopes: Vec::new(),
         ..reference_wire()
     }
 }
 
-/// The reference permit with `count` distinct ACL domains in byte order.
-pub fn wire_with_domain_count(count: usize) -> PermitWireFields {
-    let mut keys: Vec<[u8; 32]> = (0..count).map(distinct_domain_key).collect();
-    keys.sort_unstable();
+/// The reference permit with `count` distinct scopes in byte order.
+pub fn wire_with_scope_count(count: usize) -> PermitWireFields {
+    let mut scopes: Vec<[u8; SCOPE_LEN]> = (0..count).map(distinct_scope).collect();
+    scopes.sort_unstable();
     PermitWireFields {
-        allowed_acl_domain_keys: keys.iter().map(|key| key.to_vec()).collect(),
+        allowed_scopes: scopes.iter().map(|scope| scope.to_vec()).collect(),
         ..reference_wire()
     }
 }
 
-/// A distinct 32-byte key per index, all encoding to 44 base58 characters (the
+/// A distinct 32-byte identity per index, all encoding to 44 base58 characters (the
 /// widest form), so a permit built from them measures the worst case.
-pub fn distinct_domain_key(index: usize) -> [u8; 32] {
+pub fn distinct_identity(index: usize) -> [u8; 32] {
     let mut key = [0xffu8; 32];
     key[31] = 0xff - u8::try_from(index).expect("fixture index fits a byte");
     key
 }
 
-/// The widest permit the protocol admits at `domain_count` domains: every identity
-/// at its longest base58 form, the longest chain id, the longest duration and the
-/// latest timestamp.
-pub fn worst_case_wire(domain_count: usize) -> PermitWireFields {
-    let mut keys: Vec<[u8; 32]> = (10..10 + domain_count).map(distinct_domain_key).collect();
-    keys.sort_unstable();
+/// A distinct scope entry per index under one all-high program, both halves at the
+/// widest base58 form.
+pub fn distinct_scope(index: usize) -> [u8; SCOPE_LEN] {
+    let mut entry = [0xffu8; SCOPE_LEN];
+    entry[32..].copy_from_slice(&distinct_identity(index));
+    entry
+}
+
+/// The widest permit the protocol admits at `scope_count` scopes: every identity at
+/// its longest base58 form, the longest chain id, the longest duration and the latest
+/// timestamp.
+pub fn worst_case_wire(scope_count: usize) -> PermitWireFields {
+    let mut scopes: Vec<[u8; SCOPE_LEN]> = (10..10 + scope_count).map(distinct_scope).collect();
+    scopes.sort_unstable();
     PermitWireFields {
         // The fixture wallet, not a synthetic all-high key: the widest permit is also a
         // normative `valid` record, so it has to be a permit that can exist and be signed.
@@ -367,12 +388,12 @@ pub fn worst_case_wire(domain_count: usize) -> PermitWireFields {
         // claims made against this fixture are unaffected.
         user_pubkey: pubkey_of_seed(USER_SEED).as_bytes().to_vec(),
         transport_key: reference_transport_key(),
-        allowed_acl_domain_keys: keys.iter().map(|key| key.to_vec()).collect(),
+        allowed_scopes: scopes.iter().map(|scope| scope.to_vec()).collect(),
         start_timestamp: zama_solana_permit::MAX_START_TIMESTAMP,
         duration_seconds: zama_solana_permit::MAX_DURATION_SECONDS,
-        verifying_program_id: distinct_domain_key(1).to_vec(),
+        verifying_program_id: distinct_identity(1).to_vec(),
         chain_id: u64::MAX,
-        extra_data: extra_data(distinct_domain_key(2), distinct_domain_key(3)),
+        extra_data: extra_data(distinct_identity(2), distinct_identity(3)),
     }
 }
 
@@ -401,28 +422,38 @@ pub fn pseudo_identity(state: &mut u64) -> [u8; 32] {
 }
 
 /// A well-formed permit derived from `seed`, spanning the whole admitted space:
-/// every domain count, both ends of each bound, and identities that include
+/// every scope count, both ends of each bound, and identities that include
 /// leading-zero and all-high byte patterns (the two base58 corner cases).
 pub fn pseudo_valid_wire(seed: u64) -> PermitWireFields {
     let mut state = seed;
-    let domain_count = (splitmix64(&mut state) as usize) % (MAX_ACL_DOMAIN_KEYS + 1);
+    let scope_count = (splitmix64(&mut state) as usize) % (MAX_ALLOWED_SCOPES + 1);
 
-    let mut keys: Vec<[u8; 32]> = (0..domain_count)
+    let mut scopes: Vec<[u8; SCOPE_LEN]> = (0..scope_count)
         .map(|index| {
-            let mut key = pseudo_identity(&mut state);
+            let mut program = pseudo_identity(&mut state);
+            let mut scope = pseudo_identity(&mut state);
             // Force the base58 corner cases into the sample rather than hoping for
-            // them: a leading zero byte encodes shorter, an all-high key encodes
+            // them: a leading zero byte encodes shorter, an all-high identity encodes
             // longer.
             match index % 3 {
-                0 => key[0] = 0x00,
-                1 => key[0] = 0xff,
+                0 => {
+                    program[0] = 0x00;
+                    scope[0] = 0xff;
+                }
+                1 => {
+                    program[0] = 0xff;
+                    scope[0] = 0x00;
+                }
                 _ => {}
             }
-            key
+            let mut entry = [0u8; SCOPE_LEN];
+            entry[..32].copy_from_slice(&program);
+            entry[32..].copy_from_slice(&scope);
+            entry
         })
         .collect();
-    keys.sort_unstable();
-    keys.dedup();
+    scopes.sort_unstable();
+    scopes.dedup();
 
     let start_timestamp = match splitmix64(&mut state) % 4 {
         0 => 0,
@@ -446,7 +477,7 @@ pub fn pseudo_valid_wire(seed: u64) -> PermitWireFields {
     PermitWireFields {
         user_pubkey: pseudo_identity(&mut state).to_vec(),
         transport_key: transport_key_bytes(&seed.to_le_bytes()),
-        allowed_acl_domain_keys: keys.iter().map(|key| key.to_vec()).collect(),
+        allowed_scopes: scopes.iter().map(|scope| scope.to_vec()).collect(),
         start_timestamp,
         duration_seconds,
         verifying_program_id: pseudo_identity(&mut state).to_vec(),
