@@ -27,14 +27,19 @@ import {
   SOLANA_HOST_CHAIN_ID_I64,
   type GatewayBootstrapInputs,
 } from "./addresses";
-import { zamaEventAuthorityAddress, zamaHostProgramDataAddress } from "./fhe-execute";
+
 import {
   getDefineKmsContextInstructionAsync,
   getInitializeHostConfigInstructionAsync,
 } from "./internal/generated/zamaHost/instructions/index.js";
 import { findHostConfigPda } from "./internal/generated/zamaHost/pdas/index.js";
 import { ZAMA_HOST_PROGRAM_ADDRESS } from "./internal/generated/zamaHost/programAddress.js";
-import { createProvisioningContext, type SolanaProvisioningContext } from "./provision";
+import {
+  createProvisioningContext,
+  zamaEventAuthorityAddress,
+  zamaHostProgramDataAddress,
+  type SolanaProvisioningContext,
+} from "./provision";
 import {
   airdropDeployFees,
   ensureDeployerWallet,
@@ -151,7 +156,7 @@ const ENGINE_DIR = path.join(REPO_ROOT, "coprocessor", "fhevm-engine");
  * container doesn't publish the TPU ports. Returns the deployed zama_host program id.
  */
 const buildAndDeployPrograms = async (deployerKeypairPath: string): Promise<string> => {
-  console.log("    building zama_host + confidential_token");
+  console.log(`    building ${SOLANA_E2E_PROGRAMS.join(" + ")}`);
   for (const program of SOLANA_E2E_PROGRAMS) {
     await runStreaming(["anchor", "build", "--ignore-keys", "--no-idl", "-p", program], { cwd: SOLANA_DIR });
   }

@@ -3,7 +3,7 @@
 // A permit is signed once and stays reusable for its whole validity window, so asking the wallet
 // again for every private-balance view spends the user's attention on a signature that changes
 // nothing. The cache holds one signed session per question the permit answers — the wallet, the
-// chain, the ACL domain scope and the KMS route — and hands it back until the window is close
+// chain, the permit's scope and the KMS route — and hands it back until the window is close
 // enough to expiry that a decrypt started now could outlive it. A different wallet, a reseeded
 // deployment (new mints, new KMS pair) or an expired window all miss the cache and prompt again.
 //
@@ -12,11 +12,11 @@
 
 import type { SolanaPermitSession } from '@fhevm/sdk/solana';
 
-/** The identity a cached permit answers for: one wallet, one domain scope, one KMS route. */
+/** The identity a cached permit answers for: one wallet, one permit scope, one KMS route. */
 export type PermitCacheKey = {
   readonly walletAddress: string;
   readonly chainId: string;
-  readonly domainKey: string;
+  readonly permitScope: string;
   readonly kmsContextId: string;
   readonly kmsEpochId: string;
 };
@@ -31,7 +31,7 @@ export const PERMIT_REUSE_SAFETY_MARGIN_SECONDS = 60n;
 const cache = new Map<string, SolanaPermitSession>();
 
 const cacheKeyOf = (key: PermitCacheKey): string =>
-  [key.walletAddress, key.chainId, key.domainKey, key.kmsContextId, key.kmsEpochId].join('|');
+  [key.walletAddress, key.chainId, key.permitScope, key.kmsContextId, key.kmsEpochId].join('|');
 
 /** Whether the permit's own signed window still covers now, with the safety margin to spare. */
 export const permitSessionCoversNow = (session: SolanaPermitSession, nowSeconds: bigint): boolean => {

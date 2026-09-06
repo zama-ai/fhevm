@@ -182,7 +182,6 @@ export const COMPONENTS = [
   "coprocessor",
   "kms-connector",
   "relayer",
-  "solana-proof-service",
   "test-suite",
 ] as const;
 
@@ -202,7 +201,7 @@ export const COMPONENT_BY_STEP: Record<StepName, string[]> = {
   "coprocessor": ["coprocessor"],
   "kms-connector": ["kms-connector"],
   "bootstrap": ["gateway-sc", "host-sc"],
-  "relayer": ["relayer", "solana-proof-service"],
+  "relayer": ["relayer"],
   // No compose components by design: this step runs host-process nodes outside compose.
   "host-process": [],
   "test-suite": ["test-suite"],
@@ -221,9 +220,6 @@ export const GROUP_BUILD_COMPONENTS: Record<OverrideGroup, string[]> = {
   "kms-connector": ["kms-connector"],
   "listener-core": ["listener-core"],
   "relayer": ["relayer"],
-  // Own override group: `--override solana-proof-service` rebuilds the standalone
-  // proof image. Bring-up still rides the relayer step via COMPONENT_BY_STEP.
-  "solana-proof-service": ["solana-proof-service"],
   "gateway-contracts": ["gateway-mocked-payment", "gateway-sc"],
   "host-contracts": ["host-sc"],
   "test-suite": ["test-suite"],
@@ -251,7 +247,6 @@ export const GROUP_BUILD_SERVICES: Record<OverrideGroup, string[]> = {
   ],
   "listener-core": ["listener-publisher-for-anvil"],
   "relayer": ["relayer-db-migration", "relayer"],
-  "solana-proof-service": ["solana-proof-service"],
   "gateway-contracts": [
     "gateway-deploy-mocked-zama-oft",
     "gateway-set-relayer-mocked-payment",
@@ -281,7 +276,6 @@ const GROUP_PREFIX: Record<OverrideGroup, string> = {
   "kms-connector": "kms-connector-",
   "listener-core": "listener-",
   "relayer": "relayer-",
-  "solana-proof-service": "solana-proof-",
   "gateway-contracts": "gateway-",
   "host-contracts": "host-",
   "test-suite": "test-suite-",

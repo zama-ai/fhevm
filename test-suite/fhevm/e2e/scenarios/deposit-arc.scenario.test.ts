@@ -7,9 +7,9 @@
 // confidential cUSDC balance (a PUBLIC-amount escrow that needs no input proof), JOIN the pending
 // deposit batch with a coprocessor-attested amount (a real input proof built by the SDK's local
 // TFHE prover and verified by the relayer), have the keeper DISPATCH the aged batch (burning its
-// encrypted balance to a created-public handle) and SETTLE it (MMR inclusion proof from the
-// solana-proof-service + KMS burn certificate from the relayer + the on-chain settle in one
-// `settleBatch` call), then have alice CLAIM her confidential cShares payout (permissionless pull:
+// encrypted balance to a created-public handle) and SETTLE it (MMR inclusion proof rebuilt from
+// the burned value's account history + KMS burn certificate from the relayer + the on-chain settle
+// in one `settleBatch` call), then have alice CLAIM her confidential cShares payout (permissionless pull:
 // one MulDiv execution + a confidential transfer) and DECRYPT her claimed amount through the KMS
 // user-decrypt path (`decryptPosition`: ed25519-signed request -> relayer -> signcrypted shares ->
 // in-SDK de-signcryption).
@@ -35,9 +35,8 @@
 //   9. the batch reaches its minimum dispatch age (openedSlot + minBatchAgeSlots) [slot wait].
 //  10. dispatch: the keeper dispatches the aged batch                    [live, SDK, wired below].
 //  11. on-chain assertions: batch status Dispatched and a nonzero created-public burned total handle.
-//  12. the proof-service serves a verified public-decrypt proof for the burned encrypted value account — i.e. the
-//      SNS commit landed. Waited on explicitly here because `settleBatch` itself treats a
-//      not-yet-committed leaf (404) as terminal.
+//  12. the SNS commit of the burned total handle landed — waited on explicitly here so the KMS
+//      certificate request inside `settleBatch` finds the ciphertext materialized.
 //  13. settleBatch: MMR proof + KMS burn certificate + on-chain settle, keeper-signed [live, SDK].
 //  14. on-chain assertions: batch status Settled, certified totalJoined equals the joined amount
 //      (a single-join batch's total is public by construction), payoutReceived recorded.
@@ -72,6 +71,7 @@ import {
 
 import { loadPersonas, until } from "../harness";
 import { withHostReachableFetch } from "../harness/solana/sdkEncrypt";
+import { waitForSnsCommit } from "../../src/solana/sns";
 import { depositRoots, type VaultDemoRoots } from "../../demo/config";
 import { readCurrentDemoAuthorization } from "../../demo/lifecycle";
 import { DEMO_KEYPAIRS, loadDemoEnv } from "../../demo/loadDemoEnv";
@@ -129,13 +129,7 @@ type SolanaSdkSurface = {
   setFhevmRuntimeConfig(config: { auth: { type: "ApiKeyHeader"; value: string } }): void;
   defineFhevmSolanaChain(definition: {
     id: bigint;
-    fhevm: {
-      relayerUrl: string;
-      acl: { domainKeys: readonly `0x${string}`[] };
-      rpcUrl?: string;
-      proofServiceUrl?: string;
-      verifyingProgramId?: `0x${string}`;
-    };
+    fhevm: { relayerUrl: string; verifyingProgramId?: `0x${string}` };
   }): unknown;
   createFhevmEncryptClient(parameters: { chain: unknown; aclProgramAddress: `0x${string}` }): {
     buildInputProof(parameters: {
@@ -174,6 +168,7 @@ const loadSigner = async (keypairPath: string): Promise<TransactionSigner> => {
 /** A base58 address as the bytes32 hex identity the RFC-021 proof binding uses. */
 const asBytes32Hex = (value: Address): `0x${string}` =>
   `0x${Buffer.from(getAddressEncoder().encode(value)).toString("hex")}` as `0x${string}`;
+const addressBytes = (value: Address): Uint8Array => new Uint8Array(getAddressEncoder().encode(value));
 
 /** An unsigned decimal string as big-endian bytes32 — the shape the settle certificate's and the user-decrypt request's contextId take. */
 const asBytes32BigEndian = (decimal: string): Uint8Array => {
@@ -228,23 +223,14 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
         throw new Error(`keeper keypair ${keeper.address} does not match seeded persona ${config.personas.keeper}`);
       }
 
-      // Preconditions: the suite may run right after a relayer / proof-service (re)start. Gate on both
-      // health endpoints before submitting (same gates as the confidential-transfer scenario), plus
-      // the faucet the persona funds through. Every probe carries a per-request abort timeout:
+      // Preconditions: the suite may run right after a relayer (re)start. Gate on its health
+      // endpoint before submitting (same gate as the confidential-transfer scenario), plus the
+      // faucet the persona funds through. Every probe carries a per-request abort timeout:
       // until() checks its deadline only between attempts, so a hanging TCP connect would otherwise
       // stall the whole test to the runner's limit.
       await until(
         async () => (await fetch(`${env.relayerUrl}/liveness`, { signal: AbortSignal.timeout(10_000) })).ok,
         { description: "relayer liveness", timeoutMs: 60_000 },
-      );
-      await until(
-        async () => {
-          const response = await fetch(`${env.proofServiceUrl}/health/readiness`, {
-            signal: AbortSignal.timeout(10_000),
-          });
-          return /"ready"\s*:\s*true/.test(await response.text());
-        },
-        { description: "solana-proof-service readiness", timeoutMs: 120_000 },
       );
       await until(
         async () => (await fetch(`${FAUCET_URL}/health`, { signal: AbortSignal.timeout(10_000) })).ok,
@@ -360,24 +346,23 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       });
       const chain = solanaSdk.defineFhevmSolanaChain({
         id: BigInt(config.chainId),
-        fhevm: { relayerUrl: env.relayerUrl, acl: { domainKeys: [asBytes32Hex(config.mints.joinConfidential)] } },
+        fhevm: { relayerUrl: env.relayerUrl },
       }) as FhevmSolanaChain;
       const encryptClient = solanaSdk.createFhevmEncryptClient({ chain, aclProgramAddress: config.aclProgram });
       const { batch, batchAuthority, batchJoinTokenAccount } = batchBeforeJoin.addresses;
       const joinMint = config.mints.joinConfidential;
-      const joinComputeSigner = await vault.computeSignerAddress(joinMint);
 
       // The MinIO fetch rewrite is scoped to the join phase only: just the input proof's
       // key-material fetch needs it — settle's certificate phase talks to the relayer's
       // /v2/public-decrypt endpoint only (verified against actions/publicDecryptCertificate.ts).
       await withHostReachableFetch(async () => {
         // Step 6: build + submit the coprocessor input proof for the join amount. Binding tuple per
-        // joinBatch's own checks: contract identity = the join mint's compute-signer PDA (NOT the
+        // joinBatch's own checks: contract identity = the confidential-token program (NOT the
         // batcher), user identity = alice, value = euint64 amount, chain id + ACL program from the
         // seeded config. Verification is purely cryptographic — no allowlist.
         console.log("deposit-arc join: building input proof (local TFHE prover)...");
         const inputProof = await encryptClient.buildInputProof({
-          contractAddress: asBytes32Hex(joinComputeSigner),
+          contractAddress: asBytes32Hex(vault.CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS),
           userAddress: asBytes32Hex(alice.address),
           values: [{ type: "uint64", value: wrapBaseUnits }],
         });
@@ -483,60 +468,30 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       );
       expect(batchAfterDispatch.addresses.batch).toBe(batch);
 
-      // Step 12: wait for the burned encrypted value account's public-decrypt proof to become servable — i.e. for
-      // the SNS commit of the burn to land in the proof-service's store. settleBatch itself retries
-      // only `lagging` (503) and treats a not-yet-committed leaf (404 leaf_not_found) as terminal,
-      // so the readiness wait happens HERE, with a cheap probe of the same endpoint settleBatch
-      // will hit, and settleBatch is then called exactly once.
-      const burnedValueAccount = await vault.burnedAmountValueAccount(joinMint, batchJoinTokenAccount);
+      // Step 12: wait for the SNS commit of the burned total handle. The KMS certificate request
+      // inside settleBatch needs the ciphertext materialized; the Connector reads the public leaf
+      // itself, so nothing else has to catch up first.
       const burnedHandleHex = `0x${Buffer.from(batchAfterDispatch.state.burnedTotalHandle).toString("hex")}`;
-      const proofProbeUrl =
-        `${env.proofServiceUrl.replace(/\/$/, "")}/internal/solana/public-proof` +
-        `?encrypted_value=${burnedValueAccount.encryptedValueAddress}&handle=${burnedHandleHex}`;
-      console.log("deposit-arc settle: waiting for the proof-service to serve the burned-handle proof (SNS commit)...");
-      await until(
-        async () => {
-          const response = await fetch(proofProbeUrl, {
-            headers: { accept: "application/json" },
-            signal: AbortSignal.timeout(10_000),
-          });
-          if (!response.ok) {
-            // Throw (until() swallows probe errors until its deadline) so a timeout surfaces the
-            // last HTTP failure — a renamed endpoint (404) must read differently from a slow SNS
-            // commit in the timeout error.
-            throw new Error(`proof probe ${response.status}: ${await response.text()}`);
-          }
-          const body = (await response.json()) as { verified?: boolean };
-          return body.verified === true;
-        },
-        {
-          description: "proof-service serves a verified public-decrypt proof for the burned handle",
-          timeoutMs: 300_000,
-          intervalMs: 5_000,
-        },
-      );
+      console.log("deposit-arc settle: waiting for the SNS commit of the burned total handle...");
+      await waitForSnsCommit(burnedHandleHex, env.coprocessorDbContainer);
 
-      // Step 13: settle. One SDK call runs both off-chain phases (the MMR inclusion proof and the KMS
-      // burn certificate — its runtime consumes the auth config already set before the join) and the
-      // on-chain settle as a v0 transaction against the seeded lookup table. The keeper signs;
+      // Step 13: settle. One SDK call runs both off-chain phases (the MMR inclusion proof rebuilt
+      // from the burned value's account history, and the KMS burn certificate — its runtime
+      // consumes the auth config already set before the join) and the on-chain settle as a v0
+      // transaction against the seeded lookup table. The keeper signs;
       // authorityFundingLamports must suffice to cover the rent settle's CPIs charge to this
       // batch's authority — the seed recorded the open_batch value as a known-good amount.
       console.log("deposit-arc settle: calling settleBatch (MMR proof + KMS certificate + on-chain settle)...");
       const publicDecryptClient = solanaSdk.createFhevmPublicDecryptClient({ chain });
-      await vault.settleBatch(
-        chain,
-        { proofServiceUrl: env.proofServiceUrl },
-        keeper,
-        {
-          rpc,
-          rpcSubscriptions,
-          runtime: publicDecryptClient.runtime as never,
-          roots,
-          contextId: asBytes32BigEndian(config.userDecryptContextId),
-          lookupTableAddress: config.batchers.deposit.lookupTable,
-          authorityFundingLamports: BigInt(config.authorityFundingLamports),
-        },
-      );
+      await vault.settleBatch(chain, keeper, {
+        rpc,
+        rpcSubscriptions,
+        runtime: publicDecryptClient.runtime as never,
+        roots,
+        contextId: asBytes32BigEndian(config.userDecryptContextId),
+        lookupTableAddress: config.batchers.deposit.lookupTable,
+        authorityFundingLamports: BigInt(config.authorityFundingLamports),
+      });
 
       // Step 14: on-chain assertions for the settle phase. A settled batch publishes its certified
       // totals: with a single join the batch total IS alice's deposit — inherent to a one-member
@@ -561,10 +516,10 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       // (encrypted(joined) x payoutReceived / totalJoined) and a confidential transfer moves it
       // from the batch's payout account to hers. The SDK builder derives every validated account
       // from these six roots (its unit test pins each derivation against claim.rs), same as
-      // dispatch. The claim encrypted value account is still derived here for the decrypt phase: its value key names
-      // the handle alice decrypts in step 17.
+      // dispatch. The claim encrypted value account is still derived here for the decrypt phase: it
+      // is the account alice's decrypt request names in step 17.
       const payoutMint = config.mints.payoutConfidential;
-      const claimValueAccount = await vault.claimAmountValueAccount(batch, batchAuthority, alice.address);
+      const claimValueAccount = await vault.claimAmountValueAddress(batch, batchAuthority, alice.address);
       console.log(`deposit-arc claim: alice claiming her payout from batch ${batchBeforeJoin.index} (${batch})...`);
       await send(
         alice,
@@ -602,7 +557,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       // `finalized`; until() swallows probe errors until its deadline, so poll it.
       const claimValueState = await until(
         async () => {
-          const state = await vault.getEncryptedValueState(rpc, claimValueAccount.encryptedValueAddress);
+          const state = await vault.getEncryptedValueState(rpc, claimValueAccount);
           return state.currentHandle.some((byte) => byte !== 0) ? state : false;
         },
         { description: "claim-amount encrypted value account exists with a nonzero current handle", timeoutMs: 60_000 },
@@ -611,23 +566,14 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       // Step 17: decrypt. claim.rs grants `owner(alice)` on the claim-amount encrypted value account — "the user
       // decrypts their claimed amount" — so alice user-decrypts her fresh claim handle through the
       // SDK's permit path (`decryptPosition`): one sRFC-38 permit signature mints a session, the
-      // request runs under it — evidence (the claim account read and any historical proof) is
-      // resolved by the SDK's own evidence source against the demo RPC and proof service. The TKMS
-      // WASM loads from local package assets, so this phase needs no minio fetch rewrite.
+      // request names the handle and its claim-amount account, and the Connector reads the
+      // account and proves alice's allow leaf itself. The TKMS WASM loads from local package
+      // assets, so this phase needs no minio fetch rewrite.
       console.log("deposit-arc decrypt: alice user-decrypting her claimed payout (KMS roundtrip)...");
       const aliceWallet = solanaSdk.solanaPermitWalletFromSecretKey(aliceKeypairBytes);
-      // Batcher encrypted value accounts live in the BATCH's ACL domain (their PDA seeds hang off
-      // the batch address), so the permit's allowed domain key is the batch — not the chain
-      // default (the join mint's domain, which serves the token-account encrypted value accounts).
       const decryptChain = solanaSdk.defineFhevmSolanaChain({
         id: BigInt(config.chainId),
-        fhevm: {
-          relayerUrl: env.relayerUrl,
-          acl: { domainKeys: [asBytes32Hex(batch) as Bytes32Hex] },
-          rpcUrl: config.rpcUrl,
-          proofServiceUrl: config.proofServiceUrl,
-          verifyingProgramId: config.aclProgram,
-        },
+        fhevm: { relayerUrl: env.relayerUrl, verifyingProgramId: config.aclProgram },
       });
       const decryptClient = solanaSdk.createFhevmDecryptClient({
         chain: decryptChain,
@@ -649,7 +595,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       const permitSession = await decryptClient.signPermit({ wallet: aliceWallet, durationSeconds: 3_600n });
       const clearValues = await vault.decryptPosition(decryptClient as never, {
         session: permitSession,
-        entries: [{ handle: claimValueState.currentHandle, encryptedValueId: claimValueAccount.aclValueKey }],
+        entries: [{ handle: claimValueState.currentHandle, encryptedValueAccount: addressBytes(claimValueAccount) }],
         options: { timeout: DECRYPT_ROUNDTRIP_TIMEOUT_MS },
       } as never);
 

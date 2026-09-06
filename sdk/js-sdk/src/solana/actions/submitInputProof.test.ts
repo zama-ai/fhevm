@@ -74,7 +74,7 @@ function context(): {
 function solanaChain() {
   return {
     id: CHAIN_ID,
-    fhevm: { relayerUrl: 'https://relayer.example.com', acl: { domainKeys: [ACL] } },
+    fhevm: { relayerUrl: 'https://relayer.example.com' },
   } as const;
 }
 

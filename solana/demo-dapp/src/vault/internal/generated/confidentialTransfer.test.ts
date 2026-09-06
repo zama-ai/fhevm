@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { AccountRole, address, type Address, type TransactionSigner } from '@solana/kit';
 import { base58 } from '@scure/base';
 
-import { getConfidentialTransferInstructionAsync } from './confidentialToken/instructions/confidentialTransfer.js';
+import { getConfidentialTransferInstruction } from './confidentialToken/instructions/confidentialTransfer.js';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from './confidentialToken/programAddress.js';
 
 function key(fill: number): Address {
@@ -28,7 +28,7 @@ describe('generated confidentialTransfer instruction', () => {
     const underlyingMint = key(14);
     const fromAta = key(15);
     const toAta = key(15);
-    const instruction = await getConfidentialTransferInstructionAsync({
+    const instruction = getConfidentialTransferInstruction({
       owner,
       payer,
       mint,
@@ -54,6 +54,7 @@ describe('generated confidentialTransfer instruction', () => {
         extraData: new Uint8Array([0]),
         signatures: [new Uint8Array(65).fill(13)],
       },
+      receipt: null,
     });
 
     expect(instruction.accounts.map(({ address, role }) => [address, role])).toEqual([
@@ -65,7 +66,6 @@ describe('generated confidentialTransfer instruction', () => {
       [toAta, AccountRole.READONLY],
       [aliasedToken, AccountRole.WRITABLE],
       [aliasedToken, AccountRole.WRITABLE],
-      [expect.any(String), AccountRole.READONLY],
       [aliasedBalance, AccountRole.WRITABLE],
       [aliasedBalance, AccountRole.WRITABLE],
       [transferred, AccountRole.WRITABLE],
@@ -73,6 +73,9 @@ describe('generated confidentialTransfer instruction', () => {
       ['6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu', AccountRole.READONLY],
       [hostConfig, AccountRole.READONLY],
       ['11111111111111111111111111111111', AccountRole.READONLY],
+      // The four omitted optionals (HCU pair, receipt pair) resolve to the program id.
+      [CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, AccountRole.READONLY],
+      [CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, AccountRole.READONLY],
       [CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, AccountRole.READONLY],
       [CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, AccountRole.READONLY],
       [tokenEvent, AccountRole.READONLY],

@@ -29,7 +29,7 @@ use zama_fhe::{
 };
 use zama_host::program::ZamaHost;
 
-declare_id!("4tjvykteKMKDVmRGbfVSkANmBnm91NfD6DAaw6pykfF3");
+declare_id!("6zEiFjcGjYaVDmVETVPRQB2p6vk9zj6aPbXCKGVuS8wj");
 
 #[program]
 pub mod encrypted_counter {

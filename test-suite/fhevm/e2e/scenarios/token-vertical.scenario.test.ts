@@ -6,15 +6,17 @@
 //   "OK wrap_usdc" grep -> `wrapUnderlying` throws on failure (simulate+send+confirm).
 //   burn input-proof handle scrape (`solana-input.ts` subprocess + python json) -> the in-process
 //     SDK encrypt client returns the typed submission; the attestation binds
-//     (user = owner, contract = the mint's compute-signer PDA) exactly as the token requires.
+//     (user = owner, contract = the confidential-token program) exactly as the token requires.
 //   "burned handle"/"burned amount ACL" stdout scrapes -> typed reads: the burned-amount
-//     encrypted value account derives from (mint, token account, burned_amount label) and its
-//     current handle is read from chain, not from a log line.
+//     encrypted value account derives from (token program, token account, mint, burned_amount
+//     label) and its current handle is read from chain, not from a log line.
 //   burned-handle SNS poll (docker psql loop) -> `stack.waitForSnsCommit`.
 //   "OK make_handle_public" grep -> `sealBurnedAmountHandle` throws on failure.
-//   leaf_count=2 / leaf_index=0 proof assertions -> `certifiedPublicDecrypt` expectedLeafCount /
-//     expectedLeafIndex: the created-public lifecycle leaf (index 0) plus the explicit re-seal
-//     (index 1) prove lifecycle-batch ingestion; the semantic endpoint resolves to the EARLIEST.
+//   leaf_count / leaf_index proof assertions -> the consume proof is rebuilt client-side from the
+//     account's expected history (`buildPublicLeafProof`): the burn's allow leaf (0) and public
+//     leaf (1) plus the explicit re-seal (2). The rebuild cross-checks the live peaks, so a history
+//     the account does not hold fails here, by name, not inside the on-chain verifier. The KMS
+//     certificate itself needs no proof: the Connector reads the public leaf through the coprocessors.
 //   cleartext == burn amount -> the certified decrypt's cleartext == BURN_AMOUNT.
 //   "OK redeem_burned_amount" grep -> `redeemBurnedAmount` throws on failure, PLUS a stronger
 //     assertion the bash never made: the owner's underlying token balance grows by exactly the
@@ -35,7 +37,7 @@ import { describe, expect, test } from "bun:test";
 
 import { getAddressEncoder, isSolanaError, SOLANA_ERROR__INSTRUCTION_ERROR__CUSTOM, type Address } from "@solana/kit";
 
-import { certifiedPublicDecrypt, currentHandle } from "../../src/solana/fhe-vertical";
+import { buildPublicLeafProof, certifiedPublicDecrypt, currentHandle } from "../../src/solana/fhe-vertical";
 import {
   createConfidentialMint,
   createSplMint,
@@ -44,12 +46,14 @@ import {
   wrapUnderlying,
 } from "../../src/solana/provision";
 import {
+  burnedAmountLeafHistory,
   confidentialBurn,
   confidentialBurnTarget,
   discloseBurnedAmount,
   redeemBurnedAmount,
   sealBurnedAmountHandle,
 } from "../../src/solana/token-vertical";
+import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from "@demo-dapp/vault/index.js";
 import { submitUint64InputProof } from "../harness/solana/sdkEncrypt";
 import { verticalSetup } from "../harness/solana/vertical";
 
@@ -78,7 +82,7 @@ const customProgramErrorCode = (error: unknown): number | undefined => {
 
 describe("solana confidential-token consume vertical", () => {
   test(
-    "wrap 1000 -> burn attested 7 -> seal -> public-decrypt == 7 (leaves 2/0) -> redeem releases 7 -> disclose",
+    "wrap 1000 -> burn attested 7 -> seal -> public-decrypt == 7 -> redeem releases 7 (leaf 1 of 3) -> disclose",
     async () => {
       const { env, stack, context, wallet, config, walletHex } = await verticalSetup();
 
@@ -92,10 +96,7 @@ describe("solana confidential-token consume vertical", () => {
         recipient: wallet.signer.address,
         baseUnits: 1_000_000n,
       });
-      const { mint, computeSigner } = await createConfidentialMint(context, {
-        authority: wallet.signer,
-        underlyingMint,
-      });
+      const mint = await createConfidentialMint(context, { authority: wallet.signer, underlyingMint });
       await initializeConfidentialTokenAccount(context, {
         payer: wallet.signer,
         owner: wallet.signer.address,
@@ -104,14 +105,14 @@ describe("solana confidential-token consume vertical", () => {
       await wrapUnderlying(context, { owner: wallet.signer, mint, underlyingMint, amount: WRAP_AMOUNT });
 
       // The burn amount is a coprocessor-attested external input bound to (user = owner,
-      // contract = the mint's compute-signer PDA) — the token + host require
-      // contract == compute_signer for transfer/burn amounts.
+      // contract = the confidential-token program) — the contract identity the token requires
+      // for transfer/burn amounts.
+      const contractAddress = asBytes32Hex(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS);
       const submission = await submitUint64InputProof({
         chainId: config.chainId,
         relayerUrl: config.relayerUrl,
-        domainKey: asBytes32Hex(mint),
         aclProgramAddress: env.aclProgram,
-        contractAddress: asBytes32Hex(computeSigner),
+        contractAddress,
         userAddress: walletHex,
         value: BURN_AMOUNT,
       });
@@ -127,7 +128,7 @@ describe("solana confidential-token consume vertical", () => {
           ctHandles: submission.handles.map((handle) => hexToBytes(handle.bytes32Hex)),
           handleIndex: 0,
           userAddress: hexToBytes(walletHex),
-          contractAddress: hexToBytes(asBytes32Hex(computeSigner)),
+          contractAddress: hexToBytes(contractAddress),
           contractChainId: config.chainId,
           extraData: hexToBytes(submission.extraData),
           signatures: submission.signatures.map((signature) => hexToBytes(signature)),
@@ -135,23 +136,25 @@ describe("solana confidential-token consume vertical", () => {
       });
 
       const target = await confidentialBurnTarget(mint, wallet.signer.address);
-      const burnedHandle = await currentHandle(context, target.burnedAmount.encryptedValueAddress);
+      const burnedHandle = await currentHandle(context, target.burnedAmountValue);
       await stack.waitForSnsCommit(hex(burnedHandle));
 
       // Seal through the token wrapper (it signs the Host CPI as the encrypted value account
-      // authority). The burn's created-public lifecycle leaf is index 0; this explicit re-seal
-      // appends index 1 — the leaf_count=2 assertion below is what proves lifecycle-batch
-      // ingestion, and the semantic endpoint resolves the decrypt to the EARLIEST leaf.
+      // authority). The burn already appended [allowed(owner), markedPublic]; this explicit re-seal
+      // appends a third leaf. The proof below is built for the burn's own public leaf (index 1)
+      // against the 3-leaf history, which is what proves both the lifecycle leaves and the re-seal
+      // reached the account in order.
       await sealBurnedAmountHandle(context, { owner: wallet.signer, mint, handle: burnedHandle });
+      const inclusionProof = await buildPublicLeafProof(
+        context,
+        target.burnedAmountValue,
+        [...burnedAmountLeafHistory(burnedHandle, wallet.signer.address), { kind: "markedPublic", handle: burnedHandle }],
+        1n,
+      );
 
-      const { cleartext, certificate } = await certifiedPublicDecrypt(context, config, {
-        target: {
-          encryptedValue: target.burnedAmount.encryptedValueAddress,
-          encryptedValueId: target.burnedAmount.aclValueKey,
-        },
+      const { cleartext, certificate } = await certifiedPublicDecrypt(config, {
+        encryptedValue: target.burnedAmountValue,
         handle: burnedHandle,
-        expectedLeafCount: 2n,
-        expectedLeafIndex: 0n,
       });
       expect(cleartext).toBe(BURN_AMOUNT);
 
@@ -161,7 +164,7 @@ describe("solana confidential-token consume vertical", () => {
       const balanceBefore = BigInt(
         (await context.rpc.getTokenAccountBalance(ownerUnderlying, { commitment: "confirmed" }).send()).value.amount,
       );
-      await redeemBurnedAmount(context, { owner: wallet.signer, mint, underlyingMint, certificate });
+      await redeemBurnedAmount(context, { owner: wallet.signer, mint, underlyingMint, certificate, inclusionProof });
       const balanceAfter = BigInt(
         (await context.rpc.getTokenAccountBalance(ownerUnderlying, { commitment: "confirmed" }).send()).value.amount,
       );
@@ -169,7 +172,7 @@ describe("solana confidential-token consume vertical", () => {
 
       // Disclose: same verifier CPI, then the token-scoped cleartext event. Idempotent by design;
       // the burn already sealed the leaf, so the certificate's proof stays valid through both.
-      await discloseBurnedAmount(context, { owner: wallet.signer, mint, certificate });
+      await discloseBurnedAmount(context, { owner: wallet.signer, mint, certificate, inclusionProof });
 
       // Adversarial (adversarial-l4.sh [L4-b]): the same genuine certificate, but its extra_data
       // rewritten to name KMS context 2 (version byte 0x01 + 32-byte BE id) while the supplied
@@ -183,6 +186,7 @@ describe("solana confidential-token consume vertical", () => {
         owner: wallet.signer,
         mint,
         certificate: wrongContextCertificate,
+        inclusionProof,
       }).then(
         () => undefined,
         (error: unknown) => error,

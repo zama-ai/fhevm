@@ -143,7 +143,6 @@ describe("demo lifecycle collision policy", () => {
       dapp: false,
       kmsCore: true,
       relayer: true,
-      proof: true,
       hostRpc: true,
       gatewayRpc: true,
       minio: true,

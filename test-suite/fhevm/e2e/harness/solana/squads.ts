@@ -16,7 +16,15 @@
 
 import * as multisig from "@sqds/multisig";
 import { AccountRole, type Instruction } from "@solana/kit";
-import { Connection, Keypair, PublicKey, TransactionInstruction, TransactionMessage } from "@solana/web3.js";
+import {
+  ComputeBudgetProgram,
+  Connection,
+  Keypair,
+  PublicKey,
+  TransactionInstruction,
+  TransactionMessage,
+  VersionedTransaction,
+} from "@solana/web3.js";
 
 import { SQUADS_PROGRAM_ID } from "../../../src/solana/squads";
 
@@ -166,6 +174,10 @@ export const approveProposal = async (
   await confirm(connection, approved);
 };
 
+// The vault's inner instruction may CPI `fhe_execute` (a specimen write), which the default
+// per-transaction CU ceiling does not cover; the same ceiling the provisioning context requests.
+const EXECUTE_COMPUTE_UNIT_LIMIT = 1_400_000;
+
 /**
  * Executes the approved vault transaction: this is where the vault PDA `invoke_signed`s the
  * inner instruction. Below the threshold the program refuses — assert that with
@@ -177,12 +189,23 @@ export const executeVaultTransaction = async (
   member: Keypair,
   transactionIndex: bigint,
 ): Promise<void> => {
-  const executed = await multisig.rpc.vaultTransactionExecute({
+  const { instruction, lookupTableAccounts } = await multisig.instructions.vaultTransactionExecute({
     connection,
-    feePayer: member,
     multisigPda: squad.multisigPda,
     transactionIndex,
     member: member.publicKey,
   });
+  const { blockhash } = await connection.getLatestBlockhash("confirmed");
+  const message = new TransactionMessage({
+    payerKey: member.publicKey,
+    recentBlockhash: blockhash,
+    instructions: [ComputeBudgetProgram.setComputeUnitLimit({ units: EXECUTE_COMPUTE_UNIT_LIMIT }), instruction],
+  }).compileToV0Message(lookupTableAccounts);
+  const transaction = new VersionedTransaction(message);
+  transaction.sign([member]);
+  // Preflight is skipped for the same reason the provisioning context skips it on specimen
+  // writes: the result-handle entropy reads the SlotHashes sysvar via `sol_get_sysvar`, which the
+  // simulation does not populate.
+  const executed = await connection.sendTransaction(transaction, { skipPreflight: true });
   await confirm(connection, executed);
 };

@@ -40,7 +40,7 @@ export function SettlementProgress({
   readonly lifecycle: Extract<BatchLifecycle, { kind: 'awaiting-dispatch' | 'proving' }>;
   readonly action: OperatorAction | null;
 }) {
-  const phase = lifecycle.kind === 'awaiting-dispatch' ? 1 : lifecycle.proofReady ? 3 : 2;
+  const phase = lifecycle.kind === 'awaiting-dispatch' ? 1 : 2;
   const title =
     lifecycle.kind === 'awaiting-dispatch'
       ? action === 'dispatch'
@@ -48,17 +48,13 @@ export function SettlementProgress({
         : lifecycle.remainingSlots > 0n
           ? 'Waiting for batch close'
           : 'Batch ready'
-      : lifecycle.proofReady || action === 'settle'
-        ? 'Verifying settlement on Solana'
-        : 'Processing encrypted settlement';
+      : 'Verifying settlement on Solana';
   const detail =
     lifecycle.kind === 'awaiting-dispatch'
       ? lifecycle.remainingSlots > 0n
         ? `Batch closes in ~${lifecycle.remainingSlots.toString()} slots`
         : 'The local keeper is advancing the batch automatically'
-      : lifecycle.proofReady
-        ? 'The proof is ready and is being finalized on-chain'
-        : 'The privacy service is computing the encrypted batch result';
+      : 'The encrypted batch result is being certified and finalized on-chain';
 
   return (
     <div className="settlement-progress">

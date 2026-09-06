@@ -27,7 +27,6 @@
 #                         DB schema and ALL coprocessor binaries are one consistent version
 #                         (a per-service subset leaves stock services expecting newer columns)
 #   - relayer           : bytes32 host identity, Solana user-decrypt calldata + ed25519 seam
-#   - solana-proof-service : standalone MMR proof API (own override group; not piggybacked on relayer)
 #   - kms-connector     : Solana user-decrypt vertical (gw-listener + kms-worker)
 #
 # Because `kms-signer` discovers the kms-core's ACTUAL signer and registers it on-chain,
@@ -43,7 +42,7 @@ FHEVM="$ROOT/test-suite/fhevm"
 # and optional KEY=TAG lock-env pins pointing the remaining groups at branch-published images
 # (select-overrides.sh computes both in CI). Local runs keep the build-everything default; set
 # SOLANA_E2E_OVERRIDES to "none" for an explicit empty override list.
-SOLANA_E2E_OVERRIDES="${SOLANA_E2E_OVERRIDES:-gateway-contracts host-contracts coprocessor relayer solana-proof-service kms-connector}"
+SOLANA_E2E_OVERRIDES="${SOLANA_E2E_OVERRIDES:-gateway-contracts host-contracts coprocessor relayer kms-connector}"
 # Scenario + KMS corruption threshold t. Defaults reproduce the centralized PoC exactly.
 # `solana-threshold-kms` + KMS_THRESHOLD=1 runs the 4-party (3t+1) threshold KMS.
 SOLANA_E2E_SCENARIO="${SOLANA_E2E_SCENARIO:-solana}"
@@ -316,10 +315,8 @@ PY
 
 # 2. Clean rebuild of the whole EVM stack with the Solana code baked in from bootstrap.
 #    The `solana` scenario declares the RFC-021 Solana host alongside the default EVM host, so
-#    fhevm-cli generates the Solana relayer + kms-connector config and boots solana-proof-service
-#    (the Solana host-process step does not patch those — single config writer).
-#    `--override solana-proof-service` rebuilds the standalone proof image from this worktree so a
-#    stale `solana-proof-service:local` / `:fhevm-local` image cannot outlive HEAD.
+#    fhevm-cli generates the Solana relayer + kms-connector config (the Solana host-process step
+#    does not patch those — single config writer).
 #    SOLANA_E2E_SCENARIO selects the fhevm-cli scenario. Default `solana` (centralized KMS).
 #    Set to `solana-threshold-kms` to run the same vertical against a real 4-party threshold KMS
 #    (fhevm-internal#1746); that scenario also requires KMS_THRESHOLD below so the on-chain
@@ -338,11 +335,8 @@ trap - EXIT
 ( cd "$ROOT" && npm ci --workspace=@fhevm/sdk-dev --workspace=@fhevm/sdk --include-workspace-root=false )
 ( cd "$FHEVM" && node --input-type=module -e "await import('@fhevm/sdk/solana')" )
 ( cd "$FHEVM" && bun -e "await import('@fhevm/sdk/solana')" )
-# NOTE: relayer + kms-connector + solana-proof-service run the worktree code (via --override).
-# SOLANA_E2E_LOCK_PINS can point relayer and kms-connector at the branch-published
-# `feature-solana-<sha>` images instead (see select-overrides.sh); solana-proof-service is
-# always built from source. `--override solana-proof-service` rebuilds the standalone proof
-# image so a stale `:local` / `:fhevm-local` tag cannot outlive HEAD.
+# NOTE: relayer + kms-connector run the worktree code (via --override). SOLANA_E2E_LOCK_PINS can
+# point them at the branch-published `feature-solana-<sha>` images instead (see select-overrides.sh).
 
 # 3. The Solana side-stack (fresh geyser validator + program deploy, the typed zama-host bootstrap,
 #    host-chain registration, the host-listener) is no longer a separate call: the `solana` scenario

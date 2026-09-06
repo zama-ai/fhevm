@@ -21,7 +21,7 @@ export {
   fetchSolanaEncryptedValueState,
   solanaEncryptedValueAccountAddress,
 } from './encryptedValueAccount.js';
-export type { SolanaEncryptedValueState, SolanaRpc } from './encryptedValueAccount.js';
+export type { SolanaEncryptedValueSeeds, SolanaEncryptedValueState, SolanaRpc } from './encryptedValueAccount.js';
 export { createFhevmPublicDecryptClient } from './clients/createFhevmPublicDecryptClient.js';
 export type { FhevmSolanaPublicDecryptClient } from './clients/createFhevmPublicDecryptClient.js';
 export { createFhevmEncryptClient } from './clients/createFhevmEncryptClient.js';
@@ -31,11 +31,15 @@ export { clearSolanaEncryptionKeyCache } from './encryptionKeyCache.js';
 export {
   bytesToHex as solanaProofBytesToHex,
   hexToBytes as solanaProofHexToBytes,
+  mmrBuildProof,
+  mmrPeaksFromLeaves,
+  reconstructSolanaEncryptedValueAccount,
+  verifyHistoricalAccessProof,
   verifyPublicDecryptProof,
 } from './proof.js';
-export type { MmrProof } from './proof.js';
+export type { MmrProof, SolanaEncryptedValueAccountEvent, SolanaReconstructedEncryptedValueAccount } from './proof.js';
 
-export { buildSolanaPublicDecryptMmrProofExtraData } from './actions/publicDecryptCertificate.js';
+export { buildSolanaPublicDecryptExtraData } from './actions/publicDecryptCertificate.js';
 export type {
   SolanaPublicDecryptCertificateClaim,
   SolanaPublicDecryptCertificateParameters,

@@ -1,63 +1,209 @@
+// The MMR primitives, pinned to the normative leaf vectors.
+//
+// `solana/test-fixtures/leaves/leaves_v1.json` is written by the Rust shared crate the host program,
+// the coprocessor and the KMS connector all run (`bash solana/scripts/update-leaf-vectors.sh`), and
+// read here. Every vector is one account history: its events, and the leaves, peaks and one proof
+// they imply. Reproducing all of them is what makes this module the same MMR rather than one that
+// happens to agree on a hand-picked case.
+
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   bytesToHex,
-  decodeMmrProof,
-  decodeMmrProofTransportBlob,
-  deriveEncryptedValueId,
-  encodeMmrProof,
   hexToBytes,
   historicalAccessLeafCommitment,
   MAX_MMR_SIBLINGS,
-  MMR_PROOF_MODE_HISTORICAL,
+  mmrBuildProof,
   mmrLeafNode,
   mmrNode,
+  mmrPeaksFromLeaves,
   mmrVerify,
   publicDecryptLeafCommitment,
+  reconstructSolanaEncryptedValueAccount,
   verifyHistoricalAccessProof,
   verifyPublicDecryptProof,
   type MmrProof,
+  type SolanaEncryptedValueAccountEvent,
 } from './proof.js';
 
-// Every vector below is the actual output of the Rust shared crate
-// (`solana/crates/zama-solana-acl`), captured by running
-// `cargo run -p kms-worker --example mmr_vectors` (kms-connector/crates/kms-worker/examples/
-// mmr_vectors.rs) against the SAME inputs used here. This pins the TS hashing to be
-// byte-identical to the Rust implementation the on-chain program and the KMS connector run —
-// not merely internally consistent with itself.
-const domain = new Uint8Array(32).fill(1);
-const authority = new Uint8Array(32).fill(2);
-const label = new Uint8Array(32).fill(3);
-const account = new Uint8Array(32).fill(4);
-const handle = new Uint8Array(32).fill(5);
-const subject = new Uint8Array(32).fill(6);
+/* eslint-disable @typescript-eslint/naming-convention -- the fixture's own field names are snake_case */
 
-function concatBytes(...parts: readonly Uint8Array[]): Uint8Array {
-  const total = parts.reduce((n, p) => n + p.length, 0);
-  const out = new Uint8Array(total);
-  let offset = 0;
-  for (const part of parts) {
-    out.set(part, offset);
-    offset += part.length;
-  }
-  return out;
+interface LeafVectorFile {
+  readonly schema: string;
+  readonly hash: string;
+  readonly prefixes: {
+    readonly historical_access_leaf: string;
+    readonly public_decrypt_leaf: string;
+    readonly mmr_leaf_node: string;
+    readonly mmr_node: string;
+  };
+  readonly vectors: readonly LeafVector[];
 }
 
-function u32LE(value: number): Uint8Array {
-  const out = new Uint8Array(4);
-  new DataView(out.buffer).setUint32(0, value, true);
-  return out;
+interface LeafVector {
+  readonly id: string;
+  readonly comment: string;
+  readonly encrypted_value_account: string;
+  readonly events: readonly (
+    | { readonly kind: 'allowed'; readonly handle: string; readonly key: string }
+    | { readonly kind: 'marked_public'; readonly handle: string }
+  )[];
+  readonly leaves: readonly string[];
+  readonly leaf_count: string;
+  readonly peaks: readonly string[];
+  readonly proof: { readonly leaf_index: string; readonly siblings: readonly string[] };
 }
 
-function u64LE(value: bigint): Uint8Array {
-  const out = new Uint8Array(8);
-  new DataView(out.buffer).setBigUint64(0, value, true);
-  return out;
-}
+/* eslint-enable @typescript-eslint/naming-convention */
 
-function proofBlob(mode: number, leafIndex: bigint, siblings: readonly Uint8Array[]): Uint8Array {
-  return concatBytes(new Uint8Array([mode]), u64LE(leafIndex), u32LE(siblings.length), ...siblings);
-}
+const file = JSON.parse(
+  readFileSync(new URL('../../../../solana/test-fixtures/leaves/leaves_v1.json', import.meta.url), 'utf8'),
+) as LeafVectorFile;
+
+const unhex = (hex: string): Uint8Array => hexToBytes(`0x${hex}`);
+const rehex = (bytes: Uint8Array): string => bytesToHex(bytes).slice(2);
+
+const eventsOf = (vector: LeafVector): readonly SolanaEncryptedValueAccountEvent[] =>
+  vector.events.map((event) =>
+    event.kind === 'allowed'
+      ? { kind: 'allowed', handle: unhex(event.handle), key: unhex(event.key) }
+      : { kind: 'markedPublic', handle: unhex(event.handle) },
+  );
+
+const proofOf = (vector: LeafVector): MmrProof => ({
+  leafIndex: BigInt(vector.proof.leaf_index),
+  siblings: vector.proof.siblings.map(unhex),
+});
+
+const named = file.vectors.map((vector) => [vector.id, vector] as const);
+
+////////////////////////////////////////////////////////////////////////////////
+
+describe('the leaf vector file', () => {
+  it('is read under the schema it declares, and names the hash and prefixes this module uses', () => {
+    expect(file.schema).toBe('zama-solana-leaf-vectors/v1');
+    expect(file.hash).toBe('keccak256');
+    expect(file.prefixes).toEqual({
+      historical_access_leaf: 'ZAMA_HIST_ACCESS_LEAF_V1',
+      public_decrypt_leaf: 'ZAMA_PUBLIC_DECRYPT_LEAF_V1',
+      mmr_leaf_node: 'ZAMA_MMR_LEAF_V1',
+      mmr_node: 'ZAMA_MMR_NODE_V1',
+    });
+    expect(file.vectors.length).toBeGreaterThan(0);
+    // Both leaf kinds are exercised, or the public-decrypt commitment would go unpinned.
+    expect(file.vectors.some((vector) => vector.events.some((event) => event.kind === 'marked_public'))).toBe(true);
+  });
+});
+
+describe('reconstructing an account history', () => {
+  it.each(named)('%s: reproduces every leaf, the leaf count and the peaks', (_id, vector) => {
+    const rebuilt = reconstructSolanaEncryptedValueAccount(unhex(vector.encrypted_value_account), eventsOf(vector));
+    expect(rebuilt.leaves.map(rehex)).toEqual(vector.leaves);
+    expect(rebuilt.leafCount).toBe(BigInt(vector.leaf_count));
+    expect(rebuilt.peaks.map(rehex)).toEqual(vector.peaks);
+  });
+
+  it.each(named)('%s: builds the committed proof, and the proof verifies against the peaks', (_id, vector) => {
+    const account = unhex(vector.encrypted_value_account);
+    const rebuilt = reconstructSolanaEncryptedValueAccount(account, eventsOf(vector));
+    const expected = proofOf(vector);
+
+    const built = mmrBuildProof(rebuilt.leaves, expected.leafIndex);
+    expect(built?.siblings.map(rehex)).toEqual(vector.proof.siblings);
+
+    const commitment = rebuilt.leaves[Number(expected.leafIndex)]!;
+    expect(mmrVerify(rebuilt.peaks, rebuilt.leafCount, commitment, expected)).toBe(true);
+
+    // The proven leaf verifies under the authorization its kind grants, and under no other.
+    const event = vector.events[Number(expected.leafIndex)]!;
+    const handle = unhex(event.handle);
+    if (event.kind === 'allowed') {
+      expect(
+        verifyHistoricalAccessProof(account, rebuilt.peaks, rebuilt.leafCount, handle, unhex(event.key), expected),
+      ).toBe(true);
+      expect(verifyPublicDecryptProof(account, rebuilt.peaks, rebuilt.leafCount, handle, expected)).toBe(false);
+    } else {
+      expect(verifyPublicDecryptProof(account, rebuilt.peaks, rebuilt.leafCount, handle, expected)).toBe(true);
+      expect(
+        verifyHistoricalAccessProof(account, rebuilt.peaks, rebuilt.leafCount, handle, new Uint8Array(32), expected),
+      ).toBe(false);
+    }
+  });
+
+  it('builds a verifying proof for every leaf of every vector', () => {
+    for (const vector of file.vectors) {
+      const rebuilt = reconstructSolanaEncryptedValueAccount(unhex(vector.encrypted_value_account), eventsOf(vector));
+      for (const [index, leaf] of rebuilt.leaves.entries()) {
+        const proof = mmrBuildProof(rebuilt.leaves, BigInt(index));
+        expect(proof, `${vector.id}: leaf ${index}`).toBeDefined();
+        expect(mmrVerify(rebuilt.peaks, rebuilt.leafCount, leaf, proof!), `${vector.id}: leaf ${index}`).toBe(true);
+      }
+    }
+  });
+
+  it('has no proof for a leaf index past the list', () => {
+    expect(mmrBuildProof([], 0n)).toBeUndefined();
+    expect(mmrBuildProof([new Uint8Array(32)], 1n)).toBeUndefined();
+    expect(mmrBuildProof([new Uint8Array(32)], -1n)).toBeUndefined();
+  });
+
+  it('binds the account into every leaf', () => {
+    const [first, second] = file.vectors.filter((vector) => vector.events.length === 4);
+    expect(first).toBeDefined();
+    expect(second).toBeDefined();
+    expect(first!.events).toEqual(second!.events);
+    expect(first!.encrypted_value_account).not.toBe(second!.encrypted_value_account);
+    expect(first!.leaves).not.toEqual(second!.leaves);
+  });
+});
+
+describe('the primitives, one at a time', () => {
+  const account = new Uint8Array(32).fill(4);
+  const handle = new Uint8Array(32).fill(5);
+  const key = new Uint8Array(32).fill(6);
+
+  it('separates the two leaf kinds by domain', () => {
+    expect(historicalAccessLeafCommitment(account, 0n, handle, key)).not.toEqual(
+      publicDecryptLeafCommitment(account, 0n, handle),
+    );
+  });
+
+  it('binds the leaf index into the commitment', () => {
+    expect(publicDecryptLeafCommitment(account, 0n, handle)).not.toEqual(
+      publicDecryptLeafCommitment(account, 1n, handle),
+    );
+  });
+
+  it('computes peaks the same way the proof builder walks them', () => {
+    const leaves = Array.from({ length: 5 }, (_, i) => publicDecryptLeafCommitment(account, BigInt(i), handle));
+    const peaks = mmrPeaksFromLeaves(leaves);
+    // Five leaves: mountains of height 2 and 0.
+    expect(peaks).toHaveLength(2);
+    expect(peaks[1]).toEqual(mmrLeafNode(leaves[4]!));
+    expect(peaks[0]).toEqual(
+      mmrNode(
+        mmrNode(mmrLeafNode(leaves[0]!), mmrLeafNode(leaves[1]!)),
+        mmrNode(mmrLeafNode(leaves[2]!), mmrLeafNode(leaves[3]!)),
+      ),
+    );
+  });
+
+  it('refuses a proof that names another leaf count, an index out of range, or too many siblings', () => {
+    const leaves = Array.from({ length: 3 }, (_, i) => publicDecryptLeafCommitment(account, BigInt(i), handle));
+    const peaks = mmrPeaksFromLeaves(leaves);
+    const proof = mmrBuildProof(leaves, 1n)!;
+
+    expect(mmrVerify(peaks, 3n, leaves[1]!, proof)).toBe(true);
+    expect(mmrVerify(peaks, 4n, leaves[1]!, proof)).toBe(false);
+    expect(mmrVerify(peaks, 3n, leaves[0]!, { leafIndex: 5n, siblings: [] })).toBe(false);
+    expect(
+      mmrVerify(peaks, 3n, leaves[0]!, {
+        leafIndex: 0n,
+        siblings: Array.from({ length: MAX_MMR_SIBLINGS + 1 }, () => new Uint8Array(32)),
+      }),
+    ).toBe(false);
+  });
+});
 
 describe('hexToBytes', () => {
   it('accepts unprefixed, 0x-prefixed, and 0X-prefixed hex', () => {
@@ -78,190 +224,5 @@ describe('hexToBytes', () => {
 
   it('rejects odd-length hex', () => {
     expect(() => hexToBytes('0x123')).toThrow('hexToBytes: odd-length hex string: 0x123');
-  });
-});
-
-describe('decodeMmrProofTransportBlob', () => {
-  const sibling = new Uint8Array(32).fill(0x42);
-
-  it('decodes a canonical mode-prefixed Borsh MmrProof', () => {
-    const decoded = decodeMmrProofTransportBlob(proofBlob(MMR_PROOF_MODE_HISTORICAL, 7n, [sibling]));
-    expect(decoded.mode).toBe(MMR_PROOF_MODE_HISTORICAL);
-    expect(decoded.proof.leafIndex).toBe(7n);
-    expect(decoded.proof.siblings).toEqual([sibling]);
-  });
-
-  it('rejects trailing bytes after the Borsh MmrProof', () => {
-    const canonical = proofBlob(MMR_PROOF_MODE_HISTORICAL, 7n, [sibling]);
-    const withTrailing = concatBytes(canonical, new Uint8Array([0xde, 0xad]));
-    expect(() => decodeMmrProofTransportBlob(withTrailing)).toThrow(/trailing byte/);
-  });
-});
-
-describe('deriveEncryptedValueId', () => {
-  it('matches the Rust crate vector', () => {
-    const encryptedValueId = deriveEncryptedValueId(domain, authority, label);
-    expect(bytesToHex(encryptedValueId)).toBe('0xcb421159e2c7709e401334c46b4bcee90093cb616d040fca9c1dc9a14ad77820');
-  });
-});
-
-describe('leaf commitments', () => {
-  it('historicalAccessLeafCommitment matches the Rust crate vector', () => {
-    const commitment = historicalAccessLeafCommitment(account, 0n, handle, subject);
-    expect(bytesToHex(commitment)).toBe('0x22844bf8442e4ed2541819f2d087bf66430d798aa90bfe9bb7119cdd0efdc089');
-  });
-
-  it('publicDecryptLeafCommitment matches the Rust crate vector', () => {
-    const commitment = publicDecryptLeafCommitment(account, 0n, handle);
-    expect(bytesToHex(commitment)).toBe('0x778f26fcf5fc5e99bb41a656e35b1d22e51523de4e82beb20f042108c379130c');
-  });
-});
-
-describe('mmr node hashing', () => {
-  const hist = hexToBytes('0x22844bf8442e4ed2541819f2d087bf66430d798aa90bfe9bb7119cdd0efdc089');
-  const pub = hexToBytes('0x778f26fcf5fc5e99bb41a656e35b1d22e51523de4e82beb20f042108c379130c');
-
-  it('mmrLeafNode matches the Rust crate vector', () => {
-    expect(bytesToHex(mmrLeafNode(hist))).toBe('0x85b18302d4f5ac95de84eaef50f3badab330f686be31006b8f5036eae81ece29');
-  });
-
-  it('mmrNode matches the Rust crate vector', () => {
-    expect(bytesToHex(mmrNode(hist, pub))).toBe('0x9b0e61c2adae588290493cec461368ce6384bf984640174a45d13ca7990041dd');
-  });
-});
-
-describe('mmrVerify against a real 3-leaf MMR (Rust crate vectors)', () => {
-  // Built by the Rust example: three historical-access leaves for handles [0,0,...],
-  // [1,1,...], [2,2,...] all against `subject`, appended in order.
-  const leaves = [0, 1, 2].map((i) =>
-    historicalAccessLeafCommitment(account, BigInt(i), new Uint8Array(32).fill(i), subject),
-  );
-  const peaks = [
-    hexToBytes('0xd4342d5c4e6c2f3d48957506fa885ca9824c44d79e395f2089320ff47b30e279'),
-    hexToBytes('0x648e8f50ef511d05e44f67f12a788ed23983379c70ade469e196eb01f8bc11a4'),
-  ];
-  const leafCount = 3n;
-
-  it('accepts the proof for leaf 1 against the Rust-derived peaks', () => {
-    const proof: MmrProof = {
-      leafIndex: 1n,
-      siblings: [hexToBytes('0x37721a2329065e637682b98191177ff06d059819ee95def4d16cd518436a516e')],
-    };
-    expect(mmrVerify(peaks, leafCount, leaves[1]!, proof)).toBe(true);
-  });
-
-  it('rejects a tampered commitment (substitution)', () => {
-    const proof: MmrProof = {
-      leafIndex: 1n,
-      siblings: [hexToBytes('0x37721a2329065e637682b98191177ff06d059819ee95def4d16cd518436a516e')],
-    };
-    const tampered = historicalAccessLeafCommitment(account, 1n, new Uint8Array(32).fill(0x99), subject);
-    expect(mmrVerify(peaks, leafCount, tampered, proof)).toBe(false);
-  });
-
-  it('rejects a proof at a stale/wrong leaf_count (drift)', () => {
-    const proof: MmrProof = {
-      leafIndex: 1n,
-      siblings: [hexToBytes('0x37721a2329065e637682b98191177ff06d059819ee95def4d16cd518436a516e')],
-    };
-    expect(mmrVerify(peaks, 4n, leaves[1]!, proof)).toBe(false);
-  });
-
-  it('rejects an out-of-range leaf_index', () => {
-    const proof: MmrProof = { leafIndex: 5n, siblings: [] };
-    expect(mmrVerify(peaks, leafCount, leaves[0]!, proof)).toBe(false);
-  });
-
-  it('rejects a sibling-count cap violation', () => {
-    const oversized: MmrProof = {
-      leafIndex: 0n,
-      siblings: Array.from({ length: MAX_MMR_SIBLINGS + 1 }, () => new Uint8Array(32)),
-    };
-    expect(mmrVerify(peaks, leafCount, leaves[0]!, oversized)).toBe(false);
-  });
-
-  it('verifyHistoricalAccessProof end-to-end against the live peaks', () => {
-    const proof: MmrProof = {
-      leafIndex: 1n,
-      siblings: [hexToBytes('0x37721a2329065e637682b98191177ff06d059819ee95def4d16cd518436a516e')],
-    };
-    expect(verifyHistoricalAccessProof(account, peaks, leafCount, new Uint8Array(32).fill(1), subject, proof)).toBe(
-      true,
-    );
-  });
-
-  it('verifyPublicDecryptProof rejects a historical leaf under the public-decrypt domain', () => {
-    // Same account/leaf_index/handle shape hashed under the WRONG domain prefix must not verify:
-    // without domain separation, a historical leaf would prove a public decrypt.
-    const proof: MmrProof = { leafIndex: 0n, siblings: [] };
-    expect(verifyPublicDecryptProof(account, peaks, leafCount, new Uint8Array(32).fill(0), proof)).toBe(false);
-  });
-});
-
-// The user-decrypt `accessProof` is the bare Borsh proof: no mode byte, and no room for a second
-// encoding of the same proof. Both properties are shared with the relayer and the Connector, which
-// decode the same field through the same rules, so the committed envelope record is read here too.
-describe('the bare accessProof form', () => {
-  const proof: MmrProof = {
-    leafIndex: 3n,
-    siblings: [new Uint8Array(32).fill(0x11), new Uint8Array(32).fill(0x22), new Uint8Array(32).fill(0x33)],
-  };
-
-  it('round-trips through its own encoding', () => {
-    expect(decodeMmrProof(encodeMmrProof(proof))).toEqual(proof);
-  });
-
-  it('is the committed envelope record byte for byte', () => {
-    const fixture = JSON.parse(
-      readFileSync(
-        new URL('../../../../solana/test-fixtures/user-decrypt/relayer_envelope_v1.json', import.meta.url),
-        'utf8',
-      ),
-    ) as { accepted: readonly { name: string; handles: readonly { accessProof: string }[] }[] };
-    const record = fixture.accepted.find((candidate) => candidate.name === 'historical-access-one-handle');
-    expect(record, 'the envelope fixture carries a historical record').toBeDefined();
-    const committed = record?.handles[0]?.accessProof ?? '';
-
-    expect(bytesToHex(encodeMmrProof(proof))).toBe(committed);
-    expect(decodeMmrProof(hexToBytes(committed))).toEqual(proof);
-  });
-
-  it('carries no mode byte, and is not read as if it did', () => {
-    const bare = encodeMmrProof(proof);
-    // The transport form of the same proof is one byte longer. Decoding one as the other must fail
-    // rather than silently reading a shifted leaf index.
-    expect(() => decodeMmrProof(Uint8Array.from([MMR_PROOF_MODE_HISTORICAL, ...bare]))).toThrow();
-    expect(decodeMmrProofTransportBlob(Uint8Array.from([MMR_PROOF_MODE_HISTORICAL, ...bare])).proof).toEqual(proof);
-  });
-
-  it('refuses a trailing byte after the proof', () => {
-    expect(() => decodeMmrProof(Uint8Array.from([...encodeMmrProof(proof), 0x99]))).toThrow(/trailing/);
-  });
-
-  it('refuses a truncated proof', () => {
-    const bare = encodeMmrProof(proof);
-    expect(() => decodeMmrProof(bare.slice(0, bare.length - 1))).toThrow(/truncated/);
-    expect(() => decodeMmrProof(new Uint8Array(4))).toThrow(/truncated/);
-    expect(() => decodeMmrProof(new Uint8Array(0))).toThrow(/truncated/);
-  });
-
-  it('refuses more siblings than the cap, in both directions', () => {
-    const oversized: MmrProof = {
-      leafIndex: 0n,
-      siblings: Array.from({ length: MAX_MMR_SIBLINGS + 1 }, () => new Uint8Array(32)),
-    };
-    expect(() => encodeMmrProof(oversized)).toThrow(/exceeding the cap/);
-
-    // A declared count past the cap is refused before the bytes behind it are read, so a blob
-    // claiming a huge count cannot make the decoder walk it.
-    const declared = new Uint8Array(12);
-    new DataView(declared.buffer).setUint32(8, MAX_MMR_SIBLINGS + 1, true);
-    expect(() => decodeMmrProof(declared)).toThrow(/exceeding the cap/);
-  });
-
-  it('carries an empty sibling list for a lone leaf', () => {
-    const lone: MmrProof = { leafIndex: 0n, siblings: [] };
-    expect(encodeMmrProof(lone)).toHaveLength(12);
-    expect(decodeMmrProof(encodeMmrProof(lone))).toEqual(lone);
   });
 });

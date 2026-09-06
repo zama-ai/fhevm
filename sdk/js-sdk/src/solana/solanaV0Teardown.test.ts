@@ -1,4 +1,5 @@
-// The v0 Solana user-decrypt surface is gone from the SDK, provably.
+// The v0 Solana user-decrypt surface is gone from the SDK, provably — and so is the pre-RFC-035
+// proof-carrying one.
 //
 // The SDK used to build a bespoke binary preimage, sign it as a raw message, and post it under an
 // attestation type the relayer no longer accepts. All of that is replaced by the sRFC-38 permit: the
@@ -26,6 +27,21 @@ const FORBIDDEN: ReadonlyArray<readonly [string, string]> = [
   ['deSigncryptSolanaUserDecrypt', 'the v0 de-signcryption entry point; response verification replaced it'],
   ['68ba21ba', 'the retired vendored TKMS blob; the host-generic path uses the newer one'],
   ['signing_message_v1.json', 'the v0 signing-message fixture; the permit and envelope sets replaced it'],
+  // RFC 035: the client fetches no proof and names no ACL domain or subject; the Connector reads the
+  // account and asks the coprocessors for the allow leaf.
+  ['allowedAclDomainKeys', 'the ACL-domain scope; permits carry (program, scope) pairs now'],
+  ['domainKeys', 'the chain-level default ACL-domain scope; a permit is permissive unless scoped'],
+  ['proofServiceUrl', 'the standalone proof service is gone; the Connector fetches leaves itself'],
+  ['proofService', 'the proof-service client; nothing client-side fetches proofs any more'],
+  ['accessProof', 'the per-handle proof on the wire; entries carry no proof'],
+  ['proofLeafCount', 'the per-handle leaf count on the wire; entries carry no proof'],
+  ['encryptedValueId', 'the derived identity; entries name the account address'],
+  ['deriveEncryptedValueId', 'the sha256 identity derivation; the account is a PDA of four seeds'],
+  ['SolanaAccessEvidence', 'the client-side evidence resolution; the Connector resolves the leaf'],
+  ['resolve-again', 'the re-resolution recovery; an unanswered request is resubmitted unchanged'],
+  ['MmrProofTransportBlob', 'the mode-prefixed proof blob; proofs travel as (leafIndex, siblings) on chain only'],
+  ['MMR_PROOF_MODE_', 'the proof-blob mode bytes; there is no proof blob'],
+  ['aclValueKey', 'the extraData field; the 0x03 tail is the encrypted value account alone'],
 ];
 
 /** Files that may mention the symbols because their job is to name them. */

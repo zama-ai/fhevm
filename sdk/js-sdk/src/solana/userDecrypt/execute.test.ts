@@ -7,7 +7,7 @@
 // transport feeds verification (which refuses garbage shares), and an unanswered one surfaces the
 // session's own error untouched.
 
-import type { SolanaAccessEvidence, SolanaHandleRequest, SolanaSigncryptedShare } from './index.js';
+import type { SolanaSigncryptedShare, SolanaUserDecryptHandleEntry } from './index.js';
 import type { SolanaPermitFields, SolanaSignedPermit } from '../permit/index.js';
 import { describe, expect, it } from 'vitest';
 import {
@@ -38,7 +38,7 @@ const permitFields = (): SolanaPermitFields =>
   decodeSolanaPermitFields({
     userPubkey: identity(0x11),
     transportKey: new Uint8Array(PERMIT_TRANSPORT_KEY_LEN).fill(0x55),
-    allowedAclDomainKeys: [],
+    allowedScopes: [],
     startTimestamp: 1_767_229_380n,
     durationSeconds: 604_800n,
     verifyingProgramId: identity(0x22),
@@ -59,22 +59,9 @@ const handle = (): Uint8Array => {
   return bytes;
 };
 
-const REQUESTS: readonly SolanaHandleRequest[] = [
-  { handle: handle(), subject: identity(0x11), encryptedValueId: identity(0xe1) },
+const ENTRIES: readonly SolanaUserDecryptHandleEntry[] = [
+  { handle: handle(), allowedKey: identity(0x11), encryptedValueAccount: identity(0xea) },
 ];
-
-const evidence = {
-  resolve: (request: SolanaHandleRequest): Promise<SolanaAccessEvidence> =>
-    Promise.resolve({
-      handle: request.handle,
-      subject: request.subject,
-      encryptedValueId: identity(0xe1),
-      encryptedValueAccount: identity(0xea),
-      proofLeafCount: 0n,
-      accessProof: new Uint8Array(0),
-      peaks: [],
-    }),
-};
 
 const clock = { delay: (): Promise<void> => Promise.resolve() };
 
@@ -113,7 +100,7 @@ describe('executing one user decryption', () => {
     const transport = { submit: () => Promise.resolve({ ok: true as const, response: shares }) };
 
     await expect(
-      executeSolanaUserDecrypt({ session: session(), requests: REQUESTS, evidence, transport, clock, verification }),
+      executeSolanaUserDecrypt({ session: session(), entries: ENTRIES, transport, clock, verification }),
     ).rejects.toThrow();
   });
 
@@ -126,8 +113,7 @@ describe('executing one user decryption', () => {
     await expect(
       executeSolanaUserDecrypt({
         session: session(),
-        requests: REQUESTS,
-        evidence,
+        entries: ENTRIES,
         transport,
         clock,
         attempts: 1,

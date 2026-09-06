@@ -3,7 +3,7 @@ import type { Address, Instruction, TransactionSigner } from '@solana/kit';
 import { getDispatchInstructionAsync } from './internal/generated/confidentialBatcher/instructions/dispatch.js';
 
 import {
-  burnedAmountValueAccount,
+  burnedAmountValueAddress,
   findBatchAuthorityPda,
   pendingBurnAddress,
   tokenAccountAddress,
@@ -11,7 +11,6 @@ import {
 import {
   associatedTokenAddress,
   balanceValueAddress,
-  computeSignerAddress,
   tokenEventAuthorityAddress,
   totalSupplyAuthorityAddress,
   totalSupplyValueAddress,
@@ -20,7 +19,7 @@ import {
 
 /**
  * Semantic roots for the batcher `dispatch` instruction. Every other account the on-chain handler
- * validates (`dispatch.rs`) — the batch authority, the join mint's compute signer and total-supply
+ * validates (`dispatch.rs`) — the batch authority, the join mint's total-supply
  * authority, the batch's join token account, the balance / total-supply / burned-amount encrypted value accounts,
  * and both event authorities — is derived internally from these, so callers never hand-build the
  * account map.
@@ -64,13 +63,11 @@ export async function buildDispatchBatchInstruction(parameters: SolanaVaultDispa
       parameters.joinUnderlyingMint,
       parameters.tokenProgram,
     ),
-    joinComputeSigner: await computeSignerAddress(joinConfidentialMint),
     totalSupplyAuthority,
     batchJoinTokenAccount,
     batchBalanceValue: await balanceValueAddress(joinConfidentialMint, batchJoinTokenAccount),
     totalSupplyValue: await totalSupplyValueAddress(joinConfidentialMint, totalSupplyAuthority),
-    batchBurnedAmountValue: (await burnedAmountValueAccount(joinConfidentialMint, batchJoinTokenAccount))
-      .encryptedValueAddress,
+    batchBurnedAmountValue: await burnedAmountValueAddress(joinConfidentialMint, batchJoinTokenAccount),
     pendingBurn: await pendingBurnAddress(joinConfidentialMint, batchJoinTokenAccount),
     zamaEventAuthority: await zamaEventAuthorityAddress(),
     hostConfig: parameters.hostConfig,

@@ -10,7 +10,6 @@
 
 import type { FhevmSolanaChain } from '../../core/types/fhevmSolanaChain.js';
 import { describe, expect, it } from 'vitest';
-import { asBytes32Hex } from '../../core/base/bytes.js';
 import { createFhevmDecryptClient } from './createFhevmDecryptClient.js';
 import { setFhevmRuntimeConfig } from '../internal/config.js';
 
@@ -18,7 +17,6 @@ const chain = {
   id: 9223372036854788153n,
   fhevm: {
     relayerUrl: 'http://localhost:3000',
-    acl: { domainKeys: [asBytes32Hex('0x1111111111111111111111111111111111111111111111111111111111111111')] },
   },
 } as const satisfies FhevmSolanaChain;
 

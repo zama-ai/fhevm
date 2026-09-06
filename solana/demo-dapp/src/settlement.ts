@@ -1,7 +1,6 @@
 import {
   createSolanaRpc,
   createSolanaRpcSubscriptions,
-  getAddressEncoder,
   type Address,
   type Signature,
   type TransactionSigner,
@@ -9,7 +8,6 @@ import {
 import { createFhevmPublicDecryptClient, defineFhevmSolanaChain, setFhevmRuntimeConfig } from '@fhevm/sdk/solana';
 import {
   buildDispatchBatchInstruction,
-  burnedAmountValueAccount,
   deriveJoinRecordAddress,
   getBatchByIndex,
   getBatcher,
@@ -32,8 +30,6 @@ import { vaultRoots } from './vaultRoots';
 const DISPATCH_COMPUTE_UNIT_LIMIT = 600_000;
 const DEACTIVATE_LOOKUP_TABLE_COMPUTE_UNIT_LIMIT = 50_000;
 
-const addressEncoder = getAddressEncoder();
-type Bytes32Hex = Parameters<typeof defineFhevmSolanaChain>[0]['fhevm']['acl']['domainKeys'][number];
 export type DemoOperatorSession = {
   readonly config: DemoConfig;
   readonly keeper: TransactionSigner;
@@ -42,9 +38,6 @@ type DemoUserSession = {
   readonly config: DemoConfig;
   readonly signer: TransactionSigner;
 };
-
-const asBytes32Hex = (value: Address): Bytes32Hex =>
-  `0x${Array.from(addressEncoder.encode(value), (byte) => byte.toString(16).padStart(2, '0')).join('')}` as Bytes32Hex;
 
 const asBytes32BigEndian = (decimal: string): Uint8Array => {
   const bytes = new Uint8Array(32);
@@ -72,50 +65,6 @@ const currentPinnedBatch = async (
   return { rpc, batch };
 };
 
-type ProofReadinessBody = {
-  readonly verified?: unknown;
-  readonly status?: unknown;
-  readonly code?: unknown;
-};
-
-export const classifyProofReadiness = (httpStatus: number, body: ProofReadinessBody | null): boolean => {
-  if (httpStatus === 503 && body?.status === 'lagging') return false;
-  if (httpStatus < 200 || httpStatus >= 300) {
-    const reason =
-      typeof body?.status === 'string'
-        ? body.status
-        : typeof body?.code === 'string'
-          ? body.code
-          : `HTTP ${httpStatus}`;
-    throw new Error(`proof readiness check failed: ${reason}`);
-  }
-  if (body === null || typeof body.verified !== 'boolean') {
-    throw new Error('proof readiness response is malformed');
-  }
-  return body.verified;
-};
-
-const hasReadyProof = async (
-  session: { readonly config: DemoConfig },
-  batch: Awaited<ReturnType<typeof getBatchByIndex>>,
-  direction: VaultDirection,
-): Promise<boolean> => {
-  const roots = vaultRoots(session.config, direction);
-  const burned = await burnedAmountValueAccount(roots.joinConfidentialMint, batch.addresses.batchJoinTokenAccount);
-  const burnedTotalHandle = new Uint8Array(batch.state.burnedTotalHandle);
-  const handle = `0x${Array.from(burnedTotalHandle, (byte) => byte.toString(16).padStart(2, '0')).join('')}`;
-  const query = new URLSearchParams({
-    encrypted_value: burned.encryptedValueAddress,
-    handle,
-  });
-  const response = await fetch(`${session.config.proofServiceUrl}/internal/solana/public-proof?${query.toString()}`, {
-    headers: { accept: 'application/json' },
-    signal: AbortSignal.timeout(5_000),
-  });
-  const body = (await response.json().catch(() => null)) as ProofReadinessBody | null;
-  return classifyProofReadiness(response.status, body);
-};
-
 export const readVaultLifecycle = async (
   session: DemoUserSession,
   position: BatchTarget,
@@ -132,7 +81,7 @@ export const readVaultLifecycle = async (
     };
   }
   if (batch.state.status === BatchStatus.Dispatched) {
-    return { kind: 'proving', proofReady: await hasReadyProof(session, batch, direction) };
+    return { kind: 'proving' };
   }
   if (batch.state.status === BatchStatus.Settled) {
     const joinRecord = await getJoinRecord(rpc, await deriveJoinRecordAddress(position.batch, session.signer.address), {
@@ -199,19 +148,15 @@ export const settleVaultBatch = async (
   )
     return null;
   if (batch.state.status !== BatchStatus.Dispatched) throw new Error('Dispatch the batch before settlement');
-  if (!(await hasReadyProof(session, batch, direction))) throw new Error('The private proof is not ready yet');
 
   const rpcSubscriptions = createSolanaRpcSubscriptions(session.config.wsUrl);
   setFhevmRuntimeConfig({ auth: { type: 'ApiKeyHeader', value: 'local' } });
   const chain = defineFhevmSolanaChain({
     id: BigInt(session.config.chainId),
-    fhevm: {
-      relayerUrl: session.config.relayerUrl,
-      acl: { domainKeys: [asBytes32Hex(roots.joinConfidentialMint)] },
-    },
+    fhevm: { relayerUrl: session.config.relayerUrl },
   });
   const publicDecryptClient = createFhevmPublicDecryptClient({ chain });
-  const signature = await settleBatch(chain, { proofServiceUrl: session.config.proofServiceUrl }, session.keeper, {
+  const signature = await settleBatch(chain, session.keeper, {
     rpc,
     rpcSubscriptions,
     runtime: publicDecryptClient.runtime,

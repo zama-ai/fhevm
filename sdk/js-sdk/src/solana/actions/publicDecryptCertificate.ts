@@ -2,18 +2,11 @@ import type { EncryptedValueLike } from '../../core/types/encryptedTypes.js';
 import type { RelayerPublicDecryptOptions } from '../../core/types/relayer.js';
 import type { FhevmSolanaChain } from '../../core/types/fhevmSolanaChain.js';
 import type { FhevmRuntime } from '../../core/types/coreFhevmRuntime.js';
-import type { MmrProof } from '../proof.js';
 import { bytesToHex, concatBytes, unsafeBytesEquals } from '../../core/base/bytes.js';
 import { toFhevmHandle } from '../../core/handle/FhevmHandle.js';
 import { RelayerAsyncRequest } from '../../core/modules/relayer/module/RelayerAsyncRequest.js';
 import { removeSuffix } from '../../core/base/string.js';
-import {
-  decodeMmrProofTransportBlob,
-  hexToBytes,
-  MMR_PROOF_MODE_PUBLIC,
-  u64BE,
-  verifyPublicDecryptProof,
-} from '../proof.js';
+import { hexToBytes } from '../proof.js';
 
 export type SolanaPublicDecryptCertificateContext = {
   readonly chain: FhevmSolanaChain;
@@ -23,21 +16,18 @@ export type SolanaPublicDecryptCertificateContext = {
 export type SolanaPublicDecryptCertificateParameters = {
   /** The single ciphertext handle covered by the public-decrypt certificate. */
   readonly handle: EncryptedValueLike;
+  /** The 32-byte KMS context id the certificate commits to. */
   readonly contextId: Uint8Array;
-  readonly aclValueKey: Uint8Array;
-  readonly proofSlot: bigint;
+  /** The 32-byte address of the `EncryptedValue` account the handle was made public in. */
   readonly encryptedValueAccount: Uint8Array;
-  readonly peaks: readonly Uint8Array[];
-  readonly leafCount: bigint;
-  /** Canonical `0x02 || Borsh(MmrProof)` bytes; no separately decoded proof is accepted. */
-  readonly mmrProofBytes: Uint8Array;
   readonly options?: RelayerPublicDecryptOptions | undefined;
 };
 
 /**
  * An untrusted public-decrypt certificate claim returned by the relayer. Authority exists only
  * after the stateless host `verify_public_decrypt` verifies this certificate on-chain against the
- * current `KmsContext` (directly, or via the token `disclose_secp` wrapper).
+ * current `KmsContext` (directly, or via the token `disclose_secp` wrapper), together with the
+ * public-leaf inclusion proof the caller builds from the account's history.
  */
 export type SolanaPublicDecryptCertificateClaim = {
   readonly handle: string;
@@ -45,54 +35,34 @@ export type SolanaPublicDecryptCertificateClaim = {
   readonly abiEncodedCleartext: string;
   readonly signatures: readonly string[];
   readonly extraData: string;
-  readonly inclusionProof: MmrProof;
 };
 
 /**
- * `extraData` version byte carrying the context id plus the MMR-proof tail (RFC-024): version ‖
- * contextId(32) ‖ aclValueKey(32) ‖ proofSlot(8 BE) ‖ mmrProofLen(4 BE) ‖ mmrProofBytes. Mirrors
- * `SOLANA_EXTRA_DATA_VERSION_MMR_PROOF` in the connector's `solana_extra_data.rs`.
+ * `extraData` version byte of a Solana public decrypt: `0x03 ‖ contextId(32) ‖ encryptedValueAccount(32)`,
+ * exactly 65 bytes. Mirrors `SOLANA_EXTRA_DATA_VERSION_PUBLIC_DECRYPT` in the connector's
+ * `solana_extra_data.rs`.
  */
-export const SOLANA_MMR_PROOF_EXTRA_DATA_VERSION = 0x03;
-
-/** Encodes a u32 as 4 big-endian bytes (`u32::to_be_bytes`). */
-function u32BE(value: number): Uint8Array {
-  const out = new Uint8Array(4);
-  new DataView(out.buffer).setUint32(0, value, false);
-  return out;
-}
+export const SOLANA_PUBLIC_DECRYPT_EXTRA_DATA_VERSION = 0x03;
 
 /**
- * Builds the MMR-proof-tail `extraData` a public-decrypt request carries on the wire.
+ * Builds the `extraData` a public-decrypt request carries on the wire.
  *
- * Owned by public decrypt: user decrypt stopped carrying this blob when its requests moved to the
- * permit envelope — its proofs travel as bare borsh beside the handle, and its `extraData` is the
- * version-`0x02` KMS routing. The Rust half of this hand-mirrored codec is
- * `encode_solana_extra_data_mmr_proof` in the connector's `solana_extra_data.rs`; the two layouts
- * must change together, and `solana/test-fixtures/user-decrypt/extra_data_v1.json` is what pins
- * them to each other.
+ * Nothing but the account travels: the Connector reads it and asks the coprocessors for the
+ * `PublicDecryptLeaf` proof itself (RFC 035). The Rust half of this hand-mirrored codec is
+ * `encode_solana_public_decrypt_extra_data` in the connector's `solana_extra_data.rs`; the two
+ * layouts must change together, and `solana/test-fixtures/user-decrypt/extra_data_v1.json` is what
+ * pins them to each other.
  *
  * @param contextId - The 32-byte KMS context id.
- * @param aclValueKey - The 32-byte ACL value key naming the encrypted-value account.
- * @param proofSlot - The slot the proof was built at.
- * @param mmrProofBytes - The canonical transport proof blob, verbatim.
+ * @param encryptedValueAccount - The 32-byte address of the account the handle lives in.
  */
-export function buildSolanaPublicDecryptMmrProofExtraData(
+export function buildSolanaPublicDecryptExtraData(
   contextId: Uint8Array,
-  aclValueKey: Uint8Array,
-  proofSlot: bigint,
-  mmrProofBytes: Uint8Array,
+  encryptedValueAccount: Uint8Array,
 ): Uint8Array {
   assertExtraDataFieldLen('contextId', contextId, 32);
-  assertExtraDataFieldLen('aclValueKey', aclValueKey, 32);
-  return concatBytes(
-    new Uint8Array([SOLANA_MMR_PROOF_EXTRA_DATA_VERSION]),
-    contextId,
-    aclValueKey,
-    u64BE(proofSlot),
-    u32BE(mmrProofBytes.length),
-    mmrProofBytes,
-  );
+  assertExtraDataFieldLen('encryptedValueAccount', encryptedValueAccount, 32);
+  return concatBytes(new Uint8Array([SOLANA_PUBLIC_DECRYPT_EXTRA_DATA_VERSION]), contextId, encryptedValueAccount);
 }
 
 function assertExtraDataFieldLen(name: string, bytes: Uint8Array, len: number): void {
@@ -101,39 +71,14 @@ function assertExtraDataFieldLen(name: string, bytes: Uint8Array, len: number): 
   }
 }
 
-/** Requests a public-decrypt certificate after verifying its pinned MMR inclusion locally. */
+/** Requests a public-decrypt certificate for a handle made public in an encrypted value account. */
 export async function publicDecryptCertificate(
   context: SolanaPublicDecryptCertificateContext,
   parameters: SolanaPublicDecryptCertificateParameters,
 ): Promise<SolanaPublicDecryptCertificateClaim> {
   const handle = toFhevmHandle(parameters.handle);
-  const decoded = decodeMmrProofTransportBlob(parameters.mmrProofBytes);
-  if (decoded.mode !== MMR_PROOF_MODE_PUBLIC) {
-    throw new Error(`public-decrypt MMR proof must use mode 0x02, got 0x${decoded.mode.toString(16).padStart(2, '0')}`);
-  }
-  if (parameters.proofSlot !== parameters.leafCount) {
-    throw new Error(
-      `public-decrypt proof slot must equal the pinned leaf count: ${parameters.proofSlot} != ${parameters.leafCount}`,
-    );
-  }
-  if (
-    !verifyPublicDecryptProof(
-      parameters.encryptedValueAccount,
-      parameters.peaks,
-      parameters.leafCount,
-      handle.bytes32,
-      decoded.proof,
-    )
-  ) {
-    throw new Error('public-decrypt MMR proof failed client-side verification');
-  }
 
-  const requestExtraData = buildSolanaPublicDecryptMmrProofExtraData(
-    parameters.contextId,
-    parameters.aclValueKey,
-    parameters.proofSlot,
-    parameters.mmrProofBytes,
-  );
+  const requestExtraData = buildSolanaPublicDecryptExtraData(parameters.contextId, parameters.encryptedValueAccount);
   const requestExtraDataHex = bytesToHex(requestExtraData);
   const request = new RelayerAsyncRequest({
     relayerOperation: 'PUBLIC_DECRYPT',
@@ -175,6 +120,5 @@ export async function publicDecryptCertificate(
     abiEncodedCleartext: result.decryptedValue,
     signatures: result.signatures,
     extraData: result.extraData ?? requestExtraDataHex,
-    inclusionProof: decoded.proof,
   };
 }

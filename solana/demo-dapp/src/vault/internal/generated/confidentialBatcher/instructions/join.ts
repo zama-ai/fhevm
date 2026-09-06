@@ -69,7 +69,6 @@ export type JoinInstruction<
   TAccountJoinUnderlyingMint extends string | AccountMeta<string> = string,
   TAccountUserAta extends string | AccountMeta<string> = string,
   TAccountBatchAuthorityAta extends string | AccountMeta<string> = string,
-  TAccountJoinComputeSigner extends string | AccountMeta<string> = string,
   TAccountUserTokenAccount extends string | AccountMeta<string> = string,
   TAccountBatchJoinTokenAccount extends string | AccountMeta<string> = string,
   TAccountUserBalanceValue extends string | AccountMeta<string> = string,
@@ -105,7 +104,6 @@ export type JoinInstruction<
         : TAccountJoinUnderlyingMint,
       TAccountUserAta extends string ? ReadonlyAccount<TAccountUserAta> : TAccountUserAta,
       TAccountBatchAuthorityAta extends string ? ReadonlyAccount<TAccountBatchAuthorityAta> : TAccountBatchAuthorityAta,
-      TAccountJoinComputeSigner extends string ? ReadonlyAccount<TAccountJoinComputeSigner> : TAccountJoinComputeSigner,
       TAccountUserTokenAccount extends string ? WritableAccount<TAccountUserTokenAccount> : TAccountUserTokenAccount,
       TAccountBatchJoinTokenAccount extends string
         ? WritableAccount<TAccountBatchJoinTokenAccount>
@@ -142,7 +140,7 @@ export type JoinInstructionData = {
   handleIndex: number;
   /** Attested user identity (bytes32). */
   userAddress: ReadonlyUint8Array;
-  /** Attested contract identity — the input's ACL domain key (bytes32). */
+  /** Attested contract identity — the application program the input is bound to (bytes32). */
   contractAddress: ReadonlyUint8Array;
   /** Gateway-side contract chain id the attestation binds. */
   contractChainId: bigint;
@@ -161,7 +159,7 @@ export type JoinInstructionDataArgs = {
   handleIndex: number;
   /** Attested user identity (bytes32). */
   userAddress: ReadonlyUint8Array;
-  /** Attested contract identity — the input's ACL domain key (bytes32). */
+  /** Attested contract identity — the application program the input is bound to (bytes32). */
   contractAddress: ReadonlyUint8Array;
   /** Gateway-side contract chain id the attestation binds. */
   contractChainId: number | bigint;
@@ -217,7 +215,6 @@ export type JoinAsyncInput<
   TAccountJoinUnderlyingMint extends string = string,
   TAccountUserAta extends string = string,
   TAccountBatchAuthorityAta extends string = string,
-  TAccountJoinComputeSigner extends string = string,
   TAccountUserTokenAccount extends string = string,
   TAccountBatchJoinTokenAccount extends string = string,
   TAccountUserBalanceValue extends string = string,
@@ -242,7 +239,7 @@ export type JoinAsyncInput<
   batcher: Address<TAccountBatcher>;
   /** The pending batch being joined. */
   batch: Address<TAccountBatch>;
-  /** batcher execution's compute subject and encrypted value account authority. */
+  /** receipt the token program writes. */
   batchAuthority?: Address<TAccountBatchAuthority>;
   /** The user's join record for this batch; created on first join. */
   joinRecord?: Address<TAccountJoinRecord>;
@@ -251,16 +248,15 @@ export type JoinAsyncInput<
   joinUnderlyingMint: Address<TAccountJoinUnderlyingMint>;
   userAta: Address<TAccountUserAta>;
   batchAuthorityAta: Address<TAccountBatchAuthorityAta>;
-  joinComputeSigner: Address<TAccountJoinComputeSigner>;
   /** by the token CPI. */
   userTokenAccount: Address<TAccountUserTokenAccount>;
   /** validated by the token CPI and pinned below. */
   batchJoinTokenAccount: Address<TAccountBatchJoinTokenAccount>;
   userBalanceValue: Address<TAccountUserBalanceValue>;
   batchBalanceValue: Address<TAccountBatchBalanceValue>;
-  /** token CPI, then read as the batcher execution's operand. */
+  /** token CPI. */
   userTransferredValue: Address<TAccountUserTransferredValue>;
-  /** (accumulated) on repeat joins by the batcher execution. */
+  /** first join, accumulated on repeat joins. Pinned to its canonical address below. */
   pendingJoinValue: Address<TAccountPendingJoinValue>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
   /** ZamaHost program (FHE compute + ACL). */
@@ -292,7 +288,6 @@ export async function getJoinInstructionAsync<
   TAccountJoinUnderlyingMint extends string,
   TAccountUserAta extends string,
   TAccountBatchAuthorityAta extends string,
-  TAccountJoinComputeSigner extends string,
   TAccountUserTokenAccount extends string,
   TAccountBatchJoinTokenAccount extends string,
   TAccountUserBalanceValue extends string,
@@ -318,7 +313,6 @@ export async function getJoinInstructionAsync<
     TAccountJoinUnderlyingMint,
     TAccountUserAta,
     TAccountBatchAuthorityAta,
-    TAccountJoinComputeSigner,
     TAccountUserTokenAccount,
     TAccountBatchJoinTokenAccount,
     TAccountUserBalanceValue,
@@ -346,7 +340,6 @@ export async function getJoinInstructionAsync<
     TAccountJoinUnderlyingMint,
     TAccountUserAta,
     TAccountBatchAuthorityAta,
-    TAccountJoinComputeSigner,
     TAccountUserTokenAccount,
     TAccountBatchJoinTokenAccount,
     TAccountUserBalanceValue,
@@ -383,10 +376,6 @@ export async function getJoinInstructionAsync<
     userAta: { value: input.userAta ?? null, isWritable: false },
     batchAuthorityAta: {
       value: input.batchAuthorityAta ?? null,
-      isWritable: false,
-    },
-    joinComputeSigner: {
-      value: input.joinComputeSigner ?? null,
       isWritable: false,
     },
     userTokenAccount: {
@@ -471,7 +460,6 @@ export async function getJoinInstructionAsync<
       getAccountMeta('joinUnderlyingMint', accounts.joinUnderlyingMint),
       getAccountMeta('userAta', accounts.userAta),
       getAccountMeta('batchAuthorityAta', accounts.batchAuthorityAta),
-      getAccountMeta('joinComputeSigner', accounts.joinComputeSigner),
       getAccountMeta('userTokenAccount', accounts.userTokenAccount),
       getAccountMeta('batchJoinTokenAccount', accounts.batchJoinTokenAccount),
       getAccountMeta('userBalanceValue', accounts.userBalanceValue),
@@ -499,7 +487,6 @@ export async function getJoinInstructionAsync<
     TAccountJoinUnderlyingMint,
     TAccountUserAta,
     TAccountBatchAuthorityAta,
-    TAccountJoinComputeSigner,
     TAccountUserTokenAccount,
     TAccountBatchJoinTokenAccount,
     TAccountUserBalanceValue,
@@ -526,7 +513,6 @@ export type JoinInput<
   TAccountJoinUnderlyingMint extends string = string,
   TAccountUserAta extends string = string,
   TAccountBatchAuthorityAta extends string = string,
-  TAccountJoinComputeSigner extends string = string,
   TAccountUserTokenAccount extends string = string,
   TAccountBatchJoinTokenAccount extends string = string,
   TAccountUserBalanceValue extends string = string,
@@ -551,7 +537,7 @@ export type JoinInput<
   batcher: Address<TAccountBatcher>;
   /** The pending batch being joined. */
   batch: Address<TAccountBatch>;
-  /** batcher execution's compute subject and encrypted value account authority. */
+  /** receipt the token program writes. */
   batchAuthority: Address<TAccountBatchAuthority>;
   /** The user's join record for this batch; created on first join. */
   joinRecord: Address<TAccountJoinRecord>;
@@ -560,16 +546,15 @@ export type JoinInput<
   joinUnderlyingMint: Address<TAccountJoinUnderlyingMint>;
   userAta: Address<TAccountUserAta>;
   batchAuthorityAta: Address<TAccountBatchAuthorityAta>;
-  joinComputeSigner: Address<TAccountJoinComputeSigner>;
   /** by the token CPI. */
   userTokenAccount: Address<TAccountUserTokenAccount>;
   /** validated by the token CPI and pinned below. */
   batchJoinTokenAccount: Address<TAccountBatchJoinTokenAccount>;
   userBalanceValue: Address<TAccountUserBalanceValue>;
   batchBalanceValue: Address<TAccountBatchBalanceValue>;
-  /** token CPI, then read as the batcher execution's operand. */
+  /** token CPI. */
   userTransferredValue: Address<TAccountUserTransferredValue>;
-  /** (accumulated) on repeat joins by the batcher execution. */
+  /** first join, accumulated on repeat joins. Pinned to its canonical address below. */
   pendingJoinValue: Address<TAccountPendingJoinValue>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
   /** ZamaHost program (FHE compute + ACL). */
@@ -601,7 +586,6 @@ export function getJoinInstruction<
   TAccountJoinUnderlyingMint extends string,
   TAccountUserAta extends string,
   TAccountBatchAuthorityAta extends string,
-  TAccountJoinComputeSigner extends string,
   TAccountUserTokenAccount extends string,
   TAccountBatchJoinTokenAccount extends string,
   TAccountUserBalanceValue extends string,
@@ -627,7 +611,6 @@ export function getJoinInstruction<
     TAccountJoinUnderlyingMint,
     TAccountUserAta,
     TAccountBatchAuthorityAta,
-    TAccountJoinComputeSigner,
     TAccountUserTokenAccount,
     TAccountBatchJoinTokenAccount,
     TAccountUserBalanceValue,
@@ -654,7 +637,6 @@ export function getJoinInstruction<
   TAccountJoinUnderlyingMint,
   TAccountUserAta,
   TAccountBatchAuthorityAta,
-  TAccountJoinComputeSigner,
   TAccountUserTokenAccount,
   TAccountBatchJoinTokenAccount,
   TAccountUserBalanceValue,
@@ -690,10 +672,6 @@ export function getJoinInstruction<
     userAta: { value: input.userAta ?? null, isWritable: false },
     batchAuthorityAta: {
       value: input.batchAuthorityAta ?? null,
-      isWritable: false,
-    },
-    joinComputeSigner: {
-      value: input.joinComputeSigner ?? null,
       isWritable: false,
     },
     userTokenAccount: {
@@ -767,7 +745,6 @@ export function getJoinInstruction<
       getAccountMeta('joinUnderlyingMint', accounts.joinUnderlyingMint),
       getAccountMeta('userAta', accounts.userAta),
       getAccountMeta('batchAuthorityAta', accounts.batchAuthorityAta),
-      getAccountMeta('joinComputeSigner', accounts.joinComputeSigner),
       getAccountMeta('userTokenAccount', accounts.userTokenAccount),
       getAccountMeta('batchJoinTokenAccount', accounts.batchJoinTokenAccount),
       getAccountMeta('userBalanceValue', accounts.userBalanceValue),
@@ -795,7 +772,6 @@ export function getJoinInstruction<
     TAccountJoinUnderlyingMint,
     TAccountUserAta,
     TAccountBatchAuthorityAta,
-    TAccountJoinComputeSigner,
     TAccountUserTokenAccount,
     TAccountBatchJoinTokenAccount,
     TAccountUserBalanceValue,
@@ -828,7 +804,7 @@ export type ParsedJoinInstruction<
     batcher: TAccountMetas[2];
     /** The pending batch being joined. */
     batch: TAccountMetas[3];
-    /** batcher execution's compute subject and encrypted value account authority. */
+    /** receipt the token program writes. */
     batchAuthority: TAccountMetas[4];
     /** The user's join record for this batch; created on first join. */
     joinRecord: TAccountMetas[5];
@@ -837,26 +813,25 @@ export type ParsedJoinInstruction<
     joinUnderlyingMint: TAccountMetas[7];
     userAta: TAccountMetas[8];
     batchAuthorityAta: TAccountMetas[9];
-    joinComputeSigner: TAccountMetas[10];
     /** by the token CPI. */
-    userTokenAccount: TAccountMetas[11];
+    userTokenAccount: TAccountMetas[10];
     /** validated by the token CPI and pinned below. */
-    batchJoinTokenAccount: TAccountMetas[12];
-    userBalanceValue: TAccountMetas[13];
-    batchBalanceValue: TAccountMetas[14];
-    /** token CPI, then read as the batcher execution's operand. */
-    userTransferredValue: TAccountMetas[15];
-    /** (accumulated) on repeat joins by the batcher execution. */
-    pendingJoinValue: TAccountMetas[16];
-    zamaEventAuthority: TAccountMetas[17];
+    batchJoinTokenAccount: TAccountMetas[11];
+    userBalanceValue: TAccountMetas[12];
+    batchBalanceValue: TAccountMetas[13];
+    /** token CPI. */
+    userTransferredValue: TAccountMetas[14];
+    /** first join, accumulated on repeat joins. Pinned to its canonical address below. */
+    pendingJoinValue: TAccountMetas[15];
+    zamaEventAuthority: TAccountMetas[16];
     /** ZamaHost program (FHE compute + ACL). */
-    zamaProgram: TAccountMetas[18];
-    hostConfig: TAccountMetas[19];
-    confidentialTokenEventAuthority: TAccountMetas[20];
+    zamaProgram: TAccountMetas[17];
+    hostConfig: TAccountMetas[18];
+    confidentialTokenEventAuthority: TAccountMetas[19];
     /** confidential-token program composed via CPI. */
-    confidentialTokenProgram: TAccountMetas[21];
+    confidentialTokenProgram: TAccountMetas[20];
     /** System program used for account creation. */
-    systemProgram: TAccountMetas[22];
+    systemProgram: TAccountMetas[21];
   };
   data: JoinInstructionData;
 };
@@ -864,10 +839,10 @@ export type ParsedJoinInstruction<
 export function parseJoinInstruction<TProgram extends string, TAccountMetas extends readonly AccountMeta[]>(
   instruction: Instruction<TProgram> & InstructionWithAccounts<TAccountMetas> & InstructionWithData<ReadonlyUint8Array>,
 ): ParsedJoinInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 23) {
+  if (instruction.accounts.length < 22) {
     throw new SolanaError(SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS, {
       actualAccountMetas: instruction.accounts.length,
-      expectedAccountMetas: 23,
+      expectedAccountMetas: 22,
     });
   }
   let accountIndex = 0;
@@ -889,7 +864,6 @@ export function parseJoinInstruction<TProgram extends string, TAccountMetas exte
       joinUnderlyingMint: getNextAccount(),
       userAta: getNextAccount(),
       batchAuthorityAta: getNextAccount(),
-      joinComputeSigner: getNextAccount(),
       userTokenAccount: getNextAccount(),
       batchJoinTokenAccount: getNextAccount(),
       userBalanceValue: getNextAccount(),

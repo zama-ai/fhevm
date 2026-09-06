@@ -45,7 +45,7 @@ check() {
   fi
 }
 
-ALL="gateway-contracts host-contracts coprocessor relayer solana-proof-service kms-connector"
+ALL="gateway-contracts host-contracts coprocessor relayer kms-connector"
 T="feature-solana-$BASE_SHA"
 PINS_GATEWAY="GATEWAY_VERSION=$T"
 PINS_HOST="HOST_VERSION=$T"
@@ -53,19 +53,18 @@ PINS_COPRO="COPROCESSOR_DB_MIGRATION_VERSION=$T COPROCESSOR_HOST_LISTENER_VERSIO
 PINS_RELAYER="RELAYER_VERSION=$T RELAYER_MIGRATE_VERSION=$T"
 PINS_CONNECTOR="CONNECTOR_DB_MIGRATION_VERSION=$T CONNECTOR_GW_LISTENER_VERSION=$T CONNECTOR_KMS_WORKER_VERSION=$T CONNECTOR_TX_SENDER_VERSION=$T"
 
-# The proof service has no branch-published image, so it is always built from the checked-out source.
-check "solana scripts only -> proof service" \
+check "solana scripts only -> nothing" \
   $'solana/scripts/dead-surface-check.sh\nsolana/geyser/src/lib.rs\nsolana/docs/notes.md' \
   "true" \
-  "solana-proof-service" \
+  "none" \
   "$PINS_GATEWAY $PINS_HOST $PINS_COPRO $PINS_RELAYER $PINS_CONNECTOR"
 
 # The TS framework (side-stack setup, scenario helpers, generated clients) runs from PR source;
 # it is a stack consumer, not an image input, so it must not force from-source image builds.
-check "test framework src only -> proof service" \
+check "test framework src only -> nothing" \
   $'test-suite/fhevm/src/solana/deploy.ts\ntest-suite/fhevm/src/solana/internal/generated/zamaHost/index.ts' \
   "true" \
-  "solana-proof-service" \
+  "none" \
   "$PINS_GATEWAY $PINS_HOST $PINS_COPRO $PINS_RELAYER $PINS_CONNECTOR"
 
 # zama-host is compiled into the coprocessor and relayer binaries, but NOT the kms-connector's
@@ -73,119 +72,119 @@ check "test framework src only -> proof service" \
 check "solana program change -> coprocessor + relayer" \
   "solana/programs/zama-host/src/lib.rs" \
   "true" \
-  "coprocessor relayer solana-proof-service" \
+  "coprocessor relayer" \
   "$PINS_GATEWAY $PINS_HOST $PINS_CONNECTOR"
 
 # zama-solana-acl is the one solana crate the kms-connector image consumes.
 check "zama-solana-acl change -> all rust consumers" \
   "solana/crates/zama-solana-acl/src/lib.rs" \
   "true" \
-  "coprocessor kms-connector relayer solana-proof-service" \
+  "coprocessor kms-connector relayer" \
   "$PINS_GATEWAY $PINS_HOST"
 
 check "other solana crate change -> coprocessor + relayer" \
   "solana/crates/zama-fhe/src/lib.rs" \
   "true" \
-  "coprocessor relayer solana-proof-service" \
+  "coprocessor relayer" \
   "$PINS_GATEWAY $PINS_HOST $PINS_CONNECTOR"
 
 check "solana Cargo.lock change -> coprocessor + relayer" \
   "solana/Cargo.lock" \
   "true" \
-  "coprocessor relayer solana-proof-service" \
+  "coprocessor relayer" \
   "$PINS_GATEWAY $PINS_HOST $PINS_CONNECTOR"
 
 # On-chain-only demo programs are compiled into no docker image.
-check "demo-vault change -> proof service" \
+check "demo-vault change -> nothing" \
   "solana/programs/demo-vault/src/lib.rs" \
   "true" \
-  "solana-proof-service" \
+  "none" \
   "$PINS_GATEWAY $PINS_HOST $PINS_COPRO $PINS_RELAYER $PINS_CONNECTOR"
 
-check "confidential-deposit-app change -> proof service" \
+check "confidential-deposit-app change -> nothing" \
   "solana/programs/confidential-deposit-app/src/lib.rs" \
   "true" \
-  "solana-proof-service" \
+  "none" \
   "$PINS_GATEWAY $PINS_HOST $PINS_COPRO $PINS_RELAYER $PINS_CONNECTOR"
 
 # The two specimen programs share the on-chain-only bucket. This test file is the only thing
 # guarding that rule, so each arm of it needs a case of its own.
-check "encrypted-counter specimen change -> proof service" \
+check "encrypted-counter specimen change -> nothing" \
   "solana/programs/encrypted-counter/src/lib.rs" \
   "true" \
-  "solana-proof-service" \
+  "none" \
   "$PINS_GATEWAY $PINS_HOST $PINS_COPRO $PINS_RELAYER $PINS_CONNECTOR"
 
-check "dep-chain specimen change -> proof service" \
+check "dep-chain specimen change -> nothing" \
   "solana/programs/dep-chain/src/lib.rs" \
   "true" \
-  "solana-proof-service" \
+  "none" \
   "$PINS_GATEWAY $PINS_HOST $PINS_COPRO $PINS_RELAYER $PINS_CONNECTOR"
 
 check "coprocessor change -> coprocessor only" \
   "coprocessor/fhevm-engine/tfhe-worker/src/main.rs" \
   "true" \
-  "coprocessor solana-proof-service" \
+  "coprocessor" \
   "$PINS_GATEWAY $PINS_HOST $PINS_RELAYER $PINS_CONNECTOR"
 
 check "kms-connector change -> kms-connector only" \
   "kms-connector/crates/gw-listener/src/lib.rs" \
   "true" \
-  "kms-connector solana-proof-service" \
+  "kms-connector" \
   "$PINS_GATEWAY $PINS_HOST $PINS_COPRO $PINS_RELAYER"
 
 # Contracts are compiled into the Rust images (bindings/artifacts), so they fan out.
 check "host-contracts change -> contracts + rust consumers" \
   "host-contracts/contracts/FHEVMExecutor.sol" \
   "true" \
-  "host-contracts coprocessor kms-connector relayer solana-proof-service" \
+  "host-contracts coprocessor kms-connector relayer" \
   "$PINS_GATEWAY"
 
 check "gateway-contracts change -> contracts + rust consumers" \
   "gateway-contracts/contracts/Decryption.sol" \
   "true" \
-  "gateway-contracts coprocessor kms-connector relayer solana-proof-service" \
+  "gateway-contracts coprocessor kms-connector relayer" \
   "$PINS_HOST"
 
-check "sdk-only change -> proof service" \
+check "sdk-only change -> nothing" \
   "sdk/js-sdk/src/solana/index.ts" \
   "true" \
-  "solana-proof-service" \
+  "none" \
   "$PINS_GATEWAY $PINS_HOST $PINS_COPRO $PINS_RELAYER $PINS_CONNECTOR"
 
 # e2e tests and demo scripts run from PR source against the built stack; no image copies them.
-check "e2e scenario change -> proof service" \
+check "e2e scenario change -> nothing" \
   "test-suite/fhevm/e2e/scenarios/deposit-arc.scenario.test.ts" \
   "true" \
-  "solana-proof-service" \
+  "none" \
   "$PINS_GATEWAY $PINS_HOST $PINS_COPRO $PINS_RELAYER $PINS_CONNECTOR"
 
-check "demo script change -> proof service" \
+check "demo script change -> nothing" \
   "test-suite/fhevm/demo/demo-up.sh" \
   "true" \
-  "solana-proof-service" \
+  "none" \
   "$PINS_GATEWAY $PINS_HOST $PINS_COPRO $PINS_RELAYER $PINS_CONNECTOR"
 
 # src/ is the fhevm-cli + Solana side-stack framework: it runs from PR source too, and is matched
 # before the `test-suite/fhevm/*` build-recipe rule that would otherwise rebuild everything.
-check "test-suite framework change -> proof service" \
+check "test-suite framework change -> nothing" \
   "test-suite/fhevm/src/solana/deploy.ts" \
   "true" \
-  "solana-proof-service" \
+  "none" \
   "$PINS_GATEWAY $PINS_HOST $PINS_COPRO $PINS_RELAYER $PINS_CONNECTOR"
 
 # ...but a change to the package manifest IS a build-recipe change: it must still rebuild all.
 check "test-suite package.json change -> everything" \
   "test-suite/fhevm/package.json" \
   "true" \
-  "gateway-contracts host-contracts coprocessor relayer solana-proof-service kms-connector" \
+  "gateway-contracts host-contracts coprocessor relayer kms-connector" \
   ""
 
 # The SDK-plus-scenario PR shape that used to pay for a full workspace rebuild.
-check "sdk + scenario change -> proof service" \
+check "sdk + scenario change -> nothing" \
   $'sdk/js-sdk/src/solana/index.ts\ntest-suite/fhevm/e2e/scenarios/deposit-arc.scenario.test.ts' \
   "true" \
-  "solana-proof-service" \
+  "none" \
   "$PINS_GATEWAY $PINS_HOST $PINS_COPRO $PINS_RELAYER $PINS_CONNECTOR"
 
 # Build-recipe changes force full source builds regardless of published images.
@@ -206,12 +205,6 @@ check "clean-e2e.sh change -> build all" \
   "true" \
   "$ALL" \
   ""
-
-check "proof-service change -> proof service" \
-  "solana-proof-service/src/main.rs" \
-  "true" \
-  "solana-proof-service" \
-  "$PINS_GATEWAY $PINS_HOST $PINS_COPRO $PINS_RELAYER $PINS_CONNECTOR"
 
 # Fail-safe: an incomplete base-commit image set means build everything — the floating tag is
 # never consumed (a partial publish could leave it mixing branch commits).

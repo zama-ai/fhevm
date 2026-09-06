@@ -37,7 +37,7 @@ import {
   getAddressFromResolvedInstructionAccount,
   type ResolvedInstructionAccount,
 } from '@solana/program-client-core';
-import { findComputeSignerPda, findTotalSupplyAuthorityPda } from '../pdas/index.js';
+import { findTotalSupplyAuthorityPda } from '../pdas/index.js';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '../programAddress.js';
 
 export const INITIALIZE_MINT_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([209, 42, 195, 4, 129, 85, 209, 44]);
@@ -52,7 +52,6 @@ export type InitializeMintInstruction<
   TAccountMint extends string | AccountMeta<string> = string,
   TAccountUnderlyingMint extends string | AccountMeta<string> = string,
   TAccountTokenProgram extends string | AccountMeta<string> = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
-  TAccountComputeSigner extends string | AccountMeta<string> = string,
   TAccountTotalSupplyAuthority extends string | AccountMeta<string> = string,
   TAccountTotalSupplyEncryptedValue extends string | AccountMeta<string> = string,
   TAccountZamaEventAuthority extends string | AccountMeta<string> = string,
@@ -76,7 +75,6 @@ export type InitializeMintInstruction<
         : TAccountMint,
       TAccountUnderlyingMint extends string ? ReadonlyAccount<TAccountUnderlyingMint> : TAccountUnderlyingMint,
       TAccountTokenProgram extends string ? ReadonlyAccount<TAccountTokenProgram> : TAccountTokenProgram,
-      TAccountComputeSigner extends string ? ReadonlyAccount<TAccountComputeSigner> : TAccountComputeSigner,
       TAccountTotalSupplyAuthority extends string
         ? ReadonlyAccount<TAccountTotalSupplyAuthority>
         : TAccountTotalSupplyAuthority,
@@ -128,7 +126,6 @@ export type InitializeMintAsyncInput<
   TAccountMint extends string = string,
   TAccountUnderlyingMint extends string = string,
   TAccountTokenProgram extends string = string,
-  TAccountComputeSigner extends string = string,
   TAccountTotalSupplyAuthority extends string = string,
   TAccountTotalSupplyEncryptedValue extends string = string,
   TAccountZamaEventAuthority extends string = string,
@@ -148,7 +145,6 @@ export type InitializeMintAsyncInput<
   underlyingMint: Address<TAccountUnderlyingMint>;
   /** Classic Token or Token-2022 program owning `underlying_mint`. */
   tokenProgram?: Address<TAccountTokenProgram>;
-  computeSigner?: Address<TAccountComputeSigner>;
   totalSupplyAuthority?: Address<TAccountTotalSupplyAuthority>;
   totalSupplyEncryptedValue: Address<TAccountTotalSupplyEncryptedValue>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
@@ -159,12 +155,12 @@ export type InitializeMintAsyncInput<
   /** System program used for account creation. */
   systemProgram?: Address<TAccountSystemProgram>;
   /**
-   * canonical `["hcu-block-meter", compute_signer]` PDA. Supplied by an untrusted mint under a
+   * canonical `["hcu-block-meter", program, mint]` PDA. Supplied by an untrusted mint under a
    * metering-band cap; omitted when the mint is trusted or the cap is unrestricted.
    */
   hcuBlockMeter?: Address<TAccountHcuBlockMeter>;
   /**
-   * canonical `["hcu-trusted", compute_signer]` PDA. Present + valid bypasses the cap; absent
+   * canonical `["hcu-trusted", program, mint]` PDA. Present + valid bypasses the cap; absent
    * means the mint is metered.
    */
   hcuTrustedAppRecord?: Address<TAccountHcuTrustedAppRecord>;
@@ -177,7 +173,6 @@ export async function getInitializeMintInstructionAsync<
   TAccountMint extends string,
   TAccountUnderlyingMint extends string,
   TAccountTokenProgram extends string,
-  TAccountComputeSigner extends string,
   TAccountTotalSupplyAuthority extends string,
   TAccountTotalSupplyEncryptedValue extends string,
   TAccountZamaEventAuthority extends string,
@@ -195,7 +190,6 @@ export async function getInitializeMintInstructionAsync<
     TAccountMint,
     TAccountUnderlyingMint,
     TAccountTokenProgram,
-    TAccountComputeSigner,
     TAccountTotalSupplyAuthority,
     TAccountTotalSupplyEncryptedValue,
     TAccountZamaEventAuthority,
@@ -215,7 +209,6 @@ export async function getInitializeMintInstructionAsync<
     TAccountMint,
     TAccountUnderlyingMint,
     TAccountTokenProgram,
-    TAccountComputeSigner,
     TAccountTotalSupplyAuthority,
     TAccountTotalSupplyEncryptedValue,
     TAccountZamaEventAuthority,
@@ -237,7 +230,6 @@ export async function getInitializeMintInstructionAsync<
     mint: { value: input.mint ?? null, isWritable: true },
     underlyingMint: { value: input.underlyingMint ?? null, isWritable: false },
     tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
-    computeSigner: { value: input.computeSigner ?? null, isWritable: false },
     totalSupplyAuthority: {
       value: input.totalSupplyAuthority ?? null,
       isWritable: false,
@@ -267,11 +259,6 @@ export async function getInitializeMintInstructionAsync<
   if (!accounts.tokenProgram.value) {
     accounts.tokenProgram.value =
       'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA' as Address<'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'>;
-  }
-  if (!accounts.computeSigner.value) {
-    accounts.computeSigner.value = await findComputeSignerPda({
-      mint: getAddressFromResolvedInstructionAccount('mint', accounts.mint.value),
-    });
   }
   if (!accounts.totalSupplyAuthority.value) {
     accounts.totalSupplyAuthority.value = await findTotalSupplyAuthorityPda({
@@ -293,7 +280,6 @@ export async function getInitializeMintInstructionAsync<
       getAccountMeta('mint', accounts.mint),
       getAccountMeta('underlyingMint', accounts.underlyingMint),
       getAccountMeta('tokenProgram', accounts.tokenProgram),
-      getAccountMeta('computeSigner', accounts.computeSigner),
       getAccountMeta('totalSupplyAuthority', accounts.totalSupplyAuthority),
       getAccountMeta('totalSupplyEncryptedValue', accounts.totalSupplyEncryptedValue),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
@@ -313,7 +299,6 @@ export async function getInitializeMintInstructionAsync<
     TAccountMint,
     TAccountUnderlyingMint,
     TAccountTokenProgram,
-    TAccountComputeSigner,
     TAccountTotalSupplyAuthority,
     TAccountTotalSupplyEncryptedValue,
     TAccountZamaEventAuthority,
@@ -332,7 +317,6 @@ export type InitializeMintInput<
   TAccountMint extends string = string,
   TAccountUnderlyingMint extends string = string,
   TAccountTokenProgram extends string = string,
-  TAccountComputeSigner extends string = string,
   TAccountTotalSupplyAuthority extends string = string,
   TAccountTotalSupplyEncryptedValue extends string = string,
   TAccountZamaEventAuthority extends string = string,
@@ -352,7 +336,6 @@ export type InitializeMintInput<
   underlyingMint: Address<TAccountUnderlyingMint>;
   /** Classic Token or Token-2022 program owning `underlying_mint`. */
   tokenProgram?: Address<TAccountTokenProgram>;
-  computeSigner: Address<TAccountComputeSigner>;
   totalSupplyAuthority: Address<TAccountTotalSupplyAuthority>;
   totalSupplyEncryptedValue: Address<TAccountTotalSupplyEncryptedValue>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
@@ -363,12 +346,12 @@ export type InitializeMintInput<
   /** System program used for account creation. */
   systemProgram?: Address<TAccountSystemProgram>;
   /**
-   * canonical `["hcu-block-meter", compute_signer]` PDA. Supplied by an untrusted mint under a
+   * canonical `["hcu-block-meter", program, mint]` PDA. Supplied by an untrusted mint under a
    * metering-band cap; omitted when the mint is trusted or the cap is unrestricted.
    */
   hcuBlockMeter?: Address<TAccountHcuBlockMeter>;
   /**
-   * canonical `["hcu-trusted", compute_signer]` PDA. Present + valid bypasses the cap; absent
+   * canonical `["hcu-trusted", program, mint]` PDA. Present + valid bypasses the cap; absent
    * means the mint is metered.
    */
   hcuTrustedAppRecord?: Address<TAccountHcuTrustedAppRecord>;
@@ -381,7 +364,6 @@ export function getInitializeMintInstruction<
   TAccountMint extends string,
   TAccountUnderlyingMint extends string,
   TAccountTokenProgram extends string,
-  TAccountComputeSigner extends string,
   TAccountTotalSupplyAuthority extends string,
   TAccountTotalSupplyEncryptedValue extends string,
   TAccountZamaEventAuthority extends string,
@@ -399,7 +381,6 @@ export function getInitializeMintInstruction<
     TAccountMint,
     TAccountUnderlyingMint,
     TAccountTokenProgram,
-    TAccountComputeSigner,
     TAccountTotalSupplyAuthority,
     TAccountTotalSupplyEncryptedValue,
     TAccountZamaEventAuthority,
@@ -418,7 +399,6 @@ export function getInitializeMintInstruction<
   TAccountMint,
   TAccountUnderlyingMint,
   TAccountTokenProgram,
-  TAccountComputeSigner,
   TAccountTotalSupplyAuthority,
   TAccountTotalSupplyEncryptedValue,
   TAccountZamaEventAuthority,
@@ -439,7 +419,6 @@ export function getInitializeMintInstruction<
     mint: { value: input.mint ?? null, isWritable: true },
     underlyingMint: { value: input.underlyingMint ?? null, isWritable: false },
     tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
-    computeSigner: { value: input.computeSigner ?? null, isWritable: false },
     totalSupplyAuthority: {
       value: input.totalSupplyAuthority ?? null,
       isWritable: false,
@@ -485,7 +464,6 @@ export function getInitializeMintInstruction<
       getAccountMeta('mint', accounts.mint),
       getAccountMeta('underlyingMint', accounts.underlyingMint),
       getAccountMeta('tokenProgram', accounts.tokenProgram),
-      getAccountMeta('computeSigner', accounts.computeSigner),
       getAccountMeta('totalSupplyAuthority', accounts.totalSupplyAuthority),
       getAccountMeta('totalSupplyEncryptedValue', accounts.totalSupplyEncryptedValue),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
@@ -505,7 +483,6 @@ export function getInitializeMintInstruction<
     TAccountMint,
     TAccountUnderlyingMint,
     TAccountTokenProgram,
-    TAccountComputeSigner,
     TAccountTotalSupplyAuthority,
     TAccountTotalSupplyEncryptedValue,
     TAccountZamaEventAuthority,
@@ -533,28 +510,27 @@ export type ParsedInitializeMintInstruction<
     underlyingMint: TAccountMetas[2];
     /** Classic Token or Token-2022 program owning `underlying_mint`. */
     tokenProgram: TAccountMetas[3];
-    computeSigner: TAccountMetas[4];
-    totalSupplyAuthority: TAccountMetas[5];
-    totalSupplyEncryptedValue: TAccountMetas[6];
-    zamaEventAuthority: TAccountMetas[7];
+    totalSupplyAuthority: TAccountMetas[4];
+    totalSupplyEncryptedValue: TAccountMetas[5];
+    zamaEventAuthority: TAccountMetas[6];
     /** ZamaHost program used to create the initial total-supply handle. */
-    zamaProgram: TAccountMetas[8];
+    zamaProgram: TAccountMetas[7];
     /** ZamaHost config used for handle derivation. */
-    hostConfig: TAccountMetas[9];
+    hostConfig: TAccountMetas[8];
     /** System program used for account creation. */
-    systemProgram: TAccountMetas[10];
+    systemProgram: TAccountMetas[9];
     /**
-     * canonical `["hcu-block-meter", compute_signer]` PDA. Supplied by an untrusted mint under a
+     * canonical `["hcu-block-meter", program, mint]` PDA. Supplied by an untrusted mint under a
      * metering-band cap; omitted when the mint is trusted or the cap is unrestricted.
      */
-    hcuBlockMeter?: TAccountMetas[11] | undefined;
+    hcuBlockMeter?: TAccountMetas[10] | undefined;
     /**
-     * canonical `["hcu-trusted", compute_signer]` PDA. Present + valid bypasses the cap; absent
+     * canonical `["hcu-trusted", program, mint]` PDA. Present + valid bypasses the cap; absent
      * means the mint is metered.
      */
-    hcuTrustedAppRecord?: TAccountMetas[12] | undefined;
-    eventAuthority: TAccountMetas[13];
-    program: TAccountMetas[14];
+    hcuTrustedAppRecord?: TAccountMetas[11] | undefined;
+    eventAuthority: TAccountMetas[12];
+    program: TAccountMetas[13];
   };
   data: InitializeMintInstructionData;
 };
@@ -562,10 +538,10 @@ export type ParsedInitializeMintInstruction<
 export function parseInitializeMintInstruction<TProgram extends string, TAccountMetas extends readonly AccountMeta[]>(
   instruction: Instruction<TProgram> & InstructionWithAccounts<TAccountMetas> & InstructionWithData<ReadonlyUint8Array>,
 ): ParsedInitializeMintInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 15) {
+  if (instruction.accounts.length < 14) {
     throw new SolanaError(SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS, {
       actualAccountMetas: instruction.accounts.length,
-      expectedAccountMetas: 15,
+      expectedAccountMetas: 14,
     });
   }
   let accountIndex = 0;
@@ -585,7 +561,6 @@ export function parseInitializeMintInstruction<TProgram extends string, TAccount
       mint: getNextAccount(),
       underlyingMint: getNextAccount(),
       tokenProgram: getNextAccount(),
-      computeSigner: getNextAccount(),
       totalSupplyAuthority: getNextAccount(),
       totalSupplyEncryptedValue: getNextAccount(),
       zamaEventAuthority: getNextAccount(),

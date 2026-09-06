@@ -25,7 +25,7 @@ import {
 import { base58 } from '@scure/base';
 
 import { confidentialTransfer, type SolanaConfidentialTransferParameters } from './confidentialTransfer.js';
-import { findComputeSignerPda } from '../internal/generated/confidentialToken/pdas/computeSigner.js';
+import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '../internal/generated/confidentialToken/programAddress.js';
 import { associatedTokenAddress, TOKEN_PROGRAM_ADDRESS } from '../internal/tokenValueAccount.js';
 
 const CHAIN_ID = (1n << 63n) | 12345n;
@@ -63,8 +63,7 @@ function proof(
 async function parameters(overrides: Partial<SolanaConfidentialTransferParameters> = {}) {
   const mint = key(2);
   const owner = signer(key(1));
-  const [computeSigner] = await findComputeSignerPda({ mint });
-  const inputProof = proof(owner.address, computeSigner);
+  const inputProof = proof(owner.address, CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS);
   return {
     rpc: {} as SolanaConfidentialTransferParameters['rpc'],
     rpcSubscriptions: {} as SolanaConfidentialTransferParameters['rpcSubscriptions'],
@@ -97,7 +96,7 @@ describe('confidentialTransfer attestation binding', () => {
 
   it('rejects a result that is not bound to the original proof', async () => {
     const params = await parameters();
-    const other = proof(params.owner.address, (await findComputeSignerPda({ mint: params.mint }))[0], {
+    const other = proof(params.owner.address, CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, {
       bits: [8],
     });
     await expect(
@@ -117,7 +116,7 @@ describe('confidentialTransfer attestation binding', () => {
     [
       'a non-u64 selected input',
       async (params: Awaited<ReturnType<typeof parameters>>) => {
-        const inputProof = proof(params.owner.address, (await findComputeSignerPda({ mint: params.mint }))[0], {
+        const inputProof = proof(params.owner.address, CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, {
           bits: [8],
         });
         return {
@@ -131,7 +130,7 @@ describe('confidentialTransfer attestation binding', () => {
     [
       'a non-Solana chain id',
       async (params: Awaited<ReturnType<typeof parameters>>) => {
-        const inputProof = proof(params.owner.address, (await findComputeSignerPda({ mint: params.mint }))[0], {
+        const inputProof = proof(params.owner.address, CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, {
           chainId: 12345n,
         });
         return {
@@ -150,7 +149,7 @@ describe('confidentialTransfer attestation binding', () => {
     [
       'a different ACL program',
       async (params: Awaited<ReturnType<typeof parameters>>) => {
-        const inputProof = proof(params.owner.address, (await findComputeSignerPda({ mint: params.mint }))[0], {
+        const inputProof = proof(params.owner.address, CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, {
           acl: ACL,
         });
         return {
@@ -167,9 +166,16 @@ describe('confidentialTransfer attestation binding', () => {
       'does not match the transfer owner',
     ],
     [
-      'a different mint domain',
-      async (params: Awaited<ReturnType<typeof parameters>>) => ({ ...params, mint: key(10) }),
-      'does not match the mint compute signer',
+      'a proof bound to another program',
+      async (params: Awaited<ReturnType<typeof parameters>>) => {
+        const inputProof = proof(params.owner.address, key(10));
+        return {
+          ...params,
+          inputProof,
+          inputProofResult: { ...params.inputProofResult, handles: inputProof.getInputHandles() },
+        };
+      },
+      'does not match the confidential-token program',
     ],
   ])('rejects %s', async (_name, mutate, message) => {
     const params = await mutate(await parameters());
@@ -184,8 +190,7 @@ describe('confidentialTransfer attestation binding', () => {
     const owner = await generateKeyPairSigner();
     const feePayer = mode === 'same' ? owner : await generateKeyPairSigner();
     const mint = key(2);
-    const [computeSigner] = await findComputeSignerPda({ mint });
-    const inputProof = proof(owner.address, computeSigner);
+    const inputProof = proof(owner.address, CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS);
     const simulate = vi.fn().mockReturnValue({ send: vi.fn().mockResolvedValue({ value: { err: null } }) });
     const params = await parameters({
       owner,
@@ -243,9 +248,11 @@ describe('confidentialTransfer attestation binding', () => {
     });
     expect(message.instructions[1]!.accounts?.[4]).toEqual({ address: fromAta, role: AccountRole.READONLY });
     expect(message.instructions[1]!.accounts?.[5]).toEqual({ address: toAta, role: AccountRole.READONLY });
-    // Freeze ATAs inserted three metas after mint; the HCU pair that used to sit at 13/14 is now 16/17.
-    expect(message.instructions[1]!.accounts?.[16]).toEqual({ address: key(8), role: AccountRole.WRITABLE });
-    expect(message.instructions[1]!.accounts?.[17]).toEqual({ address: key(9), role: AccountRole.READONLY });
+    // The HCU pair sits after the system program: owner, payer, mint, underlying mint, two freeze
+    // ATAs, two token accounts, two balance values, transferred value, zama event authority, zama
+    // program, host config, system program — then the meter and the trust witness.
+    expect(message.instructions[1]!.accounts?.[15]).toEqual({ address: key(8), role: AccountRole.WRITABLE });
+    expect(message.instructions[1]!.accounts?.[16]).toEqual({ address: key(9), role: AccountRole.READONLY });
   });
 
   it('rejects deny records on the program self-transfer no-op path', async () => {
@@ -283,8 +290,7 @@ describe('confidentialTransfer attestation binding', () => {
   it('does not send a transaction whose simulation fails', async () => {
     const owner = await generateKeyPairSigner();
     const mint = key(2);
-    const [computeSigner] = await findComputeSignerPda({ mint });
-    const inputProof = proof(owner.address, computeSigner);
+    const inputProof = proof(owner.address, CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS);
     const params = await parameters({
       owner,
       feePayer: owner,

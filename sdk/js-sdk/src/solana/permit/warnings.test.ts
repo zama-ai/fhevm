@@ -31,7 +31,7 @@ const routing = (): Uint8Array => {
 const BASE_WIRE: SolanaPermitWireFields = {
   userPubkey: identity(0x11),
   transportKey: new Uint8Array(PERMIT_TRANSPORT_KEY_LEN),
-  allowedAclDomainKeys: [],
+  allowedScopes: [],
   startTimestamp: 1_767_229_380n,
   durationSeconds: PERMIT_WARN_ABOVE_DURATION_SECONDS,
   verifyingProgramId: identity(0x22),
@@ -43,11 +43,11 @@ const fieldsOf = (overrides: Partial<SolanaPermitWireFields>): SolanaPermitField
   decodeSolanaPermitFields({ ...BASE_WIRE, ...overrides });
 
 const A_WEEK = PERMIT_WARN_ABOVE_DURATION_SECONDS;
-const SCOPED = [identity(0x01)];
+const SCOPED = [new Uint8Array(64).fill(0x01)];
 
 describe('the permissive long-window warning', () => {
   it('is raised for a permissive permit that outlasts a week', () => {
-    const warnings = solanaPermitWarnings(fieldsOf({ allowedAclDomainKeys: [], durationSeconds: A_WEEK + 1n }));
+    const warnings = solanaPermitWarnings(fieldsOf({ allowedScopes: [], durationSeconds: A_WEEK + 1n }));
     expect(warnings).toEqual([{ code: 'PermissiveLongWindow', message: PERMIT_PERMISSIVE_WARNING }]);
   });
 
@@ -57,26 +57,26 @@ describe('the permissive long-window warning', () => {
   });
 
   it('is not raised at exactly a week: the boundary is exceeded, not reached', () => {
-    expect(solanaPermitWarnings(fieldsOf({ allowedAclDomainKeys: [], durationSeconds: A_WEEK }))).toEqual([]);
+    expect(solanaPermitWarnings(fieldsOf({ allowedScopes: [], durationSeconds: A_WEEK }))).toEqual([]);
   });
 
   it('is not raised for a short permissive permit', () => {
-    expect(solanaPermitWarnings(fieldsOf({ allowedAclDomainKeys: [], durationSeconds: 3_600n }))).toEqual([]);
+    expect(solanaPermitWarnings(fieldsOf({ allowedScopes: [], durationSeconds: 3_600n }))).toEqual([]);
   });
 
-  // A scoped permit states its domains in the text, and the signer can read what they cover; length
+  // A scoped permit states its scopes in the text, and the signer can read what they cover; length
   // alone is not the thing worth remarking on.
   it('is not raised for a scoped permit of any length', () => {
     for (const durationSeconds of [3_600n, A_WEEK, A_WEEK + 1n, 31_536_000n]) {
       expect(
-        solanaPermitWarnings(fieldsOf({ allowedAclDomainKeys: SCOPED, durationSeconds })),
+        solanaPermitWarnings(fieldsOf({ allowedScopes: SCOPED, durationSeconds })),
         `duration ${durationSeconds}`,
       ).toEqual([]);
     }
   });
 
   it('raises each warning once, however wide the permit is', () => {
-    const warnings = solanaPermitWarnings(fieldsOf({ allowedAclDomainKeys: [], durationSeconds: 31_536_000n }));
+    const warnings = solanaPermitWarnings(fieldsOf({ allowedScopes: [], durationSeconds: 31_536_000n }));
     expect(warnings).toHaveLength(1);
   });
 });

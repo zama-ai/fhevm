@@ -37,7 +37,7 @@ set -euo pipefail
 BASE_SHA="${1:?usage: select-overrides.sh <base-sha>}"
 BASE_TAG="feature-solana-$BASE_SHA"
 
-GROUPS_ALL=(gateway-contracts host-contracts coprocessor relayer solana-proof-service kms-connector)
+GROUPS_ALL=(gateway-contracts host-contracts coprocessor relayer kms-connector)
 
 # Lock env keys per group (test-suite/fhevm/src/resolve/target.ts REPO_PACKAGES): pinning these in
 # the lock makes the non-overridden compose services pull the branch image instead of the pinned
@@ -49,7 +49,6 @@ lock_keys_for() {
     host-contracts) echo "HOST_VERSION" ;;
     coprocessor) echo "COPROCESSOR_DB_MIGRATION_VERSION COPROCESSOR_HOST_LISTENER_VERSION COPROCESSOR_GW_LISTENER_VERSION COPROCESSOR_TFHE_WORKER_VERSION COPROCESSOR_ZKPROOF_WORKER_VERSION COPROCESSOR_SNS_WORKER_VERSION COPROCESSOR_TX_SENDER_VERSION" ;;
     relayer) echo "RELAYER_VERSION RELAYER_MIGRATE_VERSION" ;;
-    solana-proof-service) echo "" ;;
     kms-connector) echo "CONNECTOR_DB_MIGRATION_VERSION CONNECTOR_GW_LISTENER_VERSION CONNECTOR_KMS_WORKER_VERSION CONNECTOR_TX_SENDER_VERSION" ;;
     *) echo "unknown group $1" >&2; return 1 ;;
   esac
@@ -62,7 +61,6 @@ images_for() {
     host-contracts) echo "fhevm/host-contracts" ;;
     coprocessor) echo "fhevm/coprocessor/db-migration fhevm/coprocessor/host-listener fhevm/coprocessor/gw-listener fhevm/coprocessor/tfhe-worker fhevm/coprocessor/zkproof-worker fhevm/coprocessor/sns-worker fhevm/coprocessor/tx-sender" ;;
     relayer) echo "fhevm/relayer fhevm/relayer-migrate" ;;
-    solana-proof-service) echo "" ;;
     kms-connector) echo "fhevm/kms-connector/db-migration fhevm/kms-connector/gw-listener fhevm/kms-connector/kms-worker fhevm/kms-connector/tx-sender" ;;
     *) echo "unknown group $1" >&2; return 1 ;;
   esac
@@ -104,7 +102,6 @@ groups_for_path() {
     listener/*) echo "coprocessor" ;;
     kms-connector/*) echo "kms-connector" ;;
     relayer/*) echo "relayer" ;;
-    solana-proof-service/*) echo "solana-proof-service" ;;
     gateway-contracts/*) echo "gateway-contracts coprocessor kms-connector relayer" ;;
     host-contracts/*) echo "host-contracts coprocessor kms-connector relayer" ;;
     shared/*) echo "coprocessor kms-connector relayer" ;;
@@ -145,12 +142,6 @@ untouched=""
 if [ "$build_all" = true ]; then
   touched="${GROUPS_ALL[*]}"
 else
-  # solana-images-publish.yml does not publish this image yet. Always build it from the checked-out
-  # source so a sticky local image cannot make the e2e run pass against stale proof-service code.
-  case " $touched " in
-    *" solana-proof-service "*) ;;
-    *) touched="$touched solana-proof-service" ;;
-  esac
   touched="${touched# }"
   for group in "${GROUPS_ALL[@]}"; do
     case " $touched " in *" $group "*) ;; *) untouched="$untouched $group" ;; esac

@@ -24,9 +24,9 @@ export type FhevmSolanaPermitDecryptClient<chain extends FhevmSolanaChain = Fhev
  *
  * Without `trust`, the client carries the public-decrypt actions and nothing else. With it, the
  * permit path is wired in: `signPermit` takes a permit to the wallet once through the sRFC-38
- * channel, and `userDecrypt` runs requests under that one signature — evidence from the chain's
- * RPC and proof service, transport to its relayer, verification under the trust configuration.
- * The chain must then also name `rpcUrl`, `proofServiceUrl` and `verifyingProgramId`.
+ * channel, and `userDecrypt` runs requests under that one signature — transport to the chain's
+ * relayer, verification under the trust configuration. The chain must then also name
+ * `verifyingProgramId`.
  *
  * There is deliberately no `generateTransportKeyPair` action: the pair a permit commits to comes
  * from `generateSolanaTransportKeyPair` (`solana/userDecrypt`), and `signPermit` generates it

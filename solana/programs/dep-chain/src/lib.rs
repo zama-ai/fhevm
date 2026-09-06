@@ -39,7 +39,7 @@ use zama_fhe::{
 };
 use zama_host::program::ZamaHost;
 
-declare_id!("7Sz3qA6Wm84uWjfiFJR4ww1Trx7DZ4MMb4iB4sn5vqaV");
+declare_id!("HFx5mNcWLvhj2WU8CA9QEhuW6BZVNwA3g7UvPwVzfHx4");
 
 /// The deepest chain one `extend` can carry: the host's `MAX_FHE_EXECUTION_STEPS`, the one step
 /// ceiling for executions built on-chain and off (see the module docs — extending at this depth

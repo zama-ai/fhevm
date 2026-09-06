@@ -6,8 +6,5 @@
  * @see https://github.com/codama-idl/codama
  */
 
-export * from './allowSubjects.js';
 export * from './defineKmsContext.js';
-export * from './fheExecute.js';
 export * from './initializeHostConfig.js';
-export * from './makeHandlePublic.js';

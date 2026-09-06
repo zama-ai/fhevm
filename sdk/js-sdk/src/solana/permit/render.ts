@@ -6,8 +6,9 @@
 // line feed, integers are decimal without leading zeros, and the timestamp is rendered to the
 // second.
 //
-// An empty ACL-domain list renders as one explicit line naming the permissive breadth, rather than
-// as an empty enumeration block, so a human signer sees how wide the grant is.
+// An empty scope list renders as one explicit line naming the permissive breadth, rather than as an
+// empty enumeration block, so a human signer sees how wide the grant is. A scope renders as the
+// program and the scope it declared, both base58, joined by a slash.
 //
 // This is the second renderer of one canon; `solana/crates/zama-solana-permit/src/render.rs` is the
 // first. The committed vectors are the only thing that makes them one canon rather than two texts
@@ -20,13 +21,13 @@
 import type { SolanaPermitFields } from './types.js';
 import { base58 } from '@scure/base';
 import { transportKeyFingerprint } from './fingerprint.js';
-import { PERMIT_KMS_ROUTING_VERSION, isPermissivePermit } from './types.js';
+import { PERMIT_IDENTITY_LEN, PERMIT_KMS_ROUTING_VERSION, isPermissivePermit } from './types.js';
 
 /** First line: names the protocol and the version of this text form. */
-export const PERMIT_TEXT_HEADER = 'Zama fhevm Solana user-decrypt permit v1';
+export const PERMIT_TEXT_HEADER = 'Zama fhevm Solana user-decrypt permit v2';
 
-/** The one line an empty domain list renders as. */
-export const PERMIT_TEXT_PERMISSIVE_DOMAINS_LINE = 'ACL domains: ALL (permissive)';
+/** The one line an empty scope list renders as. */
+export const PERMIT_TEXT_PERMISSIVE_SCOPES_LINE = 'Scopes: ALL (permissive)';
 
 /**
  * Renders the canonical text a wallet signs.
@@ -62,11 +63,13 @@ export function renderSolanaPermitText(fields: SolanaPermitFields): string {
   lines.push(`Valid from: ${renderPermitTimestamp(fields.startTimestamp)} for ${fields.durationSeconds} seconds`);
 
   if (isPermissivePermit(fields)) {
-    lines.push(PERMIT_TEXT_PERMISSIVE_DOMAINS_LINE);
+    lines.push(PERMIT_TEXT_PERMISSIVE_SCOPES_LINE);
   } else {
-    lines.push(`ACL domains (${fields.allowedAclDomainKeys.length}):`);
-    for (const key of fields.allowedAclDomainKeys) {
-      lines.push(`- ${base58.encode(key)}`);
+    lines.push(`Scopes (${fields.allowedScopes.length}):`);
+    for (const scope of fields.allowedScopes) {
+      const program = scope.subarray(0, PERMIT_IDENTITY_LEN);
+      const declared = scope.subarray(PERMIT_IDENTITY_LEN);
+      lines.push(`- ${base58.encode(program)}/${base58.encode(declared)}`);
     }
   }
 

@@ -34,7 +34,6 @@ function claim(overrides: Partial<SolanaPublicDecryptCertificateClaim> = {}): So
     abiEncodedCleartext: hex(cleartextBytes),
     signatures: [hex(signatureBytes)],
     extraData: `0x${hex(extraDataBytes)}`,
-    inclusionProof,
     ...overrides,
   };
 }
@@ -49,6 +48,7 @@ describe('buildDiscloseSecpInstruction', () => {
     const instruction = await buildDiscloseSecpInstruction(
       { mint, tokenAccount, kind: DisclosedValueKind.BurnedAmount, encryptedValue, kmsContext, hostConfig },
       claim(),
+      inclusionProof,
     );
 
     expect(instruction.programAddress).toBe(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS);

@@ -7,9 +7,13 @@
 // independently so a misaligned decode fails loudly instead of returning shifted fields.
 
 import { describe, expect, it } from 'vitest';
+import { getProgramDerivedAddress, type Address } from '@solana/kit';
+import { base58 } from '@scure/base';
 import {
+  SOLANA_ENCRYPTED_VALUE_SEED,
   decodeSolanaEncryptedValueState,
   fetchSolanaEncryptedValueState,
+  solanaEncryptedValueAccountAddress,
   type SolanaRpc,
 } from './encryptedValueAccount.js';
 
@@ -46,22 +50,19 @@ function concat(...parts: readonly Uint8Array[]): Uint8Array {
 
 /** Serializes an account exactly as borsh does, plus optional realloc trailing capacity. */
 function accountData(state: {
-  readonly subjects?: readonly Uint8Array[];
   readonly leafCount?: bigint;
   readonly peaks?: readonly Uint8Array[];
   readonly trailingBytes?: number;
 }): Uint8Array {
-  const subjects = state.subjects ?? [bytes32(0x51)];
   const leafCount = state.leafCount ?? 3n;
   const peaks = state.peaks ?? [bytes32(0x71), bytes32(0x72)];
   return concat(
     ENCRYPTED_VALUE_DISCRIMINATOR, // matched by the decoder before anything else
-    bytes32(0x11), // domain
+    bytes32(0x11), // program
     bytes32(0x22), // encrypted value account authority
-    bytes32(0x33), // label
-    bytes32(0x44), // current handle
-    u32LE(subjects.length),
-    ...subjects,
+    bytes32(0x33), // scope
+    bytes32(0x44), // label
+    bytes32(0x55), // current handle
     u64LE(leafCount),
     u32LE(peaks.length),
     ...peaks,
@@ -76,14 +77,14 @@ describe('decoding an EncryptedValue account', () => {
   it('returns every field of a well-formed account', () => {
     const state = decodeSolanaEncryptedValueState(accountData({}), 'the fixture account');
 
-    expect(state.currentHandle).toEqual(bytes32(0x44));
-    expect(state.label).toEqual(bytes32(0x33));
+    expect(state.program).toBe(base58.encode(bytes32(0x11)));
+    expect(state.encryptedValueAccountAuthority).toBe(base58.encode(bytes32(0x22)));
+    expect(state.scope).toEqual(bytes32(0x33));
+    expect(state.label).toEqual(bytes32(0x44));
+    expect(state.currentHandle).toEqual(bytes32(0x55));
     expect(state.leafCount).toBe(3n);
     expect(state.peaks).toEqual([bytes32(0x71), bytes32(0x72)]);
-    expect(state.subjects).toHaveLength(1);
-    // Identity fields come out as base58 addresses, the form their consumers compare in.
-    expect(typeof state.domain).toBe('string');
-    expect(typeof state.encryptedValueAccountAuthority).toBe('string');
+    expect(state.bump).toBe(0xfe);
   });
 
   // The account realloc-grows and never shrinks: a shorter live value leaves stale capacity after
@@ -100,7 +101,7 @@ describe('decoding an EncryptedValue account', () => {
   });
 
   // The MMR invariant is checked independently of the borsh walk: as many peaks as the leaf count
-  // has set bits. A decoder that misaligned on `subjects` would fail here instead of returning
+  // has set bits. A decoder that misaligned on a field would fail here instead of returning
   // shifted fields as if they were real.
   it('rejects a peak count that does not match the leaf count', () => {
     const data = accountData({ leafCount: 3n, peaks: [bytes32(0x71)] });
@@ -111,6 +112,31 @@ describe('decoding an EncryptedValue account', () => {
     const data = accountData({});
     data[0] = data[0]! ^ 0xff;
     expect(() => decodeSolanaEncryptedValueState(data, 'the fixture account')).toThrow('discriminator');
+  });
+});
+
+describe('the account address', () => {
+  const HOST_PROGRAM = bytes32(0x99);
+
+  it('is the PDA of the tag and the four identity fields, in that order', async () => {
+    const seeds = {
+      program: bytes32(0x11),
+      encryptedValueAccountAuthority: bytes32(0x22),
+      scope: bytes32(0x33),
+      label: bytes32(0x44),
+    };
+    const [expected] = await getProgramDerivedAddress({
+      programAddress: base58.encode(HOST_PROGRAM) as Address,
+      seeds: [
+        SOLANA_ENCRYPTED_VALUE_SEED,
+        seeds.program,
+        seeds.encryptedValueAccountAuthority,
+        seeds.scope,
+        seeds.label,
+      ],
+    });
+    expect(await solanaEncryptedValueAccountAddress(HOST_PROGRAM, seeds)).toBe(expected);
+    expect(new TextDecoder().decode(SOLANA_ENCRYPTED_VALUE_SEED)).toBe('encrypted-value');
   });
 });
 

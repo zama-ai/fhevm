@@ -2,15 +2,14 @@ import type { Address, Instruction, TransactionSigner } from '@solana/kit';
 
 import { getClaimInstructionAsync } from './internal/generated/confidentialBatcher/instructions/claim.js';
 import {
-  claimAmountValueAccount,
+  claimAmountValueAddress,
   findBatchAuthorityPda,
-  pendingJoinValueAccount,
+  pendingJoinValueAddress,
   tokenAccountAddress,
 } from './internal/batcherPdas.js';
 import {
   associatedTokenAddress,
   balanceValueAddress,
-  computeSignerAddress,
   tokenEventAuthorityAddress,
   transferredAmountValueAddress,
   zamaEventAuthorityAddress,
@@ -19,7 +18,7 @@ import {
 /**
  * Semantic roots for the batcher `claim` instruction. Every other account the on-chain handler
  * validates (`claim.rs`) — the batch authority, the join record, the pending-join and claim-amount
- * encrypted value accounts, the payout mint's compute signer, both payout token accounts with their balance /
+ * encrypted value accounts, both payout token accounts with their balance /
  * transferred-amount encrypted value accounts, and both event authorities — is derived internally from these, so
  * callers never hand-build the account map.
  *
@@ -63,8 +62,8 @@ export async function buildClaimInstruction(parameters: SolanaVaultClaimParamete
     batcher: parameters.batcher,
     batch: parameters.batch,
     batchAuthority,
-    pendingJoinValue: (await pendingJoinValueAccount(parameters.batch, batchAuthority, user)).encryptedValueAddress,
-    claimAmountValue: (await claimAmountValueAccount(parameters.batch, batchAuthority, user)).encryptedValueAddress,
+    pendingJoinValue: await pendingJoinValueAddress(parameters.batch, batchAuthority, user),
+    claimAmountValue: await claimAmountValueAddress(parameters.batch, batchAuthority, user),
     payoutConfidentialMint,
     payoutUnderlyingMint: parameters.payoutUnderlyingMint,
     batchAuthorityPayoutAta: await associatedTokenAddress(
@@ -73,7 +72,6 @@ export async function buildClaimInstruction(parameters: SolanaVaultClaimParamete
       parameters.tokenProgram,
     ),
     userPayoutAta: await associatedTokenAddress(user, parameters.payoutUnderlyingMint, parameters.tokenProgram),
-    payoutComputeSigner: await computeSignerAddress(payoutConfidentialMint),
     batchPayoutTokenAccount,
     userPayoutTokenAccount,
     batchPayoutBalanceValue: await balanceValueAddress(payoutConfidentialMint, batchPayoutTokenAccount),

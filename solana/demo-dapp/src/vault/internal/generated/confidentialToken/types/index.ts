@@ -9,3 +9,4 @@
 export * from './coprocessorInputAttestation.js';
 export * from './disclosedValueKind.js';
 export * from './mmrInclusionProof.js';
+export * from './transferReceipt.js';

@@ -2,7 +2,7 @@ import { getProgramDerivedAddress, getU64Encoder, type Address } from '@solana/k
 import { base58 } from '@scure/base';
 import { sha256 } from '@noble/hashes/sha2.js';
 
-import { deriveEncryptedValueId } from '@sdk-src/solana/proof.js';
+import { solanaEncryptedValueAccountAddress } from '@sdk-src/solana/encryptedValueAccount.js';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from './generated/confidentialToken/programAddress.js';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '@sdk-src/solana/internal/generated/zamaHost/programAddress.js';
 import { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from './generated/confidentialBatcher/programAddress.js';
@@ -11,7 +11,6 @@ const encoder = new TextEncoder();
 const BATCH_SEED = encoder.encode('batch');
 const TOKEN_ACCOUNT_SEED = encoder.encode('token-account');
 const PENDING_BURN_SEED = encoder.encode('pending-burn');
-const ENCRYPTED_VALUE_SEED = encoder.encode('encrypted-value');
 /** Fixed confidential-token label for the all-or-zero burned amount (`encrypted_burned_amount_label`). */
 const ENCRYPTED_BURNED_AMOUNT_LABEL = encoder.encode('burned_amount___________________');
 /**
@@ -30,15 +29,17 @@ function addressBytes(value: Address): Uint8Array {
 }
 
 /**
- * The canonical `EncryptedValue` PDA for one confidential-value encrypted value account
- * (`zama_host::encrypted_value_address(derive_encrypted_value_id(domain, authority, label))`). The encrypted value ID
- * carries the encrypted value account's app metadata (never the opaque handle), so the address is derivable without
- * reading chain state. All the confidential-token/batcher field encrypted value accounts (balance, total supply,
- * burned amount, batcher pending/claim) are this same derivation under different labels.
+ * The canonical `EncryptedValue` PDA of a confidential-token value: the token program's value,
+ * scoped to its mint, controlled by `authority` (a token account, or a mint's total-supply
+ * authority), under one of the program's fixed labels (`token_value_id` in the token program).
  */
-export async function encryptedValueAddress(domain: Address, account: Address, label: Uint8Array): Promise<Address> {
-  const encryptedValueId = deriveEncryptedValueId(addressBytes(domain), addressBytes(account), label);
-  return pda(ZAMA_HOST_PROGRAM_ADDRESS, [ENCRYPTED_VALUE_SEED, encryptedValueId]);
+export function tokenValueAddress(mint: Address, authority: Address, label: Uint8Array): Promise<Address> {
+  return solanaEncryptedValueAccountAddress(addressBytes(ZAMA_HOST_PROGRAM_ADDRESS), {
+    program: addressBytes(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS),
+    encryptedValueAccountAuthority: addressBytes(authority),
+    scope: addressBytes(mint),
+    label,
+  });
 }
 
 /** The batch PDA for a batcher config and zero-based index (`batch_address`). */
@@ -60,31 +61,13 @@ export async function pendingBurnAddress(mint: Address, tokenAccount: Address): 
   return pda(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, [PENDING_BURN_SEED, addressBytes(mint), addressBytes(tokenAccount)]);
 }
 
-/** A confidential-value encrypted value account: its encrypted value ID and its canonical `EncryptedValue` PDA. */
-export type SolanaEncryptedValueAccount = {
-  readonly aclValueKey: Uint8Array;
-  readonly encryptedValueAddress: Address;
-};
-
 /**
- * The batch's burned-amount encrypted value account on the join mint (domain = join mint,
- * encrypted value account authority = the batch's join token account, encrypted value label =
- * `burned_amount`). Its encrypted value ID is the certificate's
- * `aclValueKey` and its PDA is both `batchBurnedAmountValue` and the proof-service `encrypted_value`.
+ * The batch's burned-amount value on the join mint: the token program's `burned_amount` value of
+ * the batch's join token account. It is `batchBurnedAmountValue` in the settle account set and the
+ * account a settle certificate is requested for.
  */
-export async function burnedAmountValueAccount(
-  joinMint: Address,
-  batchJoinTokenAccount: Address,
-): Promise<SolanaEncryptedValueAccount> {
-  const aclValueKey = deriveEncryptedValueId(
-    addressBytes(joinMint),
-    addressBytes(batchJoinTokenAccount),
-    ENCRYPTED_BURNED_AMOUNT_LABEL,
-  );
-  return {
-    aclValueKey,
-    encryptedValueAddress: await pda(ZAMA_HOST_PROGRAM_ADDRESS, [ENCRYPTED_VALUE_SEED, aclValueKey]),
-  };
+export function burnedAmountValueAddress(joinMint: Address, batchJoinTokenAccount: Address): Promise<Address> {
+  return tokenValueAddress(joinMint, batchJoinTokenAccount, ENCRYPTED_BURNED_AMOUNT_LABEL);
 }
 
 function concatBytes(...parts: Uint8Array[]): Uint8Array {
@@ -98,42 +81,27 @@ function concatBytes(...parts: Uint8Array[]): Uint8Array {
 }
 
 /**
- * A batcher-owned per-user encrypted value account (`pending_join_value` or `claim_amount_value`). Batcher encrypted value accounts
- * live in the batch's own domain: domain = batch, encrypted value account authority = batch
- * authority, encrypted value label =
- * `sha256(purpose_prefix || user)` (`batcher_encrypted_value_address`). Use the returned
- * `aclValueKey` for a `decryptPosition` call and `encryptedValueAddress` as the account.
+ * A batcher-owned per-user value (`pending_join_value` or `claim_amount_value`). Batcher values
+ * belong to the batcher program scoped to the batch (`batch_app`), are controlled by the batch
+ * authority, and are labelled `sha256(purpose_prefix || user)` (`batcher_encrypted_value_id`).
  */
-async function batcherValueAccount(
-  batch: Address,
-  batchAuthority: Address,
-  purposePrefix: string,
-  user: Address,
-): Promise<SolanaEncryptedValueAccount> {
-  const label = sha256(concatBytes(encoder.encode(purposePrefix), addressBytes(user)));
-  const aclValueKey = deriveEncryptedValueId(addressBytes(batch), addressBytes(batchAuthority), label);
-  return {
-    aclValueKey,
-    encryptedValueAddress: await pda(ZAMA_HOST_PROGRAM_ADDRESS, [ENCRYPTED_VALUE_SEED, aclValueKey]),
-  };
+function batcherValueAddress(batch: Address, batchAuthority: Address, purposePrefix: string, user: Address): Promise<Address> {
+  return solanaEncryptedValueAccountAddress(addressBytes(ZAMA_HOST_PROGRAM_ADDRESS), {
+    program: addressBytes(CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS),
+    encryptedValueAccountAuthority: addressBytes(batchAuthority),
+    scope: addressBytes(batch),
+    label: sha256(concatBytes(encoder.encode(purposePrefix), addressBytes(user))),
+  });
 }
 
-/** The user's pending joined-amount encrypted value account for a batch (`encrypted_pending_join_label`). */
-export async function pendingJoinValueAccount(
-  batch: Address,
-  batchAuthority: Address,
-  user: Address,
-): Promise<SolanaEncryptedValueAccount> {
-  return batcherValueAccount(batch, batchAuthority, 'batcher-pending-join', user);
+/** The user's pending joined-amount value for a batch (`encrypted_pending_join_label`). */
+export function pendingJoinValueAddress(batch: Address, batchAuthority: Address, user: Address): Promise<Address> {
+  return batcherValueAddress(batch, batchAuthority, 'batcher-pending-join', user);
 }
 
-/** The user's claimed-payout encrypted value account for a batch (`encrypted_claim_amount_label`). */
-export async function claimAmountValueAccount(
-  batch: Address,
-  batchAuthority: Address,
-  user: Address,
-): Promise<SolanaEncryptedValueAccount> {
-  return batcherValueAccount(batch, batchAuthority, 'batcher-claim-amount', user);
+/** The user's claimed-payout value for a batch (`encrypted_claim_amount_label`). */
+export function claimAmountValueAddress(batch: Address, batchAuthority: Address, user: Address): Promise<Address> {
+  return batcherValueAddress(batch, batchAuthority, 'batcher-claim-amount', user);
 }
 
 export {

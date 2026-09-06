@@ -7,7 +7,9 @@
 // the retired live-client derived with anchor-client (token account, pending burn, escrow ATAs,
 // KMS context) derives here from the same seeds.
 
-import { getProgramDerivedAddress, type Address, type TransactionSigner } from "@solana/kit";
+import { getAddressEncoder, getProgramDerivedAddress, type Address, type TransactionSigner } from "@solana/kit";
+
+import type { MmrProof, SolanaEncryptedValueAccountEvent } from "@sdk-src/solana/proof.js";
 
 import { associatedTokenAddress, SPL_TOKEN_PROGRAM_ADDRESS } from "./spl";
 import {
@@ -43,16 +45,12 @@ const eventAuthority = async (programAddress: Address): Promise<Address> => {
   return address;
 };
 
-// Byte-identical to `confidential_token::state`: the labels of the token-account encrypted value
-// accounts a burn writes (balance in place, burned amount created-public).
-const TOTAL_SUPPLY_LABEL = new TextEncoder().encode("total_supply____________________");
-
 /** The identities a burn touches for `(mint, owner)`, all derived from the same on-chain seeds. */
 export type ConfidentialBurnTarget = {
   readonly tokenAccount: Address;
   readonly pendingBurn: Address;
-  /** The burned-amount encrypted value account: the certificate's aclValueKey + its PDA. */
-  readonly burnedAmount: { readonly aclValueKey: Uint8Array; readonly encryptedValueAddress: Address };
+  /** The burned-amount `EncryptedValue` account: the certificate's account + the proof's leaves. */
+  readonly burnedAmountValue: Address;
 };
 
 /** Derives the burn-facing accounts for `owner`'s confidential token account under `mint`. */
@@ -62,15 +60,28 @@ export const confidentialBurnTarget = async (mint: Address, owner: Address): Pro
   return {
     tokenAccount,
     pendingBurn: await vault.pendingBurnAddress(mint, tokenAccount),
-    burnedAmount: await vault.burnedAmountValueAccount(mint, tokenAccount),
+    burnedAmountValue: await vault.burnedAmountValueAddress(mint, tokenAccount),
   };
 };
 
 /**
+ * The leaves `confidential_burn` seals on the burned amount, in order: one allow of the owner on the
+ * burned handle, then the public leaf. Byte-identical to what the host appends for the token's
+ * `PersistentOutput::new_public(..., [owner])`.
+ */
+export const burnedAmountLeafHistory = (
+  burnedHandle: Uint8Array,
+  owner: Address,
+): readonly SolanaEncryptedValueAccountEvent[] => [
+  { kind: "allowed", handle: burnedHandle, key: new Uint8Array(getAddressEncoder().encode(owner)) },
+  { kind: "markedPublic", handle: burnedHandle },
+];
+
+/**
  * Burns an attested external amount from `owner`'s confidential balance (`confidential_burn`).
- * The attestation binds (user = owner, contract = the mint's compute-signer PDA) — the token and
- * host programs require contract == compute_signer for transfer/burn amounts. Five FHE steps in
- * one instruction: raised CU limit, a 256 KiB heap frame, and no preflight (SlotHashes entropy is
+ * The attestation binds (user = owner, contract = the confidential-token program) — the token
+ * requires exactly that contract identity for transfer/burn amounts. Five FHE steps in one
+ * instruction: raised CU limit, a 256 KiB heap frame, and no preflight (SlotHashes entropy is
  * only populated in real execution), exactly the shape the retired live-client sent.
  */
 export const confidentialBurn = async (
@@ -84,12 +95,7 @@ export const confidentialBurn = async (
 ): Promise<void> => {
   const vault = await vaultModule();
   const target = await confidentialBurnTarget(params.mint, params.owner.address);
-  const { encryptedValueAddress: balanceValue } = await vault.confidentialBalanceValueAccount(
-    params.mint,
-    target.tokenAccount,
-  );
   const [totalSupplyAuthority] = await findTotalSupplyAuthorityPda({ mint: params.mint });
-  const totalSupplyValue = await vault.encryptedValueAddress(params.mint, totalSupplyAuthority, TOTAL_SUPPLY_LABEL);
   const instruction = await getConfidentialBurnInstructionAsync({
     owner: params.owner,
     mint: params.mint,
@@ -100,9 +106,9 @@ export const confidentialBurn = async (
       SPL_TOKEN_PROGRAM_ADDRESS,
     ),
     tokenAccount: target.tokenAccount,
-    balanceValue,
-    totalSupplyValue,
-    burnedAmountValue: target.burnedAmount.encryptedValueAddress,
+    balanceValue: await vault.balanceValueAddress(params.mint, target.tokenAccount),
+    totalSupplyValue: await vault.totalSupplyValueAddress(params.mint, totalSupplyAuthority),
+    burnedAmountValue: target.burnedAmountValue,
     pendingBurn: target.pendingBurn,
     zamaEventAuthority: await eventAuthority(ZAMA_HOST_PROGRAM_ADDRESS),
     hostConfig: await hostConfigAddress(),
@@ -118,8 +124,9 @@ export const confidentialBurn = async (
 /**
  * Redeems the KMS-certified burned amount from the SPL vault (`redeem_burned_amount`): the host
  * verifier CPI checks the certificate against the live KMS context it names plus the burned
- * handle's MMR public-leaf inclusion proof, the token account's PendingBurn closes, and the
- * cleartext amount of underlying releases to the owner's associated token account.
+ * handle's public-leaf inclusion proof (built by the caller from the account's history), the token
+ * account's PendingBurn closes, and the cleartext amount of underlying releases to the owner's
+ * associated token account.
  */
 export const redeemBurnedAmount = async (
   context: SolanaProvisioningContext,
@@ -128,11 +135,11 @@ export const redeemBurnedAmount = async (
     readonly mint: Address;
     readonly underlyingMint: Address;
     readonly certificate: PublicDecryptCertificate;
+    readonly inclusionProof: MmrProof;
   },
 ): Promise<void> => {
-  const vault = await vaultModule();
   const { verifyPublicDecryptArgsFromClaim } = await sdkVerifyModule();
-  const args = verifyPublicDecryptArgsFromClaim(params.certificate);
+  const args = verifyPublicDecryptArgsFromClaim(params.certificate, params.inclusionProof);
   const target = await confidentialBurnTarget(params.mint, params.owner.address);
   const [vaultAuthority] = await findVaultAuthorityPda({ mint: params.mint });
   const instruction = await getRedeemBurnedAmountInstructionAsync({
@@ -150,7 +157,7 @@ export const redeemBurnedAmount = async (
       params.underlyingMint,
       SPL_TOKEN_PROGRAM_ADDRESS,
     ),
-    burnedAmountValue: target.burnedAmount.encryptedValueAddress,
+    burnedAmountValue: target.burnedAmountValue,
     hostConfig: await hostConfigAddress(),
     kmsContext: await kmsContextAddress(),
     eventAuthority: await eventAuthority(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS),
@@ -181,7 +188,7 @@ export const sealBurnedAmountHandle = async (
       owner: params.owner,
       mint: params.mint,
       tokenAccount: target.tokenAccount,
-      encryptedValue: target.burnedAmount.encryptedValueAddress,
+      encryptedValue: target.burnedAmountValue,
       hostConfig: await hostConfigAddress(),
       kind: vault.DisclosedValueKind.BurnedAmount,
       handle: params.handle,
@@ -199,6 +206,7 @@ export const discloseBurnedAmount = async (
     readonly owner: TransactionSigner;
     readonly mint: Address;
     readonly certificate: PublicDecryptCertificate;
+    readonly inclusionProof: MmrProof;
   },
 ): Promise<void> => {
   const vault = await vaultModule();
@@ -208,11 +216,12 @@ export const discloseBurnedAmount = async (
       mint: params.mint,
       tokenAccount: target.tokenAccount,
       kind: vault.DisclosedValueKind.BurnedAmount,
-      encryptedValue: target.burnedAmount.encryptedValueAddress,
+      encryptedValue: target.burnedAmountValue,
       kmsContext: await kmsContextAddress(),
       hostConfig: await hostConfigAddress(),
     },
     params.certificate,
+    params.inclusionProof,
   );
   await context.sendTransaction(params.owner, [instruction]);
 };

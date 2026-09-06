@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { address, getProgramDerivedAddress, type Address, type TransactionSigner } from '@solana/kit';
 import { base58 } from '@scure/base';
-import { sha256 } from '@noble/hashes/sha2.js';
 
 import { buildDispatchBatchInstruction } from './dispatchBatch.js';
 import {
@@ -24,21 +23,15 @@ function signer(a: Address): TransactionSigner {
 const utf8 = (value: string): Uint8Array => new TextEncoder().encode(value);
 const pda = async (programAddress: Address, seeds: Uint8Array[]): Promise<Address> =>
   (await getProgramDerivedAddress({ programAddress, seeds }))[0];
-const concat = (...parts: Uint8Array[]): Uint8Array => {
-  const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
-  let offset = 0;
-  for (const part of parts) {
-    out.set(part, offset);
-    offset += part.length;
-  }
-  return out;
-};
-// sha256("zama-encrypted-value-key-v1" || domain || account || label), then
-// PDA(zamaHost, ["encrypted-value", encryptedValueId]) — zama_solana_acl::derive_encrypted_value_id.
-const valueAccountPda = (domain: Address, account: Address, label: Uint8Array): Promise<Address> =>
+// PDA(zamaHost, ["encrypted-value", token program, authority, mint, label]) — the crate's
+// `encrypted_value_seeds` for a token-program value scoped to its mint.
+const tokenValuePda = (mint: Address, authority: Address, label: Uint8Array): Promise<Address> =>
   pda(ZAMA_HOST_PROGRAM_ADDRESS, [
     utf8('encrypted-value'),
-    sha256(concat(utf8('zama-encrypted-value-key-v1'), base58.decode(domain), base58.decode(account), label)),
+    base58.decode(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS),
+    base58.decode(authority),
+    base58.decode(mint),
+    label,
   ]);
 
 describe('buildDispatchBatchInstruction', () => {
@@ -90,12 +83,11 @@ describe('buildDispatchBatchInstruction', () => {
       joinConfidentialMint,
       joinUnderlyingMint,
       await ata(batchAuthority, joinUnderlyingMint),
-      await pda(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, [utf8('fhe-compute'), base58.decode(joinConfidentialMint)]),
       totalSupplyAuthority,
       batchJoinTokenAccount,
-      await valueAccountPda(joinConfidentialMint, batchJoinTokenAccount, utf8('balance_________________________')),
-      await valueAccountPda(joinConfidentialMint, totalSupplyAuthority, utf8('total_supply____________________')),
-      await valueAccountPda(joinConfidentialMint, batchJoinTokenAccount, utf8('burned_amount___________________')),
+      await tokenValuePda(joinConfidentialMint, batchJoinTokenAccount, utf8('balance_________________________')),
+      await tokenValuePda(joinConfidentialMint, totalSupplyAuthority, utf8('total_supply____________________')),
+      await tokenValuePda(joinConfidentialMint, batchJoinTokenAccount, utf8('burned_amount___________________')),
       await pda(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, [
         utf8('pending-burn'),
         base58.decode(joinConfidentialMint),
@@ -114,9 +106,10 @@ describe('buildDispatchBatchInstruction', () => {
     expect(Array.from(decoded.discriminator)).toEqual(Array.from(DISPATCH_DISCRIMINATOR));
   });
 
-  // Golden pins carried over from derive.test.ts (same fixture, byte-verified against the live
-  // scenario's hand-built map) and from `solana find-program-derived-address <program>
-  // string:__event_authority` for the two event authorities.
+  // Golden pins for the fixed fixture: the value accounts are re-pinned from the RFC 035 seed
+  // derivation (`encrypted_value_seeds`, mirrored and pinned in the SDK's encryptedValueAccount
+  // test), the rest carried over unchanged, the event authorities from
+  // `solana find-program-derived-address <program> string:__event_authority`.
   it('matches the golden derived addresses for the fixed fixture', async () => {
     const instruction = await buildDispatchBatchInstruction({
       payer,
@@ -128,13 +121,12 @@ describe('buildDispatchBatchInstruction', () => {
       hostConfig,
     });
     const addresses = instruction.accounts!.map((a) => a.address);
-    expect(addresses[7]).toBe('9Zex4Xc17gawiJNk1pEirBrTx2GsNb5HB6WYgHWWkemQ'); // joinComputeSigner
-    expect(addresses[8]).toBe('W4dfnWqZVyik2iMYeP2jHGDfRJbZxzbXfgysxQS1VYK'); // totalSupplyAuthority
-    expect(addresses[9]).toBe('8iRxqzbzVoCDyN5ruCrtDs3HEJXL6S5khbmijMta8j6z'); // batchJoinTokenAccount
-    expect(addresses[10]).toBe('6L34CwYQLjs4e5sHTjCsoNk5UBZwDtTMkKegf7tRdoM7'); // batchBalanceValue
-    expect(addresses[11]).toBe('D1kRDX4FNzfiFqnJCjX443t7ZgN3jCk2NLtNk93eH8pt'); // totalSupplyValue
-    // addresses[12] = batchBurnedAmountValue; addresses[13] = pendingBurn
-    expect(addresses[14]).toBe('7usNGbH9WupMAsyDeqdUEoKrjisKcgusGjDiju4vNog'); // zamaEventAuthority
-    expect(addresses[17]).toBe('2KQ5N8YEUTk8hQWXBnkGjsvKPzm2rh2nFH6PeoVt7q8U'); // tokenEventAuthority
+    expect(addresses[7]).toBe('W4dfnWqZVyik2iMYeP2jHGDfRJbZxzbXfgysxQS1VYK'); // totalSupplyAuthority
+    expect(addresses[8]).toBe('8iRxqzbzVoCDyN5ruCrtDs3HEJXL6S5khbmijMta8j6z'); // batchJoinTokenAccount
+    expect(addresses[9]).toBe('3i11PrkLtKRVttNh4XhLcrvVyZp4yfyZroUJeL1ijZrM'); // batchBalanceValue
+    expect(addresses[10]).toBe('EHNVHNm2M214V2QXYwrXVPHFbCTCi9uPGBVcECRKBgqg'); // totalSupplyValue
+    // addresses[11] = batchBurnedAmountValue; addresses[12] = pendingBurn
+    expect(addresses[13]).toBe('7usNGbH9WupMAsyDeqdUEoKrjisKcgusGjDiju4vNog'); // zamaEventAuthority
+    expect(addresses[16]).toBe('2KQ5N8YEUTk8hQWXBnkGjsvKPzm2rh2nFH6PeoVt7q8U'); // tokenEventAuthority
   });
 });

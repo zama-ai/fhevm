@@ -162,7 +162,6 @@ sequenceDiagram
     participant Token as Confidential token
     participant Host as Encrypted-state program
     participant Listener as Chain listener
-    participant Proof as History proof service
     participant Relayer as Request service
     participant Keys as Key service
     participant Vault
@@ -172,10 +171,10 @@ sequenceDiagram
     Batch->>Token: Burn encrypted total
     Token->>Host: Record value in Solana history
     Host-->>Listener: Emit confirmed record
-    Listener-->>Proof: Rebuild recorded history
-    Keeper->>Proof: Get proof that this value was recorded
+    Listener-->>Listener: Rebuild recorded history
     Keeper->>Relayer: Request clear batch total
     Relayer->>Keys: Decrypt and sign total
+    Keys->>Listener: Get proof that this value was recorded
     Keys-->>Relayer: Return clear total and signature
     Keeper->>Batch: Submit history proof and signed total
     Batch->>Vault: Deposit public batch total
@@ -229,7 +228,7 @@ from redemption.
 The demo assumes:
 
 - local test keys and test assets have no value;
-- the key service, request service, encrypted math service, and history proof service are available;
+- the key service, request service, and encrypted math service are available;
 - the host's blocked-address grant list and per-user accounting for encrypted work are disabled;
   ordinary transaction and service limits still apply;
 - yield is a donation chosen by the demo, not income from a real strategy;
@@ -256,7 +255,7 @@ compromised authorized service behaved honestly.
 | First depositor tries to profit from a donation | The price starts with one extra asset and share; extraction is costly, but a large donation can still block deposits |
 | Tokens are sent directly into batch or payout accounts | Each batch has its own accounts; settlement counts only the vault call's change |
 | A keeper stops | Anyone can close, settle, or claim; the program supports leaving a pending batch, but the demo UI does not |
-| Key or proof services stop after a batch closes | Settlement waits; the demo has no timeout recovery after closing |
+| The key service stops after a batch closes | Settlement waits; the demo has no timeout recovery after closing |
 | Rounding distributes too much | Deposit, redeem, and per-user payout calculations round down |
 | A tiny deposit rounds to zero shares at a very high share price | The vault rejects it; recovery of an already closed batch is not implemented |
 | A demo control is exposed | Controls listen only locally and require the current run's token |

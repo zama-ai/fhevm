@@ -9,7 +9,7 @@
 // exists: an empty list, a request over the bit budget, a handle of a type nobody sized, a handle of
 // another host chain. And one property that matters more than any of them — the builder never signs.
 
-import type { SolanaAccessEvidence, SolanaUserDecryptRequestFailure } from './index.js';
+import type { SolanaUserDecryptHandleEntry, SolanaUserDecryptRequestFailure } from './index.js';
 import type { SolanaPermitFields, SolanaSignedPermit } from '../permit/index.js';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
@@ -24,15 +24,7 @@ import {
   buildSolanaUserDecryptRequest,
 } from './index.js';
 import { decodeSolanaPermitFields } from '../permit/index.js';
-import {
-  bytesToHex,
-  decodeMmrProof,
-  encodeMmrProof,
-  hexToBytes,
-  historicalAccessLeafCommitment,
-  mmrLeafNode,
-  mmrNode,
-} from '../proof.js';
+import { bytesToHex, hexToBytes } from '../proof.js';
 
 /* eslint-disable @typescript-eslint/naming-convention -- the fixtures' own field names are snake_case */
 
@@ -52,7 +44,7 @@ interface PermitCanon {
     readonly permit: {
       readonly user_pubkey: string;
       readonly transport_key: string;
-      readonly allowed_acl_domain_keys: readonly string[];
+      readonly allowed_scopes: readonly string[];
       readonly start_timestamp: string;
       readonly duration_seconds: string;
       readonly verifying_program_id: string;
@@ -86,7 +78,7 @@ const permitFields = (): SolanaPermitFields =>
   decodeSolanaPermitFields({
     userPubkey: hexToBytes(`0x${canonRecord.permit.user_pubkey}`),
     transportKey: hexToBytes(`0x${transportKeyHex}`),
-    allowedAclDomainKeys: canonRecord.permit.allowed_acl_domain_keys.map((key) => hexToBytes(`0x${key}`)),
+    allowedScopes: canonRecord.permit.allowed_scopes.map((scope) => hexToBytes(`0x${scope}`)),
     startTimestamp: canonRecord.permit.start_timestamp,
     durationSeconds: canonRecord.permit.duration_seconds,
     verifyingProgramId: hexToBytes(`0x${canonRecord.permit.verifying_program_id}`),
@@ -105,7 +97,7 @@ const expectedBody = (record: (typeof fixture.accepted)[number]): unknown => ({
   attestedPayload: {
     userPubkey: `0x${canonRecord.permit.user_pubkey}`,
     transportKey: `0x${transportKeyHex}`,
-    allowedAclDomainKeys: canonRecord.permit.allowed_acl_domain_keys.map((key) => `0x${key}`),
+    allowedScopes: canonRecord.permit.allowed_scopes.map((scope) => `0x${scope}`),
     requestValidity: {
       startTimestamp: canonRecord.permit.start_timestamp,
       durationSeconds: canonRecord.permit.duration_seconds,
@@ -119,61 +111,12 @@ const expectedBody = (record: (typeof fixture.accepted)[number]): unknown => ({
 });
 
 /** The entries a fixture record's handles stand for, in the order it lists them. */
-const entriesOf = (record: (typeof fixture.accepted)[number]): readonly SolanaAccessEvidence[] =>
-  record.handles.map((entry) => {
-    const evidence = {
-      handle: hexToBytes(entry.handle ?? '0x'),
-      subject: hexToBytes(entry.subject ?? '0x'),
-      encryptedValueId: hexToBytes(entry.encryptedValueId ?? '0x'),
-      // The account pubkey never appears in the fixture — it is not a wire field; any coherent
-      // value serves, as long as the synthesized peaks below bind the same one.
-      encryptedValueAccount: new Uint8Array(32).fill(0xea),
-      proofLeafCount: BigInt(entry.proofLeafCount ?? '0'),
-      accessProof: hexToBytes(entry.accessProof ?? '0x'),
-    };
-    // The fixture pins the wire shape, not an MMR: peaks are synthesized to admit its proof, which
-    // is exactly what a coherent evidence source would have handed over alongside it.
-    return { ...evidence, peaks: evidence.accessProof.length > 0 ? peaksAdmitting(evidence) : [] };
-  });
-
-/**
- * The peaks under which an entry's proof verifies: the sibling path is folded from the entry's own
- * leaf commitment and the result placed on the mountain its leaf index selects; every other
- * mountain gets a filler peak. This is the evidence-side complement a real source reads from the
- * account — synthesized here because a test entry has no account to read.
- */
-function peaksAdmitting(entry: {
-  readonly handle: Uint8Array;
-  readonly subject: Uint8Array;
-  readonly encryptedValueAccount: Uint8Array;
-  readonly proofLeafCount: bigint;
-  readonly accessProof: Uint8Array;
-}): readonly Uint8Array[] {
-  const proof = decodeMmrProof(entry.accessProof);
-  const peaks: Uint8Array[] = [];
-  let offset = 0n;
-  for (let height = 63; height >= 0; height -= 1) {
-    const bit = 1n << BigInt(height);
-    if ((entry.proofLeafCount & bit) === 0n) {
-      continue;
-    }
-    if (proof.leafIndex >= offset && proof.leafIndex < offset + bit) {
-      let node = mmrLeafNode(
-        historicalAccessLeafCommitment(entry.encryptedValueAccount, proof.leafIndex, entry.handle, entry.subject),
-      );
-      let local = proof.leafIndex - offset;
-      for (const sibling of proof.siblings) {
-        node = local % 2n === 0n ? mmrNode(node, sibling) : mmrNode(sibling, node);
-        local >>= 1n;
-      }
-      peaks.push(node);
-    } else {
-      peaks.push(new Uint8Array(32).fill(0x9e));
-    }
-    offset += bit;
-  }
-  return peaks;
-}
+const entriesOf = (record: (typeof fixture.accepted)[number]): readonly SolanaUserDecryptHandleEntry[] =>
+  record.handles.map((entry) => ({
+    handle: hexToBytes(entry.handle ?? '0x'),
+    allowedKey: hexToBytes(entry.allowedKey ?? '0x'),
+    encryptedValueAccount: hexToBytes(entry.encryptedValueAccount ?? '0x'),
+  }));
 
 ////////////////////////////////////////////////////////////////////////////////
 // Handles built here, for the cases no record can carry
@@ -196,36 +139,18 @@ const EBOOL_BITS = decryptionRequestBitsOfHandle(handleOf(EBOOL_TYPE_ID)) ?? 0;
 const EUINT256_TYPE_ID = 8;
 const EUINT256_BITS = decryptionRequestBitsOfHandle(handleOf(EUINT256_TYPE_ID)) ?? 0;
 
-const entriesOfType = (typeId: number, count: number): readonly SolanaAccessEvidence[] =>
+const entriesOfType = (typeId: number, count: number): readonly SolanaUserDecryptHandleEntry[] =>
   Array.from({ length: count }, (_, index) => entryFor(handleOf(typeId, PERMIT_CHAIN_ID, index % 251)));
 
-const entryFor = (handle: Uint8Array, overrides: Partial<SolanaAccessEvidence> = {}): SolanaAccessEvidence => ({
+const entryFor = (
+  handle: Uint8Array,
+  overrides: Partial<SolanaUserDecryptHandleEntry> = {},
+): SolanaUserDecryptHandleEntry => ({
   handle,
-  subject: hexToBytes(`0x${canonRecord.permit.user_pubkey}`),
-  encryptedValueId: new Uint8Array(32).fill(0xe1),
+  allowedKey: hexToBytes(`0x${canonRecord.permit.user_pubkey}`),
   encryptedValueAccount: new Uint8Array(32).fill(0xea),
-  proofLeafCount: 0n,
-  accessProof: new Uint8Array(0),
-  peaks: [],
   ...overrides,
 });
-
-/** A historical entry whose proof verifies: the proof, the count, and the peaks agree. */
-const historicalEntryFor = (
-  handle: Uint8Array,
-  proof: { leafIndex: bigint; siblings: Uint8Array[] },
-  proofLeafCount: bigint,
-): SolanaAccessEvidence => {
-  const entry = {
-    handle,
-    subject: hexToBytes(`0x${canonRecord.permit.user_pubkey}`),
-    encryptedValueId: new Uint8Array(32).fill(0xe1),
-    encryptedValueAccount: new Uint8Array(32).fill(0xea),
-    proofLeafCount,
-    accessProof: encodeMmrProof(proof),
-  };
-  return { ...entry, peaks: peaksAdmitting(entry) };
-};
 
 /** The assembly failure a call produced, or a failure if it produced anything else. */
 function failureOf(call: () => unknown): SolanaUserDecryptRequestFailure {
@@ -257,9 +182,8 @@ describe('the request the fixture pins', () => {
 });
 
 describe('the builder and the wallet', () => {
-  // The permit is the reusable object. If assembling a request needed a signature, every retry and
-  // every rebuilt proof would cost the user another wallet prompt — and each prompt is a chance to
-  // sign something else.
+  // The permit is the reusable object. If assembling a request needed a signature, every retry
+  // would cost the user another wallet prompt — and each prompt is a chance to sign something else.
   it('cites the one signature the permit carries, and produces the same body twice', () => {
     const permit = signedPermit();
     const entries = [entryFor(handleOf(EBOOL_TYPE_ID))];
@@ -297,24 +221,27 @@ describe('the entry list', () => {
     ]);
   });
 
-  // The wire identity is the triple: the same handle under the same subject can live under two
+  // The wire identity is the triple: the same handle under the same key can live under two
   // encrypted value accounts, and collapsing them would answer for an account the caller never named.
-  it('keeps each entry its own encrypted value id, even under one (handle, subject)', () => {
+  it('keeps each entry its own account, even under one (handle, key)', () => {
     const handle = handleOf(EBOOL_TYPE_ID);
-    const firstId = new Uint8Array(32).fill(0xe1);
-    const secondId = new Uint8Array(32).fill(0xe2);
+    const firstAccount = new Uint8Array(32).fill(0xe1);
+    const secondAccount = new Uint8Array(32).fill(0xe2);
     const body = buildSolanaUserDecryptRequest({
       signedPermit: signedPermit(),
-      entries: [entryFor(handle, { encryptedValueId: firstId }), entryFor(handle, { encryptedValueId: secondId })],
+      entries: [
+        entryFor(handle, { encryptedValueAccount: firstAccount }),
+        entryFor(handle, { encryptedValueAccount: secondAccount }),
+      ],
     });
 
-    expect(body.attestedPayload.handles.map((entry) => entry.encryptedValueId)).toEqual([
-      bytesToHex(firstId),
-      bytesToHex(secondId),
+    expect(body.attestedPayload.handles.map((entry) => entry.encryptedValueAccount)).toEqual([
+      bytesToHex(firstAccount),
+      bytesToHex(secondAccount),
     ]);
   });
 
-  it('names the entry whose subject or value id is not 32 bytes', () => {
+  it('names the entry whose key or account is not 32 bytes', () => {
     const permit = signedPermit();
     const handle = handleOf(EBOOL_TYPE_ID);
 
@@ -322,142 +249,19 @@ describe('the entry list', () => {
       failureOf(() =>
         buildSolanaUserDecryptRequest({
           signedPermit: permit,
-          entries: [entryFor(handle), entryFor(handle, { subject: new Uint8Array(31) })],
+          entries: [entryFor(handle), entryFor(handle, { allowedKey: new Uint8Array(31) })],
         }),
       ),
-    ).toEqual({ reason: 'evidence-field-width', index: 1, field: 'subject' });
+    ).toEqual({ reason: 'entry-field-width', index: 1, field: 'allowedKey' });
 
     expect(
       failureOf(() =>
         buildSolanaUserDecryptRequest({
           signedPermit: permit,
-          entries: [entryFor(handle, { encryptedValueId: new Uint8Array(33) })],
+          entries: [entryFor(handle, { encryptedValueAccount: new Uint8Array(33) })],
         }),
       ),
-    ).toEqual({ reason: 'evidence-field-width', index: 0, field: 'encryptedValueId' });
-  });
-});
-
-describe('the access proof', () => {
-  // The relayer and the Connector decode this field through the same rules, and both refuse a blob
-  // with anything after the proof. Refusing it here is what keeps a malformed proof from costing a
-  // submission — and, past the relayer, a gateway transaction.
-  it('is refused when it is not a bare borsh proof', () => {
-    const permit = signedPermit();
-    const handle = handleOf(EBOOL_TYPE_ID);
-    const proof = encodeMmrProof({ leafIndex: 3n, siblings: [new Uint8Array(32).fill(0x11)] });
-
-    expect(
-      failureOf(() =>
-        buildSolanaUserDecryptRequest({
-          signedPermit: permit,
-          entries: [entryFor(handle, { proofLeafCount: 8n, accessProof: Uint8Array.from([...proof, 0x99]) })],
-        }),
-      ),
-    ).toEqual({ reason: 'access-proof-form', index: 0 });
-
-    expect(
-      failureOf(() =>
-        buildSolanaUserDecryptRequest({
-          signedPermit: permit,
-          entries: [
-            entryFor(handle),
-            entryFor(handle, { proofLeafCount: 8n, accessProof: new Uint8Array([0xff, 0xff, 0xff]) }),
-          ],
-        }),
-      ),
-    ).toEqual({ reason: 'access-proof-form', index: 1 });
-  });
-
-  // The Connector would refuse a proof that proves nothing — after the fee, and as an unanswered
-  // request this side cannot tell apart from any other. The same verification it runs is run here,
-  // against the peaks the evidence came with, so a rotten proof never costs a submission.
-  it('is refused when it does not prove the claimed access', () => {
-    const wellFormed = encodeMmrProof({
-      leafIndex: 3n,
-      siblings: [new Uint8Array(32).fill(0x11), new Uint8Array(32).fill(0x22), new Uint8Array(32).fill(0x33)],
-    });
-    expect(
-      failureOf(() =>
-        buildSolanaUserDecryptRequest({
-          signedPermit: signedPermit(),
-          entries: [
-            entryFor(handleOf(EBOOL_TYPE_ID)),
-            entryFor(handleOf(EBOOL_TYPE_ID), {
-              proofLeafCount: 8n,
-              accessProof: wellFormed,
-              peaks: [new Uint8Array(32).fill(0x9e)],
-            }),
-          ],
-        }),
-      ),
-    ).toEqual({ reason: 'access-proof-refuted', index: 1 });
-  });
-
-  // An empty proof is the current-access mode, not a malformed proof: it must not be run through the
-  // decoder at all.
-  it('is left alone when it is empty', () => {
-    const body = buildSolanaUserDecryptRequest({
-      signedPermit: signedPermit(),
-      entries: [entryFor(handleOf(EBOOL_TYPE_ID))],
-    });
-    expect(body.attestedPayload.handles[0]?.accessProof).toBe('0x');
-  });
-});
-
-describe('the proof leaf count', () => {
-  const handle = () => handleOf(EBOOL_TYPE_ID);
-  const proof = () => encodeMmrProof({ leafIndex: 3n, siblings: [new Uint8Array(32).fill(0x11)] });
-
-  // The wire field is an unsigned 64-bit decimal. A bigint outside that range has no wire form, and
-  // every other field of this layer is checked before serialization — this one is not an exception.
-  it('names the entry whose leaf count does not fit an unsigned 64-bit integer', () => {
-    const permit = signedPermit();
-    for (const proofLeafCount of [-1n, 1n << 64n]) {
-      expect(
-        failureOf(() =>
-          buildSolanaUserDecryptRequest({
-            signedPermit: permit,
-            entries: [entryFor(handle()), entryFor(handle(), { proofLeafCount, accessProof: proof() })],
-          }),
-        ),
-      ).toEqual({ reason: 'proof-leaf-count-range', index: 1 });
-    }
-  });
-
-  it('carries the widest unsigned 64-bit count as a decimal string', () => {
-    // The last leaf of the fullest MMR there is: its mountain has height zero, so the proof needs
-    // no siblings and the entry stays coherent all the way through verification.
-    const fullest = (1n << 64n) - 1n;
-    const body = buildSolanaUserDecryptRequest({
-      signedPermit: signedPermit(),
-      entries: [historicalEntryFor(handle(), { leafIndex: fullest - 1n, siblings: [] }, fullest)],
-    });
-    expect(body.attestedPayload.handles[0]?.proofLeafCount).toBe('18446744073709551615');
-  });
-
-  // Current access is an empty proof AND a zero leaf count; historical is a proof AND the count it
-  // was built against. An entry claiming one mode in each field is a request the Connector is bound
-  // to refuse — after the fee — so it must not leave this layer.
-  it('refuses an empty proof with a nonzero leaf count, and a proof with a zero one', () => {
-    const permit = signedPermit();
-    expect(
-      failureOf(() =>
-        buildSolanaUserDecryptRequest({
-          signedPermit: permit,
-          entries: [entryFor(handle(), { proofLeafCount: 8n, accessProof: new Uint8Array(0) })],
-        }),
-      ),
-    ).toEqual({ reason: 'proof-mode-mismatch', index: 0 });
-
-    expect(
-      failureOf(() =>
-        buildSolanaUserDecryptRequest({
-          signedPermit: permit,
-          entries: [entryFor(handle()), entryFor(handle(), { proofLeafCount: 0n, accessProof: proof() })],
-        }),
-      ),
-    ).toEqual({ reason: 'proof-mode-mismatch', index: 1 });
+    ).toEqual({ reason: 'entry-field-width', index: 0, field: 'encryptedValueAccount' });
   });
 });
 

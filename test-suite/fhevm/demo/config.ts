@@ -69,8 +69,8 @@ export type DemoPersonas = {
 };
 
 /**
- * The demo-config artifact. Deliberately keeps `relayerUrl`/`proofServiceUrl` OUTSIDE any
- * `FhevmSolanaChain` shape — they are operator endpoints, not chain identity.
+ * The demo-config artifact. Deliberately keeps `relayerUrl` OUTSIDE any `FhevmSolanaChain`
+ * shape — it is an operator endpoint, not chain identity.
  */
 export type SolanaDemoConfig = {
   readonly source: "demo-config";
@@ -79,7 +79,6 @@ export type SolanaDemoConfig = {
   readonly rpcUrl: string;
   readonly wsUrl: string;
   readonly relayerUrl: string;
-  readonly proofServiceUrl: string;
   readonly gatewayRpcUrl: string;
   /** zama-host program id as bytes32 hex — the Solana ACL identity. */
   readonly aclProgram: `0x${string}`;
@@ -192,7 +191,6 @@ export const parseDemoConfig = (raw: unknown): SolanaDemoConfig => {
     rpcUrl: asString(o.rpcUrl, "rpcUrl"),
     wsUrl: asString(o.wsUrl, "wsUrl"),
     relayerUrl: asString(o.relayerUrl, "relayerUrl"),
-    proofServiceUrl: asString(o.proofServiceUrl, "proofServiceUrl"),
     gatewayRpcUrl: asString(o.gatewayRpcUrl, "gatewayRpcUrl"),
     aclProgram: asBytes32Hex(o.aclProgram, "aclProgram"),
     userDecryptContextId: asDecimal(o.userDecryptContextId, "userDecryptContextId"),

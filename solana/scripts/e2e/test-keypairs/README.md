@@ -11,7 +11,9 @@ Solana equivalent of Anvil's well-known dev accounts. They are **safe to commit*
 - Committing them makes the e2e self-reproducible: the side-stack setup
   (`test-suite/fhevm/src/solana/validator.ts`) seeds
   `target/deploy/` from here so `cargo build-sbf` + `solana program deploy` produce programs
-  at exactly the `declare_id!` IDs the harness/SDK expect.
+  at exactly the `declare_id!` IDs the harness/SDK expect. This covers the host and the
+  confidential token as well as the two specimen programs (`encrypted_counter`, `dep_chain`) the
+  e2e scenarios drive as the wallet-facing writers of encrypted values.
 
 Do NOT reuse these keys for anything other than the local PoC. To rotate: regenerate with
 `solana-keygen new -o <name>-keypair.json`, update each `declare_id!` + the hardcoded

@@ -25,7 +25,6 @@ export const OVERRIDE_GROUPS = [
   "kms-connector",
   "listener-core",
   "relayer",
-  "solana-proof-service",
   "gateway-contracts",
   "host-contracts",
   "test-suite",

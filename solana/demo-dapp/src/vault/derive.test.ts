@@ -100,7 +100,7 @@ describe('settle lookup-table addresses', () => {
     //   joinMintVaultUnderlying, joinMintVaultAuthority, batchBurnedAmountValue, pendingBurn,
     //   hostConfig, kmsContext, vault, vaultAuthority, vaultTokenAccount, payoutConfidentialMint,
     //   payoutUnderlyingMint, batchPayoutTokenAccount, payoutMintVaultUnderlying,
-    //   payoutMintVaultAuthority, payoutComputeSigner, payoutTotalSupplyAuthority,
+    //   payoutMintVaultAuthority, payoutTotalSupplyAuthority,
     //   batchPayoutBalanceValue, payoutTotalSupplyValue
     const GOLDEN_LOOKUP_TABLE_ADDRESSES = [
       '8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR',
@@ -110,7 +110,7 @@ describe('settle lookup-table addresses', () => {
       'LbUiWL3xVV8hTFYBVdbTNrpDo41NKS6o3LHHuDzjfcY',
       '8u7FMwPBNrQreRM2x2BM8rcxaKTSWKhf1zT7BcTjZfUs',
       '2zVia6PtH7dX6JPRMkykuv2V8ZXRWwBn1vzYtfUMKLD2',
-      '6h6FYkmzQeZ2XBGNPjgHSp3i2ktPqc6xsgpBL4xGpLMK',
+      '8A5XKVsR338v4JaUuBLFGvXVRYknNCNACqZo9DAe2hwe',
       '7araYGSRKDQdWTX2DhPZPM17HeZzesvpogxKbdAAaX8k',
       'YMN9Qj5jPNp7j14VPcML1B6xGgcPWVZUGLFU3Mnyfaf',
       'cGfHiC6Kgg3FpFZvgwGcswsCRtp4aBP2fzuXRQPizuN',
@@ -122,18 +122,17 @@ describe('settle lookup-table addresses', () => {
       '8iRxqzbzVoCDyN5ruCrtDs3HEJXL6S5khbmijMta8j6z',
       'HE7TPXRx8Dy4AZ2tuVV767SknKGXWHqPRDmXc836ZYe6',
       'DYpWU6FKz9dkW4a9HuqvBtDKgdnxD5fbtxaGuGevvDyr',
-      '9Zex4Xc17gawiJNk1pEirBrTx2GsNb5HB6WYgHWWkemQ',
       'W4dfnWqZVyik2iMYeP2jHGDfRJbZxzbXfgysxQS1VYK',
-      '6L34CwYQLjs4e5sHTjCsoNk5UBZwDtTMkKegf7tRdoM7',
-      'D1kRDX4FNzfiFqnJCjX443t7ZgN3jCk2NLtNk93eH8pt',
+      '3i11PrkLtKRVttNh4XhLcrvVyZp4yfyZroUJeL1ijZrM',
+      'EHNVHNm2M214V2QXYwrXVPHFbCTCi9uPGBVcECRKBgqg',
     ];
     expect(settleAccountsToLookupTableAddresses(accounts)).toEqual(GOLDEN_LOOKUP_TABLE_ADDRESSES);
 
     // A couple of derived PDAs pinned individually, so a derivation-logic change (not just field
     // order) is caught with a named field rather than only as a list diff.
     expect(batch.batch).toBe('Dm6gzuvv47gSSeMyV72nVs9N79AQA7sczD5GBw3XwXHX');
-    expect(accounts.batchBurnedAmountValue).toBe('6h6FYkmzQeZ2XBGNPjgHSp3i2ktPqc6xsgpBL4xGpLMK');
+    expect(accounts.batchBurnedAmountValue).toBe('8A5XKVsR338v4JaUuBLFGvXVRYknNCNACqZo9DAe2hwe');
     expect(accounts.pendingBurn).toBe('7araYGSRKDQdWTX2DhPZPM17HeZzesvpogxKbdAAaX8k');
-    expect(accounts.payoutTotalSupplyValue).toBe('D1kRDX4FNzfiFqnJCjX443t7ZgN3jCk2NLtNk93eH8pt');
+    expect(accounts.payoutTotalSupplyValue).toBe('EHNVHNm2M214V2QXYwrXVPHFbCTCi9uPGBVcECRKBgqg');
   });
 });

@@ -312,7 +312,6 @@ const main = async (): Promise<void> => {
     rpcUrl: env.rpcUrl,
     wsUrl: env.wsUrl,
     relayerUrl: env.relayerUrl,
-    proofServiceUrl: env.proofServiceUrl,
     gatewayRpcUrl: env.gatewayRpcUrl,
     aclProgram: env.aclProgram,
     userDecryptContextId: env.userDecryptContextId ?? kmsPair.kmsContextId.toString(),

@@ -18,7 +18,7 @@ declare const __solanaPermitFields: unique symbol;
 
 ////////////////////////////////////////////////////////////////////////////////
 
-/** Width of every identity the permit carries: user, program, ACL domain, KMS context and epoch. */
+/** Width of every identity the permit carries: user, program, KMS context and epoch. */
 export const PERMIT_IDENTITY_LEN = 32;
 
 /**
@@ -27,8 +27,14 @@ export const PERMIT_IDENTITY_LEN = 32;
  */
 export const PERMIT_TRANSPORT_KEY_LEN = 869;
 
-/** Upper bound on the signed ACL-domain list; an empty list is the permissive permit. */
-export const PERMIT_MAX_ACL_DOMAIN_KEYS = 10;
+/** Width of one scope entry: the 32-byte program followed by the 32-byte scope it declared. */
+export const PERMIT_SCOPE_LEN = 2 * PERMIT_IDENTITY_LEN;
+
+/**
+ * Upper bound on the signed scope list; an empty list is the permissive permit. Seven, not ten: a
+ * scope line carries two identities, and the widest permit has to stay readable on a wallet screen.
+ */
+export const PERMIT_MAX_SCOPES = 7;
 
 /** Shortest admitted validity window. */
 export const PERMIT_MIN_DURATION_SECONDS = 1n;
@@ -82,7 +88,7 @@ export type SolanaKmsRouting = {
 export type SolanaPermitWireFields = Prettify<{
   readonly userPubkey: Uint8Array;
   readonly transportKey: Uint8Array;
-  readonly allowedAclDomainKeys: readonly Uint8Array[];
+  readonly allowedScopes: readonly Uint8Array[];
   readonly startTimestamp: SolanaPermitU64;
   readonly durationSeconds: SolanaPermitU64;
   readonly verifyingProgramId: Uint8Array;
@@ -101,8 +107,11 @@ export type SolanaPermitFields = {
   readonly [__solanaPermitFields]: never;
   readonly userPubkey: Uint8Array;
   readonly transportKey: Uint8Array;
-  /** In signed order: strictly ascending in byte order, no duplicates; empty means permissive. */
-  readonly allowedAclDomainKeys: readonly Uint8Array[];
+  /**
+   * `program ‖ scope` entries in signed order: strictly ascending in byte order, no duplicates;
+   * empty means permissive.
+   */
+  readonly allowedScopes: readonly Uint8Array[];
   readonly startTimestamp: bigint;
   readonly durationSeconds: bigint;
   readonly verifyingProgramId: Uint8Array;
@@ -110,7 +119,7 @@ export type SolanaPermitFields = {
   readonly kmsRouting: SolanaKmsRouting;
 };
 
-/** True for a permit whose ACL-domain list is empty — a grant over every domain. */
+/** True for a permit whose scope list is empty — a grant over every program and scope. */
 export function isPermissivePermit(fields: SolanaPermitFields): boolean {
-  return fields.allowedAclDomainKeys.length === 0;
+  return fields.allowedScopes.length === 0;
 }

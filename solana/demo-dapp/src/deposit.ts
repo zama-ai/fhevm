@@ -22,7 +22,6 @@ import {
 import { createFhevmEncryptClient, defineFhevmSolanaChain, setFhevmRuntimeConfig } from '@fhevm/sdk/solana';
 import {
   buildWrapUsdcInstruction,
-  computeSignerAddress,
   deriveBatchAddresses,
   deriveJoinRecordAddress,
   getBatchByIndex,
@@ -422,10 +421,7 @@ export async function depositToVault(
   });
   const chain = defineFhevmSolanaChain({
     id: BigInt(config.chainId),
-    fhevm: {
-      relayerUrl: config.relayerUrl,
-      acl: { domainKeys: [asBytes32Hex(config.mints.joinConfidential)] },
-    },
+    fhevm: { relayerUrl: config.relayerUrl },
   });
   const aclProgramAddress = config.aclProgram as Bytes32Hex;
   const encryptClient = createFhevmEncryptClient({
@@ -433,12 +429,11 @@ export async function depositToVault(
     aclProgramAddress,
     options: { fheEncryptionKey: await loadDemoEncryptionKey(config) },
   });
-  const joinComputeSigner = await computeSignerAddress(config.mints.joinConfidential);
 
   onStage('proving');
   session.assertActive();
   const inputProof = await encryptClient.buildInputProof({
-    contractAddress: asBytes32Hex(joinComputeSigner),
+    contractAddress: asBytes32Hex(config.programs.token),
     userAddress: asBytes32Hex(signer.address),
     values: [{ type: 'uint64', value: amountBaseUnits }],
   });

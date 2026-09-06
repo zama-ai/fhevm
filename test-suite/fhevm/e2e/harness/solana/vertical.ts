@@ -1,10 +1,10 @@
-// vertical — the per-test setup the fhe_execute scenarios share: gate on a healthy stack, open a
+// vertical — the per-test setup the decrypt scenarios share: gate on a healthy stack, open a
 // provisioning context, fund one fresh wallet, and bind the decrypt config to the live chain.
 //
-// Every fhe-vertical/operator test starts from exactly this bundle, so it lives in the harness
-// rather than being copied into each scenario file. One wallet per test keeps scenarios fully
-// isolated: scenario-owned encrypted values derive from `(domain=wallet, account=wallet, label)`,
-// so a fresh wallet means fresh PDAs no matter what labels other tests used.
+// Every scenario starts from exactly this bundle, so it lives in the harness rather than being
+// copied into each scenario file. One wallet per test keeps scenarios fully isolated: the specimen
+// programs key their state on the owner, so a fresh wallet means a fresh counter and chain, and the
+// token scenarios mint fresh.
 
 import { getAddressEncoder } from "@solana/kit";
 
@@ -29,7 +29,7 @@ export type VerticalTestSetup = {
   readonly config: FheVerticalConfig;
   /** The wallet's 32-byte ed25519 seed, 0x-hex — the user-decrypt signing secret. */
   readonly secretKey: string;
-  /** The wallet pubkey as bytes32 hex — the ACL domain key for scenario-owned values. */
+  /** The wallet pubkey as bytes32 hex — the attested user of the scenarios' input proofs. */
   readonly walletHex: `0x${string}`;
 };
 
@@ -52,8 +52,6 @@ export const verticalSetup = async (): Promise<VerticalTestSetup> => {
   const hex20 = (bytes: Uint8Array): `0x${string}` => `0x${Buffer.from(bytes).toString("hex")}` as `0x${string}`;
   const config: FheVerticalConfig = {
     relayerUrl: env.relayerUrl,
-    proofServiceUrl: env.proofServiceUrl,
-    rpcUrl: env.rpcUrl,
     // From the live HostConfig account, not the env: the decrypts must bind the chain id the
     // deployed host actually signs for.
     chainId: await readHostChainId(context),

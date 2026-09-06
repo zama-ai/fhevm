@@ -16,7 +16,6 @@ const sampleConfig = (): SolanaDemoConfig => ({
   rpcUrl: "http://127.0.0.1:9999",
   wsUrl: "ws://127.0.0.1:9998",
   relayerUrl: "http://127.0.0.1:3001",
-  proofServiceUrl: "http://127.0.0.1:8089",
   gatewayRpcUrl: "http://127.0.0.1:8547",
   aclProgram: `0x${"cd".repeat(32)}`,
   userDecryptContextId: "7",
@@ -59,7 +58,6 @@ describe("loadDemoEnv", () => {
     const { env, config } = await loadDemoEnv(file);
     expect(env.source).toBe("demo-config");
     expect(env.rpcUrl).toBe(cfg.rpcUrl);
-    expect(env.proofServiceUrl).toBe(cfg.proofServiceUrl);
     expect(env.gatewayRpcUrl).toBe(cfg.gatewayRpcUrl);
     expect(env.chainId).toBe(BigInt(cfg.chainId));
     expect(env.aclProgram).toBe(cfg.aclProgram);

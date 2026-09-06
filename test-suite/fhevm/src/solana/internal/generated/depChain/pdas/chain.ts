@@ -14,22 +14,22 @@ import {
   type ProgramDerivedAddress,
 } from '@solana/kit';
 
-export type ComputeSignerSeeds = {
-  mint: Address;
+export type ChainSeeds = {
+  owner: Address;
 };
 
-export async function findComputeSignerPda(
-  seeds: ComputeSignerSeeds,
+export async function findChainPda(
+  seeds: ChainSeeds,
   config: { programAddress?: Address | undefined } = {},
 ): Promise<ProgramDerivedAddress> {
   const {
-    programAddress = 'pS2gMMq6PNZKpjxiANeoN5XxJgwaFsUR6xaJkpUHcDg' as Address<'pS2gMMq6PNZKpjxiANeoN5XxJgwaFsUR6xaJkpUHcDg'>,
+    programAddress = 'HFx5mNcWLvhj2WU8CA9QEhuW6BZVNwA3g7UvPwVzfHx4' as Address<'HFx5mNcWLvhj2WU8CA9QEhuW6BZVNwA3g7UvPwVzfHx4'>,
   } = config;
   return await getProgramDerivedAddress({
     programAddress,
     seeds: [
-      getBytesEncoder().encode(new Uint8Array([102, 104, 101, 45, 99, 111, 109, 112, 117, 116, 101])),
-      getAddressEncoder().encode(seeds.mint),
+      getBytesEncoder().encode(new Uint8Array([100, 101, 112, 45, 99, 104, 97, 105, 110])),
+      getAddressEncoder().encode(seeds.owner),
     ],
   });
 }

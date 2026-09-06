@@ -1,13 +1,14 @@
 import type { Address, Instruction } from '@solana/kit';
 
 import { hexToBytes } from '../../core/base/bytes.js';
+import type { MmrProof } from '../proof.js';
 import type { SolanaPublicDecryptCertificateClaim } from './publicDecryptCertificate.js';
 import { getVerifyPublicDecryptInstructionAsync } from '../internal/generated/zamaHost/instructions/verifyPublicDecrypt.js';
 
 /**
  * The certificate + inclusion-proof payload the stateless host verifier consumes, decoded from a
- * relayer [`SolanaPublicDecryptCertificateClaim`] into the exact wire types the generated
- * `verify_public_decrypt` instruction builder expects.
+ * relayer [`SolanaPublicDecryptCertificateClaim`] and the caller's public-leaf proof into the exact
+ * wire types the generated `verify_public_decrypt` instruction builder expects.
  */
 export type SolanaVerifyPublicDecryptArgs = {
   readonly handle: Uint8Array;
@@ -22,10 +23,13 @@ export type SolanaVerifyPublicDecryptArgs = {
  * Decodes a relayer public-decrypt certificate claim into the verifier instruction args, validating
  * the fixed-size fields. `handle` and `cleartext` are the 32-byte handle and 32-byte big-endian
  * `uint256` cleartext the KMS signed over; each signature is a 65-byte secp256k1 recoverable
- * signature; the proof is the MMR public-leaf inclusion path for `handle`.
+ * signature. The proof is the MMR public-leaf inclusion path for `handle`, built by the caller from
+ * the account's history (`reconstructSolanaEncryptedValueAccount` + `mmrBuildProof`): the certificate
+ * does not carry it, because the Connector fetches its own.
  */
 export function verifyPublicDecryptArgsFromClaim(
   claim: SolanaPublicDecryptCertificateClaim,
+  inclusionProof: MmrProof,
 ): SolanaVerifyPublicDecryptArgs {
   const handle = hexToBytes(claim.handle);
   if (handle.length !== 32) throw new Error(`public-decrypt handle must be 32 bytes, got ${handle.length}`);
@@ -44,8 +48,8 @@ export function verifyPublicDecryptArgsFromClaim(
     cleartext,
     signatures,
     extraData: hexToBytes(claim.extraData),
-    leafIndex: claim.inclusionProof.leafIndex,
-    siblings: [...claim.inclusionProof.siblings],
+    leafIndex: inclusionProof.leafIndex,
+    siblings: [...inclusionProof.siblings],
   };
 }
 
@@ -60,18 +64,19 @@ export type SolanaVerifyPublicDecryptAccounts = {
 };
 
 /**
- * Builds the raw, stateless `zama_host::verify_public_decrypt` instruction from a certificate claim.
- * The verifier reads state and returns `(handle, cleartext, context_id)` via `return_data`; it creates and
- * mutates nothing. Use this when consuming the verifier from a non-token program. The
- * confidential-token wrapper that discloses through the token program is not part of this SDK —
- * it lives with the vault demo dapp. Async because the host config account defaults to its PDA
- * when omitted.
+ * Builds the raw, stateless `zama_host::verify_public_decrypt` instruction from a certificate claim
+ * and the public-leaf inclusion proof. The verifier reads state and returns
+ * `(handle, cleartext, context_id)` via `return_data`; it creates and mutates nothing. Use this when
+ * consuming the verifier from a non-token program. The confidential-token wrapper that discloses
+ * through the token program is not part of this SDK — it lives with the vault demo dapp. Async
+ * because the host config account defaults to its PDA when omitted.
  */
 export async function buildVerifyPublicDecryptInstruction(
   accounts: SolanaVerifyPublicDecryptAccounts,
   claim: SolanaPublicDecryptCertificateClaim,
+  inclusionProof: MmrProof,
 ): Promise<Instruction> {
-  const args = verifyPublicDecryptArgsFromClaim(claim);
+  const args = verifyPublicDecryptArgsFromClaim(claim, inclusionProof);
   return getVerifyPublicDecryptInstructionAsync({
     ...(accounts.hostConfig !== undefined ? { hostConfig: accounts.hostConfig } : {}),
     kmsContext: accounts.kmsContext,

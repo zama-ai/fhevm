@@ -15,7 +15,6 @@ const bob = { owner: "2".repeat(32), keypairPath: "/bob.json", secretKey: hex32(
 const scenario: TwoHolderScenario = {
   mint: "3".repeat(32),
   underlyingMint: "9".repeat(32),
-  computeSigner: "4".repeat(32),
   alice,
   bob,
 };
@@ -25,7 +24,6 @@ const balance = (owner: string, handleByte: string): BalanceState => ({
   owner,
   tokenAccount: owner === alice.owner ? "5".repeat(32) : "6".repeat(32),
   encryptedValueAccount: owner === alice.owner ? "7".repeat(32) : "8".repeat(32),
-  encryptedValueId: hex32("a"),
   currentHandle: hex32(handleByte),
   chainId: "9223372036854788153",
 });

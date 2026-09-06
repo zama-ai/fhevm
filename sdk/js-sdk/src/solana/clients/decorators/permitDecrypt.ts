@@ -1,10 +1,9 @@
 // The permit-path decrypt actions: sign a permit once, run requests under it.
 //
 // This decorator is assembly and nothing else. Every rule it relies on lives in the modules it
-// fastens together — the permit builder and channel, the RPC evidence source, the relayer
-// transport, the retry session, the response verification — and what it adds is the wiring: the
-// chain says where the deployment is, the trust configuration says whom to believe, and the caller
-// brings the wallet and the handles.
+// fastens together — the permit builder and channel, the relayer transport, the retry session, the
+// response verification — and what it adds is the wiring: the chain says where the deployment is,
+// the trust configuration says whom to believe, and the caller brings the wallet and the handles.
 //
 // The trust configuration is caller-supplied deliberately. The KMS signer set and the routing pair
 // live in on-chain and management state whose read paths are open questions to their owners (the
@@ -20,12 +19,11 @@ import type { RelayerUserDecryptOptions } from '../../../core/types/relayer.js';
 import type { SolanaPermitWallet } from '../../permit/index.js';
 import type {
   SolanaGatewayEip712Domain,
-  SolanaHandleRequest,
   SolanaKmsSigner,
   SolanaPermitSession,
+  SolanaUserDecryptHandleEntry,
   SolanaUserDecryptPlaintext,
 } from '../../userDecrypt/index.js';
-import { createSolanaRpc } from '@solana/kit';
 import {
   PERMIT_KMS_ROUTING_VERSION,
   decodeSolanaPermitFields,
@@ -35,7 +33,6 @@ import {
   solanaPermitWarnings,
 } from '../../permit/index.js';
 import {
-  createSolanaRpcAccessEvidenceSource,
   createSolanaUserDecryptRelayerTransport,
   executeSolanaUserDecrypt,
   generateSolanaTransportKeyPair,
@@ -68,13 +65,24 @@ export interface SolanaDecryptTrust {
   readonly gatewayEip712Domain?: SolanaGatewayEip712Domain | undefined;
 }
 
+/** One `(program, scope)` pair a permit may be restricted to. */
+export interface SolanaPermitScope {
+  /** The 32-byte application program. */
+  readonly program: Bytes32Hex;
+  /** The 32-byte scope that program declared, e.g. the mint for the token program. */
+  readonly scope: Bytes32Hex;
+}
+
 export interface SolanaSignPermitParameters {
   /** The wallet account that is the permit's user; asked to sign exactly once. */
   readonly wallet: SolanaPermitWallet;
   /** How long the permit lives, in seconds from its start. */
   readonly durationSeconds: bigint;
-  /** The ACL-domain scope; defaults to the chain's. An empty list is the permissive permit. */
-  readonly allowedAclDomainKeys?: readonly Bytes32Hex[] | undefined;
+  /**
+   * The `(program, scope)` pairs the permit covers, in any order; the permit signs them sorted by
+   * bytes. Absent or empty is the permissive permit.
+   */
+  readonly allowedScopes?: readonly SolanaPermitScope[] | undefined;
   /** The signer's revocation watermark; `0n` (the default) when none was ever recorded. */
   readonly invalidationWatermark?: bigint | undefined;
 }
@@ -83,10 +91,13 @@ export interface SolanaSignPermitParameters {
 export interface SolanaUserDecryptEntry {
   /** The 32-byte ciphertext handle. */
   readonly handle: Uint8Array;
-  /** The 32-byte id of the `EncryptedValue` account holding this value. */
-  readonly encryptedValueId: Uint8Array;
-  /** The pubkey whose value this asks for; defaults to the permit's own user. */
-  readonly subject?: Uint8Array | undefined;
+  /** The 32-byte address of the `EncryptedValue` account holding this value. */
+  readonly encryptedValueAccount: Uint8Array;
+  /**
+   * The key whose allow on the handle this asks under: the delegator on a delegated entry.
+   * Defaults to the permit's own user.
+   */
+  readonly allowedKey?: Uint8Array | undefined;
 }
 
 export interface SolanaUserDecryptParameters {
@@ -108,23 +119,21 @@ export type SolanaPermitDecryptActions = {
 /**
  * Builds the permit-path actions for one deployment and one trust configuration.
  *
- * @param chain - Where the deployment is; `rpcUrl`, `proofServiceUrl` and `verifyingProgramId`
- * are required here, unlike on the public-decrypt-only surface.
+ * @param chain - Where the deployment is; `verifyingProgramId` is required here, unlike on the
+ * public-decrypt-only surface.
  * @param trust - Whom to believe; see {@link SolanaDecryptTrust}.
  * @param runtime - The client runtime; its configured auth reaches every relayer submission,
  * with per-call options taking precedence — the same merge the public-decrypt action runs.
- * @throws If the chain does not name the endpoints and identity the permit path stands on.
+ * @throws If the chain does not name the identity the permit path stands on.
  */
 export function solanaPermitDecryptActions(
   chain: FhevmSolanaChain,
   trust: SolanaDecryptTrust,
   runtime: FhevmRuntime,
 ): SolanaPermitDecryptActions {
-  // Fail at construction, not mid-session: a chain missing a deployment field would otherwise
+  // Fail at construction, not mid-session: a chain missing the deployment identity would otherwise
   // surface as a failure of whichever request first needed it.
-  const rpcUrl = requiredChainField(chain.fhevm.rpcUrl, 'rpcUrl');
-  const proofServiceUrl = requiredChainField(chain.fhevm.proofServiceUrl, 'proofServiceUrl');
-  const verifyingProgramId = hexToBytes32(requiredChainField(chain.fhevm.verifyingProgramId, 'verifyingProgramId'));
+  const verifyingProgramId = requiredChainField(chain.fhevm.verifyingProgramId, 'verifyingProgramId');
 
   return {
     async signPermit(parameters: SolanaSignPermitParameters): Promise<SolanaPermitSession> {
@@ -137,12 +146,10 @@ export function solanaPermitDecryptActions(
       const fields = decodeSolanaPermitFields({
         userPubkey: Uint8Array.from(parameters.wallet.account.publicKey),
         transportKey: keyPair.publicKeyBytes,
-        allowedAclDomainKeys: (parameters.allowedAclDomainKeys ?? chain.fhevm.acl.domainKeys).map((key) =>
-          hexToBytes32(key),
-        ),
+        allowedScopes: sortedScopes(parameters.allowedScopes ?? []),
         startTimestamp,
         durationSeconds: parameters.durationSeconds,
-        verifyingProgramId,
+        verifyingProgramId: hexToBytes32(verifyingProgramId),
         chainId: chain.id,
         extraData: encodeSolanaKmsRouting({
           version: PERMIT_KMS_ROUTING_VERSION,
@@ -157,21 +164,15 @@ export function solanaPermitDecryptActions(
 
     async userDecrypt(parameters: SolanaUserDecryptParameters): Promise<readonly ClearValue[]> {
       const userPubkey = parameters.session.signedPermit.fields.userPubkey;
-      const requests: readonly SolanaHandleRequest[] = parameters.entries.map((entry) => ({
+      const entries: readonly SolanaUserDecryptHandleEntry[] = parameters.entries.map((entry) => ({
         handle: entry.handle,
-        subject: entry.subject ?? userPubkey,
-        encryptedValueId: entry.encryptedValueId,
+        allowedKey: entry.allowedKey ?? userPubkey,
+        encryptedValueAccount: entry.encryptedValueAccount,
       }));
 
       const plaintexts = await executeSolanaUserDecrypt({
         session: parameters.session,
-        requests,
-        evidence: createSolanaRpcAccessEvidenceSource({
-          rpc: createSolanaRpc(rpcUrl),
-          proofService: { proofServiceUrl },
-          // The permit's verifying program IS the host program encrypted value accounts live under.
-          hostProgramId: verifyingProgramId,
-        }),
+        entries,
         transport: createSolanaUserDecryptRelayerTransport({
           relayerUrl: chain.fhevm.relayerUrl,
           options: { auth: runtime.config.auth, ...parameters.options },
@@ -187,10 +188,36 @@ export function solanaPermitDecryptActions(
 
       return toClearValues(
         plaintexts,
-        requests.map((request) => request.handle),
+        entries.map((entry) => entry.handle),
       );
     },
   };
+}
+
+/**
+ * The 64-byte `program ‖ scope` entries in the order the permit signs them: ascending by bytes.
+ * Sorting here is what lets a caller list scopes in any order; a duplicate still reaches the
+ * decoder and is refused there.
+ *
+ * @param scopes - The pairs, in any order.
+ */
+function sortedScopes(scopes: readonly SolanaPermitScope[]): readonly Uint8Array[] {
+  return scopes
+    .map((pair) => {
+      const bytes = new Uint8Array(64);
+      bytes.set(hexToBytes32(pair.program), 0);
+      bytes.set(hexToBytes32(pair.scope), 32);
+      return bytes;
+    })
+    .sort((a, b) => {
+      for (let index = 0; index < a.length; index += 1) {
+        const difference = (a[index] ?? 0) - (b[index] ?? 0);
+        if (difference !== 0) {
+          return difference;
+        }
+      }
+      return 0;
+    });
 }
 
 /**

@@ -39,7 +39,7 @@ const permitFields = (): SolanaPermitFields =>
   decodeSolanaPermitFields({
     userPubkey: PUBKEY,
     transportKey: new Uint8Array(PERMIT_TRANSPORT_KEY_LEN),
-    allowedAclDomainKeys: [identity(0x01)],
+    allowedScopes: [new Uint8Array(64).fill(0x01)],
     startTimestamp: 1_767_229_380n,
     durationSeconds: 604_800n,
     verifyingProgramId: identity(0x22),

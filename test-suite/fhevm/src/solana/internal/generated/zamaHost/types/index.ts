@@ -6,12 +6,4 @@
  * @see https://github.com/codama-idl/codama
  */
 
-export * from './coprocessorInputAttestation.js';
-export * from './fheBinaryOpCode.js';
-export * from './fheExecuteOperand.js';
-export * from './fheExecuteOutput.js';
-export * from './fheExecuteStep.js';
-export * from './fheTernaryOpCode.js';
-export * from './fheUnaryOpCode.js';
 export * from './kmsThresholds.js';
-export * from './previousState.js';

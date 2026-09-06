@@ -19,13 +19,18 @@ import type { FhevmRuntime } from '@sdk-src/core/types/coreFhevmRuntime.js';
 import type { RelayerPublicDecryptOptions } from '@sdk-src/core/types/relayer.js';
 import { publicDecryptCertificate } from '@sdk-src/solana/actions/publicDecryptCertificate.js';
 import {
+  mmrBuildProof,
+  reconstructSolanaEncryptedValueAccount,
+  type MmrProof,
+  type SolanaEncryptedValueAccountEvent,
+} from '@sdk-src/solana/proof.js';
+import {
   CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
   ZAMA_HOST_PROGRAM_ADDRESS,
 } from './internal/generated/confidentialToken/programAddress.js';
 import { getSettleInstructionAsync } from './internal/generated/confidentialBatcher/instructions/settle.js';
 import { fetchBatch } from './internal/generated/confidentialBatcher/accounts/batch.js';
-import { EVENT_AUTHORITY_SEED, burnedAmountValueAccount } from './internal/batcherPdas.js';
-import { fetchSolanaPublicDecryptProof, type SolanaProofServiceConfig } from './internal/proofService.js';
+import { EVENT_AUTHORITY_SEED } from './internal/batcherPdas.js';
 import { settleTotalFromCleartext } from './internal/cleartext.js';
 import { buildAndSignSettleTransaction } from './internal/settleMessage.js';
 import {
@@ -39,7 +44,7 @@ import { getCurrentBatch, getEncryptedValueState } from './reads.js';
 
 const ZERO_HANDLE = new Uint8Array(32);
 
-/** What `settleBatch` still needs beyond the certificate/proof phases and the keeper signer. */
+/** What `settleBatch` needs beyond the certificate phase and the keeper signer. */
 export type SolanaVaultSettleOptions = {
   readonly rpc: Rpc<SolanaRpcApi>;
   readonly rpcSubscriptions: RpcSubscriptions<SolanaRpcSubscriptionsApi>;
@@ -65,25 +70,76 @@ export type SolanaVaultSettleOptions = {
 };
 
 /**
+ * The burned-amount value's whole leaf history, as the batcher wrote it.
+ *
+ * `dispatch` burns the batch's entire join balance once through `confidential_burn_from_value`,
+ * which creates the `burned_amount` value publicly decryptable and allowed to the token account's
+ * owner — the batch authority (`PersistentOutput::new_public(..., [owner])`). The host seals the
+ * allow leaves before the public leaf (`fhe_execute.rs`), so the account holds exactly these two
+ * leaves, and the public leaf is the second. The peaks this list implies are checked against the
+ * live account before anything is sent, so a history the batcher did not write fails here rather
+ * than on-chain.
+ */
+export function burnedAmountLeafHistory(
+  burnedTotalHandle: Uint8Array,
+  batchAuthority: Address,
+): { readonly events: readonly SolanaEncryptedValueAccountEvent[]; readonly publicLeafIndex: bigint } {
+  return {
+    events: [
+      { kind: 'allowed', handle: burnedTotalHandle, key: base58.decode(batchAuthority) },
+      { kind: 'markedPublic', handle: burnedTotalHandle },
+    ],
+    publicLeafIndex: 1n,
+  };
+}
+
+/**
+ * Builds the burned handle's public-leaf inclusion proof against the account's live peaks, from
+ * the history in {@link burnedAmountLeafHistory}. Throws if the live account disagrees with it.
+ */
+export function buildBurnedAmountPublicProof(
+  encryptedValueAccount: Address,
+  live: { readonly leafCount: bigint; readonly peaks: readonly Uint8Array[] },
+  burnedTotalHandle: Uint8Array,
+  batchAuthority: Address,
+): MmrProof {
+  const history = burnedAmountLeafHistory(burnedTotalHandle, batchAuthority);
+  const rebuilt = reconstructSolanaEncryptedValueAccount(base58.decode(encryptedValueAccount), history.events);
+  const samePeaks =
+    rebuilt.leafCount === live.leafCount &&
+    rebuilt.peaks.length === live.peaks.length &&
+    rebuilt.peaks.every((peak, index) => bytesToHex(peak) === bytesToHex(live.peaks[index]!));
+  if (!samePeaks) {
+    throw new Error(
+      `burned-amount account ${encryptedValueAccount} holds ${live.leafCount} leaves that do not match the ` +
+        `${rebuilt.leafCount}-leaf history the batcher writes (one allow for the batch authority, then the public leaf)`,
+    );
+  }
+  const proof = mmrBuildProof(rebuilt.leaves, history.publicLeafIndex);
+  if (proof === undefined) throw new Error('the burned amount history has no public leaf to prove');
+  return proof;
+}
+
+/**
  * Settles a dispatched batch. The caller supplies only the batcher's roots (plus infra handles and
  * the off-chain ALT address); settle resolves everything batch-specific itself:
  *
  * - the batch (its current batch, or `batchIndex` when pinned) and its created-public burned handle,
  *   read from `Batch`;
  * - the full settle account set, derived from the roots, the batch, and the burned handle; and
- * - the burned encrypted value account's live MMR peaks and leaf count, read from its `EncryptedValue` account.
+ * - the burned value's live MMR peaks and leaf count, read from its `EncryptedValue` account.
  *
- * Two off-chain phases then feed the on-chain instruction: the burned encrypted value account's MMR inclusion proof
- * from the solana-proof-service (verified against the live peaks), and the KMS burn certificate from
- * the relayer, requested with that proof. The certified cleartext is a 32-byte `uint256`; settle's
- * on-chain argument is a `u64`, so its low 8 bytes are taken big-endian and its high 24 asserted zero
- * ({@link settleTotalFromCleartext}). The instruction is sent as an ALT-aware v0 transaction — 34
- * accounts overflow a legacy packet — keeping only the fee payer (and program/event authorities
- * outside the ALT address list) static.
+ * The KMS burn certificate is requested from the relayer for `(handle, account)` alone: the
+ * Connector reads the account and fetches the public leaf's proof from the coprocessors itself
+ * (RFC 035). The on-chain `settle` still verifies an inclusion proof, which this builds locally from
+ * the two-leaf history the batcher wrote ({@link buildBurnedAmountPublicProof}). The certified
+ * cleartext is a 32-byte `uint256`; settle's on-chain argument is a `u64`, so its low 8 bytes are
+ * taken big-endian and its high 24 asserted zero ({@link settleTotalFromCleartext}). The instruction
+ * is sent as an ALT-aware v0 transaction — 33 accounts overflow a legacy packet — keeping only the
+ * fee payer (and program/event authorities outside the ALT address list) static.
  */
 export async function settleBatch(
   chain: FhevmSolanaChain,
-  proofConfig: SolanaProofServiceConfig,
   keeper: TransactionSigner,
   options: SolanaVaultSettleOptions,
 ): Promise<Signature> {
@@ -107,40 +163,22 @@ export async function settleBatch(
 
   const accounts = await deriveSettleAccounts(roots, addresses);
 
-  // The burned encrypted value account carries the cert's encrypted value ID; cross-check its derived PDA against the
-  // settle account so a roots/derivation mismatch fails here, not at on-chain verify.
-  const burned = await burnedAmountValueAccount(roots.joinConfidentialMint, addresses.batchJoinTokenAccount);
-  if (burned.encryptedValueAddress !== accounts.batchBurnedAmountValue) {
-    throw new Error(
-      `derived burned-amount encrypted value account ${burned.encryptedValueAddress} disagrees with the settle account ${accounts.batchBurnedAmountValue}`,
-    );
-  }
-
-  // Read the burned encrypted value account's live MMR state (the peaks the proof is verified against).
+  // Read the burned value's live MMR state and build the public leaf's proof against it.
   const encryptedValueAccount = await getEncryptedValueState(rpc, accounts.batchBurnedAmountValue);
+  const inclusionProof = buildBurnedAmountPublicProof(
+    accounts.batchBurnedAmountValue,
+    encryptedValueAccount,
+    burnedTotalHandle,
+    addresses.batchAuthority,
+  );
 
-  // Phase 1: the settle burns to a created-public handle, so its proof is a public-decrypt leaf. The
-  // service resolves the leaf from (encryptedValue, burnedTotalHandle); the SDK never supplies a
-  // leaf index, and the resolved index comes back on the proof.
-  const proof = await fetchSolanaPublicDecryptProof(proofConfig, burned.encryptedValueAddress, burnedTotalHandle);
-  if (proof.leafCount !== encryptedValueAccount.leafCount) {
-    throw new Error(
-      `proof-service leaf count ${proof.leafCount} does not match the on-chain encrypted value account leaf count ${encryptedValueAccount.leafCount}`,
-    );
-  }
-
-  // Phase 2: KMS burn certificate, verified against the live peaks with the phase-1 proof.
+  // The KMS burn certificate. The relayer request names the handle and the account, nothing else.
   const claim = await publicDecryptCertificate(
     { chain, runtime: options.runtime },
     {
       handle: bytesToHex(burnedTotalHandle),
       contextId: options.contextId,
-      aclValueKey: burned.aclValueKey,
-      proofSlot: proof.leafCount,
-      encryptedValueAccount: base58.decode(burned.encryptedValueAddress),
-      peaks: encryptedValueAccount.peaks,
-      leafCount: encryptedValueAccount.leafCount,
-      mmrProofBytes: proof.mmrProofBytes,
+      encryptedValueAccount: base58.decode(accounts.batchBurnedAmountValue),
       options: options.certificateOptions,
     },
   );
@@ -192,7 +230,6 @@ export async function settleBatch(
     batchPayoutTokenAccount: accounts.batchPayoutTokenAccount,
     payoutMintVaultUnderlying: accounts.payoutMintVaultUnderlying,
     payoutMintVaultAuthority: accounts.payoutMintVaultAuthority,
-    payoutComputeSigner: accounts.payoutComputeSigner,
     payoutTotalSupplyAuthority: accounts.payoutTotalSupplyAuthority,
     batchPayoutBalanceValue: accounts.batchPayoutBalanceValue,
     payoutTotalSupplyValue: accounts.payoutTotalSupplyValue,
@@ -201,8 +238,8 @@ export async function settleBatch(
     cleartextTotal,
     signatures,
     extraData: hexToBytes(claim.extraData),
-    leafIndex: claim.inclusionProof.leafIndex,
-    siblings: [...claim.inclusionProof.siblings],
+    leafIndex: inclusionProof.leafIndex,
+    siblings: [...inclusionProof.siblings],
     authorityFundingLamports: options.authorityFundingLamports,
   });
 

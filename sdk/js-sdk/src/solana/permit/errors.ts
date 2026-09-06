@@ -5,7 +5,7 @@
 // rather than merely failing somehow. The union is the contract the vector runner asserts against;
 // the message text is for humans and nothing depends on its wording.
 
-import { PERMIT_IDENTITY_LEN } from './types.js';
+import { PERMIT_IDENTITY_LEN, PERMIT_SCOPE_LEN } from './types.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -15,10 +15,7 @@ import { PERMIT_IDENTITY_LEN } from './types.js';
  * The KMS context and epoch ids are absent on purpose: they live inside the routing field, whose
  * length is checked as a whole, so their widths cannot be wrong independently.
  */
-export type SolanaPermitIdentityField =
-  | { readonly field: 'userPubkey' }
-  | { readonly field: 'verifyingProgramId' }
-  | { readonly field: 'aclDomainKey'; readonly index: number };
+export type SolanaPermitIdentityField = { readonly field: 'userPubkey' } | { readonly field: 'verifyingProgramId' };
 
 /** A permit field the canon signs as a u64. */
 export type SolanaPermitU64Field = 'startTimestamp' | 'durationSeconds' | 'chainId';
@@ -26,16 +23,17 @@ export type SolanaPermitU64Field = 'startTimestamp' | 'durationSeconds' | 'chain
 /**
  * Why a permit was rejected.
  *
- * Eleven members mirror the Rust enum one-to-one. The last two have no counterpart there and cannot
+ * Twelve members mirror the Rust enum one-to-one. The last two have no counterpart there and cannot
  * have one: they are the JavaScript-only failures of a u64 field arriving as a `number`, or
  * arriving as a bigint or string that is not a u64 at all. Rust's wire fields are already `u64`, so
  * both are unrepresentable on that side.
  */
 export type SolanaPermitRejection =
   | { readonly code: 'IdentityWidth'; readonly field: SolanaPermitIdentityField; readonly length: number }
-  | { readonly code: 'TooManyAclDomainKeys'; readonly count: number }
-  | { readonly code: 'AclDomainKeysNotAscending'; readonly index: number }
-  | { readonly code: 'DuplicateAclDomainKey'; readonly index: number }
+  | { readonly code: 'ScopeWidth'; readonly index: number; readonly length: number }
+  | { readonly code: 'TooManyScopes'; readonly count: number }
+  | { readonly code: 'ScopesNotAscending'; readonly index: number }
+  | { readonly code: 'DuplicateScope'; readonly index: number }
   | { readonly code: 'DurationOutOfRange'; readonly durationSeconds: bigint }
   | { readonly code: 'StartTimestampOutOfRange'; readonly startTimestamp: bigint }
   | { readonly code: 'TransportKeyLength'; readonly length: number }
@@ -79,12 +77,14 @@ function describeRejection(rejection: SolanaPermitRejection): string {
   switch (rejection.code) {
     case 'IdentityWidth':
       return `identity ${describeIdentityField(rejection.field)} is ${rejection.length} bytes, expected ${PERMIT_IDENTITY_LEN}`;
-    case 'TooManyAclDomainKeys':
-      return `${rejection.count} ACL domain keys exceeds the permitted maximum`;
-    case 'AclDomainKeysNotAscending':
-      return `ACL domain key at index ${rejection.index} is not above its predecessor in byte order`;
-    case 'DuplicateAclDomainKey':
-      return `ACL domain key at index ${rejection.index} repeats an earlier key`;
+    case 'ScopeWidth':
+      return `allowedScopes[${rejection.index}] is ${rejection.length} bytes, expected ${PERMIT_SCOPE_LEN}`;
+    case 'TooManyScopes':
+      return `${rejection.count} scopes exceeds the permitted maximum`;
+    case 'ScopesNotAscending':
+      return `scope at index ${rejection.index} is not above its predecessor in byte order`;
+    case 'DuplicateScope':
+      return `scope at index ${rejection.index} repeats an earlier scope`;
     case 'DurationOutOfRange':
       return `a validity window of ${rejection.durationSeconds} seconds is outside the permitted range`;
     case 'StartTimestampOutOfRange':
@@ -119,7 +119,5 @@ function describeIdentityField(field: SolanaPermitIdentityField): string {
       return 'userPubkey';
     case 'verifyingProgramId':
       return 'verifyingProgramId';
-    case 'aclDomainKey':
-      return `allowedAclDomainKeys[${field.index}]`;
   }
 }

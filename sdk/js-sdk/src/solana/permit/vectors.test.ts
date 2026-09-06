@@ -46,7 +46,7 @@ import { bytesToHex, hexToBytes } from '../proof.js';
 interface WirePermitRecord {
   readonly user_pubkey: string;
   readonly transport_key: string;
-  readonly allowed_acl_domain_keys: readonly string[];
+  readonly allowed_scopes: readonly string[];
   readonly start_timestamp: string;
   readonly duration_seconds: string;
   readonly verifying_program_id: string;
@@ -102,9 +102,10 @@ const rehex = (bytes: Uint8Array): string => bytesToHex(bytes).slice(2);
 /** Every rule name the shared schema defines, mirroring `permit_vectors.rs`'s `rule::ALL`. */
 const PERMIT_VECTOR_RULES = [
   'identity-width',
-  'too-many-acl-domain-keys',
-  'acl-domain-keys-not-ascending',
-  'duplicate-acl-domain-key',
+  'scope-width',
+  'too-many-scopes',
+  'scopes-not-ascending',
+  'duplicate-scope',
   'duration-out-of-range',
   'start-timestamp-out-of-range',
   'transport-key-length',
@@ -125,9 +126,10 @@ type MirroredRejectionCode = Exclude<SolanaPermitRejectionCode, 'LossyNumericInp
 
 const RULE_REJECTION = {
   'identity-width': 'IdentityWidth',
-  'too-many-acl-domain-keys': 'TooManyAclDomainKeys',
-  'acl-domain-keys-not-ascending': 'AclDomainKeysNotAscending',
-  'duplicate-acl-domain-key': 'DuplicateAclDomainKey',
+  'scope-width': 'ScopeWidth',
+  'too-many-scopes': 'TooManyScopes',
+  'scopes-not-ascending': 'ScopesNotAscending',
+  'duplicate-scope': 'DuplicateScope',
   'duration-out-of-range': 'DurationOutOfRange',
   'start-timestamp-out-of-range': 'StartTimestampOutOfRange',
   'transport-key-length': 'TransportKeyLength',
@@ -163,7 +165,7 @@ function wireOf(record: PermitVectorRecord): SolanaPermitWireFields {
   return {
     userPubkey: unhex(record.permit.user_pubkey),
     transportKey: unhex(transportKey),
-    allowedAclDomainKeys: record.permit.allowed_acl_domain_keys.map(unhex),
+    allowedScopes: record.permit.allowed_scopes.map(unhex),
     startTimestamp: record.permit.start_timestamp,
     durationSeconds: record.permit.duration_seconds,
     verifyingProgramId: unhex(record.permit.verifying_program_id),
@@ -223,8 +225,8 @@ function recordNamed(name: string): PermitVectorRecord {
   return record;
 }
 
-/** The record every rejecting record is derived from: two ACL domains, everything else nominal. */
-const REFERENCE_RECORD = recordNamed('reference-permit-two-domains');
+/** The record every rejecting record is derived from: two scopes, everything else nominal. */
+const REFERENCE_RECORD = recordNamed('reference-permit-two-scopes');
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -278,9 +280,9 @@ describe('accepted records', () => {
     expect(rehex(kmsRouting.kmsEpochId)).toBe(record.kms_routing?.kms_epoch_id);
   });
 
-  it.each(named(accepted))('%s: reports its breadth from the signed domain list alone', (_name, record) => {
+  it.each(named(accepted))('%s: reports its breadth from the signed scope list alone', (_name, record) => {
     const fields = decodeSolanaPermitFields(wireOf(record));
-    expect(isPermissivePermit(fields)).toBe(record.permit.allowed_acl_domain_keys.length === 0);
+    expect(isPermissivePermit(fields)).toBe(record.permit.allowed_scopes.length === 0);
   });
 
   it('reads a u64 field identically as a bigint and as a decimal string', () => {

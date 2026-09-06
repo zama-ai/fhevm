@@ -5,15 +5,12 @@ import { runSolanaCurrentUserDecrypt, type CurrentUserDecryptDependencies } from
 const hex32 = (byte: string) => `0x${byte.repeat(64)}`;
 const validEnvironment = (): Record<string, string> => ({
   UD_RELAYER_URL: "http://127.0.0.1:3000",
-  UD_RPC_URL: "http://127.0.0.1:8899",
-  UD_PROOF_SERVICE_URL: "http://127.0.0.1:8080",
   UD_CONTRACTS_CHAIN_ID: "9223372036854788153",
   UD_HANDLE: hex32("1"),
   UD_SECRET_KEY: hex32("2"),
   UD_CONTEXT_ID: hex32("3"),
   UD_EPOCH_ID: hex32("8"),
-  UD_ALLOWED_DOMAIN_KEYS: hex32("4"),
-  UD_ACL_VALUE_KEY: hex32("5"),
+  UD_ENCRYPTED_VALUE_ACCOUNT: hex32("5"),
   UD_VERIFYING_PROGRAM_ID: hex32("6"),
   UD_KMS_SIGNERS: "0x0000000000000000000000000000000000000001,0x0000000000000000000000000000000000000002",
   UD_GATEWAY_CHAIN_ID: "31337",
@@ -26,7 +23,7 @@ const sdkReturning = (result: unknown): CurrentUserDecryptDependencies => ({
 });
 
 describe("solana-current-user-decrypt", () => {
-  test("requires every explicit current-decrypt input", async () => {
+  test("requires every explicit decrypt input", async () => {
     for (const name of Object.keys(validEnvironment())) {
       const environment: Record<string, string | undefined> = validEnvironment();
       delete environment[name];
@@ -47,10 +44,8 @@ describe("solana-current-user-decrypt", () => {
 
     expect(value).toBe(42n);
     expect(received).toMatchObject({
-      rpcUrl: "http://127.0.0.1:8899",
-      proofServiceUrl: "http://127.0.0.1:8080",
+      relayerUrl: "http://127.0.0.1:3000",
       verifyingProgramId: hex32("6"),
-      allowedAclDomainKeys: [hex32("4")],
       trust: {
         kmsContextId: hex32("3"),
         // Required, never defaulted: only the pair the deployed configuration declares is served.
@@ -70,10 +65,16 @@ describe("solana-current-user-decrypt", () => {
       },
       request: {
         handle: Uint8Array.from(Buffer.from("1".repeat(64), "hex")),
-        encryptedValueId: Uint8Array.from(Buffer.from("5".repeat(64), "hex")),
+        encryptedValueAccount: Uint8Array.from(Buffer.from("5".repeat(64), "hex")),
         durationSeconds: 3600n,
       },
     });
+    // The client names the account and nothing else: no proof, no ACL domain, no value id.
+    expect(Object.keys((received as { request: object }).request).sort()).toEqual([
+      "durationSeconds",
+      "encryptedValueAccount",
+      "handle",
+    ]);
   });
 
   test("honors the epoch, parameter and duration values", async () => {
@@ -99,10 +100,10 @@ describe("solana-current-user-decrypt", () => {
     });
   });
 
-  test("threads UD_SUBJECT through as the delegated entry's subject", async () => {
-    let received: { request?: { subject?: Uint8Array } } | undefined;
+  test("threads UD_ALLOWED_KEY through as the delegated entry's allowed key", async () => {
+    let received: { request?: { allowedKey?: Uint8Array } } | undefined;
     await runSolanaCurrentUserDecrypt(
-      { ...validEnvironment(), UD_SUBJECT: hex32("9") },
+      { ...validEnvironment(), UD_ALLOWED_KEY: hex32("9") },
       {
         userDecrypt: async (input) => {
           received = input as never;
@@ -111,11 +112,11 @@ describe("solana-current-user-decrypt", () => {
       },
     );
 
-    expect(received?.request?.subject).toEqual(Uint8Array.from(Buffer.from("9".repeat(64), "hex")));
+    expect(received?.request?.allowedKey).toEqual(Uint8Array.from(Buffer.from("9".repeat(64), "hex")));
   });
 
-  test("leaves the subject absent when UD_SUBJECT is not set — the direct entry", async () => {
-    let received: { request?: { subject?: Uint8Array } } | undefined;
+  test("leaves the allowed key absent when UD_ALLOWED_KEY is not set — the direct entry", async () => {
+    let received: { request?: { allowedKey?: Uint8Array } } | undefined;
     await runSolanaCurrentUserDecrypt(validEnvironment(), {
       userDecrypt: async (input) => {
         received = input as never;
@@ -123,7 +124,7 @@ describe("solana-current-user-decrypt", () => {
       },
     });
 
-    expect(received?.request?.subject).toBeUndefined();
+    expect(received?.request?.allowedKey).toBeUndefined();
   });
 
   test("rejects an empty SDK result", async () => {

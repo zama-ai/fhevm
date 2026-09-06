@@ -39,7 +39,7 @@ import {
   getAddressFromResolvedInstructionAccount,
   type ResolvedInstructionAccount,
 } from '@solana/program-client-core';
-import { findComputeSignerPda, findTotalSupplyAuthorityPda, findVaultAuthorityPda } from '../pdas/index.js';
+import { findTotalSupplyAuthorityPda, findVaultAuthorityPda } from '../pdas/index.js';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '../programAddress.js';
 
 export const WRAP_USDC_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([88, 246, 99, 254, 37, 183, 111, 12]);
@@ -57,7 +57,6 @@ export type WrapUsdcInstruction<
   TAccountUserUsdc extends string | AccountMeta<string> = string,
   TAccountVaultUsdc extends string | AccountMeta<string> = string,
   TAccountVaultAuthority extends string | AccountMeta<string> = string,
-  TAccountComputeSigner extends string | AccountMeta<string> = string,
   TAccountTotalSupplyAuthority extends string | AccountMeta<string> = string,
   TAccountBalanceValue extends string | AccountMeta<string> = string,
   TAccountTotalSupplyValue extends string | AccountMeta<string> = string,
@@ -84,7 +83,6 @@ export type WrapUsdcInstruction<
       TAccountUserUsdc extends string ? WritableAccount<TAccountUserUsdc> : TAccountUserUsdc,
       TAccountVaultUsdc extends string ? WritableAccount<TAccountVaultUsdc> : TAccountVaultUsdc,
       TAccountVaultAuthority extends string ? ReadonlyAccount<TAccountVaultAuthority> : TAccountVaultAuthority,
-      TAccountComputeSigner extends string ? ReadonlyAccount<TAccountComputeSigner> : TAccountComputeSigner,
       TAccountTotalSupplyAuthority extends string
         ? ReadonlyAccount<TAccountTotalSupplyAuthority>
         : TAccountTotalSupplyAuthority,
@@ -146,7 +144,6 @@ export type WrapUsdcAsyncInput<
   TAccountUserUsdc extends string = string,
   TAccountVaultUsdc extends string = string,
   TAccountVaultAuthority extends string = string,
-  TAccountComputeSigner extends string = string,
   TAccountTotalSupplyAuthority extends string = string,
   TAccountBalanceValue extends string = string,
   TAccountTotalSupplyValue extends string = string,
@@ -173,7 +170,6 @@ export type WrapUsdcAsyncInput<
   /** Program vault USDC token account. */
   vaultUsdc: Address<TAccountVaultUsdc>;
   vaultAuthority?: Address<TAccountVaultAuthority>;
-  computeSigner?: Address<TAccountComputeSigner>;
   totalSupplyAuthority?: Address<TAccountTotalSupplyAuthority>;
   /** Stable balance encrypted value account; read for the current handle and replaced by this execution. */
   balanceValue: Address<TAccountBalanceValue>;
@@ -189,12 +185,12 @@ export type WrapUsdcAsyncInput<
   /** System program used for ACL account creation. */
   systemProgram?: Address<TAccountSystemProgram>;
   /**
-   * canonical `["hcu-block-meter", compute_signer]` PDA. Supplied by an untrusted mint under a
+   * canonical `["hcu-block-meter", program, mint]` PDA. Supplied by an untrusted mint under a
    * metering-band cap; omitted when the mint is trusted or the cap is unrestricted.
    */
   hcuBlockMeter?: Address<TAccountHcuBlockMeter>;
   /**
-   * canonical `["hcu-trusted", compute_signer]` PDA. Present + valid bypasses the cap; absent
+   * canonical `["hcu-trusted", program, mint]` PDA. Present + valid bypasses the cap; absent
    * means the mint is metered.
    */
   hcuTrustedAppRecord?: Address<TAccountHcuTrustedAppRecord>;
@@ -211,7 +207,6 @@ export async function getWrapUsdcInstructionAsync<
   TAccountUserUsdc extends string,
   TAccountVaultUsdc extends string,
   TAccountVaultAuthority extends string,
-  TAccountComputeSigner extends string,
   TAccountTotalSupplyAuthority extends string,
   TAccountBalanceValue extends string,
   TAccountTotalSupplyValue extends string,
@@ -234,7 +229,6 @@ export async function getWrapUsdcInstructionAsync<
     TAccountUserUsdc,
     TAccountVaultUsdc,
     TAccountVaultAuthority,
-    TAccountComputeSigner,
     TAccountTotalSupplyAuthority,
     TAccountBalanceValue,
     TAccountTotalSupplyValue,
@@ -259,7 +253,6 @@ export async function getWrapUsdcInstructionAsync<
     TAccountUserUsdc,
     TAccountVaultUsdc,
     TAccountVaultAuthority,
-    TAccountComputeSigner,
     TAccountTotalSupplyAuthority,
     TAccountBalanceValue,
     TAccountTotalSupplyValue,
@@ -286,7 +279,6 @@ export async function getWrapUsdcInstructionAsync<
     userUsdc: { value: input.userUsdc ?? null, isWritable: true },
     vaultUsdc: { value: input.vaultUsdc ?? null, isWritable: true },
     vaultAuthority: { value: input.vaultAuthority ?? null, isWritable: false },
-    computeSigner: { value: input.computeSigner ?? null, isWritable: false },
     totalSupplyAuthority: {
       value: input.totalSupplyAuthority ?? null,
       isWritable: false,
@@ -323,11 +315,6 @@ export async function getWrapUsdcInstructionAsync<
       mint: getAddressFromResolvedInstructionAccount('mint', accounts.mint.value),
     });
   }
-  if (!accounts.computeSigner.value) {
-    accounts.computeSigner.value = await findComputeSignerPda({
-      mint: getAddressFromResolvedInstructionAccount('mint', accounts.mint.value),
-    });
-  }
   if (!accounts.totalSupplyAuthority.value) {
     accounts.totalSupplyAuthority.value = await findTotalSupplyAuthorityPda({
       mint: getAddressFromResolvedInstructionAccount('mint', accounts.mint.value),
@@ -355,7 +342,6 @@ export async function getWrapUsdcInstructionAsync<
       getAccountMeta('userUsdc', accounts.userUsdc),
       getAccountMeta('vaultUsdc', accounts.vaultUsdc),
       getAccountMeta('vaultAuthority', accounts.vaultAuthority),
-      getAccountMeta('computeSigner', accounts.computeSigner),
       getAccountMeta('totalSupplyAuthority', accounts.totalSupplyAuthority),
       getAccountMeta('balanceValue', accounts.balanceValue),
       getAccountMeta('totalSupplyValue', accounts.totalSupplyValue),
@@ -380,7 +366,6 @@ export async function getWrapUsdcInstructionAsync<
     TAccountUserUsdc,
     TAccountVaultUsdc,
     TAccountVaultAuthority,
-    TAccountComputeSigner,
     TAccountTotalSupplyAuthority,
     TAccountBalanceValue,
     TAccountTotalSupplyValue,
@@ -404,7 +389,6 @@ export type WrapUsdcInput<
   TAccountUserUsdc extends string = string,
   TAccountVaultUsdc extends string = string,
   TAccountVaultAuthority extends string = string,
-  TAccountComputeSigner extends string = string,
   TAccountTotalSupplyAuthority extends string = string,
   TAccountBalanceValue extends string = string,
   TAccountTotalSupplyValue extends string = string,
@@ -431,7 +415,6 @@ export type WrapUsdcInput<
   /** Program vault USDC token account. */
   vaultUsdc: Address<TAccountVaultUsdc>;
   vaultAuthority: Address<TAccountVaultAuthority>;
-  computeSigner: Address<TAccountComputeSigner>;
   totalSupplyAuthority: Address<TAccountTotalSupplyAuthority>;
   /** Stable balance encrypted value account; read for the current handle and replaced by this execution. */
   balanceValue: Address<TAccountBalanceValue>;
@@ -447,12 +430,12 @@ export type WrapUsdcInput<
   /** System program used for ACL account creation. */
   systemProgram?: Address<TAccountSystemProgram>;
   /**
-   * canonical `["hcu-block-meter", compute_signer]` PDA. Supplied by an untrusted mint under a
+   * canonical `["hcu-block-meter", program, mint]` PDA. Supplied by an untrusted mint under a
    * metering-band cap; omitted when the mint is trusted or the cap is unrestricted.
    */
   hcuBlockMeter?: Address<TAccountHcuBlockMeter>;
   /**
-   * canonical `["hcu-trusted", compute_signer]` PDA. Present + valid bypasses the cap; absent
+   * canonical `["hcu-trusted", program, mint]` PDA. Present + valid bypasses the cap; absent
    * means the mint is metered.
    */
   hcuTrustedAppRecord?: Address<TAccountHcuTrustedAppRecord>;
@@ -469,7 +452,6 @@ export function getWrapUsdcInstruction<
   TAccountUserUsdc extends string,
   TAccountVaultUsdc extends string,
   TAccountVaultAuthority extends string,
-  TAccountComputeSigner extends string,
   TAccountTotalSupplyAuthority extends string,
   TAccountBalanceValue extends string,
   TAccountTotalSupplyValue extends string,
@@ -492,7 +474,6 @@ export function getWrapUsdcInstruction<
     TAccountUserUsdc,
     TAccountVaultUsdc,
     TAccountVaultAuthority,
-    TAccountComputeSigner,
     TAccountTotalSupplyAuthority,
     TAccountBalanceValue,
     TAccountTotalSupplyValue,
@@ -516,7 +497,6 @@ export function getWrapUsdcInstruction<
   TAccountUserUsdc,
   TAccountVaultUsdc,
   TAccountVaultAuthority,
-  TAccountComputeSigner,
   TAccountTotalSupplyAuthority,
   TAccountBalanceValue,
   TAccountTotalSupplyValue,
@@ -542,7 +522,6 @@ export function getWrapUsdcInstruction<
     userUsdc: { value: input.userUsdc ?? null, isWritable: true },
     vaultUsdc: { value: input.vaultUsdc ?? null, isWritable: true },
     vaultAuthority: { value: input.vaultAuthority ?? null, isWritable: false },
-    computeSigner: { value: input.computeSigner ?? null, isWritable: false },
     totalSupplyAuthority: {
       value: input.totalSupplyAuthority ?? null,
       isWritable: false,
@@ -596,7 +575,6 @@ export function getWrapUsdcInstruction<
       getAccountMeta('userUsdc', accounts.userUsdc),
       getAccountMeta('vaultUsdc', accounts.vaultUsdc),
       getAccountMeta('vaultAuthority', accounts.vaultAuthority),
-      getAccountMeta('computeSigner', accounts.computeSigner),
       getAccountMeta('totalSupplyAuthority', accounts.totalSupplyAuthority),
       getAccountMeta('balanceValue', accounts.balanceValue),
       getAccountMeta('totalSupplyValue', accounts.totalSupplyValue),
@@ -621,7 +599,6 @@ export function getWrapUsdcInstruction<
     TAccountUserUsdc,
     TAccountVaultUsdc,
     TAccountVaultAuthority,
-    TAccountComputeSigner,
     TAccountTotalSupplyAuthority,
     TAccountBalanceValue,
     TAccountTotalSupplyValue,
@@ -656,33 +633,32 @@ export type ParsedWrapUsdcInstruction<
     /** Program vault USDC token account. */
     vaultUsdc: TAccountMetas[5];
     vaultAuthority: TAccountMetas[6];
-    computeSigner: TAccountMetas[7];
-    totalSupplyAuthority: TAccountMetas[8];
+    totalSupplyAuthority: TAccountMetas[7];
     /** Stable balance encrypted value account; read for the current handle and replaced by this execution. */
-    balanceValue: TAccountMetas[9];
+    balanceValue: TAccountMetas[8];
     /** Stable total-supply encrypted value account; read for the current handle and replaced by this execution. */
-    totalSupplyValue: TAccountMetas[10];
-    zamaEventAuthority: TAccountMetas[11];
+    totalSupplyValue: TAccountMetas[9];
+    zamaEventAuthority: TAccountMetas[10];
     /** ZamaHost program used for FHE operations. */
-    zamaProgram: TAccountMetas[12];
+    zamaProgram: TAccountMetas[11];
     /** ZamaHost config used for handle derivation. */
-    hostConfig: TAccountMetas[13];
+    hostConfig: TAccountMetas[12];
     /** Classic Token or Token-2022 program owning the underlying mint and token accounts. */
-    tokenProgram: TAccountMetas[14];
+    tokenProgram: TAccountMetas[13];
     /** System program used for ACL account creation. */
-    systemProgram: TAccountMetas[15];
+    systemProgram: TAccountMetas[14];
     /**
-     * canonical `["hcu-block-meter", compute_signer]` PDA. Supplied by an untrusted mint under a
+     * canonical `["hcu-block-meter", program, mint]` PDA. Supplied by an untrusted mint under a
      * metering-band cap; omitted when the mint is trusted or the cap is unrestricted.
      */
-    hcuBlockMeter?: TAccountMetas[16] | undefined;
+    hcuBlockMeter?: TAccountMetas[15] | undefined;
     /**
-     * canonical `["hcu-trusted", compute_signer]` PDA. Present + valid bypasses the cap; absent
+     * canonical `["hcu-trusted", program, mint]` PDA. Present + valid bypasses the cap; absent
      * means the mint is metered.
      */
-    hcuTrustedAppRecord?: TAccountMetas[17] | undefined;
-    eventAuthority: TAccountMetas[18];
-    program: TAccountMetas[19];
+    hcuTrustedAppRecord?: TAccountMetas[16] | undefined;
+    eventAuthority: TAccountMetas[17];
+    program: TAccountMetas[18];
   };
   data: WrapUsdcInstructionData;
 };
@@ -690,10 +666,10 @@ export type ParsedWrapUsdcInstruction<
 export function parseWrapUsdcInstruction<TProgram extends string, TAccountMetas extends readonly AccountMeta[]>(
   instruction: Instruction<TProgram> & InstructionWithAccounts<TAccountMetas> & InstructionWithData<ReadonlyUint8Array>,
 ): ParsedWrapUsdcInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 20) {
+  if (instruction.accounts.length < 19) {
     throw new SolanaError(SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS, {
       actualAccountMetas: instruction.accounts.length,
-      expectedAccountMetas: 20,
+      expectedAccountMetas: 19,
     });
   }
   let accountIndex = 0;
@@ -716,7 +692,6 @@ export function parseWrapUsdcInstruction<TProgram extends string, TAccountMetas 
       userUsdc: getNextAccount(),
       vaultUsdc: getNextAccount(),
       vaultAuthority: getNextAccount(),
-      computeSigner: getNextAccount(),
       totalSupplyAuthority: getNextAccount(),
       balanceValue: getNextAccount(),
       totalSupplyValue: getNextAccount(),

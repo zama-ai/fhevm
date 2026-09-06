@@ -33,12 +33,24 @@ const concat = (...parts: Uint8Array[]): Uint8Array => {
   }
   return out;
 };
-// sha256("zama-encrypted-value-key-v1" || domain || account || label), then
-// PDA(zamaHost, ["encrypted-value", encryptedValueId]) — zama_solana_acl::derive_encrypted_value_id.
-const valueAccountPda = (domain: Address, account: Address, label: Uint8Array): Promise<Address> =>
+// PDA(zamaHost, ["encrypted-value", token program, authority, mint, label]) — the crate's
+// `encrypted_value_seeds` for a token-program value scoped to its mint.
+const tokenValuePda = (mint: Address, authority: Address, label: Uint8Array): Promise<Address> =>
   pda(ZAMA_HOST_PROGRAM_ADDRESS, [
     utf8('encrypted-value'),
-    sha256(concat(utf8('zama-encrypted-value-key-v1'), base58.decode(domain), base58.decode(account), label)),
+    base58.decode(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS),
+    base58.decode(authority),
+    base58.decode(mint),
+    label,
+  ]);
+// A batcher value: the batcher program scoped to the batch, controlled by the batch authority.
+const batcherValuePda = (batch: Address, batchAuthority: Address, label: Uint8Array): Promise<Address> =>
+  pda(ZAMA_HOST_PROGRAM_ADDRESS, [
+    utf8('encrypted-value'),
+    base58.decode(CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS),
+    base58.decode(batchAuthority),
+    base58.decode(batch),
+    label,
   ]);
 // Batcher per-user labels: sha256(purpose_prefix || user) — encrypted_pending_join_label / encrypted_claim_amount_label.
 const userLabel = (purposePrefix: string, user: Address): Uint8Array =>
@@ -94,18 +106,17 @@ describe('buildClaimInstruction', () => {
       batch,
       batchAuthority,
       await pda(CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS, [utf8('join-record'), base58.decode(batch), base58.decode(user)]),
-      await valueAccountPda(batch, batchAuthority, userLabel('batcher-pending-join', user)),
-      await valueAccountPda(batch, batchAuthority, userLabel('batcher-claim-amount', user)),
+      await batcherValuePda(batch, batchAuthority, userLabel('batcher-pending-join', user)),
+      await batcherValuePda(batch, batchAuthority, userLabel('batcher-claim-amount', user)),
       payoutConfidentialMint,
       payoutUnderlyingMint,
       await ata(batchAuthority, payoutUnderlyingMint),
       await ata(user, payoutUnderlyingMint),
-      await pda(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, [utf8('fhe-compute'), base58.decode(payoutConfidentialMint)]),
       batchPayoutTokenAccount,
       userPayoutTokenAccount,
-      await valueAccountPda(payoutConfidentialMint, batchPayoutTokenAccount, ENCRYPTED_BALANCE_LABEL),
-      await valueAccountPda(payoutConfidentialMint, userPayoutTokenAccount, ENCRYPTED_BALANCE_LABEL),
-      await valueAccountPda(payoutConfidentialMint, batchPayoutTokenAccount, utf8('transferred_amount______________')),
+      await tokenValuePda(payoutConfidentialMint, batchPayoutTokenAccount, ENCRYPTED_BALANCE_LABEL),
+      await tokenValuePda(payoutConfidentialMint, userPayoutTokenAccount, ENCRYPTED_BALANCE_LABEL),
+      await tokenValuePda(payoutConfidentialMint, batchPayoutTokenAccount, utf8('transferred_amount______________')),
       await pda(ZAMA_HOST_PROGRAM_ADDRESS, [utf8('__event_authority')]),
       ZAMA_HOST_PROGRAM_ADDRESS,
       hostConfig,
@@ -122,9 +133,10 @@ describe('buildClaimInstruction', () => {
     expect(Array.from(decoded.discriminator)).toEqual(Array.from(CLAIM_DISCRIMINATOR));
   });
 
-  // Golden pins carried over from derive.test.ts (same fixture, byte-verified against the live
-  // scenario's hand-built map) and from `solana find-program-derived-address <program>
-  // string:__event_authority` for the two event authorities.
+  // Golden pins for the fixed fixture: the value accounts are re-pinned from the RFC 035 seed
+  // derivation (`encrypted_value_seeds`, mirrored and pinned in the SDK's encryptedValueAccount
+  // test), the rest carried over unchanged, the event authorities from
+  // `solana find-program-derived-address <program> string:__event_authority`.
   it('matches the golden derived addresses for the fixed fixture', async () => {
     const instruction = await buildClaimInstruction({
       payer,
@@ -137,10 +149,9 @@ describe('buildClaimInstruction', () => {
       hostConfig,
     });
     const addresses = instruction.accounts!.map((a) => a.address);
-    expect(addresses[12]).toBe('9Zex4Xc17gawiJNk1pEirBrTx2GsNb5HB6WYgHWWkemQ'); // payoutComputeSigner
-    expect(addresses[13]).toBe('8iRxqzbzVoCDyN5ruCrtDs3HEJXL6S5khbmijMta8j6z'); // batchPayoutTokenAccount
-    expect(addresses[15]).toBe('6L34CwYQLjs4e5sHTjCsoNk5UBZwDtTMkKegf7tRdoM7'); // batchPayoutBalanceValue
-    expect(addresses[18]).toBe('7usNGbH9WupMAsyDeqdUEoKrjisKcgusGjDiju4vNog'); // zamaEventAuthority
-    expect(addresses[21]).toBe('2KQ5N8YEUTk8hQWXBnkGjsvKPzm2rh2nFH6PeoVt7q8U'); // tokenEventAuthority
+    expect(addresses[12]).toBe('8iRxqzbzVoCDyN5ruCrtDs3HEJXL6S5khbmijMta8j6z'); // batchPayoutTokenAccount
+    expect(addresses[14]).toBe('3i11PrkLtKRVttNh4XhLcrvVyZp4yfyZroUJeL1ijZrM'); // batchPayoutBalanceValue
+    expect(addresses[17]).toBe('7usNGbH9WupMAsyDeqdUEoKrjisKcgusGjDiju4vNog'); // zamaEventAuthority
+    expect(addresses[20]).toBe('2KQ5N8YEUTk8hQWXBnkGjsvKPzm2rh2nFH6PeoVt7q8U'); // tokenEventAuthority
   });
 });

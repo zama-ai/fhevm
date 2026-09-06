@@ -13,10 +13,9 @@ type ClearValues = Awaited<ReturnType<FhevmSolanaPermitDecryptClient['userDecryp
  *
  * The parameters are `userDecrypt`'s verbatim: a signed permit session plus one entry per handle,
  * each naming the `EncryptedValue` account its value lives in —
- * `pendingJoinValueAccount`/`claimAmountValueAccount` (see `./internal/batcherPdas`) for a pending
- * joined amount or a claimed payout, or a confidential-token balance account's `aclValueKey` for a
- * wrapped balance. Evidence — the account read, and a historical-access proof when an update
- * replaced the handle mid-flight — is resolved by the SDK itself.
+ * `pendingJoinValueAddress`/`claimAmountValueAddress` (see `./internal/batcherPdas`) for a pending
+ * joined amount or a claimed payout, or `balanceValueAddress` for a wrapped balance. The Connector
+ * reads the account and fetches the allow leaf's proof itself; the client sends no evidence.
  */
 export async function decryptPosition(
   client: FhevmSolanaPermitDecryptClient,

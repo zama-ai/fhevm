@@ -66,7 +66,7 @@ const position = {
 };
 const awaiting = { kind: 'awaiting-dispatch' as const, remainingSlots: 1n };
 const dispatchable = { kind: 'awaiting-dispatch' as const, remainingSlots: 0n };
-const proofReady = { kind: 'proving' as const, proofReady: true };
+const proving = { kind: 'proving' as const };
 const settled = {
   kind: 'settled' as const,
   totalJoined: 100_000_000n,
@@ -172,8 +172,8 @@ describe('useDemoController generation safety', () => {
     expect(controller.state.depositOperatorAction).toBe(null);
   });
 
-  test('automatically settles when the proof is ready', async () => {
-    mocks.lifecycle.mockResolvedValue(proofReady);
+  test('automatically settles a dispatched batch', async () => {
+    mocks.lifecycle.mockResolvedValue(proving);
     await connect(controller);
     await flush();
 
@@ -193,12 +193,11 @@ describe('useDemoController generation safety', () => {
   });
 
   test('refreshes the lifecycle after an automatic action succeeds', async () => {
-    const proving = { kind: 'proving' as const, proofReady: false };
-    mocks.lifecycle.mockResolvedValueOnce(dispatchable).mockResolvedValueOnce(proving);
+    mocks.lifecycle.mockResolvedValueOnce(dispatchable).mockResolvedValueOnce(awaiting);
     await connect(controller);
     await flush();
 
-    expect(controller.state.depositLifecycle).toEqual(proving);
+    expect(controller.state.depositLifecycle).toEqual(awaiting);
   });
 
   test('does not advance a batch before its slot boundary', async () => {

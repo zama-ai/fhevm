@@ -7,7 +7,6 @@ export type DemoConfig = {
   readonly rpcUrl: string;
   readonly wsUrl: string;
   readonly relayerUrl: string;
-  readonly proofServiceUrl: string;
   readonly aclProgram: `0x${string}`;
   readonly userDecryptContextId: string;
   /** The registered KMS signer set (EVM addresses, registry order); party ids follow that order. */
@@ -95,7 +94,6 @@ export const parseDemoConfig = (value: unknown): DemoConfig => {
     rpcUrl,
     wsUrl: localUrl(raw.wsUrl, "demo config.wsUrl", "ws:"),
     relayerUrl: localUrl(raw.relayerUrl, "demo config.relayerUrl", "http:"),
-    proofServiceUrl: localUrl(raw.proofServiceUrl, "demo config.proofServiceUrl", "http:"),
     aclProgram: string(raw.aclProgram, "demo config.aclProgram") as `0x${string}`,
     userDecryptContextId: string(raw.userDecryptContextId, "demo config.userDecryptContextId"),
     kmsSigners: hexBytesArray(raw.kmsSigners, "demo config.kmsSigners", 20),

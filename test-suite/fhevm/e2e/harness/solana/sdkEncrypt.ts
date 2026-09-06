@@ -2,19 +2,16 @@
 //
 // Every input-proof phase does the same dance: dynamically import the SDK (kept out of the static
 // module graph so `bun test src` stays runnable before the SDK workspace is materialized),
-// configure the relayer auth, define the chain with the value's ACL domain key, and submit one
-// uint64 input proof — with the relayer's docker-internal MinIO URLs rewritten to the
-// host-published endpoint while the prover fetches key material.
+// configure the relayer auth, define the chain, and submit one uint64 input proof — with the
+// relayer's docker-internal MinIO URLs rewritten to the host-published endpoint while the prover
+// fetches key material.
 
 import { hostReachableMaterialUrl } from "../../../src/utils/fs";
 
 /** The SDK encrypt surface the scenarios drive (untyped: runtime dynamic-import seam). */
 export type SolanaSdkEncryptSurface = {
   setFhevmRuntimeConfig(config: { auth: { type: "ApiKeyHeader"; value: string } }): void;
-  defineFhevmSolanaChain(definition: {
-    id: bigint;
-    fhevm: { relayerUrl: string; acl: { domainKeys: readonly `0x${string}`[] } };
-  }): unknown;
+  defineFhevmSolanaChain(definition: { id: bigint; fhevm: { relayerUrl: string } }): unknown;
   createFhevmEncryptClient(parameters: { chain: unknown; aclProgramAddress: `0x${string}` }): {
     buildInputProof(parameters: {
       contractAddress: `0x${string}`;
@@ -60,8 +57,6 @@ export const withHostReachableFetch = async <T>(body: () => Promise<T>): Promise
 export const submitUint64InputProof = async (parameters: {
   readonly chainId: bigint;
   readonly relayerUrl: string;
-  /** The input's ACL domain key (bytes32 hex) the chain definition allows. */
-  readonly domainKey: `0x${string}`;
   readonly aclProgramAddress: `0x${string}`;
   readonly contractAddress: `0x${string}`;
   readonly userAddress: `0x${string}`;
@@ -71,10 +66,7 @@ export const submitUint64InputProof = async (parameters: {
   solanaSdk.setFhevmRuntimeConfig({
     auth: { type: "ApiKeyHeader", value: process.env.ZAMA_FHEVM_API_KEY ?? "local" },
   });
-  const chain = solanaSdk.defineFhevmSolanaChain({
-    id: parameters.chainId,
-    fhevm: { relayerUrl: parameters.relayerUrl, acl: { domainKeys: [parameters.domainKey] } },
-  });
+  const chain = solanaSdk.defineFhevmSolanaChain({ id: parameters.chainId, fhevm: { relayerUrl: parameters.relayerUrl } });
   const encryptClient = solanaSdk.createFhevmEncryptClient({
     chain,
     aclProgramAddress: parameters.aclProgramAddress,
