@@ -1,27 +1,15 @@
--- Partial index over the three in-flight statuses, on each request table, for two readers:
---   1. The Retry-After ETA, which counts queue depth and position from `req_status` so both pods
---      of an HA pair agree. See store::sql::repositories::queue_depth.
---   2. The dispatcher sweep, whose `req_status IN (...)` filter had no index at all and cost a
---      sequential scan per 500 ms tick.
+-- Serves the Retry-After ETA: it counts queue depth and position from `req_status`, so both pods
+-- of an HA pair agree. See store::sql::repositories::queue_depth.
 --
--- `(req_status, id)`: equality on status, then `id` as arrival order. Serves a position count
--- (`req_status = $1 AND id < $2`) and a depth count (`req_status = $1`).
+-- Separate from `idx_*_sweep_claim` over the same rows: that one leads on `owner_epoch` to rule
+-- rows out, this one needs `req_status` leading.
 --
--- `attempts` and `owner_epoch` stay out, including as INCLUDE columns - the sweep writes both on
--- every claim, and indexing either would make each claim a non-HOT update.
---
--- Built without CONCURRENTLY on purpose. The predicate matches only the live tail - a few
--- thousand rows - so the index is tiny and the build is bounded by one table scan: 125 ms over a
--- 1 000 000-row, 322 MB table, for a 64 kB index. A concurrent build would trade that brief
--- ACCESS SHARE-blocking window for two table scans, an INVALID index to clean up by hand if it
--- fails, and - because CREATE INDEX CONCURRENTLY waits on every other session's snapshot - a
--- deadlock whenever the integration suite migrates several test schemas at once.
+-- No CONCURRENTLY: the predicate covers only the live tail, so the build is one 125 ms scan, and
+-- CONCURRENTLY deadlocks the harness that migrates several test schemas at once.
 CREATE INDEX IF NOT EXISTS idx_input_proof_req_active
     ON input_proof_req (req_status, id)
     WHERE req_status IN ('queued'::req_status, 'processing'::req_status, 'tx_in_flight'::req_status);
 
--- Unlike input proofs, a decrypt request uses both stages this index covers: it enters `queued`
--- (readiness queue) and moves to `processing` (TX queue), so its ETA reads a count from each.
 CREATE INDEX IF NOT EXISTS idx_user_decrypt_req_active
     ON user_decrypt_req (req_status, id)
     WHERE req_status IN ('queued'::req_status, 'processing'::req_status, 'tx_in_flight'::req_status);
