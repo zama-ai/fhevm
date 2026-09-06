@@ -31,6 +31,7 @@ export { clearSolanaEncryptionKeyCache } from './encryptionKeyCache.js';
 export {
   bytesToHex as solanaProofBytesToHex,
   hexToBytes as solanaProofHexToBytes,
+  buildPublicLeafProof,
   mmrBuildProof,
   mmrPeaksFromLeaves,
   reconstructSolanaEncryptedValueAccount,

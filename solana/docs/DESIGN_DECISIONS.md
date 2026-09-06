@@ -353,7 +353,7 @@ Note: the per-instruction label-scoping described here was dissolved in fhevm-in
 DD-040). The `request_disclose_amount` / `disclose_amount` (and balance) instructions no longer exist;
 disclosure is now the single generic `disclose_secp` consumer of the host `verify_public_decrypt`
 verifier. In place of per-instruction label-scoping, the token binds the disclosed `EncryptedValue`
-encrypted value account to the mint's ACL domain.
+encrypted value account to the mint's scope.
 
 Context:
 
@@ -599,7 +599,7 @@ Status: product-open
 
 Context:
 
-`acl_storage_rationale.md` Part 5 describes two Solana token profiles: a staged inbound-credit profile
+Two Solana token profiles were weighed: a staged inbound-credit profile
 (recommended default for public-receivable tokens, where the recipient applies pending funds under
 their own transaction timing) and an immediate available-balance profile (EVM-style, where the sender
 updates the recipient's balance directly). The latter lets a sender force an update of the recipient's
@@ -924,9 +924,9 @@ The accepted design is eager materialization from confirmed instruction reconstr
 separate finality gate; KMS revalidates confirmed authorization at the plaintext-release boundary.
 
 The accepted product rule treats a valid confirmed authorization as sufficient. Coprocessor work is
-therefore scheduled from confirmed ingestion. The KMS ACL read and the proof-service confirmed RPC /
-Yellowstone path (`getAccountInfo` peak cross-check, completed-block ingest, bounded RPC recovery)
-use explicit confirmed commitment; KMS remains the only plaintext-release boundary.
+therefore scheduled from confirmed ingestion. The KMS connector's ACL read and the host listener's
+confirmed Yellowstone ingest use explicit confirmed commitment; KMS remains the only
+plaintext-release boundary.
 
 Decision provenance: accepted by the Solana feature owner during the review of
 [`zama-ai/fhevm#3122`](https://github.com/zama-ai/fhevm/pull/3122) on 2026-07-13. The accepted trade-off
@@ -1615,8 +1615,9 @@ application `(program, scope)` — `["hcu-block-meter", program, scope]`, `["hcu
 scope]` — where `program` is proven on every write from the output authority's seeds and `scope`
 is what that program declares. That closes the rotation vectors above by construction: a fresh
 keypair is not a PDA of any program, so it cannot be an output authority, and a caller cannot mint
-applications under a program it does not control. Every output of one execution must share one
-application (`FheExecuteMixedScopes`). The persist-nothing residual keeps its guard: under a finite
+applications under a program it does not control. Every output the default authority controls must
+share one application (`FheExecuteMixedScopes`); an output under an additional signing authority
+is metered as that execution's but deny-checked as its own. The persist-nothing residual keeps its guard: under a finite
 block cap an execution that binds no stored operand and no persistent output has no application to
 meter and is rejected (`FheExecuteUnanchoredUnderBlockCap`). The "registry Option B" this section
 deferred is what the verified program turned out to be — the program itself is the registry entry.
@@ -1777,6 +1778,8 @@ the account is gone, and a new burn cannot start until that close has committed.
 
 ## DD-041: Coprocessor Input Trust Is A Registered n-of-m Signer Set In `HostConfig`
 
+Status: adopted
+
 Input `CiphertextVerification` attestations are now verified against a **registered coprocessor
 signer set + configurable threshold**, matching EVM `InputVerifier`'s trust model, instead of the
 prior single hardcoded `coprocessor_signer` at threshold 1. The n-of-m recovery machinery already
@@ -1827,6 +1830,8 @@ Relates to DD-007 (input verification model) and closes the FUTURE_DESIGN §1 / 
 coprocessor signer at threshold 1" fragile item.
 
 ## DD-042: Confidential Vaults Are A Batcher-Gateway In Front Of A Public Share-Mint Vault
+
+Status: adopted
 
 Confidential yield on Solana is built as a **confidential batcher in front of an ordinary public
 vault**, not as a vault whose own accounting is encrypted. The batcher collects encrypted deposits,
@@ -1950,6 +1955,8 @@ token/host CPI passes deny-list records and HCU accounts (`deny_subject_record`,
 `grant_deny_list_enabled = false` and no binding HCU cap, which is how the PoC host fixtures run.
 
 ## DD-043: Two Derivation Regimes — Content-Addressed Deterministic Handles, Persistent-Write-Anchored Rand Seeds (`context_id` deleted)
+
+Status: adopted
 
 Decision (fhevm-internal#1853 W3+W4). Handle derivation is unified on keccak (the recorded
 2026-07-06 team position: EVM-side handle math is keccak, and both are same-price syscalls) and
@@ -2218,7 +2225,7 @@ Why not ship an allocator:
    step of each other — an allocator spending a raised frame would gain that shape at most one
    step before the trace stops it anyway. The one axis a raised frame would genuinely extend —
    persistent updates of MMR-mature values, whose decode cost grows with on-chain state
-   (`mature_updates_peaks_8/32/55`: 11, 6, 4 steps) — is bounded by history the app accumulated
+   (`mature_updates_peaks_8`, `mature_updates_peaks_32` and `mature_updates` at the peak cap: 19, 7, 4 steps) — is bounded by history the app accumulated
    itself, not by anything a transaction can request more of. Storage rent and compute dominate
    cost.
 
@@ -2253,11 +2260,15 @@ for such an authority, so only `program` can write a value that claims it. `scop
 a single namespace — and is trustworthy exactly as half of the pair. Both are seeds of the account
 (`["encrypted-value", program, authority, scope, label]`), so the identity is the address.
 
-An execution runs as one application: every stored operand and output it touches must carry the
-same pair (`FheExecuteMixedScopes`). That pair is what the block meter charges
-(`["hcu-block-meter", program, scope]`), the trust record names (`["hcu-trusted", program, scope]`),
-the deny list denies (`["deny-scope", program, scope]`), the permit scopes to (`allowedScopes`),
-the rand seed binds, and the input attestation's `contract_address` must equal (`program`).
+An execution runs as one application: every stored operand and output its default authority
+controls must carry the same pair (`FheExecuteMixedScopes`). That pair is what the block meter
+charges (`["hcu-block-meter", program, scope]`), the trust record names (`["hcu-trusted", program,
+scope]`), the permit scopes to (`allowedScopes`), the rand seed binds, and the input attestation's
+`contract_address` must equal (`program`). A value an additional signing authority admits (the
+token writing a receipt into a batcher-owned value) keeps its own application and does not fold,
+but the deny list is not scoped that way: a write is an allow in the value's own application, so
+the execution passes the deny record of every application it touches (`["deny-scope", program,
+scope]`), whoever signed for the value.
 `compute_subject` is deleted from the host, the SDK, the token program and the deposit app;
 reading a stored value into a computation is admitted by its authority's signature and nothing
 else.

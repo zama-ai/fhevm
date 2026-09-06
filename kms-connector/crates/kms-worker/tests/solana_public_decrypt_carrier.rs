@@ -26,7 +26,7 @@ use kms_worker::core::solana::proof::{HttpHostProofReader, LeafProofOutcome, Lea
 use kms_worker::core::solana::snapshot::{
     RpcHostStateReader, SnapshotKeys, multiple_accounts_request_body,
 };
-use mocktail::server::MockServer;
+use mocktail::{StatusCode, server::MockServer};
 use solana_pubkey::Pubkey;
 use solana_support::{EncryptedValueAccountFixture, deployment, handle};
 
@@ -99,21 +99,27 @@ async fn host_without_state() -> (MockServer, MockServer, SolanaHost) {
 }
 
 fn host_bound_to(rpc: &MockServer, coprocessor: &MockServer) -> SolanaHost {
+    host_bound_to_all(rpc, &[coprocessor])
+}
+
+fn host_bound_to_all(rpc: &MockServer, coprocessors: &[&MockServer]) -> SolanaHost {
     let client = reqwest::Client::new();
+    let routes: Vec<_> = coprocessors
+        .iter()
+        .map(|coprocessor| {
+            coprocessor
+                .base_url()
+                .expect("the mock coprocessor has a URL")
+                .clone()
+        })
+        .collect();
     SolanaHost {
         deployment: deployment(),
         reader: RpcHostStateReader::new(
             rpc.base_url().expect("the mock RPC has a URL").clone(),
             client.clone(),
         ),
-        proofs: HttpHostProofReader::new(
-            &[coprocessor
-                .base_url()
-                .expect("the mock coprocessor has a URL")
-                .clone()],
-            API_KEY.to_owned(),
-            client,
-        ),
+        proofs: HttpHostProofReader::new(&routes, API_KEY.to_owned(), client),
     }
 }
 
@@ -229,6 +235,41 @@ async fn a_handle_never_made_public_is_refused_terminally() {
         .await
         .expect_err("a handle nobody made public is not public");
     irrecoverable_containing(err, "no leaf");
+}
+
+/// Every configured coprocessor is asked and the answers are merged: one that fails the read
+/// and one that has not sealed the leaf yet cannot sink a request a third can serve.
+#[tokio::test]
+async fn one_serving_coprocessor_carries_a_request_the_others_cannot() {
+    let public = handle(0x55, FHE_TYPE_UINT64);
+    let fixture = public_then_updated(public, handle(0x56, FHE_TYPE_UINT64));
+    let query = fixture.public_query(public);
+    let (rpc, serving, _) = host_answering(&fixture, query, fixture.outcome(&query)).await;
+
+    let mut failing = MockServer::new_http("coprocessor-failing");
+    failing.mock(|when, then| {
+        when.post().path(LEAF_PROOFS_ROUTE);
+        then.error(StatusCode::INTERNAL_SERVER_ERROR, "leaf record unavailable");
+    });
+    failing.start().await.expect("the failing mock starts");
+    let proof_request =
+        kms_worker::core::solana::proof::leaf_proof_request_body(std::slice::from_ref(&query));
+    let behind_response = serde_json::json!({
+        "proofs": [wire_outcome(&LeafProofOutcome::NotFound { leaf_count: 0 })]
+    });
+    let mut behind = MockServer::new_http("coprocessor-behind");
+    behind.mock(move |when, then| {
+        when.post()
+            .path(LEAF_PROOFS_ROUTE)
+            .json(proof_request.clone());
+        then.json(behind_response.clone());
+    });
+    behind.start().await.expect("the behind mock starts");
+    let host = host_bound_to_all(&rpc, &[&failing, &behind, &serving]);
+
+    check_solana_handles_public_decrypt(&host, &[public], &carrier(&fixture))
+        .await
+        .expect("the one coprocessor that serves the proof authorizes the handle");
 }
 
 /// A record behind the chain says nothing yet: the read is retried once against the same mock,

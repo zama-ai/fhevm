@@ -37,7 +37,7 @@ pub const LEAF_PROOFS_PATH: &str = "/v1/solana/leaf-proofs";
 
 /// Upper bound on queries per read, the coprocessor's cap. A request's batch never reaches it:
 /// one query per entry and at most `MAX_REQUEST_HANDLES` entries.
-pub const MAX_LEAVES_PER_READ: usize = 64;
+const MAX_LEAVES_PER_READ: usize = 64;
 
 /// Which leaf a query asks for.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -99,7 +99,7 @@ impl LeafProofOutcome {
     /// Whether the record had sealed less history than the chain shows. A proof from such a
     /// record may still verify — an append merges only some peaks — but an absence from it says
     /// nothing, and the read is repeated once before either is judged.
-    pub fn is_behind(&self, live_leaf_count: u64) -> bool {
+    fn is_behind(&self, live_leaf_count: u64) -> bool {
         match self {
             Self::Found { leaf_count, .. } | Self::NotFound { leaf_count } => {
                 *leaf_count < live_leaf_count
@@ -124,7 +124,7 @@ impl LeafProofOutcome {
 
 /// Picks the better of two answers to one query. Stated once and used for both merges — across
 /// coprocessors and across the retry — so the two cannot prefer differently.
-pub fn merge_outcomes(current: LeafProofOutcome, other: LeafProofOutcome) -> LeafProofOutcome {
+fn merge_outcomes(current: LeafProofOutcome, other: LeafProofOutcome) -> LeafProofOutcome {
     if other.rank() > current.rank() {
         other
     } else {
@@ -451,5 +451,110 @@ impl HostProofReader for HttpHostProofReader {
                 failures.join("; ")
             })
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The shared spelling of the wire; the coprocessor pins its own against the same file.
+    const LEAF_PROOFS_FIXTURE: &str = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../../solana/test-fixtures/leaf-proofs/leaf_proofs_v1.json"
+    );
+
+    fn fixture() -> serde_json::Value {
+        serde_json::from_str(&std::fs::read_to_string(LEAF_PROOFS_FIXTURE).expect("read fixture"))
+            .expect("fixture is json")
+    }
+
+    #[test]
+    fn request_body_matches_the_shared_fixture() {
+        let fixture = fixture();
+        assert_eq!(
+            fixture["maxLeavesPerRequest"],
+            serde_json::json!(MAX_LEAVES_PER_READ)
+        );
+        let queries = [
+            LeafQuery {
+                encrypted_value_account: [0xAC; 32],
+                handle: [0x10; 32],
+                kind: LeafKind::Allowed { key: [0xA1; 32] },
+            },
+            LeafQuery {
+                encrypted_value_account: [0xAC; 32],
+                handle: [0x11; 32],
+                kind: LeafKind::Public,
+            },
+        ];
+        assert_eq!(leaf_proof_request_body(&queries), fixture["request"]);
+    }
+
+    #[test]
+    fn every_fixture_answer_decodes() {
+        let fixture = fixture();
+        let body = serde_json::json!({ "proofs": fixture["proofs"] }).to_string();
+        assert_eq!(
+            parse_leaf_proof_response(&body, 4).expect("the fixture answers decode"),
+            vec![
+                LeafProofOutcome::Found {
+                    leaf_index: 1,
+                    leaf_count: 3,
+                    siblings: vec![[0x5B; 32]],
+                },
+                LeafProofOutcome::NotFound { leaf_count: 3 },
+                LeafProofOutcome::UnknownAccount,
+                LeafProofOutcome::HistoryIncomplete,
+            ]
+        );
+    }
+
+    fn found(leaf_count: u64) -> LeafProofOutcome {
+        LeafProofOutcome::Found {
+            leaf_index: 0,
+            leaf_count,
+            siblings: Vec::new(),
+        }
+    }
+
+    /// Every ordered pair: a proof beats no proof, more history beats less, an answer beats a
+    /// record that cannot answer, and a tie keeps the current answer.
+    #[test]
+    fn merge_prefers_the_answer_with_more_to_say() {
+        use LeafProofOutcome::{HistoryIncomplete, NotFound, UnknownAccount};
+        let ordered = [
+            HistoryIncomplete,
+            UnknownAccount,
+            NotFound { leaf_count: 1 },
+            NotFound { leaf_count: 2 },
+            found(1),
+            found(2),
+        ];
+        for (weaker, a) in ordered.iter().enumerate() {
+            for b in &ordered[weaker + 1..] {
+                assert_eq!(merge_outcomes(a.clone(), b.clone()), *b, "{a:?} vs {b:?}");
+                assert_eq!(merge_outcomes(b.clone(), a.clone()), *b, "{b:?} vs {a:?}");
+            }
+            assert_eq!(merge_outcomes(a.clone(), a.clone()), *a);
+        }
+        // Equal rank, different content: the current answer stands.
+        let first = LeafProofOutcome::Found {
+            leaf_index: 3,
+            leaf_count: 2,
+            siblings: Vec::new(),
+        };
+        assert_eq!(merge_outcomes(first.clone(), found(2)), first);
+    }
+
+    #[test]
+    fn behind_means_less_history_than_the_chain_shows() {
+        use LeafProofOutcome::{HistoryIncomplete, NotFound, UnknownAccount};
+        assert!(found(2).is_behind(3));
+        assert!(!found(3).is_behind(3));
+        assert!(NotFound { leaf_count: 2 }.is_behind(3));
+        assert!(!NotFound { leaf_count: 3 }.is_behind(3));
+        assert!(UnknownAccount.is_behind(1));
+        assert!(!HistoryIncomplete.is_behind(1));
     }
 }

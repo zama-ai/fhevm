@@ -97,20 +97,21 @@ pub fn fhe_execute<'info>(
     // claims, and output-PDA derivation.
     let mut account_table = ExecutionAccountTable::new(ctx.remaining_accounts)?;
     // Preflight also settles the execution's application identity: the one `(program, scope)`
-    // every persistent value it reads or writes belongs to. Metering, the deny list and rand
-    // seeds all key on it.
-    let app = preflight_execution(&mut account_table, &ctx, &args)?;
-    if let Some(app) = app {
-        let host_config = &ctx.accounts.host_config;
-        let deny_record = account_table.deny_record(host_config.grant_deny_list_enabled, app)?;
-        check_scope_not_denied_info(host_config, app, deny_record)?;
+    // every persistent value the default authority controls belongs to. Metering and rand seeds
+    // key on it; the deny list gates every application the execution touches.
+    let preflight = preflight_execution(&mut account_table, &ctx, &args)?;
+    let app = preflight.app;
+    let host_config = &ctx.accounts.host_config;
+    for touched in preflight.touched_apps {
+        let deny_record =
+            account_table.deny_record(host_config.grant_deny_list_enabled, touched)?;
+        check_scope_not_denied_info(host_config, touched, deny_record)?;
     }
 
     // HCU metering: one pure pass over the execution, enforcing the per-execution total + in-execution depth
     // caps against the canonical host_config limits (u64::MAX = unlimited). The same total then feeds the
     // block-cap charge — reused, never independently recomputed — so both caps trip before
     // execution burns CU or creates any ACL record.
-    let host_config = &ctx.accounts.host_config;
     let execution = hcu::meter_execution(
         &args.steps,
         &args.dictionary,
@@ -131,7 +132,7 @@ pub fn fhe_execute<'info>(
             app: app.unwrap_or_default(),
         }),
     };
-    let random_seeds = collect_execution_random_seeds(&args, &handle_context);
+    let random_seeds = collect_execution_random_seeds(&args, &handle_context)?;
     block_cap::charge(&ctx, app, execution.total, clock.slot)?;
     // Execution is the single walk: it validates each step as it mutates. A failure mid-execution
     // leaves partial writes behind only until the runtime reverts the transaction, which discards
@@ -174,7 +175,7 @@ fn consume_rand_nonce(
 fn collect_execution_random_seeds(
     args: &FheExecuteArgs,
     handle_context: &ExecutionHandleContext,
-) -> Vec<FheExecuteRandomSeed> {
+) -> Result<Vec<FheExecuteRandomSeed>> {
     args.steps
         .iter()
         .enumerate()
@@ -184,9 +185,11 @@ fn collect_execution_random_seeds(
                 FheExecuteStep::Rand { .. } | FheExecuteStep::RandBounded { .. }
             )
         })
-        .map(|(index, _)| FheExecuteRandomSeed {
-            step_index: index as u16,
-            seed: handle_context.rand_seed(index as u16),
+        .map(|(index, _)| {
+            Ok(FheExecuteRandomSeed {
+                step_index: index as u16,
+                seed: handle_context.rand_seed(index as u16)?,
+            })
         })
         .collect()
 }
@@ -512,7 +515,7 @@ fn bind_execution_output<'info>(
     if declared.make_public {
         append_public_decrypt_leaf(output_info, &mut value, result)?;
     }
-    let space = 8 + EncryptedValue::space(value.peaks.len());
+    let space = zama_solana_acl::EncryptedValue::account_size(value.peaks.len());
     if output_info.owner == &crate::ID {
         grow_account_if_needed(
             &ctx.accounts.payer.to_account_info(),
@@ -521,19 +524,20 @@ fn bind_execution_output<'info>(
             space,
         )?;
     } else {
+        let program = declared.app.program.to_bytes();
+        let authority = declared.authority.to_bytes();
+        let [seed, program, authority, scope, label] = zama_solana_acl::encrypted_value_seeds(
+            &program,
+            &authority,
+            &declared.app.scope,
+            &declared.label,
+        );
         create_pda_strict(
             &ctx.accounts.payer.to_account_info(),
             output_info,
             &ctx.accounts.system_program.to_account_info(),
             space,
-            &[
-                zama_solana_acl::ENCRYPTED_VALUE_SEED,
-                declared.app.program.as_ref(),
-                declared.authority.as_ref(),
-                &declared.app.scope,
-                &declared.label,
-                &[output_pda.bump],
-            ],
+            &[seed, program, authority, scope, label, &[output_pda.bump]],
         )?;
     }
     write_account(output_info, &value)?;

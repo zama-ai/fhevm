@@ -88,7 +88,7 @@ export type HostConfig = {
   currentKmsContextId: ReadonlyUint8Array;
   /** Pauses production-shaped host instructions when true. */
   paused: boolean;
-  /** Enables deny-list checks for persistent grant authorities. */
+  /** Enables the deny list: a denied application `(program, scope)` cannot compute, allow, or make a handle public. */
   grantDenyListEnabled: boolean;
   /**
    * Max total HCU summed over one `fhe_execute` execution. `u64::MAX` = unlimited
@@ -151,7 +151,7 @@ export type HostConfigArgs = {
   currentKmsContextId: ReadonlyUint8Array;
   /** Pauses production-shaped host instructions when true. */
   paused: boolean;
-  /** Enables deny-list checks for persistent grant authorities. */
+  /** Enables the deny list: a denied application `(program, scope)` cannot compute, allow, or make a handle public. */
   grantDenyListEnabled: boolean;
   /**
    * Max total HCU summed over one `fhe_execute` execution. `u64::MAX` = unlimited

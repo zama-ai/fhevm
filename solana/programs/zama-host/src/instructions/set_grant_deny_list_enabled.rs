@@ -1,11 +1,12 @@
-//! Toggles deny-list witnesses for persistent grant authorities.
+//! Toggles the deny list: a denied application `(program, scope)` cannot compute, allow, or make a
+//! handle public.
 
 use anchor_lang::prelude::*;
 
 use super::common::*;
 use super::set_host_pause::HostAdmin;
 
-/// Enables or disables deny-list witnesses for persistent grant authorities.
+/// Enables or disables the deny list (`HostConfig::grant_deny_list_enabled`).
 pub fn set_grant_deny_list_enabled(ctx: Context<HostAdmin>, enabled: bool) -> Result<()> {
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
     assert_admin(&ctx.accounts.host_config, &ctx.accounts.admin)?;

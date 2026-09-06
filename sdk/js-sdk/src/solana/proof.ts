@@ -191,6 +191,40 @@ export function reconstructSolanaEncryptedValueAccount(
  *
  * @param leaves - Leaf commitments in append order.
  */
+/**
+ * The inclusion proof of leaf `publicLeafIndex` in the encrypted value account `account`, rebuilt
+ * from the account's chronological `history` and cross-checked against the `live` peaks and leaf
+ * count. Throws when the live account disagrees with the history: a proof built from a wrong history
+ * would only fail later, inside the on-chain verifier, with nothing pointing at the leaf.
+ */
+export function buildPublicLeafProof(
+  account: Uint8Array,
+  live: { readonly leafCount: bigint; readonly peaks: readonly Uint8Array[] },
+  history: readonly SolanaEncryptedValueAccountEvent[],
+  publicLeafIndex: bigint,
+): MmrProof {
+  const rebuilt = reconstructSolanaEncryptedValueAccount(account, history);
+  const samePeaks =
+    rebuilt.leafCount === live.leafCount &&
+    rebuilt.peaks.length === live.peaks.length &&
+    rebuilt.peaks.every((peak, index) => {
+      const livePeak = live.peaks[index];
+      return livePeak !== undefined && bytesToHex(peak) === bytesToHex(livePeak);
+    });
+  if (!samePeaks) {
+    throw new Error(
+      `encrypted value account holds ${live.leafCount} leaves that do not match the ` +
+        `${rebuilt.leafCount}-leaf history expected of it`,
+    );
+  }
+  if (history[Number(publicLeafIndex)]?.kind !== 'markedPublic') {
+    throw new Error(`leaf ${publicLeafIndex} of the expected history is not a public leaf`);
+  }
+  const proof = mmrBuildProof(rebuilt.leaves, publicLeafIndex);
+  if (proof === undefined) throw new Error(`leaf ${publicLeafIndex} is outside the ${rebuilt.leafCount}-leaf history`);
+  return proof;
+}
+
 export function mmrPeaksFromLeaves(leaves: readonly Uint8Array[]): readonly Uint8Array[] {
   // The append algorithm: push a height-0 node, then merge while the two topmost mountains have
   // the same height. What remains is the peak list, oldest mountain first.

@@ -505,10 +505,10 @@ fn execute_burn<'info>(
             event_authority: accounts.zama_event_authority,
             zama_program: accounts.zama_program,
             host_config: accounts.host_config,
-            deny_scope_record: fhe::deny_scope_record(
+            deny_scope_records: fhe::deny_scope_records(
                 accounts.host_config,
                 accounts.remaining_accounts,
-                mint_key,
+                [token_app(mint_key)],
             )?,
             system_program: accounts.system_program,
             hcu_block_meter: accounts.hcu_block_meter.clone(),

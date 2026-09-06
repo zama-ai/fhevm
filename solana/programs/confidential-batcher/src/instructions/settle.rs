@@ -23,7 +23,7 @@
 //! total (so cancellation is trustless), and the division never happens.
 //!
 //! The wrap and rate phases assume `grant_deny_list_enabled = false` and no
-//! binding HCU cap: every token/host CPI passes `deny_scope_record`,
+//! binding HCU cap: every token/host CPI passes `deny_scope_records`,
 //! `hcu_block_meter`, and `hcu_trusted_app_record` as hardcoded `None` (the
 //! PoC host fixtures never enable them).
 //!

@@ -33,8 +33,8 @@ use zama_solana_test_kit::{
     event_authority, funded_system_account, handle_for_chain, host_svm as mollusk,
     host_svm_without_previous_bank_hash as mollusk_without_previous_bank_hash, label,
     new_encrypted_value as new_encrypted_value_account, rand_nonce_account, read_encrypted_value,
-    read_encrypted_value_from_result, readonly_signer, serialized_account, signing, system_account,
-    system_program_account, writable, DECRYPTION_CONTRACT, GATEWAY_CHAIN_ID,
+    read_encrypted_value_from_result, readonly, readonly_signer, serialized_account, signing,
+    system_account, system_program_account, writable, DECRYPTION_CONTRACT, GATEWAY_CHAIN_ID,
     INPUT_VERIFICATION_CONTRACT,
 };
 
@@ -1044,22 +1044,42 @@ fn mollusk_deny_list_requires_exactly_the_applications_record() {
     );
 }
 
-#[test]
-fn mollusk_fhe_execute_output_of_an_additional_authority_keeps_its_own_application() {
-    // An output whose authority is a second signing authority of another program belongs to that
-    // program's application: it is not folded into the execution's application, so the deny
-    // record the execution carries is the default authority's alone. This is the transfer
-    // receipt: the token writes into the batcher's value inside the token's own execution.
-    let payer = Pubkey::new_unique();
-    let app = App::new();
-    let receiver = App::new();
+/// A create of `receiver`'s value written under its own signing authority from `app`'s execution
+/// (the transfer receipt shape), with `app` also creating a value of its own when `anchored`. The
+/// deny list is enabled; `receiver_record` is `receiver`'s deny record as passed.
+fn additional_authority_write_case(
+    payer: Pubkey,
+    app: &App,
+    receiver: &App,
+    anchored: bool,
+    receiver_record: (Pubkey, Account),
+) -> (Pubkey, Instruction, Vec<(Pubkey, Account)>) {
     let (host_config, host_config_account) = deny_enabled_host_config_account(payer);
     let app_record = host::deny_scope_address(app.app()).0;
     let mine = app.address("mine");
     let theirs = receiver.address("theirs");
     let mut dictionary = ExecutionDictionary::default();
-    let receipt = match receiver.stored_output(&mut dictionary, 1, "theirs", &[payer], None, false)
-    {
+    let mut remaining = Vec::new();
+    let mut accounts = execution_accounts(payer, app, host_config, host_config_account);
+    let mut steps = Vec::new();
+    if anchored {
+        steps.push(FheExecuteStep::TrivialEncrypt {
+            plaintext: [3; 32],
+            fhe_type: 5,
+            output: app.stored_output(&mut dictionary, 0, "mine", &[payer], None, false),
+        });
+        remaining.push(writable(mine));
+        accounts.push((mine, empty_system_account()));
+    }
+    let theirs_index = remaining.len() as u8;
+    let receipt = match receiver.stored_output(
+        &mut dictionary,
+        theirs_index,
+        "theirs",
+        &[payer],
+        None,
+        false,
+    ) {
         FheExecuteOutput::StoredValue {
             output_encrypted_value_index,
             output_program_index,
@@ -1073,7 +1093,7 @@ fn mollusk_fhe_execute_output_of_an_additional_authority_keeps_its_own_applicati
             ..
         } => FheExecuteOutput::StoredValue {
             output_encrypted_value_index,
-            output_authority_index: Some(2),
+            output_authority_index: Some(theirs_index + 1),
             output_program_index,
             output_authority_key_index,
             output_scope_index,
@@ -1085,18 +1105,20 @@ fn mollusk_fhe_execute_output_of_an_additional_authority_keeps_its_own_applicati
         },
         FheExecuteOutput::Transient => unreachable!(),
     };
-    let steps = vec![
-        FheExecuteStep::TrivialEncrypt {
-            plaintext: [3; 32],
-            fhe_type: 5,
-            output: app.stored_output(&mut dictionary, 0, "mine", &[payer], None, false),
-        },
-        FheExecuteStep::TrivialEncrypt {
-            plaintext: [4; 32],
-            fhe_type: 5,
-            output: receipt,
-        },
-    ];
+    steps.push(FheExecuteStep::TrivialEncrypt {
+        plaintext: [4; 32],
+        fhe_type: 5,
+        output: receipt,
+    });
+    remaining.push(writable(theirs));
+    remaining.push(readonly_signer(receiver.key()));
+    remaining.push(readonly(receiver_record.0));
+    accounts.push((theirs, empty_system_account()));
+    accounts.push((receiver.key(), empty_system_account()));
+    accounts.push(receiver_record);
+    if anchored {
+        accounts.push((app_record, empty_system_account()));
+    }
     let ix = fhe_execute_ix_with_extras(
         payer,
         app.key(),
@@ -1106,27 +1128,62 @@ fn mollusk_fhe_execute_output_of_an_additional_authority_keeps_its_own_applicati
             dictionary: dictionary.into_entries(),
             steps,
         },
-        vec![
-            writable(mine),
-            writable(theirs),
-            readonly_signer(receiver.key()),
-        ],
+        remaining,
         FheExecuteExtras {
-            deny_scope_record: Some(app_record),
+            deny_scope_record: anchored.then_some(app_record),
             rand_nonce: None,
         },
     );
-    let mut accounts = execution_accounts(payer, &app, host_config, host_config_account);
-    accounts.push((receiver.key(), empty_system_account()));
-    accounts.push((mine, empty_system_account()));
-    accounts.push((theirs, empty_system_account()));
-    accounts.push((app_record, empty_system_account()));
+    (theirs, ix, accounts)
+}
+
+#[test]
+fn mollusk_fhe_execute_output_of_an_additional_authority_keeps_its_own_application() {
+    // An output whose authority is a second signing authority of another program belongs to that
+    // program's application: it is not folded into the execution's application (the meter stays
+    // the default authority's), but it is one the execution touches, so its deny record travels
+    // with the execution too. This is the transfer receipt: the token writes into the batcher's
+    // value inside the token's own execution.
+    let payer = Pubkey::new_unique();
+    let app = App::new();
+    let receiver = App::new();
+    let receiver_record = host::deny_scope_address(receiver.app()).0;
+    let (theirs, ix, accounts) = additional_authority_write_case(
+        payer,
+        &app,
+        &receiver,
+        true,
+        (receiver_record, empty_system_account()),
+    );
     let result = mollusk().process_and_validate_instruction(&ix, &accounts, &[Check::success()]);
     let created = read_encrypted_value_from_result(&result, theirs);
     assert_eq!(created.program, receiver.program());
     assert_eq!(created.encrypted_value_account_authority, receiver.key());
     assert_eq!(created.scope, receiver.scope);
     assert_eq!(created.leaf_count, 1);
+}
+
+#[test]
+fn mollusk_fhe_execute_denies_a_write_under_an_additional_authority_into_a_denied_application() {
+    // A write is an allow in the value's own application, whoever signed for it: the receipt into
+    // a denied application fails whether or not the execution also anchors on its own application.
+    let payer = Pubkey::new_unique();
+    let app = App::new();
+    let denied = App::new();
+    for anchored in [true, false] {
+        let (_, ix, accounts) = additional_authority_write_case(
+            payer,
+            &app,
+            &denied,
+            anchored,
+            deny_scope_record_account(denied.app(), true),
+        );
+        mollusk().process_and_validate_instruction(
+            &ix,
+            &accounts,
+            &[custom_error(host::errors::ZamaHostError::ScopeDenied)],
+        );
+    }
 }
 
 #[test]

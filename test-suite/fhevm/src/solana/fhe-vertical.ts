@@ -14,13 +14,7 @@
 import { getAddressEncoder, type Address } from "@solana/kit";
 
 import { fetchSolanaEncryptedValueState, type SolanaEncryptedValueState } from "@sdk-src/solana/encryptedValueAccount.js";
-import {
-  bytesToHex,
-  mmrBuildProof,
-  reconstructSolanaEncryptedValueAccount,
-  type MmrProof,
-  type SolanaEncryptedValueAccountEvent,
-} from "@sdk-src/solana/proof.js";
+import { buildPublicLeafProof, type MmrProof, type SolanaEncryptedValueAccountEvent } from "@sdk-src/solana/proof.js";
 
 import { runSolanaCurrentUserDecrypt } from "./current-user-decrypt";
 import { ZAMA_HOST_PROGRAM_ADDRESS } from "./internal/generated/zamaHost/programAddress.js";
@@ -124,41 +118,12 @@ export const userDecryptExpect = (
     ...(params.allowedKey === undefined ? {} : { UD_ALLOWED_KEY: addressHex(params.allowedKey) }),
   });
 
-/**
- * The inclusion proof of leaf `publicLeafIndex` in `encryptedValue`, rebuilt from the account's
- * chronological `history` and cross-checked against the `live` peaks and leaf count. Throws when the
- * live account disagrees with the history: a proof built from a wrong history would only fail later,
- * inside the on-chain verifier, with nothing pointing at the leaf.
- */
-export const publicLeafProof = (
-  encryptedValue: Address,
-  live: { readonly leafCount: bigint; readonly peaks: readonly Uint8Array[] },
-  history: readonly SolanaEncryptedValueAccountEvent[],
-  publicLeafIndex: bigint,
-): MmrProof => {
-  const rebuilt = reconstructSolanaEncryptedValueAccount(addressBytes(encryptedValue), history);
-  const samePeaks =
-    rebuilt.leafCount === live.leafCount &&
-    rebuilt.peaks.length === live.peaks.length &&
-    rebuilt.peaks.every((peak, index) => bytesToHex(peak) === bytesToHex(live.peaks[index]!));
-  if (!samePeaks) {
-    throw new Error(
-      `encrypted value ${encryptedValue} holds ${live.leafCount} leaves that do not match the ` +
-        `${rebuilt.leafCount}-leaf history the scenario expects`,
-    );
-  }
-  if (history[Number(publicLeafIndex)]?.kind !== "markedPublic") {
-    throw new Error(`leaf ${publicLeafIndex} of the expected history is not a public leaf`);
-  }
-  const proof = mmrBuildProof(rebuilt.leaves, publicLeafIndex);
-  if (proof === undefined) throw new Error(`leaf ${publicLeafIndex} is outside the ${rebuilt.leafCount}-leaf history`);
-  return proof;
-};
 
-/** {@link publicLeafProof} against the live account. */
-export const buildPublicLeafProof = async (
+/** The SDK's {@link buildPublicLeafProof} against the live account. */
+export const livePublicLeafProof = async (
   context: SolanaProvisioningContext,
   encryptedValue: Address,
   history: readonly SolanaEncryptedValueAccountEvent[],
   publicLeafIndex: bigint,
-): Promise<MmrProof> => publicLeafProof(encryptedValue, await readEncryptedValueState(context, encryptedValue), history, publicLeafIndex);
+): Promise<MmrProof> =>
+  buildPublicLeafProof(addressBytes(encryptedValue), await readEncryptedValueState(context, encryptedValue), history, publicLeafIndex);

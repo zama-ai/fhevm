@@ -388,10 +388,11 @@ fn compute_transfer_handles<'info>(
             event_authority: accounts.zama_event_authority,
             zama_program: accounts.zama_program,
             host_config: accounts.host_config,
-            deny_scope_record: fhe::deny_scope_record(
+            deny_scope_records: fhe::deny_scope_records(
                 accounts.host_config,
                 accounts.remaining_accounts,
-                mint_key,
+                std::iter::once(token_app(mint_key))
+                    .chain(accounts.receipt.as_ref().map(|receipt| receipt.key.app())),
             )?,
             system_program: accounts.system_program,
             hcu_block_meter: accounts.hcu_block_meter.clone(),
@@ -406,6 +407,42 @@ fn compute_transfer_handles<'info>(
         transferred_output.handle()?,
         to_output.handle()?,
     ))
+}
+
+/// Re-writes `value` onto a fresh handle of the same amount (`value + 0`) allowed to `allows`,
+/// signed by `authority`: the one-step execution behind `allow_balance_viewers` and
+/// `allow_total_supply_viewers`. Returns the new handle.
+pub(crate) fn rewrite_allowing<'info>(
+    context: fhe::ExecuteContext<'_, 'info>,
+    value: &Account<'info, zama_host::EncryptedValue>,
+    id: zama_fhe::EncryptedValueId,
+    authority: fhe::ValueAuthority<'info>,
+    allows: impl IntoIterator<Item = Pubkey>,
+) -> Result<[u8; 32]> {
+    let operand = fhe::uint64_operand(value)?;
+    let output = fhe::PersistentOutput::new(value.to_account_info(), id, &authority, allows)?;
+    let execution = zama_fhe::FheExecution::build(
+        zama_fhe::ExecutionEncryptedValueAccountAuthority::new(
+            value.encrypted_value_account_authority,
+        ),
+        |builder| {
+            builder.add(
+                operand,
+                zama_fhe::Scalar::<zama_fhe::Uint<64>>::u64(0),
+                output.output(),
+            )?;
+            Ok(())
+        },
+    )
+    .map_err(invalid_execution)?;
+    let accounts =
+        fhe::ExecutionAccountSet::for_execution(&execution, [output.account_info()], [authority])?;
+    fhe::execute(fhe::Execute {
+        context,
+        accounts: &accounts,
+        execution,
+    })?;
+    output.handle()
 }
 
 pub(crate) fn invalid_execution(

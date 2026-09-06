@@ -27,9 +27,10 @@ pub struct ExecutionCpiAccounts<'info> {
     pub payer: AccountInfo<'info>,
     pub encrypted_value_account_authority: AccountInfo<'info>,
     pub host_config: AccountInfo<'info>,
-    /// The application's `DenyScopeRecord`, required while the host's deny list is enabled and
-    /// refused while it is disabled.
-    pub deny_scope_record: Option<AccountInfo<'info>>,
+    /// One `DenyScopeRecord` per application the execution touches (the caller's, plus that of
+    /// every value written or read under an additional signing authority), required while the
+    /// host's deny list is enabled and refused while it is disabled.
+    pub deny_scope_records: Vec<AccountInfo<'info>>,
     pub system_program: AccountInfo<'info>,
     /// Per-application HCU block meter (mut), keyed on the execution's `(program, scope)`.
     /// Untrusted applications in the metering band supply it; trusted applications and the
@@ -83,7 +84,7 @@ where
     {
         return Err(anchor_lang::error::ErrorCode::ConstraintAddress.into());
     }
-    let deny_scope_record = accounts.deny_scope_record;
+    let deny_scope_records = accounts.deny_scope_records;
     let fixed_accounts = zama_host::cpi::accounts::FheExecute {
         payer: accounts.payer,
         encrypted_value_account_authority: accounts.encrypted_value_account_authority,
@@ -95,18 +96,14 @@ where
         event_authority: accounts.event_authority,
         program: accounts.program,
     };
-    let (account_metas, account_infos) = fhe_execute_account_tables(
-        &fixed_accounts,
-        execution,
-        resolver,
-        deny_scope_record.as_ref(),
-    )?;
+    let (account_metas, account_infos) =
+        fhe_execute_account_tables(&fixed_accounts, execution, resolver, &deny_scope_records)?;
 
     // The execution self-describes its `remaining_accounts` length (DD-033). The deny-record
-    // witness is appended per transaction, so the final count is only known here — stamped in
+    // witnesses are appended per transaction, so the final count is only known here — stamped in
     // place: `invoke` consumed the execution, so nothing can observe the mutation.
     execution.args.account_count =
-        u8::try_from(execution.remaining_accounts.len() + usize::from(deny_scope_record.is_some()))
+        u8::try_from(execution.remaining_accounts.len() + deny_scope_records.len())
             .map_err(|_| anchor_lang::error::ErrorCode::AccountNotEnoughKeys)?;
 
     let instruction = Instruction {
@@ -130,15 +127,14 @@ pub(crate) fn fhe_execute_account_tables<'info, R>(
     fixed_accounts: &zama_host::cpi::accounts::FheExecute<'info>,
     execution: &FheExecution,
     resolver: &R,
-    deny_scope_record: Option<&AccountInfo<'info>>,
+    deny_scope_records: &[AccountInfo<'info>],
 ) -> anchor_lang::prelude::Result<(Vec<AccountMeta>, Vec<AccountInfo<'info>>)>
 where
     R: ExecutionAccountResolver<'info> + ?Sized,
 {
     let mut account_metas = fixed_accounts.to_account_metas(None);
     let mut account_infos = fixed_accounts.to_account_infos();
-    let dynamic_tail =
-        execution.remaining_accounts.len() + usize::from(deny_scope_record.is_some());
+    let dynamic_tail = execution.remaining_accounts.len() + deny_scope_records.len();
     account_metas.reserve_exact(dynamic_tail);
     account_infos.reserve_exact(dynamic_tail);
     for required in &execution.remaining_accounts {
@@ -153,7 +149,7 @@ where
         account_metas.push(meta);
         account_infos.push(account);
     }
-    if let Some(record) = deny_scope_record {
+    for record in deny_scope_records {
         account_metas.push(AccountMeta::new_readonly(record.key(), false));
         account_infos.push(record.clone());
     }

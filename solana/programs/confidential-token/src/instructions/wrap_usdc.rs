@@ -175,10 +175,10 @@ pub fn wrap_usdc<'info>(ctx: Context<'info, WrapUsdc<'info>>, amount: u64) -> Re
             event_authority: &ctx.accounts.zama_event_authority,
             zama_program: &ctx.accounts.zama_program,
             host_config: &ctx.accounts.host_config,
-            deny_scope_record: fhe::deny_scope_record(
+            deny_scope_records: fhe::deny_scope_records(
                 &ctx.accounts.host_config,
                 ctx.remaining_accounts,
-                mint_key,
+                [token_app(mint_key)],
             )?,
             system_program: &ctx.accounts.system_program,
             hcu_block_meter: ctx

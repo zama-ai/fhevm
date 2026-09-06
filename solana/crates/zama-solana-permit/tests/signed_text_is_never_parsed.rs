@@ -48,7 +48,7 @@ fn signature_over_text_with_trailing_newline_is_rejected() {
 fn signature_over_text_with_trailing_bytes_is_rejected() {
     let fields = reference_fields();
     for suffix in [
-        "\nACL domains: ALL (permissive)",
+        "\nScopes: ALL (permissive)",
         "\n- 21111111111111111111111111111111111111111111",
         " ",
         "\n\n",

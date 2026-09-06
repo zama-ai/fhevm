@@ -105,7 +105,7 @@ pub fn make_handle_public(
 
     append_public_decrypt_leaf(&info, &mut value, handle)?;
 
-    let space = 8 + EncryptedValue::space(value.peaks.len());
+    let space = zama_solana_acl::EncryptedValue::account_size(value.peaks.len());
     grow_account_if_needed(
         &ctx.accounts.payer.to_account_info(),
         &info,

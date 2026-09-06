@@ -73,10 +73,13 @@ dictionary, persistent, update, allow, application…).
     public leaf alike) and `make_handle_public` require the value's
     application record `["deny-scope", program, scope]` to be present, at its
     canonical address, and not denied (`DenyRecordMissing` / `ScopeDenied`);
-    with the list disabled no record may be passed. The deny list names
-    applications, not keys (DD-048): a denied key can still be allowed by a
-    clean application, and user-decryption delegation is a separate access
-    path with no deny check.
+    with the list disabled no record may be passed. An `fhe_execute` checks
+    every application whose value it touches, including one written under an
+    additional signing authority (the transfer receipt), so a denied
+    application cannot be written into from another program's execution. The
+    deny list names applications, not keys (DD-048): a denied key can still
+    be allowed by a clean application, and user-decryption delegation is a
+    separate access path with no deny check.
 11. **[HOLDS]** Only the encrypted value account authority writes a value: it
     signs every persistent create or update and `make_handle_public`, and it is
     a PDA of the value's `program` (#7). A viewer is not a co-admin — an allow
@@ -301,7 +304,10 @@ dictionary, persistent, update, allow, application…).
     program that declares N scopes has N per-slot budgets. The multiplier is
     bounded by program control — a scope exists only under a program that can
     sign for the value's authority, so nobody mints applications under a
-    program they do not control.
+    program they do not control. The meter charged is the default authority's
+    application; a value written under an additional signing authority is
+    metered there, so a program that lets another program write into its
+    values (the receipt) spends that program's budget, by its own consent.
 51. **[HOLDS]** The optional HCU accounts on `fhe_execute` can arrive in four
     states, and every state that could hand out more budget fails closed:
     - **Present, program-owned, well-formed** — used. An
@@ -490,8 +496,8 @@ not when the threat model changes.
     heap cost of persistent updates grows with the stored value's MMR peak
     count — on-chain state invisible at build time — and is swept per
     maturity (`fhe_execute_boundary/mature_updates_peaks_8` 19 steps, `_32` 7,
-    the 55-peak extreme 4), alongside the operand-width axis
-    (`fhe_execute_boundary/reduction_heavy`, host heap wall at 5 steps of
+    `mature_updates` at the peak cap 4), alongside the operand-width axis
+    (`fhe_execute_boundary/reduction_heavy`, host heap wall at 4 steps of
     60-operand sums; the builder's budget stops the same shape earlier on the
     app side).
 

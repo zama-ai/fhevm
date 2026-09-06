@@ -18,12 +18,7 @@ import type { FhevmSolanaChain } from '@sdk-src/core/types/fhevmSolanaChain.js';
 import type { FhevmRuntime } from '@sdk-src/core/types/coreFhevmRuntime.js';
 import type { RelayerPublicDecryptOptions } from '@sdk-src/core/types/relayer.js';
 import { publicDecryptCertificate } from '@sdk-src/solana/actions/publicDecryptCertificate.js';
-import {
-  mmrBuildProof,
-  reconstructSolanaEncryptedValueAccount,
-  type MmrProof,
-  type SolanaEncryptedValueAccountEvent,
-} from '@sdk-src/solana/proof.js';
+import { buildPublicLeafProof, type MmrProof, type SolanaEncryptedValueAccountEvent } from '@sdk-src/solana/proof.js';
 import {
   CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
   ZAMA_HOST_PROGRAM_ADDRESS,
@@ -94,8 +89,8 @@ export function burnedAmountLeafHistory(
 }
 
 /**
- * Builds the burned handle's public-leaf inclusion proof against the account's live peaks, from
- * the history in {@link burnedAmountLeafHistory}. Throws if the live account disagrees with it.
+ * The burned handle's public-leaf inclusion proof against the account's live peaks, from the
+ * history in {@link burnedAmountLeafHistory}. Throws if the live account disagrees with it.
  */
 export function buildBurnedAmountPublicProof(
   encryptedValueAccount: Address,
@@ -104,20 +99,7 @@ export function buildBurnedAmountPublicProof(
   batchAuthority: Address,
 ): MmrProof {
   const history = burnedAmountLeafHistory(burnedTotalHandle, batchAuthority);
-  const rebuilt = reconstructSolanaEncryptedValueAccount(base58.decode(encryptedValueAccount), history.events);
-  const samePeaks =
-    rebuilt.leafCount === live.leafCount &&
-    rebuilt.peaks.length === live.peaks.length &&
-    rebuilt.peaks.every((peak, index) => bytesToHex(peak) === bytesToHex(live.peaks[index]!));
-  if (!samePeaks) {
-    throw new Error(
-      `burned-amount account ${encryptedValueAccount} holds ${live.leafCount} leaves that do not match the ` +
-        `${rebuilt.leafCount}-leaf history the batcher writes (one allow for the batch authority, then the public leaf)`,
-    );
-  }
-  const proof = mmrBuildProof(rebuilt.leaves, history.publicLeafIndex);
-  if (proof === undefined) throw new Error('the burned amount history has no public leaf to prove');
-  return proof;
+  return buildPublicLeafProof(base58.decode(encryptedValueAccount), live, history.events, history.publicLeafIndex);
 }
 
 /**

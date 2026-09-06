@@ -13,7 +13,7 @@
 //!   lagging at `confirmed` shows a freshly granted delegation as absent, and the refusal is
 //!   then one the connector, reading later, would not repeat. That window is accepted policy
 //!   rather than an oversight — the EVM pre-check reading `latest` has carried the same
-//!   exposure since it was born, passing absent rows through would send the common case (no
+//!   exposure since it was introduced, passing absent rows through would send the common case (no
 //!   grant ever existed) to a doomed gateway transaction, and a caller inside the window
 //!   succeeds by resubmitting;
 //! * every ambiguity of *data* passes: a live row, an unreadable or misshapen account, an
@@ -257,8 +257,8 @@ pub(crate) fn encrypted_value_read_addresses(entries: &[DelegatedEntry]) -> Vec<
         .collect()
 }
 
-/// Plans the row read from the encrypted-value-account read's result. Entries whose encrypted
-/// value account this check cannot judge drop out here (indeterminate — the connector
+/// Plans the row read from the encrypted-value-account read's result. Entries this check cannot
+/// judge from their encrypted value account drop out here (indeterminate — the connector
 /// decides); each surviving entry
 /// contributes its two row addresses in the interleaving [`RowReadPlan`] documents.
 pub(crate) fn plan_row_reads(

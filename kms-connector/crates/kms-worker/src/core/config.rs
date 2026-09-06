@@ -171,13 +171,13 @@ pub struct HostChainConfig {
         alias = "solanaHostProgramId"
     )]
     pub solana_host_program_id: Option<SolanaPubkeyBytes>,
-    /// Base URLs of the coprocessors' leaf-proof service, one per coprocessor. Every one is
+    /// Base URLs of the coprocessors' leaf-proof endpoint, one per coprocessor. Every one is
     /// asked on each read and the answers are merged.
     ///
     /// Required, non-empty, for Solana chains; must be absent for EVM chains.
     #[serde(default, alias = "solanaProofEndpoints")]
     pub solana_proof_endpoints: Vec<Url>,
-    /// The bearer key the leaf-proof service expects.
+    /// The bearer key the leaf-proof endpoint expects.
     ///
     /// Required for Solana chains; must be absent for EVM chains.
     #[serde(default, alias = "solanaProofApiKey")]

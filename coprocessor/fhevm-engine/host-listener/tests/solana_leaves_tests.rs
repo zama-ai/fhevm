@@ -11,8 +11,8 @@ use host_listener::database::solana_leaves::{
     EncryptedValueWrite, LeafSource, StoredCheckpoint, TransactionLeafSources,
 };
 use host_listener::http_server::{
-    HttpServer, LeafProof, LeafProofRequest, LeafProofResponse, LeafQuery,
-    LeafQueryKind, LEAF_PROOFS_PATH,
+    ErrorCode, ErrorResponse, HttpServer, LeafProof, LeafProofRequest,
+    LeafProofResponse, LeafQuery, LeafQueryKind, LEAF_PROOFS_PATH,
 };
 use serial_test::serial;
 use sqlx::postgres::PgPoolOptions;
@@ -209,14 +209,9 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
         LeafProof::Found {
             leaf_index,
             leaf_count,
-            peaks,
             siblings,
         } => {
             assert_eq!(*leaf_count, 3);
-            assert_eq!(
-                *peaks,
-                recorded_peaks.iter().map(hex::encode).collect::<Vec<_>>()
-            );
             let siblings = siblings
                 .iter()
                 .map(|sibling| {
@@ -240,6 +235,31 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
     assert_eq!(verify(&body.proofs[1], recorded.leaves[0].commitment), 0);
     assert_eq!(body.proofs[2], LeafProof::NotFound { leaf_count: 3 });
     assert_eq!(body.proofs[3], LeafProof::UnknownAccount);
+
+    // A record whose leaf rows disagree with its state cannot build a proof: the route
+    // answers a retryable 502 rather than a path against the wrong peaks.
+    sqlx::query(
+        "DELETE FROM solana_encrypted_value_leaves WHERE leaf_index = 1",
+    )
+    .execute(&pool)
+    .await?;
+    let response = client
+        .post(&url)
+        .bearer_auth("secret")
+        .json(&LeafProofRequest {
+            leaves: vec![LeafQuery {
+                encrypted_value_account: hex32(&ACCOUNT),
+                handle: hex32(&[0x11; 32]),
+                kind: LeafQueryKind::Public,
+                key: None,
+            }],
+        })
+        .send()
+        .await?;
+    assert_eq!(response.status(), 502);
+    let error: ErrorResponse = response.json().await?;
+    assert_eq!(error.code, ErrorCode::UpstreamTransient);
+    assert!(error.retryable);
 
     // An account first seen through an update serves no proof.
     let mut tx = pool.begin().await?;

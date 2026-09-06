@@ -366,7 +366,7 @@ fn the_invoke_model_matches_a_counting_allocator_for_every_admitted_shape() {
                 authority_infos.iter().cloned(),
             )
             .unwrap_or_else(|error| panic!("{name}: resolves: {error:?}"));
-        let tables = crate::cpi::fhe_execute_account_tables(&fixed, &execution, &resolved, None)
+        let tables = crate::cpi::fhe_execute_account_tables(&fixed, &execution, &resolved, &[])
             .expect("assembles");
         let measured = counted_bytes() - before;
         assert_eq!(

@@ -10,7 +10,7 @@ been exercised. Commands are run from `solana/` unless a row changes directory.
 
 | Layer | Exact command | What it proves | What it does **not** prove | Prerequisites / cost |
 | --- | --- | --- | --- | --- |
-| Pure operator conformance | `cargo test -p zama-solana-runtime-tests --test operator_conformance` | The test-owned evaluator agrees with the explicit operator/type contract, including closed-world admission, operand-source rules, and rejected shapes. | SBF execution, account validation, CPIs, TFHE evaluation, randomness, or any production path. | None beyond a Rust toolchain. Warm: about one second for 379 named, filterable cases. |
+| Pure operator conformance | `cargo test -p zama-solana-runtime-tests --test operator_conformance` | The test-owned evaluator agrees with the explicit operator/type contract, including closed-world admission, operand-source rules, and rejected shapes. | SBF execution, account validation, CPIs, TFHE evaluation, randomness, or any production path. | None beyond a Rust toolchain. Warm: about one second for 328 named, filterable cases. |
 | Execution/ABI contracts | `cargo test -p zama-solana-runtime-tests --test execution_contracts` | SDK execution serialization and checked-in IDL/ABI contracts used by these tests have not drifted. | Program execution, account validation, CPIs, or cryptographic behavior. | None beyond a Rust toolchain. Warm: very fast. |
 | Representative SBF operator admission | `bash scripts/check-zama-host-idl.sh && cargo test -p zama-solana-runtime-tests --test operator_mollusk_conformance` | The compiled `zama-host` admits representative operator shapes, binds operands, and emits the expected handles and events; a test-owned evaluator makes the resulting computation readable. | Exhaustive operator coverage, real TFHE, database/listener behavior, or the networked stack. | Rebuilds PoC SBF artifacts. Eleven warm tests run in about 0.05 seconds; a cold SBF build is materially slower. |
 | Real SBF host runtime | `bash scripts/check-zama-host-idl.sh && cargo test -p zama-solana-runtime-tests --test host_mollusk -- --nocapture` | `zama-host` SBF behavior through account state, inner CPIs, return data, and rejection paths under Mollusk. | A validator, off-chain listeners/workers, real TFHE, or the networked stack. | Rebuilds PoC SBF artifacts. Warm tests are fast; a cold SBF build is materially slower. |
@@ -39,8 +39,9 @@ afterthought.
 ## Mollusk runtime coverage
 
 The `operator_mollusk_conformance`, `host_mollusk`, `fhe_execute_boundary`, `token_mollusk`,
-`batcher_mollusk`, `vault_mollusk`, `permit_invalidation_mollusk`, `disclose_packet_fit`, and specimen
-(`counter_mollusk`, `dep_chain_mollusk`) suites execute real SBF under Mollusk, booted and
+`batcher_mollusk`, `vault_mollusk`, `permit_invalidation_mollusk`, `disclose_packet_fit`,
+`host_admin_mollusk`, `user_decryption_delegation_mollusk`, and specimen (`counter_mollusk`,
+`dep_chain_mollusk`) suites execute real SBF under Mollusk, booted and
 asserted through the shared `zama-solana-test-kit` crate. Mollusk surfaces resulting **account state**, **inner instructions (CPIs)**, and **return
 data**, which are the stable artifacts these suites assert on. Plain `emit!` program-data logs are
 intentionally not part of the runtime-test contract; tests should assert the state transition,
@@ -108,7 +109,7 @@ build in those three, because they are invisible to this workspace:
 # `cargo check` or `cargo build` passes while `cargo test -p …` does not compile.
 (cd ../coprocessor/fhevm-engine && SQLX_OFFLINE=true cargo check --workspace --all-targets)
 (cd ../kms-connector && SQLX_OFFLINE=true cargo check --workspace --all-targets)
-(cd ../relayer && cargo check --all-targets)
+(cd ../relayer && cargo check --workspace --all-targets --all-features)
 ```
 
 Each of those roots hid a real break at least once. The grep sweeps in

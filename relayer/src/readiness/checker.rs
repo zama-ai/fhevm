@@ -136,8 +136,8 @@ impl ReadinessChecker {
             // it, a request whose delegation is revoked or expired would cost a gateway
             // transaction and die by timeout — the Decryption contract has no rejection entry
             // point, so a connector refusal is never observable at the relayer. Direct entries
-            // are not pre-checked: their authorization is membership in the encrypted value
-            // account, and there is no cheaper reading of it here than the connector's own.
+            // are not pre-checked: their authorization is an allow leaf sealed on the write,
+            // and there is no cheaper reading of it here than the connector's own.
             // The chain is picked inside, from the permit's signed `chain_id` — the field the
             // connector authorizes against — not from a handle's unsigned bytes.
             UserDecryptRequest::SolanaSrfc38V1 { solana_request, .. } => {

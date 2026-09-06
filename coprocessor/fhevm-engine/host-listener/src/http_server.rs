@@ -32,7 +32,7 @@ use zama_solana_acl::{mmr_build_proof, mmr_peaks_from_leaves};
 use crate::database::solana_leaves::{load_recorded_leaves, LeafKind};
 
 /// Most leaves one request may ask for.
-pub const MAX_LEAVES_PER_REQUEST: usize = 64;
+const MAX_LEAVES_PER_REQUEST: usize = 64;
 
 pub const LEAF_PROOFS_PATH: &str = "/v1/solana/leaf-proofs";
 
@@ -151,14 +151,14 @@ pub struct LeafProofRequest {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", tag = "status")]
 pub enum LeafProof {
-    /// The leaf is recorded. `peaks` and `leafCount` are the record's state the
-    /// proof was built against; the caller verifies against the on-chain account
-    /// and retries when the record is behind the chain (`leafCount` smaller).
+    /// The leaf is recorded. `leafCount` is the history the record had sealed
+    /// when it built the proof; the caller verifies the path against the
+    /// on-chain account's peaks and retries when the record is behind the
+    /// chain (`leafCount` smaller).
     #[serde(rename_all = "camelCase")]
     Found {
         leaf_index: u64,
         leaf_count: u64,
-        peaks: Vec<String>,
         /// Authentication path from the leaf to its peak.
         siblings: Vec<String>,
     },
@@ -408,7 +408,6 @@ async fn prove(
     Ok(LeafProof::Found {
         leaf_index: proof.leaf_index,
         leaf_count,
-        peaks: recorded.state.peaks.iter().map(hex::encode).collect(),
         siblings: proof.siblings.iter().map(hex::encode).collect(),
     })
 }
@@ -460,6 +459,41 @@ mod tests {
         env!("CARGO_MANIFEST_DIR"),
         "/openapi/solana_leaf_proofs.json"
     );
+
+    /// The shared spelling of the wire; the connector pins its own against the same file.
+    const LEAF_PROOFS_FIXTURE: &str = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../../solana/test-fixtures/leaf-proofs/leaf_proofs_v1.json"
+    );
+
+    #[test]
+    fn wire_matches_the_shared_fixture() {
+        let fixture: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(LEAF_PROOFS_FIXTURE)
+                .expect("read fixture"),
+        )
+        .expect("fixture is json");
+        assert_eq!(
+            fixture["maxLeavesPerRequest"],
+            serde_json::json!(MAX_LEAVES_PER_REQUEST)
+        );
+        let request: LeafProofRequest =
+            serde_json::from_value(fixture["request"].clone())
+                .expect("the fixture request decodes");
+        assert_eq!(
+            serde_json::to_value(&request).expect("serialize"),
+            fixture["request"]
+        );
+        assert_eq!(request.leaves.len(), 2);
+        for proof in fixture["proofs"].as_array().expect("proofs") {
+            let decoded: LeafProof = serde_json::from_value(proof.clone())
+                .expect("every fixture proof decodes");
+            assert_eq!(
+                serde_json::to_value(&decoded).expect("serialize"),
+                *proof
+            );
+        }
+    }
 
     /// Regenerate with `UPDATE_OPENAPI=1`.
     #[test]

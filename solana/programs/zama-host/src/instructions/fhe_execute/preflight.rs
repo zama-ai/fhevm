@@ -1,15 +1,16 @@
 //! Whole-execution checks that run before any state mutates: every remaining account and every
 //! dictionary entry is referenced, every persistent operand's authority signed, every persistent
-//! value the default authority controls belongs to one application, and that application's deny
-//! record is present when the deny list is on. Returns the application identity the rest of the
-//! execution keys on.
+//! value the default authority controls belongs to one application, and the deny record of every
+//! application the execution touches is present when the deny list is on. Returns the application
+//! identity the rest of the execution keys on and the applications to deny-check.
 //!
 //! A value admitted by an additional signing authority belongs to that authority's own
 //! application and does not fold: the signature is that program's consent, given through
 //! `invoke_signed`, for this execution to read the value or write it. That is how programs
 //! compose on Solana — the token program spends a batcher-owned amount, or writes the batcher a
-//! receipt of what it transferred — while the meter and the deny check stay on the application
-//! that built the execution.
+//! receipt of what it transferred — while the meter stays on the application that built the
+//! execution. The deny list is not scoped that way: a write is an allow in the value's own
+//! application, so every application touched is checked, whoever signed for it.
 
 use super::account_table::ExecutionAccountTable;
 use super::*;
@@ -18,13 +19,14 @@ pub(super) fn preflight_execution<'info>(
     table: &mut ExecutionAccountTable<'_, 'info>,
     ctx: &Context<'info, FheExecute<'info>>,
     args: &FheExecuteArgs,
-) -> Result<Option<AppScope>> {
+) -> Result<PreflightOutcome> {
     let mut preflight = Preflight {
         table,
         dictionary: &args.dictionary,
         dictionary_used: vec![false; args.dictionary.len()],
         encrypted_value_account_authority: ctx.accounts.encrypted_value_account_authority.key(),
         app: None,
+        touched_apps: Vec::new(),
         persistent_outputs_written: Vec::with_capacity(MAX_FHE_EXECUTION_STEPS),
     };
     for (index, step) in args.steps.iter().enumerate() {
@@ -36,13 +38,26 @@ pub(super) fn preflight_execution<'info>(
         preflight.dictionary_used.iter().all(|used| *used),
         ZamaHostError::FheExecuteDictionaryEntryUnreferenced
     );
-    if let Some(app) = preflight.app {
+    for app in &preflight.touched_apps {
         preflight
             .table
-            .mark_deny_record(ctx.accounts.host_config.grant_deny_list_enabled, app)?;
+            .mark_deny_record(ctx.accounts.host_config.grant_deny_list_enabled, *app)?;
     }
     preflight.table.assert_all_used()?;
-    Ok(preflight.app)
+    Ok(PreflightOutcome {
+        app: preflight.app,
+        touched_apps: preflight.touched_apps,
+    })
+}
+
+#[derive(Debug)]
+pub(super) struct PreflightOutcome {
+    /// The application the default authority's persistent values belong to: what the execution
+    /// is metered and rand-seeded as. `None` when it controls none.
+    pub(super) app: Option<AppScope>,
+    /// Every distinct application whose persistent value the execution reads or writes, under
+    /// any signing authority. Each is deny-checked.
+    pub(super) touched_apps: Vec<AppScope>,
 }
 
 /// Marks every account the execution references into the shared table so
@@ -56,6 +71,8 @@ struct Preflight<'t, 'a, 'info> {
     /// The `(program, scope)` of every persistent value the default authority controls; a second
     /// one is an error.
     app: Option<AppScope>,
+    /// Every distinct application touched, the default authority's included, in first-seen order.
+    touched_apps: Vec<AppScope>,
     /// Persistent accounts written by completed earlier steps. Operands are checked
     /// before the current step's output is recorded, so read-then-update in one
     /// step remains valid.
@@ -82,10 +99,14 @@ impl Preflight<'_, '_, '_> {
         Ok(())
     }
 
-    /// Folds one persistent value's application into the execution's when the default authority
-    /// controls it: the first one is adopted, every later one must match (one execution, one
-    /// meter). A value under an additional signing authority is that program's own.
+    /// Records one persistent value's application for the deny check and folds it into the
+    /// execution's when the default authority controls it: the first one is adopted, every later
+    /// one must match (one execution, one meter). A value under an additional signing authority
+    /// is that program's own.
     fn fold_app(&mut self, authority: Pubkey, app: AppScope) -> Result<()> {
+        if !self.touched_apps.contains(&app) {
+            self.touched_apps.push(app);
+        }
         if authority != self.encrypted_value_account_authority {
             return Ok(());
         }
@@ -347,7 +368,7 @@ mod tests {
         accounts: &[AccountInfo<'static>],
         args: &FheExecuteArgs,
         default_authority: Pubkey,
-    ) -> Result<Option<AppScope>> {
+    ) -> Result<PreflightOutcome> {
         let mut table = ExecutionAccountTable::new(accounts).unwrap();
         let mut preflight = Preflight {
             table: &mut table,
@@ -355,14 +376,17 @@ mod tests {
             dictionary_used: vec![false; args.dictionary.len()],
             encrypted_value_account_authority: default_authority,
             app: None,
+            touched_apps: Vec::new(),
             persistent_outputs_written: Vec::new(),
         };
         for (index, step) in args.steps.iter().enumerate() {
             preflight_step(step, index, &mut preflight)?;
         }
-        let app = preflight.app;
         preflight.table.assert_all_used()?;
-        Ok(app)
+        Ok(PreflightOutcome {
+            app: preflight.app,
+            touched_apps: preflight.touched_apps,
+        })
     }
 
     #[test]
@@ -418,7 +442,7 @@ mod tests {
 
         let by_default_signer = vec![stored_value(app(1), authority)];
         assert_eq!(
-            run(&by_default_signer, &args, authority).unwrap(),
+            run(&by_default_signer, &args, authority).unwrap().app,
             Some(app(1))
         );
 
@@ -486,7 +510,7 @@ mod tests {
             )
         }];
         assert_eq!(
-            run(&same_scope, &two_reads, authority).unwrap(),
+            run(&same_scope, &two_reads, authority).unwrap().app,
             Some(app(1))
         );
 
@@ -539,7 +563,8 @@ mod tests {
     }
 
     /// A value under an additional signing authority is that program's own: reading or writing
-    /// it neither folds into nor conflicts with the execution's application.
+    /// it neither folds into nor conflicts with the execution's application, but its application
+    /// is still one the execution touches, so it is deny-checked.
     #[test]
     fn values_of_another_signing_authority_keep_their_own_application() {
         let authority = Pubkey::new_unique();
@@ -550,7 +575,9 @@ mod tests {
             stored_value(app(2), foreign_authority),
             signer_account(foreign_authority, true),
         ];
-        assert_eq!(run(&accounts, &two_reads, authority).unwrap(), Some(app(1)));
+        let outcome = run(&accounts, &two_reads, authority).unwrap();
+        assert_eq!(outcome.app, Some(app(1)));
+        assert_eq!(outcome.touched_apps, vec![app(1), app(2)]);
 
         // Written by the foreign authority (remaining account 2, signing) into its own scope.
         let mut args = execution(vec![FheExecuteStep::Binary {
@@ -581,7 +608,9 @@ mod tests {
             test_account(Pubkey::new_unique()),
             signer_account(foreign_authority, true),
         ];
-        assert_eq!(run(&accounts, &args, authority).unwrap(), Some(app(1)));
+        let outcome = run(&accounts, &args, authority).unwrap();
+        assert_eq!(outcome.app, Some(app(1)));
+        assert_eq!(outcome.touched_apps, vec![app(1), app(2)]);
     }
 
     #[test]
@@ -614,6 +643,7 @@ mod tests {
             dictionary_used: vec![false; 2],
             encrypted_value_account_authority: Pubkey::new_unique(),
             app: None,
+            touched_apps: Vec::new(),
             persistent_outputs_written: Vec::new(),
         };
         for (index, step) in args.steps.iter().enumerate() {

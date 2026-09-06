@@ -13,7 +13,7 @@
 //   burned-handle SNS poll (docker psql loop) -> `stack.waitForSnsCommit`.
 //   "OK make_handle_public" grep -> `sealBurnedAmountHandle` throws on failure.
 //   leaf_count / leaf_index proof assertions -> the consume proof is rebuilt client-side from the
-//     account's expected history (`buildPublicLeafProof`): the burn's allow leaf (0) and public
+//     account's expected history (`livePublicLeafProof`): the burn's allow leaf (0) and public
 //     leaf (1) plus the explicit re-seal (2). The rebuild cross-checks the live peaks, so a history
 //     the account does not hold fails here, by name, not inside the on-chain verifier. The KMS
 //     certificate itself needs no proof: the Connector reads the public leaf through the coprocessors.
@@ -37,7 +37,7 @@ import { describe, expect, test } from "bun:test";
 
 import { getAddressEncoder, isSolanaError, SOLANA_ERROR__INSTRUCTION_ERROR__CUSTOM, type Address } from "@solana/kit";
 
-import { buildPublicLeafProof, certifiedPublicDecrypt, currentHandle } from "../../src/solana/fhe-vertical";
+import { livePublicLeafProof, certifiedPublicDecrypt, currentHandle } from "../../src/solana/fhe-vertical";
 import {
   createConfidentialMint,
   createSplMint,
@@ -145,7 +145,7 @@ describe("solana confidential-token consume vertical", () => {
       // against the 3-leaf history, which is what proves both the lifecycle leaves and the re-seal
       // reached the account in order.
       await sealBurnedAmountHandle(context, { owner: wallet.signer, mint, handle: burnedHandle });
-      const inclusionProof = await buildPublicLeafProof(
+      const inclusionProof = await livePublicLeafProof(
         context,
         target.burnedAmountValue,
         [...burnedAmountLeafHistory(burnedHandle, wallet.signer.address), { kind: "markedPublic", handle: burnedHandle }],

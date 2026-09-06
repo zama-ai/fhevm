@@ -74,45 +74,18 @@ pub fn allow_total_supply_viewers<'info>(
         total_supply_authority,
         encrypted_total_supply_label(),
     )?;
-    let deny_scope_record =
-        fhe::deny_scope_record(&ctx.accounts.host_config, ctx.remaining_accounts, mint)?;
     let old_total_supply_handle = total_supply_value.current_handle;
-    let total_supply = fhe::uint64_operand(total_supply_value)?;
-    let authority = fhe::ValueAuthority::total_supply(
-        &ctx.accounts.total_supply_authority,
-        mint,
-        ctx.bumps.total_supply_authority,
-    )?;
-    let total_supply_output = fhe::PersistentOutput::new(
-        total_supply_value.to_account_info(),
-        total_supply_encrypted_value_id(mint),
-        &authority,
-        viewers,
-    )?;
-    let execution = zama_fhe::FheExecution::build(
-        zama_fhe::ExecutionEncryptedValueAccountAuthority::new(total_supply_authority),
-        |builder| {
-            builder.add(
-                total_supply,
-                zama_fhe::Scalar::<zama_fhe::Uint<64>>::u64(0),
-                total_supply_output.output(),
-            )?;
-            Ok(())
-        },
-    )
-    .map_err(invalid_execution)?;
-    let execution_accounts = fhe::ExecutionAccountSet::for_execution(
-        &execution,
-        [total_supply_output.account_info()],
-        [authority],
-    )?;
-    fhe::execute(fhe::Execute {
-        context: fhe::ExecuteContext {
+    let new_total_supply_handle = rewrite_allowing(
+        fhe::ExecuteContext {
             payer: &ctx.accounts.payer,
             event_authority: &ctx.accounts.zama_event_authority,
             zama_program: &ctx.accounts.zama_program,
             host_config: &ctx.accounts.host_config,
-            deny_scope_record,
+            deny_scope_records: fhe::deny_scope_records(
+                &ctx.accounts.host_config,
+                ctx.remaining_accounts,
+                [token_app(mint)],
+            )?,
             system_program: &ctx.accounts.system_program,
             hcu_block_meter: ctx
                 .accounts
@@ -125,15 +98,21 @@ pub fn allow_total_supply_viewers<'info>(
                 .as_ref()
                 .map(|account| account.to_account_info()),
         },
-        accounts: &execution_accounts,
-        execution,
-    })?;
+        total_supply_value,
+        total_supply_encrypted_value_id(mint),
+        fhe::ValueAuthority::total_supply(
+            &ctx.accounts.total_supply_authority,
+            mint,
+            ctx.bumps.total_supply_authority,
+        )?,
+        viewers,
+    )?;
     emit_cpi!(TotalSupplyHandleUpdatedEvent {
         version: APP_EVENT_VERSION,
         mint,
         old_handle: old_total_supply_handle,
         old_encrypted_value: total_supply_value.key(),
-        new_handle: total_supply_output.handle()?,
+        new_handle: new_total_supply_handle,
         new_encrypted_value: total_supply_value.key(),
         reason: TotalSupplyUpdateReason::AllowViewers,
     });

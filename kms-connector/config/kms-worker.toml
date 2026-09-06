@@ -180,15 +180,10 @@ url = "http://localhost:8545"
 # Chain ID of the host chain (required)
 chain_id = 12345
 # ACL backend for this host chain (optional, defaults to "evm").
-# Solana uses a Gateway-PoC extraData witness envelope in this branch. That path is useful for
-# end-to-end validation, but it is not the native-v0 Solana request format from acl_storage_spec.md.
-# Native-v0 helpers parse signed request bytes, derive account fetch plans, attach fetched
-# witnesses, fetch Solana accounts through JSON-RPC getMultipleAccounts, check fetch/finality
-# policy, combine witness verification, Ed25519 request-signature verification, durable replay
-# reservation, finalized-account recheck, response certificate verification, response-route
-# metadata, durable native request/response rows, and a native notification/picker boundary. The
-# live event-processing path still needs KMS Core native work-item dispatch and tx-sender/relayer
-# publication.
+# A Solana host chain is authorized by the connector itself: it reads the encrypted value account
+# at confirmed commitment, fetches the allow leaf's proof from the coprocessors' leaf record and
+# verifies it against the peaks it read (RFC 035). A public decrypt names its account in the
+# version-3 extraData; a user decrypt names the allowed key and the account per entry.
 chain_kind = "evm"
 # Address of the ACL contract (required for EVM chains, forbidden for Solana chains)
 # Format: hex string with 0x prefix

@@ -39,11 +39,6 @@ pub struct EncryptedValue {
 }
 
 impl EncryptedValue {
-    /// Anchor account body size (excludes the 8-byte discriminator) with `peaks_len` peaks.
-    pub fn space(peaks_len: usize) -> usize {
-        zama_solana_acl::EncryptedValue::account_size(peaks_len) - 8
-    }
-
     /// Converts to the shared crate's wire type for MMR/authorization helpers.
     pub fn to_shared(&self) -> zama_solana_acl::EncryptedValue {
         zama_solana_acl::EncryptedValue {
@@ -121,7 +116,10 @@ mod tests {
         value.bump = bump;
         let mut serialized = Vec::new();
         value.try_serialize(&mut serialized).expect("serializes");
-        assert_eq!(serialized.len(), 8 + EncryptedValue::space(2));
+        assert_eq!(
+            serialized.len(),
+            zama_solana_acl::EncryptedValue::account_size(2)
+        );
 
         let decoded = zama_solana_acl::decode_on_chain_account(&serialized)
             .expect("the shared decoder accepts the program's bytes");

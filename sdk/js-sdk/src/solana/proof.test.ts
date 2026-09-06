@@ -9,6 +9,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
+  buildPublicLeafProof,
   bytesToHex,
   hexToBytes,
   historicalAccessLeafCommitment,
@@ -224,5 +225,38 @@ describe('hexToBytes', () => {
 
   it('rejects odd-length hex', () => {
     expect(() => hexToBytes('0x123')).toThrow('hexToBytes: odd-length hex string: 0x123');
+  });
+});
+
+describe('buildPublicLeafProof', () => {
+  // The proof handed to a consume step must verify against the peaks it was cross-checked with, and a
+  // live account that disagrees with the expected history must fail here, naming the leaf count, not
+  // later inside the on-chain verifier.
+  const account = new Uint8Array(32).fill(0x0c);
+  const handle = new Uint8Array(32).fill(0x92);
+  const owner = new Uint8Array(32).fill(0x11);
+  // What a burn writes, then an explicit re-seal: one allow, the public leaf, the public leaf again.
+  const history: readonly SolanaEncryptedValueAccountEvent[] = [
+    { kind: 'allowed', handle, key: owner },
+    { kind: 'markedPublic', handle },
+    { kind: 'markedPublic', handle },
+  ];
+  const live = reconstructSolanaEncryptedValueAccount(account, history);
+
+  it('builds a proof of the requested public leaf that verifies against the live peaks', () => {
+    const proof = buildPublicLeafProof(account, live, history, 1n);
+    expect(proof.leafIndex).toBe(1n);
+    expect(verifyPublicDecryptProof(account, live.peaks, live.leafCount, handle, proof)).toBe(true);
+  });
+
+  it('rejects a live account whose leaves disagree with the expected history', () => {
+    const shorter = reconstructSolanaEncryptedValueAccount(account, history.slice(0, 2));
+    expect(() => buildPublicLeafProof(account, shorter, history, 1n)).toThrow(
+      /holds 2 leaves that do not match the 3-leaf history/,
+    );
+  });
+
+  it('refuses to prove a leaf that is not public', () => {
+    expect(() => buildPublicLeafProof(account, live, history, 0n)).toThrow(/not a public leaf/);
   });
 });

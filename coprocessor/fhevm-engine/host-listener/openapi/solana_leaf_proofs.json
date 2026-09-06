@@ -111,11 +111,10 @@
         "oneOf": [
           {
             "type": "object",
-            "description": "The leaf is recorded. `peaks` and `leafCount` are the record's state the\nproof was built against; the caller verifies against the on-chain account\nand retries when the record is behind the chain (`leafCount` smaller).",
+            "description": "The leaf is recorded. `leafCount` is the history the record had sealed\nwhen it built the proof; the caller verifies the path against the\non-chain account's peaks and retries when the record is behind the\nchain (`leafCount` smaller).",
             "required": [
               "leafIndex",
               "leafCount",
-              "peaks",
               "siblings",
               "status"
             ],
@@ -129,12 +128,6 @@
                 "type": "integer",
                 "format": "int64",
                 "minimum": 0
-              },
-              "peaks": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
               },
               "siblings": {
                 "type": "array",

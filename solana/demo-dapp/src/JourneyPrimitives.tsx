@@ -37,7 +37,7 @@ export function SettlementProgress({
   lifecycle,
   action,
 }: {
-  readonly lifecycle: Extract<BatchLifecycle, { kind: 'awaiting-dispatch' | 'proving' }>;
+  readonly lifecycle: Extract<BatchLifecycle, { kind: 'awaiting-dispatch' | 'dispatched' }>;
   readonly action: OperatorAction | null;
 }) {
   const phase = lifecycle.kind === 'awaiting-dispatch' ? 1 : 2;

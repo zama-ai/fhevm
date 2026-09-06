@@ -24,7 +24,7 @@ export type BatchPosition = BatchTarget & {
 
 export type BatchLifecycle =
   | { readonly kind: 'awaiting-dispatch'; readonly remainingSlots: bigint }
-  | { readonly kind: 'proving' }
+  | { readonly kind: 'dispatched' }
   | {
       readonly kind: 'settled';
       readonly totalJoined: bigint;

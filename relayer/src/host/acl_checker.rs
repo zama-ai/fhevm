@@ -96,9 +96,9 @@ pub struct HostAclChecker {
     /// host carries a base58 `acl_address` (the zama-host program) and has no EVM ACL
     /// contract to `eth_call`; its ACL is enforced authoritatively by the KMS Connector.
     /// Direct entries and public decrypts are not pre-checked here — their authorization
-    /// is membership in the encrypted value account, and this checker has no cheaper
-    /// reading of it than the connector's own. Delegated user-decrypt entries ARE: the v3
-    /// request carries the encrypted value id and the subject, which is everything the advisory
+    /// is an allow leaf sealed on the write, and this checker has no cheaper reading of it
+    /// than the connector's own. Delegated user-decrypt entries ARE: the v3 request names
+    /// the allowed key and the encrypted value account, which is everything the advisory
     /// negative-only pre-check (`check_solana_delegated_user_decrypt`) needs to read the
     /// delegation rows.
     solana_chains: HashMap<u64, SolanaHostChain>,

@@ -22,9 +22,10 @@ place.
   authority's signature and nothing else — there is no compute identity. Persistent-output update
   checks `previous_handle` against current account state so stale off-chain state cannot rotate a
   handle.
-- Every output the execution touches must belong to one application (`FheExecuteMixedScopes`): the
-  execution's `(program, scope)` is what the HCU meter charges, the deny list checks, and the rand
-  seed binds.
+- Every persistent value the execution's default authority controls belongs to one application
+  (`FheExecuteMixedScopes`): that `(program, scope)` is what the HCU meter charges and the rand seed
+  binds. A value read or written under an additional signing authority keeps its own application,
+  and the deny list checks every application the execution touches.
 
 ## Handle Derivation
 

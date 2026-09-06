@@ -134,7 +134,7 @@ impl fmt::Display for FatalListenerError {
 
 impl std::error::Error for FatalListenerError {}
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct SolanaGrpcListenerConfig {
     /// Yellowstone gRPC endpoint, e.g. `http://poc-solana-validator:10000`.
     pub grpc_url: String,
@@ -145,6 +145,18 @@ pub struct SolanaGrpcListenerConfig {
     /// On-chain HostConfig chain_id used in handle derivation (distinct from the
     /// coprocessor host-chain id). Used by the reconstruction path.
     pub chain_id: u64,
+}
+
+/// Hand-written so the `x-token` never reaches a log through a `{:?}` of the config.
+impl fmt::Debug for SolanaGrpcListenerConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SolanaGrpcListenerConfig")
+            .field("grpc_url", &self.grpc_url)
+            .field("x_token", &self.x_token.as_ref().map(|_| "[REDACTED]"))
+            .field("program_id", &self.program_id)
+            .field("chain_id", &self.chain_id)
+            .finish()
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1348,6 +1360,18 @@ mod fhe_execute_acl_tests {
             program_id: ZAMA_HOST.to_owned(),
             chain_id: zama_host::SOLANA_POC_CHAIN_ID,
         }
+    }
+
+    #[test]
+    fn debug_redacts_yellowstone_x_token() {
+        let secret = "yellowstone-secret-token";
+        let config = SolanaGrpcListenerConfig {
+            x_token: Some(secret.to_owned()),
+            ..config()
+        };
+        let rendered = format!("{config:?}");
+        assert!(!rendered.contains(secret), "{rendered}");
+        assert!(rendered.contains("[REDACTED]"), "{rendered}");
     }
 
     const ZAMA_HOST: &str = "ZamaHost11111111111111111111111111111111";

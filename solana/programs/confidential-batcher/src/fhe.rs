@@ -115,7 +115,7 @@ pub(crate) fn execute_as_batch_authority<'info>(
             payer: accounts.payer,
             encrypted_value_account_authority: accounts.batch_authority,
             host_config: accounts.host_config,
-            deny_scope_record: accounts.remaining_accounts.first().cloned(),
+            deny_scope_records: accounts.remaining_accounts.to_vec(),
             system_program: accounts.system_program,
             hcu_block_meter: None,
             hcu_trusted_app_record: None,

@@ -81,7 +81,7 @@ export const readVaultLifecycle = async (
     };
   }
   if (batch.state.status === BatchStatus.Dispatched) {
-    return { kind: 'proving' };
+    return { kind: 'dispatched' };
   }
   if (batch.state.status === BatchStatus.Settled) {
     const joinRecord = await getJoinRecord(rpc, await deriveJoinRecordAddress(position.batch, session.signer.address), {

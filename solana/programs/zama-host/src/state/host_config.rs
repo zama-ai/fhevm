@@ -38,7 +38,7 @@ pub struct HostConfig {
     pub current_kms_context_id: [u8; 32],
     /// Pauses production-shaped host instructions when true.
     pub paused: bool,
-    /// Enables deny-list checks for persistent grant authorities.
+    /// Enables the deny list: a denied application `(program, scope)` cannot compute, allow, or make a handle public.
     pub grant_deny_list_enabled: bool,
     /// Max total HCU summed over one `fhe_execute` execution. `u64::MAX` = unlimited
     /// (enforcement off); `0` is rejected at set time.

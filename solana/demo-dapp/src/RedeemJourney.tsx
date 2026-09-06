@@ -122,7 +122,7 @@ export function RedeemJourney({ controller }: { readonly controller: DemoControl
         </ActionError>
       )}
 
-      {(lifecycle?.kind === 'awaiting-dispatch' || lifecycle?.kind === 'proving') && (
+      {(lifecycle?.kind === 'awaiting-dispatch' || lifecycle?.kind === 'dispatched') && (
         <SettlementProgress
           lifecycle={lifecycle}
           action={operatorAction}

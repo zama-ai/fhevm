@@ -6,7 +6,7 @@
   },
   "measurements": {
     "confidential_burn_from_value/direct": {
-      "compute_units": 198318,
+      "compute_units": 198927,
       "unique_accounts": 17,
       "instruction_data_bytes": 8,
       "cpi_instructions": 9,
@@ -14,7 +14,7 @@
       "max_cpi_instruction_data_bytes": 539
     },
     "confidential_transfer/direct": {
-      "compute_units": 208101,
+      "compute_units": 208673,
       "unique_accounts": 16,
       "instruction_data_bytes": 224,
       "cpi_instructions": 5,
@@ -22,7 +22,7 @@
       "max_cpi_instruction_data_bytes": 935
     },
     "confidential_transfer/steady_state": {
-      "compute_units": 204738,
+      "compute_units": 205293,
       "unique_accounts": 16,
       "instruction_data_bytes": 224,
       "cpi_instructions": 4,
@@ -30,7 +30,7 @@
       "max_cpi_instruction_data_bytes": 940
     },
     "confidential_transfer_from_value/direct": {
-      "compute_units": 158287,
+      "compute_units": 158939,
       "unique_accounts": 17,
       "instruction_data_bytes": 8,
       "cpi_instructions": 5,
@@ -38,7 +38,7 @@
       "max_cpi_instruction_data_bytes": 541
     },
     "initialize_token_account": {
-      "compute_units": 51082,
+      "compute_units": 51276,
       "unique_accounts": 10,
       "instruction_data_bytes": 8,
       "cpi_instructions": 4,

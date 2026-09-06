@@ -117,7 +117,8 @@ const SECP256K1_HALF_ORDER: [u8; 32] = [
 /// Resolve the KMS context id a public-decrypt certificate is bound to, mirroring the EVM
 /// gateway `_extractContextId`: empty or version-0 `extra_data` selects the current context;
 /// version 1 is exactly 33 bytes and carries the 32-byte context id in `extra_data[1..33]`;
-/// version 3 carries the same 32-byte id at that offset and may append an MMR-proof tail.
+/// version 3 is exactly 65 bytes: the same 32-byte id at that offset, then the 32-byte key of the
+/// encrypted value account whose public leaf the certificate is about (RFC 035).
 /// Because the KMS signs over `extra_data`, the returned id is authenticated by the
 /// certificate. Returns `None` for an unsupported version or a short payload.
 ///
@@ -132,8 +133,10 @@ pub fn extract_kms_context_id(extra_data: &[u8], current_context_id: [u8; 32]) -
             extra_data[1..33].try_into().ok()
         }
         Some(3) => {
-            let id_bytes = extra_data.get(1..33)?;
-            id_bytes.try_into().ok()
+            if extra_data.len() != 65 {
+                return None;
+            }
+            extra_data[1..33].try_into().ok()
         }
         Some(_) => None,
     }
@@ -369,12 +372,16 @@ mod tests {
         v1_long.extend_from_slice(&id(42));
         v1_long.push(0);
         assert_eq!(extract_kms_context_id(&v1_long, current), None);
-        // Version 3 (context + MMR-proof tail) reads the id at the same [1..33] offset and ignores
-        // the trailing proof bytes.
+        // Version 3 (context + encrypted value account) reads the id at the same [1..33] offset
+        // and is exactly 65 bytes: a trailing byte or a missing one is rejected.
         let mut v3 = vec![3u8];
         v3.extend_from_slice(&id(42));
-        v3.extend_from_slice(&[0xABu8; 40]);
+        v3.extend_from_slice(&[0xABu8; 32]);
         assert_eq!(extract_kms_context_id(&v3, current), Some(id(42)));
+        let mut v3_long = v3.clone();
+        v3_long.push(0);
+        assert_eq!(extract_kms_context_id(&v3_long, current), None);
+        assert_eq!(extract_kms_context_id(&v3[..64], current), None);
         // Version 2 is RFC-005 context+epoch on the EVM side, not a Solana certificate shape.
         let mut v2 = vec![2u8];
         v2.extend_from_slice(&id(42));

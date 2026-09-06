@@ -80,6 +80,10 @@ RUST_ROOTS=(
   solana/runtime-tests
   solana/test-kit
   coprocessor/fhevm-engine/host-listener/src
+  # The relayer's Solana adapter (the ACL pre-check and the delegation pre-check) speaks this
+  # vocabulary natively; the rest of the relayer is EVM prose whose "durable" and "superseded"
+  # are its own words, not retired ACL names.
+  relayer/src/host
 )
 
 # TypeScript the Solana workstream owns. The demo dapp holds the vault module (moved out of the
@@ -521,7 +525,11 @@ if run_check 3; then
   # No exception any more: the connector's `acl_value_key` went with the client-supplied proof it
   # keyed (RFC 035 — the connector reads the encrypted value account and fetches the proof itself).
   check_alias 'value_key identifier — renamed to encrypted_value_id' kms \
-    '' -iE 'value_key' --exclude-dir=utils
+    '' -iE 'value_key'
+  # Deliberate records of the retirement (the teardown gates, INVARIANTS #47, DD-035) say the
+  # service is gone; the EVM input-proof service is another thing.
+  check_alias 'proof service — the leaf record lives in the host listener' kms \
+    'is gone|proof-service client|external input proof service' -iE 'proof[ _-]service'
   # RFC 035 retired the whole "subject" vocabulary: an encrypted value account keeps no list of
   # who may decrypt it; who may decrypt a handle is an `allow` sealed on the write, and a key so
   # named is a viewer. The English idioms ("subject to", "the subject of a test") and the KMS
@@ -642,7 +650,7 @@ if run_check 3; then
     'ACL and lineage resolution' -iE '\blineage\b'
   # The adjective matters: "value account" describes every SPL token account, so dropping
   # "encrypted" turns the one distinguishing fact — that this account holds an *encrypted* value's
-  # handle, subject list and MMR — into a generic phrase. The struct is `EncryptedValue`; the
+  # handle and MMR peaks — into a generic phrase. The struct is `EncryptedValue`; the
   # adjective is the part that must survive in prose.
   #
   # ERE has no negative lookbehind, so the correct phrase is excluded by the line-level exception
@@ -1008,6 +1016,7 @@ PersistentEvalTarget|eval — say execution; evaluate is the verb
 born-public|born / birth — renamed to created-public / create
 are born with|born / birth — renamed to created-public / create
 value_key|value_key identifier — renamed to encrypted_value_id
+the proof service answers|proof service — the leaf record lives in the host listener
 the subject set|subject — say allow / viewer; the account keeps no list
 compute_subject|compute subject / compute signer — reads are admitted by the value authority
 ACL domain key|domain — say application (program, scope)

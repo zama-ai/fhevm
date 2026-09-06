@@ -83,41 +83,18 @@ pub fn allow_balance_viewers<'info>(
         token_account.key(),
         encrypted_balance_label(),
     )?;
-    let deny_scope_record =
-        fhe::deny_scope_record(&ctx.accounts.host_config, ctx.remaining_accounts, mint_key)?;
     let old_balance_handle = balance_value.current_handle;
-    let balance = fhe::uint64_operand(balance_value)?;
-    let authority = fhe::ValueAuthority::token_account(token_account)?;
-    let balance_output = fhe::PersistentOutput::new(
-        balance_value.to_account_info(),
-        balance_encrypted_value_id(mint_key, token_account.key()),
-        &authority,
-        std::iter::once(owner).chain(viewers),
-    )?;
-    let execution = zama_fhe::FheExecution::build(
-        zama_fhe::ExecutionEncryptedValueAccountAuthority::new(token_account.key()),
-        |builder| {
-            builder.add(
-                balance,
-                zama_fhe::Scalar::<zama_fhe::Uint<64>>::u64(0),
-                balance_output.output(),
-            )?;
-            Ok(())
-        },
-    )
-    .map_err(invalid_execution)?;
-    let execution_accounts = fhe::ExecutionAccountSet::for_execution(
-        &execution,
-        [balance_output.account_info()],
-        [authority],
-    )?;
-    fhe::execute(fhe::Execute {
-        context: fhe::ExecuteContext {
+    let new_balance_handle = rewrite_allowing(
+        fhe::ExecuteContext {
             payer: &ctx.accounts.payer,
             event_authority: &ctx.accounts.zama_event_authority,
             zama_program: &ctx.accounts.zama_program,
             host_config: &ctx.accounts.host_config,
-            deny_scope_record,
+            deny_scope_records: fhe::deny_scope_records(
+                &ctx.accounts.host_config,
+                ctx.remaining_accounts,
+                [token_app(mint_key)],
+            )?,
             system_program: &ctx.accounts.system_program,
             hcu_block_meter: ctx
                 .accounts
@@ -130,9 +107,11 @@ pub fn allow_balance_viewers<'info>(
                 .as_ref()
                 .map(|account| account.to_account_info()),
         },
-        accounts: &execution_accounts,
-        execution,
-    })?;
+        balance_value,
+        balance_encrypted_value_id(mint_key, token_account.key()),
+        fhe::ValueAuthority::token_account(token_account)?,
+        std::iter::once(owner).chain(viewers),
+    )?;
     emit_cpi!(BalanceHandleUpdatedEvent {
         version: APP_EVENT_VERSION,
         mint: mint_key,
@@ -140,7 +119,7 @@ pub fn allow_balance_viewers<'info>(
         token_account: token_account.key(),
         old_handle: old_balance_handle,
         old_encrypted_value: balance_value.key(),
-        new_handle: balance_output.handle()?,
+        new_handle: new_balance_handle,
         new_encrypted_value: balance_value.key(),
         reason: BalanceHandleUpdateReason::AllowViewers,
     });

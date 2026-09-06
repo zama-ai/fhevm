@@ -75,10 +75,12 @@ revived.
 
 Ordinary compute facts, MMR leaves, and persistent-output binds are reconstructed from instruction data;
 the host emits no per-operation replay stream. An execution with created-public persistent outputs emits exactly
-one versioned Anchor CPI lifecycle execution containing their ordered step index, host-owned
+one versioned Anchor CPI lifecycle event containing their ordered step index, host-owned
 `EncryptedValue` account, and host-derived output handle. An execution without created-public outputs emits
-no lifecycle execution. The bounded 16-output maximum fits one CPI; other `EncryptedValue` lifecycle
-paths remain event-free (`docs/DESIGN_DECISIONS.md` DD-033/DD-038).
+no lifecycle event. The 32-step maximum (`MAX_FHE_EXECUTION_STEPS`) fits one CPI; other `EncryptedValue`
+lifecycle paths remain event-free (`docs/DESIGN_DECISIONS.md` DD-033/DD-038). Since RFC 035 the event has
+no consumer in this repository — the host listener recomputes public leaves from instruction data — and
+its retirement is tracked by fhevm-internal#1665 (DD-037).
 
 Admission invariants for `fhe_execute`:
 
@@ -86,8 +88,9 @@ Admission invariants for `fhe_execute`:
   step must pass the `RandNonce` account (the rand seed is anchored to the host's counter, which
   the execution advances).
 - Every persistent output's authority must be a PDA of the output's declared `program`, proven by
-  the declared seeds (`EncryptedValueAuthorityNotProgramPda`), and every stored operand and output
-  must carry the same `(program, scope)` (`FheExecuteMixedScopes`).
+  the declared seeds (`EncryptedValueAuthorityNotProgramPda`); every stored operand and output the
+  default authority controls must carry the same `(program, scope)` (`FheExecuteMixedScopes`), and
+  every application the execution touches must pass the deny list.
 - Every dynamic account passed through `remaining_accounts` must be unique and referenced by an
   operand or output, and every referenced account index must be present.
 - The optional instructions sysvar account must be present only for steps that need instruction

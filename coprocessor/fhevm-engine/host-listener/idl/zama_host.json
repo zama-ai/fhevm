@@ -3276,7 +3276,7 @@
           {
             "name": "grant_deny_list_enabled",
             "docs": [
-              "Enables deny-list checks for persistent grant authorities."
+              "Enables the deny list: a denied application `(program, scope)` cannot compute, allow, or make a handle public."
             ],
             "type": "bool"
           },
@@ -3874,7 +3874,7 @@
             "name": "encrypted_value_account_authority",
             "docs": [
               "The encrypted value account authority the delegation is scoped over. A delegation covers",
-              "every value of that authority in every domain: the domain is not one of the PDA's seeds."
+              "every value of that authority in every scope: the scope is not one of the PDA's seeds."
             ],
             "type": "pubkey"
           },

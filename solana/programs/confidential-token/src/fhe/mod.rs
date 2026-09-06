@@ -142,30 +142,49 @@ pub(crate) fn uint64_operand(value: &EncryptedValue) -> Result<zama_fhe::Uint64H
     })
 }
 
-/// The application's deny record witness for one `fhe_execute` / `make_handle_public` CPI: the
-/// single remaining account while the host's deny list is enabled, none otherwise. The host
-/// re-derives the PDA; checking it here turns a wrong witness into this program's error.
-pub(crate) fn deny_scope_record<'info>(
+/// The deny record witnesses for one `fhe_execute` CPI: exactly one remaining account per
+/// application the execution touches, in `apps` order, while the host's deny list is enabled;
+/// none otherwise. The host re-derives the PDAs; checking them here turns a wrong witness into
+/// this program's error.
+pub(crate) fn deny_scope_records<'info>(
     host_config: &HostConfig,
     remaining_accounts: &[AccountInfo<'info>],
-    mint: Pubkey,
-) -> Result<Option<AccountInfo<'info>>> {
+    apps: impl IntoIterator<Item = zama_fhe::AppScope>,
+) -> Result<Vec<AccountInfo<'info>>> {
     if !host_config.grant_deny_list_enabled {
         require!(
             remaining_accounts.is_empty(),
             ConfidentialTokenError::UnexpectedRemainingAccounts
         );
-        return Ok(None);
+        return Ok(Vec::new());
     }
-    let [record] = remaining_accounts else {
-        return err!(ConfidentialTokenError::UnexpectedRemainingAccounts);
-    };
-    require_keys_eq!(
-        record.key(),
-        zama_host::deny_scope_address(token_app(mint)).0,
+    let mut apps = apps.into_iter();
+    let mut records = Vec::with_capacity(remaining_accounts.len());
+    for record in remaining_accounts {
+        let Some(app) = apps.next() else {
+            return err!(ConfidentialTokenError::UnexpectedRemainingAccounts);
+        };
+        require_keys_eq!(
+            record.key(),
+            zama_host::deny_scope_address(app).0,
+            ConfidentialTokenError::UnexpectedRemainingAccounts
+        );
+        records.push(record.clone());
+    }
+    require!(
+        apps.next().is_none(),
         ConfidentialTokenError::UnexpectedRemainingAccounts
     );
-    Ok(Some(record.clone()))
+    Ok(records)
+}
+
+/// The mint's deny record witness for one `make_handle_public` CPI, which touches one application.
+pub(crate) fn deny_scope_record<'info>(
+    host_config: &HostConfig,
+    remaining_accounts: &[AccountInfo<'info>],
+    mint: Pubkey,
+) -> Result<Option<AccountInfo<'info>>> {
+    Ok(deny_scope_records(host_config, remaining_accounts, [token_app(mint)])?.pop())
 }
 
 /// Signer model for a value authority required by an execution.
@@ -413,8 +432,8 @@ pub(crate) struct ExecuteContext<'a, 'info> {
     pub zama_program: &'a Program<'info, ZamaHost>,
     /// Host config used for chain-id-aware handle derivation.
     pub host_config: &'a Account<'info, HostConfig>,
-    /// The mint's deny record witness, from [`deny_scope_record`].
-    pub deny_scope_record: Option<AccountInfo<'info>>,
+    /// One deny record witness per application the execution touches, from [`deny_scope_records`].
+    pub deny_scope_records: Vec<AccountInfo<'info>>,
     /// System program used for output account creation.
     pub system_program: &'a Program<'info, System>,
     /// Per-mint HCU block meter forwarded into the host `fhe_execute` CPI (`None` unless the
@@ -467,7 +486,7 @@ pub(crate) fn execute<'info>(request: Execute<'_, 'info>) -> Result<()> {
             payer: request.context.payer.to_account_info(),
             encrypted_value_account_authority: encrypted_value_account_authority.account_info(),
             host_config: request.context.host_config.to_account_info(),
-            deny_scope_record: request.context.deny_scope_record,
+            deny_scope_records: request.context.deny_scope_records,
             system_program: request.context.system_program.to_account_info(),
             hcu_block_meter: request.context.hcu_block_meter,
             hcu_trusted_app_record: request.context.hcu_trusted_app_record,

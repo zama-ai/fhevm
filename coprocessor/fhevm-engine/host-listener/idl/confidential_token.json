@@ -3250,7 +3250,7 @@
           {
             "name": "grant_deny_list_enabled",
             "docs": [
-              "Enables deny-list checks for persistent grant authorities."
+              "Enables the deny list: a denied application `(program, scope)` cannot compute, allow, or make a handle public."
             ],
             "type": "bool"
           },

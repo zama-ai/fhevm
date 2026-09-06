@@ -59,14 +59,19 @@ impl ExecutionHandleContext {
         computed_eval_trivial_handle(plaintext, fhe_type, &self.derivation)
     }
 
-    /// Only called for rand steps, and `fhe_execute` refuses a rand step without the nonce
-    /// account before the walk starts, so the anchor is always present here.
-    pub(super) fn rand_seed(&self, op_index: u16) -> [u8; 16] {
+    /// `fhe_execute` refuses a rand step without the nonce account before the walk starts, so
+    /// the anchor is present whenever a rand step asks for its seed.
+    pub(super) fn rand_seed(&self, op_index: u16) -> Result<[u8; 16]> {
         let rand = self
             .rand
             .as_ref()
-            .expect("rand steps consume the nonce before the walk");
-        computed_eval_rand_seed(rand.nonce, rand.app, op_index, &self.derivation)
+            .ok_or(ZamaHostError::FheExecuteRandNonceMissing)?;
+        Ok(computed_eval_rand_seed(
+            rand.nonce,
+            rand.app,
+            op_index,
+            &self.derivation,
+        ))
     }
 
     fn unary_result(&self, op: FheUnaryOpCode, operand: [u8; 32], output_fhe_type: u8) -> [u8; 32] {
@@ -234,7 +239,7 @@ pub(super) fn walk_steps<'info>(
             }
             FheExecuteStep::Rand { fhe_type, output } => {
                 assert_supported_fhe_type(*fhe_type)?;
-                let seed = handle_context.rand_seed(op_index);
+                let seed = handle_context.rand_seed(op_index)?;
                 let result =
                     computed_rand_handle(seed, *fhe_type, handle_context.derivation.chain_id);
                 execution.accept_output(ctx, op_index, result, output)?;
@@ -256,7 +261,7 @@ pub(super) fn walk_steps<'info>(
                 output,
             } => {
                 assert_valid_bounded_rand_upper_bound(*upper_bound, *fhe_type)?;
-                let seed = handle_context.rand_seed(op_index);
+                let seed = handle_context.rand_seed(op_index)?;
                 let result = computed_rand_bounded_handle(
                     *upper_bound,
                     seed,

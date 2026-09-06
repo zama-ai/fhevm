@@ -14,7 +14,7 @@ each has dedicated coverage:
 | **allow** (`HistoricalAccessLeaf(handle, key)`) | MMR proof vs live peaks; the current handle and a replaced one alike | `zama-solana-acl` unit (`authorize_historical`, `mmr_verify`); `host_mollusk` write-then-prove; `kms-worker` `solana_` (`handle_binding`, `proof`); host-listener `solana_leaves_tests` |
 | **public** (`PublicDecryptLeaf(handle)`) | MMR proof vs live peaks, exact handle | `zama-solana-acl` (`authorize_public`); `token_mollusk` burn→redeem and `disclose_secp` after-update; `host_mollusk` `verify_public_decrypt` negatives (DD-040) |
 
-Negative coverage for each: wrong key, wrong handle, foreign-encrypted value account proof,
+Negative coverage for each: wrong key, wrong handle, a proof from a foreign encrypted value account,
 invalid/forged proof, a record that is behind — all fail closed (see the `*_rejects_*` mollusk tests
 and the connector's `ProofRecordBehind` / `NoLeaf` classification).
 
