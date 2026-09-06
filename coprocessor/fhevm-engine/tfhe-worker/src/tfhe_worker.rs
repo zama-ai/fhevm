@@ -118,18 +118,18 @@ pub(crate) const GPU_RESERVATION_LEASE_FRACTION: f32 = 0.8;
 /// the follow-up.
 pub(crate) const RETRYABLE_STAMP_MARKER: &str = "RETRYABLE";
 
-/// Row cap of the adaptive window's per-chain lateral scan, as rows per
-/// transaction of the chain's share: a chain is walked oldest-first for at
-/// most `share × this` pending rows before its transactions are ranked.
+/// Row cap of the adaptive window's per-chain probe, as rows per transaction
+/// of the chain's share: a chain is walked oldest-first for at most
+/// `share × this` pending rows before its transactions are ranked.
 ///
 /// The cap is what bounds the query -- without it a deep backlog chain is
-/// read in full on every cycle -- and it is safe in the direction that
-/// matters: every transaction whose first row lies within the cap is ranked
-/// exactly (the walk is in schedule order, so a first appearance IS the
-/// transaction's earliest row), and a transaction beyond it is simply not
-/// offered this cycle. A chain only contributes fewer than `share`
-/// transactions when its first `share` transactions together span more than
-/// `share × this` rows, i.e. when they average more rows than this.
+/// read in full on every cycle. It is NOT allowed to change the outcome: when
+/// the capped walk admits fewer than `share` distinct transactions while
+/// hitting the cap (a transaction wider than the cap at the head of the
+/// chain), the query falls back to ranking over every pending row of that
+/// one chain, so a younger transaction behind a wide, deferring one is still
+/// offered. The fallback costs one scan of that chain's pending rows and is
+/// paid only by chains in that shape.
 pub(crate) const ADAPTIVE_WINDOW_ROWS_PER_TRANSACTION: i64 = 64;
 
 fn stamp_is_retryable(error_message: Option<&str>) -> bool {
@@ -809,13 +809,13 @@ mod operand_boundary_mask_tests {
     /// The adaptive window gives every held chain its transaction share,
     /// whatever the chains' depths, and stays bounded per chain.
     ///
-    /// Three chains, oldest first: `wide` (one 200-row transaction), `deep`
-    /// (300 two-row transactions) and `shallow` (3 one-row transactions).
-    /// With a 6-transaction window over 3 chains the share is 2. `deep` and
-    /// `shallow` each contribute exactly 2 transactions; `wide` contributes
-    /// its single transaction -- its only transaction begins within the
-    /// per-chain row cap, so the cap costs it nothing -- for 5 in total.
-    /// Without per-chain bounding `deep`'s oldest rows would fill the window.
+    /// Three chains, oldest first: `wide` (one 200-row transaction, then a
+    /// one-row one), `deep` (300 two-row transactions) and `shallow` (3
+    /// one-row transactions). With a 6-transaction window over 3 chains the
+    /// share is 2 and every chain contributes exactly 2 transactions, 6 in
+    /// total. Without per-chain bounding `deep`'s oldest rows would fill the
+    /// window; without the exact fallback `wide`'s 200-row head would hide
+    /// the one-row transaction behind it, since the probe cap is 128 rows.
     #[tokio::test]
     async fn adaptive_window_shares_the_batch_across_held_chains(
     ) -> Result<(), Box<dyn std::error::Error>> {
@@ -863,6 +863,19 @@ mod operand_boundary_mask_tests {
             )
             .await;
         }
+        // Behind the 200-row transaction, a one-row one. 200 rows exceed the
+        // probe cap (share 2 × 64 = 128), so the fast path sees only the wide
+        // transaction; the exact fallback must still offer this one.
+        seed_computation(
+            &pool,
+            &tagged(0x41, 200),
+            vec![tagged(0x40, 200)],
+            mask_with_bits(&[0]),
+            Some(&wide_chain),
+            &tagged(0xA1, 1),
+            2790,
+        )
+        .await;
         for tx in 0..300_u16 {
             for row in 0..2_u16 {
                 seed_computation(
@@ -948,8 +961,9 @@ mod operand_boundary_mask_tests {
         }
         assert_eq!(
             per_chain.get(&0xA1).map(Vec::len),
-            Some(1),
-            "the wide chain offers its only transaction"
+            Some(2),
+            "the wide chain offers its share although its head transaction is \
+             wider than the probe cap: the exact fallback ranks past it"
         );
         assert_eq!(
             per_chain.get(&0xA2).map(Vec::len),
@@ -961,7 +975,10 @@ mod operand_boundary_mask_tests {
             Some(2),
             "the shallow chain gets its share despite being the youngest"
         );
-        assert_eq!(nodes.len(), 5);
+        assert_eq!(nodes.len(), 6);
+        let mut wide: Vec<_> = per_chain[&0xA1].clone();
+        wide.sort();
+        assert_eq!(wide, vec![tagged(0xA1, 0), tagged(0xA1, 1)]);
         // Within a chain the share goes to the OLDEST transactions.
         let mut deep: Vec<_> = per_chain[&0xA2].clone();
         deep.sort();
@@ -3183,51 +3200,59 @@ WHERE c.transaction_id IN (
       -- same anchor the non-adaptive query uses.
       SELECT
         ranked.transaction_id,
-        MIN(ranked.schedule_order) AS schedule_order
-      FROM (
-        -- Rank each chain's transactions by first appearance in schedule
-        -- order. The lateral walks the chain oldest-first, so the first row
-        -- seen for a transaction carries its MIN(schedule_order), and
-        -- DENSE_RANK over that first appearance is the per-chain transaction
-        -- rank -- exact for every transaction that begins within the lateral's
-        -- row cap. A chain whose first `share` transactions do not all begin
-        -- within the cap contributes fewer transactions this cycle, never a
-        -- wrong one; see ADAPTIVE_WINDOW_ROWS_PER_TRANSACTION for the cap.
+        MIN(ranked.first_order) AS schedule_order
+      FROM unnest($1::bytea[]) AS d(dependence_chain_id)
+      -- Stage 1: probe the chain's oldest pending rows under the row cap
+      -- (share × ADAPTIVE_WINDOW_ROWS_PER_TRANSACTION): how many rows the
+      -- cap admitted and how many distinct transactions they span.
+      CROSS JOIN LATERAL (
         SELECT
-          first_seen.dependence_chain_id,
-          first_seen.transaction_id,
-          first_seen.schedule_order,
-          DENSE_RANK() OVER (
-            PARTITION BY first_seen.dependence_chain_id
-            ORDER BY first_seen.first_order, first_seen.transaction_id
-          ) AS dcid_transaction_rank
+          count(*) AS scanned,
+          count(DISTINCT capped.transaction_id) AS transactions
         FROM (
-          SELECT
-            d.dependence_chain_id,
-            l.transaction_id,
-            l.schedule_order,
-            MIN(l.schedule_order) OVER (
-              PARTITION BY d.dependence_chain_id, l.transaction_id
-            ) AS first_order
-          FROM unnest($1::bytea[]) AS d(dependence_chain_id)
-          CROSS JOIN LATERAL (
+          SELECT transaction_id
+          FROM computations
+          WHERE dependence_chain_id = d.dependence_chain_id
+              AND is_completed = FALSE
+              AND is_allowed = TRUE
+              AND (is_error = FALSE
+                   OR (error_message LIKE '%' || $4 || '%'
+                       AND ($5::smallint IS NULL OR error_retry_count < $5)))
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM computations demoted
+                  WHERE demoted.transaction_id = computations.transaction_id
+                    AND demoted.is_completed = FALSE
+                    AND demoted.is_error = TRUE
+                    AND demoted.error_message LIKE '%' || $4 || '%'
+                    AND $5::smallint IS NOT NULL
+                    AND demoted.error_retry_count >= $5
+              )
+          ORDER BY schedule_order ASC
+          LIMIT $6
+        ) AS capped
+      ) AS probe
+      -- Stage 2: the chain's first `share` transactions by earliest row.
+      -- Rows of a transaction share one schedule_order (block time + depth),
+      -- so the walk sees transactions as contiguous blocks and the first row
+      -- seen for a transaction is its earliest. Exactly one branch runs; the
+      -- gating conditions reference only `probe`, so Postgres evaluates them
+      -- once per chain and skips the other branch's scan entirely.
+      CROSS JOIN LATERAL (
+        (
+          -- Fast path: the cap admitted at least `share` distinct
+          -- transactions, or the whole chain fits under it. Bounded by the
+          -- cap, whatever the chain's backlog.
+          SELECT capped.transaction_id, MIN(capped.schedule_order) AS first_order
+          FROM (
             SELECT transaction_id, schedule_order
             FROM computations
             WHERE dependence_chain_id = d.dependence_chain_id
               AND is_completed = FALSE
               AND is_allowed = TRUE
-              -- A retryable stamp stays selectable until it has spent its
-              -- attempts for this lane pass; past the threshold the row is
-              -- DEMOTED and the slow sweep re-arms it with the count reset.
-              -- Not terminal: the stamp is untouched and the row still pending.
               AND (is_error = FALSE
                    OR (error_message LIKE '%' || $4 || '%'
                        AND ($5::smallint IS NULL OR error_retry_count < $5)))
-              -- DEMOTION IS TRANSACTION-SCOPED, because selection is: the
-              -- outer query loads every row of a selected transaction, so a
-              -- pending sibling would drag a demoted row back in forever, and
-              -- since the sibling defers rather than errors it would also keep
-              -- the chain out of 'processed', beyond the sweep's reach.
               AND NOT EXISTS (
                   SELECT 1
                   FROM computations demoted
@@ -3240,10 +3265,46 @@ WHERE c.transaction_id IN (
               )
             ORDER BY schedule_order ASC
             LIMIT $6
-          ) AS l
-        ) AS first_seen
+          ) AS capped
+          WHERE probe.transactions >= $2 OR probe.scanned < $6
+          GROUP BY capped.transaction_id
+          ORDER BY first_order ASC, capped.transaction_id ASC
+          LIMIT $2
+        )
+        UNION ALL
+        (
+          -- Exact path: the cap filled up before `share` distinct
+          -- transactions were seen -- one transaction wider than the cap
+          -- sits at the head of the chain. Rank over every pending row of
+          -- THIS chain instead, so a younger transaction behind it is still
+          -- offered; the cost is one scan of this chain's pending rows, paid
+          -- only by a chain in that shape. Without this a wide transaction
+          -- that keeps deferring hid every younger one behind it for as long
+          -- as it deferred.
+          SELECT transaction_id, MIN(schedule_order) AS first_order
+          FROM computations
+          WHERE dependence_chain_id = d.dependence_chain_id
+            AND probe.transactions < $2 AND probe.scanned >= $6
+              AND is_completed = FALSE
+              AND is_allowed = TRUE
+              AND (is_error = FALSE
+                   OR (error_message LIKE '%' || $4 || '%'
+                       AND ($5::smallint IS NULL OR error_retry_count < $5)))
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM computations demoted
+                  WHERE demoted.transaction_id = computations.transaction_id
+                    AND demoted.is_completed = FALSE
+                    AND demoted.is_error = TRUE
+                    AND demoted.error_message LIKE '%' || $4 || '%'
+                    AND $5::smallint IS NOT NULL
+                    AND demoted.error_retry_count >= $5
+              )
+          GROUP BY transaction_id
+          ORDER BY first_order ASC, transaction_id ASC
+          LIMIT $2
+        )
       ) AS ranked
-      WHERE ranked.dcid_transaction_rank <= $2
       GROUP BY ranked.transaction_id
     ) AS deduped
     ORDER BY deduped.schedule_order ASC, deduped.transaction_id ASC
