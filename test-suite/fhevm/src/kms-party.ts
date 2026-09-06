@@ -29,7 +29,7 @@ export const kmsMpcPort = (party: number) => 50000 + party;
 export const kmsCoreName = (party: number) => (party === 1 ? "kms-core" : `kms-core-${party}`);
 
 /** Connector container-name prefix: `kms-connector`, then `kms-connector-{i}`.
- * Services append `-db-migration`, `-gw-listener`, `-kms-worker`, `-tx-sender`. */
+ * Services append `-db-migration`, `-gw-listener`, `-kms-worker`, `-tx-sender`, `-endpoint`. */
 export const kmsConnectorPrefix = (party: number) =>
   party === 1 ? "kms-connector" : `kms-connector-${party}`;
 

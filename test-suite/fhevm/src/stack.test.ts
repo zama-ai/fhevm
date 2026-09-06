@@ -139,6 +139,7 @@ describe("stack", () => {
       "kms-connector-gw-listener",
       "kms-connector-kms-worker",
       "kms-connector-tx-sender",
+      "kms-connector-endpoint",
     ]);
   });
 
@@ -169,6 +170,7 @@ describe("stack", () => {
       "CONNECTOR_GW_LISTENER_VERSION",
       "CONNECTOR_KMS_WORKER_VERSION",
       "CONNECTOR_TX_SENDER_VERSION",
+      "CONNECTOR_ENDPOINT_VERSION",
     ]);
     expect(plan.migrationServices).toEqual(["kms-connector-db-migration"]);
     expect(plan.runtimeServices).toEqual([
@@ -176,7 +178,29 @@ describe("stack", () => {
       "kms-connector-gw-listener",
       "kms-connector-kms-worker",
       "kms-connector-tx-sender",
+      "kms-connector-endpoint",
     ]);
+  });
+
+  test("version-lock upgrade plans leave the kms-connector endpoint out when the bundle predates it", () => {
+    const versions = {
+      target: "latest-supported" as const,
+      lockName: "latest-supported.json",
+      sources: [],
+      env: { CONNECTOR_GW_LISTENER_VERSION: "v0.11.0" } as Record<string, string>,
+    };
+    const plan = resolveUpgradePlan({ overrides: [], scenario: defaultScenario, versions }, "kms-connector", { lockFile: true });
+    expect(plan.runtimeServices).toEqual([
+      "kms-connector-gw-listener",
+      "kms-connector-kms-worker",
+      "kms-connector-tx-sender",
+    ]);
+    const modern = resolveUpgradePlan(
+      { overrides: [], scenario: defaultScenario, versions: { ...versions, env: { ...versions.env, CONNECTOR_ENDPOINT_VERSION: "02f6cc0" } } },
+      "kms",
+      { lockFile: true },
+    );
+    expect(modern.runtimeServices).toContain("kms-connector-endpoint");
   });
 
   test("upgrade plan supports listener-core version-lock upgrades", () => {

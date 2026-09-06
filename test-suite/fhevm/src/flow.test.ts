@@ -184,6 +184,43 @@ describe("resumeRepairStep", () => {
     expect(resumeRepairStep(completeState(), running)).toBe("relayer");
   });
 
+  test("expects the kms-connector endpoint only when the bundle pins its image", () => {
+    const running = [
+      "fhevm-minio",
+      "coprocessor-and-kms-db",
+      "kms-core",
+      "host-node",
+      "gateway-node",
+      "listener-redis",
+      "listener-publisher-for-anvil",
+      "coprocessor-host-listener",
+      "coprocessor-host-listener-poller",
+      "coprocessor-host-listener-consumer",
+      "coprocessor-gw-listener",
+      "coprocessor-tfhe-worker",
+      "coprocessor-zkproof-worker",
+      "coprocessor-sns-worker",
+      "coprocessor-transaction-sender",
+      "coprocessor-consensus-detector",
+      "coprocessor-upgrade-controller",
+      "kms-connector-gw-listener",
+      "kms-connector-kms-worker",
+      "kms-connector-tx-sender",
+      "fhevm-relayer-db",
+      "fhevm-relayer",
+      "fhevm-test-suite-e2e-debug",
+    ];
+    // completeState() carries no CONNECTOR_ENDPOINT_VERSION: the endpoint is not expected.
+    expect(resumeRepairStep(completeState(), running)).toBeUndefined();
+    const base = completeState();
+    const withEndpoint = {
+      ...base,
+      versions: { ...base.versions, env: { ...base.versions.env, CONNECTOR_ENDPOINT_VERSION: "02f6cc0" } },
+    };
+    expect(resumeRepairStep(withEndpoint, running)).toBe("kms-connector");
+    expect(resumeRepairStep(withEndpoint, [...running, "kms-connector-endpoint"])).toBeUndefined();
+  });
+
   test("returns nothing when every steady-state service is present", () => {
     const running = [
       "fhevm-minio",

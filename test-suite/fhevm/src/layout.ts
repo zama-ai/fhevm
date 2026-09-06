@@ -199,6 +199,7 @@ export const GROUP_BUILD_SERVICES: Record<OverrideGroup, string[]> = {
     "kms-connector-gw-listener",
     "kms-connector-kms-worker",
     "kms-connector-tx-sender",
+    "kms-connector-endpoint",
   ],
   "listener-core": ["listener-publisher-for-anvil"],
   "relayer": [

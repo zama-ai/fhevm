@@ -12,6 +12,7 @@ import {
   compatPolicyForState,
   coprocessorUsesHostKmsGeneration,
   kmsConnectorUsesHostKmsGeneration,
+  replaceRegistrySourceTag,
   requiresGatewayKmsGenerationAddress,
   requiresLegacyGatewayKmsGenerationAddress,
   requiresLegacyHostChainSeedShim,
@@ -20,7 +21,7 @@ import {
   requiresLegacyRelayerUrl,
   requiresModernHostAddressArtifacts,
   supportsCanonicalProtocolConfigSeeding,
-  replaceRegistrySourceTag,
+  supportsConnectorEndpoint,
   supportsConsensusDetector,
   supportsHostListenerConsumer,
   supportsUpgradeController,
@@ -458,6 +459,22 @@ describe("compat", () => {
     // Unparsed main sha tags are published by CI and count as modern.
     expect(supportsConsensusDetector(stateFor({ COPROCESSOR_CONSENSUS_DETECTOR_VERSION: "02f6cc0" }))).toBe(true);
     expect(supportsUpgradeController(stateFor({ COPROCESSOR_UPGRADE_CONTROLLER_VERSION: "02f6cc0" }))).toBe(true);
+  });
+
+  test("enables the kms-connector endpoint only when its image is pinned or locally built", () => {
+    const stateFor = (env: Record<string, string>, overrides: LocalOverride[] = []) => ({
+      versions: { target: "latest-main" as const, lockName: "latest-main.json", env, sources: [] },
+      overrides,
+    });
+    // Pinned profiles and shas that predate the endpoint image omit the (optional) key.
+    expect(supportsConnectorEndpoint(stateFor({}))).toBe(false);
+    expect(supportsConnectorEndpoint(stateFor({ CONNECTOR_ENDPOINT_VERSION: "02f6cc0" }))).toBe(true);
+    expect(supportsConnectorEndpoint(stateFor({ CONNECTOR_ENDPOINT_VERSION: "v0.14.0" }))).toBe(true);
+    // A local kms-connector override builds the endpoint from the working tree.
+    expect(supportsConnectorEndpoint(stateFor({}, [{ group: "kms-connector" }]))).toBe(true);
+    expect(supportsConnectorEndpoint(stateFor({}, [{ group: "kms-connector", services: ["kms-connector-endpoint"] }]))).toBe(true);
+    expect(supportsConnectorEndpoint(stateFor({}, [{ group: "kms-connector", services: ["kms-connector-gw-listener"] }]))).toBe(false);
+    expect(supportsConnectorEndpoint(stateFor({}, [{ group: "coprocessor" }]))).toBe(false);
   });
 
   test("enables host-listener consumer for v0.13 prereleases and newer bundles", () => {
