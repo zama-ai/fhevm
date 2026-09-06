@@ -51,16 +51,18 @@ mod constants {
 
     /// Share threshold configured in `tests/relayer-test-config.yaml`.
     pub const SHARES_THRESHOLD: usize = 9;
-    /// Window long enough that it cannot expire before the straggler shares land.
-    pub const WAIT_WINDOW_LONG_SECS: u32 = 20;
+    /// Window long enough that it cannot expire before the straggler shares land,
+    /// with margin over TARGET_REACHED_MAX_SECS so the two stay distinguishable under load.
+    pub const WAIT_WINDOW_LONG_SECS: u32 = 30;
     /// Window short enough that a test can afford to wait it out.
     pub const WAIT_WINDOW_SHORT_SECS: u32 = 4;
-    /// A completion this quick cannot have come from the long window expiring.
-    pub const TARGET_REACHED_MAX_SECS: u64 = 10;
+    /// A completion this quick cannot have come from the long window expiring. Well above
+    /// the ~2s a healthy run takes, since the whole suite runs 8-way parallel.
+    pub const TARGET_REACHED_MAX_SECS: u64 = 15;
     /// Inside the short window, and after every share of a 9-share committee landed.
     pub const INSIDE_WAIT_WINDOW_MS: u64 = 3000;
     /// Budget for a poll that may have to outlast the short wait window.
-    pub const POLL_BUDGET_SECS: u64 = 15;
+    pub const POLL_BUDGET_SECS: u64 = 25;
 
     // Contract error selectors for testing error classification
     // These match the selectors in src/gateway/arbitrum/transaction/contract_error_parser.rs
