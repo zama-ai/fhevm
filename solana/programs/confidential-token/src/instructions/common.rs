@@ -15,11 +15,12 @@ pub(crate) fn assert_no_remaining_accounts(remaining_accounts: &[AccountInfo]) -
 
 pub(crate) struct TransferAccounts<'a, 'info> {
     pub(crate) payer: &'a Signer<'info>,
-    pub(crate) transfer_authority: Pubkey,
+    /// The sender's signing owner: the transfer authority, and the value authority of an
+    /// existing amount it controls itself.
+    pub(crate) transfer_authority: &'a Signer<'info>,
     pub(crate) mint: &'a Account<'info, ConfidentialMint>,
     pub(crate) from_account: &'a Account<'info, ConfidentialTokenAccount>,
     pub(crate) to_account: &'a Account<'info, ConfidentialTokenAccount>,
-    pub(crate) compute_signer: &'a UncheckedAccount<'info>,
     /// Sender's stable balance encrypted value account: read for the current handle, then
     /// replaced in place as the output.
     pub(crate) from_balance_value: AccountInfo<'info>,
@@ -31,10 +32,11 @@ pub(crate) struct TransferAccounts<'a, 'info> {
     pub(crate) zama_event_authority: &'a UncheckedAccount<'info>,
     pub(crate) zama_program: &'a Program<'info, ZamaHost>,
     pub(crate) host_config: &'a Account<'info, zama_host::HostConfig>,
-    pub(crate) deny_subject_records: &'a [AccountInfo<'info>],
+    /// The instruction's remaining accounts: the mint's deny record while the deny list is on.
+    pub(crate) remaining_accounts: &'a [AccountInfo<'info>],
     pub(crate) system_program: &'a Program<'info, System>,
-    /// Per-`compute_subject` HCU block meter forwarded into the host `fhe_execute` CPI (`None` =
-    /// untrusted, no meter). The host keys the meter on the mint's compute signer PDA.
+    /// Per-mint HCU block meter forwarded into the host `fhe_execute` CPI (`None` = untrusted,
+    /// no meter). The host keys the meter on the application `(program, mint)`.
     pub(crate) hcu_block_meter: Option<AccountInfo<'info>>,
     /// HCU trust witness forwarded into the host `fhe_execute` CPI (`None` = untrusted).
     pub(crate) hcu_trusted_app_record: Option<AccountInfo<'info>>,
@@ -44,6 +46,70 @@ pub(crate) struct TransferAccounts<'a, 'info> {
     pub(crate) from_ata: AccountInfo<'info>,
     /// ATA of `to_account.owner` on `underlying_mint`. May alias `from_ata` on self-transfer.
     pub(crate) to_ata: AccountInfo<'info>,
+    /// A receipt of the transferred amount written for the recipient program, when it asked.
+    pub(crate) receipt: Option<ReceiptAccounts<'info>>,
+}
+
+/// How a program receiving a transfer learns the amount it received: the transfer's execution
+/// also writes `receipt = receipt + transferred` (first time `transferred + 0`) into a value of
+/// that program, controlled by the PDA it signs the CPI with. A value's authority is the only
+/// key that may compute on it, so the recipient cannot read `transferred_amount` itself; the
+/// token program writes the sum into the recipient's own value instead, in the same execution
+/// that computes it. EVM analog: `FHE.allow(transferred, recipient)` followed by the recipient's
+/// own `add`.
+#[derive(Clone, Debug, AnchorSerialize, AnchorDeserialize)]
+pub struct TransferReceipt {
+    /// The recipient program.
+    pub program: Pubkey,
+    /// The recipient program's scope for the value.
+    pub scope: [u8; 32],
+    /// The value's label under `(program, receipt_authority, scope)`.
+    pub label: [u8; 32],
+    /// Seeds (bump last) deriving `receipt_authority` under `program`; proven by the host on
+    /// the first write.
+    pub authority_seeds: Vec<Vec<u8>>,
+    /// Keys allowed to decrypt the receipt's new handle.
+    pub allows: Vec<Pubkey>,
+}
+
+pub(crate) struct ReceiptAccounts<'info> {
+    pub(crate) value: AccountInfo<'info>,
+    pub(crate) authority: fhe::ValueAuthority<'info>,
+    pub(crate) key: zama_fhe::EncryptedValueId,
+    pub(crate) allows: Vec<Pubkey>,
+}
+
+impl<'info> ReceiptAccounts<'info> {
+    /// Binds the optional receipt: both accounts and the descriptor together, or none of them.
+    pub(crate) fn bind(
+        receipt: Option<TransferReceipt>,
+        value: Option<&UncheckedAccount<'info>>,
+        authority: Option<&Signer<'info>>,
+    ) -> Result<Option<Self>> {
+        match (receipt, value, authority) {
+            (None, None, None) => Ok(None),
+            (Some(receipt), Some(value), Some(authority)) => {
+                let key = zama_fhe::EncryptedValueId::new(
+                    zama_fhe::AppScope {
+                        program: receipt.program,
+                        scope: receipt.scope,
+                    },
+                    authority.key(),
+                    zama_fhe::EncryptedValueLabel::new(receipt.label),
+                );
+                Ok(Some(Self {
+                    value: value.to_account_info(),
+                    authority: fhe::ValueAuthority::foreign(
+                        authority.to_account_info(),
+                        receipt.authority_seeds,
+                    )?,
+                    key,
+                    allows: receipt.allows,
+                }))
+            }
+            _ => err!(ConfidentialTokenError::TransferReceiptMismatch),
+        }
+    }
 }
 
 /// Where a transfer's amount comes from. The `ge -> sub -> select` debit and `add` credit that
@@ -53,12 +119,12 @@ pub(crate) enum TransferAmountSource<'info> {
     /// EVM `FHE.fromExternal` parity: a coprocessor-attested fresh client-side encryption,
     /// verified in-execution and transient-allowed for this execution (no persistent amount account).
     Attested(zama_host::CoprocessorInputAttestation),
-    /// EVM computed/received `euint64` parity: an existing on-chain `EncryptedValue` encrypted value account,
-    /// spent as a read-only persistent operand at its current handle. It is never replaced and
-    /// never consumed — only the two balance encrypted value accounts change. The token's spend gate (signing
-    /// owner in the value's subject set) and euint64 type check run in the instruction handler
-    /// before this reaches the execution builder; the host re-checks the handle is current and that the
-    /// mint's compute subject is allowed on the value, in-execution.
+    /// EVM computed `euint64` parity: an existing on-chain `EncryptedValue` account, spent as a
+    /// read-only persistent operand at its current handle. It is never replaced and never
+    /// consumed — only the two balance encrypted value accounts change. The token's spend gate
+    /// (the signing owner controls the value, or owns the token account that does) and euint64
+    /// type check run in the instruction handler before this reaches the execution builder; the
+    /// host re-checks the handle is current and that the value's authority signed, in-execution.
     ExistingValue { amount_value: AccountInfo<'info> },
 }
 
@@ -80,26 +146,20 @@ pub(crate) struct TransferOutcome {
 
 pub(crate) fn execute_transfer<'info>(
     accounts: TransferAccounts<'_, 'info>,
-    compute_signer_bump: u8,
     amount_source: TransferAmountSource<'info>,
 ) -> Result<Option<TransferOutcome>> {
     assert_confidential_mint_shape(accounts.mint)?;
     let mint_key = accounts.mint.key();
-    let compute_signer = accounts.mint.compute_signer;
     let from = accounts.from_account;
     let to = accounts.to_account;
 
     if let TransferAmountSource::Attested(amount_attestation) = &amount_source {
         // EVM `fromExternal` parity for the amount: the attested input must be authored by the
-        // sender (user) and bound to this mint's compute-signer PDA (the `msg.sender`/contract
-        // analog the host re-checks against `compute_subject`). The coprocessor signature over both
-        // is verified in-execution. The `ExistingValue` arm is gated instead by the token spend gate and
-        // euint64 type check in its instruction handler.
-        assert_amount_attestation_binding(
-            amount_attestation,
-            accounts.transfer_authority,
-            compute_signer,
-        )?;
+        // sender (user) and bound to this program (the `msg.sender`/contract analog the host
+        // re-checks against the execution's application). The coprocessor signature over both is
+        // verified in-execution. The `ExistingValue` arm is gated instead by the token spend gate
+        // and euint64 type check in its instruction handler.
+        assert_amount_attestation_binding(amount_attestation, accounts.transfer_authority.key())?;
     }
     require_keys_eq!(from.mint, mint_key, ConfidentialTokenError::MintMismatch);
     require_keys_eq!(to.mint, mint_key, ConfidentialTokenError::MintMismatch);
@@ -118,11 +178,6 @@ pub(crate) fn execute_transfer<'info>(
         &accounts.to_ata,
     )?;
     require_keys_eq!(
-        accounts.compute_signer.key(),
-        compute_signer,
-        ConfidentialTokenError::ComputeSignerMismatch
-    );
-    require_keys_eq!(
         accounts.from_balance_value.key(),
         from.balance_encrypted_value,
         ConfidentialTokenError::CurrentEncryptedValueMismatch
@@ -139,20 +194,21 @@ pub(crate) fn execute_transfer<'info>(
     let from_encrypted_value = accounts.from_balance_value.key();
     let to_encrypted_value = accounts.to_balance_value.key();
     if from_key == to_key {
-        assert_no_remaining_accounts(accounts.deny_subject_records)?;
+        assert_no_remaining_accounts(accounts.remaining_accounts)?;
         return Ok(None);
     }
 
-    let old_from_handle = fhe::read_encrypted_value(&accounts.from_balance_value)?.current_handle;
-    let old_to_handle = fhe::read_encrypted_value(&accounts.to_balance_value)?.current_handle;
+    let from_balance = fhe::read_encrypted_value(&accounts.from_balance_value)?;
+    let to_balance = fhe::read_encrypted_value(&accounts.to_balance_value)?;
+    let old_from_handle = from_balance.current_handle;
+    let old_to_handle = to_balance.current_handle;
 
     let (new_from_handle, transferred_handle, new_to_handle) = compute_transfer_handles(
         &accounts,
-        compute_signer_bump,
         &amount_source,
         mint_key,
-        old_from_handle,
-        old_to_handle,
+        &from_balance,
+        &to_balance,
     )?;
 
     let transferred_encrypted_value = accounts.transferred_amount_value.key();
@@ -174,81 +230,84 @@ pub(crate) fn execute_transfer<'info>(
     }))
 }
 
-#[allow(clippy::too_many_arguments)]
 fn compute_transfer_handles<'info>(
     accounts: &TransferAccounts<'_, 'info>,
-    compute_signer_bump: u8,
     amount_source: &TransferAmountSource<'info>,
     mint_key: Pubkey,
-    old_from_handle: [u8; 32],
-    old_to_handle: [u8; 32],
+    from_balance_value: &zama_host::EncryptedValue,
+    to_balance_value: &zama_host::EncryptedValue,
 ) -> Result<([u8; 32], [u8; 32], [u8; 32])> {
     let from_key = accounts.from_account.key();
     let to_key = accounts.to_account.key();
     let from_owner = accounts.from_account.owner;
     let to_owner = accounts.to_account.owner;
-    // The token program's ACL domain is the mint, so every value slot below is derived under it.
-    let mint_domain = zama_fhe::Domain::new(mint_key);
-    let from_balance = uint64_from_value(
-        old_from_handle,
-        mint_domain,
-        from_key,
-        encrypted_balance_label(),
-    )?;
-    let to_balance = uint64_from_value(
-        old_to_handle,
-        mint_domain,
-        to_key,
-        encrypted_balance_label(),
-    )?;
-    let compute_signer = accounts.compute_signer.key();
-    let balance_access = |owner| fhe::PersistentAudience::for_owner(owner, compute_signer);
-    let transferred_access = {
-        let access = fhe::PersistentAudience::for_owner(from_owner, compute_signer);
-        if to_owner != from_owner {
-            access.with_owner(to_owner)
-        } else {
-            access
-        }
-    };
+    let from_balance = fhe::uint64_operand(from_balance_value)?;
+    let to_balance = fhe::uint64_operand(to_balance_value)?;
+    let from_authority = fhe::ValueAuthority::token_account(accounts.from_account)?;
+    let to_authority = fhe::ValueAuthority::token_account(accounts.to_account)?;
+    // Each write allows its holder on the new handle; the transferred amount is allowed to both
+    // parties so the recipient can decrypt what they received.
     let from_output = fhe::PersistentOutput::new(
         accounts.from_balance_value.clone(),
-        encrypted_value_id(mint_domain, from_key, encrypted_balance_label()),
-        balance_access(from_owner),
+        balance_encrypted_value_id(mint_key, from_key),
+        &from_authority,
+        [from_owner],
     )?;
     let transferred_output = fhe::PersistentOutput::new(
         accounts.transferred_amount_value.clone(),
-        encrypted_value_id(mint_domain, from_key, encrypted_transferred_amount_label()),
-        transferred_access,
+        token_value_id(mint_key, from_key, encrypted_transferred_amount_label()),
+        &from_authority,
+        std::iter::once(from_owner).chain((to_owner != from_owner).then_some(to_owner)),
     )?;
     let to_output = fhe::PersistentOutput::new(
         accounts.to_balance_value.clone(),
-        encrypted_value_id(mint_domain, to_key, encrypted_balance_label()),
-        balance_access(to_owner),
+        balance_encrypted_value_id(mint_key, to_key),
+        &to_authority,
+        [to_owner],
     )?;
-    // Existing value: the amount is an on-chain encrypted value account's current handle, read as a
-    // persistent operand. The slot is derived from the value's own canonical fields, so its PDA
-    // equals the passed account; the host re-checks handle-is-current and compute-subject
-    // membership. Read here rather than inside the execution closure: a stored value belongs to no
-    // builder, and reading the account is this program's error to report, not the builder's.
+    // The recipient program's receipt accumulates what this transfer moved; its previous total
+    // is an operand only once the value exists.
+    let receipt_output = accounts
+        .receipt
+        .as_ref()
+        .map(|receipt| {
+            let previous = (*receipt.value.owner != System::id())
+                .then(|| fhe::read_encrypted_value(&receipt.value))
+                .transpose()?
+                .as_ref()
+                .map(fhe::uint64_operand)
+                .transpose()?;
+            let output = fhe::PersistentOutput::new(
+                receipt.value.clone(),
+                receipt.key.clone(),
+                &receipt.authority,
+                receipt.allows.iter().copied(),
+            )?;
+            Ok::<_, Error>((output, previous))
+        })
+        .transpose()?;
+    // Existing value: the amount is an on-chain encrypted value account's current handle, read as
+    // a persistent operand named by the value's own canonical fields, so its PDA equals the passed
+    // account; the host re-checks handle-is-current and the authority's signature. Read here
+    // rather than inside the execution closure: a stored value belongs to no builder, and reading
+    // the account is this program's error to report, not the builder's.
     let stored_amount = match amount_source {
         TransferAmountSource::Attested(_) => None,
-        TransferAmountSource::ExistingValue { amount_value, .. } => {
-            let value = fhe::read_encrypted_value(amount_value)?;
-            Some(uint64_from_value(
-                value.current_handle,
-                zama_fhe::Domain::new(value.domain),
-                value.encrypted_value_account_authority,
-                value.label,
-            )?)
+        TransferAmountSource::ExistingValue { amount_value } => {
+            Some(fhe::read_encrypted_value(amount_value)?)
         }
     };
+    let stored_operand = stored_amount
+        .as_ref()
+        .map(fhe::uint64_operand)
+        .transpose()?;
     let execution = zama_fhe::FheExecution::build(
         zama_fhe::ExecutionEncryptedValueAccountAuthority::new(from_key),
         |builder| {
-            let amount = match (amount_source, stored_amount) {
-                // fromExternal: the amount is a coprocessor-attested external input, verified in-execution
-                // and transient-allowed for this execution (no persistent amount handle / ACL account).
+            let amount = match (amount_source, stored_operand) {
+                // fromExternal: the amount is a coprocessor-attested external input, verified
+                // in-execution and transient-allowed for this execution (no persistent amount
+                // handle / account).
                 (TransferAmountSource::Attested(amount_attestation), _) => {
                     builder.verified_input(amount_attestation.clone())?
                 }
@@ -273,38 +332,54 @@ fn compute_transfer_handles<'info>(
                 from_output.output(),
             )?;
             builder.add(to_balance, transferred, to_output.output())?;
+            if let Some((receipt, previous)) = &receipt_output {
+                match previous {
+                    Some(previous) => builder.add(*previous, transferred, receipt.output())?,
+                    None => builder.add(
+                        transferred,
+                        zama_fhe::Scalar::<zama_fhe::Uint<64>>::u64(0),
+                        receipt.output(),
+                    )?,
+                };
+            }
             Ok(())
         },
     )
     .map_err(invalid_execution)?;
-    let compute_authority =
-        fhe::ComputeAuthority::for_mint(accounts.compute_signer, mint_key, compute_signer_bump)?;
-    // Persistent output accounts are the same for both arms; the existing-value arm adds the amount
-    // encrypted value account as a read-only persistent input operand the execution now requires.
+    // Persistent output accounts are the same for both arms; the existing-value arm adds the
+    // amount encrypted value account as a read-only persistent input operand the execution now
+    // requires, and its authority's signature when the signing owner controls it directly.
     let mut dynamic_accounts = vec![
         from_output.account_info(),
         transferred_output.account_info(),
         to_output.account_info(),
     ];
-    if let TransferAmountSource::ExistingValue { amount_value, .. } = amount_source {
-        // The amount encrypted value account can legitimately alias one of the output accounts (spending the entire
-        // balance, or re-sending a transferred_amount that is also this execution's output). The execution
-        // already merges those into one slot, so only add the amount when it is a distinct account.
+    let mut value_authorities = vec![from_authority, to_authority];
+    if let (Some(receipt), Some((receipt_output, _))) = (&accounts.receipt, &receipt_output) {
+        dynamic_accounts.push(receipt_output.account_info());
+        value_authorities.push(receipt.authority.clone());
+    }
+    if let (TransferAmountSource::ExistingValue { amount_value }, Some(stored)) =
+        (amount_source, &stored_amount)
+    {
+        // The amount encrypted value account can legitimately alias one of the output accounts
+        // (spending the entire balance, or re-sending a transferred_amount that is also this
+        // execution's output). The execution already merges those into one slot, so only add the
+        // amount when it is a distinct account.
         if !dynamic_accounts
             .iter()
             .any(|account| account.key() == amount_value.key())
         {
             dynamic_accounts.push(amount_value.clone());
         }
+        if stored.encrypted_value_account_authority == accounts.transfer_authority.key() {
+            value_authorities.push(fhe::ValueAuthority::external(
+                accounts.transfer_authority.to_account_info(),
+            ));
+        }
     }
-    let execution_accounts = fhe::ExecutionAccountSet::for_execution(
-        &execution,
-        dynamic_accounts,
-        [
-            fhe::OutputAuthority::token_account(accounts.from_account)?,
-            fhe::OutputAuthority::token_account(accounts.to_account)?,
-        ],
-    )?;
+    let execution_accounts =
+        fhe::ExecutionAccountSet::for_execution(&execution, dynamic_accounts, value_authorities)?;
 
     fhe::execute(fhe::Execute {
         context: fhe::ExecuteContext {
@@ -312,8 +387,11 @@ fn compute_transfer_handles<'info>(
             event_authority: accounts.zama_event_authority,
             zama_program: accounts.zama_program,
             host_config: accounts.host_config,
-            deny_subject_records: accounts.deny_subject_records,
-            compute_authority,
+            deny_scope_record: fhe::deny_scope_record(
+                accounts.host_config,
+                accounts.remaining_accounts,
+                mint_key,
+            )?,
             system_program: accounts.system_program,
             hcu_block_meter: accounts.hcu_block_meter.clone(),
             hcu_trusted_app_record: accounts.hcu_trusted_app_record.clone(),
@@ -336,44 +414,14 @@ pub(crate) fn invalid_execution(
     error!(ConfidentialTokenError::InvalidFheExecution)
 }
 
-pub(crate) fn encrypted_value_id(
-    domain: zama_fhe::Domain,
-    encrypted_value_account_authority: Pubkey,
-    encrypted_value_label: [u8; 32],
-) -> zama_fhe::EncryptedValueId {
-    zama_fhe::EncryptedValueId::new(
-        domain,
-        encrypted_value_account_authority,
-        zama_fhe::EncryptedValueLabel::new(encrypted_value_label),
-    )
-}
-
-pub(crate) fn uint64_from_value(
-    handle: [u8; 32],
-    domain: zama_fhe::Domain,
-    encrypted_value_account_authority: Pubkey,
-    encrypted_value_label: [u8; 32],
-) -> Result<zama_fhe::Uint64Handle> {
-    zama_fhe::Uint64Handle::persistent(
-        handle,
-        encrypted_value_id(
-            domain,
-            encrypted_value_account_authority,
-            encrypted_value_label,
-        ),
-    )
-    .map_err(invalid_execution)
-}
-
 /// Validates a coprocessor-attested transfer/burn amount (EVM `fromExternal` parity). The host
-/// re-verifies the attestation signature and enforces caller == `contract_address` in-execution; the
-/// program binds the attested identities to this transaction: the input must be authored by
-/// `expected_user` (the sender/burner) and bound to `expected_contract` (the mint compute-signer
-/// PDA the host checks against `compute_subject`). The amount handle must be a confidential balance.
+/// re-verifies the attestation signature and enforces `contract_address == program` in-execution;
+/// the program binds the attested identities to this transaction: the input must be authored by
+/// `expected_user` (the sender/burner) and bound to this program. The amount handle must be a
+/// confidential balance.
 pub(crate) fn assert_amount_attestation_binding(
     attestation: &zama_host::CoprocessorInputAttestation,
     expected_user: Pubkey,
-    expected_contract: Pubkey,
 ) -> Result<()> {
     require!(
         zama_host::handle_fhe_type(attestation.input_handle) == BALANCE_FHE_TYPE,
@@ -386,54 +434,75 @@ pub(crate) fn assert_amount_attestation_binding(
     );
     require_keys_eq!(
         Pubkey::new_from_array(attestation.contract_address),
-        expected_contract,
+        crate::ID,
         ConfidentialTokenError::AttestationContractMismatch
     );
     Ok(())
 }
 
-/// Encrypted value account checks for the redeem path: burned-amount handle type, canonical
-/// address, domain, encrypted value account authority, encrypted value label, and current
-/// membership for the owner and mint compute signer. The caller separately requires the pending
-/// handle to be current and proves its publicness through the exact-handle MMR proof verified by
-/// `verify_public_decrypt`.
+/// The token spend gate for an existing amount value — EVM `FHE.isAllowed(amount, msg.sender)`
+/// parity, app-level by design. Computing on a value is admitted by its authority's signature,
+/// so the spender must be that authority (another program's PDA signing through
+/// `invoke_signed`), or own the token account whose values this program signs for. The amount
+/// must be a confidential balance type.
+pub(crate) fn assert_amount_value_spendable(
+    amount_value: &zama_host::EncryptedValue,
+    spender: Pubkey,
+    spender_token_account: Pubkey,
+) -> Result<()> {
+    require!(
+        zama_host::handle_fhe_type(amount_value.current_handle) == BALANCE_FHE_TYPE,
+        ConfidentialTokenError::AmountHandleTypeMismatch
+    );
+    require!(
+        amount_value.encrypted_value_account_authority == spender
+            || amount_value.encrypted_value_account_authority == spender_token_account,
+        ConfidentialTokenError::AmountSpendSubjectMismatch
+    );
+    Ok(())
+}
+
+/// Binds an encrypted value to one exact token state field: this program's application for
+/// `mint`, the controlling PDA, and the field label.
+pub(crate) fn assert_token_value(
+    value: &zama_host::EncryptedValue,
+    mint: Pubkey,
+    authority: Pubkey,
+    label: [u8; 32],
+) -> Result<()> {
+    require!(
+        value.program == crate::ID
+            && value.scope == mint.to_bytes()
+            && value.encrypted_value_account_authority == authority
+            && value.label == label,
+        ConfidentialTokenError::TokenEncryptedValueMismatch
+    );
+    Ok(())
+}
+
+/// Encrypted value account checks for the redeem path: burned-amount handle type and the exact
+/// token state field. The caller separately requires the pending handle to be current and proves
+/// its publicness through the exact-handle MMR proof verified by `verify_public_decrypt`.
 pub(crate) fn assert_burned_amount_value_account(
     amount_value: &Account<zama_host::EncryptedValue>,
     burned_handle: [u8; 32],
     mint: Pubkey,
     token_account: Pubkey,
-    owner: Pubkey,
-    compute_signer: Pubkey,
 ) -> Result<()> {
     require!(
         zama_host::handle_fhe_type(burned_handle) == BALANCE_FHE_TYPE,
         ConfidentialTokenError::AmountHandleTypeMismatch
     );
-    require_keys_eq!(
-        amount_value.domain,
+    assert_token_value(
+        amount_value,
         mint,
-        ConfidentialTokenError::DomainMismatch
-    );
-    require_keys_eq!(
-        amount_value.encrypted_value_account_authority,
         token_account,
-        ConfidentialTokenError::AmountAclMismatch
-    );
-    require!(
-        amount_value.label == encrypted_burned_amount_label(),
-        ConfidentialTokenError::AmountAclMismatch
-    );
+        encrypted_burned_amount_label(),
+    )
+    .map_err(|_| error!(ConfidentialTokenError::AmountAclMismatch))?;
     require_keys_eq!(
         amount_value.key(),
         encrypted_value_address(mint, token_account, encrypted_burned_amount_label()).0,
-        ConfidentialTokenError::AmountAclMismatch
-    );
-    require!(
-        amount_value.has_subject(owner),
-        ConfidentialTokenError::AmountAclMismatch
-    );
-    require!(
-        amount_value.has_subject(compute_signer),
         ConfidentialTokenError::AmountAclMismatch
     );
     Ok(())
@@ -636,16 +705,6 @@ pub(crate) fn assert_confidential_mint_shape(mint: &Account<ConfidentialMint>) -
     require!(
         mint.to_account_info().data_len() == 8 + ConfidentialMint::SPACE,
         ConfidentialTokenError::MintAccountMismatch
-    );
-    require_keys_eq!(
-        mint.domain,
-        mint.key(),
-        ConfidentialTokenError::DomainMismatch
-    );
-    require_keys_eq!(
-        mint.compute_signer,
-        compute_signer_address(mint.key()).0,
-        ConfidentialTokenError::ComputeSignerMismatch
     );
     Ok(())
 }

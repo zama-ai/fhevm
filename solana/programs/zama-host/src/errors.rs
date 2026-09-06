@@ -210,8 +210,9 @@ pub enum ZamaHostError {
     /// transient outputs create no ACL leaf and are undecryptable — so it is rejected outright.
     #[msg("FHE execution touches no persistent value under a finite HCU block cap")]
     FheExecuteUnanchoredUnderBlockCap,
-    /// The persistent values one execution reads and writes belong to different applications;
-    /// one execution is metered against exactly one `(program, scope)`.
+    /// The persistent values one execution's default authority reads and writes belong to
+    /// different applications; one execution is metered against exactly one `(program, scope)`.
+    /// Values admitted by an additional signing authority are that program's own and do not count.
     #[msg("FHE execution mixes values of different application scopes")]
     FheExecuteMixedScopes,
 

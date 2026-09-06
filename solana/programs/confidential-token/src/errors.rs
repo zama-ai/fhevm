@@ -11,7 +11,7 @@ pub enum ConfidentialTokenError {
     /// Token account mint did not match the supplied mint.
     #[msg("Token account mint does not match")]
     MintMismatch,
-    /// Confidential mint account shape or self-domain metadata is invalid.
+    /// Confidential mint account shape is invalid.
     #[msg("Confidential mint account is invalid")]
     MintAccountMismatch,
     /// Retired (zero references). Kept so Anchor error ordinals stay stable.
@@ -43,11 +43,13 @@ pub enum ConfidentialTokenError {
     /// Vault token account was not the mint's canonical associated token account.
     #[msg("Vault token account is not the canonical mint vault")]
     VaultAccountMismatch,
-    /// Confidential mint ACL domain key was not the expected mint key.
-    #[msg("Confidential mint ACL domain key is invalid")]
+    /// Retired with the ACL domain (values are scoped by `(program, mint)` now). Kept so Anchor
+    /// error ordinals stay stable.
+    #[msg("Confidential mint ACL domain key is invalid (retired)")]
     DomainMismatch,
-    /// Compute signer PDA did not match the confidential mint metadata.
-    #[msg("Compute signer does not match confidential mint")]
+    /// Retired with the compute signer (reads are admitted by the value authority's signature).
+    /// Kept so Anchor error ordinals stay stable.
+    #[msg("Compute signer does not match confidential mint (retired)")]
     ComputeSignerMismatch,
     /// Current EncryptedValue account did not match token account state.
     #[msg("current encrypted value does not match token account state")]
@@ -61,12 +63,13 @@ pub enum ConfidentialTokenError {
     /// The attested input's user does not match the transaction owner/authority.
     #[msg("attested input user does not match owner")]
     AttestationUserMismatch,
-    /// The attested input's contract is not the mint compute-signer PDA.
-    #[msg("attested input contract does not match compute signer")]
+    /// The attested input's contract is not this program.
+    #[msg("attested input contract does not match the token program")]
     AttestationContractMismatch,
-    /// The signer spending an existing amount value is not in that value's subject set.
-    /// Token-level spend gate mirroring EVM's `FHE.isAllowed(amount, msg.sender)`.
-    #[msg("amount value spender is not in the amount's subject set")]
+    /// The signer spending an existing amount value neither controls it nor owns the token
+    /// account that does. Token-level spend gate mirroring EVM's `FHE.isAllowed(amount,
+    /// msg.sender)`: computing on a value is admitted by its authority's signature.
+    #[msg("amount value spender does not control the amount")]
     AmountSpendSubjectMismatch,
     /// Total-supply authority PDA did not match the mint.
     #[msg("total supply authority does not match mint")]
@@ -160,7 +163,8 @@ pub enum ConfidentialTokenError {
     /// An encrypted value account is not controlled by the supplied token account PDA.
     #[msg("encrypted value account authority does not match token account")]
     EncryptedValueAuthorityMismatch,
-    /// A token-account-scoped encrypted value has the wrong domain or canonical address.
+    /// A token encrypted value does not belong to this program and mint at the expected
+    /// authority and label.
     #[msg("token encrypted value account is not canonical")]
     TokenEncryptedValueMismatch,
     /// The encrypted total-supply value is not the canonical mint-scoped account.
@@ -169,4 +173,7 @@ pub enum ConfidentialTokenError {
     /// Freeze checks bind the owner's associated token account for the wrapped mint.
     #[msg("underlying associated token account does not match")]
     UnderlyingAssociatedAccountMismatch,
+    /// A transfer receipt needs its descriptor, value account and signing authority together.
+    #[msg("transfer receipt descriptor and accounts must be passed together")]
+    TransferReceiptMismatch,
 }

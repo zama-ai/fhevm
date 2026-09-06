@@ -17,14 +17,11 @@ pub struct CancelPendingBurn<'info> {
     /// Token owner, cancel authority, and rent destination for the closed pending-burn account.
     #[account(mut)]
     pub owner: Signer<'info>,
-    /// Confidential mint whose compute signer authorizes the balance/supply updates.
+    /// Confidential mint whose total supply is re-credited.
     pub mint: Box<Account<'info, ConfidentialMint>>,
     /// Token account whose balance is re-credited.
     #[account(mut)]
     pub token_account: Box<Account<'info, ConfidentialTokenAccount>>,
-    /// CHECK: Program-controlled compute signer PDA.
-    #[account(seeds = [b"fhe-compute", mint.key().as_ref()], bump)]
-    pub compute_signer: UncheckedAccount<'info>,
     /// CHECK: Mint-scoped encrypted value account authority for total-supply handles.
     #[account(seeds = [b"total-supply", mint.key().as_ref()], bump)]
     pub total_supply_authority: UncheckedAccount<'info>,
@@ -58,12 +55,12 @@ pub struct CancelPendingBurn<'info> {
     /// System program used for ACL account creation on the balance/supply update path.
     pub system_program: Program<'info, System>,
     /// CHECK: forwarded verbatim into the ZamaHost `fhe_execute` CPI, which validates it against the
-    /// canonical `["hcu-block-meter", compute_signer]` PDA. Supplied by an untrusted mint under a
+    /// canonical `["hcu-block-meter", program, mint]` PDA. Supplied by an untrusted mint under a
     /// metering-band cap; omitted when the mint is trusted or the cap is unrestricted.
     #[account(mut)]
     pub hcu_block_meter: Option<UncheckedAccount<'info>>,
     /// CHECK: forwarded verbatim into the ZamaHost `fhe_execute` CPI, which validates it against the
-    /// canonical `["hcu-trusted", compute_signer]` PDA. Present + valid bypasses the cap; absent
+    /// canonical `["hcu-trusted", program, mint]` PDA. Present + valid bypasses the cap; absent
     /// means the mint is metered.
     pub hcu_trusted_app_record: Option<UncheckedAccount<'info>>,
 }
@@ -73,8 +70,6 @@ pub struct CancelPendingBurn<'info> {
 pub fn cancel_pending_burn<'info>(ctx: Context<'info, CancelPendingBurn<'info>>) -> Result<()> {
     assert_confidential_mint_shape(&ctx.accounts.mint)?;
     let mint_key = ctx.accounts.mint.key();
-    let compute_signer = ctx.accounts.mint.compute_signer;
-    let total_supply_authority = ctx.accounts.total_supply_authority.key();
     let token_account = ctx.accounts.token_account.as_ref();
     let owner = token_account.owner;
     let token_account_key = token_account.key();
@@ -91,16 +86,6 @@ pub fn cancel_pending_burn<'info>(ctx: Context<'info, CancelPendingBurn<'info>>)
         ConfidentialTokenError::MintMismatch
     );
     assert_confidential_token_account_shape(token_account, mint_key, owner)?;
-    require_keys_eq!(
-        ctx.accounts.compute_signer.key(),
-        compute_signer,
-        ConfidentialTokenError::ComputeSignerMismatch
-    );
-    require_keys_eq!(
-        total_supply_authority,
-        total_supply_authority_address(mint_key).0,
-        ConfidentialTokenError::TotalSupplyAuthorityMismatch
-    );
 
     require_keys_eq!(
         pending.owner,
@@ -130,41 +115,29 @@ pub fn cancel_pending_burn<'info>(ctx: Context<'info, CancelPendingBurn<'info>>)
         ConfidentialTokenError::PendingBurnHandleNotCurrent
     );
 
-    let mint_domain = zama_fhe::Domain::new(mint_key);
     let old_balance_handle = ctx.accounts.balance_value.current_handle;
     let old_total_supply_handle = ctx.accounts.total_supply_value.current_handle;
+    let token_authority = fhe::ValueAuthority::token_account(&ctx.accounts.token_account)?;
+    let total_supply_authority = fhe::ValueAuthority::total_supply(
+        &ctx.accounts.total_supply_authority,
+        mint_key,
+        ctx.bumps.total_supply_authority,
+    )?;
     let balance_output = fhe::PersistentOutput::new(
         ctx.accounts.balance_value.to_account_info(),
-        encrypted_value_id(mint_domain, token_account_key, encrypted_balance_label()),
-        fhe::PersistentAudience::for_owner(owner, compute_signer),
+        balance_encrypted_value_id(mint_key, token_account_key),
+        &token_authority,
+        [owner],
     )?;
     let total_supply_output = fhe::PersistentOutput::new(
         ctx.accounts.total_supply_value.to_account_info(),
-        encrypted_value_id(
-            mint_domain,
-            total_supply_authority,
-            encrypted_total_supply_label(),
-        ),
-        fhe::PersistentAudience::compute_only(compute_signer),
+        total_supply_encrypted_value_id(mint_key),
+        &total_supply_authority,
+        [],
     )?;
-    let balance = uint64_from_value(
-        old_balance_handle,
-        mint_domain,
-        token_account_key,
-        encrypted_balance_label(),
-    )?;
-    let total_supply = uint64_from_value(
-        old_total_supply_handle,
-        mint_domain,
-        total_supply_authority,
-        encrypted_total_supply_label(),
-    )?;
-    let burned_amount = uint64_from_value(
-        burned_value.current_handle,
-        zama_fhe::Domain::new(burned_value.domain),
-        burned_value.encrypted_value_account_authority,
-        burned_value.label,
-    )?;
+    let balance = fhe::uint64_operand(&ctx.accounts.balance_value)?;
+    let total_supply = fhe::uint64_operand(&ctx.accounts.total_supply_value)?;
+    let burned_amount = fhe::uint64_operand(&burned_value)?;
 
     let execution = zama_fhe::FheExecution::build(
         zama_fhe::ExecutionEncryptedValueAccountAuthority::new(token_account_key),
@@ -175,12 +148,6 @@ pub fn cancel_pending_burn<'info>(ctx: Context<'info, CancelPendingBurn<'info>>)
         },
     )
     .map_err(invalid_execution)?;
-    let compute_authority = fhe::ComputeAuthority::for_mint(
-        &ctx.accounts.compute_signer,
-        mint_key,
-        ctx.bumps.compute_signer,
-    )?;
-    let total_supply_authority_bump = total_supply_authority_address(mint_key).1;
     let execution_accounts = fhe::ExecutionAccountSet::for_execution(
         &execution,
         [
@@ -188,14 +155,7 @@ pub fn cancel_pending_burn<'info>(ctx: Context<'info, CancelPendingBurn<'info>>)
             total_supply_output.account_info(),
             ctx.accounts.burned_amount_value.to_account_info(),
         ],
-        [
-            fhe::OutputAuthority::token_account(&ctx.accounts.token_account)?,
-            fhe::OutputAuthority::total_supply(
-                &ctx.accounts.total_supply_authority,
-                mint_key,
-                total_supply_authority_bump,
-            )?,
-        ],
+        [token_authority, total_supply_authority],
     )?;
     fhe::execute(fhe::Execute {
         context: fhe::ExecuteContext {
@@ -203,8 +163,11 @@ pub fn cancel_pending_burn<'info>(ctx: Context<'info, CancelPendingBurn<'info>>)
             event_authority: &ctx.accounts.zama_event_authority,
             zama_program: &ctx.accounts.zama_program,
             host_config: &ctx.accounts.host_config,
-            deny_subject_records: ctx.remaining_accounts,
-            compute_authority,
+            deny_scope_record: fhe::deny_scope_record(
+                &ctx.accounts.host_config,
+                ctx.remaining_accounts,
+                mint_key,
+            )?,
             system_program: &ctx.accounts.system_program,
             hcu_block_meter: ctx
                 .accounts

@@ -25,8 +25,6 @@ pub struct CancelDispatch<'info> {
     pub batch_authority: UncheckedAccount<'info>,
     /// Confidential mint whose encrypted total supply is restored.
     pub join_confidential_mint: Box<Account<'info, ct::ConfidentialMint>>,
-    /// CHECK: join mint compute-signer PDA; validated by the token CPI.
-    pub join_compute_signer: UncheckedAccount<'info>,
     /// CHECK: mint-scoped total-supply authority PDA; validated by the token CPI.
     pub total_supply_authority: UncheckedAccount<'info>,
     /// CHECK: batch's confidential join token account; validated here and by the token CPI.
@@ -106,7 +104,6 @@ pub fn cancel_dispatch(
             owner: ctx.accounts.batch_authority.to_account_info(),
             mint: ctx.accounts.join_confidential_mint.to_account_info(),
             token_account: ctx.accounts.batch_join_token_account.to_account_info(),
-            compute_signer: ctx.accounts.join_compute_signer.to_account_info(),
             total_supply_authority: ctx.accounts.total_supply_authority.to_account_info(),
             balance_value: ctx.accounts.batch_balance_value.to_account_info(),
             total_supply_value: ctx.accounts.total_supply_value.to_account_info(),

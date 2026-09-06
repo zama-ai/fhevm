@@ -496,15 +496,16 @@ pub fn kms_context_account(
     )
 }
 
-/// Builds a `DenySubjectRecord` account at its canonical PDA.
-pub fn deny_subject_record_account(subject: Pubkey, denied: bool) -> (Pubkey, Account) {
-    let (record, bump) = host::deny_subject_address(subject);
+/// Builds a `DenyScopeRecord` account for one application at its canonical PDA.
+pub fn deny_scope_record_account(app: host::AppScope, denied: bool) -> (Pubkey, Account) {
+    let (record, bump) = host::deny_scope_address(app);
     (
         record,
         Account {
             lamports: 1_000_000_000,
-            data: serialized_account(host::DenySubjectRecord {
-                subject,
+            data: serialized_account(host::DenyScopeRecord {
+                program: app.program,
+                scope: app.scope,
                 denied,
                 bump,
             }),
@@ -515,27 +516,26 @@ pub fn deny_subject_record_account(subject: Pubkey, denied: bool) -> (Pubkey, Ac
     )
 }
 
-/// Builds a canonical `EncryptedValue` at the PDA derived from
-/// `(domain, encrypted_value_account_authority, label)`.
+/// Builds a canonical `EncryptedValue` with no history at the PDA derived from
+/// `(app.program, encrypted_value_account_authority, app.scope, label)`.
 pub fn new_encrypted_value(
-    domain: Pubkey,
+    app: host::AppScope,
     encrypted_value_account_authority: Pubkey,
     encrypted_value_label: [u8; 32],
     handle: [u8; 32],
-    subjects: &[Pubkey],
 ) -> (Pubkey, host::EncryptedValue) {
-    let encrypted_value_id = zama_solana_acl::derive_encrypted_value_id(
-        domain.to_bytes(),
-        encrypted_value_account_authority.to_bytes(),
+    let (address, bump) = host::encrypted_value_address(
+        app.program,
+        encrypted_value_account_authority,
+        app.scope,
         encrypted_value_label,
     );
-    let (address, bump) = host::encrypted_value_address(encrypted_value_id);
     let value = host::EncryptedValue {
-        domain,
+        program: app.program,
         encrypted_value_account_authority,
+        scope: app.scope,
         label: encrypted_value_label,
         current_handle: handle,
-        subjects: subjects.to_vec(),
         leaf_count: 0,
         peaks: Vec::new(),
         bump,

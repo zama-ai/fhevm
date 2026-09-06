@@ -1,11 +1,9 @@
 //! Batcher-local FHE helpers.
 //!
-//! The batcher drives its own ZamaHost executions (join re-materialization, the
-//! quit reset, and the claim MulDiv) with one identity: the per-batch
-//! authority PDA is simultaneously the execution's `compute_subject` (it reads the
-//! deposit encrypted value accounts it is a subject of) and its `encrypted_value_account_authority` (it
-//! authorizes the batcher-owned persistent outputs), both signed through a single
-//! `invoke_signed`.
+//! The batcher drives its own ZamaHost executions (the quit reset and the claim MulDiv) with one
+//! identity: the per-batch authority PDA controls every batcher value, so its single
+//! `invoke_signed` admits the reads and authorizes the writes. Its application to the host is
+//! `(batcher program, batch)`.
 
 use anchor_lang::prelude::*;
 use zama_host::EncryptedValue;
@@ -26,45 +24,44 @@ pub(crate) fn read_encrypted_value(info: &AccountInfo) -> Result<EncryptedValue>
         .map_err(|_| BatcherError::EncryptedValueInvalid.into())
 }
 
-/// A persistent execution output bound to the exact `EncryptedValue` encrypted value account it may
-/// create or update, mirroring the confidential-token pattern: create when
-/// the PDA does not exist yet, update (pinning the stored previous handle
-/// and subjects) when it does.
+/// A persistent execution output bound to the exact `EncryptedValue` account it may create or
+/// update, mirroring the confidential-token pattern: create (carrying the batch authority's
+/// seeds) when the PDA does not exist yet, update (echoing the stored handle) when it does.
+/// `allows` may decrypt the handle this write produces.
 pub(crate) struct PersistentBinding<'info> {
     account: AccountInfo<'info>,
     output: Box<zama_fhe::PersistentOutput>,
-    previous_handle: Option<[u8; 32]>,
 }
 
 impl<'info> PersistentBinding<'info> {
     pub(crate) fn bind(
         account: AccountInfo<'info>,
         key: zama_fhe::EncryptedValueId,
-        subjects: Vec<Pubkey>,
+        authority_seeds: &[&[u8]],
+        allows: impl IntoIterator<Item = Pubkey>,
     ) -> Result<Self> {
         require_keys_eq!(
             account.key(),
             key.address(),
             BatcherError::DerivedAccountMismatch
         );
-        let (output, previous_handle) = if *account.owner == System::id() {
+        let mut output = if *account.owner == System::id() {
             require!(
                 account.data_is_empty() && !account.executable,
                 BatcherError::EncryptedValueInvalid
             );
-            (zama_fhe::PersistentOutput::create(key, subjects), None)
+            zama_fhe::PersistentOutput::create(key, authority_seeds)
         } else {
             let value = read_encrypted_value(&account)?;
-            (
-                zama_fhe::PersistentOutput::update(key, subjects, &value),
-                Some(value.current_handle),
-            )
+            zama_fhe::PersistentOutput::update(key, value.current_handle)
         };
+        for allowed in allows {
+            output = output.allow(allowed);
+        }
         output.validate().map_err(invalid_execution)?;
         Ok(Self {
             account,
             output: Box::new(output),
-            previous_handle,
         })
     }
 
@@ -74,17 +71,6 @@ impl<'info> PersistentBinding<'info> {
 
     pub(crate) fn account_info(&self) -> AccountInfo<'info> {
         self.account.clone()
-    }
-
-    /// The encrypted value account's handle before this execution, when the encrypted value account already existed.
-    pub(crate) fn previous_handle(&self) -> Option<[u8; 32]> {
-        self.previous_handle
-    }
-
-    /// Reads the handle the host bound into the encrypted value account. Call only after the
-    /// execution CPI carrying this output has executed.
-    pub(crate) fn handle_after_execute(&self) -> Result<[u8; 32]> {
-        Ok(read_encrypted_value(&self.account)?.current_handle)
     }
 }
 
@@ -98,11 +84,11 @@ pub(crate) struct BatchAuthorityExecute<'a, 'info> {
     pub(crate) zama_event_authority: AccountInfo<'info>,
     pub(crate) zama_program: AccountInfo<'info>,
     pub(crate) system_program: AccountInfo<'info>,
-    pub(crate) deny_subject_records: &'a [AccountInfo<'info>],
+    /// The instruction's remaining accounts: the batch's deny record while the deny list is on.
+    pub(crate) remaining_accounts: &'a [AccountInfo<'info>],
 }
 
-/// Builds and invokes one `fhe_execute` execution with the batch authority as both
-/// compute subject and encrypted value account authority.
+/// Builds and invokes one `fhe_execute` execution signed by the batch authority.
 pub(crate) fn execute_as_batch_authority<'info>(
     accounts: BatchAuthorityExecute<'_, 'info>,
     dynamic_accounts: Vec<AccountInfo<'info>>,
@@ -127,13 +113,13 @@ pub(crate) fn execute_as_batch_authority<'info>(
     execution.invoke(
         zama_fhe::ExecutionCpiAccounts {
             payer: accounts.payer,
-            compute_subject: accounts.batch_authority.clone(),
             encrypted_value_account_authority: accounts.batch_authority,
             host_config: accounts.host_config,
-            deny_subject_records: accounts.deny_subject_records,
+            deny_scope_record: accounts.remaining_accounts.first().cloned(),
             system_program: accounts.system_program,
             hcu_block_meter: None,
             hcu_trusted_app_record: None,
+            rand_nonce: None,
             event_authority: accounts.zama_event_authority,
             program: accounts.zama_program,
         },
@@ -154,11 +140,7 @@ pub(crate) fn invalid_execution(
 pub(crate) fn uint64_operand(value: &EncryptedValue) -> Result<zama_fhe::Uint64Handle> {
     zama_fhe::Uint64Handle::persistent(
         value.current_handle,
-        zama_fhe::EncryptedValueId::new(
-            zama_fhe::Domain::new(value.domain),
-            value.encrypted_value_account_authority,
-            zama_fhe::EncryptedValueLabel::new(value.label),
-        ),
+        zama_fhe::EncryptedValueId::from_value(value),
     )
     .map_err(invalid_execution)
 }

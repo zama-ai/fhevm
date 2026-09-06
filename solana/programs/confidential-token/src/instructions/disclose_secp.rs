@@ -40,13 +40,13 @@ use super::*;
 #[derive(Accounts)]
 #[event_cpi]
 pub struct DiscloseSecp<'info> {
-    /// Confidential mint whose ACL domain scopes the disclosed encrypted value account and event.
+    /// Confidential mint whose application scopes the disclosed encrypted value account and event.
     pub mint: Box<Account<'info, ConfidentialMint>>,
     /// Confidential token account for account-scoped kinds. Must be absent for total supply.
     pub token_account: Option<Box<Account<'info, ConfidentialTokenAccount>>>,
     /// The `EncryptedValue` encrypted value account the disclosed handle belongs to.
     /// CHECK: canonical PDA, layout, and host ownership are validated by the `verify_public_decrypt`
-    /// CPI; this handler additionally binds its `domain` to `mint`.
+    /// CPI; this handler additionally binds it to one exact token state field of `mint`.
     pub encrypted_value: UncheckedAccount<'info>,
     /// Host config carrying the current KMS context id and gateway EIP-712 domain.
     pub host_config: Box<Account<'info, zama_host::HostConfig>>,
@@ -73,15 +73,10 @@ pub fn disclose_secp(
     assert_host_config_allows_token_response(&ctx.accounts.host_config)?;
     let mint_key = ctx.accounts.mint.key();
 
-    // Bind the encrypted value account to one exact token state field. Domain-only binding would let
-    // an arbitrary mint-domain value emit an event that indexers could mistake for a balance or
-    // supply disclosure.
+    // Bind the encrypted value account to one exact token state field. Mint-only binding would
+    // let an arbitrary value of this mint emit an event that indexers could mistake for a balance
+    // or supply disclosure.
     let value = fhe::read_encrypted_value(&ctx.accounts.encrypted_value.to_account_info())?;
-    require_keys_eq!(
-        value.domain,
-        mint_key,
-        ConfidentialTokenError::DomainMismatch
-    );
     let (expected_authority, expected_label, expected_value) = match kind {
         DisclosedValueKind::TotalSupply => {
             require!(
@@ -121,15 +116,8 @@ pub fn disclose_secp(
             )
         }
     };
-    require_keys_eq!(
-        value.encrypted_value_account_authority,
-        expected_authority,
-        ConfidentialTokenError::DisclosedValueBindingMismatch
-    );
-    require!(
-        value.label == expected_label,
-        ConfidentialTokenError::DisclosedValueBindingMismatch
-    );
+    assert_token_value(&value, mint_key, expected_authority, expected_label)
+        .map_err(|_| error!(ConfidentialTokenError::DisclosedValueBindingMismatch))?;
     require_keys_eq!(
         ctx.accounts.encrypted_value.key(),
         expected_value,

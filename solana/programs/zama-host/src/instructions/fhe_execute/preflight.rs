@@ -1,7 +1,15 @@
 //! Whole-execution checks that run before any state mutates: every remaining account and every
 //! dictionary entry is referenced, every persistent operand's authority signed, every persistent
-//! value belongs to one application, and that application's deny record is present when the
-//! deny list is on. Returns the application identity the rest of the execution keys on.
+//! value the default authority controls belongs to one application, and that application's deny
+//! record is present when the deny list is on. Returns the application identity the rest of the
+//! execution keys on.
+//!
+//! A value admitted by an additional signing authority belongs to that authority's own
+//! application and does not fold: the signature is that program's consent, given through
+//! `invoke_signed`, for this execution to read the value or write it. That is how programs
+//! compose on Solana — the token program spends a batcher-owned amount, or writes the batcher a
+//! receipt of what it transferred — while the meter and the deny check stay on the application
+//! that built the execution.
 
 use super::account_table::ExecutionAccountTable;
 use super::*;
@@ -45,7 +53,8 @@ struct Preflight<'t, 'a, 'info> {
     dictionary: &'t [[u8; 32]],
     dictionary_used: Vec<bool>,
     encrypted_value_account_authority: Pubkey,
-    /// The `(program, scope)` of every persistent value seen so far; a second one is an error.
+    /// The `(program, scope)` of every persistent value the default authority controls; a second
+    /// one is an error.
     app: Option<AppScope>,
     /// Persistent accounts written by completed earlier steps. Operands are checked
     /// before the current step's output is recorded, so read-then-update in one
@@ -73,9 +82,13 @@ impl Preflight<'_, '_, '_> {
         Ok(())
     }
 
-    /// Folds one persistent value's application into the execution's: the first one is adopted,
-    /// every later one must match (one execution, one meter).
-    fn fold_app(&mut self, app: AppScope) -> Result<()> {
+    /// Folds one persistent value's application into the execution's when the default authority
+    /// controls it: the first one is adopted, every later one must match (one execution, one
+    /// meter). A value under an additional signing authority is that program's own.
+    fn fold_app(&mut self, authority: Pubkey, app: AppScope) -> Result<()> {
+        if authority != self.encrypted_value_account_authority {
+            return Ok(());
+        }
         match self.app {
             None => self.app = Some(app),
             Some(current) => require!(current == app, ZamaHostError::FheExecuteMixedScopes),
@@ -194,7 +207,7 @@ fn preflight_encrypted_operand(
             preflight
                 .table
                 .mark_signer(authority, preflight.encrypted_value_account_authority)?;
-            preflight.fold_app(app)?;
+            preflight.fold_app(authority, app)?;
         }
         FheExecuteOperand::EarlierStep { producer_index } => {
             require!(
@@ -234,7 +247,8 @@ fn preflight_output(
             let output_key = preflight.table.account(index)?.key();
             preflight.table.mark(index)?;
             let program = Pubkey::new_from_array(preflight.mark_dictionary(*output_program_index)?);
-            preflight.mark_dictionary(*output_authority_key_index)?;
+            let authority =
+                Pubkey::new_from_array(preflight.mark_dictionary(*output_authority_key_index)?);
             let scope = preflight.mark_dictionary(*output_scope_index)?;
             preflight.mark_dictionary(*output_label_index)?;
             preflight.mark_output_authority(*output_authority_index)?;
@@ -249,7 +263,7 @@ fn preflight_output(
             if let Some(index) = previous_handle_index {
                 preflight.mark_dictionary(*index)?;
             }
-            preflight.fold_app(AppScope { program, scope })?;
+            preflight.fold_app(authority, AppScope { program, scope })?;
             preflight.persistent_outputs_written.push(output_key);
         }
     }
@@ -485,8 +499,60 @@ mod tests {
             error!(ZamaHostError::FheExecuteMixedScopes)
         );
 
-        // Output declared for scope 2 while reading scope 1: dictionary entry 2 is the program
-        // and scope of the output.
+        // Output declared for scope 2 under the default authority while reading scope 1:
+        // dictionary entry 2 is the program and scope of the output, entry 3 its authority.
+        let output_of_scope_2 = |output_authority_index| {
+            let mut args = execution(vec![FheExecuteStep::Binary {
+                op: FheBinaryOpCode::Add,
+                lhs: FheExecuteOperand::StoredValue {
+                    handle_index: 0,
+                    encrypted_value_index: 0,
+                },
+                rhs: FheExecuteOperand::Scalar { value_index: 1 },
+                output_fhe_type: 5,
+                output: FheExecuteOutput::StoredValue {
+                    output_encrypted_value_index: 1,
+                    output_authority_index,
+                    output_program_index: 2,
+                    output_authority_key_index: 3,
+                    output_scope_index: 2,
+                    output_label_index: 1,
+                    output_authority_seeds: Vec::new(),
+                    output_allow_indexes: Vec::new(),
+                    previous_handle_index: None,
+                    make_public: false,
+                },
+            }]);
+            args.dictionary.push([2; 32]);
+            args
+        };
+        let mut args = output_of_scope_2(None);
+        args.dictionary.push(authority.to_bytes());
+        let accounts = vec![
+            stored_value(app(1), authority),
+            test_account(Pubkey::new_unique()),
+        ];
+        assert_eq!(
+            run(&accounts, &args, authority).unwrap_err(),
+            error!(ZamaHostError::FheExecuteMixedScopes)
+        );
+    }
+
+    /// A value under an additional signing authority is that program's own: reading or writing
+    /// it neither folds into nor conflicts with the execution's application.
+    #[test]
+    fn values_of_another_signing_authority_keep_their_own_application() {
+        let authority = Pubkey::new_unique();
+        let foreign_authority = Pubkey::new_unique();
+        let two_reads = execution(vec![read_step(0), read_step(1)]);
+        let accounts = vec![
+            stored_value(app(1), authority),
+            stored_value(app(2), foreign_authority),
+            signer_account(foreign_authority, true),
+        ];
+        assert_eq!(run(&accounts, &two_reads, authority).unwrap(), Some(app(1)));
+
+        // Written by the foreign authority (remaining account 2, signing) into its own scope.
         let mut args = execution(vec![FheExecuteStep::Binary {
             op: FheBinaryOpCode::Add,
             lhs: FheExecuteOperand::StoredValue {
@@ -497,9 +563,9 @@ mod tests {
             output_fhe_type: 5,
             output: FheExecuteOutput::StoredValue {
                 output_encrypted_value_index: 1,
-                output_authority_index: None,
+                output_authority_index: Some(2),
                 output_program_index: 2,
-                output_authority_key_index: 2,
+                output_authority_key_index: 3,
                 output_scope_index: 2,
                 output_label_index: 1,
                 output_authority_seeds: Vec::new(),
@@ -509,14 +575,13 @@ mod tests {
             },
         }]);
         args.dictionary.push([2; 32]);
+        args.dictionary.push(foreign_authority.to_bytes());
         let accounts = vec![
             stored_value(app(1), authority),
             test_account(Pubkey::new_unique()),
+            signer_account(foreign_authority, true),
         ];
-        assert_eq!(
-            run(&accounts, &args, authority).unwrap_err(),
-            error!(ZamaHostError::FheExecuteMixedScopes)
-        );
+        assert_eq!(run(&accounts, &args, authority).unwrap(), Some(app(1)));
     }
 
     #[test]

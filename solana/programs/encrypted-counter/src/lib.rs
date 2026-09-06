@@ -1,15 +1,14 @@
 //! Specimen `zama-host` consumer: one encrypted u64 counter per owner.
 //!
 //! This program exists to be copied. It is the smallest complete shape of an app computing over
-//! encrypted state through the host — one state account, one PDA acting with one identity as
-//! both the execution's `compute_subject` and its `encrypted_value_account_authority` (the
-//! confidential-batcher pattern), and two instructions covering the create and the update form
-//! of a persistent output. Its Mollusk test (`runtime-tests/tests/counter_mollusk.rs`) is the
+//! encrypted state through the host — one state account, one PDA of this program acting as the
+//! execution's `encrypted_value_account_authority` (the confidential-batcher pattern), and two
+//! instructions covering the create and the update form of a persistent output. Its Mollusk test (`runtime-tests/tests/counter_mollusk.rs`) is the
 //! matching specimen for testing a consumer with `zama-solana-test-kit`.
 //!
 //! Executions assume `grant_deny_list_enabled = false` and no binding HCU cap: `hcu_block_meter`
 //! and `hcu_trusted_app_record` are hardcoded `None` (the PoC host fixtures never enable them),
-//! and deny-list records ride in as the (empty) remaining accounts.
+//! and the application's deny record rides in as the (absent) optional remaining account.
 
 // Anchor macros generate framework-shaped code that trips rustc/Clippy checks.
 #![allow(unexpected_cfgs)]
@@ -25,9 +24,8 @@ pub use state::*;
 
 use anchor_lang::prelude::*;
 use zama_fhe::{
-    Domain, EncryptedValueId, EncryptedValueLabel, ExecutionCpiAccounts,
-    ExecutionEncryptedValueAccountAuthority, FheExecution, Output, PersistentOutput, Scalar, Uint,
-    Uint64Handle,
+    EncryptedValueId, ExecutionCpiAccounts, ExecutionEncryptedValueAccountAuthority, FheExecution,
+    Output, PersistentOutput, Scalar, Uint, Uint64Handle,
 };
 use zama_host::program::ZamaHost;
 
@@ -44,15 +42,12 @@ pub mod encrypted_counter {
             bump: ctx.bumps.counter,
             authority_bump: ctx.bumps.counter_authority,
         });
-        // The owner user-decrypts their count; the counter authority re-reads it as the next
-        // increment's operand.
-        let output = PersistentOutput::create(
-            count_encrypted_value_id(counter),
-            vec![
-                ctx.accounts.owner.key(),
-                ctx.accounts.counter_authority.key(),
-            ],
-        );
+        // The owner user-decrypts their count; the counter authority reads it as the next
+        // increment's operand by signing, so it needs no allow.
+        let bump = [ctx.bumps.counter_authority];
+        let authority_seeds: &[&[u8]] = &[COUNTER_AUTHORITY_SEED, counter.as_ref(), &bump];
+        let output = PersistentOutput::create(count_encrypted_value_id(counter), authority_seeds)
+            .allow(ctx.accounts.owner.key());
         let execution = FheExecution::build(
             ExecutionEncryptedValueAccountAuthority::new(ctx.accounts.counter_authority.key()),
             |builder| {
@@ -67,18 +62,16 @@ pub mod encrypted_counter {
                 [ctx.accounts.counter_authority.to_account_info()],
             )
             .map_err(invalid_execution_accounts)?;
-        let bump = [ctx.bumps.counter_authority];
-        let authority_seeds: &[&[u8]] = &[COUNTER_AUTHORITY_SEED, counter.as_ref(), &bump];
         execution.invoke(
             ExecutionCpiAccounts {
                 payer: ctx.accounts.owner.to_account_info(),
-                compute_subject: ctx.accounts.counter_authority.to_account_info(),
                 encrypted_value_account_authority: ctx.accounts.counter_authority.to_account_info(),
                 host_config: ctx.accounts.host_config.to_account_info(),
-                deny_subject_records: ctx.remaining_accounts,
+                deny_scope_record: ctx.remaining_accounts.first().cloned(),
                 system_program: ctx.accounts.system_program.to_account_info(),
                 hcu_block_meter: None,
                 hcu_trusted_app_record: None,
+                rand_nonce: None,
                 event_authority: ctx.accounts.zama_event_authority.to_account_info(),
                 program: ctx.accounts.zama_program.to_account_info(),
             },
@@ -95,22 +88,15 @@ pub mod encrypted_counter {
         // always matches the account the host re-validates.
         let operand = Uint64Handle::persistent(
             count_value.current_handle,
-            EncryptedValueId::new(
-                Domain::new(count_value.domain),
-                count_value.encrypted_value_account_authority,
-                EncryptedValueLabel::new(count_value.label),
-            ),
+            EncryptedValueId::from_value(count_value),
         )
         .map_err(invalid_execution)?;
-        // Same audience as the create: an update replaces the stored subjects wholesale.
+        // Allows are per handle: the owner is allowed again on the new count.
         let output = PersistentOutput::update(
             count_encrypted_value_id(counter),
-            vec![
-                ctx.accounts.owner.key(),
-                ctx.accounts.counter_authority.key(),
-            ],
-            count_value,
-        );
+            count_value.current_handle,
+        )
+        .allow(ctx.accounts.owner.key());
         let execution = FheExecution::build(
             ExecutionEncryptedValueAccountAuthority::new(ctx.accounts.counter_authority.key()),
             |builder| {
@@ -134,13 +120,13 @@ pub mod encrypted_counter {
         execution.invoke(
             ExecutionCpiAccounts {
                 payer: ctx.accounts.owner.to_account_info(),
-                compute_subject: ctx.accounts.counter_authority.to_account_info(),
                 encrypted_value_account_authority: ctx.accounts.counter_authority.to_account_info(),
                 host_config: ctx.accounts.host_config.to_account_info(),
-                deny_subject_records: ctx.remaining_accounts,
+                deny_scope_record: ctx.remaining_accounts.first().cloned(),
                 system_program: ctx.accounts.system_program.to_account_info(),
                 hcu_block_meter: None,
                 hcu_trusted_app_record: None,
+                rand_nonce: None,
                 event_authority: ctx.accounts.zama_event_authority.to_account_info(),
                 program: ctx.accounts.zama_program.to_account_info(),
             },
@@ -174,7 +160,7 @@ pub struct Initialize<'info> {
         bump,
     )]
     pub counter: Account<'info, Counter>,
-    /// CHECK: PDA signing the host CPI as compute subject and encrypted-value authority.
+    /// CHECK: PDA signing the host CPI as the encrypted-value authority.
     #[account(seeds = [COUNTER_AUTHORITY_SEED, counter.key().as_ref()], bump)]
     pub counter_authority: UncheckedAccount<'info>,
     /// CHECK: created by the host CPI at the counter's canonical encrypted-value address.
@@ -194,7 +180,7 @@ pub struct Increment<'info> {
     pub owner: Signer<'info>,
     #[account(seeds = [COUNTER_SEED, owner.key().as_ref()], bump = counter.bump)]
     pub counter: Account<'info, Counter>,
-    /// CHECK: PDA signing the host CPI as compute subject and encrypted-value authority.
+    /// CHECK: PDA signing the host CPI as the encrypted-value authority.
     #[account(seeds = [COUNTER_AUTHORITY_SEED, counter.key().as_ref()], bump = counter.authority_bump)]
     pub counter_authority: UncheckedAccount<'info>,
     /// Stable count encrypted value account; read for the current handle and replaced by this

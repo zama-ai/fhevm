@@ -27,9 +27,6 @@ pub struct ConfidentialTransfer<'info> {
     // A self-transfer is a supported no-op, so from_account and to_account may be equal.
     #[account(mut, dup)]
     pub to_account: Box<Account<'info, ConfidentialTokenAccount>>,
-    /// CHECK: Program-controlled compute signer PDA.
-    #[account(seeds = [b"fhe-compute", mint.key().as_ref()], bump)]
-    pub compute_signer: UncheckedAccount<'info>,
     /// Sender's stable balance `EncryptedValue` encrypted value account; read for the current
     /// handle and replaced in place by this execution's CPI.
     #[account(mut, address = from_account.balance_encrypted_value)]
@@ -50,13 +47,19 @@ pub struct ConfidentialTransfer<'info> {
     /// System program used for ACL account creation.
     pub system_program: Program<'info, System>,
     /// CHECK: forwarded verbatim into the ZamaHost `fhe_execute` CPI, which validates it against the
-    /// canonical `["hcu-block-meter", compute_signer]` PDA. The per-mint HCU block meter — supplied
+    /// canonical `["hcu-block-meter", program, mint]` PDA. The per-mint HCU block meter — supplied
     /// by an untrusted mint under a metering-band cap, omitted otherwise.
     #[account(mut)]
     pub hcu_block_meter: Option<UncheckedAccount<'info>>,
     /// CHECK: forwarded verbatim into the ZamaHost `fhe_execute` CPI, which validates it. The HCU
     /// trust witness — present + valid bypasses the cap; absent means untrusted (metered).
     pub hcu_trusted_app_record: Option<UncheckedAccount<'info>>,
+    /// CHECK: the recipient program's receipt value (see [`TransferReceipt`]); created on its
+    /// first write, accumulated thereafter. The host checks its canonical address.
+    #[account(mut)]
+    pub receipt_value: Option<UncheckedAccount<'info>>,
+    /// The recipient program's PDA controlling the receipt, signing through `invoke_signed`.
+    pub receipt_authority: Option<Signer<'info>>,
 }
 
 impl<'info> ConfidentialTransfer<'info> {
@@ -66,18 +69,17 @@ impl<'info> ConfidentialTransfer<'info> {
     ) -> TransferAccounts<'a, 'info> {
         TransferAccounts {
             payer: &self.payer,
-            transfer_authority: self.owner.key(),
+            transfer_authority: &self.owner,
             mint: &self.mint,
             from_account: &self.from_account,
             to_account: &self.to_account,
-            compute_signer: &self.compute_signer,
             from_balance_value: self.from_balance_value.to_account_info(),
             to_balance_value: self.to_balance_value.to_account_info(),
             transferred_amount_value: self.transferred_amount_value.to_account_info(),
             zama_event_authority: &self.zama_event_authority,
             zama_program: &self.zama_program,
             host_config: &self.host_config,
-            deny_subject_records: remaining_accounts,
+            remaining_accounts,
             system_program: &self.system_program,
             hcu_block_meter: self
                 .hcu_block_meter
@@ -90,25 +92,30 @@ impl<'info> ConfidentialTransfer<'info> {
             underlying_mint: self.underlying_mint.to_account_info(),
             from_ata: self.from_ata.to_account_info(),
             to_ata: self.to_ata.to_account_info(),
+            receipt: None,
         }
     }
 }
 
-/// Transfers an encrypted amount by updating the sender and recipient balance handles.
+/// Transfers an encrypted amount by updating the sender and recipient balance handles, and
+/// writes the recipient program's receipt when one is asked for.
 pub fn confidential_transfer<'info>(
     ctx: Context<'info, ConfidentialTransfer<'info>>,
     amount_attestation: zama_host::CoprocessorInputAttestation,
+    receipt: Option<TransferReceipt>,
 ) -> Result<()> {
     require_keys_eq!(
         ctx.accounts.from_account.owner,
         ctx.accounts.owner.key(),
         ConfidentialTokenError::OwnerMismatch
     );
-    let outcome = execute_transfer(
-        ctx.accounts.as_transfer_accounts(ctx.remaining_accounts),
-        ctx.bumps.compute_signer,
-        TransferAmountSource::Attested(amount_attestation),
+    let mut accounts = ctx.accounts.as_transfer_accounts(ctx.remaining_accounts);
+    accounts.receipt = ReceiptAccounts::bind(
+        receipt,
+        ctx.accounts.receipt_value.as_ref(),
+        ctx.accounts.receipt_authority.as_ref(),
     )?;
+    let outcome = execute_transfer(accounts, TransferAmountSource::Attested(amount_attestation))?;
     if let Some(outcome) = outcome {
         emit_cpi!(ConfidentialTransferEvent {
             version: APP_EVENT_VERSION,
@@ -156,7 +163,7 @@ pub fn confidential_transfer<'info>(
 #[derive(Accounts)]
 #[event_cpi]
 pub struct ConfidentialTransferFromValue<'info> {
-    /// Sender and transfer authority. Must be in `amount_value`'s subject set (the spend gate).
+    /// Sender and transfer authority. Must control `amount_value` (the spend gate).
     pub owner: Signer<'info>,
     /// Pays rent for the transferred-amount encrypted value account on its first bind.
     #[account(mut)]
@@ -177,9 +184,6 @@ pub struct ConfidentialTransferFromValue<'info> {
     // A self-transfer is a supported no-op, so from_account and to_account may be equal.
     #[account(mut, dup)]
     pub to_account: Box<Account<'info, ConfidentialTokenAccount>>,
-    /// CHECK: Program-controlled compute signer PDA.
-    #[account(seeds = [b"fhe-compute", mint.key().as_ref()], bump)]
-    pub compute_signer: UncheckedAccount<'info>,
     /// Sender's stable balance `EncryptedValue` encrypted value account; read for the current
     /// handle and replaced in place by this execution's CPI.
     #[account(mut, address = from_account.balance_encrypted_value)]
@@ -191,12 +195,11 @@ pub struct ConfidentialTransferFromValue<'info> {
     /// the sender's first transfer, replaced thereafter.
     #[account(mut, address = encrypted_value_address(mint.key(), from_account.key(), encrypted_transferred_amount_label()).0)]
     pub transferred_amount_value: UncheckedAccount<'info>,
-    /// The existing encrypted amount to spend: a computed or received `euint64` handle. Read-only
-    /// persistent operand — never replaced, never consumed. Its address is the canonical PDA of its
-    /// own `(domain, authority, label)` fields, so an encrypted value account from any app may be
-    /// passed here once that app's encrypted value account authority has granted the mint's compute
-    /// subject. `allow_token_account_subjects` applies only to confidential-token-owned values;
-    /// another app must authorize through its own authority path.
+    /// The existing encrypted amount to spend: a computed `euint64` handle. Read-only persistent
+    /// operand — never replaced, never consumed. Its address is the canonical PDA of its own
+    /// `(program, authority, scope, label)` fields, so an encrypted value account from any app may
+    /// be passed here when that app's value authority is the signing `owner` (a program PDA
+    /// authorizing through `invoke_signed`), or when it is one of the sender's own token values.
     pub amount_value: Box<Account<'info, zama_host::EncryptedValue>>,
     /// CHECK: Anchor event CPI authority for the Zama host program.
     pub zama_event_authority: UncheckedAccount<'info>,
@@ -207,7 +210,7 @@ pub struct ConfidentialTransferFromValue<'info> {
     /// System program used for ACL account creation.
     pub system_program: Program<'info, System>,
     /// CHECK: forwarded verbatim into the ZamaHost `fhe_execute` CPI, which validates it against the
-    /// canonical `["hcu-block-meter", compute_signer]` PDA. The per-mint HCU block meter — supplied
+    /// canonical `["hcu-block-meter", program, mint]` PDA. The per-mint HCU block meter — supplied
     /// by an untrusted mint under a metering-band cap, omitted otherwise.
     #[account(mut)]
     pub hcu_block_meter: Option<UncheckedAccount<'info>>,
@@ -223,18 +226,17 @@ impl<'info> ConfidentialTransferFromValue<'info> {
     ) -> TransferAccounts<'a, 'info> {
         TransferAccounts {
             payer: &self.payer,
-            transfer_authority: self.owner.key(),
+            transfer_authority: &self.owner,
             mint: &self.mint,
             from_account: &self.from_account,
             to_account: &self.to_account,
-            compute_signer: &self.compute_signer,
             from_balance_value: self.from_balance_value.to_account_info(),
             to_balance_value: self.to_balance_value.to_account_info(),
             transferred_amount_value: self.transferred_amount_value.to_account_info(),
             zama_event_authority: &self.zama_event_authority,
             zama_program: &self.zama_program,
             host_config: &self.host_config,
-            deny_subject_records: remaining_accounts,
+            remaining_accounts,
             system_program: &self.system_program,
             hcu_block_meter: self
                 .hcu_block_meter
@@ -247,6 +249,7 @@ impl<'info> ConfidentialTransferFromValue<'info> {
             underlying_mint: self.underlying_mint.to_account_info(),
             from_ata: self.from_ata.to_account_info(),
             to_ata: self.to_ata.to_account_info(),
+            receipt: None,
         }
     }
 }
@@ -262,22 +265,14 @@ pub fn confidential_transfer_from_value<'info>(
         ConfidentialTokenError::OwnerMismatch
     );
     let amount_value = &ctx.accounts.amount_value;
-    // Reject a non-euint64 amount early for a clear error, before the execution builder / host would
-    // reject the same handle deeper in the CPI (the host's binary type validation still covers it).
-    require!(
-        zama_host::handle_fhe_type(amount_value.current_handle) == BALANCE_FHE_TYPE,
-        ConfidentialTokenError::AmountHandleTypeMismatch
-    );
-    // Token-level spend gate — EVM `FHE.isAllowed(amount, msg.sender)` parity: the signing owner
-    // must be in the amount value's subject set. App-level by design; the host stays role-blind.
-    require!(
-        amount_value.has_subject(ctx.accounts.owner.key()),
-        ConfidentialTokenError::AmountSpendSubjectMismatch
-    );
+    assert_amount_value_spendable(
+        amount_value,
+        ctx.accounts.owner.key(),
+        ctx.accounts.from_account.key(),
+    )?;
     let amount_value_info = amount_value.to_account_info();
     let outcome = execute_transfer(
         ctx.accounts.as_transfer_accounts(ctx.remaining_accounts),
-        ctx.bumps.compute_signer,
         TransferAmountSource::ExistingValue {
             amount_value: amount_value_info,
         },

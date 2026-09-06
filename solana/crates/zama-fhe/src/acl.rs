@@ -78,6 +78,20 @@ impl EncryptedValueId {
         }
     }
 
+    /// The id of a stored value, from the account's own identity fields — the way an app names
+    /// the operand it reads, so the operand slot always matches the account the host
+    /// re-validates.
+    pub fn from_value(value: &zama_host::EncryptedValue) -> Self {
+        Self::new(
+            AppScope {
+                program: value.program,
+                scope: value.scope,
+            },
+            value.encrypted_value_account_authority,
+            EncryptedValueLabel::new(value.label),
+        )
+    }
+
     /// The PDA together with its bump, for a caller that signs or re-creates the account and
     /// would otherwise have to run the derivation a second time.
     pub fn address_with_bump(&self) -> (Pubkey, u8) {
@@ -119,6 +133,10 @@ pub struct PersistentOutput {
 }
 
 impl PersistentOutput {
+    pub fn encrypted_value_account_authority(&self) -> Pubkey {
+        self.key.encrypted_value_account_authority()
+    }
+
     /// First write to an encrypted value account: creates the `EncryptedValue` PDA.
     ///
     /// `authority_seeds` are the seeds (bump last) that derive the account's authority under

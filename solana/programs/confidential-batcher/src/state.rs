@@ -98,10 +98,9 @@ impl Batch {
     pub const SPACE: usize = 32 + 8 + 1 + 8 + 8 + 1 + 1 + 32 + 8 + 8 + 8;
 }
 
-/// Per-(batch, user) join record. The encrypted amount itself lives in the
-/// batcher-owned `EncryptedValue` encrypted value account at `joined_encrypted_value`
-/// (audience: the user, who can decrypt their pending amount, and the batch
-/// authority, which computes refunds and claims from it).
+/// Per-(batch, user) join record. The encrypted amount itself lives in the batcher-owned
+/// `EncryptedValue` account at `joined_encrypted_value`: the user may decrypt their pending
+/// amount, and the batch authority computes refunds and claims from it by signature.
 #[account]
 #[derive(InitSpace)]
 pub struct JoinRecord {
@@ -163,22 +162,36 @@ pub fn encrypted_claim_amount_label(user: Pubkey) -> [u8; 32] {
     solana_sha256_hasher::hashv(&[b"batcher-claim-amount", user.as_ref()]).to_bytes()
 }
 
-/// Returns the canonical `EncryptedValue` PDA for a batcher encrypted value account. Batcher
-/// encrypted value accounts live in the batch's own ACL domain: `domain = batch`,
-/// `account = batch_authority`, per-user label.
+/// The application one batch is to the host: this program, scoped to the batch.
+pub fn batch_app(batch: Pubkey) -> zama_fhe::AppScope {
+    zama_fhe::AppScope {
+        program: crate::id(),
+        scope: batch.to_bytes(),
+    }
+}
+
+/// The id of a batcher value: the batch's application, controlled by the batch authority, with a
+/// per-user label.
+pub fn batcher_encrypted_value_id(
+    batch: Pubkey,
+    batch_authority: Pubkey,
+    encrypted_value_label: [u8; 32],
+) -> zama_fhe::EncryptedValueId {
+    zama_fhe::EncryptedValueId::new(
+        batch_app(batch),
+        batch_authority,
+        zama_fhe::EncryptedValueLabel::new(encrypted_value_label),
+    )
+}
+
+/// Returns the canonical `EncryptedValue` PDA for a batcher value, delegating to zama-fhe so the
+/// batcher and host agree exactly.
 pub fn batcher_encrypted_value_address(
     batch: Pubkey,
     batch_authority: Pubkey,
     encrypted_value_label: [u8; 32],
 ) -> (Pubkey, u8) {
-    // Delegate to zama-fhe's EncryptedValueId so the batcher and host agree exactly; the id
-    // derives the PDA once at construction, so read it back instead of deriving again.
-    zama_fhe::EncryptedValueId::new(
-        zama_fhe::Domain::new(batch),
-        batch_authority,
-        zama_fhe::EncryptedValueLabel::new(encrypted_value_label),
-    )
-    .address_with_bump()
+    batcher_encrypted_value_id(batch, batch_authority, encrypted_value_label).address_with_bump()
 }
 
 /// Computes the informational payout rate of a settled batch, rounded DOWN

@@ -45,6 +45,8 @@ use zama_host::{
     FheExecuteStep, MAX_FHE_EXECUTION_STEPS,
 };
 
+use anchor_lang::prelude::Pubkey;
+
 use crate::accounts::{ExecutionAccountMeta, ExecutionEncryptedValueAccountAuthority};
 use crate::acl::{Output, OutputKind};
 use crate::execution::FheExecution;
@@ -112,7 +114,7 @@ pub(crate) struct StepLowering<'b> {
 impl StepLowering<'_> {
     pub(crate) fn operand(&mut self, operand: Operand) -> Result<FheExecuteOperand> {
         if let OperandKind::Persistent(persistent) = operand.0 {
-            self.fold_app(persistent.app)?;
+            self.fold_app(persistent.encrypted_value_account_authority, persistent.app)?;
         }
         lower_operand(
             &mut self.tables,
@@ -153,7 +155,10 @@ impl StepLowering<'_> {
 
     pub(crate) fn output(&mut self, output: Output) -> Result<FheExecuteOutput> {
         if let OutputKind::Persistent(persistent) = &output.0 {
-            self.fold_app(persistent.app())?;
+            self.fold_app(
+                persistent.encrypted_value_account_authority(),
+                persistent.app(),
+            )?;
         }
         lower_output(
             &mut self.tables,
@@ -163,8 +168,12 @@ impl StepLowering<'_> {
     }
 
     /// Mirrors the host's one-application rule (`FheExecuteMixedScopes`): the first persistent
-    /// value fixes the execution's application, every later one must match.
-    fn fold_app(&mut self, app: AppScope) -> Result<()> {
+    /// value the default authority controls fixes the execution's application, every later one
+    /// must match. A value under an additional signing authority belongs to that program.
+    fn fold_app(&mut self, authority: Pubkey, app: AppScope) -> Result<()> {
+        if authority != self.encrypted_value_account_authority.pubkey() {
+            return Ok(());
+        }
         match self.app {
             None => self.app = Some(app),
             Some(current) if current == app => {}

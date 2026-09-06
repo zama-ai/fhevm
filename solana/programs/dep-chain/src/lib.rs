@@ -18,7 +18,7 @@
 //!
 //! Executions assume `grant_deny_list_enabled = false` and no binding HCU cap: `hcu_block_meter`
 //! and `hcu_trusted_app_record` are hardcoded `None` (the PoC host fixtures never enable them),
-//! and deny-list records ride in as the (empty) remaining accounts.
+//! and the application's deny record rides in as the (absent) optional remaining account.
 
 // Anchor macros generate framework-shaped code that trips rustc/Clippy checks.
 #![allow(unexpected_cfgs)]
@@ -34,9 +34,8 @@ pub use state::*;
 
 use anchor_lang::prelude::*;
 use zama_fhe::{
-    Domain, EncryptedValueId, EncryptedValueLabel, ExecutionCpiAccounts,
-    ExecutionEncryptedValueAccountAuthority, FheExecution, Output, PersistentOutput, Scalar, Uint,
-    Uint64Handle,
+    EncryptedValueId, ExecutionCpiAccounts, ExecutionEncryptedValueAccountAuthority, FheExecution,
+    Output, PersistentOutput, Scalar, Uint, Uint64Handle,
 };
 use zama_host::program::ZamaHost;
 
@@ -62,12 +61,12 @@ pub mod dep_chain {
             bump: ctx.bumps.chain,
             authority_bump: ctx.bumps.chain_authority,
         });
-        // The owner user-decrypts the tail; the chain authority re-reads it as the next
-        // extension's first operand.
-        let output = PersistentOutput::create(
-            tail_encrypted_value_id(chain),
-            vec![ctx.accounts.owner.key(), ctx.accounts.chain_authority.key()],
-        );
+        // The owner user-decrypts the tail; the chain authority reads it as the next extension's
+        // first operand by signing, so it needs no allow.
+        let bump = [ctx.bumps.chain_authority];
+        let authority_seeds: &[&[u8]] = &[CHAIN_AUTHORITY_SEED, chain.as_ref(), &bump];
+        let output = PersistentOutput::create(tail_encrypted_value_id(chain), authority_seeds)
+            .allow(ctx.accounts.owner.key());
         let execution = FheExecution::build(
             ExecutionEncryptedValueAccountAuthority::new(ctx.accounts.chain_authority.key()),
             |builder| {
@@ -82,18 +81,16 @@ pub mod dep_chain {
                 [ctx.accounts.chain_authority.to_account_info()],
             )
             .map_err(invalid_execution_accounts)?;
-        let bump = [ctx.bumps.chain_authority];
-        let authority_seeds: &[&[u8]] = &[CHAIN_AUTHORITY_SEED, chain.as_ref(), &bump];
         execution.invoke(
             ExecutionCpiAccounts {
                 payer: ctx.accounts.owner.to_account_info(),
-                compute_subject: ctx.accounts.chain_authority.to_account_info(),
                 encrypted_value_account_authority: ctx.accounts.chain_authority.to_account_info(),
                 host_config: ctx.accounts.host_config.to_account_info(),
-                deny_subject_records: ctx.remaining_accounts,
+                deny_scope_record: ctx.remaining_accounts.first().cloned(),
                 system_program: ctx.accounts.system_program.to_account_info(),
                 hcu_block_meter: None,
                 hcu_trusted_app_record: None,
+                rand_nonce: None,
                 event_authority: ctx.accounts.zama_event_authority.to_account_info(),
                 program: ctx.accounts.zama_program.to_account_info(),
             },
@@ -117,19 +114,13 @@ pub mod dep_chain {
         // always matches the account the host re-validates.
         let operand = Uint64Handle::persistent(
             tail_value.current_handle,
-            EncryptedValueId::new(
-                Domain::new(tail_value.domain),
-                tail_value.encrypted_value_account_authority,
-                EncryptedValueLabel::new(tail_value.label),
-            ),
+            EncryptedValueId::from_value(tail_value),
         )
         .map_err(invalid_execution)?;
-        // Same audience as the create: an update replaces the stored subjects wholesale.
-        let output = PersistentOutput::update(
-            tail_encrypted_value_id(chain),
-            vec![ctx.accounts.owner.key(), ctx.accounts.chain_authority.key()],
-            tail_value,
-        );
+        // Allows are per handle: the owner is allowed again on the new tail.
+        let output =
+            PersistentOutput::update(tail_encrypted_value_id(chain), tail_value.current_handle)
+                .allow(ctx.accounts.owner.key());
         let execution = FheExecution::build(
             ExecutionEncryptedValueAccountAuthority::new(ctx.accounts.chain_authority.key()),
             |builder| {
@@ -170,13 +161,13 @@ pub mod dep_chain {
         execution.invoke(
             ExecutionCpiAccounts {
                 payer: ctx.accounts.owner.to_account_info(),
-                compute_subject: ctx.accounts.chain_authority.to_account_info(),
                 encrypted_value_account_authority: ctx.accounts.chain_authority.to_account_info(),
                 host_config: ctx.accounts.host_config.to_account_info(),
-                deny_subject_records: ctx.remaining_accounts,
+                deny_scope_record: ctx.remaining_accounts.first().cloned(),
                 system_program: ctx.accounts.system_program.to_account_info(),
                 hcu_block_meter: None,
                 hcu_trusted_app_record: None,
+                rand_nonce: None,
                 event_authority: ctx.accounts.zama_event_authority.to_account_info(),
                 program: ctx.accounts.zama_program.to_account_info(),
             },
@@ -210,7 +201,7 @@ pub struct Initialize<'info> {
         bump,
     )]
     pub chain: Account<'info, Chain>,
-    /// CHECK: PDA signing the host CPI as compute subject and encrypted-value authority.
+    /// CHECK: PDA signing the host CPI as the encrypted-value authority.
     #[account(seeds = [CHAIN_AUTHORITY_SEED, chain.key().as_ref()], bump)]
     pub chain_authority: UncheckedAccount<'info>,
     /// CHECK: created by the host CPI at the chain's canonical encrypted-value address.
@@ -230,7 +221,7 @@ pub struct Extend<'info> {
     pub owner: Signer<'info>,
     #[account(seeds = [CHAIN_SEED, owner.key().as_ref()], bump = chain.bump)]
     pub chain: Account<'info, Chain>,
-    /// CHECK: PDA signing the host CPI as compute subject and encrypted-value authority.
+    /// CHECK: PDA signing the host CPI as the encrypted-value authority.
     #[account(seeds = [CHAIN_AUTHORITY_SEED, chain.key().as_ref()], bump = chain.authority_bump)]
     pub chain_authority: UncheckedAccount<'info>,
     /// Stable tail encrypted value account; read for the current handle and replaced by this

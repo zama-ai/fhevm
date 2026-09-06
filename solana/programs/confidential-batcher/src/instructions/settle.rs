@@ -23,7 +23,7 @@
 //! total (so cancellation is trustless), and the division never happens.
 //!
 //! The wrap and rate phases assume `grant_deny_list_enabled = false` and no
-//! binding HCU cap: every token/host CPI passes `deny_subject_record`,
+//! binding HCU cap: every token/host CPI passes `deny_scope_record`,
 //! `hcu_block_meter`, and `hcu_trusted_app_record` as hardcoded `None` (the
 //! PoC host fixtures never enable them).
 //!
@@ -129,8 +129,6 @@ pub struct Settle<'info> {
     pub payout_mint_vault_underlying: UncheckedAccount<'info>,
     /// CHECK: payout mint's vault authority PDA; validated by the token CPI.
     pub payout_mint_vault_authority: UncheckedAccount<'info>,
-    /// CHECK: payout mint compute-signer PDA; validated by the token CPI.
-    pub payout_compute_signer: UncheckedAccount<'info>,
     /// CHECK: payout mint total-supply authority PDA; validated by the token CPI.
     pub payout_total_supply_authority: UncheckedAccount<'info>,
     /// CHECK: batch's confidential payout balance encrypted value account; replaced by the wrap.
@@ -332,7 +330,6 @@ pub fn settle(
                 user_usdc: ctx.accounts.batch_payout_underlying.to_account_info(),
                 vault_usdc: ctx.accounts.payout_mint_vault_underlying.to_account_info(),
                 vault_authority: ctx.accounts.payout_mint_vault_authority.to_account_info(),
-                compute_signer: ctx.accounts.payout_compute_signer.to_account_info(),
                 total_supply_authority: ctx
                     .accounts
                     .payout_total_supply_authority

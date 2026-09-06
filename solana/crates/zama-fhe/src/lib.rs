@@ -113,8 +113,10 @@ pub enum FheExecutionBuildError {
     ExceedsBuildHeapBudget,
     /// `finish` was called with no steps; the host rejects empty executions.
     EmptySteps,
-    /// Persistent values of two applications `(program, scope)` in one execution; the host
-    /// meters, deny-checks and seeds one application per execution (`FheExecuteMixedScopes`).
+    /// Persistent values of two applications `(program, scope)` under the execution's default
+    /// authority; the host meters, deny-checks and seeds one application per execution
+    /// (`FheExecuteMixedScopes`). Values under an additional signing authority are that
+    /// program's own.
     MixedScopes,
     /// A scalar was supplied as the left-hand operand. The host invariant is
     /// scalar-RHS-only: the left operand must be an encrypted handle.

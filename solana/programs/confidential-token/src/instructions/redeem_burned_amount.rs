@@ -52,8 +52,8 @@ pub struct RedeemBurnedAmount<'info> {
     /// CHECK: PDA authority for the underlying-token vault.
     #[account(seeds = [b"vault-authority", mint.key().as_ref()], bump)]
     pub vault_authority: UncheckedAccount<'info>,
-    /// Burned amount `EncryptedValue` encrypted value account whose handle is redeemed. Bound to the mint/token
-    /// account/owner by `assert_burned_amount_value_account`; its canonical PDA, layout, host ownership,
+    /// Burned amount `EncryptedValue` account whose handle is redeemed. Bound to the mint/token
+    /// account by `assert_burned_amount_value_account`; its canonical PDA, layout, host ownership,
     /// and the exact-handle MMR inclusion proof are validated by the `verify_public_decrypt` CPI.
     pub burned_amount_value: Box<Account<'info, zama_host::EncryptedValue>>,
     /// Pending-burn account opened at burn time; closed on successful redemption.
@@ -167,8 +167,6 @@ pub fn redeem_burned_amount(
         burned_handle,
         mint_key,
         token_account_key,
-        ctx.accounts.owner.key(),
-        ctx.accounts.mint.compute_signer,
     )?;
 
     // Verify the KMS certificate against the context the cert names (any live, non-destroyed

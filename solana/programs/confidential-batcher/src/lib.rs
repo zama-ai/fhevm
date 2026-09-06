@@ -90,9 +90,9 @@ pub mod confidential_batcher {
 
     /// Joins the pending batch with the batcher's join token: one user-signed
     /// transaction that CPIs the coprocessor-attested confidential transfer
-    /// into the batch's own token account, then re-materializes the
-    /// transferred amount into the user's joined encrypted value account (audience: user +
-    /// batch authority) in the same transaction. Repeated joins accumulate.
+    /// into the batch's own token account; the token program accumulates the transferred
+    /// amount into the user's joined encrypted value account as the transfer's receipt
+    /// (decryptable by the user). Repeated joins accumulate.
     pub fn join<'info>(
         ctx: Context<'info, Join<'info>>,
         amount_attestation: zama_host::CoprocessorInputAttestation,

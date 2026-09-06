@@ -1,4 +1,4 @@
-//! Initializes confidential mint state and its host ACL domain.
+//! Initializes confidential mint state and its zero encrypted total supply.
 
 use super::*;
 
@@ -16,9 +16,6 @@ pub struct InitializeMint<'info> {
     pub underlying_mint: Box<InterfaceAccount<'info, SplMint>>,
     /// Classic Token or Token-2022 program owning `underlying_mint`.
     pub token_program: Interface<'info, TokenInterface>,
-    /// CHECK: Program-controlled compute signer PDA.
-    #[account(seeds = [b"fhe-compute", mint.key().as_ref()], bump)]
-    pub compute_signer: UncheckedAccount<'info>,
     /// CHECK: Mint-scoped encrypted value account authority for total-supply handles.
     #[account(seeds = [b"total-supply", mint.key().as_ref()], bump)]
     pub total_supply_authority: UncheckedAccount<'info>,
@@ -34,42 +31,33 @@ pub struct InitializeMint<'info> {
     /// System program used for account creation.
     pub system_program: Program<'info, System>,
     /// CHECK: forwarded verbatim into the ZamaHost `fhe_execute` CPI, which validates it against the
-    /// canonical `["hcu-block-meter", compute_signer]` PDA. Supplied by an untrusted mint under a
+    /// canonical `["hcu-block-meter", program, mint]` PDA. Supplied by an untrusted mint under a
     /// metering-band cap; omitted when the mint is trusted or the cap is unrestricted.
     #[account(mut)]
     pub hcu_block_meter: Option<UncheckedAccount<'info>>,
     /// CHECK: forwarded verbatim into the ZamaHost `fhe_execute` CPI, which validates it against the
-    /// canonical `["hcu-trusted", compute_signer]` PDA. Present + valid bypasses the cap; absent
+    /// canonical `["hcu-trusted", program, mint]` PDA. Present + valid bypasses the cap; absent
     /// means the mint is metered.
     pub hcu_trusted_app_record: Option<UncheckedAccount<'info>>,
 }
 
-/// Initializes a confidential mint and records its host ACL domain.
+/// Initializes a confidential mint and creates its zero encrypted total supply, allowed to nobody
+/// until the mint authority grants viewers.
 pub fn initialize_mint<'info>(ctx: Context<'info, InitializeMint<'info>>) -> Result<()> {
     assert_supported_underlying_mint(&ctx.accounts.underlying_mint, &ctx.accounts.token_program)?;
     let mint_key = ctx.accounts.mint.key();
-    let mint_domain = zama_fhe::Domain::new(mint_key);
-    let compute_signer = compute_signer_address(mint_key).0;
-    require_keys_eq!(
-        ctx.accounts.compute_signer.key(),
-        compute_signer,
-        ConfidentialTokenError::ComputeSignerMismatch
-    );
     let total_supply_authority = ctx.accounts.total_supply_authority.key();
-    require_keys_eq!(
-        total_supply_authority,
-        total_supply_authority_address(mint_key).0,
-        ConfidentialTokenError::TotalSupplyAuthorityMismatch
-    );
+    let authority = fhe::ValueAuthority::total_supply(
+        &ctx.accounts.total_supply_authority,
+        mint_key,
+        ctx.bumps.total_supply_authority,
+    )?;
     let total_supply_encrypted_value = ctx.accounts.total_supply_encrypted_value.key();
     let total_supply_output = fhe::PersistentOutput::new(
         ctx.accounts.total_supply_encrypted_value.to_account_info(),
-        encrypted_value_id(
-            mint_domain,
-            total_supply_authority,
-            encrypted_total_supply_label(),
-        ),
-        fhe::PersistentAudience::compute_only(compute_signer),
+        total_supply_encrypted_value_id(mint_key),
+        &authority,
+        [],
     )?;
     let execution = zama_fhe::FheExecution::build(
         zama_fhe::ExecutionEncryptedValueAccountAuthority::new(total_supply_authority),
@@ -79,20 +67,10 @@ pub fn initialize_mint<'info>(ctx: Context<'info, InitializeMint<'info>>) -> Res
         },
     )
     .map_err(invalid_execution)?;
-    let compute_authority = fhe::ComputeAuthority::for_mint(
-        &ctx.accounts.compute_signer,
-        mint_key,
-        ctx.bumps.compute_signer,
-    )?;
-    let total_supply_authority_bump = total_supply_authority_address(mint_key).1;
     let execution_accounts = fhe::ExecutionAccountSet::for_execution(
         &execution,
         [total_supply_output.account_info()],
-        [fhe::OutputAuthority::total_supply(
-            &ctx.accounts.total_supply_authority,
-            mint_key,
-            total_supply_authority_bump,
-        )?],
+        [authority],
     )?;
     fhe::execute(fhe::Execute {
         context: fhe::ExecuteContext {
@@ -100,8 +78,11 @@ pub fn initialize_mint<'info>(ctx: Context<'info, InitializeMint<'info>>) -> Res
             event_authority: &ctx.accounts.zama_event_authority,
             zama_program: &ctx.accounts.zama_program,
             host_config: &ctx.accounts.host_config,
-            deny_subject_records: ctx.remaining_accounts,
-            compute_authority,
+            deny_scope_record: fhe::deny_scope_record(
+                &ctx.accounts.host_config,
+                ctx.remaining_accounts,
+                mint_key,
+            )?,
             system_program: &ctx.accounts.system_program,
             hcu_block_meter: ctx
                 .accounts
@@ -120,8 +101,6 @@ pub fn initialize_mint<'info>(ctx: Context<'info, InitializeMint<'info>>) -> Res
     let total_supply_handle = total_supply_output.handle()?;
     let mint = &mut ctx.accounts.mint;
     mint.authority = ctx.accounts.authority.key();
-    mint.domain = mint_key;
-    mint.compute_signer = compute_signer;
     mint.underlying_mint = ctx.accounts.underlying_mint.key();
     mint.decimals = ctx.accounts.underlying_mint.decimals;
     mint.total_supply_encrypted_value = total_supply_encrypted_value;
