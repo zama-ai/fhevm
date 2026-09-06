@@ -56,8 +56,8 @@ Optional cryptographic verification: transaction root, receipt root, block hash.
 - Per-consumer infinite retry until broker ACK.
 
 ### Consumer Routing
-- Internal: `FETCH_NEW_BLOCKS`, `BACKTRACK_REORG`, `WATCH`, `UNWATCH`, `CLEAN_BLOCKS`
-- External: `{consumer_id}.new-event` — dynamic from filters DB
+- Internal: `FETCH_NEW_BLOCKS`, `FETCH_FINAL_BLOCK`, `BACKTRACK_REORG`, `WATCH`, `UNWATCH`, `CLEAN_BLOCKS`, `CLEAN_FINAL_BLOCKS`, `FINAL_CATCHUP`, `RANGE_FINAL_CATCHUP`
+- External: `{consumer_id}.new-event`, `{consumer_id}.catchup-event`, `{consumer_id}.final-event`, `{consumer_id}.final-catchup-event` — dynamic from filters DB
 - All topics namespaced by `chain_id_to_namespace(chain_id)`
 
 ## File Map
@@ -93,8 +93,10 @@ Optional cryptographic verification: transaction root, receipt root, block hash.
 ## Error Handling
 
 Handlers classify errors for the broker:
-- **Transient** (`HandlerError::Transient`): DB errors, RPC failures, broker publish failures, payload build errors → broker retries (max 5).
-- **Permanent** (`HandlerError::Permanent`): Invariant violations, deserialization failures → dead-letter queue, no retry.
+- **Transient** (`HandlerError::Transient`): DB errors, RPC failures, broker publish failures, payload build errors → broker retries indefinitely (delivery count not incremented).
+- **Permanent** (`HandlerError::Permanent`): Invariant violations, deserialization failures → dead-letter queue after `max_retries`.
+
+Full failure-behavior matrix (Postgres/broker/RPC outages, missing consumer queues, per flow): see `docs/error_flows.md` at the repo root.
 
 ## Known Accepted Limitations
 

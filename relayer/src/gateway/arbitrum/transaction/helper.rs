@@ -1,5 +1,7 @@
 use crate::config::settings::GatewayConfig;
-use crate::gateway::arbitrum::transaction::engine::{CustomFillers, TransactionEngine};
+use crate::gateway::arbitrum::transaction::engine::{
+    CustomFillers, GatewayTxnError, TransactionEngine,
+};
 use crate::orchestrator::HealthCheck;
 use crate::{core::errors::EventProcessingError, core::job_id::JobId, metrics};
 use alloy::network::AnyTransactionReceipt;
@@ -162,6 +164,11 @@ impl TransactionHelper {
             .await
         {
             Ok(rec) => rec,
+            // Marking this row would fail a request that is still going to be driven: its
+            // state stays put for the successor's sweep to claim under a higher epoch.
+            Err(GatewayTxnError::GateClosed) => {
+                return Err(EventProcessingError::from(GatewayTxnError::GateClosed));
+            }
             Err(error) => {
                 metrics::transaction::transaction_failure(
                     tx_metric_type,

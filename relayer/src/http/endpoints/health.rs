@@ -64,8 +64,7 @@ pub async fn liveness_handler() -> impl IntoResponse {
     security(())
 )]
 pub async fn health_handler(orchestrator: Arc<Orchestrator>) -> impl IntoResponse {
-    // Once shutdown has started, report unhealthy unconditionally so the load
-    // balancer stops routing new traffic here, regardless of dependency status.
+    // Unhealthy regardless of dependency status, so the load balancer stops routing here.
     if orchestrator.is_shutting_down() {
         return (
             StatusCode::SERVICE_UNAVAILABLE,

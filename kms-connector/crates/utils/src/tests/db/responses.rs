@@ -5,7 +5,7 @@ use crate::{
         CrsgenResponse, EpochResultResponse, KeygenResponse, KmsResponseKind,
         NewKmsContextResponse, PrepKeygenResponse, PublicDecryptionResponse,
         UserDecryptionResponse,
-        db::{KeyDigestDbItem, KeyType, OperationStatus},
+        db::{KeyDigestDbItem, KeyType, OperationStatus, RequestSource},
     },
 };
 use alloy::{primitives::U256, sol_types::SolValue};
@@ -44,13 +44,14 @@ pub async fn insert_rand_response(
     response_type: TestResponseType,
     id: Option<U256>,
     status: Option<OperationStatus>,
+    source: RequestSource,
 ) -> anyhow::Result<KmsResponseKind> {
     let inserted_response = match response_type {
         TestResponseType::PublicDecryption => KmsResponseKind::PublicDecryption(
-            insert_rand_public_decrypt_response(db, id, status).await?,
+            insert_rand_public_decrypt_response(db, id, status, source).await?,
         ),
         TestResponseType::UserDecryption => KmsResponseKind::UserDecryption(
-            insert_rand_user_decrypt_response(db, id, status).await?,
+            insert_rand_user_decrypt_response(db, id, status, source).await?,
         ),
         TestResponseType::PrepKeygen => {
             KmsResponseKind::PrepKeygen(insert_rand_prep_keygen_response(db, id, status).await?)
@@ -75,6 +76,7 @@ pub async fn insert_rand_public_decrypt_response(
     db: &Pool<Postgres>,
     id: Option<U256>,
     status: Option<OperationStatus>,
+    source: RequestSource,
 ) -> anyhow::Result<PublicDecryptionResponse> {
     let decryption_id = id.unwrap_or_else(rand_u256);
     let decrypted_result = rand_signature();
@@ -83,9 +85,10 @@ pub async fn insert_rand_public_decrypt_response(
 
     sqlx::query!(
         "INSERT INTO public_decryption_responses(
-            decryption_id, decrypted_result, signature, extra_data, created_at, otlp_context, status
+            decryption_id, decrypted_result, signature, extra_data, created_at, otlp_context,
+            status, source
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING",
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT DO NOTHING",
         decryption_id.as_le_slice(),
         decrypted_result,
         signature,
@@ -93,6 +96,7 @@ pub async fn insert_rand_public_decrypt_response(
         Utc::now(),
         bc2wrap::serialize(&PropagationContext::empty())?,
         status as OperationStatus,
+        source as RequestSource,
     )
     .execute(db)
     .await?;
@@ -109,6 +113,7 @@ pub async fn insert_rand_user_decrypt_response(
     db: &Pool<Postgres>,
     id: Option<U256>,
     status: Option<OperationStatus>,
+    source: RequestSource,
 ) -> anyhow::Result<UserDecryptionResponse> {
     let decryption_id = id.unwrap_or_else(rand_u256);
     let user_decrypted_shares = rand_signature();
@@ -117,9 +122,10 @@ pub async fn insert_rand_user_decrypt_response(
 
     sqlx::query!(
         "INSERT INTO user_decryption_responses(
-            decryption_id, user_decrypted_shares, signature, extra_data, created_at, otlp_context, status
+            decryption_id, user_decrypted_shares, signature, extra_data, created_at, otlp_context,
+            status, source
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING",
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT DO NOTHING",
         decryption_id.as_le_slice(),
         user_decrypted_shares,
         signature,
@@ -127,6 +133,7 @@ pub async fn insert_rand_user_decrypt_response(
         Utc::now(),
         bc2wrap::serialize(&PropagationContext::empty())?,
         status as OperationStatus,
+        source as RequestSource,
     )
     .execute(db)
     .await?;

@@ -4,6 +4,8 @@ import { ethers } from 'hardhat';
 import type { FHEVMManualTestSuite } from '../../types/contracts/operations/FHEVMManualTestSuite';
 import { createInstance } from '../instance';
 import { getSigner } from '../signers';
+import { OVERSIZED_SHIFT_64, SHIFT_ROTATE_VALUE_64 } from './operatorEdgeCases';
+import { expectedRotl, expectedRotr, expectedShl, expectedShr } from './shiftSemantics';
 
 async function deployFHEVMManualTestFixture(): Promise<FHEVMManualTestSuite> {
   const admin = await getSigner(119);
@@ -15,25 +17,11 @@ async function deployFHEVMManualTestFixture(): Promise<FHEVMManualTestSuite> {
   return contract;
 }
 
-const UINT64_MASK = (1n << 64n) - 1n;
-const OVERSIZED_SHIFT_64 = 70n;
-const REDUCED_SHIFT_64 = 6n;
-const SHIFT_ROTATE_VALUE_64 = 0x123456789abcdef0n;
 const addr = (value: string) => ethers.getAddress(value);
 const ADDR_A = addr('0x8ba1f109551bd432803012645ac136ddd64dba72');
 const ADDR_B = addr('0x8881f109551bd432803012645ac136ddd64dba72');
 const ADDR_C = addr('0x9ba1f109551bd432803012645ac136ddd64dba72');
 const ADDR_D = addr('0x9aa1f109551bd432803012645ac136ddd64dba72');
-
-function rotl64(value: bigint, shift: bigint): bigint {
-  const normalized = shift % 64n;
-  return ((value << normalized) | (value >> (64n - normalized))) & UINT64_MASK;
-}
-
-function rotr64(value: bigint, shift: bigint): bigint {
-  const normalized = shift % 64n;
-  return ((value >> normalized) | (value << (64n - normalized))) & UINT64_MASK;
-}
 
 async function decrypt64Result(
   instance: Awaited<ReturnType<typeof createInstance>>,
@@ -60,7 +48,7 @@ describe('FHEVM manual operations', function () {
   // Keep this regression isolated so operators CI can target only the
   // oversized-index path without pulling the whole manual suite.
   describe('FHEVM oversized shift and rotate indexes', function () {
-    it('shr(euint64, uint8) applies modulo semantics for indexes > bit width', async function () {
+    it('shr(euint64, uint8) with an oversized index', async function () {
       const encryptedAmount = await this.instance.encryptTypedValues({
         values: [{ type: 'uint64', value: SHIFT_ROTATE_VALUE_64 }],
         contractAddress: this.contractAddress,
@@ -75,10 +63,10 @@ describe('FHEVM manual operations', function () {
           encryptedAmount.inputProof,
         ),
       );
-      assert.equal(res, SHIFT_ROTATE_VALUE_64 >> REDUCED_SHIFT_64);
+      assert.equal(res, expectedShr(SHIFT_ROTATE_VALUE_64, OVERSIZED_SHIFT_64, 64n));
     });
 
-    it('shr(euint64, euint8) applies modulo semantics for indexes > bit width', async function () {
+    it('shr(euint64, euint8) with an oversized index', async function () {
       const encryptedAmount = await this.instance.encryptTypedValues({
         values: [
           { type: 'uint64', value: SHIFT_ROTATE_VALUE_64 },
@@ -96,10 +84,10 @@ describe('FHEVM manual operations', function () {
           encryptedAmount.inputProof,
         ),
       );
-      assert.equal(res, SHIFT_ROTATE_VALUE_64 >> REDUCED_SHIFT_64);
+      assert.equal(res, expectedShr(SHIFT_ROTATE_VALUE_64, OVERSIZED_SHIFT_64, 64n));
     });
 
-    it('shl(euint64, uint8) applies modulo semantics for indexes > bit width', async function () {
+    it('shl(euint64, uint8) with an oversized index', async function () {
       const encryptedAmount = await this.instance.encryptTypedValues({
         values: [{ type: 'uint64', value: SHIFT_ROTATE_VALUE_64 }],
         contractAddress: this.contractAddress,
@@ -114,10 +102,10 @@ describe('FHEVM manual operations', function () {
           encryptedAmount.inputProof,
         ),
       );
-      assert.equal(res, (SHIFT_ROTATE_VALUE_64 << REDUCED_SHIFT_64) & UINT64_MASK);
+      assert.equal(res, expectedShl(SHIFT_ROTATE_VALUE_64, OVERSIZED_SHIFT_64, 64n));
     });
 
-    it('shl(euint64, euint8) applies modulo semantics for indexes > bit width', async function () {
+    it('shl(euint64, euint8) with an oversized index', async function () {
       const encryptedAmount = await this.instance.encryptTypedValues({
         values: [
           { type: 'uint64', value: SHIFT_ROTATE_VALUE_64 },
@@ -135,10 +123,10 @@ describe('FHEVM manual operations', function () {
           encryptedAmount.inputProof,
         ),
       );
-      assert.equal(res, (SHIFT_ROTATE_VALUE_64 << REDUCED_SHIFT_64) & UINT64_MASK);
+      assert.equal(res, expectedShl(SHIFT_ROTATE_VALUE_64, OVERSIZED_SHIFT_64, 64n));
     });
 
-    it('rotl(euint64, uint8) applies modulo semantics for indexes > bit width', async function () {
+    it('rotl(euint64, uint8) with an oversized index', async function () {
       const encryptedAmount = await this.instance.encryptTypedValues({
         values: [{ type: 'uint64', value: SHIFT_ROTATE_VALUE_64 }],
         contractAddress: this.contractAddress,
@@ -153,10 +141,10 @@ describe('FHEVM manual operations', function () {
           encryptedAmount.inputProof,
         ),
       );
-      assert.equal(res, rotl64(SHIFT_ROTATE_VALUE_64, REDUCED_SHIFT_64));
+      assert.equal(res, expectedRotl(SHIFT_ROTATE_VALUE_64, OVERSIZED_SHIFT_64, 64n));
     });
 
-    it('rotr(euint64, uint8) applies modulo semantics for indexes > bit width', async function () {
+    it('rotr(euint64, uint8) with an oversized index', async function () {
       const encryptedAmount = await this.instance.encryptTypedValues({
         values: [{ type: 'uint64', value: SHIFT_ROTATE_VALUE_64 }],
         contractAddress: this.contractAddress,
@@ -171,10 +159,10 @@ describe('FHEVM manual operations', function () {
           encryptedAmount.inputProof,
         ),
       );
-      assert.equal(res, rotr64(SHIFT_ROTATE_VALUE_64, REDUCED_SHIFT_64));
+      assert.equal(res, expectedRotr(SHIFT_ROTATE_VALUE_64, OVERSIZED_SHIFT_64, 64n));
     });
 
-    it('rotr(euint64, euint8) applies modulo semantics for indexes > bit width', async function () {
+    it('rotr(euint64, euint8) with an oversized index', async function () {
       const encryptedAmount = await this.instance.encryptTypedValues({
         values: [
           { type: 'uint64', value: SHIFT_ROTATE_VALUE_64 },
@@ -192,10 +180,10 @@ describe('FHEVM manual operations', function () {
           encryptedAmount.inputProof,
         ),
       );
-      assert.equal(res, rotr64(SHIFT_ROTATE_VALUE_64, REDUCED_SHIFT_64));
+      assert.equal(res, expectedRotr(SHIFT_ROTATE_VALUE_64, OVERSIZED_SHIFT_64, 64n));
     });
 
-    it('rotl(euint64, euint8) applies modulo semantics for indexes > bit width', async function () {
+    it('rotl(euint64, euint8) with an oversized index', async function () {
       const encryptedAmount = await this.instance.encryptTypedValues({
         values: [
           { type: 'uint64', value: SHIFT_ROTATE_VALUE_64 },
@@ -213,7 +201,7 @@ describe('FHEVM manual operations', function () {
           encryptedAmount.inputProof,
         ),
       );
-      assert.equal(res, rotl64(SHIFT_ROTATE_VALUE_64, REDUCED_SHIFT_64));
+      assert.equal(res, expectedRotl(SHIFT_ROTATE_VALUE_64, OVERSIZED_SHIFT_64, 64n));
     });
   });
 

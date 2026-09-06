@@ -215,8 +215,7 @@ pub async fn run_http_server(
         .spawn_task_and_wait_ready(
             "http_server_axum",
             async move {
-                // Cancelled when shutdown stops intake: finishes in-flight HTTP
-                // requests, then stops accepting new connections.
+                // Finishes accepted requests, then stops accepting connections.
                 axum::serve(listener, app)
                     .with_graceful_shutdown(shutdown.cancelled_owned())
                     .await

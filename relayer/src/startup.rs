@@ -48,22 +48,24 @@ use std::sync::OnceLock;
 // Global singleton registry for metrics
 static GLOBAL_REGISTRY: OnceLock<Registry> = OnceLock::new();
 
-// Shutdown exists to hand the dispatcher over, not to save in-flight work: a `queued` request
-// is recovered at the next start, an event whose handlers have not returned is re-read from
-// the chain (its cursor never advanced), and a send killed mid-flight costs at most one
-// duplicate send plus one orphaned response event - the gateway contracts mint a fresh id and
-// charge a fee per call with no dedup, so a repeat costs a fee and duplicate KMS work, never a
-// wrong result. The one client-visible case: a stale holder reads its own gate as open for a
-// heartbeat interval plus its timeout (~8s at defaults), and a `replacement underpriced`
-// collision inside that window takes the non-retryable branch in
-// `gateway::arbitrum::transaction::engine`, marking the row `failure` on a nonce clash.
-// Shutdown therefore drains only the named tasks it can order, abandons the rest, and must
-// finish inside the pod's `terminationGracePeriodSeconds` - unset in gitops, so the
-// Kubernetes default of 30s.
+// Shutdown hands the dispatcher over. Recovery, not shutdown, is what saves in-flight work,
+// so the sequence below drains the named tasks and abandons the rest - inside the pod's
+// `terminationGracePeriodSeconds`, unset in gitops and so Kubernetes' 30s.
+//
+// Both pods sign from one key, so overlapping dispatch draws from one nonce sequence. Two
+// things keep them from overlapping: a stale holder's send loop gives up once it reads its
+// gate closed, and a fresh holder serves `DispatcherLock::handover_wait` before its own gate
+// opens.
+//
+// A predecessor starved of CPU can exceed that window, and the chain takes no epoch to fence
+// it with. The cost is one duplicate transaction, which the gateway contracts accept: the
+// epoch fence refuses the loser's writes and the sweep re-drives what went unrecorded.
+//
+// One key per pod would remove the shared sequence. It needs per-wallet funding and the
+// ProtocolPayment approval, so it is a throughput choice, not a prerequisite for
+// `replicas: 2`.
 
-/// Bound on the HTTP server's graceful shutdown, the gateway listeners, the keyurl poller,
-/// the tx/readiness processors and the cron workers all observing cancellation and returning.
-/// Every one of them is cancel-safe, so this is a fallback, not an expected wait.
+/// Fallback - a named task reaching this stopped observing its token.
 const STOP_WORK_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Bound on waiting for this pod's *first* dispatcher-lock acquisition attempt to resolve
@@ -99,11 +101,9 @@ pub async fn run_fhevm_relayer(
     // === Orchestration Phase ===
     // Create orchestrator, repositories, and gateway components.
     //
-    // The three tokens name subsystems, not phases - they are all cancelled at the same
-    // moment: `intake_shutdown` closes the sources of new work (the HTTP server, the gateway
-    // listeners, the keyurl poller), `dequeue_shutdown` stops the tx/readiness processors and
-    // cron workers and cancels the readiness checks already running, and `metrics_shutdown`
-    // stops the metrics server.
+    // Three tokens, all cancelled at the same moment - they name subsystems, not phases.
+    // intake: HTTP server, gateway listeners, keyurl poller. dequeue: tx/readiness
+    // processors, cron workers, and readiness checks already running. metrics: its server.
     let detached_tasks = TaskTracker::new();
     let intake_shutdown = CancellationToken::new();
     let dequeue_shutdown = CancellationToken::new();
@@ -309,7 +309,7 @@ pub async fn run_fhevm_relayer(
         let sweep_repositories = repositories.clone();
         let sweep_orchestrator = orchestrator.clone();
         let sweep_gate = dispatcher_lock.gate();
-        let sweep_config = settings.sweep.clone();
+        let sweep_config = settings.dispatcher_lock.sweep.clone();
         let sweep_shutdown = dequeue_shutdown.clone();
         orchestrator
             .spawn_task_and_wait_ready(
@@ -401,23 +401,16 @@ pub async fn run_fhevm_relayer(
     // Step 1 - stop looking healthy, keep serving.
     orchestrator.mark_not_ready();
 
-    // Step 2 - let that reach the load balancer (see `shutdown.lb_propagation_wait`'s doc for
-    // what the wait covers). Serving nobody is pointless, so skip it when no HTTP endpoint is
-    // configured.
+    // Step 2 - let that reach the load balancer.
     if settings.http.endpoint.is_some() {
         let wait = settings.shutdown.lb_propagation_wait;
         info!(?wait, "Health check failing, waiting for traffic to drain");
         tokio::time::sleep(wait).await;
     }
 
-    // Step 3 - stop working. The HTTP server finishes requests it already accepted; the
-    // gateway listeners, keyurl poller, tx/readiness processors, cron workers and metrics
-    // server stop, and running readiness checks are cancelled where they wait. Nothing is
-    // ordered against anything else: a listener's last event only spawns a handler shutdown
-    // abandons, and a queued request is already durable in Postgres. One budget drains every
-    // task - all are cancel-safe. The dispatcher lock's loop is cancelled by
-    // `dequeue_shutdown` and drained with the rest; it stops polling but does not release
-    // (see Step 4). The sweep is among the tasks drained below, under the same token.
+    // Step 3 - stop working. Order does not matter: what is in flight is either abandoned by
+    // design or already durable in Postgres. `dequeue_shutdown` covers the sweep and the
+    // dispatcher lock's loop too.
     intake_shutdown.cancel();
     dequeue_shutdown.cancel();
     metrics_shutdown.cancel();
@@ -427,17 +420,17 @@ pub async fn run_fhevm_relayer(
         "Named task drain complete, abandoning remaining detached work"
     );
 
-    // Step 4 - exit. The pools are left to close with the process: closing them here would
-    // wait on the connections held by the tasks just abandoned, reinstating the wait this
-    // sequence removes. `finish_task_drain` is the guard for a task that no predicate above
-    // stopped, and warns when it finds one.
+    // Step 4 - exit. Pools close with the process; closing them here would wait on the
+    // connections the abandoned tasks still hold.
     orchestrator.finish_task_drain().await;
 
     // Release the dispatcher lock last, after everything else has stopped: releasing it any
     // earlier would make this process the stalled ex-holder the epoch fence exists to catch.
     // The lock's own loop already stopped polling above; this is the one explicit unlock, not
     // a race with it.
-    dispatcher_lock.release_last().await;
+    dispatcher_lock
+        .release_last(settings.shutdown.lock_release_timeout)
+        .await;
 
     info!("Relayer shutdown complete");
 

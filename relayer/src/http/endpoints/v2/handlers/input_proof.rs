@@ -10,7 +10,9 @@ use crate::core::event::{
     ApiVersion, InputProofEventData, InputProofRequest, RelayerEvent, RelayerEventData,
 };
 use crate::core::job_id::JobId;
-use crate::gateway::arbitrum::transaction::tx_throttler::{GatewayTxTask, TxThrottlingSender};
+use crate::gateway::arbitrum::transaction::tx_throttler::{
+    GatewayTxTask, TxQueueInfo, TxThrottlingSender,
+};
 use crate::http::retry_after::{RequestStateInfo, RetryAfterState};
 use crate::http::utils::bounce_check;
 use crate::http::{parse_and_validate, AppResponse};
@@ -34,6 +36,7 @@ use axum::{
     http::{header, StatusCode},
     Json,
 };
+use chrono::Utc;
 use std::sync::Arc;
 use tracing::{error, info, instrument, span, warn, Level};
 use uuid::Uuid;
@@ -225,14 +228,17 @@ impl InputProofHandler {
         };
 
         // Extract ext_job_id from any variant
-        let assigned_ext_job_id = match &insert_result {
+        let assigned_ext_job_id = match &insert_result.result {
             InputProofInsertResult::Inserted { ext_job_id } => *ext_job_id,
             InputProofInsertResult::DuplicateCompleted { ext_job_id, .. } => *ext_job_id,
             InputProofInsertResult::DuplicateProcessing { ext_job_id } => *ext_job_id,
         };
 
         // Only dispatch event for new requests (deduplication)
-        if matches!(insert_result, InputProofInsertResult::Inserted { .. }) {
+        if matches!(
+            insert_result.result,
+            InputProofInsertResult::Inserted { .. }
+        ) {
             let event_data = InputProofEventData::ReqRcvdFromUser {
                 input_proof_request: request_data,
             };
@@ -282,8 +288,13 @@ impl InputProofHandler {
         // Generate a new request_id for this HTTP request (not stored)
         let request_id_for_response = uuid::Uuid::new_v4();
 
-        // Compute dynamic retry-after based on queue state
-        let tx_queue_info = self.tx_throttler.get_queue_info().await;
+        // Depth from the INSERT above, so both pods agree. Drain rate is startup config, so this
+        // pod's throttler is a safe source. Position is None: the request joins at the back.
+        let tx_queue_info = TxQueueInfo {
+            size: insert_result.tx_queue_size as usize,
+            drain_rate_tps: self.tx_throttler.current_tps(),
+            position: None,
+        };
         let retry_after = self
             .retry_after_state
             .compute_for_input_proof_post(&tx_queue_info)
@@ -485,19 +496,26 @@ impl InputProofHandler {
                         // Request is still in progress, return 202 with dynamic Retry-After header
                         info!("Request still in progress, returning queued status");
 
-                        // Compute dynamic retry-after based on current state
-                        let state_info = RequestStateInfo::new(response_model.req_status, 0, 0);
+                        // `updated_at` is stamped on every real row change, so it dates the
+                        // current status. The copro/KMS backoff is keyed on this; it was
+                        // hardcoded to 0, which pinned every poll to the first interval.
+                        let elapsed_in_state_secs = (Utc::now() - response_model.updated_at)
+                            .num_seconds()
+                            .clamp(0, u32::MAX as i64)
+                            as u32;
+                        let state_info =
+                            RequestStateInfo::new(response_model.req_status, elapsed_in_state_secs);
 
-                        // For Queued status, also get queue info for more accurate ETA
-                        let tx_queue_info = if response_model.req_status == ReqStatus::Queued {
-                            Some(self.tx_throttler.get_queue_info().await)
-                        } else {
-                            None
+                        // Position from the same SELECT that read the status, so both pods agree.
+                        let tx_queue_info = TxQueueInfo {
+                            size: response_model.queue_position as usize,
+                            drain_rate_tps: self.tx_throttler.current_tps(),
+                            position: Some(response_model.queue_position as usize),
                         };
 
                         let retry_after = self
                             .retry_after_state
-                            .compute_for_input_proof_get(tx_queue_info.as_ref(), &state_info)
+                            .compute_for_input_proof_get(&tx_queue_info, &state_info)
                             .await;
 
                         let status_code = StatusCode::ACCEPTED;

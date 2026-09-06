@@ -1,0 +1,65 @@
+{
+  "publicDecryption": [
+    {
+      "name": "two handles, one-byte extraData",
+      "request": {
+        "ctHandles": [
+          "0x1111111111111111111111111111111111111111111111111111111111111111",
+          "0x2222222222222222222222222222222222222222222222222222222222222222"
+        ],
+        "extraData": "0x00"
+      },
+      "decryptionId": "0xaaa2956d918458882642374b5ef6fc9117ee708e1930c84510faa0e4afa018b8"
+    },
+    {
+      "name": "empty request",
+      "request": {
+        "ctHandles": [],
+        "extraData": "0x"
+      },
+      "decryptionId": "0x51ca4cc9265cad62c01ef7511e8835b8445fac4777cc65669d2c029bb9622154"
+    }
+  ],
+  "userDecryption": [
+    {
+      "name": "single handle, RFC-033-style request",
+      "request": {
+        "handles": [
+          {
+            "handle": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "contractAddress": "0x3333333333333333333333333333333333333333",
+            "ownerAddress": "0x4444444444444444444444444444444444444444"
+          }
+        ],
+        "userAddress": "0x5555555555555555555555555555555555555555",
+        "publicKey": "0x20002000",
+        "allowedContracts": [
+          "0x3333333333333333333333333333333333333333"
+        ],
+        "requestValidity": {
+          "startTimestamp": 1770000000,
+          "durationSeconds": 300
+        },
+        "signature": "0x6666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666",
+        "extraData": "0x00"
+      },
+      "decryptionId": "0x0fc9151ca446462aeadbf740c1021d1c089413cb54940664dcb996a031268453"
+    },
+    {
+      "name": "empty request",
+      "request": {
+        "handles": [],
+        "userAddress": "0x0000000000000000000000000000000000000000",
+        "publicKey": "0x",
+        "allowedContracts": [],
+        "requestValidity": {
+          "startTimestamp": 0,
+          "durationSeconds": 0
+        },
+        "signature": "0x",
+        "extraData": "0x"
+      },
+      "decryptionId": "0xfd738414a250778c1e825c76d2bff7e1f75cd8d491eb57c1dd6df538af608e9d"
+    }
+  ]
+}

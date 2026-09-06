@@ -3,7 +3,7 @@ use uuid::Uuid;
 
 use crate::store::client::PgClient;
 use crate::store::error::SqlResult;
-use crate::store::models::Filter;
+use crate::store::models::{Filter, FilterType};
 
 #[derive(Clone)]
 pub struct FilterRepository {
@@ -26,6 +26,7 @@ impl FilterRepository {
         from: Option<&str>,
         to: Option<&str>,
         log_address: Option<&str>,
+        filter_type: FilterType,
     ) -> SqlResult<Option<Filter>> {
         let mut conn = self.client.get_app_connection().await?;
         let id = Uuid::new_v4();
@@ -33,11 +34,11 @@ impl FilterRepository {
         let row = sqlx::query_as!(
             Filter,
             r#"
-            INSERT INTO filters (id, chain_id, consumer_id, "from", "to", "log_address")
-            VALUES ($1, $2, $3, $4, $5, $6)
-            ON CONFLICT (chain_id, consumer_id, COALESCE("from", ''), COALESCE("to", ''), COALESCE("log_address", ''))
+            INSERT INTO filters (id, chain_id, consumer_id, "from", "to", "log_address", filter_type)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            ON CONFLICT (chain_id, consumer_id, COALESCE("from", ''), COALESCE("to", ''), COALESCE("log_address", ''), filter_type)
             DO NOTHING
-            RETURNING id, chain_id, consumer_id, "from", "to", "log_address", created_at
+            RETURNING id, chain_id, consumer_id, "from", "to", "log_address", filter_type as "filter_type: FilterType", created_at
             "#,
             id,
             self.chain_id,
@@ -45,6 +46,7 @@ impl FilterRepository {
             from as Option<&str>,
             to as Option<&str>,
             log_address as Option<&str>,
+            filter_type as FilterType,
         )
         .fetch_optional(&mut *conn)
         .await?;
@@ -52,16 +54,20 @@ impl FilterRepository {
         Ok(row)
     }
 
-    /// Fetch all active filters for this chain_id.
+    /// Fetch all active LIVE filters for this chain_id.
     /// Results are ordered by consumer_id for efficient grouping.
+    ///
+    /// FINAL filters are excluded: they belong to the finalized-delivery flow
+    /// and must never receive head-of-chain events.
+    /// Served by the partial index `idx_filters_chain_consumer_live`.
     pub async fn get_filters_by_chain_id(&self) -> SqlResult<Vec<Filter>> {
         let mut conn = self.client.get_app_connection().await?;
         let rows = sqlx::query_as!(
             Filter,
             r#"
-            SELECT id, chain_id, consumer_id, "from", "to", "log_address", created_at
+            SELECT id, chain_id, consumer_id, "from", "to", "log_address", filter_type as "filter_type: FilterType", created_at
             FROM filters
-            WHERE chain_id = $1
+            WHERE chain_id = $1 AND filter_type = 'LIVE'::filter_type
             ORDER BY consumer_id
             "#,
             self.chain_id,
@@ -71,18 +77,18 @@ impl FilterRepository {
         Ok(rows)
     }
 
-    /// Fetch all active filters for a single consumer on this chain.
+    /// Fetch all active LIVE filters for a single consumer on this chain.
     ///
-    /// Uses the leftmost-prefix of the existing unique index
-    /// `(chain_id, consumer_id, ...)` — no dedicated index needed.
+    /// FINAL filters are excluded (see [`Self::get_filters_by_chain_id`]).
+    /// Served by the partial index `idx_filters_chain_consumer_live`.
     pub async fn get_filters_by_consumer_id(&self, consumer_id: &str) -> SqlResult<Vec<Filter>> {
         let mut conn = self.client.get_app_connection().await?;
         let rows = sqlx::query_as!(
             Filter,
             r#"
-            SELECT id, chain_id, consumer_id, "from", "to", "log_address", created_at
+            SELECT id, chain_id, consumer_id, "from", "to", "log_address", filter_type as "filter_type: FilterType", created_at
             FROM filters
-            WHERE chain_id = $1 AND consumer_id = $2
+            WHERE chain_id = $1 AND consumer_id = $2 AND filter_type = 'LIVE'::filter_type
             ORDER BY id
             "#,
             self.chain_id,
@@ -93,7 +99,56 @@ impl FilterRepository {
         Ok(rows)
     }
 
-    /// Remove a filter matching the given (chain_id, consumer_id, from, to).
+    /// Fetch all active FINAL filters for this chain_id.
+    /// Results are ordered by consumer_id for efficient grouping.
+    ///
+    /// LIVE filters are excluded: they belong to the head-of-chain flow and
+    /// must never receive finalized-only events.
+    /// Served by the partial index `idx_filters_chain_consumer_final`.
+    pub async fn get_final_filters_by_chain_id(&self) -> SqlResult<Vec<Filter>> {
+        let mut conn = self.client.get_app_connection().await?;
+        let rows = sqlx::query_as!(
+            Filter,
+            r#"
+            SELECT id, chain_id, consumer_id, "from", "to", "log_address", filter_type as "filter_type: FilterType", created_at
+            FROM filters
+            WHERE chain_id = $1 AND filter_type = 'FINAL'::filter_type
+            ORDER BY consumer_id
+            "#,
+            self.chain_id,
+        )
+        .fetch_all(&mut *conn)
+        .await?;
+        Ok(rows)
+    }
+
+    /// Fetch all active FINAL filters for a single consumer on this chain.
+    ///
+    /// LIVE filters are excluded (see [`Self::get_final_filters_by_chain_id`]).
+    /// Served by the partial index `idx_filters_chain_consumer_final`.
+    /// Groundwork for the finality catchup feature.
+    pub async fn get_final_filters_by_consumer_id(
+        &self,
+        consumer_id: &str,
+    ) -> SqlResult<Vec<Filter>> {
+        let mut conn = self.client.get_app_connection().await?;
+        let rows = sqlx::query_as!(
+            Filter,
+            r#"
+            SELECT id, chain_id, consumer_id, "from", "to", "log_address", filter_type as "filter_type: FilterType", created_at
+            FROM filters
+            WHERE chain_id = $1 AND consumer_id = $2 AND filter_type = 'FINAL'::filter_type
+            ORDER BY id
+            "#,
+            self.chain_id,
+            consumer_id,
+        )
+        .fetch_all(&mut *conn)
+        .await?;
+        Ok(rows)
+    }
+
+    /// Remove a filter matching the given (chain_id, consumer_id, from, to, log_address, filter_type).
     ///
     /// Returns `Some(Filter)` if a filter was removed, `None` if no matching filter found.
     pub async fn remove_filter(
@@ -102,6 +157,7 @@ impl FilterRepository {
         from: Option<&str>,
         to: Option<&str>,
         log_address: Option<&str>,
+        filter_type: FilterType,
     ) -> SqlResult<Option<Filter>> {
         let mut conn = self.client.get_app_connection().await?;
 
@@ -114,13 +170,15 @@ impl FilterRepository {
               AND COALESCE("from", '') = COALESCE($3, '')
               AND COALESCE("to", '') = COALESCE($4, '')
               AND COALESCE("log_address", '') = COALESCE($5, '')
-            RETURNING id, chain_id, consumer_id, "from", "to", "log_address", created_at
+              AND filter_type = $6
+            RETURNING id, chain_id, consumer_id, "from", "to", "log_address", filter_type as "filter_type: FilterType", created_at
             "#,
             self.chain_id,
             consumer_id,
             from as Option<&str>,
             to as Option<&str>,
             log_address as Option<&str>,
+            filter_type as FilterType,
         )
         .fetch_optional(&mut *conn)
         .await?;

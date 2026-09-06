@@ -16,12 +16,15 @@ use crate::{
     core::event::{
         ApiCategory, ApiVersion, InputProofEventData, InputProofRequest, PublicDecryptEventData,
         PublicDecryptRequest, RelayerEvent, RelayerEventData, UserDecryptEventData,
-        UserDecryptRequest,
     },
     core::job_id::JobId,
     metrics,
     orchestrator::Orchestrator,
-    store::sql::{models::req_status_enum_model::ReqStatus, repositories::Repositories},
+    store::sql::{
+        models::req_status_enum_model::ReqStatus,
+        models::user_decrypt_req_model::{from_stored_value, UserDecryptReqType},
+        repositories::Repositories,
+    },
 };
 use anyhow::Context;
 use serde_json::Value;
@@ -130,14 +133,16 @@ pub(crate) async fn dispatch_recovered_user_decrypt(
     orchestrator: &Arc<Orchestrator>,
     int_job_id: Vec<u8>,
     req_json: Value,
+    req_type: UserDecryptReqType,
     status: ReqStatus,
 ) -> bool {
-    let request = match serde_json::from_value::<UserDecryptRequest>(req_json.clone()) {
+    let request = match from_stored_value(req_type, req_json) {
         Ok(r) => r,
         Err(e) => {
             error!(
                 alert = true,
                 error = %e,
+                ?req_type,
                 "Failed to deserialize UserDecryptRequest in recovery, skipping"
             );
             return false;

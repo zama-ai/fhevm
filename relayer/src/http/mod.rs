@@ -14,7 +14,7 @@ pub use endpoints::{
 
 pub use middleware::openapi_middleware;
 
-pub use retry_after::{DecryptQueueInfo, ReadinessQueueInfo, RequestQueueInfo, TxQueueInfo};
+pub use retry_after::{DecryptQueueInfo, ReadinessQueueInfo, TxQueueInfo};
 
 pub use utils::{
     // Other utilities

@@ -32,6 +32,7 @@ use crate::{
     },
     logging::TxEngineStep,
     metrics,
+    orchestrator::DispatchGate,
 };
 
 pub trait SignerCombined: TxSigner<Signature> + Signer + Send + Sync + Debug {}
@@ -64,6 +65,10 @@ pub enum GatewayTxnError {
     // Special status retry later, and all tx sender (in-flight and pending should not be send)
     #[error("Transport error: {0}")]
     TransportError(String),
+
+    /// Not a failure of the row: callers must leave its state for the successor's sweep.
+    #[error("Dispatch gate closed during send")]
+    GateClosed,
 }
 
 impl From<anyhow::Error> for GatewayTxnError {
@@ -113,6 +118,9 @@ where
     ms_retry_delay: u64,
     tx_max_retries: u32,
     gas_estimation_max_retries: u32,
+    /// The send loop gives up when this closes, rather than drawing more nonces from a
+    /// sequence its successor now uses.
+    gate: DispatchGate,
 }
 
 impl
@@ -125,6 +133,7 @@ impl
     pub async fn new(
         blockchain_rpc_config: BlockchainRpcConfig,
         tx_engine_config: TxEngineConfig,
+        gate: DispatchGate,
     ) -> Result<Self> {
         let chain_id = blockchain_rpc_config.chain_id;
 
@@ -185,6 +194,7 @@ impl
             ms_retry_delay: tx_engine_config.retry.retry_interval_ms,
             tx_max_retries: tx_engine_config.retry.max_attempts,
             gas_estimation_max_retries: tx_engine_config.retry.max_attempts,
+            gate,
         })
     }
 
@@ -382,7 +392,8 @@ impl
         }
     }
 
-    // TODO: Add gas bump
+    // TODO: Add gas bump, in a branch of its own: a bump reports `transaction underpriced`
+    // itself, which the release branch below claims.
     // TODO: Match all those errors code, and make a triage accordingly: https://ethereum-json-rpc.com/errors + Combine with parsing error message for get a clear triage.
     pub async fn send_raw_transaction_sync_with_retries(
         &self,
@@ -394,6 +405,16 @@ impl
         let mut retries = 0;
 
         loop {
+            // Before the first send too: a pod that lost the lock while queued would draw from
+            // a sequence its successor now owns.
+            if !self.gate.is_open() {
+                info!(
+                    int_job_id = %job_id,
+                    "Dispatch gate closed during send, leaving the row for the successor"
+                );
+                return Err(GatewayTxnError::GateClosed);
+            }
+
             // We could add a max number of retries here.
             if retries >= self.tx_max_retries {
                 metrics::track_engine_error(metrics::TransactionErrorType::MaxRetriesExceeded);
@@ -496,19 +517,23 @@ impl
                                     step = %TxEngineStep::TxRetrying,
                                     nonce = tx.nonce,
                                     error = %err_msg,
-                                    "Nonce too low"
+                                    "Nonce already mined"
                                 );
                                 self.nonce_manager
                                     .confirm_nonce(self.sender_address(), nonce)
                                     .await;
-                            } else if response_error_string.contains("nonce too high") {
+                            } else if response_error_string.contains("transaction underpriced")
+                                || response_error_string.contains("nonce too high")
+                            {
+                                // An underpriced or too-high nonce is still undecided: the chain
+                                // has yet to say which transaction takes it.
                                 metrics::track_engine_error(metrics::TransactionErrorType::Nonce);
                                 warn!(
                                     int_job_id = %job_id,
                                     step = %TxEngineStep::TxRetrying,
                                     nonce = tx.nonce,
                                     error = %err_msg,
-                                    "Nonce too high"
+                                    "Nonce unusable, releasing"
                                 );
                                 self.nonce_manager
                                     .release_nonce(self.sender_address(), nonce)

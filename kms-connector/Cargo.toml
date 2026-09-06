@@ -14,6 +14,7 @@ version = "0.15.0"
 #####################################################################
 #                       Internal dependencies                       #
 #####################################################################
+kms-connector-api.path = "crates/api"
 endpoint.path = "crates/endpoint"
 gw-listener.path = "crates/gw-listener"
 kms-worker.path = "crates/kms-worker"

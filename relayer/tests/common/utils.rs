@@ -396,8 +396,7 @@ impl TestSetup {
         Self::new_with_config_path(Some(temp_config_path)).await
     }
 
-    /// Create test setup that keeps serving for `wait` after its health check starts
-    /// failing, instead of the zero the other setups use.
+    /// Overrides the 0s the other setups use, so a test can observe the serving window.
     #[allow(dead_code)]
     pub async fn new_with_lb_propagation_wait(wait: &str) -> anyhow::Result<Self> {
         let temp_config_dir = TempDir::new()?;
@@ -596,8 +595,7 @@ impl TestSetup {
         })
     }
 
-    /// Start the shutdown sequence without waiting for it, so a test can observe the relayer
-    /// while it is shutting down. `shutdown` still has to run afterwards to clean up.
+    /// Does not wait. `shutdown` still has to run afterwards to clean up.
     #[allow(dead_code)]
     pub fn begin_shutdown(&self) {
         self.cancellation_token.cancel();
@@ -782,9 +780,6 @@ fn create_gateway_chain_readiness_config(temp_dir: &TempDir) -> anyhow::Result<s
     Ok(temp_config_path)
 }
 
-/// Create a config file with low retry settings for tx_engine (2 attempts × 100ms)
-/// This config is used in tests for max retries exceeded scenarios.
-/// Copy the test config, setting how long shutdown keeps serving after `/healthz` fails.
 fn create_lb_propagation_config(
     temp_dir: &TempDir,
     wait: &str,
@@ -805,6 +800,8 @@ fn create_lb_propagation_config(
     Ok(temp_config_path)
 }
 
+/// Create a config file with low retry settings for tx_engine (2 attempts × 100ms)
+/// This config is used in tests for max retries exceeded scenarios.
 fn create_low_retry_config(temp_dir: &TempDir) -> anyhow::Result<std::path::PathBuf> {
     let temp_config_path = temp_dir.path().join("low_retry.yaml");
 
@@ -851,6 +848,15 @@ fn create_admin_endpoint_config(temp_dir: &TempDir) -> anyhow::Result<std::path:
     // Enable admin endpoint
     if let Some(http) = config.get_mut("http") {
         http["enable_admin_endpoint"] = serde_yaml::Value::Bool(true);
+    }
+
+    // These tests post to the TPS admin endpoint right after startup, and the TPS throttler
+    // worker starts only once `DispatchGate` opens - which the base config holds for
+    // `holder_heartbeat_interval + query_timeout`.
+    if let Some(dispatcher_lock) = config.get_mut("dispatcher_lock") {
+        dispatcher_lock["standby_poll_interval"] = serde_yaml::Value::String("5ms".to_string());
+        dispatcher_lock["holder_heartbeat_interval"] = serde_yaml::Value::String("5ms".to_string());
+        dispatcher_lock["query_timeout"] = serde_yaml::Value::String("5ms".to_string());
     }
 
     // Serialize back to YAML and write to temp file
@@ -1517,22 +1523,26 @@ pub fn register_host_acl_rpc_error(host_server: &MockServer, acl_address: Addres
 
 /// Poll/heartbeat/sweep intervals fast enough that election and handover both resolve inside
 /// the poll budgets the dispatcher tests allow themselves.
+///
+/// `query_timeout` is one of the two terms in `DispatcherLock::handover_wait`, so the test
+/// config's 3s would put every handover past 3s. 500ms still leaves a lock query on a local
+/// Postgres three orders of magnitude of headroom.
 #[allow(dead_code)]
 pub fn fast_timing(settings: &mut Settings) {
-    settings.dispatcher_lock.poll_interval = std::time::Duration::from_millis(100);
-    settings.dispatcher_lock.heartbeat_interval = std::time::Duration::from_millis(100);
-    settings.sweep.interval = std::time::Duration::from_millis(100);
+    settings.dispatcher_lock.standby_poll_interval = std::time::Duration::from_millis(100);
+    settings.dispatcher_lock.holder_heartbeat_interval = std::time::Duration::from_millis(100);
+    settings.dispatcher_lock.query_timeout = std::time::Duration::from_millis(500);
+    settings.dispatcher_lock.sweep.interval = std::time::Duration::from_millis(100);
 }
 
-/// `(req_status, owner_epoch, attempts)` for one public-decrypt row - the three columns that
-/// together say who drove a request and how it got there.
+/// `(req_status, owner_epoch)` for one public-decrypt row.
 #[allow(dead_code)]
-pub async fn row_state(pool: &sqlx::PgPool, ext_job_id: &str) -> (String, Option<i64>, i32) {
+pub async fn row_state(pool: &sqlx::PgPool, ext_job_id: &str) -> (String, i64) {
     use sqlx::Row;
 
     let row = sqlx::query(
         r#"
-        SELECT req_status::text AS status, owner_epoch, attempts
+        SELECT req_status::text AS status, owner_epoch
         FROM public_decrypt_req
         WHERE ext_job_id = $1::uuid
         "#,
@@ -1541,11 +1551,7 @@ pub async fn row_state(pool: &sqlx::PgPool, ext_job_id: &str) -> (String, Option
     .fetch_one(pool)
     .await
     .expect("Failed to read the request row");
-    (
-        row.get("status"),
-        row.get("owner_epoch"),
-        row.get("attempts"),
-    )
+    (row.get("status"), row.get("owner_epoch"))
 }
 
 #[cfg(test)]

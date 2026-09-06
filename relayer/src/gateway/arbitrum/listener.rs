@@ -2,7 +2,7 @@ use tracing::{debug, error, info, warn};
 
 use crate::{
     config::settings::GatewayConfig,
-    gateway::arbitrum::bindings::gateway_chain_event_for_log,
+    gateway::arbitrum::bindings::{gateway_chain_event_for_log, gateway_chain_event_signatures},
     gateway::handled_events::{EventKey, HandledEvents, ObservedEvent},
     logging::ListenerStep,
     orchestrator::{DispatchGate, HealthCheck},
@@ -74,7 +74,6 @@ pub struct ArbitrumListener {
     /// anyway, and the polling listener replays that range from the cursor once this pod holds
     /// the lock.
     gate: DispatchGate,
-    /// Cancelled when shutdown closes the sources of new work.
     shutdown: CancellationToken,
 }
 
@@ -99,12 +98,10 @@ impl ArbitrumListener {
         })
     }
 
-    /// Sleep for `dur`, returning early if shutdown is requested meanwhile. Returns `true`
-    /// if the sleep was cut short by shutdown.
-    async fn sleep_or_shutdown(&self, dur: Duration) -> bool {
+    async fn interruptible_sleep(&self, dur: Duration) {
         tokio::select! {
-            _ = tokio::time::sleep(dur) => false,
-            _ = self.shutdown.cancelled() => true,
+            _ = tokio::time::sleep(dur) => {}
+            _ = self.shutdown.cancelled() => {}
         }
     }
 
@@ -201,16 +198,8 @@ impl ArbitrumListener {
                         max_attempts = max_attempts,
                         "Failed to create provider"
                     );
-                    if self
-                        .sleep_or_shutdown(Duration::from_millis(retry_interval))
-                        .await
-                    {
-                        info!(
-                            instance_id = self.pool_index,
-                            "Listener stopping (shutdown)"
-                        );
-                        return Ok(());
-                    }
+                    self.interruptible_sleep(Duration::from_millis(retry_interval))
+                        .await;
                     continue;
                 }
             };
@@ -231,16 +220,8 @@ impl ArbitrumListener {
                         max_attempts = max_attempts,
                         "Failed to subscribe"
                     );
-                    if self
-                        .sleep_or_shutdown(Duration::from_millis(retry_interval))
-                        .await
-                    {
-                        info!(
-                            instance_id = self.pool_index,
-                            "Listener stopping (shutdown)"
-                        );
-                        return Ok(());
-                    }
+                    self.interruptible_sleep(Duration::from_millis(retry_interval))
+                        .await;
                     continue;
                 }
             };
@@ -272,16 +253,8 @@ impl ArbitrumListener {
                         max_attempts = max_attempts,
                         "WebSocket connection dropped"
                     );
-                    if self
-                        .sleep_or_shutdown(Duration::from_millis(retry_interval))
-                        .await
-                    {
-                        info!(
-                            instance_id = self.pool_index,
-                            "Listener stopping (shutdown)"
-                        );
-                        return Ok(());
-                    }
+                    self.interruptible_sleep(Duration::from_millis(retry_interval))
+                        .await;
                 }
                 RecycleReason::GateClosed => {
                     // Back to the top of the loop, which waits for the gate before dialing.
@@ -390,7 +363,7 @@ impl ArbitrumListener {
                                     event: gateway_event,
                                 }],
                                 None => {
-                                    debug!(
+                                    warn!(
                                         step = %ListenerStep::EventUnroutable,
                                         instance_id = self.pool_index,
                                         block_number = block_number,
@@ -450,7 +423,9 @@ impl ArbitrumListener {
         provider: &Arc<dyn Provider<AnyNetwork> + Send + Sync>,
         contract_addresses: &[Address],
     ) -> anyhow::Result<Subscription<Log>> {
-        let filter = Filter::new().address(contract_addresses.to_vec());
+        let filter = Filter::new()
+            .address(contract_addresses.to_vec())
+            .event_signature(gateway_chain_event_signatures());
 
         provider
             .subscribe_logs(&filter)

@@ -18,7 +18,7 @@ use connector_utils::{
     monitoring::otlp::PropagationContext,
     types::{
         KMS_CONTEXT_COUNTER_BASE, ProtocolEvent,
-        db::{EventType, invalidate_kms_context, invalidate_kms_epoch},
+        db::{EventType, RequestSource, invalidate_kms_context, invalidate_kms_epoch},
     },
 };
 use fhevm_host_bindings::{
@@ -315,6 +315,7 @@ where
                 event_kind,
                 log.transaction_hash,
                 otlp_ctx,
+                RequestSource::OnChain,
             ));
         }
         Ok(events)

@@ -1,13 +1,9 @@
 //! Graceful shutdown tests.
 //!
-//! These assert only that shutdown terminates and that no step reached its budget - a
-//! regression guard for adding a background task without a shutdown token.
+//! A regression guard for adding a background task without a shutdown token: these assert
+//! only that shutdown terminates and that no step reached its budget.
 //!
-//! The test config sets `shutdown.lb_propagation_wait` to zero, so the times below measure
-//! the work of shutting down rather than the wait for a load balancer that is not there.
-//!
-//! Not covered: SIGTERM is never sent - these cancel the token directly and do not run as
-//! PID 1.
+//! SIGTERM is never sent - these cancel the token directly and do not run as PID 1.
 
 mod common;
 
@@ -16,14 +12,12 @@ use rstest::rstest;
 use std::time::{Duration, Instant};
 use tokio::time::timeout;
 
-/// Observed drains are microseconds and the smallest budget (`STOP_WORK_TIMEOUT`) is 5s, so
-/// this sits clear of both.
+/// Observed drains are microseconds, `STOP_WORK_TIMEOUT` is 5s; this sits clear of both.
 const COOPERATIVE_SHUTDOWN_MAX: Duration = Duration::from_secs(2);
 
 /// Separates "slow" from "hung" so a deadlock fails instead of stalling the suite.
 const SHUTDOWN_HANG_LIMIT: Duration = Duration::from_secs(60);
 
-/// Shutdown terminates, and no step falls back to aborting.
 #[rstest]
 #[tokio::test]
 async fn test_shutdown_completes_without_reaching_budgets() {
@@ -42,8 +36,7 @@ async fn test_shutdown_completes_without_reaching_budgets() {
     );
 }
 
-/// The same, once every task is idle at its steady-state wait - the case that catches a task
-/// which only notices cancellation while handling an inbound item.
+/// From idle - catches a task that only notices cancellation while handling an item.
 #[rstest]
 #[tokio::test]
 async fn test_shutdown_from_idle_relayer() {
@@ -63,9 +56,7 @@ async fn test_shutdown_from_idle_relayer() {
     );
 }
 
-/// The relayer keeps serving while its health check fails, so a request routed before the
-/// endpoint removal reaches the ingress controller gets a 503 from a pod still listening
-/// rather than a refused connection.
+/// A request arriving in the propagation window gets a 503, not a refused connection.
 #[rstest]
 #[tokio::test]
 async fn test_health_reports_503_while_still_serving() {

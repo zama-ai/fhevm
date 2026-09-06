@@ -71,6 +71,9 @@ Grafana UI → **Dashboards** → **New** → **Import** → upload the JSON fil
 5. **Block Compute Verification**: two sub-sections per failure type (transaction root, receipt root, block hash):
    - **24h counters** (stat panels, top row): total number of compute failures over the last 24 hours — quick "has anything gone wrong today?" glance.
    - **Rate timeseries** (bottom row): failure rate split by `stalling` label — `stalling=false` are skipped permissively (data quality issues), `stalling=true` are hard halts (invariant concerns).
+6. **Catchup**: orchestrator rate, skipped-above-head and fanned-out sub-range 24h counters, sub-range duration p95 + quantiles, counter-rate timeseries — the live catchup pipeline.
+7. **Finality**: iteration rate (stall detection), finality lag in blocks (final height − final tip), finality-active on/off stat, range duration p95, final tip vs final height timeseries, range duration quantiles.
+8. **Final Catchup**: same panel set as the Catchup row, on the `listener_final_catchup_*` metrics (clamped to the final height instead of the chain head).
 
 ### Healthy vs degraded readings
 
@@ -87,6 +90,9 @@ Grafana UI → **Dashboards** → **New** → **Import** → upload the JSON fil
 | Compute failures 24h (counter) | 0 on strict chains; small/chain-dependent on L2s with skipping | sustained increase | cross-check with rate panel to see if it's a burst or a trend |
 | Compute failures rate (stalling=false) | low, chain-dependent | sustained rate | investigate RPC data quality, likely unsupported L2 tx types |
 | Compute failures rate (stalling=true) | **always zero** | any non-zero | block verification failing hard — check RPC node or block computer encoding |
+| Finality Active | `1` when finality is enabled | `0` while enabled in config | config/deploy mismatch — check `finality_active` |
+| Finality Iterations Rate | `> 0` when active | `0` while active (red) | finality loop stalled — check errors row, missing final-event consumer queue (see `docs/error_flows.md`) |
+| Finality Lag | ≈ chain's finality window, stable | growing unbounded | final flow not keeping up — check range duration + fleet RPC panels |
 
 ---
 
@@ -141,6 +147,15 @@ Principal / retry / dead-letter / pending / lag, one series per topic. **DLQ dep
 #### Broker — Circuit Breaker & Connection (collapsed)
 
 Breaker state (0=closed, 1=open, 2=half-open), trips, consecutive failures, consumer connected stat, reconnection rate, claim sweeper stats.
+
+#### Finality — Fleet (collapsed)
+
+- **Finality Active by Chain**: `listener_finality_active`, one series per chain (0/1) — spot chains where the flow is off.
+- **Finality Lag by Chain**: `listener_final_height_block_number - listener_final_tip_block_number` per chain.
+- **Finality Iteration Rate by Chain**: detect finality stalls across the fleet.
+- **Final Catchup Sub-ranges Rate by Chain**: replay activity per chain.
+
+The finality queues (`fetch-final-block`, `clean-final-blocks`, `final-catchup`, `range-final-catchup`) appear automatically in the Broker — Queue Depth row via the `topic` variable.
 
 ---
 

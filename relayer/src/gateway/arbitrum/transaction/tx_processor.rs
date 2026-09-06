@@ -21,10 +21,10 @@ impl GatewayTxProcessor {
     /// Spawns the background worker.
     ///
     /// It registers with the Orchestrator so it starts/stops cleanly with the application.
-    /// It delegates the infinite loop logic to `throttler.run_consumer`, which exits once
-    /// `shutdown` fires. `task_name` must be distinct per instance (input-proof, public-decrypt,
-    /// user-decrypt): three of these are spawned under the same orchestrator and would otherwise
-    /// be indistinguishable in logs and during phased shutdown.
+    /// It delegates the infinite loop logic to `throttler.run_consumer`.
+    ///
+    /// Three of these run under one orchestrator, so `task_name` must be distinct per
+    /// instance or the drain cannot say which one failed to stop.
     pub async fn orchestrator_spawn_task(
         task_name: &str,
         throttler_worker: TxThrottlingWorker<GatewayTxTask>,
@@ -45,9 +45,6 @@ impl GatewayTxProcessor {
                 "Worker started"
             );
 
-            // We run the consumer.
-            // This function contains the infinite loop reading from the channel.
-            // It exits once `shutdown` fires, stopping the dequeue of new work.
             throttler_worker
                 .run_consumer(gate, shutdown, move |task: GatewayTxTask| {
                     // Call the async function directly.

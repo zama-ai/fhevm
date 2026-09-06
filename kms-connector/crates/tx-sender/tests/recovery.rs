@@ -18,7 +18,7 @@ use connector_utils::{
         },
         setup::TestInstanceBuilder,
     },
-    types::db::OperationStatus,
+    types::db::{OperationStatus, RequestSource},
 };
 use rstest::rstest;
 use sqlx::{Pool, Postgres, Row, postgres::types::PgInterval};
@@ -222,12 +222,12 @@ async fn insert_operation_in_db_and_get_id(
                 .decryptionId
         }
         "PublicDecryptionResponse" => {
-            insert_rand_public_decrypt_response(db, None, Some(status))
+            insert_rand_public_decrypt_response(db, None, Some(status), RequestSource::OnChain)
                 .await?
                 .decryption_id
         }
         "UserDecryptionResponse" => {
-            insert_rand_user_decrypt_response(db, None, Some(status))
+            insert_rand_user_decrypt_response(db, None, Some(status), RequestSource::OnChain)
                 .await?
                 .decryption_id
         }

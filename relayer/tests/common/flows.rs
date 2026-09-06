@@ -17,9 +17,10 @@ use std::str::FromStr;
 /// `extraData` accepted by every v2 endpoint.
 pub const EXTRA_DATA: &str = "0x00";
 
-/// Delay between two GET polls, and the number of polls before giving up.
-const POLL_INTERVAL_MS: u64 = 500;
-const POLL_ATTEMPTS: usize = 10;
+/// Delay between two GET polls, and the number of polls before giving up. Sized for a loaded
+/// runner, not for latency - nothing here measures how long a request takes.
+const POLL_INTERVAL_MS: u64 = 1000;
+const POLL_ATTEMPTS: usize = 20;
 const REQUEST_TIMEOUT_SECS: u64 = 10;
 
 pub mod public_decrypt {

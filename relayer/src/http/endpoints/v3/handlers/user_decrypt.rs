@@ -20,7 +20,9 @@ use crate::http::endpoints::v2::types::user_decrypt::{
     UserDecryptPostResponseJson, UserDecryptQueuedResult,
 };
 use crate::http::endpoints::v3::types::AttestedUserDecryptRequestJson;
-use crate::http::retry_after::{DecryptQueueInfo, RetryAfterState};
+use crate::http::retry_after::{
+    DecryptQueueInfo, ReadinessQueueInfo, RetryAfterState, TxQueueInfo,
+};
 use crate::http::utils::BounceChecker;
 use crate::http::{parse_and_validate, AppResponse};
 use crate::logging::UserDecryptStep;
@@ -294,13 +296,16 @@ impl UserDecryptHandler {
             }
         };
 
-        let assigned_ext_job_id = match &insert_result {
+        let assigned_ext_job_id = match &insert_result.result {
             UserDecryptInsertResult::Inserted { ext_job_id } => *ext_job_id,
             UserDecryptInsertResult::DuplicateCompleted { ext_job_id, .. } => *ext_job_id,
             UserDecryptInsertResult::DuplicateProcessing { ext_job_id } => *ext_job_id,
         };
 
-        if matches!(insert_result, UserDecryptInsertResult::Inserted { .. }) {
+        if matches!(
+            insert_result.result,
+            UserDecryptInsertResult::Inserted { .. }
+        ) {
             let request_data = UserDecryptEventData::ReqRcvdFromUser {
                 decrypt_request: user_decrypt_request,
             };
@@ -348,16 +353,21 @@ impl UserDecryptHandler {
 
         let request_id_for_response = uuid::Uuid::new_v4();
 
-        let readiness_queue_info = self
-            .user_decrypt_queue_checker
-            .readiness_throttler()
-            .get_queue_info()
-            .await;
-        let tx_queue_info = self
-            .user_decrypt_queue_checker
-            .tx_throttler()
-            .get_queue_info()
-            .await;
+        // Depth from the same INSERT, so both pods agree. max_concurrency/current_tps are
+        // startup config, identical on every pod. Position None: joins at the back.
+        let readiness_queue_info = ReadinessQueueInfo {
+            size: insert_result.readiness_queue_size as usize,
+            max_concurrency: self
+                .user_decrypt_queue_checker
+                .readiness_throttler()
+                .max_concurrency(),
+            position: None,
+        };
+        let tx_queue_info = TxQueueInfo {
+            size: insert_result.tx_queue_size as usize,
+            drain_rate_tps: self.user_decrypt_queue_checker.tx_throttler().current_tps(),
+            position: None,
+        };
         let decrypt_queue_info = DecryptQueueInfo::new(readiness_queue_info, tx_queue_info);
         let retry_after = self
             .retry_after_state

@@ -3,7 +3,7 @@ use async_trait::async_trait;
 pub use broker::{AckDecision, Broker, HandlerError};
 use broker::{BrokerError, CancellationToken, Consumer, Handler, Message, Topic};
 use primitives::event::{
-    BlockPayload, CatchupPayload, FilterCommand, FilterCommandValidationError,
+    BlockPayload, CatchupPayload, FilterCommand, FilterCommandValidationError, FilterType,
 };
 use primitives::routing;
 use primitives::utils::chain_id_to_namespace;
@@ -21,10 +21,10 @@ use crate::options::{CatchupConsumerOptions, LiveConsumerOptions};
 ///
 /// # Cancellation
 ///
-/// Three tokens cooperate:
+/// Five tokens cooperate:
 ///
-/// - [`cancel_token`](Self::cancel_token) — parent. Cancelling it stops both
-///   the live and catchup flows.
+/// - [`cancel_token`](Self::cancel_token) — parent. Cancelling it stops every
+///   flow (live, catchup, final, final catchup).
 /// - `live_cancel` — child of `cancel_token`. Wired into the live consumer
 ///   and the live handler. Cancel via [`cancel_live`](Self::cancel_live) to
 ///   stop only the live flow.
@@ -33,27 +33,36 @@ use crate::options::{CatchupConsumerOptions, LiveConsumerOptions};
 ///   [`cancel_catchup`](Self::cancel_catchup) to stop only catchup
 ///   (typical use: stop the bounded backfill once it has drained while the
 ///   live stream keeps running).
+/// - `final_cancel` — child of `cancel_token`. Wired into the finalized-only
+///   consumer and handler. Cancel via [`cancel_final`](Self::cancel_final).
+/// - `final_catchup_cancel` — child of `cancel_token`. Wired into the final
+///   catchup consumer and handler. Cancel via
+///   [`cancel_final_catchup`](Self::cancel_final_catchup).
 ///
-/// Cancelling a child does *not* propagate up — the parent and the sibling
+/// Cancelling a child does *not* propagate up — the parent and the siblings
 /// keep going. Cancelling the parent cancels every child.
 #[derive(Clone)]
 pub struct ListenerConsumer {
     broker: Broker,
     chain_id: u64,
     consumer_id: String,
-    /// Parent cancellation token. Cancelling this stops both flows.
+    /// Parent cancellation token. Cancelling this stops all flows.
     pub cancel_token: CancellationToken,
     /// Child token: cancels only the live flow.
     live_cancel: CancellationToken,
     /// Child token: cancels only the catchup flow.
     catchup_cancel: CancellationToken,
+    /// Child token: cancels only the final (finalized-only) live flow.
+    final_cancel: CancellationToken,
+    /// Child token: cancels only the final catchup flow.
+    final_catchup_cancel: CancellationToken,
     live_options: LiveConsumerOptions,
     catchup_options: CatchupConsumerOptions,
 }
 
 impl ListenerConsumer {
     /// Create a new consumer bound to a broker and chain ID, with default
-    /// tuning for both the live and catchup pipelines.
+    /// tuning for all pipelines.
     pub fn new(broker: &Broker, chain_id: u64, consumer_id: &str) -> Self {
         Self::with_options(broker, chain_id, consumer_id, None, None)
     }
@@ -61,6 +70,11 @@ impl ListenerConsumer {
     /// Create a new consumer with explicit per-pipeline tuning. `None` for
     /// either argument falls back to the corresponding `Default` impl, which
     /// matches the values previously hardcoded in this file.
+    ///
+    /// The finalized-only flow ([`consume_final`](Self::consume_final))
+    /// shares the `live` tuning, and the final catchup flow
+    /// ([`consume_final_catchup`](Self::consume_final_catchup)) shares the
+    /// `catchup` tuning — "same config as the rest" by construction.
     pub fn with_options(
         broker: &Broker,
         chain_id: u64,
@@ -77,6 +91,8 @@ impl ListenerConsumer {
         let cancel_token = CancellationToken::new();
         let live_cancel = cancel_token.child_token();
         let catchup_cancel = cancel_token.child_token();
+        let final_cancel = cancel_token.child_token();
+        let final_catchup_cancel = cancel_token.child_token();
         Self {
             broker: broker.clone(),
             chain_id,
@@ -84,12 +100,14 @@ impl ListenerConsumer {
             cancel_token,
             live_cancel,
             catchup_cancel,
+            final_cancel,
+            final_catchup_cancel,
             live_options: live.unwrap_or_default(),
             catchup_options: catchup.unwrap_or_default(),
         }
     }
 
-    /// Cancel both the live and catchup flows.
+    /// Cancel all flows (live, catchup, final, final catchup).
     ///
     /// Equivalent to cancelling [`cancel_token`](Self::cancel_token) directly.
     pub fn cancel(&self) {
@@ -106,6 +124,17 @@ impl ListenerConsumer {
         self.catchup_cancel.cancel();
     }
 
+    /// Cancel only the final (finalized-only) live flow. The other flows
+    /// keep running.
+    pub fn cancel_final(&self) {
+        self.final_cancel.cancel();
+    }
+
+    /// Cancel only the final catchup flow. The other flows keep running.
+    pub fn cancel_final_catchup(&self) {
+        self.final_catchup_cancel.cancel();
+    }
+
     /// Return the chain ID this client publishes into.
     pub fn chain_id(&self) -> u64 {
         self.chain_id
@@ -116,13 +145,32 @@ impl ListenerConsumer {
         &self.consumer_id
     }
 
-    pub fn create_filter_on_log_address(&self, contract: Address) -> FilterCommand {
+    /// Build a filter command scoped to this consumer.
+    fn filter_command(
+        &self,
+        log_address: Option<Address>,
+        filter_type: Option<FilterType>,
+    ) -> FilterCommand {
         FilterCommand {
             consumer_id: self.consumer_id.clone(),
             from: None,
             to: None,
-            log_address: Some(contract),
+            log_address,
+            filter_type,
         }
+    }
+
+    pub fn create_filter_on_log_address(&self, contract: Address) -> FilterCommand {
+        self.filter_command(Some(contract), None)
+    }
+
+    /// Build a finalized-only filter command for events emitted by `contract`.
+    ///
+    /// The watcher only receives events once their block is finalized, so it
+    /// never sees reorged blocks. Delivery for final watchers is handled by a
+    /// separate flow on the listener side.
+    pub fn create_final_filter_on_log_address(&self, contract: Address) -> FilterCommand {
+        self.filter_command(Some(contract), Some(FilterType::Final))
     }
 
     /// Build a full-block (wildcard) filter command for this consumer.
@@ -131,12 +179,15 @@ impl ListenerConsumer {
     /// "broadcast the entire block": every transaction with every log is
     /// delivered, letting the consumer parse the chain dynamically.
     pub fn create_full_block_filter(&self) -> FilterCommand {
-        FilterCommand {
-            consumer_id: self.consumer_id.clone(),
-            from: None,
-            to: None,
-            log_address: None,
-        }
+        self.filter_command(None, None)
+    }
+
+    /// Build a finalized-only full-block (wildcard) filter command.
+    ///
+    /// Same wildcard semantics as [`create_full_block_filter`](Self::create_full_block_filter),
+    /// but blocks are only delivered once finalized.
+    pub fn create_final_full_block_filter(&self) -> FilterCommand {
+        self.filter_command(None, Some(FilterType::Final))
     }
 
     /// Register a full-block (wildcard) subscription for this consumer.
@@ -152,6 +203,18 @@ impl ListenerConsumer {
     /// Remove this consumer's full-block (wildcard) subscription.
     pub async fn unregister_full_block(&self) -> Result<(), ConsumerError> {
         self.unregister_filter(&self.create_full_block_filter())
+            .await
+    }
+
+    /// Register a finalized-only full-block (wildcard) subscription.
+    pub async fn register_final_full_block(&self) -> Result<(), ConsumerError> {
+        self.register_filter(&self.create_final_full_block_filter())
+            .await
+    }
+
+    /// Remove this consumer's finalized-only full-block (wildcard) subscription.
+    pub async fn unregister_final_full_block(&self) -> Result<(), ConsumerError> {
+        self.unregister_filter(&self.create_final_full_block_filter())
             .await
     }
 
@@ -189,6 +252,35 @@ impl ListenerConsumer {
         Ok(())
     }
 
+    /// Request a historical replay of **finalized** blocks
+    /// `[block_start, block_end]` (inclusive).
+    ///
+    /// Publishes a [`CatchupPayload`] to the chain-namespaced
+    /// `routing::FINAL_CATCHUP` control plane. The listener clamps the range
+    /// to the finalized head (blocks that are not final yet are skipped —
+    /// re-issue the request later), splits it into bounded sub-ranges, and
+    /// delivers the resulting events on `{consumer_id}.final-catchup-event`,
+    /// consumed via [`consume_final_catchup`](Self::consume_final_catchup).
+    ///
+    /// Requests are dropped by the listener when its finality flow is
+    /// inactive (`finality_active: false`).
+    pub async fn request_final_catchup(
+        &self,
+        block_start: u64,
+        block_end: u64,
+    ) -> Result<(), ConsumerError> {
+        let mut payload = CatchupPayload {
+            consumer_id: self.consumer_id.clone(),
+            block_start,
+            block_end,
+        };
+        payload.validate()?;
+        let namespace = chain_id_to_namespace(self.chain_id);
+        let publisher = self.broker.publisher(&namespace).await?;
+        publisher.publish(routing::FINAL_CATCHUP, &payload).await?;
+        Ok(())
+    }
+
     async fn publish_filter_command(
         &self,
         command: &FilterCommand,
@@ -219,10 +311,99 @@ impl ListenerConsumer {
         Topic::new(routing)
     }
 
+    /// Topic of this consumer's finalized-only event queue:
+    /// `{consumer_id}.final-event`.
+    pub fn final_consumer_topic(&self) -> Topic {
+        let routing = routing::consumer_final_event_routing(self.consumer_id.clone());
+        Topic::new(routing)
+    }
+
+    /// Topic of this consumer's final catchup queue:
+    /// `{consumer_id}.final-catchup-event`.
+    pub fn final_catchup_consumer_topic(&self) -> Topic {
+        let routing = routing::consumer_final_catchup_event_routing(self.consumer_id.clone());
+        Topic::new(routing)
+    }
+
     fn broker_consumer(&self) -> Result<Consumer, BrokerError> {
         let topic = self.consumer_topic();
         let cancel = self.live_cancel.clone();
         let opts = &self.live_options;
+
+        let mut builder = self
+            .broker
+            .consumer(&topic)
+            .group(topic.to_string())
+            .prefetch(opts.prefetch())
+            .max_retries(opts.max_retries())
+            .with_cancellation(cancel);
+
+        if let Some((threshold, cooldown)) = opts.circuit_breaker() {
+            builder = builder.circuit_breaker(threshold, cooldown);
+        }
+
+        let builder = match &self.broker {
+            Broker::Redis { .. } => {
+                let mut b = builder;
+                if let Some(d) = opts.redis_claim_min_idle() {
+                    b = b.redis_claim_min_idle(d.as_secs());
+                }
+                if let Some(d) = opts.redis_claim_interval() {
+                    b = b.redis_claim_interval(d.as_secs());
+                }
+                b
+            }
+            Broker::Amqp { .. } => builder,
+        };
+
+        builder.build()
+    }
+
+    /// Build the finalized-only broker consumer: `{consumer_id}.final-event`
+    /// with the final cancel token and the same tuning as the live pipeline
+    /// ([`LiveConsumerOptions`]).
+    fn broker_final_consumer(&self) -> Result<Consumer, BrokerError> {
+        let topic = self.final_consumer_topic();
+        let cancel = self.final_cancel.clone();
+        let opts = &self.live_options;
+
+        let mut builder = self
+            .broker
+            .consumer(&topic)
+            .group(topic.to_string())
+            .prefetch(opts.prefetch())
+            .max_retries(opts.max_retries())
+            .with_cancellation(cancel);
+
+        if let Some((threshold, cooldown)) = opts.circuit_breaker() {
+            builder = builder.circuit_breaker(threshold, cooldown);
+        }
+
+        let builder = match &self.broker {
+            Broker::Redis { .. } => {
+                let mut b = builder;
+                if let Some(d) = opts.redis_claim_min_idle() {
+                    b = b.redis_claim_min_idle(d.as_secs());
+                }
+                if let Some(d) = opts.redis_claim_interval() {
+                    b = b.redis_claim_interval(d.as_secs());
+                }
+                b
+            }
+            Broker::Amqp { .. } => builder,
+        };
+
+        builder.build()
+    }
+
+    /// Build the final catchup broker consumer:
+    /// `{consumer_id}.final-catchup-event` with the final catchup cancel
+    /// token and the same tuning as the catchup pipeline
+    /// ([`CatchupConsumerOptions`]).
+    fn broker_final_catchup_consumer(&self) -> Result<Consumer, BrokerError> {
+        let topic = self.final_catchup_consumer_topic();
+        let cancel = self.final_catchup_cancel.clone();
+        let opts = &self.catchup_options;
 
         let mut builder = self
             .broker
@@ -315,6 +496,44 @@ impl ListenerConsumer {
         Ok(())
     }
 
+    /// Publish filters registration command to watch contracts with
+    /// finalized-only delivery.
+    ///
+    /// Events are only delivered once their block is finalized, so the
+    /// consumer never sees reorged blocks.
+    pub async fn register_final_contracts(
+        &self,
+        contracts: &[Address],
+    ) -> Result<(), ConsumerError> {
+        if contracts.is_empty() {
+            return Err(ConsumerError::InvalidParameter(
+                "contracts array cannot be empty".into(),
+            ));
+        }
+        for contract in contracts {
+            self.register_filter(&self.create_final_filter_on_log_address(*contract))
+                .await?;
+        }
+        Ok(())
+    }
+
+    /// Publish filters removal command to unwatch finalized-only contracts.
+    pub async fn unregister_final_contracts(
+        &self,
+        contracts: &[Address],
+    ) -> Result<(), ConsumerError> {
+        if contracts.is_empty() {
+            return Err(ConsumerError::InvalidFilterCommand(
+                FilterCommandValidationError::MissingContractAddresses,
+            ));
+        }
+        for contract in contracts {
+            self.unregister_filter(&self.create_final_filter_on_log_address(*contract))
+                .await?;
+        }
+        Ok(())
+    }
+
     /// Ensure the consumer topology is set up in the broker.
     pub async fn ensure_consumer(&self) -> Result<(), BrokerError> {
         // TODO: start core listener
@@ -324,6 +543,35 @@ impl ListenerConsumer {
     /// Ensure the catchup consumer topology is set up in the broker.
     pub async fn ensure_catchup_consumer(&self) -> Result<(), BrokerError> {
         self.broker_catchup_consumer()?.ensure_topology().await
+    }
+
+    /// Ensure the finalized-only consumer topology is set up in the broker.
+    ///
+    /// On AMQP this declares the exchanges/queues/bindings up front. On Redis
+    /// it is a no-op — the stream is created when the
+    /// [`consume_final`](Self::consume_final) future starts. Until the queue
+    /// exists, events published by the listener for this consumer's FINAL
+    /// filters go through the listener's stale-publish handling (indefinite
+    /// retry by default), so start consuming promptly after registering
+    /// FINAL filters
+    /// ([`register_final_contracts`](Self::register_final_contracts) /
+    /// [`register_final_full_block`](Self::register_final_full_block)).
+    pub async fn ensure_final_consumer(&self) -> Result<(), BrokerError> {
+        self.broker_final_consumer()?.ensure_topology().await
+    }
+
+    /// Ensure the final catchup consumer topology is set up in the broker.
+    ///
+    /// On AMQP this declares the exchanges/queues/bindings up front. On Redis
+    /// it is a no-op — the stream is created when the
+    /// [`consume_final_catchup`](Self::consume_final_catchup) future starts,
+    /// so start consuming before (or promptly after)
+    /// [`request_final_catchup`](Self::request_final_catchup) so replayed
+    /// events have a queue to land on.
+    pub async fn ensure_final_catchup_consumer(&self) -> Result<(), BrokerError> {
+        self.broker_final_catchup_consumer()?
+            .ensure_topology()
+            .await
     }
 
     /// Start consuming messages with the provided handler function.
@@ -369,6 +617,73 @@ impl ListenerConsumer {
             let handler = ConsumerHandler {
                 call: Arc::new(f),
                 cancel: client.catchup_cancel.clone(),
+            };
+            consumer.run(handler).await?;
+            Ok(())
+        }
+    }
+
+    /// Start consuming finalized-only events with the provided handler
+    /// function.
+    ///
+    /// Subscribes to `{consumer_id}.final-event`, where the listener delivers
+    /// [`BlockPayload`]s with `flow == BlockFlow::Final` for the FINAL
+    /// watchers registered via
+    /// [`register_final_contracts`](Self::register_final_contracts) /
+    /// [`register_final_full_block`](Self::register_final_full_block).
+    /// Finalized blocks never reorg, so this stream carries no `Reorged`
+    /// replays.
+    ///
+    /// Same shape and ownership as [`consume`](Self::consume): the returned
+    /// future owns an internal clone of the client, so it can be spawned
+    /// without forcing the caller to clone `ListenerConsumer` first. Stop it
+    /// via [`cancel_final`](Self::cancel_final) (or the parent
+    /// [`cancel`](Self::cancel)).
+    pub fn consume_final<F, Fut>(
+        &self,
+        f: F,
+    ) -> impl Future<Output = Result<(), BrokerError>> + Send + 'static
+    where
+        F: Fn(BlockPayload, CancellationToken) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<AckDecision, HandlerError>> + Send + 'static,
+    {
+        let client = self.clone();
+        async move {
+            let consumer = client.broker_final_consumer()?;
+            let handler = ConsumerHandler {
+                call: Arc::new(f),
+                cancel: client.final_cancel.clone(),
+            };
+            consumer.run(handler).await?;
+            Ok(())
+        }
+    }
+
+    /// Start consuming final catchup events with the provided handler
+    /// function.
+    ///
+    /// Subscribes to `{consumer_id}.final-catchup-event`, where the listener
+    /// delivers [`BlockPayload`]s with `flow == BlockFlow::FinalCatchup` in
+    /// response to
+    /// [`request_final_catchup`](Self::request_final_catchup).
+    ///
+    /// Same shape and ownership as [`consume`](Self::consume). Stop it via
+    /// [`cancel_final_catchup`](Self::cancel_final_catchup) (or the parent
+    /// [`cancel`](Self::cancel)).
+    pub fn consume_final_catchup<F, Fut>(
+        &self,
+        f: F,
+    ) -> impl Future<Output = Result<(), BrokerError>> + Send + 'static
+    where
+        F: Fn(BlockPayload, CancellationToken) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<AckDecision, HandlerError>> + Send + 'static,
+    {
+        let client = self.clone();
+        async move {
+            let consumer = client.broker_final_catchup_consumer()?;
+            let handler = ConsumerHandler {
+                call: Arc::new(f),
+                cancel: client.final_catchup_cancel.clone(),
             };
             consumer.run(handler).await?;
             Ok(())
@@ -537,6 +852,41 @@ mod tests {
         );
     }
 
+    #[test]
+    fn final_consumer_topic_uses_final_event_routing() {
+        let consumer_id = "copro-1-host-eth";
+        let expected = format!("{consumer_id}.{}", routing::FINAL_EVENT);
+        assert_eq!(
+            routing::consumer_final_event_routing(consumer_id.into()),
+            expected,
+        );
+        assert_ne!(
+            routing::consumer_final_event_routing(consumer_id.into()),
+            routing::consumer_new_event_routing(consumer_id.into()),
+            "final and new-event routings must not collide",
+        );
+    }
+
+    #[test]
+    fn final_catchup_consumer_topic_uses_final_catchup_event_routing() {
+        let consumer_id = "copro-1-host-eth";
+        let expected = format!("{consumer_id}.{}", routing::FINAL_CATCHUP_EVENT);
+        assert_eq!(
+            routing::consumer_final_catchup_event_routing(consumer_id.into()),
+            expected,
+        );
+        assert_ne!(
+            routing::consumer_final_catchup_event_routing(consumer_id.into()),
+            routing::consumer_catchup_event_routing(consumer_id.into()),
+            "final-catchup and catchup-event routings must not collide",
+        );
+        assert_ne!(
+            routing::consumer_final_catchup_event_routing(consumer_id.into()),
+            routing::consumer_final_event_routing(consumer_id.into()),
+            "final-catchup and final-event routings must not collide",
+        );
+    }
+
     /// A full-block filter carries no address fields and validates as a
     /// wildcard subscription tied to this consumer's id. `build()` does not
     /// open a connection, so this runs without Docker.
@@ -553,7 +903,38 @@ mod tests {
         assert!(cmd.from.is_none());
         assert!(cmd.to.is_none());
         assert!(cmd.log_address.is_none());
+        assert!(cmd.filter_type.is_none(), "live filters carry no type");
         cmd.validate().expect("full-block filter must validate");
+    }
+
+    /// Final filter builders mark the command as finalized-only and keep the
+    /// same address semantics as their live counterparts. `build()` does not
+    /// open a connection, so this runs without Docker.
+    #[tokio::test]
+    async fn create_final_filters_carry_final_type_and_validate() {
+        let broker = Broker::amqp("amqp://user:pass@localhost:5672")
+            .build()
+            .await
+            .unwrap();
+        let consumer = ListenerConsumer::new(&broker, 1, "copro-1-host-eth");
+
+        let mut cmd = consumer.create_final_full_block_filter();
+        assert_eq!(cmd.consumer_id, "copro-1-host-eth");
+        assert!(cmd.from.is_none());
+        assert!(cmd.to.is_none());
+        assert!(cmd.log_address.is_none());
+        assert_eq!(cmd.filter_type, Some(FilterType::Final));
+        cmd.validate()
+            .expect("final full-block filter must validate");
+
+        let contract: Address = "0x00000000000000000000000000000000deadbeef"
+            .parse()
+            .unwrap();
+        let mut cmd = consumer.create_final_filter_on_log_address(contract);
+        assert_eq!(cmd.log_address, Some(contract));
+        assert_eq!(cmd.filter_type, Some(FilterType::Final));
+        cmd.validate()
+            .expect("final log-address filter must validate");
     }
 
     /// Locks in the parent/child cancellation contract that `ListenerConsumer`
@@ -564,16 +945,39 @@ mod tests {
         let parent = CancellationToken::new();
         let live = parent.child_token();
         let catchup = parent.child_token();
+        let final_flow = parent.child_token();
+        let final_catchup = parent.child_token();
 
         // Cancelling a child must not propagate to siblings or to the parent.
         live.cancel();
         assert!(live.is_cancelled());
         assert!(!catchup.is_cancelled(), "live cancel must not stop catchup");
+        assert!(
+            !final_flow.is_cancelled(),
+            "live cancel must not stop the final flow"
+        );
+        assert!(
+            !final_catchup.is_cancelled(),
+            "live cancel must not stop final catchup"
+        );
+        assert!(!parent.is_cancelled(), "child cancel must not stop parent");
+
+        // A final-flow child cancel is equally isolated.
+        final_flow.cancel();
+        assert!(final_flow.is_cancelled());
+        assert!(
+            !final_catchup.is_cancelled(),
+            "final cancel must not stop final catchup"
+        );
         assert!(!parent.is_cancelled(), "child cancel must not stop parent");
 
         // Cancelling the parent must cascade to every remaining child.
         parent.cancel();
         assert!(parent.is_cancelled());
         assert!(catchup.is_cancelled(), "parent cancel must stop catchup");
+        assert!(
+            final_catchup.is_cancelled(),
+            "parent cancel must stop final catchup"
+        );
     }
 }

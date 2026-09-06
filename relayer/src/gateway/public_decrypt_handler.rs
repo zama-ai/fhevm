@@ -25,6 +25,7 @@ use crate::{
         utils::{classify_revert_selector, extract_revert_selector},
     },
     logging::PublicDecryptStep,
+    metrics,
     orchestrator::{
         traits::{Event, EventHandler},
         ContentHasher, Orchestrator,
@@ -185,12 +186,17 @@ impl GatewayHandler {
                     "Request queued for readiness check"
                 );
             }
-            // Those errors are putting request in failure mode.
-            // This introduce a new termination error, which is failure for readiness,
-            // should NEVER happen with the bouncer.
-            // NOTE: time_out instead ?
+            // A full queue here ends the request in `failure` on its first attempt. The intake
+            // bouncer is what keeps that unreachable, so reaching it means the bouncer's
+            // capacity no longer matches the throttler's.
             Err(e) => match e {
                 EventProcessingError::QueueFull => {
+                    error!(
+                        alert = true,
+                        int_job_id = %task.job_id,
+                        queue = "public_decrypt_readiness",
+                        "Readiness queue full past the intake bouncer"
+                    );
                     return Err(EventProcessingError::ProtocolOverload(
                         "Relayer is full for public readiness check, retry later.".to_string(),
                     ));
@@ -277,14 +283,19 @@ impl GatewayHandler {
             "Request enqueued to tx throttler"
         );
 
-        // PUSH TO QUEUE
-        // Catch error from here and pass the request to failure.
-        // This case MUST never happen on this flow.
-        // The request should never be injected in the system, and bounced after the cache check if the queue is full.
+        // A full queue here ends the request in `failure` on its first attempt. The intake
+        // bouncer is what keeps that unreachable, so reaching it means the bouncer's capacity
+        // no longer matches the throttler's.
         match self.tx_throttler.push(task).await {
             Ok(()) => {}
             Err(e) => match e {
                 EventProcessingError::QueueFull => {
+                    error!(
+                        alert = true,
+                        int_job_id = %job_id,
+                        queue = "public_decrypt_tx",
+                        "Transaction queue full past the intake bouncer"
+                    );
                     return Err(EventProcessingError::ProtocolOverload(
                         "Relayer is full, retry later.".to_string(),
                     ));
@@ -497,7 +508,10 @@ impl GatewayHandler {
                         }
                         PublicDecryptCompletionOutcome::NotFound => {
                             if attempt == retry_config.max_retries {
-                                debug!(
+                                metrics::increment_unmatched_gateway_event(
+                                    "public_decryption_response",
+                                );
+                                info!(
                                     step = %PublicDecryptStep::GwEventRetrying,
                                     gw_reference_id = %public_decryption_id,
                                     max_retries = retry_config.max_retries,

@@ -8,9 +8,8 @@ use tokio::task::{AbortHandle, Id, JoinSet};
 use tokio::time::timeout;
 use tracing::{info, instrument, warn};
 
-/// The `JoinSet` plus each task's name and abort handle, so a task that outlasts the drain
-/// can be named in the log line that reports it. Kept behind one mutex so spawn and shutdown
-/// always see a consistent view of "which tasks exist".
+/// A `JoinSet` cannot name what it holds, so names and abort handles sit beside it - a task
+/// that outlasts the drain is worth naming in the log. One mutex covers both.
 #[derive(Default)]
 struct TrackedTasks {
     joinset: JoinSet<()>,
@@ -18,9 +17,8 @@ struct TrackedTasks {
 }
 
 impl TrackedTasks {
-    /// Wait up to `budget` for every tracked task to finish on its own (the caller must
-    /// already have made them observe cancellation), then abort whatever is still running.
-    /// Aborting is individual, so the log line names the tasks that did not stop.
+    /// Aborts one at a time rather than calling `shutdown()`, to keep the names of the tasks
+    /// that did not stop.
     async fn drain(&mut self, budget: Duration) {
         let mut pending: HashSet<Id> = self.tasks.keys().copied().collect();
         let total = pending.len();
@@ -31,8 +29,6 @@ impl TrackedTasks {
         }
 
         let start = Instant::now();
-        // Disjoint borrows: the join loop reaps from the joinset and removes the matching
-        // bookkeeping from `tasks`, so neither can be borrowed through `self`.
         let Self { joinset, tasks } = self;
         let drained = timeout(budget, async {
             while !pending.is_empty() {
@@ -75,8 +71,7 @@ impl TrackedTasks {
         }
     }
 
-    /// Safety net for the very end of shutdown: abort anything still tracked (the drain
-    /// above leaves nothing behind) and shut the joinset down.
+    /// The drain leaves nothing behind, so anything found here escaped every predicate.
     async fn finish(&mut self) {
         if !self.tasks.is_empty() {
             let stuck: Vec<&str> = self.tasks.values().map(|(name, _)| name.as_str()).collect();
@@ -150,24 +145,17 @@ impl TaskManager {
         Ok(())
     }
 
-    /// Mark the manager as shutting down so no further tasks can be spawned. Must be
-    /// called once, before the drain.
     pub(crate) async fn begin_shutdown(&self) {
-        // Hold the lock while flipping the flag so it can never race a concurrent
-        // spawn_task_and_wait_ready call (which checks the flag under the same lock).
+        // The guard is the point: a spawn reads this flag under the same lock.
         let _guard = self.tasks.lock().await;
         self.is_shutting_down.store(true, Ordering::Release);
     }
 
-    /// Wait up to `budget` for the tracked tasks to exit on their own; abort any still
-    /// running once the budget elapses.
     pub(crate) async fn drain_tasks(&self, budget: Duration) {
         let mut tasks = self.tasks.lock().await;
         tasks.drain(budget).await;
     }
 
-    /// Final safety net: abort anything left tracked and shut the joinset down. Called
-    /// once, after the drain.
     pub(crate) async fn finish_drain(&self) {
         let mut tasks = self.tasks.lock().await;
         tasks.finish().await;

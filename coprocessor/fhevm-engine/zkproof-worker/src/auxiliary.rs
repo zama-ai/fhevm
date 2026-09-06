@@ -1,7 +1,7 @@
 use fhevm_engine_common::chain_id::ChainId;
-use std::str::FromStr;
+use fhevm_engine_common::zk_aux::{assemble_aux_data, ZK_AUX_DATA_SIZE};
 
-const SIZE: usize = 92;
+const SIZE: usize = ZK_AUX_DATA_SIZE;
 
 /// ZkData is the data that is used to generate the ZKPs
 #[derive(Debug, Clone)]
@@ -19,21 +19,12 @@ impl ZkData {
     /// `contract_addr || user_addr  || acl_contract_addr || chain_id` i.e. 92
     /// bytes since chain ID is encoded as a 32 byte big endian integer
     pub fn assemble(&self) -> anyhow::Result<[u8; SIZE]> {
-        let contract_bytes =
-            alloy_primitives::Address::from_str(&self.contract_address)?.into_array();
-        let user_bytes = alloy_primitives::Address::from_str(&self.user_address)?.into_array();
-        let acl_bytes =
-            alloy_primitives::Address::from_str(&self.acl_contract_address)?.into_array();
-        let chain_id_bytes: [u8; 32] = alloy_primitives::U256::from(self.chain_id.as_u64())
-            .to_owned()
-            .to_be_bytes();
-
-        // Copy contract address into the first 20 bytes
-        let front: Vec<u8> = [contract_bytes, user_bytes, acl_bytes].concat();
-        let mut data = [0_u8; SIZE];
-        data[..60].copy_from_slice(front.as_slice());
-        data[60..].copy_from_slice(&chain_id_bytes);
-        Ok(data)
+        assemble_aux_data(
+            &self.contract_address,
+            &self.user_address,
+            &self.acl_contract_address,
+            self.chain_id,
+        )
     }
 }
 

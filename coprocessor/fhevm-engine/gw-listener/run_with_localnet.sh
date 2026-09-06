@@ -29,7 +29,10 @@ echo "DATABASE_URL=$DATABASE_URL"
 echo "METRICS_ADDR=$METRICS_ADDR"
 echo "HEALTH_CHECK_PORT=$HEALTH_CHECK_PORT"
 
-cargo run --jobs 32 --release $FEATURES -- \
+# stack-version-override lets BUILD_STACK_VERSION from the environment override
+# the hard-coded stack version baked into the binary (see fhevm-engine-common).
+cargo run --jobs 32 --release \
+--features fhevm-engine-common/stack-version-override $FEATURES -- \
 --database-pool-size=16 \
 --verify-proof-req-database-channel="event_zkpok_new_work" \
 --gw-url=${GATEWAY_WS_URL} \

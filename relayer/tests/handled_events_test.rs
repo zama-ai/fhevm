@@ -18,7 +18,7 @@ use alloy::primitives::{FixedBytes, TxHash};
 use alloy::rpc::types::Log;
 use anyhow::Context;
 use async_trait::async_trait;
-use fhevm_relayer::config::settings::{DispatcherLockConfig, Settings};
+use fhevm_relayer::config::settings::Settings;
 use fhevm_relayer::core::event::{GatewayChainEventData, GatewayChainEventId, RelayerEvent};
 use fhevm_relayer::gateway::handled_events::{
     EventKey, HandledEvents, ObservedEvent, RangeObserved,
@@ -95,8 +95,7 @@ impl Harness {
         // matching production wiring. Left running for the test process's lifetime; nextest
         // gives each test its own process, so there is nothing to release.
         let dispatcher_lock =
-            DispatcherLock::connect(&DispatcherLockConfig::default(), &storage.sql_database_url)
-                .await?;
+            DispatcherLock::connect(&settings.dispatcher_lock, &storage.sql_database_url).await?;
         {
             let lock = dispatcher_lock.clone();
             tokio::spawn(async move { lock.run(CancellationToken::new()).await });

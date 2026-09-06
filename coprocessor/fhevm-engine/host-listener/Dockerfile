@@ -1,25 +1,6 @@
 # RUST_IMAGE_VERSION is injected by CI from rust-toolchain.toml (see coprocessor-docker-build.yml)
 ARG RUST_IMAGE_VERSION
 
-# Stage 0: Build contracts
-FROM ghcr.io/zama-ai/fhevm/gci/nodejs:22.14.0-alpine3.21 AS contract_builder
-
-USER root
-
-WORKDIR /app
-
-# Copy root lockfile for workspace resolution
-COPY package.json package-lock.json ./
-
-COPY host-contracts ./host-contracts
-
-# Compiled host-contracts for listeners
-RUN cp host-contracts/.env.example host-contracts/.env && \
-    npm ci --workspace=host-contracts --include-workspace-root=false && \
-    cd host-contracts && \
-    HARDHAT_NETWORK=hardhat npm run deploy:emptyProxies && \
-    npx hardhat compile
-
 # Stage 1: Build Host Listener
 FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:${RUST_IMAGE_VERSION} AS builder
 
@@ -55,9 +36,8 @@ WORKDIR /app
 COPY listener ./listener
 COPY coprocessor/fhevm-engine ./coprocessor/fhevm-engine
 COPY coprocessor/proto ./coprocessor/proto
-COPY host-contracts/contracts/ ./host-contracts/contracts/
-COPY --from=contract_builder /app/host-contracts/artifacts/contracts /app/host-contracts/artifacts/contracts
 COPY gateway-contracts/rust_bindings ./gateway-contracts/rust_bindings
+COPY host-contracts/rust_bindings ./host-contracts/rust_bindings
 COPY shared/ciphertext-attestation ./shared/ciphertext-attestation
 COPY .git/HEAD ./coprocessor/fhevm-engine/BUILD_ID
 

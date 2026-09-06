@@ -261,14 +261,28 @@ impl<'a> Scheduler<'a> {
     }
 }
 
+/// Re-randomizes an operation's encrypted operands (RFC 019). The seed
+/// transcript's function description binds the operation's OUTPUT HANDLE
+/// ahead of its opcode: the handle's preimage commits to the opcode, every
+/// operand handle and each operand's origin, so it is the collision-resistant
+/// commitment to the function being evaluated. The opcode is kept alongside
+/// it, redundantly, so the function binding stays visible in the transcript.
+///
+/// Binding the output handle rather than any chain coordinate is what keeps
+/// dynamic single assignment: two sites minting the same handle — a same-block
+/// alias, a replay on a competing fork — derive the same transcript from the
+/// same operands and assign that handle the same bytes, while different
+/// computations mint different handles and randomize independently.
 fn re_randomise_operation_inputs(
     cts: &mut [SupportedFheCiphertexts],
+    result_handle: &[u8],
     opcode: i32,
     cpk: &tfhe::CompactPublicKey,
 ) -> Result<()> {
+    let opcode_bytes = opcode.to_be_bytes();
     let mut re_rand_context = ReRandomizationContext::new(
         OPERATION_RERANDOMISATION_DOMAIN_SEPARATOR,
-        [opcode.to_be_bytes().as_slice()],
+        [result_handle, opcode_bytes.as_slice()],
         COMPACT_PUBLIC_ENCRYPTION_DOMAIN_SEPARATOR,
     );
     for ct in cts.iter() {
@@ -532,7 +546,9 @@ fn try_execute_node(
     {
         let _guard = tracing::info_span!("rerandomise_op_inputs").entered();
         let started_at = std::time::Instant::now();
-        if let Err(e) = re_randomise_operation_inputs(&mut cts, node.opcode, cpk) {
+        if let Err(e) =
+            re_randomise_operation_inputs(&mut cts, &node.result_handle, node.opcode, cpk)
+        {
             error!(target: "scheduler", { handle = ?hex::encode(&node.result_handle), error = ?e },
                    "Error while re-randomising operation inputs");
             telemetry::set_current_span_error(&e);

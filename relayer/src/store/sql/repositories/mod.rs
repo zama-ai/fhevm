@@ -4,6 +4,7 @@ pub mod expiry_repo;
 pub mod health;
 pub mod input_proof_repo;
 pub mod public_decrypt_repo;
+pub mod queue_depth;
 pub mod timeout_repo;
 pub mod user_decrypt_repo;
 pub mod utils;
@@ -92,8 +93,7 @@ impl Repositories {
 
     /// Register background workers with the orchestrator for proper lifecycle management.
     /// The timeout worker always starts; the expiry worker only starts when enabled.
-    /// `shutdown` stops both workers (and their panic-restart supervisor loops) along with
-    /// the rest of the work when shutdown starts.
+    /// `shutdown` stops the workers and their panic-restart supervisor loops.
     pub async fn register_background_workers(
         &self,
         orchestrator: &Arc<Orchestrator>,

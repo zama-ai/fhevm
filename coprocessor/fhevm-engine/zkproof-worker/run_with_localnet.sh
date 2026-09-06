@@ -20,7 +20,9 @@ export TENANT_API_KEY
 # ------------------------------------------------------------------------------
 
 HEALTH_CHECK_PORT=10002
-FEATURES=()
+# Always on: lets BUILD_STACK_VERSION from the environment override the
+# hard-coded stack version baked into the binary (see fhevm-engine-common).
+FEATURES=(fhevm-engine-common/stack-version-override)
 
 # ------------------------------------------------------------------------------
 # CLI parsing

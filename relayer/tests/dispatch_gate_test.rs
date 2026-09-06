@@ -15,7 +15,7 @@ mod common;
 use common::flows::public_decrypt;
 use common::utils::{fast_timing, row_state, TestSetup};
 use fhevm_relayer::http::endpoints::v2::types::error::ApiResponseStatus;
-use fhevm_relayer::orchestrator::DISPATCHER_LOCK_CLASSID;
+use fhevm_relayer::orchestrator::{DISPATCHER_LOCK_CLASSID, UNCLAIMED_EPOCH};
 use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
 use std::time::Duration;
@@ -58,7 +58,7 @@ async fn hold_lock(database_url: &str, objid: i32) -> PgPool {
 /// request and persists it, drives nothing at all, and once it becomes the dispatcher its sweep
 /// picks that request up and carries it to completion.
 ///
-/// The unowned row is what connects the two halves: intake stamps `owner_epoch = NULL` because
+/// The unowned row is what connects the two halves: intake leaves `owner_epoch` unclaimed because
 /// the gate was closed, and `NULL` is exactly what the sweep claims on sight.
 #[tokio::test]
 async fn test_a_standby_accepts_without_driving_then_the_sweep_drives_it_after_handover() {
@@ -101,18 +101,15 @@ async fn test_a_standby_accepts_without_driving_then_the_sweep_drives_it_after_h
     // several sweep ticks to have run and declined to claim.
     tokio::time::sleep(Duration::from_secs(3)).await;
 
-    let (status, owner_epoch, attempts) = row_state(&db, &ext_job_id).await;
+    let (status, owner_epoch) = row_state(&db, &ext_job_id).await;
     assert_eq!(
         status, "queued",
         "a pod that is not the dispatcher must not drive the request it accepted"
     );
     assert_eq!(
-        owner_epoch, None,
-        "intake must leave the row unowned, which is what makes it claimable on sight"
-    );
-    assert_eq!(
-        attempts, 0,
-        "the sweep must not claim anything while the gate is closed"
+        owner_epoch, UNCLAIMED_EPOCH,
+        "intake must leave the row unowned, and a sweep claim behind a closed gate would have \
+         stamped an epoch over it"
     );
 
     // Hand the lock over. Closing the peer's session releases it exactly as a dead pod would.
@@ -132,15 +129,10 @@ async fn test_a_standby_accepts_without_driving_then_the_sweep_drives_it_after_h
         "the decryption result must be stored"
     );
 
-    let (_, owner_epoch, attempts) = row_state(&db, &ext_job_id).await;
+    let (_, owner_epoch) = row_state(&db, &ext_job_id).await;
     assert!(
-        owner_epoch.is_some(),
+        owner_epoch > UNCLAIMED_EPOCH,
         "the claim must stamp the epoch it dispatched under"
-    );
-    assert_eq!(
-        attempts, 1,
-        "one claim, not a re-dispatch per tick: the row is under the sweep's own epoch after \
-         the first claim, and its own epoch is what the claim never matches"
     );
 
     setup.shutdown().await;

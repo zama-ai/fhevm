@@ -31,4 +31,7 @@ pub struct InputProofResponseModel {
     pub err_reason: Option<String>,
     pub accepted: Option<bool>,
     pub updated_at: DateTime<Utc>,
+    /// Requests ahead of this one in the queue its status names. Zero-based, matching the
+    /// in-memory position it replaces. Zero once the request leaves the queues.
+    pub queue_position: i64,
 }

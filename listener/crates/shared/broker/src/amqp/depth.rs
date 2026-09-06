@@ -56,7 +56,7 @@ impl AmqpQueueInspector {
                 } else {
                     Err(ConsumerError::QueueDeclaration {
                         queue: queue.to_string(),
-                        source: e,
+                        source: Box::new(e),
                     })
                 }
             }
@@ -85,7 +85,7 @@ impl AmqpQueueInspector {
                 } else {
                     Err(ConsumerError::QueueDeclaration {
                         queue: queue.to_string(),
-                        source: e,
+                        source: Box::new(e),
                     })
                 }
             }
