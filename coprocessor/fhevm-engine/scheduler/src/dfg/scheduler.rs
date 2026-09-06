@@ -648,12 +648,17 @@ fn execute_partition(
                     // which the upload path ignores by design. Both rows sat
                     // pending forever, re-executed at poll cadence.
                     //
-                    // A foreign row stays excluded: it is loaded as a
-                    // recompute-only producer for this chain and its verdicts
-                    // belong to the chain that owns it.
-                    if node.is_owned {
-                        reported.push((node.result_handle.clone(), tid.clone(), Err(e)));
-                    }
+                    // Foreign rows are reported too. A foreign producer is
+                    // loaded as a recompute-only input for an OWNED consumer,
+                    // and when it fails here the consumer comes back with an
+                    // unresolved local dependence that upload leaves unstamped.
+                    // Dropping the producer's error left that consumer with no
+                    // verdict anywhere -- the owning chain never sees this
+                    // consumer -- so the transaction re-executed forever. The
+                    // worker routes a foreign row's error to the owned allowed
+                    // dependents it recorded before scheduling and never
+                    // touches the foreign row itself (`is_foreign_producer`).
+                    reported.push((node.result_handle.clone(), tid.clone(), Err(e)));
                 }
             }
         }

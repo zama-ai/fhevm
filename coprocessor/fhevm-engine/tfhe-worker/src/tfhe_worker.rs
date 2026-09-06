@@ -969,6 +969,170 @@ mod operand_boundary_mask_tests {
         Ok(())
     }
 
+    /// A FOREIGN producer's pre-result failure must land on the owned allowed
+    /// consumer it blocks, and must not touch the foreign row.
+    ///
+    /// Transaction T is split across two chains (the shape divergent listener
+    /// caches produce): producer P is filed under a chain another worker
+    /// holds, its consumer C under ours. P is loaded as a recompute-only input
+    /// for C; its boundary operand's stored ciphertext is garbage, so P fails
+    /// at decompression -- an error raised BEFORE any operation result. That
+    /// error used to be dropped for non-owned nodes, C came back as an
+    /// unresolved local dependence that upload leaves unstamped, and T
+    /// re-executed at poll cadence forever: the owning chain never runs C, so
+    /// nothing could ever record a verdict. Now the error is routed to C
+    /// through the pre-schedule snapshot, as a retryable stamp, and P's row
+    /// -- another chain's -- stays untouched.
+    #[tokio::test]
+    async fn foreign_producer_failure_lands_on_its_owned_consumer(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let db = setup_test_db(ImportMode::WithKeysNoSns).await?;
+        let pool = PgPoolOptions::new()
+            .max_connections(4)
+            .connect(db.db_url())
+            .await?;
+
+        let own_chain = vec![0x71_u8; 32];
+        let foreign_chain = vec![0x72_u8; 32];
+        sqlx::query(
+            "INSERT INTO dependence_chain (dependence_chain_id, status, last_updated_at)
+             VALUES ($1, 'updated', NOW() - INTERVAL '10 seconds')",
+        )
+        .bind(&own_chain)
+        .execute(&pool)
+        .await?;
+        // Held by someone else for the next hour: not acquirable, so every
+        // row filed under it is FOREIGN to this worker.
+        sqlx::query(
+            "INSERT INTO dependence_chain
+                 (dependence_chain_id, status, worker_id, lock_acquired_at, lock_expires_at,
+                  last_updated_at)
+             VALUES ($1, 'processing', $2, NOW(), NOW() + INTERVAL '1 hour',
+                     NOW() - INTERVAL '20 seconds')",
+        )
+        .bind(&foreign_chain)
+        .bind(Uuid::new_v4())
+        .execute(&pool)
+        .await?;
+
+        let boundary = handle(0x80);
+        let producer = handle(0x81);
+        let consumer = handle(0x82);
+        let transaction_id = [0xA7_u8; 32];
+        // The boundary operand exists but cannot be decompressed.
+        sqlx::query(
+            "INSERT INTO ciphertexts (handle, ciphertext, ciphertext_version, ciphertext_type)
+             VALUES ($1, $2, 0, 5)",
+        )
+        .bind(&boundary)
+        .bind(vec![0xDE_u8, 0xAD, 0xBE, 0xEF])
+        .execute(&pool)
+        .await?;
+        // P = FheNot(boundary): its operand crosses a transaction boundary,
+        // so bit 0 is SET.
+        seed_computation(
+            &pool,
+            &producer,
+            vec![boundary.clone()],
+            mask_with_bits(&[0]),
+            Some(&foreign_chain),
+            &transaction_id,
+            20,
+        )
+        .await;
+        // C = FheNot(P): P is minted in T, so bit 0 is CLEAR -- a raw forward.
+        seed_computation(
+            &pool,
+            &consumer,
+            vec![producer.clone()],
+            mask_with_bits(&[]),
+            Some(&own_chain),
+            &transaction_id,
+            19,
+        )
+        .await;
+
+        let args = test_args("10", db.db_url());
+        let health_check = crate::health_check::HealthCheck::new(
+            db.db_url().to_owned().into(),
+            Duration::from_secs(300),
+        );
+        let mut locks = dependence_chain::LockMngr::new_with_conf(
+            Uuid::new_v4(),
+            pool.clone(),
+            30,
+            false,
+            None,
+            None,
+            None,
+            3,
+        );
+        let mut no_progress_cycles = 0;
+        let mut cooldown = DeferredTransactionCooldown::new();
+
+        let mut trx = pool.begin().await?;
+        let (mut nodes, _, more) = query_for_work(
+            &args,
+            &health_check,
+            &mut trx,
+            &mut locks,
+            &mut no_progress_cycles,
+            &mut cooldown,
+            false,
+        )
+        .await?;
+        assert!(more && !nodes.is_empty(), "T is selected through our chain");
+        assert_eq!(
+            locks.get_current_lock_ids(),
+            vec![own_chain.clone()],
+            "only our chain is held; P is foreign"
+        );
+
+        let db_key_cache = DbKeyCache::new_from_env(args.key_cache_size)
+            .map_err(|e| CoprocessorError::Other(e.into()))?;
+        let mut tx_graph = build_transaction_graph_and_execute(
+            &mut nodes,
+            db_key_cache,
+            &health_check,
+            &mut trx,
+            &locks,
+            false,
+            Duration::from_secs(5),
+            1,
+        )
+        .await?;
+        let (progressed, _) =
+            upload_transaction_graph_results(&mut tx_graph, &mut trx, &mut locks).await?;
+        trx.commit().await?;
+        assert!(progressed, "a fresh verdict on the consumer is progress");
+
+        let (consumer_error, consumer_message): (bool, Option<String>) = sqlx::query_as(
+            "SELECT is_error, error_message FROM computations WHERE output_handle = $1",
+        )
+        .bind(&consumer)
+        .fetch_one(&pool)
+        .await?;
+        assert!(
+            consumer_error,
+            "the owned consumer carries the foreign producer's verdict"
+        );
+        let message = consumer_message.unwrap_or_default();
+        assert!(
+            message.contains(RETRYABLE_STAMP_MARKER) && message.contains("DecompressionError"),
+            "a decompression failure is a retryable verdict: {message}"
+        );
+        let producer_error: bool =
+            sqlx::query_scalar("SELECT is_error FROM computations WHERE output_handle = $1")
+                .bind(&producer)
+                .fetch_one(&pool)
+                .await?;
+        assert!(
+            !producer_error,
+            "the foreign row belongs to another chain and is never stamped from here"
+        );
+        Ok(())
+    }
+
     /// A drain-only window (every row terminally stamped, nothing deferred)
     /// must NOT rotate: the chain stays owned, the next cycle finds the
     /// window empty and retires it through the normal no-work path.
@@ -3992,6 +4156,20 @@ async fn upload_transaction_graph_results<'a>(
                 // completed). Answered from the snapshot taken before
                 // `schedule()`: the inner graphs are gone by now.
                 let blocked = tx_graph.allowed_dependents(&result.transaction_id, &result.handle);
+                if tx_graph.is_foreign_producer(&result.transaction_id, &result.handle) {
+                    // A foreign row belongs to another chain: never stamp it
+                    // from here. What this failure blocks is OUR owned allowed
+                    // consumers, which have nowhere else to receive a verdict
+                    // -- the owning chain never executes them.
+                    res |= propagate_error_to_dependents(
+                        &blocked,
+                        &result.transaction_id,
+                        &stamp_text(&*cerr, retryable),
+                        trx,
+                    )
+                    .await?;
+                    continue;
+                }
                 res |= set_computation_error(
                     &result.handle,
                     &result.transaction_id,
@@ -4347,6 +4525,17 @@ async fn propagate_error_to_dependents<'a>(
     Ok(transitioned)
 }
 
+/// The text a verdict is stamped with. The retryable marker is applied HERE
+/// rather than being baked into any error's Display, so the retryable class is
+/// a property of the stamping decision and lives in exactly one place.
+fn stamp_text(cerr: &(dyn std::error::Error + Send + Sync), retryable: bool) -> String {
+    if retryable {
+        format!("{RETRYABLE_STAMP_MARKER} {cerr}")
+    } else {
+        cerr.to_string()
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn set_computation_error<'a>(
     output_handle: &[u8],
@@ -4359,14 +4548,7 @@ async fn set_computation_error<'a>(
     trx: &mut sqlx::Transaction<'a, Postgres>,
     deps_mngr: &mut dependence_chain::LockMngr,
 ) -> Result<bool, CoprocessorError> {
-    // The marker is applied HERE rather than being baked into any error's
-    // Display, so the retryable class is a property of the stamping decision
-    // and lives in exactly one place.
-    let err_string = if retryable {
-        format!("{RETRYABLE_STAMP_MARKER} {cerr}")
-    } else {
-        cerr.to_string()
-    };
+    let err_string = stamp_text(cerr, retryable);
 
     // A completed row's ciphertext exists — a cascaded error (a poisoned
     // transaction stamps EVERY op of the node, mirroring set_uncomputable's

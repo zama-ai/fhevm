@@ -70,8 +70,8 @@ impl Default for DFGOp {
 }
 pub type ComponentEdge = ();
 /// A transaction's inner dataflow graph reduced to `(result handle,
-/// is_allowed)` per node; see `DFComponentGraph::blocked_dependents`.
-type ReducedGraph = Dag<(Handle, bool), OpEdge>;
+/// is_allowed, is_owned)` per node; see `DFComponentGraph::blocked_dependents`.
+type ReducedGraph = Dag<(Handle, bool, bool), OpEdge>;
 #[derive(Default)]
 pub struct ComponentNode {
     // Inner dataflow graph
@@ -338,7 +338,7 @@ pub struct DFComponentGraph {
     pub results: Vec<DFGTxResult>,
     deferred_dependences: Vec<(NodeIndex, NodeIndex, Handle)>,
     /// Per transaction, the inner dataflow graph reduced to
-    /// `(result handle, is_allowed)` per node. Taken by
+    /// `(result handle, is_allowed, is_owned)` per node. Taken by
     /// [`Self::snapshot_blocked_dependents`] BEFORE scheduling, because the
     /// scheduler moves each transaction's inner graph out of its node at
     /// dispatch (`std::mem::take`) and never puts it back, so after
@@ -672,9 +672,34 @@ impl DFComponentGraph {
 
     fn reduce(graph: &DFGraph) -> ReducedGraph {
         graph.graph.map(
-            |_, node| (node.result_handle.clone(), node.is_allowed),
+            |_, node| (node.result_handle.clone(), node.is_allowed, node.is_owned),
             |_, edge| *edge,
         )
+    }
+
+    /// Whether `handle` in `transaction_id` is a FOREIGN producer: a row of
+    /// another chain loaded as a recompute-only input for an owned consumer.
+    /// Its verdicts belong to the chain that owns it, so the worker must not
+    /// stamp its row and instead records a failure on the owned allowed
+    /// dependents ([`Self::allowed_dependents`]). Answered from the snapshot
+    /// taken before scheduling, or the live graph before that; unknown nodes
+    /// are not foreign.
+    pub fn is_foreign_producer(&self, transaction_id: &[u8], handle: &[u8]) -> bool {
+        let owned = |reduced: &ReducedGraph| {
+            reduced
+                .node_references()
+                .find(|(_, (result_handle, _, _))| result_handle.as_slice() == handle)
+                .map(|(_, (_, _, is_owned))| *is_owned)
+        };
+        let is_owned = if let Some(snapshot) = &self.blocked_dependents {
+            snapshot.get(transaction_id).and_then(owned)
+        } else {
+            self.graph
+                .node_references()
+                .find(|(_, tx)| tx.transaction_id.as_slice() == transaction_id)
+                .and_then(|(_, tx)| owned(&Self::reduce(&tx.graph)))
+        };
+        matches!(is_owned, Some(false))
     }
 
     /// The allowed handles transitively downstream of `handle` in a reduced
@@ -682,7 +707,7 @@ impl DFComponentGraph {
     fn allowed_dependents_in(reduced: &ReducedGraph, handle: &[u8]) -> Vec<Handle> {
         let Some(start) = reduced
             .node_references()
-            .find(|(_, (result_handle, _))| result_handle.as_slice() == handle)
+            .find(|(_, (result_handle, _, _))| result_handle.as_slice() == handle)
             .map(|(index, _)| index)
         else {
             return vec![];
@@ -696,7 +721,7 @@ impl DFComponentGraph {
                 if !seen.insert(next) {
                     continue;
                 }
-                if let Some((result_handle, is_allowed)) = reduced.node_weight(next) {
+                if let Some((result_handle, is_allowed, _)) = reduced.node_weight(next) {
                     if *is_allowed {
                         out.push(result_handle.clone());
                     }
