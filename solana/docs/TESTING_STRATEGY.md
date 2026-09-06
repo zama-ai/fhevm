@@ -4,101 +4,111 @@ How the MMR-ACL rewrite and the confidential-token flows are tested, layer by la
 deliberately deferred. Companion to [`MMR_ACL_MVP.md`](./MMR_ACL_MVP.md) (the model) and
 [`DESIGN_DECISIONS.md`](./DESIGN_DECISIONS.md) (the rationale).
 
-## The three authorization paths (the core invariant surface)
+## The two leaves (the core invariant surface)
 
-Every decrypt authorizes through exactly one of these, and each has dedicated coverage:
+Every decrypt authorizes through exactly one leaf proof against the account's confirmed peaks, and
+each has dedicated coverage:
 
-| Path | On-chain check | Where tested |
+| Leaf | Check | Where tested |
 |---|---|---|
-| **current** | `handle == current_handle && subject ∈ subjects` (no proof) | `zama-solana-acl` unit (`authorize_current`); `host_mollusk` current-decrypt cases |
-| **historical** | MMR proof of `HistoricalAccessLeaf(handle, subject)` vs live peaks | `zama-solana-acl` (`authorize_historical`, `mmr_verify`); `host_mollusk` update-then-prove; `solana-proof-service` reconstruction |
-| **public** | MMR proof of `PublicDecryptLeaf(handle)` vs live peaks | `zama-solana-acl` (`authorize_public`); `token_mollusk` burn→redeem and `disclose_secp` after-update; `host_mollusk` `verify_public_decrypt` negatives (DD-040) |
+| **allow** (`HistoricalAccessLeaf(handle, key)`) | MMR proof vs live peaks; the current handle and a replaced one alike | `zama-solana-acl` unit (`authorize_historical`, `mmr_verify`); `host_mollusk` write-then-prove; `kms-worker` `solana_` (`handle_binding`, `proof`); host-listener `solana_leaves_tests` |
+| **public** (`PublicDecryptLeaf(handle)`) | MMR proof vs live peaks, exact handle | `zama-solana-acl` (`authorize_public`); `token_mollusk` burn→redeem and `disclose_secp` after-update; `host_mollusk` `verify_public_decrypt` negatives (DD-040) |
 
-Negative coverage for each: wrong subject, wrong handle, foreign-encrypted value account proof, invalid/forged proof —
-all fail closed (see the `*_rejects_*` mollusk tests).
+Negative coverage for each: wrong key, wrong handle, foreign-encrypted value account proof,
+invalid/forged proof, a record that is behind — all fail closed (see the `*_rejects_*` mollusk tests
+and the connector's `ProofRecordBehind` / `NoLeaf` classification).
 
 ## Test layers
 
 1. **Shared-crate unit** (`solana/crates/zama-solana-acl`): MMR append/verify (incl. peak-cap
-   `append_at_peak_cap_fails_without_mutating`), domain-separated leaf commitments, the three
-   `authorize_*` functions, encrypted value account reconstruction, and the `resource_bounds_match_liveness_doc`
-   doc-sync guard (keeps `MMR_ACL_MVP.md`'s liveness numbers honest).
+   `append_at_peak_cap_fails_without_mutating`), prefix-separated leaf commitments, the two
+   `authorize_*` functions, encrypted value account reconstruction, the seed list, and the
+   `resource_bounds_match_liveness_doc` doc-sync guard (keeps `MMR_ACL_MVP.md`'s liveness numbers
+   honest).
 2. **On-chain integration — Mollusk** (`solana/runtime-tests/tests/{host,token}_mollusk.rs`): runs the
-   **real compiled `.so`** against Mollusk. Covers all three auth paths, the
-   full token flows (wrap / transfer / burn→redeem / disclose), the produced-public lifecycle execution
-   (zero/one/multiple/max-size/fail-closed), the sequential pending-burn redeem/cancel act-once
-   lifecycle, and handle update. Token disclosure is now the thin `disclose_secp`
-   consumer of the host `verify_public_decrypt` verifier (DD-040); `token_mollusk` covers its happy path
-   (amount + balance), after-update consume, idempotency / no-replay-marker, foreign-proof
-   rejection surfaced from the host, and mint-domain binding. The verifier's own negatives (destroyed
-   context, sub-threshold cert, handle/proof mismatch, non-canonical context, survives-update) live
-   in `host_mollusk` (#3220). There are no more `request_disclose_*` / `disclose_*_secp` witness-bound
-   disclosure tests. The token and batcher Mollusk suites explicitly set `compute_unit_limit = 1_400_000`;
+   **real compiled `.so`** against Mollusk. Covers both leaf kinds, program verification of the
+   output authority (`EncryptedValueAuthorityNotProgramPda`), the deny list by application, the rand
+   nonce, the full token flows (wrap / transfer / burn→redeem / disclose), the produced-public
+   lifecycle event (zero/one/multiple/max-size), the sequential pending-burn redeem/cancel act-once
+   lifecycle, and handle update. Token disclosure is the thin `disclose_secp` consumer of the host
+   `verify_public_decrypt` verifier (DD-040); `token_mollusk` covers its happy path (amount +
+   balance), after-update consume, idempotency / no-replay-marker, foreign-proof rejection surfaced
+   from the host, and scope binding. The verifier's own negatives (destroyed context, sub-threshold
+   cert, handle/proof mismatch, non-canonical context, survives-update) live in `host_mollusk`
+   (#3220). The token and batcher Mollusk suites explicitly set `compute_unit_limit = 1_400_000`;
    the host suite uses Mollusk's default per-instruction budget (stricter than 1.4M). In all cases,
-   every passing test is an implicit CU-fits assertion at the configured budget.
+   every passing test is an implicit CU-fits assertion at the configured budget. The specimen
+   suites (`counter_mollusk`, `dep_chain_mollusk`) prove the kit onboarding and the load shape.
 3. **Handle-derivation / lifecycle transport** (`zama-host` lib unit): the maximum
     `MAX_FHE_EXECUTION_STEPS`-record execution's exact CPI envelope — 32 records, 2,133 bytes
     (21 bytes of framing + 66 per record), asserted against DD-038's 10,240-byte limit in
     `event_transport.rs` — and signer/readonly event-authority metadata, plus handle-derivation
     determinism.
 4. **Off-chain reconstruction — host-listener** (`coprocessor/fhevm-engine/host-listener`, feature
-    `solana-grpc`, which includes reconstruction): reconstructs MMR leaves from instruction data +
-    sysvar-streamed block entropy (Yellowstone gRPC), with no dependence on emitted events. Derives
-    update/produced-public handles directly; fails closed on incomplete executions.
-5. **Off-chain proof service — solana-proof-service** (`solana-proof-service/`): ingest (atomic, gap-free,
-   fail-closed), decode (incl. `emit_cpi!` op-event resolution for created-public handles), replay, and
-   `build_verified_proof` cross-check against confirmed peaks (a wrong record surfaces as
-   `PeaksDiverged`/`CorruptCache`, never a bad proof).
-6. **ABI / IDL golden** (`scripts/check-zama-host-idl.sh`, `execution_contracts.rs`): vendored IDLs and the
-   Borsh golden manifest must match the freshly-built Anchor IDLs; EVENT_VERSION consistency across
-   zama-host / confidential-token / host-listener is asserted (a mismatch would silently drop events).
+    `solana-reconstruct`): reconstructs compute rows and MMR leaves from instruction data +
+    sysvar-streamed block entropy (Yellowstone gRPC), with no dependence on emitted events for the
+    leaves. Derives update/produced-public handles directly; fails closed on incomplete executions.
+    `tests/solana_leaves_tests.rs` (real Postgres) round-trips the leaf record through the
+    migration, moves the checkpoint, and answers `POST /v1/solana/leaf-proofs` with proofs that
+    verify against the recorded peaks; a test keeps the committed OpenAPI document in sync with the
+    routes.
+5. **KMS connector** (`kms-connector/crates/kms-worker`, `solana_` tests): the pipeline as pure
+   functions of `(typed request, snapshot, proofs, deployment, now)` — envelope signature, window,
+   deployment identity, the two-read snapshot ordering, pause, watermark, scope (`(program, scope)`
+   against `allowedScopes`), the leaf-proof read with its fan-out merge and one retry, handle
+   binding, delegation freshness — plus the committed byte vectors under
+   `solana/test-fixtures/` that the TypeScript SDK asserts against too.
+6. **ABI / IDL golden** (`scripts/check-zama-host-idl.sh`, `execution_contracts.rs`,
+   `scripts/check-pda-seeds.py`): vendored IDLs and the Borsh golden manifest must match the
+   freshly-built Anchor IDLs; EVENT_VERSION consistency across zama-host / confidential-token /
+   host-listener is asserted (a mismatch would silently drop events); every handwritten TypeScript
+   PDA seed matches its Rust counterpart.
 7. **End-to-end** (`.github/workflows/solana-e2e.yml`, the bun:test scenario suite under
-   `test-suite/fhevm/e2e/scenarios/`): the Yellowstone-only
-   path feeds ordinary computation facts through Yellowstone gRPC reconstruction while retaining only
-   the narrow produced-public lifecycle execution required by solana-proof-service
-   reconstruction. It drives the **decrypt vertical** against a local validator + full coprocessor/KMS
-   stack — compute → public-decrypt (solana-proof-service MMR proof) → user-decrypt (current) → historical-user-decrypt
-   (replaced handle + live MMR proof) — exercising all three authorization paths. Operator execution
-   is intentionally representative rather than exhaustive: the live vertical retains one example for
-   encrypted/encrypted and encrypted/scalar binary wiring, unary type conversion, ternary selection,
-   bounded randomness, and each distinct composite encoding (`Sum`, `IsIn`, `MulDiv`). Exhaustive
-   operator contract belongs to pure conformance; Mollusk and direct real-TFHE add representative SBF
-   and cryptographic evidence. The live vertical also retains token composition through wrap → burn →
-   public release → redeem (witness-bound KMS certificate) and `disclose_secp` (stateless host `verify_public_decrypt`, DD-040). `token_mollusk` owns the
-   broader negative matrix (including after-update, redeem consume-once, disclosure idempotency, and foreign-proof rejection).
+   `test-suite/fhevm/e2e/scenarios/`): the Yellowstone-only path feeds computation facts and leaves
+   through host-listener reconstruction against a local validator + full coprocessor/KMS stack. It
+   drives the **decrypt vertical** through the `encrypted-counter` specimen — write → user decrypt
+   (allow leaf) → update → user decrypt of the replaced handle and of the current one — and the
+   token composition wrap → burn → public release → redeem (certified public decrypt) and
+   `disclose_secp` (stateless host `verify_public_decrypt`, DD-040), the confidential-transfer arc,
+   delegated decrypt with a Squads multisig delegator, and the `dep-chain` load smoke. Operator
+   semantics are not exercised live any more: the pure conformance layer owns the full operator
+   contract, and Mollusk plus direct real-TFHE supply representative SBF and cryptographic
+   evidence (the live operator matrix went with the wallet-signed `fhe_execute` driver — a value's
+   authority must be a program PDA, so wallets cannot own values). `token_mollusk` owns the
+   broader negative matrix (including after-update, redeem consume-once, disclosure idempotency,
+   and foreign-proof rejection).
 
 ## Reconstruction parity strategy
 
 The rewrite's central correctness bet is that off-chain consumers reproduce on-chain MMR state exactly.
-The solana-e2e scenarios exercise host-listener reconstruction against the full stack, while
-`build_verified_proof` cross-checks reconstructed peaks against final chain state. A divergence fails
-closed rather than yielding a wrong proof, which the KMS then re-verifies against confirmed peaks anyway
-(DD-035).
+The solana-e2e scenarios exercise host-listener reconstruction against the full stack, and every
+proof the connector fetches is verified against the peaks it read on chain. A divergence fails
+closed rather than yielding a wrong proof: a record that has sealed at least as much history as the
+chain shows and holds no such leaf is a terminal refusal; a record that is behind is a retry.
 
 ## Confirmed-view operations
 
-An equal-leaf-count proof mismatch is retried as
-`classification=confirmed_equal_count`; a proof ahead of the KMS view is retried as
-`classification=confirmed_proof_ahead`. Both use the ordinary configured decryption budget
-(`max_decryption_attempts`, default 20) and fast event polling interval (default 3 seconds). Actual
-wall-clock exhaustion also depends on execution load and processing time; there is no separate hidden
-fork-retry loop. Deterministic mismatches remain fail-closed, but the classification distinguishes
-them from ordinary proof-ahead catch-up in logs.
+The connector reads the account at `confirmed` commitment (once, or twice when an entry is
+delegated; the second read decides) and then reads the leaf proofs from every configured
+coprocessor as one batch. A record whose leaf count is below the chain's is known to be behind and
+is read once more before any verdict; after that the request is rejected retryably
+(`ProofRecordBehind`) and the ordinary decryption budget (`max_decryption_attempts`, default 20)
+and event polling interval (default 3 seconds) decide. There is no separate hidden fork-retry loop.
+Deterministic mismatches (`NoLeaf`, a proof that does not verify) are terminal.
 
-A persistent proof-service `corrupt_cache` response means the PostgreSQL store snapshot disagrees with
-the confirmed on-chain peaks after Yellowstone ingest / bounded RPC recovery. Recovery is operational,
-not an authorization fallback: stop `solana-proof-service`, reset its Postgres volume / DB, and restart
-it so Yellowstone (plus configured `recovery.bootstrap_slot` RPC recovery when needed) rebuilds the
-persistent store. Proof HTTP remains read-only against that store and fails closed (`lagging` /
-`corrupt_cache` / readiness gates) until history is complete; the KMS never trusts the store without
-re-verifying the proof against live chain state.
+The leaf record is derived in the same database transaction as the compute rows, so it cannot
+disagree with them about which blocks were applied. An account first seen through an update has
+`history_complete = false`: no leaf of it is stored and no proof is served for it until the
+listener is replayed from before its creation. Recovery is operational, not an authorization
+fallback: the connector never trusts the record without verifying the proof against live chain
+state, and a record behind or incomplete only delays a decrypt.
 
 ## Deliberately deferred (filed as follow-ups, not gaps in the merge)
 
 - **Explicit Mollusk CU-trace assertions.** CU fit is currently implicit (Mollusk enforces the budget,
-  so passing = fits) and bounded by the liveness audit's op-count analysis (≤80 SHA-256/update,
-  leaf-count-independent). An explicit `compute_units_consumed` assertion per hot instruction would turn
-  the estimate into a measured, regression-guarded number.
+  so passing = fits) and bounded by the liveness audit's op-count analysis (leaf-count-independent).
+  An explicit `compute_units_consumed` assertion per hot instruction would turn the estimate into a
+  measured, regression-guarded number.
 - **litesvm gate** (zama-ai/fhevm#3045): a lighter-weight in-process runtime alongside Mollusk.
   Blocked on two dependency walls, both recorded in `solana/runtime-tests/Cargo.toml`: litesvm
   pulls `solana-program-runtime >= 4.1` where this workspace is pinned to `=4.0.0-rc.0`, and

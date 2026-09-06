@@ -36,7 +36,7 @@ fn the_builder_admits_what_the_host_heap_cannot_hold() {
         });
     }
     // One past the cap is where the app-side ceilings finally stop the shape — the gap is
-    // exactly the 17–20 band, not open-ended.
+    // exactly the 18–20 band, not open-ended.
     assert_eq!(
         FheExecution::build(
             ExecutionEncryptedValueAccountAuthority::new(Pubkey::new_unique()),

@@ -69,7 +69,7 @@ describe("solana-current-user-decrypt", () => {
         durationSeconds: 3600n,
       },
     });
-    // The client names the account and nothing else: no proof, no ACL domain, no value id.
+    // The client names the account and nothing else: no proof, no scope, no derived id.
     expect(Object.keys((received as { request: object }).request).sort()).toEqual([
       "durationSeconds",
       "encryptedValueAccount",

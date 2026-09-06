@@ -25,10 +25,11 @@ flowchart LR
     end
     LISTENER[coprocessor listener] -.->|reads tx bytes| HOST
     LISTENER --> WORKERS[FHE workers]
-    PROOF[proof service] -.->|reads confirmed blocks| HOST
+    LISTENER --> LEAVES[leaf record]
     CLIENT[client / js-sdk] --> RELAYER[relayer] --> GATEWAY[gateway contracts]
     GATEWAY --> CONNECTOR[KMS connectors, one per party]
     CONNECTOR -.->|reads encrypted value accounts| HOST
+    CONNECTOR -.->|fetches leaf proofs| LEAVES
     CONNECTOR --> KMS[KMS core]
 ```
 
@@ -40,10 +41,9 @@ Each component owns exactly one kind of trust decision:
 | Component | Where | Decides |
 |---|---|---|
 | `zama-host` program | `solana/programs/zama-host` | All on-chain authorization: who may execute on which values, input attestations (threshold secp256k1, verified on-chain), public-decrypt certificates + MMR proofs, HCU caps. |
-| Coprocessor listener + workers | `coprocessor/fhevm-engine` | Nothing. It reconstructs executions from transaction bytes and schedules FHE compute eagerly; a wrong fork wastes compute but cannot release plaintext (INVARIANTS #31). |
-| Proof service | `solana-proof-service/` | Nothing. It serves MMR inclusion proofs; every proof is re-verified against live on-chain peaks by its consumers (INVARIANTS #30). |
+| Coprocessor listener + workers | `coprocessor/fhevm-engine` | Nothing. It reconstructs executions and MMR leaves from transaction bytes, schedules FHE compute eagerly, and serves leaf proofs from its record; a wrong fork wastes compute but cannot release plaintext, and every proof is verified against live on-chain peaks by the connector (INVARIANTS #30, #31). |
 | Gateway + relayer | `gateway-contracts/`, `relayer/` | Routing, fees, and request-shape conformance only. User requests are signed; neither can alter who asks or for what (INVARIANTS #42). |
-| KMS connector | `kms-connector/` | Decrypt authorization. Each KMS party's connector independently re-verifies the user's ed25519 signature and reads the encrypted value account from the host chain, using the same compiled `zama_solana_acl` code the program runs (INVARIANTS #42, #45). |
+| KMS connector | `kms-connector/` | Decrypt authorization. Each KMS party's connector independently re-verifies the user's ed25519 signature, reads the encrypted value account from the host chain, fetches the allow leaf's proof from the coprocessors, and verifies it with the same compiled `zama_solana_acl` code the program runs (INVARIANTS #42, #45). |
 | KMS core | `zama-ai/kms` repo | Chain-blind threshold decryption; binds each response to the requester's typed pubkey and encryption key. |
 
 The division worth remembering: the host program is the authorization
@@ -57,9 +57,11 @@ trusted for authorization.
   event-free (DD-033): the listener re-derives every output handle from raw
   transaction bytes with the program's own derivation functions, so replay
   from bytes alone reconstructs full history (INVARIANTS #28, #29).
-- **Account-based ACL.** One canonical PDA encrypted value account per encrypted value
-  ID. Handles are stored inside the account and never used as PDA seeds, so
-  apps can pre-allocate output accounts before the compute result exists.
+- **Account-based ACL.** One canonical PDA encrypted value account per
+  `(program, authority, scope, label)`. Handles are stored inside the account
+  and never used as PDA seeds, so apps can pre-allocate output accounts before
+  the compute result exists. The account keeps no list of who may decrypt: the
+  allows a write declares are sealed as MMR leaves.
 - **MMR-sealed history.** Each encrypted value account seals its handle history into an
   append-only MMR; replaced and public handles stay provable forever inside
   a fixed-size account (`docs/MMR_ACL_MVP.md`).
@@ -71,9 +73,10 @@ trusted for authorization.
   handles ride the shared gateway and coprocessor infrastructure while every
   consumer can branch on chain type where the shapes genuinely differ.
 - **Roles are account positions, not `msg.sender`.** An execution names a
-  payer, a compute subject (metered, ACL identity), and per-output authority
-  signers as distinct accounts; a transaction with three signers is
-  unambiguous about which one is "the caller".
+  payer and per-output authority signers as distinct accounts, and the
+  application it runs as is `(program, scope)` — the program proven from the
+  authority's seeds, the scope that program declares (DD-047). That pair is
+  what the HCU meter charges and the deny list names.
 - **Eager scheduling, decoupled authorization.** The coprocessor computes on
   confirmed (not finalized) state and never unwinds; safety comes from the
   KMS re-checking the chain at decrypt time (DD-025, DD-034).
@@ -124,8 +127,9 @@ The rest of the vertical lives elsewhere in this repository:
 ```text
 coprocessor/fhevm-engine/host-listener   Solana ingestion: solana_adapter.rs (mapping into the
                                          coprocessor schema), solana_reconstruct.rs (handle
-                                         re-derivation), solana_grpc_listener.rs (Yellowstone).
-solana-proof-service/                    MMR proof ingestion + HTTP service.
+                                         re-derivation), solana_grpc_listener.rs (Yellowstone),
+                                         database/solana_leaves.rs + http_server.rs (the leaf
+                                         record and its proof route).
 gateway-contracts/                       Gateway (EVM) contracts, incl. the typed Solana
                                          decryption entrypoint.
 relayer/                                 HTTP relayer: v3 typed Solana requests, chain-aware
@@ -169,7 +173,7 @@ to `127.0.0.1:8899`):
 
 ```bash
 bash scripts/e2e/clean-e2e.sh              # bring up fhevm-cli + Solana side-stack
-cd ../test-suite/fhevm && bun run test:e2e # scenario suite: compute/decrypt, operators, token arc
+cd ../test-suite/fhevm && bun run test:e2e # scenario suite: counter decrypt, delegation, token arc
 ```
 
 ## Integrating an app
@@ -180,10 +184,8 @@ An app program drives compute by CPI into `zama-host`, using
 - Consume a verified external input as a `VerifiedInput` operand of
   `fhe_execute` (the Solana analog of `FHE.fromExternal`): the host
   re-verifies the coprocessor attestation inside the execution and allows the
-  input transiently, for that execution only. Bind the attestation to your
-  program's compute-authority PDA and check the attested `user_address`
-  yourself — the host only enforces that the attestation names your compute
-  subject.
+  input transiently, for that execution only. The host enforces that the
+  attestation names your program; check the attested `user_address` yourself.
 - Compose atomic multi-account effects (debit sender + credit receiver) as
   one execution with per-output authority signers, using `FheExecution::build`.
 - To receive confidential funds, expose your own instruction that CPIs

@@ -10,7 +10,7 @@ export type UntilOptions = {
   readonly timeoutMs?: number;
   /** Delay between attempts. Default 2s, matching the bash readiness loops it replaces. */
   readonly intervalMs?: number;
-  /** Human-readable subject for the timeout error (e.g. "relayer readiness"). */
+  /** Human-readable name for the timeout error (e.g. "relayer readiness"). */
   readonly description?: string;
 };
 
@@ -27,7 +27,7 @@ export async function until<T>(
 ): Promise<T> {
   const timeoutMs = options.timeoutMs ?? 120_000;
   const intervalMs = options.intervalMs ?? 2_000;
-  const subject = options.description ?? "condition";
+  const description = options.description ?? "condition";
   const deadline = Date.now() + timeoutMs;
   let lastError: unknown;
   for (;;) {
@@ -40,7 +40,7 @@ export async function until<T>(
     }
     if (Date.now() >= deadline) {
       const suffix = lastError ? `; last error: ${lastError instanceof Error ? lastError.message : String(lastError)}` : "";
-      throw new Error(`until(${subject}) timed out after ${timeoutMs}ms${suffix}`);
+      throw new Error(`until(${description}) timed out after ${timeoutMs}ms${suffix}`);
     }
     await sleep(intervalMs);
   }

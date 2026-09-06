@@ -106,7 +106,7 @@ describe('buildDispatchBatchInstruction', () => {
     expect(Array.from(decoded.discriminator)).toEqual(Array.from(DISPATCH_DISCRIMINATOR));
   });
 
-  // Golden pins for the fixed fixture: the value accounts are re-pinned from the RFC 035 seed
+  // Golden pins for the fixed fixture: the encrypted value accounts are re-pinned from the RFC 035 seed
   // derivation (`encrypted_value_seeds`, mirrored and pinned in the SDK's encryptedValueAccount
   // test), the rest carried over unchanged, the event authorities from
   // `solana find-program-derived-address <program> string:__event_authority`.

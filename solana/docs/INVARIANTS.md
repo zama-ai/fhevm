@@ -26,10 +26,10 @@ assuming the opposite. Numbers are stable across both parts and never reused, so
 entry that moves between them keeps its number.
 
 Scope note: this register covers the Solana feature branch: `zama-host`, the
-`zama-fhe` SDK, the host-listener reconstruction path, the proof service, and the
-reference confidential-token and confidential-batcher applications. Vocabulary
-follows GLOSSARY.md (execution, dictionary, persistent, update, encrypted value
-ID…).
+`zama-fhe` SDK, the host-listener reconstruction path and its leaf record, the
+KMS connector's Solana pipeline, and the reference confidential-token and
+confidential-batcher applications. Vocabulary follows GLOSSARY.md (execution,
+dictionary, persistent, update, allow, application…).
 
 ---
 
@@ -44,7 +44,8 @@ ID…).
    branch to observe).
 3. **[ANTI]** Participation, timing, touched accounts, instruction shapes, and
    execution structure are all public.
-4. **[ANTI]** Subject lists (who is allowed on a value) are public.
+4. **[ANTI]** Allows (who may decrypt which handle) are public: every allow is
+   sealed from instruction data, and the leaf record republishes it.
 
 ## B. Handles & access state
 
@@ -52,36 +53,48 @@ ID…).
    `fhe_execute` outputs; no instruction accepts a caller-chosen handle into
    persistent state.
 6. **[HOLDS]** Updating a persistent value requires echoing its exact current
-   handle and subject list; a stale echo fails the whole execution (no lost-update).
-7. **[HOLDS]** Every encrypted value account lives at the canonical PDA of its encrypted
-   value ID. The ID is recomputed from the account's seeds rather than stored,
-   so an account cannot claim a different identity.
+   handle; a stale echo fails the whole execution (no lost-update). The new
+   handle's allows are declared afresh on the write; the old handle's stay sealed.
+7. **[HOLDS]** Every encrypted value account lives at the canonical PDA of its
+   four identity seeds `(program, authority, scope, label)`, which it stores in
+   the clear and every reader rederives, so an account cannot claim a different
+   identity. `program` is verified on every write, not declared: the authority
+   must be a PDA of it, proven by the seeds the execution declares
+   (`EncryptedValueAuthorityNotProgramPda`), which is what makes the application
+   `(program, scope)` unforgeable (DD-047).
 8. **[HOLDS]** Sealed history (the MMR) is append-only: a handle sealed public
    stays provable after any number of later updates.
-9. **[HOLDS]** `remove_subject` cannot leave a value with zero subjects.
-10. **[HOLDS]** Every subject newly granted membership on an encrypted value
-    clears the grant deny-list when it is enabled, on all three membership
-    paths: `fhe_execute` persistent create, persistent update (added subjects), and
-    `allow_subjects`. Subjects already stored are exempt. Scope is value
-    membership only: user-decryption delegation is a separate access path
-    with no deny check (a denied key can still be delegated to by a clean
-    subject) — that boundary belongs to the delegation/permit rework.
-    (Closed the former create-path gap; fhevm-internal#1859 §3-S1.)
-11. **[HOLDS]** Subject-list mutation is gated like persistent create/update:
-    `allow_subjects` and `remove_subject` require the signer to equal
-    `EncryptedValue.encrypted_value_account_authority` (the app-owned account
-    identity). Decrypt subjects are not co-admins. Confidential-token ships
-    owner-gated CPI wrappers that `invoke_signed` as the **token-account** PDA
-    (`allow_token_account_subjects` / `remove_token_account_subject`). The mint
-    authority can rotate total-supply subjects through wrappers that
-    `invoke_signed` as the total-supply authority PDA. (Closed the former flat-admin
-    ANTI; fhevm-internal#1862 #13.)
+9. **[RETIRED]** The instruction that removed a viewer went with the stored list
+   (RFC 035, DD-048): allows are sealed on the write and never removed. A handle with no allows and
+   no public leaf is undecryptable by everyone, which is its author's choice, not
+   a stranding — the next write declares the next handle's allows.
+10. **[HOLDS]** Every allow the host seals passes the deny list when it is
+    enabled: a persistent write (create or update, every allowed key and the
+    public leaf alike) and `make_handle_public` require the value's
+    application record `["deny-scope", program, scope]` to be present, at its
+    canonical address, and not denied (`DenyRecordMissing` / `ScopeDenied`);
+    with the list disabled no record may be passed. The deny list names
+    applications, not keys (DD-048): a denied key can still be allowed by a
+    clean application, and user-decryption delegation is a separate access
+    path with no deny check.
+11. **[HOLDS]** Only the encrypted value account authority writes a value: it
+    signs every persistent create or update and `make_handle_public`, and it is
+    a PDA of the value's `program` (#7). A viewer is not a co-admin — an allow
+    grants decrypt and nothing else, and no instruction adds or removes an
+    allow after the write (DD-048). Confidential-token ships owner-gated
+    wrappers that `invoke_signed` as the **token-account** PDA
+    (`allow_balance_viewers`, which re-writes the balance onto a handle allowed
+    to the viewers, and `make_token_account_handle_public`); the mint authority
+    has the same pair for the total supply, signed as the total-supply
+    authority PDA (`allow_total_supply_viewers`,
+    `make_total_supply_handle_public`). (fhevm-internal#1862 #13; RFC 035.)
     Related token/Host lifecycle guardrails are:
     - **11b [HOLDS].** `make_handle_public` requires the signer to equal
-      `EncryptedValue.encrypted_value_account_authority`. A decrypt subject cannot
-      make a handle public and the grant deny-list is not consulted because no
-      subject is being granted. Confidential-token owner/mint-authority wrappers
-      validate the exact state field and sign as the token-account/total-supply PDA.
+      `EncryptedValue.encrypted_value_account_authority` and the handle to be the
+      current one. A viewer cannot make a handle public. The deny list is
+      consulted for the value's application, because sealing a public leaf is an
+      allow (#10). Confidential-token owner/mint-authority wrappers validate the
+      exact state field and sign as the token-account/total-supply PDA.
       (fhevm-internal#1862.)
     - **11c [HOLDS].** Each confidential token account may have exactly one pending
       burn, stored at `["pending-burn", mint, token_account]`. A second burn is
@@ -119,17 +132,18 @@ ID…).
 12. **[HOLDS]** An execution is atomic: preflight validates the whole of it —
     indexes, accounts, types, costs — before any state is touched; a failing
     execution mutates nothing.
-13. **[HOLDS]** Every dictionary index is bounds-checked by all four consumers
-    (program, SDK, proof service, listener); an unreferenced dictionary entry
-    rejects the execution.
+13. **[HOLDS]** Every dictionary index is bounds-checked by all three consumers
+    (program, SDK, listener); an unreferenced dictionary entry rejects the
+    execution.
 15. **[HOLDS]** Every op/type combination that validation accepts also has a
     metering cost row, so a step that passed validation can never abort because
     its cost is unknown. It does not work the other way round, deliberately:
     some combinations have a price but are still rejected by validation.
-16. **[HOLDS]** An execution containing a rand step must bind a persistent output.
-    That output can be claimed only once per execution
-    (`ExecutionAccountTable::claim_persistent_output`), which is what stops two
-    executions from deriving the same seed.
+16. **[HOLDS]** An execution containing a rand step must pass the host's
+    `RandNonce` singleton (`["rand-nonce"]`; `FheExecuteRandNonceMissing`
+    otherwise) and advances it; the nonce is bound into every rand seed, so two
+    executions can never derive the same seed, whatever they persist (DD-043).
+    The nonce is host state, never caller-supplied, so a caller cannot steer it.
 17. **[HOLDS]** `account_count` declared inside the instruction data must equal
     the accounts actually delivered (the execution's bytes are self-describing).
 18. **[HOLDS]** Values from two different builders cannot be mixed into one
@@ -145,17 +159,17 @@ ID…).
 61. **[ANTI]** `FheExecution::build` does **not** guarantee the host's side of
     the CPI survives. `build`'s promise is the app-side instruction (#54); the
     host runs in its own fresh 32 KB heap frame, and what it allocates there
-    scales with created outputs times subjects per output — the created
-    accounts' subject tables plus the public-outputs event payload — which no
-    app-side number can price: the builder's packet interns a shared audience
-    once in the dictionary, while the host materializes it per created
-    account. The counterexample is pinned from both sides: the builder admits
-    20 shared-audience eight-subject `make_public` creates
+    scales with created outputs times allows per output — the leaves it seals
+    plus the public-outputs event payload — which no app-side number can
+    price: the builder's packet interns a shared audience once in the
+    dictionary, while the host hashes it per created account. The
+    counterexample is pinned from both sides: the builder admits 20
+    shared-audience eight-key `make_public` creates
     (`the_builder_admits_what_the_host_heap_cannot_hold` in
     `solana/crates/zama-fhe/src/heap_budget/` builds them `Ok`), and the
-    host's measured wall is 16
-    (`fhe_execute_boundary/subject_heavy_public_creates`: the 17th aborts in
-    the host's CPI frame). Executions in the 17–20 band build cleanly and die
+    host's measured wall is 17
+    (`fhe_execute_boundary/allow_heavy_public_creates`: the 18th aborts in
+    the host's CPI frame). Executions in the 18–20 band build cleanly and die
     on-chain with no error. Until this wall gets a typed policy cap or a
     host-side heap model (a design decision tracked in fhevm-internal#1872),
     apps creating many wide-audience public outputs must budget against the
@@ -164,18 +178,18 @@ ID…).
 ## D. Entry & exit trust
 
 19. **[HOLDS]** A verified input is consumed only with a threshold-valid
-    coprocessor attestation that names the calling app and the host chain id.
+    coprocessor attestation that names the calling program and the host chain id.
 20. **[HOLDS]** Verified inputs grant nothing persistent: they are usable only
     inside the carrying execution; persistence requires an explicit output with its
-    own access list.
+    own allows.
 21. **[HOLDS]** Public cleartext is accepted on-chain only through
     `verify_public_decrypt`: a KMS threshold certificate **and** an MMR
     inclusion proof that the exact handle was sealed public.
 22. **[HOLDS]** Certificate binding chain: signed extra_data → context id →
     canonical KmsContext PDA → signer set. Empty or version-0 extra_data
     selects the current context; version 1 is exactly 33 bytes and carries
-    the 32-byte id; version 3 carries the same 32-byte id and may append an
-    MMR-proof tail. Destroying a context invalidates every certificate it
+    the 32-byte id; version 3 is exactly 65 bytes: the id then the 32-byte key
+    of the account whose public leaf is proven. Destroying a context invalidates every certificate it
     issued; rotation alone invalidates none.
 23. **[ASSUMPTION]** The coprocessor and KMS committees are honest at their
     thresholds, and their EVM signing keys are not compromised.
@@ -198,12 +212,15 @@ ID…).
 26. **[RISK]** `cleartext` is one 32-byte word ("today's results fit"): an FHE
     type outgrowing it changes the certificate format, the entrypoint
     signature, and the return layout together.
-27. **[GAP]** User-decryption delegation records have no consumer yet —
-    gateway/KMS payloads do not carry them (stated in the account's own docs).
-    The KMS connector's `verify_delegation` is written and unit-tested but
-    nothing in the request path calls it. The event that used to be emitted on
-    delegation was removed for the same reason (DD-044): the reader being built
-    reads the record, not an event.
+27. **[HOLDS]** User-decryption delegation records are consumed. A delegated
+    entry names the delegator as its allowed key; the KMS connector reads the
+    delegation record — the row for the encrypted value account's authority or
+    the delegator's wildcard row — in the deciding snapshot and requires it
+    live at that slot (not revoked, not expired, not written after the
+    observation), then authorizes the delegate against the delegator's allow
+    leaf (`kms-worker/src/core/solana/delegation.rs`). The relayer refuses
+    dead rows advisorily before the gateway fee (#50). No event is emitted on
+    delegation (DD-044): readers read the record.
 
 ## E. Reconstruction & off-chain services
 
@@ -213,11 +230,13 @@ ID…).
     the e2e derivation check this too).
 29. **[HOLDS]** Every transaction is independently interpretable: replay from
     instruction bytes alone reconstructs full history with zero account reads
-    (updates echo the previous handle and subjects).
-30. **[HOLDS]** The proof service can stop a decrypt from happening but can
-    never be what allows one, because the KMS re-verifies every proof against
-    live confirmed on-chain peaks. A compromised proof service fails decrypts;
-    it cannot authorize one.
+    (updates echo the previous handle and declare the new handle's allows).
+30. **[HOLDS]** The leaf record can stop a decrypt from happening but can
+    never be what allows one: the KMS connector verifies every proof against
+    the peaks it read on chain itself, fans out to every configured
+    coprocessor and merges (a proof beats no proof, more history beats less),
+    and rejects a client-supplied proof outright. A compromised or lagging
+    record fails or delays decrypts; it cannot authorize one (DD-048).
 31. **[HOLDS]** Coprocessor scheduling is decoupled from authorization: eager
     scheduling can waste compute on a minority fork; it can never release
     plaintext.
@@ -237,7 +256,7 @@ ID…).
     one (DD-044). Seeing it is all this buys: authorization still comes from
     account state, never from event bytes.
 36. **[HOLDS]** `HostConfig.paused` freezes both halves of the plaintext path:
-    the production-shaped host instructions (`fhe_execute`, the ACL writes,
+    the production-shaped host instructions (`fhe_execute`,
     `make_handle_public`, `delegate_for_user_decryption`, and the token
     cash-out paths of 11f), and connector user decryption — the KMS connector's
     authorization reads the `HostConfig` PDA in the account read it already
@@ -253,8 +272,6 @@ ID…).
     connector from serving delegated decryptions, so a delegator frozen out of
     revoking would be left with grants they can neither use nor withdraw, and a
     lever the operator can switch off is not the user's lever.
-    While `remove_subject` exists, pause also freezes subject revocation
-    (`remove_subject` calls `assert_not_paused`).
     Not gated: `verify_public_decrypt` (DD-040, already-sealed leaves reveal
     nothing new) and the admin setters, pause included.
 37. **[HOLDS]** HCU enforcement ships disabled (unrestricted defaults) and is
@@ -271,25 +288,29 @@ ID…).
     empty key cannot become admin. A program whose upgrade authority has been
     burned (`upgrade_authority_address == None`) cannot initialize. Production
     governance is tracked separately (fhevm-internal#1634).
-40. **[HOLDS]** A compute subject cannot self-trust: HCU trust records are
-    written only by the admin, live at a PDA derived from the subject they
-    trust, and a caller can neither point at another subject's record (address
-    check) nor forge one (program-owned PDA, admin-gated write). The block cap
-    is enforced by the program in `fhe_execute` before the execution walk; the
-    meter account is only a counter.
-41. **[ANTI]** HCU block budgets are per compute subject, not per organization:
-    a caller controlling N allowed subjects has N per-slot budgets. The
-    multiplier is bounded by grant control — each subject must first be allowed
-    on real values (unanchored executions are rejected under a finite cap).
+40. **[HOLDS]** An application cannot self-trust: HCU trust records are
+    written only by the admin, live at `["hcu-trusted", program, scope]`, and
+    a caller can neither point at another application's record (address
+    check) nor forge one (program-owned PDA, admin-gated write). The
+    application is `(program, scope)` with `program` verified from the output
+    authority (#7, DD-039/DD-047), so a caller cannot claim a trusted program
+    it does not control. The block cap is enforced by the program in
+    `fhe_execute` before the execution walk; the meter account is only a
+    counter.
+41. **[ANTI]** HCU block budgets are per application, not per organization: a
+    program that declares N scopes has N per-slot budgets. The multiplier is
+    bounded by program control — a scope exists only under a program that can
+    sign for the value's authority, so nobody mints applications under a
+    program they do not control.
 51. **[HOLDS]** The optional HCU accounts on `fhe_execute` can arrive in four
     states, and every state that could hand out more budget fails closed:
     - **Present, program-owned, well-formed** — used. An
       `hcu_trusted_app_record` with `trusted == true` bypasses the cap;
-      `hcu_block_meter` charges the subject's per-slot budget.
-    - **Absent (`None`)** — the untrusted default. A subject that is supposed to
-      be metered but omits its meter is rejected, not left unmetered.
+      `hcu_block_meter` charges the application's per-slot budget.
+    - **Absent (`None`)** — the untrusted default. An application that is
+      supposed to be metered but omits its meter is rejected, not left unmetered.
     - **Present at the canonical PDA but never created** (system-owned, empty) —
-      harmless. The subject is simply untrusted or unused. A squatted meter that
+      harmless. The application is simply untrusted or unused. A squatted meter that
       does hold data is rejected when `charge` lazily creates it.
     - **Present at the wrong PDA, or program-owned but malformed** — the
       execution is rejected outright.
@@ -298,26 +319,32 @@ ID…).
 
 42. **[HOLDS]** Every KMS party's connector independently re-verifies the
     user's ed25519 signature over the full request — identity, handles,
-    allowed domains, validity window, nonce, and the evidence tail. The
+    allowed scopes, validity window, and nonce. The
     relayer and gateway are transport; neither can alter who asks or for what.
 43. **[ANTI]** The user-decrypt nonce is not dedup-enforced on-chain or in the
     connector; replay is bounded only by the request validity window (EVM
     parity).
-44. **[ANTI]** An empty `allowedAclDomainKeys` list means permissive mode: the
-    request is not domain-scoped. Scoping is opt-in per request.
-45. **[HOLDS]** The connector authorizes against the canonical encrypted-value-account
-    PDA, program-owned, using the same compiled `zama_solana_acl` code the
-    on-chain program runs (decode, MMR verification, all three authorize
-    functions).
+44. **[ANTI]** An empty `allowedScopes` list means permissive mode: the permit
+    is not scoped to an application, and opens the signer's own handles and
+    every delegation the signer holds. Scoping (at most seven `(program,
+    scope)` pairs) is opt-in per permit and is tested per entry against the
+    account's own pair, never against a request field.
+45. **[HOLDS]** The connector authorizes against the canonical encrypted value
+    account PDA, program-owned, rederived from the seeds the account carries,
+    using the same compiled `zama_solana_acl` code the on-chain program runs
+    (decode, seeds, MMR verification, both authorize functions). The leaf proof
+    comes from the coprocessors' leaf record (`POST /v1/solana/leaf-proofs`,
+    API key), never from the client, and is verified against the peaks of the
+    account the connector read itself (`kms-worker/src/core/solana/`).
 46. **[RISK]** The connector's ACL reads use confirmed (not finalized)
     commitment, and this component is the authorization gate. The choice is
-    deliberate and documented at the site (`solana_v2_fetcher.rs` module doc:
-    a grant observed on a supermajority-confirmed fork is sufficient
-    authorization even if that fork is exceptionally rolled back). This entry
-    records that choice as accepted at the protocol level.
+    deliberate and documented at the site (`kms-worker/src/core/solana/snapshot.rs`
+    module doc: a grant observed on a supermajority-confirmed fork is
+    sufficient authorization even if that fork is exceptionally rolled back).
+    This entry records that choice as accepted at the protocol level.
 49. **[ASSUMPTION]** The coprocessor's EVM-shaped event rows carry a zeroed
-    `caller` for every Solana transaction (the 32-byte compute subject does
-    not fit the 20-byte field and is discarded). This is safe if and only if
+    `caller` for every Solana transaction (the 32-byte program does not fit
+    the 20-byte field and is discarded). This is safe if and only if
     nothing downstream ever derives authorization, quotas, or identity from
     `caller` on Solana rows — authorization lives in the KMS connector (#42,
     #45). Any feature reading `caller` from these rows must branch on the
@@ -326,7 +353,7 @@ ID…).
 ## H. Reference confidential applications
 
 55. **[HOLDS]** Token disclosure binds the requested kind to the complete
-    confidential-token state field: mint domain, canonical encrypted value
+    confidential-token state field: scope (the mint), canonical encrypted value
     account address, encrypted value account authority, encrypted value label,
     and current or historically sealed handle. A valid certificate for another
     field in the same mint cannot be relabelled in the emitted disclosure event.
@@ -344,10 +371,12 @@ ID…).
     accounts they actually move. Cancel-pending-burn is not freeze-gated. Token-2022 transfer-fee, transfer-hook,
     non-transferable, and confidential-transfer behavior cannot be inherited
     accidentally because those mint extensions fail closed under #56.
-58. **[HOLDS]** Only `ConfidentialMint.authority` can add or remove subjects on
-    the encrypted total supply. The wrapper signs the Host CPI as the canonical
-    total-supply authority PDA; callers cannot substitute another encrypted
-    value account, encrypted value account authority, label, or domain.
+58. **[HOLDS]** Only `ConfidentialMint.authority` can re-write the encrypted
+    total supply onto a handle with new viewers (`allow_total_supply_viewers`)
+    or seal its handle public (`make_total_supply_handle_public`). The wrapper
+    signs the Host CPI as the canonical total-supply authority PDA; callers
+    cannot substitute another encrypted value account, encrypted value account
+    authority, label, or scope.
 59. **[HOLDS]** `ConfidentialMint.authority` is the wrapper's policy authority.
     It is distinct from the authority that can upgrade the Zama Host program.
     Future governance may own the mint authority without acquiring Host upgrade
@@ -375,15 +404,22 @@ not when the threat model changes.
 34. **[OPERATIONAL]** Reconstruction fixtures compile only under
     `--features solana-grpc,solana-reconstruct`; coverage exists only where CI
     passes those flags.
-47. **[OPERATIONAL]** The proof service runs single-replica and
-    unauthenticated in the POC. An outage stalls decrypts; it can never
-    authorize one (#30).
+47. **[RETIRED]** The standalone proof service is gone (RFC 035, DD-048). The
+    leaf record lives in each coprocessor's host listener, served behind an API
+    key; the connector fans out to every configured coprocessor, so one behind
+    or unreachable cannot sink a request another can serve. Authorization was
+    never its to give (#30).
 48. **[HOLDS]** Settle transactions at production KMS thresholds fit one packet
     only as v0 + one address lookup table; a legacy settle never fits. Both
     directions are pinned by tests.
-50. **[OPERATIONAL]** The relayer's ACL preflight covers EVM host chains only.
-    An unauthorized Solana request is rejected by the KMS connectors, after
-    the gateway fee is paid. This does not affect authorization (#42, #45); for
+50. **[OPERATIONAL]** The relayer's ACL preflight covers EVM host chains and,
+    advisorily, Solana delegated entries: a delegation row that is dead at the
+    slot of the read (absent, revoked, expired) is refused before the gateway
+    fee (`relayer/src/host/solana_delegation_precheck.rs`); every ambiguity of
+    data passes. A direct Solana entry is not pre-checked — its authorization
+    is an allow leaf the connector fetches, and there is no cheaper reading of
+    it — so an unauthorized one is rejected by the KMS connectors after the
+    gateway fee is paid. This does not affect authorization (#42, #45); for
     the POC we accept that a rejected request can still cost a fee, and that
     this leaves room for spam.
 52. **[OPERATIONAL]** Every batch gets its own settle address lookup table, and
@@ -433,10 +469,10 @@ not when the threat model changes.
       budget.
 
     Lowering an execution never copies the builder's intern tables or the
-    app's subject lists (the binding moves them), the packet serializes once
+    app's allow lists (the binding moves them), the packet serializes once
     into a right-sized buffer, and resolve and invoke reserve their exact
     table sizes up front. Both tallies are proven equal to a counting
-    allocator byte-for-byte across a 122-shape frontier (49 admitted) by
+    allocator byte-for-byte across a 122-shape frontier (57 admitted) by
     `solana/crates/zama-fhe/src/heap_budget/`
     (`the_heap_tally_matches_a_counting_allocator_for_every_admitted_shape`
     for build + packet,
@@ -444,16 +480,16 @@ not when the threat model changes.
     for resolve + CPI tables), so an untallied allocation cannot ship; the
     at-cap dep-chain specimen proves the chain shape under SBF with the
     uncounted costs on top. For scale, the heaviest admitted totals
-    (build + packet + invoke): full 32-step chain 13,794 bytes; 20 creates
-    20,656; 20 creates x 2 subjects 21,336; four maximum attestations 20,897;
-    one 60-operand sum 16,484 — the frontier grid is printed by that
+    (build + packet + invoke): 20 creates with one allow 18,628 bytes; 16
+    creates x 6 allows 24,320; 24 updates 24,128; five maximum attestations
+    23,575; one 60-operand sum 12,836 — the frontier grid is printed by that
     directory's `print_build_frontier_grid` (`#[ignore]`d — run with
     `--ignored --nocapture`).
 
     What the ceilings cannot see stays measured, not guessed. The host-side
     heap cost of persistent updates grows with the stored value's MMR peak
     count — on-chain state invisible at build time — and is swept per
-    maturity (`fhe_execute_boundary/mature_updates_peaks_8` 11 steps, `_32` 6,
+    maturity (`fhe_execute_boundary/mature_updates_peaks_8` 19 steps, `_32` 7,
     the 55-peak extreme 4), alongside the operand-width axis
     (`fhe_execute_boundary/reduction_heavy`, host heap wall at 5 steps of
     60-operand sums; the builder's budget stops the same shape earlier on the

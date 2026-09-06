@@ -197,9 +197,9 @@ SENTINEL_FILES=(
 # Check 5's pinned justification prose, as `file|phrase`. The v0 `actions/userDecrypt.ts` entry
 # died with the file; its successor reuse — the permit's verifying program doubling as the host
 # program id the evidence source derives accounts under — is justified where it happens.
-RETROFIT_JUSTIFICATIONS=(
-  "sdk/js-sdk/src/solana/clients/decorators/permitDecrypt.ts|verifying program IS the host program"
-)
+# Empty since RFC 035: the one entry (the permit's verifying program reused as the host program id
+# of the SDK's RPC evidence source) went with that source. The check stays for the next one.
+RETROFIT_JUSTIFICATIONS=()
 # The self-test cannot violate check 5 by planting a file — it would have to delete prose from a real
 # one — so it adds an entry through the environment instead. Same code path, both arms.
 [ -n "${DEAD_SURFACE_EXTRA_RETROFIT:-}" ] && \
@@ -524,10 +524,11 @@ if run_check 3; then
     '' -iE 'value_key' --exclude-dir=utils
   # RFC 035 retired the whole "subject" vocabulary: an encrypted value account keeps no list of
   # who may decrypt it; who may decrypt a handle is an `allow` sealed on the write, and a key so
-  # named is a viewer. The English idioms ("subject to", "the subject of a test") are the only
+  # named is a viewer. The English idioms ("subject to", "the subject of a test") and the KMS
+  # core's TLS certificate subject (`tls_subject`, `--tls-subject`, "subject-matching") are the only
   # exceptions.
   check_alias 'subject — say allow / viewer; the account keeps no list' kms \
-    'subject to|subject of|whose subject|subject is the|subject matter' \
+    'subject to|subject of|whose subject|subject is the|subject matter|tls[_-]subject|subject-matching' \
     -iE '\bsubjects?\b|_subjects?\b|subjects?_|Subjects?[A-Z]|[a-z]Subjects?\b'
   # Reading a value into a computation is admitted by its authority's signature; there is no
   # separate compute identity to name.
@@ -744,7 +745,7 @@ if run_check 5; then
   # The other §8 shape: a field with no Solana meaning filled with a *reused* real value rather than
   # a zero. There is no constant to grep for, so the check pins the explanation — delete the prose
   # and this fails, because the prose is the only way a reader learns the field is inert.
-  for entry in "${RETROFIT_JUSTIFICATIONS[@]}"; do
+  for entry in ${RETROFIT_JUSTIFICATIONS[@]+"${RETROFIT_JUSTIFICATIONS[@]}"}; do
     file=${entry%%|*}
     phrase=${entry#*|}
     [ -f "$file" ] || { echo "MISSING RETROFIT FILE: ${file} (update RETROFIT_JUSTIFICATIONS)"; fail=1; continue; }
