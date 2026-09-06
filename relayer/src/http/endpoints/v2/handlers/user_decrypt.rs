@@ -23,7 +23,8 @@ use crate::http::{parse_and_validate, AppResponse};
 use crate::logging::UserDecryptStep;
 use crate::metrics::http::{self as http_metrics, HttpEndpoint, HttpMethod};
 use crate::metrics::{
-    observe_raw_eta_seconds, observe_spare_shares, HttpApiVersion, RetryAfterRequestType,
+    increment_request_cache, observe_raw_eta_seconds, observe_spare_shares, HttpApiVersion,
+    RequestCacheResult, RetryAfterRequestType,
 };
 use crate::orchestrator::{ContentHasher, Orchestrator};
 use crate::readiness::throttler::UserDecryptReadinessTask;
@@ -306,6 +307,7 @@ impl UserDecryptHandler {
             insert_result.result,
             UserDecryptInsertResult::Inserted { .. }
         ) {
+            increment_request_cache(RetryAfterRequestType::UserDecrypt, RequestCacheResult::Miss);
             let request_data = UserDecryptEventData::ReqRcvdFromUser {
                 decrypt_request: user_decrypt_request,
             };
@@ -342,6 +344,7 @@ impl UserDecryptHandler {
                 );
             }
         } else {
+            increment_request_cache(RetryAfterRequestType::UserDecrypt, RequestCacheResult::Hit);
             info!(
                 step = %UserDecryptStep::DedupHit,
                 req_id = %request_id,
@@ -562,6 +565,7 @@ impl UserDecryptHandler {
             insert_result.result,
             UserDecryptInsertResult::Inserted { .. }
         ) {
+            increment_request_cache(RetryAfterRequestType::UserDecrypt, RequestCacheResult::Miss);
             let request_data = UserDecryptEventData::ReqRcvdFromUser {
                 decrypt_request: delegated_user_decrypt_request,
             };
@@ -601,6 +605,7 @@ impl UserDecryptHandler {
                 );
             }
         } else {
+            increment_request_cache(RetryAfterRequestType::UserDecrypt, RequestCacheResult::Hit);
             info!(
                 step = %UserDecryptStep::DedupHit,
                 req_id = %request_id,

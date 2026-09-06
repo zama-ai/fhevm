@@ -3,8 +3,8 @@ mod common;
 use crate::common::utils::{
     assert_retry_after_header_present, create_timeout_test_config, create_user_decrypt_wait_config,
     register_host_acl_allow_all_dynamic, register_host_acl_deny_all,
-    register_host_acl_partial_deny, register_host_acl_rpc_error, spare_shares_count_and_sum,
-    TestSetup, TEST_HOST_CHAIN_ID, TEST_HOST_CHAIN_ID_2,
+    register_host_acl_partial_deny, register_host_acl_rpc_error, request_cache_total,
+    spare_shares_count_and_sum, TestSetup, TEST_HOST_CHAIN_ID, TEST_HOST_CHAIN_ID_2,
 };
 use crate::common::validation_helper::{
     expect_v2_malformed_json, expect_v2_missing_field, expect_v2_validation_error, test_endpoint,
@@ -1873,6 +1873,7 @@ async fn test_wait_disabled_completes_at_threshold() {
     let metrics_endpoint = setup.settings.metrics.endpoint.clone();
     let (spare_count_before, spare_sum_before) =
         spare_shares_count_and_sum(&metrics_endpoint).await;
+    let cache_miss_before = request_cache_total(&metrics_endpoint, "user_decrypt", "miss").await;
 
     // 9 emitted, target 9: the request is reconstructable as soon as the quorum lands.
     let started = std::time::Instant::now();
@@ -1902,6 +1903,8 @@ async fn test_wait_disabled_completes_at_threshold() {
         0.0,
         "Returning exactly the quorum leaves the client no spare"
     );
+    let cache_miss_after = request_cache_total(&metrics_endpoint, "user_decrypt", "miss").await;
+    assert_eq!(cache_miss_after - cache_miss_before, 1.0);
 
     setup.shutdown().await;
 }

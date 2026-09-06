@@ -1012,6 +1012,18 @@ pub async fn spare_shares_count_and_sum(metrics_endpoint: &str) -> (f64, f64) {
     )
 }
 
+/// Cumulative POST deduplication counter for one request type and outcome.
+///
+/// Process-global like the histogram above: compare deltas, not absolutes.
+#[allow(dead_code)]
+pub async fn request_cache_total(metrics_endpoint: &str, req_type: &str, result: &str) -> f64 {
+    let text = scrape_metrics(metrics_endpoint).await.unwrap_or_default();
+    metric_sample(
+        &text,
+        &format!(r#"relayer_request_cache_total{{req_type="{req_type}",result="{result}"}}"#),
+    )
+}
+
 #[allow(dead_code)]
 pub fn create_user_decrypt_wait_config(
     temp_dir: &TempDir,
