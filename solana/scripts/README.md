@@ -25,5 +25,4 @@ against a running stack (CI: `solana-e2e`).
 | Path | Role |
 |---|---|
 | `check_solana_abi.py` | Called by `check-` / `sync-zama-host-idl.sh`; owns the one list of committed IDLs, copying them out of `target/idl` with `--write` and comparing them back without it |
-| `check_proof_store_idl.py` | Called by `check-zama-host-idl.sh` + `solana-proof-service-tests`; partitions proof-store decode.rs against vendored `zama_host` IDL |
 | `e2e/test-keypairs/` | Well-known local program keypairs for reproducible deploys |

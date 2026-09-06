@@ -82,15 +82,14 @@ pub fn is_fhe_execute_instruction(instruction_data: &[u8]) -> bool {
 
 /// Whether `instruction_data` is the event self-CPI carrying event `T`
 /// (Anchor event tag followed by `T`'s event discriminator).
-pub fn is_event_cpi<T: Discriminator>(instruction_data: &[u8]) -> bool {
+fn is_event_cpi<T: Discriminator>(instruction_data: &[u8]) -> bool {
     instruction_data.starts_with(EVENT_IX_TAG_LE)
         && instruction_data.get(8..16) == Some(T::DISCRIMINATOR)
 }
 
 /// Strips the event self-CPI envelope (tag + `T`'s discriminator) and returns
-/// the raw event payload, for callers that decode it with stricter rules than
-/// [`decode_event_cpi`] (e.g. rejecting trailing bytes).
-pub fn strip_event_cpi_envelope<T: Discriminator>(instruction_data: &[u8]) -> Option<&[u8]> {
+/// the raw event payload.
+fn strip_event_cpi_envelope<T: Discriminator>(instruction_data: &[u8]) -> Option<&[u8]> {
     if !is_event_cpi::<T>(instruction_data) {
         return None;
     }

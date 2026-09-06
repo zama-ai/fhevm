@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO solana_encrypted_value_leaves\n                (encrypted_value_account, leaf_index, commitment, leaf_kind, handle,\n                 allowed_key, block_slot, transaction_index)\n            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Int8",
+        "Bytea",
+        "Int2",
+        "Bytea",
+        "Bytea",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d859b5ceb48a1a17e7679b4e1eee97b24bd4bb602ba4e813d0d29e25b26d0b39"
+}

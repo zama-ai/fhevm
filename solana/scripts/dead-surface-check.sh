@@ -79,7 +79,6 @@ RUST_ROOTS=(
   solana/crates
   solana/runtime-tests
   solana/test-kit
-  solana-proof-service
   coprocessor/fhevm-engine/host-listener/src
 )
 
@@ -106,7 +105,7 @@ SCRIPT_ROOTS=(
 
 # Two scopes, because three of the retired words are ordinary technical English outside the FHE
 # core. `plan` names a docker-compose stack plan all over test-suite/fhevm, `pool` names a Postgres
-# connection pool all over the listener and the proof service, and `namespace` names a Kubernetes
+# connection pool all over the listener, and `namespace` names a Kubernetes
 # namespace in the workflows. Sweeping those trees for those words would produce either noise or an
 # exception list so long it stops meaning anything, so they are swept in CORE only — the sources
 # that speak the Solana FHE vocabulary natively, where the word can only be the retired sense.
@@ -174,7 +173,6 @@ done
 SENTINEL_ROOTS=(
   solana/programs
   solana/crates
-  solana-proof-service
   sdk/js-sdk/src/solana
   solana/demo-dapp/src
   test-suite/fhevm
@@ -605,8 +603,8 @@ if run_check 3; then
   check_alias 'plan — one fhe_execute invocation is an execution' core \
     'const plan = await|plan === null|plan\.instructions|plan\.initializesAccount' \
     -iE '\bplans?\b'
-  # dictionary <- pool. CORE-only: the listener and the proof service are full of Postgres connection
-  # pools, and neither is swept here. Inside the FHE core the only collection that could be called a
+  # dictionary <- pool. CORE-only: the listener is full of Postgres connection
+  # pools, and it is not swept here. Inside the FHE core the only collection that could be called a
   # pool is the dictionary. The single exception is a vault's liquidity pool in the confidential
   # vaults writeup, which is the finance sense of the word.
   check_alias 'pool — the interning structure is the dictionary' core \
@@ -781,8 +779,8 @@ if run_check 6; then
   # wider than that — every Rust and TypeScript root plus the connector crates — so an export a
   # service calls still reads as alive.
   #
-  # Deliberately not collected: solana-proof-service, the host listener's src, and
-  # kms-connector/crates. Widening to them means triaging roughly six hundred more declarations —
+  # Deliberately not collected: the host listener's src and kms-connector/crates. Widening to
+  # them means triaging roughly six hundred more declarations —
   # audience lines, dropped `pub`s, and deletions — across two services and a tree the EVM stack
   # shares, which is its own piece of work rather than a side effect of a vocabulary pass. Said out
   # loud here so the gap is a decision on the record instead of something a reader has to infer from
@@ -920,8 +918,8 @@ fi
 if run_check 7; then
   echo "== 7. every swept root is a CI trigger for this script =="
   # The script only protects a tree if a change to that tree runs it. It used to run inside
-  # build-and-test, gated on `solana`, so an edit to the proof service, the listener, the
-  # kms-connector, the SDK's Solana surface, or the test suite could add a retired name with the sweep
+  # build-and-test, gated on `solana`, so an edit to the listener, the kms-connector, the
+  # SDK's Solana surface, or the test suite could add a retired name with the sweep
   # never executing. The dedicated `dead-surface` job fixed that, and this check keeps the two lists in
   # step: every root swept below must be covered by a path in the job's paths-filter.
   TRIGGER_WORKFLOW='.github/workflows/solana-tests.yml'

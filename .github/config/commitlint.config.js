@@ -29,8 +29,7 @@ const Configuration = {
         'common',
         'relayer',
         'listener',
-        'solana',
-        'solana-proof-service'
+        'solana'
       ]
     ],
   },

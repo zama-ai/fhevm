@@ -1308,7 +1308,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash",
  "rustls",
- "socket2 0.5.10",
+ "socket2 0.6.5",
  "thiserror 2.0.20",
  "tokio",
  "tracing",
@@ -5366,6 +5366,7 @@ dependencies = [
  "aws-credential-types",
  "aws-sdk-s3",
  "aws-smithy-mocks",
+ "axum 0.7.9",
  "base64 0.22.1",
  "bigdecimal",
  "bs58",
@@ -5374,6 +5375,7 @@ dependencies = [
  "fhevm-engine-common",
  "fhevm_host_bindings",
  "futures-util",
+ "hex",
  "host-listener",
  "lru 0.13.0",
  "primitives",
@@ -5391,6 +5393,7 @@ dependencies = [
  "sqlx",
  "test-harness",
  "tfhe",
+ "thiserror 2.0.20",
  "time",
  "tokio",
  "tokio-util",
@@ -5400,6 +5403,7 @@ dependencies = [
  "tracing-test",
  "union-find",
  "url",
+ "utoipa",
  "yellowstone-grpc-proto",
  "zama-host",
  "zama-solana-acl",
@@ -5600,7 +5604,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.5.10",
+ "socket2 0.6.5",
  "tokio",
  "tower-service",
  "tracing",
@@ -7699,7 +7703,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash",
  "rustls",
- "socket2 0.5.10",
+ "socket2 0.6.5",
  "thiserror 2.0.20",
  "tokio",
  "tracing",
@@ -7737,7 +7741,7 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.5.10",
+ "socket2 0.6.5",
  "tracing",
  "windows-sys 0.60.2",
 ]
@@ -11529,7 +11533,7 @@ dependencies = [
  "solar-config",
  "solar-data-structures",
  "solar-macros",
- "thiserror 1.0.69",
+ "thiserror 2.0.20",
  "tracing",
  "unicode-width",
 ]
@@ -12216,7 +12220,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "tempfile",
- "thiserror 1.0.69",
+ "thiserror 2.0.20",
  "url",
  "zip",
 ]
@@ -13398,6 +13402,29 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 
 [[package]]
+name = "utoipa"
+version = "5.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8bde15df68e80b16c7d16b9616e80770ad158988daa56a27dccd1e55558b0160"
+dependencies = [
+ "indexmap 2.14.1",
+ "serde",
+ "serde_json",
+ "utoipa-gen",
+]
+
+[[package]]
+name = "utoipa-gen"
+version = "5.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6ba0b99ee52df3028635d93840c797102da61f8a7bb3cf751032455895b52ef8"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
 name = "uuid"
 version = "1.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -14387,6 +14414,8 @@ version = "0.1.0"
 dependencies = [
  "borsh",
  "sha2 0.10.9",
+ "sha3 0.10.8",
+ "solana-keccak-hasher",
  "solana-sha256-hasher",
 ]
 

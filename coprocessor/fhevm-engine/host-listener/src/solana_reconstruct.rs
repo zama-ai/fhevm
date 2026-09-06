@@ -2,8 +2,10 @@
 //! block context, WITHOUT relying on on-chain `emit_cpi!`/`emit!`.
 //!
 //! Covers the `fhe_execute` execution walk (recomputing each step's handle via the
-//! program's own `computed_*` functions, byte-identical to on-chain emission)
-//! and the event-free `EncryptedValue` instruction decode (RFC-024).
+//! program's own `computed_*` functions, byte-identical to on-chain emission), the
+//! persistent output each step writes (the handle it installs, the keys it allows,
+//! whether it is made public: the leaf record of RFC 035), and the event-free
+//! `make_handle_public` instruction decode.
 
 use anchor_lang::Discriminator;
 use zama_host::state::{
@@ -16,11 +18,7 @@ use zama_host::state::{
 };
 use zama_host::{FheExecuteRandomSeed, FheExecuteRandomSeedsEvent};
 
-#[cfg(test)]
-use crate::database::tfhe_event_propagate::Handle;
-use crate::solana_adapter::{
-    material_request, SolanaHostRecord, SolanaMaterialRequest,
-};
+use crate::solana_adapter::SolanaHostRecord;
 use zama_host::records::{
     FheBinaryOp, FheIsIn, FheMulDiv, FheRand, FheRandBounded, FheSum,
     FheTernaryOp, FheUnaryOp, TrivialEncrypt,
@@ -61,119 +59,35 @@ pub fn decode_fhe_execute_random_seeds_event(
     (event.version == zama_host::EVENT_VERSION).then_some(event)
 }
 
-// --- RFC-024 `EncryptedValue` instruction decode -----------------------------
+// --- `make_handle_public` instruction decode ---------------------------------
 //
 // `EncryptedValue` is event-free by design (see zama-host's
-// `instructions/encrypted_value.rs` module doc): ACL changes are carried by
-// `fhe_execute` persistent outputs, `make_handle_public`, `allow_subjects`, and
-// `remove_subject`. There is no ACL event to decode — instruction data is the
-// allow signal and must be decoded directly (top-level AND inner/CPI, since an
-// app program may invoke these via CPI) by Anchor discriminator
-// (`sha256("global:<name>")[..8]`).
+// `instructions/encrypted_value.rs` module doc): every leaf is carried by the
+// instruction that sealed it, a `fhe_execute` persistent output or
+// `make_handle_public`. Instruction data is decoded directly (top-level AND
+// inner/CPI, since an app program invokes the host via CPI) by Anchor
+// discriminator (`sha256("global:<name>")[..8]`).
 
-/// A decoded `EncryptedValue` instruction, args-only (accounts are resolved by
-/// the caller from the instruction's account list).
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum EncryptedValueInstruction {
-    MakeHandlePublic { handle: [u8; 32] },
-    AllowSubjects { subjects: Vec<[u8; 32]> },
-    RemoveSubject { subject: [u8; 32] },
+pub fn is_make_handle_public_instruction(data: &[u8]) -> bool {
+    data.get(..8)
+        == Some(zama_host::instruction::MakeHandlePublic::DISCRIMINATOR)
 }
 
-pub fn is_encrypted_value_instruction(data: &[u8]) -> bool {
-    let Some(discriminator) = data.get(..8) else {
-        return false;
-    };
-    discriminator == zama_host::instruction::MakeHandlePublic::DISCRIMINATOR
-        || discriminator == zama_host::instruction::AllowSubjects::DISCRIMINATOR
-        || discriminator == zama_host::instruction::RemoveSubject::DISCRIMINATOR
-}
-
-/// `allow_subjects` and `make_handle_public` place `encrypted_value` at this
-/// index (`payer`, `authority`, `encrypted_value`, ...) — see
-/// `AllowEncryptedValueSubjects` and `MakeEncryptedValueHandlePublic` in
-/// zama-host's `encrypted_value.rs`. `remove_subject` has no payer and uses
-/// index 1.
+/// `make_handle_public` places `encrypted_value` at this index (`payer`,
+/// `authority`, `encrypted_value`, ...) — see `MakeEncryptedValueHandlePublic`
+/// in zama-host's `encrypted_value.rs`.
 pub const ENCRYPTED_VALUE_ACCOUNT_INDEX: usize = 2;
 
-/// Decodes one `EncryptedValue` instruction from raw instruction data
-/// (discriminator + borsh args) through `zama_host::decode`, or `None` if the
-/// data is not a well-formed `EncryptedValue` instruction at all — the caller
-/// tries this decoder against every top-level and inner instruction of the
-/// zama-host program.
-pub fn decode_encrypted_value_instruction(
-    data: &[u8],
-) -> Option<EncryptedValueInstruction> {
-    use zama_host::decode::ZamaHostInstruction;
+/// Decodes the handle a `make_handle_public` instruction seals, through
+/// `zama_host::decode`, or `None` if the data is not a well-formed
+/// `make_handle_public` instruction.
+pub fn decode_make_handle_public(data: &[u8]) -> Option<[u8; 32]> {
     match zama_host::decode::decode_instruction(data).ok()? {
-        Some(ZamaHostInstruction::MakeHandlePublic { handle }) => {
-            Some(EncryptedValueInstruction::MakeHandlePublic { handle })
-        }
-        Some(ZamaHostInstruction::AllowSubjects { subjects }) => {
-            Some(EncryptedValueInstruction::AllowSubjects {
-                subjects: subjects
-                    .iter()
-                    .map(|subject| subject.to_bytes())
-                    .collect(),
-            })
-        }
-        Some(ZamaHostInstruction::RemoveSubject { subject }) => {
-            Some(EncryptedValueInstruction::RemoveSubject {
-                subject: subject.to_bytes(),
-            })
-        }
+        Some(zama_host::decode::ZamaHostInstruction::MakeHandlePublic {
+            handle,
+        }) => Some(handle),
         _ => None,
     }
-}
-
-pub(crate) fn encrypted_value_account_index(
-    instruction: &EncryptedValueInstruction,
-) -> usize {
-    match instruction {
-        EncryptedValueInstruction::RemoveSubject { .. } => 1,
-        EncryptedValueInstruction::MakeHandlePublic { .. }
-        | EncryptedValueInstruction::AllowSubjects { .. } => {
-            ENCRYPTED_VALUE_ACCOUNT_INDEX
-        }
-    }
-}
-
-/// The material request(s) one decoded `EncryptedValue` instruction produces,
-/// using only handles carried by the instruction. Subject changes emit no
-/// request: material was already prepared when the current handle was created,
-/// and KMS reads live ACL state when authorizing decrypts.
-pub fn encrypted_value_material_requests(
-    instruction: &EncryptedValueInstruction,
-) -> Vec<SolanaMaterialRequest> {
-    match instruction {
-        EncryptedValueInstruction::MakeHandlePublic { handle } => {
-            vec![material_request(*handle)]
-        }
-        EncryptedValueInstruction::AllowSubjects { .. }
-        | EncryptedValueInstruction::RemoveSubject { .. } => Vec::new(),
-    }
-}
-
-/// Decodes the `EncryptedValue` material requests for one transaction's
-/// instructions, given in on-chain execution order and including inner
-/// (CPI-invoked) instructions interleaved in that same order. Non-matching
-/// instructions are skipped; no state is retained across transactions.
-pub fn decode_encrypted_value_instructions<'a>(
-    instructions: impl IntoIterator<Item = (&'a str, &'a [u8], &'a [[u8; 32]])>,
-    zama_host_program_id: &str,
-) -> Vec<SolanaMaterialRequest> {
-    instructions
-        .into_iter()
-        .filter(|(program_id, _, _)| *program_id == zama_host_program_id)
-        .filter_map(|(_, data, accounts)| {
-            let instruction = decode_encrypted_value_instruction(data)?;
-            let encrypted_value_index =
-                encrypted_value_account_index(&instruction);
-            accounts.get(encrypted_value_index)?;
-            Some(encrypted_value_material_requests(&instruction))
-        })
-        .flatten()
-        .collect()
 }
 
 /// A decoded instruction invocation: program id, instruction data, resolved
@@ -185,25 +99,6 @@ pub struct DecodedInstruction {
     pub accounts: Vec<[u8; 32]>,
     pub top_level_index: u32,
     pub is_inner: bool,
-}
-
-pub fn decode_encrypted_value_material_request_records(
-    instructions: &[DecodedInstruction],
-    zama_host_program_id: &str,
-) -> Vec<SolanaHostRecord> {
-    decode_encrypted_value_instructions(
-        instructions.iter().map(|ix| {
-            (
-                ix.program.as_str(),
-                ix.data.as_slice(),
-                ix.accounts.as_slice(),
-            )
-        }),
-        zama_host_program_id,
-    )
-    .into_iter()
-    .map(SolanaHostRecord::MaterialRequest)
-    .collect()
 }
 
 // `previous_bank_hash` sourcing lives in `solana_slot_hashes` (feature-independent
@@ -279,14 +174,11 @@ fn resolve_rhs(
 ///
 /// Returns `None` on a malformed execution (operand or dictionary reference out of range,
 /// or a `Scalar` where only an encrypted operand is valid). `ctx` supplies
-/// chain_id / previous_bank_hash / unix_timestamp; `subject` is the compute
-/// subject. Random seeds are supplied by the host's signed event-CPI execution
-/// because their anchor includes live persistent-account versions that are not
-/// caller-provided instruction data.
+/// chain_id / previous_bank_hash / unix_timestamp. Random seeds are supplied by
+/// the host's signed event-CPI execution because their anchor includes the live
+/// rand nonce, which is not caller-provided instruction data.
 pub fn reconstruct_fhe_execute_steps(
     execution: &FheExecuteArgs,
-    subject: [u8; 32],
-    _remaining_accounts: &[[u8; 32]],
     random_seeds: &[FheExecuteRandomSeed],
     ctx: &ReconstructContext,
 ) -> Option<Vec<ReconstructedExecutionStep>> {
@@ -341,7 +233,6 @@ pub fn reconstruct_fhe_execute_steps(
                 SolanaHostRecord::FheBinaryOp(FheBinaryOp {
                     version: EVENT_VERSION,
                     op: *op,
-                    subject,
                     lhs: lhs_handle,
                     rhs: rhs_handle,
                     scalar,
@@ -377,7 +268,6 @@ pub fn reconstruct_fhe_execute_steps(
                 SolanaHostRecord::FheTernaryOp(FheTernaryOp {
                     version: EVENT_VERSION,
                     op: *op,
-                    subject,
                     control: c,
                     if_true: t,
                     if_false: f,
@@ -394,7 +284,6 @@ pub fn reconstruct_fhe_execute_steps(
                 produced.push(result);
                 SolanaHostRecord::TrivialEncrypt(TrivialEncrypt {
                     version: EVENT_VERSION,
-                    subject,
                     plaintext: *plaintext,
                     fhe_type: *fhe_type,
                     result,
@@ -410,7 +299,6 @@ pub fn reconstruct_fhe_execute_steps(
                 produced.push(result);
                 SolanaHostRecord::FheRand(FheRand {
                     version: EVENT_VERSION,
-                    subject,
                     seed,
                     fhe_type: *fhe_type,
                     result,
@@ -434,7 +322,6 @@ pub fn reconstruct_fhe_execute_steps(
                 SolanaHostRecord::FheUnaryOp(FheUnaryOp {
                     version: EVENT_VERSION,
                     op: *op,
-                    subject,
                     operand: operand_handle,
                     result,
                 })
@@ -457,7 +344,6 @@ pub fn reconstruct_fhe_execute_steps(
                 produced.push(result);
                 SolanaHostRecord::FheRandBounded(FheRandBounded {
                     version: EVENT_VERSION,
-                    subject,
                     upper_bound: *upper_bound,
                     seed,
                     fhe_type: *fhe_type,
@@ -484,7 +370,6 @@ pub fn reconstruct_fhe_execute_steps(
                 produced.push(result);
                 SolanaHostRecord::FheSum(FheSum {
                     version: EVENT_VERSION,
-                    subject,
                     operands: operand_handles,
                     fhe_type: *fhe_type,
                     result,
@@ -517,7 +402,6 @@ pub fn reconstruct_fhe_execute_steps(
                 produced.push(result);
                 SolanaHostRecord::FheIsIn(FheIsIn {
                     version: EVENT_VERSION,
-                    subject,
                     value: value_handle,
                     set: set_handles,
                     fhe_type: *fhe_type,
@@ -546,7 +430,6 @@ pub fn reconstruct_fhe_execute_steps(
                 produced.push(result);
                 SolanaHostRecord::FheMulDiv(FheMulDiv {
                     version: EVENT_VERSION,
-                    subject,
                     factor1: factor1_handle,
                     factor2: factor2_handle,
                     divisor: *divisor,
@@ -555,50 +438,88 @@ pub fn reconstruct_fhe_execute_steps(
                 })
             }
         };
+        let result = *produced.last()?;
         steps_out.push(ReconstructedExecutionStep {
             record,
-            persistent_encrypted_value_index:
-                fhe_execute_step_persistent_output_index(step),
-            previous_handle: fhe_execute_step_previous_handle(step),
+            persistent: fhe_execute_step_persistent_output(
+                step,
+                &execution.dictionary,
+                result,
+            )?,
         });
     }
     Some(steps_out)
 }
 
-/// One reconstructed `fhe_execute` step: the decoded op record plus, for a `Persistent`
-/// output, the `remaining_accounts` index of the output `EncryptedValue` PDA.
-/// The transport resolves that index to the persistent handle's material request.
+/// One reconstructed `fhe_execute` step: the decoded op record plus, for a
+/// `StoredValue` output, the write it performs on its encrypted value account.
 pub struct ReconstructedExecutionStep {
     pub record: SolanaHostRecord,
-    pub persistent_encrypted_value_index: Option<u8>,
-    /// Present when the persistent output updates an existing encrypted value account. The
-    /// transport requests material for the outgoing and reconstructed output
-    /// handles.
+    pub persistent: Option<PersistentOutput>,
+}
+
+/// What a `StoredValue` step writes, read off instruction data alone: the
+/// account (as a `remaining_accounts` index the transport resolves), its
+/// identity fields, the handle it installs and the leaves it seals. Every field
+/// is validated on chain before the write, so a confirmed transaction's values
+/// are authoritative.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PersistentOutput {
+    /// Index into `remaining_accounts` of the output `EncryptedValue` PDA.
+    pub encrypted_value_index: u8,
+    pub program: [u8; 32],
+    pub encrypted_value_account_authority: [u8; 32],
+    pub scope: [u8; 32],
+    pub label: [u8; 32],
+    /// The handle being replaced: `None` on create.
     pub previous_handle: Option<[u8; 32]>,
+    /// The handle the step installs.
+    pub handle: [u8; 32],
+    /// Keys allowed on `handle`, one historical-access leaf each, in this order.
+    pub allowed_keys: Vec<[u8; 32]>,
+    /// Whether a public-decrypt leaf for `handle` follows the allow leaves.
+    pub make_public: bool,
 }
 
-pub fn fhe_execute_step_persistent_output_index(
+/// Resolves a step's `StoredValue` output against the execution dictionary, or
+/// `None` on a dictionary reference out of range (a malformed execution).
+fn fhe_execute_step_persistent_output(
     step: &FheExecuteStep,
-) -> Option<u8> {
-    match fhe_execute_step_output(step) {
-        FheExecuteOutput::StoredValue {
-            output_encrypted_value_index,
-            ..
-        } => Some(*output_encrypted_value_index),
-        FheExecuteOutput::Transient => None,
-    }
-}
-
-/// The outgoing handle when a persistent output updates an existing encrypted value account.
-pub fn fhe_execute_step_previous_handle(
-    step: &FheExecuteStep,
-) -> Option<[u8; 32]> {
-    match fhe_execute_step_output(step) {
-        FheExecuteOutput::StoredValue { previous_state, .. } => {
-            previous_state.as_ref().map(|previous| previous.handle)
-        }
-        FheExecuteOutput::Transient => None,
-    }
+    dictionary: &[[u8; 32]],
+    handle: [u8; 32],
+) -> Option<Option<PersistentOutput>> {
+    let FheExecuteOutput::StoredValue {
+        output_encrypted_value_index,
+        output_program_index,
+        output_authority_key_index,
+        output_scope_index,
+        output_label_index,
+        output_allow_indexes,
+        previous_handle_index,
+        make_public,
+        ..
+    } = fhe_execute_step_output(step)
+    else {
+        return Some(None);
+    };
+    let entry = |index: &u8| dictionary.get(usize::from(*index)).copied();
+    Some(Some(PersistentOutput {
+        encrypted_value_index: *output_encrypted_value_index,
+        program: entry(output_program_index)?,
+        encrypted_value_account_authority: entry(output_authority_key_index)?,
+        scope: entry(output_scope_index)?,
+        label: entry(output_label_index)?,
+        previous_handle: match previous_handle_index {
+            Some(index) => Some(entry(index)?),
+            None => None,
+        },
+        handle,
+        allowed_keys: output_allow_indexes
+            .iter()
+            .map(entry)
+            .collect::<Option<Vec<_>>>()?,
+        make_public: *make_public,
+    }))
 }
 
 /// The output policy of an execution step, independent of step kind.
@@ -621,51 +542,26 @@ fn fhe_execute_step_output(step: &FheExecuteStep) -> &FheExecuteOutput {
 /// [`reconstruct_fhe_execute_steps`].
 pub fn reconstruct_fhe_execute_records(
     execution: &FheExecuteArgs,
-    subject: [u8; 32],
-    remaining_accounts: &[[u8; 32]],
     random_seeds: &[FheExecuteRandomSeed],
     ctx: &ReconstructContext,
 ) -> Option<Vec<SolanaHostRecord>> {
     Some(
-        reconstruct_fhe_execute_steps(
-            execution,
-            subject,
-            remaining_accounts,
-            random_seeds,
-            ctx,
-        )?
-        .into_iter()
-        .map(|step| step.record)
-        .collect(),
+        reconstruct_fhe_execute_steps(execution, random_seeds, ctx)?
+            .into_iter()
+            .map(|step| step.record)
+            .collect(),
     )
 }
 
 #[cfg(test)]
-mod encrypted_value_decode_tests {
+mod make_handle_public_decode_tests {
     use super::*;
     use anchor_lang::AnchorSerialize;
-
-    const ZAMA_HOST: &str = "ZamaHost11111111111111111111111111111111";
-    const ENCRYPTED_VALUE: [u8; 32] = [0x22; 32];
-
-    type TestInstruction<'a> = (&'a str, &'a [u8], &'a [[u8; 32]]);
 
     fn encode(discriminator: &[u8], args: impl AnchorSerialize) -> Vec<u8> {
         let mut bytes = discriminator.to_vec();
         args.serialize(&mut bytes).unwrap();
         bytes
-    }
-
-    fn accounts_with_encrypted_value_at_index_2() -> [[u8; 32]; 6] {
-        let mut accounts = [[0u8; 32]; 6];
-        accounts[ENCRYPTED_VALUE_ACCOUNT_INDEX] = ENCRYPTED_VALUE;
-        accounts
-    }
-
-    fn remove_subject_accounts() -> [[u8; 32]; 4] {
-        let mut accounts = [[0u8; 32]; 4];
-        accounts[1] = ENCRYPTED_VALUE;
-        accounts
     }
 
     #[test]
@@ -674,163 +570,36 @@ mod encrypted_value_decode_tests {
             zama_host::instruction::MakeHandlePublic::DISCRIMINATOR,
             [4u8; 32],
         );
-        assert_eq!(
-            decode_encrypted_value_instruction(&data),
-            Some(EncryptedValueInstruction::MakeHandlePublic {
-                handle: [4; 32]
-            })
-        );
+        assert!(is_make_handle_public_instruction(&data));
+        assert_eq!(decode_make_handle_public(&data), Some([4; 32]));
     }
 
     #[test]
-    fn lifecycle_decode_matches_anchor_trailing_byte_semantics() {
+    fn decode_matches_anchor_trailing_byte_semantics() {
         let mut data = encode(
             zama_host::instruction::MakeHandlePublic::DISCRIMINATOR,
             [4u8; 32],
         );
         data.extend_from_slice(&[0xAA, 0xBB]);
-        assert_eq!(
-            decode_encrypted_value_instruction(&data),
-            Some(EncryptedValueInstruction::MakeHandlePublic {
-                handle: [4; 32]
-            })
-        );
+        assert_eq!(decode_make_handle_public(&data), Some([4; 32]));
     }
 
     #[test]
-    fn make_handle_public_malformed_args_fail_closed() {
+    fn malformed_args_fail_closed() {
         let data =
             zama_host::instruction::MakeHandlePublic::DISCRIMINATOR.to_vec();
-        assert_eq!(decode_encrypted_value_instruction(&data), None);
+        assert!(is_make_handle_public_instruction(&data));
+        assert_eq!(decode_make_handle_public(&data), None);
     }
 
     #[test]
-    fn decodes_allow_subjects() {
-        let data = encode(
-            zama_host::instruction::AllowSubjects::DISCRIMINATOR,
-            vec![[6u8; 32]],
-        );
-        let decoded = decode_encrypted_value_instruction(&data)
-            .expect("must decode allow_subjects");
-        assert_eq!(
-            decoded,
-            EncryptedValueInstruction::AllowSubjects {
-                subjects: vec![[6; 32]]
-            }
-        );
-    }
-
-    #[test]
-    fn decodes_remove_subject() {
-        let data = encode(
-            zama_host::instruction::RemoveSubject::DISCRIMINATOR,
-            [7u8; 32],
-        );
-        let decoded = decode_encrypted_value_instruction(&data)
-            .expect("must decode remove_subject");
-        assert_eq!(
-            decoded,
-            EncryptedValueInstruction::RemoveSubject { subject: [7; 32] }
-        );
-    }
-
-    #[test]
-    fn unknown_discriminator_decodes_to_none() {
-        let data = [0xFFu8; 8].to_vec();
-        assert!(decode_encrypted_value_instruction(&data).is_none());
-    }
-
-    #[test]
-    fn make_handle_public_requests_decoded_handle() {
-        let requests = encrypted_value_material_requests(
-            &EncryptedValueInstruction::MakeHandlePublic { handle: [4; 32] },
-        );
-        assert_eq!(requests.len(), 1);
-        assert_eq!(
-            requests[0].handle,
-            crate::database::tfhe_event_propagate::Handle::from([4; 32])
-        );
-    }
-
-    #[test]
-    fn allow_subjects_schedules_no_material() {
-        let requests = encrypted_value_material_requests(
-            &EncryptedValueInstruction::AllowSubjects {
-                subjects: vec![[6; 32], [7; 32]],
-            },
-        );
-        assert!(requests.is_empty());
-    }
-
-    #[test]
-    fn remove_subject_does_not_delete_prepared_material() {
-        let requests = encrypted_value_material_requests(
-            &EncryptedValueInstruction::RemoveSubject { subject: [6; 32] },
-        );
-        assert!(requests.is_empty());
-    }
-
-    #[test]
-    fn transaction_decode_includes_inner_cpi_instructions() {
-        // A top-level instruction from a different (app) program CPIs into
-        // zama_host's make_handle_public, then allow_subjects; both must be
-        // picked up even though only the second is literally top-level here —
-        // the walk must not special-case position, only program id.
-        let create_data = encode(
-            zama_host::instruction::MakeHandlePublic::DISCRIMINATOR,
-            [4u8; 32],
-        );
-        let allow_data = encode(
-            zama_host::instruction::AllowSubjects::DISCRIMINATOR,
-            vec![[6u8; 32]],
-        );
-        let accounts = accounts_with_encrypted_value_at_index_2();
-        let app_program = "AppProgram111111111111111111111111111111";
-        let instructions: Vec<TestInstruction<'_>> = vec![
-            (app_program, b"unrelated top-level ix data...", &accounts),
-            // Inner (CPI-invoked) instruction from the app's top-level call.
-            (ZAMA_HOST, &create_data, &accounts),
-            (ZAMA_HOST, &allow_data, &accounts),
-        ];
-        let requests =
-            decode_encrypted_value_instructions(instructions, ZAMA_HOST);
-        assert_eq!(
-            requests.len(),
-            1,
-            "make_handle_public requests material while allow_subjects reuses it"
-        );
-        assert_eq!(requests[0].handle, Handle::from([4; 32]));
-    }
-
-    #[test]
-    fn transaction_decode_uses_remove_subject_account_index() {
-        let remove_data = encode(
-            zama_host::instruction::RemoveSubject::DISCRIMINATOR,
-            [6u8; 32],
-        );
-        let accounts = remove_subject_accounts();
-        let instructions: Vec<TestInstruction<'_>> =
-            vec![(ZAMA_HOST, &remove_data, &accounts)];
-        let requests =
-            decode_encrypted_value_instructions(instructions, ZAMA_HOST);
-        assert!(requests.is_empty());
-    }
-
-    #[test]
-    fn non_zama_host_program_instructions_are_skipped() {
-        let data = encode(
-            zama_host::instruction::MakeHandlePublic::DISCRIMINATOR,
-            [4u8; 32],
-        );
-        let accounts = accounts_with_encrypted_value_at_index_2();
-        let instructions: Vec<TestInstruction<'_>> = vec![(
-            "SomeOtherProgram1111111111111111111111111",
-            &data,
-            &accounts,
-        )];
-        let requests =
-            decode_encrypted_value_instructions(instructions, ZAMA_HOST);
-        assert!(requests.is_empty());
+    fn other_discriminators_decode_to_none() {
+        assert!(!is_make_handle_public_instruction(&[0xFFu8; 8]));
+        assert!(decode_make_handle_public(&[0xFFu8; 8]).is_none());
+        let fhe_execute =
+            zama_host::instruction::FheExecute::DISCRIMINATOR.to_vec();
+        assert!(!is_make_handle_public_instruction(&fhe_execute));
+        assert!(decode_make_handle_public(&fhe_execute).is_none());
     }
 }
 
@@ -838,8 +607,6 @@ mod encrypted_value_decode_tests {
 mod tests {
     use super::*;
     use zama_host::state::{FheBinaryOpCode, FheUnaryOpCode};
-
-    const SUBJECT: [u8; 32] = [1u8; 32];
 
     fn ctx() -> ReconstructContext {
         ReconstructContext {
@@ -947,14 +714,8 @@ mod tests {
                 },
             ],
         };
-        let records = reconstruct_fhe_execute_records(
-            &execution,
-            SUBJECT,
-            &[],
-            &[],
-            &ctx(),
-        )
-        .expect("walk");
+        let records = reconstruct_fhe_execute_records(&execution, &[], &ctx())
+            .expect("walk");
         assert_eq!(records.len(), 2);
         let step0 = match &records[0] {
             SolanaHostRecord::TrivialEncrypt(e) => {
@@ -993,32 +754,27 @@ mod tests {
                 output: FheExecuteOutput::StoredValue {
                     output_encrypted_value_index: 0,
                     output_authority_index: None,
-                    output_domain_index: 0,
-                    output_account_index: 1,
+                    output_program_index: 0,
+                    output_authority_key_index: 1,
+                    output_scope_index: 1,
                     output_label_index: 2,
-                    output_subject_indexes: vec![3],
-                    previous_state: None,
+                    output_authority_seeds: vec![],
+                    output_allow_indexes: vec![3],
+                    previous_handle_index: None,
                     make_public: false,
                 },
             }],
         };
 
-        let output_encrypted_value_account = [0x55u8; 32];
         let random_seeds = [FheExecuteRandomSeed {
             step_index: 0,
             seed: [7; 16],
         }];
-        let records = reconstruct_fhe_execute_records(
-            &execution,
-            SUBJECT,
-            &[output_encrypted_value_account],
-            &random_seeds,
-            &ctx(),
-        )
-        .expect("walk");
+        let records =
+            reconstruct_fhe_execute_records(&execution, &random_seeds, &ctx())
+                .expect("walk");
         match &records[..] {
             [SolanaHostRecord::FheRandBounded(event)] => {
-                assert_eq!(event.subject, SUBJECT);
                 assert_eq!(event.upper_bound, upper_bound);
                 assert_eq!(event.fhe_type, 5);
             }
@@ -1035,8 +791,7 @@ mod tests {
             b
         };
         // The execution ends in a rand step, so it anchors a persistent output
-        // (fhevm-internal#1853 W4); dictionary entries 1..=4 are its ACL metadata.
-        let output_encrypted_value_account = [0x55u8; 32];
+        // (fhevm-internal#1853 W4); dictionary entries 1..=4 are its identity and allow list.
         let execution = FheExecuteArgs {
             account_count: 1,
             dictionary: vec![
@@ -1092,11 +847,13 @@ mod tests {
                     output: FheExecuteOutput::StoredValue {
                         output_encrypted_value_index: 0,
                         output_authority_index: None,
-                        output_domain_index: 1,
-                        output_account_index: 2,
+                        output_program_index: 1,
+                        output_authority_key_index: 2,
+                        output_scope_index: 2,
                         output_label_index: 3,
-                        output_subject_indexes: vec![4],
-                        previous_state: None,
+                        output_authority_seeds: vec![],
+                        output_allow_indexes: vec![4],
+                        previous_handle_index: None,
                         make_public: false,
                     },
                 },
@@ -1105,8 +862,6 @@ mod tests {
         let random_seed = [9; 16];
         let records = reconstruct_fhe_execute_records(
             &execution,
-            SUBJECT,
-            &[output_encrypted_value_account],
             &[FheExecuteRandomSeed {
                 step_index: 6,
                 seed: random_seed,
@@ -1204,13 +959,99 @@ mod tests {
                 output: FheExecuteOutput::Transient,
             }],
         };
-        assert!(reconstruct_fhe_execute_records(
-            &execution,
-            SUBJECT,
-            &[],
-            &[],
-            &ctx()
-        )
-        .is_none());
+        assert!(
+            reconstruct_fhe_execute_records(&execution, &[], &ctx()).is_none()
+        );
+    }
+
+    /// A `StoredValue` output is read off instruction data: the handle the step
+    /// installs, the keys it allows and the public flag become the account's
+    /// leaves, and the identity fields name the account.
+    #[test]
+    fn fhe_execute_walk_extracts_persistent_output() {
+        let execution = FheExecuteArgs {
+            account_count: 1,
+            dictionary: vec![
+                [0xA1; 32], [0xA2; 32], [0xA3; 32], [0xA4; 32], [0xB1; 32],
+                [0xB2; 32], [0xC1; 32],
+            ],
+            steps: vec![FheExecuteStep::TrivialEncrypt {
+                plaintext: [7u8; 32],
+                fhe_type: 5,
+                output: FheExecuteOutput::StoredValue {
+                    output_encrypted_value_index: 3,
+                    output_authority_index: None,
+                    output_program_index: 0,
+                    output_authority_key_index: 1,
+                    output_scope_index: 2,
+                    output_label_index: 3,
+                    output_authority_seeds: vec![],
+                    output_allow_indexes: vec![4, 5],
+                    previous_handle_index: Some(6),
+                    make_public: true,
+                },
+            }],
+        };
+        let steps = reconstruct_fhe_execute_steps(&execution, &[], &ctx())
+            .expect("walk");
+        let handle = match &steps[0].record {
+            SolanaHostRecord::TrivialEncrypt(e) => e.result,
+            other => panic!("expected TrivialEncrypt, got {other:?}"),
+        };
+        assert_eq!(
+            steps[0].persistent,
+            Some(PersistentOutput {
+                encrypted_value_index: 3,
+                program: [0xA1; 32],
+                encrypted_value_account_authority: [0xA2; 32],
+                scope: [0xA3; 32],
+                label: [0xA4; 32],
+                previous_handle: Some([0xC1; 32]),
+                handle,
+                allowed_keys: vec![[0xB1; 32], [0xB2; 32]],
+                make_public: true,
+            })
+        );
+
+        let transient = FheExecuteArgs {
+            account_count: 0,
+            dictionary: vec![],
+            steps: vec![FheExecuteStep::TrivialEncrypt {
+                plaintext: [7u8; 32],
+                fhe_type: 5,
+                output: FheExecuteOutput::Transient,
+            }],
+        };
+        let steps = reconstruct_fhe_execute_steps(&transient, &[], &ctx())
+            .expect("walk");
+        assert!(steps[0].persistent.is_none());
+    }
+
+    #[test]
+    fn fhe_execute_walk_rejects_persistent_output_dictionary_overflow() {
+        let execution = FheExecuteArgs {
+            account_count: 1,
+            dictionary: vec![[0xA1; 32]],
+            steps: vec![FheExecuteStep::TrivialEncrypt {
+                plaintext: [7u8; 32],
+                fhe_type: 5,
+                output: FheExecuteOutput::StoredValue {
+                    output_encrypted_value_index: 0,
+                    output_authority_index: None,
+                    output_program_index: 0,
+                    output_authority_key_index: 0,
+                    output_scope_index: 0,
+                    output_label_index: 0,
+                    output_authority_seeds: vec![],
+                    // Allow index past the dictionary: malformed.
+                    output_allow_indexes: vec![1],
+                    previous_handle_index: None,
+                    make_public: false,
+                },
+            }],
+        };
+        assert!(
+            reconstruct_fhe_execute_steps(&execution, &[], &ctx()).is_none()
+        );
     }
 }

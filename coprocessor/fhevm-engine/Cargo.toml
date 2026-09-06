@@ -32,6 +32,7 @@ alloy-primitives = "1.6.1"
 async-trait = "0.1.88"
 axum = "0.7"
 tower-http = { version = "0.5", features = ["trace"] }
+utoipa = "5.4.0"
 anyhow = "1.0.98"
 aws-config = "1.8.5"
 aws-credential-types = "1.2.6"

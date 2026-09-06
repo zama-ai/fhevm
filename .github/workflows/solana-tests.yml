@@ -51,15 +51,14 @@ jobs:
             dead-surface-check:
               - solana/scripts/dead-surface-check.sh
             # Every tree dead-surface-check.sh sweeps. The check used to run only inside
-            # build-and-test, which is gated on `solana`, so an edit to the proof service, the
-            # listener, the kms-connector, the SDK, or the test suite could introduce a retired name
+            # build-and-test, which is gated on `solana`, so an edit to the listener, the
+            # kms-connector, the SDK, or the test suite could introduce a retired name
             # or a dead export without it ever running. Keep this list and the script's own
             # RUST_ROOTS/TS_ROOTS/SCRIPT_ROOTS in step.
             dead-surface:
               - .github/workflows/solana-tests.yml
               - .github/workflows/solana-e2e.yml
               - solana/**
-              - solana-proof-service/**
               - coprocessor/fhevm-engine/host-listener/src/**
               - kms-connector/crates/**
               - sdk/js-sdk/src/solana/**

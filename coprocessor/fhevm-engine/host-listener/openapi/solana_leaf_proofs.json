@@ -1,0 +1,281 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Solana host listener leaf proofs",
+    "description": "Inclusion proofs from the RFC 035 leaf record of Solana encrypted value accounts, for the KMS connector.",
+    "license": {
+      "name": "BSD-3-Clause-Clear",
+      "identifier": "BSD-3-Clause-Clear"
+    },
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/v1/solana/leaf-proofs": {
+      "post": {
+        "tags": [
+          "solana"
+        ],
+        "summary": "Builds the inclusion proof of each queried leaf from the leaf record.",
+        "operationId": "leaf_proofs",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LeafProofRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "One answer per queried leaf, in request order",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LeafProofResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Leaf record unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ErrorCode": {
+        "type": "string",
+        "description": "Error codes, in the RFC 033 vocabulary.",
+        "enum": [
+          "malformed",
+          "sender_authentication_failed",
+          "upstream_transient"
+        ]
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "retryable"
+        ],
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/ErrorCode"
+          },
+          "message": {
+            "type": "string"
+          },
+          "retryable": {
+            "type": "boolean"
+          }
+        }
+      },
+      "LeafProof": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "The leaf is recorded. `peaks` and `leafCount` are the record's state the\nproof was built against; the caller verifies against the on-chain account\nand retries when the record is behind the chain (`leafCount` smaller).",
+            "required": [
+              "leaf_index",
+              "leaf_count",
+              "peaks",
+              "siblings",
+              "status"
+            ],
+            "properties": {
+              "leaf_count": {
+                "type": "integer",
+                "format": "int64",
+                "minimum": 0
+              },
+              "leaf_index": {
+                "type": "integer",
+                "format": "int64",
+                "minimum": 0
+              },
+              "peaks": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "siblings": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Authentication path from the leaf to its peak."
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "found"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The account is recorded but no such leaf is, at `leafCount` leaves. Either\nit was never sealed or the record has not reached the block that sealed it.",
+            "required": [
+              "leaf_count",
+              "status"
+            ],
+            "properties": {
+              "leaf_count": {
+                "type": "integer",
+                "format": "int64",
+                "minimum": 0
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "notFound"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The record never saw this account.",
+            "required": [
+              "status"
+            ],
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "unknownAccount"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The account was first seen through an update, so its earlier leaves are\nunknown and no proof can be served for it.",
+            "required": [
+              "status"
+            ],
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "historyIncomplete"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "The answer for one queried leaf, in request order."
+      },
+      "LeafProofRequest": {
+        "type": "object",
+        "required": [
+          "leaves"
+        ],
+        "properties": {
+          "leaves": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LeafQuery"
+            },
+            "description": "At most [`MAX_LEAVES_PER_REQUEST`] entries; answered in order."
+          }
+        }
+      },
+      "LeafProofResponse": {
+        "type": "object",
+        "required": [
+          "proofs"
+        ],
+        "properties": {
+          "proofs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LeafProof"
+            }
+          }
+        }
+      },
+      "LeafQuery": {
+        "type": "object",
+        "description": "One leaf to prove. Byte fields are 32 bytes as lowercase hex, `0x` optional.",
+        "required": [
+          "encryptedValueAccount",
+          "handle",
+          "kind"
+        ],
+        "properties": {
+          "encryptedValueAccount": {
+            "type": "string",
+            "description": "The encrypted value account whose MMR holds the leaf."
+          },
+          "handle": {
+            "type": "string"
+          },
+          "key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The allowed key; required for `allowed`, absent for `public`."
+          },
+          "kind": {
+            "$ref": "#/components/schemas/LeafQueryKind"
+          }
+        }
+      },
+      "LeafQueryKind": {
+        "type": "string",
+        "description": "Which leaf authorizes the decrypt.",
+        "enum": [
+          "allowed",
+          "public"
+        ]
+      }
+    },
+    "securitySchemes": {
+      "bearer": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    }
+  }
+}

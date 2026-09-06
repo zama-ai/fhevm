@@ -1,5 +1,6 @@
-//! Solana host listener: reconstructs coprocessor work from confirmed Yellowstone
-//! sealed blocks and ingests it into the shared database.
+//! Solana host listener: reconstructs coprocessor work and the RFC 035 leaf record
+//! from confirmed Yellowstone sealed blocks, ingests both into the shared database,
+//! and serves leaf inclusion proofs over HTTP.
 
 use std::{str::FromStr, time::Duration};
 
@@ -14,8 +15,13 @@ use tracing::{info, Level};
 use fhevm_engine_common::{chain_id::ChainId, telemetry, utils::DatabaseURL};
 use host_listener::{
     cmd::DEFAULT_DEPENDENCE_CACHE_SIZE,
-    database::tfhe_event_propagate::Database,
-    solana_grpc_listener::{run, SolanaGrpcListenerConfig, StartPosition},
+    database::{
+        solana_leaves::load_checkpoint, tfhe_event_propagate::Database,
+    },
+    http_server::HttpServer,
+    solana_grpc_listener::{
+        run, BlockCheckpoint, SolanaGrpcListenerConfig, StartPosition,
+    },
     solana_reconstruct::{parse_host_config, HOST_CONFIG_SEED},
 };
 
@@ -47,6 +53,14 @@ struct Args {
     /// Dependence-chain cache size.
     #[arg(long, default_value_t = DEFAULT_DEPENDENCE_CACHE_SIZE)]
     dependence_cache_size: u16,
+
+    /// Port of the HTTP server: health routes and the leaf-proof route.
+    #[arg(long, default_value_t = 8080)]
+    http_port: u16,
+
+    /// Bearer API key the leaf-proof route requires.
+    #[arg(long, env = "SOLANA_PROOF_API_KEY")]
+    proof_api_key: String,
 
     #[arg(long, default_value_t = Level::INFO)]
     log_level: Level,
@@ -102,6 +116,23 @@ async fn main() -> Result<()> {
     .await
     .context("connect coprocessor database")?;
 
+    let pool = db.pool.read().await.clone();
+    // Resume after the last block whose compute rows and leaves were committed; the
+    // leaf record can only be continued from where it stopped.
+    let start = match load_checkpoint(&pool).await.context("load checkpoint")? {
+        Some(checkpoint) => {
+            info!(
+                slot = checkpoint.slot,
+                "resuming after the recorded checkpoint"
+            );
+            StartPosition::Resume(BlockCheckpoint {
+                slot: checkpoint.slot,
+                block_hash: checkpoint.block_hash,
+            })
+        }
+        None => StartPosition::Tip,
+    };
+
     let cancel = CancellationToken::new();
     let signal_cancel = cancel.clone();
     tokio::spawn(async move {
@@ -111,7 +142,21 @@ async fn main() -> Result<()> {
         }
     });
 
-    run(
+    let http_server = HttpServer::new(
+        pool,
+        args.proof_api_key,
+        args.http_port,
+        cancel.clone(),
+    );
+    let http_cancel = cancel.clone();
+    let http_task = tokio::spawn(async move {
+        let result = http_server.start().await;
+        // A dead proof route must not leave the listener running silently.
+        http_cancel.cancel();
+        result
+    });
+
+    let listener_result = run(
         &db,
         &SolanaGrpcListenerConfig {
             grpc_url: args.grpc_url,
@@ -119,8 +164,11 @@ async fn main() -> Result<()> {
             program_id: program_id.to_string(),
             chain_id: host_config_chain_id,
         },
-        StartPosition::Tip,
-        cancel,
+        start,
+        cancel.clone(),
     )
-    .await
+    .await;
+    cancel.cancel();
+    http_task.await.context("join HTTP server")??;
+    listener_result
 }

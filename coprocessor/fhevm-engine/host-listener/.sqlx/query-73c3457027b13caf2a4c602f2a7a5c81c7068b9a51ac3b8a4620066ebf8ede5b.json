@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO solana_listener_checkpoint (singleton, slot, block_hash)\n        VALUES (1, $1, $2)\n        ON CONFLICT (singleton) DO UPDATE SET\n            slot = EXCLUDED.slot,\n            block_hash = EXCLUDED.block_hash,\n            updated_at = NOW()\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "73c3457027b13caf2a4c602f2a7a5c81c7068b9a51ac3b8a4620066ebf8ede5b"
+}

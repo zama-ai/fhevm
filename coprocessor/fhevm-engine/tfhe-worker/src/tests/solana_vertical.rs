@@ -259,28 +259,16 @@ fn reconstruct_transfer_events(
     meta: &TransactionMetadata,
     account_keys: &[Pubkey],
 ) -> Vec<SolanaHostRecord> {
-    // fhe_execute has 9 named accounts (incl. event-CPI authority + program); the rest are the
-    // batch's remaining accounts, which the dictionary wire format references by index.
-    const FHE_EXECUTE_REMAINING_BASE: usize = 9;
-    let (batch, remaining_accounts) = meta
+    let batch = meta
         .inner_instructions
         .iter()
         .flatten()
         .filter(|inner| *inner.instruction.program_id(account_keys) == fixture.host_program_id)
-        .find_map(|inner| {
-            let batch = decode_fhe_execute_args(&inner.instruction.data)?;
-            let remaining = inner.instruction.accounts[FHE_EXECUTE_REMAINING_BASE..]
-                .iter()
-                .map(|index| account_keys[usize::from(*index)].to_bytes())
-                .collect::<Vec<_>>();
-            Some((batch, remaining))
-        })
+        .find_map(|inner| decode_fhe_execute_args(&inner.instruction.data))
         .expect("confidential transfer must CPI into zama-host fhe_execute");
     let clock = fixture.svm.get_sysvar::<Clock>();
     reconstruct_fhe_execute_records(
         &batch,
-        fixture.compute_signer.to_bytes(),
-        &remaining_accounts,
         &[],
         &ReconstructContext {
             chain_id: host::SOLANA_POC_CHAIN_ID,
@@ -301,7 +289,6 @@ struct TokenFixture {
     underlying_mint: Pubkey,
     alice_ata: Pubkey,
     bob_ata: Pubkey,
-    compute_signer: Pubkey,
     alice_token: Pubkey,
     bob_token: Pubkey,
     alice_initial: [u8; 32],
@@ -394,10 +381,9 @@ fn token_fixture() -> TokenFixture {
     svm.airdrop(&bob.pubkey(), 1_000_000_000).unwrap();
     let host_config = seed_host_config(&mut svm, host_program_id, alice.pubkey());
     create_spl_mint(&mut svm, &alice, &underlying_mint, 6);
-    let compute_signer = token::compute_signer_address(mint.pubkey()).0;
     let total_supply_authority = token::total_supply_authority_address(mint.pubkey()).0;
     let total_supply_encrypted_value =
-        token::total_supply_encrypted_value_address(mint.pubkey(), total_supply_authority).0;
+        token::total_supply_encrypted_value_id(mint.pubkey()).address();
 
     send_with_signers(
         &mut svm,
@@ -408,7 +394,6 @@ fn token_fixture() -> TokenFixture {
                 authority: alice.pubkey(),
                 mint: mint.pubkey(),
                 underlying_mint: underlying_mint.pubkey(),
-                compute_signer,
                 total_supply_authority,
                 total_supply_encrypted_value,
                 zama_event_authority: event_authority(host_program_id),
@@ -430,9 +415,9 @@ fn token_fixture() -> TokenFixture {
     let alice_token = token_account_address(token_program_id, mint.pubkey(), alice.pubkey());
     let bob_token = token_account_address(token_program_id, mint.pubkey(), bob.pubkey());
     let alice_current_compute_acl =
-        token::balance_encrypted_value_address(mint.pubkey(), alice_token).0;
+        token::balance_encrypted_value_id(mint.pubkey(), alice_token).address();
     let bob_current_compute_acl =
-        token::balance_encrypted_value_address(mint.pubkey(), bob_token).0;
+        token::balance_encrypted_value_id(mint.pubkey(), bob_token).address();
 
     initialize_token_account(
         &mut svm,
@@ -444,7 +429,6 @@ fn token_fixture() -> TokenFixture {
             host_config,
             mint: mint.pubkey(),
             token_account: alice_token,
-            compute_signer,
             balance_encrypted_value: alice_current_compute_acl,
         },
     );
@@ -458,7 +442,6 @@ fn token_fixture() -> TokenFixture {
             host_config,
             mint: mint.pubkey(),
             token_account: bob_token,
-            compute_signer,
             balance_encrypted_value: bob_current_compute_acl,
         },
     );
@@ -492,7 +475,6 @@ fn token_fixture() -> TokenFixture {
         underlying_mint: underlying_mint.pubkey(),
         alice_ata,
         bob_ata,
-        compute_signer,
         alice_token,
         bob_token,
         alice_initial,
@@ -508,7 +490,6 @@ struct TokenAccountInit {
     host_config: Pubkey,
     mint: Pubkey,
     token_account: Pubkey,
-    compute_signer: Pubkey,
     balance_encrypted_value: Pubkey,
 }
 
@@ -527,7 +508,6 @@ fn initialize_token_account(
                 payer: payer.pubkey(),
                 owner,
                 mint: init.mint,
-                compute_signer: init.compute_signer,
                 token_account: init.token_account,
                 balance_encrypted_value: init.balance_encrypted_value,
                 zama_event_authority: event_authority(init.host_program_id),
@@ -582,7 +562,6 @@ fn transfer_ix(
             to_ata: fixture.bob_ata,
             from_account: fixture.alice_token,
             to_account: fixture.bob_token,
-            compute_signer: fixture.compute_signer,
             from_balance_value: output.alice,
             to_balance_value: output.bob,
             transferred_amount_value: output.transferred,
@@ -590,18 +569,21 @@ fn transfer_ix(
             zama_program: fixture.host_program_id,
             host_config: fixture.host_config,
             system_program: system_program::ID,
+            receipt_value: None,
+            receipt_authority: None,
             event_authority: event_authority(fixture.token_program_id),
             program: fixture.token_program_id,
         }
         .to_account_metas(None),
         data: token::instruction::ConfidentialTransfer {
             // fromExternal: the amount is a coprocessor-signed attestation bound to
-            // (user = owner, contract = mint compute-signer PDA), re-verified in fhe_execute.
+            // (user = owner, contract = the token program), re-verified in fhe_execute.
             amount_attestation: amount_attestation_for(
                 amount_handle,
                 fixture.alice.pubkey(),
-                fixture.compute_signer,
+                fixture.token_program_id,
             ),
+            receipt: None,
         }
         .data(),
     }
