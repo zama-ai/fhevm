@@ -13,8 +13,8 @@ use crate::{
 
 use super::harness::balance_handle;
 
-/// The widest allow list the frontier explores per output: the eight-key audience the retired
-/// subject model capped at, kept so the boundary numbers stay comparable across the redesign.
+/// The widest allow list the frontier explores per output: eight keys, the cap the retired
+/// per-account list had, kept so the boundary numbers stay comparable across the redesign.
 pub(crate) const WIDE_ALLOW_LIST: usize = 8;
 
 fn fresh_app() -> AppScope {

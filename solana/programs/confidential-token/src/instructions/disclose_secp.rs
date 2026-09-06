@@ -31,7 +31,7 @@
 //! ## Indexer note (fhevm-internal#1862 #14)
 //!
 //! `HandleDisclosedEvent` carries the validated token state kind, authority, and label. Consumers do
-//! not need to infer whether a mint-domain value was a balance, transfer amount, burn amount, or
+//! not need to infer whether a value of the mint was a balance, transfer amount, burn amount, or
 //! total supply from an untrusted account choice.
 
 use super::*;

@@ -23,7 +23,7 @@ pub struct EncryptedValue {
     /// the account written must be the PDA rederived from the declared four seeds, which is what
     /// ties the signer to the stored value. For a token balance this is the token account itself.
     pub encrypted_value_account_authority: Pubkey,
-    /// Program-declared scope inside `program`'s namespace (the mint for the token program).
+    /// Program-declared scope within `program` (the mint for the token program).
     /// `(program, scope)` is the application identity for HCU metering and the deny list.
     pub scope: [u8; 32],
     /// Which of the authority's values this is.

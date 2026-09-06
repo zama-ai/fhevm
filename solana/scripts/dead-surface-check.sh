@@ -520,8 +520,30 @@ if run_check 3; then
   # never match `*_value_key`, because `_` is a word character to grep — so two connector test names
   # kept the word, and the one exception the entry does need was being granted by accident rather
   # than stated. `acl_value_key` is that exception, named now.
+  # No exception any more: the connector's `acl_value_key` went with the client-supplied proof it
+  # keyed (RFC 035 — the connector reads the encrypted value account and fetches the proof itself).
   check_alias 'value_key identifier — renamed to encrypted_value_id' kms \
-    'acl_value_key' -iE 'value_key' --exclude-dir=utils
+    '' -iE 'value_key' --exclude-dir=utils
+  # RFC 035 retired the whole "subject" vocabulary: an encrypted value account keeps no list of
+  # who may decrypt it; who may decrypt a handle is an `allow` sealed on the write, and a key so
+  # named is a viewer. The English idioms ("subject to", "the subject of a test") are the only
+  # exceptions.
+  check_alias 'subject — say allow / viewer; the account keeps no list' kms \
+    'subject to|subject of|whose subject|subject is the|subject matter' \
+    -iE '\bsubjects?\b|_subjects?\b|subjects?_|Subjects?[A-Z]|[a-z]Subjects?\b'
+  # Reading a value into a computation is admitted by its authority's signature; there is no
+  # separate compute identity to name.
+  check_alias 'compute subject / compute signer — reads are admitted by the value authority' kms \
+    '' -iE 'compute[ _-]?(subject|signer)|computeSubject|computeSigner|fhe-compute'
+  # The ACL "domain" became the application `(program, scope)`. Swept as the ACL sense only:
+  # "ACL domain", "mint domain", the `Domain` type, `.domain` fields and `domain_index` wire names.
+  # EIP-712 signing domains and hash domain separation are other senses and never matched. The
+  # permit crate is excluded whole: `acl_domain_key` / "ACL domain key" is the normative field of
+  # the signed permit wire and its vectors, kept on purpose.
+  check_alias 'domain — say application (program, scope)' kms \
+    'acl_domain_key|acl-domain-key|acl domain key|acl-domain key|allowed_acl_domain_keys|aclDomainKey|allowedAclDomainKeys' \
+    -iE '\bacl[ _-]domains?\b|mint[ _-]domain|self[ _-]domain|Domain::new|zama_fhe::Domain|\bDomain<|domain_index|\.domain\b|domain: Pubkey|\bdomain key' \
+    --exclude-dir=zama-solana-permit
   # The encrypted-value ID components are domain / encrypted_value_account_authority /
   # encrypted_value_label. `acl_domain_key` is NOT swept: it is the normative field name of the signed
   # Solana permit (`allowed_acl_domain_keys` in the user-decryption specification) and of the v3 wire,
@@ -988,6 +1010,9 @@ PersistentEvalTarget|eval — say execution; evaluate is the verb
 born-public|born / birth — renamed to created-public / create
 are born with|born / birth — renamed to created-public / create
 value_key|value_key identifier — renamed to encrypted_value_id
+the subject set|subject — say allow / viewer; the account keeps no list
+compute_subject|compute subject / compute signer — reads are admitted by the value authority
+ACL domain key|domain — say application (program, scope)
 app_account|app_account / app_authority — renamed to encrypted_value_account_authority
 app_authority|app_account / app_authority — renamed to encrypted_value_account_authority
 app context|app context — say encrypted value account authority

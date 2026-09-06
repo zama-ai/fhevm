@@ -77,7 +77,7 @@ pub struct EncryptedValue {
     /// The account that controls this encrypted value: a PDA of `program` that must sign to
     /// create it or update its handle. For a token balance this is the token account itself.
     pub encrypted_value_account_authority: [u8; 32],
-    /// Program-declared scope inside `program`'s namespace — the mint for the token program.
+    /// Program-declared scope within `program` — the mint for the token program.
     /// Trustworthy only as the pair `(program, scope)`: another program cannot forge the
     /// `program` half. The pair is the application identity for HCU metering, the deny list and
     /// permit scoping.

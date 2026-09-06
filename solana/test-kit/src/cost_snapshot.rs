@@ -349,10 +349,10 @@ fn cost_failures(expected: &Cost, measured: &Cost) -> Vec<String> {
     failures
 }
 
-fn assert_snapshot_matches(path: &Path, subject: &str, failures: Vec<String>) {
+fn assert_snapshot_matches(path: &Path, what: &str, failures: Vec<String>) {
     assert!(
         failures.is_empty(),
-        "snapshot mismatch for {subject} in {}:\n  {}\naccept intentional changes with \
+        "snapshot mismatch for {what} in {}:\n  {}\naccept intentional changes with \
          `bash scripts/update-cost-snapshots.sh` (or {UPDATE_ENV}=1) and commit the updated snapshot",
         path.display(),
         failures.join("\n  ")

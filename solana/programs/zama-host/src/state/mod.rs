@@ -308,7 +308,7 @@ pub struct CoprocessorInputAttestation {
     pub handle_index: u8,
     /// Attested user identity (bytes32).
     pub user_address: [u8; 32],
-    /// Attested contract identity — the input's ACL domain key (bytes32).
+    /// Attested contract identity — the application program the input is bound to (bytes32).
     pub contract_address: [u8; 32],
     /// Gateway-side contract chain id the attestation binds.
     pub contract_chain_id: u64,

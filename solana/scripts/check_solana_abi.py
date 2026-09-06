@@ -122,16 +122,12 @@ PINNED_SCHEMAS = [
     ("zama_host", "event", "PublicOutputsProducedEvent", True),
     ("zama_host", "instruction_args", "initialize_host_config", True),
     ("zama_host", "instruction_args", "fhe_execute", True),
-    # EncryptedValue itself is intentionally not an Anchor `Account<'info, T>`
-    # (see solana/programs/zama-host/src/instructions/encrypted_value.rs) —
-    # every instruction takes it as `UncheckedAccount` and hand-rolls the
-    # discriminator+borsh codec via `zama_solana_acl`, so Anchor's IDL builder
-    # never registers it as an `account`/`type` entry. Its wire layout is
-    # instead pinned by `zama-host`'s own
-    # `state::encrypted_value::tests::discriminator_matches_shared_crate` and
-    # `zama-solana-acl`'s codec tests, not by this golden file.
-    ("zama_host", "instruction_args", "allow_subjects", True),
-    ("zama_host", "instruction_args", "remove_subject", True),
+    # The encrypted value account layout is also pinned by `zama-solana-acl`'s codec tests and
+    # `shared_crate_decoder_reads_what_the_program_serializes`; the deny record and the rand nonce
+    # are read by the connector and the indexer.
+    ("zama_host", "account", "EncryptedValue", True),
+    ("zama_host", "account", "DenyScopeRecord", True),
+    ("zama_host", "account", "RandNonce", True),
     ("zama_host", "instruction_args", "make_handle_public", True),
     ("zama_host", "instruction_args", "define_kms_context", True),
     ("zama_host", "instruction_args", "delegate_for_user_decryption", True),
@@ -141,7 +137,7 @@ PINNED_SCHEMAS = [
     ("zama_host", "instruction_args", "set_admin", True),
     ("zama_host", "instruction_args", "set_coprocessor_signers", True),
     ("zama_host", "instruction_args", "set_eip712_domain", True),
-    ("zama_host", "instruction_args", "set_deny_subject", True),
+    ("zama_host", "instruction_args", "set_deny_scope", True),
     ("zama_host", "instruction_args", "set_grant_deny_list_enabled", True),
     ("zama_host", "instruction_args", "set_hcu_app_trusted", True),
     ("zama_host", "instruction_args", "set_hcu_block_cap_per_app", True),
@@ -166,12 +162,10 @@ PINNED_SCHEMAS = [
     ("confidential_token", "instruction_args", "disclose_secp", True),
     ("confidential_token", "instruction_args", "initialize_mint", True),
     ("confidential_token", "instruction_args", "initialize_token_account", True),
-    ("confidential_token", "instruction_args", "allow_token_account_subjects", True),
-    ("confidential_token", "instruction_args", "allow_total_supply_subjects", True),
+    ("confidential_token", "instruction_args", "allow_balance_viewers", True),
+    ("confidential_token", "instruction_args", "allow_total_supply_viewers", True),
     ("confidential_token", "instruction_args", "make_token_account_handle_public", True),
     ("confidential_token", "instruction_args", "make_total_supply_handle_public", True),
-    ("confidential_token", "instruction_args", "remove_token_account_subject", True),
-    ("confidential_token", "instruction_args", "remove_total_supply_subject", True),
     ("confidential_token", "instruction_args", "redeem_burned_amount", True),
     ("confidential_token", "instruction_args", "cancel_pending_burn", True),
     ("confidential_token", "instruction_args", "wrap_usdc", True),

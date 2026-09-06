@@ -457,7 +457,7 @@ pub(crate) fn assert_amount_value_spendable(
     require!(
         amount_value.encrypted_value_account_authority == spender
             || amount_value.encrypted_value_account_authority == spender_token_account,
-        ConfidentialTokenError::AmountSpendSubjectMismatch
+        ConfidentialTokenError::AmountSpendAuthorityMismatch
     );
     Ok(())
 }

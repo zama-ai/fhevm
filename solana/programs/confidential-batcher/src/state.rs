@@ -200,7 +200,7 @@ pub fn batcher_encrypted_value_address(
 ///
 /// Event-facing only — claims never multiply by it (they use exact
 /// proportional division), so a redeem batch whose per-unit payout exceeds
-/// the u64 rate domain (extreme share price) must not fail settle over a
+/// the u64 rate range (extreme share price) must not fail settle over a
 /// display number. `total_joined` must be non-zero (zero-total batches cancel
 /// instead).
 pub fn payout_rate(payout_received: u64, total_joined: u64) -> Result<u64> {

@@ -43,14 +43,6 @@ pub enum ConfidentialTokenError {
     /// Vault token account was not the mint's canonical associated token account.
     #[msg("Vault token account is not the canonical mint vault")]
     VaultAccountMismatch,
-    /// Retired with the ACL domain (values are scoped by `(program, mint)` now). Kept so Anchor
-    /// error ordinals stay stable.
-    #[msg("Confidential mint ACL domain key is invalid (retired)")]
-    DomainMismatch,
-    /// Retired with the compute signer (reads are admitted by the value authority's signature).
-    /// Kept so Anchor error ordinals stay stable.
-    #[msg("Compute signer does not match confidential mint (retired)")]
-    ComputeSignerMismatch,
     /// Current EncryptedValue account did not match token account state.
     #[msg("current encrypted value does not match token account state")]
     CurrentEncryptedValueMismatch,
@@ -70,7 +62,7 @@ pub enum ConfidentialTokenError {
     /// account that does. Token-level spend gate mirroring EVM's `FHE.isAllowed(amount,
     /// msg.sender)`: computing on a value is admitted by its authority's signature.
     #[msg("amount value spender does not control the amount")]
-    AmountSpendSubjectMismatch,
+    AmountSpendAuthorityMismatch,
     /// Total-supply authority PDA did not match the mint.
     #[msg("total supply authority does not match mint")]
     TotalSupplyAuthorityMismatch,
@@ -167,13 +159,11 @@ pub enum ConfidentialTokenError {
     /// authority and label.
     #[msg("token encrypted value account is not canonical")]
     TokenEncryptedValueMismatch,
-    /// The encrypted total-supply value is not the canonical mint-scoped account.
-    #[msg("encrypted total supply value is not canonical")]
-    TotalSupplyValueMismatch,
     /// Freeze checks bind the owner's associated token account for the wrapped mint.
     #[msg("underlying associated token account does not match")]
     UnderlyingAssociatedAccountMismatch,
-    /// A transfer receipt needs its descriptor, value account and signing authority together.
+    /// A transfer receipt needs its descriptor, encrypted value account and signing authority
+    /// together.
     #[msg("transfer receipt descriptor and accounts must be passed together")]
     TransferReceiptMismatch,
 }
