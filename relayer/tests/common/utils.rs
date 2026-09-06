@@ -953,6 +953,37 @@ pub fn create_timeout_test_config(
     Ok(temp_config_path)
 }
 
+/// Override the wait-window knobs, which `tests/relayer-test-config.yaml` pins to 0.
+/// The share threshold stays at its configured 9, so the emitted share count is what varies.
+#[allow(dead_code)]
+pub fn create_user_decrypt_wait_config(
+    temp_dir: &TempDir,
+    additional_shares: u32,
+    additional_shares_timeout_secs: u32,
+) -> anyhow::Result<std::path::PathBuf> {
+    let temp_config_path = temp_dir.path().join("user_decrypt_wait.yaml");
+
+    let config_content = std::fs::read_to_string("tests/relayer-test-config.yaml")
+        .context("Failed to read default config")?;
+    let mut config: serde_yaml::Value =
+        serde_yaml::from_str(&config_content).context("Failed to parse YAML config")?;
+
+    if let Some(gateway) = config.get_mut("gateway") {
+        if let Some(contracts) = gateway.get_mut("contracts") {
+            contracts["user_decrypt_additional_shares"] =
+                serde_yaml::Value::Number(serde_yaml::Number::from(additional_shares));
+            contracts["user_decrypt_additional_shares_timeout_secs"] =
+                serde_yaml::Value::Number(serde_yaml::Number::from(additional_shares_timeout_secs));
+        }
+    }
+
+    let modified_content =
+        serde_yaml::to_string(&config).context("Failed to serialize modified config")?;
+    std::fs::write(&temp_config_path, modified_content).context("Failed to write temp config")?;
+
+    Ok(temp_config_path)
+}
+
 /// Generate a random Ethereum address for testing
 #[allow(dead_code)]
 pub fn random_address() -> Address {

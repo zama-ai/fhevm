@@ -6,6 +6,7 @@
 use super::config_param::{ConfigError, ConfigParam, ConfigValue};
 use super::registry::AdminConfigRegistry;
 use crate::http::retry_after::RetryAfterState;
+use crate::http::user_decrypt_wait::UserDecryptWaitState;
 use axum::{
     extract::Extension,
     http::StatusCode,
@@ -112,13 +113,15 @@ pub enum ConstraintInfo {
 pub async fn update_config(
     Extension(registry): Extension<Option<Arc<AdminConfigRegistry>>>,
     Extension(retry_after_state): Extension<Option<Arc<RetryAfterState>>>,
+    Extension(user_decrypt_wait_state): Extension<Option<Arc<UserDecryptWaitState>>>,
     Json(payload): Json<UpdateConfigRequest>,
 ) -> Response {
-    // Check if admin endpoints are enabled (need either registry or retry-after state)
+    // Check if admin endpoints are enabled (need at least one backing store)
     let registry = registry.as_ref();
     let retry_state = retry_after_state.as_ref();
+    let wait_state = user_decrypt_wait_state.as_ref();
 
-    if registry.is_none() && retry_state.is_none() {
+    if registry.is_none() && retry_state.is_none() && wait_state.is_none() {
         warn!("Admin endpoint called but admin endpoints are disabled");
         return (
             StatusCode::FORBIDDEN,
@@ -238,6 +241,33 @@ pub async fn update_config(
                 (status, Json(AdminErrorResponse { error: error_msg })).into_response()
             }
         }
+    } else if param.is_user_decrypt_wait_param() {
+        // Route to UserDecryptWaitState
+        let Some(state) = wait_state else {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(AdminErrorResponse {
+                    error: "User-decrypt wait state not configured".to_string(),
+                }),
+            )
+                .into_response();
+        };
+
+        apply_user_decrypt_wait_update(state, param, &payload.value).await;
+        info!(
+            param = %param,
+            value = %payload.value,
+            "ADMIN_CONFIG_UPDATE: User-decrypt wait param updated"
+        );
+        (
+            StatusCode::OK,
+            Json(UpdateConfigResponse {
+                name: payload.param,
+                value: payload.value,
+                message: "Configuration updated successfully".to_string(),
+            }),
+        )
+            .into_response()
     } else {
         (
             StatusCode::BAD_REQUEST,
@@ -246,6 +276,23 @@ pub async fn update_config(
             }),
         )
             .into_response()
+    }
+}
+
+/// Apply a validated user-decrypt wait-window update to `UserDecryptWaitState`.
+async fn apply_user_decrypt_wait_update(
+    state: &UserDecryptWaitState,
+    param: ConfigParam,
+    value: &ConfigValue,
+) {
+    // Both params are u32 and already range-validated by the caller.
+    let v = value.as_u32().unwrap_or_default();
+    match param {
+        ConfigParam::UserDecryptAdditionalShares => state.set_additional_shares(v).await,
+        ConfigParam::UserDecryptAdditionalSharesTimeoutSecs => {
+            state.set_additional_shares_timeout_secs(v).await
+        }
+        _ => {}
     }
 }
 
@@ -372,12 +419,14 @@ fn format_validation_error(param_name: &str, validation_msg: &str) -> String {
 pub async fn get_config(
     Extension(registry): Extension<Option<Arc<AdminConfigRegistry>>>,
     Extension(retry_after_state): Extension<Option<Arc<RetryAfterState>>>,
+    Extension(user_decrypt_wait_state): Extension<Option<Arc<UserDecryptWaitState>>>,
 ) -> Response {
     // Check if admin endpoints are enabled
     let registry = registry.as_ref();
     let retry_state = retry_after_state.as_ref();
+    let wait_state = user_decrypt_wait_state.as_ref();
 
-    if registry.is_none() && retry_state.is_none() {
+    if registry.is_none() && retry_state.is_none() && wait_state.is_none() {
         warn!("Admin endpoint called but admin endpoints are disabled");
         return (
             StatusCode::FORBIDDEN,
@@ -431,6 +480,18 @@ pub async fn get_config(
         values.insert(
             ConfigParam::NominalTxConfirmationMs.to_string(),
             ConfigValue::U32(state.nominal_tx_ms().await),
+        );
+    }
+
+    // Add optimistic user-decrypt wait-window values if available
+    if let Some(state) = wait_state {
+        values.insert(
+            ConfigParam::UserDecryptAdditionalShares.to_string(),
+            ConfigValue::U32(state.additional_shares().await),
+        );
+        values.insert(
+            ConfigParam::UserDecryptAdditionalSharesTimeoutSecs.to_string(),
+            ConfigValue::U32(state.additional_shares_timeout_secs().await),
         );
     }
 
