@@ -27,6 +27,7 @@
     "ts",
     "forge",
     "LICENSE",
+    "README.md",
     "!**/tsconfig*.json",
     "!**/*.tsbuildinfo"
   ],

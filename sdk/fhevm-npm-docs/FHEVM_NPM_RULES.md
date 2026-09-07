@@ -227,40 +227,46 @@ exits 0 — the silent failure TS18002 would catch, except `references` suppress
 
 ### 3.1 Depending on a workspace member
 
-**3.1.1 A member depending on another member uses a plain version matching that member's version.** npm links the
-member in preference to npmjs.com, even when the same version is published there. This holds in a published manifest
-too: 4.3.1's consumer-facing ranges are for root-pinned third-party packages, never for a member.
+**3.1.1 A member depending on another member uses a relative `file:` link to that member's directory.** This
+applies to intra-workspace dependencies only — a member naming another manifest member, such as a plugin depending on
+`@fhevm/host-contracts-cleartext`. External packages (`eslint`, `hardhat`, `@fhevm/sdk`) are untouched and follow
+section 4. npm installs the link as a symlink, whatever installation root each side lives in, so bumping the target's
+version changes no dependency spec and no lockfile edge. A version pin would do the opposite: the moment the member's
+version moves past the pin, npm silently fetches npmjs.com's package of that name instead of linking the member.
 
-A mirror-only consumer project is the narrow exception: it may use a relative `file:` directory link to the exact
-manifest-listed candidate, because `test-consumer` copies the project outside the workspace before installing it. A
-package whose distribution includes `npm` never uses `file:` — that local path would not exist for npm consumers.
+An npm-distributed package may link only an npm-published member: the publish layer renders the link to a registry
+range, and there is nothing to render a private helper to. The link is legal in the working tree precisely because
+publication rewrites it; an unrendered `file:` spec must never reach npmjs.com.
 
 ```jsonc
-// ✅ In hardhat/v2/e2e: resolves to a symlink to hardhat/v2/plugin/pkg, even though this version
-//    exists on npmjs.com.
+// ✅ In hardhat/v2/e2e: a symlink to hardhat/v2/plugin/pkg, and still one after the plugin bumps.
+"@fhevm/hardhat-plugin": "file:../plugin/pkg"
+
+// ✅ In hardhat/v2/plugin/pkg (npm-distributed) to an npm-published member of another root.
+//    Rendered to a registry range at publish time.
+"@fhevm/host-contracts-cleartext": "file:../../../../host-contracts-cleartext/v13/pkg"
+
+// ❌ Names the member by version. Correct today; after the plugin bumps to 0.4.3 npm fetches
+//    npmjs.com's 0.4.2, and the workspace stops testing the member without a word.
 "@fhevm/hardhat-plugin": "0.4.2"
 
-// ✅ In the mirror-only fhevm-hardhat-template consumer: resolves to the local candidate after the
-//    project is copied outside the workspace by test-consumer.
-"@fhevm/hardhat-plugin": "file:../../plugin/pkg"
-
-// ❌ The member is 0.4.2, so no local package satisfies this range and npm goes to npmjs.com.
-//    A range that drifts past the member's version is how a member stops testing the member.
+// ❌ A range has the same failure, one step earlier.
 "@fhevm/hardhat-plugin": "^0.5.0"
 
-// ❌ A mirror-only consumer link must resolve to the manifest member having this package name.
+// ❌ A link must resolve to the manifest member having this package name.
 "@fhevm/hardhat-plugin": "file:../../another-package/pkg"
 
-// ❌ In an npm-distributed package: local filesystem paths cannot be consumed from npmjs.com.
-"@fhevm/host-contracts-cleartext": "file:../../../host-contracts-cleartext/v13/pkg"
+// ❌ An npm-distributed package linking a private helper: a published tarball cannot resolve it,
+//    and nothing can render it.
+"@fhevm/sdk-common-dev": "file:../../../common"
 ```
 
 **3.1.2 Never use `file:*.tgz` for a name that is also a member.** npm links members by name before reading the spec,
 so the tarball is ignored and the edge is marked `invalid` — after which the whole subtree stops resolving.
 
 ```jsonc
-// ✅ Same package, linked by name instead of packed. No pack step, nothing to rebuild first.
-"@fhevm/hardhat-plugin": "0.4.2"
+// ✅ Same package, linked as a directory instead of packed. No pack step, nothing to rebuild first.
+"@fhevm/hardhat-plugin": "file:../plugin/pkg"
 
 // ❌ In hardhat/v2/e2e, while @fhevm/hardhat-plugin is a member at hardhat/v2/plugin/pkg. npm reports:
 //    invalid: "file:...fhevm-hardhat-plugin-0.4.2.tgz" from hardhat/v2/e2e -> ./hardhat/v2/plugin/pkg
@@ -270,16 +276,16 @@ so the tarball is ignored and the edge is marked `invalid` — after which the w
 
 ### 3.2 Depending from outside the workspace
 
-**3.2.1 A consumer installed outside the workspace links a directory on disk, not a version.** Rule 3.1.1 works only
-while npm can find a workspace member with that name; in an isolated copy, a plain version goes to npmjs.com.
+**3.2.1 A consumer installed outside the workspace links a directory on disk, not a version.** Same shape as 3.1.1,
+for the same reason: in an isolated copy there is no member to find by name, so a plain version goes to npmjs.com.
 
 ```jsonc
 // ✅ In fhevm-hardhat-template: test-consumer resolves this relative link to the local candidate before
 //    copying and installing the consumer outside the workspace.
 "@fhevm/hardhat-plugin": "file:../../plugin/pkg"
 
-// ❌ Identical to 3.1.1's ✅, but with no member to link. npm fetches npmjs.com's own 0.4.2, which peers
-//    on @zama-fhe/relayer-sdk and @fhevm/solidity ^0.11.1 — a different generation, installed silently.
+// ❌ No member to link. npm fetches npmjs.com's own 0.4.2, which peers on @zama-fhe/relayer-sdk and
+//    @fhevm/solidity ^0.11.1 — a different generation, installed silently.
 "@fhevm/hardhat-plugin": "0.4.2"
 ```
 
@@ -486,7 +492,8 @@ the manifest inventory, and report `4.2.1` on a missing, ranged or divergent dec
 
 **4.2.3 Siblings inside one dependency group declare identical ranges.** Gated by comparing members against each
 other rather than against a table, so the rule needs no edit when a dependency group is added. Membership in the
-group is declared by the manifest's `dependencyGroup` field.
+group is declared by the manifest's `dependencyGroup` field. A 3.1.1 `file:` link counts by the directory it resolves
+to, so siblings at different depths agree when they link the same member.
 
 ```jsonc
 // ✅ hardhat/v2/plugin and hardhat/v2/e2e agree, so the hoisted copy is the one both declare.
@@ -691,6 +698,17 @@ Prettier plugin, Solhint) and does not require `forge:fmt`, `forge:fmt:check` or
 **5.1.6 A non-published package running Prettier uses the workspace configuration.** It contains `prettier.config.js`
 referencing `sdk/prettier.base.mjs` by relative path; the only accepted config filenames are those two. A dev owner
 containing only `package.json` and `pkg/` has no local source to format, so any local Prettier config is forbidden.
+An installation root carries neither.
+
+**The workspace root is the sole exception: it holds both, and both are required.** `prettier.base.mjs` is the shared
+base, and `prettier.config.js` re-exports it. The second is not a duplicate: `prettier.base.mjs` is not a filename
+Prettier discovers, so without the re-export the files that sit directly in `sdk/` and belong to no package —
+`npm-manifest.json`, `cleartext-config.json`, the sdk-level docs — resolve the repository-root Prettier config
+instead, whose plugins the sdk workspace does not install. Formatting them then fails rather than happening, which
+is silent in an editor. Two configs are allowed here; two sources of formatting truth are not, so the re-export is
+pinned to the one statement.
+
+Comments are ignored when the statement is pinned, in every package: prose explaining a config is not a fork of it.
 
 ```js
 // ✅ In an ESM sdk/common/prettier.config.js.
@@ -698,11 +716,17 @@ export { default } from '../prettier.base.mjs';
 
 // ✅ In a CommonJS package's prettier.config.js.
 module.exports = import('../../../prettier.base.mjs').then((module) => module.default);
+
+// ✅ At the workspace root, beside prettier.base.mjs, comment and all.
+export { default } from './prettier.base.mjs';
 ```
 
 ```text
 ❌ Alternate configuration filename:
 .prettierrc.mjs
+
+❌ At the workspace root, restating options instead of re-exporting the base:
+export default { singleQuote: true };
 ```
 
 **5.1.7 ESLint configuration uses one conventional filename.** Every non-published package defining `lint` contains
@@ -771,6 +795,26 @@ toolchain. Neither substitutes its own convenient resolution mode for the consum
 ❌ tsc under nodenext only: no proof that a Hardhat v2 consumer resolves the package
 ```
 
+**5.2.6 Every file in an npm-distributed payload directory is published or deliberately excluded.** `files` is a
+whitelist, so a file that sits beside it without being selected is dead weight: committed under `pkg/`, shipped to
+nobody, reviewed by nobody. The check takes the repository-visible files of the payload directory (tracked and
+untracked-unignored, as 7.1.1 discovers), asks npm what it would pack (`npm pack --dry-run`, scripts skipped), and
+requires each file to be either in that tarball or matched by a `!` pattern in `files`. The `!` pattern is the one
+place a deliberately unpublished file is declared; npm reads a pattern without a `/` at any depth, and so does the
+check. A published package without `files` fails outright, since without the whitelist every stray file ships.
+Mirror-only payloads are exempt: their directory is the mirror, and its unpublished files are the point.
+
+```jsonc
+// ✅ The tsconfig beside the sources is declared unpublished, so it may stay.
+"files": ["src", "_types", "!**/tsconfig*.json", "!**/*.tsbuildinfo"]
+```
+
+```text
+❌ pkg/NOTES.md      present, not selected by "files", named by no "!" pattern: delete it or declare it
+❌ pkg/tsconfig.json present, "files": ["src", "_types"] says nothing about it
+❌ no "files" at all in a published package.json
+```
+
 #### Hardhat v2 profile — proposed example
 
 This profile is the concrete application of 5.2.3–5.2.5 to `@fhevm/hardhat-plugin`. It is an example until a shared
@@ -801,6 +845,19 @@ The profile performs all of these checks against the isolated installation from 
 ✅ require -> temporary consumer/node_modules/@fhevm/hardhat-plugin/_cjs/index.js
 ✅ types   -> temporary consumer/node_modules/@fhevm/hardhat-plugin/_types/index.d.ts
 ❌ types   -> checkout/sdk/hardhat/v2/plugin/pkg/src/index.ts
+```
+
+**5.2.7 Every npm-distributed payload ships `LICENSE` and `README.md`, present in the payload directory and named in
+`files`.** They are the two files npmjs.com renders on a package page: the license text and the front page. npm packs
+both whatever `files` says, so the listing exists for the reader, not for npm — a whitelist that omits them reads as
+if the package shipped without them. Names are exact: `LICENSE` and `README.md`, not `license` or `readme`.
+
+```jsonc
+// ✅ The whitelist is the complete manifest of what ships.
+"files": ["src", "_types", "LICENSE", "README.md", "!**/tsconfig*.json"]
+
+// ❌ Both files sit in pkg/ and npm packs them, yet the list says otherwise.
+"files": ["src", "_types", "!**/tsconfig*.json"]
 ```
 
 ### 5.3 Tarballs

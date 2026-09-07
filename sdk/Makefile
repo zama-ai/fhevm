@@ -175,6 +175,7 @@ fmt: ## Rewrite formatting everywhere
 	$(call run-hh-v2,$(W_HH_V2_E2E),fmt)
 	$(call run-hh-v3,$(W_HH_V3_PLUGIN),fmt)
 	$(call run-hh-v3,$(W_HH_V3_TEMPLATE),fmt)
+	$(call run-hh-v3,$(W_HH_V3_E2E),fmt)
 	$(call run-prefix,$(DIR_FHEVM_NPM),prettier:write)
 
 fmt-check: ## Verify formatting everywhere
@@ -187,6 +188,7 @@ fmt-check: ## Verify formatting everywhere
 	$(call run-hh-v2,$(W_HH_V2_E2E),fmt:check)
 	$(call run-hh-v3,$(W_HH_V3_PLUGIN),fmt:check)
 	$(call run-hh-v3,$(W_HH_V3_TEMPLATE),fmt:check)
+	$(call run-hh-v3,$(W_HH_V3_E2E),fmt:check)
 	$(call run-prefix,$(DIR_FHEVM_NPM),prettier:check)
 
 # One `npm install` per INSTALLATION ROOT. The sdk root workspace holds no hardhat at all; each
@@ -464,6 +466,7 @@ check-npm-cli-pre-build: # Internal: run fhevm-npm checks that do not require ge
 	$(call run-fhevm-npm,check-workspaces)
 	$(call run-fhevm-npm,check-ownership)
 	$(call run-fhevm-npm,check-package-json)
+	$(call run-fhevm-npm,check-published-files)
 	$(call run-fhevm-npm,check-dependencies)
 	$(call run-fhevm-npm,check-generations)
 	$(call run-fhevm-npm,check-scripts)
@@ -483,10 +486,13 @@ check-mirror: ## Verify the hardhat template still mirrors upstream byte-for-byt
 	@echo "⚠️  The mirror spec does not yet describe this workspace's adaptations, so the real check"
 	@echo "⚠️  ($(DIR_HH_V2_TEMPLATE) -> npm run check:mirror) still reports false violations."
 
-check-npm-cli-post-build: compile-hh-v2-e2e compile-hh-v2-template # Internal: check generated paths
+# The prerequisites are `compile`'s, deliberately: both checks below validate literal paths across every
+# package, and build output is among those paths — the templates' gitignored `types/`, and each plugin
+# payload's `_esm`/`_types`, which its own `exports` and `types` name. A prerequisite list narrower than
+# `compile` makes them pass on whatever the last build happened to leave and fail on a clean tree; that
+# is how the v3 cluster went unbuilt here while its `_types/index.d.ts` was being checked.
+check-npm-cli-post-build: compile # Internal: check generated paths
 	$(call run-fhevm-npm,check-package-json-paths)
-	# Both of these validate literal paths, and some of those paths are build output — the template's
-	# gitignored `types/` among them — so neither can run before the build.
 	$(call run-fhevm-npm,check-tsconfig-paths)
 
 ########################################################################################################
@@ -505,6 +511,7 @@ check-post: check-npm-cli-post-build ## Checks that require a generated and buil
 	$(call run,$(W_CLEARTEXT_V_PREV),check)
 	$(call run,$(W_CLEARTEXT_V_CUR),check)
 	$(call run-hh-v2,$(W_HH_V2_PLUGIN),check)
+	$(call run-hh-v3,$(W_HH_V3_PLUGIN),check)
 
 ########################################################################################################
 # Lint graph

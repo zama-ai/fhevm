@@ -15,6 +15,7 @@ export const commandNames = [
   'check-scripts',
   'check-lockfiles',
   'check-manifest-coverage',
+  'check-published-files',
   'check-foundry',
   'check-json-schemas',
   'check-lint-policy',
@@ -230,6 +231,8 @@ Checked scripts:
   prettier:check Required on every dev package, shared helper and internal consumer; must exclude Solidity.
   prettier:write Required on every dev package, shared helper and internal consumer; must exclude Solidity.
   prettier.config.js The only package-level Prettier config filename; references the root prettier.base.mjs.
+                     Required at the workspace root too, beside the base it re-exports (5.1.6's sole exception:
+                     Prettier does not discover 'prettier.base.mjs', so sdk-level files need it).
   check:publint  Required on every dev owner of an npm-distributed package.
   test:consumer  Required on every dev owner of an npm-distributed package; mirror-only consumer projects are exempt.
   fmt            Required on every dev package, shared helper and internal consumer.
@@ -272,6 +275,12 @@ Checked scripts:
     .description('Check filesystem discovery, manifest completeness, and path containment.')
     .action(() => {
       selected = 'check-manifest-coverage';
+    });
+  program
+    .command('check-published-files')
+    .description('Check that every file in an npm-distributed payload is published or excluded by "files".')
+    .action(() => {
+      selected = 'check-published-files';
     });
   program
     .command('check-mirror <package>')

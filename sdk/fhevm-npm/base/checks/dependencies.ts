@@ -1,4 +1,4 @@
-import { resolve } from 'node:path';
+import { relative, resolve } from 'node:path';
 
 import type { NpmManifest } from '../../manifest.ts';
 import type { Violation } from '../diagnostics.ts';
@@ -13,7 +13,6 @@ import {
 } from '../npm.ts';
 import { listOwnedSourceFiles } from '../paths.ts';
 import { type ScriptPackageUses, collectScriptPackageUses, rootDependencyBinaryIndex } from '../script-dependencies.ts';
-import { installationRootOf } from './workspaces.ts';
 
 const PRIVATE_PACKAGE_KINDS = new Set(['dev', 'shared-helper', 'internal-consumer']);
 
@@ -162,68 +161,31 @@ export function validateDependencyOrder(packages: readonly LoadedPackage[]): rea
   return violations;
 }
 
-// Per installation root. A member referencing a member of its OWN root uses the plain exact version —
-// npm resolves it by name inside that root. A member referencing ANOTHER root's member must use a
-// `file:` path (name resolution cannot cross installation roots): npm installs it as a link, and the
-// publish layer maps it to a registry range. An npm-distributed source may cross-root-link only to an
-// npm-published target — linking a private helper would ship an unresolvable specifier.
+// A member depending on another member uses a relative `file:` link to that member's directory, whatever
+// installation root each lives in. npm links the directory, so bumping the target's version changes no
+// dependency spec and no lockfile edge; the publish layer maps the link to a registry range. An
+// npm-distributed source may link only an npm-published target — linking a private helper would ship an
+// unresolvable specifier.
 export function validateWorkspaceMemberSpecs(packages: readonly LoadedPackage[]): readonly Violation[] {
   const violations: Violation[] = [];
-  const targets = new Map<string, LoadedPackage[]>();
-
-  for (const target of packages) {
-    if (!target.inventory.member || target.packageJson.name === undefined) continue;
-    const candidates = targets.get(target.packageJson.name) ?? [];
-    candidates.push(target);
-    targets.set(target.packageJson.name, candidates);
-  }
+  const members = new Set(
+    packages
+      .filter((pkg) => pkg.inventory.member && pkg.packageJson.name !== undefined)
+      .map((pkg) => pkg.packageJson.name),
+  );
 
   for (const source of packages) {
     if (!source.inventory.member) continue;
-    const sourceRoot = installationRootOf(source);
     for (const declaration of dependencyDeclarations(source.packageJson)) {
       if (declaration.spec.startsWith('file:')) {
-        validateFileSpec(source, sourceRoot, declaration, packages, violations);
-        continue;
-      }
-
-      const allCandidates = targets.get(declaration.name) ?? [];
-      const candidates = allCandidates.filter((candidate) => installationRootOf(candidate) === sourceRoot);
-      if (candidates.length === 0) {
-        if (allCandidates.length > 0) {
-          violations.push({
-            rule: '3.1.1',
-            packageKey: source.key,
-            message:
-              `package '${declaration.name}' in '${declaration.field}' names a member of another installation ` +
-              `root (${allCandidates.map((pkg) => pkg.key).join(', ')}); a cross-root reference must use a file: path`,
-          });
-        }
-        continue;
-      }
-      if (candidates.length !== 1) {
+        validateFileSpec(source, declaration, packages, violations);
+      } else if (members.has(declaration.name)) {
         violations.push({
           rule: '3.1.1',
           packageKey: source.key,
-          message: `package '${declaration.name}' in '${declaration.field}' is ambiguous across ${candidates.length} workspace members`,
-        });
-        continue;
-      }
-
-      const target = candidates[0];
-      if (target === undefined) continue;
-      const version = target.packageJson.version;
-      if (version === undefined || !isExactVersion(version)) {
-        violations.push({
-          rule: '3.1.1',
-          packageKey: source.key,
-          message: `package '${declaration.name}' in '${declaration.field}' targets ${target.key}, which has no exact version`,
-        });
-      } else if (declaration.spec !== version || !isExactVersion(declaration.spec)) {
-        violations.push({
-          rule: '3.1.1',
-          packageKey: source.key,
-          message: `package '${declaration.name}' in '${declaration.field}' is "${declaration.spec}"; member ${target.key} requires plain version "${version}"`,
+          message:
+            `package '${declaration.name}' in '${declaration.field}' is "${declaration.spec}" but names a workspace ` +
+            `member; a member depends on a member through a relative file: link to its directory`,
         });
       }
     }
@@ -234,7 +196,6 @@ export function validateWorkspaceMemberSpecs(packages: readonly LoadedPackage[])
 
 function validateFileSpec(
   source: LoadedPackage,
-  sourceRoot: string | undefined,
   declaration: { readonly name: string; readonly field: DependencyField; readonly spec: string },
   packages: readonly LoadedPackage[],
   violations: Violation[],
@@ -260,18 +221,6 @@ function validateFileSpec(
     return;
   }
 
-  const targetRoot = installationRootOf(linkedTarget);
-  if (targetRoot !== undefined && targetRoot === sourceRoot && !isMirrorOnly(source)) {
-    violations.push({
-      rule: '3.1.1',
-      packageKey: source.key,
-      message:
-        `package '${declaration.name}' in '${declaration.field}' links a member of the SAME installation ` +
-        `root (${linkedTarget.key}); use the plain exact version instead`,
-    });
-    return;
-  }
-
   const targetIsPublishable = linkedTarget.inventory.kind === 'published' && isNpmDistributed(linkedTarget);
   if (source.inventory.kind === 'published' && isNpmDistributed(source) && !targetIsPublishable) {
     violations.push({
@@ -286,11 +235,6 @@ function validateFileSpec(
 
 function isNpmDistributed(pkg: LoadedPackage): boolean {
   return (pkg.inventory.distribution ?? ['npm']).includes('npm');
-}
-
-function isMirrorOnly(source: LoadedPackage): boolean {
-  const distribution = source.inventory.distribution ?? ['npm'];
-  return source.inventory.kind === 'published' && distribution.length === 1 && distribution[0] === 'mirror';
 }
 
 export function validatePrivateRootPins(
@@ -455,6 +399,7 @@ export function validateSiblingRanges(packages: readonly LoadedPackage[]): reado
     byDependencyGroup.set(dependencyGroup, siblings);
   }
 
+  const workspaceRoot = packages.find((pkg) => pkg.key === '.')?.directory;
   const violations: Violation[] = [];
   for (const [dependencyGroup, siblings] of byDependencyGroup) {
     const byDependency = new Map<string, Map<string, Set<string>>>();
@@ -462,7 +407,7 @@ export function validateSiblingRanges(packages: readonly LoadedPackage[]): reado
       for (const declaration of dependencyDeclarations(sibling.packageJson)) {
         const byPackage = byDependency.get(declaration.name) ?? new Map<string, Set<string>>();
         const specs = byPackage.get(sibling.key) ?? new Set<string>();
-        specs.add(declaration.spec);
+        specs.add(comparableSpec(sibling, declaration.spec, workspaceRoot));
         byPackage.set(sibling.key, specs);
         byDependency.set(declaration.name, byPackage);
       }
@@ -486,4 +431,12 @@ export function validateSiblingRanges(packages: readonly LoadedPackage[]): reado
     }
   }
   return violations;
+}
+
+// Two relative `file:` links written from different depths still name one directory (rule 3.1.1), so
+// siblings are compared on the directory they link, shown workspace-relative, not on the text.
+function comparableSpec(pkg: LoadedPackage, spec: string, workspaceRoot: string | undefined): string {
+  if (!spec.startsWith('file:')) return spec;
+  const target = resolve(pkg.directory, spec.slice(5));
+  return `file:${workspaceRoot === undefined ? target : `./${relative(workspaceRoot, target)}`}`;
 }

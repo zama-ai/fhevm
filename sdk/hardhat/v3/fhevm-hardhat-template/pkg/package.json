@@ -50,7 +50,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@fhevm/hardhat-plugin-v3": "0.13.0",
+    "@fhevm/hardhat-plugin-v3": "file:../../plugin/pkg",
     "@fhevm/sdk": "0.13.3",
     "@nomicfoundation/hardhat-ignition": "^3.1.8",
     "@nomicfoundation/hardhat-toolbox-viem": "^5.0.7",

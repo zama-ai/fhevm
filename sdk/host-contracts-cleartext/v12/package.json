@@ -68,8 +68,8 @@
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",
     "@eslint/js": "^10.0.1",
-    "@fhevm/sdk-common-dev": "0.0.0",
-    "@fhevm/sdk-vendored-dev": "0.0.0",
+    "@fhevm/sdk-common-dev": "file:../../common",
+    "@fhevm/sdk-vendored-dev": "file:../../common-vendored",
     "@openzeppelin/contracts": "5.1.0",
     "@openzeppelin/contracts-upgradeable": "5.1.0",
     "@types/node": "^22.0.0",

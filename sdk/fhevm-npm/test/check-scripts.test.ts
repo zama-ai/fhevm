@@ -1135,29 +1135,34 @@ test('forbids portable package configs from importing workspace files', () => {
   );
 });
 
-test("reserves 'prettier.base.mjs' for the workspace root", () => {
+test("reserves 'prettier.base.mjs' for the workspace root, beside its own 'prettier.config.js'", () => {
   const root = loadedPackage(
     '.',
     { kind: 'workspace-root', name: 'workspace', private: true, member: false },
     { name: 'workspace', private: true },
   );
+  const rootConfig = "export { default } from './prettier.base.mjs';\n";
 
+  // The root is the sole package carrying two configs: the shared base, and the re-export that makes
+  // Prettier discover a config for the root's own files. Any third filename is still forbidden.
   assert.deepEqual(
     validatePrettierConfigs(
       '/workspace',
       [root],
-      () => undefined,
-      () => ['.prettierrc.yml', 'prettier.base.mjs'],
+      () => rootConfig,
+      () => ['.prettierrc.yml', 'prettier.base.mjs', 'prettier.config.js'],
     ),
     [
       {
         rule: '5.1.6',
         packageKey: '.',
-        message: "Prettier configuration file '.prettierrc.yml' is forbidden; use only 'prettier.base.mjs'",
+        message:
+          "Prettier configuration file '.prettierrc.yml' is forbidden; use only 'prettier.base.mjs' or 'prettier.config.js'",
       },
     ],
   );
 
+  // Both are required.
   assert.deepEqual(
     validatePrettierConfigs(
       '/workspace',
@@ -1170,6 +1175,39 @@ test("reserves 'prettier.base.mjs' for the workspace root", () => {
         rule: '5.1.6',
         packageKey: '.',
         message: "workspace root must contain 'prettier.base.mjs'",
+      },
+      {
+        rule: '5.1.6',
+        packageKey: '.',
+        message: "workspace root must contain 'prettier.config.js' referencing './prettier.base.mjs'",
+      },
+    ],
+  );
+
+  // Present and correct, with a comment above the statement: prose is not a second source of truth.
+  assert.deepEqual(
+    validatePrettierConfigs(
+      '/workspace',
+      [root],
+      () => `// Mandatory at the root: Prettier does not discover 'prettier.base.mjs'.\n${rootConfig}`,
+      () => ['prettier.base.mjs', 'prettier.config.js'],
+    ),
+    [],
+  );
+
+  // A root config that restates options instead of re-exporting the base is a fork of it.
+  assert.deepEqual(
+    validatePrettierConfigs(
+      '/workspace',
+      [root],
+      () => 'export default { singleQuote: true };\n',
+      () => ['prettier.base.mjs', 'prettier.config.js'],
+    ),
+    [
+      {
+        rule: '5.1.6',
+        packageKey: '.',
+        message: "'prettier.config.js' must contain: export { default } from './prettier.base.mjs';",
       },
     ],
   );

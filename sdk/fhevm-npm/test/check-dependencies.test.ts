@@ -136,24 +136,34 @@ test('dependency sections must be alphabetically ordered', () => {
   ]);
 });
 
-test('rule 3.1.1 requires the exact plain workspace-member version', () => {
+test('rule 3.1.1 requires a file: link for a workspace member, and ignores external packages', () => {
   const target = loadedPackage(
     './library/pkg',
     { kind: 'published', name: '@scope/library', member: true },
     { name: '@scope/library', version: '1.2.3' },
   );
-  const consumer = loadedPackage(
-    './consumer',
-    { kind: 'internal-consumer', name: '@scope/consumer-dev', private: true, member: true },
-    { name: '@scope/consumer-dev', version: '0.0.0', devDependencies: { '@scope/library': '^1.2.3' } },
-  );
+  const consumer = (spec: string) =>
+    loadedPackage(
+      './consumer',
+      { kind: 'internal-consumer', name: '@scope/consumer-dev', private: true, member: true },
+      {
+        name: '@scope/consumer-dev',
+        version: '0.0.0',
+        devDependencies: { '@scope/library': spec, eslint: '^9.0.0' },
+      },
+    );
 
-  const violations = validateWorkspaceMemberSpecs([root, target, consumer]);
-  assert.equal(violations.length, 1);
-  assert.equal(violations[0]?.rule, '3.1.1');
+  // A range and the exact version both name the member by version; only the link is accepted.
+  for (const spec of ['^1.2.3', '1.2.3']) {
+    const violations = validateWorkspaceMemberSpecs([root, target, consumer(spec)]);
+    assert.equal(violations.length, 1, spec);
+    assert.equal(violations[0]?.rule, '3.1.1');
+    assert.match(violations[0]?.message ?? '', /relative file: link/);
+  }
+  assert.deepEqual(validateWorkspaceMemberSpecs([root, target, consumer('file:../library/pkg')]), []);
 });
 
-test('rule 3.1.1 permits an exact file link from a mirror-only consumer project', () => {
+test('rule 3.1.1 accepts a file: link only when it resolves to the member of that name', () => {
   const target = loadedPackage(
     './plugin/pkg',
     { kind: 'published', name: '@scope/plugin', member: true },
@@ -184,7 +194,7 @@ test('rule 3.1.1 permits an exact file link from a mirror-only consumer project'
   assert.equal(validateWorkspaceMemberSpecs([root, target, wrongTarget]).length, 1);
 });
 
-test('rule 3.1.1 forbids file dependencies in npm-distributed packages', () => {
+test('rule 3.1.1 lets an npm-distributed package link only npm-published members', () => {
   const target = loadedPackage(
     './library/pkg',
     { kind: 'published', name: '@scope/library', member: true },
@@ -200,10 +210,8 @@ test('rule 3.1.1 forbids file dependencies in npm-distributed packages', () => {
     },
   );
 
-  // Same installation root: the link must be a plain exact version instead.
-  const sameRoot = validateWorkspaceMemberSpecs([root, target, published]);
-  assert.equal(sameRoot.length, 1);
-  assert.match(sameRoot[0]?.message ?? '', /links a member of the SAME installation root/);
+  // Same installation root, npm-published target: legal, like any member edge.
+  assert.deepEqual(validateWorkspaceMemberSpecs([root, target, published]), []);
 
   // Cross-root to an npm-published target: legal (the publish layer maps it to a registry range).
   const clusterRoot = loadedPackage(
@@ -470,4 +478,17 @@ test('rule 4.2.3 requires sibling ranges to agree', () => {
   const violations = validateSiblingRanges([root, first, second]);
   assert.equal(violations.length, 2);
   assert.ok(violations.every((violation) => violation.rule === '4.2.3'));
+
+  // Two file: links from different depths to the same member agree: compared by directory, not text.
+  const deeper = loadedPackage(
+    './family/template/pkg',
+    { kind: 'internal-consumer', name: 'template-dev', private: true, member: true, dependencyGroup: 'family/v1' },
+    { name: 'template-dev', private: true, devDependencies: { '@scope/plugin': 'file:../../plugin/pkg' } },
+  );
+  const shallower = loadedPackage(
+    './family/e2e',
+    { kind: 'internal-consumer', name: '@scope/e2e-dev', private: true, member: true, dependencyGroup: 'family/v1' },
+    { name: '@scope/e2e-dev', private: true, devDependencies: { '@scope/plugin': 'file:../plugin/pkg' } },
+  );
+  assert.deepEqual(validateSiblingRanges([root, deeper, shallower]), []);
 });

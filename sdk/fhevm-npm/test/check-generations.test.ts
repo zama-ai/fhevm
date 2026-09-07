@@ -180,7 +180,7 @@ test('resolves a shared published name by exact version, and reports a range it 
   const violations = validateGenerationDependencies(manifest(), ranged);
   assert.equal(violations.length, 1);
   assert.match(violations[0]?.message ?? '', /shared by 2 generations/);
-  assert.match(violations[0]?.message ?? '', /use a file: path or the exact version/);
+  assert.match(violations[0]?.message ?? '', /use a file: path to V\(N\)/);
 });
 
 test('is a no-op without a generations block', () => {

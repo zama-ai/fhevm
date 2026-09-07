@@ -16,7 +16,11 @@
   "files": [
     "_esm",
     "_types",
-    "src"
+    "src",
+    "LICENSE",
+    "README.md",
+    "!**/tsconfig*.json",
+    "!**/*.tsbuildinfo"
   ],
   "exports": {
     ".": {

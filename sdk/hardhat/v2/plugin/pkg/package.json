@@ -31,6 +31,8 @@
     "src/*",
     "_cjs/*",
     "_types/*",
+    "LICENSE",
+    "README.md",
     "!**/tsconfig*.json",
     "!**/*.tsbuildinfo"
   ],

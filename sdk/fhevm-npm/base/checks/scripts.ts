@@ -521,7 +521,15 @@ export function validatePrettierConfigs(
     const usesPrettier = scripts['prettier:check'] !== undefined || scripts['prettier:write'] !== undefined;
     const files = listFiles(pkg.directory);
     const configFiles = files.filter(isPrettierConfigFileName).sort();
-    const expectedConfigName = pkg.inventory.kind === 'workspace-root' ? 'prettier.base.mjs' : 'prettier.config.js';
+    const isSdkRoot = pkg.inventory.kind === 'workspace-root' && pkg.key === '.';
+    // The sdk root is the sole package allowed two Prettier configs, and the only exception to one config
+    // per package: `prettier.base.mjs` is the shared base every other package re-exports, and Prettier does
+    // not discover that filename, so the root's own files (npm-manifest.json, cleartext-config.json, the
+    // sdk-level docs) format only through a `prettier.config.js` re-exporting it.
+    const acceptedConfigNames = isSdkRoot
+      ? ['prettier.base.mjs', 'prettier.config.js']
+      : [pkg.inventory.kind === 'workspace-root' ? 'prettier.base.mjs' : 'prettier.config.js'];
+    const acceptedList = acceptedConfigNames.map((name) => `'${name}'`).join(' or ');
 
     if (isPayloadOnlyDevOwner(pkg, files, listDirectories(pkg.directory))) {
       for (const configFile of configFiles) {
@@ -535,23 +543,26 @@ export function validatePrettierConfigs(
     }
 
     for (const configFile of configFiles) {
-      if (configFile === expectedConfigName) continue;
+      if (acceptedConfigNames.includes(configFile)) continue;
       violations.push({
         rule: '5.1.6',
         packageKey: pkg.key,
-        message: `Prettier configuration file '${configFile}' is forbidden; use only '${expectedConfigName}'`,
+        message: `Prettier configuration file '${configFile}' is forbidden; use only ${acceptedList}`,
       });
     }
 
     if (pkg.inventory.kind === 'workspace-root') {
       // Only the sdk root carries the shared base config; a cluster root is a pure installation root —
       // its members reference the sdk root's base by relative path, so a second base would be a fork.
-      if (pkg.key === '.' && !configFiles.includes('prettier.base.mjs')) {
-        violations.push({
-          rule: '5.1.6',
-          packageKey: pkg.key,
-          message: "workspace root must contain 'prettier.base.mjs'",
-        });
+      if (pkg.key === '.') {
+        if (!configFiles.includes('prettier.base.mjs')) {
+          violations.push({
+            rule: '5.1.6',
+            packageKey: pkg.key,
+            message: "workspace root must contain 'prettier.base.mjs'",
+          });
+        }
+        violations.push(...rootPrettierConfigViolations(pkg, configFiles, readTextFile));
       }
       if (pkg.key !== '.') {
         for (const configFile of configFiles) {
@@ -837,6 +848,36 @@ function isEslintConfigFileName(fileName: string): boolean {
   );
 }
 
+/** The sdk root's own `prettier.config.js`: required, and a re-export of the base rather than a fork of it. */
+function rootPrettierConfigViolations(
+  pkg: LoadedPackage,
+  configFiles: readonly string[],
+  readTextFile: (file: string) => string | undefined,
+): readonly Violation[] {
+  const commonjs = pkg.packageJson.type === 'commonjs';
+  if (!configFiles.includes('prettier.config.js')) {
+    return [
+      {
+        rule: '5.1.6',
+        packageKey: pkg.key,
+        message: "workspace root must contain 'prettier.config.js' referencing './prettier.base.mjs'",
+      },
+    ];
+  }
+  const contents = readTextFile(join(pkg.directory, 'prettier.config.js'));
+  if (contents === undefined || isPrettierBaseReference(contents, './prettier.base.mjs', commonjs)) return [];
+  const expectedStatement = commonjs
+    ? "module.exports = import('./prettier.base.mjs').then((module) => module.default);"
+    : "export { default } from './prettier.base.mjs';";
+  return [
+    {
+      rule: '5.1.6',
+      packageKey: pkg.key,
+      message: `'prettier.config.js' must contain: ${expectedStatement}`,
+    },
+  ];
+}
+
 function isPrettierConfigFileName(fileName: string): boolean {
   return (
     fileName === 'prettier.base.mjs' ||
@@ -845,7 +886,17 @@ function isPrettierConfigFileName(fileName: string): boolean {
   );
 }
 
-function isPrettierBaseReference(contents: string, expectedImport: string, commonjs: boolean): boolean {
+/** Whole-line `//` comments and block comments: prose about a config is not a second source of truth. */
+function withoutComments(contents: string): string {
+  return contents
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .split('\n')
+    .filter((line) => !/^\s*\/\//.test(line))
+    .join('\n');
+}
+
+function isPrettierBaseReference(rawContents: string, expectedImport: string, commonjs: boolean): boolean {
+  const contents = withoutComments(rawContents);
   const escapedImport = expectedImport.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   if (commonjs) {
     return new RegExp(

@@ -10,6 +10,7 @@ import { checkJsonSchemas } from './commands/check-json-schemas.ts';
 import { checkLintPolicy } from './commands/check-lint-policy.ts';
 import { checkLockfiles } from './commands/check-lockfiles.ts';
 import { checkManifestCoverage } from './commands/check-manifest-coverage.ts';
+import { checkPublishedFiles } from './commands/check-published-files.ts';
 import { checkMirror } from './commands/check-mirror.ts';
 import { checkNames } from './commands/check-names.ts';
 import { checkOwnership } from './commands/check-ownership.ts';
@@ -51,6 +52,7 @@ const commands: Readonly<Record<CommandName, CheckCommand>> = {
   'check-json-schemas': checkJsonSchemas,
   'check-lint-policy': checkLintPolicy,
   'check-manifest-coverage': checkManifestCoverage,
+  'check-published-files': checkPublishedFiles,
   'check-tsconfig-paths': checkTsconfigPaths,
   'check-tsc-mode': checkTscMode,
   'check-commit-scope': checkCommitScope,

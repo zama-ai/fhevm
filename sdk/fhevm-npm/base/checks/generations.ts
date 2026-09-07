@@ -252,7 +252,7 @@ function resolveTarget(
     message:
       `${prefix}package '${declaration.name}' in '${declaration.field}' is "${declaration.spec}", a name shared by ` +
       `${candidates.length} generations of ${family.family} (${candidates.map((pkg) => pkg.key).join(', ')}); ` +
-      `use a file: path or the exact version of V(N) '${family.current}'`,
+      `use a file: path to V(N) '${family.current}'`,
   });
   return undefined;
 }
