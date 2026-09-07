@@ -96,6 +96,30 @@ e2e.yaml's header for the full story). This also sidesteps Crossplane/RDS entire
 three throwaway databases. `kms-core` (KMS itself) is never deployed from this repo at all — the
 CI path reuses `zama-ai/kms`'s own deploy pipeline as-is (see `preview-env-deploy.yml`).
 
+### Dedicated KMS version pins
+
+Preview-env **never builds** kms-core. It sparse-checkouts `zama-ai/kms` at
+`kms_repo_ref`, pulls `core-service-enclave:<kms_core_version>` for PCR
+attestation, and runs kms's `deploy.sh --tag … --num-parties "${NB_KMS_CORE}"`.
+
+| Input | Override key | Meaning |
+| --- | --- | --- |
+| Party count | `nb_kms_core` (`4` \| `13`) | Topology only — not in `overrides`. |
+| Enclave image | `kms_core_version` | GHCR tag → `KMS_CORE_TAG`. |
+| Deploy scripts + chart | `kms_repo_ref` | Git SHA/ref on `zama-ai/kms`. |
+
+Defaults live in [`scripts/parse-overrides.cjs`](./scripts/parse-overrides.cjs)
+(`kms_core_version`, `kms_repo_ref`). **PR labels always use those defaults.**
+Override only via dispatch `overrides` / CLI `--set`, or by bumping
+`ALWAYS_DEFAULTS` for everyone. Keep the two keys aligned to the same kms
+release.
+
+**kms-connector** (`kms_connector_version`, `kms_connector_chart_version`) is
+fhevm-owned and follows the normal image/chart resolve rules — separate from
+kms-core.
+
+Usage: [`101-preview-env.md`](./101-preview-env.md#option-b--manual-run-workflow_dispatch).
+
 Note this path's own images (contracts/kms-connector/relayer/test-suite) are addressed via
 `hub.zama.org/ghcr/zama-ai/fhevm/...` (the Harbor pull-through-cache mirror of `ghcr.io`), not
 `hub.zama.org/zama-protocol/...`. A freshly-built PR image only exists at its GHCR tag/mirror;
@@ -347,8 +371,10 @@ deployed. Every Polygon step in the workflow is gated on `deploy_polygon == 'tru
   rather than scaling only the workers behind shared listeners. Revisit against how
   devnet/testnet actually scale this (shared vs per-party listeners) if that topology is
   preferred.
-- Add support for changing the dedicated KMS's instance type (currently whatever
-  `zama-ai/kms`'s own `ci/scripts/deploy.sh` defaults to).
+- ~~Add support for changing the dedicated KMS's instance type~~ — version/repo
+  override via `kms_core_version` + `kms_repo_ref` in `overrides` (see
+  "Dedicated KMS version pins" above). Enclave **instance type** is still
+  whatever kms `deploy.sh` picks for `aws-ci`.
 - Add support for changing the coprocessor's tfhe-worker instance type (e.g. GPU vs CPU nodepool
   selection).
 - ~~Add multichain support~~ — done, see "Multichain: second Polygon host chain

@@ -33,8 +33,8 @@ usage() {
 preview-env — dispatch and inspect fhEVM preview environments on zws-dev.
 
   preview-env launch --ref <branch> [options]
-  preview-env watch <run-id>
-  preview-env status <run-id>
+  preview-env watch [--ref <branch>] [<run-id>]
+  preview-env status [--ref <branch>] [<run-id>]
   preview-env destroy <fhevm-ci-*>
   preview-env namespace [--run-id <id>]
   preview-env connect [--run-id <id>]
@@ -52,6 +52,11 @@ launch options:
   --kms-parties 4|13        default 4
   --set key=value           pack into overrides JSON (repeatable)
   --repo owner/repo         default zama-ai/fhevm
+  --watch                   after launch, wait for the run id and stream progress
+
+watch / status:
+  Pass a numeric run id, a GitHub Actions run URL, or omit it with --ref <branch>
+  to pick the latest preview-env-deploy run on that branch.
 
 This CLI only talks to GitHub Actions. It never helm-installs on zws-dev.
 EOF
@@ -98,14 +103,66 @@ derive_namespace() {
   echo "fhevm-ci-${actor_fit}-${suffix_ns}"
 }
 
-repo_flag() {
-  echo "--repo=${REPO}"
+# Accept 34101890912 or …/actions/runs/34101890912.
+normalize_run_id() {
+  local id="${1:-}"
+  if [[ "${id}" =~ ^https?:// ]]; then
+    id="${id#*/actions/runs/}"
+    id="${id%%/*}"
+    id="${id%%\?*}"
+  fi
+  if [[ ! "${id}" =~ ^[0-9]+$ ]]; then
+    return 1
+  fi
+  echo "${id}"
+}
+
+find_latest_run_id() {
+  local ref="${1:-}"
+  local -a args=(-R "${REPO}" --workflow="${DEPLOY_WORKFLOW}" --limit 1 --json databaseId)
+  if [[ -n "${ref}" ]]; then
+    args+=(--branch "${ref}")
+  fi
+  gh run list "${args[@]}" --jq '.[0].databaseId // empty'
+}
+
+resolve_run_id() {
+  local run_id="${1:-}" ref="${2:-}" resolved=""
+  if [[ -n "${run_id}" ]]; then
+    resolved=$(normalize_run_id "${run_id}") \
+      || die "run id must be numeric or a …/actions/runs/<id> URL (got '${run_id}')"
+    echo "${resolved}"
+    return 0
+  fi
+  [[ -n "${ref}" ]] || die "pass a run id or --ref <branch> to select the latest ${DEPLOY_WORKFLOW} run"
+  resolved=$(find_latest_run_id "${ref}")
+  [[ -n "${resolved}" ]] || die "no ${DEPLOY_WORKFLOW} run found for branch '${ref}' on ${REPO}"
+  echo "${resolved}"
+}
+
+wait_for_new_run() {
+  local ref="$1"
+  local before_id="" run_id=""
+  before_id=$(find_latest_run_id "${ref}" || true)
+  local i
+  for i in $(seq 1 45); do
+    sleep 2
+    run_id=$(find_latest_run_id "${ref}" || true)
+    if [[ -n "${run_id}" && "${run_id}" != "${before_id}" ]]; then
+      echo "${run_id}"
+      return 0
+    fi
+  done
+  run_id=$(find_latest_run_id "${ref}" || true)
+  [[ -n "${run_id}" ]] || return 1
+  echo "${run_id}"
 }
 
 cmd_launch() {
   local ref="" parties="1" blue_green="false" blockchain_dev="false"
   local tests="false" polygon="false" observability="false"
   local build_images="true" test_suite_only="false" kms_parties="4"
+  local do_watch="false"
   local -a sets=()
 
   while [[ $# -gt 0 ]]; do
@@ -122,6 +179,7 @@ cmd_launch() {
       --kms-parties) kms_parties="${2:-}"; shift 2 ;;
       --set) sets+=("${2:-}"); shift 2 ;;
       --repo) REPO="${2:-}"; shift 2 ;;
+      --watch) do_watch="true"; shift ;;
       -h|--help) usage; exit 0 ;;
       *) die "unknown launch flag: $1" ;;
     esac
@@ -171,7 +229,7 @@ print(json.dumps(out, separators=(",", ":")))
   echo "  parties=${parties} blue_green=${blue_green} blockchain_dev=${blockchain_dev} tests=${tests} polygon=${polygon}"
   echo "  overrides=${overrides}"
 
-  gh workflow run "${DEPLOY_WORKFLOW}" "$(repo_flag)" --ref "${ref}" \
+  gh workflow run "${DEPLOY_WORKFLOW}" -R "${REPO}" --ref "${ref}" \
     -f "build_images=${build_images}" \
     -f "build_test_suite_only=${test_suite_only}" \
     -f "automated_tests=${tests}" \
@@ -183,36 +241,56 @@ print(json.dumps(out, separators=(",", ":")))
     -f "use_blockchain_dev=${blockchain_dev}" \
     -f "overrides=${overrides}"
 
-  echo "dispatched. find the run with:"
-  echo "  gh run list $(repo_flag) --workflow=${DEPLOY_WORKFLOW} --branch=${ref} --limit 5"
+  echo "waiting for Actions run to appear on ${ref}..."
+  run_id=$(wait_for_new_run "${ref}") || die "timed out waiting for a new ${DEPLOY_WORKFLOW} run"
+  echo "run ${run_id}"
+  echo "  preview-env status ${run_id}"
+  echo "  preview-env watch ${run_id}"
+  echo "  preview-env namespace --run-id ${run_id}"
+
+  if [[ "${do_watch}" == "true" ]]; then
+    gh run watch -R "${REPO}" "${run_id}"
+  fi
 }
 
 cmd_watch() {
-  local run_id="${1:-}"
-  [[ -n "${run_id}" ]] || die "watch requires a run id"
-  shift || true
+  local run_id="" ref=""
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --repo) REPO="${2:-}"; shift 2 ;;
-      *) die "unknown watch flag: $1" ;;
+      --ref) ref="${2:-}"; shift 2 ;;
+      -h|--help) usage; exit 0 ;;
+      -* ) die "unknown watch flag: $1" ;;
+      *)
+        [[ -z "${run_id}" ]] || die "unexpected argument: $1"
+        run_id="$1"
+        shift
+        ;;
     esac
   done
   need_gh
-  gh run watch "${run_id}" "$(repo_flag)"
+  run_id=$(resolve_run_id "${run_id}" "${ref}")
+  gh run watch -R "${REPO}" "${run_id}"
 }
 
 cmd_status() {
-  local run_id="${1:-}"
-  [[ -n "${run_id}" ]] || die "status requires a run id"
-  shift || true
+  local run_id="" ref=""
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --repo) REPO="${2:-}"; shift 2 ;;
-      *) die "unknown status flag: $1" ;;
+      --ref) ref="${2:-}"; shift 2 ;;
+      -h|--help) usage; exit 0 ;;
+      -* ) die "unknown status flag: $1" ;;
+      *)
+        [[ -z "${run_id}" ]] || die "unexpected argument: $1"
+        run_id="$1"
+        shift
+        ;;
     esac
   done
   need_gh
-  gh run view "${run_id}" "$(repo_flag)"
+  run_id=$(resolve_run_id "${run_id}" "${ref}")
+  gh run view -R "${REPO}" "${run_id}"
 }
 
 cmd_destroy() {
@@ -228,13 +306,14 @@ cmd_destroy() {
   done
   [[ "${ns}" == fhevm-ci-* ]] || die "refusing to destroy '${ns}' (must start with fhevm-ci-)"
   need_gh
-  gh workflow run "${DESTROY_WORKFLOW}" "$(repo_flag)" --ref "${DESTROY_REF:-main}" \
+  gh workflow run "${DESTROY_WORKFLOW}" -R "${REPO}" --ref "${DESTROY_REF:-main}" \
     -f "namespace=${ns}"
   echo "destroy dispatched for ${ns}"
 }
 
 namespace_for_run() {
-  local run_id="$1"
+  local run_id
+  run_id=$(resolve_run_id "${1}" "")
   need_gh
   local json event actor pr_number pr_author
   json=$(gh api "repos/${REPO}/actions/runs/${run_id}")

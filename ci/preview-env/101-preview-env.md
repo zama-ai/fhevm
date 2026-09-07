@@ -86,18 +86,63 @@ Key inputs (all have sensible defaults — you rarely set more than a couple):
   chain. Do not combine with `deploy_polygon`.
 
 **Versions** — one optional `overrides` JSON object (empty / `{}` = resolve as
-today). Allowed keys are the old per-input names
-(`coprocessor_version`, `contracts_chart_version`, `kms_repo_ref`,
-`relayer_sdk_version`, …). Unknown keys fail the run.
-- **fhevm's own images** default to **empty**, meaning "resolve from the base
-  commit" exactly as a PR run does. Set one only to force a specific tag.
-- **In-repo charts** default to **empty**, meaning "install `charts/<name>`
-  from the picked branch". Set one to deploy that **published** OCI chart.
-- **External deps** (`common_chart_version`, `kms_core_version`, …) default
-  to the pins in `parse-overrides.cjs`. Dispatch-only:
-  `relayer_sdk_version` defaults to `0.4.4` when omitted (empty it in
-  `overrides` to skip the relayer-sdk suite). PR runs always leave it empty
-  so only `@fhevm/sdk` runs.
+today). Allowed keys are listed in
+[`scripts/parse-overrides.cjs`](./scripts/parse-overrides.cjs). Unknown keys
+fail the run.
+
+| Kind | Override keys | Default on PR / empty dispatch |
+| --- | --- | --- |
+| **fhevm images** | `coprocessor_version`, `kms_connector_version`, `test_suite_version`, … | Resolve from the change-detection base commit (built components use the PR/dispatch SHA). |
+| **In-repo charts** | `coprocessor_chart_version`, `contracts_chart_version`, … | Install `charts/<name>` from the workflow checkout. |
+| **External pins** | `common_chart_version`, `kms_core_version`, `kms_repo_ref`, `redis_chart_version`, … | Always the pins in `parse-overrides.cjs` (`ALWAYS_DEFAULTS`). **Not** resolved from the fhevm base commit. |
+| **Relayer SDK** | `relayer_sdk_version` | PR: empty → `@fhevm/sdk` only. Dispatch: `0.4.4` when omitted; set `""` in `overrides` to skip the relayer-sdk suite. |
+
+**Dedicated KMS (`zama-ai/kms`)** — never built by this workflow. Party count
+is **`nb_kms_core`** (`4` or `13`), not an override. Version is two override
+keys (keep them aligned to the same kms release):
+
+| Key | Becomes | Role |
+| --- | --- | --- |
+| `kms_core_version` | `KMS_CORE_TAG` | GHCR tag for `core-service-enclave` → `deploy.sh --tag`. CI reads PCR labels from this image before install. |
+| `kms_repo_ref` | `KMS_REPO_REF` | Git ref sparse-checked out of `zama-ai/kms` (`deploy.sh`, charts, threshold wiring). |
+
+Current defaults (also in `parse-overrides.cjs`): `kms_core_version=d27c3b5`,
+`kms_repo_ref=35edfa2f0656ee266e3299a004a83ac7d4fe2418`.
+
+**kms-connector is not kms-core.** `kms_connector_version` /
+`kms_connector_chart_version` are fhevm-owned (same resolve/build rules as
+coprocessor). Changing KMS version does not change kms-connector unless you
+override those too.
+
+**PR labels cannot override KMS.** `overrides` is empty on `pull_request`, so
+every labeled preview uses the `ALWAYS_DEFAULTS` pair above. To test a kms
+build: `workflow_dispatch` or the CLI with `--set`, or bump the defaults in
+`parse-overrides.cjs` for everyone.
+
+Dispatch examples:
+
+```bash
+# Test a kms enclave + matching deploy scripts
+ci/preview-env/preview-env launch --ref <branch> --tests \
+  --set kms_core_version=<tag> \
+  --set kms_repo_ref=<kms-commit-sha>
+
+# 13-party threshold KMS
+ci/preview-env/preview-env launch --ref <branch> --kms-parties 13 --tests
+```
+
+Or `overrides` in the Actions form:
+
+```json
+{
+  "kms_core_version": "abc1234",
+  "kms_repo_ref": "35edfa2f0656ee266e3299a004a83ac7d4fe2418"
+}
+```
+
+The enclave tag must exist on GHCR with `zama.kms.eif_pcr{0,1,2}` labels.
+An old `kms_repo_ref` may lack features the workflow expects (e.g.
+`--tracing-endpoint` when `observability=true`).
 
 - **Namespace:** `fhevm-ci-<actor>-<run-id-base36>` (dispatch) or
   `fhevm-ci-<pr-author>-<pr-number>` (PR). Actor is truncated if needed so
@@ -117,17 +162,22 @@ ci/preview-env/preview-env launch --ref <your-branch> --tests
 ci/preview-env/preview-env launch --ref <your-branch> --blockchain-dev
 ci/preview-env/preview-env launch --ref <your-branch> --blue-green --blockchain-dev --tests
 ci/preview-env/preview-env launch --ref <your-branch> --set coprocessor_version=abc1234
+ci/preview-env/preview-env launch --ref <your-branch> --tests \
+  --set kms_core_version=d27c3b5 --set kms_repo_ref=35edfa2f0656ee266e3299a004a83ac7d4fe2418
 ```
 
 `--blue-green` sends `enable_blue_green=true` and `nb_coprocessor=2`.
 `--parties 2` without `--blue-green` is two-party consensus only.
 
-Find the run with:
+`launch` polls for the new Actions run and prints its id. Stream progress with
+`--watch`, or inspect later:
 
 ```bash
+ci/preview-env/preview-env launch --ref <your-branch> --tests --watch
+ci/preview-env/preview-env status --ref <your-branch>     # latest deploy on branch
+ci/preview-env/preview-env status <run-id>                # or a …/actions/runs/<id> URL
 ci/preview-env/preview-env watch <run-id>
-# or
-gh run list --workflow=preview-env-deploy.yml --branch=<your-branch> --limit 5
+ci/preview-env/preview-env namespace --run-id <run-id>
 ```
 
 ---
@@ -209,14 +259,13 @@ kubectl delete namespace <namespace>
   commit's images only, use a `workflow_dispatch` run with `build_images=false`.
 - **Chart changes deploy directly.** In-repo charts (`charts/*`) install straight
   from your branch's checkout — no publish, no version bump needed.
-- **There are no version pins for fhevm's own artifacts.** Charts come from your
-  checkout, and every push to `main`/`release/*` tags every image with that
-  commit's short SHA, so unbuilt components resolve from your base commit. Check
-  the run summary's **Images** table: each row shows the tag *and* where it came
-  from (`built`, `base-sha`, `dispatch-override`). Blue-green GCS workers are
-  the exception: they publish as `<sha>-gcs0.15.0` so they do not overwrite the
-  baseline `<sha>` image.
-
+- **There are no auto-pins for fhevm's own images** (coprocessor, kms-connector,
+  contracts, …). Charts come from your checkout; images resolve from your base
+  commit unless built this run. Check the run summary **Images** table for
+  `built`, `base-sha`, or `dispatch-override`. Blue-green GCS workers publish
+  as `<sha>-gcs0.15.0`. **Exception:** dedicated **kms-core** is always an
+  external pin (`kms_core_version` + `kms_repo_ref` in `parse-overrides.cjs`) —
+  PR labels cannot change it without editing that file or using dispatch.
 - **Unresolvable ⇒ the run fails.** If GHCR has pruned the base commit's tags and
   nothing turns up within 50 commits, `resolve-tags` fails instead of quietly
   deploying something older. Rebase onto a newer base commit, or pass an explicit
