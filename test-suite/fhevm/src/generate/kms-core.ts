@@ -196,6 +196,10 @@ const genKeysCommand = (topology: ResolvedKmsTopology, opts: KmsRenderOptions) =
  * (a dedicated component, so it never merges with the centralized `core`
  * template — no env/healthcheck conflicts to work around).
  */
+// The KMS core image is published amd64-only at every tag; pin the platform so the generated cores
+// run (emulated) on arm64 hosts, matching the hardcoded pin in core-docker-compose.yml.
+const CORE_PLATFORM = "linux/amd64";
+
 export const buildKmsThresholdOverride = (
   topology: ResolvedKmsTopology,
   opts: KmsRenderOptions,
@@ -209,6 +213,7 @@ export const buildKmsThresholdOverride = (
   services["kms-core-gen-keys"] = {
     container_name: "kms-core-gen-keys",
     image: opts.coreImage,
+    platform: CORE_PLATFORM,
     entrypoint: ["/bin/sh", "-c", genKeysCommand(topology, opts)],
     environment: { AWS_ACCESS_KEY_ID: opts.s3AccessKey, AWS_SECRET_ACCESS_KEY: opts.s3SecretKey },
     volumes: kmsPartyIds(topology.parties).map((partyId) => {
@@ -230,6 +235,7 @@ export const buildKmsThresholdOverride = (
       image: coreVersionByNodeId[partyId]
         ? kmsRenderOptionsFor(coreVersionByNodeId[partyId]).coreImage
         : opts.coreImage,
+      platform: CORE_PLATFORM,
       // No shell wrapper: per-party config comes from KMS_CORE__* env and AWS creds
       // come from the environment, so the core binary runs directly.
       entrypoint: ["kms-server", "--config-file", `config/${configName}`],
@@ -260,6 +266,7 @@ export const buildKmsThresholdOverride = (
   services["kms-core-init"] = {
     container_name: "kms-core-init",
     image: opts.coreImage,
+    platform: CORE_PLATFORM,
     entrypoint: ["/bin/sh", "-c", `kms-init -a ${initEndpoints}`],
     depends_on: Object.fromEntries(
       kmsPartyIds(topology.parties).map((partyId) => [
