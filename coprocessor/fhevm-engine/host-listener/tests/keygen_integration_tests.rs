@@ -411,8 +411,12 @@ async fn materialize_kms_generation_steps(
 ) -> anyhow::Result<()> {
     let pool = db.pool().await;
     for _ in 0..steps {
-        process_kms_generation_activations(pool.clone(), aws_s3_client.clone())
-            .await?;
+        process_kms_generation_activations(
+            pool.clone(),
+            aws_s3_client.clone(),
+            Some(i64::MAX),
+        )
+        .await?;
     }
     Ok(())
 }
@@ -446,6 +450,7 @@ where
         dependence_cross_block: true,
         dependent_ops_max_per_chain: 0,
         is_protocol_config_listener: true,
+        disable_synthetic_ops: false,
     };
 
     ingest_block_logs(

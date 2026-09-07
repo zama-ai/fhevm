@@ -3,7 +3,12 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import YAML from "yaml";
 
-import { generateComposeOverrides, loadMergedComposeDoc, serviceNameList } from "./generate/compose";
+import {
+  blueGreenServiceNames,
+  generateComposeOverrides,
+  loadMergedComposeDoc,
+  serviceNameList,
+} from "./generate/compose";
 import { TEMPLATE_COMPOSE_DIR, composePath, envPath } from "./layout";
 import { presetBundle } from "./resolve/target";
 import {
@@ -87,6 +92,17 @@ const gatewayContractsOverrideState: State = {
   ...state,
   overrides: [{ group: "gateway-contracts" }],
   scenario: testDefaultScenario(),
+};
+
+const testSuiteOverrideState: State = {
+  ...state,
+  overrides: [{ group: "test-suite" }],
+  scenario: testDefaultScenario(),
+};
+
+const kmsConnectorOverrideState: State = {
+  ...state,
+  overrides: [{ group: "kms-connector" }],
 };
 
 const envAndArgsScenarioState: State = {
@@ -241,6 +257,66 @@ describe("render-compose", () => {
       expect(doc.services["coprocessor1-host-listener"]?.image).toContain(":fhevm-local-i1");
       expect(doc.services["coprocessor-host-listener"]?.build).toBeTruthy();
       expect(doc.services["coprocessor1-host-listener"]?.build).toBeTruthy();
+      const args = (doc.services["coprocessor-host-listener"]?.build as { args?: Record<string, string> })?.args;
+      expect(args?.COPROCESSOR_RUNTIME_BASE_IMAGE).toBeUndefined();
+      expect(args?.COPROCESSOR_DB_MIGRATION_RUNTIME_BASE_IMAGE).toBeUndefined();
+    });
+  });
+
+  test("routes every locally-built coprocessor target through the explicit public E2E runtime bases", async () => {
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      await writeFile(envPath("coprocessor"), "\n");
+      await writeFile(envPath("coprocessor.1"), "\n");
+      const publicRuntimeState: State = { ...inheritedScenarioState, e2ePublicRuntime: true };
+      await generateComposeOverrides(publicRuntimeState, stackSpecForState(publicRuntimeState));
+      const doc = YAML.parse(await readFile(composePath("coprocessor"), "utf8")) as {
+        services: Record<string, { build?: { args?: Record<string, string> } }>;
+      };
+
+      for (const [name, service] of Object.entries(doc.services)) {
+        expect(service.build?.args?.COPROCESSOR_RUNTIME_BASE_IMAGE, name).toBe("e2e-public-runtime");
+        expect(service.build?.args?.COPROCESSOR_DB_MIGRATION_RUNTIME_BASE_IMAGE, name).toBe(
+          "e2e-public-db-migration-runtime",
+        );
+      }
+    });
+  });
+
+  test("routes only local KMS connector runtime services through the public E2E runtime base", async () => {
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      await writeFile(envPath("coprocessor"), "\n");
+      await writeFile(envPath("coprocessor.1"), "\n");
+      const publicRuntimeState: State = { ...kmsConnectorOverrideState, e2ePublicRuntime: true };
+      await generateComposeOverrides(publicRuntimeState, stackSpecForState(publicRuntimeState));
+      const doc = YAML.parse(await readFile(composePath("kms-connector"), "utf8")) as {
+        services: Record<string, { build?: { args?: Record<string, string> } }>;
+      };
+
+      for (const name of ["kms-connector-gw-listener", "kms-connector-kms-worker", "kms-connector-tx-sender"]) {
+        expect(doc.services[name]?.build?.args?.KMS_CONNECTOR_RUNTIME_BASE_IMAGE, name).toBe("e2e-public-runtime");
+        expect(doc.services[name]?.build?.args?.BUILD_ID, name).toMatch(/^(?:[0-9a-f]{7,}|unknown)$/);
+      }
+      expect(doc.services["kms-connector-db-migration"]?.build?.args?.KMS_CONNECTOR_RUNTIME_BASE_IMAGE).toBeUndefined();
+      expect(doc.services["kms-connector-db-migration"]?.build?.args?.BUILD_ID).toBeUndefined();
+    });
+  });
+
+  test("keeps the certified KMS connector runtime base when the public E2E flag is absent", async () => {
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      await writeFile(envPath("coprocessor"), "\n");
+      await writeFile(envPath("coprocessor.1"), "\n");
+      await generateComposeOverrides(kmsConnectorOverrideState, stackSpecForState(kmsConnectorOverrideState));
+      const doc = YAML.parse(await readFile(composePath("kms-connector"), "utf8")) as {
+        services: Record<string, { build?: { args?: Record<string, string> } }>;
+      };
+
+      for (const name of ["kms-connector-gw-listener", "kms-connector-kms-worker", "kms-connector-tx-sender"]) {
+        expect(doc.services[name]?.build?.args?.KMS_CONNECTOR_RUNTIME_BASE_IMAGE, name).toBeUndefined();
+        expect(doc.services[name]?.build?.args?.BUILD_ID, name).toMatch(/^(?:[0-9a-f]{7,}|unknown)$/);
+      }
     });
   });
 
@@ -296,6 +372,21 @@ describe("render-compose", () => {
       );
       expect(doc.services["relayer"]?.image).toContain(":fhevm-local");
       expect(doc.services["relayer"]?.build?.dockerfile).toContain("relayer/docker/relayer/Dockerfile");
+    });
+  });
+
+  test("does not duplicate the test-suite Docker socket group in a local build override", async () => {
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      await writeFile(envPath("coprocessor"), "\n");
+      await generateComposeOverrides(testSuiteOverrideState, stackSpecForState(testSuiteOverrideState));
+      const doc = YAML.parse(await readFile(composePath("test-suite"), "utf8")) as {
+        services: Record<string, { image?: string; build?: unknown; group_add?: unknown }>;
+      };
+      const testSuite = doc.services["test-suite-e2e-debug"];
+      expect(testSuite?.image).toContain(":fhevm-local");
+      expect(testSuite?.build).toBeTruthy();
+      expect(testSuite?.group_add).toBeUndefined();
     });
   });
 
@@ -412,6 +503,73 @@ gcs:
       // GCS reuses BCS's db-migration — no `coprocessor-gcs-db-migration`.
       expect(doc.services["coprocessor-gcs-db-migration"]).toBeUndefined();
     });
+  });
+
+  test("blue-green can run Green from a published image tag", async () => {
+    const blueGreenScenario = resolveBlueGreenScenario(
+      path.join("/tmp", "blue-green-registry-gcs.yaml"),
+      parseBlueGreenScenario(`
+version: 1
+kind: blue-green
+hostChains:
+  - key: host
+    chainId: "12345"
+    rpcPort: 8545
+  - key: chain-b
+    chainId: "67890"
+    rpcPort: 8547
+bcs:
+  source: { mode: registry, tag: v0.14.0-10 }
+gcs:
+  source: { mode: registry, tag: target-sha }
+  stackVersion: "0.15.0"
+`),
+    );
+    const bgState: State = { ...state, scenario: blueGreenScenario };
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      await writeFile(envPath("coprocessor"), "\n");
+      await writeFile(envPath("coprocessor-chain-b.0"), "\n");
+      await generateComposeOverrides(bgState, stackSpecForState(bgState));
+      const primary = YAML.parse(await readFile(composePath("coprocessor"), "utf8")) as {
+        services: Record<string, { image?: string; build?: unknown }>;
+      };
+      const secondary = YAML.parse(await readFile(composePath("coprocessor-chain-b"), "utf8")) as {
+        services: Record<string, { image?: string; build?: unknown }>;
+      };
+
+      expect(primary.services["coprocessor-db-migration"]?.image).toEndWith(":target-sha");
+      expect(primary.services["coprocessor-db-migration"]?.build).toBeUndefined();
+      expect(primary.services["coprocessor-gcs-host-listener"]?.image).toEndWith(":target-sha");
+      expect(primary.services["coprocessor-gcs-host-listener"]?.build).toBeUndefined();
+      expect(secondary.services["coprocessor-gcs-host-listener-chain-b"]?.image).toEndWith(":target-sha");
+      expect(secondary.services["coprocessor-gcs-host-listener-chain-b"]?.build).toBeUndefined();
+    });
+  });
+
+  test("deferred Green is omitted from startup until explicitly requested", () => {
+    const deferredScenario = resolveBlueGreenScenario(
+      path.join("/tmp", "blue-green-deferred-test.yaml"),
+      parseBlueGreenScenario(`
+version: 1
+kind: blue-green
+gcs:
+  source: { mode: local }
+  stackVersion: "0.15.0"
+  deferredStart: true
+`),
+    );
+    const deferredState: State = { ...state, scenario: deferredScenario };
+
+    const initialServices = blueGreenServiceNames(deferredState, { includeMigration: true });
+    expect(initialServices.some((service) => service.includes("-gcs-"))).toBe(false);
+
+    const explicitGreenServices = blueGreenServiceNames(deferredState, {
+      includeMigration: false,
+      includeDeferredGreen: true,
+    });
+    expect(explicitGreenServices).toContain("coprocessor-gcs-host-listener");
+    expect(explicitGreenServices).toContain("coprocessor-gcs-upgrade-controller");
   });
 
   test("multi-operator blue-green emits BCS + GCS fleets per operator with correct prefixes", async () => {
@@ -555,6 +713,69 @@ gcs:
       const gcsCommand = doc.services["coprocessor-gcs-sns-worker"]?.command ?? [];
       expect(gcsCommand).toContain("--bucket-name=coproc-0");
       expect(gcsCommand.filter((arg) => arg.startsWith("--bucket-name-"))).toEqual([]);
+    });
+  });
+
+  test("blue-green keeps the release command shape for a SHA-tagged BCS hotfix", async () => {
+    const hotfixScenario = resolveBlueGreenScenario(
+      path.join("/tmp", "blue-green-hotfix-bcs.yaml"),
+      parseBlueGreenScenario(`
+version: 1
+kind: blue-green
+bcs:
+  source:
+    mode: registry
+    tag: v0.14.0-10
+gcs:
+  source: { mode: local }
+  stackVersion: "0.15.0"
+`),
+    );
+    hotfixScenario.bcs.source = { mode: "registry", tag: "04fb072", compatTag: "v0.14.0-10" };
+    const bgState: State = { ...state, scenario: hotfixScenario };
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      await writeFile(envPath("coprocessor"), "BUCKET_NAME=coproc-0\n");
+      await generateComposeOverrides(bgState, stackSpecForState(bgState));
+      const doc = YAML.parse(await readFile(composePath("coprocessor"), "utf8")) as {
+        services: Record<string, { command?: string[]; image?: string }>;
+      };
+      const bcs = doc.services["coprocessor-sns-worker"] ?? {};
+      expect(bcs.image).toEndWith(":04fb072");
+      expect(bcs.command).toContain("--bucket-name-ct128=coproc-0");
+      expect(bcs.command).toContain("--bucket-name-ct64=coproc-0");
+      expect(bcs.command).not.toContain("--bucket-name=coproc-0");
+    });
+  });
+
+  test("blue-green uses v0.15 commands when a v0.14 BCS is upgraded to a v0.15 SHA", async () => {
+    const upgradedScenario = resolveBlueGreenScenario(
+      path.join("/tmp", "blue-green-upgraded-bcs.yaml"),
+      parseBlueGreenScenario(`
+version: 1
+kind: blue-green
+bcs:
+  source:
+    mode: registry
+    tag: v0.14.0-10
+gcs:
+  source: { mode: local }
+  stackVersion: "0.15.1"
+`),
+    );
+    upgradedScenario.bcs.source = { mode: "registry", tag: "15abcde", compatTag: "v0.15.0" };
+    const bgState: State = { ...state, scenario: upgradedScenario };
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      await writeFile(envPath("coprocessor"), "BUCKET_NAME=coproc-0\n");
+      await generateComposeOverrides(bgState, stackSpecForState(bgState));
+      const doc = YAML.parse(await readFile(composePath("coprocessor"), "utf8")) as {
+        services: Record<string, { command?: string[]; image?: string }>;
+      };
+      const blue = doc.services["coprocessor-sns-worker"] ?? {};
+      expect(blue.image).toEndWith(":15abcde");
+      expect(blue.command).toContain("--bucket-name=coproc-0");
+      expect(blue.command?.filter((arg) => arg.startsWith("--bucket-name-"))).toEqual([]);
     });
   });
 });

@@ -7,7 +7,8 @@ use fhevm_host_bindings::kms_generation::KMSGeneration::{
 use kms_connector_api::ErrorCode;
 use kms_grpc::kms::v1::{
     CompressedKeyConfig, ComputeKeyType, CrsGenRequest, Eip712DomainMsg, KeyGenPreprocRequest,
-    KeyGenRequest, KeyGenSecretKeyConfig, KeySetConfig, KeySetType, StandardKeySetConfig,
+    KeyGenRequest, KeyGenSecretKeyConfig, KeySetAddedInfo, KeySetConfig, KeySetType,
+    StandardKeySetConfig,
 };
 use tracing::error;
 
@@ -45,8 +46,7 @@ impl KMSGenerationProcessor {
             epoch_id: parsed_extra_data.epoch_id.map(u256_to_request_id),
             context_id: parsed_extra_data.context_id.map(u256_to_request_id),
             extra_data: prep_keygen_request.extraData.to_vec(),
-            // Explicitly request the compressed XOF keyset layout expected by GPU workers.
-            keyset_config: Some(COMPRESSED_XOF_KEY_SET_CONFIG),
+            keyset_config: Some(keyset_config(prep_keygen_request.existingKeyId)),
         }))
     }
 
@@ -57,6 +57,8 @@ impl KMSGenerationProcessor {
         let parsed_extra_data = parse_extra_data(&keygen_request.extraData)
             .map_err(|e| ProcessingError::irrecoverable(ErrorCode::Unprocessable, e))?;
 
+        let existing_key_id = keygen_request.existingKeyId;
+
         Ok(KmsGrpcRequest::Keygen(KeyGenRequest {
             request_id: Some(u256_to_request_id(keygen_request.keyId)),
             preproc_id: Some(u256_to_request_id(keygen_request.prepKeygenId)),
@@ -65,9 +67,8 @@ impl KMSGenerationProcessor {
             epoch_id: parsed_extra_data.epoch_id.map(u256_to_request_id),
             context_id: parsed_extra_data.context_id.map(u256_to_request_id),
             extra_data: keygen_request.extraData.to_vec(),
-            // Explicitly request the compressed XOF keyset layout expected by GPU workers.
-            keyset_config: Some(COMPRESSED_XOF_KEY_SET_CONFIG),
-            keyset_added_info: None,
+            keyset_config: Some(keyset_config(existing_key_id)),
+            keyset_added_info: keyset_added_info(existing_key_id),
         }))
     }
 
@@ -101,6 +102,15 @@ impl KMSGenerationProcessor {
     }
 }
 
+const COMPRESSED_MIGRATION_KEY_SET_CONFIG: KeySetConfig = KeySetConfig {
+    keyset_type: KeySetType::Standard as i32,
+    standard_keyset_config: Some(StandardKeySetConfig {
+        compute_key_type: ComputeKeyType::Cpu as i32,
+        secret_key_config: KeyGenSecretKeyConfig::UseExisting as i32,
+        compressed_key_config: CompressedKeyConfig::CompressedAll as i32,
+    }),
+};
+
 const COMPRESSED_XOF_KEY_SET_CONFIG: KeySetConfig = KeySetConfig {
     keyset_type: KeySetType::Standard as i32,
     standard_keyset_config: Some(StandardKeySetConfig {
@@ -109,3 +119,84 @@ const COMPRESSED_XOF_KEY_SET_CONFIG: KeySetConfig = KeySetConfig {
         compressed_key_config: CompressedKeyConfig::CompressedAll as i32,
     }),
 };
+
+fn keyset_config(existing_key_id: U256) -> KeySetConfig {
+    if existing_key_id.is_zero() {
+        COMPRESSED_XOF_KEY_SET_CONFIG
+    } else {
+        COMPRESSED_MIGRATION_KEY_SET_CONFIG
+    }
+}
+
+fn keyset_added_info(existing_key_id: U256) -> Option<KeySetAddedInfo> {
+    (!existing_key_id.is_zero()).then(|| KeySetAddedInfo {
+        from_keyset_id_decompression_only: None,
+        to_keyset_id_decompression_only: None,
+        existing_keyset_id: Some(u256_to_request_id(existing_key_id)),
+        use_existing_key_tag: true,
+        copy_compressed_key_to_original: true,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rstest::rstest;
+
+    #[rstest]
+    #[case::fresh(U256::ZERO)]
+    #[case::migration(U256::from(42))]
+    #[tokio::test]
+    async fn prepares_keygen_request(#[case] existing_key_id: U256) {
+        let processor = KMSGenerationProcessor::new(&Config::default());
+        let prep_keygen_id = U256::from(7);
+        let key_id = U256::from(8);
+        let is_migration = !existing_key_id.is_zero();
+        let expected_config = if is_migration {
+            COMPRESSED_MIGRATION_KEY_SET_CONFIG
+        } else {
+            COMPRESSED_XOF_KEY_SET_CONFIG
+        };
+        let expected_added_info = is_migration.then(|| KeySetAddedInfo {
+            from_keyset_id_decompression_only: None,
+            to_keyset_id_decompression_only: None,
+            existing_keyset_id: Some(u256_to_request_id(existing_key_id)),
+            use_existing_key_tag: true,
+            copy_compressed_key_to_original: true,
+        });
+
+        let KmsGrpcRequest::PrepKeygen(prep_request) = processor
+            .prepare_prep_keygen_request(&PrepKeygenRequest {
+                prepKeygenId: prep_keygen_id,
+                paramsType: 0,
+                existingKeyId: existing_key_id,
+                extraData: Default::default(),
+            })
+            .await
+            .unwrap()
+        else {
+            panic!("expected preprocessing request");
+        };
+        assert_eq!(prep_request.keyset_config, Some(expected_config));
+
+        let KmsGrpcRequest::Keygen(keygen_request) = processor
+            .prepare_keygen_request(&KeygenRequest {
+                prepKeygenId: prep_keygen_id,
+                keyId: key_id,
+                existingKeyId: existing_key_id,
+                extraData: Default::default(),
+            })
+            .await
+            .unwrap()
+        else {
+            panic!("expected key generation request");
+        };
+        assert_eq!(keygen_request.request_id, Some(u256_to_request_id(key_id)));
+        assert_eq!(
+            keygen_request.preproc_id,
+            Some(u256_to_request_id(prep_keygen_id))
+        );
+        assert_eq!(keygen_request.keyset_config, Some(expected_config));
+        assert_eq!(keygen_request.keyset_added_info, expected_added_info);
+    }
+}

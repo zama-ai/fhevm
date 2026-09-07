@@ -23,6 +23,14 @@ export const ABI_COMPAT_EXCEPTIONS: Partial<Record<PackageName, Partial<Record<s
       "error InvalidKMSContext(uint256)",
       "error CurrentKMSContextCannotBeDestroyed(uint256)",
     ],
+    // The 0.15 DAO-only key generation ABI is intentionally replaced before any 0.15 ceremony:
+    // one request now covers both fresh generation and same-key compressed material production.
+    KMSGeneration: [
+      "event PrepKeygenRequest(uint256,uint8,bytes)",
+      "event KeygenRequest(uint256,uint256,bytes)",
+      "event ActivateKey(uint256,string[],(uint8,bytes)[])",
+      "function keygen(uint8)",
+    ],
   },
   "gateway-contracts": {
     // The NotCustodian{Signer,TxSender} selectors were inherited from the GatewayConfigChecks

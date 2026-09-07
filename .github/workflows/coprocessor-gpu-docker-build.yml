@@ -1,0 +1,124 @@
+# GPU-enabled coprocessor images.
+#
+# The CPU images go through `common-docker.yml`, which builds inside buildx on a
+# standard runner. GPU images cannot: `tfhe-cuda-backend`'s CMakeLists chooses
+# its target architectures from the device present at *build* time —
+#
+#   if(MULTI_ARCH)        -> 75 80 86 89     # stops short of 90, so no H100
+#   elseif(CUDA_SUCCESS)  -> native
+#   else()                -> 70              # Volta, behind a CMake warning
+#
+# — and `docker build` exposes no GPU (buildx has no `--gpus`). A containerized
+# cargo build therefore takes the third branch and produces an sm_70 image,
+# quietly, for a fleet that runs H100s. The multi-arch cargo feature does not
+# cover 90 either.
+#
+# So this compiles on the GPU runner, where CMake sees the device and builds
+# `native`, and packages the binaries afterwards with
+# `coprocessor/fhevm-engine/Dockerfile.gpu`. The consequence is that every image
+# is specific to the compute capability it was built on, so the capability is
+# read off the device and carried in the tag and in a label. An image that
+# cannot say which device it targets is a trap, and a `:gpu` tag that means
+# "some GPU" is the same trap with better branding.
+#
+# WHICH RUNNER, AND WHY IT IS NOT A FREE CHOICE. The default is the slab
+# `single-h100` profile, because production is H100. The `l40` profile is
+# offered for L40 deployments and is *not* a substitute: CMake bakes the
+# detected capability into a `CUDA_ARCH` compile definition, and
+# `tfhe-cuda-backend` gates real code on it -- `#if CUDA_ARCH >= 900` appears
+# throughout the programmable bootstrap, including the thread-block-cluster
+# paths that only Hopper has. An L40 build is therefore not merely
+# differently-tuned: those code paths are compiled out of it. Its cubins would
+# not load on an H100 either. Hence one image per capability, with the
+# capability in the tag.
+#
+# Manual trigger only. A GPU build occupies a scarce GPU runner for the length
+# of a tfhe-rs CUDA compile, and it produces an artifact that is only valid for
+# one device class, so it is not something to fire automatically on a tag or a
+# commit.
+#
+# Which services: tfhe-worker, sns-worker and zkproof-worker — the three that
+# declare a `gpu` cargo feature and do FHE work. The listeners and senders have
+# no GPU path, so they stay CPU-only rather than gaining a pointless CUDA base.
+name: coprocessor-gpu-docker-build
+
+env:
+  # Secrets reach only zama-ai organization members; the slab steps check this
+  # rather than failing on a fork.
+  SECRETS_AVAILABLE: ${{ secrets.JOB_SECRET != '' }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: "Instance to build on. Scaleway first: far better availability than Hyperstack. Only single-GPU profiles -- a compile gains nothing from eight."
+        required: true
+        default: "scaleway::single-h100 (H100-1-80G)"
+        type: choice
+        options:
+          - "scaleway::single-h100 (H100-1-80G)"
+          - "hyperstack::single-h100 (n3-H100x1)"
+          - "hyperstack::l40 (n3-L40x1)"
+      runtime-base:
+        description: "Runtime base image. Production is the Chainguard pin; the open Chainguard image is for testing without cgr.dev credentials."
+        default: "cgr.dev/zama.ai/glibc-dynamic:15.2.0"
+        type: choice
+        options:
+          - cgr.dev/zama.ai/glibc-dynamic:15.2.0
+          - cgr.dev/chainguard/glibc-dynamic:latest
+      push:
+        description: "Push to ghcr.io. Off by default so a run can be inspected first."
+        default: false
+        type: boolean
+
+# One run at a time. Each run provisions a GPU instance, and two concurrent
+# runs would compete for the same scarce H100s. `cancel-in-progress: false`
+# deliberately: cancelling mid-build risks leaving a provisioned instance
+# behind, so a second request queues rather than pre-empting the first.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+# The floor for every job. Anything beyond this is granted per job, to the one
+# job that needs it, so a compromised step in the others cannot reach it.
+# `id-token` is deliberately absent: nothing here authenticates by OIDC -- slab
+# uses a PAT and ghcr uses GITHUB_TOKEN -- so requesting it would hand out a
+# credential no step consumes.
+permissions:
+  contents: "read" # Required to check out the repository
+
+jobs:
+  parse-inputs:
+    name: coprocessor-gpu-docker-build/parse-inputs
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
+    permissions:
+      contents: "read" # Required to check out ci/parse_benchmark_profile.py and ci/slab.toml
+    outputs:
+      backend: ${{ steps.parse_profile.outputs.backend }}
+      profile: ${{ steps.parse_profile.outputs.profile }}
+      hardware_name: ${{ steps.parse_profile.outputs.hardware }}
+      cloud_provider: ${{ steps.parse_profile.outputs.cloud_provider }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: "false"
+
+      # The parser reads ci/slab.toml through tomllib, which the runner image
+      # only ships from Python 3.11 on.
+      - name: Use Python
+        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+        with:
+          python-version: "3.11"
+
+      # Same parser the GPU benchmark job uses, so a profile string means the
+      # same thing in both places: it maps `provider::profile (hardware)` onto
+      # the slab backend (`terraform` for Scaleway, `hyperstack` for Hyperstack)
+      # and validates the profile exists in ci/slab.toml before an instance is
+      # requested.
+      - name: Parse profile and hardware name
+        id: parse_profile
+        env:
+          PROFILE: ${{ inputs.profile }}
+        run: python3 ci/parse_benchmark_profile.py "${PROFILE}" "${GITHUB_OUTPUT}"
+

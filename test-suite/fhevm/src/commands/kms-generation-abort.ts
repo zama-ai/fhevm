@@ -259,14 +259,22 @@ export const assertActiveIdUnchanged = (kind: "key" | "CRS", baseline: bigint, c
  */
 const abortKeygenMidFlight = async (state: State, target: Target, owner: Owner, abi: AbiHashes, paramsType: string, baselineKeyId: bigint) => {
   console.log("[kms-generation-abort] triggering keygen to abort it mid-flight…");
-  const trigger = await castSend(target, owner, "keygen(uint8)", paramsType);
+  const trigger = await castSend(target, owner, "keygen(uint8,uint256)", paramsType, "0");
   // The receipt's PrepKeygenRequest event is the in-flight proof.
   const prepKeygenId = eventLogWord(trigger, abi.topics.prepKeygenRequest, "PrepKeygenRequest");
   const keyId = parseUintOutput(await castCall(target.rpcUrl, target.kmsGenerationAddress, "getKeyCounter()(uint256)"));
   console.log(`[kms-generation-abort] keygen in flight: prepKeygenId=${prepKeygenId} keyId=${keyId}`);
 
   // The pipeline is exclusive while the request is in flight.
-  await expectRevert(target, owner, "keygen while one is in flight", "KeygenOngoing(uint256)", "keygen(uint8)", paramsType);
+  await expectRevert(
+    target,
+    owner,
+    "keygen while one is in flight",
+    "KeygenOngoing(uint256)",
+    "keygen(uint8,uint256)",
+    paramsType,
+    "0",
+  );
 
   // Let every connector register the ceremony on its KMS core before the abort event exists.
   await Bun.sleep(TRIGGER_TO_ABORT_SLEEP_MS);
@@ -364,7 +372,7 @@ const recoverAfterAborts = async (state: State, target: Target, owner: Owner, ab
   const minioBase = `${state.discovery!.endpoints.minioExternal}/kms-public/${state.discovery!.minioKeyPrefix ?? "PUB"}`;
 
   console.log("[kms-generation-abort] recovery: triggering a fresh keygen (must not revert KeygenOngoing)…");
-  const keygenTrigger = await castSend(target, owner, "keygen(uint8)", paramsType);
+  const keygenTrigger = await castSend(target, owner, "keygen(uint8,uint256)", paramsType, "0");
   const prepKeygenId = eventLogWord(keygenTrigger, abi.topics.prepKeygenRequest, "PrepKeygenRequest");
   const keyId = parseUintOutput(await castCall(target.rpcUrl, target.kmsGenerationAddress, "getKeyCounter()(uint256)"));
   await waitForActivation(target, "recovery keygen", "getActiveKeyId()(uint256)", keyId);

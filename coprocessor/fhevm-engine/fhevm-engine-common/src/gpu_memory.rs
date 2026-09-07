@@ -3,13 +3,185 @@ use crate::{
     types::{FhevmError, SupportedFheCiphertexts, SupportedFheOperations},
 };
 use lazy_static::lazy_static;
+use prometheus::{register_int_counter_vec, IntCounterVec};
+use std::{
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        LazyLock,
+    },
+    time::{Duration, Instant},
+};
 use tfhe::{core_crypto::gpu::get_number_of_gpus, prelude::*, FheUint2, GpuIndex};
+use tracing::{error, warn};
 
 lazy_static! {
-    pub static ref gpu_mem_reservation: Vec<std::sync::atomic::AtomicU64> = (0
-        ..get_number_of_gpus())
-        .map(|_| std::sync::atomic::AtomicU64::new(0))
-        .collect::<Vec<_>>();
+    static ref GPU_MEMORY_POOL: GpuMemoryPool = GpuMemoryPool::new(get_number_of_gpus() as usize);
+}
+
+const RESERVATION_RETRY_INTERVAL: Duration = Duration::from_millis(2);
+const RESERVATION_PROGRESS_INTERVAL: Duration = Duration::from_secs(5);
+
+static RESERVATION_TIMEOUT_COUNTER: LazyLock<IntCounterVec> = LazyLock::new(|| {
+    register_int_counter_vec!(
+        "coprocessor_gpu_memory_reservation_timeouts_total",
+        "GPU memory reservation waits which exhausted their configured deadline",
+        &["gpu_idx"]
+    )
+    .expect("GPU memory reservation timeout metric registration")
+});
+
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+pub enum GpuMemoryReservationError {
+    #[error("GPU memory reservation requested unknown device {gpu_idx}")]
+    UnknownDevice { gpu_idx: usize },
+    #[error("GPU memory reservation accounting overflow on device {gpu_idx}")]
+    AccountingOverflow { gpu_idx: usize },
+    #[error(
+        "GPU memory reservation timed out for device {gpu_idx} after {waited_ms}ms ({amount} bytes)"
+    )]
+    TimedOut {
+        gpu_idx: usize,
+        amount: u64,
+        waited_ms: u64,
+    },
+}
+
+struct GpuMemoryPool {
+    reserved: Vec<AtomicU64>,
+}
+
+impl GpuMemoryPool {
+    fn new(device_count: usize) -> Self {
+        Self {
+            reserved: (0..device_count).map(|_| AtomicU64::new(0)).collect(),
+        }
+    }
+
+    fn acquire_with(
+        &self,
+        amount: u64,
+        gpu_idx: usize,
+        max_wait: Duration,
+        can_allocate: impl FnMut(u64, usize) -> bool,
+    ) -> Result<GpuMemoryReservation<'_>, GpuMemoryReservationError> {
+        self.acquire_with_limits(
+            amount,
+            gpu_idx,
+            RESERVATION_RETRY_INTERVAL,
+            max_wait,
+            can_allocate,
+        )
+    }
+
+    fn acquire_with_limits(
+        &self,
+        amount: u64,
+        gpu_idx: usize,
+        retry_interval: Duration,
+        max_wait: Duration,
+        mut can_allocate: impl FnMut(u64, usize) -> bool,
+    ) -> Result<GpuMemoryReservation<'_>, GpuMemoryReservationError> {
+        let counter = self
+            .reserved
+            .get(gpu_idx)
+            .ok_or(GpuMemoryReservationError::UnknownDevice { gpu_idx })?;
+        let started_at = Instant::now();
+        let mut next_progress_log = RESERVATION_PROGRESS_INTERVAL;
+        loop {
+            let previous = counter
+                .fetch_update(Ordering::AcqRel, Ordering::Acquire, |reserved| {
+                    reserved.checked_add(amount)
+                })
+                .map_err(|_| GpuMemoryReservationError::AccountingOverflow { gpu_idx })?;
+            let total = previous + amount;
+            let reservation = GpuMemoryReservation {
+                pool: self,
+                amount,
+                gpu_idx,
+            };
+            if can_allocate(total, gpu_idx) {
+                return Ok(reservation);
+            }
+            drop(reservation);
+
+            let elapsed = started_at.elapsed();
+            if elapsed >= max_wait {
+                let waited_ms = u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX);
+                warn!(
+                    target: "gpu_memory",
+                    gpu_idx,
+                    amount,
+                    waited_ms,
+                    "GPU memory reservation timed out"
+                );
+                return Err(GpuMemoryReservationError::TimedOut {
+                    gpu_idx,
+                    amount,
+                    waited_ms,
+                });
+            }
+            if elapsed >= next_progress_log {
+                warn!(
+                    target: "gpu_memory",
+                    gpu_idx,
+                    amount,
+                    waited_ms = u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX),
+                    "waiting for GPU memory reservation"
+                );
+                next_progress_log = elapsed.saturating_add(RESERVATION_PROGRESS_INTERVAL);
+            }
+            std::thread::sleep(retry_interval.min(max_wait.saturating_sub(elapsed)));
+        }
+    }
+
+    #[cfg(test)]
+    fn reserved(&self, gpu_idx: usize) -> u64 {
+        self.reserved[gpu_idx].load(Ordering::Acquire)
+    }
+}
+
+/// Owns one device's reservation accounting. Dropping the guard releases the
+/// reservation on success, ordinary errors, and unwinding.
+pub struct GpuMemoryReservation<'a> {
+    pool: &'a GpuMemoryPool,
+    amount: u64,
+    gpu_idx: usize,
+}
+
+impl Drop for GpuMemoryReservation<'_> {
+    fn drop(&mut self) {
+        let previous = self.pool.reserved[self.gpu_idx].fetch_sub(self.amount, Ordering::AcqRel);
+        if previous < self.amount {
+            // Restore the counter before reporting the invariant violation;
+            // wrapping it would poison all later capacity decisions.
+            self.pool.reserved[self.gpu_idx].fetch_add(self.amount, Ordering::Release);
+            error!(
+                target: "gpu_memory",
+                gpu_idx = self.gpu_idx,
+                amount = self.amount,
+                reserved = previous,
+                "GPU memory reservation accounting underflow"
+            );
+        }
+    }
+}
+
+pub fn reserve_memory_on_gpu(
+    amount: u64,
+    gpu_idx: usize,
+    max_wait: Duration,
+) -> Result<GpuMemoryReservation<'static>, GpuMemoryReservationError> {
+    GPU_MEMORY_POOL
+        .acquire_with(amount, gpu_idx, max_wait, |total, idx| {
+            check_valid_cuda_malloc(total, GpuIndex::new(idx as u32))
+        })
+        .inspect_err(|error| {
+            if matches!(error, GpuMemoryReservationError::TimedOut { .. }) {
+                RESERVATION_TIMEOUT_COUNTER
+                    .with_label_values(&[&gpu_idx.to_string()])
+                    .inc();
+            }
+        })
 }
 
 impl SupportedFheCiphertexts {
@@ -51,31 +223,6 @@ impl SupportedFheCiphertexts {
             SupportedFheCiphertexts::Scalar(v) => v.len() as u64,
         }
     }
-}
-
-// Reserving GPU memory happens in two stages:
-//  - we add the amount we need atomically to the GPU's reservation pool
-//  - we check that the new pool fits on GPU
-//    - if it does, we continue and allocate, then remove the reservation from the pool
-//    - if it doesn't, we remove from the pool and for now simply retry after a short interval
-// TODO: refine retrying, possibly targeting a different GPU where appropriate
-pub fn reserve_memory_on_gpu(amount: u64, idx: usize) {
-    loop {
-        let old_pool_size =
-            gpu_mem_reservation[idx].fetch_add(amount, std::sync::atomic::Ordering::SeqCst);
-        if check_valid_cuda_malloc(old_pool_size + amount, GpuIndex::new(idx as u32)) {
-            break;
-        } else {
-            // Remove reservation as failed
-            let _ = gpu_mem_reservation[idx].fetch_sub(amount, std::sync::atomic::Ordering::SeqCst);
-            std::thread::sleep(std::time::Duration::from_millis(2));
-        }
-    }
-}
-pub fn release_memory_on_gpu(amount: u64, idx: usize) {
-    let current_pool_size = gpu_mem_reservation[idx].load(std::sync::atomic::Ordering::SeqCst);
-    assert!(current_pool_size >= amount);
-    let _ = gpu_mem_reservation[idx].fetch_sub(amount, std::sync::atomic::Ordering::SeqCst);
 }
 
 fn get_fhe_sum_size_on_gpu(
@@ -125,13 +272,27 @@ fn get_fhe_is_in_size_on_gpu(
     }
 }
 
+// PRECONDITION (panic-avoidance sweep, 2026-08-08): every match arm below
+// asserts `input_operands.len()` against the operation's fixed arity and then
+// indexes the slice directly. That precondition is established by
+// `tfhe_ops::check_fhe_operand_types`, which validates arity/type/scalar
+// placement for every `SupportedFheOperations` variant (including the
+// variable-arity `Other` ops) and returns a typed `FhevmError` on mismatch.
+// The one production caller (`tfhe-worker::component_worker`) always runs
+// that check before a computation reaches `perform_fhe_operation` /
+// `get_op_size_on_gpu`, so the asserts/indexing here enforce an
+// already-validated invariant rather than gating untrusted input directly.
+// Rewriting every arm to re-validate defensively would touch ~40 match arms
+// in this function alone (mirrored in `tfhe_ops::perform_fhe_operation_impl`)
+// without a signature change; left as a follow-up given the size/risk of that
+// change in a crypto hot path. Any new caller of these `pub fn`s must run
+// `check_fhe_operand_types` first or risk a panic on malformed operand counts.
 pub fn get_op_size_on_gpu(
     fhe_operation_int: i16,
     input_operands: &[SupportedFheCiphertexts],
     // for deterministic randomness functions
 ) -> Result<u64, FhevmError> {
-    let fhe_operation: SupportedFheOperations =
-        fhe_operation_int.try_into().expect("Invalid operation");
+    let fhe_operation: SupportedFheOperations = fhe_operation_int.try_into()?;
     match fhe_operation {
         SupportedFheOperations::FheAdd => {
             assert_eq!(input_operands.len(), 2);
@@ -1927,5 +2088,102 @@ pub fn get_op_size_on_gpu(
             }
         }
         _ => Err(FhevmError::UnknownFheOperation(fhe_operation_int.into())),
+    }
+}
+
+#[cfg(test)]
+mod reservation_tests {
+    use super::*;
+    use std::sync::{atomic::AtomicUsize, Arc, Barrier};
+
+    #[test]
+    fn reservation_releases_on_success_error_and_drop() {
+        let pool = GpuMemoryPool::new(2);
+        {
+            let _first = pool
+                .acquire_with(11, 0, Duration::from_secs(1), |_, _| true)
+                .expect("first reservation");
+            let _second = pool
+                .acquire_with(7, 1, Duration::from_secs(1), |_, _| true)
+                .expect("second reservation");
+            assert_eq!(pool.reserved(0), 11);
+            assert_eq!(pool.reserved(1), 7);
+
+            let operation: Result<(), &'static str> = (|| {
+                let _temporary = pool
+                    .acquire_with(5, 0, Duration::from_secs(1), |_, _| true)
+                    .expect("temporary reservation");
+                Err("operation failed")
+            })();
+            assert_eq!(operation, Err("operation failed"));
+            assert_eq!(pool.reserved(0), 11);
+        }
+        assert_eq!(pool.reserved(0), 0);
+        assert_eq!(pool.reserved(1), 0);
+    }
+
+    #[test]
+    fn reservation_releases_during_panic_unwind() {
+        let pool = GpuMemoryPool::new(1);
+        let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _reservation = pool
+                .acquire_with(13, 0, Duration::from_secs(1), |_, _| true)
+                .expect("reservation");
+            panic!("simulated TFHE panic");
+        }));
+        assert!(panic.is_err());
+        assert_eq!(pool.reserved(0), 0);
+    }
+
+    #[test]
+    fn waiting_reservation_times_out_without_leaking() {
+        let pool = GpuMemoryPool::new(1);
+        let result = pool.acquire_with_limits(23, 0, Duration::ZERO, Duration::ZERO, |_, _| false);
+        let error = match result {
+            Ok(_) => panic!("bounded reservation wait must time out"),
+            Err(error) => error,
+        };
+        assert!(matches!(
+            error,
+            GpuMemoryReservationError::TimedOut {
+                gpu_idx: 0,
+                amount: 23,
+                ..
+            }
+        ));
+        assert_eq!(pool.reserved(0), 0);
+    }
+
+    #[test]
+    fn simultaneous_oversubscription_never_leaks_or_overcommits_accounting() {
+        let pool = Arc::new(GpuMemoryPool::new(1));
+        let start = Arc::new(Barrier::new(2));
+        let largest_probe = Arc::new(AtomicU64::new(0));
+        let successful_guards = Arc::new(AtomicUsize::new(0));
+        std::thread::scope(|scope| {
+            for _ in 0..2 {
+                let pool = pool.clone();
+                let start = start.clone();
+                let largest_probe = largest_probe.clone();
+                let successful_guards = successful_guards.clone();
+                scope.spawn(move || {
+                    start.wait();
+                    let reservation = pool
+                        .acquire_with(60, 0, Duration::from_secs(1), |total, _| {
+                            largest_probe.fetch_max(total, Ordering::AcqRel);
+                            total <= 100
+                        })
+                        .expect("oversubscribed waiter eventually acquires");
+                    let concurrent_guards = successful_guards.fetch_add(1, Ordering::AcqRel) + 1;
+                    assert!(concurrent_guards <= 1);
+                    std::thread::sleep(Duration::from_millis(10));
+                    successful_guards.fetch_sub(1, Ordering::AcqRel);
+                    drop(reservation);
+                });
+            }
+        });
+        assert!(largest_probe.load(Ordering::Acquire) >= 120);
+        assert_eq!(successful_guards.load(Ordering::Acquire), 0);
+        assert_eq!(pool.reserved(0), 0);
     }
 }

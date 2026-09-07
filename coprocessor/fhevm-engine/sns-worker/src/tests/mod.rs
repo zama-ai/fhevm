@@ -46,6 +46,11 @@ use tracing::{info, Level};
 const LISTEN_CHANNEL: &str = "sns_worker_chan";
 static TRACING_INIT: OnceLock<()> = OnceLock::new();
 
+// Every test in this module is `cfg(not(gpu))` -- it exercises the S3
+// migration path, which has no device component -- so the module itself is
+// CPU-only. Gating it here rather than each helper keeps the two in step: a
+// GPU build otherwise reports every helper as dead code.
+#[cfg(not(feature = "gpu"))]
 mod s3_migration;
 mod s3_migration_dry_run;
 
@@ -1085,6 +1090,7 @@ async fn assert_ciphertext_uploaded(
     Ok(())
 }
 
+#[cfg(not(feature = "gpu"))]
 async fn wait_for_ciphertext_digest_upload_state(
     pool: &sqlx::PgPool,
     handle: &Vec<u8>,

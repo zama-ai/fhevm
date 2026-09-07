@@ -3,7 +3,7 @@
  */
 import { effectiveOverrides } from "../scenario/resolve";
 import type { StackSpec } from "../stack-spec/stack-spec";
-import type { State } from "../types";
+import type { CoprocessorInstanceSource, State } from "../types";
 
 type CompatSemver = readonly [number, number, number];
 type CompatService =
@@ -264,6 +264,21 @@ const parseCompatVersion = (version: string) => {
   };
 };
 
+/** Keeps a release command shape when only the registry image tag changes to a commit SHA. */
+export const replaceRegistrySourceTag = (
+  source: CoprocessorInstanceSource,
+  tag: string,
+  compatTag?: string,
+): CoprocessorInstanceSource => {
+  if (parseCompatVersion(tag)) {
+    return { mode: "registry", tag };
+  }
+  const effectiveCompatTag = compatTag ?? (source.mode === "registry"
+    ? source.compatTag ?? (parseCompatVersion(source.tag) ? source.tag : undefined)
+    : undefined);
+  return { mode: "registry", tag, ...(effectiveCompatTag ? { compatTag: effectiveCompatTag } : {}) };
+};
+
 const compatVersionGte = (
   version: string,
   target: CompatSemver,
@@ -462,15 +477,15 @@ export const supportsCanonicalProtocolConfigSeeding = (state: CompatState) =>
 
 /**
  * First host build whose canonical seeding tasks read the reviewed snapshot from `CANONICAL_*`
- * environment variables. Every tag from v0.13.1 through v0.14.0-8 declares `--canonical-rpc-url` /
+ * environment variables. Every tag from v0.13.1 through v0.14.0-9 declares `--canonical-rpc-url` /
  * `--canonical-protocol-config-address` instead. The floor therefore sits inside the v0.14.0 family.
- * A three-part floor cannot express it. [0, 14, 0] would wrongly claim v0.14.0-0..8 read environment
+ * A three-part floor cannot express it. [0, 14, 0] would wrongly claim v0.14.0-0..9 read environment
  * variables. [0, 14, 1] would wrongly claim the release carrying the migration reads command-line
  * flags. The separate build floor below closes that gap. Confirm the build number against the tag
  * that ships the migration when that tag is cut.
  */
 const CANONICAL_ENV_SEEDING_FLOOR: CompatSemver = [0, 14, 0];
-const CANONICAL_ENV_SEEDING_FLOOR_BUILD = 9;
+const CANONICAL_ENV_SEEDING_FLOOR_BUILD = 10;
 
 /**
  * Detects when the host image's canonical seeding tasks take the exported snapshot as `CANONICAL_*`
