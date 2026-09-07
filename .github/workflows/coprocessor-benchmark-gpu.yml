@@ -166,9 +166,11 @@ jobs:
       - name: Setup GPU dependencies
         uses: ./.github/actions/gpu_setup
         with:
-          cuda-version: "12.8 12.2"
+          # 12.8 only, for the same reason as coprocessor-gpu-tests: a listed
+          # pre-installed 12.2 would keep hyperstack on a different toolchain
+          # than Scaleway, and benchmark numbers must be comparable across them.
+          cuda-version: "12.8"
           gcc-version: 12
-          cloud-provider: ${{ needs.parse-inputs.outputs.cloud_provider }}
 
       # A job that ends as "The operation was canceled." with no failing command
       # lost its host rather than its command: out of disk, out of memory, or a

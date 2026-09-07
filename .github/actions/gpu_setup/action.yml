@@ -3,13 +3,13 @@ description: Set up CUDA and its host compiler on a GPU runner
 
 inputs:
   cuda-version:
-    description: Space-separated acceptable CUDA versions; installs the first if none are present
+    description: >-
+      Space-separated acceptable CUDA versions; installs the first if none are
+      present. List one version to pin every runner to it: a pre-installed
+      toolkit only counts when it is listed.
     required: true
   gcc-version:
     description: Version of GCC to use as the CUDA host compiler
-    required: true
-  cloud-provider:
-    description: Cloud provider hosting the GPU runner
     required: true
 
 runs:

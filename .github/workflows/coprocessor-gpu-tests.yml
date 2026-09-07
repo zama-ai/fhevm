@@ -104,9 +104,12 @@ jobs:
       - name: Setup GPU dependencies
         uses: ./.github/actions/gpu_setup
         with:
-          cuda-version: "12.8 12.2"
+          # 12.8 only: the hyperstack images ship 12.2, and accepting it here
+          # left them on 12.2 while a fresh Scaleway host installed 12.8, so the
+          # toolchain differed per provider. Pinning one version installs it
+          # wherever it is missing.
+          cuda-version: "12.8"
           gcc-version: 12
-          cloud-provider: hyperstack
 
       - name: Install latest stable
         uses: dtolnay/rust-toolchain@a54c7afa936fefeb4456b2dd8068152669aa8203
