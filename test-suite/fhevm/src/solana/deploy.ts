@@ -12,7 +12,7 @@
 
 import path from "node:path";
 
-import { createKeyPairSignerFromBytes, fetchEncodedAccount, type TransactionSigner } from "@solana/kit";
+import { createKeyPairSignerFromBytes, type TransactionSigner } from "@solana/kit";
 
 import { closeSync, openSync } from "node:fs";
 
@@ -21,26 +21,10 @@ import { SOLANA_LEAF_PROOF_API_KEY, SOLANA_LEAF_PROOF_PORT } from "../generate/s
 import { readEnvFile } from "../utils/fs";
 import { until } from "../utils/until";
 import { run, runStreaming } from "../utils/process";
-import {
-  BRINGUP_KMS_CONTEXT_ID,
-  readGatewayBootstrapInputs,
-  SOLANA_HOST_CHAIN_ID,
-  SOLANA_HOST_CHAIN_ID_I64,
-  type GatewayBootstrapInputs,
-} from "./addresses";
-
-import {
-  getDefineKmsContextInstructionAsync,
-  getInitializeHostConfigInstructionAsync,
-} from "./internal/generated/zamaHost/instructions/index.js";
-import { findHostConfigPda } from "./internal/generated/zamaHost/pdas/index.js";
-import { ZAMA_HOST_PROGRAM_ADDRESS } from "./internal/generated/zamaHost/programAddress.js";
-import {
-  createProvisioningContext,
-  zamaEventAuthorityAddress,
-  zamaHostProgramDataAddress,
-  type SolanaProvisioningContext,
-} from "./provision";
+export { bootstrapZamaHost, kmsCertificateThreshold } from "./host-deploy/bootstrap";
+import { bootstrapZamaHost } from "./host-deploy/bootstrap";
+import { readGatewayBootstrapInputs, SOLANA_HOST_CHAIN_ID, SOLANA_HOST_CHAIN_ID_I64 } from "./addresses";
+import { createProvisioningContext } from "./provision";
 import {
   airdropDeployFees,
   ensureDeployerWallet,
@@ -50,96 +34,6 @@ import {
   VALIDATOR_RPC_URL,
   VALIDATOR_WS_URL,
 } from "./validator";
-
-/**
- * Derives the on-chain certificate threshold (matching signatures a certificate needs) from the
- * KMS corruption threshold t. A centralized KMS (t=0) signs with one key; a threshold-mode KMS
- * needs 2t+1 matching signatures, and KMS core requires parties == 3t+1 (see
- * scenarios/four-party-threshold-kms.yaml).
- */
-export const kmsCertificateThreshold = (kmsCorruptionThreshold: number, registeredSignerCount: number): number => {
-  const certificateThreshold = 2 * kmsCorruptionThreshold + 1;
-  if (certificateThreshold > registeredSignerCount) {
-    throw new Error(
-      `KMS_THRESHOLD=${kmsCorruptionThreshold} needs 2t+1=${certificateThreshold} certificate ` +
-        `signatures but only ${registeredSignerCount} KMS signers are registered on the gateway`,
-    );
-  }
-  return certificateThreshold;
-};
-
-export type BootstrapZamaHostParams = {
-  readonly payer: TransactionSigner;
-  readonly gateway: GatewayBootstrapInputs;
-  /**
-   * Input-attestation n-of-m. The PoC coprocessor emits a single attestation signature, so 1
-   * keeps the live flow green while the full registered set is stored (EVM `InputVerifier`
-   * parity).
-   */
-  readonly coprocessorThreshold?: number;
-  /** KMS corruption threshold t; 0 is the centralized PoC default. */
-  readonly kmsCorruptionThreshold?: number;
-};
-
-/**
- * Initializes the zama-host HostConfig (idempotent: the gateway outlives validator resets, the
- * config account does not, so a re-run against a fresh validator recreates it and a re-run against
- * a configured one skips it) and defines the active KMS context from the registered signer set.
- */
-export const bootstrapZamaHost = async (
-  context: SolanaProvisioningContext,
-  params: BootstrapZamaHostParams,
-): Promise<void> => {
-  const eventAuthority = await zamaEventAuthorityAddress();
-  const [hostConfig] = await findHostConfigPda();
-  const shared = { eventAuthority, program: ZAMA_HOST_PROGRAM_ADDRESS } as const;
-
-  const existing = await fetchEncodedAccount(context.rpc, hostConfig);
-  if (existing.exists) {
-    console.log("host_config already initialized — skipping initialize_host_config");
-  } else {
-    await context.sendTransaction(params.payer, [
-      await getInitializeHostConfigInstructionAsync({
-        payer: params.payer,
-        admin: params.payer,
-        programData: await zamaHostProgramDataAddress(),
-        chainId: SOLANA_HOST_CHAIN_ID,
-        gatewayChainId: params.gateway.gatewayChainId,
-        inputVerificationContract: params.gateway.inputVerificationContract,
-        coprocessorSigners: [...params.gateway.coprocessorSigners],
-        coprocessorThreshold: params.coprocessorThreshold ?? 1,
-        decryptionContract: params.gateway.decryptionContract,
-        grantDenyListEnabled: false,
-        ...shared,
-      }),
-    ]);
-    console.log("OK initialize_host_config");
-  }
-
-  const kmsCorruptionThreshold = params.kmsCorruptionThreshold ?? 0;
-  const certificateThreshold = kmsCertificateThreshold(kmsCorruptionThreshold, params.gateway.kmsSigners.length);
-  await context.sendTransaction(params.payer, [
-    await getDefineKmsContextInstructionAsync({
-      admin: params.payer,
-      contextId: BRINGUP_KMS_CONTEXT_ID,
-      signers: [...params.gateway.kmsSigners],
-      thresholds: {
-        publicDecryption: certificateThreshold,
-        userDecryption: certificateThreshold,
-        kmsGen: certificateThreshold,
-        // Mirrors the gateway's MPC_THRESHOLD, which is t itself and NOT 2t+1 (fhevm-cli
-        // generates MPC_THRESHOLD=t alongside the =2t+1 decryption thresholds; see
-        // src/kms-threshold.test.ts). Stored for fidelity, never gates on-chain verification.
-        mpc: kmsCorruptionThreshold,
-      },
-      ...shared,
-    }),
-  ]);
-  console.log(
-    `OK define_kms_context (signers: ${params.gateway.kmsSigners.length}, ` +
-      `t=${kmsCorruptionThreshold}, cert_threshold=${certificateThreshold})`,
-  );
-};
 
 /** Reads the standard 64-byte Solana CLI keypair file into a kit signer. */
 const loadKeypairSigner = async (keypairPath: string): Promise<TransactionSigner> => {

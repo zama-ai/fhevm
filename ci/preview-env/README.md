@@ -46,6 +46,9 @@ ci/preview-env/
 │   ├── values-gateway-contracts-e2e.yaml     # contracts overlay, gateway-contracts
 │   ├── values-gateway-add-host-chains-e2e.yaml # contracts overlay, deferred addHostChains step
 │   └── values-gateway-add-host-chains-polygon-e2e.yaml # contracts overlay, register Polygon (80002) (deploy_polygon)
+├── solana-host/
+│   ├── values-solana-programs-e2e.yaml # contracts overlay, zama_host + confidential_token + HostConfig/KMS context
+│   └── values-gateway-add-host-chains-solana-e2e.yaml # contracts overlay, register Solana host chain id
 ├── coprocessor/
 │   ├── values-coprocessor-e2e.yaml        # coprocessor overlay (one release per party: coprocessor-<i>)
 │   ├── values-coprocessor-bcs-e2e.yaml    # RFC-021 BCS overlay (pinned 0.14.0, extraSelectorLabels)

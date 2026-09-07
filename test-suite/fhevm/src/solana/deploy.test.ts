@@ -7,6 +7,7 @@ import { bootstrapZamaHost, kmsCertificateThreshold, lifecycleComposeProject } f
 import { zamaHostProgramDataAddress } from "./provision";
 import { getDefineKmsContextInstructionDataDecoder } from "./internal/generated/zamaHost/instructions/defineKmsContext";
 import { getInitializeHostConfigInstructionDataDecoder } from "./internal/generated/zamaHost/instructions/initializeHostConfig";
+import { findHostConfigPda, findKmsContextPda } from "./internal/generated/zamaHost/pdas/index.js";
 import { ZAMA_HOST_PROGRAM_ADDRESS } from "./internal/generated/zamaHost/programAddress.js";
 import type { SolanaProvisioningContext } from "./provision";
 
@@ -20,13 +21,29 @@ const gateway: GatewayBootstrapInputs = {
   kmsSigners: [address20(0x0d), address20(0x0e), address20(0x0f), address20(0x10)],
 };
 
-/** A fake context capturing sent instructions, with a stubbed host-config account read. */
-const fakeContext = (hostConfigExists: boolean) => {
+/** A fake context capturing sent instructions, with stubbed host-config / kms-context reads. */
+const fakeContext = async (hostConfigExists: boolean, kmsContextExists = false) => {
+  const [hostConfig] = await findHostConfigPda();
+  const [kmsContext] = await findKmsContextPda({ contextId: BRINGUP_KMS_CONTEXT_ID });
   const sent: Instruction[][] = [];
   const context = {
     rpc: {
-      getAccountInfo: () => ({
-        send: async () => ({ value: hostConfigExists ? { data: ["", "base64"], owner: ZAMA_HOST_PROGRAM_ADDRESS } : null }),
+      getAccountInfo: (address: string) => ({
+        send: async () => {
+          const key = String(address);
+          const exists = key === hostConfig ? hostConfigExists : key === kmsContext ? kmsContextExists : false;
+          return {
+            value: exists
+              ? {
+                  data: ["", "base64"] as const,
+                  owner: ZAMA_HOST_PROGRAM_ADDRESS,
+                  executable: false,
+                  lamports: 1n,
+                  space: 0n,
+                }
+              : null,
+          };
+        },
       }),
     },
     async sendTransaction(_payer: TransactionSigner, instructions: readonly Instruction[]) {
@@ -80,7 +97,7 @@ describe("kmsCertificateThreshold", () => {
 describe("bootstrapZamaHost", () => {
   test("fresh validator: initializes the host config, then defines KMS context 1", async () => {
     const payer = await generateKeyPairSigner();
-    const { context, sent } = fakeContext(false);
+    const { context, sent } = await fakeContext(false);
     await bootstrapZamaHost(context, { payer, gateway, kmsCorruptionThreshold: 1 });
 
     expect(sent).toHaveLength(2);
@@ -108,7 +125,7 @@ describe("bootstrapZamaHost", () => {
 
   test("configured validator: skips initialize_host_config, still defines the context", async () => {
     const payer = await generateKeyPairSigner();
-    const { context, sent } = fakeContext(true);
+    const { context, sent } = await fakeContext(true);
     await bootstrapZamaHost(context, { payer, gateway });
 
     expect(sent).toHaveLength(1);
@@ -119,9 +136,16 @@ describe("bootstrapZamaHost", () => {
 
   test("refuses a corruption threshold the registered signer set cannot satisfy", async () => {
     const payer = await generateKeyPairSigner();
-    const { context } = fakeContext(true);
+    const { context } = await fakeContext(true);
     await expect(
       bootstrapZamaHost(context, { payer, gateway: { ...gateway, kmsSigners: [address20(1)] }, kmsCorruptionThreshold: 1 }),
     ).rejects.toThrow("only 1 KMS signers");
+  });
+
+  test("already bootstrapped: skips both initialize_host_config and define_kms_context", async () => {
+    const payer = await generateKeyPairSigner();
+    const { context, sent } = await fakeContext(true, true);
+    await bootstrapZamaHost(context, { payer, gateway });
+    expect(sent).toHaveLength(0);
   });
 });

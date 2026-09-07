@@ -1,0 +1,32 @@
+# One-shot zama-host deployer, same image/command as the preview-env Helm Job.
+# Does not start a validator. Point SOLANA_RPC_URL at the host-native test validator
+# (`http://host.docker.internal:8899`) or at public Solana **devnet**.
+#
+# Gateway contract addresses must already exist (fhevm-cli / preview-env gateway-contracts).
+# ENTRYPOINT is `/bin/bash -c` (same as host-contracts); `command` is the inner script.
+services:
+  solana-programs-deploy:
+    container_name: solana-programs-deploy
+    platform: linux/amd64
+    image: ghcr.io/zama-ai/fhevm/solana-programs:${SOLANA_PROGRAMS_VERSION:-local}
+    build:
+      context: ../../..
+      dockerfile: solana/deploy/Dockerfile
+    environment:
+      SOLANA_RPC_URL: ${SOLANA_RPC_URL:-http://host.docker.internal:8899}
+      GATEWAY_RPC_URL: ${GATEWAY_RPC_URL:-http://host.docker.internal:8546}
+      GATEWAY_CONFIG_ADDRESS: ${GATEWAY_CONFIG_ADDRESS:-}
+      INPUT_VERIFICATION_ADDRESS: ${INPUT_VERIFICATION_ADDRESS:-}
+      DECRYPTION_ADDRESS: ${DECRYPTION_ADDRESS:-}
+      SOLANA_DEPLOYER_KEYPAIR_JSON: ${SOLANA_DEPLOYER_KEYPAIR_JSON:-}
+      SOLANA_ZAMA_HOST_KEYPAIR_JSON: ${SOLANA_ZAMA_HOST_KEYPAIR_JSON:-}
+      SOLANA_CONFIDENTIAL_TOKEN_KEYPAIR_JSON: ${SOLANA_CONFIDENTIAL_TOKEN_KEYPAIR_JSON:-}
+      KMS_THRESHOLD: ${KMS_THRESHOLD:-0}
+      COPROCESSOR_THRESHOLD: ${COPROCESSOR_THRESHOLD:-1}
+      SOLANA_PROGRAM_PROFILE: ${SOLANA_PROGRAM_PROFILE:-preview-env}
+    command:
+      - node /app/cli.mjs all
+    volumes:
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/addresses/solana:/app/addresses
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

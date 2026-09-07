@@ -8,62 +8,19 @@
 import { createPublicClient, http, parseAbi } from "viem";
 
 import {
-  DEFAULT_HOST_CHAIN_KEY,
-  gatewayAddressesPath,
-  hostChainAddressesPath,
-  SOLANA_DEFAULT_PUBLIC_DECRYPT_CONTEXT,
-} from "../layout";
+  evmAddressBytes,
+  readGatewayBootstrapInputs as readGatewayBootstrapInputsFromAddresses,
+  type GatewayBootstrapInputs,
+} from "./host-deploy/gateway";
+import { DEFAULT_HOST_CHAIN_KEY, gatewayAddressesPath, hostChainAddressesPath } from "../layout";
 import { readEnvFile } from "../utils/fs";
 
-// RFC-021 Solana host chain id: the chain-type high bit ORed over 12345. The coprocessor DB
-// stores chain ids as PostgreSQL BIGINT, so the same bit pattern reads back as the negative i64.
-export const SOLANA_HOST_CHAIN_ID = 9223372036854788153n;
-export const SOLANA_HOST_CHAIN_ID_I64 = SOLANA_HOST_CHAIN_ID - (1n << 64n);
-
-const bytes32FromHex = (hex: `0x${string}`): Uint8Array => {
-  const body = hex.slice(2);
-  const out = new Uint8Array(32);
-  for (let i = 0; i < 32; i++) {
-    out[i] = Number.parseInt(body.slice(i * 2, i * 2 + 2), 16);
-  }
-  return out;
-};
-
-/**
- * The KMS context id every bring-up provisions (`deploy.ts` bootstrap and `fhevm-cli up`'s
- * `demo/seed.ts`). This is the tagged gateway uint256 (`SOLANA_DEFAULT_PUBLIC_DECRYPT_CONTEXT`).
- * Isolated host unit tests still mint untagged `canonical_test_context_id(n)` in Rust; the host
- * equality-matches all 32 bytes, so public-decrypt extra_data must name this bring-up id.
- */
-export const BRINGUP_KMS_CONTEXT_ID = bytes32FromHex(SOLANA_DEFAULT_PUBLIC_DECRYPT_CONTEXT);
-
-// The two GatewayConfig getters the bootstrap needs; viem derives the selectors and decodes the
-// `address[]` returns from these signatures.
-const GATEWAY_CONFIG_ABI = parseAbi([
-  "function getCoprocessorSigners() view returns (address[])",
-  "function getKmsSigners() view returns (address[])",
-]);
-
-export type GatewayBootstrapInputs = {
-  readonly gatewayChainId: bigint;
-  /** EVM `InputVerification` contract (EIP-712 verifying contract for input attestations). */
-  readonly inputVerificationContract: Uint8Array;
-  /** EVM `Decryption` contract (EIP-712 verifying contract for KMS certificates). */
-  readonly decryptionContract: Uint8Array;
-  /** Coprocessor attestation signer set registered on the gateway (EVM `InputVerifier` parity). */
-  readonly coprocessorSigners: readonly Uint8Array[];
-  /** KMS certificate signer set registered on the gateway. */
-  readonly kmsSigners: readonly Uint8Array[];
-};
-
-/** Decodes a 0x-prefixed 20-byte EVM address into its raw bytes. */
-export const evmAddressBytes = (address: string): Uint8Array => {
-  const hex = address.replace(/^0x/, "");
-  if (hex.length !== 40 || !/^[0-9a-f]{40}$/i.test(hex)) {
-    throw new Error(`expected a 20-byte EVM address, got "${address}"`);
-  }
-  return Uint8Array.from(Buffer.from(hex, "hex"));
-};
+export {
+  BRINGUP_KMS_CONTEXT_ID,
+  SOLANA_HOST_CHAIN_ID,
+  SOLANA_HOST_CHAIN_ID_I64,
+} from "./host-deploy/constants";
+export { evmAddressBytes, type GatewayBootstrapInputs };
 
 /**
  * Reads the gateway inputs the zama-host bootstrap needs: contract addresses from the fhevm-cli
@@ -125,18 +82,10 @@ export const readGatewayBootstrapInputs = async (parameters: {
     if (!value) throw new Error(`missing ${name} in the gateway address artifact`);
     return value;
   };
-  const gatewayConfig = required("GATEWAY_CONFIG_ADDRESS") as `0x${string}`;
-  const client = createPublicClient({ transport: http(parameters.gatewayRpcUrl) });
-  const [gatewayChainId, coprocessorSigners, kmsSigners] = await Promise.all([
-    client.getChainId(),
-    client.readContract({ address: gatewayConfig, abi: GATEWAY_CONFIG_ABI, functionName: "getCoprocessorSigners" }),
-    client.readContract({ address: gatewayConfig, abi: GATEWAY_CONFIG_ABI, functionName: "getKmsSigners" }),
-  ]);
-  return {
-    gatewayChainId: BigInt(gatewayChainId),
-    inputVerificationContract: evmAddressBytes(required("INPUT_VERIFICATION_ADDRESS")),
-    decryptionContract: evmAddressBytes(required("DECRYPTION_ADDRESS")),
-    coprocessorSigners: coprocessorSigners.map(evmAddressBytes),
-    kmsSigners: kmsSigners.map(evmAddressBytes),
-  };
+  return readGatewayBootstrapInputsFromAddresses({
+    gatewayRpcUrl: parameters.gatewayRpcUrl,
+    gatewayConfigAddress: required("GATEWAY_CONFIG_ADDRESS"),
+    inputVerificationAddress: required("INPUT_VERIFICATION_ADDRESS"),
+    decryptionAddress: required("DECRYPTION_ADDRESS"),
+  });
 };

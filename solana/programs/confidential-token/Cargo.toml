@@ -16,6 +16,7 @@ cpi = ["no-entrypoint"]
 no-entrypoint = []
 no-log-ix-name = []
 idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build", "zama-host/idl-build"]
+preview-env = ["zama-host/preview-env"]
 
 [dependencies]
 anchor-lang = "1.1.2"

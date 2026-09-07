@@ -11,6 +11,12 @@ confidential_token = "pS2gMMq6PNZKpjxiANeoN5XxJgwaFsUR6xaJkpUHcDg"
 demo_vault = "6JJTCTipqMjhq5djroouMgi1XZ1Rtc3RMp483F8Bz8b9"
 zama_host = "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
 
+# Durable preview-env host on public Solana **devnet**. Compile with
+# `--features preview-env`. Not local e2e, not official Zama protocol 0.15.
+[programs.preview-env]
+confidential_token = "FAWs7E52LZmXR5YzFy4aXanfBjNtXV2qooQVtkmBa3cL"
+zama_host = "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ"
+
 [provider]
 cluster = "localnet"
 wallet = "~/.config/solana/id.json"
