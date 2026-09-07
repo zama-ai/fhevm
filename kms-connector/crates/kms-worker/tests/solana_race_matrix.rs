@@ -303,8 +303,7 @@ async fn delegation_revocation_does_not_touch_the_direct_branch() {
 // ---------------------------------------------------------------------------
 
 /// The record is behind the chain by one leaf, and the append it missed left the proof's peak
-/// alone. The proof it serves still verifies, so the request is authorized — after one repeat of
-/// the read, because a record behind the chain is asked once more before anything is judged.
+/// alone. The proof it serves still verifies, so the request is authorized without a refresh.
 /// Rejecting on age would break every request that raced any write.
 #[tokio::test]
 async fn a_record_behind_by_a_non_merging_append_still_authorizes() {
@@ -331,8 +330,8 @@ async fn a_record_behind_by_a_non_merging_append_still_authorizes() {
 
     outcome.expect("the proof of the first leaf still reaches the two-leaf peak");
     assert_eq!(
-        reads.proofs, 2,
-        "a record behind the chain is asked once more, and the proof it repeats still verifies"
+        reads.proofs, 1,
+        "a valid proof needs no refresh even when its record is behind the chain"
     );
 }
 
@@ -379,7 +378,7 @@ async fn a_record_behind_by_a_merging_append_is_retryable_and_then_authorized() 
     assert_eq!(failure.class(), FailureClass::Retryable);
     assert_eq!(
         reads.proofs, 2,
-        "asked once more, still behind, then judged"
+        "a proof that does not verify gets one refresh against the same observation"
     );
 
     let (outcome, _) = observe(world, &request).await;
@@ -435,8 +434,8 @@ async fn a_record_ahead_of_the_observation_is_retryable_and_then_authorized() {
     );
     assert_eq!(failure.class(), FailureClass::Retryable);
     assert_eq!(
-        reads.proofs, 1,
-        "a record ahead of the chain is not behind it, so the read is not repeated"
+        reads.proofs, 2,
+        "an out-of-range leaf is retryable and gets one refresh against the same observation"
     );
 
     let (outcome, _) = observe(
