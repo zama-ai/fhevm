@@ -172,9 +172,11 @@ jobs:
       - name: Setup CUDA
         uses: ./.github/actions/gpu_setup
         with:
-          cuda-version: "12.8 12.2"
+          # 12.8 only, like coprocessor-gpu-tests and the GPU benchmark: an
+          # accepted pre-installed 12.2 would tag and build the image from a
+          # different toolchain on hyperstack than on Scaleway.
+          cuda-version: "12.8"
           gcc-version: 12
-          cloud-provider: ${{ needs.parse-inputs.outputs.cloud_provider }}
 
       # The rest of the native build dependencies. `gpu_setup` installs the
       # CUDA toolkit, the host compiler, CMake and libclang; it does not install
