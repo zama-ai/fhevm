@@ -68,11 +68,25 @@ export type Squad = {
   readonly vaultPda: PublicKey;
 };
 
+/**
+ * Names the program error behind a failed transaction. A raw `err` is
+ * `{"InstructionError":[1,{"Custom":6008}]}`, which says nothing about what refused; the
+ * solita-generated table turns the code into the Squads program's own message. A code the table
+ * does not know — an inner CPI's — decodes to nothing, so the raw error always travels along.
+ */
+const describeTransactionError = (err: unknown): string => {
+  const instruction = (err as { InstructionError?: readonly [number, unknown] }).InstructionError;
+  const code = (instruction?.[1] as { Custom?: number } | undefined)?.Custom;
+  const named = code === undefined ? undefined : multisig.generated.errorFromCode(code);
+  const raw = JSON.stringify(err);
+  return named ? `${named.name}: ${named.message} (${raw})` : raw;
+};
+
 const confirm = async (connection: Connection, signature: string): Promise<void> => {
   const latest = await connection.getLatestBlockhash("confirmed");
   const status = await connection.confirmTransaction({ signature, ...latest }, "confirmed");
   if (status.value.err !== null) {
-    throw new Error(`squads transaction ${signature} failed: ${JSON.stringify(status.value.err)}`);
+    throw new Error(`squads transaction ${signature} failed: ${describeTransactionError(status.value.err)}`);
   }
 };
 

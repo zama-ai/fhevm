@@ -194,9 +194,9 @@ describe("solana confidential-token consume vertical", () => {
       if (rejection === undefined) {
         throw new Error("SECURITY: context-mismatched certificate was disclosed on-chain");
       }
-      // zama-host InvalidKmsContext is anchor error 6064 (0x17b0) — pinning the code proves the
+      // zama-host InvalidKmsContext is anchor error 6062 (0x17ae) — pinning the code proves the
       // context binding (not some unrelated failure) repelled the certificate.
-      expect(customProgramErrorCode(rejection)).toBe(6064);
+      expect(customProgramErrorCode(rejection)).toBe(6062);
     },
     SCENARIO_TIMEOUT_MS,
   );
