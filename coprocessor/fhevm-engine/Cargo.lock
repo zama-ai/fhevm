@@ -4359,6 +4359,7 @@ dependencies = [
  "aws-sdk-s3",
  "aws-smithy-mocks",
  "bigdecimal",
+ "broker",
  "clap",
  "consumer",
  "fhevm-engine-common",

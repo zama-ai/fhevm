@@ -7,7 +7,7 @@ use alloy::rpc::types::Log;
 use alloy_primitives::LogData;
 use anyhow::Result;
 use tokio::sync::RwLock;
-use tokio::time::{interval_at, sleep, Instant, MissedTickBehavior};
+use tokio::time::{interval_at, Instant, MissedTickBehavior};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
@@ -21,25 +21,27 @@ use primitives::event::BlockFlow;
 
 use crate::cmd::block_history::BlockSummary;
 use crate::consumer::metrics::{
-    inc_blocks_duplicated, inc_blocks_missing, inc_blocks_processed,
-    inc_db_errors, observe_legacy_insert_delay_seconds,
+    inc_blocks_duplicated, inc_blocks_missing, inc_db_errors,
+    observe_legacy_insert_delay_seconds,
 };
-use crate::database::ingest::{ingest_block_logs, BlockLogs, IngestOptions};
+use crate::database::ingest::IngestOptions;
 use crate::database::tfhe_event_propagate::Database;
 use crate::health_check::HealthCheck;
 
 use consumer::{
     AckDecision, BlockPayload, Broker, HandlerError, ListenerConsumer,
 };
+pub mod catchup;
+mod ingestion;
 mod metrics;
 
-const MAX_DB_RETRIES: u64 = 10;
 const STATS_REPORT_INTERVAL: Duration = Duration::from_secs(60);
 static SLOW_LANE_PROMOTION_ATTEMPTED: AtomicBool = AtomicBool::new(false);
 const STATS_FINALIZATION_MARGIN: i64 = 5;
 
 #[derive(Clone, Debug)]
 pub struct ConsumerConfig {
+    pub manual_catchup: catchup::ManualCatchupArgs,
     pub url: String,
     pub acl_address: Address,
     pub tfhe_address: Address,
@@ -308,6 +310,7 @@ async fn run_consumer_stats_observer(
 }
 
 pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
+    config.manual_catchup.validate()?;
     info!("Starting consumer with config: {:?}", config);
     let mut contracts = vec![config.acl_address, config.tfhe_address];
     if let Some(protocol_config_address) = config.protocol_config_address {
@@ -333,8 +336,9 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
     let blockchain_timeout_tick = HeartBeat::new();
     let blockchain_provider = Arc::new(RwLock::new(None));
 
-    let broker_url = config.url; // e.g."amqp://user:pass@localhost:5672";
+    let broker_url = config.url.clone(); // e.g."amqp://user:pass@localhost:5672";
     let broker = Broker::from_url(&broker_url).await?;
+    let manual_catchup = config.manual_catchup.clone();
     let consumer_id = format!("{}.{}", config.service_name, config.chain_id);
     let client =
         ListenerConsumer::new(&broker, chain_id.as_u64(), &consumer_id);
@@ -351,8 +355,11 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
 
     info!("Consumer registering contracts");
     client.register_contracts(&contracts).await?;
-    info!("Consumer ensure queue");
+    info!("Consumer ensure queues");
     client.ensure_consumer().await?;
+    if manual_catchup.enabled() {
+        client.ensure_catchup_consumer().await?;
+    }
 
     let health_check = HealthCheck {
         blockchain_timeout_tick: blockchain_timeout_tick.clone(),
@@ -398,198 +405,147 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
     }
 
     let last_known_drift = Arc::new(RwLock::new(STARTING_DRIFT));
+    let manual_drift_boundary = catchup::DriftBoundary::default();
     let chain_id_str = config.chain_id.to_string();
     let stats_task = tokio::spawn(run_consumer_stats_observer(
         db.clone(),
         chain_id_str.clone(),
         client.cancel_token.clone(),
     ));
-    let consumer_task = client.consume(move |payload, _cancel| {
-        blockchain_tick.update();
-        let mut db = db.clone();
-        let chain_id_str = chain_id_str.clone();
-        let last_known_drift = last_known_drift.clone();
-        let ingest_options = ingest_options.clone();
-        let stack_mode = stack_mode.clone();
-        async move {
-            // Paused (retired blue stack after cutover): no-op — ack and drop
-            // the block without writing anything to the DB.
-            if stack_mode.is_paused() {
-                return Ok(AckDecision::Ack);
+    let (live_reference, head_rx) =
+        catchup::LiveReference::new(chain_id.as_u64());
+    let ingestor = Arc::new(ingestion::BlockIngestor {
+        db: db.clone(),
+        chain_id,
+        config: config.clone(),
+        options: ingest_options,
+    });
+    // Both flows use identical ingestion; the live reference and drift gate
+    // remain explicit so recovery can later pause live independently.
+    let handle_block =
+        move |payload: BlockPayload, _cancel: CancellationToken| {
+            if payload.flow != BlockFlow::Catchup {
+                blockchain_tick.update();
             }
-            let drift_revert_is_over = check_if_drift_revert_is_over(
-                &db,
-                chain_id.as_u64() as i64,
-                last_known_drift,
-                payload.block_number,
-            )
-            .await;
-            match drift_revert_is_over {
-                Ok(false) => {
-                    return Err(HandlerError::Transient(Box::from(
-                        "Drift in progress",
-                    )))
+            let db = db.clone();
+            let last_known_drift = last_known_drift.clone();
+            let manual_drift_boundary = manual_drift_boundary.clone();
+            let ingestor = ingestor.clone();
+            let stack_mode = stack_mode.clone();
+            let live_reference = live_reference.clone();
+            async move {
+                // Paused (retired blue stack after cutover): no-op — ack and drop
+                // the block without writing anything to the DB.
+                if stack_mode.is_paused() {
+                    return Ok(AckDecision::Ack);
                 }
-                Ok(true) => (), // all good
-                Err(err) => {
-                    error!(%err, "Can't check drift-revert status");
-                    return Err(HandlerError::Transient(err.into()));
-                }
-            }
-            promote_once_all_chains_to_fast(
-                &db,
-                ingest_options.dependent_ops_max_per_chain,
-            )
-            .await;
-            if payload.chain_id != chain_id.as_u64() {
-                error!(
+                if payload.chain_id != chain_id.as_u64() {
+                    error!(
                     payload_chain_id = payload.chain_id,
                     configured_chain_id = chain_id.as_u64(),
                     block_number = payload.block_number,
                     "Block delivered for wrong chain — broker routing misconfigured; dropping"
                 );
-                return Ok(AckDecision::Ack);
+                    return Ok(AckDecision::Ack);
+                }
+                live_reference.observe(&payload).await;
+                if payload.flow == BlockFlow::Catchup {
+                    // Temporary: discard the drifted block and its tail, even
+                    // after cleanup. A later commit adds replay restart and
+                    // generation isolation. Never mutate the live drift gate.
+                    let pool = db.pool().await;
+                    let signal = fhevm_engine_common::drift_revert::latest_signal_for_chain(
+                        &pool, chain_id.as_u64() as i64,
+                    ).await.map_err(|err| HandlerError::Transient(err.into()))?;
+                    if manual_drift_boundary
+                        .should_skip(
+                            payload.block_number,
+                            signal.map(|signal| {
+                                signal.offending_host_block_number
+                            }),
+                        )
+                        .await
+                    {
+                        info!(block_number = payload.block_number, "Skipping manual catchup block at or after drift boundary; recovery restart is not implemented yet");
+                        return Ok(AckDecision::Ack);
+                    }
+                    return ingestor.ingest(payload).await;
+                }
+                let drift_revert_is_over = check_if_drift_revert_is_over(
+                    &db,
+                    chain_id.as_u64() as i64,
+                    last_known_drift,
+                    payload.block_number,
+                )
+                .await;
+                match drift_revert_is_over {
+                    Ok(false) => {
+                        return Err(HandlerError::Transient(Box::from(
+                            "Drift in progress",
+                        )))
+                    }
+                    Ok(true) => (), // all good
+                    Err(err) => {
+                        error!(%err, "Can't check drift-revert status");
+                        return Err(HandlerError::Transient(err.into()));
+                    }
+                }
+                ingestor.ingest(payload).await
             }
-            let block_summary = BlockSummary {
-                number: payload.block_number,
-                hash: payload.block_hash,
-                parent_hash: payload.parent_hash,
-                timestamp: payload.timestamp,
-            };
-            let catchup = payload.flow == BlockFlow::Catchup;
-            observe_consumer_block_timing(
-                &db,
-                &chain_id_str,
-                &block_summary,
-                catchup,
-            )
-            .await;
-            let logs = collect_logs(&payload);
-            info!(
-                chain_id = %payload.chain_id,
-                block_number = payload.block_number,
-                block_hash = ?payload.block_hash,
-                nb_tx = payload.transactions.len(),
-                nb_logs = logs.len(),
-                "Received new block payload"
-            );
-            let block_logs = BlockLogs {
-                summary: block_summary,
-                logs,
-                catchup: false,
-                finalized: false,
-            };
-            match ingest_with_retry(
-                chain_id,
-                &mut db,
-                &block_logs,
-                config.acl_address,
-                config.tfhe_address,
-                config.kms_generation_address,
-                config.protocol_config_address,
-                config.confidential_bridge_address,
-                config.database_retry_interval,
-                ingest_options.clone(),
-            )
-            .await
-            {
-                Ok(_) => {
-                    db.tick.update();
+        };
 
-                    inc_blocks_processed(&chain_id_str, 1);
-                    Ok(AckDecision::Ack)
-                }
-                Err((err, retries)) => {
-                    inc_db_errors(&chain_id_str, 1);
-                    error!(
-                        block_number = block_summary.number,
-                        block_hash = ?block_logs.summary.hash,
-                        error = %err,
-                        retries = retries,
-                        "Failed to ingest block"
-                    );
-                    Err(HandlerError::Transient(err.into()))
-                }
-            }
+    info!(chain_id = %config.chain_id, "Starting host-listener consumer");
+    let mut tasks = tokio::task::JoinSet::new();
+    let live = client.consume(handle_block.clone());
+    tasks.spawn(async move { live.await.map_err(anyhow::Error::from) });
+    if manual_catchup.enabled() {
+        let catchup = client.consume_catchup(handle_block);
+        tasks.spawn(async move { catchup.await.map_err(anyhow::Error::from) });
+    }
+
+    let startup = async {
+        if manual_catchup.enabled() {
+            let reference = head_rx.await.map_err(|_| anyhow::anyhow!("Live consumer ended before providing the catchup reference"))?;
+            let (start, end) = manual_catchup.resolve(reference)?;
+            info!(reference, start, end, "Requesting manual catchup (inclusive); live processing continues");
+            client.request_catchup(start, end).await?;
+            info!(start, end, "Manual catchup request published");
         }
-    });
-
-    info!(
-        chain_id = %config.chain_id,
-        "Starting host-listener consumer"
-    );
-    let consumer_run = tokio::spawn(consumer_task);
-    let consumer_result = consumer_run.await;
-    info!(
-        chain_id = %config.chain_id,
-        "Host listener consumer graceful stop"
-    );
+        Ok::<_, anyhow::Error>(())
+    };
+    // Supervise workers even while waiting for the first live block or while
+    // publishing the request. A startup error must not leave detached workers.
+    let result = tokio::select! {
+        result = startup => match result {
+            Err(error) => Err(error),
+            Ok(()) => tokio::select! {
+                result = tasks.join_next() => consumer_task_result(result),
+                _ = tokio::signal::ctrl_c() => Ok(()),
+                _ = client.cancel_token.cancelled() => Ok(()),
+            },
+        },
+        result = tasks.join_next() => consumer_task_result(result),
+        _ = tokio::signal::ctrl_c() => Ok(()),
+        _ = client.cancel_token.cancelled() => Ok(()),
+    };
     client.cancel();
+    while let Some(result) = tasks.join_next().await {
+        if let Err(error) = consumer_task_result(Some(result)) {
+            error!(%error, "Consumer failed during shutdown");
+        }
+    }
     if let Err(err) = stats_task.await {
         error!(error = %err, "Consumer stats background task failed");
     }
-    match consumer_result {
-        Ok(Ok(())) => {
-            info!("Consumer task completed successfully");
-            Ok(())
-        }
-        Ok(Err(err)) => {
-            error!(error = %err, "Consumer broker error");
-            anyhow::bail!("Consumer broker error: {}", err)
-        }
-        Err(err) => {
-            error!(error = %err, "Consumer spawn error");
-            anyhow::bail!("Consumer spawn error: {}", err)
-        }
-    }
+    result
 }
 
-#[allow(clippy::too_many_arguments)]
-async fn ingest_with_retry(
-    chain_id: ChainId,
-    db: &mut Database,
-    block_logs: &BlockLogs<Log>,
-    acl_address: Address,
-    tfhe_address: Address,
-    kms_generation_address: Option<Address>,
-    protocol_config_address: Option<Address>,
-    confidential_bridge_address: Option<Address>,
-    retry_interval: Duration,
-    options: IngestOptions,
-) -> Result<u64, (sqlx::Error, u64)> {
-    let mut errors = 0;
-    let acl = Some(acl_address);
-    let tfhe = Some(tfhe_address);
-    let protocol_config = protocol_config_address;
-    loop {
-        match ingest_block_logs(
-            chain_id,
-            db,
-            block_logs,
-            &acl,
-            &tfhe,
-            &kms_generation_address,
-            &protocol_config,
-            &confidential_bridge_address,
-            options.clone(),
-        )
-        .await
-        {
-            Ok(_) => return Ok(errors),
-            Err(err) => {
-                errors += 1;
-                if errors > MAX_DB_RETRIES {
-                    return Err((err, errors));
-                }
-                warn!(
-                    block = ?block_logs.summary.number,
-                    retries = errors,
-                    error = %err,
-                    "Retrying block ingestion"
-                );
-                db.reconnect().await;
-                sleep(retry_interval).await;
-            }
-        }
+fn consumer_task_result(
+    result: Option<Result<Result<()>, tokio::task::JoinError>>,
+) -> Result<()> {
+    match result {
+        Some(Ok(result)) => result,
+        Some(Err(error)) => Err(error.into()),
+        _ => anyhow::bail!("Consumer task exited unexpectedly"),
     }
 }

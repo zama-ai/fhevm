@@ -112,6 +112,21 @@ struct Args {
     )]
     pub dependent_ops_max_per_chain: u32,
 
+    #[arg(
+        long,
+        allow_hyphen_values = true,
+        help = "Replay from this block, inclusive; negative values are offsets from the first observed live block"
+    )]
+    pub catchup_from_block: Option<i64>,
+
+    #[arg(
+        long,
+        allow_hyphen_values = true,
+        requires = "catchup_from_block",
+        help = "Last replay block, inclusive; defaults to -1 (one block before the first observed live block); negative values are offsets from that block. Live processing continues"
+    )]
+    pub catchup_up_to_block: Option<i64>,
+
     #[arg(long)]
     pub chain_id: String,
 }
@@ -140,6 +155,11 @@ async fn main() -> anyhow::Result<()> {
     fhevm_engine_common::handle_stack_version_flag();
 
     let args = Args::parse();
+    let manual_catchup = host_listener::consumer::catchup::ManualCatchupArgs {
+        catchup_from_block: args.catchup_from_block,
+        catchup_up_to_block: args.catchup_up_to_block,
+    };
+    manual_catchup.validate()?;
 
     let _otel_guard = telemetry::init_tracing_otel_with_logs_only_fallback(
         args.log_level,
@@ -175,6 +195,7 @@ async fn main() -> anyhow::Result<()> {
     };
 
     let config = ConsumerConfig {
+        manual_catchup,
         url: args.url,
         acl_address: args.acl_contract_address,
         tfhe_address: args.tfhe_contract_address,
@@ -204,4 +225,40 @@ async fn main() -> anyhow::Result<()> {
     };
 
     run_consumer(config).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(options: &[&str]) -> Result<Args, clap::Error> {
+        Args::try_parse_from([
+            "consumer", "--url=redis://localhost", "--chain-id=1",
+            "--database-url=postgres://localhost/test",
+            "--acl-contract-address=0x0000000000000000000000000000000000000000",
+            "--tfhe-contract-address=0x0000000000000000000000000000000000000001",
+        ].into_iter().chain(options.iter().copied()))
+    }
+
+    #[test]
+    fn catchup_cli_accepts_signed_bounds_and_requires_start() {
+        let args = parse(&[
+            "--catchup-from-block=-100",
+            "--catchup-up-to-block",
+            "-10",
+        ])
+        .unwrap();
+        assert_eq!(args.catchup_from_block, Some(-100));
+        assert_eq!(args.catchup_up_to_block, Some(-10));
+        assert!(parse(&["--catchup-up-to-block=10"]).is_err());
+        let args = parse(&[]).unwrap();
+        assert_eq!(args.catchup_from_block, None);
+        assert_eq!(args.catchup_up_to_block, None);
+        assert_eq!(
+            parse(&["--catchup-from-block=-100"])
+                .unwrap()
+                .catchup_up_to_block,
+            None
+        );
+    }
 }

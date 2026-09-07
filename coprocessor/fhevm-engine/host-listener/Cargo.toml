@@ -63,6 +63,7 @@ consumer = { path = "../../../listener/crates/consumer" }
 primitives = { path = "../../../listener/crates/shared/primitives" }
 
 [dev-dependencies]
+broker = { path = "../../../listener/crates/shared/broker" }
 alloy = { workspace = true, features = ["node-bindings"] }
 anyhow = { workspace = true }
 aws-smithy-mocks = "0.1.1"
