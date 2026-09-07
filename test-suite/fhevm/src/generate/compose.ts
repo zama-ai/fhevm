@@ -2,7 +2,7 @@
  * Generates compose overrides for local builds, scenario instances, and compatibility-adjusted service commands.
  */
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import YAML from "yaml";
@@ -726,6 +726,55 @@ export const buildKmsConnectorOverride = async (plan: StackSpec) => {
   return { services };
 };
 
+/** The universal test-runner service that consensus restart and fault tests drive. */
+const TEST_SUITE_RUNNER_SERVICE = "test-suite-e2e-debug";
+const CONTAINER_DOCKER_SOCKET = "/var/run/docker.sock";
+
+/**
+ * Resolves the host Docker socket, when one is actually there. The path follows a
+ * `unix://` `DOCKER_HOST` and otherwise falls back to the default socket location; a
+ * remote daemon (`tcp://`), a rootless setup, or a missing socket all resolve to
+ * `undefined`. The gid is read off the socket itself rather than guessed.
+ */
+export const dockerSocketRuntime = (
+  env: NodeJS.ProcessEnv = process.env,
+): { path: string; gid: number } | undefined => {
+  const dockerHost = env.DOCKER_HOST ?? "";
+  if (dockerHost && !dockerHost.startsWith("unix://")) {
+    // A remote daemon (`tcp://`, `ssh://`) is not reachable through a local socket, so
+    // there is nothing to mount even when the default socket path happens to exist.
+    return undefined;
+  }
+  const socketPath = dockerHost ? dockerHost.slice("unix://".length) : CONTAINER_DOCKER_SOCKET;
+  try {
+    const stat = statSync(socketPath);
+    if (!stat.isSocket()) {
+      return undefined;
+    }
+    return { path: socketPath, gid: stat.gid };
+  } catch {
+    return undefined;
+  }
+};
+
+/**
+ * Hands the host Docker socket to the e2e runner so restart and fault tests can act on
+ * explicitly named containers; the socket is inert for ordinary E2E tests. This is
+ * generated rather than tracked in the static compose file because both halves are host
+ * facts: the socket group id is read from the socket at generation time (guessing it
+ * grants nothing), and a host without a socket must still be able to start the runner.
+ */
+const applyDockerSocketRuntime = (services: ComposeDoc["services"]) => {
+  const socket = dockerSocketRuntime();
+  if (!socket) {
+    return;
+  }
+  const service = services[TEST_SUITE_RUNNER_SERVICE] ?? {};
+  service.volumes = [`${socket.path}:${CONTAINER_DOCKER_SOCKET}`];
+  service.group_add = [String(socket.gid)];
+  services[TEST_SUITE_RUNNER_SERVICE] = service;
+};
+
 /** Builds the generated compose override for one component. */
 const buildComposeOverride = async (component: string, plan: StackSpec) => {
   if (component === "coprocessor") {
@@ -757,15 +806,10 @@ const buildComposeOverride = async (component: string, plan: StackSpec) => {
     if (build) {
       next.build = build;
     }
-    // The generated file is layered over the static test-suite compose file.
-    // Keep the socket group in the static file only: Docker Compose appends
-    // `group_add` values from both files, and an identical Docker GID makes
-    // the merged configuration invalid.  The local override changes only the
-    // image/build source, so it must not repeat this inherited runtime field.
-    if (component === "test-suite") {
-      delete next.group_add;
-    }
     services[name] = next;
+  }
+  if (component === "test-suite") {
+    applyDockerSocketRuntime(services);
   }
   return { services };
 };
@@ -944,6 +988,9 @@ const buildExtraCoprocessorListenerOverride = async (
 export const generatedComposeComponents = (plan: Pick<StackSpec, "overrides" | "kms">) =>
   new Set([
     "coprocessor",
+    // Always generated: it carries the host Docker socket wiring for the e2e runner,
+    // which depends on host facts rather than on any local build override.
+    "test-suite",
     ...(plan.kms.mode === "threshold" ? ["core-threshold", "kms-connector"] : []),
     ...plan.overrides.flatMap((override) => GROUP_BUILD_COMPONENTS[override.group]),
   ]);
