@@ -372,7 +372,7 @@ export function useDemoController() {
     }
     const generation = state.generation;
     void refreshVaultMetrics(generation);
-  }, [commit, refreshVaultMetrics, state.connection, state.generation]);
+  }, [commit, currentDepositClaimed, refreshVaultMetrics, state.connection, state.generation]);
 
   const disconnect = useCallback(() => {
     const generation = sessionGeneration.current + 1;
