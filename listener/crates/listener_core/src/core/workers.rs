@@ -5,7 +5,9 @@ use broker::{AckDecision, Handler, HandlerError, Message, Publisher};
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
-use primitives::event::{CancelCatchupPayload, CatchupPayload, FilterCommand, ReorgBacktrackEvent};
+use primitives::event::{
+    CancelCatchupPayload, CatchupPayload, FilterCommand, ReorgBacktrackEvent, WatchCommand,
+};
 use primitives::routing;
 use primitives::utils::checksum_optional_address;
 
@@ -691,8 +693,9 @@ impl Handler for ReorgHandler {
 
 /// Handler for the control.watch consumer.
 ///
-/// Deserializes `msg.payload` into [`FilterCommand`], validates and checksums
-/// it, then calls [`Filters::add_filter`]. Deserialization and validation
+/// Deserializes `msg.payload` into [`WatchCommand`] (a single filter or a batch),
+/// validates it, then calls [`Filters::add_filters_atomically`] to checksum and
+/// apply all filters in one transaction. Deserialization and validation
 /// errors are dead-lettered immediately (deterministic, will never succeed on
 /// retry). Database errors are transient via [`classify_filter`].
 #[derive(Clone)]
@@ -709,7 +712,7 @@ impl WatchHandler {
 #[async_trait]
 impl Handler for WatchHandler {
     async fn call(&self, msg: &Message) -> Result<AckDecision, HandlerError> {
-        let mut event: FilterCommand = match serde_json::from_slice(&msg.payload) {
+        let mut event: WatchCommand = match serde_json::from_slice(&msg.payload) {
             Ok(e) => e,
             Err(err) => {
                 error!(
@@ -733,20 +736,8 @@ impl Handler for WatchHandler {
             return Ok(AckDecision::Dead);
         }
 
-        let from = checksum_optional_address(&event.from);
-        let to = checksum_optional_address(&event.to);
-        let log_address = checksum_optional_address(&event.log_address);
-        // Missing filter_type means a legacy (or default) command: Live watcher.
-        let filter_type: DbFilterType = event.filter_type.unwrap_or_default().into();
-
         self.filters
-            .add_filter(
-                &event.consumer_id,
-                from.as_deref(),
-                to.as_deref(),
-                log_address.as_deref(),
-                filter_type,
-            )
+            .add_filters_atomically(&event.into_filters())
             .await
             .map(|_| AckDecision::Ack)
             .map_err(classify_filter)
