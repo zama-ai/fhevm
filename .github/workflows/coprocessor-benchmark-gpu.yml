@@ -74,8 +74,11 @@ on:
 # Two runs holding the same Slab profile can have one run's teardown stop the
 # instance the other is still working on, which surfaces as an unexplained
 # cancellation mid-step. Queue same-profile dispatches instead of racing them.
+# The group is keyed on the Slab profile ALONE, not on the workflow: the GPU
+# test and image-build workflows use the same profiles, and a per-workflow
+# group would let them race this one for the instance.
 concurrency:
-  group: ${{ github.workflow }}-${{ inputs.profile }}
+  group: slab-${{ inputs.profile }}
   cancel-in-progress: false
 
 env:
@@ -139,7 +142,9 @@ jobs:
     name: coprocessor-benchmark-gpu/benchmark-gpu (bpr)
     needs: [ parse-inputs, setup-instance ]
     runs-on: ${{ needs.setup-instance.outputs.runner-name }}
-    continue-on-error: true
+    # No continue-on-error: the one-shot suite exits non-zero when a scenario
+    # fails, and that has to fail the run, not only paint one job red while
+    # the run concludes green. Teardown runs under always() regardless.
     timeout-minutes: 720  # 12 hours
     permissions:
       contents: 'read' # Required to checkout repository code
@@ -236,7 +241,7 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            target
+            coprocessor/fhevm-engine/target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
 
@@ -300,11 +305,28 @@ jobs:
           BENCHMARK_TYPE: ${{ inputs.benchmark_type }}
           OPTIMIZATION_TARGET: ${{ inputs.optimization_target }}
 
-      # The cargo cache restores "target", which holds CRITERION_HOME. Drop any
-      # artifact an earlier attempt on this commit left there: it would carry a
-      # matching revision, so the parse step would accept it and publish the
-      # earlier attempt's numbers. This runs even when an earlier step failed,
-      # because the parse step does too.
+      # The Makefile's canonical list drives CI; benches/erc20.rs defines the
+      # scenarios it can run. They are maintained by hand in two places, so
+      # refuse to run a suite whose two lists disagree instead of measuring a
+      # subset and reporting it as the suite.
+      - name: Check the one-shot scenario list is consistent
+        if: ${{ inputs.benchmarks == 'main_block_one_shot' }}
+        working-directory: coprocessor/fhevm-engine/tfhe-worker
+        run: |
+          expected=$(make -s print_bench_one_shot_scenarios | tr ' ' '\n' | sort)
+          declared=$(awk '/^const MAIN_BLOCK_ONE_SHOT_SCENARIOS/,/^\];/' benches/erc20.rs \
+            | sed -n 's/^ *name: "\([a-z0-9_]*\)",$/\1/p' | sort)
+          if [ "${expected}" != "${declared}" ]; then
+            echo "Makefile BENCH_ONE_SHOT_CANONICAL_SCENARIOS and benches/erc20.rs MAIN_BLOCK_ONE_SHOT_SCENARIOS disagree:" >&2
+            diff <(echo "${expected}") <(echo "${declared}") >&2 || true
+            exit 1
+          fi
+
+      # The cargo cache restores the workspace target directory, which holds
+      # CRITERION_HOME. Drop any artifact an earlier attempt on this commit left
+      # there: it would carry a matching revision, so the parse step would
+      # accept it and publish the earlier attempt's numbers. This runs even when
+      # an earlier step failed, because the parse step does too.
       - name: Drop stale one-shot artifacts
         if: ${{ !cancelled() && inputs.benchmarks == 'main_block_one_shot' }}
         run: rm -rf "${CRITERION_HOME}/benchmark-runs"
@@ -440,7 +462,11 @@ jobs:
 
   teardown-instance:
     name: coprocessor-benchmark-gpu/teardown
-    if: ${{ always() && needs.setup-instance.result == 'success' }}
+    # Gate on the runner label, not on the setup job's result: a start that
+    # registered the runner and then failed a later step still holds a billed
+    # instance that must be stopped. A start that never emitted a label left
+    # nothing this job could address.
+    if: ${{ always() && needs.setup-instance.outputs.runner-name != '' }}
     needs: [ setup-instance, benchmark ]
     runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
     permissions:

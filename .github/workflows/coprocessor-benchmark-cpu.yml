@@ -46,9 +46,10 @@ on:
         default: "ALL"
 
 # Queue dispatches rather than letting two runs compete for the single AWS bench
-# profile: one run's teardown would stop the instance the other is using.
+# profile: one run's teardown would stop the instance the other is using. Keyed
+# on the Slab profile, so any other workflow using it queues here too.
 concurrency:
-  group: ${{ github.workflow }}
+  group: slab-aws-bench
   cancel-in-progress: false
 
 env:
@@ -83,7 +84,8 @@ jobs:
     name: coprocessor-benchmarks-cpu/benchmarks-cpu (bpr)
     needs: setup-instance
     runs-on: ${{ needs.setup-instance.outputs.runner-name }}
-    continue-on-error: true
+    # No continue-on-error: a failed one-shot scenario must fail the run, not
+    # only its job. Teardown runs under always() regardless.
     timeout-minutes: 720  # 12 hours
     permissions:
       contents: 'read' # Required to checkout repository code
@@ -152,7 +154,7 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            target
+            coprocessor/fhevm-engine/target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
 
@@ -208,11 +210,28 @@ jobs:
           SCHEDULING_POLICY: ${{ inputs.scheduling_policy }}
           BENCHMARKS: ${{ inputs.benchmarks }}
 
-      # The cargo cache restores "target", which holds CRITERION_HOME. Drop any
-      # artifact an earlier attempt on this commit left there: it would carry a
-      # matching revision, so the parse step would accept it and publish the
-      # earlier attempt's numbers. This runs even when an earlier step failed,
-      # because the parse step does too.
+      # The Makefile's canonical list drives CI; benches/erc20.rs defines the
+      # scenarios it can run. They are maintained by hand in two places, so
+      # refuse to run a suite whose two lists disagree instead of measuring a
+      # subset and reporting it as the suite.
+      - name: Check the one-shot scenario list is consistent
+        if: ${{ inputs.benchmarks == 'main_block_one_shot' }}
+        working-directory: coprocessor/fhevm-engine/tfhe-worker
+        run: |
+          expected=$(make -s print_bench_one_shot_scenarios | tr ' ' '\n' | sort)
+          declared=$(awk '/^const MAIN_BLOCK_ONE_SHOT_SCENARIOS/,/^\];/' benches/erc20.rs \
+            | sed -n 's/^ *name: "\([a-z0-9_]*\)",$/\1/p' | sort)
+          if [ "${expected}" != "${declared}" ]; then
+            echo "Makefile BENCH_ONE_SHOT_CANONICAL_SCENARIOS and benches/erc20.rs MAIN_BLOCK_ONE_SHOT_SCENARIOS disagree:" >&2
+            diff <(echo "${expected}") <(echo "${declared}") >&2 || true
+            exit 1
+          fi
+
+      # The cargo cache restores the workspace target directory, which holds
+      # CRITERION_HOME. Drop any artifact an earlier attempt on this commit left
+      # there: it would carry a matching revision, so the parse step would
+      # accept it and publish the earlier attempt's numbers. This runs even when
+      # an earlier step failed, because the parse step does too.
       - name: Drop stale one-shot artifacts
         if: ${{ !cancelled() && inputs.benchmarks == 'main_block_one_shot' }}
         run: rm -rf "${CRITERION_HOME}/benchmark-runs"
@@ -336,7 +355,9 @@ jobs:
 
   teardown-instance:
     name: coprocessor-benchmarks-cpu/teardown
-    if: ${{ always() && needs.setup-instance.result == 'success' }}
+    # Gate on the runner label, not on the setup job's result (see the GPU
+    # workflow): a partially failed start can still hold a billed instance.
+    if: ${{ always() && needs.setup-instance.outputs.runner-name != '' }}
     needs: [ setup-instance, benchmarks-cpu ]
     runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
     permissions:
