@@ -4329,7 +4329,7 @@ async fn upload_transaction_graph_results<'a>(
                         // consumers, which have nowhere else to receive a verdict
                         // -- the owning chain never executes them.
                         res |= propagate_error_to_dependents(
-                            &unpropagated(&mut propagated, &blocked),
+                            &mark_as_propagated(&mut propagated, &blocked),
                             &result.transaction_id,
                             &stamp_text(&*cerr, retryable),
                             trx,
@@ -4708,8 +4708,8 @@ fn stamp_text(cerr: &(dyn std::error::Error + Send + Sync), retryable: bool) -> 
     }
 }
 
-/// Dependents not yet propagated to in this pass; marks them as propagated.
-fn unpropagated(propagated: &mut HashSet<Vec<u8>>, dependents: &[Vec<u8>]) -> Vec<Vec<u8>> {
+/// Marks `dependents` as propagated to; returns the ones that were not yet.
+fn mark_as_propagated(propagated: &mut HashSet<Vec<u8>>, dependents: &[Vec<u8>]) -> Vec<Vec<u8>> {
     dependents
         .iter()
         .filter(|d| propagated.insert((*d).clone()))
@@ -4820,7 +4820,7 @@ async fn set_computation_error<'a>(
         Some(state_changed) => state_changed,
         None => {
             propagate_error_to_dependents(
-                &unpropagated(propagated, dependents),
+                &mark_as_propagated(propagated, dependents),
                 transaction_id,
                 &err_string,
                 trx,
