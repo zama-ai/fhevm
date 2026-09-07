@@ -95,7 +95,7 @@ impl From<InputProofEventId> for u8 {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
 /// Relayer event represents a single step in one of the different flows of the
 /// relayer (such as public decryption, input proof verification and so on).
 pub struct RelayerEvent {
@@ -204,7 +204,7 @@ pub enum ApiCategory {
 
 /// Relayer event data represents the different categories of event data, each
 /// representing a specific flow.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
 pub enum RelayerEventData {
     GatewayChain(GatewayChainEventData),
     PublicDecrypt(PublicDecryptEventData),
@@ -373,7 +373,7 @@ impl PublicDecryptEventData {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
 pub enum UserDecryptEventData {
     /// Event representing a user decryption request for ciphertexts on fhevm.
     ReqRcvdFromUser { decrypt_request: UserDecryptRequest },
@@ -484,8 +484,11 @@ pub struct PublicDecryptRequest {
 /// legacy EIP-712 formats (direct + delegated) are deprecated; at that
 /// point only `Eip712UnifiedV1` remains and this enum collapses into a
 /// struct.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Hash)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+/// The stored JSON shape is selected by `user_decrypt_req.req_type` and
+/// defined in `store::sql::models::user_decrypt_req_model`. No
+/// `Serialize`/`Deserialize` here: a derive is a second way to write the
+/// same rows.
+#[derive(Debug, Clone, Hash)]
 pub enum UserDecryptRequest {
     /// Legacy EIP-712 direct user-decryption: maps to
     /// `userDecryptionRequest(CtHandleContractPair[], RequestValidity,

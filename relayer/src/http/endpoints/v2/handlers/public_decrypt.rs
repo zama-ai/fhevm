@@ -14,7 +14,9 @@ use crate::core::event::{
 };
 use crate::core::job_id::JobId;
 use crate::host::HostChainIdChecker;
-use crate::http::retry_after::{DecryptQueueInfo, RequestStateInfo, RetryAfterState};
+use crate::http::retry_after::{
+    DecryptQueueInfo, ReadinessQueueInfo, RequestStateInfo, RetryAfterState, TxQueueInfo,
+};
 use crate::http::utils::BounceChecker;
 use crate::http::{parse_and_validate, AppResponse};
 use crate::logging::PublicDecryptStep;
@@ -37,6 +39,7 @@ use axum::{
     http::{header, StatusCode},
     Json,
 };
+use chrono::Utc;
 use std::sync::Arc;
 use tracing::{error, info, instrument, span, Level};
 use uuid::Uuid;
@@ -219,16 +222,20 @@ impl PublicDecryptHandler {
 
         let proposed_ext_job_id = self.orchestrator.new_ext_job_id();
 
-        let insert_result = match self
+        // One gate read for both decisions - see `dispatch_epoch`.
+        let dispatch_epoch = self.public_decrypt_repo.dispatch_epoch();
+
+        let insert_outcome = match self
             .public_decrypt_repo
             .insert_data_on_conflict_and_get_ext_job_id(
                 proposed_ext_job_id,
                 int_job_id.as_ref(),
                 request.clone(),
+                dispatch_epoch,
             )
             .await
         {
-            Ok(result) => result,
+            Ok(outcome) => outcome,
             Err(e) => {
                 error!(
                     "Failed to insert/get public decrypt into/from database: {}",
@@ -240,14 +247,17 @@ impl PublicDecryptHandler {
         };
 
         // Extract ext_job_id from any variant
-        let assigned_ext_job_id = match &insert_result {
+        let assigned_ext_job_id = match &insert_outcome.result {
             PublicDecryptInsertResult::Inserted { ext_job_id } => *ext_job_id,
             PublicDecryptInsertResult::DuplicateCompleted { ext_job_id, .. } => *ext_job_id,
             PublicDecryptInsertResult::DuplicateProcessing { ext_job_id } => *ext_job_id,
         };
 
         // Only dispatch event for new requests (deduplication)
-        if matches!(insert_result, PublicDecryptInsertResult::Inserted { .. }) {
+        if matches!(
+            insert_outcome.result,
+            PublicDecryptInsertResult::Inserted { .. }
+        ) {
             let event_data = PublicDecryptEventData::ReqRcvdFromUser {
                 decrypt_request: request.clone(),
             };
@@ -258,19 +268,33 @@ impl PublicDecryptHandler {
                 RelayerEventData::PublicDecrypt(event_data),
             );
 
-            if let Err(e) = self.orchestrator.dispatch_event(event).await {
-                error!("Failed to dispatch event to orchestrator: {:?}", e);
-                return RelayerV2ResponseFailed::internal_server_error(&request_id.to_string())
-                    .into_response();
-            }
+            // Only the confirmed dispatcher drives what it accepted. On any other pod
+            // the row stays durable and unowned, so the holder's sweep claims it on its
+            // next tick; dispatching here would make this pod a second dispatcher for a
+            // request the holder is about to drive.
+            if dispatch_epoch.is_some() {
+                if let Err(e) = self.orchestrator.dispatch_event(event).await {
+                    error!("Failed to dispatch event to orchestrator: {:?}", e);
+                    return RelayerV2ResponseFailed::internal_server_error(&request_id.to_string())
+                        .into_response();
+                }
 
-            info!(
-                step = %PublicDecryptStep::Queued,
-                req_id = %request_id,
-                ext_job_id = %assigned_ext_job_id,
-                int_job_id = ?int_job_id,
-                "Dispatched event to orchestrator"
-            );
+                info!(
+                    step = %PublicDecryptStep::Queued,
+                    req_id = %request_id,
+                    ext_job_id = %assigned_ext_job_id,
+                    int_job_id = ?int_job_id,
+                    "Dispatched event to orchestrator"
+                );
+            } else {
+                info!(
+                    step = %PublicDecryptStep::Queued,
+                    req_id = %request_id,
+                    ext_job_id = %assigned_ext_job_id,
+                    int_job_id = ?int_job_id,
+                    "Accepted while not the dispatcher, left for the sweep to drive"
+                );
+            }
         } else {
             info!(
                 step = %PublicDecryptStep::DedupHit,
@@ -284,13 +308,19 @@ impl PublicDecryptHandler {
         // Generate a new request_id for this HTTP request (not stored)
         let request_id_for_response = uuid::Uuid::new_v4();
 
-        // Compute dynamic retry-after based on dual queue state
-        let readiness_queue_info = self
-            .bounce_checker
-            .readiness_throttler()
-            .get_queue_info()
-            .await;
-        let tx_queue_info = self.bounce_checker.tx_throttler().get_queue_info().await;
+        // Sizes come from the INSERT above, so both pods agree. max_concurrency and drain rate
+        // are startup config, identical on both pods. Position is None: the request just joined
+        // the back of both queues.
+        let readiness_queue_info = ReadinessQueueInfo {
+            size: insert_outcome.readiness_queue_size as usize,
+            max_concurrency: self.bounce_checker.readiness_throttler().max_concurrency(),
+            position: None,
+        };
+        let tx_queue_info = TxQueueInfo {
+            size: insert_outcome.tx_queue_size as usize,
+            drain_rate_tps: self.bounce_checker.tx_throttler().current_tps(),
+            position: None,
+        };
         let decrypt_queue_info = DecryptQueueInfo::new(readiness_queue_info, tx_queue_info);
         let retry_after = self
             .retry_after_state
@@ -495,27 +525,44 @@ impl PublicDecryptHandler {
                         // Request is still in progress, return 202 with dynamic Retry-After header
                         info!("Request still in progress, returning queued status");
 
-                        // Compute dynamic retry-after based on current state
-                        let state_info = RequestStateInfo::new(response_model.req_status, 0, 0);
+                        // `updated_at` dates the current status; elapsed time drives the
+                        // copro/KMS backoff escalation. A hardcoded zero pinned it to the first
+                        // interval.
+                        let elapsed_in_state_secs = (Utc::now() - response_model.updated_at)
+                            .num_seconds()
+                            .clamp(0, u32::MAX as i64)
+                            as u32;
+                        let state_info =
+                            RequestStateInfo::new(response_model.req_status, elapsed_in_state_secs);
 
-                        // For Queued status, also get queue info for more accurate ETA
-                        let decrypt_queue_info = if response_model.req_status == ReqStatus::Queued {
-                            let readiness_queue_info = self
+                        // Position comes from the same SELECT, not a per-pod throttler (empty on
+                        // the passive pod). `Queued` is the readiness queue, everything else the
+                        // TX queue - matching `get_decrypt_stage`. A queued request has not
+                        // reached the TX queue, so that side takes the measured depth.
+                        let (readiness_position, tx_position) = match response_model.req_status {
+                            ReqStatus::Queued => (Some(response_model.queue_position), None),
+                            _ => (None, Some(response_model.queue_position)),
+                        };
+                        let readiness_queue_info = ReadinessQueueInfo {
+                            size: response_model.queue_position as usize,
+                            max_concurrency: self
                                 .bounce_checker
                                 .readiness_throttler()
-                                .get_queue_info()
-                                .await;
-                            let tx_queue_info =
-                                self.bounce_checker.tx_throttler().get_queue_info().await;
-                            Some(DecryptQueueInfo::new(readiness_queue_info, tx_queue_info))
-                        } else {
-                            None
+                                .max_concurrency(),
+                            position: readiness_position.map(|p| p as usize),
                         };
+                        let tx_queue_info = TxQueueInfo {
+                            size: response_model.tx_queue_size as usize,
+                            drain_rate_tps: self.bounce_checker.tx_throttler().current_tps(),
+                            position: tx_position.map(|p| p as usize),
+                        };
+                        let decrypt_queue_info =
+                            DecryptQueueInfo::new(readiness_queue_info, tx_queue_info);
 
                         let retry_after = self
                             .retry_after_state
                             .compute_for_decrypt_get(
-                                decrypt_queue_info.as_ref(),
+                                &decrypt_queue_info,
                                 &state_info,
                                 false, // is_user_decrypt
                             )

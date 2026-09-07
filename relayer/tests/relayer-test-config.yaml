@@ -263,3 +263,21 @@ storage:
 shutdown:
   # No load balancer in front of the tests, so nothing has to notice the 503.
   lb_propagation_wait: "0s"
+  lock_release_timeout: "3s"
+
+# Near-production timings, except that `holder_heartbeat_interval + query_timeout` is also the
+# handover wait a fresh holder serves before its gate opens, so production values here would
+# put every test's first dispatch 8s after startup. The tests that exercise the lock itself
+# build their own `DispatcherLockConfig` (see `dispatcher_lock_test.rs::fast_config`).
+dispatcher_lock:
+  standby_poll_interval: "2s"
+  holder_heartbeat_interval: "500ms"
+  query_timeout: "500ms"
+  exit_after_consecutive_failures: 20
+  connect_timeout: "5s"
+  # Must exceed both intervals above.
+  idle_session_timeout: "60s"
+  key_override: null
+
+  sweep:
+    interval: "500ms"

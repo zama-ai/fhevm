@@ -95,6 +95,11 @@ impl fmt::Display for TransactionType {
 pub enum TransactionStatus {
     Failed,
     Confirmed,
+    /// A receipt came back from the chain, but recording it lost the epoch fence: a successor
+    /// already claimed the row. Distinct from `Failed` because the send
+    /// itself did not fail - it landed on chain - and distinct from `Confirmed` because this
+    /// pod never stored it. See `TransactionHelper::send_raw_transaction_sync`'s doc comment.
+    ReceiptRefused,
 }
 
 impl TransactionStatus {
@@ -102,6 +107,7 @@ impl TransactionStatus {
         match self {
             TransactionStatus::Failed => "failed",
             TransactionStatus::Confirmed => "confirmed",
+            TransactionStatus::ReceiptRefused => "receipt_refused",
         }
     }
 }
@@ -181,6 +187,36 @@ pub fn transaction_confirmed(transaction_type: TransactionType, duration_millis:
         .with_label_values(&[
             transaction_type.to_string().as_str(),
             TransactionStatus::Confirmed.as_str(),
+        ])
+        .observe(duration_secs);
+}
+
+/// Call when a receipt came back from the chain but recording it was refused by the epoch
+/// fence - never call `transaction_confirmed` for that outcome, which would count and log a
+/// transaction as confirmed when this pod never stored its receipt (see
+/// `TransactionStatus::ReceiptRefused`'s doc comment).
+pub fn transaction_receipt_refused(transaction_type: TransactionType, duration_millis: f64) {
+    let metrics = TRANSACTION_METRICS
+        .get()
+        .expect("Transaction metrics not initialized");
+    metrics
+        .in_flight_transactions
+        .with_label_values(&[transaction_type.to_string().as_str()])
+        .dec();
+    metrics
+        .transaction_total
+        .with_label_values(&[
+            transaction_type.to_string().as_str(),
+            TransactionStatus::ReceiptRefused.as_str(),
+        ])
+        .inc();
+
+    let duration_secs = duration_millis / 1000.0;
+    metrics
+        .transaction_duration_secs
+        .with_label_values(&[
+            transaction_type.to_string().as_str(),
+            TransactionStatus::ReceiptRefused.as_str(),
         ])
         .observe(duration_secs);
 }

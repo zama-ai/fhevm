@@ -16,7 +16,7 @@ use crate::gateway::arbitrum::transaction::tx_processor::GatewayTxProcessor;
 use crate::gateway::handled_events::HandledEvents;
 use crate::gateway::throttlers::GatewayThrottlers;
 use crate::host::{HostAclChecker, ThresholdResolver};
-use crate::orchestrator::{HealthCheck, Orchestrator};
+use crate::orchestrator::{DispatchGate, HealthCheck, Orchestrator};
 use crate::readiness::{
     checker::ReadinessChecker, public_decrypt_processor::PublicDecryptReadinessProcessor,
     user_decrypt_processor::UserDecryptReadinessProcessor,
@@ -41,6 +41,7 @@ pub async fn initialize_gateway(
     settings: &Settings,
     repositories: Arc<Repositories>,
     gateway_throttlers: GatewayThrottlers,
+    gate: DispatchGate,
     dequeue_shutdown: CancellationToken,
     intake_shutdown: CancellationToken,
 ) -> anyhow::Result<()> {
@@ -50,6 +51,7 @@ pub async fn initialize_gateway(
     let tx_engine_gateway = GatewayTransactionEngine::new(
         settings.gateway.blockchain_rpc.clone(),
         settings.gateway.tx_engine.clone(),
+        gate.clone(),
     )
     .await?;
 
@@ -64,6 +66,7 @@ pub async fn initialize_gateway(
         gateway_throttlers.tx_throttlers.input_proof_tx_worker,
         gateway_tx_helper.clone(),
         orchestrator.clone(),
+        gate.clone(),
         dequeue_shutdown.clone(),
     )
     .await?;
@@ -74,6 +77,7 @@ pub async fn initialize_gateway(
         gateway_throttlers.tx_throttlers.public_decrypt_tx_worker,
         gateway_tx_helper.clone(),
         orchestrator.clone(),
+        gate.clone(),
         dequeue_shutdown.clone(),
     )
     .await?;
@@ -84,6 +88,7 @@ pub async fn initialize_gateway(
         gateway_throttlers.tx_throttlers.user_decrypt_tx_worker,
         gateway_tx_helper.clone(),
         orchestrator.clone(),
+        gate.clone(),
         dequeue_shutdown.clone(),
     )
     .await?;
@@ -115,6 +120,7 @@ pub async fn initialize_gateway(
             .public_decrypt_readiness_worker,
         readiness_checker.clone(),
         orchestrator.clone(),
+        gate.clone(),
         dequeue_shutdown.clone(),
     )
     .await?;
@@ -125,6 +131,7 @@ pub async fn initialize_gateway(
             .user_decrypt_readiness_worker,
         readiness_checker.clone(),
         orchestrator.clone(),
+        gate.clone(),
         dequeue_shutdown.clone(),
     )
     .await?;
@@ -237,6 +244,7 @@ pub async fn initialize_gateway(
                             index: ws_stagger_index,
                             total: num_ws_listeners,
                         },
+                        gate.clone(),
                         intake_shutdown.clone(),
                     )
                     .await
@@ -295,6 +303,7 @@ pub async fn initialize_gateway(
                         handled_events.clone(),
                         pool_index,
                         url.clone(),
+                        gate.clone(),
                         intake_shutdown.clone(),
                     )
                     .map_err(|e| {
