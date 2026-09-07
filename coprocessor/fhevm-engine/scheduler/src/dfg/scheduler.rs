@@ -1029,6 +1029,7 @@ fn run_computation(
                 &inputs,
                 gpu_idx,
                 output_types[0],
+                gpu_reservation_timeout,
             );
 
             match result {

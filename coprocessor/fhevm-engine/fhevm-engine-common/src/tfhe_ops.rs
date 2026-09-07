@@ -921,6 +921,7 @@ pub fn perform_multi_output_fhe_operation(
     input_operands: &[SupportedFheCiphertexts],
     output_types: &[i16],
     _: usize,
+    _: std::time::Duration,
 ) -> Result<Vec<SupportedFheCiphertexts>, FhevmError> {
     perform_multi_output_fhe_operation_impl(fhe_operation_int, input_operands, output_types)
 }
@@ -931,18 +932,14 @@ pub fn perform_multi_output_fhe_operation(
     input_operands: &[SupportedFheCiphertexts],
     output_types: &[i16],
     gpu_idx: usize,
+    reservation_timeout: std::time::Duration,
 ) -> Result<Vec<SupportedFheCiphertexts>, FhevmError> {
-    use crate::gpu_memory::{get_op_size_on_gpu, release_memory_on_gpu, reserve_memory_on_gpu};
+    use crate::gpu_memory::{get_op_size_on_gpu, reserve_memory_on_gpu};
 
-    let mut gpu_mem_res = get_op_size_on_gpu(fhe_operation_int, input_operands)?;
-    input_operands
-        .iter()
-        .for_each(|i| gpu_mem_res += i.get_size_on_gpu());
-    reserve_memory_on_gpu(gpu_mem_res, gpu_idx);
-    let res =
-        perform_multi_output_fhe_operation_impl(fhe_operation_int, input_operands, output_types);
-    release_memory_on_gpu(gpu_mem_res, gpu_idx);
-    res
+    let gpu_mem_res = get_op_size_on_gpu(fhe_operation_int, input_operands)?;
+    let _reservation = reserve_memory_on_gpu(gpu_mem_res, gpu_idx, reservation_timeout)
+        .map_err(FhevmError::GpuMemoryReservationError)?;
+    perform_multi_output_fhe_operation_impl(fhe_operation_int, input_operands, output_types)
 }
 
 fn collect_operands_as<'a, T>(
