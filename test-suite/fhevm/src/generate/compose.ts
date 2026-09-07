@@ -389,10 +389,6 @@ const applyInstanceAdjustments = (
   override: Pick<ResolvedCoprocessorScenarioInstance, "env" | "args"> = { env: {}, args: {} },
   compatArgs: CompatPolicy["coprocessorArgs"] = {},
   compatDropFlags: CompatPolicy["coprocessorDropFlags"] = {},
-  // The image tag lives only in the resolved version bundle: the override keeps
-  // `...:${COPROCESSOR_*_VERSION}` so compose substitutes it at run time, which
-  // is why the GPU wiring cannot be keyed on the rendered image string.
-  versions: Record<string, string> = {},
 ) => {
   const next = interpolateComposeValue(structuredClone(service), envVars) as Record<string, unknown>;
   const serviceKey = baseServiceName.replace(/^coprocessor-/, "");
@@ -404,7 +400,6 @@ const applyInstanceAdjustments = (
   if (Object.keys(override.env).length) {
     next.environment = { ...normalizeEnvironment(next.environment), ...override.env };
   }
-  applyGpuImageRuntime(next, { ...envVars, ...versions });
   if (next.command) {
     const current = Array.isArray(next.command) ? next.command : [];
     const key = serviceKey as keyof CompatPolicy["coprocessorArgs"];
@@ -539,25 +534,42 @@ const coprocessorBuildServices = (plan: Pick<StackSpec, "overrides">) => {
   return new Set(overrides.flatMap((override) => override.services ?? []));
 };
 
-/** Applies scenario image sourcing rules to one coprocessor service clone. */
+/**
+ * Applies scenario image sourcing rules to one coprocessor service clone, then
+ * the GPU runtime the chosen image needs.
+ *
+ * The GPU wiring keys on the image that will actually run, so it must follow
+ * the final selection here rather than the bundle's image: a registry pin or a
+ * local build replaces the bundle tag, and a CPU image carrying the nvidia env
+ * and a device reservation cannot start on a host without a GPU, while a GPU
+ * image pinned over a CPU bundle would silently compute on the CPU. Local
+ * builds use Dockerfile.workspace, which produces CPU images, so their
+ * `fhevm-local-*` tag never matches and they get no GPU wiring.
+ *
+ * `versions` is the resolved bundle: an inherited image keeps its
+ * `...:${COPROCESSOR_*_VERSION}` placeholder for compose to substitute, and the
+ * wiring resolves that placeholder against the same values.
+ */
 const applyCoprocessorSource = (
   service: Record<string, unknown>,
   serviceName: string,
   instance: ResolvedCoprocessorScenarioInstance,
   locallyBuilt: boolean,
   e2ePublicRuntime: boolean,
+  versions: Record<string, string>,
 ) => {
   if (locallyBuilt) {
     service.image = retagLocal(service.image, localInstanceTag(instance.index));
     service.build = localBuildSpecFor("coprocessor", serviceName, e2ePublicRuntime);
-    return;
+  } else {
+    if (instance.source.mode === "registry") {
+      service.image = rewriteImageTag(service.image, instance.source.tag);
+    }
+    if (service.image) {
+      delete service.build;
+    }
   }
-  if (instance.source.mode === "registry") {
-    service.image = rewriteImageTag(service.image, instance.source.tag);
-  }
-  if (service.image) {
-    delete service.build;
-  }
+  applyGpuImageRuntime(service, versions);
 };
 
 /**
@@ -640,10 +652,9 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
         sourceInstance,
         locallyBuilt ? {} : argPolicy.coprocessorArgs,
         locallyBuilt ? {} : argPolicy.coprocessorDropFlags,
-        plan.versions.env,
       );
       adjusted.container_name = serviceName;
-      applyCoprocessorSource(adjusted, name, sourceInstance, locallyBuilt, plan.e2ePublicRuntime);
+      applyCoprocessorSource(adjusted, name, sourceInstance, locallyBuilt, plan.e2ePublicRuntime, plan.versions.env);
       if (instance.index > 0 && adjusted.depends_on && typeof adjusted.depends_on === "object") {
         adjusted.depends_on = rewriteCoprocessorDependsOn(
           adjusted.depends_on as Record<string, unknown>,
@@ -693,10 +704,9 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
           gcsInstance,
           locallyBuilt ? {} : gcsArgPolicy.coprocessorArgs,
           locallyBuilt ? {} : gcsArgPolicy.coprocessorDropFlags,
-          plan.versions.env,
         );
         adjusted.container_name = serviceName;
-        applyCoprocessorSource(adjusted, baseName, gcsInstance, locallyBuilt, plan.e2ePublicRuntime);
+        applyCoprocessorSource(adjusted, baseName, gcsInstance, locallyBuilt, plan.e2ePublicRuntime, plan.versions.env);
         if (locallyBuilt && buildSpec) {
           adjusted.image = retagLocal(service.image, `gcs-${gcs.stackVersion}`);
           // GCS compiles the newer stack version (build arg enables the override feature),
@@ -972,11 +982,10 @@ const buildExtraCoprocessorListenerOverride = async (
         instance,
         locallyBuilt ? {} : argPolicy.coprocessorArgs,
         locallyBuilt ? {} : argPolicy.coprocessorDropFlags,
-        plan.versions.env,
       );
       adjusted.container_name = cloneName;
       // Extra chains keep their env canonical id (default chain), so they don't decode proposals.
-      applyCoprocessorSource(adjusted, baseName, instance, locallyBuilt, plan.e2ePublicRuntime);
+      applyCoprocessorSource(adjusted, baseName, instance, locallyBuilt, plan.e2ePublicRuntime, plan.versions.env);
       delete adjusted.depends_on;
       services[cloneName] = adjusted;
     }
@@ -1016,10 +1025,9 @@ const buildExtraCoprocessorListenerOverride = async (
           gcsInstance,
           locallyBuilt ? {} : gcsArgPolicy.coprocessorArgs,
           locallyBuilt ? {} : gcsArgPolicy.coprocessorDropFlags,
-          plan.versions.env,
         );
         adjusted.container_name = cloneName;
-        applyCoprocessorSource(adjusted, baseName, gcsInstance, locallyBuilt, plan.e2ePublicRuntime);
+        applyCoprocessorSource(adjusted, baseName, gcsInstance, locallyBuilt, plan.e2ePublicRuntime, plan.versions.env);
         if (locallyBuilt && buildSpec) {
           adjusted.image = retagLocal(baseService.image, `gcs-${gcs.stackVersion}`);
           adjusted.build = {

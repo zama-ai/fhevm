@@ -893,6 +893,97 @@ gcs:
     });
   });
 
+  type RenderedWorker = {
+    image?: string;
+    build?: unknown;
+    environment?: Record<string, string>;
+    deploy?: { resources?: { reservations?: { devices?: unknown[] } } };
+  };
+  const renderWorkers = async (rendered: State) => {
+    await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+    await writeFile(envPath("coprocessor"), "\n");
+    await writeFile(envPath("coprocessor.1"), "\n");
+    await generateComposeOverrides(rendered, stackSpecForState(rendered));
+    const doc = YAML.parse(await readFile(composePath("coprocessor"), "utf8")) as {
+      services: Record<string, RenderedWorker>;
+    };
+    return doc.services;
+  };
+  const expectGpuWiring = (service: RenderedWorker | undefined) => {
+    expect(service?.environment?.NVIDIA_VISIBLE_DEVICES).toBe("all");
+    expect(service?.environment?.NVIDIA_DRIVER_CAPABILITIES).toBe("compute,utility");
+    expect(service?.deploy?.resources?.reservations?.devices).toHaveLength(1);
+  };
+  const expectNoGpuWiring = (service: RenderedWorker | undefined) => {
+    expect(service?.environment?.NVIDIA_VISIBLE_DEVICES).toBeUndefined();
+    expect(service?.environment?.NVIDIA_DRIVER_CAPABILITIES).toBeUndefined();
+    expect(service?.deploy).toBeUndefined();
+  };
+  const withWorkerTag = (base: State, tag: string): State => ({
+    ...base,
+    versions: {
+      ...base.versions,
+      env: { ...base.versions.env, COPROCESSOR_TFHE_WORKER_VERSION: tag, COPROCESSOR_SNS_WORKER_VERSION: "921b69113" },
+    },
+  });
+  const pinnedWorkerScenario = (tag: string) =>
+    resolveScenarioFile(
+      path.join("/tmp", "two-of-two-pinned.yaml"),
+      parseCoprocessorScenario(`
+version: 1
+kind: coprocessor-consensus
+topology:
+  count: 2
+  threshold: 2
+instances:
+  - index: 1
+    source:
+      mode: registry
+      tag: ${tag}
+      compatTag: v0.15.0
+`),
+    );
+
+  test("a registry pin decides the GPU wiring, not the bundle's tag", async () => {
+    // The pin replaces the bundle image after the instance adjustments ran, so
+    // wiring keyed on the bundle would follow the wrong image. Both directions
+    // matter: a CPU pin over a GPU bundle carrying the nvidia env and a device
+    // reservation cannot start on a host without a GPU; a GPU pin over a CPU
+    // bundle without them silently computes on the CPU.
+    await withTempStateDir(async () => {
+      const cpuPinOverGpuBundle = withWorkerTag(
+        { ...state, scenario: pinnedWorkerScenario("921b69113") },
+        "921b69113-cuda12.8-sm90",
+      );
+      let services = await renderWorkers(cpuPinOverGpuBundle);
+      expectGpuWiring(services["coprocessor-tfhe-worker"]);
+      expect(services["coprocessor1-tfhe-worker"]?.image).toMatch(/:921b69113$/);
+      expectNoGpuWiring(services["coprocessor1-tfhe-worker"]);
+
+      const gpuPinOverCpuBundle = withWorkerTag(
+        { ...state, scenario: pinnedWorkerScenario("921b69113-cuda12.8-sm90") },
+        "921b69113",
+      );
+      services = await renderWorkers(gpuPinOverCpuBundle);
+      expectNoGpuWiring(services["coprocessor-tfhe-worker"]);
+      expect(services["coprocessor1-tfhe-worker"]?.image).toMatch(/:921b69113-cuda12\.8-sm90$/);
+      expectGpuWiring(services["coprocessor1-tfhe-worker"]);
+    });
+  });
+
+  test("a locally built worker gets no GPU wiring even under a GPU bundle", async () => {
+    // A local build replaces the bundle image with the `fhevm-local-*` tag and
+    // compiles Dockerfile.workspace, which is a CPU image: demanding a GPU for
+    // it would keep a CPU run from starting on a host without one.
+    await withTempStateDir(async () => {
+      const services = await renderWorkers(withWorkerTag(inheritedScenarioState, "921b69113-cuda12.8-sm90"));
+      for (const name of ["coprocessor-tfhe-worker", "coprocessor1-tfhe-worker"]) {
+        expect(services[name]?.image).toMatch(/:fhevm-local-i[01]$/);
+        expect(services[name]?.build).toBeDefined();
+        expectNoGpuWiring(services[name]);
+      }
+    });
+  });
 });
 
 describe("test-suite docker socket runtime", () => {
