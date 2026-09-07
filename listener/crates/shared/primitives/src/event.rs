@@ -21,6 +21,8 @@ pub struct ReorgBacktrackEvent {
 pub enum FilterCommandValidationError {
     #[error("consumer_id must not be empty")]
     EmptyConsumerId,
+    #[error("atomic filter registration must not be empty")]
+    EmptyAtomicRegistration,
     #[error("at least one of from or to must be set")]
     MissingContractAddresses,
 }
@@ -45,6 +47,40 @@ pub struct FilterCommand {
     /// Watcher type. `None` means Live (backward-compatible default).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub filter_type: Option<FilterType>,
+}
+
+/// WATCH accepts the legacy single object or an atomic array of filters.
+/// An array must be nonempty and every member must validate before any writes.
+/// Core adds all members in one transaction; existing filters are retained.
+/// UNWATCH remains a single-filter command.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum WatchCommand {
+    Single(FilterCommand),
+    Atomic(Vec<FilterCommand>),
+}
+
+impl WatchCommand {
+    pub fn validate(&mut self) -> Result<(), FilterCommandValidationError> {
+        let filters = match self {
+            Self::Single(filter) => std::slice::from_mut(filter),
+            Self::Atomic(filters) => filters.as_mut_slice(),
+        };
+        if filters.is_empty() {
+            return Err(FilterCommandValidationError::EmptyAtomicRegistration);
+        }
+        for filter in filters {
+            filter.validate()?;
+        }
+        Ok(())
+    }
+
+    pub fn into_filters(self) -> Vec<FilterCommand> {
+        match self {
+            Self::Single(filter) => vec![filter],
+            Self::Atomic(filters) => filters,
+        }
+    }
 }
 
 impl FilterCommand {
@@ -732,5 +768,39 @@ mod tests {
 
         let deserialized: TransactionPayload = serde_json::from_value(json).unwrap();
         assert_eq!(deserialized.to, None);
+    }
+}
+
+#[cfg(test)]
+mod watch_batch_tests {
+    use super::*;
+
+    #[test]
+    fn watch_accepts_legacy_and_batch_and_validates_every_member() {
+        let legacy = r#"{"consumer_id":" host.1 ","log_address":"0x0000000000000000000000000000000000000001"}"#;
+        let mut single: WatchCommand = serde_json::from_str(legacy).unwrap();
+        single.validate().unwrap();
+        assert_eq!(single.into_filters()[0].consumer_id, "host.1");
+        let mut batch: WatchCommand =
+            serde_json::from_str(&format!("[{legacy},{legacy}]")).unwrap();
+        batch.validate().unwrap();
+        assert_eq!(batch.into_filters().len(), 2);
+        let mut empty: WatchCommand = serde_json::from_str("[]").unwrap();
+        assert_eq!(
+            empty.validate(),
+            Err(FilterCommandValidationError::EmptyAtomicRegistration)
+        );
+        let mut invalid: WatchCommand =
+            serde_json::from_str(&format!("[{legacy},{{\"consumer_id\":\" \"}}]")).unwrap();
+        assert_eq!(
+            invalid.validate(),
+            Err(FilterCommandValidationError::EmptyConsumerId)
+        );
+        assert!(
+            serde_json::from_str::<WatchCommand>(&format!(
+                "[{legacy},{{\"consumer_id\":\"host.1\",\"log_address\":\"invalid\"}}]"
+            ))
+            .is_err()
+        );
     }
 }

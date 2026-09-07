@@ -35,7 +35,10 @@ existing behavior: it caps the end at its actual RPC head and skips a range
 starting above that head. Future scheduled replay is not supported. Startup
 without a start flag does not request or consume manual replay.
 
-The consumer starts both flows, waits for the live reference, and publishes the resolved
+The consumer declares its live and catchup queues before registering contracts.
+It registers all contracts in one atomic WATCH registration, so a fresh subscription
+cannot publish a live block with only part of the contract set active.
+It starts both flows, waits for the live reference, and publishes the resolved
 range using the existing listener-core catchup protocol. Request publication failure or
 consumer failure stops the process with an error; live processing does not wait
 for replay to finish.
@@ -49,7 +52,13 @@ Use distinct service names for consumers that need independent replay delivery.
 Reusing the same consumer ID after a restart reuses its durable queues;
 pending replay and the new startup request may overlap. Ingestion is idempotent.
 
-## Scope
+## Deployment and scope
+
+Deploy the updated listener-core before deploying this host-consumer: startup
+now requires atomic WATCH support, even without manual catchup. Atomic WATCH uses
+an array of ordinary filter commands on the existing WATCH topic. Core still
+accepts legacy single commands; atomic registrations add filters rather than replacing them.
+Existing partial registrations are not deactivated while an atomic registration is pending.
 
 This feature does not declare replay completion: different chunks can finish
 out of order, so seeing the last block is insufficient. The catchup consumer
