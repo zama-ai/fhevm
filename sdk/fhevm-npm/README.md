@@ -32,7 +32,12 @@ node ./fhevm-npm.ts version apply --check-npmjs
 node ./fhevm-npm.ts version list
 node ./fhevm-npm.ts version list --check-npmjs
 node ./fhevm-npm.ts version list --check-npmjs --json
-node ./fhevm-npm.ts pack-tarball ./hardhat/v2/plugin
+node ./fhevm-npm.ts publish order
+node ./fhevm-npm.ts publish render ./hardhat/v3/plugin/pkg
+node ./fhevm-npm.ts publish render ./hardhat/v3/plugin/pkg --json
+node ./fhevm-npm.ts publish pack ./hardhat/v3/plugin/pkg
+node ./fhevm-npm.ts publish check ./hardhat/v3/plugin/pkg
+node ./fhevm-npm.ts publish check ./hardhat/v3/plugin/pkg --check-npmjs
 node ./fhevm-npm.ts test-consumer --list
 node ./fhevm-npm.ts test-consumer ./host-contracts-cleartext/v12
 node ./fhevm-npm.ts test-consumer ./host-contracts-cleartext/v12 --build-linked-dependencies --run

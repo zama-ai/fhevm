@@ -33,6 +33,10 @@ import { cleanForgeDependencies } from './commands/clean-forge-dependencies.ts';
 import { installForgeDependencies } from './commands/install-forge-dependencies.ts';
 import { listPackages } from './commands/list-packages.ts';
 import { packTarballs } from './commands/pack-tarball.ts';
+import { publishCheck } from './commands/publish-check.ts';
+import { publishOrder } from './commands/publish-order.ts';
+import { publishPack } from './commands/publish-pack.ts';
+import { publishRender } from './commands/publish-render.ts';
 import { syncVendoredCommand } from './commands/sync-vendored.ts';
 import { testConsumerRegeneratePackageLock } from './commands/test-consumer-regenerate-package-lock.ts';
 import { testConsumer } from './commands/test-consumer.ts';
@@ -115,6 +119,30 @@ async function main(): Promise<void> {
   }
   if (options.command === 'list-packages') {
     listPackages(manifest);
+    return;
+  }
+  if (options.command === 'publish-order') {
+    publishOrder(options.workspaceRoot, manifest);
+    return;
+  }
+  if (options.command === 'publish-check') {
+    const report = await publishCheck(options.workspaceRoot, manifest, {
+      payload: options.payload,
+      outDir: options.outDir,
+      checkNpmjs: options.checkNpmjs,
+      retries: options.retries,
+      retryDelaySeconds: options.retryDelaySeconds,
+    });
+    printReport(report, options.verbosity);
+    if (report.violations.length > 0) process.exitCode = 1;
+    return;
+  }
+  if (options.command === 'publish-pack') {
+    publishPack(options.workspaceRoot, manifest, { payload: options.payload, outDir: options.outDir });
+    return;
+  }
+  if (options.command === 'publish-render') {
+    publishRender(options.workspaceRoot, manifest, { payload: options.payload, json: options.json });
     return;
   }
   if (options.command === 'version-apply') {

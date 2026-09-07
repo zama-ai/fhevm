@@ -44,6 +44,10 @@ export type CliOptions = {
     | 'version-check'
     | 'version-list'
     | 'pack-tarball'
+    | 'publish-check'
+    | 'publish-order'
+    | 'publish-pack'
+    | 'publish-render'
     | 'sync-fhevm-chains'
     | 'sync-vendored'
     | 'test-consumer'
@@ -72,6 +76,17 @@ export type CliOptions = {
       readonly force: boolean;
     }
   | { readonly command: 'list-packages' }
+  | {
+      readonly command: 'publish-check';
+      readonly payload: string;
+      readonly outDir?: string;
+      readonly checkNpmjs: boolean;
+      readonly retries: number;
+      readonly retryDelaySeconds: number;
+    }
+  | { readonly command: 'publish-order' }
+  | { readonly command: 'publish-pack'; readonly payload: string; readonly outDir?: string }
+  | { readonly command: 'publish-render'; readonly payload: string; readonly json: boolean }
   | { readonly command: 'version-apply'; readonly dryRun: boolean; readonly checkNpmjs: boolean }
   | { readonly command: 'version-check' }
   | { readonly command: 'version-list'; readonly checkNpmjs: boolean; readonly json: boolean }
@@ -144,6 +159,18 @@ export function parseCliOptions(argv: readonly string[]): CliOptions {
   let listVersions: { readonly checkNpmjs: boolean; readonly json: boolean } | undefined;
   let versionCheckSelected = false;
   let versionApply: { readonly dryRun: boolean; readonly checkNpmjs: boolean } | undefined;
+  let publishOrderSelected = false;
+  let publishRender: { readonly payload: string; readonly json: boolean } | undefined;
+  let publishPack: { readonly payload: string; readonly outDir?: string } | undefined;
+  let publishCheck:
+    | {
+        readonly payload: string;
+        readonly outDir?: string;
+        readonly checkNpmjs: boolean;
+        readonly retries: number;
+        readonly retryDelaySeconds: number;
+      }
+    | undefined;
   let packTarball: { readonly packageSelector?: string; readonly outDir?: string; readonly clean: boolean } | undefined;
   let syncVendored: { readonly check: boolean } | undefined;
   let syncFhevmChains: { readonly commit?: string; readonly latest: boolean } | undefined;
@@ -480,12 +507,72 @@ Why:
     .action((options: { readonly dryRun: boolean; readonly checkNpmjs: boolean }) => {
       versionApply = { dryRun: options.dryRun, checkNpmjs: options.checkNpmjs };
     });
-  program
-    .command('pack-tarball [package]')
+  // The publication group: what npmjs.com will see, and in which order payloads must get there.
+  const publish = program
+    .command('publish')
+    .description('Render, pack and check npm-distributed payloads as npmjs.com must see them. Never publishes.');
+  publish
+    .command('order')
+    .description('Print the npm-distributed payloads in dependency order, one manifest key per line.')
+    .action(() => {
+      publishOrderSelected = true;
+    });
+  publish
+    .command('render <payload>')
     .description(
-      'Pack one npm-distributed payload (or all of them when omitted) into the manifest-declared ' +
-        "tarballs directory. The payload comes from the dev owner's publishedRelPath.",
+      "Show a payload's package.json as npmjs.com will see it — each file: link rendered to its target's " +
+        'generation range — followed by the files npm would pack. Writes nothing.',
     )
+    .option('--json', 'print the full rendered package.json instead of a diff', false)
+    .action((payload: string, options: { readonly json: boolean }) => {
+      publishRender = { payload, json: options.json };
+    });
+  publish
+    .command('pack <payload>')
+    .description(
+      'Render the payload as `publish render` shows it, `npm pack` a staged copy into the manifest-declared ' +
+        'tarballs directory, and print the tarball path. The tree is untouched.',
+    )
+    .option('-o, --out-dir <dir>', 'override npm-manifest.json#tarballs.relPath')
+    .action((payload: string, options: { readonly outDir?: string }) => {
+      publishPack = { payload, outDir: options.outDir };
+    });
+  publish
+    .command('check <payload>')
+    .description(
+      'Check the packed tarball: no file: spec survived rendering and its version is the central one. With ' +
+        '--check-npmjs, every rendered dependency range has a published version (retried) and the payload ' +
+        'itself is not published yet (never retried).',
+    )
+    .option(
+      '-o, --out-dir <dir>',
+      'where `publish pack` put the tarball; defaults to npm-manifest.json#tarballs.relPath',
+    )
+    .option('--check-npmjs', 'consult registry.npmjs.org', false)
+    .option('--retries <n>', 'attempts for a dependency version the registry does not have yet', '5')
+    .option('--retry-delay <seconds>', 'pause between attempts', '10')
+    .action(
+      (
+        payload: string,
+        options: {
+          readonly outDir?: string;
+          readonly checkNpmjs: boolean;
+          readonly retries: string;
+          readonly retryDelay: string;
+        },
+      ) => {
+        publishCheck = {
+          payload,
+          outDir: options.outDir,
+          checkNpmjs: options.checkNpmjs,
+          retries: positiveInteger(options.retries, '--retries'),
+          retryDelaySeconds: positiveInteger(options.retryDelay, '--retry-delay'),
+        };
+      },
+    );
+  program
+    .command('pack-tarball [package]', { hidden: true })
+    .description('Deprecated alias of `publish pack`: packs one payload, or every npm-distributed one when omitted.')
     .option('-o, --out-dir <dir>', 'override npm-manifest.json#tarballs.relPath')
     .option('--clean', 'delete existing *.tgz in the output directory first', false)
     .action((packageSelector: string | undefined, options: { readonly outDir?: string; readonly clean: boolean }) => {
@@ -538,6 +625,10 @@ Why:
     listVersions === undefined &&
     !versionCheckSelected &&
     versionApply === undefined &&
+    !publishOrderSelected &&
+    publishRender === undefined &&
+    publishPack === undefined &&
+    publishCheck === undefined &&
     packTarball === undefined &&
     !regenerateConsumerPackageLocks &&
     testConsumer === undefined &&
@@ -692,6 +783,45 @@ Why:
       sortPackageJson: false,
     };
   }
+  if (publishOrderSelected) {
+    return {
+      command: 'publish-order',
+      workspaceRoot,
+      manifestFile: resolve(workspaceRoot, 'npm-manifest.json'),
+      verbosity: options.verbose,
+      sortPackageJson: false,
+    };
+  }
+  if (publishCheck !== undefined) {
+    return {
+      command: 'publish-check',
+      ...publishCheck,
+      workspaceRoot,
+      manifestFile: resolve(workspaceRoot, 'npm-manifest.json'),
+      verbosity: options.verbose,
+      sortPackageJson: false,
+    };
+  }
+  if (publishPack !== undefined) {
+    return {
+      command: 'publish-pack',
+      ...publishPack,
+      workspaceRoot,
+      manifestFile: resolve(workspaceRoot, 'npm-manifest.json'),
+      verbosity: options.verbose,
+      sortPackageJson: false,
+    };
+  }
+  if (publishRender !== undefined) {
+    return {
+      command: 'publish-render',
+      ...publishRender,
+      workspaceRoot,
+      manifestFile: resolve(workspaceRoot, 'npm-manifest.json'),
+      verbosity: options.verbose,
+      sortPackageJson: false,
+    };
+  }
   if (versionApply !== undefined) {
     return {
       command: 'version-apply',
@@ -741,4 +871,10 @@ Why:
     verbosity: options.verbose,
     sortPackageJson,
   };
+}
+
+// Commander hands option values over as strings; the two retry knobs must be whole non-negative numbers.
+function positiveInteger(value: string, flag: string): number {
+  if (!/^\d+$/.test(value)) throw new Error(`${flag} expects a non-negative integer, got '${value}'`);
+  return Number(value);
 }

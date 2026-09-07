@@ -1,10 +1,9 @@
-// Packs npm-distributed payloads with `npm pack` into the manifest-declared tarballs directory.
-// Manifest-aware where the old scripts/pack-tarball.ts was conventional: the payload comes from the
-// dev owner's publishedRelPath, never a `./pkg` guess, and a mirror-only payload is refused instead
-// of packed by accident.
+// The packing primitives shared by `publish pack` and its `pack-tarball` alias: which payloads are
+// packable (from the dev owner's publishedRelPath, never a `./pkg` guess; mirror-only refused), where
+// tarballs go (declared in the manifest), and one `npm pack` run with the workspace's own npm cache.
 
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
+import { mkdirSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -19,14 +18,6 @@ export type PackTarget = {
   readonly ownerKey: string;
   readonly payloadKey: string;
   readonly payloadDirectory: string;
-};
-
-export type PackTarballOptions = {
-  readonly workspaceRoot: string;
-  readonly manifest: NpmManifest;
-  readonly packageSelector?: string;
-  readonly outDir?: string;
-  readonly clean: boolean;
 };
 
 /** Every npm-distributed payload, keyed by its dev owner — the packable universe. */
@@ -70,27 +61,10 @@ export function tarballsOutDir(workspaceRoot: string, manifest: NpmManifest, ove
   return resolve(workspaceRoot, relPath);
 }
 
-export function packTarballs(options: PackTarballOptions): void {
-  const targets = selectPackTargets(options.workspaceRoot, options.manifest, options.packageSelector);
-  const outDir = tarballsOutDir(options.workspaceRoot, options.manifest, options.outDir);
-
-  mkdirSync(outDir, { recursive: true });
-  if (options.clean) {
-    // Only *.tgz, and only when asked: outDir may be a directory the caller named for other reasons.
-    for (const entry of readdirSync(outDir)) {
-      if (entry.endsWith('.tgz')) rmSync(join(outDir, entry), { force: true });
-    }
-  }
+/** One `npm pack` in a directory, scripts skipped (the staged copy has no node_modules); returns the tarball path. */
+export function packOne(packageDir: string, outDir: string): string {
   mkdirSync(NPM_CACHE_ABS_PATH, { recursive: true });
-
-  for (const target of targets) {
-    const tarballPath = packOne(target.payloadDirectory, outDir);
-    console.log(`📦 ${target.payloadKey} -> ${tarballPath}`);
-  }
-}
-
-function packOne(packageDir: string, outDir: string): string {
-  const result = spawnSync('npm', ['pack', '--json', '--pack-destination', outDir], {
+  const result = spawnSync('npm', ['pack', '--json', '--ignore-scripts', '--pack-destination', outDir], {
     cwd: packageDir,
     encoding: 'utf8',
     env: { ...process.env, npm_config_cache: NPM_CACHE_ABS_PATH },
