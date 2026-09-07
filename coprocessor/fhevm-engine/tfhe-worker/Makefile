@@ -24,7 +24,8 @@ BENCH_ONE_SHOT_RECREATE_DB ?= 0
 # Wall-clock budget per scenario, including its build, in seconds; 0 disables it.
 # The whole suite must fit the CI job timeout with room for instance setup, so
 # this bounds one wedged scenario rather than letting it starve the others:
-# 6 canonical scenarios x 3600s leaves half of a 720-minute job spare.
+# 7 canonical scenarios x 3600s is 420 of a 720-minute job, leaving 300 minutes
+# for the first scenario's cold build, instance setup and reporting.
 BENCH_ONE_SHOT_SCENARIO_TIMEOUT ?= 3600
 # Keep each canonical logical block in one Main scheduling acquisition. Callers
 # may still override this for a deliberate dispatch-shape experiment.
@@ -73,6 +74,14 @@ init_db:
 # benchmark itself builds, never the one in that image.
 BENCH_DB_URL ?= postgresql://postgres:postgres@127.0.0.1:5432/coprocessor
 BENCH_DB_MIGRATIONS ?= ../db-migration/migrations
+# The database the reportable benches connect to. Defaults to the one this
+# Makefile migrates and resets, so migration, reset and execution name ONE
+# target; an override must point all three at the same database (checked by
+# the suite when it resets between scenarios).
+export FHEVM_BENCH_DATABASE_URL ?= $(BENCH_DB_URL)
+# Database name of BENCH_DB_URL, for statements that address it by name: the
+# last path segment, with any query string dropped.
+BENCH_DB_NAME = $(lastword $(subst /, ,$(firstword $(subst ?, ,$(BENCH_DB_URL)))))
 
 .PHONY: bench_db_up
 bench_db_up:
@@ -95,7 +104,7 @@ migrate_bench_db:
 .PHONY: reset_bench_db
 reset_bench_db:
 	docker compose exec -T db psql -U postgres -d postgres \
-	  -c "DROP DATABASE IF EXISTS coprocessor WITH (FORCE);"
+	  -c "DROP DATABASE IF EXISTS \"$(BENCH_DB_NAME)\" WITH (FORCE);"
 	$(MAKE) migrate_bench_db
 
 .PHONY: recreate_db
@@ -162,6 +171,11 @@ define run_one_shot_suite
 	@$(BENCH_ONE_SHOT_SCENARIO_CHECK)set -u; \
 	: "A dirty worktree is not a per-scenario failure: report it once up front"; \
 	$(MAKE) check_main_block_baseline_clean_source || exit 2; \
+	: "Reset and execution must address the same database, or the reset wipes one while the benches keep the other's rows"; \
+	if [ "$(BENCH_ONE_SHOT_RECREATE_DB)" = "1" ] && [ "$$FHEVM_BENCH_DATABASE_URL" != "$(BENCH_DB_URL)" ]; then \
+	  echo "BENCH_ONE_SHOT_RECREATE_DB=1 resets BENCH_DB_URL ($(BENCH_DB_URL)) but the benches run against FHEVM_BENCH_DATABASE_URL ($$FHEVM_BENCH_DATABASE_URL); point both at one database" >&2; \
+	  exit 2; \
+	fi; \
 	failed=""; \
 	for scenario in $(BENCH_ONE_SHOT_SCENARIOS); do \
 	  if [ "$(BENCH_ONE_SHOT_RECREATE_DB)" = "1" ]; then \

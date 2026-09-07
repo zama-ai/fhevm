@@ -1,15 +1,18 @@
 import { describe, expect, test } from "bun:test";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { statSync } from "node:fs";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import YAML from "yaml";
 
 import {
   blueGreenServiceNames,
+  dockerSocketRuntime,
   generateComposeOverrides,
   loadMergedComposeDoc,
   serviceNameList,
 } from "./generate/compose";
-import { TEMPLATE_COMPOSE_DIR, composePath, envPath } from "./layout";
+import { COMPOSE_OUT_DIR, TEMPLATE_COMPOSE_DIR, composePath, envPath } from "./layout";
 import { presetBundle } from "./resolve/target";
 import {
   parseBlueGreenScenario,
@@ -100,6 +103,14 @@ const testSuiteOverrideState: State = {
   scenario: testDefaultScenario(),
 };
 
+// Single-instance, no local builds: the test-suite override then contains only whatever
+// the generator adds on its own, which is the host Docker socket wiring.
+const socketWiringState: State = {
+  ...state,
+  overrides: [],
+  scenario: testDefaultScenario(),
+};
+
 const kmsConnectorOverrideState: State = {
   ...state,
   overrides: [{ group: "kms-connector" }],
@@ -128,6 +139,53 @@ instances:
         - --initial-block-time=2
 `),
   ),
+};
+
+/** Runs a test body with `DOCKER_HOST` pinned to a known value, restoring it after. */
+const withDockerHost = async <T>(value: string | undefined, run: () => Promise<T>) => {
+  const previous = process.env.DOCKER_HOST;
+  if (value === undefined) {
+    delete process.env.DOCKER_HOST;
+  } else {
+    process.env.DOCKER_HOST = value;
+  }
+  try {
+    return await run();
+  } finally {
+    if (previous === undefined) {
+      delete process.env.DOCKER_HOST;
+    } else {
+      process.env.DOCKER_HOST = previous;
+    }
+  }
+};
+
+/** Runs a test body against a real, listening unix socket in a temporary directory. */
+const withUnixSocket = async <T>(run: (socketPath: string) => Promise<T>) => {
+  const dir = await mkdtemp(path.join(tmpdir(), "fhevm-docker-sock-"));
+  const socketPath = path.join(dir, "docker.sock");
+  const server = Bun.listen({ unix: socketPath, socket: { data() {} } });
+  try {
+    return await run(socketPath);
+  } finally {
+    server.stop(true);
+    await rm(dir, { recursive: true, force: true });
+  }
+};
+
+/** Collects every service in every generated compose override, keyed by file and name. */
+const generatedServices = async () => {
+  const entries = await readdir(COMPOSE_OUT_DIR);
+  const services: Array<[string, Record<string, unknown>]> = [];
+  for (const entry of entries.filter((name) => name.endsWith(".yml"))) {
+    const doc = YAML.parse(await readFile(path.join(COMPOSE_OUT_DIR, entry), "utf8")) as {
+      services?: Record<string, Record<string, unknown>>;
+    };
+    for (const [name, service] of Object.entries(doc.services ?? {})) {
+      services.push([`${entry}:${name}`, service]);
+    }
+  }
+  return services;
 };
 
 describe("render-compose", () => {
@@ -375,18 +433,21 @@ describe("render-compose", () => {
     });
   });
 
-  test("does not duplicate the test-suite Docker socket group in a local build override", async () => {
-    await withTempStateDir(async () => {
-      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
-      await writeFile(envPath("coprocessor"), "\n");
-      await generateComposeOverrides(testSuiteOverrideState, stackSpecForState(testSuiteOverrideState));
-      const doc = YAML.parse(await readFile(composePath("test-suite"), "utf8")) as {
-        services: Record<string, { image?: string; build?: unknown; group_add?: unknown }>;
-      };
-      const testSuite = doc.services["test-suite-e2e-debug"];
-      expect(testSuite?.image).toContain(":fhevm-local");
-      expect(testSuite?.build).toBeTruthy();
-      expect(testSuite?.group_add).toBeUndefined();
+  test("renders a test-suite local build override without daemon access on a socketless host", async () => {
+    await withDockerHost("unix:///nonexistent/docker.sock", async () => {
+      await withTempStateDir(async () => {
+        await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+        await writeFile(envPath("coprocessor"), "\n");
+        await generateComposeOverrides(testSuiteOverrideState, stackSpecForState(testSuiteOverrideState));
+        const doc = YAML.parse(await readFile(composePath("test-suite"), "utf8")) as {
+          services: Record<string, { image?: string; build?: unknown; volumes?: unknown; group_add?: unknown }>;
+        };
+        const testSuite = doc.services["test-suite-e2e-debug"];
+        expect(testSuite?.image).toContain(":fhevm-local");
+        expect(testSuite?.build).toBeTruthy();
+        expect(testSuite?.volumes).toBeUndefined();
+        expect(testSuite?.group_add).toBeUndefined();
+      });
     });
   });
 
@@ -777,5 +838,114 @@ gcs:
       expect(blue.command).toContain("--bucket-name=coproc-0");
       expect(blue.command?.filter((arg) => arg.startsWith("--bucket-name-"))).toEqual([]);
     });
+  });
+});
+
+describe("test-suite docker socket runtime", () => {
+  test("dockerSocketRuntime resolves a unix DOCKER_HOST socket with its group id", async () => {
+    await withUnixSocket(async (socketPath) => {
+      const runtime = dockerSocketRuntime({ DOCKER_HOST: `unix://${socketPath}` });
+      expect(runtime?.path).toBe(socketPath);
+      expect(runtime?.gid).toBe(statSync(socketPath).gid);
+    });
+  });
+
+  test("dockerSocketRuntime returns undefined for a missing socket", () => {
+    expect(dockerSocketRuntime({ DOCKER_HOST: "unix:///nonexistent/docker.sock" })).toBeUndefined();
+  });
+
+  test("dockerSocketRuntime treats a remote DOCKER_HOST as socketless", async () => {
+    await withUnixSocket(async (socketPath) => {
+      // A tcp:// daemon is never local, even while a unix socket exists elsewhere.
+      expect(dockerSocketRuntime({ DOCKER_HOST: "tcp://127.0.0.1:2375" })).toBeUndefined();
+      expect(dockerSocketRuntime({ DOCKER_HOST: `unix://${socketPath}` })).toBeDefined();
+    });
+  });
+
+  test("dockerSocketRuntime falls back to the default socket path without DOCKER_HOST", () => {
+    // The fallback path is a host fact, so only the path it probes is asserted here.
+    const runtime = dockerSocketRuntime({});
+    expect(runtime === undefined || runtime.path === "/var/run/docker.sock").toBe(true);
+  });
+
+  test("grants the e2e runner the host docker socket when one exists", async () => {
+    await withUnixSocket(async (socketPath) => {
+      await withDockerHost(`unix://${socketPath}`, async () => {
+        await withTempStateDir(async () => {
+          await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+          await writeFile(envPath("coprocessor"), "\n");
+          await generateComposeOverrides(socketWiringState, stackSpecForState(socketWiringState));
+          const doc = YAML.parse(await readFile(composePath("test-suite"), "utf8")) as {
+            services: Record<string, { volumes?: string[]; group_add?: string[] }>;
+          };
+          const runner = doc.services["test-suite-e2e-debug"];
+          expect(runner?.volumes).toEqual([`${socketPath}:/var/run/docker.sock`]);
+          expect(runner?.group_add).toEqual([String(statSync(socketPath).gid)]);
+          const others = (await generatedServices()).filter(([key]) => key !== "test-suite.yml:test-suite-e2e-debug");
+          expect(others.length).toBeGreaterThan(0);
+          for (const [key, service] of others) {
+            expect(YAML.stringify({ [key]: service })).not.toContain("/var/run/docker.sock");
+            expect(service.group_add).toBeUndefined();
+          }
+        });
+      });
+    });
+  });
+
+  test("keeps the local build override alongside the socket wiring", async () => {
+    await withUnixSocket(async (socketPath) => {
+      await withDockerHost(`unix://${socketPath}`, async () => {
+        await withTempStateDir(async () => {
+          await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+          await writeFile(envPath("coprocessor"), "\n");
+          await generateComposeOverrides(testSuiteOverrideState, stackSpecForState(testSuiteOverrideState));
+          const doc = YAML.parse(await readFile(composePath("test-suite"), "utf8")) as {
+            services: Record<string, { image?: string; build?: unknown; volumes?: string[]; group_add?: string[] }>;
+          };
+          const runner = doc.services["test-suite-e2e-debug"];
+          expect(runner?.image).toContain(":fhevm-local");
+          expect(runner?.build).toBeTruthy();
+          expect(runner?.volumes).toEqual([`${socketPath}:/var/run/docker.sock`]);
+          expect(runner?.group_add).toEqual([String(statSync(socketPath).gid)]);
+        });
+      });
+    });
+  });
+
+  test("renders an empty test-suite override on a host without a docker socket", async () => {
+    await withDockerHost("unix:///nonexistent/docker.sock", async () => {
+      await withTempStateDir(async () => {
+        await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+        await writeFile(envPath("coprocessor"), "\n");
+        await generateComposeOverrides(socketWiringState, stackSpecForState(socketWiringState));
+        const doc = YAML.parse(await readFile(composePath("test-suite"), "utf8")) as {
+          services: Record<string, { volumes?: unknown; group_add?: unknown }>;
+        };
+        expect(doc.services).toEqual({});
+        expect(doc.services["test-suite-e2e-debug"]?.volumes).toBeUndefined();
+        expect(doc.services["test-suite-e2e-debug"]?.group_add).toBeUndefined();
+      });
+    });
+  });
+
+  test("leaves the runner socketless when DOCKER_HOST points at a remote daemon", async () => {
+    await withDockerHost("tcp://127.0.0.1:2375", async () => {
+      await withTempStateDir(async () => {
+        await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+        await writeFile(envPath("coprocessor"), "\n");
+        await generateComposeOverrides(socketWiringState, stackSpecForState(socketWiringState));
+        const doc = YAML.parse(await readFile(composePath("test-suite"), "utf8")) as {
+          services: Record<string, unknown>;
+        };
+        expect(doc.services).toEqual({});
+      });
+    });
+  });
+
+  test("the tracked test-suite compose file carries no docker socket wiring", async () => {
+    const raw = await readFile(path.join(TEMPLATE_COMPOSE_DIR, "test-suite-docker-compose.yml"), "utf8");
+    expect(raw).not.toContain("docker.sock");
+    expect(raw).not.toContain("group_add");
+    expect(raw).not.toContain("DOCKER_GID");
   });
 });
