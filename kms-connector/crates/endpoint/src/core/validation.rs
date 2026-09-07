@@ -73,12 +73,11 @@ fn validate_handles<'a>(
 ) -> Result<u64, ValidationError> {
     let (mut chain_id, mut total_bits) = (None, 0u64);
     for handle in handles {
-        let fhe_type = extract_fhe_type_from_handle(handle).map_err(|e| {
-            ValidationError::InvalidHandle {
+        let fhe_type =
+            extract_fhe_type_from_handle(handle).map_err(|e| ValidationError::InvalidHandle {
                 handle: *handle,
                 reason: e.to_string(),
-            }
-        })?;
+            })?;
         let bits = fhe_type_size(handle, fhe_type)?;
         total_bits += u64::from(bits);
 
