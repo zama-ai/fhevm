@@ -3,6 +3,7 @@ services:
   test-suite-e2e-debug:
     container_name: fhevm-test-suite-e2e-debug
     image: ghcr.io/zama-ai/fhevm/test-suite/e2e:${TEST_SUITE_VERSION}
+    platform: linux/amd64
     # Share MinIO's network namespace so the `http://localhost:9000` key URLs published by
     # pre-v0.13 KMS cores resolve inside this container. Each component is composed from its
     # own file, so `service:minio` is not addressable here and the container name is used
