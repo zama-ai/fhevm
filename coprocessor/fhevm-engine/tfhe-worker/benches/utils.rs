@@ -909,6 +909,15 @@ pub async fn insert_tfhe_event(
 /// chain. The auction fixture instead preserves its 300 EVM transaction IDs
 /// while intentionally executing their same-L1-block graph as one legacy
 /// scheduling chain.
+///
+/// Every staged computation also gets its `dependence_chain` row materialized
+/// here, because the bench worker runs with DCID locking enabled: it only
+/// acquires work whose chain has an `'updated'`, unowned, zero-dependency row
+/// in `dependence_chain`. Without that row the staged computations are never
+/// picked up and the fixture stalls on its own wait timeout. The insert is
+/// `DO NOTHING` on purpose -- one-shot fixtures call
+/// [`upsert_legacy_dependence_chain`] afterwards with real dependency counts
+/// and dependents, and those values must win.
 pub async fn insert_tfhe_event_with_dependence_chain(
     db: &ListenerDatabase,
     tx: &mut Transaction<'_>,
@@ -917,6 +926,20 @@ pub async fn insert_tfhe_event_with_dependence_chain(
     dependence_chain: Handle,
     is_allowed: bool,
 ) -> Result<bool, sqlx::Error> {
+    // Bench staging bypasses ordered block ingestion, so nothing else creates
+    // the DCID row the locking worker needs before it can claim this work.
+    // Seed a ready, unowned, zero-dependency chain; `DO NOTHING` leaves any
+    // richer row already written by `upsert_legacy_dependence_chain` intact.
+    sqlx::query(
+        "INSERT INTO dependence_chain ( \
+             dependence_chain_id, status, last_updated_at, dependency_count, dependents, \
+             block_hash, block_height, schedule_priority \
+         ) VALUES ($1, 'updated', NOW(), 0, '{}', ''::bytea, 0, 0) \
+         ON CONFLICT (dependence_chain_id) DO NOTHING",
+    )
+    .bind(dependence_chain.to_vec())
+    .execute(&mut **tx)
+    .await?;
     // Bench staging bypasses ordered block ingestion, so derive the same
     // authoritative transaction-local origin bits from rows already staged
     // for this fixture transaction.
