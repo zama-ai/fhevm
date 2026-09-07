@@ -3,6 +3,7 @@
 use alloy::primitives::B256;
 use std::{
     collections::HashMap,
+    ops::DerefMut,
     sync::{
         Arc, Mutex,
         atomic::{AtomicU64, Ordering},
@@ -77,10 +78,10 @@ impl Waiters {
         true
     }
 
-    /// Drains the whole registry. Dropping the senders fails every waiter with `RecvError`.
+    /// Empties the registry. Dropping the senders fails every waiter with `RecvError`.
     pub fn clear(&self) {
-        let drained: Vec<Waiter> = self.lock().drain().flat_map(|(_, v)| v).collect();
-        drop(drained);
+        // Bind the old map so it is dropped after the lock guard is released.
+        let _old = std::mem::take(self.lock().deref_mut());
     }
 
     pub fn len(&self) -> usize {
