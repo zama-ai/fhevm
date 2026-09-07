@@ -456,6 +456,44 @@ async fn test_nonce_too_high_then_succeeds() {
     setup.shutdown().await;
 }
 
+/// The error a same-nonce collision between two dispatchers reports. It must cost a retry,
+/// not a terminal `failure` on the row.
+#[tokio::test]
+async fn test_replacement_underpriced_then_succeeds() {
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+    let contract_address = helpers::random_address();
+    let user_address = helpers::random_address();
+    let payload = helpers::create_user_decrypt_payload(
+        &setup.settings.gateway.blockchain_rpc.chain_id.to_string(),
+        contract_address,
+        user_address,
+    );
+    let handles = helpers::extract_ciphertext_handles_from_user_payload(&payload);
+
+    setup.fhevm_mock.queue_tx_responses_for_selector(
+        setup.fhevm_mock.decryption_contract,
+        constants::USER_DECRYPT_SELECTOR,
+        vec![Response::error(
+            "replacement transaction underpriced".to_string(),
+        )],
+    );
+    setup.fhevm_mock.on_user_decrypt_success(
+        UserDecryptKind::Direct,
+        handles.clone(),
+        user_address,
+        ethereum_rpc_mock::SubscriptionTarget::All,
+    );
+
+    let job_id = helpers::submit_request(&setup, &payload).await;
+    let (status, body) = helpers::poll_until_terminal(&setup, &job_id).await;
+
+    assert_eq!(status, reqwest::StatusCode::OK);
+    assert_eq!(body.status, ApiResponseStatus::Succeeded);
+    assert!(body.result.is_some());
+
+    setup.shutdown().await;
+}
+
 #[tokio::test]
 async fn test_max_retries_exceeded_fails() {
     let setup = TestSetup::new_with_low_retries()
