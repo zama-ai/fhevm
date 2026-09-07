@@ -116,7 +116,7 @@ pub struct Scheduler<'a> {
 /// fell back to the first producer and could stamp the wrong row, leaving the
 /// one that actually failed unstamped -- outside the retry and demotion path
 /// entirely.
-type PartitionOutcome = (Handle, Handle, Result<TaskResult>);
+type PartitionOutcome = (Vec<Handle>, Handle, Result<TaskResult>);
 type PartitionResult = (Vec<PartitionOutcome>, NodeIndex, usize);
 impl<'a> Scheduler<'a> {
     fn is_ready_task(&self, node: &ExecNode) -> bool {
@@ -305,14 +305,14 @@ impl<'a> Scheduler<'a> {
             let (sks, _cpk, _) = self.get_keys(DeviceSelection::Index(result.2))?;
             tfhe::set_server_key(sks);
             let task_index = result.1;
-            for (handle, transaction_id, node_result) in result.0.into_iter() {
+            for (handles, transaction_id, node_result) in result.0.into_iter() {
                 // Add computed allowed handles to the graph. These
                 // can be used as inputs and forwarded to subsequent,
                 // dependent transactions. The transaction travels with the
                 // handle: two transactions can mint the same one, and the
                 // graph has to attribute this outcome to the right producer.
                 self.graph
-                    .add_output(&handle, &transaction_id, node_result, &self.edges)?;
+                    .add_output(&handles, &transaction_id, node_result, &self.edges)?;
             }
             for edge in task_dependences.edges_directed(task_index, Direction::Outgoing) {
                 let dependent_task_index = edge.target();
@@ -482,13 +482,11 @@ fn execute_partition(
                         // ours to stamp, and gating on allowance dropped its
                         // verdict on the floor.
                         if node.is_owned {
-                            for h in node.handles() {
-                                reported.push((
-                                    h,
-                                    tid.clone(),
-                                    Err(SchedulerError::MissingInputs.into()),
-                                ));
-                            }
+                            reported.push((
+                                node.handles(),
+                                tid.clone(),
+                                Err(SchedulerError::MissingInputs.into()),
+                            ));
                         }
                     }
                     continue 'tx;
@@ -517,13 +515,11 @@ fn execute_partition(
                     continue;
                 };
                 if node.is_owned {
-                    for h in node.handles() {
-                        reported.push((
-                            h,
-                            tid.clone(),
-                            Err(SchedulerError::CyclicDependence.into()),
-                        ));
-                    }
+                    reported.push((
+                        node.handles(),
+                        tid.clone(),
+                        Err(SchedulerError::CyclicDependence.into()),
+                    ));
                 }
             }
             continue 'tx;
@@ -534,7 +530,6 @@ fn execute_partition(
                 error!(target: "scheduler", {index = ?nidx.index() }, "Wrong dataflow graph index");
                 continue;
             };
-            let producer_handles: Vec<Handle> = node.handles();
             let result = try_execute_node(
                 node,
                 nidx.index(),
@@ -565,7 +560,7 @@ fn execute_partition(
                     let working = match op_result {
                         Ok(working) => working,
                         Err(e) => {
-                            fan_out_error(&producer_handles, e, &tid, &mut reported);
+                            reported.push((producer_handles.clone(), tid.clone(), Err(e)));
                             continue;
                         }
                     };
@@ -576,7 +571,7 @@ fn execute_partition(
                     if let Err(error) = validate_results(&node_outputs, &produced) {
                         error!(target: "scheduler", { error = %error },
                         "Dispatch result does not match the operation's declared outputs");
-                        fan_out_error(&producer_handles, error.into(), &tid, &mut reported);
+                        reported.push((producer_handles.clone(), tid.clone(), Err(error.into())));
                         continue;
                     }
                     // Each consumer's representation of this output
@@ -624,7 +619,7 @@ fn execute_partition(
                     if let Some(e) = compression_failure {
                         error!(target: "scheduler", { error = %e },
                         "Compression failed for an allowed output; failing the whole operation");
-                        fan_out_error(&producer_handles, e, &tid, &mut reported);
+                        reported.push((producer_handles.clone(), tid.clone(), Err(e)));
                         continue;
                     }
                     let mut forwarded: Vec<SupportedFheCiphertexts> =
@@ -639,7 +634,11 @@ fn execute_partition(
                                 transaction_id: tid.clone(),
                             };
                             outputs.insert(output.handle.clone(), task_result.clone());
-                            reported.push((output.handle.clone(), tid.clone(), Ok(task_result)));
+                            reported.push((
+                                vec![output.handle.clone()],
+                                tid.clone(),
+                                Ok(task_result),
+                            ));
                         }
                         forwarded.push(value);
                     }
@@ -656,7 +655,15 @@ fn execute_partition(
                         let dep_handle = match child_node.inputs.get(input_idx) {
                             Some(DFGTaskInput::LocalDependence(dh))
                             | Some(DFGTaskInput::BoundaryDependence(dh)) => dh.clone(),
-                            _ => continue,
+                            // Already resolved; nothing to route.
+                            Some(DFGTaskInput::Value(_)) | Some(DFGTaskInput::Compressed(..)) => {
+                                continue
+                            }
+                            None => {
+                                error!(target: "scheduler", { input_idx },
+                                    "Edge names an input slot the consumer does not have - graph inconsistency");
+                                continue;
+                            }
                         };
                         let Some(out_idx) = producer_handles.iter().position(|h| h == &dep_handle)
                         else {
@@ -674,19 +681,10 @@ fn execute_partition(
                         error!(target: "scheduler", {index = ?nidx.index() }, "Wrong dataflow graph index");
                         continue;
                     };
-                    // `is_owned`, matching the bubbled-error arm below:
-                    // an internal producer under our lease has a row of
-                    // ours to stamp, and gating on allowance dropped its
-                    // verdict on the floor.
-                    if node.is_owned {
-                        for h in node.handles() {
-                            reported.push((
-                                h,
-                                tid.clone(),
-                                Err(SchedulerError::MissingInputs.into()),
-                            ));
-                        }
-                    }
+                    // Report every producer's error, allowed or not: an unreported
+                    // failure left its consumers waiting forever. The worker decides
+                    // where a foreign row's error is recorded (`is_foreign_producer`).
+                    reported.push((node.handles(), tid.clone(), Err(e)));
                 }
             }
         }
@@ -917,45 +915,6 @@ fn validate_results(
     Ok(())
 }
 
-/// Fan one error out to every output handle so siblings of a multi-output op share
-/// the same worker classification. Typed `SchedulerError` is cloned; anything else
-/// is wrapped in `MultiOutputFailure`.
-/// Reports one error against every handle of an operation, so a group never
-/// leaves a sibling without a verdict.
-fn fan_out_error(
-    handles: &[Handle],
-    err: anyhow::Error,
-    transaction_id: &Handle,
-    reported: &mut Vec<PartitionOutcome>,
-) {
-    if handles.is_empty() {
-        return;
-    }
-    if handles.len() == 1 {
-        reported.push((handles[0].clone(), transaction_id.clone(), Err(err)));
-        return;
-    }
-    if let Some(sched) = err.downcast_ref::<SchedulerError>() {
-        let cloned = sched.clone();
-        for h in handles {
-            reported.push((
-                h.clone(),
-                transaction_id.clone(),
-                Err(cloned.clone().into()),
-            ));
-        }
-        return;
-    }
-    let err_msg = format!("{}", err);
-    for h in handles {
-        reported.push((
-            h.clone(),
-            transaction_id.clone(),
-            Err(SchedulerError::MultiOutputFailure(err_msg.clone()).into()),
-        ));
-    }
-}
-
 /// Materializes an operation output that leaves its transaction: allowed
 /// handles (persisted) and inputs of other transactions both read this
 /// canonical compressed form — as do the producer's own same-transaction
@@ -1029,6 +988,7 @@ fn run_computation(
                 &inputs,
                 output_types,
                 gpu_idx,
+                gpu_reservation_timeout,
             );
 
             return match result {
@@ -1069,7 +1029,6 @@ fn run_computation(
                 &inputs,
                 gpu_idx,
                 output_types[0],
-                gpu_reservation_timeout,
             );
 
             match result {

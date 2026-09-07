@@ -14,7 +14,7 @@ pub struct TaskResult {
     pub transaction_id: Handle,
 }
 pub struct DFGTxResult {
-    pub handle: Handle,
+    pub handles: Vec<Handle>,
     pub transaction_id: Handle,
     pub compressed_ct: Result<CompressedCiphertext>,
 }
@@ -23,7 +23,7 @@ impl std::fmt::Debug for DFGTxResult {
         let _ = writeln!(
             f,
             "Result: [{:?}] - tid [{:?}]",
-            self.handle, self.transaction_id
+            self.handles, self.transaction_id
         );
         if self.compressed_ct.is_err() {
             let _ = write!(f, "\t ERROR");

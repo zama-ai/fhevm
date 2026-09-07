@@ -488,7 +488,7 @@ impl DFComponentGraph {
                     for h in op.handles().iter() {
                         self.results.push(DFGTxResult {
                             transaction_id: tx.transaction_id.clone(),
-                            handle: h.clone(),
+                            handles: vec![h.clone()],
                             compressed_ct: Err(SchedulerError::MissingInputs.into()),
                         });
                     }
@@ -529,11 +529,13 @@ impl DFComponentGraph {
     }
     pub fn add_output(
         &mut self,
-        handle: &[u8],
+        handles: &[Handle],
         transaction_id: &[u8],
         result: Result<TaskResult>,
         edges: &Dag<(), ComponentEdge>,
     ) -> Result<()> {
+        // Every handle of a group shares one producer, so the first one locates it.
+        let handle = handles.first().ok_or(SchedulerError::DataflowGraphError)?;
         if let Some(producer) = self.produced.get(handle).cloned() {
             if producer.is_empty() {
                 error!(target: "scheduler", { output_handle = ?hex::encode(handle) },
@@ -590,7 +592,7 @@ impl DFComponentGraph {
                         .ok_or(SchedulerError::DataflowGraphError)?;
                     self.results.push(DFGTxResult {
                         transaction_id: producer_tx.transaction_id.clone(),
-                        handle: handle.to_vec(),
+                        handles: handles.to_vec(),
                         compressed_ct: result.map(|rok| rok.compressed_ct),
                     });
                 }
@@ -624,7 +626,7 @@ impl DFComponentGraph {
                 for h in op.handles().iter() {
                     self.results.push(DFGTxResult {
                         transaction_id: tx_node.transaction_id.clone(),
-                        handle: h.clone(),
+                        handles: vec![h.clone()],
                         compressed_ct: Err(SchedulerError::MissingInputs.into()),
                     });
                 }
@@ -1129,7 +1131,7 @@ mod tests {
 
         graph
             .add_output(
-                &colliding,
+                std::slice::from_ref(&colliding),
                 &victim,
                 Err(SchedulerError::ExecutionPanic("device fault".into()).into()),
                 &edges,
@@ -1139,7 +1141,7 @@ mod tests {
         let attributed: Vec<_> = graph
             .get_results()
             .into_iter()
-            .filter(|r| r.handle == colliding && r.compressed_ct.is_err())
+            .filter(|r| r.handles == [colliding.clone()] && r.compressed_ct.is_err())
             .map(|r| r.transaction_id)
             .collect();
         assert!(
@@ -1311,7 +1313,12 @@ mod tests {
                 ),
                 "cycle members must be DEFERRED (MissingInputs), never stamped: {error}"
             );
-            deferred.push((result.handle, result.transaction_id));
+            deferred.extend(
+                result
+                    .handles
+                    .iter()
+                    .map(|h| (h.clone(), result.transaction_id.clone())),
+            );
         }
         deferred.sort();
         let mut expected = vec![(h3, t1.clone()), (h4, t2.clone()), (h1, t2.clone())];

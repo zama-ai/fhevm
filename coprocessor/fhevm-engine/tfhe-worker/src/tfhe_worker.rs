@@ -4202,14 +4202,20 @@ async fn upload_transaction_graph_results<'a>(
     for result in graph_results.into_iter() {
         match result.compressed_ct {
             Ok(cct) => {
+                let [handle] = result.handles.as_slice() else {
+                    error!(target: "tfhe_worker", { handles = ?result.handles },
+                        "a computed ciphertext must belong to exactly one handle");
+                    continue;
+                };
                 cts_to_insert.push((
-                    result.handle.clone(),
+                    handle.clone(),
                     (cct.ct_bytes, (current_ciphertext_version(), cct.ct_type)),
                 ));
-                handles_to_update.push((result.handle.clone(), result.transaction_id.clone()));
+                handles_to_update.push((handle.clone(), result.transaction_id.clone()));
                 WORK_ITEMS_PROCESSED_COUNTER.inc();
             }
             Err(mut err) => {
+                let output_handles: Vec<String> = result.handles.iter().map(hex::encode).collect();
                 #[cfg(feature = "gpu")]
                 if matches!(
                     err.downcast_ref::<FhevmError>(),
@@ -4218,7 +4224,7 @@ async fn upload_transaction_graph_results<'a>(
                     warn!(
                         target: "tfhe_worker",
                         error = %err,
-                        output_handle = %format!("0x{}", hex::encode(&result.handle)),
+                        output_handles = ?output_handles,
                         "transient GPU memory reservation failure; leaving computation pending for retry"
                     );
                     // Deliberately unstamped -- a reservation failure is not a
@@ -4259,7 +4265,7 @@ async fn upload_transaction_graph_results<'a>(
                     ) {
                         warn!(target: "tfhe_worker",
                                           { error = cerr,
-                        output_handle = format!("0x{}", hex::encode(&result.handle)) },
+                        output_handles = ?output_handles },
                                         "scheduler encountered an error while processing work item"
                                     );
                         continue;
@@ -4286,7 +4292,7 @@ async fn upload_transaction_graph_results<'a>(
                         // already refuses the cycle before execution; this is
                         // the belt to that pair of braces.
                         warn!(target: "tfhe_worker",
-                            { error = cerr, output_handle = format!("0x{}", hex::encode(&result.handle)) },
+                            { error = cerr, output_handles = ?output_handles },
                             "key lacks re-randomization material; leaving computation pending for retry");
                         continue;
                     }
@@ -4304,31 +4310,41 @@ async fn upload_transaction_graph_results<'a>(
                 // cannot carry the verdict (an internal producer is stored
                 // completed). Answered from the snapshot taken before
                 // `schedule()`: the inner graphs are gone by now.
-                let blocked = tx_graph.allowed_dependents(&result.transaction_id, &result.handle);
-                if tx_graph.is_foreign_producer(&result.transaction_id, &result.handle) {
-                    // A foreign row belongs to another chain: never stamp it
-                    // from here. What this failure blocks is OUR owned allowed
-                    // consumers, which have nowhere else to receive a verdict
-                    // -- the owning chain never executes them.
-                    res |= propagate_error_to_dependents(
-                        &blocked,
+                // A consumer shared by several siblings must be stamped once per
+                // pass, or its retry count advances once per sibling.
+                let mut propagated: HashSet<Vec<u8>> = HashSet::new();
+                for handle in &result.handles {
+                    let blocked: Vec<Vec<u8>> = tx_graph
+                        .allowed_dependents(&result.transaction_id, handle)
+                        .into_iter()
+                        .filter(|d| !propagated.contains(d))
+                        .collect();
+                    propagated.extend(blocked.iter().cloned());
+                    if tx_graph.is_foreign_producer(&result.transaction_id, handle) {
+                        // A foreign row belongs to another chain: never stamp it
+                        // from here. What this failure blocks is OUR owned allowed
+                        // consumers, which have nowhere else to receive a verdict
+                        // -- the owning chain never executes them.
+                        res |= propagate_error_to_dependents(
+                            &blocked,
+                            &result.transaction_id,
+                            &stamp_text(&*cerr, retryable),
+                            trx,
+                        )
+                        .await?;
+                        continue;
+                    }
+                    res |= set_computation_error(
+                        handle,
                         &result.transaction_id,
-                        &stamp_text(&*cerr, retryable),
+                        &*cerr,
+                        retryable,
+                        &blocked,
                         trx,
+                        deps_mngr,
                     )
                     .await?;
-                    continue;
                 }
-                res |= set_computation_error(
-                    &result.handle,
-                    &result.transaction_id,
-                    &*cerr,
-                    retryable,
-                    &blocked,
-                    trx,
-                    deps_mngr,
-                )
-                .await?;
             }
         }
     }
@@ -4489,15 +4505,9 @@ fn is_terminal_verdict(error: Option<&CoprocessorError>) -> bool {
             | SchedulerError::DataflowGraphError
             | SchedulerError::ReRandomisationError
             | SchedulerError::SchedulerError => false,
-            // Mixed class, so it takes the reversible arm. `validate_results`
-            // raises it for a declared-shape or declared-type mismatch, which
-            // IS a pure function of on-chain data; but `fan_out_error` also
-            // flattens a non-SchedulerError into it, because `FhevmError` is
-            // not Clone and every row of a group must carry the same verdict.
-            // A flattened device fault must not condemn the cone, and a
-            // genuinely deterministic mismatch still reaches terminal through
-            // the retry budget.
-            SchedulerError::MultiOutputFailure(_) => false,
+            // Declared output count or type disagrees with what the op produced:
+            // a function of the opcode and the on-chain handles.
+            SchedulerError::MultiOutputFailure(_) => true,
         },
         Some(CoprocessorError::FhevmError(fhevm_error)) => match fhevm_error {
             // Type-check, opcode and scalar-shape rules. Every one is decided
