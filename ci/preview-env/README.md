@@ -70,9 +70,11 @@ ci/preview-env/
 │   ├── values-relayer-e2e.yaml          # `common` chart overlay, relayer server
 │   ├── values-relayer-migrate-e2e.yaml  # `common` chart overlay, relayer DB migration Job
 │   └── values-postgres-relayer-e2e.yaml # `common` chart overlay: in-cluster Postgres, dedicated to relayer + relayer-migrate
-└── test-suite/
-    ├── values-test-suite-e2e.yaml       # `common` chart overlay, e2e test-suite Job
-    └── values-test-suite-workflow-polygon-e2e.yaml # Argo Workflow overlay, Polygon e2e run (deploy_polygon + automated_tests)
+├── test-suite/
+│   ├── values-test-suite-e2e.yaml       # `common` chart overlay, e2e test-suite Job
+│   └── values-test-suite-workflow-polygon-e2e.yaml # Argo Workflow overlay, Polygon e2e run (deploy_polygon + automated_tests)
+├── preview-env                          # gh CLI: launch / watch / destroy (does not helm-install)
+└── scripts/                             # deploy-time helpers called from preview-env-deploy.yml
 ```
 
 Every file here is a **values overlay for a chart**. `anvil-node`/`contracts`/`coprocessor`/
@@ -283,7 +285,7 @@ These are different models. `nb_coprocessor > 1` is N-party unless you opt into 
 | Model | Meaning | How to enable |
 | --- | --- | --- |
 | **N-party consensus** | N on-chain identities (wallet, S3, Postgres). Gateway `NUM_COPROCESSORS=N`. | `nb_coprocessor` in `{1,2,3,5}` |
-| **Blue-green (RFC-021)** | **Two fleets of the same identity**: BCS (live `v0.14.0-7`) + GCS (HEAD compiled as `0.15.0`), shared DB/S3/wallet. Cutover is `ProtocolConfig.proposeCoprocessorUpgrade` then off-chain unanimity of all N operators. | PR label `preview-env-blue-green` (deploys, forces N=2) or dispatch `nb_coprocessor=2-blue-green` |
+| **Blue-green (RFC-021)** | **Two fleets of the same identity**: BCS (live `v0.14.0-7`) + GCS (HEAD compiled as `0.15.0`), shared DB/S3/wallet. Cutover is `ProtocolConfig.proposeCoprocessorUpgrade` then off-chain unanimity of all N operators. | PR label `preview-env-blue-green` (deploys, forces N=2) or dispatch `enable_blue_green=true` |
 
 Blue-green does **not** register 2N gateway slots. Per party the preview keeps one listener, one Redis, one poller; BCS and GCS `hostListenerConsumer`s share that broker. GCS also runs `upgrade-controller` and `consensus-detector`. Incompatible with `deploy_polygon` and with `nb_coprocessor=1`.
 

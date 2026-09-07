@@ -68,8 +68,10 @@ Key inputs (all have sensible defaults — you rarely set more than a couple):
 - `nb_kms_core` — number of KMS parties (default `4`).
 - `nb_coprocessor` — number of independent coprocessor **identities** (default
   `1`). `2` is two-party consensus (one fleet each), **not** blue-green.
-  `2-blue-green` is RFC-021 (BCS+GCS on each of two parties). `3`/`5` stay
-  N-party only. See `README.md`.
+  `3`/`5` stay N-party only. See `README.md`.
+- `enable_blue_green` — RFC-021 BCS+GCS on each identity (default `false`).
+  Forces `nb_coprocessor=2` when N=1. The `preview-env-blue-green` PR label
+  is the other gate. Incompatible with `deploy_polygon`.
 - `deploy_polygon` — also add a second Polygon Amoy (`80002`) host chain (default
   `false`). Fresh local anvil, reuses the ETH KMS key; roughly doubles the
   host-side stack. With `automated_tests` on it also runs a Polygon e2e suite.
@@ -83,20 +85,19 @@ Key inputs (all have sensible defaults — you rarely set more than a couple):
   labels stay on Anvil). After teardown the contracts remain on the shared
   chain. Do not combine with `deploy_polygon`.
 
-**Versions** — three kinds:
-- **fhevm's own images** (`coprocessor_version`, `test_suite_version`, …)
-  default to **empty**, meaning "resolve from the base commit" exactly as a PR
-  run does. Set one only to force a specific tag for this run.
-- **In-repo charts** (`coprocessor_chart_version`, `contracts_chart_version`, …)
-  default to **empty**, meaning "install `charts/<name>` straight from the
-  picked branch". Set one to deploy that **published** OCI chart release
-  instead.
-- **External deps** (`common_chart_version`, `redis_chart_version`,
-  `kms_core_version`/`kms_repo_ref`, …) also default to **empty**, meaning
-  "use the pinned version in the workflow env" — they're owned by other
-  repos, so there's no commit of this repo to derive them from.
-  (`relayer_sdk_version` keeps a real default; emptying it skips the
-  relayer-sdk suite.)
+**Versions** — one optional `overrides` JSON object (empty / `{}` = resolve as
+today). Allowed keys are the old per-input names
+(`coprocessor_version`, `contracts_chart_version`, `kms_repo_ref`,
+`relayer_sdk_version`, …). Unknown keys fail the run.
+- **fhevm's own images** default to **empty**, meaning "resolve from the base
+  commit" exactly as a PR run does. Set one only to force a specific tag.
+- **In-repo charts** default to **empty**, meaning "install `charts/<name>`
+  from the picked branch". Set one to deploy that **published** OCI chart.
+- **External deps** (`common_chart_version`, `kms_core_version`, …) default
+  to the pins in `parse-overrides.cjs`. Dispatch-only:
+  `relayer_sdk_version` defaults to `0.4.4` when omitted (empty it in
+  `overrides` to skip the relayer-sdk suite). PR runs always leave it empty
+  so only `@fhevm/sdk` runs.
 
 - **Namespace:** `fhevm-ci-<actor>-<run-id-base36>` (dispatch) or
   `fhevm-ci-<pr-author>-<pr-number>` (PR). Actor is truncated if needed so
@@ -106,42 +107,26 @@ Key inputs (all have sensible defaults — you rarely set more than a couple):
   destroys it automatically. Run **preview-env-destroy** with the namespace (see
   [Destroy an environment](#destroy-an-environment)), or re-run to reuse it.
 
-### Launch from the CLI (`gh api`)
+### Launch from the CLI
 
-Same manual run, scripted. `gh api` expands the `inputs[key]=value` brackets into
-the `inputs` object the dispatch endpoint expects; `ref` is the branch the run
-executes from. Every input has a default, so pass only `ref` plus what you want
-to override:
+[`preview-env`](./preview-env) wraps `gh workflow run`. It does **not**
+helm-install; Actions stays the write path. `--ref` must already be on origin.
 
 ```bash
-gh api --method POST \
-  -H "Accept: application/vnd.github+json" \
-  /repos/zama-ai/fhevm/actions/workflows/preview-env-deploy.yml/dispatches \
-  -f "ref=<your-branch>" \
-  -f "inputs[build_images]=true" \
-  -f "inputs[automated_tests]=true" \
-  -f "inputs[nb_coprocessor]=1" \
-  -f "inputs[nb_kms_core]=4" \
-  -f "inputs[deploy_polygon]=false" \
-  -f "inputs[use_blockchain_dev]=false"
+ci/preview-env/preview-env launch --ref <your-branch> --tests
+ci/preview-env/preview-env launch --ref <your-branch> --blockchain-dev
+ci/preview-env/preview-env launch --ref <your-branch> --blue-green --blockchain-dev --tests
+ci/preview-env/preview-env launch --ref <your-branch> --set coprocessor_version=abc1234
 ```
 
-Connect to the shared `blockchain-dev` Geth + Nitro (no Anvil). The namespace
-is derived automatically from this run's id (base36) — there is no
-`namespace_suffix` input:
+`--blue-green` sends `enable_blue_green=true` and `nb_coprocessor=2`.
+`--parties 2` without `--blue-green` is two-party consensus only.
+
+Find the run with:
 
 ```bash
-gh api --method POST \
-  -H "Accept: application/vnd.github+json" \
-  /repos/zama-ai/fhevm/actions/workflows/preview-env-deploy.yml/dispatches \
-  -f "ref=<your-branch>" \
-  -f "inputs[use_blockchain_dev]=true" \
-  -f "inputs[deploy_polygon]=false"
-```
-
-The endpoint returns `204 No Content` (fire-and-forget); find the run with:
-
-```bash
+ci/preview-env/preview-env watch <run-id>
+# or
 gh run list --workflow=preview-env-deploy.yml --branch=<your-branch> --limit 5
 ```
 
@@ -200,15 +185,10 @@ set the `namespace` input to the **exact** namespace from your deploy run's
 summary (e.g. `fhevm-ci-alice-987654`). It must start with `fhevm-ci-` (a guard
 refuses anything else, so it can't nuke an unrelated namespace).
 
-Or script it with `gh api` (runs the destroy workflow from `main`; the
-`fhevm-ci-` namespace guard still applies):
+Or:
 
 ```bash
-gh api --method POST \
-  -H "Accept: application/vnd.github+json" \
-  /repos/zama-ai/fhevm/actions/workflows/preview-env-destroy.yml/dispatches \
-  -f "ref=main" \
-  -f "inputs[namespace]=fhevm-ci-<actor>-<run-id digest>"
+ci/preview-env/preview-env destroy fhevm-ci-<exact-name>
 ```
 
 **Fallback.** If a run can't reach the cluster, do it yourself:
@@ -240,7 +220,7 @@ kubectl delete namespace <namespace>
 - **Unresolvable ⇒ the run fails.** If GHCR has pruned the base commit's tags and
   nothing turns up within 50 commits, `resolve-tags` fails instead of quietly
   deploying something older. Rebase onto a newer base commit, or pass an explicit
-  `*_version` input via dispatch.
+  `*_version` key in the `overrides` JSON.
 - **Stacked PRs resolve images from `main`.** Only `main`/`release/*` commits
   publish images, so a PR based on another feature branch resolves them from its
   merge-base with `main` and **excludes the parent PR's code changes** (with a

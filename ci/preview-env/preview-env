@@ -1,0 +1,296 @@
+#!/usr/bin/env bash
+# GitHub Actions controller for fhEVM preview environments.
+# Does not helm-install. Wraps `gh workflow run` / `gh run`.
+set -euo pipefail
+
+REPO_DEFAULT="zama-ai/fhevm"
+DEPLOY_WORKFLOW="preview-env-deploy.yml"
+DESTROY_WORKFLOW="preview-env-destroy.yml"
+TAILSCALE_HOSTNAME="tailscale-operator-zws-dev.diplodocus-boa.ts.net"
+
+ALLOWED_OVERRIDES=(
+  host_contracts_version
+  gateway_contracts_version
+  contracts_chart_version
+  coprocessor_version
+  coprocessor_chart_version
+  coprocessor_infra_chart_version
+  kms_connector_version
+  kms_connector_chart_version
+  kms_core_version
+  kms_repo_ref
+  relayer_version
+  relayer_sdk_version
+  test_suite_version
+  common_chart_version
+  redis_chart_version
+  listener_chart_version
+  listener_version
+)
+
+usage() {
+  cat <<'EOF'
+preview-env — dispatch and inspect fhEVM preview environments on zws-dev.
+
+  preview-env launch --ref <branch> [options]
+  preview-env watch <run-id>
+  preview-env status <run-id>
+  preview-env destroy <fhevm-ci-*>
+  preview-env namespace [--run-id <id>]
+  preview-env connect [--run-id <id>]
+
+launch options:
+  --ref <branch>            required (must be pushed to origin)
+  --parties 1|2|3|5         identities (default 1). 2 is two-party, not blue-green
+  --blue-green              enable_blue_green=true and nb_coprocessor=2
+  --blockchain-dev          use shared Geth/Nitro instead of Anvil
+  --tests                   automated_tests=true
+  --polygon                 second Polygon host (incompatible with blue-green)
+  --observability           in-namespace Prometheus/Grafana/Jaeger
+  --no-build                build_images=false
+  --test-suite-only         build only the e2e test-suite image
+  --kms-parties 4|13        default 4
+  --set key=value           pack into overrides JSON (repeatable)
+  --repo owner/repo         default zama-ai/fhevm
+
+This CLI only talks to GitHub Actions. It never helm-installs on zws-dev.
+EOF
+}
+
+die() { echo "preview-env: $*" >&2; exit 1; }
+
+is_allowed_override() {
+  local key="$1"
+  local allowed
+  for allowed in "${ALLOWED_OVERRIDES[@]}"; do
+    if [[ "${key}" == "${allowed}" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+need_gh() {
+  command -v gh >/dev/null || die "gh is not on PATH"
+}
+
+sanitize_ns() {
+  echo "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9-]+/-/g; s/-+/-/g; s/^-+//; s/-+$//'
+}
+
+base36() {
+  python3 -c "n=int('${1}'); d='0123456789abcdefghijklmnopqrstuvwxyz'; s='' if n else '0'
+while n:
+    n,r=divmod(n,36); s=d[r]+s
+print(s)"
+}
+
+derive_namespace() {
+  local actor="$1" suffix="$2"
+  local suffix_ns actor_ns budget actor_fit
+  suffix_ns=$(sanitize_ns "${suffix}")
+  budget=$((28 - 9 - 1 - ${#suffix_ns})) # 28 - len('fhevm-ci-') - '-' - suffix
+  actor_ns=$(sanitize_ns "${actor}")
+  if (( budget < 1 )); then
+    budget=1
+  fi
+  actor_fit=$(echo "${actor_ns}" | cut -c1-"${budget}" | sed -E 's/-+$//')
+  echo "fhevm-ci-${actor_fit}-${suffix_ns}"
+}
+
+repo_flag() {
+  echo "--repo=${REPO}"
+}
+
+cmd_launch() {
+  local ref="" parties="1" blue_green="false" blockchain_dev="false"
+  local tests="false" polygon="false" observability="false"
+  local build_images="true" test_suite_only="false" kms_parties="4"
+  local -a sets=()
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --ref) ref="${2:-}"; shift 2 ;;
+      --parties) parties="${2:-}"; shift 2 ;;
+      --blue-green) blue_green="true"; shift ;;
+      --blockchain-dev) blockchain_dev="true"; shift ;;
+      --tests) tests="true"; shift ;;
+      --polygon) polygon="true"; shift ;;
+      --observability) observability="true"; shift ;;
+      --no-build) build_images="false"; shift ;;
+      --test-suite-only) test_suite_only="true"; shift ;;
+      --kms-parties) kms_parties="${2:-}"; shift 2 ;;
+      --set) sets+=("${2:-}"); shift 2 ;;
+      --repo) REPO="${2:-}"; shift 2 ;;
+      -h|--help) usage; exit 0 ;;
+      *) die "unknown launch flag: $1" ;;
+    esac
+  done
+
+  [[ -n "${ref}" ]] || die "launch requires --ref <branch>"
+  case "${parties}" in
+    1|2|3|5) ;;
+    *) die "--parties must be 1, 2, 3, or 5" ;;
+  esac
+  case "${kms_parties}" in
+    4|13) ;;
+    *) die "--kms-parties must be 4 or 13" ;;
+  esac
+  if [[ "${blue_green}" == "true" && "${parties}" == "1" ]]; then
+    parties="2"
+  fi
+  if [[ "${blue_green}" == "true" && "${polygon}" == "true" ]]; then
+    die "--blue-green is incompatible with --polygon"
+  fi
+  if [[ "${blockchain_dev}" == "true" && "${polygon}" == "true" ]]; then
+    die "--blockchain-dev is incompatible with --polygon"
+  fi
+
+  local overrides="{}"
+  if [[ ${#sets[@]} -gt 0 ]]; then
+    local pair key value json_args=()
+    for pair in "${sets[@]}"; do
+      [[ "${pair}" == *=* ]] || die "--set expects key=value, got '${pair}'"
+      key="${pair%%=*}"
+      value="${pair#*=}"
+      is_allowed_override "${key}" || die "unknown overrides key '${key}'"
+      json_args+=("${key}=${value}")
+    done
+    overrides=$(python3 -c '
+import json, sys
+out = {}
+for item in sys.argv[1:]:
+    k, _, v = item.partition("=")
+    out[k] = v
+print(json.dumps(out, separators=(",", ":")))
+' "${json_args[@]}")
+  fi
+
+  need_gh
+  echo "dispatching ${DEPLOY_WORKFLOW} on ${REPO} @ ${ref}"
+  echo "  parties=${parties} blue_green=${blue_green} blockchain_dev=${blockchain_dev} tests=${tests} polygon=${polygon}"
+  echo "  overrides=${overrides}"
+
+  gh workflow run "${DEPLOY_WORKFLOW}" "$(repo_flag)" --ref "${ref}" \
+    -f "build_images=${build_images}" \
+    -f "build_test_suite_only=${test_suite_only}" \
+    -f "automated_tests=${tests}" \
+    -f "observability=${observability}" \
+    -f "nb_coprocessor=${parties}" \
+    -f "enable_blue_green=${blue_green}" \
+    -f "nb_kms_core=${kms_parties}" \
+    -f "deploy_polygon=${polygon}" \
+    -f "use_blockchain_dev=${blockchain_dev}" \
+    -f "overrides=${overrides}"
+
+  echo "dispatched. find the run with:"
+  echo "  gh run list $(repo_flag) --workflow=${DEPLOY_WORKFLOW} --branch=${ref} --limit 5"
+}
+
+cmd_watch() {
+  local run_id="${1:-}"
+  [[ -n "${run_id}" ]] || die "watch requires a run id"
+  shift || true
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --repo) REPO="${2:-}"; shift 2 ;;
+      *) die "unknown watch flag: $1" ;;
+    esac
+  done
+  need_gh
+  gh run watch "${run_id}" "$(repo_flag)"
+}
+
+cmd_status() {
+  local run_id="${1:-}"
+  [[ -n "${run_id}" ]] || die "status requires a run id"
+  shift || true
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --repo) REPO="${2:-}"; shift 2 ;;
+      *) die "unknown status flag: $1" ;;
+    esac
+  done
+  need_gh
+  gh run view "${run_id}" "$(repo_flag)"
+}
+
+cmd_destroy() {
+  local ns="${1:-}"
+  [[ -n "${ns}" ]] || die "destroy requires a namespace (fhevm-ci-*)"
+  shift || true
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --repo) REPO="${2:-}"; shift 2 ;;
+      --ref) DESTROY_REF="${2:-}"; shift 2 ;;
+      *) die "unknown destroy flag: $1" ;;
+    esac
+  done
+  [[ "${ns}" == fhevm-ci-* ]] || die "refusing to destroy '${ns}' (must start with fhevm-ci-)"
+  need_gh
+  gh workflow run "${DESTROY_WORKFLOW}" "$(repo_flag)" --ref "${DESTROY_REF:-main}" \
+    -f "namespace=${ns}"
+  echo "destroy dispatched for ${ns}"
+}
+
+namespace_for_run() {
+  local run_id="$1"
+  need_gh
+  local json event actor pr_number pr_author
+  json=$(gh api "repos/${REPO}/actions/runs/${run_id}")
+  event=$(python3 -c "import json,sys; print(json.load(sys.stdin).get('event',''))" <<<"${json}")
+  actor=$(python3 -c "import json,sys; d=json.load(sys.stdin); print((d.get('actor') or {}).get('login',''))" <<<"${json}")
+  if [[ "${event}" == "workflow_dispatch" ]]; then
+    derive_namespace "${actor}" "$(base36 "${run_id}")"
+    return
+  fi
+  pr_number=$(python3 -c "import json,sys; d=json.load(sys.stdin); prs=d.get('pull_requests') or []; print(prs[0]['number'] if prs else '')" <<<"${json}")
+  [[ -n "${pr_number}" ]] || die "run ${run_id} is not a dispatch and has no pull_requests[]"
+  pr_author=$(gh api "repos/${REPO}/pulls/${pr_number}" --jq .user.login)
+  derive_namespace "${pr_author}" "${pr_number}"
+}
+
+cmd_namespace() {
+  local run_id=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --run-id) run_id="${2:-}"; shift 2 ;;
+      --repo) REPO="${2:-}"; shift 2 ;;
+      *) die "unknown namespace flag: $1" ;;
+    esac
+  done
+  if [[ -z "${run_id}" ]]; then
+    echo "PR:        fhevm-ci-<pr-author>-<pr-number>"
+    echo "dispatch:  fhevm-ci-<actor>-<run-id-base36>  (whole name ≤ 28 chars)"
+    echo "pass --run-id to derive the exact name."
+    return
+  fi
+  namespace_for_run "${run_id}"
+}
+
+cmd_connect() {
+  local ns
+  ns=$(cmd_namespace "$@")
+  echo "tailscale configure kubeconfig ${TAILSCALE_HOSTNAME}"
+  echo "kubectl config current-context   # must be zws-dev"
+  if [[ "${ns}" == fhevm-ci-* ]]; then
+    echo "kubectl get pods -n ${ns}"
+  else
+    echo "kubectl get pods -n <namespace>   # ${ns}"
+  fi
+}
+
+REPO="${REPO_DEFAULT}"
+cmd="${1:-}"
+[[ -n "${cmd}" ]] || { usage; exit 1; }
+shift || true
+case "${cmd}" in
+  launch) cmd_launch "$@" ;;
+  watch) cmd_watch "$@" ;;
+  status) cmd_status "$@" ;;
+  destroy) cmd_destroy "$@" ;;
+  namespace) cmd_namespace "$@" ;;
+  connect) cmd_connect "$@" ;;
+  -h|--help|help) usage ;;
+  *) die "unknown command: ${cmd} (try --help)" ;;
+esac
