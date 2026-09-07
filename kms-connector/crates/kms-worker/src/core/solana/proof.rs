@@ -9,21 +9,8 @@
 //! the account's own peaks or it does not, and nothing the service says about a leaf is trusted
 //! on its own.
 //!
-//! ## Fan-out
-//!
-//! Every configured coprocessor is asked, concurrently, and the answers are merged per query
-//! ([`merge_outcomes`]): a proof beats no proof, more history beats less. A coprocessor that is
-//! behind cannot sink a request that another can serve, and one that is unreachable is ignored
-//! for as long as any other answers. Only when none does is the read a failure, and it is a
-//! transient one.
-//!
-//! ## One read, one retry
-//!
-//! A request's proofs are planned as one batch and read once. The account's own `leaf_count`
-//! says how much history a proof must have seen, so a record that answers with less history than
-//! the chain has is known to be behind, and the batch is read once more before any verdict
-//! ([`read_proofs_with_one_retry`]). That is the whole of the retry policy inside a request;
-//! beyond it the request is rejected retryably and the ordinary attempt budget decides.
+//! Each query retains all responding coprocessors' candidates. The binding layer verifies them
+//! against its chain observation before deciding whether another read is necessary.
 
 use crate::core::solana_acl::{HandleBytes, SolanaPubkeyBytes};
 use futures::future::join_all;
@@ -87,62 +74,17 @@ pub enum LeafProofOutcome {
     HistoryIncomplete,
 }
 
-impl LeafProofOutcome {
-    /// The history the record had sealed, where it said.
-    fn leaf_count(&self) -> Option<u64> {
-        match self {
-            Self::Found { leaf_count, .. } | Self::NotFound { leaf_count } => Some(*leaf_count),
-            Self::UnknownAccount | Self::HistoryIncomplete => None,
-        }
-    }
-
-    /// Whether the record had sealed less history than the chain shows. A proof from such a
-    /// record may still verify — an append merges only some peaks — but an absence from it says
-    /// nothing, and the read is repeated once before either is judged.
-    fn is_behind(&self, live_leaf_count: u64) -> bool {
-        match self {
-            Self::Found { leaf_count, .. } | Self::NotFound { leaf_count } => {
-                *leaf_count < live_leaf_count
-            }
-            Self::UnknownAccount => true,
-            Self::HistoryIncomplete => false,
-        }
-    }
-
-    /// How much this outcome is worth against another for the same query: a proof beats no
-    /// proof, more history beats less, and an answer beats a record that cannot answer.
-    fn rank(&self) -> (u8, u64) {
-        let tier = match self {
-            Self::Found { .. } => 3,
-            Self::NotFound { .. } => 2,
-            Self::UnknownAccount => 1,
-            Self::HistoryIncomplete => 0,
-        };
-        (tier, self.leaf_count().unwrap_or(0))
-    }
-}
-
-/// Picks the better of two answers to one query. Stated once and used for both merges — across
-/// coprocessors and across the retry — so the two cannot prefer differently.
-fn merge_outcomes(current: LeafProofOutcome, other: LeafProofOutcome) -> LeafProofOutcome {
-    if other.rank() > current.rank() {
-        other
-    } else {
-        current
-    }
-}
-
 /// The single proof-reading abstraction of the authorization path.
 ///
 /// Authorization is generic over it for the same reason it is generic over the state reader: a
 /// test drives the pipeline against canned proofs and counts the reads. Production has exactly one
 /// implementation ([`HttpHostProofReader`]).
 pub trait HostProofReader: Send + Sync {
-    /// Answers every query, in order.
+    /// One list of peer candidates per query, in query order. No candidate is trusted here.
     fn read_proofs(
         &self,
         queries: &[LeafQuery],
-    ) -> impl Future<Output = Result<Vec<LeafProofOutcome>, ProofReadError>> + Send;
+    ) -> impl Future<Output = Result<Vec<Vec<LeafProofOutcome>>, ProofReadError>> + Send;
 }
 
 /// An ordered, duplicate-free batch of queries, with the position of each.
@@ -175,36 +117,7 @@ impl ProofBatch {
     }
 }
 
-/// Reads a batch, and reads it once more if any answer is behind the chain.
-///
-/// `live_leaf_count` gives, per query position, the leaf count the on-chain account showed at the
-/// deciding observation. The second read replaces an answer only where it is the better one
-/// ([`merge_outcomes`]), so a repeat that lands on a coprocessor further behind cannot make things
-/// worse.
-pub async fn read_proofs_with_one_retry<P: HostProofReader>(
-    reader: &P,
-    batch: &ProofBatch,
-    live_leaf_count: impl Fn(usize) -> u64,
-) -> Result<Vec<LeafProofOutcome>, ProofReadError> {
-    let mut outcomes = reader.read_proofs(batch.queries()).await?;
-    check_length(batch.queries().len(), outcomes.len())?;
-    let behind = outcomes
-        .iter()
-        .enumerate()
-        .any(|(position, outcome)| outcome.is_behind(live_leaf_count(position)));
-    if behind {
-        let again = reader.read_proofs(batch.queries()).await?;
-        check_length(batch.queries().len(), again.len())?;
-        outcomes = outcomes
-            .into_iter()
-            .zip(again)
-            .map(|(current, other)| merge_outcomes(current, other))
-            .collect();
-    }
-    Ok(outcomes)
-}
-
-fn check_length(requested: usize, returned: usize) -> Result<(), ProofReadError> {
+pub(super) fn check_length(requested: usize, returned: usize) -> Result<(), ProofReadError> {
     if requested == returned {
         Ok(())
     } else {
@@ -355,7 +268,7 @@ fn unavailable(reason: String) -> ProofReadError {
     ProofReadError::Unavailable { reason }
 }
 
-/// The production reader: one authenticated `POST` per coprocessor per read, merged per query.
+/// The production reader: one authenticated `POST` per coprocessor per read, grouped per query.
 #[derive(Clone, Debug)]
 pub struct HttpHostProofReader {
     routes: Vec<Url>,
@@ -412,7 +325,7 @@ impl HostProofReader for HttpHostProofReader {
     async fn read_proofs(
         &self,
         queries: &[LeafQuery],
-    ) -> Result<Vec<LeafProofOutcome>, ProofReadError> {
+    ) -> Result<Vec<Vec<LeafProofOutcome>>, ProofReadError> {
         if queries.len() > MAX_LEAVES_PER_READ {
             return Err(ProofReadError::TooManyQueries {
                 count: queries.len(),
@@ -427,30 +340,29 @@ impl HostProofReader for HttpHostProofReader {
         )
         .await;
 
-        let mut merged: Option<Vec<LeafProofOutcome>> = None;
+        let mut candidates = vec![Vec::new(); queries.len()];
+        let mut answered = false;
         let mut failures = Vec::new();
         for answer in answers {
             match answer {
                 Ok(outcomes) => {
-                    merged = Some(match merged {
-                        None => outcomes,
-                        Some(current) => current
-                            .into_iter()
-                            .zip(outcomes)
-                            .map(|(current, other)| merge_outcomes(current, other))
-                            .collect(),
-                    })
+                    answered = true;
+                    for (query_candidates, outcome) in candidates.iter_mut().zip(outcomes) {
+                        query_candidates.push(outcome);
+                    }
                 }
                 Err(error) => failures.push(error.to_string()),
             }
         }
-        merged.ok_or_else(|| {
-            unavailable(if failures.is_empty() {
+        if answered {
+            Ok(candidates)
+        } else {
+            Err(unavailable(if failures.is_empty() {
                 "no leaf proof endpoint is configured".to_string()
             } else {
                 failures.join("; ")
-            })
-        })
+            }))
+        }
     }
 }
 
@@ -508,53 +420,5 @@ mod tests {
                 LeafProofOutcome::HistoryIncomplete,
             ]
         );
-    }
-
-    fn found(leaf_count: u64) -> LeafProofOutcome {
-        LeafProofOutcome::Found {
-            leaf_index: 0,
-            leaf_count,
-            siblings: Vec::new(),
-        }
-    }
-
-    /// Every ordered pair: a proof beats no proof, more history beats less, an answer beats a
-    /// record that cannot answer, and a tie keeps the current answer.
-    #[test]
-    fn merge_prefers_the_answer_with_more_to_say() {
-        use LeafProofOutcome::{HistoryIncomplete, NotFound, UnknownAccount};
-        let ordered = [
-            HistoryIncomplete,
-            UnknownAccount,
-            NotFound { leaf_count: 1 },
-            NotFound { leaf_count: 2 },
-            found(1),
-            found(2),
-        ];
-        for (weaker, a) in ordered.iter().enumerate() {
-            for b in &ordered[weaker + 1..] {
-                assert_eq!(merge_outcomes(a.clone(), b.clone()), *b, "{a:?} vs {b:?}");
-                assert_eq!(merge_outcomes(b.clone(), a.clone()), *b, "{b:?} vs {a:?}");
-            }
-            assert_eq!(merge_outcomes(a.clone(), a.clone()), *a);
-        }
-        // Equal rank, different content: the current answer stands.
-        let first = LeafProofOutcome::Found {
-            leaf_index: 3,
-            leaf_count: 2,
-            siblings: Vec::new(),
-        };
-        assert_eq!(merge_outcomes(first.clone(), found(2)), first);
-    }
-
-    #[test]
-    fn behind_means_less_history_than_the_chain_shows() {
-        use LeafProofOutcome::{HistoryIncomplete, NotFound, UnknownAccount};
-        assert!(found(2).is_behind(3));
-        assert!(!found(3).is_behind(3));
-        assert!(NotFound { leaf_count: 2 }.is_behind(3));
-        assert!(!NotFound { leaf_count: 3 }.is_behind(3));
-        assert!(UnknownAccount.is_behind(1));
-        assert!(!HistoryIncomplete.is_behind(1));
     }
 }

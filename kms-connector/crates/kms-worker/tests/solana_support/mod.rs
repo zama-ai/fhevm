@@ -971,7 +971,7 @@ impl HostProofReader for ScriptedProofReader {
     async fn read_proofs(
         &self,
         queries: &[LeafQuery],
-    ) -> Result<Vec<LeafProofOutcome>, ProofReadError> {
+    ) -> Result<Vec<Vec<LeafProofOutcome>>, ProofReadError> {
         let index = {
             let mut calls = self.calls.lock().expect("proof reader lock");
             calls.push(queries.to_vec());
@@ -984,7 +984,10 @@ impl HostProofReader for ScriptedProofReader {
                 self.records.len()
             )
         });
-        Ok(queries.iter().map(|query| record.answer(query)).collect())
+        Ok(queries
+            .iter()
+            .map(|query| vec![record.answer(query)])
+            .collect())
     }
 }
 
@@ -995,7 +998,7 @@ impl HostProofReader for UnavailableProofReader {
     async fn read_proofs(
         &self,
         _queries: &[LeafQuery],
-    ) -> Result<Vec<LeafProofOutcome>, ProofReadError> {
+    ) -> Result<Vec<Vec<LeafProofOutcome>>, ProofReadError> {
         Err(ProofReadError::Unavailable {
             reason: "no coprocessor answered".to_owned(),
         })

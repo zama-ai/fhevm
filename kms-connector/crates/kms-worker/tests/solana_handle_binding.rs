@@ -752,3 +752,126 @@ async fn a_batch_failure_names_the_entry_without_a_leaf() {
         "the failure names the entry, got {failure}"
     );
 }
+
+#[test]
+fn ahead_paths_verify_against_every_earlier_mountain() {
+    let key = Wallet::new(1).pubkey();
+    let sealed = handle(0x61, FHE_TYPE_UINT64);
+    let mut history = EncryptedValueAccountFixture::allowing(sealed, key);
+    let mut snapshots = vec![history.clone()];
+    for tag in 2..=16 {
+        history.allow(Wallet::new(tag).pubkey());
+        snapshots.push(history.clone());
+    }
+    for (index, snapshot) in snapshots.iter().enumerate() {
+        let account = resolved(snapshot);
+        for tag in 1..=index + 1 {
+            let key = Wallet::new(tag as u8).pubkey();
+            for ahead in &snapshots[index..] {
+                check_handle_binding(&account, sealed, key, &answer(ahead, sealed, key))
+                    .expect("ahead paths can be shortened to the observed peak");
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn valid_older_proof_does_not_trigger_a_refresh() {
+    let wallet = Wallet::new(1);
+    let sealed = handle(0x62, FHE_TYPE_UINT64);
+    let mut before = EncryptedValueAccountFixture::allowing(sealed, wallet.pubkey());
+    before.allow(Wallet::new(2).pubkey());
+    let mut after = before.clone();
+    after.allow(Wallet::new(3).pubkey());
+    let request = RequestBuilder::new(&wallet).direct(&after, sealed).typed();
+    let world = World::running_at_slot(100)
+        .with_encrypted_value_account(&after)
+        .with_watermark(wallet.pubkey(), 0);
+    let proofs = ScriptedProofReader::scripted(vec![ProofRecord::of(&[&before])]);
+    authorize_request(
+        &ScriptedReader::constant(world),
+        &ServableKmsPair,
+        &proofs,
+        context(&deployment()),
+        &request,
+    )
+    .await
+    .expect("surviving peak needs no refresh");
+    assert_eq!(proofs.call_count(), 1);
+}
+
+#[tokio::test]
+async fn peer_candidates_and_failed_refreshes_preserve_valid_bindings() {
+    use kms_worker::core::solana::{
+        handle_binding::verify_proofs_with_one_retry,
+        proof::{HostProofReader, ProofBatch, ProofReadError},
+    };
+    use std::{collections::VecDeque, sync::Mutex};
+
+    struct Reader {
+        replies: Mutex<VecDeque<Result<Vec<Vec<LeafProofOutcome>>, ProofReadError>>>,
+        calls: Mutex<Vec<Vec<LeafQuery>>>,
+    }
+    impl HostProofReader for Reader {
+        async fn read_proofs(
+            &self,
+            queries: &[LeafQuery],
+        ) -> Result<Vec<Vec<LeafProofOutcome>>, ProofReadError> {
+            self.calls.lock().unwrap().push(queries.to_vec());
+            self.replies
+                .lock()
+                .unwrap()
+                .pop_front()
+                .expect("no extra reads")
+        }
+    }
+
+    let key = Wallet::new(1).pubkey();
+    let sealed = handle(0x63, FHE_TYPE_UINT64);
+    let mut fixture = EncryptedValueAccountFixture::allowing(sealed, key);
+    fixture.allow(Wallet::new(2).pubkey());
+    let account = resolved(&fixture);
+    let query = fixture.allowed_query(sealed, key);
+    let missing = LeafQuery {
+        handle: handle(0x64, FHE_TYPE_UINT64),
+        ..query
+    };
+    let batch = ProofBatch::new([query, missing]);
+    let valid = answer(&fixture, sealed, key);
+    let invalid = LeafProofOutcome::Found {
+        leaf_index: 0,
+        leaf_count: u64::MAX,
+        siblings: vec![[0; 32]],
+    };
+    for refresh in [
+        Err(ProofReadError::Unavailable {
+            reason: "timeout".into(),
+        }),
+        Ok(Vec::new()), // malformed refresh, not a reason to discard the first success
+        Ok(vec![vec![LeafProofOutcome::UnknownAccount]]),
+    ] {
+        for candidates in [
+            vec![invalid.clone(), valid.clone()],
+            vec![valid.clone(), invalid.clone()],
+        ] {
+            let reader = Reader {
+                replies: Mutex::new(VecDeque::from([
+                    Ok(vec![candidates, vec![LeafProofOutcome::UnknownAccount]]),
+                    refresh.clone(),
+                ])),
+                calls: Mutex::new(Vec::new()),
+            };
+            let results = verify_proofs_with_one_retry(&reader, &batch, |position, outcome| {
+                check_handle_binding(&account, batch.queries()[position].handle, key, outcome)
+            })
+            .await
+            .unwrap();
+            assert_eq!(results[0], Ok(()));
+            assert!(results[1].is_err());
+            assert_eq!(
+                *reader.calls.lock().unwrap(),
+                vec![vec![query, missing], vec![missing]]
+            );
+        }
+    }
+}

@@ -16,10 +16,11 @@ use crate::core::{
         deployment::DeploymentIdentity,
         encrypted_value_account::{EncryptedValueAccountFailure, resolve_encrypted_value_account},
         failure::FailureClass,
-        handle_binding::{HandleBindingFailure, check_public_binding},
+        handle_binding::{
+            HandleBindingFailure, check_public_binding, verify_proofs_with_one_retry,
+        },
         proof::{
             HostProofReader, HttpHostProofReader, LeafKind, LeafQuery, ProofBatch, ProofReadError,
-            read_proofs_with_one_retry,
         },
         snapshot::{HostStateReader, RpcHostStateReader, SnapshotError, SnapshotKeys},
     },
@@ -108,10 +109,11 @@ where
         handle,
         kind: LeafKind::Public,
     }]);
-    let live_leaf_count = encrypted_value_account.encrypted_value().leaf_count;
-    let outcomes = read_proofs_with_one_retry(proofs, &batch, |_| live_leaf_count).await?;
-
-    check_public_binding(&encrypted_value_account, handle, &outcomes[0])?;
+    let bindings = verify_proofs_with_one_retry(proofs, &batch, |_, outcome| {
+        check_public_binding(&encrypted_value_account, handle, outcome)
+    })
+    .await?;
+    bindings[0].clone()?;
     Ok(())
 }
 

@@ -104,7 +104,7 @@ pub struct Config {
     /// Ceiling on the calls a single host chain endpoint may have in flight, across all requests.
     #[serde(default = "default_host_rpc_max_concurrent_calls")]
     pub host_rpc_max_concurrent_calls: NonZeroUsize,
-    /// Timeout of a single host chain RPC call.
+    /// Deadline for one host RPC call or Solana coprocessor proof request, including its body.
     #[serde(with = "humantime_serde", default = "default_host_rpc_call_timeout")]
     pub host_rpc_call_timeout: Duration,
 

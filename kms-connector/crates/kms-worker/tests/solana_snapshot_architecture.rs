@@ -17,7 +17,7 @@
 //! "reads state once" is a claim about code that no test can hold to account: the difference
 //! between one read and two is invisible in the outcome and very visible in a race. The leaf
 //! record has its own counted reader, for the same reason: the proof read is one batch per
-//! request, repeated once when the record is behind, and never a third time.
+//! request, repeated once for unresolved retryable proofs, and never a third time.
 
 mod solana_support;
 
@@ -597,11 +597,10 @@ async fn the_deciding_state_of_a_delegated_request_is_the_second_reads() {
     assert_eq!(failure.class(), FailureClass::Terminal);
 }
 
-/// The proof read is one batch per request. A record in step with the chain is read once; a
-/// record behind it is read once more, and never a third time — beyond that the request is
-/// rejected retryably and the ordinary attempt budget decides.
+/// Missing leaves from a lagging record are fetched once more. If still missing, the request
+/// is rejected retryably and the ordinary attempt budget decides.
 #[tokio::test]
-async fn the_leaf_record_is_read_once_and_once_more_only_when_behind() {
+async fn the_leaf_record_is_retried_only_when_a_required_leaf_is_unavailable() {
     let (wallet, encrypted_value_account, handle) = direct_scenario();
     let request = RequestBuilder::new(&wallet)
         .direct(&encrypted_value_account, handle)

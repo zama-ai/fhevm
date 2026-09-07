@@ -18,9 +18,70 @@
 //! it. The first is terminal, the second is retried.
 
 use super::encrypted_value_account::ResolvedEncryptedValueAccount;
-use super::proof::LeafProofOutcome;
+use super::failure::FailureClass;
+use super::proof::{HostProofReader, LeafProofOutcome, ProofBatch, ProofReadError, check_length};
 use crate::core::solana_acl::{HandleBytes, SolanaPubkeyBytes};
 use zama_solana_acl::{AclError, MmrProof, authorize_historical, authorize_public};
+
+/// Verify every peer against the same observation, then retry only unresolved, retryable queries.
+/// A failed refresh cannot erase an earlier result. Counts classify failures, never successes.
+pub async fn verify_proofs_with_one_retry<P: HostProofReader>(
+    reader: &P,
+    batch: &ProofBatch,
+    verify: impl Fn(usize, &LeafProofOutcome) -> Result<(), HandleBindingFailure>,
+) -> Result<Vec<Result<(), HandleBindingFailure>>, ProofReadError> {
+    let candidates = reader.read_proofs(batch.queries()).await?;
+    check_length(batch.queries().len(), candidates.len())?;
+    let mut results: Vec<_> = candidates
+        .iter()
+        .enumerate()
+        .map(|(position, candidates)| {
+            verify_candidates(candidates, |candidate| verify(position, candidate))
+        })
+        .collect();
+    let unresolved: Vec<_> = results
+        .iter()
+        .enumerate()
+        .filter_map(|(position, result)| match result {
+            Err(error) if error.class() == FailureClass::Retryable => Some(position),
+            _ => None,
+        })
+        .collect();
+    if !unresolved.is_empty() {
+        let queries: Vec<_> = unresolved
+            .iter()
+            .map(|&position| batch.queries()[position])
+            .collect();
+        if let Ok(again) = reader.read_proofs(&queries).await
+            && check_length(queries.len(), again.len()).is_ok()
+        {
+            for (position, candidates) in unresolved.into_iter().zip(again) {
+                results[position] =
+                    verify_candidates(&candidates, |candidate| verify(position, candidate));
+            }
+        }
+    }
+    Ok(results)
+}
+
+fn verify_candidates(
+    candidates: &[LeafProofOutcome],
+    verify: impl Fn(&LeafProofOutcome) -> Result<(), HandleBindingFailure>,
+) -> Result<(), HandleBindingFailure> {
+    let mut failure = None;
+    for candidate in candidates {
+        match verify(candidate) {
+            Ok(()) => return Ok(()),
+            Err(error) => {
+                // One peer's absence cannot make another peer's temporary failure terminal.
+                if failure.is_none() || error.class() == FailureClass::Retryable {
+                    failure = Some(error);
+                }
+            }
+        }
+    }
+    Err(failure.unwrap_or(HandleBindingFailure::AccountUnknownToProofRecord))
+}
 
 /// Establishes that `allowed_key` may decrypt `handle` under this encrypted value account.
 ///
@@ -101,11 +162,24 @@ fn check_leaf(
         });
     }
 
+    if siblings.len() > zama_solana_acl::MAX_MMR_PEAKS {
+        return Err(HandleBindingFailure::ProofDoesNotVerify {
+            record_leaf_count,
+            live_leaf_count,
+        });
+    }
+
     // Verify first. Age is not a failure — an older proof whose peak survived still verifies,
     // and it must be accepted. Only a proof that genuinely does not verify is reported.
     let proof = MmrProof {
         leaf_index,
-        siblings: siblings.clone(),
+        // The mountain containing this leaf only grows on append. A proof for a later
+        // tree therefore starts with the path to the observed mountain's peak.
+        siblings: siblings
+            .iter()
+            .take((live_leaf_count ^ leaf_index).ilog2() as usize)
+            .copied()
+            .collect(),
     };
     verify(value, &proof).map_err(|error| match error {
         AclError::HistoricalProofInvalid | AclError::PublicDecryptProofInvalid => {

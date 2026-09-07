@@ -333,7 +333,10 @@ async fn register_host_chain_backends(
     let mut backends = HashMap::with_capacity(config.host_chains.len());
     // The workspace `reqwest`, not alloy's re-export: alloy now vendors a different major, and
     // the Solana readers are typed against the workspace crate.
-    let solana_client = ::reqwest::Client::new();
+    let solana_client = ::reqwest::Client::builder()
+        .connect_timeout(config.host_rpc_call_timeout)
+        .timeout(config.host_rpc_call_timeout)
+        .build()?;
 
     for host_chain in &config.host_chains {
         let backend = match host_chain.chain_kind {

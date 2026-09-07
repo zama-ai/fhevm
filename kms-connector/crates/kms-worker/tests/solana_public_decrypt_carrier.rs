@@ -392,3 +392,67 @@ async fn a_carrier_naming_a_foreign_account_is_refused() {
         .expect_err("a foreign program's account is not an encrypted value account");
     irrecoverable_containing(err, "is owned by");
 }
+
+/// A peer can stall before headers or halfway through its body. Neither may trap a healthy
+/// proof behind join_all; the same bounded client also protects the deciding RPC read.
+#[tokio::test]
+async fn stalled_http_does_not_block_healthy_proofs_or_rpc_failure() {
+    use std::time::Duration;
+    use tokio::{io::AsyncWriteExt, net::TcpListener, time::timeout};
+    let public = handle(0x91, FHE_TYPE_UINT64);
+    let fixture = public_then_updated(public, handle(0x92, FHE_TYPE_UINT64));
+    let query = fixture.public_query(public);
+    let (rpc, good, _) = host_answering(&fixture, query, fixture.outcome(&query)).await;
+    for send_headers in [false, true] {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let stalled: url::Url = format!("http://{}", listener.local_addr().unwrap())
+            .parse()
+            .unwrap();
+        let server = tokio::spawn(async move {
+            loop {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                tokio::spawn(async move {
+                    if send_headers {
+                        stream
+                            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 1000\r\n\r\n{")
+                            .await
+                            .unwrap();
+                    }
+                    std::future::pending::<()>().await;
+                    drop(stream);
+                });
+            }
+        });
+        let client = reqwest::Client::builder()
+            .connect_timeout(Duration::from_millis(250))
+            .timeout(Duration::from_millis(250))
+            .build()
+            .unwrap();
+        let mut host = SolanaHost {
+            deployment: deployment(),
+            reader: RpcHostStateReader::new(rpc.base_url().unwrap().clone(), client.clone()),
+            proofs: HttpHostProofReader::new(
+                &[stalled.clone(), good.base_url().unwrap().clone()],
+                API_KEY.into(),
+                client.clone(),
+            ),
+        };
+        timeout(
+            Duration::from_secs(3),
+            check_solana_handles_public_decrypt(&host, &[public], &carrier(&fixture)),
+        )
+        .await
+        .expect("fanout must finish")
+        .expect("healthy peer still authorizes");
+        host.reader = RpcHostStateReader::new(stalled, client);
+        let error = timeout(
+            Duration::from_secs(3),
+            check_solana_handles_public_decrypt(&host, &[public], &carrier(&fixture)),
+        )
+        .await
+        .expect("RPC must finish")
+        .expect_err("stalled RPC has no observation");
+        assert_eq!(error.kind, ProcessingErrorKind::Recoverable);
+        server.abort();
+    }
+}

@@ -56,10 +56,10 @@ use super::encrypted_value_account::{
     ResolvedEncryptedValueAccount, resolve_encrypted_value_account,
 };
 use super::failure::AuthorizationFailure;
-use super::handle_binding::check_handle_binding;
+use super::handle_binding::{check_handle_binding, verify_proofs_with_one_retry};
 use super::kms_pair::KmsPairValidator;
 use super::pause::check_not_paused;
-use super::proof::{HostProofReader, LeafKind, LeafQuery, ProofBatch, read_proofs_with_one_retry};
+use super::proof::{HostProofReader, LeafKind, LeafQuery, ProofBatch};
 use super::request::{RequestFormError, SolanaUserDecryptRequest};
 use super::scope::check_scope;
 use super::snapshot::{HostSnapshot, HostStateReader, plan_first_read, plan_second_read};
@@ -285,15 +285,18 @@ where
                 },
             }),
     );
-    let live_leaf_count = |position: usize| {
+    let bindings = verify_proofs_with_one_retry(proofs, &batch, |position, outcome| {
         let query = &batch.queries()[position];
-        accounts
+        let account = accounts
             .iter()
             .find(|account| account.account_key() == query.encrypted_value_account)
-            .map(|account| account.encrypted_value().leaf_count)
-            .unwrap_or(0)
-    };
-    let outcomes = read_proofs_with_one_retry(proofs, &batch, live_leaf_count).await?;
+            .expect("query planned from resolved account");
+        let LeafKind::Allowed { key } = query.kind else {
+            unreachable!("user decrypt query")
+        };
+        check_handle_binding(account, query.handle, key, outcome)
+    })
+    .await?;
 
     let mut entries = Vec::with_capacity(request.handles().len());
     let mut delegated = Vec::new();
@@ -307,15 +310,10 @@ where
                 key: entry.allowed_key(),
             },
         };
-        let outcome = &outcomes[batch
+        bindings[batch
             .position(&query)
-            .expect("every entry's query was planned into the batch")];
-        check_handle_binding(
-            encrypted_value_account,
-            entry.handle(),
-            entry.allowed_key(),
-            outcome,
-        )
+            .expect("every entry's query was planned into the batch")]
+        .clone()
         .map_err(|source| AuthorizationFailure::HandleBinding { index, source })?;
 
         if entry.allowed_key() != signer {
