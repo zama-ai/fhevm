@@ -52,12 +52,12 @@ impl ResponseListener {
                     self.fail_in_flight_waiters();
                 }
                 Err(e) => {
-                    break error!("Error while listening for Postgres notifications: {e}");
+                    error!("Error while listening for Postgres notifications: {e}");
+                    self.fail_in_flight_waiters();
+                    return info!("ResponseListener stopped");
                 }
             }
         }
-        self.fail_in_flight_waiters();
-        info!("ResponseListener stopped");
     }
 
     /// Drops the registered waiters, failing their requests with a retryable error.
@@ -67,8 +67,8 @@ impl ResponseListener {
             warn!(
                 "Failing the waiters of {in_flight} in-flight decryption(s): their response may have been missed"
             );
+            self.waiters.clear();
         }
-        self.waiters.clear();
     }
 
     fn handle(&self, notification: PgNotification) {

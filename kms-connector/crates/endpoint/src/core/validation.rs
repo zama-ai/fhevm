@@ -79,7 +79,7 @@ fn validate_handles<'a>(
                 reason: e.to_string(),
             }
         })?;
-        let bits = fhe_type_size(*handle, fhe_type)?;
+        let bits = fhe_type_size(handle, fhe_type)?;
         total_bits += u64::from(bits);
 
         let handle_chain_id =
@@ -111,7 +111,7 @@ fn validate_handles<'a>(
     Ok(chain_id)
 }
 
-fn fhe_type_size(handle: B256, fhe_type: FheTypes) -> Result<u16, ValidationError> {
+fn fhe_type_size(handle: &B256, fhe_type: FheTypes) -> Result<u16, ValidationError> {
     let size = match fhe_type {
         FheTypes::Bool => 2,
         FheTypes::Uint8 => 8,
@@ -123,7 +123,7 @@ fn fhe_type_size(handle: B256, fhe_type: FheTypes) -> Result<u16, ValidationErro
         FheTypes::Uint256 => 256,
         _ => {
             return Err(ValidationError::InvalidHandle {
-                handle,
+                handle: *handle,
                 reason: format!("FHE type {fhe_type:?} cannot be decrypted"),
             });
         }
