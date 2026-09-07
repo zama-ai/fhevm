@@ -1326,7 +1326,12 @@ That optional in-process integration remains a known product gap.
 
 ## DD-036: Burn-Redemption Consume Authorizes By MMR Public-Decrypt Proof, Not Live Handle
 
-Status: adopted
+Status: adopted, then amended by DD-045 — the live-handle check is back. The heading and the
+Decision below record the original design. `redeem_burned_amount` now requires
+`current_handle == burned_handle` as well as the public-decrypt proof and the certificate; the
+`PendingBurn` account is what keeps the burned handle current. The survives-a-later-update
+property this record secured now lives on the disclosure path, where `disclose_secp` never reads
+`current_handle`. Read the DD-045 amendment below before quoting this record.
 
 Context:
 
@@ -1613,14 +1618,22 @@ subject, which covers the known trusted-app cases without a registry.
 Amendment (RFC 035, DD-047): `compute_subject` is deleted. The meter and trust records key on the
 application `(program, scope)` — `["hcu-block-meter", program, scope]`, `["hcu-trusted", program,
 scope]` — where `program` is proven on every write from the output authority's seeds and `scope`
-is what that program declares. That closes the rotation vectors above by construction: a fresh
-keypair is not a PDA of any program, so it cannot be an output authority, and a caller cannot mint
-applications under a program it does not control. Every output the default authority controls must
+is what that program declares. That closes the rotation vectors above **for a caller outside the
+program**: a fresh keypair is not a PDA of any program, so it cannot be an output authority, and a
+caller cannot mint applications under a program it does not control. It does not bound the program
+itself. A program declares its own `scope`, so it can create any number of scopes and hold a
+separate per-slot meter for each, at the cost of one `HcuBlockMeter` rent per scope. The
+granularity note above therefore still stands, with `(program, scope)` in place of the identity it
+used to key on: a finite cap binds one application only as far as that application declines to
+spread itself across scopes. See DD-047's consequences and INVARIANTS #41.
+Every output the default authority controls must
 share one application (`FheExecuteMixedScopes`); an output under an additional signing authority
 is metered as that execution's but deny-checked as its own. The persist-nothing residual keeps its guard: under a finite
 block cap an execution that binds no stored operand and no persistent output has no application to
 meter and is rejected (`FheExecuteUnanchoredUnderBlockCap`). The "registry Option B" this section
-deferred is what the verified program turned out to be — the program itself is the registry entry.
+deferred had two halves, and the verified program answers one of them: an application identity a
+caller cannot forge, with the program as its own registry entry. The other half, aggregating one
+finite cap across the several identities a single application may hold, is still not built.
 
 ## DD-040: App Public-Decrypt Is A Stateless Pull-Oracle Verifier, Not A Request Lifecycle
 
@@ -1645,8 +1658,12 @@ context_id`, the last 32 bytes the verified context id, well under the 1024-byte
 (`host_config`, `kms_context`, `encrypted_value`) are read-only. An app CPIs it, asserts the returned
 handle equals the handle it pinned at request time, then applies its own state transition; act-once
 and timeout live in the app's own state machine (a settled flag + deadline), which it needs anyway.
-This generalizes the DD-036 precedent (burn-redemption already authorizes by MMR public-decrypt proof
-+ cert rather than live state) instead of the token's witness pattern.
+This generalizes the DD-036 precedent (burn-redemption authorizes by MMR public-decrypt proof
++ cert) instead of the token's witness pattern. Note that DD-036's "rather than live state" half no
+longer holds for redemption: DD-045 restored `current_handle == burned_handle` there, because one
+`PendingBurn` per token account keeps the burned handle current. This verifier is the path where
+authorizing a handle the account has since replaced still works, since it reads no live handle at
+all.
 
 Any live context, not a current-only pin (fhevm-internal#1765):
 
