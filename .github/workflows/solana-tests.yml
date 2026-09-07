@@ -287,6 +287,8 @@ jobs:
           solana --version
           anchor --version
           test "$(anchor --version)" = "anchor-cli ${ANCHOR_VERSION}"
+          # AVM can change the active Solana CLI when resolving Anchor. Check after it runs.
+          test "$(solana --version | awk '{print $2}')" = "${SOLANA_VERSION}"
           test "$(awk -F'"' '/^anchor_version/ { print $2 }' Anchor.toml)" = "${ANCHOR_VERSION}"
 
       - name: Build Anchor programs and check host-listener IDL sync
