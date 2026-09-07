@@ -17,7 +17,7 @@ pub enum ErrorCode {
     SenderAuthenticationFailed,
     /// Per-sender rate limit exceeded (connector proxy).
     RateLimited,
-    /// Endpoint replica at its in-flight cap (connector endpoint).
+    /// Endpoint is overloaded.
     Overloaded,
     /// ACL denied the requested handles (kms_worker row).
     AclDenied,

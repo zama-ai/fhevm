@@ -67,9 +67,10 @@ pub async fn read_user_decryption_response<'e>(
     .await
 }
 
-/// Upserts an HTTP-sourced public decryption request, or re-arms it if it previously `failed`.
+/// Upserts an HTTP-sourced public decryption request, or resets its status to `pending` if it
+/// previously `failed`.
 ///
-/// Only HTTP-sourced rows are ever re-armed: a Gateway row can never be touched by the endpoint.
+/// Only HTTP-sourced rows are ever resets.
 pub async fn upsert_public_decryption_request<'e>(
     executor: impl PgExecutor<'e>,
     id: B256,
@@ -100,7 +101,10 @@ pub async fn upsert_public_decryption_request<'e>(
     .map_err(anyhow::Error::from)
 }
 
-/// Upserts an HTTP-sourced user decryption request, or re-arms it if it previously `failed`.
+/// Upserts an HTTP-sourced user decryption request, or resets its status to `pending` if it
+/// previously `failed`.
+///
+/// Only HTTP-sourced rows are ever resets.
 pub async fn upsert_user_decryption_request<'e>(
     executor: impl PgExecutor<'e>,
     id: B256,

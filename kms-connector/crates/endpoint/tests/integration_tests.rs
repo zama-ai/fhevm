@@ -258,13 +258,13 @@ async fn test_non_retryable_error_row_is_served(
     endpoint.stop().await
 }
 
-/// A stored retryable error is never served: the `failed` request is re-armed to `pending` so the
-/// kms-worker re-processes it, and the client gets the fresh outcome (here, a new error row
-/// overriding the previous one, as the kms-worker does).
+/// A stored retryable error is never served: the `failed` request has its status reset to
+/// `pending` so the kms-worker re-processes it, and the client gets the fresh outcome (here, a
+/// new error row overriding the previous one, as the kms-worker does).
 #[rstest]
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
-async fn test_retryable_error_row_rearms_failed_request() -> anyhow::Result<()> {
+async fn test_retryable_error_row_resets_failed_request() -> anyhow::Result<()> {
     let endpoint = setup().await?;
 
     let retryable_codes = [
@@ -327,7 +327,7 @@ async fn test_retryable_error_row_rearms_failed_request() -> anyhow::Result<()> 
 }
 
 /// A retryable error row whose request is already being re-processed (or whose request row is
-/// gone) does not re-arm anything: the connection attaches to the in-flight processing, or a new
+/// gone) does not reset anything: the connection attaches to the in-flight processing, or a new
 /// request is stored.
 #[rstest]
 #[timeout(Duration::from_secs(60))]

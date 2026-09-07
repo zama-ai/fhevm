@@ -5,8 +5,8 @@
 //! 3. backpressure: take an in-flight permit or answer `503 overloaded`,
 //! 4. register the waiter *before* reading the DB so no response can be missed,
 //! 5. in one transaction: serve an existing payload or non-retryable error row, otherwise store the
-//!    request (insert it, or re-arm it to `pending` if it previously `failed`; any other conflict
-//!    means the kms-worker is already on it and we attach),
+//!    request (insert it, or reset its status to `pending` if it previously `failed`; any other
+//!    conflict means the kms-worker is already on it and we attach),
 //! 6. wait for the response listener to wake the waiter, then read the response row.
 
 use crate::core::{http::AppState, waiters::WaiterGuard};
