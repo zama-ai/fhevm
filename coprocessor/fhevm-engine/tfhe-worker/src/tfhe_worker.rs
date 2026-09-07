@@ -21,7 +21,7 @@ use prometheus::{
 #[cfg(feature = "gpu")]
 use scheduler::dfg::scheduler::GpuExecutionLimiter;
 use scheduler::dfg::types::{CompressedCiphertext, DFGTxInput, SchedulerError};
-use scheduler::dfg::{build_component_nodes, ComponentNode, DFComponentGraph, DFGOp};
+use scheduler::dfg::{build_component_nodes, ComponentNode, DFComponentGraph, DFGOp, DFGOutput};
 use scheduler::dfg::{scheduler::Scheduler, types::DFGTaskInput};
 use sqlx::types::Uuid;
 use sqlx::{postgres::PgListener, query, query_scalar, Postgres};
@@ -76,6 +76,13 @@ struct WorkItem {
     /// for rows retained from a fork sibling (`ON CONFLICT .. DO NOTHING`);
     /// such rows are loaded as recompute-only producers, never as work.
     dependence_chain_id: Option<Vec<u8>>,
+    /// `None` for a single-output op; the shared key of a multi-output group
+    /// otherwise. Rows sharing it are one operation.
+    group_id: Option<Vec<u8>>,
+    /// Position of this output within its group; 0 for a single-output op.
+    output_index: i16,
+    /// Outputs the operation declared, on every row; 1 for a singleton.
+    output_count: i16,
 }
 
 const OPERAND_BOUNDARY_MASK_BYTES: usize = 32;
@@ -249,6 +256,9 @@ mod operand_boundary_mask_tests {
         is_allowed: bool,
     ) -> WorkItem {
         WorkItem {
+            group_id: None,
+            output_index: 0,
+            output_count: 1,
             output_handle: output,
             dependencies: deps,
             fhe_operation: SupportedFheOperations::FheAdd as i16,
@@ -338,7 +348,7 @@ mod operand_boundary_mask_tests {
         let prepared = prepare_transaction_ops(&txwork, dcid.map(|d| vec![d]).as_deref(), &dead)
             .expect("prepared");
         assert_eq!(prepared.ops.len(), 1, "independent op still executes");
-        assert_eq!(prepared.ops[0].output_handle, handle(4));
+        assert_eq!(prepared.ops[0].outputs[0].handle, handle(4));
         assert_eq!(prepared.invalid_rows.len(), 1);
         assert_eq!(prepared.invalid_rows[0].0, handle(3));
         assert!(prepared.invalid_rows[0].1.contains("dead boundary input"));
@@ -409,7 +419,7 @@ mod operand_boundary_mask_tests {
         let consumer = prepared
             .ops
             .iter()
-            .find(|op| op.output_handle == handle(2))
+            .find(|op| op.outputs[0].handle == handle(2))
             .expect("consumer op");
         // handle(1) is produced by this transaction -> local; handle(9) is
         // not -> canonical persisted form.
@@ -489,7 +499,7 @@ mod operand_boundary_mask_tests {
             prepare_transaction_ops(&txwork, dcid.map(|d| vec![d]).as_deref(), &HashSet::new())
                 .expect("prepared");
         assert_eq!(prepared.ops.len(), 1);
-        assert_eq!(prepared.ops[0].output_handle, handle(4));
+        assert_eq!(prepared.ops[0].outputs[0].handle, handle(4));
         let mut errored: Vec<Vec<u8>> = prepared
             .invalid_rows
             .iter()
@@ -581,18 +591,18 @@ mod operand_boundary_mask_tests {
         let foreign = prepared
             .ops
             .iter()
-            .find(|op| op.output_handle == handle(1))
+            .find(|op| op.outputs[0].handle == handle(1))
             .expect("foreign producer joined the graph");
         // Recompute-only: never eligible for results or persistence, even
         // though its own row is allowed.
-        assert!(!foreign.is_allowed);
+        assert!(!foreign.outputs[0].is_allowed);
         assert_eq!(input_kinds(foreign), ["boundary", "boundary"]);
         let ours_op = prepared
             .ops
             .iter()
-            .find(|op| op.output_handle == handle(2))
+            .find(|op| op.outputs[0].handle == handle(2))
             .expect("owned consumer");
-        assert!(ours_op.is_allowed);
+        assert!(ours_op.outputs[0].is_allowed);
         assert_eq!(input_kinds(ours_op), ["local", "boundary"]);
         // Foreign rows never anchor the batch's schedule order.
         assert_eq!(
@@ -626,7 +636,7 @@ mod operand_boundary_mask_tests {
             prepare_transaction_ops(&txwork, Some(std::slice::from_ref(&ours)), &HashSet::new())
                 .expect("prepared");
         assert_eq!(prepared.ops.len(), 1);
-        assert_eq!(prepared.ops[0].output_handle, handle(2));
+        assert_eq!(prepared.ops[0].outputs[0].handle, handle(2));
     }
 
     async fn seed_computation(
@@ -1428,6 +1438,7 @@ mod operand_boundary_mask_tests {
             &panic_error,
             true,
             &blocked,
+            &mut HashSet::new(),
             &mut trx,
             &mut locks,
         )
@@ -1551,6 +1562,7 @@ mod operand_boundary_mask_tests {
             true,
             // What the graph reports for this shape: the producer's only consumer.
             std::slice::from_ref(&consumer),
+            &mut HashSet::new(),
             &mut trx,
             &mut locks,
         )
@@ -1586,6 +1598,7 @@ mod operand_boundary_mask_tests {
                 &panic_error,
                 true,
                 std::slice::from_ref(&consumer),
+                &mut HashSet::new(),
                 &mut trx,
                 &mut locks,
             )
@@ -1652,6 +1665,7 @@ mod operand_boundary_mask_tests {
             &panic_error,
             true,
             &[],
+            &mut HashSet::new(),
             &mut trx,
             &mut locks,
         )
@@ -1684,6 +1698,7 @@ mod operand_boundary_mask_tests {
                 &panic_error,
                 true,
                 &[],
+                &mut HashSet::new(),
                 &mut trx,
                 &mut locks,
             )
@@ -1763,6 +1778,7 @@ mod operand_boundary_mask_tests {
                 &panic_error,
                 true,
                 &[],
+                &mut HashSet::new(),
                 &mut trx,
                 &mut locks
             )
@@ -1775,6 +1791,7 @@ mod operand_boundary_mask_tests {
                 &dead_input,
                 false,
                 &[],
+                &mut HashSet::new(),
                 &mut trx,
                 &mut locks
             )
@@ -3188,7 +3205,10 @@ SELECT
   c.transaction_id,
   c.schedule_order,
   c.operand_boundary_mask,
-  c.dependence_chain_id
+  c.dependence_chain_id,
+  c.group_id,
+  c.output_index,
+  c.output_count
 FROM computations c
 WHERE c.transaction_id IN (
     SELECT deduped.transaction_id
@@ -3340,7 +3360,10 @@ SELECT
   c.transaction_id,
   c.schedule_order,
   c.operand_boundary_mask,
-  c.dependence_chain_id
+  c.dependence_chain_id,
+  c.group_id,
+  c.output_index,
+  c.output_count
 FROM computations c
 WHERE c.transaction_id IN (
     SELECT DISTINCT oldest.transaction_id
@@ -3404,7 +3427,10 @@ SELECT
   c.transaction_id,
   c.schedule_order,
   c.operand_boundary_mask,
-  c.dependence_chain_id
+  c.dependence_chain_id,
+  c.group_id,
+  c.output_index,
+  c.output_count
 FROM computations c
 WHERE c.transaction_id IN (
     SELECT DISTINCT
@@ -3512,6 +3538,7 @@ WHERE c.transaction_id IN (
                     // These rows are pending, so the direct stamp lands; there is
                     // nothing to fall back to.
                     &[],
+                    &mut HashSet::new(),
                     trx,
                     deps_chain_mngr,
                 )
@@ -3702,6 +3729,21 @@ fn prepare_transaction_ops(
         .iter()
         .map(|w| (w.output_handle.as_slice(), w))
         .collect();
+    // A multi-output op is N rows sharing `group_id`, ordered by
+    // `output_index`; a singleton is its own group. Rows are indexed by group
+    // so the walk below emits one op per group rather than one per row.
+    let group_key = |w: &WorkItem| -> Vec<u8> {
+        w.group_id
+            .clone()
+            .unwrap_or_else(|| w.output_handle.clone())
+    };
+    let mut rows_by_group: HashMap<Vec<u8>, Vec<&WorkItem>> = HashMap::new();
+    for w in txwork.iter() {
+        rows_by_group.entry(group_key(w)).or_default().push(w);
+    }
+    for rows in rows_by_group.values_mut() {
+        rows.sort_by_key(|w| w.output_index);
+    }
     let row_is_owned = |w: &WorkItem| match locked_dependence_chain_ids {
         None => true,
         Some(fenced) => w
@@ -3739,11 +3781,52 @@ fn prepare_transaction_ops(
         }
     }
 
+    // A group shares one op, so a group-level rejection must stamp every row.
+    let group_error = |rows: &[&WorkItem], msg: String| -> Vec<(Vec<u8>, String)> {
+        rows.iter()
+            .map(|r| (r.output_handle.clone(), msg.clone()))
+            .collect()
+    };
     let mut ops: Vec<DFGOp> = vec![];
     let mut earliest_owned_allowed: Option<PrimitiveDateTime> = None;
     let mut invalid_rows: Vec<(Vec<u8>, String)> = vec![];
     let mut dead_input_rows: Vec<Vec<u8>> = vec![];
+    let mut emitted_groups: HashSet<Vec<u8>> = HashSet::new();
     while let Some(w) = queue.pop_front() {
+        // One op per group: whichever member the walk reaches first builds it,
+        // and the op-level fields are read from the row carrying output_index 0.
+        let this_group = group_key(w);
+        if !emitted_groups.insert(this_group.clone()) {
+            continue;
+        }
+        let group_rows: &[&WorkItem] = rows_by_group
+            .get(&this_group)
+            .map(|v| v.as_slice())
+            .unwrap_or(std::slice::from_ref(&w));
+        // Op-level fields are identical across the group; results bind to
+        // handles by position, so a group not starting at index 0 is
+        // malformed and cannot be bound safely.
+        let w = group_rows[0];
+        if w.output_index != 0 {
+            invalid_rows.extend(group_error(
+                group_rows,
+                "multi-output group does not start at output_index 0".to_string(),
+            ));
+            continue;
+        }
+        // Only the first row's index is checked above, so a group missing any
+        // later row would otherwise run before the scheduler rejected it.
+        if i64::try_from(group_rows.len()).unwrap_or(i64::MAX) != i64::from(w.output_count) {
+            invalid_rows.extend(group_error(
+                group_rows,
+                format!(
+                    "multi-output group has {} of {} declared outputs",
+                    group_rows.len(),
+                    w.output_count
+                ),
+            ));
+            continue;
+        }
         let owned = row_is_owned(w);
         let fhe_op: SupportedFheOperations = match w.fhe_operation.try_into() {
             Ok(op) => op,
@@ -3754,8 +3837,8 @@ fn prepare_transaction_ops(
                         hex::encode(&w.output_handle)
                     ));
                 }
-                invalid_rows.push((
-                    w.output_handle.clone(),
+                invalid_rows.extend(group_error(
+                    group_rows,
                     format!("invalid FHE operation: {e}"),
                 ));
                 continue;
@@ -3808,10 +3891,11 @@ fn prepare_transaction_ops(
             // ops of the same transaction keep computing. Foreign rows are
             // dropped without a stamp: the verdict is database-derived, so
             // their own chain reaches the same conclusion.
-            dead_input_rows.push(w.output_handle.clone());
+            // Whole group is dead; sole path in for a foreign group.
+            dead_input_rows.extend(group_rows.iter().map(|r| r.output_handle.clone()));
             if owned {
-                invalid_rows.push((
-                    w.output_handle.clone(),
+                invalid_rows.extend(group_error(
+                    group_rows,
                     format!(
                         "dead boundary input 0x{}: every producer row is terminally errored",
                         hex::encode(dh)
@@ -3829,28 +3913,38 @@ fn prepare_transaction_ops(
                     hex::encode(&w.output_handle)
                 ));
             }
-            invalid_rows.push((
-                w.output_handle.clone(),
+            invalid_rows.extend(group_error(
+                group_rows,
                 format!("invalid FHE operands: {e}"),
             ));
             continue;
         }
+        // Outputs of one operation can differ in permission, so each carries
+        // its own. Foreign rows are recompute-only producers whatever their own
+        // row says: results, persistence and completion belong to the chain
+        // that owns them, so an unowned group keeps nothing.
         ops.push(DFGOp {
-            output_handle: w.output_handle.clone(),
+            outputs: group_rows
+                .iter()
+                .map(|r| DFGOutput {
+                    handle: r.output_handle.clone(),
+                    // Foreign rows are recompute-only producers, whatever
+                    // their own row says: results, persistence and
+                    // completion belong to the chain that owns them.
+                    is_allowed: owned && r.is_allowed,
+                })
+                .collect(),
             fhe_op,
             inputs,
-            // Foreign rows are recompute-only producers, whatever their own
-            // row says: results, persistence and completion belong to the
-            // chain that owns them.
-            is_allowed: owned && w.is_allowed,
-            // Kept separate from the line above, because the two answer
+            // Kept separate from the per-output flag, because the two answer
             // different questions. That one decides whether the output is
             // persisted; this one decides whether a failure of this node has a
             // row of OURS to stamp. An internal producer under our lease is
             // owned without being allowed, and its errors have to survive.
             is_owned: owned,
         });
-        if owned && w.is_allowed {
+        // Permission is per output; row 0 alone drops sibling-only grants.
+        if owned && group_rows.iter().any(|r| r.is_allowed) {
             // Only account for owned allowed rows to avoid the reorg case
             // where colliding trivial encrypts of a fork sibling would
             // drag the batch's schedule anchor backwards.
@@ -3903,14 +3997,16 @@ fn prepare_transaction_ops(
                 // Ownership derived from the row itself, so no parallel
                 // bookkeeping can drift out of alignment with `ops`.
                 let owned = rows_by_handle
-                    .get(op.output_handle.as_slice())
+                    .get(op.outputs[0].handle.as_slice())
                     .is_some_and(|row| row_is_owned(row));
-                uncomputable.insert(op.output_handle.clone());
+                uncomputable.extend(op.outputs.iter().map(|o| o.handle.clone()));
                 if owned {
-                    invalid_rows.push((
-                        op.output_handle,
-                        "transaction-local producer is terminally errored".to_string(),
-                    ));
+                    for handle in op.outputs.into_iter().map(|o| o.handle) {
+                        invalid_rows.push((
+                            handle,
+                            "transaction-local producer is terminally errored".to_string(),
+                        ));
+                    }
                 }
                 progressed = true;
             } else {
@@ -4114,14 +4210,20 @@ async fn upload_transaction_graph_results<'a>(
     for result in graph_results.into_iter() {
         match result.compressed_ct {
             Ok(cct) => {
+                let [handle] = result.handles.as_slice() else {
+                    error!(target: "tfhe_worker", { handles = ?result.handles },
+                        "a computed ciphertext must belong to exactly one handle");
+                    continue;
+                };
                 cts_to_insert.push((
-                    result.handle.clone(),
+                    handle.clone(),
                     (cct.ct_bytes, (current_ciphertext_version(), cct.ct_type)),
                 ));
-                handles_to_update.push((result.handle.clone(), result.transaction_id.clone()));
+                handles_to_update.push((handle.clone(), result.transaction_id.clone()));
                 WORK_ITEMS_PROCESSED_COUNTER.inc();
             }
             Err(mut err) => {
+                let output_handles: Vec<String> = result.handles.iter().map(hex::encode).collect();
                 #[cfg(feature = "gpu")]
                 if matches!(
                     err.downcast_ref::<FhevmError>(),
@@ -4130,7 +4232,7 @@ async fn upload_transaction_graph_results<'a>(
                     warn!(
                         target: "tfhe_worker",
                         error = %err,
-                        output_handle = %format!("0x{}", hex::encode(&result.handle)),
+                        output_handles = ?output_handles,
                         "transient GPU memory reservation failure; leaving computation pending for retry"
                     );
                     // Deliberately unstamped -- a reservation failure is not a
@@ -4171,7 +4273,7 @@ async fn upload_transaction_graph_results<'a>(
                     ) {
                         warn!(target: "tfhe_worker",
                                           { error = cerr,
-                        output_handle = format!("0x{}", hex::encode(&result.handle)) },
+                        output_handles = ?output_handles },
                                         "scheduler encountered an error while processing work item"
                                     );
                         continue;
@@ -4198,7 +4300,7 @@ async fn upload_transaction_graph_results<'a>(
                         // already refuses the cycle before execution; this is
                         // the belt to that pair of braces.
                         warn!(target: "tfhe_worker",
-                            { error = cerr, output_handle = format!("0x{}", hex::encode(&result.handle)) },
+                            { error = cerr, output_handles = ?output_handles },
                             "key lacks re-randomization material; leaving computation pending for retry");
                         continue;
                     }
@@ -4216,31 +4318,37 @@ async fn upload_transaction_graph_results<'a>(
                 // cannot carry the verdict (an internal producer is stored
                 // completed). Answered from the snapshot taken before
                 // `schedule()`: the inner graphs are gone by now.
-                let blocked = tx_graph.allowed_dependents(&result.transaction_id, &result.handle);
-                if tx_graph.is_foreign_producer(&result.transaction_id, &result.handle) {
-                    // A foreign row belongs to another chain: never stamp it
-                    // from here. What this failure blocks is OUR owned allowed
-                    // consumers, which have nowhere else to receive a verdict
-                    // -- the owning chain never executes them.
-                    res |= propagate_error_to_dependents(
-                        &blocked,
+                // A consumer shared by several siblings is propagated to once
+                // per pass, or its retry count advances once per sibling.
+                let mut propagated: HashSet<Vec<u8>> = HashSet::new();
+                for handle in &result.handles {
+                    let blocked = tx_graph.allowed_dependents(&result.transaction_id, handle);
+                    if tx_graph.is_foreign_producer(&result.transaction_id, handle) {
+                        // A foreign row belongs to another chain: never stamp it
+                        // from here. What this failure blocks is OUR owned allowed
+                        // consumers, which have nowhere else to receive a verdict
+                        // -- the owning chain never executes them.
+                        res |= propagate_error_to_dependents(
+                            &mark_as_propagated(&mut propagated, &blocked),
+                            &result.transaction_id,
+                            &stamp_text(&*cerr, retryable),
+                            trx,
+                        )
+                        .await?;
+                        continue;
+                    }
+                    res |= set_computation_error(
+                        handle,
                         &result.transaction_id,
-                        &stamp_text(&*cerr, retryable),
+                        &*cerr,
+                        retryable,
+                        &blocked,
+                        &mut propagated,
                         trx,
+                        deps_mngr,
                     )
                     .await?;
-                    continue;
                 }
-                res |= set_computation_error(
-                    &result.handle,
-                    &result.transaction_id,
-                    &*cerr,
-                    retryable,
-                    &blocked,
-                    trx,
-                    deps_mngr,
-                )
-                .await?;
             }
         }
     }
@@ -4401,6 +4509,9 @@ fn is_terminal_verdict(error: Option<&CoprocessorError>) -> bool {
             | SchedulerError::DataflowGraphError
             | SchedulerError::ReRandomisationError
             | SchedulerError::SchedulerError => false,
+            // Declared output count or type disagrees with what the op produced:
+            // a function of the opcode and the on-chain handles.
+            SchedulerError::MultiOutputFailure(_) => true,
         },
         Some(CoprocessorError::FhevmError(fhevm_error)) => match fhevm_error {
             // Type-check, opcode and scalar-shape rules. Every one is decided
@@ -4597,6 +4708,15 @@ fn stamp_text(cerr: &(dyn std::error::Error + Send + Sync), retryable: bool) -> 
     }
 }
 
+/// Marks `dependents` as propagated to; returns the ones that were not yet.
+fn mark_as_propagated(propagated: &mut HashSet<Vec<u8>>, dependents: &[Vec<u8>]) -> Vec<Vec<u8>> {
+    dependents
+        .iter()
+        .filter(|d| propagated.insert((*d).clone()))
+        .cloned()
+        .collect()
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn set_computation_error<'a>(
     output_handle: &[u8],
@@ -4606,6 +4726,7 @@ async fn set_computation_error<'a>(
     // Allowed handles this failure blocks, from the dataflow graph. Consulted
     // only when the handle's own row cannot carry the verdict.
     dependents: &[Vec<u8>],
+    propagated: &mut HashSet<Vec<u8>>,
     trx: &mut sqlx::Transaction<'a, Postgres>,
     deps_mngr: &mut dependence_chain::LockMngr,
 ) -> Result<bool, CoprocessorError> {
@@ -4697,7 +4818,15 @@ async fn set_computation_error<'a>(
     // as the dead-producer drain already would for a stampable producer.
     let stamped = match stamped {
         Some(state_changed) => state_changed,
-        None => propagate_error_to_dependents(dependents, transaction_id, &err_string, trx).await?,
+        None => {
+            propagate_error_to_dependents(
+                &mark_as_propagated(propagated, dependents),
+                transaction_id,
+                &err_string,
+                trx,
+            )
+            .await?
+        }
     };
     // the chain's root-cause error_message for those would inflate error
     // metrics and bury the first, most informative message.

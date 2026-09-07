@@ -5,7 +5,7 @@ use tracing::{debug, error, info, warn};
 use union_find::{QuickUnionUf, UnionBySize, UnionFind};
 
 use crate::database::tfhe_event_propagate::{
-    tfhe_inputs_handle, tfhe_result_handle, ChainHash,
+    tfhe_inputs_handle, tfhe_result_handles, ChainHash,
 };
 use crate::database::tfhe_event_propagate::{
     Chain, ChainCache, ConsumedBoundaryGuard, Handle, LogTfhe, OrderedChains,
@@ -18,6 +18,8 @@ struct Transaction {
     input_handle: Vec<Handle>,
     output_handle: Vec<Handle>,
     allowed_handle: Vec<Handle>,
+    /// (allowed output, group id) of multi-output ops.
+    output_group: Vec<(Handle, Handle)>,
     input_tx: HashSet<TransactionHash>,
     output_tx: HashSet<TransactionHash>,
     linear_chain: TransactionHash,
@@ -40,6 +42,7 @@ impl Transaction {
             input_handle: Vec::with_capacity(5),
             output_handle: Vec::with_capacity(5),
             allowed_handle: Vec::with_capacity(5),
+            output_group: Vec::new(),
             input_tx: HashSet::with_capacity(3),
             output_tx: HashSet::with_capacity(3),
             linear_chain: tx_hash, //  before coalescing linear tx chains
@@ -77,7 +80,9 @@ fn scan_transactions(
             }
             Entry::Occupied(e) => e.into_mut(),
         };
-        tx.size += 1;
+        let outputs = tfhe_result_handles(&log.event);
+        // Count computation rows (multi-output op -> N rows); .max(1) for non-FHE events.
+        tx.size += outputs.len().max(1) as u64;
         let log_inputs = tfhe_inputs_handle(&log.event);
         for input in log_inputs {
             if tx.output_handle.contains(&input) {
@@ -86,11 +91,15 @@ fn scan_transactions(
             }
             tx.input_handle.push(input);
         }
-        if let Some(output) = tfhe_result_handle(&log.event) {
-            tx.output_handle.push(output);
-            if log.is_allowed {
+        let group = (outputs.len() > 1).then(|| outputs[0]);
+        for output in outputs {
+            if log.allowed_outputs.contains(&output) {
                 tx.allowed_handle.push(output);
+                if let Some(group) = group {
+                    tx.output_group.push((output, group));
+                }
             }
+            tx.output_handle.push(output);
         }
     }
     (ordered_txs_hash, txs)
@@ -122,7 +131,7 @@ async fn fill_tx_dependence_maps(
                 consumed_boundaries
                     .write()
                     .await
-                    .put(*input_handle, *tx_hash);
+                    .consume(input_handle, *tx_hash);
                 tx.input_tx.insert(*dep_tx);
                 used_txs_chains
                     .entry(*dep_tx)
@@ -147,7 +156,7 @@ async fn fill_tx_dependence_maps(
                 if let Some(previous_consumer) = consumed_boundaries
                     .write()
                     .await
-                    .put(*input_handle, *tx_hash)
+                    .consume(input_handle, *tx_hash)
                 {
                     if previous_consumer != *tx_hash {
                         tx.forked_cross_block = true;
@@ -170,6 +179,12 @@ async fn fill_tx_dependence_maps(
         // update allowed handle for next txs
         for allowed_handle in &tx.allowed_handle {
             allowed_handle_tx.entry(*allowed_handle).or_insert(*tx_hash);
+        }
+        for (handle, group) in &tx.output_group {
+            consumed_boundaries
+                .write()
+                .await
+                .record_group(*handle, *group);
         }
         // propagate memorized producers
         let mut depth_size = 0;
@@ -540,7 +555,9 @@ mod tests {
     use crate::contracts::TfheContract as C;
     use crate::contracts::TfheContract::TfheContractEvents as E;
     use crate::database::dependence_chains::dependence_chains;
-    use crate::database::tfhe_event_propagate::{Chain, ChainCache, LogTfhe};
+    use crate::database::tfhe_event_propagate::{
+        uniform_allowed_outputs, Chain, ChainCache, LogTfhe,
+    };
     use crate::database::tfhe_event_propagate::{
         ClearConst, Handle, TransactionHash,
     };
@@ -564,9 +581,10 @@ mod tests {
     ) {
         static COUNTER: std::sync::atomic::AtomicU64 =
             std::sync::atomic::AtomicU64::new(0);
+        let event = tfhe_event(e);
         logs.push(LogTfhe {
-            event: tfhe_event(e),
-            is_allowed,
+            allowed_outputs: uniform_allowed_outputs(&event, is_allowed),
+            event,
             block_number: 0,
             block_hash: TransactionHash::ZERO,
             block_timestamp: sqlx::types::time::PrimitiveDateTime::MIN,
@@ -703,9 +721,11 @@ mod tests {
 
     fn new_guard(
     ) -> crate::database::tfhe_event_propagate::ConsumedBoundaryGuard {
-        std::sync::Arc::new(tokio::sync::RwLock::new(lru::LruCache::new(
-            std::num::NonZeroUsize::new(4096).unwrap(),
-        )))
+        std::sync::Arc::new(tokio::sync::RwLock::new(
+            crate::database::tfhe_event_propagate::ConsumedBoundaries::new(
+                std::num::NonZeroUsize::new(4096).unwrap(),
+            ),
+        ))
     }
 
     /// Drive one block through the REAL ingest sequence for one listener:
@@ -790,7 +810,7 @@ mod tests {
         LogTfhe {
             event: log.event.clone(),
             transaction_hash: log.transaction_hash,
-            is_allowed: log.is_allowed,
+            allowed_outputs: log.allowed_outputs.clone(),
             block_number: log.block_number,
             block_hash: log.block_hash,
             block_timestamp: log.block_timestamp,
@@ -1141,10 +1161,10 @@ mod tests {
         let tx2 = TransactionHash::with_last_byte(2);
         let va_1 = input_handle(&mut logs, tx1);
         let _vb_1 = op1(va_1, &mut logs, tx1);
-        logs[1].is_allowed = false;
+        logs[1].allowed_outputs.clear();
         let va_2 = input_handle(&mut logs, tx2);
         let _vb_2 = op1(va_2, &mut logs, tx2);
-        logs[3].is_allowed = false;
+        logs[3].allowed_outputs.clear();
         let chains = dependence_chains(
             &mut logs,
             &cache,
