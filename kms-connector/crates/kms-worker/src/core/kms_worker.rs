@@ -533,6 +533,49 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn registered_solana_backends_bound_rpc_and_proof_requests() {
+        use crate::core::solana::{
+            proof::{HostProofReader, LeafKind, LeafQuery},
+            snapshot::{HostStateReader, SnapshotKeys},
+        };
+        use std::time::Duration;
+        use tokio::{net::TcpListener, time::timeout};
+
+        // The listening socket permits TCP connections but never answers HTTP requests.
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}", listener.local_addr().unwrap());
+        let mut chain = host_chain(2, HostChainKind::Solana);
+        chain.url = endpoint.parse().unwrap();
+        chain.solana_proof_endpoints = vec![endpoint.parse().unwrap()];
+        let config = Config {
+            host_chains: vec![chain],
+            host_rpc_call_timeout: Duration::from_millis(250),
+            ..Default::default()
+        };
+        let backends = register_host_chain_backends(&config).await.unwrap();
+        let HostChainAclBackend::Solana(host) = &backends[&(SOLANA_CHAIN_TYPE_BIT | 2)] else {
+            panic!("expected Solana backend")
+        };
+        let keys = SnapshotKeys::new([[1; 32]]);
+        let queries = [LeafQuery {
+            encrypted_value_account: [1; 32],
+            handle: [2; 32],
+            kind: LeafKind::Public,
+        }];
+        let (rpc, proofs) = tokio::join!(
+            timeout(Duration::from_secs(3), host.reader.read_accounts(&keys)),
+            timeout(Duration::from_secs(3), host.proofs.read_proofs(&queries)),
+        );
+        assert!(rpc.expect("registered RPC client must time out").is_err());
+        assert!(
+            proofs
+                .expect("registered proof client must time out")
+                .is_err()
+        );
+        drop(listener);
+    }
+
     #[test]
     fn rejects_duplicate_chain_ids() {
         // Under the RFC-021 invariant an EVM id and a Solana id can never collide

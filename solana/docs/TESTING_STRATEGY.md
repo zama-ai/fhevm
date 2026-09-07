@@ -55,7 +55,7 @@ and the connector's `ProofRecordBehind` / `NoLeaf` classification).
 5. **KMS connector** (`kms-connector/crates/kms-worker`, `solana_` tests): the pipeline as pure
    functions of `(typed request, snapshot, proofs, deployment, now)` — envelope signature, window,
    deployment identity, the two-read snapshot ordering, pause, watermark, scope (`(program, scope)`
-   against `allowedScopes`), the leaf-proof read with its fan-out merge and one retry, handle
+   against `allowedScopes`), peer proof verification and one selective retry, handle
    binding, delegation freshness — plus the committed byte vectors under
    `solana/test-fixtures/` that the TypeScript SDK asserts against too.
 6. **ABI / IDL golden** (`scripts/check-zama-host-idl.sh`, `execution_contracts.rs`,
@@ -71,10 +71,12 @@ and the connector's `ProofRecordBehind` / `NoLeaf` classification).
    token composition wrap → burn → public release → redeem (certified public decrypt) and
    `disclose_secp` (stateless host `verify_public_decrypt`, DD-040), the confidential-transfer arc,
    delegated decrypt with a Squads multisig delegator, and the `dep-chain` load smoke. Operator
-   semantics are not exercised live any more: the pure conformance layer owns the full operator
-   contract, and Mollusk plus direct real-TFHE supply representative SBF and cryptographic
-   evidence (the live operator matrix went with the wallet-signed `fhe_execute` driver — a value's
-   authority must be a program PDA, so wallets cannot own values). `token_mollusk` owns the
+   semantics beyond the counter's operations are not exercised live: the pure conformance layer
+   owns the full operator contract, and Mollusk plus direct real-TFHE supply representative SBF
+   and cryptographic evidence. This leaves an integration-coverage gap for the other operators
+   through reconstruction, scheduling, and decrypt. Restore that coverage through a program-owned
+   specimen; the removed wallet-signed driver cannot supply the required PDA authority.
+   `token_mollusk` owns the
    broader negative matrix (including after-update, redeem consume-once, disclosure idempotency,
    and foreign-proof rejection).
 
@@ -90,18 +92,27 @@ chain shows and holds no such leaf is a terminal refusal; a record that is behin
 
 The connector reads the account at `confirmed` commitment (once, or twice when an entry is
 delegated; the second read decides) and then reads the leaf proofs from every configured
-coprocessor as one batch. A record whose leaf count is below the chain's is known to be behind and
-is read once more before any verdict; after that the request is rejected retryably
-(`ProofRecordBehind`) and the ordinary decryption budget (`max_decryption_attempts`, default 20)
-and event polling interval (default 3 seconds) decide. There is no separate hidden fork-retry loop.
-Deterministic mismatches (`NoLeaf`, a proof that does not verify) are terminal.
+coprocessor as one batch. Each query accepts any candidate that verifies against that snapshot.
+An older proof may still verify against an unchanged peak; an ahead proof is shortened to the
+snapshot's required height before verification. Only unresolved retryable queries are fetched
+once more. A failed refresh does not discard successful queries. After that, the ordinary
+decryption budget (`max_decryption_attempts`, default 20) and event polling interval (default
+3 seconds) decide. An invalid path or an index ahead of the snapshot is retryable; it may reflect
+different confirmed observations. A `NoLeaf` response from a record claiming sufficient history
+is terminal unless another peer supplies a valid candidate or a retryable outcome.
+Local HTTP tests cover peers stalling before headers and during body reads, with a healthy peer
+still able to authorize, and RPC requests terminating at the same configured deadline.
 
 The leaf record is derived in the same database transaction as the compute rows, so it cannot
 disagree with them about which blocks were applied. An account first seen through an update has
 `history_complete = false`: no leaf of it is stored and no proof is served for it until the
 listener is replayed from before its creation. Recovery is operational, not an authorization
 fallback: the connector never trusts the record without verifying the proof against live chain
-state, and a record behind or incomplete only delays a decrypt.
+state, and a record behind or incomplete only delays a decrypt. The optional `--start-slot`
+bootstrap reuses inclusive Yellowstone replay within provider retention. Listener tests cover
+an unapplied anchor across reconnects and the transition to an applied checkpoint. They do not
+establish that a deployed Yellowstone provider retains all historical sysvar updates: validate
+that with the actual plugin before relying on recovery operationally.
 
 ## Deliberately deferred (filed as follow-ups, not gaps in the merge)
 

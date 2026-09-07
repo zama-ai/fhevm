@@ -67,9 +67,17 @@ place.
   recomputes every leaf from the confirmed instruction stream, stores it next to the compute rows
   it was derived with in the same database transaction, and serves proofs over
   `POST /v1/solana/leaf-proofs` behind an API key. The KMS connector fetches from every configured
-  coprocessor, merges the answers (a proof beats no proof, more history beats less), and verifies
-  each proof against the peaks it read on chain itself. The record supplies paths; the chain
-  decides. Clients supply no proof, and a request carrying one is rejected.
+  coprocessor and keeps the candidates until it verifies them against its own confirmed chain
+  snapshot. Any valid candidate authorizes the query; a peer's claimed leaf count cannot displace
+  a valid proof. Clients supply no proof, and a request carrying one is rejected.
+- Proof freshness depends on the leaf's peak, not just the record's leaf count. An older proof
+  still works when its peak has not changed. For a proof built after the connector's snapshot,
+  the connector shortens the sibling path to that snapshot's peak height, then verifies it
+  against the snapshot's peaks. The leaf index must be below the snapshot's leaf count. A path
+  missing required siblings cannot be repaired this way: the connector fetches unresolved
+  retryable queries once more, keeping already verified queries even if the refresh fails.
+  Host RPC and proof HTTP requests share the configured `host_rpc_call_timeout`, including
+  response-body reads. No historical roots or peaks are stored on chain.
 - Delegated user decrypt is isolated from the core ACL path. Delegation uses standalone
   `UserDecryptionDelegation` PDAs and does not touch `EncryptedValue`; the connector reads the
   record (the authority-specific row or the delegator's wildcard row) and authorizes the delegate
@@ -82,6 +90,11 @@ place.
   (`set_deny_scope`, `DenyScopeRecord` at `["deny-scope", program, scope]`) and gates the allows
   it would seal — every persistent write and `make_handle_public` — because both are allows; it
   blocks new action and is not an erasure mechanism for already sealed history.
+- Token transfer and burn must forward the deny record for a stored amount's application too.
+  When the deny list is enabled, transfer remaining accounts contain the token application's
+  record, the stored amount application's record if present, then the receipt application's
+  record if present, with duplicate applications omitted. Burn uses the same order without a
+  receipt. This permits allowed foreign amounts while still rejecting a denied application.
 - Solana programs enforce authorization. The relayer, the leaf record, host-listener ingestion,
   and coprocessor scheduling are untrusted for authorization. The KMS connector reads confirmed
   on-chain facts — the encrypted value account and, for a delegated entry, the delegation record

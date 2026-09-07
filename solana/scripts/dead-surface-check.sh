@@ -530,14 +530,10 @@ if run_check 3; then
   # service is gone; the EVM input-proof service is another thing.
   check_alias 'proof service — the leaf record lives in the host listener' kms \
     'is gone|proof-service client|external input proof service' -iE 'proof[ _-]service'
-  # RFC 035 retired the whole "subject" vocabulary: an encrypted value account keeps no list of
-  # who may decrypt it; who may decrypt a handle is an `allow` sealed on the write, and a key so
-  # named is a viewer. The English idioms ("subject to", "the subject of a test") and the KMS
-  # core's TLS certificate subject (`tls_subject`, `--tls-subject`, "subject-matching") are the only
-  # exceptions.
+  # Reject the retired ACL collection and mutation API, not ordinary English or unrelated
+  # variables called "subject" (for example a polling condition or TLS certificate field).
   check_alias 'subject — say allow / viewer; the account keeps no list' kms \
-    'subject to|subject of|whose subject|subject is the|subject matter|tls[_-]subject|subject-matching' \
-    -iE '\bsubjects?\b|_subjects?\b|subjects?_|Subjects?[A-Z]|[a-z]Subjects?\b'
+    '' -iE '\bsubject[ _-]set\b|\.subjects\b|\bsubjects[[:space:]]*:|output_subject_indexes|previous_subjects|allow_subjects|remove_subject|SubjectSet'
   # Reading a value into a computation is admitted by its authority's signature; there is no
   # separate compute identity to name.
   check_alias 'compute subject / compute signer — reads are admitted by the value authority' kms \
