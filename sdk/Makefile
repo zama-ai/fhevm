@@ -114,7 +114,7 @@ run-fhevm-npm = $(FHEVM_NPM_CLI) $(FHEVM_NPM_ARGS) $(1)
 # Aggregates
 ########################################################################################################
 
-.PHONY: help graph build compile rebuild ci ci-from-scratch distclean regenerate-package-lock lint test check check-pre generate fmt fmt-check clean clean-generated install
+.PHONY: help graph build compile rebuild ci ci-from-scratch distclean regenerate-package-lock lint test check check-pre generate fmt fmt-check clean clean-generated install install-fast install-ci
 
 help: ## List the targets
 	@grep -hE '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -209,6 +209,17 @@ install-fast: ## Install every installation root (sdk, fhevm-npm, each hardhat c
 	npm --prefix $(DIR_FHEVM_NPM) install --no-audit --no-fund
 	npm --prefix $(DIR_HH_V2) install --no-audit --no-fund
 	npm --prefix $(DIR_HH_V3) install --no-audit --no-fund
+	$(call run-fhevm-npm,install-forge-dependencies)
+
+# The strict variant, for CI and for publishing: `npm ci` installs exactly what each lockfile records,
+# fails when a lockfile and its package.json disagree, and never writes a lockfile. `install` above
+# would re-resolve and rewrite instead, so an artifact built after it is not provably the reviewed
+# resolution. It deletes node_modules first, which is why the daily loop keeps using `install`.
+install-ci: ## Install every installation root from its committed lockfile (npm ci), then forge dependencies
+	npm ci --no-audit --no-fund
+	npm --prefix $(DIR_FHEVM_NPM) ci --no-audit --no-fund
+	npm --prefix $(DIR_HH_V2) ci --no-audit --no-fund
+	npm --prefix $(DIR_HH_V3) ci --no-audit --no-fund
 	$(call run-fhevm-npm,install-forge-dependencies)
 
 # Deliberately NOT `git clean`: pattern-based deletion cannot distinguish a build output from a
@@ -462,6 +473,7 @@ check-npm-cli: check-npm-cli-post-build # Internal: run every fhevm-npm check in
 check-npm-cli-pre-build: # Internal: run fhevm-npm checks that do not require generated output
 	$(call run-fhevm-npm,check-json-schemas)
 	$(call run-fhevm-npm,check-manifest-coverage)
+	$(call run-fhevm-npm,version check)
 	$(call run-fhevm-npm,check-names)
 	$(call run-fhevm-npm,check-workspaces)
 	$(call run-fhevm-npm,check-ownership)
@@ -690,6 +702,44 @@ check-generated: ## Delete every generated file, regenerate, and fail unless the
 ########################################################################################################
 
 .PHONY: sync-common-vendored check-vendored-origin check-vendored check-cleartext-config sync-fhevm-chains check-fhevm-chains
+.PHONY: version-list version-check version-plan version-apply publish-order publish-render publish-pack publish-check
+
+########################################################################################################
+# Release: versions and publication (plans/RELEASE_PLAN.md). sdk/versions.json is the authority for
+# every published version; package.json versions and lockfile member lines are derived from it.
+# Nothing here publishes: `publish pack` produces the tarball, `npm publish <tarball>` is CI's.
+########################################################################################################
+
+# The payload selector for the publish-* targets: a manifest key such as ./hardhat/v3/plugin/pkg.
+PAYLOAD ?=
+require-payload = $(if $(PAYLOAD),,$(error PAYLOAD is required, e.g. make $(1) PAYLOAD=./hardhat/v3/plugin/pkg))
+
+version-list: ## Every published payload: central version, package.json version, channels
+	$(call run-fhevm-npm,version list)
+
+version-check: ## Is every derived version equal to sdk/versions.json (also part of check-pre)
+	$(call run-fhevm-npm,version check)
+
+version-plan: ## Preview what `version apply` would reconcile from sdk/versions.json, writing nothing
+	$(call run-fhevm-npm,version apply --dry-run)
+
+version-apply: ## Reconcile package.json versions and lockfile member lines from sdk/versions.json
+	$(call run-fhevm-npm,version apply)
+
+publish-order: ## The npm-distributed payloads in dependency order, one manifest key per line
+	$(call run-fhevm-npm,publish order)
+
+publish-render: ## Show PAYLOAD's package.json as npmjs.com will see it, and the files npm would pack
+	$(call require-payload,publish-render)
+	$(call run-fhevm-npm,publish render $(PAYLOAD))
+
+publish-pack: ## Render PAYLOAD and `npm pack` it into ./tarballs; prints the tarball path
+	$(call require-payload,publish-pack)
+	$(call run-fhevm-npm,publish pack $(PAYLOAD))
+
+publish-check: ## Is PAYLOAD's tarball fit for npmjs.com (no file: spec, central version)
+	$(call require-payload,publish-check)
+	$(call run-fhevm-npm,publish check $(PAYLOAD))
 
 sync-common-vendored: ## Write every vendored destination from its source of truth
 	$(call run-fhevm-npm,sync-vendored)

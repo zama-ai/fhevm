@@ -43,7 +43,6 @@ export type CliOptions = {
     | 'version-apply'
     | 'version-check'
     | 'version-list'
-    | 'pack-tarball'
     | 'publish-check'
     | 'publish-order'
     | 'publish-pack'
@@ -90,12 +89,6 @@ export type CliOptions = {
   | { readonly command: 'version-apply'; readonly dryRun: boolean; readonly checkNpmjs: boolean }
   | { readonly command: 'version-check' }
   | { readonly command: 'version-list'; readonly checkNpmjs: boolean; readonly json: boolean }
-  | {
-      readonly command: 'pack-tarball';
-      readonly packageSelector?: string;
-      readonly outDir?: string;
-      readonly clean: boolean;
-    }
   | { readonly command: 'check-fhevm-chains-origin' }
   | { readonly command: 'sync-fhevm-chains'; readonly commit?: string; readonly latest: boolean }
   | { readonly command: 'sync-vendored'; readonly check: boolean }
@@ -171,7 +164,6 @@ export function parseCliOptions(argv: readonly string[]): CliOptions {
         readonly retryDelaySeconds: number;
       }
     | undefined;
-  let packTarball: { readonly packageSelector?: string; readonly outDir?: string; readonly clean: boolean } | undefined;
   let syncVendored: { readonly check: boolean } | undefined;
   let syncFhevmChains: { readonly commit?: string; readonly latest: boolean } | undefined;
   let checkFhevmChainsOrigin = false;
@@ -571,14 +563,6 @@ Why:
       },
     );
   program
-    .command('pack-tarball [package]', { hidden: true })
-    .description('Deprecated alias of `publish pack`: packs one payload, or every npm-distributed one when omitted.')
-    .option('-o, --out-dir <dir>', 'override npm-manifest.json#tarballs.relPath')
-    .option('--clean', 'delete existing *.tgz in the output directory first', false)
-    .action((packageSelector: string | undefined, options: { readonly outDir?: string; readonly clean: boolean }) => {
-      packTarball = { packageSelector, outDir: options.outDir, clean: options.clean };
-    });
-  program
     .command('test-consumer [package]')
     .description('Install one checked-in consumer fixture or manifest-listed consumer project.')
     .option('-l, --list', 'list available consumer fixtures and projects', false)
@@ -629,7 +613,6 @@ Why:
     publishRender === undefined &&
     publishPack === undefined &&
     publishCheck === undefined &&
-    packTarball === undefined &&
     !regenerateConsumerPackageLocks &&
     testConsumer === undefined &&
     syncVendored === undefined &&
@@ -851,16 +834,6 @@ Why:
       manifestFile: resolve(workspaceRoot, 'npm-manifest.json'),
       verbosity: options.verbose,
       sortPackageJson: false,
-    };
-  }
-  if (packTarball !== undefined) {
-    return {
-      command: 'pack-tarball',
-      workspaceRoot,
-      manifestFile: resolve(workspaceRoot, 'npm-manifest.json'),
-      verbosity: options.verbose,
-      sortPackageJson: false,
-      ...packTarball,
     };
   }
   if (selected === undefined) throw new Error('unreachable');

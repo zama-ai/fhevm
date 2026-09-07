@@ -25,7 +25,7 @@
     "fmt": "npm run prettier:write",
     "fmt:check": "npm run prettier:check",
     "lint": "npm run compile && eslint && tsc -b ./tsconfig.json --noEmit",
-    "pack:tarball": "node ../../../fhevm-npm/fhevm-npm.ts pack-tarball ./hardhat/v3/plugin",
+    "pack:tarball": "node ../../../fhevm-npm/fhevm-npm.ts publish pack ./hardhat/v3/plugin",
     "prettier:check": "prettier --check \"**/*.{js,json,md,mjs,ts,yml}\"",
     "prettier:write": "prettier --write \"**/*.{js,json,md,mjs,ts,yml}\"",
     "test": "node --test test/*.test.ts",

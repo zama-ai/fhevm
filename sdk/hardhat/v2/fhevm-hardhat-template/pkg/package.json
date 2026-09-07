@@ -1,6 +1,6 @@
 {
   "name": "fhevm-hardhat-template-v2",
-  "version": "0.4.2",
+  "version": "0.13.0",
   "description": "Hardhat v2 based template for developing FHEVM Solidity smart contracts",
   "license": "BSD-3-Clause-Clear",
   "type": "commonjs",

@@ -97,7 +97,7 @@ the Forge scripts and `foundry.toml` belong to the corresponding `dev` owner.
 ```jsonc
 // ✅ Delegates to the manifest-aware CLI: the payload comes from this owner's publishedRelPath, and
 //    the tarball lands in npm-manifest.json#tarballs.relPath.
-"pack:tarball": "node ../../fhevm-npm/fhevm-npm.ts pack-tarball ./host-contracts-cleartext/v12"
+"pack:tarball": "node ../../fhevm-npm/fhevm-npm.ts publish pack ./host-contracts-cleartext/v12"
 
 // ❌ Packs the member root, so foundry.toml, tests and internal/ all ship.
 "pack:tarball": "npm pack"
@@ -529,6 +529,50 @@ workspace ever built against.
 // ❌ Floor 6.16.0, a version nothing here ever compiled against. This shipped once, and the first
 //    consumer to install 6.16.0 would have been the first to find out.
 "peerDependencies": { "ethers": "^6.16.0" }
+```
+
+**4.3.2 `sdk/versions.json` is the only authority for a published payload's version.** Exactly one entry per
+`kind: published` manifest package, keyed by its manifest key (names are not unique: two generations share
+`@fhevm/host-contracts-cleartext`), listed in manifest order, every value canonical SemVer (`x.y.z` or `x.y.z-pre`).
+`fhevm-npm version check` enforces coverage both ways (`version-coverage`), the value shape (`version-semver`) and the
+order (`version-order`); it runs in `check-pre`. A missing entry is never inferred from a package's `package.json`,
+because that would let derived state become authoritative — it is added by hand, once.
+
+```jsonc
+// ✅ sdk/versions.json: the manifest's published payloads, in the manifest's order.
+{ "schemaVersion": 1, "packages": { "./host-contracts-cleartext/v13/pkg": "0.13.0", "./hardhat/v3/plugin/pkg": "0.13.0" } }
+
+// ❌ A range, and a payload the manifest does not publish.
+{ "packages": { "./hardhat/v3/plugin/pkg": "^0.13.0", "./hardhat/v3/e2e": "0.0.0" } }
+```
+
+**4.3.3 Every derived version equals the central one.** A payload's `package.json` version (`version-package`) and,
+in every installation root whose lockfile records the member — its own root, and any root that links it cross-root —
+the `version` npm wrote for it (`version-lockfile`). The only remedy is `fhevm-npm version apply`: edit
+`sdk/versions.json`, preview with `--dry-run`, apply. It accepts a clean worktree or exactly one unstaged change, that
+file; a central version only moves forward; no dependency spec changes, because member edges are `file:` links (3.1.1).
+`npm version` is not a supported path — it writes derived state first and `version check` fails on it.
+
+```sh
+# ✅ The whole workflow. Two derived writes for a plugin bump: its package.json and one lockfile line.
+$EDITOR sdk/versions.json && make version-plan && make version-apply && git add -A sdk && git commit
+
+# ❌ Writes package.json first, so the authority is now the one out of date.
+npm --prefix hardhat/v3/plugin/pkg version patch
+```
+
+**4.3.4 A rendered dependency range is the target's generation: `^0.<generation>.0`.** The generation is the minor of
+the target's central version, so generation 13 renders as `^0.13.0` whether that version is `0.13.0` or `0.13.4`: this
+generation, any patch, never the next one, and a contracts patch never forces a plugin re-render. A prerelease central
+version renders exactly, since a caret range does not match prereleases. This is the one range policy; there is no
+per-edge configuration.
+
+```jsonc
+// ✅ In the v3 plugin's tarball, rendered from the file: link by `publish pack` (target central 0.13.4).
+"@fhevm/host-contracts-cleartext": "^0.13.0"
+
+// ❌ Exact: every contracts patch would force a plugin release, or leave consumers with two copies.
+"@fhevm/host-contracts-cleartext": "0.13.4"
 ```
 
 ### 4.4 Standalone projects and non-packages
@@ -1001,6 +1045,33 @@ metadata and type-resolution coverage, but neither replaces runtime execution of
 **5.3.9 No test-consumer parallelism is allowed.** Consumer packages, CJS/ESM fixtures and test files execute one at
 a time; a fixture using Node's test runner sets `--test-concurrency=1`, and other runners use their serial mode.
 Distinct ports do not permit an exception to this rule.
+
+**5.3.10 A tarball for an npm-distributed payload carries only registry specs and the central version.** `file:` links
+are right in the tree (3.1.1) and wrong on npmjs.com, which cannot resolve a path; `fhevm-npm publish pack` is the only
+producer of a tarball, and it renders every link per 4.3.4 into a staged copy before `npm pack`, so the tree is never
+touched. `fhevm-npm publish check <payload>` reads the tarball with `tar` and fails on any surviving `file:` spec, a
+version other than the central one, a dependency on another payload whose range is not what that payload's
+central version renders to, or an entry point the shipped `package.json` declares (`main`, `module`,
+`types`, `bin`, any `exports` leaf) that the tarball does not contain — `files` is a whitelist, so a built
+entry point left out of it publishes a package that resolves to nothing, and the `publint`/`attw` gate of
+5.3.8 inspects the payload directory rather than this artifact. With `--check-npmjs` it also requires every rendered range to
+have a published satisfying version — retried, because the CI loop publishes the dependency seconds earlier — and the
+payload's own version to be absent, never retried. `fhevm-npm publish order` derives the sequence from the links, so
+the order is enforced by refusal, not written down. `publish render <payload>` shows the same rendering without
+producing anything.
+
+```sh
+# ✅ The CI loop: no hand-listed order, each payload proven just before it goes out.
+for p in $(fhevm-npm publish order); do
+  fhevm-npm publish render "$p"
+  tgz=$(fhevm-npm publish pack "$p")
+  fhevm-npm publish check "$p" --check-npmjs
+  npm publish "$tgz"
+done
+
+# ❌ Publishes the working tree: the tarball ships "file:../../../../host-contracts-cleartext/v13/pkg".
+npm publish ./hardhat/v3/plugin/pkg
+```
 
 ## 6. Lockfiles and recovery
 

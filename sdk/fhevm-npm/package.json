@@ -36,13 +36,13 @@
     "typecheck": "tsc --project ./tsconfig.json"
   },
   "dependencies": {
-    "ajv": "8.20.0",
-    "commander": "14.0.3",
-    "prettier": "3.8.3",
-    "typescript": "6.0.3",
-    "zod": "4.4.3"
+    "ajv": "^8.20.0",
+    "commander": "^14.0.3",
+    "prettier": "^3.8.3",
+    "typescript": "^6.0.3",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@types/node": "22.20.1"
+    "@types/node": "^22.20.1"
   }
 }

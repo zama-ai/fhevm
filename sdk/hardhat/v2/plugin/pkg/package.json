@@ -1,6 +1,6 @@
 {
   "name": "@fhevm/hardhat-plugin",
-  "version": "0.4.2",
+  "version": "0.13.0",
   "description": "FHEVM Hardhat Plugin v2",
   "license": "BSD-3-Clause-Clear",
   "type": "commonjs",

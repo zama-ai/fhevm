@@ -123,6 +123,47 @@ Purge does not touch fhevm-npm's lockfile (the autonomous orchestrator manages i
 `fhevm-npm/package-lock.json` and run `npm --prefix fhevm-npm install` to upgrade it deliberately)
 nor the consumer-fixture lockfiles (`./fhevm-npm-cli test-consumer-regenerate-package-lock`).
 
+# Bumping a published version
+
+`sdk/versions.json` is the ONE authority for every published payload's version (RULES 4.3.2); package.json
+versions and lockfile member lines are derived from it. Never edit a payload's version by hand or with
+`npm version` — edit the central file, preview, apply:
+
+```sh
+make version-list                 # central vs package.json for every payload, and channels
+$EDITOR sdk/versions.json         # e.g. "./hardhat/v3/plugin/pkg": "0.13.0" -> "0.13.1"; alphas go here too: "0.14.0-alpha.0"
+make version-plan                 # "central edit" + "would reconcile": the exact files and lines, nothing written
+make version-apply                # writes them, refreshes the affected lockfiles, runs `version check`
+git add -A sdk && git commit -m "chore(sdk): prepare @fhevm/hardhat-plugin-v3 0.13.1"
+```
+
+Because member edges are `file:` links, a bump changes NO dependency spec anywhere: for a plugin, two lines
+(its package.json, one line in its cluster's lock); for host-contracts, its package.json plus one line in
+each of the three locks that record it. `version apply` refuses unless the worktree is clean or holds only
+the central edit, and a version only moves forward; on a failure it leaves the diff and refuses to run again
+until only sdk/versions.json is modified. `make check-pre` runs `version check`, so a tree whose derived
+versions drifted from the central file fails ci.
+
+# Publishing a payload (rendering the file: links)
+
+A published payload links other payloads with `file:` (RULES 3.1.1) — correct here, meaningless on npmjs.com.
+`publish pack` renders each link to the target's generation range (`^0.13.0`, RULES 4.3.4) in a staged copy
+and packs that; `publish check` proves the tarball; `publish order` says which payload goes first. Nothing
+in fhevm-npm publishes — `npm publish <tarball>` is CI's, with its credentials and dist-tag:
+
+```sh
+make publish-order                                          # ./host-contracts-cleartext/v13/pkg before ./hardhat/v3/plugin/pkg
+make publish-render PAYLOAD=./hardhat/v3/plugin/pkg         # the diff npmjs.com will see, plus the packed file list
+make publish-pack   PAYLOAD=./hardhat/v3/plugin/pkg         # ./tarballs/fhevm-hardhat-plugin-v3-0.13.0.tgz
+make publish-check  PAYLOAD=./hardhat/v3/plugin/pkg         # no file: spec survived, version is the central one
+./fhevm-npm-cli publish check ./hardhat/v3/plugin/pkg --check-npmjs   # + the dependency IS on npmjs, this version is NOT
+```
+
+The dependency must be on npmjs.com before its dependents: the CI loop iterates `publish order` and checks
+each payload just before publishing it, so a dependency published seconds earlier is there when its
+dependent is checked (`--retries`/`--retry-delay` absorb registry propagation). The dev owners'
+`npm run pack:tarball` is the same `publish pack`.
+
 # Changing a vendored origin (pin bump)
 
 Vendored folders are frozen copies of upstream content; `npm-manifest.json` declares each one's

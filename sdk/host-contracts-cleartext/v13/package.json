@@ -56,7 +56,7 @@
     "lint": "npm run forge:lint && eslint && tsc -b ./tsconfig.json --noEmit && tsc -p ./create2-deploy/tsconfig.json --noEmit && tsc -p test/ts/tsconfig.json --noEmit",
     "lint:internal": "eslint -c ./eslint.config.js ./internal && tsc -p ./internal/tsconfig.json --noEmit",
     "list:upgrade-ops": "node internal/cli/listUpgradeOps.ts",
-    "pack:tarball": "node ../../fhevm-npm/fhevm-npm.ts pack-tarball ./host-contracts-cleartext/v13",
+    "pack:tarball": "node ../../fhevm-npm/fhevm-npm.ts publish pack ./host-contracts-cleartext/v13",
     "prettier:check": "prettier --check \"**/*.{js,json,md,mjs,ts,yml}\"",
     "prettier:write": "prettier --write \"**/*.{js,json,md,mjs,ts,yml}\"",
     "test": "npm run test:forge && npm run test:templates:run && npm run test:harness:run && npm run test:upgrade-e2e && npm run test:create2-e2e",

@@ -32,7 +32,6 @@ import { generateExportsCommand } from './commands/generate-exports.ts';
 import { cleanForgeDependencies } from './commands/clean-forge-dependencies.ts';
 import { installForgeDependencies } from './commands/install-forge-dependencies.ts';
 import { listPackages } from './commands/list-packages.ts';
-import { packTarballs } from './commands/pack-tarball.ts';
 import { publishCheck } from './commands/publish-check.ts';
 import { publishOrder } from './commands/publish-order.ts';
 import { publishPack } from './commands/publish-pack.ts';
@@ -157,16 +156,6 @@ async function main(): Promise<void> {
   }
   if (options.command === 'version-list') {
     await versionList(options.workspaceRoot, manifest, { checkNpmjs: options.checkNpmjs, json: options.json });
-    return;
-  }
-  if (options.command === 'pack-tarball') {
-    packTarballs({
-      workspaceRoot: options.workspaceRoot,
-      manifest,
-      packageSelector: options.packageSelector,
-      outDir: options.outDir,
-      clean: options.clean,
-    });
     return;
   }
   if (options.command === 'check-mirror') {
