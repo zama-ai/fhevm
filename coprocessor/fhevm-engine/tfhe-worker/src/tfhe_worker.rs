@@ -1438,6 +1438,7 @@ mod operand_boundary_mask_tests {
             &panic_error,
             true,
             &blocked,
+            &mut HashSet::new(),
             &mut trx,
             &mut locks,
         )
@@ -1561,6 +1562,7 @@ mod operand_boundary_mask_tests {
             true,
             // What the graph reports for this shape: the producer's only consumer.
             std::slice::from_ref(&consumer),
+            &mut HashSet::new(),
             &mut trx,
             &mut locks,
         )
@@ -1596,6 +1598,7 @@ mod operand_boundary_mask_tests {
                 &panic_error,
                 true,
                 std::slice::from_ref(&consumer),
+                &mut HashSet::new(),
                 &mut trx,
                 &mut locks,
             )
@@ -1662,6 +1665,7 @@ mod operand_boundary_mask_tests {
             &panic_error,
             true,
             &[],
+            &mut HashSet::new(),
             &mut trx,
             &mut locks,
         )
@@ -1694,6 +1698,7 @@ mod operand_boundary_mask_tests {
                 &panic_error,
                 true,
                 &[],
+                &mut HashSet::new(),
                 &mut trx,
                 &mut locks,
             )
@@ -1773,6 +1778,7 @@ mod operand_boundary_mask_tests {
                 &panic_error,
                 true,
                 &[],
+                &mut HashSet::new(),
                 &mut trx,
                 &mut locks
             )
@@ -1785,6 +1791,7 @@ mod operand_boundary_mask_tests {
                 &dead_input,
                 false,
                 &[],
+                &mut HashSet::new(),
                 &mut trx,
                 &mut locks
             )
@@ -3531,6 +3538,7 @@ WHERE c.transaction_id IN (
                     // These rows are pending, so the direct stamp lands; there is
                     // nothing to fall back to.
                     &[],
+                    &mut HashSet::new(),
                     trx,
                     deps_chain_mngr,
                 )
@@ -4310,23 +4318,18 @@ async fn upload_transaction_graph_results<'a>(
                 // cannot carry the verdict (an internal producer is stored
                 // completed). Answered from the snapshot taken before
                 // `schedule()`: the inner graphs are gone by now.
-                // A consumer shared by several siblings must be stamped once per
-                // pass, or its retry count advances once per sibling.
+                // A consumer shared by several siblings is propagated to once
+                // per pass, or its retry count advances once per sibling.
                 let mut propagated: HashSet<Vec<u8>> = HashSet::new();
                 for handle in &result.handles {
-                    let blocked: Vec<Vec<u8>> = tx_graph
-                        .allowed_dependents(&result.transaction_id, handle)
-                        .into_iter()
-                        .filter(|d| !propagated.contains(d))
-                        .collect();
-                    propagated.extend(blocked.iter().cloned());
+                    let blocked = tx_graph.allowed_dependents(&result.transaction_id, handle);
                     if tx_graph.is_foreign_producer(&result.transaction_id, handle) {
                         // A foreign row belongs to another chain: never stamp it
                         // from here. What this failure blocks is OUR owned allowed
                         // consumers, which have nowhere else to receive a verdict
                         // -- the owning chain never executes them.
                         res |= propagate_error_to_dependents(
-                            &blocked,
+                            &unpropagated(&mut propagated, &blocked),
                             &result.transaction_id,
                             &stamp_text(&*cerr, retryable),
                             trx,
@@ -4340,6 +4343,7 @@ async fn upload_transaction_graph_results<'a>(
                         &*cerr,
                         retryable,
                         &blocked,
+                        &mut propagated,
                         trx,
                         deps_mngr,
                     )
@@ -4704,6 +4708,15 @@ fn stamp_text(cerr: &(dyn std::error::Error + Send + Sync), retryable: bool) -> 
     }
 }
 
+/// Dependents not yet propagated to in this pass; marks them as propagated.
+fn unpropagated(propagated: &mut HashSet<Vec<u8>>, dependents: &[Vec<u8>]) -> Vec<Vec<u8>> {
+    dependents
+        .iter()
+        .filter(|d| propagated.insert((*d).clone()))
+        .cloned()
+        .collect()
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn set_computation_error<'a>(
     output_handle: &[u8],
@@ -4713,6 +4726,7 @@ async fn set_computation_error<'a>(
     // Allowed handles this failure blocks, from the dataflow graph. Consulted
     // only when the handle's own row cannot carry the verdict.
     dependents: &[Vec<u8>],
+    propagated: &mut HashSet<Vec<u8>>,
     trx: &mut sqlx::Transaction<'a, Postgres>,
     deps_mngr: &mut dependence_chain::LockMngr,
 ) -> Result<bool, CoprocessorError> {
@@ -4804,7 +4818,15 @@ async fn set_computation_error<'a>(
     // as the dead-producer drain already would for a stampable producer.
     let stamped = match stamped {
         Some(state_changed) => state_changed,
-        None => propagate_error_to_dependents(dependents, transaction_id, &err_string, trx).await?,
+        None => {
+            propagate_error_to_dependents(
+                &unpropagated(propagated, dependents),
+                transaction_id,
+                &err_string,
+                trx,
+            )
+            .await?
+        }
     };
     // the chain's root-cause error_message for those would inflate error
     // metrics and bury the first, most informative message.
