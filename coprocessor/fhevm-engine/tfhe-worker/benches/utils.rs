@@ -932,7 +932,6 @@ pub async fn insert_tfhe_event_with_dependence_chain(
         previously_minted.contains(handle.as_slice())
     })
     .map_err(sqlx::Error::Protocol)?;
-    let inner = log.inner;
     let event = LogTfhe {
         allowed_outputs: uniform_allowed_outputs(&log.inner, is_allowed),
         event: log.inner,

@@ -146,8 +146,8 @@ async fn internal_producer_execution_error_lands_on_its_allowed_consumer(
         .await?
         .expect("new_transaction() returns Some on a live stack");
 
-    let lhs = next_handle();
-    let rhs = next_handle();
+    let lhs = next_handle_with_type(4);
+    let rhs = next_handle_with_type(5);
     // lhs is uint32 (type 4), rhs is uint64 (type 5): FheSub passes
     // `check_fhe_operand_types` and fails at execution with
     // UnsupportedFheTypes, deterministically, on both CPU and GPU.
