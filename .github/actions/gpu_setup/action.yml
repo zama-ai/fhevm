@@ -74,7 +74,11 @@ runs:
       env:
         CUDA_VERSION: ${{ inputs.cuda-version }}
         CUDA_KEYRING_PACKAGE: cuda-keyring_1.1-1_all.deb
-        CUDA_KEYRING_SHA: d93190d50b98ad4699ff40f4f7af50f16a76dac3bb8da1eaaf366d47898ff8df
+        # One checksum per repository: the keyring package is built per
+        # distribution (its sources.list entry names the repository), so the
+        # jammy and noble artifacts differ.
+        CUDA_KEYRING_SHA_UBUNTU2204: d93190d50b98ad4699ff40f4f7af50f16a76dac3bb8da1eaaf366d47898ff8df
+        CUDA_KEYRING_SHA_UBUNTU2404: d2a6b11c096396d868758b86dab1823b25e14d70333f1dfa74da5ddaf6a06dba
       run: |
         CUDA_INSTALL_VERSION="${CUDA_VERSION%% *}"
         TOOLKIT_VERSION="$(echo "${CUDA_INSTALL_VERSION}" | sed 's/\(.*\)\.\(.*\)/\1-\2/')"
@@ -91,17 +95,26 @@ runs:
           exit 1
         fi
         CUDA_REPO="ubuntu${VERSION_ID//./}"
+        # Select the checksum alongside the repository; a release without a pin
+        # fails here rather than installing an unverified keyring.
+        case "${CUDA_REPO}" in
+          ubuntu2204) CUDA_KEYRING_SHA="${CUDA_KEYRING_SHA_UBUNTU2204}" ;;
+          ubuntu2404) CUDA_KEYRING_SHA="${CUDA_KEYRING_SHA_UBUNTU2404}" ;;
+          *)
+            echo "No keyring checksum pinned for ${CUDA_REPO}; add CUDA_KEYRING_SHA_${CUDA_REPO^^}" >&2
+            exit 1
+            ;;
+        esac
         echo "Installing CUDA ${CUDA_INSTALL_VERSION} from the ${CUDA_REPO} repository"
 
         # Download outside the checkout, as above.
         CUDA_KEYRING="${RUNNER_TEMP}/${CUDA_KEYRING_PACKAGE}"
         wget -O "${CUDA_KEYRING}" \
           "https://developer.download.nvidia.com/compute/cuda/repos/${CUDA_REPO}/x86_64/${CUDA_KEYRING_PACKAGE}"
-        # The keyring package is the same artifact across repositories, so one
-        # pin covers them. If NVIDIA ever diverges them this fails loudly rather
-        # than installing an unverified keyring: re-pin for the new repository.
+        # A mismatch means NVIDIA re-published the package: re-pin from a fresh
+        # download of that repository's artifact rather than skipping the check.
         if ! echo "${CUDA_KEYRING_SHA}  ${CUDA_KEYRING}" | sha256sum --check; then
-          echo "Keyring checksum mismatch for ${CUDA_REPO}; update CUDA_KEYRING_SHA" >&2
+          echo "Keyring checksum mismatch for ${CUDA_REPO}; update CUDA_KEYRING_SHA_${CUDA_REPO^^}" >&2
           exit 1
         fi
         sudo dpkg -i "${CUDA_KEYRING}"
