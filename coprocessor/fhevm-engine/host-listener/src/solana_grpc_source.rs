@@ -117,7 +117,6 @@ pub(super) enum SealDecision {
 #[derive(Debug)]
 pub(super) struct BlockValidator {
     start: StartPosition,
-    resume_is_applied: bool,
     checkpoint_observed: bool,
     last_observed: Option<(BlockCheckpoint, BlockIdentity)>,
     last_committed: Option<BlockCheckpoint>,
@@ -126,11 +125,10 @@ pub(super) struct BlockValidator {
 }
 
 impl BlockValidator {
-    pub fn new(start: StartPosition, resume_is_applied: bool) -> Self {
+    pub fn new(start: StartPosition) -> Self {
         Self {
             checkpoint_observed: matches!(start, StartPosition::Tip),
             start,
-            resume_is_applied,
             last_observed: None,
             last_committed: None,
             last_committed_context: None,
@@ -208,7 +206,7 @@ impl BlockValidator {
                 bail!("checkpoint block hash changed at slot {}", block.slot);
             }
             self.checkpoint_observed = true;
-            if self.resume_is_applied {
+            if matches!(self.start, StartPosition::Resume(_)) {
                 self.last_observed = Some((checkpoint.clone(), identity));
                 self.last_committed = Some(checkpoint.clone());
                 self.last_committed_context = None;
@@ -490,7 +488,7 @@ mod tests {
 
     #[test]
     fn empty_block_advances_checkpoint() {
-        let mut validator = BlockValidator::new(StartPosition::Tip, true);
+        let mut validator = BlockValidator::new(StartPosition::Tip);
         let decision = validator
             .seal(block(2, hash(2), 1, hash(1), vec![]))
             .unwrap();
@@ -504,7 +502,7 @@ mod tests {
     #[test]
     fn transactions_are_sorted_and_failed_transactions_are_retained_for_ignore()
     {
-        let mut validator = BlockValidator::new(StartPosition::Tip, true);
+        let mut validator = BlockValidator::new(StartPosition::Tip);
         let decision = validator
             .seal(block(2, hash(2), 1, hash(1), vec![failed(3), failed(1)]))
             .unwrap();
@@ -523,7 +521,7 @@ mod tests {
 
     #[test]
     fn malformed_successful_transaction_halts() {
-        let mut validator = BlockValidator::new(StartPosition::Tip, true);
+        let mut validator = BlockValidator::new(StartPosition::Tip);
         let mut transaction = successful(0);
         transaction.meta = None;
         assert!(validator
@@ -533,7 +531,7 @@ mod tests {
 
     #[test]
     fn inclusive_replay_is_idempotent_but_conflicts_halt() {
-        let mut validator = BlockValidator::new(StartPosition::Tip, true);
+        let mut validator = BlockValidator::new(StartPosition::Tip);
         let mut original = block(2, hash(2), 1, hash(1), vec![failed(1)]);
         original.block_time = Some(Default::default());
         original.block_time.as_mut().unwrap().timestamp = 100;
@@ -576,14 +574,14 @@ mod tests {
             transaction.signature = vec![1; length];
             let mut invalid = block(2, hash(2), 1, hash(1), vec![transaction]);
             invalid.executed_transaction_count = 1;
-            assert!(BlockValidator::new(StartPosition::Tip, true)
+            assert!(BlockValidator::new(StartPosition::Tip)
                 .seal(invalid)
                 .is_err());
         }
 
         let mut invalid = block(2, hash(2), 1, hash(1), vec![failed(1)]);
         invalid.executed_transaction_count = 1;
-        assert!(BlockValidator::new(StartPosition::Tip, true)
+        assert!(BlockValidator::new(StartPosition::Tip)
             .seal(invalid)
             .is_err());
     }
@@ -595,7 +593,7 @@ mod tests {
             block_hash: hash(5),
         };
         let mut validator =
-            BlockValidator::new(StartPosition::Resume(checkpoint), true);
+            BlockValidator::new(StartPosition::Resume(checkpoint));
         assert!(validator
             .seal(block(6, hash(6), 5, hash(5), vec![]))
             .is_err());
@@ -605,7 +603,7 @@ mod tests {
             block_hash: hash(5),
         };
         let mut validator =
-            BlockValidator::new(StartPosition::Resume(checkpoint), true);
+            BlockValidator::new(StartPosition::Resume(checkpoint));
         assert!(matches!(
             validator
                 .seal(block(5, hash(5), 4, hash(4), vec![]))
@@ -624,7 +622,7 @@ mod tests {
             block_hash: hash(5),
         };
         let mut validator =
-            BlockValidator::new(StartPosition::Resume(checkpoint), false);
+            BlockValidator::new(StartPosition::ReplayFrom(checkpoint));
 
         let decision = validator
             .seal(block(5, hash(5), 4, hash(4), vec![]))
@@ -636,7 +634,7 @@ mod tests {
 
     #[test]
     fn missing_context_does_not_commit_the_sealed_block() {
-        let mut validator = BlockValidator::new(StartPosition::Tip, true);
+        let mut validator = BlockValidator::new(StartPosition::Tip);
         let decision = validator
             .seal(block(2, hash(2), 1, hash(1), vec![successful(0)]))
             .unwrap();
@@ -650,7 +648,7 @@ mod tests {
 
     #[test]
     fn sealed_block_can_wait_for_later_sysvar_context() {
-        let mut validator = BlockValidator::new(StartPosition::Tip, true);
+        let mut validator = BlockValidator::new(StartPosition::Tip);
         let SealDecision::Process(mut sealed) = validator
             .seal(block(2, hash(2), 1, hash(1), vec![successful(0)]))
             .unwrap()
@@ -690,7 +688,7 @@ mod tests {
 
     #[test]
     fn context_can_lag_past_a_later_sealed_block() {
-        let mut validator = BlockValidator::new(StartPosition::Tip, true);
+        let mut validator = BlockValidator::new(StartPosition::Tip);
         let SealDecision::Process(mut first) = validator
             .seal(block(2, hash(2), 1, hash(1), vec![successful(0)]))
             .unwrap()
@@ -734,7 +732,7 @@ mod tests {
 
     #[test]
     fn account_identity_conflict_and_context_overflow_halt() {
-        let mut validator = BlockValidator::new(StartPosition::Tip, true);
+        let mut validator = BlockValidator::new(StartPosition::Tip);
         let account = |slot, data: Vec<u8>| SubscribeUpdateAccount {
             slot,
             account: Some(SubscribeUpdateAccountInfo {
@@ -748,7 +746,7 @@ mod tests {
         validator.observe_account(account(1, vec![1])).unwrap();
         assert!(validator.observe_account(account(1, vec![2])).is_err());
 
-        let mut validator = BlockValidator::new(StartPosition::Tip, true);
+        let mut validator = BlockValidator::new(StartPosition::Tip);
         for slot in 0..MAX_CONTEXT_SLOTS as u64 {
             validator.observe_account(account(slot, vec![1])).unwrap();
         }
@@ -796,7 +794,7 @@ mod tests {
             block_hash: hash(9),
         };
         let mut validator =
-            BlockValidator::new(StartPosition::Resume(checkpoint), true);
+            BlockValidator::new(StartPosition::Resume(checkpoint));
 
         validator.observe_account(account(vec![1])).unwrap();
         assert!(matches!(
@@ -807,7 +805,7 @@ mod tests {
         ));
         validator.observe_account(account(vec![2])).unwrap();
 
-        let mut validator = BlockValidator::new(StartPosition::Tip, true);
+        let mut validator = BlockValidator::new(StartPosition::Tip);
         validator.observe_account(account(vec![1])).unwrap();
         let SealDecision::Process(sealed) = validator
             .seal(block(9, hash(9), 8, hash(8), vec![]))

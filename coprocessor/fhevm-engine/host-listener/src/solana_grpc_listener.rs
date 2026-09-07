@@ -168,6 +168,7 @@ pub struct BlockCheckpoint {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum StartPosition {
     Tip,
+    /// Verify the committed checkpoint without applying it again.
     Resume(BlockCheckpoint),
     /// Inclusive bootstrap anchor: this block has not been committed locally.
     ReplayFrom(BlockCheckpoint),
@@ -196,10 +197,14 @@ impl From<StartPosition> for IngestionProgress {
 }
 
 impl IngestionProgress {
-    fn subscription_start(&self) -> (Option<BlockCheckpoint>, bool) {
+    fn subscription_start(&self) -> StartPosition {
         match &self.retry {
-            Some(checkpoint) => (Some(checkpoint.clone()), false),
-            None => (self.applied.clone(), self.applied.is_some()),
+            Some(checkpoint) => StartPosition::ReplayFrom(checkpoint.clone()),
+            None => self
+                .applied
+                .clone()
+                .map(StartPosition::Resume)
+                .unwrap_or(StartPosition::Tip),
         }
     }
 
@@ -238,17 +243,8 @@ pub async fn run(
         if cancel.is_cancelled() {
             return Ok(());
         }
-        let (resume, resume_is_applied) = progress.subscription_start();
-        match subscribe_loop(
-            db,
-            config,
-            resume,
-            resume_is_applied,
-            &mut progress,
-            &cancel,
-        )
-        .await
-        {
+        let start = progress.subscription_start();
+        match subscribe_loop(db, config, start, &mut progress, &cancel).await {
             Ok(()) => return Ok(()), // cancelled
             Err(err) => match err.downcast::<FatalListenerError>() {
                 Ok(fatal) => {
@@ -389,8 +385,7 @@ fn resolve_transaction_instructions(
 async fn subscribe_loop(
     db: &Database,
     config: &SolanaGrpcListenerConfig,
-    resume: Option<BlockCheckpoint>,
-    resume_is_applied: bool,
+    start: StartPosition,
     progress: &mut IngestionProgress,
     cancel: &CancellationToken,
 ) -> Result<()> {
@@ -419,12 +414,9 @@ async fn subscribe_loop(
     )
     .max_decoding_message_size(MAX_DECODING_MESSAGE_SIZE);
 
-    let is_resume = resume.is_some();
-    let start = resume
-        .map(StartPosition::Resume)
-        .unwrap_or(StartPosition::Tip);
+    let is_resume = !matches!(start, StartPosition::Tip);
     let request = build_subscribe_request(&config.program_id, &start);
-    let mut validator = BlockValidator::new(start, resume_is_applied);
+    let mut validator = BlockValidator::new(start);
     let outbound = futures_util::stream::once(async move { request })
         .chain(futures_util::stream::pending::<SubscribeRequest>());
 
@@ -740,7 +732,7 @@ mod replay_status_tests {
             parent_blockhash: bs58::encode([4; 32]).into_string(),
             ..Default::default()
         };
-        let mut first_validator = BlockValidator::new(StartPosition::Tip, true);
+        let mut first_validator = BlockValidator::new(StartPosition::Tip);
         let SealDecision::Process(first) =
             first_validator.seal(update.clone()).unwrap()
         else {
@@ -751,15 +743,11 @@ mod replay_status_tests {
         progress.observe_unapplied(checkpoint.clone());
 
         // A retryable apply failure does not mutate progress.
-        let (resume, resume_is_applied) = progress.subscription_start();
-        assert_eq!(resume, Some(checkpoint.clone()));
-        assert!(!resume_is_applied);
+        let start = progress.subscription_start();
+        assert_eq!(start, StartPosition::ReplayFrom(checkpoint.clone()));
         assert!(progress.applied.is_none());
 
-        let mut retry_validator = BlockValidator::new(
-            StartPosition::Resume(checkpoint.clone()),
-            resume_is_applied,
-        );
+        let mut retry_validator = BlockValidator::new(start);
         let SealDecision::Process(retried) =
             retry_validator.seal(update).unwrap()
         else {
@@ -786,7 +774,7 @@ mod replay_status_tests {
         for _ in 0..2 {
             assert_eq!(
                 progress.subscription_start(),
-                (Some(checkpoint.clone()), false)
+                StartPosition::ReplayFrom(checkpoint.clone())
             );
             assert!(progress.applied.is_none());
         }
@@ -797,18 +785,16 @@ mod replay_status_tests {
             parent_blockhash: bs58::encode([4; 32]).into_string(),
             ..Default::default()
         };
-        let mut validator =
-            BlockValidator::new(StartPosition::Resume(checkpoint), false);
+        let mut validator = BlockValidator::new(progress.subscription_start());
         let SealDecision::Process(block) =
             validator.seal(update.clone()).unwrap()
         else {
             panic!("bootstrap block must be applied")
         };
         progress.commit(block.checkpoint(), None);
-        let (start, applied) = progress.subscription_start();
-        assert!(applied);
-        let mut restarted =
-            BlockValidator::new(StartPosition::Resume(start.unwrap()), applied);
+        let start = progress.subscription_start();
+        assert_eq!(start, StartPosition::Resume(checkpoint));
+        let mut restarted = BlockValidator::new(start);
         assert!(matches!(
             restarted.seal(update).unwrap(),
             SealDecision::Replay
@@ -818,13 +804,12 @@ mod replay_status_tests {
     #[test]
     fn bootstrap_rejects_a_provider_that_skips_or_changes_the_anchor() {
         for (slot, hash) in [(6, [6; 32]), (5, [9; 32])] {
-            let mut validator = BlockValidator::new(
-                StartPosition::Resume(BlockCheckpoint {
+            let mut validator = BlockValidator::new(StartPosition::ReplayFrom(
+                BlockCheckpoint {
                     slot: 5,
                     block_hash: [5; 32],
-                }),
-                false,
-            );
+                },
+            ));
             assert!(validator
                 .seal(SubscribeUpdateBlock {
                     slot,
