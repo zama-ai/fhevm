@@ -192,7 +192,9 @@ impl BlockValidator {
         let identity = block_identity(&block);
 
         if !self.checkpoint_observed {
-            let StartPosition::Resume(checkpoint) = &self.start else {
+            let (StartPosition::Resume(checkpoint)
+            | StartPosition::ReplayFrom(checkpoint)) = &self.start
+            else {
                 unreachable!("tip starts with checkpoint observed")
             };
             if block.slot != checkpoint.slot {
@@ -363,7 +365,8 @@ pub(super) fn build_subscribe_request(
         ping: None,
         from_slot: match start {
             StartPosition::Tip => None,
-            StartPosition::Resume(checkpoint) => Some(checkpoint.slot),
+            StartPosition::Resume(checkpoint)
+            | StartPosition::ReplayFrom(checkpoint) => Some(checkpoint.slot),
         },
     }
 }

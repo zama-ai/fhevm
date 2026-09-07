@@ -169,12 +169,30 @@ pub struct BlockCheckpoint {
 pub enum StartPosition {
     Tip,
     Resume(BlockCheckpoint),
+    /// Inclusive bootstrap anchor: this block has not been committed locally.
+    ReplayFrom(BlockCheckpoint),
 }
 
 #[derive(Debug, Default)]
 struct IngestionProgress {
     applied: Option<BlockCheckpoint>,
     retry: Option<BlockCheckpoint>,
+}
+
+impl From<StartPosition> for IngestionProgress {
+    fn from(start: StartPosition) -> Self {
+        match start {
+            StartPosition::Tip => Self::default(),
+            StartPosition::Resume(checkpoint) => Self {
+                applied: Some(checkpoint),
+                retry: None,
+            },
+            StartPosition::ReplayFrom(checkpoint) => Self {
+                applied: None,
+                retry: Some(checkpoint),
+            },
+        }
+    }
 }
 
 impl IngestionProgress {
@@ -214,13 +232,7 @@ pub async fn run(
         grpc_url = %config.grpc_url,
         "Starting Solana host listener (Yellowstone gRPC transport)"
     );
-    let mut progress = IngestionProgress {
-        applied: match start {
-            StartPosition::Tip => None,
-            StartPosition::Resume(checkpoint) => Some(checkpoint),
-        },
-        retry: None,
-    };
+    let mut progress = IngestionProgress::from(start);
 
     loop {
         if cancel.is_cancelled() {
@@ -692,7 +704,8 @@ fn is_terminal_replay_status(status: &tonic::Status) -> bool {
 mod replay_status_tests {
     use super::{
         checked_pending_bytes, is_terminal_replay_status,
-        sealed_block_timestamp, IngestionProgress, MAX_PENDING_BLOCK_BYTES,
+        sealed_block_timestamp, BlockCheckpoint, IngestionProgress,
+        MAX_PENDING_BLOCK_BYTES,
     };
     use crate::solana_grpc_listener::StartPosition;
     use crate::solana_grpc_source::{
@@ -757,6 +770,71 @@ mod replay_status_tests {
 
         assert_eq!(progress.applied, Some(checkpoint));
         assert!(progress.retry.is_none());
+    }
+
+    #[test]
+    fn bootstrap_anchor_survives_disconnect_and_is_processed_before_checkpointing(
+    ) {
+        let checkpoint = BlockCheckpoint {
+            slot: 5,
+            block_hash: [5; 32],
+        };
+        let mut progress = IngestionProgress::from(StartPosition::ReplayFrom(
+            checkpoint.clone(),
+        ));
+        // Disconnects before the first block leave the inclusive, unapplied cursor intact.
+        for _ in 0..2 {
+            assert_eq!(
+                progress.subscription_start(),
+                (Some(checkpoint.clone()), false)
+            );
+            assert!(progress.applied.is_none());
+        }
+        let update = SubscribeUpdateBlock {
+            slot: 5,
+            blockhash: bs58::encode([5; 32]).into_string(),
+            parent_slot: 4,
+            parent_blockhash: bs58::encode([4; 32]).into_string(),
+            ..Default::default()
+        };
+        let mut validator =
+            BlockValidator::new(StartPosition::Resume(checkpoint), false);
+        let SealDecision::Process(block) =
+            validator.seal(update.clone()).unwrap()
+        else {
+            panic!("bootstrap block must be applied")
+        };
+        progress.commit(block.checkpoint(), None);
+        let (start, applied) = progress.subscription_start();
+        assert!(applied);
+        let mut restarted =
+            BlockValidator::new(StartPosition::Resume(start.unwrap()), applied);
+        assert!(matches!(
+            restarted.seal(update).unwrap(),
+            SealDecision::Replay
+        ));
+    }
+
+    #[test]
+    fn bootstrap_rejects_a_provider_that_skips_or_changes_the_anchor() {
+        for (slot, hash) in [(6, [6; 32]), (5, [9; 32])] {
+            let mut validator = BlockValidator::new(
+                StartPosition::Resume(BlockCheckpoint {
+                    slot: 5,
+                    block_hash: [5; 32],
+                }),
+                false,
+            );
+            assert!(validator
+                .seal(SubscribeUpdateBlock {
+                    slot,
+                    blockhash: bs58::encode(hash).into_string(),
+                    parent_slot: 4,
+                    parent_blockhash: bs58::encode([4; 32]).into_string(),
+                    ..Default::default()
+                })
+                .is_err());
+        }
     }
 
     #[test]

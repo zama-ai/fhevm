@@ -6,7 +6,9 @@ use std::{str::FromStr, time::Duration};
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use solana_client::nonblocking::rpc_client::RpcClient;
+use solana_client::{
+    nonblocking::rpc_client::RpcClient, rpc_request::RpcRequest,
+};
 use solana_commitment_config::CommitmentConfig;
 use solana_sdk::pubkey::Pubkey;
 use tokio_util::sync::CancellationToken;
@@ -41,6 +43,11 @@ struct Args {
     /// Yellowstone gRPC endpoint.
     #[arg(long, default_value = "http://127.0.0.1:10000")]
     grpc_url: String,
+
+    /// Existing confirmed block to replay inclusively on an empty database. Must be within
+    /// Yellowstone retention and precede the host activity to reconstruct. A saved checkpoint wins.
+    #[arg(long)]
+    start_slot: Option<u64>,
 
     /// Optional `x-token` auth metadata for the gRPC endpoint.
     #[arg(long)]
@@ -130,7 +137,25 @@ async fn main() -> Result<()> {
                 block_hash: checkpoint.block_hash,
             })
         }
-        None => StartPosition::Tip,
+        None => match args.start_slot {
+            Some(slot) => {
+                // Anchor to an actual block, so a provider silently starting at the tip is rejected.
+                // RPC supplies only its identity; reconstruction still uses Yellowstone sysvars.
+                let block: serde_json::Value = rpc.send(RpcRequest::GetBlock, serde_json::json!([
+                    slot, {"commitment": "confirmed", "transactionDetails": "none", "rewards": false}
+                ])).await.with_context(|| format!("fetch bootstrap block {slot}"))?;
+                let block_hash = block["blockhash"].as_str().context(
+                    "bootstrap slot must identify an existing confirmed block",
+                )?;
+                StartPosition::ReplayFrom(BlockCheckpoint {
+                    slot,
+                    block_hash: solana_sdk::hash::Hash::from_str(block_hash)
+                        .context("parse bootstrap block hash")?
+                        .to_bytes(),
+                })
+            }
+            None => StartPosition::Tip,
+        },
     };
 
     let cancel = CancellationToken::new();

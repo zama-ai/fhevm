@@ -116,6 +116,29 @@ cargo test -p host-listener --test host_listener_integration_tests \
   test_slow_lane_off_mode_promotes_all_chains_on_startup_locally -- --nocapture
 ```
 
+### Solana bootstrap and restart
+
+`solana_host_listener` reconstructs compute rows and ACL leaves from confirmed
+Yellowstone blocks. On an empty database, `--start-slot <slot>` selects an
+existing confirmed block to replay **inclusively**. Choose a block before the
+host activity that must be reconstructed, within the provider's replay window.
+RPC supplies that block's hash; transactions and required sysvar context still
+come from Yellowstone. The first block must match the requested slot and hash.
+
+Once a block's compute rows, leaves, and checkpoint commit together, restarts
+resume from that checkpoint and ignore `--start-slot`. Inclusive replay verifies
+the committed block's identity without applying it twice. A disconnect before
+the first commit retains the unapplied bootstrap anchor for reconnection.
+Without a checkpoint or `--start-slot`, the listener starts at the stream tip;
+this cannot recover earlier leaves.
+
+This is bounded gRPC replay, not archival RPC recovery. The local configuration
+in `solana/geyser/yellowstone-config.json` retains **256 slots**. Replay must
+include the required historical sysvar context as well as sealed blocks; an
+unavailable anchor, gap, conflicting block, or missing context stops ingestion
+without advancing the checkpoint. Increasing retention is a provider concern.
+The HTTP health routes check database availability, not reconstruction catch-up.
+
 ## Events in FHEVM
 
 ### Blockchain Events
