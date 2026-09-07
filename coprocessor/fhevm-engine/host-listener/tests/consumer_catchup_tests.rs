@@ -34,7 +34,7 @@ async fn exercise_catchup(bounded: bool) {
     use alloy::primitives::Address;
     use broker::{AsyncHandlerPayloadClassified, Topic};
     use primitives::{
-        event::{CatchupPayload, FilterCommand},
+        event::{CatchupPayload, WatchCommand},
         routing,
         utils::chain_id_to_namespace,
     };
@@ -91,10 +91,11 @@ async fn exercise_catchup(bounded: bool) {
         .unwrap();
     watch.ensure_topology().await.unwrap();
     controls.spawn(watch.run(AsyncHandlerPayloadClassified::new(
-        move |command: FilterCommand| {
+        move |command: WatchCommand| {
             let tx = watch_tx.clone();
             async move {
-                tx.send(command.consumer_id).unwrap();
+                tx.send(command.into_filters()[0].consumer_id.clone())
+                    .unwrap();
                 Ok(())
             }
         },

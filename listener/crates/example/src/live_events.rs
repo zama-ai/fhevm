@@ -1,10 +1,8 @@
 //! Live subset: head-of-chain events + historical catchup.
 //!
-//! This module deliberately drives the listener's control plane the
-//! **low-level way**: it hand-builds a [`FilterCommand`] and publishes it via
-//! [`ListenerConsumer::register_filter`], instead of using the high-level
-//! contract API. Compare with `final_events.rs`, which shows the high-level
-//! style — together they demonstrate both ways to interact with the listener.
+//! Registers live contracts atomically with [`ListenerConsumer::register_contracts`].
+//! For multiple contracts, pass the complete address list in this one call.
+//! A raw [`FilterCommand`] remains useful for individual filter removal.
 //!
 //! Flows started here (log tags in parentheses):
 //! - `consume` on `{consumer_id}.new-event` (`LIVE`) — head-of-chain blocks,
@@ -54,11 +52,10 @@ pub async fn start(consumer: &ListenerConsumer, token: Address) -> anyhow::Resul
     consumer.ensure_consumer().await?;
     consumer.ensure_catchup_consumer().await?;
 
-    // 2. Register the watcher — low-level style: a hand-built FilterCommand.
-    consumer
-        .register_filter(&live_filter(consumer, token))
-        .await?;
-    info!(%token, "LIVE: registered WATCH filter (raw FilterCommand, log_address)");
+    // 2. Activate the complete contract set atomically (one token here).
+    //    Requires core with atomic WATCH support; declare queues first.
+    consumer.register_contracts(&[token]).await?;
+    info!(%token, "LIVE: requested atomic contract registration");
 
     // 3. Live consumer — also signals the first live head so the catchup
     //    request below knows the replay range.

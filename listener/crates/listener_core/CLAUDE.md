@@ -70,7 +70,7 @@ Optional cryptographic verification: transaction root, receipt root, block hash.
 | `src/core/slot_buffer.rs` | AsyncSlotBuffer |
 | `src/core/publisher.rs` | FilterIndex + event publishing |
 | `src/core/workers.rs` | Broker message handlers (FetchHandler, ReorgHandler, etc.) |
-| `src/core/filters.rs` | Filter lifecycle (add/remove) |
+| `src/core/filters.rs` | Filter lifecycle (atomic WATCH additions / single UNWATCH removal) |
 | `src/core/cleaner.rs` | Old block deletion |
 | `src/blockchain/evm/evm_block_fetcher.rs` | 5 fetching strategies |
 | `src/blockchain/evm/evm_block_computer.rs` | Block verification |
@@ -106,3 +106,14 @@ Full failure-behavior matrix (Postgres/broker/RPC outages, missing consumer queu
 
 - if available locally, load the skill /karpathy-guidelines
 - for planning, or when benchmarking, if available locally, load the skill /brainstorming
+
+### Atomic WATCH registration
+
+`WatchCommand` accepts a legacy single `FilterCommand` object or a nonempty array.
+`WatchHandler` validates the entire command before `Filters::add_filters_atomically`
+applies it in one PostgreSQL transaction. A failure rolls back every new row;
+retries are idempotent through the existing unique index. Existing filters remain
+active; this is addition, not replacement. UNWATCH still removes one filter.
+The consumer library's `register_contracts` sends one atomic live registration.
+Queue declaration must precede registration. See `docs/consumer_registration.md`
+at the listener workspace root for compatibility and test instructions.

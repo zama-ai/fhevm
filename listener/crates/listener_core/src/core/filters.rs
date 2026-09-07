@@ -55,6 +55,18 @@ impl Filters {
             .map_err(|source| FilterError::DatabaseError { source })
     }
 
+    /// Apply a validated WATCH registration atomically, retaining existing filters.
+    pub async fn add_filters_atomically(
+        &self,
+        filters: &[primitives::event::FilterCommand],
+    ) -> Result<(), FilterError> {
+        self.repositories
+            .filters
+            .add_filters_atomically(filters)
+            .await
+            .map_err(|source| FilterError::DatabaseError { source })
+    }
+
     /// Remove a filter.
     pub async fn remove_filter(
         &self,
