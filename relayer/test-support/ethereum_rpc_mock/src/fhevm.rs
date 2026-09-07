@@ -5,7 +5,7 @@ use crate::{
 };
 use alloy::primitives::{Address, Bytes, B256, U256};
 use alloy::primitives::{Log, LogData};
-use alloy::sol_types::{SolCall, SolEvent};
+use alloy::sol_types::{SolCall, SolEvent, SolValue};
 use rand::{Rng, RngExt};
 use std::{
     str::FromStr,
@@ -19,7 +19,10 @@ use tracing::{debug, info};
 
 // Re-export FHEVM bindings for convenience
 pub use fhevm_gateway_bindings::decryption::Decryption;
+pub use fhevm_gateway_bindings::gateway_config::GatewayConfig;
 pub use fhevm_gateway_bindings::input_verification::InputVerification;
+
+use crate::ct_attestation::CtAttestationMock;
 
 /// Selects which user-decryption gateway overload the mock should match
 /// when registering a success pattern. `Direct` / `Delegated` are the
@@ -57,6 +60,15 @@ const MOCK_PUBLIC_KEY_SIZE: usize = 32;
 const MOCK_SIGNATURE_SIZE: usize = 65;
 
 // Mock data generation helpers
+
+/// Wrap ABI-encoded return data as a successful `eth_call` response.
+fn success_bytes(data: Vec<u8>) -> Response {
+    Response::Success {
+        hash: None,
+        data: crate::mock_server::ResponseData::Bytes(Bytes::from(data)),
+        scheduled_transactions: Vec::new(),
+    }
+}
 
 /// Generate a random hash for transaction IDs
 fn random_hash() -> B256 {
@@ -103,6 +115,61 @@ fn matches_and_asserts_user_decrypt_txn(
         }
         matches
     }
+}
+
+/// Like `matches_contract_and_selector_for_call`, but also decodes the readiness calldata and
+/// panics unless it carries `expected_handles` and `expected_extra_data`.
+fn matches_and_asserts_readiness_call(
+    contract: Address,
+    selector: [u8; 4],
+    expected_handles: Vec<B256>,
+    expected_extra_data: Bytes,
+) -> impl Fn(&crate::mock_server::CallParams) -> bool + Send + Sync + 'static {
+    move |params: &crate::mock_server::CallParams| -> bool {
+        let matches =
+            params.to == contract && params.input.len() >= 4 && params.input[0..4] == selector;
+        if matches {
+            assert_readiness_calldata(
+                selector,
+                &expected_handles,
+                &expected_extra_data,
+                &params.input,
+            );
+        }
+        matches
+    }
+}
+
+fn assert_readiness_calldata(
+    selector: [u8; 4],
+    expected_handles: &[B256],
+    expected_extra_data: &Bytes,
+    data: &[u8],
+) {
+    let payload = &data[4..];
+    let (handles, extra_data) = if selector == Decryption::isPublicDecryptionReadyCall::SELECTOR {
+        let decoded = Decryption::isPublicDecryptionReadyCall::abi_decode_raw(payload)
+            .expect("calldata: failed to decode isPublicDecryptionReadyCall");
+        (decoded.ctHandles, decoded._1)
+    } else {
+        let decoded = Decryption::isUserDecryptionReady_1Call::abi_decode_raw(payload)
+            .expect("calldata: failed to decode isUserDecryptionReady_1Call");
+        let handles = decoded
+            .ctHandleContractPairs
+            .iter()
+            .map(|pair| pair.ctHandle)
+            .collect();
+        (handles, decoded._1)
+    };
+
+    assert_eq!(
+        handles, expected_handles,
+        "readiness calldata.ctHandles mismatch"
+    );
+    assert_eq!(
+        &extra_data, expected_extra_data,
+        "readiness calldata.extraData mismatch"
+    );
 }
 
 fn assert_user_decrypt_calldata(
@@ -167,6 +234,7 @@ pub struct FhevmMockWrapper {
     next_zk_proof_id: Arc<AtomicU64>,
     pub decryption_contract: Address,
     pub input_proof_contract: Address,
+    pub gateway_config_contract: Address,
 }
 
 impl FhevmMockWrapper {
@@ -175,6 +243,7 @@ impl FhevmMockWrapper {
         json_rpc_server: MockServer,
         decryption_contract: Address,
         input_proof_contract: Address,
+        gateway_config_contract: Address,
     ) -> Self {
         info!(
             decryption_contract = %decryption_contract,
@@ -200,6 +269,11 @@ impl FhevmMockWrapper {
             InputVerification::DEPLOYED_BYTECODE.clone(),
         );
 
+        json_rpc_server.set_code(
+            gateway_config_contract,
+            GatewayConfig::DEPLOYED_BYTECODE.clone(),
+        );
+
         Self {
             json_rpc_server,
             next_zk_proof_id: Arc::new(
@@ -207,6 +281,7 @@ impl FhevmMockWrapper {
             ),
             decryption_contract,
             input_proof_contract,
+            gateway_config_contract,
         }
     }
 
@@ -239,8 +314,51 @@ impl FhevmMockWrapper {
         self.register_readiness_patterns(true);
     }
 
+    /// Configure readiness checks to return true, but only for a call carrying exactly `handles`
+    /// and `extra_data`.
+    ///
+    /// [`Self::set_readiness_success`] matches contract and selector alone, so a relayer that
+    /// forwarded the wrong handles, or dropped the `extra_data` that only the on-chain source
+    /// consumes, would still be answered true. A mismatch here panics out of the mock task and
+    /// fails the test, naming the offending field.
+    pub fn set_readiness_success_for_handles(&self, handles: Vec<B256>, extra_data: Bytes) {
+        debug!(
+            handles = handles.len(),
+            "Configuring readiness checks to return true for exact calldata"
+        );
+
+        // Built inline rather than shared with `register_readiness_patterns_with_limit`, whose
+        // body is kept byte-identical to the pre-off-chain-check original.
+        let ready = Response::Success {
+            hash: None,
+            data: crate::mock_server::ResponseData::Bytes(
+                Bytes::from_str(
+                    "0x0000000000000000000000000000000000000000000000000000000000000001",
+                )
+                .unwrap(),
+            ),
+            scheduled_transactions: Vec::new(),
+        };
+
+        for selector in [
+            Decryption::isPublicDecryptionReadyCall::SELECTOR,
+            Decryption::isUserDecryptionReady_1Call::SELECTOR,
+        ] {
+            self.json_rpc_server.on_call(
+                matches_and_asserts_readiness_call(
+                    self.decryption_contract,
+                    selector,
+                    handles.clone(),
+                    extra_data.clone(),
+                ),
+                ready.clone(),
+                UsageLimit::Unlimited,
+            );
+        }
+    }
+
     /// Configure readiness checks to return a JSON-RPC error (simulating node unavailable / contract error).
-    /// This causes `ReadinessCheckError::ContractError` after max retries, dispatching `ReadinessCheckFailed`.
+    /// This causes `ReadinessCheckError::GwContractError` after max retries, dispatching `ReadinessCheckFailed`.
     pub fn set_readiness_contract_error(&self) {
         debug!("Configuring readiness checks to return RPC error");
 
@@ -263,6 +381,89 @@ impl FhevmMockWrapper {
                 Decryption::isUserDecryptionReady_1Call::SELECTOR,
             ),
             error_response,
+            UsageLimit::Unlimited,
+        );
+    }
+
+    /// Serve the `GatewayConfig` registry views the off-chain readiness check reads: the
+    /// tx-sender list, the per-Coprocessor signer↔bucket binding and the majority threshold.
+    ///
+    /// The bucket URLs come from the [`CtAttestationMock`]'s live listeners, so the relayer
+    /// resolves real origins off-chain and probes them over HTTP.
+    pub fn set_coprocessor_registry(&self, attestation_mock: &CtAttestationMock) {
+        let coprocessors = attestation_mock.coprocessors().to_vec();
+        let threshold = attestation_mock.majority_threshold();
+        debug!(
+            coprocessors = coprocessors.len(),
+            threshold, "Registering GatewayConfig Coprocessor registry"
+        );
+
+        let tx_senders: Vec<Address> = coprocessors.iter().map(|c| c.tx_sender).collect();
+        self.on_gateway_config_view(
+            GatewayConfig::getCoprocessorTxSendersCall::SELECTOR,
+            tx_senders.abi_encode(),
+        );
+
+        self.on_gateway_config_view(
+            GatewayConfig::getCoprocessorMajorityThresholdCall::SELECTOR,
+            U256::from(threshold).abi_encode(),
+        );
+
+        // `getCoprocessor` is per-tx-sender, so the response has to depend on the calldata.
+        let gateway_config_contract = self.gateway_config_contract;
+        self.json_rpc_server.on_call_dynamic(
+            matches_contract_and_selector_for_call(
+                gateway_config_contract,
+                GatewayConfig::getCoprocessorCall::SELECTOR,
+            ),
+            move |params: &mock_server::CallParams| -> Response {
+                let decoded = GatewayConfig::getCoprocessorCall::abi_decode_raw(&params.input[4..])
+                    .expect("calldata: failed to decode getCoprocessorCall");
+                let Some(coprocessor) = coprocessors
+                    .iter()
+                    .find(|c| c.tx_sender == decoded.coprocessorTxSenderAddress)
+                else {
+                    return Response::Error(format!(
+                        "getCoprocessor: {} is not a registered tx sender",
+                        decoded.coprocessorTxSenderAddress
+                    ));
+                };
+                success_bytes(
+                    GatewayConfig::Coprocessor {
+                        txSenderAddress: coprocessor.tx_sender,
+                        signerAddress: coprocessor.signer,
+                        s3BucketUrl: coprocessor.s3_bucket_url.clone(),
+                    }
+                    .abi_encode(),
+                )
+            },
+            UsageLimit::Unlimited,
+        );
+    }
+
+    /// Configure the `GatewayConfig` registry views to return a JSON-RPC error, simulating a
+    /// gateway read node that is unavailable while the registry snapshot is refreshed.
+    pub fn set_coprocessor_registry_error(&self) {
+        debug!("Configuring GatewayConfig registry views to return RPC error");
+
+        for selector in [
+            GatewayConfig::getCoprocessorTxSendersCall::SELECTOR,
+            GatewayConfig::getCoprocessorMajorityThresholdCall::SELECTOR,
+            GatewayConfig::getCoprocessorCall::SELECTOR,
+        ] {
+            self.json_rpc_server.on_call(
+                matches_contract_and_selector_for_call(self.gateway_config_contract, selector),
+                Response::Error("RPC error: node unavailable".to_string()),
+                UsageLimit::Unlimited,
+            );
+        }
+    }
+
+    /// Register a static ABI-encoded return for one `GatewayConfig` view function.
+    fn on_gateway_config_view(&self, selector: [u8; 4], return_data: Vec<u8>) {
+        self.json_rpc_server.on_call(
+            matches_contract_and_selector_for_call(self.gateway_config_contract, selector),
+            success_bytes(return_data),
             UsageLimit::Unlimited,
         );
     }
@@ -439,8 +640,8 @@ impl FhevmMockWrapper {
         targets: Vec<mock_server::SubscriptionTarget>,
         usage_limit: UsageLimit,
     ) {
-        // Set up readiness check patterns to return true (ready)
-        self.set_readiness_success();
+        // Readiness is armed by the test setup for whichever source is configured — the on-chain
+        // `set_readiness_*` patterns or the `CtAttestationMock` buckets — never from here.
 
         let id = self.next_decryption_id();
         debug!(
@@ -602,9 +803,6 @@ impl FhevmMockWrapper {
             scheduled_transactions: vec![scheduled_tx],
         };
 
-        // Set up default readiness patterns (ready state)
-        self.register_readiness_patterns(true);
-
         // Register pattern that returns immediate response with scheduled transaction.
         // Predicate also asserts that the calldata's handles and address-of-interest
         // match what the test passed in — guards against silent forwarding bugs.
@@ -641,8 +839,7 @@ impl FhevmMockWrapper {
         values: Vec<u64>,
         target: mock_server::SubscriptionTarget,
     ) {
-        // Set up readiness check patterns to return true (ready)
-        self.set_readiness_success();
+        // Readiness is armed by the test setup for whichever source is configured, not here.
 
         // Register the transaction pattern with Once limit for redundancy tests
         // (each pattern registration in a loop should be consumed once)
@@ -782,9 +979,6 @@ impl FhevmMockWrapper {
     /// Register public decryption request event only (for timeout testing)
     /// Emits the request event but NO response event, causing the relayer to timeout
     pub fn on_public_decrypt_request_only(&self, handles: Vec<B256>) {
-        // Set up readiness check to return true (ready)
-        self.set_readiness_success();
-
         let id = self.next_decryption_id();
         let request_log = build_public_decrypt_request(self.decryption_contract, id, handles);
         self.register_request_only(
@@ -812,7 +1006,6 @@ impl FhevmMockWrapper {
         handles: Vec<B256>,
         user: Address,
     ) {
-        self.set_readiness_success();
         let id = self.next_decryption_id();
         let request_log =
             build_legacy_user_decrypt_request(self.decryption_contract, id, user, handles);
@@ -1280,8 +1473,10 @@ mod tests {
         let server = MockServer::new(MockConfig::new());
         let decryption_addr = Address::repeat_byte(1);
         let input_addr = Address::repeat_byte(2);
+        let gateway_config_addr = Address::repeat_byte(3);
 
-        let wrapper = FhevmMockWrapper::new(server, decryption_addr, input_addr);
+        let wrapper =
+            FhevmMockWrapper::new(server, decryption_addr, input_addr, gateway_config_addr);
 
         assert_eq!(
             wrapper.decryption_contract, decryption_addr,

@@ -89,14 +89,13 @@ impl UserDecryptReadinessProcessor {
             return;
         }
 
-        // 2. GATEWAY CIPHERTEXT CHECK
-        // All three attestation types use the same
-        // `isUserDecryptionReady_1((bytes32,address)[], bytes)` overload:
-        // the gateway only verifies that ciphertext material exists for
-        // each handle, so we just need a `HandleContractPair` projection.
-        // For `Eip712UnifiedV1` we drop `owner_address` from each
-        // `HandleEntry` — that field only feeds the gateway's per-handle
-        // ACL on the decryption call itself.
+        // 2. CIPHERTEXT READINESS CHECK
+        // All three request kinds collapse to the same check: under the on-chain Gateway check
+        // and the off-chain Coprocessor attestation check alike, the gateway/consensus verdict
+        // only depends on whether ciphertext material exists for each handle, so a
+        // `HandleContractPair` projection is enough. For `Eip712UnifiedV1` we drop
+        // `owner_address` from each `HandleEntry` — that field only feeds the gateway's
+        // per-handle ACL on the decryption call itself.
         let (pairs, extra_data): (Vec<HandleContractPair>, _) = match &task.request {
             UserDecryptRequest::LegacyDirect {
                 ct_handle_contract_pairs,
@@ -171,6 +170,40 @@ impl UserDecryptReadinessProcessor {
                     &task.request,
                     task.job_id,
                     EventProcessingError::ContractCallFailed(redact_alloy_error(&e)),
+                )
+                .await;
+            }
+
+            Err(
+                e @ (ReadinessCheckError::NoAttestationConsensus { .. }
+                | ReadinessCheckError::RegistryError { .. }),
+            ) => {
+                // Operator log: a digest value may legitimately appear here. What a caller sees —
+                // the stored reason and the HTTP response — is decided solely by the `From` impl
+                // below.
+                error!(job_id = %task.job_id, error = ?e, "No Coprocessor attestation consensus");
+
+                Self::dispatch_failure(
+                    &dispatcher,
+                    &task.request,
+                    task.job_id,
+                    EventProcessingError::from(e),
+                )
+                .await;
+            }
+
+            Err(e @ ReadinessCheckError::AttestationsNotReady { .. }) => {
+                error!(
+                    job_id = %task.job_id,
+                    error = ?e,
+                    "Ciphertext attestation readiness check timed out"
+                );
+
+                Self::dispatch_timeout(
+                    &dispatcher,
+                    &task.request,
+                    task.job_id,
+                    EventProcessingError::from(e),
                 )
                 .await;
             }
