@@ -105,7 +105,9 @@ impl From<Erc1271Error> for ProcessingError {
                 Self::irrecoverable(ErrorCode::UserSignatureRejected, err)
             }
             Erc1271Error::Transport(_) => Self::transient(err),
-            Erc1271Error::WrongMagic(..) | Erc1271Error::Rejected(..) => {
+            Erc1271Error::WrongMagic(..)
+            | Erc1271Error::Rejected(..)
+            | Erc1271Error::EmptyRevert(_) => {
                 Self::recoverable(ErrorCode::UserSignatureRejected, err)
             }
         }
@@ -201,7 +203,8 @@ impl From<Erc1271Error> for RequestCheckError {
     fn from(err: Erc1271Error) -> Self {
         let kind = match &err {
             Erc1271Error::Transport(_) => RequestCheckKind::Network,
-            Erc1271Error::EmptySigOnEoa(_)
+            Erc1271Error::EmptyRevert(_)
+            | Erc1271Error::EmptySigOnEoa(_)
             | Erc1271Error::EoaMismatchNoCode(_)
             | Erc1271Error::Rejected(..)
             | Erc1271Error::WrongMagic(..) => RequestCheckKind::Signature,
