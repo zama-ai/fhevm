@@ -21,10 +21,11 @@ export const ERC1271_MAGIC_VALUE = '0x1626ba7e' as const;
 
 /**
  * Gas cap for the `isValidSignature` STATICCALL. Matches the relayer / KMS
- * default (`erc1271_gas_limit = 100000`) so all three layers bound the wallet's
- * verification the same way.
+ * default (`erc1271_gas_limit = 250000`) so all three layers bound the wallet's
+ * verification identically. A nested Safe (a Safe owning a Safe) costs ~91k
+ * gas; the rest is headroom for deeper nesting.
  */
-export const ERC1271_GAS_LIMIT = 100_000n;
+export const ERC1271_GAS_LIMIT = 250_000n;
 
 ////////////////////////////////////////////////////////////////////////////////
 

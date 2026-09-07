@@ -216,7 +216,7 @@ fn default_s3_connect_timeout() -> Duration {
 }
 
 fn default_erc1271_gas_limit() -> u64 {
-    100_000
+    250_000
 }
 
 fn default_ct_attestation_verifier_enabled() -> bool {

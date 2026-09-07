@@ -17,6 +17,7 @@ import {
   chainIdFromHandle,
   computeUnifiedDigest,
   concatSignatureParts,
+  describeUnifiedFailure,
   directHandle,
   isSignatureRejection,
   pollJob,
@@ -27,8 +28,10 @@ import {
 import { Signers, getSigners, initSigners } from '../signers';
 import { FhevmInstances } from '../types';
 import {
+  ERC1271_GAS_LIMIT,
   SafeAccount,
   approveSafeHash,
+  assertErc1271ValidOnChain,
   buildSafeMultisigSignature,
   buildSafeNestedMultisigSignature,
   collectSafeOwnerParts,
@@ -63,6 +66,14 @@ const lazy = <T>(create: () => Promise<T>): (() => Promise<T>) => {
   let pending: Promise<T> | undefined;
   return () => (pending ??= create());
 };
+
+/**
+ * Failure hint for a positive whose signature the host chain already accepted,
+ * which narrows a `400` to the relayer's own gas cap or its view of the chain.
+ */
+const relayerCapHint = (gasNeeded: bigint): string =>
+  `(host chain accepts this signature: the ERC-1271 check costs ${gasNeeded} gas under the ${ERC1271_GAS_LIMIT} ` +
+  "cap asserted here, so a 400 points at the relayer's cap or its view of the chain)";
 
 /**
  * ERC-1271 support for smart-account signature verification.
@@ -235,8 +246,8 @@ describe('ERC-1271 user decryption', function () {
         timeoutMs: POSITIVE_TIMEOUT_MS,
       },
     );
-    expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
-    expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
+    expect(post.httpStatus, describeUnifiedFailure(post)).to.equal(202);
+    expect(poll?.status, describeUnifiedFailure(post, poll)).to.equal('succeeded');
     // Decrypt the same handle through the public SDK and assert the known plaintext.
     const clear = await instances.alice.userDecryptSingleHandle({
       handle,
@@ -267,8 +278,8 @@ describe('ERC-1271 user decryption', function () {
         timeoutMs: POSITIVE_TIMEOUT_MS,
       },
     );
-    expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
-    expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
+    expect(post.httpStatus, describeUnifiedFailure(post)).to.equal(202);
+    expect(poll?.status, describeUnifiedFailure(post, poll)).to.equal('succeeded');
   });
 
   it('test erc1271 user decrypt smart account (approveHash empty signature) succeeds', async function () {
@@ -287,7 +298,7 @@ describe('ERC-1271 user decryption', function () {
     await (await approveWallet.connect(signers.bob).approveHash(digest)).wait();
 
     const { post } = await submitUnifiedRequest(cfg, req, { kind: 'empty' });
-    expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
+    expect(post.httpStatus, describeUnifiedFailure(post)).to.equal(202);
     const poll = await pollJob(cfg, post.jobId!, { timeoutMs: POSITIVE_TIMEOUT_MS });
     expect(poll.status, JSON.stringify(poll.raw)).to.equal('succeeded');
   });
@@ -480,8 +491,8 @@ describe('ERC-1271 user decryption', function () {
         timeoutMs: POSITIVE_TIMEOUT_MS,
       },
     );
-    expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
-    expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
+    expect(post.httpStatus, describeUnifiedFailure(post)).to.equal(202);
+    expect(poll?.status, describeUnifiedFailure(post, poll)).to.equal('succeeded');
   });
 
   it('test erc1271 user decrypt Safe 1-of-1 single owner signature succeeds', async function () {
@@ -500,8 +511,8 @@ describe('ERC-1271 user decryption', function () {
       { kind: 'raw', signature },
       { waitForTerminal: true, timeoutMs: POSITIVE_TIMEOUT_MS },
     );
-    expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
-    expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
+    expect(post.httpStatus, describeUnifiedFailure(post)).to.equal(202);
+    expect(poll?.status, describeUnifiedFailure(post, poll)).to.equal('succeeded');
   });
 
   it('test erc1271 user decrypt multisig 3-of-3 concatenated owner signatures succeed', async function () {
@@ -519,8 +530,8 @@ describe('ERC-1271 user decryption', function () {
         timeoutMs: POSITIVE_TIMEOUT_MS,
       },
     );
-    expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
-    expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
+    expect(post.httpStatus, describeUnifiedFailure(post)).to.equal(202);
+    expect(poll?.status, describeUnifiedFailure(post, poll)).to.equal('succeeded');
   });
 
   it('test erc1271 user decrypt multisig rejects a blob below threshold (1 of 3 parts)', async function () {
@@ -594,8 +605,8 @@ describe('ERC-1271 user decryption', function () {
       { kind: 'raw', signature },
       { waitForTerminal: true, timeoutMs: POSITIVE_TIMEOUT_MS },
     );
-    expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
-    expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
+    expect(post.httpStatus, describeUnifiedFailure(post)).to.equal(202);
+    expect(poll?.status, describeUnifiedFailure(post, poll)).to.equal('succeeded');
   });
 
   it('test erc1271 user decrypt multisig accepts a mixed blob (ECDSA part + pre-approved-hash part)', async function () {
@@ -616,8 +627,8 @@ describe('ERC-1271 user decryption', function () {
       { kind: 'raw', signature },
       { waitForTerminal: true, timeoutMs: POSITIVE_TIMEOUT_MS },
     );
-    expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
-    expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
+    expect(post.httpStatus, describeUnifiedFailure(post)).to.equal(202);
+    expect(poll?.status, describeUnifiedFailure(post, poll)).to.equal('succeeded');
   });
 
   it('test erc1271 user decrypt multisig rejects a pre-approved-hash part that was never approved', async function () {
@@ -653,8 +664,8 @@ describe('ERC-1271 user decryption', function () {
       { kind: 'raw', signature },
       { waitForTerminal: true, timeoutMs: POSITIVE_TIMEOUT_MS },
     );
-    expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
-    expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
+    expect(post.httpStatus, describeUnifiedFailure(post)).to.equal(202);
+    expect(poll?.status, describeUnifiedFailure(post, poll)).to.equal('succeeded');
   });
 
   it('test erc1271 user decrypt multisig accepts a v=0 contract-signature part (nested Safe owner)', async function () {
@@ -664,7 +675,7 @@ describe('ERC-1271 user decryption', function () {
     // The outer 2-of-3's approvals: a v=0 part from the inner 1-of-1 Safe
     // (dave signs the inner SafeMessage wrap of the outer preimage) + bob's
     // plain ECDSA part. 227 bytes: 130 static + 32-byte length + 65 inner.
-    // Measured ~83k gas incl. intrinsic vs the 100k erc1271_gas_limit.
+    // ~83k gas incl. intrinsic on canonical Safe v1.4.1.
     const signature = await buildSafeNestedMultisigSignature(
       (await nestedOuter1of1()).safe,
       digest,
@@ -672,14 +683,20 @@ describe('ERC-1271 user decryption', function () {
       [signers.bob],
     );
     expect(signature.length).to.equal(2 + 227 * 2);
+    const gasNeeded = await assertErc1271ValidOnChain(
+      ethers.provider,
+      (await nestedOuter1of1()).safe.address,
+      digest,
+      signature,
+    );
     const { post, poll } = await requestUnifiedUserDecrypt(
       cfg,
       req,
       { kind: 'raw', signature },
       { waitForTerminal: true, timeoutMs: POSITIVE_TIMEOUT_MS },
     );
-    expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
-    expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
+    expect(post.httpStatus, `${describeUnifiedFailure(post)} ${relayerCapHint(gasNeeded)}`).to.equal(202);
+    expect(poll?.status, describeUnifiedFailure(post, poll)).to.equal('succeeded');
   });
 
   it('test erc1271 user decrypt multisig accepts a v=0 part from a nested 2-of-3 Safe owner', async function () {
@@ -687,16 +704,14 @@ describe('ERC-1271 user decryption', function () {
     const req = await freshMultisigRequest(nestedOuter2of3);
     const digest = computeUnifiedDigest(cfg, req);
     // Same shape with a multisig INNER Safe (bob+dave of a 2-of-3): 292 bytes
-    // = 130 static + 32-byte length + 130 inner. Measured ~91k gas incl.
-    // intrinsic — only ~9% under the default 100k erc1271_gas_limit, so this
-    // positive doubles as a gas-headroom canary. Exceeding the cap does NOT
-    // read as an invalid signature: only an RPC error carrying revert data
-    // becomes `Rejected` (shared/user-decryption-signature/src/lib.rs:136-149)
-    // and out-of-gas carries none (anvil answers `EVM error OutOfGas`, no
-    // `data`), so it lands in `Transport` — the relayer retries and then fails
-    // the request with a 500 without ever queuing it
-    // (relayer/src/host/signature_prechecker.rs:130-157), while the connector
-    // treats the same class as recoverable and retries until it gives up.
+    // = 130 static + 32-byte length + 130 inner. ~91k gas incl. intrinsic —
+    // the most expensive shape in this suite, so the first positive to break
+    // if `erc1271_gas_limit` is set too low.
+    //
+    // A `400` here is ambiguous: an under-gassed call reverts with empty data,
+    // which `verify_signature` reports exactly like a forged blob, a genuine
+    // rejection being told apart only by carrying a revert reason. The
+    // cross-check below prices the call on-chain so the failure says which.
     const signature = await buildSafeNestedMultisigSignature(
       (await nestedOuter2of3()).safe,
       digest,
@@ -704,14 +719,20 @@ describe('ERC-1271 user decryption', function () {
       [signers.bob],
     );
     expect(signature.length).to.equal(2 + 292 * 2);
+    const gasNeeded = await assertErc1271ValidOnChain(
+      ethers.provider,
+      (await nestedOuter2of3()).safe.address,
+      digest,
+      signature,
+    );
     const { post, poll } = await requestUnifiedUserDecrypt(
       cfg,
       req,
       { kind: 'raw', signature },
       { waitForTerminal: true, timeoutMs: POSITIVE_TIMEOUT_MS },
     );
-    expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
-    expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
+    expect(post.httpStatus, `${describeUnifiedFailure(post)} ${relayerCapHint(gasNeeded)}`).to.equal(202);
+    expect(poll?.status, describeUnifiedFailure(post, poll)).to.equal('succeeded');
   });
 
   it('test erc1271 user decrypt multisig rejects a v=0 part whose inner signature is from a non-owner', async function () {
