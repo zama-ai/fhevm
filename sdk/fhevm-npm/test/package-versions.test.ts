@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { formatPackageVersions, packageVersionEntries } from '../base/package-versions.ts';
+import { formatPackageVersions, packageVersionEntries, withCentralVersions } from '../base/package-versions.ts';
 import { loadedPackage } from './helpers.ts';
 
 const packages = [
@@ -51,6 +51,20 @@ test('the table is aligned and carries a header', () => {
   assert.equal(lines.length, 4);
   assert.match(lines[0] ?? '', /^package\s+name\s+version\s+distribution\s+mirror$/);
   assert.match(lines[2] ?? '', /^\.\/b\/pkg\s+@fhevm\/b\s+1\.2\.3\s+npm$/);
+});
+
+test('the central column appears beside the derived version once sdk/versions.json is loaded', () => {
+  const entries = withCentralVersions(packageVersionEntries(packages), {
+    $schema: './fhevm-npm/schemas/versions.schema.json',
+    schemaVersion: 1,
+    packages: { './b/pkg': '1.2.4' },
+  });
+  const lines = formatPackageVersions(entries).split('\n');
+  assert.match(lines[0] ?? '', /^package\s+name\s+central\s+version\s+distribution\s+mirror$/);
+  // Central and derived disagree here; the list shows both and leaves the verdict to `version check`.
+  assert.match(lines[2] ?? '', /^\.\/b\/pkg\s+@fhevm\/b\s+1\.2\.4\s+1\.2\.3\s+npm$/);
+  // A payload the file does not list shows '-', never a guess.
+  assert.match(lines[1] ?? '', /\s-\s/);
 });
 
 test('--check-npmjs classifies each npm-distributed entry from the registry answer', async () => {

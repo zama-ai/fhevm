@@ -3,13 +3,17 @@
 
 import type { NpmManifestEntry } from '../manifest.ts';
 import type { LoadedPackage } from './npm.ts';
+import type { VersionsFile } from './versions.ts';
 
 type DistributionChannel = 'npm' | 'mirror';
 
 export type PackageVersionEntry = {
   readonly key: string;
   readonly name: string;
+  /** What package.json says — derived state. */
   readonly version: string;
+  /** What sdk/versions.json says — the authority; absent when the caller did not load it. */
+  readonly central?: string;
   readonly channels: readonly DistributionChannel[];
   /** The local payload's package.json `repository` URL, as written. */
   readonly repository?: string;
@@ -43,15 +47,38 @@ export function packageVersionEntries(packages: readonly LoadedPackage[]): reado
     .sort((left, right) => left.key.localeCompare(right.key));
 }
 
+/** The same entries with the central version beside the derived one; a payload the file lacks shows '-'. */
+export function withCentralVersions(
+  entries: readonly PackageVersionEntry[],
+  versions: VersionsFile,
+): readonly PackageVersionEntry[] {
+  return entries.map((entry) => ({ ...entry, central: versions.packages[entry.key] ?? '-' }));
+}
+
 export function formatPackageVersions(entries: readonly PackageVersionEntry[]): string {
+  const central = hasCentral(entries);
   const rows = entries.map((entry) => [
     entry.key,
     entry.name,
+    ...centralCell(entry, central),
     entry.version,
     entry.channels.join('+'),
     entry.mirrorRepository ?? '',
   ]);
-  return formatTable(['package', 'name', 'version', 'distribution', 'mirror'], rows);
+  return formatTable(['package', 'name', ...centralHeader(central), 'version', 'distribution', 'mirror'], rows);
+}
+
+// The central column appears only when the caller loaded sdk/versions.json, so older callers keep their table.
+function hasCentral(entries: readonly PackageVersionEntry[]): boolean {
+  return entries.some((entry) => entry.central !== undefined);
+}
+
+function centralHeader(central: boolean): readonly string[] {
+  return central ? ['central'] : [];
+}
+
+function centralCell(entry: PackageVersionEntry, central: boolean): readonly string[] {
+  return central ? [entry.central ?? '-'] : [];
 }
 
 function formatTable(header: readonly string[], rows: readonly (readonly string[])[]): string {
@@ -193,11 +220,13 @@ export function formatNpmjsStatus(status: NpmjsStatus | undefined): string {
 }
 
 export function formatCheckedPackageVersions(entries: readonly NpmjsCheckedEntry[]): string {
+  const central = hasCentral(entries);
   const rows = entries.map((entry) => {
     const publication = entry.npmjs?.kind === 'published' ? entry.npmjs : undefined;
     return [
       entry.key,
       entry.name,
+      ...centralCell(entry, central),
       entry.version,
       entry.channels.join('+'),
       formatNpmjsStatus(entry.npmjs),
@@ -208,7 +237,18 @@ export function formatCheckedPackageVersions(entries: readonly NpmjsCheckedEntry
     ];
   });
   return formatTable(
-    ['package', 'name', 'version', 'distribution', 'npmjs', 'published', 'npmjs repository', 'gitHead', 'mirror'],
+    [
+      'package',
+      'name',
+      ...centralHeader(central),
+      'version',
+      'distribution',
+      'npmjs',
+      'published',
+      'npmjs repository',
+      'gitHead',
+      'mirror',
+    ],
     rows,
   );
 }

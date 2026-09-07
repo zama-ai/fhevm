@@ -32,11 +32,13 @@ import { generateExportsCommand } from './commands/generate-exports.ts';
 import { cleanForgeDependencies } from './commands/clean-forge-dependencies.ts';
 import { installForgeDependencies } from './commands/install-forge-dependencies.ts';
 import { listPackages } from './commands/list-packages.ts';
-import { listVersions } from './commands/list-versions.ts';
 import { packTarballs } from './commands/pack-tarball.ts';
 import { syncVendoredCommand } from './commands/sync-vendored.ts';
 import { testConsumerRegeneratePackageLock } from './commands/test-consumer-regenerate-package-lock.ts';
 import { testConsumer } from './commands/test-consumer.ts';
+import { versionApply } from './commands/version-apply.ts';
+import { versionCheck } from './commands/version-check.ts';
+import { versionList } from './commands/version-list.ts';
 import { loadNpmManifest } from './manifest.ts';
 
 const commands: Readonly<Record<CommandName, CheckCommand>> = {
@@ -115,8 +117,18 @@ async function main(): Promise<void> {
     listPackages(manifest);
     return;
   }
-  if (options.command === 'list-versions') {
-    await listVersions(options.workspaceRoot, manifest, { checkNpmjs: options.checkNpmjs, json: options.json });
+  if (options.command === 'version-apply') {
+    await versionApply(options.workspaceRoot, manifest, { dryRun: options.dryRun, checkNpmjs: options.checkNpmjs });
+    return;
+  }
+  if (options.command === 'version-check') {
+    const report = versionCheck({ workspaceRoot: options.workspaceRoot, manifest });
+    printReport(report, options.verbosity);
+    if (report.violations.length > 0) process.exitCode = 1;
+    return;
+  }
+  if (options.command === 'version-list') {
+    await versionList(options.workspaceRoot, manifest, { checkNpmjs: options.checkNpmjs, json: options.json });
     return;
   }
   if (options.command === 'pack-tarball') {

@@ -9,6 +9,7 @@ import type { Violation } from '../base/diagnostics.ts';
 const SCHEMA_DIRECTORY = join('fhevm-npm', 'schemas');
 const REQUIRED_JSON_FILES = [
   'npm-manifest.json',
+  'versions.json',
   'cleartext-config.json',
   'fhevm-chains.config.json',
   'fhevm-network-groups.config.json',

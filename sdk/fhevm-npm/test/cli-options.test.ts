@@ -13,6 +13,17 @@ test('global verbosity counts -v through -vvvv and caps additional flags', () =>
   assert.equal(parseCliOptions(['check-names', '--verbose', '--verbose']).verbosity, 2);
 });
 
+test("'version list' is the first grouped command and keeps list-versions' flags", () => {
+  const plain = parseCliOptions(['version', 'list']);
+  assert.equal(plain.command, 'version-list');
+  if (plain.command !== 'version-list') throw new Error('unreachable');
+  assert.deepEqual([plain.checkNpmjs, plain.json], [false, false]);
+
+  const full = parseCliOptions(['version', 'list', '--check-npmjs', '--json']);
+  if (full.command !== 'version-list') throw new Error('unreachable');
+  assert.deepEqual([full.checkNpmjs, full.json], [true, true]);
+});
+
 test('consumer lock regeneration defaults to every fixture', () => {
   const options = parseCliOptions(['test-consumer-regenerate-package-lock']);
   assert.equal(options.command, 'test-consumer-regenerate-package-lock');
@@ -64,16 +75,4 @@ test("test-consumer accepts '--test-file' without implicitly enabling '--run'", 
   if (options.command !== 'test-consumer') throw new Error('unreachable');
   assert.equal(options.testFile, 'test/fhe-rand.test.ts');
   assert.equal(options.run, false);
-});
-
-test('list-versions takes no argument and an optional --check-npmjs', () => {
-  const plain = parseCliOptions(['list-versions']);
-  assert.equal(plain.command, 'list-versions');
-  if (plain.command !== 'list-versions') throw new Error('unreachable');
-  assert.equal(plain.checkNpmjs, false);
-  assert.equal(plain.json, false);
-  const checked = parseCliOptions(['list-versions', '--check-npmjs', '--json']);
-  if (checked.command !== 'list-versions') throw new Error('unreachable');
-  assert.equal(checked.checkNpmjs, true);
-  assert.equal(checked.json, true);
 });

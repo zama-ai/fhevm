@@ -11,6 +11,7 @@ const SOURCE_WORKSPACE = join(import.meta.dirname, '..', '..');
 const MANIFEST = loadNpmManifest(join(SOURCE_WORKSPACE, 'npm-manifest.json'));
 const ROOT_JSON_FILES = [
   'npm-manifest.json',
+  'versions.json',
   'cleartext-config.json',
   'fhevm-chains.config.json',
   'fhevm-network-groups.config.json',
@@ -42,7 +43,7 @@ test('validates every real central schema and JSON configuration file', () => {
   try {
     const result = report(workspace);
     assert.deepEqual(result.violations, []);
-    assert.equal(result.checkedPackageKeys.length, 11);
+    assert.equal(result.checkedPackageKeys.length, 13);
   } finally {
     rmSync(workspace, { recursive: true, force: true });
   }

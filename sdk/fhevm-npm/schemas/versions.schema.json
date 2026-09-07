@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/zama-ai/fhevm/blob/main/sdk/fhevm-npm/schemas/versions.schema.json",
+  "title": "fhevm published package versions",
+  "description": "The single authority for the version of every published payload, keyed by its npm-manifest.json package key. package.json versions are derived from this file by `fhevm-npm version apply`, never edited by hand.",
+  "$comment": "This schema validates local structure. fhevm-npm additionally requires exactly one entry per `kind: published` payload, in manifest order, with canonical SemVer values.",
+  "type": "object",
+  "required": ["$schema", "schemaVersion", "packages"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "const": "./fhevm-npm/schemas/versions.schema.json" },
+    "schemaVersion": { "const": 1 },
+    "packages": {
+      "type": "object",
+      "description": "Manifest package key to canonical SemVer version.",
+      "propertyNames": { "pattern": "^\\./" },
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(-[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?$"
+      }
+    }
+  }
+}

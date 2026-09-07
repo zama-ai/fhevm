@@ -40,7 +40,9 @@ export type CliOptions = {
     | 'generate-exports'
     | 'install-forge-dependencies'
     | 'list-packages'
-    | 'list-versions'
+    | 'version-apply'
+    | 'version-check'
+    | 'version-list'
     | 'pack-tarball'
     | 'sync-fhevm-chains'
     | 'sync-vendored'
@@ -70,7 +72,9 @@ export type CliOptions = {
       readonly force: boolean;
     }
   | { readonly command: 'list-packages' }
-  | { readonly command: 'list-versions'; readonly checkNpmjs: boolean; readonly json: boolean }
+  | { readonly command: 'version-apply'; readonly dryRun: boolean; readonly checkNpmjs: boolean }
+  | { readonly command: 'version-check' }
+  | { readonly command: 'version-list'; readonly checkNpmjs: boolean; readonly json: boolean }
   | {
       readonly command: 'pack-tarball';
       readonly packageSelector?: string;
@@ -135,10 +139,11 @@ export function parseCliOptions(argv: readonly string[]): CliOptions {
   let forgeDependencyPackageSelector: string | undefined;
   let installAllForgeDependencies = false;
   let cleanForgeDependencies:
-    | { readonly packageSelector?: string; readonly dryRun: boolean; readonly force: boolean }
-    | undefined;
+    { readonly packageSelector?: string; readonly dryRun: boolean; readonly force: boolean } | undefined;
   let listPackagesSelected = false;
   let listVersions: { readonly checkNpmjs: boolean; readonly json: boolean } | undefined;
+  let versionCheckSelected = false;
+  let versionApply: { readonly dryRun: boolean; readonly checkNpmjs: boolean } | undefined;
   let packTarball: { readonly packageSelector?: string; readonly outDir?: string; readonly clean: boolean } | undefined;
   let syncVendored: { readonly check: boolean } | undefined;
   let syncFhevmChains: { readonly commit?: string; readonly latest: boolean } | undefined;
@@ -438,15 +443,42 @@ Why:
     .action(() => {
       listPackagesSelected = true;
     });
-  program
-    .command('list-versions')
+  // One level of nesting, in the shape FHEVM_NPM_CLI_PLAN.md gives the whole CLI: `version` groups the
+  // commands about sdk/versions.json and prints its own usage when called bare. Completion lists the
+  // group as one word; completing its subcommands belongs to that plan's renderer work.
+  const version = program
+    .command('version')
+    .description('Read and reconcile sdk/versions.json, the authority for every published payload version.');
+  version
+    .command('list')
     .description(
-      'List the version of every published payload, with its distribution channels (npm, mirror) and mirror repository.',
+      'List every published payload: central version, package.json version, distribution channels (npm, mirror) ' +
+        'and mirror repository.',
     )
     .option('--check-npmjs', 'ask registry.npmjs.org whether each npm-distributed version is published', false)
     .option('--json', 'print the entries as JSON instead of a table', false)
     .action((options: { readonly checkNpmjs: boolean; readonly json: boolean }) => {
       listVersions = { checkNpmjs: options.checkNpmjs, json: options.json };
+    });
+  version
+    .command('check')
+    .description(
+      'Check that sdk/versions.json is valid and that every package.json version and lockfile member entry ' +
+        'equals its central version. Read-only.',
+    )
+    .action(() => {
+      versionCheckSelected = true;
+    });
+  version
+    .command('apply')
+    .description(
+      'Reconcile every derived version (package.json, lockfile member entries) from sdk/versions.json. ' +
+        'Requires a clean worktree or exactly one unstaged change: sdk/versions.json.',
+    )
+    .option('--dry-run', 'print the central edit and the derived writes without changing any file', false)
+    .option('--check-npmjs', 'refuse a changed npm-distributed version that registry.npmjs.org already has', false)
+    .action((options: { readonly dryRun: boolean; readonly checkNpmjs: boolean }) => {
+      versionApply = { dryRun: options.dryRun, checkNpmjs: options.checkNpmjs };
     });
   program
     .command('pack-tarball [package]')
@@ -504,6 +536,8 @@ Why:
     cleanForgeDependencies === undefined &&
     !listPackagesSelected &&
     listVersions === undefined &&
+    !versionCheckSelected &&
+    versionApply === undefined &&
     packTarball === undefined &&
     !regenerateConsumerPackageLocks &&
     testConsumer === undefined &&
@@ -658,9 +692,29 @@ Why:
       sortPackageJson: false,
     };
   }
+  if (versionApply !== undefined) {
+    return {
+      command: 'version-apply',
+      dryRun: versionApply.dryRun,
+      checkNpmjs: versionApply.checkNpmjs,
+      workspaceRoot,
+      manifestFile: resolve(workspaceRoot, 'npm-manifest.json'),
+      verbosity: options.verbose,
+      sortPackageJson: false,
+    };
+  }
+  if (versionCheckSelected) {
+    return {
+      command: 'version-check',
+      workspaceRoot,
+      manifestFile: resolve(workspaceRoot, 'npm-manifest.json'),
+      verbosity: options.verbose,
+      sortPackageJson: false,
+    };
+  }
   if (listVersions !== undefined) {
     return {
-      command: 'list-versions',
+      command: 'version-list',
       checkNpmjs: listVersions.checkNpmjs,
       json: listVersions.json,
       workspaceRoot,
