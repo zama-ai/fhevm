@@ -5066,41 +5066,68 @@ fn mollusk_transfer_from_value_spends_existing_amount() {
     assert_eq!(amount_after.leaf_count, 0);
 }
 
-/// An amount value under the sender's own wallet (an authority outside the token program, such as
-/// a value another program wrote for this wallet) is spendable because the wallet signs the
-/// transaction: the host admits it on the owner's signature.
+/// A program PDA owns the token account and supplies a foreign amount through signer privileges
+/// forwarded to the token instruction. The real token -> host CPI must carry both deny records.
 #[test]
-fn mollusk_transfer_from_value_spends_amount_under_owner_wallet_authority() {
-    let fixture = TokenFixture::new();
-    let mut accounts = fixture.base_accounts();
-    let amount_handle = handle_for_chain(45, BALANCE_FHE_TYPE);
-    let amount_value = seed_amount_value(
-        &fixture,
-        &mut accounts,
-        fixture.owner,
-        [0x77; 32],
-        amount_handle,
-    );
-    let context = mollusk().with_context(accounts);
-
-    let mut cleartext = CleartextLedger::default();
-    cleartext.seed_amount(fixture.alice_initial, 1_000);
-    cleartext.seed_amount(fixture.bob_initial, 100);
-    cleartext.seed_amount(amount_handle, 200);
-
-    let transfer = confidential_transfer_from_value_ix(
-        &fixture,
-        fixture.owner,
-        fixture.alice_token,
-        fixture.bob_token,
-        fixture.alice_balance_value,
-        fixture.bob_balance_value,
-        amount_value,
-    );
-    let result = context.process_and_validate_instruction(&transfer, &[Check::success()]);
-    cleartext.evaluate_fhe_cpi(&context, &result);
-    assert_eq!(cleartext.balance(&context, fixture.alice_token), 800);
-    assert_eq!(cleartext.balance(&context, fixture.bob_token), 300);
+fn mollusk_transfer_from_value_checks_every_application_deny_record() {
+    for (foreign, denied) in [(false, false), (true, false), (true, true)] {
+        let program = confidential_batcher::id();
+        let owner = Pubkey::find_program_address(&[b"amount-owner"], &program).0;
+        let fixture = TokenFixture::with_keys(owner, Pubkey::new_unique(), Pubkey::new_unique());
+        let (mut accounts, token_record) = deny_enabled_transfer_accounts(&fixture, false);
+        let amount_handle = handle_for_chain(45, BALANCE_FHE_TYPE);
+        let app = if foreign {
+            host::AppScope {
+                program,
+                scope: [0x77; 32],
+            }
+        } else {
+            fixture.app()
+        };
+        let authority = if foreign { owner } else { fixture.alice_token };
+        let (amount_value, value) = new_encrypted_value(app, authority, [0x77; 32], amount_handle);
+        accounts.insert(amount_value, encrypted_value_account(&value));
+        let mut records = vec![token_record];
+        if foreign {
+            let (record, account) = deny_scope_record_account(app, denied);
+            accounts.insert(record, account);
+            records.push(record);
+        }
+        let context = mollusk().with_context(accounts);
+        let mut transfer = confidential_transfer_from_value_ix(
+            &fixture,
+            owner,
+            fixture.alice_token,
+            fixture.bob_token,
+            fixture.alice_balance_value,
+            fixture.bob_balance_value,
+            amount_value,
+        );
+        transfer.accounts.extend(
+            records
+                .into_iter()
+                .map(|key| AccountMeta::new_readonly(key, false)),
+        );
+        if denied {
+            context.process_and_validate_instruction(
+                &transfer,
+                &[anchor_error_check(host::ZamaHostError::ScopeDenied as u32)],
+            );
+            assert_eq!(
+                read_encrypted_value(&context, fixture.alice_balance_value).current_handle,
+                fixture.alice_initial
+            );
+        } else {
+            let mut cleartext = CleartextLedger::default();
+            cleartext.seed_amount(fixture.alice_initial, 1_000);
+            cleartext.seed_amount(fixture.bob_initial, 100);
+            cleartext.seed_amount(amount_handle, 200);
+            let result = context.process_and_validate_instruction(&transfer, &[Check::success()]);
+            cleartext.evaluate_fhe_cpi(&context, &result);
+            assert_eq!(cleartext.balance(&context, fixture.alice_token), 800);
+            assert_eq!(cleartext.balance(&context, fixture.bob_token), 300);
+        }
+    }
 }
 
 /// The recipient of a transfer may decrypt the sender's `transferred_amount` (they are allowed on
@@ -5891,37 +5918,73 @@ fn mollusk_burn_from_value_burned_handle_redeems() {
     );
 }
 
-/// An amount under the owner's own wallet is spendable for a burn: the wallet signs, so the host
-/// admits the value on the owner's signature.
+/// The from-value burn uses the same application witness rule as transfer, including deduplication.
 #[test]
-fn mollusk_burn_from_value_spends_amount_under_owner_wallet_authority() {
-    let fixture = BurnRedeemFixture::new();
-    let mut accounts = fixture.accounts(1_000);
-    let amount_handle = handle_for_chain(60, BALANCE_FHE_TYPE);
-    let amount_value = seed_burn_amount_value(
-        &fixture,
-        &mut accounts,
-        fixture.owner,
-        [0x77; 32],
-        amount_handle,
-    );
-    let context = burn_redeem_mollusk().with_context(accounts);
-
-    let mut cleartext = CleartextLedger::default();
-    cleartext.seed_amount(fixture.initial_balance, 1_000);
-    cleartext.seed_amount(fixture.initial_total_supply, 5_000);
-    cleartext.seed_amount(amount_handle, 300);
-    let burn = confidential_burn_from_value_auto(
-        &context,
-        &fixture,
-        fixture.owner,
-        fixture.owner,
-        amount_value,
-    );
-    let result = context.process_and_validate_instruction(&burn, &[Check::success()]);
-    cleartext.evaluate_fhe_cpi(&context, &result);
-    assert_eq!(cleartext.balance(&context, fixture.token_account), 700);
-    assert_eq!(cleartext.u64_at(&context, fixture.burned_amount_value), 300);
+fn mollusk_burn_from_value_checks_every_application_deny_record() {
+    for (foreign, denied) in [(false, false), (true, false), (true, true)] {
+        let program = confidential_batcher::id();
+        let owner = Pubkey::find_program_address(&[b"amount-owner"], &program).0;
+        let fixture =
+            BurnRedeemFixture::with_keys(owner, Pubkey::new_unique(), Pubkey::new_unique());
+        let mut accounts = fixture.accounts(1_000);
+        accounts.insert(
+            fixture.host_config,
+            deny_enabled_host_config_account(owner, secp_evm_address(&coprocessor_signing_key())),
+        );
+        let (token_record, token_account) = deny_scope_record_account(fixture.app(), false);
+        accounts.insert(token_record, token_account);
+        let payer = Pubkey::new_unique();
+        accounts.insert(payer, system_account(5_000_000_000));
+        let amount_handle = handle_for_chain(60, BALANCE_FHE_TYPE);
+        let app = if foreign {
+            host::AppScope {
+                program,
+                scope: [0x77; 32],
+            }
+        } else {
+            fixture.app()
+        };
+        let authority = if foreign {
+            owner
+        } else {
+            fixture.token_account
+        };
+        let (amount_value, value) = new_encrypted_value(app, authority, [0x77; 32], amount_handle);
+        accounts.insert(amount_value, encrypted_value_account(&value));
+        let mut records = vec![token_record];
+        if foreign {
+            let (record, account) = deny_scope_record_account(app, denied);
+            accounts.insert(record, account);
+            records.push(record);
+        }
+        let context = burn_redeem_mollusk().with_context(accounts);
+        let mut burn =
+            confidential_burn_from_value_auto(&context, &fixture, owner, payer, amount_value);
+        burn.accounts.extend(
+            records
+                .into_iter()
+                .map(|key| AccountMeta::new_readonly(key, false)),
+        );
+        if denied {
+            context.process_and_validate_instruction(
+                &burn,
+                &[anchor_error_check(host::ZamaHostError::ScopeDenied as u32)],
+            );
+            assert_eq!(
+                read_encrypted_value(&context, fixture.balance_value).current_handle,
+                fixture.initial_balance
+            );
+        } else {
+            let mut cleartext = CleartextLedger::default();
+            cleartext.seed_amount(fixture.initial_balance, 1_000);
+            cleartext.seed_amount(fixture.initial_total_supply, 5_000);
+            cleartext.seed_amount(amount_handle, 300);
+            let result = context.process_and_validate_instruction(&burn, &[Check::success()]);
+            cleartext.evaluate_fhe_cpi(&context, &result);
+            assert_eq!(cleartext.balance(&context, fixture.token_account), 700);
+            assert_eq!(cleartext.u64_at(&context, fixture.burned_amount_value), 300);
+        }
+    }
 }
 
 /// An amount under an authority the signer does not control is rejected by the token's spend gate

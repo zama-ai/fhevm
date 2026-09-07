@@ -508,7 +508,12 @@ fn execute_burn<'info>(
             deny_scope_records: fhe::deny_scope_records(
                 accounts.host_config,
                 accounts.remaining_accounts,
-                [token_app(mint_key)],
+                std::iter::once(token_app(mint_key)).chain(stored_amount.as_ref().map(|value| {
+                    zama_fhe::AppScope {
+                        program: value.program,
+                        scope: value.scope,
+                    }
+                })),
             )?,
             system_program: accounts.system_program,
             hcu_block_meter: accounts.hcu_block_meter.clone(),

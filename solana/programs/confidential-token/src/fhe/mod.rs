@@ -143,7 +143,7 @@ pub(crate) fn uint64_operand(value: &EncryptedValue) -> Result<zama_fhe::Uint64H
 }
 
 /// The deny record witnesses for one `fhe_execute` CPI: exactly one remaining account per
-/// application the execution touches, in `apps` order, while the host's deny list is enabled;
+/// application the execution touches, in first-occurrence `apps` order, while the host's deny list is enabled;
 /// none otherwise. The host re-derives the PDAs; checking them here turns a wrong witness into
 /// this program's error.
 pub(crate) fn deny_scope_records<'info>(
@@ -158,7 +158,13 @@ pub(crate) fn deny_scope_records<'info>(
         );
         return Ok(Vec::new());
     }
-    let mut apps = apps.into_iter();
+    let mut unique_apps = Vec::new();
+    for app in apps {
+        if !unique_apps.contains(&app) {
+            unique_apps.push(app);
+        }
+    }
+    let mut apps = unique_apps.into_iter();
     let mut records = Vec::with_capacity(remaining_accounts.len());
     for record in remaining_accounts {
         let Some(app) = apps.next() else {

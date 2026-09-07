@@ -32,7 +32,8 @@ pub(crate) struct TransferAccounts<'a, 'info> {
     pub(crate) zama_event_authority: &'a UncheckedAccount<'info>,
     pub(crate) zama_program: &'a Program<'info, ZamaHost>,
     pub(crate) host_config: &'a Account<'info, zama_host::HostConfig>,
-    /// The instruction's remaining accounts: the mint's deny record while the deny list is on.
+    /// Deny records while enabled: token application, stored amount application, then receipt
+    /// application, omitting absent and duplicate applications.
     pub(crate) remaining_accounts: &'a [AccountInfo<'info>],
     pub(crate) system_program: &'a Program<'info, System>,
     /// Per-mint HCU block meter forwarded into the host `fhe_execute` CPI (`None` = untrusted,
@@ -392,6 +393,10 @@ fn compute_transfer_handles<'info>(
                 accounts.host_config,
                 accounts.remaining_accounts,
                 std::iter::once(token_app(mint_key))
+                    .chain(stored_amount.as_ref().map(|value| zama_fhe::AppScope {
+                        program: value.program,
+                        scope: value.scope,
+                    }))
                     .chain(accounts.receipt.as_ref().map(|receipt| receipt.key.app())),
             )?,
             system_program: accounts.system_program,
