@@ -337,6 +337,12 @@ jobs:
 
       - name: Setup GPU
         uses: ./.github/actions/gpu_setup
+        with:
+          # `gpu_setup` requires its inputs; called bare, the CUDA check ran
+          # with no acceptable version and the install step with an empty one.
+          # Same pin as every other GPU job.
+          cuda-version: "12.8"
+          gcc-version: 12
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@ecf28ddc73e819eb6fa29df6b34ef8921c743461 # v2.1.3
