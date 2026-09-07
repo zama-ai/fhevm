@@ -4,8 +4,8 @@ use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::types::AllowEvents;
 use host_listener::contracts::TfheContract::TfheContractEvents;
 use host_listener::database::tfhe_event_propagate::{
-    operand_boundary_mask_from_minted, ClearConst, Database as ListenerDatabase, Handle, LogTfhe,
-    ToType, Transaction,
+    operand_boundary_mask_from_minted, uniform_allowed_outputs, ClearConst,
+    Database as ListenerDatabase, Handle, LogTfhe, ToType, Transaction,
 };
 use sqlx::types::time::PrimitiveDateTime;
 
@@ -48,7 +48,8 @@ pub fn next_handle() -> Handle {
     let mut out = [0_u8; 32];
     // Keep generated test handles in a namespace disjoint from scalar-encoded handles.
     out[0] = 0x80;
-    out[24..].copy_from_slice(&v.to_be_bytes());
+    // Skip byte 30: next_handle_with_type overwrites it, so handles 256 apart would collide.
+    out[24..30].copy_from_slice(&v.to_be_bytes()[2..]);
     Handle::from(out)
 }
 
@@ -135,10 +136,11 @@ pub async fn insert_event(
         previously_minted.contains(handle.as_slice())
     })
     .map_err(sqlx::Error::Protocol)?;
+    let inner = log.inner;
     let event = LogTfhe {
-        event: log.inner,
+        allowed_outputs: uniform_allowed_outputs(&inner, is_allowed),
+        event: inner,
         transaction_hash: Some(tx_id),
-        is_allowed,
         block_number: 0,
         block_hash: Handle::ZERO,
         block_timestamp: PrimitiveDateTime::MAX,

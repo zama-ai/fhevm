@@ -15,7 +15,9 @@ use daggy::{
 use fhevm_engine_common::common::FheOperation;
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::tfhe_ops::perform_fhe_operation;
-use fhevm_engine_common::types::{get_ct_type, Handle, SupportedFheCiphertexts};
+use fhevm_engine_common::types::{
+    get_ct_type, Handle, SupportedFheCiphertexts, SupportedFheOperations,
+};
 use fhevm_engine_common::utils::HeartBeat;
 use std::collections::HashMap;
 #[cfg(feature = "gpu")]
@@ -25,7 +27,7 @@ use tfhe::ReRandomizationContext;
 use tokio::task::JoinSet;
 use tracing::{error, info, warn};
 
-use super::{DFComponentGraph, DFGraph, OpNode};
+use super::{DFComponentGraph, DFGOutput, DFGraph, OpNode};
 
 const OPERATION_RERANDOMISATION_DOMAIN_SEPARATOR: [u8; 8] = *b"TFHE_Rrd";
 const COMPACT_PUBLIC_ENCRYPTION_DOMAIN_SEPARATOR: [u8; 8] = *b"TFHE_Enc";
@@ -114,7 +116,7 @@ pub struct Scheduler<'a> {
 /// fell back to the first producer and could stamp the wrong row, leaving the
 /// one that actually failed unstamped -- outside the retry and demotion path
 /// entirely.
-type PartitionOutcome = (Handle, Handle, Result<TaskResult>);
+type PartitionOutcome = (Vec<Handle>, Handle, Result<TaskResult>);
 type PartitionResult = (Vec<PartitionOutcome>, NodeIndex, usize);
 impl<'a> Scheduler<'a> {
     fn is_ready_task(&self, node: &ExecNode) -> bool {
@@ -303,14 +305,14 @@ impl<'a> Scheduler<'a> {
             let (sks, _cpk, _) = self.get_keys(DeviceSelection::Index(result.2))?;
             tfhe::set_server_key(sks);
             let task_index = result.1;
-            for (handle, transaction_id, node_result) in result.0.into_iter() {
+            for (handles, transaction_id, node_result) in result.0.into_iter() {
                 // Add computed allowed handles to the graph. These
                 // can be used as inputs and forwarded to subsequent,
                 // dependent transactions. The transaction travels with the
                 // handle: two transactions can mint the same one, and the
                 // graph has to attribute this outcome to the right producer.
                 self.graph
-                    .add_output(&handle, &transaction_id, node_result, &self.edges)?;
+                    .add_output(&handles, &transaction_id, node_result, &self.edges)?;
             }
             for edge in task_dependences.edges_directed(task_index, Direction::Outgoing) {
                 let dependent_task_index = edge.target();
@@ -481,7 +483,7 @@ fn execute_partition(
                         // verdict on the floor.
                         if node.is_owned {
                             reported.push((
-                                node.result_handle.clone(),
+                                node.handles(),
                                 tid.clone(),
                                 Err(SchedulerError::MissingInputs.into()),
                             ));
@@ -514,7 +516,7 @@ fn execute_partition(
                 };
                 if node.is_owned {
                     reported.push((
-                        node.result_handle.clone(),
+                        node.handles(),
                         tid.clone(),
                         Err(SchedulerError::CyclicDependence.into()),
                     ));
@@ -550,86 +552,128 @@ fn execute_partition(
                         error!(target: "scheduler", {index = ?nidx.index() }, "Wrong dataflow graph index");
                         continue;
                     };
-                    let handle = node.result_handle.clone();
-                    let is_allowed = node.is_allowed;
+                    // Named apart from the partition's `outputs` results map.
+                    let node_outputs = node.outputs.clone();
+                    let producer_handles: Vec<Handle> =
+                        node_outputs.iter().map(|o| o.handle.clone()).collect();
                     let opcode = node.opcode;
-                    match op_result {
-                        Ok(working) => {
-                            // Each consumer's representation of this output
-                            // is pinned on chain: the executor folded a
-                            // boundary bit per operand into the consuming
-                            // handle, zero for operands minted in the
-                            // consuming transaction. Every in-graph edge here
-                            // is by definition that case, so all of them
-                            // forward the raw working value — no
-                            // compress/decompress round-trip for
-                            // same-transaction consumers, and no byte-equality
-                            // obligation against differently-sourced aliases,
-                            // which now mint different handles.
-                            //
-                            // An output is compressed iff it is allowed:
-                            // persistence needs the bytes, and any
-                            // cross-transaction consumer must have been
-                            // granted a persistent allowance first (transient
-                            // allowances are transaction-scoped), so
-                            // cross-transaction consumers need no separate
-                            // tracking. `computations.is_allowed` is always
-                            // stamped by the compute block's own ACL events
-                            // at ingest: ACL.allow requires an already
-                            // allowed sender, and before a handle's first
-                            // persistent grant the only access is transient
-                            // (transaction-scoped), seeded unguarded only by
-                            // the executor at mint/verifyInput and by the
-                            // bridge at delivery. So the first persistent
-                            // allow always lands in a transaction that
-                            // minted the handle — the original mint, a
-                            // re-mint of the same spelling (which inserts
-                            // and stamps its own row), or a bridge delivery
-                            // (no listener-stamped computation rows; the
-                            // ingest allow set covers bridge dst handles) —
-                            // and an allow can never arrive later for a
-                            // handle that was not already persisted.
-                            let forwarded = if is_allowed {
-                                match compress_output(&working, &tid, opcode) {
-                                    Ok(compressed_ct) => {
-                                        let task_result = TaskResult {
-                                            compressed_ct,
-                                            is_allowed,
-                                            transaction_id: tid.clone(),
-                                        };
-                                        outputs.insert(handle.clone(), task_result.clone());
-                                        reported.push((handle, tid.clone(), Ok(task_result)));
-                                        Some(working)
-                                    }
-                                    Err(e) => {
-                                        // The block fails on this allowed
-                                        // handle anyway; forward nothing so
-                                        // downstream ops fail as missing
-                                        // inputs instead of computing results
-                                        // destined to be discarded.
-                                        reported.push((handle, tid.clone(), Err(e)));
-                                        None
-                                    }
-                                }
-                            } else {
-                                Some(working)
-                            };
-                            if let Some(forwarded) = forwarded {
-                                for edge in edges.edges_directed(nidx, Direction::Outgoing) {
-                                    let child_index = edge.target();
-                                    let Some(child_node) = dfg.graph.node_weight_mut(child_index)
-                                    else {
-                                        error!(target: "scheduler", {index = ?child_index.index() }, "Wrong dataflow graph index");
-                                        continue;
-                                    };
-                                    child_node.inputs[*edge.weight() as usize] =
-                                        DFGTaskInput::Value(forwarded.clone());
-                                }
+                    let working = match op_result {
+                        Ok(working) => working,
+                        Err(e) => {
+                            reported.push((producer_handles.clone(), tid.clone(), Err(e)));
+                            continue;
+                        }
+                    };
+                    let produced: Vec<i16> = working.iter().map(|v| v.type_num()).collect();
+                    // Nothing is forwarded or published: a wrong count or type
+                    // means the results cannot be matched to the handles, so the
+                    // whole group fails rather than binding to the wrong ones.
+                    if let Err(error) = validate_results(&node_outputs, &produced) {
+                        error!(target: "scheduler", { error = %error },
+                        "Dispatch result does not match the operation's declared outputs");
+                        reported.push((producer_handles.clone(), tid.clone(), Err(error.into())));
+                        continue;
+                    }
+                    // Each consumer's representation of this output
+                    // is pinned on chain: the executor folded a
+                    // boundary bit per operand into the consuming
+                    // handle, zero for operands minted in the
+                    // consuming transaction. Every in-graph edge here
+                    // is by definition that case, so all of them
+                    // forward the raw working value — no
+                    // compress/decompress round-trip for
+                    // same-transaction consumers, and no byte-equality
+                    // obligation against differently-sourced aliases,
+                    // which now mint different handles.
+                    //
+                    // An output is compressed iff it is allowed:
+                    // persistence needs the bytes, and any
+                    // cross-transaction consumer must have been
+                    // granted a persistent allowance first (transient
+                    // allowances are transaction-scoped), so
+                    // cross-transaction consumers need no separate
+                    // tracking.
+                    //
+                    // A multi-output op materializes each output
+                    // separately, so the rule above is applied per
+                    // handle rather than once per operation.
+                    //
+                    // Compress all allowed outputs before recording any: a late
+                    // failure must not leave earlier siblings completed.
+                    let mut compressed: Vec<Option<CompressedCiphertext>> =
+                        Vec::with_capacity(node_outputs.len());
+                    let mut compression_failure: Option<anyhow::Error> = None;
+                    for (output, value) in node_outputs.iter().zip(working.iter()) {
+                        if !output.is_allowed {
+                            compressed.push(None);
+                            continue;
+                        }
+                        match compress_output(value, &tid, opcode) {
+                            Ok(compressed_ct) => compressed.push(Some(compressed_ct)),
+                            Err(e) => {
+                                compression_failure = Some(e);
+                                break;
                             }
                         }
-                        Err(e) => {
-                            reported.push((handle, tid.clone(), Err(e)));
+                    }
+                    if let Some(e) = compression_failure {
+                        error!(target: "scheduler", { error = %e },
+                        "Compression failed for an allowed output; failing the whole operation");
+                        reported.push((producer_handles.clone(), tid.clone(), Err(e)));
+                        continue;
+                    }
+                    let mut forwarded: Vec<SupportedFheCiphertexts> =
+                        Vec::with_capacity(working.len());
+                    for ((output, value), compressed_ct) in
+                        node_outputs.iter().zip(working).zip(compressed)
+                    {
+                        if let Some(compressed_ct) = compressed_ct {
+                            let task_result = TaskResult {
+                                compressed_ct,
+                                is_allowed: output.is_allowed,
+                                transaction_id: tid.clone(),
+                            };
+                            outputs.insert(output.handle.clone(), task_result.clone());
+                            reported.push((
+                                vec![output.handle.clone()],
+                                tid.clone(),
+                                Ok(task_result),
+                            ));
                         }
+                        forwarded.push(value);
+                    }
+                    // Route each output to the consumers that name it:
+                    // an edge carries the consuming input slot, and the
+                    // handle in that slot selects which output feeds it.
+                    for edge in edges.edges_directed(nidx, Direction::Outgoing) {
+                        let child_index = edge.target();
+                        let input_idx = *edge.weight() as usize;
+                        let Some(child_node) = dfg.graph.node_weight_mut(child_index) else {
+                            error!(target: "scheduler", {index = ?child_index.index() }, "Wrong dataflow graph index");
+                            continue;
+                        };
+                        let dep_handle = match child_node.inputs.get(input_idx) {
+                            Some(DFGTaskInput::LocalDependence(dh))
+                            | Some(DFGTaskInput::BoundaryDependence(dh)) => dh.clone(),
+                            // Already resolved; nothing to route.
+                            Some(DFGTaskInput::Value(_)) | Some(DFGTaskInput::Compressed(..)) => {
+                                continue
+                            }
+                            None => {
+                                error!(target: "scheduler", { input_idx },
+                                    "Edge names an input slot the consumer does not have - graph inconsistency");
+                                continue;
+                            }
+                        };
+                        let Some(out_idx) = producer_handles.iter().position(|h| h == &dep_handle)
+                        else {
+                            error!(target: "scheduler",
+                            { handle = ?hex::encode(&dep_handle) },
+                            "Consumer dependence handle not found in producer outputs - graph inconsistency");
+                            continue;
+                        };
+                        child_node.inputs[input_idx] =
+                            DFGTaskInput::Value(forwarded[out_idx].clone());
                     }
                 }
                 Err(e) => {
@@ -637,28 +681,10 @@ fn execute_partition(
                         error!(target: "scheduler", {index = ?nidx.index() }, "Wrong dataflow graph index");
                         continue;
                     };
-                    // OWNERSHIP, not allowance. This arm carries the errors
-                    // that never became an OpResult -- a decompression failure,
-                    // a caught panic around it, missing inputs, a
-                    // re-randomization fault -- and gating them on `is_allowed`
-                    // silently discarded every one raised by an internal
-                    // producer. Nothing then stamped that row, so it never
-                    // accumulated a retry count and never reached demotion,
-                    // while its allowed consumer came back as MissingInputs,
-                    // which the upload path ignores by design. Both rows sat
-                    // pending forever, re-executed at poll cadence.
-                    //
-                    // Foreign rows are reported too. A foreign producer is
-                    // loaded as a recompute-only input for an OWNED consumer,
-                    // and when it fails here the consumer comes back with an
-                    // unresolved local dependence that upload leaves unstamped.
-                    // Dropping the producer's error left that consumer with no
-                    // verdict anywhere -- the owning chain never sees this
-                    // consumer -- so the transaction re-executed forever. The
-                    // worker routes a foreign row's error to the owned allowed
-                    // dependents it recorded before scheduling and never
-                    // touches the foreign row itself (`is_foreign_producer`).
-                    reported.push((node.result_handle.clone(), tid.clone(), Err(e)));
+                    // Report every producer's error, allowed or not: an unreported
+                    // failure left its consumers waiting forever. The worker decides
+                    // where a foreign row's error is recorded (`is_foreign_producer`).
+                    reported.push((node.handles(), tid.clone(), Err(e)));
                 }
             }
         }
@@ -702,6 +728,8 @@ fn try_execute_node(
     if !node.check_ready_inputs(tx_inputs) {
         return Err(SchedulerError::SchedulerError.into());
     }
+    let handle = hex::encode(&node.outputs[0].handle);
+    let outputs = node.outputs.len();
     let mut cts = Vec::with_capacity(node.inputs.len());
     for i in std::mem::take(&mut node.inputs) {
         match i {
@@ -724,57 +752,57 @@ fn try_execute_node(
                 // the operation is: an allocation failure that surfaces as a
                 // PANIC rather than as a reservation error would otherwise
                 // escape this function, kill the spawn_blocking task, and fail
-                // the WHOLE batch with nothing stamped — retried only at batch
-                // granularity, unattributable, and rotating forever if it is
-                // deterministic. Caught, it becomes an ExecutionPanic like any
-                // other, and takes the per-computation retry path.
-                let decompressed = match std::panic::catch_unwind(
-                    std::panic::AssertUnwindSafe(|| {
+                // the WHOLE batch with nothing stamped.
+                let decompressed =
+                    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                         SupportedFheCiphertexts::decompress(
                             cct.ct_type,
                             &cct.ct_bytes,
                             gpu_idx,
-                                            gpu_reservation_timeout,
+                            gpu_reservation_timeout,
                         )
-                    }),
-                ) {
-                    Ok(result) => result,
-                    Err(panic) => {
-                        let msg = panic_message(panic);
+                    })) {
+                        Ok(result) => result,
+                        Err(panic) => {
+                            let msg = panic_message(panic);
+                            error!(
+                                target: "scheduler",
+                                { handle = ?handle, ct_type = cct.ct_type, panic = %msg },
+                                "Panic while decompressing op input"
+                            );
+                            return Err(SchedulerError::ExecutionPanic(format!(
+                                "decompressing boundary input: {msg}"
+                            ))
+                            .into());
+                        }
+                    }
+                    .map_err(|e| {
                         error!(
                             target: "scheduler",
-                            { handle = ?hex::encode(&node.result_handle), ct_type = cct.ct_type, panic = %msg },
-                            "Panic while decompressing op input"
+                            { handle = ?handle, ct_type = cct.ct_type, error = ?e },
+                            "Error while decompressing op input"
                         );
-                        return Err(SchedulerError::ExecutionPanic(format!(
-                            "decompressing boundary input: {msg}"
-                        ))
-                        .into());
-                    }
-                }
-		    .map_err(|e| {
-				error!(
-			    target: "scheduler",
-			    { handle = ?hex::encode(&node.result_handle), ct_type = cct.ct_type, error = ?e },
-			    "Error while decompressing op input"
-				);
-				telemetry::set_current_span_error(&e);
-				#[cfg(feature = "gpu")]
-				if matches!(
-				    e.downcast_ref::<fhevm_engine_common::types::FhevmError>(),
-				    Some(
-					fhevm_engine_common::types::FhevmError::GpuMemoryReservationError(_)
-				    )
-				) {
-				    return e;
-				}
-				anyhow::Error::new(SchedulerError::DecompressionError)
-			    })?;
+                        telemetry::set_current_span_error(&e);
+                        #[cfg(feature = "gpu")]
+                        if matches!(
+                            e.downcast_ref::<fhevm_engine_common::types::FhevmError>(),
+                            Some(
+                                fhevm_engine_common::types::FhevmError::GpuMemoryReservationError(
+                                    _
+                                )
+                            )
+                        ) {
+                            return e;
+                        }
+                        anyhow::Error::new(SchedulerError::DecompressionError)
+                    })?;
                 boundary_cache.insert(handle, decompressed.clone());
                 cts.push(decompressed);
             }
             DFGTaskInput::LocalDependence(_) | DFGTaskInput::BoundaryDependence(_) => {
-                error!(target: "scheduler", { handle = ?hex::encode(&node.result_handle) }, "Computation missing inputs");
+                error!(target: "scheduler",
+                    { handle = ?handle, outputs },
+                    "Computation missing inputs");
                 return Err(SchedulerError::MissingInputs.into());
             }
         }
@@ -783,11 +811,14 @@ fn try_execute_node(
     {
         let _guard = tracing::info_span!("rerandomise_op_inputs").entered();
         let started_at = std::time::Instant::now();
+        // Every handle of a group derives from one base, so output 0 binds the
+        // operation for the transcript.
         if let Err(e) =
-            re_randomise_operation_inputs(&mut cts, &node.result_handle, node.opcode, cpk)
+            re_randomise_operation_inputs(&mut cts, &node.outputs[0].handle, node.opcode, cpk)
         {
-            error!(target: "scheduler", { handle = ?hex::encode(&node.result_handle), error = ?e },
-                   "Error while re-randomising operation inputs");
+            error!(target: "scheduler",
+                { handle = ?handle, outputs, error = ?e },
+                "Error while re-randomising operation inputs");
             telemetry::set_current_span_error(&e);
             return Err(SchedulerError::ReRandomisationError.into());
         }
@@ -795,12 +826,24 @@ fn try_execute_node(
         RERAND_LATENCY_BATCH_HISTOGRAM.observe(elapsed.as_secs_f64());
     }
     let opcode = node.opcode;
-    let output_type = get_ct_type(&node.result_handle).map_err(|e| {
-        error!(target: "scheduler", { handle = ?hex::encode(&node.result_handle), error = ?e },
-               "Invalid result handle: cannot read type byte");
-        telemetry::set_current_span_error(&e);
-        SchedulerError::SchedulerError
-    })?;
+    // One type per declared output: outputs of one operation can differ in type.
+    // Terminal: the generic SchedulerError is left unstamped and retried forever.
+    let output_types = node
+        .outputs
+        .iter()
+        .enumerate()
+        .map(|(index, o)| {
+            get_ct_type(&o.handle).map_err(|e| {
+                error!(target: "scheduler",
+                    { handle = ?handle, outputs, error = ?e },
+                    "Invalid result handle: cannot read type byte");
+                telemetry::set_current_span_error(&e);
+                SchedulerError::MultiOutputFailure(format!(
+                    "output {index} has an invalid handle: {e}"
+                ))
+            })
+        })
+        .collect::<std::result::Result<Vec<i16>, _>>()?;
 
     // AssertUnwindSafe: the closure only reads shared state and
     // owns everything else it touches; a panic cannot leave observable
@@ -812,7 +855,7 @@ fn try_execute_node(
             node_index,
             gpu_idx,
             transaction_id,
-            output_type,
+            &output_types,
             gpu_reservation_timeout,
         )
     }));
@@ -820,8 +863,9 @@ fn try_execute_node(
         Err(e) => {
             let msg = panic_message(e);
             eprintln!("Panic while executing operation: {msg}");
-            error!(target: "scheduler", { handle = ?hex::encode(&node.result_handle), msg },
-               "Panic while executing operation");
+            error!(target: "scheduler",
+                { handle = ?handle, outputs, msg },
+                "Panic while executing operation");
             telemetry::set_current_span_error(&msg);
             Err(SchedulerError::ExecutionPanic(msg).into())
         }
@@ -836,7 +880,40 @@ fn panic_message(e: Box<dyn std::any::Any + Send>) -> String {
         .unwrap_or_else(|| "unknown panic payload".to_string())
 }
 
-type OpResult = Result<SupportedFheCiphertexts>;
+/// Ok payload length matches the op's output handle count (1 or N). Values are
+/// the raw working representation; the scheduler compresses the ones it must
+/// persist.
+type OpResult = Result<Vec<SupportedFheCiphertexts>>;
+
+/// Checks that the operation produced what its handles asked for. Runs before
+/// anything is routed, so a bad result fails the whole group rather than
+/// half-updating the graph.
+/// Checks the dispatch result against what the handles asked for, before any
+/// output is compressed, published or forwarded. Runs on the raw working
+/// values, so a bad result fails the whole group rather than half-updating it.
+fn validate_results(
+    outputs: &[DFGOutput],
+    produced_types: &[i16],
+) -> std::result::Result<(), SchedulerError> {
+    if produced_types.len() != outputs.len() {
+        return Err(SchedulerError::MultiOutputFailure(format!(
+            "produced {} ciphertexts for {} handles",
+            produced_types.len(),
+            outputs.len()
+        )));
+    }
+    for (index, (output, &produced)) in outputs.iter().zip(produced_types).enumerate() {
+        let asked_for = get_ct_type(&output.handle).map_err(|_| {
+            SchedulerError::MultiOutputFailure(format!("output {index} has an invalid handle"))
+        })?;
+        if produced != asked_for {
+            return Err(SchedulerError::MultiOutputFailure(format!(
+                "output {index} has type {produced} but was asked for {asked_for}"
+            )));
+        }
+    }
+    Ok(())
+}
 
 /// Materializes an operation output that leaves its transaction: allowed
 /// handles (persisted) and inputs of other transactions both read this
@@ -889,14 +966,45 @@ fn run_computation(
     graph_node_index: usize,
     gpu_idx: usize,
     transaction_id: &Handle,
-    output_type: i16,
+    output_types: &[i16],
     gpu_reservation_timeout: Duration,
 ) -> (usize, OpResult) {
     let txn_id_short = telemetry::short_hex_id(transaction_id);
+
+    // Multi-output ops dispatch through a separate impl that returns Vec.
+    if let Ok(sup_op) = SupportedFheOperations::try_from(operation as i16) {
+        if sup_op.is_multi_output() {
+            let op_name = format!("{:?}", sup_op);
+            let _fhe_guard = tracing::info_span!(
+                "fhe_operation_multi_output",
+                txn_id = %txn_id_short,
+                operation = %op_name,
+                operation_code = operation as i64,
+            )
+            .entered();
+
+            let result = fhevm_engine_common::tfhe_ops::perform_multi_output_fhe_operation(
+                operation as i16,
+                &inputs,
+                output_types,
+                gpu_idx,
+                gpu_reservation_timeout,
+            );
+
+            return match result {
+                Ok(results) => (graph_node_index, Ok(results)),
+                Err(e) => {
+                    telemetry::set_current_span_error(&e);
+                    (graph_node_index, Err(e.into()))
+                }
+            };
+        }
+    }
+
     let op = FheOperation::try_from(operation);
     match op {
         Ok(FheOperation::FheGetCiphertext) => match inputs.into_iter().next() {
-            Some(ct) => (graph_node_index, Ok(ct)),
+            Some(ct) => (graph_node_index, Ok(vec![ct])),
             None => (graph_node_index, Err(SchedulerError::MissingInputs.into())),
         },
         Ok(fhe_op) => {
@@ -915,16 +1023,17 @@ fn run_computation(
                 tracing::Span::current().record("input_type", inputs[0].type_name());
             }
 
+            // A single-output op has exactly one declared output.
             let result = perform_fhe_operation(
                 operation as i16,
                 &inputs,
                 gpu_idx,
-                output_type,
+                output_types[0],
                 gpu_reservation_timeout,
             );
 
             match result {
-                Ok(result) => (graph_node_index, Ok(result)),
+                Ok(result) => (graph_node_index, Ok(vec![result])),
                 Err(e) => {
                     telemetry::set_current_span_error(&e);
                     (graph_node_index, Err(e.into()))
@@ -932,5 +1041,48 @@ fn run_computation(
             }
         }
         Err(e) => (graph_node_index, Err(e.into())),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn output(type_byte: u8) -> DFGOutput {
+        let mut handle = vec![0u8; 32];
+        handle[30] = type_byte;
+        DFGOutput {
+            handle,
+            is_allowed: true,
+        }
+    }
+
+    #[test]
+    fn accepts_matching_count_and_types() {
+        let outputs = [output(4), output(5), output(4)];
+        let results = [4i16, 5, 4];
+        assert!(validate_results(&outputs, &results).is_ok());
+    }
+
+    #[test]
+    fn rejects_a_count_mismatch() {
+        let outputs = [output(4), output(4)];
+        assert!(validate_results(&outputs, &[4]).is_err());
+        assert!(validate_results(&outputs[..1], &[4, 4]).is_err());
+    }
+
+    #[test]
+    fn rejects_a_wrong_type_at_the_last_output() {
+        let outputs = [output(4), output(5)];
+        assert!(validate_results(&outputs, &[4, 4]).is_err());
+    }
+
+    #[test]
+    fn rejects_an_invalid_handle() {
+        let outputs = [DFGOutput {
+            handle: vec![0u8; 8],
+            is_allowed: true,
+        }];
+        assert!(validate_results(&outputs, &[4]).is_err());
     }
 }

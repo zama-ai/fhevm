@@ -11,7 +11,8 @@ use fhevm_engine_common::database::{
 };
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::types::{
-    AllowEvents, SchedulePriority, SupportedFheOperations,
+    is_valid_multi_output_arity, AllowEvents, SchedulePriority,
+    SupportedFheOperations, MAX_MULTI_OUTPUT_ARITY,
 };
 use fhevm_engine_common::utils::DatabaseURL;
 use fhevm_engine_common::utils::{to_hex, HeartBeat};
@@ -118,8 +119,38 @@ pub type SealedChainGuard = Arc<RwLock<lru::LruCache<ChainHash, ()>>>;
 /// it must form its own (gated) chain instead of extending the producer's
 /// chain, or independent branches serialize on one DCID. (One transaction
 /// consuming a handle several times — e.g. FheAdd(x, x) — is not a fork.)
-pub type ConsumedBoundaryGuard =
-    Arc<RwLock<lru::LruCache<Handle, TransactionHash>>>;
+///
+/// Keyed by the producing op: group id for multi-output, else the handle.
+pub struct ConsumedBoundaries {
+    consumers: lru::LruCache<Handle, TransactionHash>,
+    /// Boundary output -> group id, multi-output ops only.
+    groups: lru::LruCache<Handle, Handle>,
+}
+
+impl ConsumedBoundaries {
+    pub fn new(capacity: std::num::NonZeroUsize) -> Self {
+        Self {
+            consumers: lru::LruCache::new(capacity),
+            groups: lru::LruCache::new(capacity),
+        }
+    }
+
+    pub fn record_group(&mut self, handle: Handle, group: Handle) {
+        self.groups.put(handle, group);
+    }
+
+    /// Returns the previous consumer of the op behind `handle`.
+    pub fn consume(
+        &mut self,
+        handle: &Handle,
+        tx: TransactionHash,
+    ) -> Option<TransactionHash> {
+        let key = self.groups.get(handle).copied().unwrap_or(*handle);
+        self.consumers.put(key, tx)
+    }
+}
+
+pub type ConsumedBoundaryGuard = Arc<RwLock<ConsumedBoundaries>>;
 pub type OrderedChains = Vec<Chain>;
 
 const MINIMUM_BUCKET_CACHE_SIZE: u16 = 16;
@@ -229,7 +260,8 @@ pub struct Database {
 pub struct LogTfhe {
     pub event: Log<TfheContractEvents>,
     pub transaction_hash: Option<TransactionHash>,
-    pub is_allowed: bool,
+    /// The output handles of this event that are allowed.
+    pub allowed_outputs: HashSet<Handle>,
     pub block_number: u64,
     pub block_hash: BlockHash,
     pub block_timestamp: PrimitiveDateTime,
@@ -300,7 +332,7 @@ impl Database {
                 .into(),
             )));
         let consumed_boundaries =
-            Arc::new(tokio::sync::RwLock::new(lru::LruCache::new(
+            Arc::new(tokio::sync::RwLock::new(ConsumedBoundaries::new(
                 std::num::NonZeroU16::new(
                     dependence_cache_size.max(MINIMUM_BUCKET_CACHE_SIZE),
                 )
@@ -764,22 +796,27 @@ impl Database {
             .map(|d| d.to_vec())
             .collect::<Vec<_>>();
         let dependencies = [&dependencies_handles, dependencies_bytes].concat();
-        self.insert_computation_inner(
+        self.insert_computation(
             tx,
             result,
             dependencies,
             fhe_operation,
             scalar_byte,
+            None,
+            0,
+            1,
             log,
         )
         .await
     }
 
-    #[allow(clippy::too_many_arguments)]
-    async fn insert_computation(
+    // N rows sharing `group_id`, with `output_index` 0..N-1.
+    // Infrastructure for future multi-output ops; no callers in this PR.
+    #[allow(clippy::too_many_arguments, dead_code)]
+    async fn insert_multi_output_computation(
         &self,
         tx: &mut Transaction<'_>,
-        result: &Handle,
+        results: &[&Handle],
         dependencies: &[&Handle],
         fhe_operation: FheOperation,
         scalar_byte: &FixedBytes<1>,
@@ -787,25 +824,46 @@ impl Database {
     ) -> Result<bool, SqlxError> {
         let dependencies =
             dependencies.iter().map(|d| d.to_vec()).collect::<Vec<_>>();
-        self.insert_computation_inner(
-            tx,
-            result,
-            dependencies,
-            fhe_operation,
-            scalar_byte,
-            log,
-        )
-        .await
+        if !is_valid_multi_output_arity(results.len()) {
+            warn!(target: "host_listener",
+                arity = results.len(),
+                max = MAX_MULTI_OUTPUT_ARITY,
+                "unsupported multi-output arity; skipping event");
+            return Ok(false);
+        }
+        let group_id = results[0].to_vec();
+        let mut any_inserted = false;
+        for (idx, result) in results.iter().enumerate() {
+            let output_index = idx as i16;
+            let inserted = self
+                .insert_computation(
+                    tx,
+                    result,
+                    dependencies.clone(),
+                    fhe_operation,
+                    scalar_byte,
+                    Some(&group_id),
+                    output_index,
+                    results.len() as i16,
+                    log,
+                )
+                .await?;
+            any_inserted = any_inserted || inserted;
+        }
+        Ok(any_inserted)
     }
 
     #[allow(clippy::too_many_arguments)]
-    async fn insert_computation_inner(
+    async fn insert_computation(
         &self,
         tx: &mut Transaction<'_>,
         result: &Handle,
         dependencies: Vec<Vec<u8>>,
         fhe_operation: FheOperation,
         scalar_byte: &FixedBytes<1>,
+        group_id: Option<&[u8]>,
+        output_index: i16,
+        output_count: i16,
         log: &LogTfhe,
     ) -> Result<bool, SqlxError> {
         let is_scalar = !scalar_byte.is_zero();
@@ -816,11 +874,15 @@ impl Database {
             &dependencies,
             fhe_operation,
             is_scalar,
+            group_id,
+            output_index,
+            output_count,
             log,
         )
         .await
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn insert_computation_legacy_row(
         &self,
         tx: &mut Transaction<'_>,
@@ -828,6 +890,9 @@ impl Database {
         dependencies: &[Vec<u8>],
         fhe_operation: FheOperation,
         is_scalar: bool,
+        group_id: Option<&[u8]>,
+        output_index: i16,
+        output_count: i16,
         log: &LogTfhe,
     ) -> Result<bool, SqlxError> {
         let operand_boundary_mask = log.operand_boundary_mask.as_ref().ok_or_else(|| {
@@ -839,6 +904,8 @@ impl Database {
         // Schema isolation handles BCS/GCS routing at the connection layer
         // (`search_path = gcs,public` for GCS, default `public` for BCS), so
         // this INSERT references `computations` unqualified.
+        let group_id_vec = group_id.map(|g| g.to_vec());
+        let output_allowed = log.is_output_allowed(output_handle);
         let query = sqlx::query!(
             r#"
             INSERT INTO computations (
@@ -854,9 +921,12 @@ impl Database {
                 is_completed,
                 host_chain_id,
                 block_number,
-                operand_boundary_mask
+                operand_boundary_mask,
+                group_id,
+                output_index,
+                output_count
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8::timestamp, $9, $10, $11, $12)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8::timestamp, $9, $10, $11, $12, $13, $14, $15)
             ON CONFLICT (output_handle, transaction_id) DO NOTHING
             "#,
             output_handle,
@@ -865,15 +935,18 @@ impl Database {
             is_scalar,
             log.dependence_chain.to_vec(),
             log.transaction_hash.map(|txh| txh.to_vec()) as _,
-            log.is_allowed,
+            output_allowed,
             log.block_timestamp
                 .saturating_add(TimeDuration::microseconds(
                     log.tx_depth_size as i64
                 )),
-            !log.is_allowed,
+            !output_allowed,
             self.chain_id.as_i64(),
             log.block_number as i64,
             operand_boundary_mask.as_slice(),
+            group_id_vec,
+            output_index,
+            output_count,
         );
         query
             .execute(tx.deref_mut())
@@ -902,12 +975,25 @@ impl Database {
             "txn_id",
             log.transaction_hash.as_ref(),
         );
-        let insert_computation = |tx, result, dependencies, scalar_byte| {
-            self.insert_computation(tx, result, dependencies, fhe_operation, scalar_byte, log)
+        let insert_computation = |tx, result, dependencies: &[&Handle], scalar_byte| {
+            self.insert_computation(
+                tx,
+                result,
+                dependencies.iter().map(|d| d.to_vec()).collect(),
+                fhe_operation,
+                scalar_byte,
+                None,
+                0,
+                1,
+                log,
+            )
         };
         let insert_computation_bytes = |tx, result, dependencies_handles, dependencies_bytes, scalar_byte| {
             self.insert_computation_bytes(tx, result, dependencies_handles, dependencies_bytes, fhe_operation, scalar_byte, log)
         };
+        // TODO: when adding a multi-output op, define a closure mirroring the two above,
+        // backed by `self.insert_multi_output_computation(...)`, which writes N rows
+        // sharing `group_id`.
 
         // Record the transaction if this is a computation event
         if !matches!(
@@ -2454,7 +2540,28 @@ pub fn event_name(op: &TfheContractEvents) -> &'static str {
     }
 }
 
-pub fn tfhe_result_handle(op: &TfheContractEvents) -> Option<Handle> {
+/// Gives every output the same permission, for callers that have no per-output
+/// permission of their own.
+pub fn uniform_allowed_outputs(
+    event: &Log<TfheContractEvents>,
+    is_allowed: bool,
+) -> HashSet<Handle> {
+    if is_allowed {
+        tfhe_result_handles(event).into_iter().collect()
+    } else {
+        HashSet::new()
+    }
+}
+
+impl LogTfhe {
+    fn is_output_allowed(&self, output_handle: &[u8]) -> bool {
+        self.allowed_outputs
+            .iter()
+            .any(|h| h.as_slice() == output_handle)
+    }
+}
+
+pub fn tfhe_result_handles(op: &TfheContractEvents) -> Vec<Handle> {
     use TfheContract as C;
     use TfheContractEvents as E;
     match op {
@@ -2487,9 +2594,9 @@ pub fn tfhe_result_handle(op: &TfheContractEvents) -> Option<Handle> {
         | E::TrivialEncrypt(C::TrivialEncrypt { result, .. })
         | E::FheSum(C::FheSum { result, .. })
         | E::FheIsIn(C::FheIsIn { result, .. })
-        | E::FheMulDiv(C::FheMulDiv { result, .. }) => Some(*result),
+        | E::FheMulDiv(C::FheMulDiv { result, .. }) => vec![*result],
 
-        E::Initialized(_) | E::Upgraded(_) | E::VerifyInput(_) => None,
+        E::Initialized(_) | E::Upgraded(_) | E::VerifyInput(_) => vec![],
     }
 }
 
@@ -2914,6 +3021,43 @@ where
 /// always-scalar divisor).
 fn fhe_mul_div_factor2_is_scalar(scalar_byte: &ScalarByte) -> bool {
     scalar_byte.0[0] & 0b10 != 0
+}
+
+#[cfg(test)]
+mod consumed_boundaries_tests {
+    use super::*;
+
+    fn handle(last: u8) -> Handle {
+        Handle::from([last; 32])
+    }
+
+    fn tx(last: u8) -> TransactionHash {
+        TransactionHash::from([last; 32])
+    }
+
+    #[test]
+    fn single_output_handles_are_their_own_key() {
+        let mut guard =
+            ConsumedBoundaries::new(std::num::NonZeroUsize::new(8).unwrap());
+        assert_eq!(guard.consume(&handle(1), tx(1)), None);
+        assert_eq!(guard.consume(&handle(2), tx(2)), None);
+        assert_eq!(guard.consume(&handle(1), tx(3)), Some(tx(1)));
+    }
+
+    #[test]
+    fn outputs_of_one_op_share_a_consumer_slot() {
+        let mut guard =
+            ConsumedBoundaries::new(std::num::NonZeroUsize::new(8).unwrap());
+        let group = handle(10);
+        guard.record_group(handle(10), group);
+        guard.record_group(handle(11), group);
+        guard.record_group(handle(12), group);
+        assert_eq!(guard.consume(&handle(10), tx(1)), None);
+        assert_eq!(guard.consume(&handle(11), tx(2)), Some(tx(1)));
+        assert_eq!(guard.consume(&handle(12), tx(3)), Some(tx(2)));
+        assert_eq!(guard.consume(&handle(11), tx(3)), Some(tx(3)));
+        assert_eq!(guard.consume(&handle(20), tx(4)), None);
+    }
 }
 
 #[cfg(test)]
