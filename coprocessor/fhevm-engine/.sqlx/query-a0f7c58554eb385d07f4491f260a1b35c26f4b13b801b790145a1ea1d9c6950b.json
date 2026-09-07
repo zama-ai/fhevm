@@ -1,0 +1,87 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\nSELECT\n  c.output_handle,\n  c.dependencies,\n  c.fhe_operation,\n  c.is_scalar,\n  c.is_allowed,\n  c.is_error,\n  c.error_message,\n  c.transaction_id,\n  c.schedule_order,\n  c.operand_boundary_mask,\n  c.dependence_chain_id\nFROM computations c\nWHERE c.transaction_id IN (\n    SELECT deduped.transaction_id\n    FROM (\n      -- Collapse to one row per transaction before the LIMIT: a transaction\n      -- whose rows a fork-exposed database retained under a second chain is\n      -- ranked once per chain and would otherwise spend the window's LIMIT on\n      -- duplicates of itself. Ordering keeps the earliest of its ranks, the\n      -- same anchor the non-adaptive query uses.\n      SELECT\n        ranked.transaction_id,\n        MIN(ranked.first_order) AS schedule_order\n      FROM unnest($1::bytea[]) AS d(dependence_chain_id)\n      -- Stage 1: probe the chain's oldest pending rows under the row cap\n      -- (share × ADAPTIVE_WINDOW_ROWS_PER_TRANSACTION): how many rows the\n      -- cap admitted and how many distinct transactions they span.\n      CROSS JOIN LATERAL (\n        SELECT\n          count(*) AS scanned,\n          count(DISTINCT capped.transaction_id) AS transactions\n        FROM (\n          SELECT transaction_id\n          FROM computations\n          WHERE dependence_chain_id = d.dependence_chain_id\n              AND is_completed = FALSE\n              AND is_allowed = TRUE\n              AND (is_error = FALSE\n                   OR (error_message LIKE '%' || $4 || '%'\n                       AND ($5::smallint IS NULL OR error_retry_count < $5)))\n              AND NOT EXISTS (\n                  SELECT 1\n                  FROM computations demoted\n                  WHERE demoted.transaction_id = computations.transaction_id\n                    AND demoted.is_completed = FALSE\n                    AND demoted.is_error = TRUE\n                    AND demoted.error_message LIKE '%' || $4 || '%'\n                    AND $5::smallint IS NOT NULL\n                    AND demoted.error_retry_count >= $5\n              )\n          ORDER BY schedule_order ASC\n          LIMIT $6\n        ) AS capped\n      ) AS probe\n      -- Stage 2: the chain's first `share` transactions by earliest row.\n      -- Rows of a transaction share one schedule_order (block time + depth),\n      -- so the walk sees transactions as contiguous blocks and the first row\n      -- seen for a transaction is its earliest. Exactly one branch runs; the\n      -- gating conditions reference only `probe`, so Postgres evaluates them\n      -- once per chain and skips the other branch's scan entirely.\n      CROSS JOIN LATERAL (\n        (\n          -- Fast path: the cap admitted at least `share` distinct\n          -- transactions, or the whole chain fits under it. Bounded by the\n          -- cap, whatever the chain's backlog.\n          SELECT capped.transaction_id, MIN(capped.schedule_order) AS first_order\n          FROM (\n            SELECT transaction_id, schedule_order\n            FROM computations\n            WHERE dependence_chain_id = d.dependence_chain_id\n              AND is_completed = FALSE\n              AND is_allowed = TRUE\n              AND (is_error = FALSE\n                   OR (error_message LIKE '%' || $4 || '%'\n                       AND ($5::smallint IS NULL OR error_retry_count < $5)))\n              AND NOT EXISTS (\n                  SELECT 1\n                  FROM computations demoted\n                  WHERE demoted.transaction_id = computations.transaction_id\n                    AND demoted.is_completed = FALSE\n                    AND demoted.is_error = TRUE\n                    AND demoted.error_message LIKE '%' || $4 || '%'\n                    AND $5::smallint IS NOT NULL\n                    AND demoted.error_retry_count >= $5\n              )\n            ORDER BY schedule_order ASC\n            LIMIT $6\n          ) AS capped\n          WHERE probe.transactions >= $2 OR probe.scanned < $6\n          GROUP BY capped.transaction_id\n          ORDER BY first_order ASC, capped.transaction_id ASC\n          LIMIT $2\n        )\n        UNION ALL\n        (\n          -- Exact path: the cap filled up before `share` distinct\n          -- transactions were seen -- one transaction wider than the cap\n          -- sits at the head of the chain. Rank over every pending row of\n          -- THIS chain instead, so a younger transaction behind it is still\n          -- offered; the cost is one scan of this chain's pending rows, paid\n          -- only by a chain in that shape. Without this a wide transaction\n          -- that keeps deferring hid every younger one behind it for as long\n          -- as it deferred.\n          SELECT transaction_id, MIN(schedule_order) AS first_order\n          FROM computations\n          WHERE dependence_chain_id = d.dependence_chain_id\n            AND probe.transactions < $2 AND probe.scanned >= $6\n              AND is_completed = FALSE\n              AND is_allowed = TRUE\n              AND (is_error = FALSE\n                   OR (error_message LIKE '%' || $4 || '%'\n                       AND ($5::smallint IS NULL OR error_retry_count < $5)))\n              AND NOT EXISTS (\n                  SELECT 1\n                  FROM computations demoted\n                  WHERE demoted.transaction_id = computations.transaction_id\n                    AND demoted.is_completed = FALSE\n                    AND demoted.is_error = TRUE\n                    AND demoted.error_message LIKE '%' || $4 || '%'\n                    AND $5::smallint IS NOT NULL\n                    AND demoted.error_retry_count >= $5\n              )\n          GROUP BY transaction_id\n          ORDER BY first_order ASC, transaction_id ASC\n          LIMIT $2\n        )\n      ) AS ranked\n      GROUP BY ranked.transaction_id\n    ) AS deduped\n    ORDER BY deduped.schedule_order ASC, deduped.transaction_id ASC\n    LIMIT $3\n)\n  -- Like the other windows: load ALL rows of the selected transactions,\n  -- fork-retained siblings included; ownership is re-applied in code, which\n  -- turns rows of other chains into recompute-only producers excluded from\n  -- results, persistence and completion.\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "output_handle",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "dependencies",
+        "type_info": "ByteaArray"
+      },
+      {
+        "ordinal": 2,
+        "name": "fhe_operation",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 3,
+        "name": "is_scalar",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 4,
+        "name": "is_allowed",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 5,
+        "name": "is_error",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 6,
+        "name": "error_message",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "transaction_id",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 8,
+        "name": "schedule_order",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 9,
+        "name": "operand_boundary_mask",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 10,
+        "name": "dependence_chain_id",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "ByteaArray",
+        "Int8",
+        "Int8",
+        "Text",
+        "Int2",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "a0f7c58554eb385d07f4491f260a1b35c26f4b13b801b790145a1ea1d9c6950b"
+}

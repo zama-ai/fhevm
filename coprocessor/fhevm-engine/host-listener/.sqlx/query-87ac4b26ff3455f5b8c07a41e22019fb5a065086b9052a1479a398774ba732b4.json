@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT key_id, sequence_number, pks_key, COALESCE(compressed_xof_keyset, sks_key) AS \"server_key_blob!\", (compressed_xof_keyset IS NOT NULL) AS \"is_xof!\", cks_key FROM keys WHERE sequence_number = $1",
+  "query": "SELECT key_id, sequence_number, pks_key,\n               CASE WHEN $2 THEN sks_key\n                    ELSE COALESCE(compressed_xof_keyset, sks_key)\n               END AS \"server_key_blob!\",\n               CASE WHEN $2 THEN FALSE\n                    ELSE compressed_xof_keyset IS NOT NULL\n               END AS \"is_xof!\",\n               cks_key\n               FROM keys WHERE sequence_number = $1",
   "describe": {
     "columns": [
       {
@@ -36,7 +36,8 @@
     ],
     "parameters": {
       "Left": [
-        "Int8"
+        "Int8",
+        "Bool"
       ]
     },
     "nullable": [
@@ -48,5 +49,5 @@
       true
     ]
   },
-  "hash": "35ee352c973bc8da412fd11a35b15969f75f2183cdcb3f76c2b5851432bc55ae"
+  "hash": "87ac4b26ff3455f5b8c07a41e22019fb5a065086b9052a1479a398774ba732b4"
 }

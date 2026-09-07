@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE computations AS c\n        SET is_error = true,\n            -- Unconditional now that nothing rewrites the stamp: a fresh\n            -- error, a terminal stamp superseding a retryable one, and a\n            -- repeat of the same retryable failure all write the same text.\n            error_message = $1,\n            error_retry_count = CASE\n                WHEN NOT old.is_error THEN 0\n                -- Saturating: the count only has to reach the demote\n                -- threshold, and a chain retried for months must not wrap\n                -- back under it.\n                ELSE LEAST(old.error_retry_count + 1, 32767)::smallint\n            END\n        FROM computations AS old\n        WHERE old.output_handle = c.output_handle\n          AND old.transaction_id = c.transaction_id\n          AND c.output_handle = $2\n          AND c.transaction_id = $3\n          AND c.is_completed = false\n          AND (c.is_error = false OR c.error_message LIKE '%' || $4 || '%')\n        RETURNING (\n            NOT old.is_error\n            OR $1 NOT LIKE '%' || $4 || '%'\n        ) AS \"state_changed!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "state_changed!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Bytea",
+        "Bytea",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "5f24554e4e025122849d4d8b9d4374bdc7fc4fc8b15f2ce5704f41d07c80cc1f"
+}

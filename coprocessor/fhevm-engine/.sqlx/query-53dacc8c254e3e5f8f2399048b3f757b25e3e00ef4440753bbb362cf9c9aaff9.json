@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            -- Bytes are the ground truth of success: a row whose ciphertext\n            -- was just inserted is completed, and any error stamp on it was a\n            -- nondeterministic-failure artifact (e.g. another worker's\n            -- transient panic on the same stolen batch) — heal it, or the\n            -- row would stay a terminally errored, never-completed\n            -- contradiction next to published bytes. Rows drained for dead\n            -- inputs never execute, so no bytes ever arrive to heal them.\n            UPDATE computations\n            SET is_completed = true, completed_at = CURRENT_TIMESTAMP,\n                is_error = false, error_message = NULL, error_retry_count = 0\n            WHERE is_completed = false\n            AND (output_handle, transaction_id) IN (\n                SELECT * FROM unnest($1::BYTEA[], $2::BYTEA[])\n            )\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "ByteaArray",
+        "ByteaArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "53dacc8c254e3e5f8f2399048b3f757b25e3e00ef4440753bbb362cf9c9aaff9"
+}

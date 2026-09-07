@@ -79,7 +79,11 @@ impl FhevmKeys {
         let compressed_server_key = CompressedServerKey::new(&client_key);
         #[cfg(not(feature = "gpu"))]
         let server_key = compressed_server_key.decompress();
+        // The clone keeps `compressed_server_key` alive for the GPU
+        // decompression below; clippy under `--features gpu` flags it because
+        // this tfhe API takes `&self` there.
         #[cfg(feature = "gpu")]
+        #[allow(clippy::redundant_clone)]
         let server_key = compressed_server_key.clone().decompress();
         let (
             sks,
