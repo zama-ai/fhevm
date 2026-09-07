@@ -188,6 +188,7 @@ function handleSolidityTFHEEncryptedOperatorForTwoEncryptedTypes(
   }
 
   if (lhsFheType.type.startsWith('Uint') && rhsFheType.type.startsWith('Uint')) {
+    // Widening casts validate and initialize their source; avoid checking it twice.
     // Determine the maximum number of bits between lhsBits and rhsBits
     const outputBits = Math.max(lhsFheType.bitLength, rhsFheType.bitLength);
     const castLeftToRight = lhsFheType.bitLength < rhsFheType.bitLength;
@@ -214,12 +215,8 @@ function handleSolidityTFHEEncryptedOperatorForTwoEncryptedTypes(
     function ${
       operator.name
     }(e${lhsFheType.type.toLowerCase()} a, e${rhsFheType.type.toLowerCase()} b) internal returns (${returnType}) {
-        if (!isInitialized(a)) {
-            a = asE${lhsFheType.type.toLowerCase()}(0);
-        }
-        if (!isInitialized(b)) {
-            b = asE${rhsFheType.type.toLowerCase()}(0);
-        }
+        ${castLeftToRight ? '' : assignValidatedFheValue('a', lhsFheType.type)}
+        ${castRightToLeft ? '' : assignValidatedFheValue('b', rhsFheType.type)}
         return ${returnType}.wrap(${implExpression});
     }
 `);
@@ -229,12 +226,8 @@ function handleSolidityTFHEEncryptedOperatorForTwoEncryptedTypes(
     * @dev Evaluates ${operator.name}(ebool a, ebool b) and returns the result.
     */
     function ${operator.name}(ebool a, ebool b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEbool(false);
-        }
-        if (!isInitialized(b)) {
-            b = asEbool(false);
-        }
+        ${assignValidatedFheValue('a', 'Bool')}
+        ${assignValidatedFheValue('b', 'Bool')}
         return ebool.wrap(Impl.${operator.name}(ebool.unwrap(a), ebool.unwrap(b), false));
     }
 `);
@@ -244,12 +237,8 @@ function handleSolidityTFHEEncryptedOperatorForTwoEncryptedTypes(
       * @dev Evaluates ${operator.name}(eaddress a, eaddress b) and returns the result.
       */
       function ${operator.name}(eaddress a, eaddress b) internal returns (ebool) {
-          if (!isInitialized(a)) {
-              a = asEaddress(address(0));
-          }
-          if (!isInitialized(b)) {
-              b = asEaddress(address(0));
-          }
+          ${assignValidatedFheValue('a', 'Address')}
+          ${assignValidatedFheValue('b', 'Address')}
           return ebool.wrap(Impl.${operator.name}(eaddress.unwrap(a), eaddress.unwrap(b), false));
       }
   `);
@@ -347,11 +336,7 @@ function generateSolidityTFHEScalarOperator(fheType: AdjustedFheType, operator: 
     function ${
       operator.name
     }(e${fheType.type.toLowerCase()} a, ${clearMatchingType.toLowerCase()} b) internal returns (${returnType}) {
-        if (!isInitialized(a)) {
-            a = asE${fheType.type.toLowerCase()}(${
-              fheType.type == 'Bool' ? 'false' : fheType.type == 'Address' ? `${clearMatchingType.toLowerCase()}(0)` : 0
-            });
-        }
+        ${assignValidatedFheValue('a', fheType.type)}
         return ${returnType}.wrap(${implExpressionA});
     }
 `);
@@ -369,11 +354,7 @@ function generateSolidityTFHEScalarOperator(fheType: AdjustedFheType, operator: 
       operator.name
     }(${clearMatchingType.toLowerCase()} a, e${fheType.type.toLowerCase()} b) internal returns (${returnType}) {
         ${maybeEncryptLeft}
-        if (!isInitialized(b)) {
-            b = asE${fheType.type.toLowerCase()}(${
-              fheType.type == 'Bool' ? 'false' : fheType.type == 'Address' ? `${clearMatchingType.toLowerCase()}(0)` : 0
-            });
-        }
+        ${assignValidatedFheValue('b', fheType.type)}
         return ${returnType}.wrap(${implExpressionB});
     }
         `);
@@ -383,12 +364,26 @@ function generateSolidityTFHEScalarOperator(fheType: AdjustedFheType, operator: 
 }
 
 function handleSolidityTFHEIsInitialized(fheType: AdjustedFheType): string {
+  const zero = fheType.type === 'Bool' ? 'false' : fheType.type === 'Address' ? 'address(0)' : '0';
   return `
       /**
       * @dev Returns true if the encrypted integer is initialized and false otherwise.
       */
       function isInitialized(e${fheType.type.toLowerCase()} v) internal pure returns (bool) {
           return e${fheType.type.toLowerCase()}.unwrap(v) != 0;
+      }
+
+      /**
+       * @dev Returns the value after validating its FHE type, or a correctly typed encrypted zero if uninitialized.
+       */
+      function _getValidatedFheValue(e${fheType.type.toLowerCase()} value) private returns (e${fheType.type.toLowerCase()}) {
+          if (!isInitialized(value)) {
+              return asE${fheType.type.toLowerCase()}(${zero});
+          }
+          Impl.checkHandleType(e${fheType.type.toLowerCase()}.unwrap(value), FheType.${
+            fheType.isAlias ? fheType.aliasType : fheType.type
+          });
+          return value;
       }
     `;
 }
@@ -418,12 +413,8 @@ function handleSolidityTFHEShiftOperator(fheType: AdjustedFheType, operator: Ope
      * @dev Evaluates ${operator.name}(euint${lhsBits} a, euint${rhsBits} b) and returns the result.
      */
     function ${operator.name}(euint${lhsBits} a, euint${rhsBits} b) internal returns (e${fheType.type.toLowerCase()}) {
-        if (!isInitialized(a)) {
-            a = asEuint${lhsBits}(0);
-        }
-        if (!isInitialized(b)) {
-            b = asEuint${rhsBits}(0);
-        }
+        ${assignValidatedFheValue('a', fheType.type)}
+        ${castRightToLeft ? '' : assignValidatedFheValue('b', 'Uint8')}
         return e${fheType.type.toLowerCase()}.wrap(${implExpression});
     }
 `);
@@ -441,9 +432,7 @@ function handleSolidityTFHEShiftOperator(fheType: AdjustedFheType, operator: Ope
     function ${operator.name}(e${fheType.type.toLowerCase()} a, ${getUint(
       rhsBits,
     )} b) internal returns (e${fheType.type.toLowerCase()}) {
-        if (!isInitialized(a)) {
-            a = asE${fheType.type.toLowerCase()}(0);
-        }
+        ${assignValidatedFheValue('a', fheType.type)}
         return e${fheType.type.toLowerCase()}.wrap(${implExpression});
     }
   `);
@@ -451,16 +440,11 @@ function handleSolidityTFHEShiftOperator(fheType: AdjustedFheType, operator: Ope
   return res.join('');
 }
 
-function checkInitialized(varname: string, type: string) {
-  if (type === 'Bool') {
-    return `if (!isInitialized(${varname})) { ${varname} = asEbool(false); }`;
-  } else if (type.startsWith('Uint') || type.startsWith('Uint')) {
-    return `if (!isInitialized(${varname})) { ${varname} = asE${type.toLowerCase()}(0); }`;
-  } else if (type.startsWith('Address')) {
-    return `if (!isInitialized(${varname})) { ${varname} = asEaddress(address(0)); }`;
-  } else {
+function assignValidatedFheValue(varname: string, type: string) {
+  if (type !== 'Bool' && !type.startsWith('Uint') && type !== 'Address') {
     throw new Error(`Unsupported type ${type}`);
   }
+  return `${varname} = _getValidatedFheValue(${varname});`;
 }
 
 function handleSolidityTFHESelect(fheType: AdjustedFheType): string {
@@ -473,9 +457,9 @@ function handleSolidityTFHESelect(fheType: AdjustedFheType): string {
     *      If 'control's value is 'false', the result has the same value as 'ifFalse'.
     */
     function select(ebool control, e${fheType.type.toLowerCase()} a, e${fheType.type.toLowerCase()} b) internal returns (e${fheType.type.toLowerCase()}) {
-        ${checkInitialized('control', 'Bool')}
-        ${checkInitialized('a', fheType.type)}
-        ${checkInitialized('b', fheType.type)}
+        ${assignValidatedFheValue('control', 'Bool')}
+        ${assignValidatedFheValue('a', fheType.type)}
+        ${assignValidatedFheValue('b', fheType.type)}
         return e${fheType.type.toLowerCase()}.wrap(Impl.select(ebool.unwrap(control), e${fheType.type.toLowerCase()}.unwrap(a), e${fheType.type.toLowerCase()}.unwrap(b)));
     }
     `;
@@ -501,7 +485,7 @@ function handleSolidityTFHECustomCastBetweenTwoEuint(
     * @dev Casts an encrypted integer from 'e${inputFheType.type.toLowerCase()}' to 'e${outputFheType.type.toLowerCase()}'.
     */
     function asE${outputFheType.type.toLowerCase()}(e${inputFheType.type.toLowerCase()} value) internal returns (e${outputFheType.type.toLowerCase()}) {
-        ${checkInitialized('value', inputFheType.type)}
+        ${assignValidatedFheValue('value', inputFheType.type)}
         return e${outputFheType.type.toLowerCase()}.wrap(Impl.cast(e${inputFheType.type.toLowerCase()}.unwrap(value), FheType.${
           outputFheType.type
         }));
@@ -519,7 +503,7 @@ function handleSolidityTFHECustomCastBetweenEboolAndEuint(fheType: AdjustedFheTy
      * @dev Converts an 'ebool' to an 'e${fheType.type.toLowerCase()}'.
      */
     function asE${fheType.type.toLowerCase()}(ebool b) internal returns (e${fheType.type.toLowerCase()}) {
-        ${checkInitialized('b', 'Bool')}
+        ${assignValidatedFheValue('b', 'Bool')}
         return e${fheType.type.toLowerCase()}.wrap(Impl.cast(ebool.unwrap(b), FheType.${fheType.type}));
     }
     `);
@@ -530,7 +514,6 @@ function handleSolidityTFHECustomCastBetweenEboolAndEuint(fheType: AdjustedFheTy
       * @dev Casts an encrypted integer from 'e${fheType.type.toLowerCase()}' to 'ebool'.
       */
       function asEbool(e${fheType.type.toLowerCase()} value) internal returns (ebool) {
-          ${checkInitialized('value', fheType.type)}
           return ne(value, 0);
       }
       `);
@@ -550,7 +533,7 @@ function handleSolidityTFHEUnaryOperators(fheType: AdjustedFheType, operators: O
            * @dev Evaluates ${op.name}(e${fheType.type.toLowerCase()} value) and returns the result.
            */
         function ${op.name}(e${fheType.type.toLowerCase()} value) internal returns (e${fheType.type.toLowerCase()}) {
-            ${checkInitialized('value', fheType.type)}
+            ${assignValidatedFheValue('value', fheType.type)}
             return e${fheType.type.toLowerCase()}.wrap(Impl.${op.name}(e${fheType.type.toLowerCase()}.unwrap(value)));
         }
       `);
@@ -576,7 +559,7 @@ function handleSolidityTFHEConvertPlaintextAndEinputToRespectiveType(fheType: Ad
     /** 
      * @dev Convert an inputHandle with corresponding inputProof to an encrypted e${fheType.type.toLowerCase()} integer.
      * @dev If inputProof is empty, the externalE${fheType.type.toLowerCase()} inputHandle can be used as a regular e${fheType.type.toLowerCase()} handle if it
-     *      has already been verified and allowed to the sender. 
+     *      has already been verified and allowed to the sender, and matches the expected FHE type.
      *      This could facilitate integrating smart contract accounts with fhevm.
      */
     function fromExternal(externalE${fheType.type.toLowerCase()} inputHandle, bytes memory inputProof) internal returns (e${fheType.type.toLowerCase()}) {
@@ -596,6 +579,7 @@ function handleSolidityTFHEConvertPlaintextAndEinputToRespectiveType(fheType: Ad
             });
           }
           if (!Impl.isAllowed(inputBytes32, msg.sender)) revert SenderNotAllowedToUseHandle(inputBytes32, msg.sender);
+          Impl.checkHandleType(inputBytes32, FheType.${fheType.isAlias ? fheType.aliasType : fheType.type});
           return e${fheType.type.toLowerCase()}.wrap(inputBytes32);
         }
     }
@@ -665,7 +649,7 @@ function generateSolidityACLMethods(fheTypes: AdjustedFheType[]): string {
      * @dev Allows the use of value for the address account.
      */
     function allow(e${fheType.type.toLowerCase()} value, address account) internal returns(e${fheType.type.toLowerCase()}) {
-      ${checkInitialized('value', fheType.type)}
+      ${assignValidatedFheValue('value', fheType.type)}
       Impl.allow(e${fheType.type.toLowerCase()}.unwrap(value), account);
       return value;
     }
@@ -674,7 +658,7 @@ function generateSolidityACLMethods(fheTypes: AdjustedFheType[]): string {
      * @dev Allows the use of value for this address (address(this)).
      */
     function allowThis(e${fheType.type.toLowerCase()} value) internal returns(e${fheType.type.toLowerCase()}) {
-      ${checkInitialized('value', fheType.type)}
+      ${assignValidatedFheValue('value', fheType.type)}
       Impl.allow(e${fheType.type.toLowerCase()}.unwrap(value), address(this));
       return value;
     }
@@ -683,7 +667,7 @@ function generateSolidityACLMethods(fheTypes: AdjustedFheType[]): string {
      * @dev Allows the use of value by address account for this transaction.
      */
     function allowTransient(e${fheType.type.toLowerCase()} value, address account) internal returns(e${fheType.type.toLowerCase()}) {
-      ${checkInitialized('value', fheType.type)}
+      ${assignValidatedFheValue('value', fheType.type)}
       Impl.allowTransient(e${fheType.type.toLowerCase()}.unwrap(value), account);
       return value;
     }
@@ -692,7 +676,7 @@ function generateSolidityACLMethods(fheTypes: AdjustedFheType[]): string {
      * @dev Makes the value publicly decryptable.
      */
     function makePubliclyDecryptable(e${fheType.type.toLowerCase()} value) internal returns(e${fheType.type.toLowerCase()}) {
-      ${checkInitialized('value', fheType.type)}
+      ${assignValidatedFheValue('value', fheType.type)}
       Impl.makePubliclyDecryptable(e${fheType.type.toLowerCase()}.unwrap(value));
       return value;
     }
