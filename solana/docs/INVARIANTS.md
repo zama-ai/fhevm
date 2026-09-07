@@ -134,8 +134,9 @@ dictionary, persistent, update, allow, application…).
     application the execution touches (#10). The converse halves both hold: an
     allow grants decrypt and never compute (#11), and being the authority
     admits compute but never decrypt, which always needs a leaf (#8, #45).
-    There is no stored subject list and no `compute_subject` intersection
-    check; both were removed with RFC 035. (fhevm-internal#1891.)
+    The account keeps no list of who may decrypt — every allow is a leaf
+    (DD-048) — and there is no separate compute identity to name; both went
+    with RFC 035. (fhevm-internal#1891.)
 53. **[ANTI]** `make_handle_public` is not idempotent. Sealing a handle that is
     already sealed appends a second leaf committing to the same
     `(account, handle)` fact: it authorizes nothing the first leaf did not, and
