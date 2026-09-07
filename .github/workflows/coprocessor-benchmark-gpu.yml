@@ -358,7 +358,7 @@ jobs:
           ONE_SHOT_SCENARIOS: ${{ inputs.one_shot_scenarios }}
           OPTIMIZATION_TARGET: ${{ inputs.optimization_target }}
           SCHEDULING_POLICY: ${{ inputs.scheduling_policy }}
-          FHEVM_BENCH_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/coprocessor
+          BENCH_DB_URL: postgresql://postgres:postgres@localhost:5432/coprocessor
           CRITERION_HOME: ${{ github.workspace }}/coprocessor/fhevm-engine/target/criterion
 
       - name: Parse results
