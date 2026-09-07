@@ -24,6 +24,16 @@ RPC Nodes ──► Parallel Fetchers ──► Cursor Validator ──► Broke
 | `listener_core` | Main binary. Fetches blocks via HTTP RPC, validates hash-chains, persists metadata to PostgreSQL, publishes events. |
 | `broker` | Backend-agnostic message broker. Wraps Redis Streams (consumer groups, XCLAIM, PEL) and RabbitMQ (exchanges, TTL-DLX retry) behind a unified API with retry, dead-letter, and circuit breaker semantics. |
 | `primitives` | Shared Ethereum types and routing constants. |
+| `consumer` | Consumer library: registration, live delivery, catchup and finality flows. |
+| `example` | Runnable consumer examples for contract and full-block subscriptions. |
+
+## Consumer registration
+
+Declare delivery queues before calling `ListenerConsumer::register_contracts()`.
+This activates the complete live contract set atomically, preventing partially
+filtered startup blocks for a fresh subscription. Deploy the updated core first.
+See [registration protocol and compatibility](docs/consumer_registration.md) and
+[the live consumer example](crates/example/src/live_events.rs).
 
 ## Quick Start
 

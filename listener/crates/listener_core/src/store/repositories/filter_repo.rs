@@ -29,6 +29,45 @@ impl FilterRepository {
         filter_type: FilterType,
     ) -> SqlResult<Option<Filter>> {
         let mut conn = self.client.get_app_connection().await?;
+        self.add_filter_in(&mut conn, consumer_id, from, to, log_address, filter_type)
+            .await
+    }
+
+    /// All additions become visible together; any error rolls the batch back.
+    pub async fn add_filters_atomically(
+        &self,
+        filters: &[primitives::event::FilterCommand],
+    ) -> SqlResult<()> {
+        let mut conn = self.client.get_app_connection().await?;
+        let mut tx = sqlx::Connection::begin(&mut *conn).await?;
+        for filter in filters {
+            let from = primitives::utils::checksum_optional_address(&filter.from);
+            let to = primitives::utils::checksum_optional_address(&filter.to);
+            let log_address = primitives::utils::checksum_optional_address(&filter.log_address);
+            self.add_filter_in(
+                &mut tx,
+                &filter.consumer_id,
+                from.as_deref(),
+                to.as_deref(),
+                log_address.as_deref(),
+                filter.filter_type.unwrap_or_default().into(),
+            )
+            .await?;
+        }
+        tx.commit().await?;
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn add_filter_in(
+        &self,
+        conn: &mut sqlx::PgConnection,
+        consumer_id: &str,
+        from: Option<&str>,
+        to: Option<&str>,
+        log_address: Option<&str>,
+        filter_type: FilterType,
+    ) -> SqlResult<Option<Filter>> {
         let id = Uuid::new_v4();
 
         let row = sqlx::query_as!(
@@ -184,5 +223,87 @@ impl FilterRepository {
         .await?;
 
         Ok(row)
+    }
+}
+
+#[cfg(test)]
+mod batch_tests {
+    use super::*;
+    use primitives::event::FilterCommand;
+
+    #[tokio::test]
+    #[ignore = "requires a disposable BATCH_WATCH_DATABASE_URL"]
+    async fn batch_watch_commits_together_and_rolls_back_on_failure() {
+        let pool = sqlx::PgPool::connect(&std::env::var("BATCH_WATCH_DATABASE_URL").unwrap())
+            .await
+            .unwrap();
+        sqlx::migrate!("./migrations").run(&pool).await.unwrap();
+        let chain_id = 42;
+        let config = serde_json::from_value(serde_json::json!({
+            "db_url": std::env::var("BATCH_WATCH_DATABASE_URL").unwrap()
+        }))
+        .unwrap();
+        let repo = FilterRepository::new(Arc::new(PgClient::new(&config).await.unwrap()), chain_id);
+        let owner = Uuid::new_v4().to_string();
+        let first = FilterCommand {
+            consumer_id: owner.clone(),
+            from: None,
+            to: None,
+            log_address: Some(
+                "0x0000000000000000000000000000000000000001"
+                    .parse()
+                    .unwrap(),
+            ),
+            filter_type: None,
+        };
+        let mut second = first.clone();
+        second.log_address = Some(
+            "0x0000000000000000000000000000000000000002"
+                .parse()
+                .unwrap(),
+        );
+        // A database error on the second row must not expose the first row.
+        sqlx::raw_sql(
+            r#"
+            CREATE FUNCTION reject_batch_test_filter() RETURNS trigger LANGUAGE plpgsql AS $$
+            BEGIN
+                IF NEW.log_address = '0x0000000000000000000000000000000000000002' THEN
+                    RAISE EXCEPTION 'injected second insert failure';
+                END IF;
+                RETURN NEW;
+            END $$;
+            CREATE TRIGGER reject_batch_test_filter BEFORE INSERT ON filters
+            FOR EACH ROW EXECUTE FUNCTION reject_batch_test_filter();
+        "#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        assert!(
+            repo.add_filters_atomically(&[first.clone(), second.clone()])
+                .await
+                .is_err()
+        );
+        assert!(
+            repo.get_filters_by_consumer_id(&owner)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        sqlx::raw_sql("DROP TRIGGER reject_batch_test_filter ON filters; DROP FUNCTION reject_batch_test_filter();")
+            .execute(&pool).await.unwrap();
+        repo.add_filters_atomically(&[first.clone(), second.clone()])
+            .await
+            .unwrap();
+        assert_eq!(
+            repo.get_filters_by_consumer_id(&owner).await.unwrap().len(),
+            2
+        );
+        repo.add_filters_atomically(&[first, second]).await.unwrap();
+        assert_eq!(
+            repo.get_filters_by_consumer_id(&owner).await.unwrap().len(),
+            2
+        );
+        pool.close().await;
     }
 }
