@@ -41,27 +41,62 @@ describe("compat", () => {
     expect(replaceRegistrySourceTag(hotfix, "v0.15.0")).toEqual({ mode: "registry", tag: "v0.15.0" });
   });
 
-  test("requires a full local coprocessor build for multi-node consensus topologies", () => {
-    const scenario = testDefaultScenario({ topology: { count: 3, threshold: 3 } });
+  test("multi-node consensus topologies need one coprocessor revision, not a local build", () => {
+    const scenario = testDefaultScenario({
+      topology: { count: 3, threshold: 3 },
+      instances: [0, 1, 2].map((index) => ({ index, source: { mode: "inherit" as const }, env: {}, args: {} })),
+    });
     const versions = {
       target: "latest-main" as const,
       lockName: "latest-main.json",
-      env: {} as Record<string, string>,
+      env: { COPROCESSOR_TFHE_WORKER_VERSION: "v0.15.0" } as Record<string, string>,
       sources: [],
     };
-    expect(() => assertSupportedBundleScenario({ versions, overrides: [], scenario })).toThrow(
-      "require a full local coprocessor build",
-    );
+    // The published bundle on every node is one revision: the orchestrated CI
+    // path runs exactly this, with no override at all.
+    expect(() => assertSupportedBundleScenario({ versions, overrides: [], scenario })).not.toThrow();
+    // A full local build on every node is one revision too.
     expect(() =>
       assertSupportedBundleScenario({ versions, overrides: [{ group: "coprocessor" }], scenario }),
     ).not.toThrow();
+    // A service-scoped override mixes local and published services.
     expect(() =>
       assertSupportedBundleScenario({
         versions,
         overrides: [{ group: "coprocessor", services: ["coprocessor-host-listener"] }],
         scenario,
       }),
-    ).toThrow("require a full local coprocessor build");
+    ).toThrow("service-scoped coprocessor override (coprocessor-host-listener)");
+    // Instances on different sources are different revisions.
+    const mixed = testDefaultScenario({
+      topology: { count: 3, threshold: 3 },
+      instances: [
+        { index: 0, source: { mode: "local" }, env: {}, args: {} },
+        { index: 1, source: { mode: "registry", tag: "v0.14.0" }, env: {}, args: {} },
+        { index: 2, source: { mode: "inherit" }, env: {}, args: {} },
+      ],
+    });
+    expect(() => assertSupportedBundleScenario({ versions, overrides: [], scenario: mixed })).toThrow(
+      /instance sources differ: .*local \(instance 0\).*registry:v0\.14\.0 \(instance 1\).*bundle \(instance 2\)/,
+    );
+    // An explicit registry tag equal to the bundle's is the same revision.
+    const pinnedToBundle = testDefaultScenario({
+      topology: { count: 2, threshold: 2 },
+      instances: [
+        { index: 0, source: { mode: "registry", tag: "v0.15.0" }, env: {}, args: {} },
+        { index: 1, source: { mode: "inherit" }, env: {}, args: {} },
+      ],
+    });
+    expect(() => assertSupportedBundleScenario({ versions, overrides: [], scenario: pinnedToBundle })).not.toThrow();
+    // A single node is never a consensus comparison; partial overrides stay legal there.
+    const single = testDefaultScenario({ topology: { count: 1, threshold: 1 } });
+    expect(() =>
+      assertSupportedBundleScenario({
+        versions,
+        overrides: [{ group: "coprocessor", services: ["coprocessor-host-listener"] }],
+        scenario: single,
+      }),
+    ).not.toThrow();
   });
 
   test("flags relayer v1 vs test-suite v2 incompatibility", () => {
