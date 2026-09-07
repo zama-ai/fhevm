@@ -56,7 +56,7 @@ async fn test_public_decrypt_happy_path() -> anyhow::Result<()> {
 
     let request = public_request();
     let id = request.id();
-    let pending = endpoint.spawn_post_public(&request);
+    let pending = endpoint.spawn_pdec(&request);
 
     info!("Checking the stored request row...");
     let row = wait_for_request_row(&endpoint.db, PUBLIC_REQUESTS, id).await;
@@ -101,7 +101,7 @@ async fn test_user_decrypt_happy_path() -> anyhow::Result<()> {
 
     let request = user_request();
     let id = request.id();
-    let pending = endpoint.spawn_post_user(&request);
+    let pending = endpoint.spawn_udec(&request);
 
     info!("Checking the stored RFC016 request row...");
     let row = wait_for_request_row(&endpoint.db, USER_REQUESTS, id).await;
@@ -148,7 +148,7 @@ async fn test_user_decrypt_happy_path() -> anyhow::Result<()> {
     );
 
     info!("Playing the worker: inserting the response row...");
-    let inserted = complete_user(&endpoint.db, id).await?;
+    let inserted = complete_udec(&endpoint.db, id).await?;
 
     let response = pending.await?;
     assert_eq!(response.status(), StatusCode::OK);
@@ -171,8 +171,8 @@ async fn test_duplicate_submissions_share_one_request() -> anyhow::Result<()> {
 
     let request = public_request();
     let id = request.id();
-    let first = endpoint.spawn_post_public(&request);
-    let second = endpoint.spawn_post_public(&request);
+    let first = endpoint.spawn_pdec(&request);
+    let second = endpoint.spawn_pdec(&request);
 
     wait_for_request_row(&endpoint.db, PUBLIC_REQUESTS, id).await;
     complete_public(&endpoint.db, id).await?;
@@ -203,7 +203,7 @@ async fn test_existing_payload_row_is_served_immediately() -> anyhow::Result<()>
     assert_eq!(body.decrypted_result.to_vec(), inserted.decrypted_result);
 
     let user = user_request();
-    let inserted = complete_user(&endpoint.db, user.id()).await?;
+    let inserted = complete_udec(&endpoint.db, user.id()).await?;
     let response = endpoint.post_user(&user).await;
     assert_eq!(response.status(), StatusCode::OK);
     let body: UserDecryptionResponse = response.json().await?;
@@ -283,7 +283,7 @@ async fn test_retryable_error_row_resets_failed_request() -> anyhow::Result<()> 
         insert_rand_public_decryption_request(&endpoint.db, failed_http_request(id)).await?;
         fail_public(&endpoint.db, id, stored_code, "before").await?;
 
-        let pending = endpoint.spawn_post_public(&public);
+        let pending = endpoint.spawn_pdec(&public);
         wait_for_request_status(&endpoint.db, PUBLIC_REQUESTS, id, "pending").await;
         assert_eq!(
             count_rows(&endpoint.db, PUBLIC_REQUESTS).await,
@@ -308,7 +308,7 @@ async fn test_retryable_error_row_resets_failed_request() -> anyhow::Result<()> 
     insert_rand_user_decryption_request_v2(&endpoint.db, failed_http_request(id)).await?;
     fail_user(&endpoint.db, id, "acl_denied", "before").await?;
 
-    let pending = endpoint.spawn_post_user(&user);
+    let pending = endpoint.spawn_udec(&user);
     wait_for_request_status(&endpoint.db, USER_REQUESTS, id, "pending").await;
     assert_eq!(count_rows(&endpoint.db, USER_REQUESTS).await, 1);
     fail_user(&endpoint.db, id, "unprocessable", "after").await?;
@@ -345,7 +345,7 @@ async fn test_retryable_error_row_attaches_to_reprocessing() -> anyhow::Result<(
     .await?;
     fail_public(&endpoint.db, public_id, "acl_denied", "before").await?;
 
-    let pending = endpoint.spawn_post_public(&public);
+    let pending = endpoint.spawn_pdec(&public);
     // Nothing observable happens in DB until the worker answers, so give the route time to run.
     tokio::time::sleep(Duration::from_millis(300)).await;
     assert_eq!(
@@ -363,7 +363,7 @@ async fn test_retryable_error_row_attaches_to_reprocessing() -> anyhow::Result<(
     let user = user_request();
     let user_id = user.id();
     fail_user(&endpoint.db, user_id, "acl_denied", "before").await?;
-    let pending = endpoint.spawn_post_user(&user);
+    let pending = endpoint.spawn_udec(&user);
     wait_for_request_status(&endpoint.db, USER_REQUESTS, user_id, "pending").await;
     fail_user(&endpoint.db, user_id, "unprocessable", "after").await?;
     let response = pending.await?;
@@ -381,7 +381,7 @@ async fn test_error_row_notified_while_waiting() -> anyhow::Result<()> {
 
     let request = user_request();
     let id = request.id();
-    let pending = endpoint.spawn_post_user(&request);
+    let pending = endpoint.spawn_udec(&request);
     wait_for_request_row(&endpoint.db, USER_REQUESTS, id).await;
 
     fail_user(&endpoint.db, id, "acl_denied", "not allowed").await?;
@@ -405,7 +405,7 @@ async fn test_overloaded_replica_answers_503() -> anyhow::Result<()> {
 
     // Fills the single in-flight slot.
     let first_request = public_request();
-    let first = endpoint.spawn_post_public(&first_request);
+    let first = endpoint.spawn_pdec(&first_request);
     wait_for_request_row(&endpoint.db, PUBLIC_REQUESTS, first_request.id()).await;
 
     let second_request = public_request();
@@ -570,7 +570,7 @@ async fn test_decryption_timeout_answers_504_and_releases_permit() -> anyhow::Re
             .as_deref(),
         Some("pending")
     );
-    let resubmitted = endpoint.spawn_post_public(&request);
+    let resubmitted = endpoint.spawn_pdec(&request);
     complete_public(&endpoint.db, id).await?;
     assert_eq!(resubmitted.await?.status(), StatusCode::OK);
     assert_eq!(count_rows(&endpoint.db, PUBLIC_REQUESTS).await, 1);
@@ -590,7 +590,7 @@ async fn test_listener_reconnection_fails_in_flight_requests_fast() -> anyhow::R
     let mut endpoint = setup().await?;
 
     let request = public_request();
-    let pending = endpoint.spawn_post_public(&request);
+    let pending = endpoint.spawn_pdec(&request);
     wait_for_request_row(&endpoint.db, PUBLIC_REQUESTS, request.id()).await;
 
     info!("Killing the listener connection...");
@@ -627,7 +627,7 @@ async fn test_listener_reconnection_fails_in_flight_requests_fast() -> anyhow::R
 
     info!("The service keeps running on a fresh listener connection...");
     let next = public_request();
-    let pending = endpoint.spawn_post_public(&next);
+    let pending = endpoint.spawn_pdec(&next);
     wait_for_request_row(&endpoint.db, PUBLIC_REQUESTS, next.id()).await;
     complete_public(&endpoint.db, next.id()).await?;
     assert_eq!(pending.await?.status(), StatusCode::OK);
@@ -715,7 +715,7 @@ impl RunningEndpoint {
     }
 
     /// Fires a public-decrypt request in a background task.
-    fn spawn_post_public(&self, request: &PublicDecryptionRequest) -> JoinHandle<Response> {
+    fn spawn_pdec(&self, request: &PublicDecryptionRequest) -> JoinHandle<Response> {
         let client = self.client.clone();
         let url = self.url(PUBLIC_DECRYPTION_ROUTE);
         let request = request.clone();
@@ -730,7 +730,7 @@ impl RunningEndpoint {
     }
 
     /// Fires a user-decrypt request in a background task.
-    fn spawn_post_user(&self, request: &UserDecryptionRequest) -> JoinHandle<Response> {
+    fn spawn_udec(&self, request: &UserDecryptionRequest) -> JoinHandle<Response> {
         let client = self.client.clone();
         let url = self.url(USER_DECRYPTION_ROUTE);
         let request = request.clone();
@@ -805,7 +805,7 @@ async fn complete_public(
 }
 
 /// Plays the kms-worker: stores a completed user decryption for `id`.
-async fn complete_user(
+async fn complete_udec(
     db: &Pool<Postgres>,
     id: B256,
 ) -> anyhow::Result<connector_utils::types::UserDecryptionResponse> {

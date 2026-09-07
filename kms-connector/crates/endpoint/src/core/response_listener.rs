@@ -44,7 +44,7 @@ impl ResponseListener {
         info!("Starting ResponseListener");
         loop {
             match self.db_listener.try_recv().await {
-                Ok(Some(notification)) => self.handle(notification),
+                Ok(Some(notification)) => self.handle_notif(notification),
                 // `sqlx` already reconnected and re-issued the `LISTEN`s. Notifications emitted
                 // during the gap are lost, so the in-flight waiters are failed fast.
                 Ok(None) => {
@@ -71,7 +71,7 @@ impl ResponseListener {
         }
     }
 
-    fn handle(&self, notification: PgNotification) {
+    fn handle_notif(&self, notification: PgNotification) {
         let id = match id_from_notification_payload(notification.payload()) {
             Ok(id) => id,
             Err(e) => return error!("Ignoring malformed response notification: {e}"),
