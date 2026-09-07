@@ -194,6 +194,13 @@ describe("buildKmsThresholdOverride", () => {
     expect(config).toContain('tls_subject = "kms-core-3"');
   });
 
+  test("core services pin the amd64 platform (the core image is published amd64-only)", () => {
+    const services = buildKmsThresholdOverride(fourParty, RENDER_OPTS).services;
+    for (const name of ["kms-core-gen-keys", "kms-core", "kms-core-4", "kms-core-init"]) {
+      expect(services[name].platform).toBe("linux/amd64");
+    }
+  });
+
   test("rejects a non-threshold topology", () => {
     expect(() => buildKmsThresholdOverride(resolveKmsTopology(undefined), RENDER_OPTS)).toThrow();
   });
