@@ -98,12 +98,21 @@ export const PROJECT = "fhevm";
 export const DEFAULT_HOST_RPC_PORT = 8545;
 export const DEFAULT_GATEWAY_RPC_PORT = 8546;
 export const DEFAULT_EXTRA_HOST_RPC_PORT = 8547;
+/**
+ * Host port of the managed fork Anvil used by the dual-Anvil fork scenarios.
+ * Deliberately NOT DEFAULT_EXTRA_HOST_RPC_PORT: that one is the second host
+ * chain's RPC in multi-chain scenarios, and sharing it would let a fork
+ * scenario and a multi-chain scenario bind the same port — the fork tests
+ * would then talk to whichever Anvil won the race, which is exactly the sort
+ * of silent mis-targeting that makes a consensus result meaningless.
+ */
+export const DEFAULT_FORK_RPC_PORT = 8548;
 export const MINIO_PORT = 9000;
 export const POSTGRES_PORT = 5432;
 export const DEFAULT_POSTGRES_USER = "postgres";
 export const DEFAULT_POSTGRES_PASSWORD = "postgres";
 export const DEFAULT_POSTGRES_DB = "coprocessor";
-export const PORTS = [3000, 3001, POSTGRES_PORT, 5433, DEFAULT_HOST_RPC_PORT, DEFAULT_GATEWAY_RPC_PORT, DEFAULT_EXTRA_HOST_RPC_PORT, MINIO_PORT, 9001];
+export const PORTS = [3000, 3001, POSTGRES_PORT, 5433, DEFAULT_HOST_RPC_PORT, DEFAULT_GATEWAY_RPC_PORT, DEFAULT_EXTRA_HOST_RPC_PORT, DEFAULT_FORK_RPC_PORT, MINIO_PORT, 9001];
 export const MINIO_INTERNAL_URL = `http://minio:${MINIO_PORT}`;
 export const MINIO_EXTERNAL_URL = `http://localhost:${MINIO_PORT}`;
 export const POSTGRES_HOST = `db:${POSTGRES_PORT}`;
