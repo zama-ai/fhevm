@@ -38,7 +38,7 @@ contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
 
         assertEq(address(fhevmExecutorProxy), fhevmExecutorAdd, "FHEVMExecutor proxy address mismatch");
         assertNotEq(fhevmExecutorImplementation, address(0), "Implementation not deployed");
-        assertEq(fhevmExecutorProxy.getVersion(), "FHEVMExecutor v0.4.0", "Version mismatch");
+        assertEq(fhevmExecutorProxy.getVersion(), "FHEVMExecutor v0.5.0", "Version mismatch");
         assertEq(
             _readImplementationSlot(fhevmExecutorAdd),
             fhevmExecutorImplementation,
