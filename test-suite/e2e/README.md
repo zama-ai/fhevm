@@ -68,6 +68,35 @@ Run via the fhevm-cli profiles `erc1271-user-decryption`,
 `standard`) — see `test-suite/fhevm/README.md` — or directly with
 `npx hardhat test --grep "<describe title>" --network staging`.
 
+## KMS Connector HTTP endpoint suites
+
+E2E coverage for the kms-connector HTTP decryption endpoint (RFC 033,
+`POST /v1/public-decrypt`, `POST /v1/user-decrypt`), driven directly from the
+e2e container against every KMS party's `kms-connector[-i]-endpoint`:
+
+- `test/connectorHttp/connectorHttpPublicDecrypt.ts` — per-party KMS
+  signatures recovered and checked against `KMSVerifier`, 2t+1 quorum,
+  cache/idempotency, agreement with the relayer path
+- `test/connectorHttp/connectorHttpUserDecrypt.ts` — unified EIP-712
+  permit, every decryptable type, permissive mode, idempotency (structural
+  checks on the shares; reconstruction is a follow-up)
+- `test/connectorHttp/connectorHttpNegative.ts` — rejections decided
+  by the kms-worker against the real ACL (`403 acl_denied`,
+  `403 user_signature_rejected`, `422 unprocessable`) and the re-arm of a
+  retryable error once the ACL changes. Rejections the endpoint decides alone
+  (`400 malformed`, `503`, `504`) are covered by the crate's own tests
+
+The client lives in `test/sdk/connector/` and is deliberately thin: it posts the
+RFC 033 body, never throws on non-2xx, re-submits transient worker outcomes, and
+leaves quorum verification to `verify.ts` (the endpoint only returns its own
+party's answer). The suites skip when `KMS_CONNECTOR_ENDPOINT_URLS` is empty
+(bundles without the endpoint image).
+
+Run via the fhevm-cli profile `connector-http` (part of `standard`; runs all
+three suites), the narrower `connector-http-public-decrypt`,
+`connector-http-user-decrypt` and `connector-http-negative` profiles, or directly with
+`npx hardhat test --grep "Connector HTTP" --network staging`.
+
 ## Operator edge-case suite
 
 Limit-case coverage for the arithmetic, shift, rotate and cast operators:

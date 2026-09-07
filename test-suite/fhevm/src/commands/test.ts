@@ -1,7 +1,7 @@
 /**
  * Runs named e2e test profiles, standard/heavy CI suites, and topology-specific test flows.
  */
-import { compatPolicyForState, supportsCoprocessorDbStateRevert } from "../compat/compat";
+import { compatPolicyForState, supportsConnectorEndpoint, supportsCoprocessorDbStateRevert } from "../compat/compat";
 import { type DecryptionRunner, runKmsGenerationProfile } from "./kms-generation";
 import { runKmsGenerationAbortProfile } from "./kms-generation-abort";
 import { runKmsContextSwitchProfile } from "./kms-context-switch";
@@ -118,6 +118,14 @@ const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[numb
   "public-decryption": "Run async public decryption coverage.",
   "public-decrypt-http-ebool": "Run HTTP public decrypt coverage for ebool payloads.",
   "public-decrypt-http-mixed": "Run mixed HTTP public decrypt coverage.",
+  "connector-http-public-decrypt":
+    "Run public decryption straight against every kms-connector HTTP endpoint (RFC 033)",
+  "connector-http-user-decrypt":
+    "Run user decryption straight against every kms-connector HTTP endpoint (RFC 033)",
+  "connector-http-negative":
+    "Run kms-connector HTTP endpoint rejections.",
+  "connector-http":
+    "Run the three connector-http-* suites (public decrypt, user decrypt, negative) in one go.",
   random: "Run random generation coverage.",
   "random-subset": "Run a narrower random generation subset.",
   operators: "Run manual operator workflows.",
@@ -1628,6 +1636,11 @@ export const test = async (testName: string | undefined, options: TestOptions) =
   const multiChainIsolationSkipReason = () =>
     state.scenario.hostChains.length > 1 ? undefined : "topology has fewer than 2 host chains";
 
+  const connectorEndpointSkipReason = () =>
+    supportsConnectorEndpoint(state)
+      ? undefined
+      : "CONNECTOR_ENDPOINT_VERSION is not part of the resolved bundle (no kms-connector-endpoint container)";
+
   const dbStateRevertSkipReason = () =>
     supportsCoprocessorDbStateRevert(state)
       ? undefined
@@ -1942,6 +1955,12 @@ export const test = async (testName: string | undefined, options: TestOptions) =
         throw new PreflightError(precondition);
       }
     }
+    if (name.startsWith("connector-http")) {
+      const precondition = connectorEndpointSkipReason();
+      if (precondition) {
+        throw new PreflightError(`${name}: ${precondition}`);
+      }
+    }
 
     const filter = TEST_GREP[name];
     if (!filter) {
@@ -2010,6 +2029,13 @@ export const test = async (testName: string | undefined, options: TestOptions) =
             continue;
           }
         }
+        if (profile.startsWith("connector-http")) {
+          const skipReason = connectorEndpointSkipReason();
+          if (skipReason) {
+            console.log(`[test] skipping ${profile}: ${skipReason}`);
+            continue;
+          }
+        }
         await runProfile(profile);
       }
     });
@@ -2060,6 +2086,13 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     const started = Date.now();
     await runLogged("rollout-standard", started, async () => {
       for (const profile of ROLLOUT_STANDARD_TEST_PROFILES) {
+        if (profile.startsWith("connector-http")) {
+          const skipReason = connectorEndpointSkipReason();
+          if (skipReason) {
+            console.log(`[test] skipping ${profile}: ${skipReason}`);
+            continue;
+          }
+        }
         await runProfile(profile);
       }
     });

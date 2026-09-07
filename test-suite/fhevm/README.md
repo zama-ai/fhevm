@@ -347,6 +347,8 @@ When changing runtime flags, env contracts, target semantics, or external compan
 ./fhevm-cli test erc1271-user-decryption
 ./fhevm-cli test unified-user-decryption
 ./fhevm-cli test decryption-signature-invalidation
+./fhevm-cli test connector-http-public-decrypt
+./fhevm-cli test connector-http
 ./fhevm-cli test light
 ./fhevm-cli test standard
 ./fhevm-cli test heavy

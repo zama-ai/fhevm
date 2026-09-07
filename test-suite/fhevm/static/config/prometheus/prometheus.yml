@@ -7,7 +7,7 @@ scrape_configs:
 
     static_configs:
       - targets: ['kms-connector-gw-listener:9100', 'kms-connector-kms-worker:9100', 'kms-connector-tx-sender:9100', 'kms-connector-endpoint:9100']
-   
+
   # Coprocessor job configuration
   - job_name: 'coprocessor'
     static_configs:

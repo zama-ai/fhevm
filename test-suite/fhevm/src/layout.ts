@@ -292,6 +292,11 @@ export const TEST_GREP: Record<string, string> = {
   "public-decryption": "test HTTPPublicDecrypt ebool",
   "public-decrypt-http-ebool": "test HTTPPublicDecrypt ebool",
   "public-decrypt-http-mixed": "test HTTPPublicDecrypt mixed",
+  "connector-http-public-decrypt": "Connector HTTP public decrypt",
+  "connector-http-user-decrypt": "Connector HTTP user decrypt",
+  "connector-http-negative": "Connector HTTP negative",
+  // All three connector HTTP suites in one mocha run; this is the profile included in the standard test set.
+  "connector-http": "Connector HTTP",
   "random": "generate and decrypt|generating rand in reverting sub-call|upper bound and decrypt",
   "random-subset":
     "64 bits generate and decrypt|generating rand in reverting sub-call|64 bits generate with upper bound and decrypt",
@@ -323,6 +328,7 @@ export const ROLLOUT_STANDARD_TEST_PROFILES = [
   "erc20",
   "public-decrypt-http-ebool",
   "public-decrypt-http-mixed",
+  "connector-http",
 ] as const;
 
 export const STANDARD_TEST_PROFILES = [
@@ -339,6 +345,7 @@ export const STANDARD_TEST_PROFILES = [
   "erc20",
   "public-decrypt-http-ebool",
   "public-decrypt-http-mixed",
+  "connector-http",
   "negative-acl",
   "random-subset",
   "multi-chain-isolation",
@@ -376,6 +383,7 @@ export const STANDARD_SHARD_DECRYPTION_TEST_PROFILES = [
   "decryption-signature-invalidation",
   "public-decrypt-http-ebool",
   "public-decrypt-http-mixed",
+  "connector-http",
 ] as const;
 
 export const STANDARD_SHARD_COMPUTE_TEST_PROFILES = [
