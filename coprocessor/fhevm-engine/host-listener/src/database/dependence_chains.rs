@@ -18,6 +18,8 @@ struct Transaction {
     input_handle: Vec<Handle>,
     output_handle: Vec<Handle>,
     allowed_handle: Vec<Handle>,
+    /// (allowed output, group id) of multi-output ops.
+    output_group: Vec<(Handle, Handle)>,
     input_tx: HashSet<TransactionHash>,
     output_tx: HashSet<TransactionHash>,
     linear_chain: TransactionHash,
@@ -40,6 +42,7 @@ impl Transaction {
             input_handle: Vec::with_capacity(5),
             output_handle: Vec::with_capacity(5),
             allowed_handle: Vec::with_capacity(5),
+            output_group: Vec::new(),
             input_tx: HashSet::with_capacity(3),
             output_tx: HashSet::with_capacity(3),
             linear_chain: tx_hash, //  before coalescing linear tx chains
@@ -88,9 +91,13 @@ fn scan_transactions(
             }
             tx.input_handle.push(input);
         }
+        let group = (outputs.len() > 1).then(|| outputs[0]);
         for output in outputs {
             if log.allowed_outputs.contains(&output) {
                 tx.allowed_handle.push(output);
+                if let Some(group) = group {
+                    tx.output_group.push((output, group));
+                }
             }
             tx.output_handle.push(output);
         }
@@ -124,7 +131,7 @@ async fn fill_tx_dependence_maps(
                 consumed_boundaries
                     .write()
                     .await
-                    .put(*input_handle, *tx_hash);
+                    .consume(input_handle, *tx_hash);
                 tx.input_tx.insert(*dep_tx);
                 used_txs_chains
                     .entry(*dep_tx)
@@ -149,7 +156,7 @@ async fn fill_tx_dependence_maps(
                 if let Some(previous_consumer) = consumed_boundaries
                     .write()
                     .await
-                    .put(*input_handle, *tx_hash)
+                    .consume(input_handle, *tx_hash)
                 {
                     if previous_consumer != *tx_hash {
                         tx.forked_cross_block = true;
@@ -172,6 +179,12 @@ async fn fill_tx_dependence_maps(
         // update allowed handle for next txs
         for allowed_handle in &tx.allowed_handle {
             allowed_handle_tx.entry(*allowed_handle).or_insert(*tx_hash);
+        }
+        for (handle, group) in &tx.output_group {
+            consumed_boundaries
+                .write()
+                .await
+                .record_group(*handle, *group);
         }
         // propagate memorized producers
         let mut depth_size = 0;
@@ -708,9 +721,11 @@ mod tests {
 
     fn new_guard(
     ) -> crate::database::tfhe_event_propagate::ConsumedBoundaryGuard {
-        std::sync::Arc::new(tokio::sync::RwLock::new(lru::LruCache::new(
-            std::num::NonZeroUsize::new(4096).unwrap(),
-        )))
+        std::sync::Arc::new(tokio::sync::RwLock::new(
+            crate::database::tfhe_event_propagate::ConsumedBoundaries::new(
+                std::num::NonZeroUsize::new(4096).unwrap(),
+            ),
+        ))
     }
 
     /// Drive one block through the REAL ingest sequence for one listener:

@@ -119,8 +119,38 @@ pub type SealedChainGuard = Arc<RwLock<lru::LruCache<ChainHash, ()>>>;
 /// it must form its own (gated) chain instead of extending the producer's
 /// chain, or independent branches serialize on one DCID. (One transaction
 /// consuming a handle several times — e.g. FheAdd(x, x) — is not a fork.)
-pub type ConsumedBoundaryGuard =
-    Arc<RwLock<lru::LruCache<Handle, TransactionHash>>>;
+///
+/// Keyed by the producing op: group id for multi-output, else the handle.
+pub struct ConsumedBoundaries {
+    consumers: lru::LruCache<Handle, TransactionHash>,
+    /// Boundary output -> group id, multi-output ops only.
+    groups: lru::LruCache<Handle, Handle>,
+}
+
+impl ConsumedBoundaries {
+    pub fn new(capacity: std::num::NonZeroUsize) -> Self {
+        Self {
+            consumers: lru::LruCache::new(capacity),
+            groups: lru::LruCache::new(capacity),
+        }
+    }
+
+    pub fn record_group(&mut self, handle: Handle, group: Handle) {
+        self.groups.put(handle, group);
+    }
+
+    /// Returns the previous consumer of the op behind `handle`.
+    pub fn consume(
+        &mut self,
+        handle: &Handle,
+        tx: TransactionHash,
+    ) -> Option<TransactionHash> {
+        let key = self.groups.get(handle).copied().unwrap_or(*handle);
+        self.consumers.put(key, tx)
+    }
+}
+
+pub type ConsumedBoundaryGuard = Arc<RwLock<ConsumedBoundaries>>;
 pub type OrderedChains = Vec<Chain>;
 
 const MINIMUM_BUCKET_CACHE_SIZE: u16 = 16;
@@ -302,7 +332,7 @@ impl Database {
                 .into(),
             )));
         let consumed_boundaries =
-            Arc::new(tokio::sync::RwLock::new(lru::LruCache::new(
+            Arc::new(tokio::sync::RwLock::new(ConsumedBoundaries::new(
                 std::num::NonZeroU16::new(
                     dependence_cache_size.max(MINIMUM_BUCKET_CACHE_SIZE),
                 )
@@ -2991,6 +3021,43 @@ where
 /// always-scalar divisor).
 fn fhe_mul_div_factor2_is_scalar(scalar_byte: &ScalarByte) -> bool {
     scalar_byte.0[0] & 0b10 != 0
+}
+
+#[cfg(test)]
+mod consumed_boundaries_tests {
+    use super::*;
+
+    fn handle(last: u8) -> Handle {
+        Handle::from([last; 32])
+    }
+
+    fn tx(last: u8) -> TransactionHash {
+        TransactionHash::from([last; 32])
+    }
+
+    #[test]
+    fn single_output_handles_are_their_own_key() {
+        let mut guard =
+            ConsumedBoundaries::new(std::num::NonZeroUsize::new(8).unwrap());
+        assert_eq!(guard.consume(&handle(1), tx(1)), None);
+        assert_eq!(guard.consume(&handle(2), tx(2)), None);
+        assert_eq!(guard.consume(&handle(1), tx(3)), Some(tx(1)));
+    }
+
+    #[test]
+    fn outputs_of_one_op_share_a_consumer_slot() {
+        let mut guard =
+            ConsumedBoundaries::new(std::num::NonZeroUsize::new(8).unwrap());
+        let group = handle(10);
+        guard.record_group(handle(10), group);
+        guard.record_group(handle(11), group);
+        guard.record_group(handle(12), group);
+        assert_eq!(guard.consume(&handle(10), tx(1)), None);
+        assert_eq!(guard.consume(&handle(11), tx(2)), Some(tx(1)));
+        assert_eq!(guard.consume(&handle(12), tx(3)), Some(tx(2)));
+        assert_eq!(guard.consume(&handle(11), tx(3)), Some(tx(3)));
+        assert_eq!(guard.consume(&handle(20), tx(4)), None);
+    }
 }
 
 #[cfg(test)]
