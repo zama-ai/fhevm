@@ -586,7 +586,7 @@ describe("fork-anvil scenarios", () => {
     expect(scenarioUsesForkAnvil(withInstanceEnv({ RPC_HTTP_URL: "http://not-fork-anvil:8546" }))).toBe(false);
   });
 
-  test("treats an unparseable RPC URL as no fork rather than throwing", () => {
+  test("treats an unparsable RPC URL as no fork rather than throwing", () => {
     expect(scenarioUsesForkAnvil(withInstanceEnv({ RPC_HTTP_URL: "not a url" }))).toBe(false);
   });
 

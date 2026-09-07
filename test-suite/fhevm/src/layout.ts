@@ -104,7 +104,7 @@ export const DEFAULT_EXTRA_HOST_RPC_PORT = 8547;
  * chain's RPC in multi-chain scenarios, and sharing it would let a fork
  * scenario and a multi-chain scenario bind the same port — the fork tests
  * would then talk to whichever Anvil won the race, which is exactly the sort
- * of silent mis-targeting that makes a consensus result meaningless.
+ * of silent mistargeting that makes a consensus result meaningless.
  */
 export const DEFAULT_FORK_RPC_PORT = 8548;
 export const MINIO_PORT = 9000;

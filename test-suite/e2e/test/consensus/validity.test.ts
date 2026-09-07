@@ -28,7 +28,7 @@ describe('parseGauge', () => {
     expect(parseGauge('coprocessor_worker_deferred_transactions_current 7', DEFERRED_TRANSACTIONS_METRIC)).to.eq(7);
   });
 
-  it('reads a labelled gauge', () => {
+  it('reads a labeled gauge', () => {
     expect(parseGauge('some_metric{operator="1",shard="a"} 3', 'some_metric')).to.eq(3);
   });
 
@@ -65,7 +65,7 @@ describe('tfheWorkerMetricsUrl', () => {
     expect(tfheWorkerMetricsUrl(2)).to.eq('http://coprocessor2-tfhe-worker:9100/metrics');
   });
 
-  it('honours a non-default port', () => {
+  it('honors a non-default port', () => {
     expect(tfheWorkerMetricsUrl(1, 9999)).to.eq('http://coprocessor1-tfhe-worker:9999/metrics');
   });
 });
