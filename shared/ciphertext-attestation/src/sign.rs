@@ -103,7 +103,7 @@ impl CiphertextAttestation {
     }
 }
 
-fn keccak_b256(bytes: &[u8]) -> B256 {
+pub(crate) fn keccak_b256(bytes: &[u8]) -> B256 {
     B256::from_slice(Keccak256::digest(bytes).as_slice())
 }
 
