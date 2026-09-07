@@ -1,41 +1,7 @@
-# charts/contracts overlay that deploys zama_host + confidential_token and bootstraps HostConfig /
-# KMS context 1. Same Job shape as host-contracts: the image contains the CLI, this overlay sets
-# env + deployCommands, the chart's `/app/deploy-contracts.sh` runs them and scrapes
-# addresses/.env.solana into ConfigMap solana-program-ids.
-#
-# Program ids are the preview-env `declare_id!` (`--features preview-env`), distinct from
-# localnet e2e. The program-keypair secret must match those ids (the CLI checks).
-#
-# The deployer keypair pays rent, is the BPF upgrade authority, and becomes HostConfig.admin.
-# It needs SOL on the target cluster (public Solana **devnet** has no airdrop).
-#
-# Gateway signers are read LIVE from GATEWAY_RPC_URL (getKmsSigners / getCoprocessorSigners), so
-# this Job must run after gateway-contracts (whose values already wired the KMS/coprocessor
-# committee). Contract addresses come from gw-sc-addresses via valueFrom. Host-contracts /
-# trigger-keygen are not required for this Job.
-#
-# Image is amd64-only (Agave CLI). Pin an immutable tag from solana-images-publish
-# (`feature-solana-<sha>`), not `latest`.
-#
-# Deployed as (after one preview-env dispatch, via Tailscale):
-#   kubectl -n <ns> create secret generic solana-deployer \
-#     --from-file=deployer.json=... \
-#     --from-file=zama_host.json=... \
-#     --from-file=confidential_token.json=...
-#   kubectl -n <ns> create secret generic solana-rpc --from-literal=rpc-url='https://...'
-#   helm upgrade --install solana-programs \
-#     oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/contracts --version 0.8.2 \
-#     -n <ns> -f this-file \
-#     --set-string scDeploy.image.tag=<feature-solana-sha> \
-#     --wait --wait-for-jobs --timeout=15m
-#
-# Jobs are immutable once completed. Retry:
-#   helm uninstall solana-programs -n <ns>
-#   helm upgrade --install ... (same as above)
-# The Job name is `<release>-deploy` (or `<release>-deploy-<Chart.AppVersion>` when the chart
-# sets appVersion), currently `solana-programs-deploy`.
+# Protocol host only. Install after gateway contracts; demos use a separate release.
 scDeploy:
   enabled: true
+  runOnUpgrade: true
   image:
     name: hub.zama.org/ghcr/zama-ai/fhevm/solana-programs
     tag: latest
@@ -47,7 +13,7 @@ scDeploy:
       cpu: "1"
       memory: 1Gi
   configmap:
-    name: solana-program-ids
+    name: solana-host-addresses
   env:
     - {name: SOLANA_ARTIFACTS_DIR, value: "/app/programs"}
     - {name: ADDRESSES_DIR, value: "/app/addresses"}
@@ -83,16 +49,11 @@ scDeploy:
         secretKeyRef:
           name: solana-deployer
           key: zama_host.json
-    - name: SOLANA_CONFIDENTIAL_TOKEN_KEYPAIR_JSON
-      valueFrom:
-        secretKeyRef:
-          name: solana-deployer
-          key: confidential_token.json
     # Preview-env default is a 4-party KMS (t=1). Override if the dispatch used nb_kms_core=13.
     - {name: KMS_THRESHOLD, value: "1"}
     - {name: COPROCESSOR_THRESHOLD, value: "1"}
   deployCommands:
-    - node /app/cli.mjs all
+    - node /app/cli.mjs host deploy
   verifyContracts: false
 nodeSelector:
   kubernetes.io/arch: amd64

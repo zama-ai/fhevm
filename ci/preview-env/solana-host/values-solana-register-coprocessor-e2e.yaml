@@ -1,0 +1,26 @@
+# Install once per coprocessor DB after canonical key generation, before starting its workers.
+# Set scDeploy.env[0].value with the existing coprocessor database URL (or use valueFrom).
+scDeploy:
+  enabled: true
+  runOnUpgrade: true
+  image:
+    name: hub.zama.org/ghcr/zama-ai/fhevm/solana-programs
+    tag: latest
+  configmap:
+    name: solana-coprocessor-registration
+  env:
+    - name: DATABASE_URL
+      value: ""
+    - {name: SOLANA_PROGRAM_PROFILE, value: preview-env}
+    - {name: SOLANA_KEY_SOURCE_CHAIN_ID, value: "12345"}
+  deployCommands:
+    - node /app/cli.mjs coprocessor register
+  verifyContracts: false
+nodeSelector:
+  kubernetes.io/arch: amd64
+persistence:
+  enabled: false
+  volumeClaim:
+    create: false
+scUpgrade:
+  enabled: false

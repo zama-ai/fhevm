@@ -13,7 +13,9 @@ zama_host = "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
 
 # Durable preview-env host on public Solana **devnet**. Compile with
 # `--features preview-env`. Not local e2e, not official Zama protocol 0.15.
-[programs.preview-env]
+[programs.devnet]
+demo_vault = "gjgLTv4tB3QBP4RCnHgZvL7GZWP198HuesTA4oM9EdE"
+confidential_batcher = "A2akndg4KnaLBQM3giUrFh89V3c1BUKVinoT6X1179da"
 confidential_token = "FAWs7E52LZmXR5YzFy4aXanfBjNtXV2qooQVtkmBa3cL"
 zama_host = "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ"
 

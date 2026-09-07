@@ -1,0 +1,37 @@
+# Optional applications. Run after host deployment and demonstrated listener ingestion.
+scDeploy:
+  enabled: true
+  runOnUpgrade: true
+  image:
+    name: hub.zama.org/ghcr/zama-ai/fhevm/solana-programs
+    tag: latest
+  configmap:
+    name: solana-demo-addresses
+  env:
+    - name: SOLANA_RPC_URL
+      valueFrom:
+        secretKeyRef: {name: solana-rpc, key: rpc-url}
+    - name: SOLANA_DEPLOYER_KEYPAIR_JSON
+      valueFrom:
+        secretKeyRef: {name: solana-deployer, key: deployer.json}
+    - name: SOLANA_CONFIDENTIAL_TOKEN_KEYPAIR_JSON
+      valueFrom:
+        secretKeyRef: {name: solana-deployer, key: confidential_token.json}
+    - name: SOLANA_DEMO_VAULT_KEYPAIR_JSON
+      valueFrom:
+        secretKeyRef: {name: solana-deployer, key: demo_vault.json}
+    - name: SOLANA_CONFIDENTIAL_BATCHER_KEYPAIR_JSON
+      valueFrom:
+        secretKeyRef: {name: solana-deployer, key: confidential_batcher.json}
+    - {name: SOLANA_PROGRAM_PROFILE, value: preview-env}
+  deployCommands:
+    - node /app/cli.mjs demos deploy
+  verifyContracts: false
+nodeSelector:
+  kubernetes.io/arch: amd64
+persistence:
+  enabled: false
+  volumeClaim:
+    create: false
+scUpgrade:
+  enabled: false

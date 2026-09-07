@@ -1,8 +1,11 @@
 // HTTP-only send/confirm for the zama-host deployer. Preview-env Solana RPC is a single URL
 // (Helius / public **devnet**); there is no Yellowstone and no guarantee of a WS endpoint, so this
 // must not use `sendAndConfirmTransactionFactory` (that factory requires rpcSubscriptions).
-
 import {
+  type Instruction,
+  type Rpc,
+  type SolanaRpcApi,
+  type TransactionSigner,
   appendTransactionMessageInstructions,
   assertIsTransactionWithBlockhashLifetime,
   createSolanaRpc,
@@ -12,11 +15,7 @@ import {
   setTransactionMessageFeePayerSigner,
   setTransactionMessageLifetimeUsingBlockhash,
   signTransactionMessageWithSigners,
-  type Instruction,
-  type Rpc,
-  type SolanaRpcApi,
-  type TransactionSigner,
-} from "@solana/kit";
+} from '@solana/kit';
 
 const CONFIRM_TIMEOUT_MS = 60_000;
 const CONFIRM_INTERVAL_MS = 400;
@@ -40,9 +39,7 @@ export const createHostDeployContext = (rpcUrl: string): HostDeployContext => {
       const signedTransaction = await signTransactionMessageWithSigners(message);
       assertIsTransactionWithBlockhashLifetime(signedTransaction);
       const signature = getSignatureFromTransaction(signedTransaction);
-      await rpc
-        .sendTransaction(getBase64EncodedWireTransaction(signedTransaction), { encoding: "base64" })
-        .send();
+      await rpc.sendTransaction(getBase64EncodedWireTransaction(signedTransaction), { encoding: 'base64' }).send();
       const deadline = Date.now() + CONFIRM_TIMEOUT_MS;
       for (;;) {
         const { value } = await rpc.getSignatureStatuses([signature]).send();
@@ -51,7 +48,7 @@ export const createHostDeployContext = (rpcUrl: string): HostDeployContext => {
           throw new Error(`transaction ${signature} failed: ${JSON.stringify(status.err)}`);
         }
         const level = status?.confirmationStatus;
-        if (level === "confirmed" || level === "finalized") return;
+        if (level === 'confirmed' || level === 'finalized') return;
         if (Date.now() >= deadline) {
           throw new Error(`transaction ${signature} did not confirm within ${CONFIRM_TIMEOUT_MS}ms`);
         }

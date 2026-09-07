@@ -38,6 +38,11 @@ pull() {
 pull zama_host "${PROFILE_DIR}/zama_host-keypair.json"
 pull confidential_token "${PROFILE_DIR}/confidential_token-keypair.json"
 pull deployer "${PROFILE_DIR}/deployer-keypair.json"
+# Optional until the demo keys have been added to the vault item.
+if [[ "${INCLUDE_DEMOS:-false}" == true ]]; then
+  pull demo_vault "${PROFILE_DIR}/demo_vault-keypair.json"
+  pull confidential_batcher "${PROFILE_DIR}/confidential_batcher-keypair.json"
+fi
 
 echo "wrote keypairs to ${PROFILE_DIR} (gitignored)"
 if command -v solana-keygen >/dev/null; then

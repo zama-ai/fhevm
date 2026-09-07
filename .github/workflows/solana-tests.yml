@@ -340,3 +340,22 @@ jobs:
 
       - name: Run Clippy on the zama-host decode feature
         run: cargo clippy -p zama-host --features decode --all-targets -- -D warnings
+
+  deployer-image:
+    name: solana-tests/deployer-image
+    needs: check-changes
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.check-changes.outputs.changes-solana == 'true' || needs.check-changes.outputs.changes-test-suite-fhevm == 'true' }}
+    runs-on: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/volume=100gb
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@d70bba72b1f3fd22344832f00baa16ece964efeb # v3.3.0
+      - name: Build deployer without private program keys
+        run: |
+          docker buildx build --platform linux/amd64 --load \
+            -f solana/deploy/Dockerfile -t solana-programs:ci .
+          docker run --rm solana-programs:ci --help

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Generate (or reuse) the three preview-env Solana keypairs, keep them gitignored
+# Generate (or reuse) the preview-env Solana keypairs, keep them gitignored
 # under solana/deploy/profiles/preview-env/, and attach them to a 1Password item.
 #
 # Private JSON is never printed. `--silent` suppresses the BIP39 seed phrase.
@@ -44,11 +44,15 @@ ensure_keypair() {
 zama_host_pk="$(ensure_keypair zama_host)"
 confidential_token_pk="$(ensure_keypair confidential_token)"
 deployer_pk="$(ensure_keypair deployer)"
+demo_vault_pk="$(ensure_keypair demo_vault)"
+confidential_batcher_pk="$(ensure_keypair confidential_batcher)"
 
 echo "public keys (safe to commit; private JSON stays in ${PROFILE_DIR} and 1Password)"
 echo "  zama_host:           ${zama_host_pk}"
 echo "  confidential_token:  ${confidential_token_pk}"
 echo "  deployer:            ${deployer_pk}"
+echo "  demo_vault:          ${demo_vault_pk}"
+echo "  confidential_batcher: ${confidential_batcher_pk}"
 
 if ! item_id="$(
   op item create --category=secureNote \
@@ -57,6 +61,8 @@ if ! item_id="$(
     --tags="$TAGS" \
     "zama_host.json[file]=${PROFILE_DIR}/zama_host-keypair.json" \
     "confidential_token.json[file]=${PROFILE_DIR}/confidential_token-keypair.json" \
+    "demo_vault.json[file]=${PROFILE_DIR}/demo_vault-keypair.json" \
+    "confidential_batcher.json[file]=${PROFILE_DIR}/confidential_batcher-keypair.json" \
     "deployer.json[file]=${PROFILE_DIR}/deployer-keypair.json" \
     "zama_host_pubkey[text]=${zama_host_pk}" \
     "confidential_token_pubkey[text]=${confidential_token_pk}" \

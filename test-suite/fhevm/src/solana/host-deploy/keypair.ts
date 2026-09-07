@@ -1,7 +1,6 @@
-import { mkdir, writeFile } from "node:fs/promises";
-import path from "node:path";
-
-import { createKeyPairSignerFromBytes, type TransactionSigner } from "@solana/kit";
+import { type TransactionSigner, createKeyPairSignerFromBytes } from '@solana/kit';
+import { mkdir, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 
 /** Parses a Solana CLI keypair JSON (64-byte seed+pubkey array). */
 export const parseKeypairBytes = (json: string): Uint8Array => {
@@ -9,14 +8,14 @@ export const parseKeypairBytes = (json: string): Uint8Array => {
   try {
     parsed = JSON.parse(json);
   } catch {
-    throw new Error("invalid Solana keypair JSON");
+    throw new Error('invalid Solana keypair JSON');
   }
   if (
     !Array.isArray(parsed) ||
     parsed.length !== 64 ||
     parsed.some((byte) => !Number.isInteger(byte) || byte < 0 || byte > 255)
   ) {
-    throw new Error("invalid Solana keypair JSON (expected 64 bytes 0-255)");
+    throw new Error('invalid Solana keypair JSON (expected 64 bytes 0-255)');
   }
   return Uint8Array.from(parsed);
 };
@@ -30,8 +29,8 @@ export const writeKeypairJson = async (file: string, json: string): Promise<stri
 };
 
 export const loadKeypairSigner = async (keypairPath: string): Promise<TransactionSigner> => {
-  const { readFile } = await import("node:fs/promises");
-  return createKeyPairSignerFromBytes(parseKeypairBytes(await readFile(keypairPath, "utf8")));
+  const { readFile } = await import('node:fs/promises');
+  return createKeyPairSignerFromBytes(parseKeypairBytes(await readFile(keypairPath, 'utf8')));
 };
 
 /**

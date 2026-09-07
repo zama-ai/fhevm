@@ -47,7 +47,7 @@ ci/preview-env/
 │   ├── values-gateway-add-host-chains-e2e.yaml # contracts overlay, deferred addHostChains step
 │   └── values-gateway-add-host-chains-polygon-e2e.yaml # contracts overlay, register Polygon (80002) (deploy_polygon)
 ├── solana-host/
-│   ├── values-solana-programs-e2e.yaml # contracts overlay, zama_host + confidential_token + HostConfig/KMS context
+│   ├── values-solana-programs-e2e.yaml # contracts overlay, host deployment + HostConfig/KMS context
 │   └── values-gateway-add-host-chains-solana-e2e.yaml # contracts overlay, register Solana host chain id
 ├── coprocessor/
 │   ├── values-coprocessor-e2e.yaml        # coprocessor overlay (one release per party: coprocessor-<i>)
@@ -382,3 +382,5 @@ deployed. Every Polygon step in the workflow is gated on `deploy_polygon == 'tru
   selection).
 - ~~Add multichain support~~ — done, see "Multichain: second Polygon host chain
   (`deploy_polygon`)" above (opt-in; ETH + Polygon Amoy sharing one KMS key).
+
+See [Solana deployment](../../solana/deploy/README.md) for the separate host/demo Jobs, listener, internal proof API and upgrade flow.

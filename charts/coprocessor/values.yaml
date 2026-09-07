@@ -1789,3 +1789,32 @@ consensusDetector:
     rollingUpdate:
       maxSurge: 1
       maxUnavailable: 0
+# One Solana stream writer per coprocessor database, alongside the EVM consumers.
+# Exposes authenticated leaf proofs on a ClusterIP Service; no public ingress.
+solanaHostListener:
+  enabled: false
+  image:
+    name: ghcr.io/zama-ai/fhevm/coprocessor/host-listener
+    tag: latest
+  httpPort: 8080
+  # Supply SOLANA_RPC_URL, SOLANA_GRPC_URL, SOLANA_HOST_PROGRAM_ID,
+  # SOLANA_PROOF_API_KEY and optionally SOLANA_GRPC_X_TOKEN using secretKeyRef.
+  env: []
+  extraArgs: []
+  podLabels: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  serviceAccountName: ""
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10000
+    runAsGroup: 10001
+    allowPrivilegeEscalation: false
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "2"
+      memory: 2Gi
