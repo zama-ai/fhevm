@@ -186,6 +186,10 @@ const upCommandDefinition = {
     reset: { type: "boolean", description: "Discard cached resolution and regenerate from scratch." },
     "allow-schema-mismatch": { type: "boolean", description: "Bypass schema-coupled local override safety checks." },
     build: { type: "boolean", description: "Build every workspace-owned group locally, including test-suite." },
+    "e2e-public-runtime": {
+      type: "boolean",
+      description: "For local coprocessor and KMS connector E2E builds, use public Debian runtime bases instead of private certified bases.",
+    },
   },
   async run({ args }: { args: Record<string, unknown> }) {
     const parsed = parseUpInput(args);
@@ -259,10 +263,22 @@ const root = defineCommand({
           type: "string",
           description: "Move this group to the versions from a lock file before restarting.",
         },
+        "adopt-local-override": {
+          type: "boolean",
+          description:
+            "Explicitly add the local KMS connector runtime override to a running local-coprocessor E2E stack; only valid for kms-connector with --e2e-public-runtime.",
+        },
+        "e2e-public-runtime": {
+          type: "boolean",
+          description:
+            "Use the public Debian KMS connector runtime only with upgrade kms-connector --adopt-local-override; not a production/certification build.",
+        },
       },
       async run({ args }) {
         await upgradeRuntimeGroup(asString(args.group), {
           lockFile: asString(args["lock-file"]),
+          adoptLocalOverride: asBool(args["adopt-local-override"]),
+          e2ePublicRuntime: asBool(args["e2e-public-runtime"]),
         });
       },
     }),

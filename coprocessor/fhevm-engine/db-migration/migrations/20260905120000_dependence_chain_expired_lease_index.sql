@@ -1,0 +1,35 @@
+-- Index for the work-stealing arm of the worker's DCID acquisition.
+--
+-- `acquire_next_locks` selects
+--     (status = 'updated' AND worker_id IS NULL AND dependency_count = 0)
+--     OR (lock_expires_at < NOW() AND dependency_count = 0)
+-- The first arm has idx_pending_dependence_chain. The second had only
+-- idx_dependence_chain_unlock (last_updated_at, lock_expires_at), whose
+-- leading column the predicate does not constrain, so the planner walked
+-- every dependency_count = 0 entry -- which includes every retained processed
+-- chain -- on each acquisition. Production counters (248 days): 17.5M scans
+-- reading 137k index tuples each on a 7.7k-row table, while
+-- idx_pending_dependence_chain recorded 0 scans because the OR kept the
+-- planner from using it at all.
+--
+-- With `lock_expires_at` leading, and NULL leases excluded by the predicate
+-- (only owned chains carry a lease; `< NOW()` implies IS NOT NULL), the arm
+-- is a short range scan over owned chains. The acquisition query is
+-- rewritten alongside to evaluate the two arms as separately ordered,
+-- LIMITed scans, which is what lets each arm use its own index.
+--
+-- The stealing arm no longer requires `dependency_count = 0`, so neither does
+-- this predicate. A lease exists only because a worker acquired the chain --
+-- through the gate, the stale-gate repair, or the no-progress escalation that
+-- bypasses the gate and leaves the count intact -- and a lapsed lease must be
+-- reclaimable whatever the count says: an escalated chain whose owner parked
+-- it or died otherwise matched no acquisition predicate at all.
+--
+-- idx_dependence_chain_unlock is left in place; unused indexes are dropped
+-- in a later release once production counters confirm they are idle.
+--
+-- dependence_chain holds a few thousand live rows, so a plain in-transaction
+-- CREATE INDEX is fine here (no CONCURRENTLY, no pre-creation step).
+CREATE INDEX IF NOT EXISTS idx_dependence_chain_expired_lease
+ON dependence_chain (lock_expires_at, schedule_priority, last_updated_at)
+WHERE lock_expires_at IS NOT NULL;

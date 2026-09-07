@@ -1,0 +1,56 @@
+-- Retry budget for the one NONDETERMINISTIC error class.
+--
+-- A panic caught around an FHE op (`SchedulerError::ExecutionPanic`) is not a
+-- verdict on the inputs — it can be device or allocation pressure — so the
+-- work window keeps re-selecting the row and a later success heals it. That
+-- retry had no upper bound: a panic that is in fact deterministic kept its
+-- chain out of 'processed' forever, which left every dependent of that chain
+-- gated forever (the repair path requires all producers processed, so it
+-- cannot rescue them either).
+--
+-- This column bounds it. Each re-stamp over a retryable stamp consumes one
+-- unit; at --computation-retry-demote-threshold the row is DEMOTED to the
+-- slow lane -- the work window stops selecting it and its chain's completion
+-- test stops counting it, so the chain retires and its dependents discharge,
+-- while the row keeps its retryable stamp and stays pending. An hourly sweep
+-- re-arms those chains at SchedulePriority::Slow with this counter reset.
+--
+-- Nothing is rewritten into a terminal verdict. An earlier revision of this
+-- comment described promotion-to-terminal at a cap; that behaviour was removed
+-- in the same commit that added the demotion path, and is recorded here only
+-- because this file is where F1 sends a reviewer looking for the stamp
+-- convention.
+--
+-- SMALLINT with a constant default: metadata-only on PG11+, so no table
+-- rewrite and no long lock on `computations`.
+--
+--
+-- NO BACKFILL, AND WHY NONE IS NEEDED.
+--
+-- Whether a row is retryable is carried as a substring of `error_message`,
+-- load-bearing in four predicates: both work-window re-selection terms,
+-- `release_completed_locks`'s survivor NOT EXISTS, and
+-- `DEAD_PRODUCER_PREDICATE`. That substring changed alongside this column —
+-- RETRYABLE_STAMP_MARKER went from "ExecutionPanic", which was merely a
+-- substring of the error's own Display, to a literal "RETRYABLE" prefix
+-- written by the stamping decision. A row stamped by the older code would
+-- therefore read as TERMINAL to the new predicates: never re-selected, chain
+-- retired as 'processed' with lock_expires_at = NULL (which no acquisition
+-- predicate matches), handle dead, consumer cone drained.
+--
+-- That population is empty on every deployable baseline. Re-selectable error
+-- stamps arrived in 6e479ee2c (#3560, 2026-08-27), which is not an ancestor
+-- of release/0.14.x: that branch's work window is a flat `is_error = FALSE`,
+-- and it has neither `release_completed_locks` nor `DEAD_PRODUCER_PREDICATE`.
+-- Every errored row on a 0.14 database is therefore already terminal and the
+-- new predicates agree with it. Only a database tracking untagged main after
+-- 2026-08-27 could hold a row in the old shape.
+--
+-- If a backfill ever is needed, scope it to chains that can still be
+-- acquired. Rewriting every '%ExecutionPanic%' stamp unscoped would also make
+-- rows whose chain already retired as 'processed' (or was TTL-deleted)
+-- non-terminal AND unacquirable, which stops DEAD_PRODUCER_PREDICATE calling
+-- their handles dead and leaves their consumers deferring forever instead of
+-- draining — trading a condemnation for a wedge.
+ALTER TABLE computations
+  ADD COLUMN IF NOT EXISTS error_retry_count SMALLINT NOT NULL DEFAULT 0;

@@ -341,6 +341,17 @@ describe("buildKmsConnectorOverride (--override kms-connector)", () => {
     expect(services["kms-connector-2-gw-listener"]?.build).toBeDefined();
     expect(String(services["kms-connector-3-gw-listener"]?.image)).not.toContain("fhevm-local");
   });
+
+  test("public E2E runtime changes only the locally built connector service images", async () => {
+    const plan = { ...thresholdSpec([{ group: "kms-connector" }]), e2ePublicRuntime: true };
+    const services = (await buildKmsConnectorOverride(plan)).services;
+    for (const name of ["kms-connector-gw-listener", "kms-connector-kms-worker", "kms-connector-tx-sender"]) {
+      const build = services[name]?.build as { args?: Record<string, string> } | undefined;
+      expect(build?.args?.KMS_CONNECTOR_RUNTIME_BASE_IMAGE, name).toBe("e2e-public-runtime");
+    }
+    const migrationBuild = services["kms-connector-db-migration"]?.build as { args?: Record<string, string> } | undefined;
+    expect(migrationBuild?.args?.KMS_CONNECTOR_RUNTIME_BASE_IMAGE).toBeUndefined();
+  });
 });
 
 describe("renderEnvMaps (threshold)", () => {

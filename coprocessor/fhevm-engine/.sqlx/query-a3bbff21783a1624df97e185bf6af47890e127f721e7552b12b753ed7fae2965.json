@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH demoted AS (\n            -- GROUP BY rather than DISTINCT: `SELECT DISTINCT` requires\n            -- every ORDER BY expression in the select list, and the ordering\n            -- key below is the chain's age, not its id.\n            SELECT c.dependence_chain_id\n            FROM computations c\n            JOIN dependence_chain dc\n              ON dc.dependence_chain_id = c.dependence_chain_id\n            -- NO `is_allowed` FILTER, deliberately. `is_allowed` decides what\n            -- counts as WORK -- only an allowed row makes a transaction\n            -- selectable -- but it must not decide what counts as a BLOCKER.\n            -- A non-allowed internal producer is still executed on behalf of\n            -- an allowed consumer, is still stamped when it panics (the stamp\n            -- does not filter on it either), and so still reaches the demote\n            -- threshold. Filtering it out here while the completion test\n            -- counts it as a blocker is precisely the asymmetry that lets a\n            -- chain retire and then never be re-armed, stranding the allowed\n            -- consumer and everything downstream of it.\n            --\n            -- Harmless in the degenerate case: if the transaction has no\n            -- allowed row at all, the re-arm resets the count, the window\n            -- still will not select the transaction, and the row stops\n            -- selectable, so this settles after one pass instead of churning\n            -- every sweep.\n            WHERE c.is_completed = FALSE\n              AND c.is_error = TRUE\n              AND c.error_message LIKE '%' || $1 || '%'\n              -- NO comparison against the demote threshold, deliberately.\n              -- Demotion is not persisted: it is inferred as\n              -- `retryable && error_retry_count >= <current threshold>`. Read\n              -- the same way here, the sweep stops recognizing work it retired\n              -- under a LOWER threshold -- raise 3 to 5 and a row demoted at 3\n              -- matches neither the window (`count < 5`, but its chain is\n              -- already processed and unowned, so acquisition cannot reach it)\n              -- nor this sweep (`3 >= 5` is false). Retention keeps the row,\n              -- and nothing ever runs it again: a permanent wedge from a config\n              -- change alone.\n              --\n              -- The predicate is unnecessary as well as harmful. This CTE\n              -- already requires `dc.status = 'processed'` with no owner, and a\n              -- chain only reaches that state while a retryable row of it is\n              -- still pending BECAUSE that row was demoted -- the completion\n              -- test counts every non-demoted retryable row as a blocker. So on\n              -- an unowned processed chain, a pending retryable row is demoted\n              -- by construction, whatever the current threshold says.\n              -- Only chains nothing is working on. A 'processing' chain is\n              -- owned and will retire on its own terms; re-arming it under its\n              -- owner would strand the lease.\n              AND dc.status = 'processed'\n              AND dc.worker_id IS NULL\n            -- OLDEST FIRST, and not just for tidiness: with more demoted\n            -- chains than the batch admits, an unordered LIMIT lets the plan\n            -- return the same subset every sweep, so the chains behind it\n            -- never get a pass at all. Ordering by age makes the sweep a\n            -- queue -- a chain re-armed here gets `last_updated_at = NOW()`\n            -- below, which sends it to the back.\n            GROUP BY c.dependence_chain_id\n            ORDER BY MIN(dc.last_updated_at) ASC, c.dependence_chain_id ASC\n            LIMIT $2\n        ),\n        rearmed AS (\n            UPDATE dependence_chain dc\n            SET status = 'updated',\n                dependency_count = 0,\n                schedule_priority = $3,\n                last_updated_at = NOW()\n            FROM demoted\n            WHERE dc.dependence_chain_id = demoted.dependence_chain_id\n              -- Re-checked under this statement's own row lock. Between the\n              -- SELECT above and here the listener can re-arm the chain with\n              -- new work; without these two predicates the sweep would zero a\n              -- freshly-armed dependency_count and open a gate early.\n              AND dc.status = 'processed'\n              AND dc.worker_id IS NULL\n            RETURNING dc.dependence_chain_id\n        ),\n        reset AS (\n            -- The count means \"attempts in the current lane pass\", so it has\n            -- to go back to zero or the work window would skip the row it was\n            -- just re-armed for.\n            UPDATE computations c\n            SET error_retry_count = 0\n            FROM rearmed\n            WHERE c.dependence_chain_id = rearmed.dependence_chain_id\n              AND c.is_completed = FALSE\n              AND c.is_error = TRUE\n              AND c.error_message LIKE '%' || $1 || '%'\n            RETURNING 1\n        )\n        SELECT\n            (SELECT count(*) FROM rearmed) AS \"rearmed!\",\n            (SELECT count(*) FROM reset) AS \"reset!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "rearmed!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "reset!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8",
+        "Int2"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "a3bbff21783a1624df97e185bf6af47890e127f721e7552b12b753ed7fae2965"
+}
