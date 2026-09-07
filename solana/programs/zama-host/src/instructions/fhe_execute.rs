@@ -59,11 +59,13 @@ pub struct FheExecute<'info> {
     pub system_program: Program<'info, System>,
     /// Per-application HCU block meter (written once in the execution `charge`). The HCU PDAs
     /// (`hcu_block_meter`, `hcu_trusted_app_record`) key on the `(program, scope)` of the
-    /// persistent values the execution touches — an identity the program proved when it created
-    /// them, so no caller can rotate a fresh signer to mint a fresh per-slot meter. Untrusted
-    /// applications in the metering band MUST supply this meter; trusted applications and the
-    /// unrestricted default omit it. An `UncheckedAccount` because it may be uninitialized
-    /// (lazy-created) and is validated manually.
+    /// persistent values the execution touches. Only the `program` half is proved (from the
+    /// output authority, on create), so no caller can rotate a fresh *signer* to reach another
+    /// program's meter — but a program declares its own `scope` freely, and a fresh scope is a
+    /// fresh meter (INVARIANTS #41). Untrusted applications in the metering band MUST supply
+    /// this meter; trusted applications and the unrestricted default omit it. An
+    /// `UncheckedAccount` because it may be uninitialized (lazy-created) and is validated
+    /// manually.
     #[account(mut)]
     pub hcu_block_meter: Option<UncheckedAccount<'info>>,
     /// Trust witness (read-only), keyed on `(program, scope)`. Present + program-owned +

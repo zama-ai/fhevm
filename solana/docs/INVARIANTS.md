@@ -119,6 +119,23 @@ dictionary, persistent, update, allow, application…).
       registry / observer / on-chain gov surface in this PoC (out of scope;
       zama-ai/fhevm-internal#1634).
 
+62. **[HOLDS]** Computing on a value requires its authority's signature on that
+    execution; decrypting it requires a sealed leaf. The two rights are
+    separate and neither implies the other. Reading a persistent value as an
+    execution operand is admitted only by its stored
+    `encrypted_value_account_authority` having signed — as `fhe_execute`'s
+    default authority signer, or as any signing remaining account
+    (`fhe_execute/preflight.rs`, `mark_signer`). That is how one program
+    consents to another computing on its value: the owning program signs for
+    its PDA through `invoke_signed`, which is what makes the
+    confidential-token receipt and batcher flows composable. A value admitted
+    that way is **not** folded into the builder's application — it is metered
+    to its own authority's (#41) — but it is deny-checked like every other
+    application the execution touches (#10). The converse halves both hold: an
+    allow grants decrypt and never compute (#11), and being the authority
+    admits compute but never decrypt, which always needs a leaf (#8, #45).
+    There is no stored subject list and no `compute_subject` intersection
+    check; both were removed with RFC 035. (fhevm-internal#1891.)
 53. **[ANTI]** `make_handle_public` is not idempotent. Sealing a handle that is
     already sealed appends a second leaf committing to the same
     `(account, handle)` fact: it authorizes nothing the first leaf did not, and
@@ -301,13 +318,23 @@ dictionary, persistent, update, allow, application…).
     `fhe_execute` before the execution walk; the meter account is only a
     counter.
 41. **[ANTI]** HCU block budgets are per application, not per organization: a
-    program that declares N scopes has N per-slot budgets. The multiplier is
-    bounded by program control — a scope exists only under a program that can
-    sign for the value's authority, so nobody mints applications under a
-    program they do not control. The meter charged is the default authority's
-    application; a value written under an additional signing authority is
-    metered there, so a program that lets another program write into its
-    values (the receipt) spends that program's budget, by its own consent.
+    program that declares N scopes has N per-slot budgets. Nobody mints
+    applications under a program they do not control — a scope exists only
+    under a program that can sign for the value's authority — but that
+    confines the multiplier to the program's *own* identity, it does not bound
+    it. Only the `program` half of `(program, scope)` is ever proved (#40);
+    `scope` is 32 bytes the program declares, never validated, and the meter is
+    lazy-created, so a program willing to rotate scopes has as many per-slot
+    budgets as it cares to pay rent for. The per-slot meter is therefore
+    **fairness between the instances of a cooperating program**, not a limit on
+    a program that does not wish to be limited: no scope-keyed lever can bind
+    the party that chooses the scope. It is inert in the shipped configuration
+    (#37, `hcu_block_cap_per_app = u64::MAX`), and a lever that binds a program
+    regardless of scope would have to key on the program id alone. The meter
+    charged is the default authority's application; a value written under an
+    additional signing authority is metered there (#62), so a program that lets
+    another program write into its values (the receipt) spends that program's
+    budget, by its own consent.
 51. **[HOLDS]** The optional HCU accounts on `fhe_execute` can arrive in four
     states, and every state that could hand out more budget fails closed:
     - **Present, program-owned, well-formed** — used. An
@@ -335,6 +362,21 @@ dictionary, persistent, update, allow, application…).
     every delegation the signer holds. Scoping (at most seven `(program,
     scope)` pairs) is opt-in per permit and is tested per entry against the
     account's own pair, never against a request field.
+63. **[ANTI]** Revoking permits does not reach a permit pre-signed to open
+    later. `revoke_permits` raises one per-user number — the
+    `PermitInvalidation` watermark at `["permit-invalidation", user]`, absent
+    reading as zero — and a verifier kills any permit whose signed
+    `start_timestamp` precedes it (`check_not_invalidated`). One write, constant
+    work, however many permits are outstanding, because a permit is an
+    off-chain signed object with no on-chain record to mark. The cost of never
+    registering permits is that a permit whose window has not opened yet sits
+    *above* the watermark and survives the revocation; request-time checks
+    refuse it until its window opens, and from then on it is valid. This is EVM
+    parity, not a Solana shortcut: `ACL.invalidateDecryptionSignaturesBefore`
+    reverts with `InvalidationTimestampInTheFuture` rather than let a caller
+    set the watermark forward, which is the only mechanism that would reach
+    such a permit. Bounding exposure from a pre-dated permit is therefore the
+    signer's job (short windows), not revocation's.
 45. **[HOLDS]** The connector authorizes against the canonical encrypted value
     account PDA, program-owned, rederived from the seeds the account carries,
     using the same compiled `zama_solana_acl` code the on-chain program runs

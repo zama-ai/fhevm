@@ -587,7 +587,7 @@ fn an_inconsistent_mmr_state_is_terminal() {
 /// handle, this key — and nothing broader. A record that answered a different query would be
 /// answering a question nobody asked.
 #[tokio::test]
-async fn the_pipeline_asks_the_record_for_the_entrys_own_leaf() {
+async fn the_pipeline_asks_the_record_for_the_leaf_the_entry_claims() {
     let wallet = Wallet::new(1);
     let live = handle(0x50, FHE_TYPE_UINT64);
     let encrypted_value_account = EncryptedValueAccountFixture::allowing(live, wallet.pubkey());

@@ -17,6 +17,7 @@ import { createKeyPairSignerFromBytes, fetchEncodedAccount, type TransactionSign
 import { closeSync, openSync } from "node:fs";
 
 import { envPath, REPO_ROOT, STATE_DIR } from "../layout";
+import { SOLANA_LEAF_PROOF_API_KEY, SOLANA_LEAF_PROOF_PORT } from "../generate/solana";
 import { readEnvFile } from "../utils/fs";
 import { until } from "../utils/until";
 import { run, runStreaming } from "../utils/process";
@@ -345,6 +346,12 @@ const startHostListener = async (parameters: {
       VALIDATOR_RPC_URL,
       "--program-id",
       parameters.zamaHostId,
+      // The leaf-proof route the KMS connector reads. `--proof-api-key` has no default and the
+      // binary refuses to start without it.
+      "--http-port",
+      String(SOLANA_LEAF_PROOF_PORT),
+      "--proof-api-key",
+      SOLANA_LEAF_PROOF_API_KEY,
     ],
     { stdin: "ignore", stdout: logFd, stderr: logFd },
   );

@@ -83,7 +83,7 @@ function concatBytes(...parts: Uint8Array[]): Uint8Array {
 /**
  * A batcher-owned per-user value (`pending_join_value` or `claim_amount_value`). Batcher values
  * belong to the batcher program scoped to the batch (`batch_app`), are controlled by the batch
- * authority, and are labelled `sha256(purpose_prefix || user)` (`batcher_encrypted_value_id`).
+ * authority, and are labeled `sha256(purpose_prefix || user)` (`batcher_encrypted_value_id`).
  */
 function batcherValueAddress(batch: Address, batchAuthority: Address, purposePrefix: string, user: Address): Promise<Address> {
   return solanaEncryptedValueAccountAddress(addressBytes(ZAMA_HOST_PROGRAM_ADDRESS), {

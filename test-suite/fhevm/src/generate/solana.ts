@@ -70,6 +70,26 @@ export const solanaProgramId = (discovery: Pick<Discovery, "hosts"> | undefined,
 export const solanaValidatorUrl = (chain: { readonly rpcPort: number }): string =>
   `http://host.docker.internal:${chain.rpcPort}`;
 
+/**
+ * Port the Solana host listener serves its leaf-proof route on, and the bearer key that route
+ * requires. Both sides of the same connection read these: `startHostListener` passes them to
+ * `solana_host_listener` as `--http-port` / `--proof-api-key`, and `serializeKmsHostChains` puts
+ * them in the connector's host-chain entry. Passed explicitly rather than relying on the
+ * binary's own default, so the two cannot drift apart silently.
+ */
+export const SOLANA_LEAF_PROOF_PORT = 8080;
+export const SOLANA_LEAF_PROOF_API_KEY = "00000000-0000-0000-0000-000000000000";
+
+/**
+ * The leaf-proof endpoint as reached from INSIDE the docker network — same host-process problem
+ * as {@link solanaValidatorUrl}: the listener runs natively next to the validator, the connector
+ * runs in a container.
+ *
+ * One entry, because the demo runs one `solana_host_listener`. The connector accepts a list and
+ * merges every answer, so a topology with several coprocessors would list one URL per listener.
+ */
+export const solanaLeafProofUrl = (): string => `http://host.docker.internal:${SOLANA_LEAF_PROOF_PORT}`;
+
 /** A kms-connector `KMS_CONNECTOR_HOST_CHAINS` entry. `aclAddress` is EVM-only. */
 export type KmsHostChainEntry = {
   readonly url: string;
@@ -82,16 +102,19 @@ export type KmsHostChainEntry = {
 /**
  * Serializes `KMS_CONNECTOR_HOST_CHAINS`. EVM entries carry a numeric `chain_id` + `acl_address`.
  * Solana entries emit `chain_id` as a raw integer literal (RFC-021 ids exceed
- * Number.MAX_SAFE_INTEGER, so `JSON.stringify(Number(id))` would corrupt it), `chain_kind`, and
- * `solana_host_program_id` — and OMIT `acl_address` (the connector's schema makes it optional and
- * ignores it for Solana, whose ACL is verified via the program id).
+ * Number.MAX_SAFE_INTEGER, so `JSON.stringify(Number(id))` would corrupt it), `chain_kind`,
+ * `solana_host_program_id`, and the leaf-proof endpoints + bearer key the connector requires for
+ * a Solana chain — and OMIT `acl_address` (the connector's schema makes it optional and ignores
+ * it for Solana, whose ACL is verified via the program id).
  */
 export const serializeKmsHostChains = (entries: readonly KmsHostChainEntry[]): string => {
   const parts = entries.map((e) => {
     if (e.kind === "solana") {
       return (
         `{"url":${JSON.stringify(e.url)},"chain_id":${BigInt(e.chainId).toString()},` +
-        `"chain_kind":"solana","solana_host_program_id":${JSON.stringify(e.solanaProgramId ?? "")}}`
+        `"chain_kind":"solana","solana_host_program_id":${JSON.stringify(e.solanaProgramId ?? "")},` +
+        `"solana_proof_endpoints":${JSON.stringify([solanaLeafProofUrl()])},` +
+        `"solana_proof_api_key":${JSON.stringify(SOLANA_LEAF_PROOF_API_KEY)}}`
       );
     }
     return JSON.stringify({ url: e.url, chain_id: Number(e.chainId), acl_address: e.aclAddress ?? "" });

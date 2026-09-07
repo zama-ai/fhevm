@@ -2290,6 +2290,28 @@ Consequences:
 - The execution's application is known at build time: the SDK's `AppScope` is a builder input, and
   the deny record and meter an app must pass are derivable from it.
 - FUTURE_DESIGN §2 (canonicalize the compute-authority-PDA convention) is resolved.
+- **A self-declared identifier can carry consent but never coercion.** Since `program` declares
+  its own `scope`, the pair works for every consumer where the *affected party* signs the literal
+  value it is agreeing to — permit `allowedScopes`, the admin-written trust record, value identity
+  — because nothing can be substituted for a value the party named. It cannot work for a consumer
+  meant to restrain the program itself: a program with unbounded scopes has unbounded per-slot
+  meters (INVARIANTS #41), and a `["deny-scope", program, scope]` record is escaped by declaring
+  another scope. That is not an implementation weakness to tighten; whoever chooses the identifier
+  cannot be bound by it. Rent is the only cost of a fresh scope, and rent is not a bound.
+  Consequently the deny list holds against the case it is for — a legitimate application
+  misbehaving, which cannot rotate away from the balances addressed under its own scope — and not
+  against an attacker with no state to lose, for whom the levers are fees and the block cap. A
+  lever that must bind a program regardless of its cooperation has to key on the one field the
+  program cannot change, its program id (`["deny-program", program]`, or a program-level ceiling);
+  neither is built, and EVM has no program-level ban either, so neither is a parity gap.
+  A create-time check that `scope` names an existing account owned by `program` would ground the
+  identifier — the reference confidential token already satisfies it, since its scope is the
+  address of a keypair-generated, program-owned `ConfidentialMint` — and would stop a program from
+  forwarding a caller-supplied scope and so handing out host-level trust or metering it was never
+  granted. It would not make the deny list or the meter binding. Because grounding is transitive
+  (updates and metering read the stored scope, `preflight.rs` `fold_app`), such a check has to be
+  unconditional and land before any encrypted value exists that will not be wiped; it cannot be
+  retrofitted onto values already written.
 
 ## DD-048: Allows Are Sealed On The Write; The Deny List Names Applications; One Connector Path (RFC 035)
 
