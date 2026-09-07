@@ -170,8 +170,9 @@ const signerAddress = '0xYourWalletAddress';
 // 1. Generate the transport key pair.
 const transportKeyPair = await client.generateTransportKeyPair();
 
-// 2. Build and sign the permit in one step.
-const signedPermit = await client.signDecryptionPermit({
+// 2. Build and sign the permit in one step (V1 shape, works everywhere —
+// see Decryption for when to use signUnifiedDecryptionPermit instead).
+const signedPermit = await client.signLegacyDecryptionPermit({
   transportKeyPair,
   contractAddresses: [contractAddress],
   startTimestamp: Math.floor(Date.now() / 1000),
