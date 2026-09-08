@@ -346,7 +346,7 @@ Glibc works out in both directions, which is worth knowing because the two provi
 
 Measured on a real build: **107 MB**, against 437 MB for an Ubuntu CUDA `-base` plus apt, and 3.65 GB for the CUDA `-runtime` flavor, which bundles cuBLAS, cuFFT and cuSPARSE that a worker never links.
 
-The images set **no `CMD`**. One Dockerfile serves three services, and a Dockerfile cannot interpolate a build argument into an exec-form `CMD`; the alternatives were a shell the distroless base does not have, or a second copy of a 55 MB binary. Nothing is lost, because the stack already names the binary explicitly for the CPU images too — `command: [sns_worker, --database-url=…]` in compose — and the binary keeps its own name on `PATH`.
+The images carry a **default `CMD`**, but not by naming the binary: one Dockerfile serves three services, and a Dockerfile cannot interpolate a build argument into an exec-form `CMD`, while the alternatives were a shell the distroless base does not have, or a second copy of a 57 MB binary. Instead the workflow stages a fixed-name relative symlink beside the binary (`worker -> sns_worker`, ten bytes), and `CMD ["/usr/local/bin/worker"]` runs it. It is a `CMD`, not an `ENTRYPOINT`, so the stack's explicit `command: [sns_worker, --database-url=…]` replaces it outright, exactly as for the CPU images; what the default buys is that `docker create` and `docker run` work on the bare image, which is how a binary is staged out of it. The binary also keeps its own name on `PATH`.
 
 ### Guards before anything is pushed
 

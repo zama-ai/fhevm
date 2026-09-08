@@ -309,7 +309,13 @@ const GPU_WORKER_IMAGE = /-cuda[0-9][0-9.]*-sm[0-9]+$/;
  * host where `runc` is the default. Relying on the host default is exactly how a
  * GPU run becomes a CPU run without anyone noticing.
  *
- * NVIDIA_VISIBLE_DEVICES stays overridable so a caller can pin one card.
+ * NVIDIA_VISIBLE_DEVICES stays overridable so a caller can pin cards, and the
+ * device request follows the pin: Docker resolves a `count` request against
+ * every GPU on the host and sets NVIDIA_VISIBLE_DEVICES itself, so `count: all`
+ * next to a pin of `0` hands the container every card and two workers pinned
+ * to different cards end up competing for the same memory. A pinned service
+ * therefore requests exactly its `device_ids` (indexes or GPU UUIDs) with no
+ * `count`, and `none` or `void` requests no device at all.
  */
 const applyGpuImageRuntime = (service: Record<string, unknown>, envVars: Record<string, string>) => {
   const image = typeof service.image === "string" ? service.image : "";
@@ -320,16 +326,34 @@ const applyGpuImageRuntime = (service: Record<string, unknown>, envVars: Record<
   const placeholder = /\$\{([A-Z0-9_]+)\}/.exec(image);
   const tag = placeholder ? (envVars[placeholder[1]] ?? "") : image;
   if (!GPU_WORKER_IMAGE.test(tag)) return;
-  const environment = normalizeEnvironment(service.environment);
-  service.environment = {
+  const environment: Record<string, unknown> = {
     NVIDIA_VISIBLE_DEVICES: "all",
     NVIDIA_DRIVER_CAPABILITIES: "compute,utility",
-    ...environment,
+    ...normalizeEnvironment(service.environment),
   };
+  service.environment = environment;
+  const request = gpuDeviceRequest(String(environment.NVIDIA_VISIBLE_DEVICES ?? "all"));
+  if (!request) return;
   service.deploy = {
     ...(typeof service.deploy === "object" && service.deploy !== null ? service.deploy : {}),
-    resources: { reservations: { devices: [{ driver: "nvidia", count: "all", capabilities: ["gpu"] }] } },
+    resources: { reservations: { devices: [{ driver: "nvidia", ...request, capabilities: ["gpu"] }] } },
   };
+};
+
+/**
+ * Maps an NVIDIA_VISIBLE_DEVICES pin onto a compose device request. `count` and
+ * `device_ids` are mutually exclusive in the compose spec, so exactly one is
+ * emitted; `none`/`void` (driver libraries, no device) yields no request.
+ */
+const gpuDeviceRequest = (visibleDevices: string): { count: "all" } | { device_ids: string[] } | undefined => {
+  const pin = visibleDevices.trim();
+  if (pin === "" || pin === "all") return { count: "all" };
+  if (pin === "none" || pin === "void") return undefined;
+  const ids = pin
+    .split(",")
+    .map((id) => id.trim())
+    .filter(Boolean);
+  return ids.length ? { device_ids: ids } : { count: "all" };
 };
 
 

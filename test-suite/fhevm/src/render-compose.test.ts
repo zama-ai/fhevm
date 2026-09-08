@@ -971,6 +971,50 @@ instances:
     });
   });
 
+  test("a worker pinned to specific cards requests exactly those devices", async () => {
+    // Docker resolves `count: all` against every GPU on the host and overwrites
+    // NVIDIA_VISIBLE_DEVICES with the result, so a pin of `0` next to `count:
+    // all` still hands the container every card, and two workers pinned to
+    // different cards compete for one card's memory. The request has to follow
+    // the pin: `device_ids` alone, no `count`.
+    const pinnedScenario = resolveScenarioFile(
+      path.join("/tmp", "two-of-two-pinned-cards.yaml"),
+      parseCoprocessorScenario(`
+version: 1
+kind: coprocessor-consensus
+topology:
+  count: 2
+  threshold: 2
+instances:
+  - index: 0
+    env:
+      NVIDIA_VISIBLE_DEVICES: "0"
+  - index: 1
+    env:
+      NVIDIA_VISIBLE_DEVICES: "GPU-3f2a1b, 1"
+`),
+    );
+    await withTempStateDir(async () => {
+      const services = await renderWorkers(withWorkerTag({ ...state, scenario: pinnedScenario }, "921b69113-cuda12.8-sm90"));
+      const expectDevices = (name: string, pin: string, ids: string[]) => {
+        const worker = services[name];
+        expect(worker?.environment?.NVIDIA_VISIBLE_DEVICES).toBe(pin);
+        expect(worker?.environment?.NVIDIA_DRIVER_CAPABILITIES).toBe("compute,utility");
+        expect(worker?.deploy?.resources?.reservations?.devices).toEqual([
+          { driver: "nvidia", device_ids: ids, capabilities: ["gpu"] },
+        ]);
+      };
+      expectDevices("coprocessor-tfhe-worker", "0", ["0"]);
+      expectDevices("coprocessor1-tfhe-worker", "GPU-3f2a1b, 1", ["GPU-3f2a1b", "1"]);
+      // Instance env reaches every service on the node, so the CPU sibling
+      // carries the pin as plain env; what it must not get is a device request.
+      for (const name of ["coprocessor-sns-worker", "coprocessor1-sns-worker"]) {
+        expect(services[name]?.environment?.NVIDIA_DRIVER_CAPABILITIES).toBeUndefined();
+        expect(services[name]?.deploy).toBeUndefined();
+      }
+    });
+  });
+
   test("a locally built worker gets no GPU wiring even under a GPU bundle", async () => {
     // A local build replaces the bundle image with the `fhevm-local-*` tag and
     // compiles Dockerfile.workspace, which is a CPU image: demanding a GPU for
