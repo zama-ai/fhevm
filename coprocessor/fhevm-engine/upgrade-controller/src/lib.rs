@@ -693,6 +693,61 @@ async fn transition_to_dry_run_started(
     proposal_id: &[u8],
     proposal_block: i64,
 ) -> Result<(), Error> {
+    // A proposal naming another release can never cut over, so fail the attempt
+    // here: cutover is only reachable once this has passed.
+    let proposed: Option<Option<String>> = sqlx::query_scalar::<_, Option<String>>(
+        r#"
+        SELECT version
+          FROM upgrade_state
+         WHERE stack_role = 'GCS'
+           AND state = 'UpgradeActivated'
+           AND proposal_id = $1
+           AND COALESCE(proposal_block, -1) = $2
+         LIMIT 1
+        "#,
+    )
+    .bind(proposal_id)
+    .bind(proposal_block)
+    .fetch_optional(pool)
+    .await?;
+
+    if let Some(version) = proposed {
+        let reason = match version {
+            None => Some("proposal names no release".to_string()),
+            Some(release) => {
+                let live_stack_version: String = sqlx::query_scalar(
+                    "SELECT stack_version FROM versioning WHERE singleton = TRUE",
+                )
+                .fetch_one(pool)
+                .await?;
+                validate_cutover_release(&release, &live_stack_version).err()
+            }
+        };
+        if let Some(reason) = reason {
+            warn!(
+                reason,
+                "proposal cannot cut over; failing the attempt before the dry run"
+            );
+            sqlx::query(
+                r#"
+                UPDATE upgrade_state
+                   SET state = 'PAUSED', status = 'failed',
+                       last_error = $1, updated_at = NOW()
+                 WHERE stack_role = 'GCS'
+                   AND state = 'UpgradeActivated'
+                   AND proposal_id = $2
+                   AND COALESCE(proposal_block, -1) = $3
+                "#,
+            )
+            .bind(&reason)
+            .bind(proposal_id)
+            .bind(proposal_block)
+            .execute(pool)
+            .await?;
+            return Ok(());
+        }
+    }
+
     let result = sqlx::query(
         r#"
         UPDATE upgrade_state
@@ -1787,26 +1842,6 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
         warn!("cutover: GCS proposal is not UpgradeAuthorized — skipping (already cut over)");
         return Ok(());
     };
-    let live_stack_version: String =
-        sqlx::query_scalar("SELECT stack_version FROM versioning WHERE singleton = TRUE")
-            .fetch_one(&mut *tx)
-            .await?;
-    // Fail the attempt rather than erroring: the rows are already UpgradeAuthorized,
-    // and only a failed attempt can be replaced by a later proposal.
-    if let Err(reason) = validate_cutover_release(&stack_version, &live_stack_version) {
-        warn!(reason, "proposal cannot cut over; failing the attempt");
-        sqlx::query(
-            "UPDATE upgrade_state
-                SET state = 'PAUSED', status = 'failed',
-                    last_error = $1, updated_at = NOW()
-              WHERE stack_role = 'GCS' AND state = 'UpgradeAuthorized'",
-        )
-        .bind(&reason)
-        .execute(&mut *tx)
-        .await?;
-        tx.commit().await?;
-        return Ok(());
-    }
     let consensus_version = i64::from(fhevm_engine_common::CONSENSUS_PROTOCOL_VERSION);
 
     // 2. Promote the new stack version inside the cutover tx. This is the
@@ -4145,6 +4180,59 @@ mod tests {
             .await
             .expect("transition");
         assert_eq!(gcs_state(&pool).await.0, "DryRunStarted");
+    }
+
+    /// A proposal naming another release is failed before any dry-run work starts,
+    /// so the window is not spent on an upgrade that could never cut over.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn transition_rejects_a_proposal_for_another_release() {
+        let (_instance, pool) = test_pool().await;
+        seed_gcs_row(&pool, "UpgradeActivated", "in_progress").await; // proposal_id = [0x02]
+        sqlx::query("UPDATE upgrade_state SET version = 'v9.9.9' WHERE stack_role = 'GCS'")
+            .execute(&pool)
+            .await
+            .expect("name another release");
+
+        transition_to_dry_run_started(&pool, &[0x02], 10)
+            .await
+            .expect("transition");
+
+        assert_eq!(
+            gcs_state(&pool).await,
+            ("PAUSED".into(), "failed".into()),
+            "a proposal for another release must not reach the dry run"
+        );
+        let last_error: Option<String> =
+            sqlx::query_scalar("SELECT last_error FROM upgrade_state WHERE stack_role = 'GCS'")
+                .fetch_one(&pool)
+                .await
+                .expect("last_error");
+        assert!(
+            last_error.unwrap_or_default().contains("does not match"),
+            "the recorded failure must name the release mismatch"
+        );
+    }
+
+    /// A row carrying no release is refused too: cutover reads a missing version as
+    /// an empty release and would promote that into `versioning`.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn transition_rejects_a_proposal_without_a_release() {
+        let (_instance, pool) = test_pool().await;
+        seed_gcs_row(&pool, "UpgradeActivated", "in_progress").await; // proposal_id = [0x02]
+        sqlx::query("UPDATE upgrade_state SET version = NULL WHERE stack_role = 'GCS'")
+            .execute(&pool)
+            .await
+            .expect("clear the release");
+
+        transition_to_dry_run_started(&pool, &[0x02], 10)
+            .await
+            .expect("transition");
+
+        assert_eq!(
+            gcs_state(&pool).await,
+            ("PAUSED".into(), "failed".into()),
+            "a proposal with no release must not reach the dry run"
+        );
     }
 
     /// Same guard on the gateway track: a stale proposal must not set gw_dry_run_started.
