@@ -67,9 +67,15 @@ impl WaiterRegistry {
         self.lock().is_empty()
     }
 
+    /// Locks the registry, recovering from a poisoned lock.
+    ///
+    /// Poisoning is only a signal that a thread panicked while holding the lock, and it
+    /// requires a decision on whether the protected data is still consistent. Here it is: every
+    /// critical section is a single `HashMap` operation that either completes or never starts, so
+    /// a poisoned lock still holds a consistent map. Recovery is required rather than optional,
+    /// because this is called from [`Waiter::drop`], which can run while a task is already
+    /// unwinding after a panic. A second panic there would abort the whole process.
     fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<B256, watch::Sender<()>>> {
-        // The map is only ever mutated under short critical sections that cannot panic, so a
-        // poisoned lock still holds a consistent map.
         self.inner.lock().unwrap_or_else(|e| e.into_inner())
     }
 }
@@ -88,7 +94,7 @@ pub struct Waiter {
 }
 
 impl Waiter {
-    /// Resolves on the next wake-up not observed yet.
+    /// Blocks until the next `wake` for this `Waiter`.
     pub async fn wait(&mut self) -> Result<(), watch::error::RecvError> {
         self.receiver
             .as_mut()
@@ -135,7 +141,7 @@ mod tests {
         assert!(waiters.wake(&id));
         w1.wait().await.unwrap();
         w2.wait().await.unwrap();
-        // WaiterRegistry stay registered after a wake-up.
+        // WaiterRegistry stays registered after a wake-up.
         assert!(waiters.contains(&id));
         assert!(waiters.wake(&id));
     }

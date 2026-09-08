@@ -19,7 +19,7 @@ impl Endpoint {
         let db_pool = connect_to_db(&config.database_url, config.database_pool_size).await?;
         let waiter_registry = Arc::new(WaiterRegistry::new());
         let response_listener =
-            ResponseListener::connect(&db_pool, waiter_registry.clone()).await?;
+            ResponseListener::connect(&db_pool, Arc::clone(&waiter_registry)).await?;
 
         Ok(Self {
             config: Arc::new(config),
