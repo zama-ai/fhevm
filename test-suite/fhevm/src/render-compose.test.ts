@@ -839,6 +839,304 @@ gcs:
       expect(blue.command?.filter((arg) => arg.startsWith("--bucket-name-"))).toEqual([]);
     });
   });
+
+  test("a GPU-tagged worker image gets the driver and devices; a CPU-tagged one does not", async () => {
+    // The published GPU images are tagged <revision>-cuda<version>-sm<arch>.
+    // Pinning one worker to a GPU tag and leaving another on the CPU tag proves
+    // both halves in one render: the GPU service must be given the nvidia
+    // runtime's env and a device reservation, and the CPU service must be left
+    // alone -- a CPU run that demands a GPU cannot start on a host without one.
+    //
+    // Why this is needed at all: measured on a host whose docker default runtime
+    // is already `nvidia`, a container with NVIDIA_VISIBLE_DEVICES unset sees
+    // zero /dev/nvidia* devices. A GPU image would run, serve, and compute
+    // nothing on the GPU -- the silent failure this wiring exists to prevent.
+    const gpuState: State = {
+      ...state,
+      versions: {
+        ...state.versions,
+        env: {
+          ...state.versions.env,
+          COPROCESSOR_TFHE_WORKER_VERSION: "921b69113-cuda12.8-sm90",
+          COPROCESSOR_SNS_WORKER_VERSION: "921b69113",
+        },
+      },
+    };
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      await writeFile(envPath("coprocessor"), "\n");
+      await writeFile(envPath("coprocessor.1"), "\n");
+      await generateComposeOverrides(gpuState, stackSpecForState(gpuState));
+      const doc = YAML.parse(await readFile(composePath("coprocessor"), "utf8")) as {
+        services: Record<
+          string,
+          {
+            image?: string;
+            environment?: Record<string, string>;
+            deploy?: { resources?: { reservations?: { devices?: unknown[] } } };
+          }
+        >;
+      };
+
+      const gpu = doc.services["coprocessor-tfhe-worker"];
+      // The override deliberately keeps the ${...} placeholder; the GPU wiring is
+      // keyed on the resolved version, which is what compose will substitute.
+      expect(gpu?.image).toContain("${COPROCESSOR_TFHE_WORKER_VERSION}");
+      expect(gpu?.environment?.NVIDIA_VISIBLE_DEVICES).toBe("all");
+      expect(gpu?.environment?.NVIDIA_DRIVER_CAPABILITIES).toBe("compute,utility");
+      expect(gpu?.deploy?.resources?.reservations?.devices).toHaveLength(1);
+
+      const cpu = doc.services["coprocessor-sns-worker"];
+      expect(cpu?.image).toContain("${COPROCESSOR_SNS_WORKER_VERSION}");
+      expect(cpu?.environment?.NVIDIA_VISIBLE_DEVICES).toBeUndefined();
+      expect(cpu?.deploy).toBeUndefined();
+    });
+  });
+
+  type RenderedWorker = {
+    image?: string;
+    build?: unknown;
+    environment?: Record<string, string>;
+    deploy?: { resources?: { reservations?: { devices?: unknown[] } } };
+  };
+  const renderWorkers = async (rendered: State) => {
+    await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+    await writeFile(envPath("coprocessor"), "\n");
+    await writeFile(envPath("coprocessor.1"), "\n");
+    await generateComposeOverrides(rendered, stackSpecForState(rendered));
+    const doc = YAML.parse(await readFile(composePath("coprocessor"), "utf8")) as {
+      services: Record<string, RenderedWorker>;
+    };
+    return doc.services;
+  };
+  const expectGpuWiring = (service: RenderedWorker | undefined) => {
+    expect(service?.environment?.NVIDIA_VISIBLE_DEVICES).toBe("all");
+    expect(service?.environment?.NVIDIA_DRIVER_CAPABILITIES).toBe("compute,utility");
+    expect(service?.deploy?.resources?.reservations?.devices).toHaveLength(1);
+  };
+  const expectNoGpuWiring = (service: RenderedWorker | undefined) => {
+    expect(service?.environment?.NVIDIA_VISIBLE_DEVICES).toBeUndefined();
+    expect(service?.environment?.NVIDIA_DRIVER_CAPABILITIES).toBeUndefined();
+    expect(service?.deploy).toBeUndefined();
+  };
+  const withWorkerTag = (base: State, tag: string): State => ({
+    ...base,
+    versions: {
+      ...base.versions,
+      env: { ...base.versions.env, COPROCESSOR_TFHE_WORKER_VERSION: tag, COPROCESSOR_SNS_WORKER_VERSION: "921b69113" },
+    },
+  });
+  const pinnedWorkerScenario = (tag: string) =>
+    resolveScenarioFile(
+      path.join("/tmp", "two-of-two-pinned.yaml"),
+      parseCoprocessorScenario(`
+version: 1
+kind: coprocessor-consensus
+topology:
+  count: 2
+  threshold: 2
+instances:
+  - index: 1
+    source:
+      mode: registry
+      tag: ${tag}
+      compatTag: v0.15.0
+`),
+    );
+
+  test("a registry pin decides the GPU wiring, not the bundle's tag", async () => {
+    // The pin replaces the bundle image after the instance adjustments ran, so
+    // wiring keyed on the bundle would follow the wrong image. Both directions
+    // matter: a CPU pin over a GPU bundle carrying the nvidia env and a device
+    // reservation cannot start on a host without a GPU; a GPU pin over a CPU
+    // bundle without them silently computes on the CPU.
+    await withTempStateDir(async () => {
+      const cpuPinOverGpuBundle = withWorkerTag(
+        { ...state, scenario: pinnedWorkerScenario("921b69113") },
+        "921b69113-cuda12.8-sm90",
+      );
+      let services = await renderWorkers(cpuPinOverGpuBundle);
+      expectGpuWiring(services["coprocessor-tfhe-worker"]);
+      expect(services["coprocessor1-tfhe-worker"]?.image).toMatch(/:921b69113$/);
+      expectNoGpuWiring(services["coprocessor1-tfhe-worker"]);
+
+      const gpuPinOverCpuBundle = withWorkerTag(
+        { ...state, scenario: pinnedWorkerScenario("921b69113-cuda12.8-sm90") },
+        "921b69113",
+      );
+      services = await renderWorkers(gpuPinOverCpuBundle);
+      expectNoGpuWiring(services["coprocessor-tfhe-worker"]);
+      expect(services["coprocessor1-tfhe-worker"]?.image).toMatch(/:921b69113-cuda12\.8-sm90$/);
+      expectGpuWiring(services["coprocessor1-tfhe-worker"]);
+    });
+  });
+
+  test("a worker pinned to specific cards requests exactly those devices", async () => {
+    // Docker resolves `count: all` against every GPU on the host and overwrites
+    // NVIDIA_VISIBLE_DEVICES with the result, so a pin of `0` next to `count:
+    // all` still hands the container every card, and two workers pinned to
+    // different cards compete for one card's memory. The request has to follow
+    // the pin: `device_ids` alone, no `count`.
+    const pinnedScenario = resolveScenarioFile(
+      path.join("/tmp", "two-of-two-pinned-cards.yaml"),
+      parseCoprocessorScenario(`
+version: 1
+kind: coprocessor-consensus
+topology:
+  count: 2
+  threshold: 2
+instances:
+  - index: 0
+    env:
+      NVIDIA_VISIBLE_DEVICES: "0"
+  - index: 1
+    env:
+      NVIDIA_VISIBLE_DEVICES: "GPU-3f2a1b, 1"
+`),
+    );
+    await withTempStateDir(async () => {
+      const services = await renderWorkers(withWorkerTag({ ...state, scenario: pinnedScenario }, "921b69113-cuda12.8-sm90"));
+      const expectDevices = (name: string, pin: string, ids: string[]) => {
+        const worker = services[name];
+        expect(worker?.environment?.NVIDIA_VISIBLE_DEVICES).toBe(pin);
+        expect(worker?.environment?.NVIDIA_DRIVER_CAPABILITIES).toBe("compute,utility");
+        expect(worker?.deploy?.resources?.reservations?.devices).toEqual([
+          { driver: "nvidia", device_ids: ids, capabilities: ["gpu"] },
+        ]);
+      };
+      expectDevices("coprocessor-tfhe-worker", "0", ["0"]);
+      expectDevices("coprocessor1-tfhe-worker", "GPU-3f2a1b, 1", ["GPU-3f2a1b", "1"]);
+      // Instance env reaches every service on the node, so the CPU sibling
+      // carries the pin as plain env; what it must not get is a device request.
+      for (const name of ["coprocessor-sns-worker", "coprocessor1-sns-worker"]) {
+        expect(services[name]?.environment?.NVIDIA_DRIVER_CAPABILITIES).toBeUndefined();
+        expect(services[name]?.deploy).toBeUndefined();
+      }
+    });
+  });
+
+  test("a locally built worker gets no GPU wiring even under a GPU bundle", async () => {
+    // A local build replaces the bundle image with the `fhevm-local-*` tag and
+    // compiles Dockerfile.workspace, which is a CPU image: demanding a GPU for
+    // it would keep a CPU run from starting on a host without one.
+    await withTempStateDir(async () => {
+      const services = await renderWorkers(withWorkerTag(inheritedScenarioState, "921b69113-cuda12.8-sm90"));
+      for (const name of ["coprocessor-tfhe-worker", "coprocessor1-tfhe-worker"]) {
+        expect(services[name]?.image).toMatch(/:fhevm-local-i[01]$/);
+        expect(services[name]?.build).toBeDefined();
+        expectNoGpuWiring(services[name]);
+      }
+    });
+  });
+});
+
+describe("test-suite docker socket runtime", () => {
+  test("dockerSocketRuntime resolves a unix DOCKER_HOST socket with its group id", async () => {
+    await withUnixSocket(async (socketPath) => {
+      const runtime = dockerSocketRuntime({ DOCKER_HOST: `unix://${socketPath}` });
+      expect(runtime?.path).toBe(socketPath);
+      expect(runtime?.gid).toBe(statSync(socketPath).gid);
+    });
+  });
+
+  test("dockerSocketRuntime returns undefined for a missing socket", () => {
+    expect(dockerSocketRuntime({ DOCKER_HOST: "unix:///nonexistent/docker.sock" })).toBeUndefined();
+  });
+
+  test("dockerSocketRuntime treats a remote DOCKER_HOST as socketless", async () => {
+    await withUnixSocket(async (socketPath) => {
+      // A tcp:// daemon is never local, even while a unix socket exists elsewhere.
+      expect(dockerSocketRuntime({ DOCKER_HOST: "tcp://127.0.0.1:2375" })).toBeUndefined();
+      expect(dockerSocketRuntime({ DOCKER_HOST: `unix://${socketPath}` })).toBeDefined();
+    });
+  });
+
+  test("dockerSocketRuntime falls back to the default socket path without DOCKER_HOST", () => {
+    // The fallback path is a host fact, so only the path it probes is asserted here.
+    const runtime = dockerSocketRuntime({});
+    expect(runtime === undefined || runtime.path === "/var/run/docker.sock").toBe(true);
+  });
+
+  test("grants the e2e runner the host docker socket when one exists", async () => {
+    await withUnixSocket(async (socketPath) => {
+      await withDockerHost(`unix://${socketPath}`, async () => {
+        await withTempStateDir(async () => {
+          await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+          await writeFile(envPath("coprocessor"), "\n");
+          await generateComposeOverrides(socketWiringState, stackSpecForState(socketWiringState));
+          const doc = YAML.parse(await readFile(composePath("test-suite"), "utf8")) as {
+            services: Record<string, { volumes?: string[]; group_add?: string[] }>;
+          };
+          const runner = doc.services["test-suite-e2e-debug"];
+          expect(runner?.volumes).toEqual([`${socketPath}:/var/run/docker.sock`]);
+          expect(runner?.group_add).toEqual([String(statSync(socketPath).gid)]);
+          const others = (await generatedServices()).filter(([key]) => key !== "test-suite.yml:test-suite-e2e-debug");
+          expect(others.length).toBeGreaterThan(0);
+          for (const [key, service] of others) {
+            expect(YAML.stringify({ [key]: service })).not.toContain("/var/run/docker.sock");
+            expect(service.group_add).toBeUndefined();
+          }
+        });
+      });
+    });
+  });
+
+  test("keeps the local build override alongside the socket wiring", async () => {
+    await withUnixSocket(async (socketPath) => {
+      await withDockerHost(`unix://${socketPath}`, async () => {
+        await withTempStateDir(async () => {
+          await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+          await writeFile(envPath("coprocessor"), "\n");
+          await generateComposeOverrides(testSuiteOverrideState, stackSpecForState(testSuiteOverrideState));
+          const doc = YAML.parse(await readFile(composePath("test-suite"), "utf8")) as {
+            services: Record<string, { image?: string; build?: unknown; volumes?: string[]; group_add?: string[] }>;
+          };
+          const runner = doc.services["test-suite-e2e-debug"];
+          expect(runner?.image).toContain(":fhevm-local");
+          expect(runner?.build).toBeTruthy();
+          expect(runner?.volumes).toEqual([`${socketPath}:/var/run/docker.sock`]);
+          expect(runner?.group_add).toEqual([String(statSync(socketPath).gid)]);
+        });
+      });
+    });
+  });
+
+  test("renders an empty test-suite override on a host without a docker socket", async () => {
+    await withDockerHost("unix:///nonexistent/docker.sock", async () => {
+      await withTempStateDir(async () => {
+        await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+        await writeFile(envPath("coprocessor"), "\n");
+        await generateComposeOverrides(socketWiringState, stackSpecForState(socketWiringState));
+        const doc = YAML.parse(await readFile(composePath("test-suite"), "utf8")) as {
+          services: Record<string, { volumes?: unknown; group_add?: unknown }>;
+        };
+        expect(doc.services).toEqual({});
+        expect(doc.services["test-suite-e2e-debug"]?.volumes).toBeUndefined();
+        expect(doc.services["test-suite-e2e-debug"]?.group_add).toBeUndefined();
+      });
+    });
+  });
+
+  test("leaves the runner socketless when DOCKER_HOST points at a remote daemon", async () => {
+    await withDockerHost("tcp://127.0.0.1:2375", async () => {
+      await withTempStateDir(async () => {
+        await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+        await writeFile(envPath("coprocessor"), "\n");
+        await generateComposeOverrides(socketWiringState, stackSpecForState(socketWiringState));
+        const doc = YAML.parse(await readFile(composePath("test-suite"), "utf8")) as {
+          services: Record<string, unknown>;
+        };
+        expect(doc.services).toEqual({});
+      });
+    });
+  });
+
+  test("the tracked test-suite compose file carries no docker socket wiring", async () => {
+    const raw = await readFile(path.join(TEMPLATE_COMPOSE_DIR, "test-suite-docker-compose.yml"), "utf8");
+    expect(raw).not.toContain("docker.sock");
+    expect(raw).not.toContain("group_add");
+    expect(raw).not.toContain("DOCKER_GID");
+  });
 });
 
 describe("test-suite docker socket runtime", () => {
