@@ -17,8 +17,7 @@ import {
 } from '#esm/internal/network.js';
 
 type FakeConfig =
-  | { type: 'edr-simulated'; chainId: number }
-  | { type: 'http'; chainId?: number; url: { getUrl(): Promise<string> } };
+  { type: 'edr-simulated'; chainId: number } | { type: 'http'; chainId?: number; url: { getUrl(): Promise<string> } };
 
 function fakeConnection(
   networkName: string,
