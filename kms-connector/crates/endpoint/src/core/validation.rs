@@ -10,6 +10,10 @@ use kms_connector_api::{PublicDecryptionRequest, RequestValidity, UserDecryption
 use tfhe::FheTypes;
 use thiserror::Error;
 
+/// The maximum total bit size of the handles of a single decryption request. Mirrors
+/// `MAX_DECRYPTION_REQUEST_BITS` of the `Decryption` gateway contract.
+const MAX_DECRYPTION_REQUEST_BITS: u64 = 2048;
+
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum ValidationError {
     #[error("no handle provided")]
@@ -98,10 +102,10 @@ fn validate_handles<'a>(
     let Some(chain_id) = chain_id else {
         return Err(ValidationError::NoHandles);
     };
-    if total_bits > config.max_decryption_request_bits {
+    if total_bits > MAX_DECRYPTION_REQUEST_BITS {
         return Err(ValidationError::BitSizeExceeded(
             total_bits,
-            config.max_decryption_request_bits,
+            MAX_DECRYPTION_REQUEST_BITS,
         ));
     }
     if !config.supported_chain_ids.contains(&chain_id) {
@@ -145,6 +149,7 @@ pub(crate) mod tests {
     const EBOOL: u8 = FheTypes::Bool as u8;
     const EUINT4: u8 = FheTypes::Uint4 as u8;
     const EUINT64: u8 = FheTypes::Uint64 as u8;
+    const EUINT256: u8 = FheTypes::Uint256 as u8;
     /// A type byte no `FheTypes` variant maps to.
     const BAD_FHE_TYPE: u8 = 0xff;
 
@@ -160,7 +165,6 @@ pub(crate) mod tests {
     pub fn config() -> Config {
         Config {
             supported_chain_ids: vec![1, 2],
-            max_decryption_request_bits: 128,
             max_allowed_contracts: 1,
             ..Config::default()
         }
@@ -230,13 +234,14 @@ pub(crate) mod tests {
     #[test]
     fn bit_size_budget() {
         let cfg = config();
-        // 64 + 64 + 2 = 130 > 128, but 64 ebools = 128 fit.
-        let handles = vec![handle(1, EUINT64), handle(1, EUINT64), handle(1, EBOOL)];
+        // 8 * 256 = 2048 fits exactly, one more bit exceeds the budget.
+        let mut handles = vec![handle(1, EUINT256); 8];
+        handles.push(handle(1, EBOOL));
         assert_eq!(
             validate_public_decryption(&public_request(handles, vec![]), &cfg),
-            Err(ValidationError::BitSizeExceeded(130, 128))
+            Err(ValidationError::BitSizeExceeded(2050, 2048))
         );
-        let handles = vec![handle(1, EBOOL); 64];
+        let handles = vec![handle(1, EUINT256); 8];
         assert_eq!(
             validate_user_decryption(&user_request(handles, vec![]), &cfg),
             Ok(())

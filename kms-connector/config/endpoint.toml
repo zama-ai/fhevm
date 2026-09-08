@@ -30,11 +30,6 @@ database_url = "postgres://postgres:postgres@localhost/kms-connector"
 # ENV: KMS_CONNECTOR_MAX_BODY_BYTES
 # max_body_bytes = 1048576
 
-# Maximum total bit size of the handles of a decryption request (optional, defaults to 2048).
-# Mirrors `MAX_DECRYPTION_REQUEST_BITS` of the `Decryption` gateway contract.
-# ENV: KMS_CONNECTOR_MAX_DECRYPTION_REQUEST_BITS
-# max_decryption_request_bits = 2048
-
 # Maximum number of `allowedContracts` of a user decryption request (optional, defaults to 10).
 # Mirrors `MAX_USER_DECRYPT_CONTRACT_ADDRESSES` of the `Decryption` gateway contract.
 # ENV: KMS_CONNECTOR_MAX_ALLOWED_CONTRACTS
@@ -51,7 +46,3 @@ supported_chain_ids = [11155111]
 # The timeout to perform each external service connection healthcheck (optional, defaults to 3s)
 # ENV: KMS_CONNECTOR_HEALTHCHECK_TIMEOUT (format: https://docs.rs/humantime/latest/humantime/)
 # healthcheck_timeout = "3s"
-
-# The maximum number of tasks to process requests concurrently (optional, defaults to 1000)
-# ENV: KMS_CONNECTOR_TASK_LIMIT
-# task_limit = 1000

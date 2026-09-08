@@ -1,7 +1,6 @@
 use connector_utils::{
     config::{DeserializeConfig, default_database_pool_size},
     monitoring::{health::default_healthcheck_timeout, server::default_monitoring_endpoint},
-    tasks::default_task_limit,
 };
 use serde::Deserialize;
 #[cfg(test)]
@@ -33,10 +32,6 @@ pub struct Config {
     /// The maximum accepted size of a JSON request body.
     #[serde(default = "default_max_body_bytes")]
     pub max_body_bytes: usize,
-    /// The maximum total bit size of the handles of a single decryption request. Mirrors
-    /// `MAX_DECRYPTION_REQUEST_BITS` of the `Decryption` gateway contract.
-    #[serde(default = "default_max_decryption_request_bits")]
-    pub max_decryption_request_bits: u64,
     /// The maximum number of `allowedContracts` of a user decryption request. Mirrors
     /// `MAX_USER_DECRYPT_CONTRACT_ADDRESSES` of the `Decryption` gateway contract.
     #[serde(default = "default_max_allowed_contracts")]
@@ -47,9 +42,6 @@ pub struct Config {
     /// The service name used for tracing.
     #[serde(default = "default_service_name")]
     pub service_name: String,
-    /// The maximum number of tasks that can be executed concurrently.
-    #[serde(default = "default_task_limit")]
-    pub task_limit: usize,
     /// The monitoring server endpoint of the `Endpoint` service.
     #[serde(default = "default_monitoring_endpoint")]
     pub monitoring_endpoint: SocketAddr,
@@ -80,10 +72,6 @@ fn default_max_body_bytes() -> usize {
     1024 * 1024 // 1 MiB
 }
 
-fn default_max_decryption_request_bits() -> u64 {
-    2048
-}
-
 fn default_max_allowed_contracts() -> usize {
     10
 }
@@ -98,11 +86,9 @@ impl Default for Config {
             max_in_flight_decryptions: default_max_in_flight_decryptions(),
             decryption_timeout: default_decryption_timeout(),
             max_body_bytes: default_max_body_bytes(),
-            max_decryption_request_bits: default_max_decryption_request_bits(),
             max_allowed_contracts: default_max_allowed_contracts(),
             supported_chain_ids: vec![11155111],
             service_name: default_service_name(),
-            task_limit: default_task_limit(),
             monitoring_endpoint: default_monitoring_endpoint(),
             healthcheck_timeout: default_healthcheck_timeout(),
         }
@@ -127,11 +113,9 @@ mod tests {
             env::remove_var("KMS_CONNECTOR_MAX_IN_FLIGHT_DECRYPTIONS");
             env::remove_var("KMS_CONNECTOR_DECRYPTION_TIMEOUT");
             env::remove_var("KMS_CONNECTOR_MAX_BODY_BYTES");
-            env::remove_var("KMS_CONNECTOR_MAX_DECRYPTION_REQUEST_BITS");
             env::remove_var("KMS_CONNECTOR_MAX_ALLOWED_CONTRACTS");
             env::remove_var("KMS_CONNECTOR_SUPPORTED_CHAIN_IDS");
             env::remove_var("KMS_CONNECTOR_SERVICE_NAME");
-            env::remove_var("KMS_CONNECTOR_TASK_LIMIT");
             env::remove_var("KMS_CONNECTOR_MONITORING_ENDPOINT");
             env::remove_var("KMS_CONNECTOR_HEALTHCHECK_TIMEOUT");
         }
@@ -160,11 +144,9 @@ mod tests {
             env::set_var("KMS_CONNECTOR_MAX_IN_FLIGHT_DECRYPTIONS", "12");
             env::set_var("KMS_CONNECTOR_DECRYPTION_TIMEOUT", "15s");
             env::set_var("KMS_CONNECTOR_MAX_BODY_BYTES", "2048");
-            env::set_var("KMS_CONNECTOR_MAX_DECRYPTION_REQUEST_BITS", "512");
             env::set_var("KMS_CONNECTOR_MAX_ALLOWED_CONTRACTS", "3");
             env::set_var("KMS_CONNECTOR_SUPPORTED_CHAIN_IDS", "1,31337");
             env::set_var("KMS_CONNECTOR_SERVICE_NAME", "kms-connector-test");
-            env::set_var("KMS_CONNECTOR_TASK_LIMIT", "42");
             env::set_var("KMS_CONNECTOR_MONITORING_ENDPOINT", "127.0.0.1:9101");
             env::set_var("KMS_CONNECTOR_HEALTHCHECK_TIMEOUT", "7s");
         }
@@ -180,11 +162,9 @@ mod tests {
         assert_eq!(config.max_in_flight_decryptions, 12);
         assert_eq!(config.decryption_timeout, Duration::from_secs(15));
         assert_eq!(config.max_body_bytes, 2048);
-        assert_eq!(config.max_decryption_request_bits, 512);
         assert_eq!(config.max_allowed_contracts, 3);
         assert_eq!(config.supported_chain_ids, vec![1, 31337]);
         assert_eq!(config.service_name, "kms-connector-test");
-        assert_eq!(config.task_limit, 42);
         assert_eq!(
             config.monitoring_endpoint,
             "127.0.0.1:9101".parse().unwrap()
