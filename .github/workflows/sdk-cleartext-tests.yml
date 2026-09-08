@@ -1,4 +1,4 @@
-name: sdk-tests
+name: sdk-cleartext-tests
 
 on:
   pull_request:
