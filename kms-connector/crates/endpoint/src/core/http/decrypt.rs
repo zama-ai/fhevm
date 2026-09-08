@@ -9,7 +9,7 @@
 //!    conflict means the kms-worker is already on it and we attach),
 //! 6. wait for the response listener to wake the waiter, then read the response row.
 
-use crate::core::{http::AppState, waiters::WaiterGuard};
+use crate::core::{http::AppState, waiters::Waiter};
 use actix_web::HttpResponse;
 use alloy::primitives::B256;
 use anyhow::anyhow;
@@ -21,7 +21,7 @@ use sqlx::{
     types::chrono::{DateTime, Utc},
 };
 use std::{future::Future, sync::Arc};
-use tokio::{sync::oneshot, time::Instant};
+use tokio::time::Instant;
 use tracing::{debug, info, warn};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
@@ -81,7 +81,7 @@ pub async fn handle<R: DecryptionRoute>(
             Some(id),
         ));
     };
-    let (guard, receiver) = state.waiters.register(id, permit);
+    let mut waiter = state.waiter_registry.register(id, permit);
 
     let lookup = find_response_or_store_request::<R>(state, id, request)
         .await
@@ -92,13 +92,11 @@ pub async fn handle<R: DecryptionRoute>(
 
     let row = match lookup {
         LookupOutcome::Serve(row) => row,
-        LookupOutcome::Stored => {
-            wait_and_read_response::<R>(state, id, &guard, receiver, None).await?
-        }
+        LookupOutcome::Stored => wait_and_read_response::<R>(state, id, &mut waiter, None).await?,
         LookupOutcome::Retry {
             old_response_created_at,
         } => {
-            wait_and_read_response::<R>(state, id, &guard, receiver, Some(old_response_created_at))
+            wait_and_read_response::<R>(state, id, &mut waiter, Some(old_response_created_at))
                 .await?
         }
     };
@@ -149,19 +147,18 @@ async fn find_response_or_store_request<R: DecryptionRoute>(
 
 /// Waits for the response of `id` and reads it, within `Config::decryption_timeout` overall.
 ///
-/// A wake-up that only leads to the stale row identified by `old_response_created_at` re-arms the
-/// waiter and keeps waiting.
+/// A wake-up that only leads to the stale row identified by `old_response_created_at` keeps
+/// waiting.
 async fn wait_and_read_response<R: DecryptionRoute>(
     state: &AppState,
     id: B256,
-    guard: &WaiterGuard,
-    mut receiver: oneshot::Receiver<()>,
+    waiter: &mut Waiter,
     old_response_created_at: Option<DateTime<Utc>>,
 ) -> Result<R::ResponseRow, ErrorResponse> {
     let timeout = state.config.decryption_timeout;
     let deadline = Instant::now() + timeout;
     loop {
-        let wake_signal = tokio::time::timeout_at(deadline, receiver)
+        let wake_signal = tokio::time::timeout_at(deadline, waiter.wait())
             .await
             .map_err(|_| {
                 warn!(decryption_id = %id, "No response within {timeout:?}, answering timeout");
@@ -193,7 +190,6 @@ async fn wait_and_read_response<R: DecryptionRoute>(
 
         if old_response_created_at == Some(R::created_at(&row)) {
             debug!(decryption_id = %id, "Woken up by the stale error row, waiting again");
-            receiver = guard.rearm();
             continue;
         }
         return Ok(row);

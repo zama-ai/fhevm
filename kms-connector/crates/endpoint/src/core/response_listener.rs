@@ -1,6 +1,6 @@
 //! Postgres listener waking up the connections waiting for an HTTP-sourced response row.
 
-use crate::core::{Waiters, db::id_from_notification_payload};
+use crate::core::{WaiterRegistry, db::id_from_notification_payload};
 use anyhow::anyhow;
 use sqlx::{
     Pool, Postgres,
@@ -16,12 +16,15 @@ pub const HTTP_USER_DECRYPT_NOTIFICATION: &str = "http_user_decryption_response_
 /// waiters.
 pub struct ResponseListener {
     db_listener: PgListener,
-    waiters: Arc<Waiters>,
+    waiter_registry: Arc<WaiterRegistry>,
 }
 
 impl ResponseListener {
     /// Connects a dedicated listener connection and subscribes to both HTTP response channels.
-    pub async fn connect(db_pool: &Pool<Postgres>, waiters: Arc<Waiters>) -> anyhow::Result<Self> {
+    pub async fn connect(
+        db_pool: &Pool<Postgres>,
+        waiter_registry: Arc<WaiterRegistry>,
+    ) -> anyhow::Result<Self> {
         let mut db_listener = PgListener::connect_with(db_pool)
             .await
             .map_err(|e| anyhow!("Failed to init Postgres Listener: {e}"))?;
@@ -35,7 +38,7 @@ impl ResponseListener {
 
         Ok(Self {
             db_listener,
-            waiters,
+            waiter_registry,
         })
     }
 
@@ -62,12 +65,12 @@ impl ResponseListener {
 
     /// Drops the registered waiters, failing their requests with a retryable error.
     fn fail_in_flight_waiters(&self) {
-        let in_flight = self.waiters.len();
+        let in_flight = self.waiter_registry.len();
         if in_flight > 0 {
             warn!(
                 "Failing the waiters of {in_flight} in-flight decryption(s): their response may have been missed"
             );
-            self.waiters.clear();
+            self.waiter_registry.clear();
         }
     }
 
@@ -78,7 +81,7 @@ impl ResponseListener {
         };
         debug!(decryption_id = %id, channel = notification.channel(), "Response notification received");
 
-        if self.waiters.wake(&id) {
+        if self.waiter_registry.wake(&id) {
             info!(decryption_id = %id, "Waiting connection(s) woken up");
         } else {
             // Another endpoint replica's request, or a client that already went away.

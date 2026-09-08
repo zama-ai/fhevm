@@ -1,4 +1,4 @@
-use crate::core::{Config, ResponseListener, Waiters, http};
+use crate::core::{Config, ResponseListener, WaiterRegistry, http};
 use anyhow::anyhow;
 use connector_utils::conn::connect_to_db;
 use sqlx::{Pool, Postgres};
@@ -10,20 +10,21 @@ use tracing::{error, info};
 pub struct Endpoint {
     config: Arc<Config>,
     db_pool: Pool<Postgres>,
-    waiters: Arc<Waiters>,
+    waiter_registry: Arc<WaiterRegistry>,
     response_listener: ResponseListener,
 }
 
 impl Endpoint {
     pub async fn from_config(config: Config) -> anyhow::Result<Self> {
         let db_pool = connect_to_db(&config.database_url, config.database_pool_size).await?;
-        let waiters = Arc::new(Waiters::new());
-        let response_listener = ResponseListener::connect(&db_pool, waiters.clone()).await?;
+        let waiter_registry = Arc::new(WaiterRegistry::new());
+        let response_listener =
+            ResponseListener::connect(&db_pool, waiter_registry.clone()).await?;
 
         Ok(Self {
             config: Arc::new(config),
             db_pool,
-            waiters,
+            waiter_registry,
             response_listener,
         })
     }
@@ -32,7 +33,8 @@ impl Endpoint {
     pub async fn start(self, cancel_token: CancellationToken) -> anyhow::Result<()> {
         info!("Starting Endpoint");
 
-        let state = http::AppState::new(Arc::clone(&self.config), self.db_pool, self.waiters);
+        let state =
+            http::AppState::new(Arc::clone(&self.config), self.db_pool, self.waiter_registry);
         let server = http::run_server(state, self.config.http_endpoint)?;
         info!("HTTP server listening at: {}", self.config.http_endpoint);
         let server_handle = server.handle();

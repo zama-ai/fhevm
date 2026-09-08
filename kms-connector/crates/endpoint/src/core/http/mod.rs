@@ -5,7 +5,7 @@ pub mod public_decrypt;
 pub mod user_decrypt;
 pub mod version;
 
-use crate::core::{Config, Waiters};
+use crate::core::{Config, WaiterRegistry};
 use actix_web::{
     App, HttpRequest, HttpResponse, HttpServer,
     dev::Server,
@@ -25,18 +25,22 @@ use tokio::sync::Semaphore;
 pub struct AppState {
     pub config: Arc<Config>,
     pub db_pool: Pool<Postgres>,
-    pub waiters: Arc<Waiters>,
+    pub waiter_registry: Arc<WaiterRegistry>,
     /// In-flight decryptions backpressure, sized by `Config::max_in_flight_decryptions`.
     pub in_flight_limiter: Arc<Semaphore>,
 }
 
 impl AppState {
-    pub fn new(config: Arc<Config>, db_pool: Pool<Postgres>, waiters: Arc<Waiters>) -> Self {
+    pub fn new(
+        config: Arc<Config>,
+        db_pool: Pool<Postgres>,
+        waiter_registry: Arc<WaiterRegistry>,
+    ) -> Self {
         let in_flight_limiter = Arc::new(Semaphore::new(config.max_in_flight_decryptions));
         Self {
             config,
             db_pool,
-            waiters,
+            waiter_registry,
             in_flight_limiter,
         }
     }

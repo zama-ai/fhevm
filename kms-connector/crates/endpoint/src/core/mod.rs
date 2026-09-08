@@ -9,4 +9,4 @@ mod waiters;
 pub use config::Config;
 pub use endpoint::Endpoint;
 pub use response_listener::ResponseListener;
-pub use waiters::{WaiterGuard, Waiters};
+pub use waiters::{Waiter, WaiterRegistry};
