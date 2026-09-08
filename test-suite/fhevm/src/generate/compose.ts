@@ -287,6 +287,76 @@ const rewriteComposePaths = (doc: ComposeDoc) => {
 const interpolateString = (value: string, vars: Record<string, string>) =>
   value.replace(/(?<!\$)\$\{([A-Z0-9_]+)\}/g, (match, key) => (key in vars ? vars[key] : match));
 
+/**
+ * Published GPU worker images are tagged `<revision>-cuda<version>-sm<arch>`.
+ * Keying off the tag keeps a CPU run untouched -- it never asks for a GPU it does
+ * not need -- and avoids threading a new flag or scenario field through.
+ */
+const GPU_WORKER_IMAGE = /-cuda[0-9][0-9.]*-sm[0-9]+$/;
+
+/**
+ * Gives a GPU worker image the driver and the devices, because neither arrives
+ * by default.
+ *
+ * Measured on a host whose docker default runtime is already `nvidia`: with
+ * NVIDIA_VISIBLE_DEVICES unset a container sees ZERO /dev/nvidia* devices, so a
+ * GPU image starts, serves, and computes nothing on the GPU. Setting it to `all`
+ * exposes six devices, and NVIDIA_DRIVER_CAPABILITIES=compute,utility injects
+ * libcuda.so.1.
+ *
+ * The device reservation is belt and braces: the env vars are what the nvidia
+ * runtime reads, the reservation is what makes compose ask for that runtime on a
+ * host where `runc` is the default. Relying on the host default is exactly how a
+ * GPU run becomes a CPU run without anyone noticing.
+ *
+ * NVIDIA_VISIBLE_DEVICES stays overridable so a caller can pin cards, and the
+ * device request follows the pin: Docker resolves a `count` request against
+ * every GPU on the host and sets NVIDIA_VISIBLE_DEVICES itself, so `count: all`
+ * next to a pin of `0` hands the container every card and two workers pinned
+ * to different cards end up competing for the same memory. A pinned service
+ * therefore requests exactly its `device_ids` (indexes or GPU UUIDs) with no
+ * `count`, and `none` or `void` requests no device at all.
+ */
+const applyGpuImageRuntime = (service: Record<string, unknown>, envVars: Record<string, string>) => {
+  const image = typeof service.image === "string" ? service.image : "";
+  // The override keeps the image as `...:${COPROCESSOR_TFHE_WORKER_VERSION}` so
+  // compose resolves it at run time. Testing the rendered string alone would
+  // therefore match nothing and this wiring would silently do nothing, so
+  // resolve the placeholder against the same env compose will use.
+  const placeholder = /\$\{([A-Z0-9_]+)\}/.exec(image);
+  const tag = placeholder ? (envVars[placeholder[1]] ?? "") : image;
+  if (!GPU_WORKER_IMAGE.test(tag)) return;
+  const environment: Record<string, unknown> = {
+    NVIDIA_VISIBLE_DEVICES: "all",
+    NVIDIA_DRIVER_CAPABILITIES: "compute,utility",
+    ...normalizeEnvironment(service.environment),
+  };
+  service.environment = environment;
+  const request = gpuDeviceRequest(String(environment.NVIDIA_VISIBLE_DEVICES ?? "all"));
+  if (!request) return;
+  service.deploy = {
+    ...(typeof service.deploy === "object" && service.deploy !== null ? service.deploy : {}),
+    resources: { reservations: { devices: [{ driver: "nvidia", ...request, capabilities: ["gpu"] }] } },
+  };
+};
+
+/**
+ * Maps an NVIDIA_VISIBLE_DEVICES pin onto a compose device request. `count` and
+ * `device_ids` are mutually exclusive in the compose spec, so exactly one is
+ * emitted; `none`/`void` (driver libraries, no device) yields no request.
+ */
+const gpuDeviceRequest = (visibleDevices: string): { count: "all" } | { device_ids: string[] } | undefined => {
+  const pin = visibleDevices.trim();
+  if (pin === "" || pin === "all") return { count: "all" };
+  if (pin === "none" || pin === "void") return undefined;
+  const ids = pin
+    .split(",")
+    .map((id) => id.trim())
+    .filter(Boolean);
+  return ids.length ? { device_ids: ids } : { count: "all" };
+};
+
+
 /** Normalizes compose environment syntax into a flat map before local overrides are merged. */
 const normalizeEnvironment = (value: unknown) => {
   if (Array.isArray(value)) {
@@ -488,25 +558,42 @@ const coprocessorBuildServices = (plan: Pick<StackSpec, "overrides">) => {
   return new Set(overrides.flatMap((override) => override.services ?? []));
 };
 
-/** Applies scenario image sourcing rules to one coprocessor service clone. */
+/**
+ * Applies scenario image sourcing rules to one coprocessor service clone, then
+ * the GPU runtime the chosen image needs.
+ *
+ * The GPU wiring keys on the image that will actually run, so it must follow
+ * the final selection here rather than the bundle's image: a registry pin or a
+ * local build replaces the bundle tag, and a CPU image carrying the nvidia env
+ * and a device reservation cannot start on a host without a GPU, while a GPU
+ * image pinned over a CPU bundle would silently compute on the CPU. Local
+ * builds use Dockerfile.workspace, which produces CPU images, so their
+ * `fhevm-local-*` tag never matches and they get no GPU wiring.
+ *
+ * `versions` is the resolved bundle: an inherited image keeps its
+ * `...:${COPROCESSOR_*_VERSION}` placeholder for compose to substitute, and the
+ * wiring resolves that placeholder against the same values.
+ */
 const applyCoprocessorSource = (
   service: Record<string, unknown>,
   serviceName: string,
   instance: ResolvedCoprocessorScenarioInstance,
   locallyBuilt: boolean,
   e2ePublicRuntime: boolean,
+  versions: Record<string, string>,
 ) => {
   if (locallyBuilt) {
     service.image = retagLocal(service.image, localInstanceTag(instance.index));
     service.build = localBuildSpecFor("coprocessor", serviceName, e2ePublicRuntime);
-    return;
+  } else {
+    if (instance.source.mode === "registry") {
+      service.image = rewriteImageTag(service.image, instance.source.tag);
+    }
+    if (service.image) {
+      delete service.build;
+    }
   }
-  if (instance.source.mode === "registry") {
-    service.image = rewriteImageTag(service.image, instance.source.tag);
-  }
-  if (service.image) {
-    delete service.build;
-  }
+  applyGpuImageRuntime(service, versions);
 };
 
 /**
@@ -591,7 +678,7 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
         locallyBuilt ? {} : argPolicy.coprocessorDropFlags,
       );
       adjusted.container_name = serviceName;
-      applyCoprocessorSource(adjusted, name, sourceInstance, locallyBuilt, plan.e2ePublicRuntime);
+      applyCoprocessorSource(adjusted, name, sourceInstance, locallyBuilt, plan.e2ePublicRuntime, plan.versions.env);
       if (instance.index > 0 && adjusted.depends_on && typeof adjusted.depends_on === "object") {
         adjusted.depends_on = rewriteCoprocessorDependsOn(
           adjusted.depends_on as Record<string, unknown>,
@@ -643,7 +730,7 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
           locallyBuilt ? {} : gcsArgPolicy.coprocessorDropFlags,
         );
         adjusted.container_name = serviceName;
-        applyCoprocessorSource(adjusted, baseName, gcsInstance, locallyBuilt, plan.e2ePublicRuntime);
+        applyCoprocessorSource(adjusted, baseName, gcsInstance, locallyBuilt, plan.e2ePublicRuntime, plan.versions.env);
         if (locallyBuilt && buildSpec) {
           adjusted.image = retagLocal(service.image, `gcs-${gcs.stackVersion}`);
           // GCS compiles the newer stack version (build arg enables the override feature),
@@ -922,7 +1009,7 @@ const buildExtraCoprocessorListenerOverride = async (
       );
       adjusted.container_name = cloneName;
       // Extra chains keep their env canonical id (default chain), so they don't decode proposals.
-      applyCoprocessorSource(adjusted, baseName, instance, locallyBuilt, plan.e2ePublicRuntime);
+      applyCoprocessorSource(adjusted, baseName, instance, locallyBuilt, plan.e2ePublicRuntime, plan.versions.env);
       delete adjusted.depends_on;
       services[cloneName] = adjusted;
     }
@@ -964,7 +1051,7 @@ const buildExtraCoprocessorListenerOverride = async (
           locallyBuilt ? {} : gcsArgPolicy.coprocessorDropFlags,
         );
         adjusted.container_name = cloneName;
-        applyCoprocessorSource(adjusted, baseName, gcsInstance, locallyBuilt, plan.e2ePublicRuntime);
+        applyCoprocessorSource(adjusted, baseName, gcsInstance, locallyBuilt, plan.e2ePublicRuntime, plan.versions.env);
         if (locallyBuilt && buildSpec) {
           adjusted.image = retagLocal(baseService.image, `gcs-${gcs.stackVersion}`);
           adjusted.build = {
