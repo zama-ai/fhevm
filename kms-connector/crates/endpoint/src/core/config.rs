@@ -1,5 +1,5 @@
 use connector_utils::{
-    config::{DeserializeConfig, default_database_pool_size},
+    config::{DeserializeConfig, default_database_pool_size, deserialize_one_or_many},
     monitoring::{health::default_healthcheck_timeout, server::default_monitoring_endpoint},
 };
 use serde::Deserialize;
@@ -37,6 +37,7 @@ pub struct Config {
     #[serde(default = "default_max_allowed_contracts")]
     pub max_allowed_contracts: usize,
     /// The host chain ids accepted in ciphertext handles.
+    #[serde(deserialize_with = "deserialize_one_or_many")]
     pub supported_chain_ids: Vec<u64>,
 
     /// The service name used for tracing.
@@ -172,6 +173,39 @@ mod tests {
         assert_eq!(config.healthcheck_timeout, Duration::from_secs(7));
 
         cleanup_env_vars();
+    }
+
+    #[test]
+    #[serial(config_tests)]
+    fn test_single_supported_chain_id_from_env() {
+        cleanup_env_vars();
+        unsafe {
+            env::set_var(
+                "KMS_CONNECTOR_DATABASE_URL",
+                "postgres://postgres:postgres@localhost",
+            );
+            env::set_var("KMS_CONNECTOR_SUPPORTED_CHAIN_IDS", "1");
+        }
+
+        let config = Config::from_env_and_file::<&str>(None).unwrap();
+        assert_eq!(config.supported_chain_ids, vec![1]);
+
+        cleanup_env_vars();
+    }
+
+    #[test]
+    #[serial(config_tests)]
+    fn test_single_supported_chain_id_from_file() {
+        cleanup_env_vars();
+        let toml = r#"
+            database_url = "postgres://postgres:postgres@localhost"
+            supported_chain_ids = 1
+        "#;
+        let tmp = std::env::temp_dir().join(format!("endpoint-cfg-{}.toml", std::process::id()));
+        std::fs::write(&tmp, toml).unwrap();
+        let config = Config::from_env_and_file(Some(&tmp)).unwrap();
+        std::fs::remove_file(&tmp).ok();
+        assert_eq!(config.supported_chain_ids, vec![1]);
     }
 
     #[test]
