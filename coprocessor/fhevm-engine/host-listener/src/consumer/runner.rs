@@ -84,7 +84,7 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
     });
     let mut contracts = vec![config.acl_address, config.tfhe_address];
     contracts.extend(config.protocol_config_address);
-    contracts.extend(config.kms_generation_address);
+    contracts.push(config.kms_generation_address);
     contracts.extend(config.confidential_bridge_address);
     let options = IngestOptions {
         dependence_by_connexity: config.dependence_by_connexity,
@@ -209,6 +209,12 @@ impl Runner {
             tick: self.blockchain_tick.clone(),
             cancel: client.cancel_token.clone(),
             in_flight_handlers: RwLock::new(()),
+        });
+        let kms = ingestor.clone();
+        let cancel = client.cancel_token.clone();
+        tasks.spawn(async move {
+            kms.process_kms(cancel).await;
+            Ok(())
         });
         let handler_ingestor = ingestor.clone();
         let handle = move |payload: BlockPayload,

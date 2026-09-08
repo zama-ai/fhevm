@@ -171,3 +171,16 @@ while live processing continues, out-of-order and duplicate delivery, and an
 explicit inclusive end that keeps live consumption running. ABI-encoded TFHE
 and ACL events must produce the exact expected handles in both database tables.
 A control peer stands in for listener-core RPC fetching.
+
+## KMS processing
+
+The required `--kms-generation-address` specifies the KMS contract to monitor.
+A supervised KMS activation worker always runs. Every five seconds it retries the shared legacy processor: cancel orphaned
+candidates, activate finalized ready keys/CRS, and download and verify pending
+material. Downloads do not block broker acknowledgement. The worker stops with
+its delivery subscription during drift recovery and shutdown, and respects stack
+retirement. No additional CLI option is required.
+
+At this stage block finalization must still be supplied by a legacy listener or
+poller. Compressed material for an existing key still requires their RPC-finality
+check; the consumer does not provide an RPC finalized height.

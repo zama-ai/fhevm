@@ -31,12 +31,8 @@ struct Args {
     #[arg(long, help = "TFHE contract address to monitor")]
     tfhe_contract_address: Address,
 
-    #[arg(
-        long,
-        default_value = "",
-        help = "Optional KMS generation contract address to monitor"
-    )]
-    kms_generation_address: String,
+    #[arg(long, help = "KMS generation contract address to monitor")]
+    kms_generation_address: Address,
 
     #[command(flatten)]
     protocol_config: host_listener::protocol_config::ProtocolConfigArgs,
@@ -199,10 +195,7 @@ async fn main() -> anyhow::Result<()> {
         url: args.url,
         acl_address: args.acl_contract_address,
         tfhe_address: args.tfhe_contract_address,
-        kms_generation_address: parse_optional_address(
-            &args.kms_generation_address,
-            "KMS generation contract",
-        )?,
+        kms_generation_address: args.kms_generation_address,
         protocol_config_address,
         confidential_bridge_address: parse_optional_address(
             &args.confidential_bridge_address,

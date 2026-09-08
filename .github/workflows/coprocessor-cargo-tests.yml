@@ -32,6 +32,8 @@ jobs:
               - coprocessor/fhevm-engine/**
               - coprocessor/proto/**
               - host-contracts/rust_bindings/**
+              - listener/crates/consumer/**
+              - listener/crates/shared/**
   cargo-tests:
     name: coprocessor-cargo-test/${{ matrix.service }}
     needs: check-changes
@@ -174,6 +176,19 @@ jobs:
         done
         echo "postgres did not become ready"; exit 1
 
+    - name: Start consumer test broker
+      if: ${{ matrix.package == 'host-listener' }}
+      run: |
+        docker run --rm -d --name consumer-test-redis -p 127.0.0.1:6379:6379 redis:7-alpine
+        for _ in {1..30}; do
+          if docker exec consumer-test-redis redis-cli ping | grep -q PONG; then
+            exit 0
+          fi
+          sleep 1
+        done
+        docker logs consumer-test-redis
+        echo "consumer test broker did not become ready"; exit 1
+
     - name: Run tests with coverage
       if: ${{ !matrix.use_nextest }}
       env:
@@ -190,6 +205,13 @@ jobs:
         fi
         cargo llvm-cov clean --workspace --profile coverage
         cargo llvm-cov test -p "$TEST_PACKAGE" --profile coverage
+        if [ "$TEST_PACKAGE" = "host-listener" ]; then
+          # These integration targets require an isolated broker and Docker.
+          # The glob also includes optional-contract tests added later in the stack.
+          CATCHUP_BROKER_URL=redis://127.0.0.1:6379 \
+            cargo llvm-cov test -p "$TEST_PACKAGE" --profile coverage --no-clean \
+              --test 'consumer_*' -- --ignored
+        fi
       working-directory: coprocessor/fhevm-engine
 
     - name: Run tests with coverage (sharded)

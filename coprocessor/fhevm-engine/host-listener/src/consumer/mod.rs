@@ -35,7 +35,7 @@ pub struct ConsumerConfig {
     pub url: String,
     pub acl_address: Address,
     pub tfhe_address: Address,
-    pub kms_generation_address: Option<Address>,
+    pub kms_generation_address: Address,
     pub protocol_config_address: Option<Address>,
     pub confidential_bridge_address: Option<Address>,
     pub database_url: DatabaseURL,

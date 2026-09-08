@@ -59,7 +59,7 @@ async fn exercise_catchup(bounded: bool) {
         url: broker_url,
         acl_address: Address::ZERO,
         tfhe_address: Address::repeat_byte(1),
-        kms_generation_address: None,
+        kms_generation_address: Address::repeat_byte(2),
         protocol_config_address: None,
         confidential_bridge_address: None,
         database_url: instance.db_url.clone(),
