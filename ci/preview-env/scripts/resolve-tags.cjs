@@ -2,8 +2,8 @@
 // namespace, and write the deployment-plan job summary. Invoked from the
 // resolve-tags github-script step:
 //   await require('./ci/preview-env/scripts/resolve-tags.cjs')({ core, context, github })
-// Env: NEEDS, EVENT_NAME, INPUTS, ACTOR, MAX_IMAGE_COMMIT_COUNT, GHCR_USER,
-// GHCR_READ_TOKEN.
+// Env: NEEDS, EVENT_NAME, INPUTS (parsed overrides_json from check-labels),
+// ACTOR, MAX_IMAGE_COMMIT_COUNT, GHCR_USER, GHCR_READ_TOKEN.
 //
 // Per image: built this run -> this run's short SHA; else a non-empty
 // <component>_version dispatch input; else the short SHA of the newest ancestor
@@ -136,10 +136,24 @@ module.exports = async ({ core, context, github }) => {
   // PR head SHA on pull_request; picked branch tip on dispatch.
   const shortSha = isDispatch ? short(context.sha) : short(context.payload.pull_request.head.sha);
 
-  // Empty dispatch input = "resolve it"; pull_request runs never override.
-  const override = (name) => (isDispatch ? String(inputs[name] ?? '').trim() : '');
+  // Non-empty <component>_version from check-labels overrides_json. Empty on
+  // pull_request (parse-overrides never fills image pins on PR). Empty on
+  // dispatch means "resolve from the base commit".
+  const override = (name) => String(inputs[name] ?? '').trim();
 
   const registry = registryClient({ core, user: process.env.GHCR_USER, token: process.env.GHCR_READ_TOKEN });
+
+  // GCS workers compiled with BUILD_STACK_VERSION publish as <sha>-gcs<ver>
+  // (see coprocessor-docker-build.yml image_tag). db-migration stays on <sha>.
+  const gcsImageTag = String(needs['build-coprocessor']?.outputs?.image_tag || '').trim();
+  const gcsBuiltKeys = new Set([
+    'coprocessor_gw_listener',
+    'coprocessor_host_listener',
+    'coprocessor_sns_worker',
+    'coprocessor_tfhe_worker',
+    'coprocessor_tx_sender',
+    'coprocessor_zkproof_worker',
+  ]);
 
   // 'success' -> freshly built+pushed; ''/undefined/'skipped' -> not built this
   // run. Anything else is FATAL: a failed build must not fall back to an older
@@ -182,7 +196,8 @@ module.exports = async ({ core, context, github }) => {
   for (const image of IMAGES) {
     const value = override(`${image.component}_version`);
     if (wasBuilt(image)) {
-      decisions.set(image.key, { tag: shortSha, source: 'built', detail: `built this run (${shortSha})` });
+      const tag = gcsImageTag && gcsBuiltKeys.has(image.key) ? gcsImageTag : shortSha;
+      decisions.set(image.key, { tag, source: 'built', detail: `built this run (${tag})` });
     } else if (value) {
       decisions.set(image.key, { tag: value, source: 'dispatch-override', detail: 'explicit dispatch input' });
     }
@@ -282,8 +297,9 @@ module.exports = async ({ core, context, github }) => {
         : `fhevm e2e preview - deployment plan (PR #${context.payload.pull_request.number}, ${shortSha})`,
     )
     .addRaw(
-      `Base commit: ${baseWhy} \`${short(baseSha)}\`. Images built this run are tagged \`${shortSha}\`; ` +
-        `the rest resolve from the base commit (table below). Helm charts install from this run's ` +
+      `Base commit: ${baseWhy} \`${short(baseSha)}\`. Images built this run are tagged \`${shortSha}\`` +
+        (gcsImageTag ? `; GCS coprocessor workers use \`${gcsImageTag}\`` : '') +
+        `; the rest resolve from the base commit (table below). Helm charts install from this run's ` +
         `checkout unless overridden (see preview-env-deploy.yml).\n\n`,
     )
     .addHeading('Images', 3)
@@ -303,7 +319,7 @@ module.exports = async ({ core, context, github }) => {
         unresolved.map((i) => `  - ${i.label} (${decisions.get(i.key).detail})`).join('\n') +
         `\nThere are deliberately no fallback pins. Fix the dispatch override tag if one is listed ` +
         `above; otherwise the registry likely pruned these tags - raise MAX_IMAGE_COMMIT_COUNT, ` +
-        `rebase onto a newer base commit, or pass an explicit version via workflow_dispatch.`,
+        `rebase onto a newer base commit, or pass an explicit version in the overrides input.`,
     );
   }
 
