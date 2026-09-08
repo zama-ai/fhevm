@@ -1,6 +1,9 @@
 import { address } from '@solana/kit';
 import { describe, expect, test } from 'bun:test';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
 
+import { REPO_ROOT } from '../../layout';
 import { SOLANA_DEFAULT_PUBLIC_DECRYPT_CONTEXT } from '../../layout';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '../internal/generated/confidentialToken/programAddress.js';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '../internal/generated/zamaHost/programAddress.js';
@@ -48,4 +51,27 @@ describe('solana program profiles', () => {
       else process.env.SOLANA_PROGRAM_PROFILE = original;
     }
   });
+});
+
+test('deployment profiles match Anchor and the Rust feature declarations', async () => {
+  const anchor = await readFile(path.join(REPO_ROOT, 'solana/Anchor.toml'), 'utf8');
+  for (const profile of ['localnet', 'preview-env'] as const) {
+    const ids = programIdsFor(profile);
+    const section = anchor.split(`[programs.${profile === 'localnet' ? 'localnet' : 'devnet'}]`)[1]!.split('[')[0]!;
+    for (const [program, id] of Object.entries({
+      zama_host: ids.zamaHost,
+      confidential_token: ids.confidentialToken,
+      demo_vault: ids.demoVault,
+      confidential_batcher: ids.confidentialBatcher,
+    })) {
+      expect(section).toContain(`${program} = "${id}"`);
+      const source = await readFile(
+        path.join(REPO_ROOT, 'solana/programs', program.replaceAll('_', '-'), 'src/lib.rs'),
+        'utf8',
+      );
+      const cfg =
+        profile === 'preview-env' ? '#[cfg(feature = "preview-env")]' : '#[cfg(not(feature = "preview-env"))]';
+      expect(source).toContain(`${cfg}\ndeclare_id!("${id}");`);
+    }
+  }
 });

@@ -214,3 +214,21 @@ describe('bootstrapZamaHost', () => {
     expect(sent).toHaveLength(0);
   });
 });
+
+test('first-deploy preflight rejects malformed inputs without sending initialization', async () => {
+  const payer = await generateKeyPairSigner();
+  const { context, sent } = await fakeContext(false, payer.address);
+  for (const invalid of [
+    { coprocessorThreshold: 0 },
+    { coprocessorThreshold: 2 },
+    { coprocessorThreshold: 256 },
+    { kmsCorruptionThreshold: -1 },
+    { kmsCorruptionThreshold: 1.5 },
+    { gateway: { ...gateway, gatewayChainId: 1n << 63n } },
+    { gateway: { ...gateway, kmsSigners: [address20(0)] } },
+    { gateway: { ...gateway, coprocessorSigners: [address20(1), address20(1)] } },
+  ]) {
+    await expect(bootstrapZamaHost(context, { payer, gateway, validateOnly: true, ...invalid })).rejects.toThrow();
+  }
+  expect(sent).toHaveLength(0);
+});

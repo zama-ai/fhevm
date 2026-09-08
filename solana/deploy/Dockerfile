@@ -6,11 +6,13 @@
 # Build from repo root:
 #   docker build --platform=linux/amd64 -f solana/deploy/Dockerfile -t ghcr.io/zama-ai/fhevm/solana-programs:local .
 
+ARG PROGRAM_PROFILE=preview-env
 ARG SOLANA_VERSION=4.1.2
 ARG ANCHOR_VERSION=1.1.2
 ARG KUBECTL_VERSION=v1.32.3
 
 FROM --platform=linux/amd64 ubuntu:24.04 AS sbf
+ARG PROGRAM_PROFILE
 ARG SOLANA_VERSION
 ARG ANCHOR_VERSION
 ENV DEBIAN_FRONTEND=noninteractive
@@ -33,14 +35,16 @@ RUN curl -sSfL "https://github.com/solana-foundation/anchor/releases/download/v$
     && solana --version && anchor --version
 
 WORKDIR /src/solana
-COPY solana/ /src/solana/
+COPY solana/Anchor.toml solana/Cargo.toml solana/Cargo.lock solana/rust-toolchain.toml ./
+COPY solana/programs/ programs/
+COPY solana/crates/ crates/
+COPY solana/runtime-tests/ runtime-tests/
+COPY solana/test-kit/ test-kit/
+COPY solana/scripts/build-programs.sh scripts/build-programs.sh
 # Preview-env profile: compile `declare_id!` behind `--features preview-env`.
 # Program private keys are first-deploy runtime secrets (k8s / AWS), not a build input.
-RUN rustup show \
-    && anchor build --ignore-keys --no-idl -p zama_host -- --features preview-env \
-    && anchor build --ignore-keys --no-idl -p confidential_token -- --features preview-env \
-    && anchor build --ignore-keys --no-idl -p demo_vault -- --features preview-env \
-    && anchor build --ignore-keys --no-idl -p confidential_batcher -- --features preview-env
+RUN rustup show && bash scripts/build-programs.sh "$PROGRAM_PROFILE" \
+      zama_host confidential_token demo_vault confidential_batcher
 
 FROM --platform=linux/amd64 oven/bun:1.3.14-debian AS bundle
 WORKDIR /src/test-suite/fhevm
@@ -53,6 +57,7 @@ COPY solana/deploy/profiles/preview-env/program-ids.json /src/solana/deploy/prof
 RUN bun build src/solana/host-deploy/cli.ts --target=node --outfile=/out/cli.mjs
 
 FROM --platform=linux/amd64 node:22-bookworm-slim AS prod
+ARG PROGRAM_PROFILE
 ARG KUBECTL_VERSION
 RUN apt-get update && apt-get install -y --no-install-recommends \
       bash ca-certificates curl libssl3 libudev1 postgresql-client \
@@ -76,7 +81,7 @@ WORKDIR /app
 ENV HOME=/home/fhevm
 ENV SOLANA_ARTIFACTS_DIR=/app/programs
 ENV ADDRESSES_DIR=/app/addresses
-ENV SOLANA_PROGRAM_PROFILE=preview-env
+ENV SOLANA_PROGRAM_PROFILE=$PROGRAM_PROFILE
 # Compose uses this ENTRYPOINT (same as host-contracts). The Helm Job overrides `command` to
 # `/app/deploy-contracts.sh`, which then runs `deployCommands`.
 ENTRYPOINT ["node", "/app/cli.mjs"]

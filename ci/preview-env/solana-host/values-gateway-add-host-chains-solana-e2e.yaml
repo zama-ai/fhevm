@@ -21,6 +21,7 @@
 # GATEWAY_CONFIG_ADDRESS from addresses/.env.gateway.
 scDeploy:
   enabled: true
+  runOnUpgrade: true
   image:
     name: hub.zama.org/ghcr/zama-ai/fhevm/gateway-contracts
     tag: latest

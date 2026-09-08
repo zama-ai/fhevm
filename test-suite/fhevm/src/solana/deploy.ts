@@ -9,7 +9,6 @@
 //
 // Run directly (from test-suite/fhevm, after `fhevm-cli up --scenario solana`):
 //   bun run src/solana/deploy.ts
-import { type TransactionSigner, createKeyPairSignerFromBytes } from '@solana/kit';
 import { closeSync, openSync } from 'node:fs';
 import path from 'node:path';
 
@@ -19,13 +18,11 @@ import { readEnvFile } from '../utils/fs';
 import { run, runStreaming } from '../utils/process';
 import { until } from '../utils/until';
 import { SOLANA_HOST_CHAIN_ID, SOLANA_HOST_CHAIN_ID_I64, readGatewayBootstrapInputs } from './addresses';
-import { bootstrapZamaHost } from './host-deploy/bootstrap';
 import { registerSolanaCoprocessorSql } from './host-deploy/coprocessor';
-import { createProvisioningContext } from './provision';
+import { deployHostPrograms } from './host-deploy/deploy-host';
 import {
   SOLANA_E2E_PROGRAMS,
   VALIDATOR_RPC_URL,
-  VALIDATOR_WS_URL,
   airdropDeployFees,
   ensureDeployerWallet,
   seedProgramKeypairs,
@@ -34,50 +31,33 @@ import {
 
 export { bootstrapZamaHost, kmsCertificateThreshold } from './host-deploy/bootstrap';
 
-/** Reads the standard 64-byte Solana CLI keypair file into a kit signer. */
-const loadKeypairSigner = async (keypairPath: string): Promise<TransactionSigner> => {
-  const bytes = Uint8Array.from(JSON.parse(await Bun.file(keypairPath).text()) as number[]);
-  return createKeyPairSignerFromBytes(bytes);
-};
-
 const SOLANA_DIR = path.join(REPO_ROOT, 'solana');
 const ENGINE_DIR = path.join(REPO_ROOT, 'coprocessor', 'fhevm-engine');
 
-/**
- * Two separate `-p` builds, not one workspace build: these produce exactly the two
- * `target/deploy/*.so` the deploy loop reads, and naming them keeps the e2e from building the
- * batcher and the demo vault it never deploys. --use-rpc: deploy over RPC (8899) since the
- * container doesn't publish the TPU ports. Returns the deployed zama_host program id.
- */
-const buildAndDeployPrograms = async (deployerKeypairPath: string): Promise<string> => {
-  console.log(`    building ${SOLANA_E2E_PROGRAMS.join(' + ')}`);
-  for (const program of SOLANA_E2E_PROGRAMS) {
-    await runStreaming(['anchor', 'build', '--ignore-keys', '--no-idl', '-p', program], { cwd: SOLANA_DIR });
-  }
-  for (const program of SOLANA_E2E_PROGRAMS) {
-    await run([
-      'solana',
-      'program',
-      'deploy',
-      '-u',
-      VALIDATOR_RPC_URL,
-      '-k',
-      deployerKeypairPath,
-      '--use-rpc',
-      '--program-id',
-      path.join(SOLANA_DIR, 'target', 'deploy', `${program}-keypair.json`),
-      path.join(SOLANA_DIR, 'target', 'deploy', `${program}.so`),
-    ]);
-  }
-  const zamaHostId = (
-    await run(['solana', 'address', '-k', path.join(SOLANA_DIR, 'target', 'deploy', 'zama_host-keypair.json')])
-  ).stdout.trim();
-  console.log(`    zama_host=${zamaHostId} deployed`);
-  return zamaHostId;
+const buildAndDeployPrograms = async (
+  deployerKeypairPath: string,
+  gateway: Awaited<ReturnType<typeof readGatewayBootstrapInputs>>,
+): Promise<string> => {
+  await runStreaming(['bash', 'scripts/build-programs.sh', 'localnet', ...SOLANA_E2E_PROGRAMS], { cwd: SOLANA_DIR });
+  const artifactsDir = path.join(SOLANA_DIR, 'target', 'deploy');
+  const ids = await deployHostPrograms({
+    databaseUrl: await readCoprocessorDatabaseUrl(),
+    rpcUrl: VALIDATOR_RPC_URL,
+    deployerKeypairPath,
+    artifactsDir,
+    gateway,
+    coprocessorThreshold: readIntegerEnv('COPROCESSOR_THRESHOLD', 1),
+    kmsCorruptionThreshold: readIntegerEnv('KMS_THRESHOLD', 0),
+    programKeypairPaths: Object.fromEntries(
+      SOLANA_E2E_PROGRAMS.map((program) => [program, path.join(artifactsDir, `${program}-keypair.json`)]),
+    ),
+    programs: SOLANA_E2E_PROGRAMS,
+  });
+  return ids.zama_host!;
 };
 
 /** The coprocessor DB URL from the generated env, repointed at the host-published port. */
-const readCoprocessorDatabaseUrl = async (): Promise<string> => {
+export const readCoprocessorDatabaseUrl = async (): Promise<string> => {
   const environment = await readEnvFile(envPath('coprocessor'));
   const url = environment.DATABASE_URL;
   if (!url) throw new Error('missing DATABASE_URL in the generated coprocessor env');
@@ -191,7 +171,7 @@ const registerSolanaHostChain = async (parameters: {
  * transaction instructions; created-public lifecycle outputs retain a narrow CPI event.
  * Handle-derivation params are auto-detected from the on-chain HostConfig PDA at startup.
  */
-const startHostListener = async (parameters: {
+export const startHostListener = async (parameters: {
   readonly zamaHostId: string;
   readonly databaseUrl: string;
   readonly grpcUrl: string;
@@ -233,7 +213,7 @@ const startHostListener = async (parameters: {
   }
   // One shared descriptor for stdout+stderr — the same interleaving `>log 2>&1` produces; the
   // child holds its own duplicate, so the parent copy closes right away.
-  const logFd = openSync(path.join(parameters.logDir, 'host-listener.log'), 'w');
+  const logFd = openSync(path.join(parameters.logDir, 'host-listener.log'), 'a');
   const listener = Bun.spawn(
     [
       path.join(ENGINE_DIR, 'target', 'debug', 'solana_host_listener'),
@@ -264,7 +244,7 @@ const startHostListener = async (parameters: {
 const readIntegerEnv = (name: string, fallback: number): number => {
   const raw = process.env[name];
   if (raw === undefined || raw === '') return fallback;
-  const value = Number.parseInt(raw, 10);
+  const value = Number(raw);
   if (!Number.isSafeInteger(value) || value < 0) throw new Error(`${name} must be a non-negative integer`);
   return value;
 };
@@ -328,17 +308,7 @@ export const provisionSolanaHostNode = async (): Promise<{ zamaHostId: string }>
     pluginLibPath: process.env.PLUGIN_LIB || undefined,
   });
   await airdropDeployFees(deployerKeypairPath);
-  const zamaHostId = await buildAndDeployPrograms(deployerKeypairPath);
-
-  console.log('==> [3/5] bootstrap zama-host (real gateway/ProtocolConfig values, mock/test OFF)');
-  const payer = await loadKeypairSigner(deployerKeypairPath);
-  const context = createProvisioningContext(VALIDATOR_RPC_URL, VALIDATOR_WS_URL);
-  await bootstrapZamaHost(context, {
-    payer,
-    gateway,
-    coprocessorThreshold: readIntegerEnv('COPROCESSOR_THRESHOLD', 1),
-    kmsCorruptionThreshold: readIntegerEnv('KMS_THRESHOLD', 0),
-  });
+  const zamaHostId = await buildAndDeployPrograms(deployerKeypairPath, gateway);
 
   console.log('==> [4/5] register Solana host chain (coprocessor DB + gateway)');
   await registerSolanaHostChain({ zamaHostId, composeProject });

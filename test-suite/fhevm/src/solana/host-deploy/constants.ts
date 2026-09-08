@@ -20,4 +20,4 @@ export const SOLANA_DEPLOY_PROGRAMS = [
   'demo_vault',
   'confidential_batcher',
 ] as const;
-export type SolanaDeployProgram = (typeof SOLANA_DEPLOY_PROGRAMS)[number];
+export type SolanaDeployProgram = (typeof SOLANA_DEPLOY_PROGRAMS)[number] | 'encrypted_counter' | 'dep_chain';

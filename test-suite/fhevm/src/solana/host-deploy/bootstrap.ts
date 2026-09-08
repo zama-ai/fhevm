@@ -37,6 +37,9 @@ const BPF_UPGRADEABLE_LOADER = 'BPFLoaderUpgradeab1e11111111111111111111111' as 
  * needs 2t+1 matching signatures, and KMS core requires parties == 3t+1.
  */
 export const kmsCertificateThreshold = (kmsCorruptionThreshold: number, registeredSignerCount: number): number => {
+  if (!Number.isSafeInteger(kmsCorruptionThreshold) || kmsCorruptionThreshold < 0 || kmsCorruptionThreshold > 255) {
+    throw new Error('KMS_THRESHOLD must be an unsigned byte');
+  }
   const certificateThreshold = 2 * kmsCorruptionThreshold + 1;
   if (certificateThreshold > registeredSignerCount) {
     throw new Error(
@@ -80,7 +83,37 @@ export type BootstrapZamaHostParams = {
   readonly validateOnly?: boolean;
 };
 
+// Mirror program input constraints so malformed first-deploy config cannot upload bytecode first.
+export const validateBootstrapInputs = (params: BootstrapZamaHostParams): void => {
+  for (const [name, signers, maximum] of [
+    ['coprocessor', params.gateway.coprocessorSigners, 8],
+    ['KMS', params.gateway.kmsSigners, 16],
+  ] as const) {
+    const addresses = signers.map((signer) => Buffer.from(signer).toString('hex'));
+    if (
+      signers.length < 1 ||
+      signers.length > maximum ||
+      signers.some((s) => s.length !== 20 || s.every((b) => b === 0)) ||
+      new Set(addresses).size !== signers.length
+    ) {
+      throw new Error(`${name} signer set must contain 1..${maximum} distinct nonzero 20-byte addresses`);
+    }
+  }
+  const threshold = params.coprocessorThreshold ?? 1;
+  if (!Number.isSafeInteger(threshold) || threshold < 1 || threshold > params.gateway.coprocessorSigners.length) {
+    throw new Error('coprocessor threshold must be between 1 and signer count');
+  }
+  if (params.gateway.gatewayChainId < 0n || params.gateway.gatewayChainId >= 1n << 63n) {
+    throw new Error('gateway chain id must be an EVM u64 with the chain-type bit clear');
+  }
+  if (params.gateway.decryptionContract.length !== 20 || params.gateway.inputVerificationContract.length !== 20) {
+    throw new Error('gateway contract addresses must be 20 bytes');
+  }
+  kmsCertificateThreshold(params.kmsCorruptionThreshold ?? 0, params.gateway.kmsSigners.length);
+};
+
 export const bootstrapZamaHost = async (context: HostDeployContext, params: BootstrapZamaHostParams): Promise<void> => {
+  validateBootstrapInputs(params);
   const programAddress = params.programAddress ?? ZAMA_HOST_PROGRAM_ADDRESS;
   const eventAuthority = await zamaEventAuthorityAddress(programAddress);
   const programData = await programDataAddressFor(programAddress);
@@ -91,7 +124,7 @@ export const bootstrapZamaHost = async (context: HostDeployContext, params: Boot
 
   const kmsCorruptionThreshold = params.kmsCorruptionThreshold ?? 0;
   const certificateThreshold = kmsCertificateThreshold(kmsCorruptionThreshold, params.gateway.kmsSigners.length);
-  const existing = await fetchEncodedAccount(context.rpc, hostConfig);
+  const existing = await fetchEncodedAccount(context.rpc, hostConfig, { commitment: 'confirmed' });
 
   if (existing.exists) {
     const equalBytes = (a: ArrayLike<number>, b: ArrayLike<number>) => Buffer.from(a).equals(Buffer.from(b));
@@ -141,7 +174,7 @@ export const bootstrapZamaHost = async (context: HostDeployContext, params: Boot
   }
 
   const [kmsContext] = await findKmsContextPda({ contextId: BRINGUP_KMS_CONTEXT_ID }, { programAddress });
-  const existingContext = await fetchEncodedAccount(context.rpc, kmsContext);
+  const existingContext = await fetchEncodedAccount(context.rpc, kmsContext, { commitment: 'confirmed' });
   if (existingContext.exists) {
     // The Codama subset exports the instruction/threshold codec but not the KmsContext account.
     // Account layout is defined in zama-host/src/state/kms_context.rs.

@@ -8,6 +8,9 @@ scDeploy:
   configmap:
     name: solana-demo-addresses
   env:
+    - name: SOLANA_DEPLOY_DATABASE_URL
+      valueFrom:
+        secretKeyRef: {name: solana-deployment-lock, key: database-url}
     - name: SOLANA_RPC_URL
       valueFrom:
         secretKeyRef: {name: solana-rpc, key: rpc-url}
@@ -16,13 +19,13 @@ scDeploy:
         secretKeyRef: {name: solana-deployer, key: deployer.json}
     - name: SOLANA_CONFIDENTIAL_TOKEN_KEYPAIR_JSON
       valueFrom:
-        secretKeyRef: {name: solana-deployer, key: confidential_token.json}
+        secretKeyRef: {name: solana-deployer, key: confidential_token.json, optional: true}
     - name: SOLANA_DEMO_VAULT_KEYPAIR_JSON
       valueFrom:
-        secretKeyRef: {name: solana-deployer, key: demo_vault.json}
+        secretKeyRef: {name: solana-deployer, key: demo_vault.json, optional: true}
     - name: SOLANA_CONFIDENTIAL_BATCHER_KEYPAIR_JSON
       valueFrom:
-        secretKeyRef: {name: solana-deployer, key: confidential_batcher.json}
+        secretKeyRef: {name: solana-deployer, key: confidential_batcher.json, optional: true}
     - {name: SOLANA_PROGRAM_PROFILE, value: preview-env}
   deployCommands:
     - node /app/cli.mjs demos deploy

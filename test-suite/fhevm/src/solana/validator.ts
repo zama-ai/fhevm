@@ -49,7 +49,8 @@ export const renderGeyserConfig = (template: string, pluginLibPath: string): str
  */
 export const validatorStartArgs = (parameters: {
   readonly ledgerDir: string;
-  readonly geyserConfigPath: string;
+  readonly geyserConfigPath?: string;
+  readonly rpcPort?: number;
   /**
    * Foreign programs loaded at genesis at their canonical addresses — no keypair, no deploy
    * transaction. The Squads e2e uses this: `solana program deploy --program-id` needs the
@@ -62,15 +63,14 @@ export const validatorStartArgs = (parameters: {
   "solana-test-validator",
   "--reset",
   "--rpc-port",
-  "8899",
+  String(parameters.rpcPort ?? 8899),
   "--bind-address",
   "127.0.0.1",
   "--ledger",
   parameters.ledgerDir,
   "--deactivate-feature",
   "B8JJXCy5amZyWG9r7EnUYLwzXSXTxG7GZ1qZ1qggo83g",
-  "--geyser-plugin-config",
-  parameters.geyserConfigPath,
+  ...(parameters.geyserConfigPath ? ["--geyser-plugin-config", parameters.geyserConfigPath] : []),
   ...(parameters.genesisPrograms ?? []).flatMap((program) => ["--bpf-program", program.address, program.soPath]),
   ...(parameters.genesisAccounts ?? []).flatMap((account) => ["--account", account.address, account.jsonPath]),
 ];

@@ -24,3 +24,6 @@ kmsConnectorKmsWorker:
         solanaProofEndpoints:
           - http://coprocessor-1-solana-host-listener:8080
         solanaProofApiKey: "$(SOLANA_PROOF_API_KEY)"
+
+kmsConnectorDbMigration:
+  runOnUpgrade: true

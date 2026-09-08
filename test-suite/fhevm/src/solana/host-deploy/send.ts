@@ -27,19 +27,26 @@ export type HostDeployContext = {
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
-export const createHostDeployContext = (rpcUrl: string): HostDeployContext => {
+export const createHostDeployContext = (rpcUrl: string, signal?: AbortSignal): HostDeployContext => {
   const rpc = createSolanaRpc(rpcUrl);
   return {
     rpc,
     async sendTransaction(payer, instructions) {
-      const { value: latestBlockhash } = await rpc.getLatestBlockhash().send();
+      signal?.throwIfAborted();
+      const { value: latestBlockhash } = await rpc.getLatestBlockhash({ commitment: 'confirmed' }).send();
       const base = setTransactionMessageFeePayerSigner(payer, createTransactionMessage({ version: 0 }));
       const withLifetime = setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, base);
       const message = appendTransactionMessageInstructions([...instructions], withLifetime);
       const signedTransaction = await signTransactionMessageWithSigners(message);
       assertIsTransactionWithBlockhashLifetime(signedTransaction);
       const signature = getSignatureFromTransaction(signedTransaction);
-      await rpc.sendTransaction(getBase64EncodedWireTransaction(signedTransaction), { encoding: 'base64' }).send();
+      signal?.throwIfAborted();
+      await rpc
+        .sendTransaction(getBase64EncodedWireTransaction(signedTransaction), {
+          encoding: 'base64',
+          preflightCommitment: 'confirmed',
+        })
+        .send();
       const deadline = Date.now() + CONFIRM_TIMEOUT_MS;
       for (;;) {
         const { value } = await rpc.getSignatureStatuses([signature]).send();

@@ -1,105 +1,166 @@
 # Solana deployment
 
-The deployer image contains compiled programs and a CLI. It does not run a validator,
-listener, coprocessor or KMS. JSON-RPC endpoints and private keypairs are runtime inputs.
-The same image runs directly with Docker or inside the existing `charts/contracts` Job.
+The image packages Anchor's compiled `.so` programs and a Node CLI. Solana's CLI owns
+uploading and upgrading those programs. Our code owns selecting artifacts, checking the
+existing deployment, and initializing the FHEVM host from the live gateway configuration.
+It does not run the validator, listener, coprocessor or KMS.
+
+```mermaid
+flowchart LR
+  Source[Program source] --> Build[Shared pinned Anchor build]
+  Build --> Artifacts[Compiled .so programs]
+  Artifacts --> Local[Local test harness]
+  Artifacts --> Image[Deployment image]
+  Local --> Deploy[Shared host deployment]
+  Image --> Deploy
+  Deploy --> CLI[Solana CLI]
+  CLI --> Chain[Solana programs and accounts]
+```
+
+## Build and run
+
+`solana/scripts/build-programs.sh` is the build entry point for the local harness,
+demo and Dockerfile. It checks the Anchor/Solana versions pinned in `Anchor.toml` and
+builds the selected programs, including their Cargo dependencies. It does not cache by
+source timestamps or maintain a separate artifact registry.
 
 ```sh
+bash solana/scripts/build-programs.sh localnet zama_host confidential_token
+# Default image profile is preview-env; localnet builds are used by packaged CLI tests.
+docker build -f solana/deploy/Dockerfile -t solana-programs:<sha> .
 docker run --rm --env-file /path/to/deployment.env solana-programs:<sha> host deploy
+docker run --rm --env-file /path/to/deployment.env solana-programs:<sha> host upgrade
 docker run --rm --env-file /path/to/deployment.env solana-programs:<sha> demos deploy
 ```
 
-`host deploy` validates existing HostConfig/gateway bindings, deploys the host and
-initializes missing host/KMS accounts. `demos deploy` deploys example programs separately.
-`host upgrade` and `demos upgrade` require the selected programs to exist, upgrade their
-bytecode at the same addresses, and do not reset application state. Host configuration
-mismatches fail instead of silently attaching an existing host to a new gateway.
+Profiles select **compiled program identities**, not RPC networks. The same artifact can
+run on a local validator or another Solana cluster at those identities. A new identity
+requires rebuilding; changing `SOLANA_RPC_URL` cannot change `declare_id!`. Tests check
+that Rust declarations, Anchor configuration and deployer profiles agree. Existing IDL
+and generated-client checks remain authoritative for the local client ABI.
 
-Program identities are selected at build time; changing the RPC URL does not change the
-compiled identities. The current image builds the preview identities. Local native e2e
-keeps its local identities. Never supply private keys to an image build.
+The local e2e harness builds and selects the host, token and two specimen programs. The
+`host` image command selects only the host. `demos` selects confidential-token, demo-vault
+and confidential-batcher. Wallets, mints and example data remain separate test fixtures.
 
-## Preview integration
+## Deployment and upgrade behavior
 
-Use the component scripts/launcher from Fred's preview refactor (#3681). The Solana
-values files in `ci/preview-env/solana-host` extend the existing charts:
-
-| Values file | Chart | Install into |
-| --- | --- | --- |
-| `values-solana-programs-e2e.yaml` | contracts | `solana-host` |
-| `values-gateway-add-host-chains-solana-e2e.yaml` | contracts | gateway registration release |
-| `values-solana-register-coprocessor-e2e.yaml` | contracts | one registration Job per coprocessor database |
-| `values-solana-coprocessor-e2e.yaml` | coprocessor | each existing coprocessor release |
-| `values-solana-connector-e2e.yaml` | kms-connector | each existing connector release |
-| `values-solana-demos-e2e.yaml` | contracts | optional `solana-demos` |
-
-Merge these overlays with the existing environment/party values. Pin compatible image
-tags from the same source revision, including the listener's Solana features and database
-migration. The connector example lists one coprocessor; supply every participating
-coprocessor's Service URL for a multi-party environment. Helm replaces lists, so preserve
-any additional EVM chains and environment entries when composing overlays.
-
-1. Synchronize namespace secrets using the existing `sync-secrets` chart.
-2. Deploy the gateway and its signer configuration, then `solana-host`.
-3. Register the Solana chain on the gateway. Complete canonical key generation.
-4. Run `coprocessor register` once against each coprocessor database, with `DATABASE_URL`
-   and `SOLANA_KEY_SOURCE_CHAIN_ID`. It registers the host and mirrors the canonical host's
-   key material using the same SQL as local bring-up. This is preview bootstrap, not a
-   production key synchronization service. On later key rotations rerun registration.
-5. Start/restart workers after registration: the zkproof worker caches host chains at
-   startup. Enable the Solana listener and configure the connectors' proof endpoints.
-6. Confirm a controlled transaction is ingested before creating demo encrypted values.
-   Then deploy the optional applications and drive their selected test scenario.
-
-The listener stores computations, MMR leaves and its checkpoint in the existing
-coprocessor database. It has one replica and uses `Recreate` to avoid overlapping writers.
-Its proof API uses a ClusterIP Service and a bearer key. There is no public ingress.
-Use the cluster's network policies to restrict callers as appropriate to the environment.
-`/healthz` proves database/HTTP availability, not historical completeness or catch-up.
-
-### Secrets
-
-| Kubernetes Secret | Keys |
+| Observed state | Result |
 | --- | --- |
-| `solana-deployer` | `deployer.json`, `zama_host.json`, `confidential_token.json`, `demo_vault.json`, `confidential_batcher.json` |
+| Program absent, valid inputs and first-deploy key supplied | Deploy and initialize missing host accounts |
+| Same bytecode and matching host configuration | Success, log `unchanged`, return existing addresses |
+| Host initialized but KMS context missing | Complete the missing initialization |
+| Different bytecode with `deploy` | Fail before uploading; require explicit `upgrade` |
+| Different bytecode with `upgrade` | Check authority, upgrade at the same address, preserve accounts |
+| Incompatible configuration or malformed initial inputs | Fail before changing bytecode |
+| Another deployment holds the host lock | Fail promptly; retry after it finishes |
+
+Bytecode comparison reads the deployed program through the Solana CLI and accounts for
+zero-filled allocation padding. Deployment waits for the loader's next-slot activation.
+All RPC commands use the supplied signer and confirmed commitment, including bootstrap
+preflight; they do not depend on the developer's global Solana configuration.
+
+Every caller for the same host/cluster uses a PostgreSQL advisory lock through
+`SOLANA_DEPLOY_DATABASE_URL`. The lock covers validation, deployment and initialization.
+Use the **same database** from CI, Kubernetes and local invocations; port-forwarding to
+that database is fine. The lock uses the Solana genesis hash and host ID. It creates no
+tables and releases on session close. The local harness uses its existing coprocessor DB.
+
+`SOLANA_DEPLOYER_KEYPAIR` and `SOLANA_<PROGRAM>_KEYPAIR` accept standard Solana keypair
+paths; their `_JSON` counterparts support Kubernetes Secret injection. Original program
+keypairs are needed only for first deployment. The fee payer/upgrade authority remains a
+runtime input. No private key is a build input or packaged into the image.
+
+A compatible upgrade preserves program IDs, PDAs and account data. This CLI does not
+invent state migrations or make incompatible account layouts safe. Those changes need an
+explicit migration or a fresh experiment. Helm rollback does not roll back on-chain code.
+
+## Persistent preview
+
+Use `preview-env-deploy.yml` with `solana_action=deploy` for the initial experiment.
+Set `preview_namespace` to that run's namespace on later runs, with `deploy` for a no-op
+check or `upgrade` to permit changed code. Set `solana_demos=true` to include applications.
+The normal EVM preview path is unchanged. Solana currently requires the dedicated Anvil
+gateway and canonical EVM host; Polygon and shared blockchain-dev combinations are rejected.
+
+Image/chart overrides now use the validated `overrides` JSON input, adopting the parser
+from Fred's #3681. The workflow does not depend on his blue-green deployment topology.
+Solana images built by the workflow use its source revision, like the other components.
+
+Initial bootstrap creates the gateway, KMS, canonical keys and databases once. Anvil is
+configured to save state to its existing PVC. Later Solana rollouts preserve bootstrap
+resources, verify recorded EVM contract code and canonical keys, then:
+
+1. Validate/deploy/upgrade the host and register its chain on the gateway.
+2. Register the host and mirror canonical key material in each coprocessor database.
+3. Upgrade coprocessors, enable the singleton Yellowstone listener, and restart zkproof
+   workers to refresh their host-chain cache.
+4. Upgrade KMS connectors with every coprocessor's private proof endpoint; retain EVM
+   configuration. Add the Solana chain to the relayer.
+5. Wait for listener checkpoints to advance, then optionally deploy example programs.
+
+The listener persists computations, MMR leaves and its checkpoint in the coprocessor DB.
+Its proof API is a ClusterIP Service with bearer authentication and no public ingress.
+Checkpoint progress proves stream delivery; confidential-operation/decryption acceptance
+is still required to prove compute, proof serving and the connector path together.
+
+### What Fred needs to provision
+
+Supply `solana_secrets_namespace`, where the existing secret synchronization flow exposes:
+
+| Secret | Keys |
+| --- | --- |
 | `solana-rpc` | `rpc-url`, `grpc-url`, `grpc-x-token` |
-| `solana-proof-api` | `api-key` shared with the participating connectors |
+| `solana-deployer` | `deployer.json`; first-deploy program keys `zama_host.json`, `confidential_token.json`, `demo_vault.json`, `confidential_batcher.json` |
+| `solana-proof-api` | `api-key`, shared by listeners and connectors |
+| `solana-deployment-lock` | `database-url`, pointing to one shared existing PostgreSQL database for these program identities |
 
-The host Job requires no application keys. New demo program keys must be added to the
-secret store before running the optional demo Job. Program deployment does not seed demo
-wallets, mints or vaults; that remains a separate test scenario. CLI keypairs can alternatively be supplied as
-mounted paths through `SOLANA_DEPLOYER_KEYPAIR` and `SOLANA_<PROGRAM>_KEYPAIR`.
-The image contains neither private keys nor RPC credentials.
+The workflow copies these named secrets into the preview without printing their contents.
+Fred also needs a funded devnet deployer, the approved RPC/Yellowstone subscription, and
+cluster routing to the provider, lock DB and internal proof Services. The host Job does
+not require application keys. Optional program-key references allow retiring first-deploy
+keys while retaining the upgrade authority.
 
-### Repeating a rollout
+A retained preview records its Solana genesis hash, topology and a digest of the RPC, deployer, proof and lock
+credentials. Switching their source or changing these inputs fails instead of retargeting
+existing history. Program-key removal is excluded from that digest. Credential rotation
+and topology changes need a separately reviewed maintenance procedure; they are not
+silently handled as application upgrades in this experiment.
 
-The Solana values enable `scDeploy.runOnUpgrade`: every Helm revision creates a new Job.
-For a program upgrade override `scDeploy.deployCommands[0]` to
-`node /app/cli.mjs host upgrade` (or `demos upgrade`). Keep `scUpgrade.enabled=false`;
-that chart path copies old Solidity sources and is not the Solana upgrade mechanism.
-Address outputs go into distinct host/demo ConfigMaps using the chart's existing
-`addresses/.env.*` format. There is no deployer PVC; the coprocessor database must persist.
+### Stop, resume and reset
 
-Keep one active experiment per shared set of public-devnet program identities. Namespace
-and secret recreation does not reset on-chain state. A fresh listener defaults to the tip;
-existing values whose creation it missed cannot acquire complete proof history merely by
-restarting it. For a new database, `solanaHostListener.extraArgs: ["--start-slot=<slot>"]`
-selects an existing confirmed block within provider retention, before the activity to
-reconstruct. An existing database checkpoint takes precedence. Short recovery depends on provider replay of transactions **and** the Clock
-and SlotHashes account updates used for reconstruction. Test that against the actual
-provider. If history cannot be recovered, explicitly reset the experiment instead of
-continuing to submit transactions against incomplete history.
+Keep one active experiment per shared set of public-devnet program IDs. Do not submit
+transactions while its listener is down. Recovery relies on provider replay of transactions
+**and Clock/SlotHashes updates**; verify actual retention and replay against the provider.
+A checkpoint always takes precedence over a configured initial start slot.
 
-## Checks
+Use `preview-env-destroy.yml` for explicit teardown. It destroys the off-chain history;
+public Solana accounts remain. A new experiment after lost history needs fresh identities
+and fixtures, or a proven complete restore/replay. Recreating a namespace does not reset
+Solana. Failed bootstrap without a completed marker also requires explicit inspection/reset.
+Anvil snapshots support this experiment's restart loop; they are not a production chain
+or a guarantee of crash-consistent recovery across the whole distributed stack.
+
+## Feedback and acceptance
 
 ```sh
-bun test test-suite/fhevm/src/solana/host-deploy test-suite/fhevm/src/solana/deploy.test.ts
+bun test --cwd test-suite/fhevm src
 python3 ci/preview-env/solana-host/test_charts.py
-docker build --platform linux/amd64 -f solana/deploy/Dockerfile -t solana-programs:local .
-docker run --rm solana-programs:local --help
+bash solana/scripts/build-programs.sh localnet zama_host
+bun test --cwd test-suite/fhevm e2e/deployment/solana-deployment.test.ts
+# Full owned stack, including real gateway/KMS/coprocessor:
+bun run demo up
+bun run --cwd test-suite/fhevm test:e2e
+bun run demo restart-listener
+bun run demo reseed --direct --upgrade-programs
+bun run demo down
 ```
 
-PR CI also runs the local Solana scenarios against the RFC35 base. These do not prove
-Helius replay or cluster network policy. The preview acceptance test is a confidential
-operation/decryption, a listener restart with retained database, then a compatible
-program upgrade followed by old-value decryption and a new operation.
+The isolated deployment test starts and cleans up its own validator/PostgreSQL and uses a
+fixed gateway committee fixture. CI also runs it through the packaged Node CLI and its
+image's host artifact. It checks real initialization, no-op behavior, configuration
+rejection, an actual different compatible executable, retained HostConfig and contention.
+The different executable uses another optimization level, without adding a test instruction
+to the program. Full e2e additionally checks old-value decryption and new computation after
+host upgrade and listener restart. This local evidence does not prove public-provider
+replay or cluster connectivity; repeat that acceptance in the provisioned preview.

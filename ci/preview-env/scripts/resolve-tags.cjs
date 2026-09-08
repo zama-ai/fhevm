@@ -129,7 +129,11 @@ const listAncestors = async ({ github, owner, repo, sha, max }) => {
 module.exports = async ({ core, context, github }) => {
   const needs = JSON.parse(process.env.NEEDS);
   const isDispatch = process.env.EVENT_NAME === 'workflow_dispatch';
-  const inputs = JSON.parse(process.env.INPUTS);
+  const dispatch = JSON.parse(process.env.INPUTS);
+  const inputs = { ...dispatch, ...JSON.parse(dispatch.overrides || '{}') };
+  const images = inputs.solana_action && inputs.solana_action !== 'off' ? [...IMAGES, {
+    key: 'solana_programs', repo: 'fhevm/solana-programs', job: 'build-solana-programs', output: 'build_result', component: 'solana_programs', label: 'solana-programs',
+  }] : IMAGES;
   const { owner, repo } = context.repo;
   const short = (sha) => sha.substring(0, 7);
 
@@ -193,7 +197,7 @@ module.exports = async ({ core, context, github }) => {
 
   // source: 'built' | 'dispatch-override' | 'base-sha' | 'unresolved'
   const decisions = new Map();
-  for (const image of IMAGES) {
+  for (const image of images) {
     const value = override(`${image.component}_version`);
     if (wasBuilt(image)) {
       const tag = gcsImageTag && gcsBuiltKeys.has(image.key) ? gcsImageTag : shortSha;
@@ -204,7 +208,7 @@ module.exports = async ({ core, context, github }) => {
   }
 
   // Fail fast in case of bad override tags
-  const overridden = IMAGES.filter((image) => decisions.get(image.key)?.source === 'dispatch-override');
+  const overridden = images.filter((image) => decisions.get(image.key)?.source === 'dispatch-override');
   const overrideExists = await Promise.all(overridden.map((image) => registry.manifestExists(image.repo, decisions.get(image.key).tag)));
   overridden.forEach((image, i) => {
     if (overrideExists[i]) return;
@@ -212,7 +216,7 @@ module.exports = async ({ core, context, github }) => {
     decisions.set(image.key, { tag: '', source: 'unresolved', detail: `dispatch override '${tag}' not found in GHCR (${image.repo})` });
   });
 
-  let pending = IMAGES.filter((image) => !decisions.has(image.key));
+  let pending = images.filter((image) => !decisions.has(image.key));
   let searched = 0;
   if (pending.length > 0) {
     const maxCommits = Number(process.env.MAX_IMAGE_COMMIT_COUNT || 50);
@@ -252,7 +256,7 @@ module.exports = async ({ core, context, github }) => {
     decisions.set(image.key, { tag: '', source: 'unresolved', detail: `no published image in the last ${searched} commits from ${short(baseSha)}` });
   }
 
-  const tags = Object.fromEntries(IMAGES.map((image) => [image.key, decisions.get(image.key).tag]));
+  const tags = Object.fromEntries(images.map((image) => [image.key, decisions.get(image.key).tag]));
 
   // Actor segment is the PR AUTHOR (not github.actor) so it matches what
   // preview-env-destroy.yml derives on `closed` - keep the two in sync. k8s
@@ -284,9 +288,9 @@ module.exports = async ({ core, context, github }) => {
 
   // Dispatch suffix: this run's id in base36 (~7 chars) - unique per run,
   // deterministic, and short enough to leave the actor a usable budget.
-  const namespace = isDispatch
+  const namespace = inputs.preview_namespace || (isDispatch
     ? deriveNamespace(process.env.ACTOR, Number(context.runId).toString(36))
-    : deriveNamespace(context.payload.pull_request.user.login, context.payload.pull_request.number);
+    : deriveNamespace(context.payload.pull_request.user.login, context.payload.pull_request.number));
 
   // Summary first, so a failed resolution still shows exactly what it resolved
   // and what it couldn't.
@@ -305,14 +309,14 @@ module.exports = async ({ core, context, github }) => {
     .addHeading('Images', 3)
     .addTable([
       [{ data: 'Component', header: true }, { data: 'Tag', header: true }, { data: 'Source', header: true }, { data: 'Resolved from', header: true }],
-      ...IMAGES.map((image) => {
+      ...images.map((image) => {
         const decision = decisions.get(image.key);
         return [image.key, decision.tag || '-', decision.source, decision.detail];
       }),
     ])
     .write();
 
-  const unresolved = IMAGES.filter((i) => decisions.get(i.key).source === 'unresolved');
+  const unresolved = images.filter((i) => decisions.get(i.key).source === 'unresolved');
   if (unresolved.length > 0) {
     throw new Error(
       `could not resolve ${unresolved.length} image(s) from ${baseWhy} ${short(baseSha)}:\n` +

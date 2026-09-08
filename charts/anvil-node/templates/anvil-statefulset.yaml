@@ -49,6 +49,13 @@ spec:
             {{- end }}
             - "--mnemonic"
             - "$(MNEMONIC)"
+            {{- if .Values.persistState }}
+            - "--state"
+            - "/home/foundry/.foundry/anvil/state.json"
+            - "--state-interval"
+            - "1"
+            - "--preserve-historical-states"
+            {{- end }}
           ports:
             - containerPort: {{ .Values.port }}
           resources:

@@ -38,6 +38,27 @@ on:
     types: [opened, labeled, synchronize, reopened]
   workflow_dispatch:
     inputs:
+      overrides:
+        description: 'Optional image/chart overrides as JSON, e.g. {"solana_programs_version":"abcdef0"}. See parse-overrides.cjs for allowed keys.'
+        default: "{}"
+        type: string
+      solana_action:
+        description: "Solana devnet: deploy returns unchanged for matching code; upgrade permits changed code at existing identities. Retains preview state."
+        type: choice
+        default: "off"
+        options: ["off", "deploy", "upgrade"]
+      preview_namespace:
+        description: "Existing persistent Solana preview namespace to update. Empty creates a new preview."
+        type: string
+        default: ""
+      solana_secrets_namespace:
+        description: "Namespace where Fred provisions solana-rpc, solana-deployer, solana-proof-api and solana-deployment-lock from the preview vault."
+        type: string
+        default: ""
+      solana_demos:
+        description: "Also deploy/upgrade the example programs (no fixture seeding)."
+        type: boolean
+        default: false
       build_images:
         description: "Build fresh images from the selected branch (the branch picked above via 'Use workflow from'). Uncheck to skip building entirely and deploy what the branch's merge-base with main runs."
         required: true
@@ -80,10 +101,6 @@ on:
         options:
           - "4"
           - "13"
-      overrides:
-        description: "Optional JSON object of version/chart pins (empty / {} = resolve as today). Allowed keys: host_contracts_version, gateway_contracts_version, contracts_chart_version, coprocessor_version, coprocessor_chart_version, coprocessor_infra_chart_version, kms_connector_version, kms_connector_chart_version, kms_core_version, kms_repo_ref, relayer_version, relayer_sdk_version, test_suite_version, common_chart_version, redis_chart_version, listener_chart_version, listener_version. Unknown keys fail the run. Dispatch default for relayer_sdk_version is 0.4.4 when omitted."
-        required: false
-        default: ""
       deploy_polygon:
         description: "Also deploy a SECOND (Polygon Amoy, 80002) host chain: a fresh local anvil, its own host-contracts (reusing the ETH KMS key via canonical ProtocolConfig mirror), a per-party listener + coprocessor consumer/poller, and - when automated_tests is on - a Polygon e2e run. Roughly doubles the host-side stack. Incompatible with use_blockchain_dev."
         required: true
@@ -103,9 +120,10 @@ on:
 
 concurrency:
   # pull_request: one preview per PR, new pushes cancel the in-flight run.
-  # workflow_dispatch: keyed on run_id, so manual runs never cancel each other.
-  group: pr-preview-deploy-${{ github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: true
+  # Solana dispatches serialize because their program identities are shared.
+  # Other dispatches use run_id, so manual runs never cancel each other.
+  group: pr-preview-deploy-${{ inputs.solana_action && inputs.solana_action != 'off' && 'solana-devnet' || github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ inputs.solana_action == '' || inputs.solana_action == 'off' }}
 
 permissions: {}
 
@@ -121,6 +139,9 @@ permissions: {}
 # relayer_sdk_version=0.4.4 here: PRs must stay empty so only @fhevm/sdk runs.
 ##############################################################################
 env:
+  SOLANA_SECRETS_NAMESPACE: ${{ inputs.solana_secrets_namespace }}
+  SOLANA_ACTION: ${{ inputs.solana_action || 'off' }}
+  SOLANA_DEMOS: ${{ inputs.solana_demos || 'false' }}
   # How far back from the base commit to look for a published image before
   # failing.
   MAX_IMAGE_COMMIT_COUNT: "50"
@@ -137,8 +158,7 @@ env:
   COPROCESSOR_CHART_VERSION: ""
   KMS_CONNECTOR_CHART_VERSION: ""
   LISTENER_CHART_VERSION: ""
-  #=====EXTERNAL PINS (overrides JSON / deploy job env)======================
-  # Owned by other repos, so there is no commit of this repo to resolve them
+  #=====EXTERNAL PINS (overrides JSON / deploy job env)===============  # Owned by other repos, so there is no commit of this repo to resolve them
   # from. Pinned to the same known-good releases zama-zws/gitops's fhevm-dev
   # environment runs. Deploy overwrites these from overrides_json.
   COPROCESSOR_INFRA_CHART: oci://hub.zama.org/ghcr/zama-zws/crossplane/coprocessor-infra
@@ -148,13 +168,7 @@ env:
   RELAYER_SDK_VERSION: ""
   COMMON_CHART: oci://hub.zama.org/ghcr/zama-zws/helm-charts/common
   COMMON_CHART_VERSION: "0.3.3"
-  #=====KMS==================================================================
-  KMS_REPO_REF: "35edfa2f0656ee266e3299a004a83ac7d4fe2418"
-  KMS_CORE_TAG: "d27c3b5"
-  #=====REDIS================================================================
-  REDIS_CHART: oci://hub.zama.org/cgr/zama.ai/iamguarded-charts/redis
-  REDIS_CHART_VERSION: "25.3.8"
-  #=====POLYGON=============================================================
+  #=====KMS===========================================================  #=====POLYGON=============================================================
   # Second (Polygon Amoy, 80002) host chain: opt-in via the deploy_polygon
   # dispatch input, off by default (inputs.* is empty on PR runs, so PRs never
   # get Polygon).
@@ -175,6 +189,8 @@ jobs:
   check-labels:
     name: check-labels
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     if: >-
       github.event_name == 'workflow_dispatch' ||
       github.event.action != 'labeled' ||
@@ -203,6 +219,17 @@ jobs:
           OVERRIDES_RAW: ${{ inputs.overrides }}
           EVENT_NAME: ${{ github.event_name }}
         run: node ci/preview-env/scripts/parse-overrides.cjs
+      - name: Validate Solana topology
+        env:
+          PREVIEW_NAMESPACE: ${{ inputs.preview_namespace }}
+          ENABLE_BLUE_GREEN: ${{ inputs.enable_blue_green || 'false' }}
+        run: |
+          if [[ "$SOLANA_ACTION" != off && ( "$USE_BLOCKCHAIN_DEV" == true || "$DEPLOY_POLYGON" == true || "$ENABLE_BLUE_GREEN" == true ) ]]; then
+            echo '::error::Solana preview requires dedicated Anvil chains and one coprocessor fleet'; exit 1
+          fi
+          if [[ -n "$PREVIEW_NAMESPACE" ]]; then
+            [[ "$SOLANA_ACTION" != off && "$PREVIEW_NAMESPACE" =~ ^fhevm-ci-[a-z0-9]([a-z0-9-]*[a-z0-9])?$ && ${#PREVIEW_NAMESPACE} -le 28 ]] || exit 1
+          fi
       - id: check
         env:
           EVENT_NAME: ${{ github.event_name }}
@@ -324,6 +351,17 @@ jobs:
       CGR_USERNAME: ${{ secrets.CGR_USERNAME }}
       CGR_PASSWORD: ${{ secrets.CGR_PASSWORD }}
 
+  build-solana-programs:
+    name: build/solana-programs
+    needs: check-labels
+    if: >-
+      needs.check-labels.outputs.should_deploy == 'true' &&
+      needs.check-labels.outputs.build_images == 'true' &&
+      inputs.solana_action && inputs.solana_action != 'off'
+    uses: ./.github/workflows/solana-programs-docker-build.yml
+    permissions: *docker_permissions
+    secrets: *docker_secrets
+
   build-gateway-contracts:
     name: build/gateway-contracts
     needs: check-labels
@@ -393,6 +431,7 @@ jobs:
     needs:
       - check-labels
       - build-host-contracts
+      - build-solana-programs
       - build-gateway-contracts
       - build-kms-connector
       - build-coprocessor
@@ -542,17 +581,11 @@ jobs:
       # NAMESPACE: destroy-then-recreate every run, cascading deletion of any
       # leftover Crossplane claims (coprocessor-infra, tkms-infra).
       ######################################################################
-      - name: Reset namespace
-        run: |
-          if kubectl get namespace "${NAMESPACE}" > /dev/null 2>&1; then
-            echo "Namespace ${NAMESPACE} already exists, destroying it first..."
-            helm list -n "${NAMESPACE}" --short | xargs -r -L1 helm uninstall -n "${NAMESPACE}"
-            kubectl delete namespace "${NAMESPACE}" --grace-period=1 --timeout=5s --wait=false
-            kubectl wait --for=delete "namespace/${NAMESPACE}" --timeout=180s
-          fi
-          kubectl create namespace "${NAMESPACE}"
+      - name: Prepare preview namespace
+        run: bash ci/preview-env/solana-host/prepare-preview.sh
 
       - name: Grant dev-access groups RBAC on preview namespace
+        if: env.PREVIEW_BOOTSTRAP != 'false'
         run: |
           kubectl create rolebinding fhevm-ci-dev-binding \
             --clusterrole=admin \
@@ -568,7 +601,7 @@ jobs:
       # Public Docker Hub images, so no registry-credentials dependency.
       ######################################################################
       - name: Deploy observability stack (Prometheus + Grafana + Jaeger)
-        if: env.OBSERVABILITY == 'true'
+        if: env.PREVIEW_BOOTSTRAP != 'false' && (env.OBSERVABILITY == 'true')
         run: bash ci/preview-env/scripts/deploy-observability.sh
 
       ######################################################################
@@ -579,6 +612,7 @@ jobs:
       # imagePullSecrets hardcodes), so we don't install sync-secrets ourselves.
       ######################################################################
       - name: Sparse-checkout zama-ai/kms deploy scripts
+        if: env.PREVIEW_BOOTSTRAP != 'false'
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           repository: zama-ai/kms
@@ -593,6 +627,7 @@ jobs:
           path: .kms-deploy
 
       - name: Fetch enclave PCR values for KMS_CORE_TAG
+        if: env.PREVIEW_BOOTSTRAP != 'false'
         # kms's enclave images are labeled with zama.kms.eif_pcr{0,1,2} (wired
         # into kms-core's trustedReleases). deploy.sh reads them as PCR0/1/2.
         env:
@@ -622,34 +657,40 @@ jobs:
       # dependencies and ready in seconds.
       ######################################################################
       - name: Deploy in-cluster Postgres for coprocessor
+        if: env.PREVIEW_BOOTSTRAP != 'false'
         # One instance PER COPROCESSOR PARTY (postgres-coprocessor-<i>): each
         # independent coprocessor gets its own DB, same as postgres-connector-<i>
         # below. fullnameOverride per release; launched in parallel (seconds each).
         run: bash ci/preview-env/scripts/deploy-postgres.sh coprocessor
 
       - name: Deploy in-cluster Postgres for kms-connector
+        if: env.PREVIEW_BOOTSTRAP != 'false'
         # One instance PER PARTY (postgres-connector-<i>): one kms-connector
         # release per kms-core party, each needing its own DB. fullnameOverride
         # per release; launched in parallel since each takes only seconds.
         run: bash ci/preview-env/scripts/deploy-postgres.sh connector
 
       - name: Deploy in-cluster Postgres for listener
+        if: env.PREVIEW_BOOTSTRAP != 'false'
         # One instance PER COPROCESSOR PARTY (postgres-listener-<i>): the
         # dedicated listener producer keeps its own cursor DB, separate from the
         # coprocessor DB (see listener/values-postgres-listener-e2e.yaml).
         run: bash ci/preview-env/scripts/deploy-postgres.sh listener
 
       - name: Deploy in-cluster Postgres for polygon listener
+        if: env.PREVIEW_BOOTSTRAP != 'false'
         # One cursor DB PER COPROCESSOR PARTY for the Polygon listener
         # (postgres-listener-polygon-<i>), separate from the ETH listener's so
         # their schemas/migrations never collide. Same values file, new name.
-        if: env.DEPLOY_POLYGON == 'true'
+        if: env.PREVIEW_BOOTSTRAP != 'false' && (env.DEPLOY_POLYGON == 'true')
         run: bash ci/preview-env/scripts/deploy-postgres.sh listener-polygon
 
       - name: Deploy in-cluster Postgres for relayer + relayer-migrate
+        if: env.PREVIEW_BOOTSTRAP != 'false'
         run: bash ci/preview-env/scripts/deploy-postgres.sh relayer
 
       - name: Deploy dedicated KMS (kms's own ci/scripts/deploy.sh)
+        if: env.PREVIEW_BOOTSTRAP != 'false'
         working-directory: .kms-deploy
         env:
           # deploy.sh's parse_args takes CLI flags, not env vars, for these
@@ -679,6 +720,7 @@ jobs:
             "${tracing_args[@]}"
 
       - name: Discover KMS party signer addresses (S3 public vault)
+        if: env.PREVIEW_BOOTSTRAP != 'false'
         id: kms-identity
         # Each party generates its own signer identity (VerfAddress) on boot,
         # separate from keygen. deploy.sh only waits for pod readiness, which
@@ -714,7 +756,7 @@ jobs:
       # prefunded accounts). blockchain-dev generates a fresh mnemonic and
       # funds the derived addresses from the in-cluster faucets.
       - name: Capture host head block (blockchain-dev)
-        if: env.USE_BLOCKCHAIN_DEV == 'true'
+        if: env.PREVIEW_BOOTSTRAP != 'false' && (env.USE_BLOCKCHAIN_DEV == 'true')
         run: |
           raw=$(bash ci/preview-env/scripts/cluster-rpc.sh "${HOST_HTTP}" \
             '{"jsonrpc":"2.0","id":1,"method":"eth_blockNumber","params":[]}')
@@ -727,12 +769,13 @@ jobs:
           echo "blockchain-dev host head block $((hex))"
 
       - name: Install ethers for wallet derivation
+        if: env.PREVIEW_BOOTSTRAP != 'false'
         run: |
           mkdir -p /tmp/wallet-tools && cd /tmp/wallet-tools
           npm install --silent --no-save ethers@6
 
       - name: Generate preview mnemonic (blockchain-dev)
-        if: env.USE_BLOCKCHAIN_DEV == 'true'
+        if: env.PREVIEW_BOOTSTRAP != 'false' && (env.USE_BLOCKCHAIN_DEV == 'true')
         env:
           NODE_PATH: /tmp/wallet-tools/node_modules
           ROLES_JSON_PATH: /tmp/preview-role-wallets.json
@@ -745,6 +788,7 @@ jobs:
             --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Derive KMS tx-sender wallets
+        if: env.PREVIEW_BOOTSTRAP != 'false'
         id: kms-wallets
         # KMS tx-senders (submit KMS responses on-chain). Offset 10 to avoid
         # indices used elsewhere in this namespace.
@@ -757,6 +801,7 @@ jobs:
         run: node ci/preview-env/scripts/derive-wallets.cjs
 
       - name: Derive coprocessor tx-sender wallets
+        if: env.PREVIEW_BOOTSTRAP != 'false'
         id: coproc-wallets
         # Per-party coprocessor identity (tx-sender = signer).
         env:
@@ -777,14 +822,14 @@ jobs:
           node ci/preview-env/scripts/derive-wallets.cjs
 
       - name: Fund wallets from blockchain-dev faucets
-        if: env.USE_BLOCKCHAIN_DEV == 'true'
+        if: env.PREVIEW_BOOTSTRAP != 'false' && (env.USE_BLOCKCHAIN_DEV == 'true')
         env:
           WALLETS_JSON: ${{ steps.kms-wallets.outputs.wallets_json }}
           COPROC_WALLETS_JSON: ${{ steps.coproc-wallets.outputs.wallets_json }}
         run: bash ci/preview-env/scripts/fund-wallets.sh
 
       - name: Apply blockchain-dev values overlays
-        if: env.USE_BLOCKCHAIN_DEV == 'true'
+        if: env.PREVIEW_BOOTSTRAP != 'false' && (env.USE_BLOCKCHAIN_DEV == 'true')
         run: bash ci/preview-env/scripts/apply-chain-env.sh
 
       ######################################################################
@@ -792,16 +837,17 @@ jobs:
       # Skipped when use_blockchain_dev points at the shared Geth/Nitro nodes.
       ######################################################################
       - name: Deploy anvil-host
-        if: env.USE_BLOCKCHAIN_DEV != 'true'
+        if: env.PREVIEW_BOOTSTRAP != 'false' && (env.USE_BLOCKCHAIN_DEV != 'true')
         run: bash ci/preview-env/scripts/deploy-anvil.sh host
 
       - name: Deploy anvil-gateway
-        if: env.USE_BLOCKCHAIN_DEV != 'true'
+        if: env.PREVIEW_BOOTSTRAP != 'false' && (env.USE_BLOCKCHAIN_DEV != 'true')
         run: bash ci/preview-env/scripts/deploy-anvil.sh gateway
 
       - name: Deploy anvil-host-polygon
+        if: env.PREVIEW_BOOTSTRAP != 'false'
         # Second (Polygon Amoy, 80002) host chain - fresh local anvil, no fork.
-        if: env.DEPLOY_POLYGON == 'true' && env.USE_BLOCKCHAIN_DEV != 'true'
+        if: env.PREVIEW_BOOTSTRAP != 'false' && (env.DEPLOY_POLYGON == 'true' && env.USE_BLOCKCHAIN_DEV != 'true')
         run: bash ci/preview-env/scripts/deploy-anvil.sh host-polygon
 
       ######################################################################
@@ -814,6 +860,7 @@ jobs:
       # rather than rely on `helm --wait` alone.
       ######################################################################
       - name: Deploy coprocessor-infra (Crossplane S3)
+        if: env.PREVIEW_BOOTSTRAP != 'false'
         # One release PER COPROCESSOR PARTY (coprocessor-infra-<i>): each gets its
         # own S3 bucket, its own IRSA ServiceAccount (coprocessor-<i>, consumed by
         # that party's S3-touching workers) and its own bucket ConfigMap
@@ -822,6 +869,7 @@ jobs:
         run: bash ci/preview-env/scripts/deploy-coprocessor-infra.sh
 
       - name: Wait for coprocessor-infra to reconcile
+        if: env.PREVIEW_BOOTSTRAP != 'false'
         env:
           NAME_PREFIX: coprocessor-infra-
         run: bash ci/preview-env/scripts/wait-crossplane-s3.sh
@@ -831,6 +879,7 @@ jobs:
       # InputVerification addresses), then register the host chain into gateway.
       ######################################################################
       - name: Wire real KMS node info into gateway-contracts values
+        if: env.PREVIEW_BOOTSTRAP != 'false'
         id: gateway-contracts-values
         env:
           TARGET: gateway
@@ -841,6 +890,7 @@ jobs:
         run: bash ci/preview-env/scripts/wire-contracts-values.sh
 
       - name: Deploy gateway-contracts
+        if: env.PREVIEW_BOOTSTRAP != 'false'
         env:
           # Via env (not inline ${{ }}) so the step-output value is never
           # interpolated into the shell script itself (zizmor template-injection).
@@ -848,6 +898,7 @@ jobs:
         run: bash ci/preview-env/scripts/deploy-contracts.sh gateway
 
       - name: Wire real KMS node info into host-contracts values
+        if: env.PREVIEW_BOOTSTRAP != 'false'
         id: host-contracts-values
         # Mirrors the gateway wiring, with host-contracts' own field names
         # (KMS_NODE_IP_x vs KMS_NODE_IP_ADDRESS_x, KMS_GEN_THRESHOLD vs
@@ -863,6 +914,7 @@ jobs:
         run: bash ci/preview-env/scripts/wire-contracts-values.sh
 
       - name: Deploy host-contracts
+        if: env.PREVIEW_BOOTSTRAP != 'false'
         env:
           # Via env (not inline ${{ }}) so the step-output value is never
           # interpolated into the shell script itself (zizmor template-injection).
@@ -870,6 +922,7 @@ jobs:
         run: bash ci/preview-env/scripts/deploy-contracts.sh host
 
       - name: Register host chain into gateway
+        if: env.PREVIEW_BOOTSTRAP != 'false'
         run: bash ci/preview-env/scripts/deploy-contracts.sh add-host-chains
 
       ######################################################################
@@ -880,8 +933,9 @@ jobs:
       # canonical source) and gateway-contracts (Decryption/InputVerification).
       ######################################################################
       - name: Wire real KMS node info into host-contracts-polygon values
+        if: env.PREVIEW_BOOTSTRAP != 'false'
         id: host-contracts-polygon-values
-        if: env.DEPLOY_POLYGON == 'true'
+        if: env.PREVIEW_BOOTSTRAP != 'false' && (env.DEPLOY_POLYGON == 'true')
         env:
           TARGET: host-polygon
           SIGNERS_JSON: ${{ steps.kms-identity.outputs.signers_json }}
@@ -891,13 +945,13 @@ jobs:
         run: bash ci/preview-env/scripts/wire-contracts-values.sh
 
       - name: Deploy host-contracts-polygon
-        if: env.DEPLOY_POLYGON == 'true'
+        if: env.PREVIEW_BOOTSTRAP != 'false' && (env.DEPLOY_POLYGON == 'true')
         env:
           VALUES_FILE: ${{ steps.host-contracts-polygon-values.outputs.values_file }}
         run: bash ci/preview-env/scripts/deploy-contracts.sh host-polygon
 
       - name: Register polygon host chain into gateway
-        if: env.DEPLOY_POLYGON == 'true'
+        if: env.PREVIEW_BOOTSTRAP != 'false' && (env.DEPLOY_POLYGON == 'true')
         run: bash ci/preview-env/scripts/deploy-contracts.sh add-host-chains-polygon
 
       ######################################################################
@@ -906,6 +960,7 @@ jobs:
       # already static in the values files (in-cluster Postgres).
       ######################################################################
       - name: Deploy coprocessor-redis (per-party host-listener-consumer broker)
+        if: env.PREVIEW_BOOTSTRAP != 'false'
         # One Redis PER COPROCESSOR PARTY (coprocessor-redis-<i>): the broker
         # between that party's listener producer and its host-listener-consumer
         # (see values-coprocessor-redis-e2e.yaml). Deployed before the listener +
@@ -914,6 +969,7 @@ jobs:
         run: bash ci/preview-env/scripts/deploy-party-deps.sh redis
 
       - name: Deploy listener (per-party host-chain event producer)
+        if: env.PREVIEW_BOOTSTRAP != 'false'
         # One listener PER COPROCESSOR PARTY (listener-<i>): indexes the host
         # chain and publishes events to that party's Redis (coprocessor-redis-<i>),
         # which the coprocessor host-listener-consumer then ingests. Replaces the
@@ -922,15 +978,17 @@ jobs:
         run: bash ci/preview-env/scripts/deploy-party-deps.sh listener
 
       - name: Deploy polygon listener (per-party Polygon event producer)
+        if: env.PREVIEW_BOOTSTRAP != 'false'
         # One Polygon listener PER COPROCESSOR PARTY (listener-polygon-<i>):
         # indexes the Polygon anvil and publishes chain-80002 events to the SAME
         # per-party Redis the ETH listener uses; the coprocessor's polygon
         # host-listener-consumer filters that chain out by --chain-id. Own cursor
         # DB (postgres-listener-polygon-<i>).
-        if: env.DEPLOY_POLYGON == 'true'
+        if: env.PREVIEW_BOOTSTRAP != 'false' && (env.DEPLOY_POLYGON == 'true')
         run: bash ci/preview-env/scripts/deploy-party-deps.sh listener-polygon
 
       - name: Deploy coprocessor
+        if: env.PREVIEW_BOOTSTRAP != 'false'
         # One release PER COPROCESSOR PARTY (coprocessor-<i>), each with its own
         # Postgres (postgres-coprocessor-<i>), IRSA SA + S3 bucket ConfigMap
         # (coprocessor-<i>, from coprocessor-infra-<i>) and tx-sender/sns-worker
@@ -947,6 +1005,7 @@ jobs:
         run: bash ci/preview-env/scripts/deploy-coprocessor.sh
 
       - name: Deploy polygon coprocessor consumer (per-party Polygon consumer)
+        if: env.PREVIEW_BOOTSTRAP != 'false'
         # One Polygon host-listener-consumer PER COPROCESSOR PARTY
         # (coprocessor-polygon-<i>), as its OWN single-chain release. Deployed
         # SEPARATELY from the ETH consumer (coprocessor-<i>) because the coprocessor
@@ -956,10 +1015,11 @@ jobs:
         # party's Postgres (host_chains already seeded by coprocessor-<i>'s
         # dbMigration) and Redis; ingests chain-80002 events published by
         # listener-polygon-<i>.
-        if: env.DEPLOY_POLYGON == 'true'
+        if: env.PREVIEW_BOOTSTRAP != 'false' && (env.DEPLOY_POLYGON == 'true')
         run: bash ci/preview-env/scripts/deploy-coprocessor-sidecars.sh polygon-consumer
 
       - name: Deploy coprocessor-poller (per-party key/CRS activation)
+        if: env.PREVIEW_BOOTSTRAP != 'false'
         # One poller release PER COPROCESSOR PARTY (coprocessor-poller-<i>), the
         # DB-side background processor that, on a pending kms_key_activation /
         # kms_crs_activation row, DOWNLOADS the ServerKey/PublicKey/CRS material
@@ -983,15 +1043,17 @@ jobs:
         run: bash ci/preview-env/scripts/deploy-coprocessor-sidecars.sh poller
 
       - name: Deploy polygon coprocessor-poller (per-party Polygon finalization)
+        if: env.PREVIEW_BOOTSTRAP != 'false'
         # One Polygon poller PER COPROCESSOR PARTY (coprocessor-poller-polygon-<i>),
         # as its OWN single-chain release (same separator-collision reason as the
         # Polygon consumer above). Finalizes Polygon blocks so the Polygon consumer's
         # block_status='finalized' gate is met. dbMigration disabled - coprocessor-<i>
         # already seeded host_chains for both chains.
-        if: env.DEPLOY_POLYGON == 'true'
+        if: env.PREVIEW_BOOTSTRAP != 'false' && (env.DEPLOY_POLYGON == 'true')
         run: bash ci/preview-env/scripts/deploy-coprocessor-sidecars.sh poller-polygon
 
       - name: Create kms-connector-tx-sender secrets
+        if: env.PREVIEW_BOOTSTRAP != 'false'
         env:
           WALLETS_JSON: ${{ steps.kms-wallets.outputs.wallets_json }}
         run: |
@@ -1009,6 +1071,7 @@ jobs:
           done
 
       - name: Deploy kms-connector
+        if: env.PREVIEW_BOOTSTRAP != 'false'
         run: bash ci/preview-env/scripts/deploy-kms-connector.sh
 
       ######################################################################
@@ -1020,18 +1083,22 @@ jobs:
       # key + CRS material exists, not just that the request was sent.
       ######################################################################
       - name: Trigger KMS keygen + CRS generation
+        if: env.PREVIEW_BOOTSTRAP != 'false'
         run: bash ci/preview-env/scripts/deploy-contracts.sh trigger-keygen
 
       ######################################################################
       # RELAYER + TEST-SUITE: generic `common` chart + published images.
       ######################################################################
       - name: Deploy relayer-migrate
+        if: env.PREVIEW_BOOTSTRAP != 'false'
         run: bash ci/preview-env/scripts/deploy-relayer.sh migrate
 
       - name: Deploy relayer
+        if: env.PREVIEW_BOOTSTRAP != 'false'
         run: bash ci/preview-env/scripts/deploy-relayer.sh relayer
 
       - name: Deploy test-suite
+        if: env.PREVIEW_BOOTSTRAP != 'false'
         run: bash ci/preview-env/scripts/deploy-relayer.sh test-suite
 
       # Propose only after the relayer can serve traffic, so the upgrade
@@ -1051,6 +1118,10 @@ jobs:
       # during DryRunStarted (BCS live, GCS must shadow computations > 0),
       # then again after versioning flips to v0.15 (green).
       ######################################################################
+      - name: Record persistent bootstrap and deploy Solana
+        if: env.SOLANA_ACTION != 'off'
+        run: bash ci/preview-env/solana-host/deploy-preview.sh
+
       - name: Deploy automated e2e test workflow
         if: env.AUTOMATED_TESTS == 'true'
         env:

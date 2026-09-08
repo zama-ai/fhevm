@@ -15,6 +15,9 @@ scDeploy:
   configmap:
     name: solana-host-addresses
   env:
+    - name: SOLANA_DEPLOY_DATABASE_URL
+      valueFrom:
+        secretKeyRef: {name: solana-deployment-lock, key: database-url}
     - {name: SOLANA_ARTIFACTS_DIR, value: "/app/programs"}
     - {name: ADDRESSES_DIR, value: "/app/addresses"}
     - {name: SOLANA_PROGRAM_PROFILE, value: "preview-env"}
@@ -49,6 +52,7 @@ scDeploy:
         secretKeyRef:
           name: solana-deployer
           key: zama_host.json
+          optional: true
     # Preview-env default is a 4-party KMS (t=1). Override if the dispatch used nb_kms_core=13.
     - {name: KMS_THRESHOLD, value: "1"}
     - {name: COPROCESSOR_THRESHOLD, value: "1"}

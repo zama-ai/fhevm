@@ -19,21 +19,29 @@
 //              decrypts to its old value: the Connector proves the old allow leaf from the account's
 //              history, no client-side proof involved. The scenario asserts the update really
 //              rotated the current handle before decrypting both.
+import { describe, expect, test } from 'bun:test';
+import { cp, mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 
-import { describe, expect, test } from "bun:test";
-
-import { userDecryptExpect } from "../../src/solana/fhe-vertical";
-import { incrementCounter, initializeCounter } from "../../src/solana/specimens";
-import { verticalSetup } from "../harness/solana/vertical";
+import { restartDemoSolanaListener } from '../../demo/lifecycle';
+import { REPO_ROOT } from '../../src/layout';
+import { readGatewayBootstrapInputs } from '../../src/solana/addresses';
+import { readCoprocessorDatabaseUrl } from '../../src/solana/deploy';
+import { userDecryptExpect } from '../../src/solana/fhe-vertical';
+import { deployHostPrograms } from '../../src/solana/host-deploy/deploy-host';
+import { incrementCounter, initializeCounter } from '../../src/solana/specimens';
+import { runStreaming } from '../../src/utils/process';
+import { verticalSetup } from '../harness/solana/vertical';
 
 // Each phase does its own write + SNS commit wait (up to ~3min) + KMS round-trips.
 const SCENARIO_TIMEOUT_MS = 15 * 60_000;
 
-const hex = (bytes: Uint8Array): string => `0x${Buffer.from(bytes).toString("hex")}`;
+const hex = (bytes: Uint8Array): string => `0x${Buffer.from(bytes).toString('hex')}`;
 
-describe("solana specimen decrypt vertical", () => {
+describe('solana specimen decrypt vertical', () => {
   test(
-    "counter: initialize -> increment(42) -> pure-SDK user-decrypt == 42",
+    'counter: initialize -> increment(42) -> pure-SDK user-decrypt == 42',
     async () => {
       const { stack, context, wallet, config, secretKey } = await verticalSetup();
 
@@ -54,7 +62,7 @@ describe("solana specimen decrypt vertical", () => {
   );
 
   test(
-    "historical decrypt: increment again, then user-decrypt the OLD handle and the current one",
+    'historical decrypt: increment again, then user-decrypt the OLD handle and the current one',
     async () => {
       const { stack, context, wallet, config, secretKey } = await verticalSetup();
 
@@ -69,9 +77,86 @@ describe("solana specimen decrypt vertical", () => {
       await stack.waitForSnsCommit(hex(updated.handle));
 
       const encryptedValue = original.value.encryptedValue;
-      expect(await userDecryptExpect(config, { encryptedValue, handle: original.handle, secretKey, expected: 42n })).toBe(42n);
-      expect(await userDecryptExpect(config, { encryptedValue, handle: updated.handle, secretKey, expected: 49n })).toBe(49n);
+      expect(
+        await userDecryptExpect(config, { encryptedValue, handle: original.handle, secretKey, expected: 42n }),
+      ).toBe(42n);
+      expect(
+        await userDecryptExpect(config, { encryptedValue, handle: updated.handle, secretKey, expected: 49n }),
+      ).toBe(49n);
     },
     SCENARIO_TIMEOUT_MS,
   );
 });
+
+// The same source compiled with another optimization level supplies a genuinely different,
+// compatible executable without introducing a test-only instruction into the host program.
+test(
+  'host upgrade and listener restart retain old decryptable values',
+  async () => {
+    const { env, stack, context, wallet, config, secretKey } = await verticalSetup();
+    const directory = await mkdtemp(path.join(tmpdir(), 'solana-upgrade-'));
+    const artifactsDir = path.join(REPO_ROOT, 'solana/target/deploy');
+    const databaseUrl = await readCoprocessorDatabaseUrl();
+    const bootstrap = {
+      gateway: await readGatewayBootstrapInputs({ gatewayRpcUrl: env.gatewayRpcUrl }),
+      coprocessorThreshold: Number(process.env.COPROCESSOR_THRESHOLD ?? 1),
+      kmsCorruptionThreshold: Number(process.env.KMS_THRESHOLD ?? 0),
+    };
+    const rollout = (directory: string, upgrade: boolean) =>
+      deployHostPrograms({
+        ...bootstrap,
+        databaseUrl,
+        rpcUrl: env.rpcUrl,
+        deployerKeypairPath: env.roots.deployerKeypairPath,
+        artifactsDir: directory,
+        programKeypairPaths: {},
+        programs: ['zama_host'],
+        upgrade,
+      });
+    let upgraded = false;
+    let passed = false;
+    try {
+      await initializeCounter(context, wallet.signer);
+      const original = await incrementCounter(context, wallet.signer, 42n);
+      await stack.waitForSnsCommit(hex(original.handle));
+      await rollout(artifactsDir, false);
+      await cp(path.join(artifactsDir, 'zama_host.so'), path.join(directory, 'zama_host.so'));
+      await runStreaming(['bash', 'scripts/build-programs.sh', 'localnet', 'zama_host'], {
+        cwd: path.join(REPO_ROOT, 'solana'),
+        env: { CARGO_PROFILE_RELEASE_OPT_LEVEL: '2' },
+      });
+      expect(await readFile(path.join(artifactsDir, 'zama_host.so'))).not.toEqual(
+        await readFile(path.join(directory, 'zama_host.so')),
+      );
+      await rollout(artifactsDir, true);
+      upgraded = true;
+      await restartDemoSolanaListener();
+      const encryptedValue = original.value.encryptedValue;
+      expect(
+        await userDecryptExpect(config, { encryptedValue, handle: original.handle, secretKey, expected: 42n }),
+      ).toBe(42n);
+      const updated = await incrementCounter(context, wallet.signer, 7n);
+      await stack.waitForSnsCommit(hex(updated.handle));
+      expect(
+        await userDecryptExpect(config, { encryptedValue, handle: updated.handle, secretKey, expected: 49n }),
+      ).toBe(49n);
+      expect(
+        await userDecryptExpect(config, { encryptedValue, handle: original.handle, secretKey, expected: 42n }),
+      ).toBe(42n);
+      passed = true;
+    } finally {
+      try {
+        if (upgraded) await rollout(directory, true);
+      } catch (error) {
+        if (passed) throw error;
+        console.error('Restoring the original host after a failed upgrade test also failed:', error);
+      } finally {
+        // Keep the normal build output even when an assertion or on-chain restoration fails.
+        if (await Bun.file(path.join(directory, 'zama_host.so')).exists())
+          await cp(path.join(directory, 'zama_host.so'), path.join(artifactsDir, 'zama_host.so'));
+        await rm(directory, { recursive: true, force: true });
+      }
+    }
+  },
+  20 * 60_000,
+);

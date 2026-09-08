@@ -1,0 +1,45 @@
+name: solana-programs-docker-build
+on:
+  workflow_call:
+    secrets:
+      AWS_ACCESS_KEY_S3_USER:
+        required: true
+      AWS_SECRET_KEY_S3_USER:
+        required: true
+      BLOCKCHAIN_ACTIONS_TOKEN:
+        required: true
+      GHCR_READ_TOKEN:
+        required: true
+      CGR_USERNAME:
+        required: true
+      CGR_PASSWORD:
+        required: true
+    outputs:
+      build_result:
+        description: "Result of the Solana programs image build"
+        value: ${{ jobs.build.result }}
+
+permissions: {}
+jobs:
+  build:
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@cc49b4b7f41819757c6b3999c9cadb8e27be8ab3 # v1.0.11
+    secrets:
+      AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
+      AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }}
+      BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
+      CGR_USERNAME: ${{ secrets.CGR_USERNAME }}
+      CGR_PASSWORD: ${{ secrets.CGR_PASSWORD }}
+    permissions:
+      actions: 'read' # Required to read workflow run information
+      contents: 'read' # Required to checkout repository code
+      pull-requests: 'read' # Required to read pull request information
+      attestations: 'write' # Required to create build attestations
+      packages: 'write' # Required to publish Docker images
+      id-token: 'write' # Required for OIDC authentication
+    with:
+      working-directory: "."
+      docker-context: "."
+      push_image: true
+      image-name: "fhevm/solana-programs"
+      docker-file: "./solana/deploy/Dockerfile"
+      app-cache-dir: "fhevm-solana-programs"

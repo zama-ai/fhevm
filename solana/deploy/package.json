@@ -5,6 +5,7 @@
   "dependencies": {
     "@solana/kit": "6.10.0",
     "@solana/program-client-core": "6.10.0",
+    "pg": "8.16.3",
     "viem": "^2.46.3"
   }
 }
