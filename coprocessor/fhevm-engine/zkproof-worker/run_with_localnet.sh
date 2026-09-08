@@ -20,9 +20,16 @@ export TENANT_API_KEY
 # ------------------------------------------------------------------------------
 
 HEALTH_CHECK_PORT=10002
-# Always on: lets BUILD_STACK_VERSION from the environment override the
-# hard-coded stack version baked into the binary (see fhevm-engine-common).
-FEATURES=(fhevm-engine-common/stack-version-override)
+# Version overrides for a fleet that joins a running stack: consensus decides the
+# role, and the release has to move too or the cutover is refused. Each is off
+# unless its variable is set.
+FEATURES=()
+if [[ -n "${BUILD_STACK_VERSION:-}" ]]; then
+  FEATURES+=(fhevm-engine-common/stack-version-override)
+fi
+if [[ -n "${BUILD_CONSENSUS_VERSION:-}" ]]; then
+  FEATURES+=(fhevm-engine-common/consensus-version-override)
+fi
 
 # ------------------------------------------------------------------------------
 # CLI parsing

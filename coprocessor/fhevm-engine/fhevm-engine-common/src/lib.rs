@@ -29,9 +29,21 @@ pub mod common {
 ///
 /// Exposed as a macro (not a `const`) so it embeds inside `concat!` — e.g. the
 /// versioned GCS schema name in `database.rs` — while staying single-sourced.
+#[cfg(not(feature = "stack-version-override"))]
 macro_rules! stack_version {
     () => {
         "0.15.0"
+    };
+}
+
+/// Local runs only: the release comes from `BUILD_STACK_VERSION`.
+#[cfg(feature = "stack-version-override")]
+macro_rules! stack_version {
+    () => {
+        env!(
+            "BUILD_STACK_VERSION",
+            "stack-version-override needs BUILD_STACK_VERSION set"
+        )
     };
 }
 pub(crate) use stack_version;
@@ -56,7 +68,21 @@ pub const HANDLE_VERSION: i16 = 0;
 //   - randomization changes
 //   - the scheduling logic changes
 // Leave it as is for every other release, which then rolls out without a cutover.
+#[cfg(not(feature = "consensus-version-override"))]
 pub const CONSENSUS_PROTOCOL_VERSION: u32 = 2;
+
+/// Local runs only: the value comes from `BUILD_CONSENSUS_VERSION`.
+#[cfg(feature = "consensus-version-override")]
+pub const CONSENSUS_PROTOCOL_VERSION: u32 = match u32::from_str_radix(
+    env!(
+        "BUILD_CONSENSUS_VERSION",
+        "consensus-version-override needs BUILD_CONSENSUS_VERSION set"
+    ),
+    10,
+) {
+    Ok(value) => value,
+    Err(_) => panic!("BUILD_CONSENSUS_VERSION must be a whole number"),
+};
 
 /// If `--stack-version` appears in the process arguments, prints the
 /// compiled-in coprocessor [`STACK_VERSION`] to stdout and exits with status 0.

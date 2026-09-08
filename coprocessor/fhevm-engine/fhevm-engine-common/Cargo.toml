@@ -55,6 +55,11 @@ gpu = ["tfhe/gpu"]
 latency = []
 throughput = []
 compact-hex = []
+# Local runs only: take the versions from BUILD_CONSENSUS_VERSION and
+# BUILD_STACK_VERSION so a second stack builds from the same tree. A cutover
+# needs both to move, so they are normally used together.
+consensus-version-override = []
+stack-version-override = []
 
 [build-dependencies]
 tonic-build = { workspace = true }
