@@ -104,6 +104,16 @@ jobs:
             needs_localstack: false
             needs_foundry: false
             runner: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
+          - service: upgrade-controller
+            package: upgrade-controller
+            needs_localstack: false
+            needs_foundry: false
+            runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64
+          - service: consensus-detector
+            package: consensus-detector
+            needs_localstack: false
+            needs_foundry: false
+            runner: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
     steps:
     - name: Checkout code
       uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
