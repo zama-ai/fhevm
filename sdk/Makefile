@@ -114,12 +114,12 @@ run-fhevm-npm = $(FHEVM_NPM_CLI) $(FHEVM_NPM_ARGS) $(1)
 # Aggregates
 ########################################################################################################
 
-.PHONY: help graph build compile rebuild ci ci-build ci-from-scratch distclean regenerate-package-lock lint test check check-pre generate fmt fmt-check clean clean-generated install install-fast install-ci
+.PHONY: help graph build compile rebuild ci build-ci ci-from-scratch distclean regenerate-package-lock lint test check check-pre generate fmt fmt-check clean clean-generated install install-fast install-ci
 
 help: ## List the targets
 	@grep -hE '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) \
 	  | awk -F':.*?## ' '{ \
-	      if ($$1 ~ /^(build|check|check-pre|ci|ci-build|ci-from-scratch|clean|compile|graph|help|install|lint|regenerate-package-lock|rebuild|test|distclean)$$/) group = 0; \
+	      if ($$1 ~ /^(build|check|check-pre|ci|build-ci|ci-from-scratch|clean|compile|graph|help|install|lint|regenerate-package-lock|rebuild|test|distclean)$$/) group = 0; \
 	      else if ($$1 ~ /^compile-/) group = 1; \
 	      else if ($$1 ~ /^check-/) group = 2; \
 	      else if ($$1 ~ /^fmt($$|-)/) group = 3; \
@@ -306,7 +306,7 @@ ci-from-scratch: ## Prove a fresh clone works: distclean everything, install, th
 # The phases are sequential recipe lines rather than prerequisites: prerequisites of one target may run
 # in any order under `-j`, and make abandons the rest of a recipe at its first failing line, so nothing
 # downstream of a failed gate can run.
-ci-build: ## Every ci gate EXCEPT the tests: clean, check-generated, checks, build, check-post
+build-ci: ## Every ci gate EXCEPT the tests: clean, check-generated, checks, build, check-post
 	$(call require-spotless-worktree)
 	$(MAKE) clean
 	$(MAKE) check-generated
@@ -315,12 +315,12 @@ ci-build: ## Every ci gate EXCEPT the tests: clean, check-generated, checks, bui
 	$(MAKE) build
 	$(MAKE) check-post
 
-# The maximum run: every gate this workspace has. `ci-build` owns the build-and-check phases and the
+# The maximum run: every gate this workspace has. `build-ci` owns the build-and-check phases and the
 # reasoning about their order; this adds the tests on top.
 #
 # Excluded on purpose: `test-hh-v2-e2e-anvil` and `test-hh-v3-e2e-anvil`, which need an anvil node already running.
 ci: ## Run EVERY gate from a clean tree: formatting, checks, compile, lint, tests, consumer rehearsal
-	$(MAKE) ci-build
+	$(MAKE) build-ci
 	$(MAKE) test
 	$(MAKE) test-consumer-ci
 

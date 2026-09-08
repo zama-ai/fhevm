@@ -14,6 +14,6 @@
     "@fhevm/hardhat-plugin-v3": "file:../../pkg",
     "@fhevm/sdk": "^0.13.3",
     "hardhat": "^3.0.0",
-    "viem": "^2.55.19"
+    "viem": "2.55.19"
   }
 }

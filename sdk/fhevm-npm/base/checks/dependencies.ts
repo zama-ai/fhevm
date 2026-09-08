@@ -245,21 +245,21 @@ export function validatePrivateRootPins(
   if (root === undefined) throw new Error('The loaded inventory has no workspace root package');
 
   const rootPins = new Map(
-    dependencyDeclarations(root.packageJson)
-      .filter((declaration) => isExactVersion(declaration.spec))
-      .map((declaration) => [declaration.name, declaration.spec] as const),
+    dependencyDeclarations(root.packageJson).map((declaration) => [declaration.name, declaration.spec] as const),
   );
   const violations: Violation[] = [];
 
   for (const pkg of packages) {
-    if (!PRIVATE_PACKAGE_KINDS.has(pkg.inventory.kind)) continue;
+    const checksUsage = PRIVATE_PACKAGE_KINDS.has(pkg.inventory.kind);
+    const privateStandalone = pkg.inventory.kind === 'standalone' && pkg.packageJson.private === true;
+    if ((!checksUsage && !privateStandalone) || pkg.inventory.distribution?.includes('mirror')) continue;
     const imported = importsByPackage.get(pkg.key) ?? new Set<string>();
     const declared = declarationsByName(pkg.packageJson);
     const requiredField = requiredPrivateDependencyField(pkg.inventory.kind);
 
     for (const [name, pin] of rootPins) {
       const declarations = declared.get(name) ?? [];
-      if (imported.has(name) && declarations.length === 0) {
+      if (checksUsage && isExactVersion(pin) && imported.has(name) && declarations.length === 0) {
         violations.push({
           rule: '4.2.1',
           packageKey: pkg.key,
@@ -268,6 +268,15 @@ export function validatePrivateRootPins(
       }
 
       for (const declaration of declarations) {
+        if (declaration.spec !== pin) {
+          violations.push({
+            rule: '4.2.1',
+            packageKey: pkg.key,
+            message: `package '${name}' in '${declaration.field}' is "${declaration.spec}"; the root dependency spec is "${pin}"`,
+          });
+        }
+        // Preserve existing usage/placement policy for exact root pins only.
+        if (!checksUsage || !isExactVersion(pin)) continue;
         if (!imported.has(name)) {
           violations.push({
             rule: '4.2.1',
@@ -280,13 +289,6 @@ export function validatePrivateRootPins(
               rule: '4.2.1',
               packageKey: pkg.key,
               message: `package '${name}' must move from '${declaration.field}' to '${requiredField}' for kind '${pkg.inventory.kind}'`,
-            });
-          }
-          if (declaration.spec !== pin || !isExactVersion(declaration.spec)) {
-            violations.push({
-              rule: '4.2.1',
-              packageKey: pkg.key,
-              message: `package '${name}' in '${declaration.field}' is "${declaration.spec}"; the exact root pin is "${pin}"`,
             });
           }
         }

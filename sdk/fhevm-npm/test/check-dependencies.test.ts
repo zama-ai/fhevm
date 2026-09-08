@@ -304,6 +304,42 @@ test('rule 4.2.1 requires imported root pins exactly and rejects unused declarat
   );
 });
 
+test('rule 4.2.1 matches private root specs including ranges and standalone consumers', () => {
+  const rangedRoot = loadedPackage(
+    '.',
+    { kind: 'workspace-root', name: 'workspace', private: true, member: false },
+    { devDependencies: { typescript: '^6.0.2', tsx: '~4.23.0', viem: '2.55.19' } },
+  );
+  for (const kind of ['dev', 'shared-helper', 'internal-consumer', 'standalone'] as const) {
+    const consumer = loadedPackage(
+      './consumer',
+      { kind, name: 'consumer-dev', private: true, member: false },
+      { private: true, devDependencies: { typescript: '6.0.2', tsx: '^4.23.0', viem: '^2.55.19' } },
+    );
+    const imports = new Map([['./consumer', new Set(['viem'])]]);
+    const mismatches = validatePrivateRootPins([rangedRoot, consumer], imports).filter((violation) =>
+      violation.message.includes('root dependency spec'),
+    );
+    assert.equal(mismatches.length, 3);
+  }
+  const aligned = loadedPackage(
+    './aligned',
+    { kind: 'standalone', name: 'aligned', private: true, member: false },
+    { private: true, devDependencies: { typescript: '^6.0.2', tsx: '~4.23.0', viem: '2.55.19' } },
+  );
+  const published = loadedPackage(
+    './published',
+    { kind: 'published', name: 'published', member: false },
+    { peerDependencies: { viem: '^2.55.19' } },
+  );
+  const mirror = loadedPackage(
+    './mirror',
+    { kind: 'published', name: 'mirror', member: false, distribution: ['mirror'] },
+    { devDependencies: { typescript: '^5.9.3' } },
+  );
+  assert.deepEqual(validatePrivateRootPins([rangedRoot, aligned, published, mirror], new Map()), []);
+});
+
 test("rule 4.3.1 requires published dependency range floors to equal the workspace's exact root pins", () => {
   const pinnedRoot = loadedPackage(
     '.',
