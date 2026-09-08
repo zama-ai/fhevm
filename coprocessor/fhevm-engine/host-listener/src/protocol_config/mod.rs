@@ -4,7 +4,7 @@ use std::str::FromStr;
 
 use alloy::primitives::Address;
 use anyhow::{anyhow, Result};
-use tracing::info;
+use tracing::{info, warn};
 
 /// CLI fragment shared by all host-listener binaries (main, poller, consumer).
 /// Groups the two ProtocolConfig-related flags so they're declared and
@@ -49,9 +49,11 @@ impl ProtocolConfigArgs {
 }
 
 /// True iff `canonical_protocol_config_chain_id == Some(chain_id)`. Rejects `Some(0)`; logs the resolved role.
+/// Warns when the role and `protocol_config_address` disagree, since either mismatch silently disables decoding.
 pub fn resolve_protocol_config_listener(
     canonical_protocol_config_chain_id: Option<u64>,
     chain_id: u64,
+    protocol_config_address: Option<Address>,
 ) -> Result<bool> {
     if matches!(canonical_protocol_config_chain_id, Some(0)) {
         return Err(anyhow!(
@@ -63,7 +65,63 @@ pub fn resolve_protocol_config_listener(
         is_protocol_config_listener = is_listener,
         chain_id,
         canonical_protocol_config_chain_id = ?canonical_protocol_config_chain_id,
+        protocol_config_address = ?protocol_config_address,
         "Resolved ProtocolConfig listener role",
     );
+    match (is_listener, protocol_config_address) {
+        (true, None) => warn!(
+            chain_id,
+            "ProtocolConfig listener has no --protocol-config-address; \
+             ProtocolConfig.CoprocessorUpgradeProposed events will not be decoded"
+        ),
+        (false, Some(address)) => warn!(
+            chain_id,
+            canonical_protocol_config_chain_id = ?canonical_protocol_config_chain_id,
+            protocol_config_address = %address,
+            "--protocol-config-address is set but this listener is not the ProtocolConfig listener; \
+             ProtocolConfig.CoprocessorUpgradeProposed events will not be decoded. \
+             Set --canonical-protocol-config-chain-id to this chain id or drop the address"
+        ),
+        (true, Some(_)) | (false, None) => {}
+    }
     Ok(is_listener)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const NOT_DECODED: &str = "events will not be decoded";
+    const NO_ADDRESS: &str = "has no --protocol-config-address";
+    const NOT_LISTENER: &str = "not the ProtocolConfig listener";
+
+    #[test]
+    #[tracing_test::traced_test]
+    fn listener_without_address_warns() {
+        let is_listener =
+            resolve_protocol_config_listener(Some(1), 1, None).unwrap();
+        assert!(is_listener);
+        assert!(logs_contain(NO_ADDRESS));
+        assert!(!logs_contain(NOT_LISTENER));
+    }
+
+    #[test]
+    #[tracing_test::traced_test]
+    fn address_without_canonical_chain_warns() {
+        let address = Some(Address::repeat_byte(0x11));
+        let is_listener =
+            resolve_protocol_config_listener(None, 1, address).unwrap();
+        assert!(!is_listener);
+        assert!(logs_contain(NOT_LISTENER));
+        assert!(!logs_contain(NO_ADDRESS));
+    }
+
+    #[test]
+    #[tracing_test::traced_test]
+    fn non_listener_without_address_is_quiet() {
+        let is_listener =
+            resolve_protocol_config_listener(None, 1, None).unwrap();
+        assert!(!is_listener);
+        assert!(!logs_contain(NOT_DECODED));
+    }
 }
