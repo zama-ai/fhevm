@@ -1,0 +1,233 @@
+name: sdk-cleartext-publish-package
+
+on:
+  workflow_call:
+    inputs:
+      build_target:
+        description: 'compile-cleartext-v-cur, compile-hh-v2-plugin, compile-hh-v3-plugin'
+        required: true
+        type: string
+      dry_run:
+        description: 'run every step but stop short of publishing'
+        required: false
+        default: true
+        type: boolean
+    secrets:
+      NPM_TOKEN:
+        required: true
+
+# No permissions at the workflow level — each job declares only what it needs.
+permissions: {}
+
+jobs:
+  publish:
+    name: sdk-publish-payload/publish
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./sdk
+    permissions:
+      contents: 'read' # Required to checkout repository code
+      id-token: 'write' # Required for OIDC / npm provenance attestation
+    # One publish at a time per payload: two concurrent runs could both pass `publish check` and race.
+    # Each supported build target identifies one payload before metadata resolution.
+    concurrency:
+      group: sdk-publish-${{ inputs.build_target }}
+      cancel-in-progress: false
+    steps:
+      # -----------------------------------------------------------------------
+      # 1. Checkout
+      #    Pinned to a full commit SHA (not a mutable tag) to prevent supply
+      #    chain attacks. persist-credentials: false removes the Git token from
+      #    the local config so subsequent steps can't accidentally leak it.
+      #    The default shallow checkout is sufficient: publishing consumes
+      #    committed generated sources; CI validates their vendored origin.
+      # -----------------------------------------------------------------------
+      - name: Check out repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: 'false'
+
+      # -----------------------------------------------------------------------
+      # 2. Node.js setup
+      #    The SDK requires Node >=22.6 (declared in package.json "engines").
+      #    22.x resolves to the latest 22, which matters: ./fhevm-npm-cli runs a
+      #    .ts entry point with no flags and relies on Node's built-in type
+      #    stripping, on by default from 22.18.
+      #    No registry-url: nothing here authenticates through NODE_AUTH_TOKEN.
+      #    `publish check` reads npmjs.com anonymously and block 8 receives the
+      #    token directly.
+      # -----------------------------------------------------------------------
+      - name: Set up Node.js
+        uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        with:
+          node-version: 22.x
+
+      # -----------------------------------------------------------------------
+      # 2b. Choose the package, version and npm tag
+      #     compile-cleartext-v-cur -> current host-contracts-cleartext version
+      #     compile-hh-v2-plugin    -> Hardhat 2 plugin
+      #     compile-hh-v3-plugin    -> Hardhat 3 plugin
+      #     The current contracts directory comes from npm-manifest.json.
+      #     The version comes from sdk/versions.json:
+      #       X.Y.Z -> latest; X.Y.Z-A -> alpha.
+      #     Fail before installing or building if the target or version is missing
+      #     or the target is unsupported.
+      # -----------------------------------------------------------------------
+      - name: Resolve release metadata
+        id: release_meta
+        env:
+          BUILD_TARGET: ${{ inputs.build_target }}
+        run: |
+          set -euo pipefail
+          case "$BUILD_TARGET" in
+            compile-cleartext-v-cur)
+              directory="$(node -p "require('./npm-manifest.json').generations?.['host-contracts-cleartext']?.current ?? ''")"
+              if [[ -z "$directory" ]]; then
+                echo "::error::npm-manifest.json#generations.host-contracts-cleartext.current is missing"
+                exit 1
+              fi
+              payload="${directory}/pkg"
+              ;;
+            compile-hh-v2-plugin)
+              payload='./hardhat/v2/plugin/pkg'
+              ;;
+            compile-hh-v3-plugin)
+              payload='./hardhat/v3/plugin/pkg'
+              ;;
+            *)
+              echo "::error::unsupported build_target '${BUILD_TARGET}'"
+              exit 1
+              ;;
+          esac
+          export PAYLOAD="$payload"
+          version="$(node -p "require('./versions.json').packages[process.env.PAYLOAD] ?? ''")"
+          if [[ -z "$version" ]]; then
+            echo "::error::'${payload}' has no entry in sdk/versions.json — is the payload key right?"
+            exit 1
+          fi
+          if [[ "$version" == *-* ]]; then dist_tag="alpha"; else dist_tag="latest"; fi
+          echo "${payload} ${version} -> dist-tag ${dist_tag}"
+          {
+            echo "payload=${payload}"
+            echo "version=${version}"
+            echo "dist_tag=${dist_tag}"
+          } >> "$GITHUB_OUTPUT"
+
+      # -----------------------------------------------------------------------
+      # 2c. Foundry
+      #     Foundry installs the Solidity dependencies needed by all three builds.
+      #     Install the stable release, then check its version against npm-manifest.json.
+      #     If the versions differ, the build stops.
+      # -----------------------------------------------------------------------
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@82dee4ba654bd2146511f85f0d013af94670c4de # v1.4.0
+        with:
+          version: stable
+
+      # -----------------------------------------------------------------------
+      # 3. safe-chain
+      #    Aikido's supply-chain monitor. Hooks into npm install so that any
+      #    package with a known-malicious checksum is blocked before it can
+      #    execute. --ci makes it exit non-zero on any violation instead of
+      #    prompting interactively.
+      # -----------------------------------------------------------------------
+      - name: Install safe-chain
+        shell: bash
+        run: |
+          # safe-chain v1.5.3 is distributed as an immutable GitHub release asset —
+          # its content is permanently fixed and cannot be modified after the tag is published.
+          # Verify immutability: curl -fsSL https://api.github.com/repos/AikidoSec/safe-chain/releases/tags/1.5.3 | grep immutable
+          curl -fsSL https://github.com/AikidoSec/safe-chain/releases/download/1.5.3/install-safe-chain.sh | sh -s -- --ci
+
+      # -----------------------------------------------------------------------
+      # 4. Upgrade npm
+      #    The bundled npm in Node 22 may not support provenance publishing.
+      #    Pin to the same version used in the sibling library-solidity workflow
+      #    for consistency. Block 8 passes --provenance explicitly, since these
+      #    payloads carry no .npmrc of their own.
+      # -----------------------------------------------------------------------
+      - name: Update npm
+        run: npm install -g npm@11.7.0
+
+      # -----------------------------------------------------------------------
+      # 5. Install dependencies
+      #    Use `npm ci` to install the exact package versions saved in the lockfiles.
+      #    Also install Solidity dependencies.
+      #    Stop if a lockfile does not match its package.json.
+      #    Warning: do not use `make install` (it calls `npm install`
+      #    instead of `npm ci`)
+      # -----------------------------------------------------------------------
+      - name: Install dependencies
+        run: make install-ci
+
+      # -----------------------------------------------------------------------
+      # 6. Build
+      #    Build the selected package and the packages it needs.
+      #    Keep the pre-build checks, but run no tests here.
+      #    sdk-cleartext-tests.yml handles the full checks and tests before merge.
+      # -----------------------------------------------------------------------
+      - name: Build
+        env:
+          BUILD_TARGET: ${{ inputs.build_target }}
+        run: make "$BUILD_TARGET"
+
+      # -----------------------------------------------------------------------
+      # 7. Pack
+      #    Copy the package and replace local file: dependencies with npm version ranges.
+      #    Create a .tgz archive without changing the source files.
+      #    Save its path so step 8 publishes this exact archive.
+      # -----------------------------------------------------------------------
+      - name: Pack the rendered payload
+        id: pack
+        env:
+          PAYLOAD: ${{ steps.release_meta.outputs.payload }}
+        run: |
+          set -euo pipefail
+          tarball="$(./fhevm-npm-cli publish pack "${PAYLOAD}")"
+          echo "Packed ${tarball}"
+          echo "tarball=${tarball}" >> "$GITHUB_OUTPUT"
+
+      # -----------------------------------------------------------------------
+      # 7b. Pack inspection
+      #     Show the package files, sizes and dependency versions in the logs.
+      #     This is for inspection; step 7c performs the checks.
+      # -----------------------------------------------------------------------
+      - name: Inspect pack contents
+        env:
+          PAYLOAD: ${{ steps.release_meta.outputs.payload }}
+        run: ./fhevm-npm-cli publish render "${PAYLOAD}"
+
+      # -----------------------------------------------------------------------
+      # 7c. Tarball gate
+      #     Check that:
+      #     - No local `file:` dependencies remain.
+      #     - The package version matches sdk/versions.json.
+      #     - All declared entry points exist in the archive.
+      #     - Converted dependency ranges match sdk/versions.json.
+      #     - npmjs.com has a published version matching each converted range.
+      #     - This package version is not already published on npmjs.com.
+      #     This means contracts must be published before plugins that need them.
+      # -----------------------------------------------------------------------
+      - name: Check the tarball against npmjs.com
+        env:
+          PAYLOAD: ${{ steps.release_meta.outputs.payload }}
+        run: ./fhevm-npm-cli publish check "${PAYLOAD}" --check-npmjs
+
+      # -----------------------------------------------------------------------
+      # 8. Publish to npm
+      #    Publish the checked .tgz from step 7 with the latest or alpha tag.
+      #    Make it public and attach proof of the source commit and workflow run.
+      #    Use the NPM_TOKEN repository secret to authenticate.
+      #    When dry_run is true, skip publishing.
+      # -----------------------------------------------------------------------
+      - name: Publish to npm
+        uses: JS-DevTools/npm-publish@7f8fe47b3bea1be0c3aec2b717c5ec1f3e03410b # v4.1.1
+        with:
+          package: ${{ steps.pack.outputs.tarball }}
+          tag: ${{ steps.release_meta.outputs.dist_tag }}
+          # Can run in dry-run mode for testing purpose
+          dry-run: ${{ inputs.dry_run }}
+          provenance: true
+          access: public
+          token: ${{ secrets.NPM_TOKEN }}
