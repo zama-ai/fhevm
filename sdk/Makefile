@@ -114,12 +114,12 @@ run-fhevm-npm = $(FHEVM_NPM_CLI) $(FHEVM_NPM_ARGS) $(1)
 # Aggregates
 ########################################################################################################
 
-.PHONY: help graph build compile rebuild ci ci-from-scratch distclean regenerate-package-lock lint test check check-pre generate fmt fmt-check clean clean-generated install install-fast install-ci
+.PHONY: help graph build compile rebuild ci ci-build ci-from-scratch distclean regenerate-package-lock lint test check check-pre generate fmt fmt-check clean clean-generated install install-fast install-ci
 
 help: ## List the targets
 	@grep -hE '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) \
 	  | awk -F':.*?## ' '{ \
-	      if ($$1 ~ /^(build|check|check-pre|ci|ci-from-scratch|clean|compile|graph|help|install|lint|regenerate-package-lock|rebuild|test|distclean)$$/) group = 0; \
+	      if ($$1 ~ /^(build|check|check-pre|ci|ci-build|ci-from-scratch|clean|compile|graph|help|install|lint|regenerate-package-lock|rebuild|test|distclean)$$/) group = 0; \
 	      else if ($$1 ~ /^compile-/) group = 1; \
 	      else if ($$1 ~ /^check-/) group = 2; \
 	      else if ($$1 ~ /^fmt($$|-)/) group = 3; \
@@ -287,16 +287,26 @@ ci-from-scratch: ## Prove a fresh clone works: distclean everything, install, th
 	$(MAKE) install
 	$(MAKE) ci
 
-# Two sub-makes rather than `rebuild: clean build`: prerequisites of one target may run in any order
-# under `-j`, which would race the clean against the build.
-# The maximum run: from a clean tree, every gate this workspace has, cheapest first so a failure costs
-# the least time. `clean` is deliberate — stamps make `build` skippable, and validating a stale payload
-# with publint/attw would be worse than not validating it.
+# Everything `ci` gates EXCEPT the tests. Split out so one invocation can build and check the whole
+# workspace while the tests are run separately — per package, in their own CI job (plans/CI_TARGETS_PLAN.md).
+# It is NOT narrowed per package, deliberately: deciding which subset of the checks and compiles one
+# package's tests depend on is the kind of list that is wrong eventually, and a wrong one validates
+# stale output and reports a false green. Repeating the whole thing only costs minutes.
 #
-# Excluded on purpose: `test-hh-v2-e2e-anvil` and `test-hh-v3-e2e-anvil`, which need an anvil node already running.
-# The spotless check runs FIRST, before anything at all: check-generated needs it anyway, and
-# discovering it only there would have already thrown away every build output for nothing.
-ci: ## Run EVERY gate from a clean tree: formatting, checks, compile, lint, tests, consumer rehearsal
+# The phase ORDER is load-bearing, cheapest gate first so a failure costs the least time:
+#   - The spotless check runs FIRST, before anything at all: check-generated needs it anyway, and
+#     discovering it only there would have already thrown away every build output for nothing.
+#   - `clean` is deliberate — stamps make `build` skippable, and validating a stale payload with
+#     publint/attw would be worse than not validating it.
+#   - `check-generated` is SECOND so regeneration drift fails before any compile. It deletes every
+#     generated file, regenerates, and fails unless the worktree comes back spotless: it only ever
+#     COMPARES, and never accepts what the generators produced. Once it passes the tree is spotless by
+#     definition, which is what guarantees every later phase compiles exactly the committed bytes.
+#
+# The phases are sequential recipe lines rather than prerequisites: prerequisites of one target may run
+# in any order under `-j`, and make abandons the rest of a recipe at its first failing line, so nothing
+# downstream of a failed gate can run.
+ci-build: ## Every ci gate EXCEPT the tests: clean, check-generated, checks, build, check-post
 	$(call require-spotless-worktree)
 	$(MAKE) clean
 	$(MAKE) check-generated
@@ -304,9 +314,18 @@ ci: ## Run EVERY gate from a clean tree: formatting, checks, compile, lint, test
 	$(MAKE) check-vendored-origin
 	$(MAKE) build
 	$(MAKE) check-post
+
+# The maximum run: every gate this workspace has. `ci-build` owns the build-and-check phases and the
+# reasoning about their order; this adds the tests on top.
+#
+# Excluded on purpose: `test-hh-v2-e2e-anvil` and `test-hh-v3-e2e-anvil`, which need an anvil node already running.
+ci: ## Run EVERY gate from a clean tree: formatting, checks, compile, lint, tests, consumer rehearsal
+	$(MAKE) ci-build
 	$(MAKE) test
 	$(MAKE) test-consumer-ci
 
+# Two sub-makes rather than `rebuild: clean build`: prerequisites of one target may run in any order
+# under `-j`, which would race the clean against the build.
 rebuild: ## Clean everything, then compile from scratch (no gates — use 'build' for the gated form)
 	$(MAKE) clean
 	$(MAKE) compile
@@ -623,23 +642,40 @@ test-hh-v2-e2e-anvil: compile-hh-v2-e2e ## Hardhat v2 e2e tests against a local 
 
 # Separate tier: packs and installs each payload into a temp project and runs its suite. Minutes, not
 # seconds, so it is deliberately not part of `make test`.
-test-consumer: clean-scratch compile-hh-v2-template compile-hh-v3-plugin ## Install each published payload as a real consumer
-	$(call run-fhevm-npm,test-consumer ./$(DIR_CLEARTEXT_V_PREV) --build-linked-dependencies --run)
-	$(call run-fhevm-npm,test-consumer ./$(DIR_CLEARTEXT_V_CUR) --build-linked-dependencies --run)
-	$(call run-fhevm-npm,test-consumer ./hardhat/v2/fhevm-hardhat-template/pkg --build-linked-dependencies --run)
-	$(call run-hh-v2,$(W_HH_V2_PLUGIN),test:consumer)
-	$(call run-hh-v3,$(W_HH_V3_PLUGIN),test:consumer)
+# Every leg names ONE consumer, by its own path, rather than the owner that registers it. An owner
+# selector is ambiguous today: `./host-contracts-cleartext/v12` matches its two fixtures AND the dev
+# package itself, which generic discovery treats as a consumer "project" because it happens to declare a
+# `test` script and a `file:` dependency. That third target installs the dev package and re-runs the unit
+# tests `make test-cleartext-v-prev` already ran, and it has no committed lockfile, so `--ci` below
+# refuses the whole selection. Naming the consumer removes both problems.
+test-consumer: clean-scratch compile-hh-v2-template compile-hh-v3-template ## Install each published payload as a real consumer
+	$(call run-fhevm-npm,test-consumer ./$(DIR_CLEARTEXT_V_PREV)/test-consumer/cjs --build-linked-dependencies --run)
+	$(call run-fhevm-npm,test-consumer ./$(DIR_CLEARTEXT_V_PREV)/test-consumer/esm --build-linked-dependencies --run)
+	$(call run-fhevm-npm,test-consumer ./$(DIR_CLEARTEXT_V_CUR)/test-consumer/cjs --build-linked-dependencies --run)
+	$(call run-fhevm-npm,test-consumer ./$(DIR_CLEARTEXT_V_CUR)/test-consumer/esm --build-linked-dependencies --run)
+	$(call run-fhevm-npm,test-consumer ./$(DIR_HH_V2_TEMPLATE)/pkg --build-linked-dependencies --run)
+	$(call run-fhevm-npm,test-consumer ./$(DIR_HH_V3_TEMPLATE)/pkg --build-linked-dependencies --run)
+	$(call run-fhevm-npm,test-consumer ./$(DIR_HH_V3_PLUGIN)/test-consumer/esm --build-linked-dependencies --run)
 
-# The template leg runs WITHOUT --ci on purpose: the workspace-native template is a cluster member with
-# no committed lockfile BY DESIGN (option E) — the lock-replaying rehearsal of it belongs to the
-# publish-mirror RENDER, which regenerates a public lockfile. Until that lands, this leg still proves a
-# fresh consumer install + test of the template against the live workspace payloads.
-test-consumer-ci: clean-scratch compile-hh-v2-template compile-hh-v3-plugin ## Run every consumer from its committed lockfile (template: fresh resolve, see comment)
-	$(call run-fhevm-npm,test-consumer ./$(DIR_CLEARTEXT_V_PREV) --build-linked-dependencies --run --ci)
-	$(call run-fhevm-npm,test-consumer ./$(DIR_CLEARTEXT_V_CUR) --build-linked-dependencies --run --ci)
-	$(call run-fhevm-npm,test-consumer ./hardhat/v2/fhevm-hardhat-template/pkg --build-linked-dependencies --run)
-	$(call run-hh-v2,$(W_HH_V2_PLUGIN),test:consumer)
-	$(call run-fhevm-npm,test-consumer ./hardhat/v3/plugin --build-linked-dependencies --run --ci)
+# Every leg replays its consumer's committed lockfile with TWO exceptions, both hardhat templates: each
+# is a cluster MEMBER with no committed lockfile BY DESIGN (option E), so `--ci` would have nothing to
+# replay and the CLI rejects the flag outright. Their lock-replaying rehearsal belongs to the
+# publish-mirror RENDER, which regenerates a public lockfile; until that lands these legs still prove a
+# fresh consumer install and test of each template against the live workspace payloads.
+#
+# The v2 template leg is also the v2 PLUGIN's consumer test: the template links the plugin payload
+# (npm-manifest.json#consumerTests names it for exactly this reason), so installing the template
+# installs and exercises the plugin as a real consumer would. That is why there is no separate v2
+# plugin leg here — the resolution checks the CLI runs on every linked payload used to live in a
+# hand-written runner in hardhat/v2/plugin, and they now run here for both payloads.
+test-consumer-ci: clean-scratch compile-hh-v2-template compile-hh-v3-template ## Run every consumer from its committed lockfile (both templates: fresh resolve, see comment)
+	$(call run-fhevm-npm,test-consumer ./$(DIR_CLEARTEXT_V_PREV)/test-consumer/cjs --build-linked-dependencies --run --ci)
+	$(call run-fhevm-npm,test-consumer ./$(DIR_CLEARTEXT_V_PREV)/test-consumer/esm --build-linked-dependencies --run --ci)
+	$(call run-fhevm-npm,test-consumer ./$(DIR_CLEARTEXT_V_CUR)/test-consumer/cjs --build-linked-dependencies --run --ci)
+	$(call run-fhevm-npm,test-consumer ./$(DIR_CLEARTEXT_V_CUR)/test-consumer/esm --build-linked-dependencies --run --ci)
+	$(call run-fhevm-npm,test-consumer ./$(DIR_HH_V2_TEMPLATE)/pkg --build-linked-dependencies --run)
+	$(call run-fhevm-npm,test-consumer ./$(DIR_HH_V3_TEMPLATE)/pkg --build-linked-dependencies --run)
+	$(call run-fhevm-npm,test-consumer ./$(DIR_HH_V3_PLUGIN)/test-consumer/esm --build-linked-dependencies --run --ci)
 
 ########################################################################################################
 # Generated sources

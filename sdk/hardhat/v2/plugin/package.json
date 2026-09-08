@@ -23,7 +23,7 @@
     "prettier:check": "prettier --check \"**/*.{js,json,md,mjs,ts,yml}\"",
     "prettier:write": "prettier --write \"**/*.{js,json,md,mjs,ts,yml}\"",
     "test": "node --test test/*.test.ts",
-    "test:consumer": "node ./internal/test-consumer.ts"
+    "test:consumer": "node ../../../fhevm-npm/fhevm-npm.ts test-consumer ./hardhat/v2/fhevm-hardhat-template/pkg --run --build-linked-dependencies"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",

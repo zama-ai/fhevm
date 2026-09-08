@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import {
   cpSync,
   existsSync,
@@ -14,13 +14,15 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import type { NpmManifest } from '../manifest.ts';
 import { type ModuleKind, consumerModuleKinds } from './module-kind.ts';
+import { declaredEntryPoints } from './publish-check.ts';
 import {
   type DependencyDeclaration,
   type LoadedPackage,
+  type PackageJson,
   dependencyDeclarations,
   loadPackages,
   readPackageJson,
@@ -157,7 +159,16 @@ export function prepareTestConsumer(options: PrepareTestConsumerOptions): void {
       );
       patchLocalDependencies(destination, target.source.directory, target.linkedDependencies, options.ci);
       runNpm(destination, consumerInstallArguments(options.ci), options.verbosity);
-      for (const dependency of target.linkedDependencies) verifyPhysicalInstallation(destination, dependency.package);
+      for (const dependency of target.linkedDependencies) {
+        verifyPhysicalInstallation(destination, dependency.package);
+        // Entry-point and declaration resolution are properties of a PUBLISHED artifact. The linked set
+        // also carries workspace dev packages — a fixture links them as devDependencies, and the top
+        // level deliberately reads those (a payload under test is a devDependency in some fixtures) —
+        // but nothing ships them, so there is no published surface of theirs to hold to its own manifest.
+        if (dependency.package.inventory.kind !== 'published') continue;
+        verifyResolvedEntryPoints(destination, dependency.package, target.moduleKind, options.verbosity);
+        verifyDeclarationResolution(destination, dependency.package, target.moduleKind, options.verbosity);
+      }
 
       if (options.run) {
         runNpm(
@@ -1059,6 +1070,270 @@ function verifyPhysicalInstallation(destination: string, published: LoadedPackag
   const rel = relative(realpathSync(destination), realpathSync(installed));
   if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
     throw new Error(`${packageName} resolved outside the prepared consumer: ${realpathSync(installed)}`);
+  }
+}
+
+/**
+ * Does the INSTALLED package resolve to the entry points it declares? Rule 5.3.10 proves the tarball
+ * CONTAINS them; this proves a real consumer reaches them. Everything is derived from the installed
+ * `package.json` — never from a package name — so every payload is checked the same way.
+ */
+function verifyResolvedEntryPoints(
+  destination: string,
+  published: LoadedPackage,
+  consumerModuleKind: ModuleKind | 'dual',
+  verbosity: Verbosity = 0,
+): void {
+  const packageName = published.packageJson.name;
+  if (packageName === undefined) throw new Error(`Published package '${published.key}' has no name`);
+  const installedRoot = join(destination, 'node_modules', ...packageName.split('/'));
+  const installed = readPackageJson(join(installedRoot, 'package.json'));
+  if (installed === undefined) throw new Error(`${packageName} has no installed package.json in ${installedRoot}`);
+
+  if (!declaresRootEntryPoint(installed)) {
+    if (hasProgress(verbosity)) {
+      console.log(`   Resolution: skipped for ${packageName} (subpath-only package, no root entry point)`);
+    }
+    return;
+  }
+
+  for (const moduleKind of probedModuleKinds(consumerModuleKind, installed)) {
+    const resolved = resolveFromConsumer(destination, packageName, moduleKind);
+    const verdict = classifyResolvedEntryPoint(installedRoot, resolved, installed);
+    if (!verdict.inside) {
+      throw new Error(
+        `${packageName} resolved for ${moduleKind.toUpperCase()} to ${resolved}, outside its installed directory ` +
+          `${installedRoot} — the consumer escaped the installed package`,
+      );
+    }
+    if (!verdict.declared) {
+      throw new Error(
+        `${packageName} resolved for ${moduleKind.toUpperCase()} to '${verdict.relPath}', which its own package.json ` +
+          `does not declare as an entry point (declares: ${declaredEntryPoints(installed).join(', ')})`,
+      );
+    }
+    if (hasProgress(verbosity)) {
+      console.log(`   ${moduleKind.toUpperCase()} resolution: ${packageName} -> ${verdict.relPath}`);
+    }
+  }
+}
+
+/**
+ * Can a bare `import`/`require` of this package's NAME resolve at all? A package whose `exports` map has
+ * no `.` key is reachable only through subpaths (`@scope/pkg/thing`), and resolving the bare name is
+ * SUPPOSED to fail, so probing it would report a defect that is really a design choice.
+ */
+export function declaresRootEntryPoint(installed: PackageJson): boolean {
+  const exportsField = (installed as unknown as Record<string, unknown>)['exports'];
+  if (exportsField === undefined || exportsField === null) {
+    return declaredEntryPoints(installed).length > 0;
+  }
+  // `"exports": "./index.js"` and `"exports": ["./a.js"]` are both sugar for the root.
+  if (typeof exportsField === 'string' || Array.isArray(exportsField)) return true;
+  if (typeof exportsField !== 'object') return false;
+  return Object.keys(exportsField).some((key) => key === '.' || !key.startsWith('.'));
+}
+
+/** The kinds worth probing: those the consumer itself uses AND the installed package exposes. */
+export function probedModuleKinds(
+  consumerModuleKind: ModuleKind | 'dual',
+  installed: PackageJson,
+): readonly ModuleKind[] {
+  const exposed = new Set(consumerModuleKinds(installed));
+  const wanted: readonly ModuleKind[] = consumerModuleKind === 'dual' ? ['cjs', 'esm'] : [consumerModuleKind];
+  return wanted.filter((kind) => exposed.has(kind));
+}
+
+/** Where the resolved file sits relative to the installed package, and whether that path is declared. */
+export function classifyResolvedEntryPoint(
+  installedRoot: string,
+  resolvedPath: string,
+  installed: PackageJson,
+): { readonly relPath: string; readonly inside: boolean; readonly declared: boolean } {
+  // Both sides through realpath: a consumer under a symlinked temp root (macOS /var -> /private/var)
+  // resolves to the real path, and comparing that against the symlinked root reads as an escape.
+  const rel = relative(realpathIfPossible(installedRoot), realpathIfPossible(resolvedPath));
+  const inside = rel !== '' && rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
+  const relPath = rel.split(sep).join('/');
+  return { relPath, inside, declared: inside && declaredEntryPoints(installed).includes(relPath) };
+}
+
+/**
+ * Resolve a bare specifier the way the consumer's own module system would: `require.resolve` for CJS,
+ * `import.meta.resolve` for ESM, both rooted at the consumer directory so its node_modules is used.
+ */
+function resolveFromConsumer(destination: string, packageName: string, moduleKind: ModuleKind): string {
+  const script =
+    moduleKind === 'cjs'
+      ? 'process.stdout.write(require.resolve(process.argv[1]))'
+      : 'process.stdout.write(import.meta.resolve(process.argv[1]))';
+  const args = moduleKind === 'cjs' ? ['-e', script, packageName] : ['--input-type=module', '-e', script, packageName];
+  let output: string;
+  try {
+    output = execFileSync(process.execPath, args, { cwd: destination, encoding: 'utf8' }).trim();
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `${packageName} could not be resolved for ${moduleKind.toUpperCase()} in ${destination}: ${detail}`,
+    );
+  }
+  return output.startsWith('file:') ? fileURLToPath(output) : output;
+}
+
+/**
+ * Does TypeScript reach the INSTALLED declarations, rather than escaping to the payload's sources in the
+ * workspace? `publint`/`attw` inspect the payload directory, so nothing else covers this. Skipped when
+ * the consumer has no TypeScript of its own: this must never install a compiler the consumer did not ask
+ * for. The forbidden directory is the payload's own workspace path, so no package is named here either.
+ */
+function verifyDeclarationResolution(
+  destination: string,
+  published: LoadedPackage,
+  consumerModuleKind: ModuleKind | 'dual',
+  verbosity: Verbosity = 0,
+): void {
+  const packageName = published.packageJson.name;
+  if (packageName === undefined) throw new Error(`Published package '${published.key}' has no name`);
+  if (!existsSync(join(destination, 'node_modules', 'typescript', 'package.json'))) {
+    if (hasProgress(verbosity)) {
+      console.log(`   Declaration resolution: skipped for ${packageName} (consumer has no TypeScript)`);
+    }
+    return;
+  }
+  const installedRoot = join(destination, 'node_modules', ...packageName.split('/'));
+  const installed = readPackageJson(join(installedRoot, 'package.json'));
+  if (installed === undefined) throw new Error(`${packageName} has no installed package.json in ${installedRoot}`);
+  const declarations = declaredTypeEntryPoints(installed);
+  if (!declaresRootEntryPoint(installed)) {
+    if (hasProgress(verbosity)) {
+      console.log(`   Declaration resolution: skipped for ${packageName} (subpath-only package)`);
+    }
+    return;
+  }
+  if (declarations.length === 0) {
+    if (hasProgress(verbosity)) {
+      console.log(`   Declaration resolution: skipped for ${packageName} (declares no types)`);
+    }
+    return;
+  }
+
+  for (const moduleKind of probedModuleKinds(consumerModuleKind, installed)) {
+    const trace = traceDeclarationResolution(destination, packageName, moduleKind, verbosity);
+    const verdict = classifyDeclarationTrace(trace, installedRoot, declarations, published.directory);
+    if (verdict.escapedTo !== undefined) {
+      throw new Error(
+        `TypeScript resolved ${packageName} for ${moduleKind.toUpperCase()} to the workspace sources at ` +
+          `${verdict.escapedTo} instead of the installed declarations — the published types do not stand alone`,
+      );
+    }
+    if (!verdict.reachedDeclared) {
+      throw new Error(
+        `TypeScript did not resolve ${packageName} for ${moduleKind.toUpperCase()} to any declaration its own ` +
+          `package.json declares (${declarations.join(', ')}) under ${installedRoot}`,
+      );
+    }
+    if (hasProgress(verbosity)) {
+      console.log(`   ${moduleKind.toUpperCase()} declaration resolution: ${packageName} -> installed types`);
+    }
+  }
+}
+
+/** `types`, `typings`, and every `types` condition inside `exports`. */
+export function declaredTypeEntryPoints(installed: PackageJson): readonly string[] {
+  const record = installed as unknown as Record<string, unknown>;
+  const fields = [record['types'], record['typings']];
+  const paths = [...fields, ...typesConditionTargets(record['exports'])]
+    .filter((value): value is string => typeof value === 'string' && value.startsWith('./'))
+    .map((value) => value.slice('./'.length));
+  return [...new Set(paths)].sort();
+}
+
+function typesConditionTargets(value: unknown, result: string[] = []): readonly string[] {
+  if (typeof value !== 'object' || value === null) return result;
+  for (const [key, nested] of Object.entries(value)) {
+    if (key === 'types' && typeof nested === 'string') result.push(nested);
+    typesConditionTargets(nested, result);
+  }
+  return result;
+}
+
+/** Did the trace reach a declared declaration under the installed root, or escape to the payload's sources? */
+export function classifyDeclarationTrace(
+  trace: string,
+  installedRoot: string,
+  declarations: readonly string[],
+  forbiddenSourceDirectory: string,
+): { readonly reachedDeclared: boolean; readonly escapedTo?: string } {
+  const normalized = trace.split(sep).join('/');
+  const forbidden = `${realpathIfPossible(forbiddenSourceDirectory).split(sep).join('/')}/`;
+  // Only a source file counts as an escape: the trace legitimately mentions the payload directory while
+  // walking `file:` links, so the check is whether a MODULE was resolved from there.
+  const escapedTo = normalized
+    .split('\n')
+    .map((line) => line.trim())
+    .find((line) => /^File '.*' exist|^Resolved .* to /.test(line) && line.includes(forbidden) && line.includes('.ts'));
+  const root = realpathIfPossible(installedRoot).split(sep).join('/');
+  const reachedDeclared = declarations.some((declaration) => normalized.includes(`${root}/${declaration}`));
+  return escapedTo === undefined ? { reachedDeclared } : { reachedDeclared, escapedTo };
+}
+
+function realpathIfPossible(directory: string): string {
+  try {
+    return realpathSync(directory);
+  } catch {
+    return directory;
+  }
+}
+
+/** One `tsc --traceResolution` run on a throwaway file, cleaned up afterwards. */
+function traceDeclarationResolution(
+  destination: string,
+  packageName: string,
+  moduleKind: ModuleKind,
+  verbosity: Verbosity,
+): string {
+  // The probe's EXTENSION picks the module system, not a compiler option: .cts is always CommonJS and
+  // .mts always ESM, so `nodenext` honours the matching `exports` condition for each. Selecting it with
+  // `moduleResolution: node10` instead would be more faithful to an old consumer, but that option is
+  // deprecated from TypeScript 6 and its opt-out value differs per major, which no generic check can pin.
+  const entry = join(destination, `fhevm-resolution.${moduleKind}.${moduleKind === 'cjs' ? 'cts' : 'mts'}`);
+  const config = join(destination, `tsconfig.fhevm-resolution.${moduleKind}.json`);
+  const compilerOptions = { module: 'nodenext', moduleResolution: 'nodenext' };
+  writeFileSync(entry, `import '${packageName}';\n`);
+  writeFileSync(
+    config,
+    `${JSON.stringify(
+      {
+        compilerOptions: { ...compilerOptions, noEmit: true, skipLibCheck: true, target: 'es2022', types: [] },
+        files: [`./${relative(destination, entry).split(sep).join('/')}`],
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  try {
+    const result = spawnSync(
+      'npm',
+      ['exec', '--offline', '--', 'tsc', '--project', relative(destination, config), '--traceResolution'],
+      { cwd: destination, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 },
+    );
+    if (result.error !== undefined) throw result.error;
+    const trace = `${result.stdout ?? ''}${result.stderr ?? ''}`;
+    if (result.status !== 0) {
+      const diagnostics = trace
+        .split('\n')
+        .filter((line) => /error TS\d+:/.test(line))
+        .join('\n');
+      throw new Error(
+        `TypeScript failed to compile a bare import of ${packageName} in the consumer` +
+          `${diagnostics.length > 0 ? `:\n${diagnostics}` : ` (exit ${String(result.status)})`}`,
+      );
+    }
+    if (hasDetailedOutput(verbosity)) process.stdout.write(trace);
+    return trace;
+  } finally {
+    rmSync(entry, { force: true });
+    rmSync(config, { force: true });
   }
 }
 

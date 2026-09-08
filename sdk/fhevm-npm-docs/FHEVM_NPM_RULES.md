@@ -939,10 +939,10 @@ all four properties; `test-consumer --ci` performs the isolated installation and
 
 ```jsonc
 // ✅ In the dev package that wraps ./pkg. One command owns the whole consumer test.
-"scripts": { "test:consumer": "node ./internal/test-consumer.ts" }
+"scripts": { "test:consumer": "node ../../../fhevm-npm/fhevm-npm.ts test-consumer ./hardhat/v2/fhevm-hardhat-template/pkg --run" }
 
 // ❌ A package-specific name cannot be discovered or invoked uniformly.
-"scripts": { "test:hardhat-template": "node ./internal/test-consumer.ts" }
+"scripts": { "test:hardhat-template": "node ../../../fhevm-npm/fhevm-npm.ts test-consumer ./hardhat/v2/fhevm-hardhat-template/pkg --run" }
 ```
 
 **5.3.2 Every published package has exactly one dev owner carrying its applicable conventional checks.** The validator
@@ -964,13 +964,13 @@ and requires `check`, `check:publint` and `test:consumer` on owners of npm-distr
 "scripts": {
   "check": "npm run check:publint && npm run check:vendored-origin",
   "check:publint": "publint --strict ./pkg && attw --pack ./pkg",
-  "test:consumer": "node ./internal/test-consumer.ts"
+  "test:consumer": "node ../../../fhevm-npm/fhevm-npm.ts test-consumer ./hardhat/v2/fhevm-hardhat-template/pkg --run"
 }
 
 // ❌ Package-specific names are not the conventional entry points the validator requires.
 "scripts": {
   "check:package": "publint --strict ./pkg",
-  "test:hardhat-template": "node ./internal/test-consumer.ts"
+  "test:hardhat-template": "node ../../../fhevm-npm/fhevm-npm.ts test-consumer ./hardhat/v2/fhevm-hardhat-template/pkg --run"
 }
 ```
 
@@ -1035,7 +1035,7 @@ metadata and type-resolution coverage, but neither replaces runtime execution of
 // ✅ Static packaging checks and the installed-artifact test cover different failures.
 "scripts": {
   "check:publint": "publint --strict ./pkg && attw --pack ./pkg",
-  "test:consumer": "node ./internal/test-consumer.ts"
+  "test:consumer": "node ../../../fhevm-npm/fhevm-npm.ts test-consumer ./hardhat/v2/fhevm-hardhat-template/pkg --run"
 }
 
 // ❌ Type-resolution analysis alone does not execute the installed runtime artifact.
