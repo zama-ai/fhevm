@@ -163,6 +163,12 @@ afterAll(async () => {
 test(
   'deploy, verified no-op, explicit compatible upgrade, and persistent HostConfig',
   async () => {
+    for (const name of ['INPUT_VERIFICATION_ADDRESS', 'DECRYPTION_ADDRESS']) {
+      const invalid = await deploy('deploy', { [name]: `0x${'0'.repeat(40)}` });
+      expect(invalid.code).not.toBe(0);
+      expect(invalid.stderr).toContain('nonzero 20-byte addresses');
+      expect((await rpc.getAccountInfo(programIdsFor('localnet').zamaHost).send()).value).toBeNull();
+    }
     const first = await deploy();
     expect(first.code, first.stderr).toBe(0);
     const before = await hostData();

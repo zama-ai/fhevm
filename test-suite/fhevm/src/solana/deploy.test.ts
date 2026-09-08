@@ -225,6 +225,8 @@ test('first-deploy preflight rejects malformed inputs without sending initializa
     { kmsCorruptionThreshold: -1 },
     { kmsCorruptionThreshold: 1.5 },
     { gateway: { ...gateway, gatewayChainId: 1n << 63n } },
+    { gateway: { ...gateway, inputVerificationContract: address20(0) } },
+    { gateway: { ...gateway, decryptionContract: address20(0) } },
     { gateway: { ...gateway, kmsSigners: [address20(0)] } },
     { gateway: { ...gateway, coprocessorSigners: [address20(1), address20(1)] } },
   ]) {

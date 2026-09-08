@@ -106,8 +106,12 @@ export const validateBootstrapInputs = (params: BootstrapZamaHostParams): void =
   if (params.gateway.gatewayChainId < 0n || params.gateway.gatewayChainId >= 1n << 63n) {
     throw new Error('gateway chain id must be an EVM u64 with the chain-type bit clear');
   }
-  if (params.gateway.decryptionContract.length !== 20 || params.gateway.inputVerificationContract.length !== 20) {
-    throw new Error('gateway contract addresses must be 20 bytes');
+  if (
+    [params.gateway.decryptionContract, params.gateway.inputVerificationContract].some(
+      (contract) => contract.length !== 20 || contract.every((byte) => byte === 0),
+    )
+  ) {
+    throw new Error('gateway contract addresses must be nonzero 20-byte addresses');
   }
   kmsCertificateThreshold(params.kmsCorruptionThreshold ?? 0, params.gateway.kmsSigners.length);
 };
