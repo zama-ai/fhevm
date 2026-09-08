@@ -2,15 +2,18 @@
 use alloy::{primitives::Address, rpc::types::Log};
 use consumer::{AckDecision, BlockPayload, HandlerError};
 use fhevm_engine_common::chain_id::ChainId;
+use fhevm_engine_common::versioning::StackMode;
 use primitives::event::BlockFlow;
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
+use tokio::sync::RwLock;
 use tokio::time::sleep;
+use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
 use super::metrics::{inc_blocks_processed, inc_db_errors};
 use super::{
     collect_logs, observe_consumer_block_timing,
-    promote_once_all_chains_to_fast, ConsumerConfig,
+    promote_once_all_chains_to_fast, ConsumerConfig, KnownDrift,
 };
 use crate::cmd::block_history::BlockSummary;
 use crate::database::ingest::{ingest_block_logs, BlockLogs, IngestOptions};
@@ -23,6 +26,8 @@ pub(super) struct BlockIngestor {
     pub chain_id: ChainId,
     pub config: ConsumerConfig,
     pub options: IngestOptions,
+    pub mode: Arc<StackMode>,
+    pub last_known_drift: Arc<RwLock<KnownDrift>>,
 }
 
 impl BlockIngestor {
@@ -78,7 +83,7 @@ impl BlockIngestor {
             &block_logs,
             config.acl_address,
             config.tfhe_address,
-            config.kms_generation_address,
+            Some(config.kms_generation_address),
             config.protocol_config_address,
             config.confidential_bridge_address,
             config.database_retry_interval,
@@ -104,6 +109,45 @@ impl BlockIngestor {
                 Err(HandlerError::Transient(err.into()))
             }
         }
+    }
+
+    async fn ready(&self) -> Result<bool, HandlerError> {
+        if self.mode.is_paused() {
+            return Ok(false);
+        }
+        if !self.last_known_drift.read().await.is_finished {
+            return Ok(false);
+        }
+        Ok(true)
+    }
+
+    /// One supervised worker per delivery subscription; retry even on quiet chains.
+    pub(super) async fn process_kms(&self, cancel: CancellationToken) {
+        let mut interval = tokio::time::interval(Duration::from_secs(5));
+        interval
+            .set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            tokio::select! {
+                _ = cancel.cancelled() => return,
+                _ = interval.tick() => {},
+            }
+            if let Err(error) = self.process_kms_once().await {
+                warn!(%error, "KMS activation pass failed; retrying on next tick");
+            }
+        }
+    }
+
+    async fn process_kms_once(&self) -> Result<(), HandlerError> {
+        if self.ready().await? {
+            crate::kms_generation::process_kms_generation_activations(
+                self.db.pool().await,
+                crate::kms_generation::aws_s3::AwsS3Client {},
+                None,
+            )
+            .await
+            .map_err(|error| HandlerError::Transient(error.into()))?;
+        }
+        Ok(())
     }
 }
 

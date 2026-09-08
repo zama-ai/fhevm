@@ -45,7 +45,7 @@ pub struct ConsumerConfig {
     pub url: String,
     pub acl_address: Address,
     pub tfhe_address: Address,
-    pub kms_generation_address: Option<Address>,
+    pub kms_generation_address: Address,
     pub protocol_config_address: Option<Address>,
     pub confidential_bridge_address: Option<Address>,
     pub database_url: DatabaseURL,
@@ -89,7 +89,7 @@ pub fn collect_logs(payload: &BlockPayload) -> Vec<Log> {
 }
 
 #[derive(Copy, Debug, Clone)]
-struct KnownDrift {
+pub(super) struct KnownDrift {
     id: i64,
     is_finished: bool,
     catchup_to: i64,
@@ -316,9 +316,7 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
     if let Some(protocol_config_address) = config.protocol_config_address {
         contracts.push(protocol_config_address);
     }
-    if let Some(kms_generation_address) = config.kms_generation_address {
-        contracts.push(kms_generation_address);
-    }
+    contracts.push(config.kms_generation_address);
     if let Some(confidential_bridge_address) =
         config.confidential_bridge_address
     {
@@ -419,7 +417,10 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         chain_id,
         config: config.clone(),
         options: ingest_options,
+        mode: stack_mode.clone(),
+        last_known_drift: last_known_drift.clone(),
     });
+    let kms = ingestor.clone();
     // Both flows use identical ingestion; the live reference and drift gate
     // remain explicit so recovery can later pause live independently.
     let handle_block =
@@ -496,6 +497,11 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
 
     info!(chain_id = %config.chain_id, "Starting host-listener consumer");
     let mut tasks = tokio::task::JoinSet::new();
+    let cancel = client.cancel_token.clone();
+    tasks.spawn(async move {
+        kms.process_kms(cancel).await;
+        Ok(())
+    });
     let live = client.consume(handle_block.clone());
     tasks.spawn(async move { live.await.map_err(anyhow::Error::from) });
     if manual_catchup.enabled() {
