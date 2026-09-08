@@ -1,27 +1,32 @@
-{{- if .Values.gwListener.enabled -}}
-{{- $disabled := default (list) .Values.gwListener.disabledArgs -}}
+{{- if .Values.consensusDetector.enabled -}}
+{{- $disabled := default (list) .Values.consensusDetector.disabledArgs -}}
+{{- $myBucket := .Values.consensusDetector.myBucket | default dict -}}
+{{- if not (or $myBucket.value $myBucket.valueFrom) -}}
+{{- $myBucket = ((.Values.snsWorker.config).s3BucketName) | default dict -}}
+{{- end -}}
+{{- $s3Endpoint := .Values.consensusDetector.s3Endpoint | default dict -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   labels:
-    app: coprocessor-gw-listener
-    app.kubernetes.io/name: {{ include "gwListenerName" . }}
-  name: {{ include "gwListenerName" . }}
+    app: coprocessor-consensus-detector
+    app.kubernetes.io/name: {{ include "consensusDetectorName" . }}
+  name: {{ include "consensusDetectorName" . }}
 spec:
-  replicas: {{ .Values.gwListener.replicas }}
+  replicas: {{ .Values.consensusDetector.replicas }}
   selector:
     matchLabels:
-      app: coprocessor-gw-listener
+      app: coprocessor-consensus-detector
       {{- include "coprocessor.extraSelectorLabels" . | nindent 6 }}
-  {{- if .Values.gwListener.updateStrategy }}
+  {{- if .Values.consensusDetector.updateStrategy }}
   strategy:
-    {{- toYaml .Values.gwListener.updateStrategy | nindent 4 }}
+    {{- toYaml .Values.consensusDetector.updateStrategy | nindent 4 }}
   {{- end }}
   template:
     metadata:
       labels:
-        app: coprocessor-gw-listener
-        app.kubernetes.io/name: {{ include "gwListenerName" . }}
+        app: coprocessor-consensus-detector
+        app.kubernetes.io/name: {{ include "consensusDetectorName" . }}
         {{- include "coprocessor.extraSelectorLabels" . | nindent 8 }}
         {{- with .Values.commonConfig.stackVersion }}
         app.kubernetes.io/version: {{ . | quote }}
@@ -29,7 +34,7 @@ spec:
         {{- with .Values.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
-        {{- with .Values.gwListener.podLabels }}
+        {{- with .Values.consensusDetector.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
       {{- with .Values.podAnnotations }}
@@ -40,29 +45,29 @@ spec:
       imagePullSecrets:
         - name: registry-credentials
       restartPolicy: Always
-      {{- with .Values.gwListener.nodeSelector }}
+      {{- with .Values.consensusDetector.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.gwListener.affinity }}
+      {{- with .Values.consensusDetector.affinity }}
       affinity:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.gwListener.tolerations }}
+      {{- with .Values.consensusDetector.tolerations }}
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- if .Values.gwListener.serviceAccountName }}
-      serviceAccountName: {{ .Values.gwListener.serviceAccountName }}
+      {{- if .Values.consensusDetector.serviceAccountName }}
+      serviceAccountName: {{ .Values.consensusDetector.serviceAccountName }}
       {{- end }}
       containers:
-        - name: coprocessor-gw-listener
-          image: {{ .Values.gwListener.image.name }}:{{ .Values.gwListener.image.tag }}
-          command: ["gw_listener"]
+        - name: coprocessor-consensus-detector
+          image: {{ .Values.consensusDetector.image.name }}:{{ .Values.consensusDetector.image.tag }}
+          command: ["consensus-detector"]
           {{- if .Values.commonConfig.stackVersionProbe.enabled }}
           startupProbe:
             exec:
-              command: ["gw_listener", "--stack-version"]
+              command: ["consensus-detector", "--stack-version"]
             periodSeconds: {{ .Values.commonConfig.stackVersionProbe.periodSeconds | default 10 }}
             failureThreshold: {{ .Values.commonConfig.stackVersionProbe.failureThreshold | default 30 }}
           {{- end }}
@@ -73,22 +78,16 @@ spec:
             {{- if not (has "gw-url" $disabled) }}
             - --gw-url=$(GATEWAY_URL)
             {{- end }}
-            {{- if not (has "input-verification-address" $disabled) }}
-            - --input-verification-address=$(INPUT_VERIFICATION_ADDRESS)
-            {{- end }}
-            {{- if and (or .Values.commonConfig.gatewayContractAddresses.ciphertextCommits.value .Values.commonConfig.gatewayContractAddresses.ciphertextCommits.valueFrom) (not (has "ciphertext-commits-address" $disabled)) }}
-            - --ciphertext-commits-address=$(CIPHERTEXT_COMMITS_ADDRESS)
-            {{- end }}
             {{- if and (or .Values.commonConfig.gatewayContractAddresses.gatewayConfig.value .Values.commonConfig.gatewayContractAddresses.gatewayConfig.valueFrom) (not (has "gateway-config-address" $disabled)) }}
             - --gateway-config-address=$(GATEWAY_CONFIG_ADDRESS)
             {{- end }}
-            {{- if not (has "health-check-port" $disabled) }}
-            - --health-check-port={{ .Values.gwListener.ports.healthcheck }}
+            {{- if and (or $myBucket.value $myBucket.valueFrom) (not (has "my-bucket" $disabled)) }}
+            - --my-bucket=$(S3_BUCKET_NAME)
             {{- end }}
-            {{- if not (has "metrics-addr" $disabled) }}
-            - --metrics-addr=0.0.0.0:{{ .Values.gwListener.ports.metrics }}
+            {{- if and (or $s3Endpoint.value $s3Endpoint.valueFrom) (not (has "s3-endpoint" $disabled)) }}
+            - --s3-endpoint=$(S3_ENDPOINT)
             {{- end }}
-            {{- with .Values.gwListener.extraArgs }}
+            {{- with .Values.consensusDetector.extraArgs }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
           env:
@@ -150,24 +149,6 @@ spec:
                 {{- toYaml .valueFrom | nindent 16 }}
               {{- end }}
             {{- end }}
-            {{- with .Values.commonConfig.gatewayContractAddresses.inputVerification }}
-            - name: INPUT_VERIFICATION_ADDRESS
-              {{- if .value }}
-              value: {{ .value | quote }}
-              {{- else if .valueFrom }}
-              valueFrom:
-                {{- toYaml .valueFrom | nindent 16 }}
-              {{- end }}
-            {{- end }}
-            {{- with .Values.commonConfig.gatewayContractAddresses.ciphertextCommits }}
-            - name: CIPHERTEXT_COMMITS_ADDRESS
-              {{- if .value }}
-              value: {{ .value | quote }}
-              {{- else if .valueFrom }}
-              valueFrom:
-                {{- toYaml .valueFrom | nindent 16 }}
-              {{- end }}
-            {{- end }}
             {{- with .Values.commonConfig.gatewayContractAddresses.gatewayConfig }}
             - name: GATEWAY_CONFIG_ADDRESS
               {{- if .value }}
@@ -177,48 +158,50 @@ spec:
                 {{- toYaml .valueFrom | nindent 16 }}
               {{- end }}
             {{- end }}
-            {{- with .Values.gwListener.config.chainId }}
-            - name: CHAIN_ID
-              value: {{ . | quote }}
+            {{- if or $myBucket.value $myBucket.valueFrom }}
+            - name: S3_BUCKET_NAME
+              {{- if $myBucket.value }}
+              value: {{ $myBucket.value | quote }}
+              {{- else if $myBucket.valueFrom }}
+              valueFrom:
+                {{- toYaml $myBucket.valueFrom | nindent 16 }}
+              {{- end }}
             {{- end }}
-          {{- if default .Values.commonConfig.tracing.enabled .Values.gwListener.tracing.enabled }}
+            {{- if or $s3Endpoint.value $s3Endpoint.valueFrom }}
+            - name: S3_ENDPOINT
+              {{- if $s3Endpoint.value }}
+              value: {{ $s3Endpoint.value | quote }}
+              {{- else if $s3Endpoint.valueFrom }}
+              valueFrom:
+                {{- toYaml $s3Endpoint.valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+          {{- if default .Values.commonConfig.tracing.enabled .Values.consensusDetector.tracing.enabled }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ .Values.commonConfig.tracing.endpoint | quote }}
             - name: OTEL_SERVICE_NAME
-              {{- if .Values.gwListener.tracing.service }}
-              value: {{ .Values.gwListener.tracing.service | quote }}
-              {{- else }}
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.name
-              {{- end }}
+              value: {{ .Values.consensusDetector.tracing.service | quote }}
           {{- end }}
           {{- with .Values.commonConfig.env }}
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          {{- with .Values.gwListener.env }}
+          {{- with .Values.consensusDetector.env }}
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          ports:
-            {{- range $portName, $portValue := .Values.gwListener.ports }}
-            - name: {{ $portName }}
-              containerPort: {{ $portValue }}
-              protocol: TCP
-            {{- end }}
           resources:
             requests:
-              cpu: {{ .Values.gwListener.resources.requests.cpu | default "100m" }}
-              memory: {{ .Values.gwListener.resources.requests.memory | default "256Mi" }}
+              cpu: {{ .Values.consensusDetector.resources.requests.cpu | default "100m" }}
+              memory: {{ .Values.consensusDetector.resources.requests.memory | default "256Mi" }}
             limits:
-              cpu: {{ .Values.gwListener.resources.limits.cpu | default "500m" }}
-              memory: {{ .Values.gwListener.resources.limits.memory | default "512Mi" }}
-          {{- if and .Values.gwListener.probes .Values.gwListener.probes.liveness.enabled }}
+              cpu: {{ .Values.consensusDetector.resources.limits.cpu | default "500m" }}
+              memory: {{ .Values.consensusDetector.resources.limits.memory | default "512Mi" }}
+          {{- if and .Values.consensusDetector.probes .Values.consensusDetector.probes.liveness.enabled }}
           livenessProbe:
-            {{- toYaml (omit .Values.gwListener.probes.liveness "enabled") | nindent 12 }}
+            {{- toYaml (omit .Values.consensusDetector.probes.liveness "enabled") | nindent 12 }}
           {{- end }}
-          {{- if and .Values.gwListener.probes .Values.gwListener.probes.readiness.enabled }}
+          {{- if and .Values.consensusDetector.probes .Values.consensusDetector.probes.readiness.enabled }}
           readinessProbe:
-            {{- toYaml (omit .Values.gwListener.probes.readiness "enabled") | nindent 12 }}
+            {{- toYaml (omit .Values.consensusDetector.probes.readiness "enabled") | nindent 12 }}
           {{- end }}
           {{- if eq (include "coprocessor.databaseSslRootCertMountEnabled" .) "true" }}
           {{- include "coprocessor.databaseSslRootCertVolumeMount" . | nindent 10 }}
