@@ -126,7 +126,7 @@ test('the plan names every derived field that disagrees: package.json versions a
   );
 });
 
-test('an injected git runner is honoured, so the classifier is testable without a repository', () => {
+test('an injected git runner is honored, so the classifier is testable without a repository', () => {
   const git: GitRunner = (args) => (args[0] === 'rev-parse' ? 'sdk/\n' : ' M sdk/versions.json\n');
   assert.deepEqual(classifyWorktree('/anywhere', git), { kind: 'central-edit' });
 });

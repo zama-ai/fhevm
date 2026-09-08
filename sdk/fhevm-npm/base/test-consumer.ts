@@ -1383,7 +1383,7 @@ function traceDeclarationResolution(
   verbosity: Verbosity,
 ): string {
   // The probe's EXTENSION picks the module system, not a compiler option: .cts is always CommonJS and
-  // .mts always ESM, so `nodenext` honours the matching `exports` condition for each. Selecting it with
+  // .mts always ESM, so `nodenext` honors the matching `exports` condition for each. Selecting it with
   // `moduleResolution: node10` instead would be more faithful to an old consumer, but that option is
   // deprecated from TypeScript 6 and its opt-out value differs per major, which no generic check can pin.
   const entry = join(destination, `fhevm-resolution.${moduleKind}.${moduleKind === 'cjs' ? 'cts' : 'mts'}`);

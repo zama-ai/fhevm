@@ -17,7 +17,8 @@ import {
 } from '#esm/internal/network.js';
 
 type FakeConfig =
-  { type: 'edr-simulated'; chainId: number } | { type: 'http'; chainId?: number; url: { getUrl(): Promise<string> } };
+  | { type: 'edr-simulated'; chainId: number }
+  | { type: 'http'; chainId?: number; url: { getUrl(): Promise<string> } };
 
 function fakeConnection(
   networkName: string,
@@ -97,7 +98,7 @@ void test('public chains are classified by their live chain id, one entry per gr
   }
 });
 
-void test('an unrecognised chain is unknown, not an error', async () => {
+void test('an unrecognized chain is unknown, not an error', async () => {
   const info = await resolveFhevmNetwork(fakeConnection('other', 99_999, http('https://rpc.example')));
   assert.equal(info.kind, 'unknown');
   assert.deepEqual(info.publicChains, []);

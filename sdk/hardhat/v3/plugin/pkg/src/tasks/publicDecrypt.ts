@@ -1,5 +1,5 @@
 // `hardhat fhevm public-decrypt <type> <handle>`: prints the cleartext of a publicly decryptable handle.
-// Opens the connection `--network` selects (a bare `getOrCreate()` honours it).
+// Opens the connection `--network` selects (a bare `getOrCreate()` honors it).
 
 import type { NewTaskActionFunction } from 'hardhat/types/tasks';
 
