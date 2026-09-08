@@ -1,5 +1,3 @@
-import { readCoprocessorDatabaseUrl, startHostListener } from "../src/solana/deploy";
-import { programIdsFor } from "../src/solana/host-deploy/program-profile";
 import { createHash } from "node:crypto";
 import { closeSync, openSync } from "node:fs";
 import fs from "node:fs/promises";
@@ -2105,6 +2103,9 @@ export const restartDemoSolanaListener = async (): Promise<void> =>
     if (!manifest || !(await isOwnedBootReseedable(manifest))) {
       throw new Error('listener restart requires a healthy, exactly-owned demo core stack');
     }
+    // Bootstrap commands must load before the stack installs its Solana dependency graph.
+    const { readCoprocessorDatabaseUrl, startHostListener } = await import("../src/solana/deploy");
+    const { programIdsFor } = await import("../src/solana/host-deploy/program-profile");
     const runtimeDir = path.join(DEMO_RUNTIME_DIR, manifest.bootId);
     const logDir = path.join(runtimeDir, 'logs');
     await stopOwnedProcess('listener', manifest.processes.listener);
