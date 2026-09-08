@@ -2941,9 +2941,7 @@ mod tests {
     async fn test_pool() -> (test_harness::instance::DBInstance, Pool<Postgres>) {
         use sqlx::postgres::PgPoolOptions;
         use test_harness::instance::{setup_test_db, ImportMode};
-        let instance = setup_test_db(ImportMode::WithKeysNoSns)
-            .await
-            .expect("test db");
+        let instance = setup_test_db(ImportMode::None).await.expect("test db");
         let pool = PgPoolOptions::new()
             .max_connections(4)
             .connect(instance.db_url())
