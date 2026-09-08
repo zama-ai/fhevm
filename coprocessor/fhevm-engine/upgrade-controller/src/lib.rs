@@ -1842,6 +1842,27 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
         warn!("cutover: GCS proposal is not UpgradeAuthorized — skipping (already cut over)");
         return Ok(());
     };
+    // Activation checked this, but a replacement controller joins at whatever state
+    // it finds and skips that transition. Re-check before the promotion and merge.
+    let live_stack_version: String =
+        sqlx::query_scalar("SELECT stack_version FROM versioning WHERE singleton = TRUE")
+            .fetch_one(&mut *tx)
+            .await?;
+    if let Err(reason) = validate_cutover_release(&stack_version, &live_stack_version) {
+        warn!(reason, "proposal cannot cut over; failing the attempt");
+        sqlx::query(
+            "UPDATE upgrade_state
+                SET state = 'PAUSED', status = 'failed',
+                    last_error = $1, updated_at = NOW()
+              WHERE stack_role = 'GCS' AND state = 'UpgradeAuthorized'",
+        )
+        .bind(&reason)
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        return Ok(());
+    }
+
     let consensus_version = i64::from(fhevm_engine_common::CONSENSUS_PROTOCOL_VERSION);
 
     // 2. Promote the new stack version inside the cutover tx. This is the
@@ -3977,6 +3998,32 @@ mod tests {
 
     /// A cutover that fails for a transient reason is retried until it succeeds. The
     /// stand-in for the transient fault is a missing GCS schema, which makes
+    /// A replacement controller joins at whatever state it finds, so it never runs the
+    /// activation check. Cutover must refuse a proposal for another release itself,
+    /// before promoting versions or merging its own schema.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn cutover_rejects_a_proposal_for_another_release() {
+        let (_instance, pool) = test_pool().await;
+        seed_gcs_row(&pool, "UpgradeAuthorized", "in_progress").await;
+        sqlx::query("UPDATE upgrade_state SET version = 'v9.9.9' WHERE stack_role = 'GCS'")
+            .execute(&pool)
+            .await
+            .expect("name another release");
+
+        execute_cutover(&pool).await.expect("cutover returns");
+
+        assert_eq!(
+            gcs_state(&pool).await,
+            ("PAUSED".into(), "failed".into()),
+            "a proposal for another release must not cut over"
+        );
+        assert_eq!(
+            live_stack_version(&pool).await,
+            "v0.14",
+            "the live versions must not move"
+        );
+    }
+
     /// `delete_bcs_gw_leftovers` fail on `gcs.input_handles`; a background task creates
     /// the schema part-way through the backoff, and a later attempt then commits.
     ///
