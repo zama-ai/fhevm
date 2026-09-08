@@ -3287,7 +3287,7 @@ mod tests {
                 .fetch_one(&pool)
                 .await
                 .expect("versioning");
-        assert_eq!(sv, "v0.15");
+        assert_eq!(sv, fhevm_engine_common::STACK_VERSION);
     }
 
     /// Reconcile cuts over on both latches when the unanimity NOTIFY was missed.
@@ -4016,7 +4016,7 @@ mod tests {
         assert_eq!(gcs_state(&pool).await, ("LIVE".into(), "completed".into()));
         assert_eq!(
             live_stack_version(&pool).await,
-            "v0.15",
+            fhevm_engine_common::STACK_VERSION,
             "the successful retry must promote the new stack version"
         );
     }
