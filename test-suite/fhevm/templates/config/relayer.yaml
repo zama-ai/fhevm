@@ -138,6 +138,7 @@ http:
   metrics:
     histogram_buckets: [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 40]
   api_retry_after_seconds: 4
+  enable_admin_endpoint: false
   # Dynamic retry-after configuration for V2 handlers
   # Computes Retry-After based on queue size, drain rate, and processing stage
   retry_after:
@@ -205,6 +206,7 @@ storage:
     max_lifetime_secs: 1800
   sql_health_check_timeout_secs: 5
   cron:
+    expiry_enabled: false
     # 60s for interval check
     timeout_cron_interval: "60s"
     # 30 mins timeout logic
