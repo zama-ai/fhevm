@@ -50,11 +50,18 @@ jobs:
       #    Pinned to a full commit SHA (not a mutable tag) to prevent supply
       #    chain attacks. persist-credentials: false removes the Git token from
       #    the local config so subsequent steps can't accidentally leak it.
+      #    fetch-depth: 0 is required here, unlike most workflows in this repo:
+      #    `make generate` runs `check-vendored-origin`, which reads vendored
+      #    files straight out of this repo's own git history at their pinned
+      #    origin commit (`git show <commit>:<path>`) to prove the vendored
+      #    copy still matches. A shallow checkout doesn't have that commit,
+      #    and the read fails with "unavailable locally".
       # -----------------------------------------------------------------------
       - name: Check out repository
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           persist-credentials: 'false'
+          fetch-depth: 0
 
       # -----------------------------------------------------------------------
       # 2. Node.js setup
