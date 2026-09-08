@@ -319,6 +319,9 @@ jobs:
           fi
           ./fhevm-cli up "${args[@]}"
 
+      # standard / standard-shard-stateful run normal drift recovery first,
+      # then consumer-only drift with all legacy host listeners/pollers stopped.
+      # The CLI restores the previously running services even on failure.
       - name: Selected e2e suite
         working-directory: test-suite/fhevm
         run: |
@@ -387,6 +390,10 @@ jobs:
             snapshot_logs "${label} - Transaction Sender (filtered)" "${prefix}-transaction-sender" "Selected 0 rows to process"
             snapshot_logs "${label} - ZKProof Worker" "${prefix}-zkproof-worker"
             snapshot_logs "${label} - TFHE Worker" "${prefix}-tfhe-worker"
+          done
+          # Include every host consumer, also on extra chains and after a crash.
+          for container in $(docker ps -a --format '{{.Names}}' | grep -E '^coprocessor[0-9]*-host-listener-consumer($|-)' | sort); do
+            snapshot_logs "${container} - Host Consumer" "${container}"
           done
           # Threshold-mode KMS only (no-op on a centralized single-core stack): party 1 is the bare
           # `kms-core` / `kms-connector-*` already captured above; parties 2..N use the `-{i}-`

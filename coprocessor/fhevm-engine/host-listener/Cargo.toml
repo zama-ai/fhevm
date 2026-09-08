@@ -27,6 +27,7 @@ test = false
 bench = false
 
 [dependencies]
+uuid = { version = "1", features = ["v4"] }
 # workspace dependencies
 anyhow = { workspace = true }
 alloy = { workspace = true }

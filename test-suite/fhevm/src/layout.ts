@@ -348,6 +348,7 @@ export const STANDARD_TEST_PROFILES = [
   // `ciphertext-drift` is still registered as a profile for on-demand runs but
   // is omitted from the standard suite to avoid leaving a corrupted DB.
   "ciphertext-drift-auto-recovery",
+  "ciphertext-drift-consumer-recovery",
 ] as const;
 
 // CI shards of the standard suite. Together they must cover STANDARD_TEST_PROFILES
@@ -365,6 +366,7 @@ export const STANDARD_SHARD_STATEFUL_TEST_PROFILES = [
   "paused-gateway-contracts",
   "coprocessor-db-state-revert",
   "ciphertext-drift-auto-recovery",
+  "ciphertext-drift-consumer-recovery",
 ] as const;
 
 export const STANDARD_SHARD_DECRYPTION_TEST_PROFILES = [

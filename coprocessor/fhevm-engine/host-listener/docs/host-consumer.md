@@ -28,47 +28,134 @@ bounds are inclusive. For example, with a live reference of 1000,
 Negative values subtract from that same observed block, saturating at block zero
 (including the default end when the reference is genesis).
 The reference is captured once from a `LIVE` payload on the configured chain;
-reorg and catchup payloads cannot supply it. A queued live backlog means this
-reference can be behind the RPC head. Inverted ranges are rejected. Absolute
-bounds do not have to be below the live reference. Listener-core retains its
-existing behavior: it caps the end at its actual RPC head and skips a range
-starting above that head. Future scheduled replay is not supported. Startup
-without a start flag does not request or consume manual replay.
+reorg and catchup payloads cannot supply it. These manual bounds remain fixed
+across drift restarts. A queued live backlog means this reference can be behind
+the RPC head. Inverted ranges are rejected. Absolute bounds do not have to be
+below the live reference. Listener-core retains its existing behavior: it caps
+the end at its actual RPC head and skips a range starting above that head.
+Future scheduled replay is not supported.
 
-The consumer declares its live and catchup queues before registering contracts.
+The consumer declares its delivery queues before registering contracts.
 It registers all contracts in one atomic WATCH registration, so a fresh subscription
 cannot publish a live block with only part of the contract set active.
-It starts both flows, waits for the live reference, and publishes the resolved
+It starts the flows, waits for the live reference, and publishes the resolved
 range using the existing listener-core catchup protocol. Request publication failure or
 consumer failure stops the process with an error; live processing does not wait
 for replay to finish.
 
-## Independent instances
+Without manual flags and without a recorded drift, startup requests no replay.
+Delivery queues are declared so automatic drift recovery is always available.
 
-The consumer ID is `<service-name>.<chain-id>`, shared by live delivery,
-replay requests, and filter registration. The listener library derives delivery
-queue names from this ID, including `<consumer-id>.catchup-event` for replay.
-Use distinct service names for consumers that need independent replay delivery.
-Reusing the same consumer ID after a restart reuses its durable queues;
-pending replay and the new startup request may overlap. Ingestion is idempotent.
+## Drift restart
 
-## Deployment and scope
+Drift recovery restarts live and replay processing after database cleanup and
+requests the missing history. It does not depend on another host listener
+rebuilding the database.
+
+The consumer polls `drift_revert_signal` even when no blocks arrive. Every block
+handler also checks that its subscription's database drift checkpoint is current
+before ingesting. Query failures stop or retry work rather than bypassing the
+check; each drift query has a timeout.
+
+On a new signal, a changed boundary, or a signal becoming unfinished again:
+
+1. Cancel both live and replay intake. Cancel active ingestion and wait for its
+   local barrier to drain, then await the consumer tasks. Cancelling ingestion
+   drops its transaction; the database driver rolls it back.
+2. Publish UNWATCH for the retired subscription's contracts.
+3. Wait for cleanup to be Done. Pending, Reverting and Failed keep ingestion
+   stopped. Cleanup is still owned by the existing gw-listener revert runner;
+   a Failed signal requires the existing operator retry/acknowledgement flow.
+4. Create a new subscription with fresh dependency caches, queues and registration.
+5. Observe its first live block H and request replay through H − 1 while live
+   processes H onward. The start is the earliest observed drift point or the
+   original manual start, whichever is lower. A higher explicit manual end is
+   retained. A drift start at or above H needs no replay below H unless the
+   manual range also requires it.
+
+A pending signal lowered to an earlier block is picked up while waiting for
+cleanup. Later signals never raise the earliest required replay start during
+this process. Repeated observation of the same completed signal does not cause
+another restart. If drift occurs again during recovery, the loop repeats.
+
+At process startup, an existing Done drift signal also triggers replay from its
+boundary. This is conservative recovery for a recorded drift. General automatic
+catchup from the last persisted block, when no drift signal exists,
+is not implemented. Use explicit manual bounds when such a shutdown gap needs
+repairing.
+
+The consumer does not declare replay completion: chunks can finish out of order,
+so receiving the last block is insufficient. Both flows remain active; neither
+waits for another listener's database tip. Retired-stack protections still apply.
+
+## Subscription identities and resources
+
+The runner constructs a consumer ID as `<service>.<chain>.<session>.s<subscription_id>`.
+Each process creates a fresh UUID session ID. The subscription counter starts at
+0 and increments after each drift-revert; a fresh subscription is then created. The listener library derives delivery
+queue names from this consumer ID, for example:
+
+```text
+<service>.<chain>.<session>.s0.new-event
+<service>.<chain>.<session>.s0.catchup-event
+```
+
+The complete consumer ID owns its filters. Each process has independent live
+and replay delivery. Old messages cannot enter the new subscription, including
+messages published after cancellation. A process restart creates a new session
+and does not reuse its old queues. Ingestion remains idempotent.
+
+UNWATCH is asynchronous and best effort on shutdown; failure is logged. Old
+queues, streams and dead-letter resources are not deleted automatically, and
+in-flight core work is not synchronously cancelled. Retire these resources
+through broker maintenance. Old replay requests use ordinary catchup semantics:
+once filters are removed, core skips publication instead of waiting for those
+filters to return. A future acknowledged retirement protocol can replace this
+resource lifecycle. Raw broker metrics retain subscription-specific topic labels;
+application metrics remain keyed by chain ID.
+
+When upgrading from stable queue identities, retire the old shared registration
+and queues only after all consumers using them have stopped.
+
+## Deployment and validation
 
 Deploy the updated listener-core before deploying this host-consumer: startup
-now requires atomic WATCH support, even without manual catchup. Atomic WATCH uses
+requires atomic WATCH support, even without manual catchup. Atomic WATCH uses
 an array of ordinary filter commands on the existing WATCH topic. Core still
 accepts legacy single commands; atomic registrations add filters rather than replacing them.
 Existing partial registrations are not deactivated while an atomic registration is pending.
 
-This feature does not declare replay completion: different chunks can finish
-out of order, so seeing the last block is insufficient. The catchup consumer
-stays active alongside live consumption. Drift recovery and finalization/KMS
-changes are separate work. Live retains its existing drift checks. Manual replay acknowledges and discards
-blocks at or above the earliest drift boundary observed during this run, even
-when that signal is already Done. Earlier blocks may still be ingested. Manual
-replay does not update live's recovery target. Restarting replay after cleanup
-is deferred to a later commit, so this version does not complete manual recovery
-across a drift. Retired-stack protections still apply.
+Each subscription declares its delivery queues before publishing its complete
+contract set atomically. Its first live block therefore proves the registration
+is active; catchup uses `request_catchup()` with that same subscription identity.
+No schema change or new core cancellation protocol is required.
+
+Unit tests cover replay bounds, drift checkpoints and cancellation/draining:
+
+```sh
+SQLX_OFFLINE=true cargo test -p host-listener --lib consumer::
+```
+
+The ignored drift tests require Docker for a disposable PostgreSQL database and
+an isolated Redis or RabbitMQ broker. A control peer stands in for listener-core
+RPC fetching, with ABI-encoded TFHE and ACL events exercising real ingestion.
+
+Drift tests exercise the subscription runner:
+
+```sh
+DRIFT_RECOVERY_BROKER_URL=redis://127.0.0.1:6379 SQLX_OFFLINE=true cargo test -p host-listener --lib consumer::runner::tests -- --ignored
+```
+
+They cover recovery with and without manual flags, lower drift boundaries,
+rejection of old-subscription messages, and recovery after the production revert
+SQL deletes computations and permissions. The latter checks that replay restores
+the exact original handles in both tables.
+
+For full-stack detection, cleanup, RPC replay and compute/decrypt validation, run
+`./fhevm-cli test ciphertext-drift-consumer-recovery` from `test-suite/fhevm`
+after booting a `two-of-three` stack with this host-consumer and listener-core.
+This profile temporarily stops legacy host listeners and pollers on every
+operator and host chain. See the test-suite README for CI instructions.
 
 ## Manual catchup tests
 
