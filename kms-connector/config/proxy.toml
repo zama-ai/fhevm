@@ -1,0 +1,57 @@
+# Example configuration for KMS Connector's `Proxy`
+
+# Service name for tracing (optional, defaults to "kms-connector-proxy")
+# ENV: KMS_CONNECTOR_SERVICE_NAME
+# service_name = "kms-connector-proxy"
+
+# Bind address of the proxy (optional, defaults to "0.0.0.0:8443")
+# ENV: KMS_CONNECTOR_PROXY_BIND_ADDRESS
+# bind_address = "0.0.0.0:8443"
+
+# SHA-256 digest of the API key the relayer sends as `Authorization: Bearer <key>` (required).
+# The plaintext key lives in a secret shared with the relayer; only its digest is configured here.
+# Compute it with: printf '%s' "$API_KEY" | sha256sum
+# ENV: KMS_CONNECTOR_API_KEY_DIGEST
+api_key_digest = "0x9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+
+# `host:port` addresses of the Connector endpoint replicas (required).
+# Can be a Kubernetes ClusterIP Service (kube-proxy balances), a docker-compose service name, or
+# plain IPs. Hostnames are resolved once at startup.
+# ENV: KMS_CONNECTOR_ENDPOINT_ADDRESSES (comma-separated list, e.g. "endpoint-1:8080,endpoint-2:8080")
+endpoint_addresses = ["kms-connector-endpoint:8080"]
+
+# Timeout to establish a TCP connection to an endpoint (optional, defaults to "3s")
+# ENV: KMS_CONNECTOR_ENDPOINT_CONNECT_TIMEOUT (format: https://docs.rs/humantime/latest/humantime/)
+# endpoint_connect_timeout = "3s"
+
+# How long the proxy waits for an endpoint response before answering `502` (optional, defaults to "60s").
+# Must exceed the endpoint's `decryption_timeout` so its own `504 timeout` reaches the relayer.
+# ENV: KMS_CONNECTOR_ENDPOINT_RESPONSE_TIMEOUT (format: https://docs.rs/humantime/latest/humantime/)
+# endpoint_response_timeout = "60s"
+
+# How long an idle pooled endpoint connection is kept open (optional, defaults to "10s").
+# Keep it short behind a ClusterIP Service so newly scaled endpoint pods receive traffic.
+# ENV: KMS_CONNECTOR_ENDPOINT_IDLE_TIMEOUT (format: https://docs.rs/humantime/latest/humantime/)
+# endpoint_idle_timeout = "10s"
+
+# Maximum size of a request body, in bytes (optional, defaults to 1 MiB)
+# ENV: KMS_CONNECTOR_MAX_BODY_BYTES
+# max_body_bytes = 1048576
+
+# How long the proxy waits for the client to send request bytes (optional, defaults to "30s")
+# ENV: KMS_CONNECTOR_REQUEST_READ_TIMEOUT (format: https://docs.rs/humantime/latest/humantime/)
+# request_read_timeout = "30s"
+
+# How long in-flight requests are given to complete after SIGTERM (optional, defaults to "60s").
+# The pod's `terminationGracePeriodSeconds` must exceed this value.
+# ENV: KMS_CONNECTOR_SHUTDOWN_GRACE_PERIOD (format: https://docs.rs/humantime/latest/humantime/)
+# shutdown_grace_period = "60s"
+
+# TLS configuration of the proxy (required)
+[tls_config]
+# Path of the PEM certificate chain
+# ENV: KMS_CONNECTOR_TLS_CONFIG__CERT_PATH
+cert_path = "/etc/kms-connector/proxy/tls.crt"
+# Path of the PEM private key
+# ENV: KMS_CONNECTOR_TLS_CONFIG__KEY_PATH
+key_path = "/etc/kms-connector/proxy/tls.key"
