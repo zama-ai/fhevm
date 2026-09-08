@@ -3,7 +3,7 @@
  */
 import { effectiveOverrides } from "../scenario/resolve";
 import type { StackSpec } from "../stack-spec/stack-spec";
-import type { CoprocessorInstanceSource, State } from "../types";
+import type { CoprocessorInstanceSource, ResolvedCoprocessorScenario, State } from "../types";
 
 type CompatSemver = readonly [number, number, number];
 type CompatService =
@@ -539,10 +539,73 @@ export const validateBundleCompatibility = (state: Pick<CompatState, "versions">
   return issues;
 };
 
+/**
+ * Rejects a multi-node consensus scenario whose nodes would not all run the
+ * same coprocessor revision.
+ *
+ * Byte-consensus compares persisted ciphertext bytes across coprocessors,
+ * which is only meaningful when every node runs the same software revision.
+ * Two shapes break that and are refused: a service-scoped coprocessor
+ * override, which mixes locally built services with published ones; and
+ * instances whose effective sources differ (one local, one published, or two
+ * different published tags). A single published tag for every node, or a full
+ * local build for every node, both satisfy the premise and pass -- the
+ * orchestrated CI path runs the published bundle with no override at all.
+ */
+const assertSingleCoprocessorRevision = (
+  state: CompatState,
+  scenario: Pick<ResolvedCoprocessorScenario, "instances">,
+) => {
+  const overrides = effectiveCompatOverrides(state);
+  const partial = overrides.find((override) => override.group === "coprocessor" && override.services?.length);
+  if (partial) {
+    throw new Error(
+      "Consensus scenarios need every coprocessor service on every node from one revision; " +
+        `a service-scoped coprocessor override (${(partial.services ?? []).join(", ")}) mixes locally built ` +
+        "services with published ones. Use --override coprocessor (or --build) for a full local build, or no " +
+        "coprocessor override to run the bundle's published images.",
+    );
+  }
+  // An inherited instance builds locally only under an EXPLICIT full
+  // coprocessor override; scenario-owned sources (`mode: local` on some
+  // instance) never change how a sibling `inherit` instance sources its
+  // images, and `assertScenarioOverrideCompatibility` already refuses
+  // explicit overrides alongside scenario-owned sources.
+  const fullLocal = state.overrides.some((override) => override.group === "coprocessor" && !override.services?.length);
+  const bundleTag = state.versions.env.COPROCESSOR_TFHE_WORKER_VERSION ?? "";
+  const revisionOf = (source: CoprocessorInstanceSource) => {
+    switch (source.mode) {
+      case "local":
+        return "local";
+      case "registry":
+        return source.tag === bundleTag ? "bundle" : `registry:${source.tag}`;
+      default:
+        return fullLocal ? "local" : "bundle";
+    }
+  };
+  const nodesByRevision = new Map<string, number[]>();
+  scenario.instances.forEach((instance, position) => {
+    const revision = revisionOf(instance.source);
+    nodesByRevision.set(revision, [...(nodesByRevision.get(revision) ?? []), instance.index ?? position]);
+  });
+  if (nodesByRevision.size > 1) {
+    const detail = [...nodesByRevision]
+      .map(([revision, indexes]) => `${revision} (instance ${indexes.join(", ")})`)
+      .join(" vs ");
+    throw new Error(
+      `Consensus scenarios need every node on one coprocessor revision; instance sources differ: ${detail}. ` +
+        "Align the instance sources, or use --override coprocessor to build every node locally.",
+    );
+  }
+};
+
 /** Rejects multi-chain scenarios when the resolved coprocessor bundle predates multi-chain support. */
 export const assertSupportedBundleScenario = (state: CompatState) => {
   const scenario = "scenario" in state ? state.scenario : state.coprocessor;
   if (!scenario) return; // blue-green stack spec — handled by its own compat path
+  if (scenario.kind === "coprocessor-consensus" && (scenario.topology?.count ?? 1) > 1) {
+    assertSingleCoprocessorRevision(state, scenario);
+  }
   const hostChains = scenario.hostChains;
   if (hostChains.length <= 1 || !requiresLegacySingleChainCoprocessor(state)) {
     return;

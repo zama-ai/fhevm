@@ -188,9 +188,12 @@ leaves the metric. Latencies are in nanoseconds; the rate metrics are already
 per second.
 
 The panels filter on hardware and branch, not on backend. Backend follows from
-the machine — a GPU flavor only ever stores `cuda` — so filtering on it adds a
-way for a panel to come back empty without adding a distinction. It is still
-recorded, and the diagnostics below print it.
+the machine — a GPU flavor stores `cuda`, a CPU one `cpu` — so filtering on it
+adds a way for a panel to come back empty without adding a distinction. It is
+still recorded, and the diagnostics below print it. GPU points recorded before
+the one-shot suite landed carry the older label `gpu`; the label was unified to
+`cuda` for every GPU series, so a backend filter spanning that change has to
+accept both.
 
 Primary metric per scenario, in milliseconds. The label differs between the
 paced and unpaced workloads, which is why two are matched:
@@ -283,7 +286,8 @@ SELECT
   max(1000 / (m.value / 1e9)) FILTER (WHERE split_part(test.name, '::', 4) = 'cross_tx_dependent_1000_50x20') AS cross_tx_dependent_1000_50x20,
   max(300 / (m.value / 1e9)) FILTER (WHERE split_part(test.name, '::', 4) = 'auction_300') AS auction_300,
   max(1000 / (m.value / 1e9)) FILTER (WHERE split_part(test.name, '::', 4) = 'traffic_1000_200x5_10x100_lag2') AS traffic_1000_200x5_10x100_lag2,
-  max(1000 / (m.value / 1e9)) FILTER (WHERE split_part(test.name, '::', 4) = 'traffic_join_1000_200x5_20acct_lag2') AS traffic_join_1000_200x5_20acct_lag2
+  max(1000 / (m.value / 1e9)) FILTER (WHERE split_part(test.name, '::', 4) = 'traffic_join_1000_200x5_20acct_lag2') AS traffic_join_1000_200x5_20acct_lag2,
+  max(250 / (m.value / 1e9)) FILTER (WHERE split_part(test.name, '::', 4) = 'skewed_chains_250_1x200_50x1') AS skewed_chains_250_1x200_50x1
 FROM benchmark.metrics AS m
 JOIN benchmark.test AS test ON test.id = m.test_id
 JOIN benchmark.hardware AS h ON h.id = m.hardware_id
@@ -323,7 +327,8 @@ SELECT
   max(m.value) FILTER (WHERE split_part(test.name, '::', 4) = 'cross_tx_dependent_1000_50x20') AS cross_tx_dependent_1000_50x20,
   max(m.value) FILTER (WHERE split_part(test.name, '::', 4) = 'auction_300') AS auction_300,
   max(m.value) FILTER (WHERE split_part(test.name, '::', 4) = 'traffic_1000_200x5_10x100_lag2') AS traffic_1000_200x5_10x100_lag2,
-  max(m.value) FILTER (WHERE split_part(test.name, '::', 4) = 'traffic_join_1000_200x5_20acct_lag2') AS traffic_join_1000_200x5_20acct_lag2
+  max(m.value) FILTER (WHERE split_part(test.name, '::', 4) = 'traffic_join_1000_200x5_20acct_lag2') AS traffic_join_1000_200x5_20acct_lag2,
+  max(m.value) FILTER (WHERE split_part(test.name, '::', 4) = 'skewed_chains_250_1x200_50x1') AS skewed_chains_250_1x200_50x1
 FROM benchmark.metrics AS m
 JOIN benchmark.test AS test ON test.id = m.test_id
 JOIN benchmark.hardware AS h ON h.id = m.hardware_id
@@ -374,7 +379,8 @@ WITH scenario (bench, transfers, ord) AS (
     ('cross_tx_dependent_1000_50x20', 1000, 3),
     ('auction_300', 300, 4),
     ('traffic_1000_200x5_10x100_lag2', 1000, 5),
-    ('traffic_join_1000_200x5_20acct_lag2', 1000, 6)
+    ('traffic_join_1000_200x5_20acct_lag2', 1000, 6),
+    ('skewed_chains_250_1x200_50x1', 250, 7)
 ), latest AS (
   SELECT DISTINCT ON (pv.name, s.bench, h.name)
     left(pv.name, 7) AS commit,
