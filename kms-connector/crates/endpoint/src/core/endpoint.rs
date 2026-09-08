@@ -10,7 +10,6 @@ use tracing::{error, info};
 
 /// The `Endpoint` service: the `v1` HTTP decryption interface of the KMS Connector.
 pub struct Endpoint {
-    config: Arc<Config>,
     app_state: http::AppState,
     response_listener: ResponseListener,
 }
@@ -34,7 +33,6 @@ impl Endpoint {
         );
 
         let endpoint = Self {
-            config,
             app_state,
             response_listener,
         };
@@ -45,8 +43,9 @@ impl Endpoint {
     pub async fn start(self, cancel_token: CancellationToken) -> anyhow::Result<()> {
         info!("Starting Endpoint");
 
-        let server = http::run_server(self.app_state, self.config.http_endpoint)?;
-        info!("HTTP server listening at: {}", self.config.http_endpoint);
+        let http_endpoint = self.app_state.config.http_endpoint;
+        let server = http::run_server(self.app_state, http_endpoint)?;
+        info!("HTTP server listening at: {http_endpoint}");
         let server_handle = server.handle();
 
         let mut listener_task = tokio::spawn(self.response_listener.start());
