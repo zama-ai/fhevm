@@ -117,9 +117,14 @@ export function runLogged(cmd: string, args: readonly string[], env?: NodeJS.Pro
 /** Run a command and capture its output. Never throws; inspect `.ok`. */
 export function capture(cmd: string, args: readonly string[]): CaptureResult {
   const r = spawnSync(cmd, args as string[], { encoding: 'utf8' });
+  // `r.error` is set when `cmd` itself doesn't exist (ENOENT) — nothing was spawned, so `r.stdout`/
+  // `r.stderr` are `undefined` at runtime despite spawnSync's types promising a string once `encoding`
+  // is set. `requireTool` relies on this never throwing so its `command`-then-`which` fallback can
+  // reach the second attempt on a platform (Linux) where `command` isn't a standalone executable,
+  // only a shell builtin, unlike on macOS.
+  if (r.error) return { ok: false, stdout: '', stderr: '', code: 1 };
   return {
     ok: r.status === 0,
-    // spawnSync types these as string when `encoding` is set, so no nullish coalescing is needed.
     stdout: r.stdout.trim(),
     stderr: r.stderr.trim(),
     code: r.status ?? 1,
