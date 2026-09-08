@@ -16,7 +16,7 @@ import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import type { NpmManifest } from '../manifest.ts';
+import { type NpmManifest, registeredConsumers } from '../manifest.ts';
 import { type ModuleKind, consumerModuleKinds } from './module-kind.ts';
 import { declaredEntryPoints } from './publish-check.ts';
 import {
@@ -29,10 +29,14 @@ import {
 } from './npm.ts';
 import { type Verbosity, hasDetailedOutput, hasProgress, npmVerbosityArguments } from './verbosity.ts';
 
-export type TestConsumerFixture = {
-  readonly owner: LoadedPackage;
+/**
+ * One `consumerTests` entry, resolved: `published` registers the consumer for `moduleKind`, and `owner` is
+ * the dev package that owns `published`. The owner is derived from the REGISTRATION, never from where the
+ * consumer's directory happens to sit, so a template registered by a plugin belongs to the plugin's owner.
+ */
+export type TestConsumerRegistration = {
   readonly published: LoadedPackage;
-  readonly fixture: LoadedPackage;
+  readonly owner: LoadedPackage;
   readonly moduleKind: ModuleKind;
 };
 
@@ -43,19 +47,47 @@ export type LinkedDependency = {
   readonly package: LoadedPackage;
 };
 
+/**
+ * A consumer suite to run: one per registered consumer package, however many payloads register it. Every
+ * registration is kept so owner and payload selectors still reach a shared consumer, which runs once.
+ */
 export type TestConsumerTarget = {
-  readonly kind: 'fixture' | 'project';
   readonly source: LoadedPackage;
-  readonly owner?: LoadedPackage;
-  readonly published?: LoadedPackage;
-  readonly moduleKind: ModuleKind | 'dual';
+  readonly moduleKind: ModuleKind;
+  readonly registrations: readonly TestConsumerRegistration[];
   readonly linkedDependencies: readonly LinkedDependency[];
 };
+
+/**
+ * How a consumer is installed is a property of the CONSUMER, not a flag: a committed lockfile is replayed
+ * (`npm ci`); a workspace member has none by policy (rule 6.1.1: its installation root locks it) and is
+ * resolved fresh (`npm install`); an isolated consumer with no lockfile is resolved fresh too, but that is
+ * a gap rather than a policy, so it warns, and `--ci` turns the warning into an error.
+ */
+export type ConsumerInstallMode = {
+  readonly mode: 'committed' | 'fresh';
+  readonly reason: 'committed lockfile' | 'workspace member' | 'no lockfile';
+};
+
+export function consumerInstallMode(
+  source: Pick<LoadedPackage, 'directory' | 'inventory'>,
+  fileExists: (file: string) => boolean = existsSync,
+): ConsumerInstallMode {
+  if (source.inventory.member) return { mode: 'fresh', reason: 'workspace member' };
+  if (fileExists(join(source.directory, 'package-lock.json')))
+    return { mode: 'committed', reason: 'committed lockfile' };
+  return { mode: 'fresh', reason: 'no lockfile' };
+}
+
+export function describeInstallMode(install: ConsumerInstallMode): string {
+  return install.mode === 'committed' ? 'committed' : `fresh (${install.reason})`;
+}
 
 export type PrepareTestConsumerOptions = {
   readonly workspaceRoot: string;
   readonly manifest: NpmManifest;
   readonly packageSelector?: string;
+  readonly all: boolean;
   readonly output?: string;
   readonly testFile?: string;
   readonly force: boolean;
@@ -83,23 +115,26 @@ const managedOutputRoot = join(tmpdir(), 'fhevm-npm-test-consumer');
 
 export function prepareTestConsumer(options: PrepareTestConsumerOptions): void {
   const packages = loadPackages(options.workspaceRoot, options.manifest);
-  const targets = findTestConsumerTargets(options.workspaceRoot, packages);
+  const targets = resolveTestConsumerTargets(options.workspaceRoot, packages);
   if (options.list) {
     printTargets(targets);
     return;
   }
-  if (options.packageSelector === undefined) {
-    throw new Error("test-consumer requires a package selector; use '--list' to see available consumers");
-  }
-
-  const selected = selectTestConsumerTargets(targets, options.packageSelector);
+  const selected = selectTargetsToRun(targets, options.packageSelector, options.all, packages);
   for (const target of selected) {
     const testScript = target.source.packageJson.scripts?.test;
     if (testScript === undefined || testScript.trim() === '') {
       throw new Error(`Consumer '${target.source.key}' must define a non-empty 'test' script`);
     }
-    if (options.ci && !existsSync(join(target.source.directory, 'package-lock.json'))) {
-      throw new Error(`Consumer '${target.source.key}' requires a committed package-lock.json for '--ci'`);
+    const install = consumerInstallMode(target.source);
+    if (install.reason === 'no lockfile') {
+      if (options.ci) {
+        throw new Error(
+          `Consumer '${target.source.key}' is not a workspace member and has no committed package-lock.json; ` +
+            "'--ci' refuses to resolve it fresh",
+        );
+      }
+      console.warn(`⚠️  Consumer '${target.source.key}' has no committed package-lock.json; resolving it fresh`);
     }
   }
   if (options.testFile !== undefined && selected.length !== 1) {
@@ -112,8 +147,11 @@ export function prepareTestConsumer(options: PrepareTestConsumerOptions): void {
     throw new Error(`Consumer '${selected[0]?.source.key}' does not define a 'test:file' script`);
   }
   const planned = selected.map((target) => {
+    // Several suites may share a format, so a multi-consumer output fans out by SOURCE, never by format.
     const output =
-      options.output === undefined || selected.length === 1 ? options.output : join(options.output, target.moduleKind);
+      options.output === undefined || selected.length === 1
+        ? options.output
+        : join(options.output, destinationDirectoryName(target.source.key));
     const testFile =
       options.testFile === undefined
         ? undefined
@@ -122,8 +160,13 @@ export function prepareTestConsumer(options: PrepareTestConsumerOptions): void {
       testFile === undefined
         ? undefined
         : workspaceRelativeDisplayPath(options.workspaceRoot, join(target.source.directory, testFile));
-    const destinationOwner = target.owner?.key ?? target.source.key;
-    return { target, testFile, testFileLabel, ...resolveDestination(output, destinationOwner, target.moduleKind) };
+    return {
+      target,
+      testFile,
+      testFileLabel,
+      install: consumerInstallMode(target.source),
+      ...resolveDestination(output, target.source.key, target.moduleKind),
+    };
   });
   for (const { destination, managed } of planned) {
     if (managed) removeExistingManagedDestination(destination);
@@ -136,12 +179,12 @@ export function prepareTestConsumer(options: PrepareTestConsumerOptions): void {
     buildLinkedDependenciesWithMake(options.workspaceRoot, owners, options.verbosity);
   }
 
-  for (const [index, { target, testFile, testFileLabel, destination, managed }] of planned.entries()) {
+  for (const [index, { target, testFile, testFileLabel, install, destination, managed }] of planned.entries()) {
     const serialIndex = index + 1;
     const startedAt = Date.now();
     let succeeded = false;
     try {
-      printConsumerStartBanner(target, destination, testFileLabel, options.ci, serialIndex, planned.length);
+      printConsumerStartBanner(target, destination, testFileLabel, install, serialIndex, planned.length);
       prepareDestination(destination, options.force, managed);
       copyFixture(target.source.directory, destination);
       writeFileSync(
@@ -149,16 +192,17 @@ export function prepareTestConsumer(options: PrepareTestConsumerOptions): void {
         `${JSON.stringify(
           {
             consumer: target.source.key,
-            kind: target.kind,
             moduleKind: target.moduleKind,
+            registeredBy: target.registrations.map((registration) => registration.published.key),
             linkedDependencies: target.linkedDependencies.map((dependency) => dependency.package.key),
           },
           null,
           2,
         )}\n`,
       );
-      patchLocalDependencies(destination, target.source.directory, target.linkedDependencies, options.ci);
-      runNpm(destination, consumerInstallArguments(options.ci), options.verbosity);
+      const useCommittedLock = install.mode === 'committed';
+      patchLocalDependencies(destination, target.source.directory, target.linkedDependencies, useCommittedLock);
+      runNpm(destination, consumerInstallArguments(useCommittedLock), options.verbosity);
       for (const dependency of target.linkedDependencies) {
         verifyPhysicalInstallation(destination, dependency.package);
         // Entry-point and declaration resolution are properties of a PUBLISHED artifact. The linked set
@@ -215,7 +259,7 @@ function printConsumerStartBanner(
   target: TestConsumerTarget,
   destination: string,
   testFile: string | undefined,
-  ci: boolean,
+  install: ConsumerInstallMode,
   serialIndex: number,
   serialTotal: number,
 ): void {
@@ -235,7 +279,7 @@ function printConsumerStartBanner(
 📋 CONSUMER SOURCE: ${target.source.directory}
 🔗 LINKED DEPENDENCIES:
 ${dependencies === '' ? '  - none' : dependencies}
-${testFile === undefined ? '' : `🎯 TEST FILE: ${testFile}\n`}🔒 INSTALL MODE: ${ci ? 'COMMITTED LOCK (npm ci)' : 'FRESH LOCK (npm install)'}
+${testFile === undefined ? '' : `🎯 TEST FILE: ${testFile}\n`}🔒 INSTALL MODE: ${install.mode === 'committed' ? 'COMMITTED LOCK (npm ci)' : `FRESH LOCK (npm install; ${install.reason})`}
 🟦${separator}
 `);
 }
@@ -267,17 +311,37 @@ export function regenerateTestConsumerPackageLocks(
   runner: NpmRunner = runNpm,
 ): void {
   const packages = loadPackages(options.workspaceRoot, options.manifest);
-  const targets = findTestConsumerTargets(options.workspaceRoot, packages);
+  const targets = resolveTestConsumerTargets(options.workspaceRoot, packages);
   const selected =
     options.packageSelector === undefined
-      ? targets.filter((target) => target.kind === 'fixture')
-      : selectTestConsumerTargets(targets, options.packageSelector);
-  if (selected.length === 0) throw new Error('No checked-in test consumers are available.');
+      ? targets
+      : selectTestConsumerTargets(targets, options.packageSelector, packages);
+  if (selected.length === 0) throw new Error('No registered test consumers are available.');
 
-  for (const target of selected) {
+  // A workspace member is locked by its installation root and must not carry its own lockfile (rule
+  // 6.1.1). An explicit request for one is a mistake to explain; a bulk run skips it and says so.
+  const [members, isolated] = partition(selected, (target) => target.source.inventory.member);
+  if (options.packageSelector !== undefined && members.length > 0) {
+    throw new Error(
+      `Consumer '${members.map((target) => target.source.key).join("', '")}' is a workspace member: its ` +
+        'dependencies are locked by its installation root, and a lockfile of its own is forbidden by rule 6.1.1',
+    );
+  }
+  for (const target of members) {
+    console.log(`⏭️  Skipped ${target.source.key}: workspace member, locked by its installation root`);
+  }
+
+  for (const target of isolated) {
     regenerateFixturePackageLock(target.source.directory, runner, target.linkedDependencies, options.verbosity);
     console.log(`✅ Regenerated ${target.source.key}/package-lock.json (${target.moduleKind.toUpperCase()})`);
   }
+}
+
+function partition<T>(values: readonly T[], predicate: (value: T) => boolean): [readonly T[], readonly T[]] {
+  const matching: T[] = [];
+  const rest: T[] = [];
+  for (const value of values) (predicate(value) ? matching : rest).push(value);
+  return [matching, rest];
 }
 
 export function regenerateFixturePackageLock(
@@ -427,58 +491,68 @@ function validateGeneratedPackageLock(stagingDirectory: string): void {
   }
 }
 
-export function findTestConsumerFixtures(workspaceRoot: string, manifest: NpmManifest): readonly TestConsumerFixture[] {
-  const packages = loadPackages(workspaceRoot, manifest);
-  return findFixtures(packages);
-}
-
-function findFixtures(packages: readonly LoadedPackage[]): readonly TestConsumerFixture[] {
-  const byKey = new Map(packages.map((pkg) => [pkg.key, pkg]));
-  const fixtures: TestConsumerFixture[] = [];
-
-  for (const owner of packages) {
-    if (owner.inventory.kind !== 'dev' || owner.packageJson.scripts?.['test:consumer']?.trim() === '') continue;
-    if (owner.packageJson.scripts?.['test:consumer'] === undefined || owner.inventory.publishedRelPath === undefined) {
-      continue;
-    }
-    const published = byKey.get(owner.inventory.publishedRelPath);
-    if (published === undefined) continue;
-    for (const moduleKind of consumerModuleKinds(published.packageJson)) {
-      const fixture = byKey.get(`${owner.key}/test-consumer/${moduleKind}`);
-      if (fixture === undefined || !existsSync(join(fixture.directory, 'package.json'))) continue;
-      fixtures.push({ owner, published, fixture, moduleKind });
-    }
-  }
-
-  return fixtures.sort((left, right) => left.owner.key.localeCompare(right.owner.key));
-}
-
-export function findTestConsumerTargets(
+/**
+ * Resolve every consumer suite from `consumerTests`, the manifest's sole registry of consumer tests.
+ * Nothing is discovered: a `test-consumer/<format>` directory beside a payload registers nothing by
+ * existing, and a package with a `test` script and a `file:` dependency is not a consumer test unless
+ * some payload says so. Dependency traversal still happens per consumer, but it finds what to INSTALL,
+ * never what to run.
+ */
+export function resolveTestConsumerTargets(
   workspaceRoot: string,
   packages: readonly LoadedPackage[],
 ): readonly TestConsumerTarget[] {
-  const fixtures = findFixtures(packages).map((fixture): TestConsumerTarget => ({
-    kind: 'fixture',
-    source: fixture.fixture,
-    owner: fixture.owner,
-    published: fixture.published,
-    moduleKind: fixture.moduleKind,
-    linkedDependencies: resolveLinkedDependencies(workspaceRoot, fixture.fixture, packages),
-  }));
-  const projects = packages
-    .filter((pkg) => !/\/test-consumer\/(?:cjs|esm)$/.test(pkg.key))
-    .filter((pkg) => pkg.packageJson.scripts?.test?.trim() !== '')
-    .filter((pkg) => pkg.packageJson.scripts?.test !== undefined)
-    .filter((pkg) =>
-      dependencyDeclarations(pkg.packageJson).some((declaration) => declaration.spec.startsWith('file:')),
-    )
-    .map((source): TestConsumerTarget => ({
-      kind: 'project',
+  const byKey = new Map(packages.map((pkg) => [pkg.key, pkg]));
+  const ownersByPayload = new Map<string, LoadedPackage[]>();
+  for (const pkg of packages) {
+    if (pkg.inventory.kind !== 'dev' || pkg.inventory.publishedRelPath === undefined) continue;
+    const owners = ownersByPayload.get(pkg.inventory.publishedRelPath) ?? [];
+    owners.push(pkg);
+    ownersByPayload.set(pkg.inventory.publishedRelPath, owners);
+  }
+
+  const registrationsBySource = new Map<string, TestConsumerRegistration[]>();
+  for (const published of packages) {
+    if (published.inventory.kind !== 'published') continue;
+    for (const { moduleKind, consumerKey } of registeredConsumers(published.inventory)) {
+      if (!byKey.has(consumerKey)) {
+        throw new Error(
+          `'${published.key}' registers consumer '${consumerKey}', which is absent from npm-manifest.json`,
+        );
+      }
+      const owners = ownersByPayload.get(published.key) ?? [];
+      const owner = owners[0];
+      if (owner === undefined || owners.length !== 1) {
+        throw new Error(
+          `'${published.key}' registers consumer tests but has ${String(owners.length)} dev owners instead of one`,
+        );
+      }
+      const registrations = registrationsBySource.get(consumerKey) ?? [];
+      registrations.push({ published, owner, moduleKind });
+      registrationsBySource.set(consumerKey, registrations);
+    }
+  }
+
+  const targets: TestConsumerTarget[] = [];
+  for (const [sourceKey, registrations] of registrationsBySource) {
+    const source = byKey.get(sourceKey);
+    if (source === undefined) throw new Error('unreachable');
+    const moduleKinds = new Set(registrations.map((registration) => registration.moduleKind));
+    const moduleKind = [...moduleKinds][0];
+    if (moduleKind === undefined || moduleKinds.size !== 1) {
+      throw new Error(
+        `Consumer '${sourceKey}' is registered under conflicting formats (${[...moduleKinds].sort().join(', ')}); ` +
+          'one consumer package executes as one format',
+      );
+    }
+    targets.push({
       source,
-      moduleKind: source.inventory.type,
+      moduleKind,
+      registrations: [...registrations].sort((left, right) => left.published.key.localeCompare(right.published.key)),
       linkedDependencies: resolveLinkedDependencies(workspaceRoot, source, packages),
-    }));
-  return [...fixtures, ...projects].sort((left, right) => left.source.key.localeCompare(right.source.key));
+    });
+  }
+  return targets.sort((left, right) => left.source.key.localeCompare(right.source.key));
 }
 
 function resolveLinkedDependencies(
@@ -610,43 +684,69 @@ function resolveFileDependency(
   return pkg;
 }
 
-export function selectTestConsumerFixtures(
-  fixtures: readonly TestConsumerFixture[],
-  selector: string,
-): readonly TestConsumerFixture[] {
-  const normalized = normalizeSelector(selector);
-  const matches = fixtures.filter((fixture) => fixtureSelectors(fixture).has(normalized));
-  if (matches.length === 0) {
-    throw new Error(`No test consumer matches '${selector}'. Use 'test-consumer --list' to see available consumers.`);
+/**
+ * `--all` means every registered consumer, which the registry makes well defined: there is no longer a
+ * discovered set whose stragglers a run-all would have to filter out. It is exclusive with a selector.
+ */
+export function selectTargetsToRun(
+  targets: readonly TestConsumerTarget[],
+  selector: string | undefined,
+  all: boolean,
+  packages: readonly LoadedPackage[] = [],
+): readonly TestConsumerTarget[] {
+  if (all && selector !== undefined) {
+    throw new Error(`'--all' runs every registered consumer; drop the selector '${selector}' or drop '--all'`);
   }
-  const owners = new Set(matches.map(({ owner }) => owner.key));
-  if (owners.size > 1) {
-    throw new Error(
-      `Test consumer selector '${selector}' is ambiguous; use an owner path: ${[...owners].sort().join(', ')}`,
-    );
+  if (all) {
+    if (targets.length === 0) throw new Error('No consumer tests are registered in npm-manifest.json#consumerTests.');
+    return targets;
   }
-  return matches.sort((left, right) => left.moduleKind.localeCompare(right.moduleKind));
+  if (selector === undefined) {
+    throw new Error("test-consumer requires a package selector or '--all'; use '--list' to see available consumers");
+  }
+  return selectTestConsumerTargets(targets, selector, packages);
 }
 
+/**
+ * Select by consumer key or name, by a registering payload's key or name, or by that payload's owner key
+ * or name. Owner and payload selectors run every suite they register, including several of one format;
+ * a consumer registered by several payloads is one target and runs once. A selector spanning more than
+ * one owner (a package name two payloads share, say) is ambiguous.
+ */
 export function selectTestConsumerTargets(
   targets: readonly TestConsumerTarget[],
   selector: string,
+  packages: readonly LoadedPackage[] = [],
 ): readonly TestConsumerTarget[] {
   const normalized = normalizeSelector(selector);
   const matches = targets.filter((target) => targetSelectors(target).has(normalized));
   if (matches.length === 0) {
+    const unregistered = packages.find((pkg) => selectors(pkg.key, pkg.packageJson.name).has(normalized));
+    if (unregistered !== undefined) {
+      throw new Error(
+        `'${unregistered.key}' is a manifest package but no payload registers it as a consumer test; add it to ` +
+          `the 'cjs' or 'esm' array of 'consumerTests' on the published package it tests, or use one of the ` +
+          `registered consumers listed by 'test-consumer --list'`,
+      );
+    }
     throw new Error(`No test consumer matches '${selector}'. Use 'test-consumer --list' to see available consumers.`);
   }
-  const groups = new Set(matches.map((target) => target.owner?.key ?? target.source.key));
-  if (groups.size > 1) {
+  // Ambiguity is a property of what the selector HIT, not of everything a matched target is registered
+  // by: a consumer named directly is one suite however many payloads share it, while a name that reaches
+  // registrations under two different owners could mean either.
+  const owners = new Set<string>();
+  for (const target of matches) {
+    if (selectors(target.source.key, target.source.packageJson.name).has(normalized)) continue;
+    for (const registration of target.registrations) {
+      if (registrationSelectors(registration).has(normalized)) owners.add(registration.owner.key);
+    }
+  }
+  if (owners.size > 1) {
     throw new Error(
-      `Test consumer selector '${selector}' is ambiguous; use a consumer path: ${matches
-        .map((target) => target.source.key)
-        .sort()
-        .join(', ')}`,
+      `Test consumer selector '${selector}' is ambiguous; use an owner or consumer path: ${[...owners].sort().join(', ')}`,
     );
   }
-  return matches.sort((left, right) => left.moduleKind.localeCompare(right.moduleKind));
+  return matches.sort((left, right) => left.source.key.localeCompare(right.source.key));
 }
 
 export function resolveConsumerTestFile(testFile: string, workspaceRoot: string, fixtureDirectory: string): string {
@@ -680,31 +780,20 @@ export function resolveConsumerTestFile(testFile: string, workspaceRoot: string,
   return relativeFile.split(sep).join('/');
 }
 
-function fixtureSelectors(fixture: TestConsumerFixture): ReadonlySet<string> {
-  return new Set(
-    [
-      fixture.owner.key,
-      fixture.owner.packageJson.name,
-      fixture.published.key,
-      fixture.published.packageJson.name,
-      fixture.fixture.key,
-      fixture.fixture.packageJson.name,
-    ]
-      .filter((value): value is string => value !== undefined)
-      .flatMap((value) => [normalizeSelector(value), normalizeSelector(value.replace(/^\.\//, ''))]),
-  );
+function targetSelectors(target: TestConsumerTarget): ReadonlySet<string> {
+  return new Set([
+    ...selectors(target.source.key, target.source.packageJson.name),
+    ...target.registrations.flatMap((registration) => [...registrationSelectors(registration)]),
+  ]);
 }
 
-function targetSelectors(target: TestConsumerTarget): ReadonlySet<string> {
-  if (target.kind === 'fixture' && target.owner !== undefined && target.published !== undefined) {
-    return fixtureSelectors({
-      owner: target.owner,
-      published: target.published,
-      fixture: target.source,
-      moduleKind: target.moduleKind as ModuleKind,
-    });
-  }
-  return selectors(target.source.key, target.source.packageJson.name);
+function registrationSelectors(registration: TestConsumerRegistration): ReadonlySet<string> {
+  return selectors(
+    registration.owner.key,
+    registration.owner.packageJson.name,
+    registration.published.key,
+    registration.published.packageJson.name,
+  );
 }
 
 function selectors(...values: readonly (string | undefined)[]): ReadonlySet<string> {
@@ -721,22 +810,17 @@ function normalizeSelector(selector: string): string {
 
 function printTargets(targets: readonly TestConsumerTarget[]): void {
   if (targets.length === 0) {
-    console.log('No checked-in test-consumer fixtures or manifest-listed consumer projects are available.');
+    console.log('No consumer tests are registered in npm-manifest.json#consumerTests.');
     return;
   }
   for (const target of targets) {
+    const payloads = target.registrations.map((registration) => registration.published.key).join(', ');
+    const owners = [...new Set(target.registrations.map((registration) => registration.owner.key))].join(', ');
     const dependencies = target.linkedDependencies.map((dependency) => dependency.package.key).join(', ');
-    if (target.kind === 'fixture' && target.owner !== undefined) {
-      console.log(
-        `${target.owner.key} (${target.owner.packageJson.name}) -> ${target.source.key} ` +
-          `[fixture, ${target.moduleKind.toUpperCase()}, links: ${dependencies}]`,
-      );
-    } else {
-      console.log(
-        `${target.source.key} (${target.source.packageJson.name}) ` +
-          `[project, ${target.moduleKind.toUpperCase()}, links: ${dependencies}]`,
-      );
-    }
+    console.log(
+      `${target.source.key} [${target.moduleKind.toUpperCase()}] payload: ${payloads}; owner: ${owners}; ` +
+        `lock: ${describeInstallMode(consumerInstallMode(target.source))}; links: ${dependencies}`,
+    );
   }
 }
 
@@ -830,13 +914,19 @@ function assertInsideDirectory(root: string, candidate: string, label: string): 
 
 function resolveDestination(
   output: string | undefined,
-  ownerKey: string,
-  moduleKind: ModuleKind | 'dual',
+  sourceKey: string,
+  moduleKind: ModuleKind,
 ): { readonly destination: string; readonly managed: boolean } {
   if (output !== undefined) return { destination: resolve(output), managed: false };
   prepareManagedRoot();
-  const ownerDirectory = ownerKey.replace(/^\.\//, '').replaceAll('/', '-');
-  return { destination: join(managedOutputRoot, ownerDirectory, moduleKind), managed: true };
+  // The format leaf carries no identity (the source key is already unique); it keeps the marked directory
+  // one level below the source-named one, which is where every earlier layout put its marker too.
+  return { destination: join(managedOutputRoot, destinationDirectoryName(sourceKey), moduleKind), managed: true };
+}
+
+/** The destination identity of a consumer is its SOURCE key, so two suites of one format never collide. */
+export function destinationDirectoryName(sourceKey: string): string {
+  return sourceKey.replace(/^\.\//, '').replaceAll('/', '-');
 }
 
 function prepareManagedRoot(): void {

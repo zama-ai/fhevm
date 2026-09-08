@@ -37,7 +37,7 @@ test('a member consumer needs no own lockfile; an isolated consumer still does',
       kind: 'published',
       name: '@scope/plugin',
       member: true,
-      consumerTests: { cjs: './template/pkg' },
+      consumerTests: { cjs: ['./template/pkg'] },
     },
     { name: '@scope/plugin', version: '1.0.0' },
   );
@@ -67,12 +67,32 @@ test('a member consumer needs no own lockfile; an isolated consumer still does',
   );
   const isolatedPublished = loadedPackage(
     './plugin/pkg',
-    { kind: 'published', name: '@scope/plugin', member: true, consumerTests: { cjs: './plugin/test-consumer/cjs' } },
+    { kind: 'published', name: '@scope/plugin', member: true, consumerTests: { cjs: ['./plugin/test-consumer/cjs'] } },
     { name: '@scope/plugin', version: '1.0.0' },
   );
   const missing = validateLockfiles([root, isolatedPublished, isolatedConsumer], (file) => file === rootLock);
   assert.equal(missing.length, 1);
   assert.match(missing[0]?.message ?? '', /isolated npm ci|own package-lock/);
+
+  // The same consumer registered through an ARRAY is read through the same accessor.
+  const arrayPublished = loadedPackage(
+    './plugin/pkg',
+    {
+      kind: 'published',
+      name: '@scope/plugin',
+      member: true,
+      consumerTests: { cjs: ['./plugin/test-consumer/cjs', './template/pkg'] },
+    },
+    { name: '@scope/plugin', version: '1.0.0' },
+  );
+  const arrayMissing = validateLockfiles(
+    [root, arrayPublished, isolatedConsumer, memberConsumer],
+    (file) => file === rootLock,
+  );
+  assert.deepEqual(
+    arrayMissing.map((violation) => violation.packageKey),
+    ['./plugin/test-consumer/cjs'],
+  );
 });
 
 function fixtures() {

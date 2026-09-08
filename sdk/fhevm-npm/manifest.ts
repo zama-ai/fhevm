@@ -29,10 +29,17 @@ export const packageKinds = [
 export const distributionChannels = ['npm', 'mirror'] as const;
 
 const distributionSchema = z.array(z.enum(distributionChannels)).min(1).superRefine(uniqueStrings);
+// The registry of consumer tests: per module format, the keys of the manifest packages that consume this
+// payload as that format. A format may register several suites, so the value is always an array.
+const consumerKeySchema = z.string().regex(PREFIXED_PATH, 'must be a safe path with a leading ./');
+const consumerRegistrationSchema = z
+  .array(consumerKeySchema)
+  .min(1, 'must register at least one consumer')
+  .superRefine(uniqueStrings);
 const consumerTestsSchema = z
   .object({
-    cjs: z.string().regex(PREFIXED_PATH, 'must be a safe path with a leading ./').optional(),
-    esm: z.string().regex(PREFIXED_PATH, 'must be a safe path with a leading ./').optional(),
+    cjs: consumerRegistrationSchema.optional(),
+    esm: consumerRegistrationSchema.optional(),
   })
   .strict()
   .refine((value) => value.cjs !== undefined || value.esm !== undefined, 'must select at least one consumer');
@@ -191,7 +198,7 @@ const packageEntrySchema = z
     }
 
     if (entry.consumerTests !== undefined && entry.distribution?.includes('npm') === false) {
-      issue(context, ['consumerTests'], 'consumer test overrides apply only to npm-distributed packages');
+      issue(context, ['consumerTests'], 'consumer tests are registered only on npm-distributed packages');
     }
     if (entry.consumerTests?.cjs !== undefined && entry.type === 'esm') {
       issue(context, ['consumerTests', 'cjs'], 'an ESM-only package does not require a CJS consumer');
@@ -323,7 +330,7 @@ const npmManifestSchema = z
           );
         }
       }
-      for (const [moduleKind, consumerKey] of Object.entries(entry.consumerTests ?? {})) {
+      for (const { moduleKind, consumerKey } of registeredConsumers(entry)) {
         const consumer = manifest.packages[consumerKey];
         if (consumer === undefined) {
           issue(context, ['packages', key, 'consumerTests', moduleKind], `'${consumerKey}' is not a manifest package`);
@@ -345,6 +352,28 @@ const npmManifestSchema = z
 export type PackageKind = (typeof packageKinds)[number];
 export type NpmManifestEntry = z.infer<typeof packageEntrySchema>;
 export type NpmManifest = z.infer<typeof npmManifestSchema>;
+export type ConsumerModuleKind = 'cjs' | 'esm';
+
+export interface ConsumerRegistration {
+  readonly moduleKind: ConsumerModuleKind;
+  readonly consumerKey: string;
+}
+
+/**
+ * The consumer keys an entry registers for one module format, in manifest order. This is the ONLY reader
+ * of the field: every validator and the runner go through it, so they cannot disagree about what is
+ * registered.
+ */
+export function registeredConsumerKeys(entry: NpmManifestEntry, moduleKind: ConsumerModuleKind): readonly string[] {
+  return entry.consumerTests?.[moduleKind] ?? [];
+}
+
+/** Every registration of an entry, CJS first, each format in manifest order. */
+export function registeredConsumers(entry: NpmManifestEntry): readonly ConsumerRegistration[] {
+  return (['cjs', 'esm'] as const).flatMap((moduleKind) =>
+    registeredConsumerKeys(entry, moduleKind).map((consumerKey) => ({ moduleKind, consumerKey })),
+  );
+}
 
 export class ManifestValidationError extends Error {
   readonly file: string;

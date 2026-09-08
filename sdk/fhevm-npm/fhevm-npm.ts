@@ -175,6 +175,7 @@ async function main(): Promise<void> {
       workspaceRoot: options.workspaceRoot,
       manifest,
       packageSelector: options.packageSelector,
+      all: options.all,
       output: options.output,
       testFile: options.testFile,
       force: options.force,

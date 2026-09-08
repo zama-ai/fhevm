@@ -96,6 +96,7 @@ export type CliOptions = {
   | {
       readonly command: 'test-consumer';
       readonly packageSelector?: string;
+      readonly all: boolean;
       readonly output?: string;
       readonly testFile?: string;
       readonly force: boolean;
@@ -112,6 +113,7 @@ type RawOptions = {
 };
 
 type RawTestConsumerOptions = {
+  readonly all: boolean;
   readonly output?: string;
   readonly testFile?: string;
   readonly force: boolean;
@@ -172,6 +174,7 @@ export function parseCliOptions(argv: readonly string[]): CliOptions {
   let testConsumer:
     | {
         readonly packageSelector?: string;
+        readonly all: boolean;
         readonly output?: string;
         readonly testFile?: string;
         readonly force: boolean;
@@ -264,7 +267,7 @@ Checked scripts:
   check          Required on every dev owner of an npm-distributed package.
   check:vendored-origin Required when the package declares vendored content.
   check:mirror   Optional until the mirror spec lands.
-  test           Required in each expected test-consumer/cjs or test-consumer/esm fixture.
+  test           Required in every consumer registered in npm-manifest.json#consumerTests.
 `,
     )
     .action(() => {
@@ -564,21 +567,29 @@ Why:
     );
   program
     .command('test-consumer [package]')
-    .description('Install one checked-in consumer fixture or manifest-listed consumer project.')
-    .option('-l, --list', 'list available consumer fixtures and projects', false)
+    .description(
+      'Install the consumers registered in npm-manifest.json#consumerTests, selected by consumer, payload or owner.',
+    )
+    .option('-l, --list', 'list every registered consumer with its payload, owner, format and lockfile', false)
+    .option('-a, --all', 'run every registered consumer, serially, in source order', false)
     .option('-o, --output <path>', 'persistent installation directory')
     .option('--test-file <path>', "select one fixture-relative file for the consumer's 'test:file' script")
     .option(
       '--build-linked-dependencies',
-      'ask the SDK Makefile to build dev owners of direct and recursively discovered local candidates',
+      'ask the SDK Makefile to build dev owners of direct and recursively linked local candidates',
       false,
     )
     .option('--run', "run the consumer's 'test' script after installation", false)
-    .option('--ci', 'install from the committed consumer lockfile with npm ci', false)
+    .option(
+      '--ci',
+      'refuse a non-member consumer that has no committed lockfile (a committed lockfile is always replayed)',
+      false,
+    )
     .option('-f, --force', 'replace an existing output directory', false)
     .action((packageSelector: string | undefined, options: RawTestConsumerOptions) => {
       testConsumer = {
         packageSelector,
+        all: options.all,
         output: options.output,
         testFile: options.testFile,
         force: options.force,
@@ -590,7 +601,9 @@ Why:
     });
   program
     .command('test-consumer-regenerate-package-lock [package]')
-    .description('Regenerate and validate consumer package-lock.json files; defaults to every conventional fixture.')
+    .description(
+      'Regenerate and validate consumer package-lock.json files; defaults to every registered non-member consumer.',
+    )
     .action((packageSelector: string | undefined) => {
       regenerateConsumerPackageLocks = true;
       regenerateConsumerPackageLockSelector = packageSelector;

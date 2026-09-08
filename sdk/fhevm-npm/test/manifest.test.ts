@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { ManifestValidationError, parseNpmManifest } from '../manifest.ts';
+import { ManifestValidationError, parseNpmManifest, registeredConsumerKeys, registeredConsumers } from '../manifest.ts';
 
 test('parses the manifest-local package invariants', () => {
   const manifest = parseNpmManifest({
@@ -28,8 +28,8 @@ test('parses the manifest-local package invariants', () => {
         name: '@scope/feature',
         member: true,
         consumerTests: {
-          cjs: './consumer/cjs',
-          esm: './consumer/esm',
+          cjs: ['./consumer/cjs'],
+          esm: ['./consumer/esm'],
         },
         mirror: { repository: 'https://github.com/example/feature' },
       },
@@ -52,8 +52,8 @@ test('parses the manifest-local package invariants', () => {
 
   assert.equal(manifest.packages['./feature/pkg']?.mirror?.repository, 'https://github.com/example/feature');
   assert.deepEqual(manifest.packages['./feature/pkg']?.consumerTests, {
-    cjs: './consumer/cjs',
-    esm: './consumer/esm',
+    cjs: ['./consumer/cjs'],
+    esm: ['./consumer/esm'],
   });
   assert.equal(manifest.foundry?.version, '1.5.1-stable');
   assert.deepEqual(manifest.packageJson.published, {
@@ -75,7 +75,7 @@ test('rejects a consumerTests path that is absent or has the wrong module format
             browser: false,
             name: '@scope/feature',
             member: true,
-            consumerTests: { cjs: './esm-only', esm: './missing' },
+            consumerTests: { cjs: ['./esm-only'], esm: ['./missing'] },
           },
           './esm-only': {
             kind: 'standalone',
@@ -87,6 +87,91 @@ test('rejects a consumerTests path that is absent or has the wrong module format
         },
       }),
     ManifestValidationError,
+  );
+});
+
+function consumerManifest(consumerTests: unknown) {
+  return {
+    packageJson: { published: { required: ['name', 'version'], excluded: ['private'] } },
+    packages: {
+      '.': { kind: 'workspace-root', type: 'esm', browser: false, name: 'workspace', private: true, member: false },
+      './feature/pkg': {
+        kind: 'published',
+        type: 'dual',
+        browser: false,
+        name: '@scope/feature',
+        member: true,
+        consumerTests,
+      },
+      './consumer/cjs': { kind: 'standalone', type: 'cjs', browser: false, name: 'consumer-cjs', member: false },
+      './consumer/esm': { kind: 'standalone', type: 'esm', browser: false, name: 'consumer-esm', member: false },
+      './template/pkg': {
+        kind: 'internal-consumer',
+        type: 'esm',
+        browser: false,
+        name: 'template-dev',
+        private: true,
+        member: true,
+      },
+    },
+  };
+}
+
+test('registers several consumers per module format and reads them through one accessor', () => {
+  const manifest = parseNpmManifest(
+    consumerManifest({ cjs: ['./consumer/cjs'], esm: ['./consumer/esm', './template/pkg'] }),
+  );
+  const entry = manifest.packages['./feature/pkg'];
+  assert.ok(entry !== undefined);
+
+  assert.deepEqual(registeredConsumerKeys(entry, 'cjs'), ['./consumer/cjs']);
+  assert.deepEqual(registeredConsumerKeys(entry, 'esm'), ['./consumer/esm', './template/pkg']);
+  assert.deepEqual(registeredConsumers(entry), [
+    { moduleKind: 'cjs', consumerKey: './consumer/cjs' },
+    { moduleKind: 'esm', consumerKey: './consumer/esm' },
+    { moduleKind: 'esm', consumerKey: './template/pkg' },
+  ]);
+
+  const unregistered = manifest.packages['./consumer/cjs'];
+  assert.ok(unregistered !== undefined);
+  assert.deepEqual(registeredConsumerKeys(unregistered, 'cjs'), []);
+  assert.deepEqual(registeredConsumers(unregistered), []);
+});
+
+test('rejects an empty consumer registration array', () => {
+  assert.throws(
+    () => parseNpmManifest(consumerManifest({ cjs: ['./consumer/cjs'], esm: [] })),
+    ManifestValidationError,
+  );
+});
+
+test('rejects the retired single-string spelling of a consumer registration', () => {
+  assert.throws(() => parseNpmManifest(consumerManifest({ cjs: './consumer/cjs' })), ManifestValidationError);
+});
+
+test('rejects a consumer registered twice for the same format', () => {
+  assert.throws(
+    () => parseNpmManifest(consumerManifest({ esm: ['./consumer/esm', './consumer/esm'] })),
+    ManifestValidationError,
+  );
+});
+
+test('validates every element of a consumer registration array', () => {
+  assert.throws(
+    () => parseNpmManifest(consumerManifest({ esm: ['./consumer/esm', './missing'] })),
+    (error) => {
+      assert.ok(error instanceof ManifestValidationError);
+      assert.match(error.message, /'\.\/missing' is not a manifest package/);
+      return true;
+    },
+  );
+  assert.throws(
+    () => parseNpmManifest(consumerManifest({ cjs: ['./consumer/cjs', './consumer/esm'] })),
+    (error) => {
+      assert.ok(error instanceof ManifestValidationError);
+      assert.match(error.message, /'\.\/consumer\/esm' does not support CJS/);
+      return true;
+    },
   );
 });
 

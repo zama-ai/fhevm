@@ -642,40 +642,24 @@ test-hh-v2-e2e-anvil: compile-hh-v2-e2e ## Hardhat v2 e2e tests against a local 
 
 # Separate tier: packs and installs each payload into a temp project and runs its suite. Minutes, not
 # seconds, so it is deliberately not part of `make test`.
-# Every leg names ONE consumer, by its own path, rather than the owner that registers it. An owner
-# selector is ambiguous today: `./host-contracts-cleartext/v12` matches its two fixtures AND the dev
-# package itself, which generic discovery treats as a consumer "project" because it happens to declare a
-# `test` script and a `file:` dependency. That third target installs the dev package and re-runs the unit
-# tests `make test-cleartext-v-prev` already ran, and it has no committed lockfile, so `--ci` below
-# refuses the whole selection. Naming the consumer removes both problems.
-test-consumer: clean-scratch compile-hh-v2-template compile-hh-v3-template ## Install each published payload as a real consumer
-	$(call run-fhevm-npm,test-consumer ./$(DIR_CLEARTEXT_V_PREV)/test-consumer/cjs --build-linked-dependencies --run)
-	$(call run-fhevm-npm,test-consumer ./$(DIR_CLEARTEXT_V_PREV)/test-consumer/esm --build-linked-dependencies --run)
-	$(call run-fhevm-npm,test-consumer ./$(DIR_CLEARTEXT_V_CUR)/test-consumer/cjs --build-linked-dependencies --run)
-	$(call run-fhevm-npm,test-consumer ./$(DIR_CLEARTEXT_V_CUR)/test-consumer/esm --build-linked-dependencies --run)
-	$(call run-fhevm-npm,test-consumer ./$(DIR_HH_V2_TEMPLATE)/pkg --build-linked-dependencies --run)
-	$(call run-fhevm-npm,test-consumer ./$(DIR_HH_V3_TEMPLATE)/pkg --build-linked-dependencies --run)
-	$(call run-fhevm-npm,test-consumer ./$(DIR_HH_V3_PLUGIN)/test-consumer/esm --build-linked-dependencies --run)
-
-# Every leg replays its consumer's committed lockfile with TWO exceptions, both hardhat templates: each
-# is a cluster MEMBER with no committed lockfile BY DESIGN (option E), so `--ci` would have nothing to
-# replay and the CLI rejects the flag outright. Their lock-replaying rehearsal belongs to the
-# publish-mirror RENDER, which regenerates a public lockfile; until that lands these legs still prove a
-# fresh consumer install and test of each template against the live workspace payloads.
 #
-# The v2 template leg is also the v2 PLUGIN's consumer test: the template links the plugin payload
-# (npm-manifest.json#consumerTests names it for exactly this reason), so installing the template
-# installs and exercises the plugin as a real consumer would. That is why there is no separate v2
-# plugin leg here — the resolution checks the CLI runs on every linked payload used to live in a
-# hand-written runner in hardhat/v2/plugin, and they now run here for both payloads.
-test-consumer-ci: clean-scratch compile-hh-v2-template compile-hh-v3-template ## Run every consumer from its committed lockfile (both templates: fresh resolve, see comment)
-	$(call run-fhevm-npm,test-consumer ./$(DIR_CLEARTEXT_V_PREV)/test-consumer/cjs --build-linked-dependencies --run --ci)
-	$(call run-fhevm-npm,test-consumer ./$(DIR_CLEARTEXT_V_PREV)/test-consumer/esm --build-linked-dependencies --run --ci)
-	$(call run-fhevm-npm,test-consumer ./$(DIR_CLEARTEXT_V_CUR)/test-consumer/cjs --build-linked-dependencies --run --ci)
-	$(call run-fhevm-npm,test-consumer ./$(DIR_CLEARTEXT_V_CUR)/test-consumer/esm --build-linked-dependencies --run --ci)
-	$(call run-fhevm-npm,test-consumer ./$(DIR_HH_V2_TEMPLATE)/pkg --build-linked-dependencies --run)
-	$(call run-fhevm-npm,test-consumer ./$(DIR_HH_V3_TEMPLATE)/pkg --build-linked-dependencies --run)
-	$(call run-fhevm-npm,test-consumer ./$(DIR_HH_V3_PLUGIN)/test-consumer/esm --build-linked-dependencies --run --ci)
+# WHICH consumers run is not this file's knowledge: `--all` runs every consumer registered in
+# npm-manifest.json#consumerTests, serially, in source order (`test-consumer --list` shows them). HOW each
+# is installed is derived per consumer by the CLI, not chosen here: a committed lockfile is replayed
+# (npm ci); a workspace MEMBER — both hardhat templates — has none BY DESIGN (rule 6.1.1: its installation
+# root locks it) and is resolved fresh (npm install). The templates' lock-replaying rehearsal belongs to
+# the publish-mirror RENDER, which regenerates a public lockfile; until that lands their legs still prove
+# a fresh consumer install and test against the live workspace payloads. The v2 template is also the v2
+# PLUGIN's consumer test: it links the plugin payload, so the resolution checks the CLI runs on every
+# linked payload cover the plugin there.
+#
+# The two targets differ by ONE flag. `--ci` is a strictness assertion: an isolated (non-member) consumer
+# with no committed lockfile is a warning below and a hard error in the CI variant. Nothing else changes.
+test-consumer: clean-scratch compile-hh-v2-template compile-hh-v3-template ## Install and test every registered consumer (missing fixture lockfile: warn)
+	$(call run-fhevm-npm,test-consumer --all --build-linked-dependencies --run)
+
+test-consumer-ci: clean-scratch compile-hh-v2-template compile-hh-v3-template ## Install and test every registered consumer (missing fixture lockfile: error)
+	$(call run-fhevm-npm,test-consumer --all --build-linked-dependencies --run --ci)
 
 ########################################################################################################
 # Generated sources

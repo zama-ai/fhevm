@@ -94,6 +94,10 @@
       "name": "@fhevm/host-contracts-cleartext",
       "member": false,
       "dependencyGroup": "host-contracts-cleartext/v12",
+      "consumerTests": {
+        "cjs": ["./host-contracts-cleartext/v12/test-consumer/cjs"],
+        "esm": ["./host-contracts-cleartext/v12/test-consumer/esm"]
+      },
       "mirror": {
         "repository": "https://github.com/zama-ai/host-contracts-cleartext"
       },
@@ -168,6 +172,10 @@
       "name": "@fhevm/host-contracts-cleartext",
       "member": true,
       "dependencyGroup": "host-contracts-cleartext/v13",
+      "consumerTests": {
+        "cjs": ["./host-contracts-cleartext/v13/test-consumer/cjs"],
+        "esm": ["./host-contracts-cleartext/v13/test-consumer/esm"]
+      },
       "mirror": {
         "repository": "https://github.com/zama-ai/host-contracts-cleartext"
       },
@@ -254,7 +262,7 @@
       "memberOf": "./hardhat/v2",
       "dependencyGroup": "hardhat/v2",
       "consumerTests": {
-        "cjs": "./hardhat/v2/fhevm-hardhat-template/pkg"
+        "cjs": ["./hardhat/v2/fhevm-hardhat-template/pkg"]
       },
       "vendored": [
         {
@@ -332,7 +340,7 @@
       "memberOf": "./hardhat/v3",
       "dependencyGroup": "hardhat/v3",
       "consumerTests": {
-        "esm": "./hardhat/v3/plugin/test-consumer/esm"
+        "esm": ["./hardhat/v3/plugin/test-consumer/esm", "./hardhat/v3/fhevm-hardhat-template/pkg"]
       },
       "note": "One published package per hardhat generation: the v2 payload stays @fhevm/hardhat-plugin, this one is @fhevm/hardhat-plugin-v3, versioned on the FHEVM protocol line it targets (0.13.x).",
       "vendored": [

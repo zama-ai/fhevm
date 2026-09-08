@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { registeredConsumers } from '../../manifest.ts';
 import type { Violation } from '../diagnostics.ts';
 import type { LoadedPackage } from '../npm.ts';
 
@@ -9,7 +10,9 @@ export function validateLockfiles(
   fileExists: (file: string) => boolean = existsSync,
 ): readonly Violation[] {
   const violations: Violation[] = [];
-  const configuredConsumerKeys = new Set(packages.flatMap((pkg) => Object.values(pkg.inventory.consumerTests ?? {})));
+  const configuredConsumerKeys = new Set(
+    packages.flatMap((pkg) => registeredConsumers(pkg.inventory).map((registration) => registration.consumerKey)),
+  );
 
   for (const pkg of packages) {
     const lockfile = join(pkg.directory, 'package-lock.json');

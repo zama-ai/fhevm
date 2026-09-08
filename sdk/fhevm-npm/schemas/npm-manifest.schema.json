@@ -166,6 +166,13 @@
       "description": "A non-empty relative path with leading `./`; `.` and `..` are forbidden as segments.",
       "pattern": "^\\.(?:/(?!\\.{1,2}(?:/|$))[A-Za-z0-9._-]+)+$"
     },
+    "consumerRegistration": {
+      "description": "The manifest keys of the consumers registered for one module format. Always an array: a format may have several suites.",
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/prefixedRelativePath" }
+    },
     "unprefixedRelativePath": {
       "type": "string",
       "description": "A non-empty relative path without leading `./`; `.` and `..` are forbidden as segments.",
@@ -347,13 +354,13 @@
         },
         "consumerTests": {
           "type": "object",
-          "description": "Optional overrides for the conventional sibling consumer fixtures of an npm-distributed package, keyed by module format.",
-          "$comment": "Each value is the key of another manifest package. The TypeScript validator checks that the consumer supports the requested format, directly file-links this package, has a runnable test script and carries a committed lockfile.",
+          "description": "The registry of this npm-distributed package's consumer tests, keyed by module format. It is the SOLE source of which consumer suites exist: directory names, scripts and dependencies register nothing.",
+          "$comment": "Required for every module format the package exposes. Each element is the key of another manifest package; the TypeScript validator checks that it executes as the requested format, directly file-links this package with a directory 'file:' dependency, has a runnable test script, is private unless it is itself a mirror-only payload, and carries a committed lockfile unless it is a workspace member.",
           "minProperties": 1,
           "additionalProperties": false,
           "properties": {
-            "cjs": { "$ref": "#/$defs/prefixedRelativePath" },
-            "esm": { "$ref": "#/$defs/prefixedRelativePath" }
+            "cjs": { "$ref": "#/$defs/consumerRegistration" },
+            "esm": { "$ref": "#/$defs/consumerRegistration" }
           }
         },
         "distribution": {
@@ -434,7 +441,7 @@
           "then": { "not": { "required": ["publishedRelPath"] } }
         },
         {
-          "$comment": "Only a published package can override the locations of its consumer tests.",
+          "$comment": "Only a published package registers consumer tests.",
           "if": {
             "properties": {
               "kind": {

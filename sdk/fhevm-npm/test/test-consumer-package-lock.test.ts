@@ -4,11 +4,41 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
 
-import { consumerInstallArguments, regenerateFixturePackageLock } from '../base/test-consumer.ts';
+import {
+  consumerInstallArguments,
+  consumerInstallMode,
+  describeInstallMode,
+  regenerateFixturePackageLock,
+} from '../base/test-consumer.ts';
+import type { NpmManifestEntry } from '../manifest.ts';
 
 test('consumer install arguments select npm install or npm ci', () => {
   assert.deepEqual(consumerInstallArguments(false), ['install', '--install-links', '--no-audit', '--no-fund']);
   assert.deepEqual(consumerInstallArguments(true), ['ci', '--install-links', '--no-audit', '--no-fund']);
+});
+
+test('the install mode is derived from membership and the committed lockfile, not from a flag', () => {
+  const inventory = (member: boolean): NpmManifestEntry => ({
+    kind: member ? 'internal-consumer' : 'standalone',
+    type: 'esm',
+    browser: false,
+    name: 'consumer',
+    member,
+  });
+  const hasLock = (file: string) => file === join('/ws/fixture', 'package-lock.json');
+
+  const isolatedWithLock = consumerInstallMode({ directory: '/ws/fixture', inventory: inventory(false) }, hasLock);
+  assert.deepEqual(isolatedWithLock, { mode: 'committed', reason: 'committed lockfile' });
+  assert.equal(describeInstallMode(isolatedWithLock), 'committed');
+
+  // A member never replays its own lock, even if one were lying around: the installation root owns it.
+  const member = consumerInstallMode({ directory: '/ws/fixture', inventory: inventory(true) }, hasLock);
+  assert.deepEqual(member, { mode: 'fresh', reason: 'workspace member' });
+  assert.equal(describeInstallMode(member), 'fresh (workspace member)');
+
+  const isolatedWithoutLock = consumerInstallMode({ directory: '/ws/other', inventory: inventory(false) }, hasLock);
+  assert.deepEqual(isolatedWithoutLock, { mode: 'fresh', reason: 'no lockfile' });
+  assert.equal(describeInstallMode(isolatedWithoutLock), 'fresh (no lockfile)');
 });
 
 test('regenerates and validates a consumer lock atomically in a sibling staging directory', () => {

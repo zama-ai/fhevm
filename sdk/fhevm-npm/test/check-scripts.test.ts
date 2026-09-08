@@ -29,7 +29,11 @@ test('accepts conventional scripts on each resolved test owner', () => {
     'check:vendored-origin': 'node ./check-vendored-origin.ts',
     'check:mirror': 'node ./check-mirror.ts',
   });
-  const published = publishedPackage({ vendored: [vendoredCapability()], mirror: mirrorCapability() });
+  const published = publishedPackage({
+    vendored: [vendoredCapability()],
+    mirror: mirrorCapability(),
+    consumerTests: { cjs: ['./library/test-consumer/cjs'] },
+  });
   const standalone = loadedPackage(
     './standalone',
     { kind: 'standalone', name: 'consumer', member: false, mirror: mirrorCapability() },
@@ -37,22 +41,39 @@ test('accepts conventional scripts on each resolved test owner', () => {
   );
 
   assert.deepEqual(
-    validateScripts([owner, published, consumerFixture('cjs'), standalone], () => true),
+    validateScripts(
+      [owner, published, consumerFixture('cjs'), standalone],
+      () => false,
+      () => true,
+    ),
     [],
   );
 });
 
 test('reports missing scripts, unresolved owners, and scripts on the wrong kind', () => {
   const owner = devOwner({});
-  const published = publishedPackage({ vendored: [vendoredCapability()] }, { 'test:consumer': 'wrong owner' });
+  const published = publishedPackage(
+    { vendored: [vendoredCapability()], consumerTests: { cjs: ['./library/test-consumer/cjs'] } },
+    { 'test:consumer': 'wrong owner' },
+  );
   const orphan = loadedPackage(
     './orphan/pkg',
-    { kind: 'published', name: '@scope/orphan', member: false, mirror: mirrorCapability() },
+    {
+      kind: 'published',
+      name: '@scope/orphan',
+      member: false,
+      mirror: mirrorCapability(),
+      consumerTests: { cjs: ['./orphan/test-consumer/cjs'] },
+    },
     { name: '@scope/orphan' },
   );
-  const orphanConsumer = consumerFixture('cjs', './orphan');
+  const orphanConsumer = consumerFixture('cjs', './orphan', '@scope/orphan');
 
-  const violations = validateScripts([owner, published, consumerFixture('cjs'), orphan, orphanConsumer], () => true);
+  const violations = validateScripts(
+    [owner, published, consumerFixture('cjs'), orphan, orphanConsumer],
+    () => false,
+    () => true,
+  );
   assert.equal(violations.filter((violation) => violation.rule === '2.1.2').length, 2);
   assert.equal(violations.filter((violation) => violation.rule === '5.1.3').length, 1);
   assert.equal(violations.filter((violation) => violation.rule === '5.1.4').length, 2);
@@ -67,7 +88,7 @@ test('forbids scripts in npm-distributed published packages but preserves mirror
   const mirrorPackage = publishedPackage({ distribution: ['mirror'] }, { build: 'tsc' });
 
   assert.deepEqual(
-    validateScripts([npmPackage, mirrorPackage], () => true).filter((violation) => violation.rule === '2.1.2'),
+    validateScripts([npmPackage, mirrorPackage]).filter((violation) => violation.rule === '2.1.2'),
     [
       {
         rule: '2.1.2',
@@ -99,11 +120,7 @@ test('preserves the upstream packaging, consumer, formatting and linting policy 
   );
 
   assert.deepEqual(
-    validateScripts(
-      [owner, published],
-      () => false,
-      (pkg) => pkg.key === published.key,
-    ),
+    validateScripts([owner, published], (pkg) => pkg.key === published.key),
     [],
   );
 });
@@ -169,7 +186,7 @@ test('forbids lint and Prettier configs on a dev owner containing only package.j
   );
 });
 
-test("requires format-specific directories below 'test-consumer'", () => {
+test('requires a consumerTests registration for every module format a payload exposes', () => {
   const owner = devOwner({
     compile: 'tsc',
     clean: 'rm -rf ./dist *.tsbuildinfo',
@@ -190,26 +207,19 @@ test("requires format-specific directories below 'test-consumer'", () => {
     exports: { '.': { import: './dist/index.js', require: './dist/index.cjs' } },
   });
 
-  const checkedDirectories: string[] = [];
-  const violations = validateScripts([owner, published], (directory) => {
-    checkedDirectories.push(directory);
-    return false;
-  });
+  // A conventional sibling fixture registers NOTHING by existing: it is present here and still unused.
+  const violations = validateScripts([owner, published, consumerFixture('cjs'), consumerFixture('esm')]);
 
-  assert.deepEqual(checkedDirectories, [
-    '/workspace/library/test-consumer/cjs',
-    '/workspace/library/test-consumer/esm',
-  ]);
   assert.deepEqual(violations, [
     {
       rule: '5.3.1',
       packageKey: './library/pkg',
-      message: "published package exposes CJS but has no sibling './library/test-consumer/cjs' directory",
+      message: 'published package exposes CJS but registers no CJS consumer in npm-manifest.json#consumerTests',
     },
     {
       rule: '5.3.1',
       packageKey: './library/pkg',
-      message: "published package exposes ESM but has no sibling './library/test-consumer/esm' directory",
+      message: 'published package exposes ESM but registers no ESM consumer in npm-manifest.json#consumerTests',
     },
   ]);
 });
@@ -228,7 +238,7 @@ test('accepts a manifest-selected consumer instead of a sibling fixture', () => 
     'check:publint': 'publint --strict ./pkg',
     check: 'npm run check:publint',
   });
-  const published = publishedPackage({ consumerTests: { cjs: './template/pkg' } });
+  const published = publishedPackage({ consumerTests: { cjs: ['./template/pkg'] } });
   const template = loadedPackage(
     './template/pkg',
     {
@@ -249,10 +259,63 @@ test('accepts a manifest-selected consumer instead of a sibling fixture', () => 
     validateScripts(
       [owner, published, template],
       () => false,
-      () => false,
       () => true,
     ),
     [],
+  );
+});
+
+test('validates every consumer of a registration array, holding a registered consumer to the fixture rules', () => {
+  const owner = devOwner({
+    build: 'tsc --build',
+    clean: 'rm -rf ./dist *.tsbuildinfo',
+    lint: 'eslint .',
+    'pack:tarball': 'npm pack ./pkg',
+    'prettier:check': 'prettier --check .',
+    'prettier:write': 'prettier --write .',
+    fmt: 'npm run prettier:write',
+    'fmt:check': 'npm run prettier:check',
+    'test:consumer': 'node ./consumer.js',
+    'check:publint': 'publint --strict ./pkg',
+    check: 'npm run check:publint',
+  });
+  const published = publishedPackage(
+    { consumerTests: { esm: ['./library/test-consumer/esm', './template/pkg', './missing'] } },
+    undefined,
+    { type: 'module', exports: { '.': { import: './dist/index.js' } } },
+  );
+  // Registered, member and internal-consumer: a valid shape, but it forgot `private`.
+  const template = loadedPackage(
+    './template/pkg',
+    { kind: 'internal-consumer', name: 'template', private: true, member: true },
+    {
+      name: 'template',
+      type: 'module',
+      scripts: { test: 'node ./test.js' },
+      devDependencies: { '@scope/library': 'file:../../library/pkg' },
+    },
+  );
+
+  const violations = validateScripts(
+    [owner, published, consumerFixture('esm'), template],
+    () => false,
+    () => true,
+  );
+
+  assert.deepEqual(
+    violations.filter((violation) => violation.rule === '5.3.1'),
+    [
+      {
+        rule: '5.3.1',
+        packageKey: './template/pkg',
+        message: 'consumer fixture must set private=true',
+      },
+      {
+        rule: '5.3.1',
+        packageKey: './library/pkg',
+        message: "registered ESM consumer './missing' is not a package in npm-manifest.json",
+      },
+    ],
   );
 });
 
@@ -270,27 +333,38 @@ test('validates each format-specific consumer fixture', () => {
     check: 'npm run check:publint',
     'test:consumer': 'node ./test-consumer.ts',
   });
-  const published = publishedPackage({}, undefined, {
-    type: 'module',
-    main: './dist/index.cjs',
-    module: './dist/index.js',
-    exports: { '.': { import: './dist/index.js', require: './dist/index.cjs' } },
-  });
+  const published = publishedPackage(
+    { consumerTests: { cjs: ['./library/test-consumer/cjs'], esm: ['./library/test-consumer/esm'] } },
+    undefined,
+    {
+      type: 'module',
+      main: './dist/index.cjs',
+      module: './dist/index.js',
+      exports: { '.': { import: './dist/index.js', require: './dist/index.cjs' } },
+    },
+  );
   const invalidCjs = loadedPackage(
     './library/test-consumer/cjs',
     { kind: 'standalone', name: 'library-consumer-cjs', private: true, member: true },
     { name: 'library-consumer-cjs', private: false, type: 'module', scripts: {} },
   );
 
-  const violations = validateScripts([owner, published, invalidCjs, consumerFixture('esm')], () => true);
+  const violations = validateScripts(
+    [owner, published, invalidCjs, consumerFixture('esm')],
+    () => false,
+    () => true,
+  );
 
+  // The conventional sibling and a registered consumer go through the SAME validator, so the sibling is
+  // also held to the format and the direct payload link that only registered consumers used to prove.
   assert.deepEqual(
     violations.filter((violation) => violation.packageKey === './library/test-consumer/cjs'),
     [
       {
         rule: '5.3.1',
         packageKey: './library/test-consumer/cjs',
-        message: "consumer fixture must be kind 'standalone' with member=false",
+        message:
+          "consumer must be a non-member 'standalone' fixture, or a member 'internal-consumer' or mirror-only 'published' template; found kind 'standalone' with member=true",
       },
       {
         rule: '5.3.1',
@@ -300,35 +374,17 @@ test('validates each format-specific consumer fixture', () => {
       {
         rule: '5.3.1',
         packageKey: './library/test-consumer/cjs',
-        message: "consumer fixture must define a non-empty 'test' script",
+        message: "consumer of './library/pkg' does not execute as CJS",
       },
-    ],
-  );
-});
-
-test('requires an existing consumer directory to be registered in the manifest', () => {
-  const owner = devOwner({
-    compile: 'tsc',
-    clean: 'rm -rf ./dist *.tsbuildinfo',
-    lint: 'eslint .',
-    'pack:tarball': 'npm pack ./pkg',
-    'prettier:check': 'prettier --check .',
-    'prettier:write': 'prettier --write .',
-    fmt: 'npm run prettier:write',
-    'fmt:check': 'npm run prettier:check',
-    'check:publint': 'publint --strict ./pkg',
-    check: 'npm run check:publint',
-    'test:consumer': 'node ./test-consumer.ts',
-  });
-  const published = publishedPackage({});
-
-  assert.deepEqual(
-    validateScripts([owner, published], () => true),
-    [
       {
         rule: '5.3.1',
-        packageKey: './library/pkg',
-        message: "consumer fixture './library/test-consumer/cjs' exists but is not registered in npm-manifest.json",
+        packageKey: './library/test-consumer/cjs',
+        message: "consumer fixture must define a non-empty 'test' script",
+      },
+      {
+        rule: '5.3.1',
+        packageKey: './library/test-consumer/cjs',
+        message: "consumer must directly link '@scope/library' to './library/pkg' with a directory 'file:' dependency",
       },
     ],
   );
@@ -348,12 +404,16 @@ test("requires serial execution when a consumer fixture uses 'node --test'", () 
     check: 'npm run check:publint',
     'test:consumer': 'node ./test-consumer.ts',
   });
-  const published = publishedPackage({}, undefined, {
-    type: 'module',
-    main: './dist/index.cjs',
-    module: './dist/index.js',
-    exports: { '.': { import: './dist/index.js', require: './dist/index.cjs' } },
-  });
+  const published = publishedPackage(
+    { consumerTests: { cjs: ['./library/test-consumer/cjs'], esm: ['./library/test-consumer/esm'] } },
+    undefined,
+    {
+      type: 'module',
+      main: './dist/index.cjs',
+      module: './dist/index.js',
+      exports: { '.': { import: './dist/index.js', require: './dist/index.cjs' } },
+    },
+  );
   const cjs = consumerFixture('cjs');
   const esmFixture = consumerFixture('esm');
   const esm = {
@@ -365,7 +425,11 @@ test("requires serial execution when a consumer fixture uses 'node --test'", () 
   };
 
   assert.deepEqual(
-    validateScripts([owner, published, cjs, esm], () => true),
+    validateScripts(
+      [owner, published, cjs, esm],
+      () => false,
+      () => true,
+    ),
     [
       {
         rule: '5.3.9',
@@ -393,11 +457,7 @@ test('requires Forge scripts on the owner of a published payload containing Soli
   const published = publishedPackage({});
   const fixture = consumerFixture('cjs');
 
-  const violations = validateScripts(
-    [owner, published, fixture],
-    () => true,
-    (pkg) => pkg.key === published.key,
-  );
+  const violations = validateScripts([owner, published, fixture], (pkg) => pkg.key === published.key);
 
   assert.deepEqual(
     violations.filter((violation) => violation.rule === 'package-scripts'),
@@ -430,11 +490,7 @@ test('requires Forge scripts directly on a non-published package containing Soli
   );
 
   assert.deepEqual(
-    validateScripts(
-      [internalConsumer],
-      () => true,
-      () => true,
-    ),
+    validateScripts([internalConsumer], () => true),
     [
       {
         rule: '5.1.4',
@@ -512,11 +568,7 @@ test('requires Forge scripts on the adjacent -dev owner of a workspace-native pk
     },
   );
 
-  const violations = validateScripts(
-    [owner, template],
-    () => true,
-    (pkg) => pkg.key === template.key,
-  );
+  const violations = validateScripts([owner, template], (pkg) => pkg.key === template.key);
 
   assert.deepEqual(
     violations.filter((violation) => violation.rule === '5.1.4'),
@@ -553,11 +605,7 @@ test('does not require package-level Forge scripts on the Make-orchestrated work
   );
 
   assert.deepEqual(
-    validateScripts(
-      [root],
-      () => true,
-      () => true,
-    ),
+    validateScripts([root], () => true),
     [],
   );
 });
@@ -570,11 +618,7 @@ test('requires hygiene scripts on shared helpers', () => {
   );
 
   assert.deepEqual(
-    validateScripts(
-      [helper],
-      () => true,
-      () => false,
-    ),
+    validateScripts([helper], () => false),
     [
       {
         rule: '5.1.4',
@@ -620,11 +664,7 @@ test("requires 'generate' and 'clean:generated' on any package that defines a 'g
   );
 
   assert.deepEqual(
-    validateScripts(
-      [generator],
-      () => true,
-      () => false,
-    ),
+    validateScripts([generator], () => false),
     [
       {
         rule: 'package-scripts',
@@ -660,11 +700,7 @@ test("rejects 'generate' or 'clean:generated' on a package with no 'generate:*' 
     },
   );
 
-  const violations = validateScripts(
-    [deadWiring],
-    () => true,
-    () => false,
-  );
+  const violations = validateScripts([deadWiring], () => false);
   assert.deepEqual(
     violations.map((violation) => violation.message),
     [
@@ -703,11 +739,7 @@ test('requires every generator and deliverable check to be reachable from its ve
   );
 
   assert.deepEqual(
-    validateScripts(
-      [generator],
-      () => true,
-      () => false,
-    ),
+    validateScripts([generator], () => false),
     [
       {
         rule: '5.1.4b',
@@ -760,11 +792,7 @@ test("requires 'clean:generated' to delete every export-manifest output", () => 
     };
 
     assert.deepEqual(
-      validateScripts(
-        [generator],
-        () => true,
-        () => false,
-      ),
+      validateScripts([generator], () => false),
       [
         {
           rule: '5.1.4b',
@@ -797,11 +825,7 @@ test("requires 'clean' to delete '*.tsbuildinfo' when the package runs tsc", () 
   );
 
   assert.deepEqual(
-    validateScripts(
-      [helper],
-      () => true,
-      () => false,
-    ),
+    validateScripts([helper], () => false),
     [
       {
         rule: 'package-scripts',
@@ -835,11 +859,7 @@ test("follows 'npm run' references when checking what 'clean' deletes", () => {
   );
 
   assert.deepEqual(
-    validateScripts(
-      [helper],
-      () => true,
-      () => false,
-    ),
+    validateScripts([helper], () => false),
     [],
   );
 });
@@ -864,11 +884,7 @@ test("skips flags after 'npm run' when resolving clean references", () => {
   );
 
   assert.deepEqual(
-    validateScripts(
-      [helper],
-      () => true,
-      () => false,
-    ),
+    validateScripts([helper], () => false),
     [],
   );
 });
@@ -893,11 +909,7 @@ test("does not resolve cross-package 'npm run' clauses in the caller's namespace
     },
   );
 
-  const violations = validateScripts(
-    [helper],
-    () => true,
-    () => false,
-  );
+  const violations = validateScripts([helper], () => false);
   assert.equal(violations.length, 1);
   assert.match(violations[0]?.message ?? '', /'clean' must delete '\*\.tsbuildinfo'/);
 });
@@ -921,11 +933,7 @@ test("requires a 'clean' script on a private source-owning package that has none
   );
 
   assert.deepEqual(
-    validateScripts(
-      [helper],
-      () => true,
-      () => false,
-    ),
+    validateScripts([helper], () => false),
     [
       {
         rule: 'package-scripts',
@@ -955,11 +963,7 @@ test("does not require 'clean:generated' on a package with no generators", () =>
   );
 
   assert.deepEqual(
-    validateScripts(
-      [plain],
-      () => true,
-      () => false,
-    ),
+    validateScripts([plain], () => false),
     [],
   );
 });
@@ -983,11 +987,7 @@ test('rejects Solidity targets in Prettier scripts', () => {
   );
 
   assert.deepEqual(
-    validateScripts(
-      [internalConsumer],
-      () => true,
-      () => false,
-    ),
+    validateScripts([internalConsumer], () => false),
     [
       {
         rule: '5.1.5',
@@ -1320,7 +1320,7 @@ function publishedPackage(
     readonly vendored?: ReturnType<typeof vendoredCapability>[];
     readonly mirror?: ReturnType<typeof mirrorCapability>;
     readonly distribution?: ('npm' | 'mirror')[];
-    readonly consumerTests?: { readonly cjs?: string; readonly esm?: string };
+    readonly consumerTests?: { readonly cjs?: string[]; readonly esm?: string[] };
   },
   scripts?: Readonly<Record<string, string>>,
   packageJson?: Parameters<typeof loadedPackage>[2],
@@ -1332,7 +1332,7 @@ function publishedPackage(
   );
 }
 
-function consumerFixture(moduleKind: 'cjs' | 'esm', ownerKey = './library') {
+function consumerFixture(moduleKind: 'cjs' | 'esm', ownerKey = './library', payloadName = '@scope/library') {
   const fixtureName = `${ownerKey.slice(2).replaceAll('/', '-')}-consumer-${moduleKind}`;
   return loadedPackage(
     `${ownerKey}/test-consumer/${moduleKind}`,
@@ -1347,6 +1347,7 @@ function consumerFixture(moduleKind: 'cjs' | 'esm', ownerKey = './library') {
       private: true,
       type: moduleKind === 'esm' ? 'module' : 'commonjs',
       scripts: { test: 'node ./test.js' },
+      devDependencies: { [payloadName]: 'file:../../pkg' },
     },
   );
 }

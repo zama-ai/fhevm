@@ -910,32 +910,42 @@ if the package shipped without them. Names are exact: `LICENSE` and `README.md`,
 command for proving the installed payload; optional stages share the stem (`test:consumer:run`, …) but callers invoke
 only `test:consumer`. A mirror-only consumer project is already the consumer and is exempt.
 
-The checked-in fixtures are format-specific: `test-consumer/cjs` for a CommonJS entry point, `test-consumer/esm` for
-ESM, both for a dual package — derived from the published entry points, not duplicated in the manifest. When an
-existing manifest-listed project is the real consumer, `consumerTests` maps the format to it instead.
+The published entry's `consumerTests` is the SOLE registry of its consumer tests: per module format the payload
+exposes (CJS, ESM, both for a dual package — derived from the published entry points), a non-empty array of manifest
+package keys. Nothing registers a consumer by existing: a `test-consumer/<format>` directory beside the payload, a
+`test` script, or a `file:` dependency on the payload carry no registration semantics. A format may register several
+suites, and one consumer may be registered by several payloads. The CLI (`test-consumer`) lists, selects, runs and
+regenerates lockfiles for exactly this registry.
 
 ```text
-✅ dual package: test-consumer/cjs/ and test-consumer/esm/
-✅ ESM-only package: test-consumer/esm/
-❌ dual package: test-consumer/esm/ only
+✅ dual package: "consumerTests": { "cjs": [...], "esm": [...] }
+✅ ESM-only package: "consumerTests": { "esm": [...] }
+❌ dual package registering only "esm"
+❌ an existing test-consumer/cjs directory with no registration
 ```
 
 ```jsonc
-// ✅ The Hardhat template is the plugin's real CJS consumer.
+// ✅ The v3 plugin exposes ESM and registers two ESM suites: its fixture and the Hardhat template.
 {
-  "type": "cjs",
+  "type": "esm",
   "consumerTests": {
-    "cjs": "./hardhat/v2/fhevm-hardhat-template/pkg"
+    "esm": ["./hardhat/v3/plugin/test-consumer/esm", "./hardhat/v3/fhevm-hardhat-template/pkg"]
   }
 }
 
 // ❌ A boolean waiver would remove consumer coverage instead of locating it.
 { "consumerTests": false }
+
+// ❌ The single-string spelling is retired; a registration is always an array.
+{ "consumerTests": { "cjs": "./hardhat/v2/fhevm-hardhat-template/pkg" } }
 ```
 
-An overridden consumer must support the selected module format, define a non-empty `test` script, contain a committed
-`package-lock.json`, and directly link the tested package through a directory `file:` dependency. The validator checks
-all four properties; `test-consumer --ci` performs the isolated installation and execution.
+A registered consumer must execute as the selected module format, define a non-empty `test` script, and directly link
+the tested package through a directory `file:` dependency. An isolated (non-member) consumer is a `standalone` fixture
+and carries a committed `package-lock.json`; a workspace-member consumer is an `internal-consumer` or a mirror-only
+`published` template and carries none (6.1.1). A consumer that is not itself a payload sets `private: true`. The
+validator checks all of these; `test-consumer` performs the isolated installation and execution, replaying the
+committed lockfile where one exists.
 
 ```jsonc
 // ✅ In the dev package that wraps ./pkg. One command owns the whole consumer test.
@@ -1078,18 +1088,21 @@ npm publish ./hardhat/v3/plugin/pkg
 ### 6.1 Lockfiles
 
 **6.1.1 One authoritative lockfile per installation root.** Ordinary members have none (the root lock covers them); a
-standalone project keeps its own, and so does a `consumerTests`-referenced package, because its isolated copy is an
-independent installation root. Consumer lockfiles are immutable except through `test-consumer-regenerate-package-lock`.
+standalone project keeps its own, and so does a non-member consumer registered in `consumerTests`, because its isolated
+copy is an independent installation root. A workspace MEMBER registered as a consumer (a Hardhat template) still has
+none: its installation root locks it, and `test-consumer` resolves its isolated copy fresh. Consumer lockfiles are
+immutable except through `test-consumer-regenerate-package-lock`, which refuses a member.
 
 ```text
 ✅ ordinary workspace member                    sdk/package-lock.json only
 ✅ standalone consumer                         <consumer>/package-lock.json
-✅ workspace member selected by consumerTests  <consumer>/package-lock.json for its isolated copy
+✅ workspace member registered as a consumer   sdk/package-lock.json only (fresh isolated resolve)
 ❌ ordinary workspace member                    nested package-lock.json
 ```
 
-`test-consumer` normally removes the lock only from its temporary copy and runs `npm install --install-links`, testing
-fresh compatible resolution. With `--ci`, it requires the committed lock and runs `npm ci --install-links` instead.
+`test-consumer` derives each consumer's install mode: it replays a committed lockfile with `npm ci --install-links`,
+and runs `npm install --install-links` for a workspace member (none by policy) or for an isolated consumer that lacks
+one, which prints a warning. `--ci` turns that warning into an error and changes nothing else.
 
 ### 6.2 Recovering a broken tree
 

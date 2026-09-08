@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
+import { type ConsumerModuleKind, registeredConsumerKeys } from '../../manifest.ts';
 import type { Violation } from '../diagnostics.ts';
 import { forgeArtifactDirectories, memoizedForgeConfigReader } from '../forge-config.ts';
 import { collectModuleSpecifiers, packageNameFromSpecifier } from '../imports.ts';
@@ -11,7 +12,6 @@ const sharedForgeConfigReader = memoizedForgeConfigReader();
 
 export function validateScripts(
   packages: readonly LoadedPackage[],
-  isDirectory: (directory: string) => boolean = existingDirectory,
   hasSolidityFiles?: (pkg: LoadedPackage) => boolean,
   isFile: (file: string) => boolean = existingFile,
 ): readonly Violation[] {
@@ -258,42 +258,30 @@ export function validateScripts(
 
   for (const published of packages.filter((pkg) => pkg.inventory.kind === 'published' && isNpmDistributed(pkg))) {
     for (const moduleKind of consumerModuleKinds(published.packageJson)) {
-      const configuredConsumerKey = published.inventory.consumerTests?.[moduleKind];
-      if (configuredConsumerKey !== undefined) {
-        const configuredConsumer = packagesByKey.get(configuredConsumerKey);
-        if (configuredConsumer === undefined) {
+      // `consumerTests` is the SOLE registry of consumer suites: a sibling `test-consumer/<format>`
+      // directory registers nothing by existing, and a payload that exposes a format without registering
+      // a consumer for it has no consumer test, however many plausible directories sit beside it.
+      const registeredKeys = registeredConsumerKeys(published.inventory, moduleKind);
+      if (registeredKeys.length === 0) {
+        violations.push({
+          rule: '5.3.1',
+          packageKey: published.key,
+          message: `published package exposes ${moduleKind.toUpperCase()} but registers no ${moduleKind.toUpperCase()} consumer in npm-manifest.json#consumerTests`,
+        });
+        continue;
+      }
+      for (const registeredKey of registeredKeys) {
+        const registeredConsumer = packagesByKey.get(registeredKey);
+        if (registeredConsumer === undefined) {
           violations.push({
             rule: '5.3.1',
             packageKey: published.key,
-            message: `configured ${moduleKind.toUpperCase()} consumer '${configuredConsumerKey}' is not registered in npm-manifest.json`,
+            message: `registered ${moduleKind.toUpperCase()} consumer '${registeredKey}' is not a package in npm-manifest.json`,
           });
           continue;
         }
-        validateConfiguredConsumer(configuredConsumer, published, moduleKind, violations, isFile);
-        continue;
+        validateConsumer(registeredConsumer, published, moduleKind, violations, isFile);
       }
-
-      const testConsumerDirectory = join(dirname(published.directory), 'test-consumer', moduleKind);
-      const testConsumerKey = `${published.key.slice(0, -'/pkg'.length)}/test-consumer/${moduleKind}`;
-      if (!isDirectory(testConsumerDirectory)) {
-        violations.push({
-          rule: '5.3.1',
-          packageKey: published.key,
-          message: `published package exposes ${moduleKind.toUpperCase()} but has no sibling '${testConsumerKey}' directory`,
-        });
-        continue;
-      }
-
-      const fixture = packagesByKey.get(testConsumerKey);
-      if (fixture === undefined) {
-        violations.push({
-          rule: '5.3.1',
-          packageKey: published.key,
-          message: `consumer fixture '${testConsumerKey}' exists but is not registered in npm-manifest.json`,
-        });
-        continue;
-      }
-      validateTestConsumerFixture(fixture, moduleKind, violations);
     }
   }
 
@@ -340,18 +328,47 @@ export function validateScripts(
   return violations;
 }
 
-function validateConfiguredConsumer(
+/**
+ * The ONE set of properties a consumer test of `published` must have, whether it was reached through a
+ * `consumerTests` registration or through the conventional sibling directory. Properties of the consumer
+ * itself are attributed to the consumer's key; a bad mapping is attributed to the payload.
+ *
+ * Shape: an isolated (non-member) consumer is a `standalone` fixture; a workspace-member consumer is an
+ * `internal-consumer`, or a mirror-only `published` template that consumes the payload the way a user
+ * project would. A consumer that is not itself a payload must be private so it can never be published.
+ */
+function validateConsumer(
   consumer: LoadedPackage,
   published: LoadedPackage,
-  moduleKind: 'cjs' | 'esm',
+  moduleKind: ConsumerModuleKind,
   violations: Violation[],
   isFile: (file: string) => boolean,
 ): void {
+  const { kind, member } = consumer.inventory;
+  const isolatedFixture = !member && kind === 'standalone';
+  const memberConsumer =
+    member && (kind === 'internal-consumer' || (kind === 'published' && !isNpmDistributed(consumer)));
+  if (!isolatedFixture && !memberConsumer) {
+    violations.push({
+      rule: '5.3.1',
+      packageKey: consumer.key,
+      message: `consumer must be a non-member 'standalone' fixture, or a member 'internal-consumer' or mirror-only 'published' template; found kind '${kind}' with member=${String(member)}`,
+    });
+  }
+
+  if (kind !== 'published' && consumer.packageJson.private !== true) {
+    violations.push({
+      rule: '5.3.1',
+      packageKey: consumer.key,
+      message: `consumer fixture must set private=true`,
+    });
+  }
+
   if (!consumerModuleKinds(consumer.packageJson).includes(moduleKind)) {
     violations.push({
       rule: '5.3.1',
-      packageKey: published.key,
-      message: `configured consumer '${consumer.key}' does not execute as ${moduleKind.toUpperCase()}`,
+      packageKey: consumer.key,
+      message: `consumer of '${published.key}' does not execute as ${moduleKind.toUpperCase()}`,
     });
   }
 
@@ -370,18 +387,18 @@ function validateConfiguredConsumer(
   if (!linksCandidate) {
     violations.push({
       rule: '5.3.1',
-      packageKey: published.key,
-      message: `configured consumer '${consumer.key}' must directly link '${packageName ?? published.key}' to '${published.key}' with a directory 'file:' dependency`,
+      packageKey: consumer.key,
+      message: `consumer must directly link '${packageName ?? published.key}' to '${published.key}' with a directory 'file:' dependency`,
     });
   }
 
   // Only an ISOLATED consumer needs its own lock (test-consumer --ci replays it). A workspace-member
   // consumer is installed by its installation root; its isolated rehearsal belongs to the publish layer.
-  if (!consumer.inventory.member && !isFile(join(consumer.directory, 'package-lock.json'))) {
+  if (!member && !isFile(join(consumer.directory, 'package-lock.json'))) {
     violations.push({
       rule: '5.3.1',
-      packageKey: published.key,
-      message: `configured consumer '${consumer.key}' must contain a committed package-lock.json for --ci`,
+      packageKey: consumer.key,
+      message: `isolated consumer must contain a committed package-lock.json for --ci`,
     });
   }
 }
@@ -744,26 +761,6 @@ export function validateEslintConfigs(
   return violations;
 }
 
-function validateTestConsumerFixture(fixture: LoadedPackage, moduleKind: 'cjs' | 'esm', violations: Violation[]): void {
-  if (fixture.inventory.kind !== 'standalone' || fixture.inventory.member !== false) {
-    violations.push({
-      rule: '5.3.1',
-      packageKey: fixture.key,
-      message: `consumer fixture must be kind 'standalone' with member=false`,
-    });
-  }
-
-  if (fixture.packageJson.private !== true) {
-    violations.push({
-      rule: '5.3.1',
-      packageKey: fixture.key,
-      message: `consumer fixture must set private=true`,
-    });
-  }
-
-  validateRunnableConsumer(fixture, violations);
-}
-
 function validateRunnableConsumer(fixture: LoadedPackage, violations: Violation[]): void {
   const testScript = fixture.packageJson.scripts?.test;
   if (testScript === undefined || testScript.trim() === '') {
@@ -783,14 +780,6 @@ function validateRunnableConsumer(fixture: LoadedPackage, violations: Violation[
 
 function invokesNodeTest(command: string): boolean {
   return /(?:^|\s)node(?:\s+[^&|;\n]+)*\s--test(?:\s|$)/.test(command);
-}
-
-function existingDirectory(directory: string): boolean {
-  try {
-    return statSync(directory).isDirectory();
-  } catch {
-    return false;
-  }
 }
 
 function existingFile(file: string): boolean {
