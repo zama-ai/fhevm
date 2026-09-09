@@ -52,7 +52,7 @@ describe('the label table', () => {
 describe('a refused submission', () => {
   // A request the relayer will refuse identically forever. Retrying costs attempts and teaches the
   // client nothing; the caller has to change the request.
-  it.each(['validation_failed', 'malformed_json', 'missing_fields', 'host_chain_id_not_supported'])(
+  it.each(['validation_failed', 'malformed_json', 'missing_fields', 'host_chain_id_not_supported', 'no_attestation_consensus'])(
     'gives up on %s',
     (label) => {
       expect(classifySolanaUserDecryptRejection({ kind: 'refused', label })).toEqual({ action: 'give-up' });

@@ -256,6 +256,23 @@ pub const COPROCESSOR_TABLES: &[CoprocessorTable] = &[
         duplicated: false,
         conflict_cols: &[],
     },
+    // Solana has one listener per database; preview rejects blue-green Solana
+    // rollouts. Its proof history and checkpoint belong to that single writer.
+    CoprocessorTable {
+        name: "solana_encrypted_value_accounts",
+        duplicated: false,
+        conflict_cols: &[],
+    },
+    CoprocessorTable {
+        name: "solana_encrypted_value_leaves",
+        duplicated: false,
+        conflict_cols: &[],
+    },
+    CoprocessorTable {
+        name: "solana_listener_checkpoint",
+        duplicated: false,
+        conflict_cols: &[],
+    },
     CoprocessorTable {
         name: "host_chains",
         duplicated: false,
