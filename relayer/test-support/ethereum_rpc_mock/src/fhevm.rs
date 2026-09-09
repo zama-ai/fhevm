@@ -51,10 +51,18 @@ impl UserDecryptKind {
 
 // Constants
 const RESPONSE_DELAY_MS: u64 = 500;
-const BLOCK_DELAY_1_MS: u64 = 500; // Block N+1: 3 events
-const BLOCK_DELAY_2_MS: u64 = 1000; // Block N+2: 3 events
-const BLOCK_DELAY_3_MS: u64 = 1500; // Block N+3: 3 events
-const BLOCK_DELAY_4_MS: u64 = 2000; // Block N+4: 1 consensus event
+const BLOCK_DELAY_1_MS: u64 = 500; // Block N+1: 3 shares
+const BLOCK_DELAY_2_MS: u64 = 1000; // Block N+2: 3 shares
+const BLOCK_DELAY_3_MS: u64 = 1500; // Block N+3: 3 shares + the consensus event
+/// `Decryption.sol` emits the share and the consensus event from one call, so they share a
+/// block. A later delay would model a gap the contract cannot produce.
+const CONSENSUS_DELAY_MS: u64 = BLOCK_DELAY_3_MS;
+const FIRST_STRAGGLER_DELAY_MS: u64 = 2000;
+const EXTRA_SHARE_BLOCK_DELAY_MS: u64 = 500;
+const SHARES_PER_BLOCK: usize = 3;
+/// Also the `user_decrypt_shares_threshold` the integration tests configure, so the ninth
+/// share is the one that reaches the threshold.
+pub const DEFAULT_USER_DECRYPT_SHARES: usize = 9;
 const MOCK_CHAIN_ID: u64 = 1337;
 const MOCK_PUBLIC_KEY_SIZE: usize = 32;
 const MOCK_SIGNATURE_SIZE: usize = 65;
@@ -587,7 +595,8 @@ impl FhevmMockWrapper {
     // Public API methods — User Decryption (direct + delegated)
 
     /// Register user decryption that succeeds with the multi-response pattern.
-    /// Emits events across multiple blocks using 3-3-3-1 pattern + consensus.
+    /// Emits nine share events across a 3-3-3 block pattern, with the consensus event riding
+    /// in the third block alongside the share that reaches the threshold.
     pub fn on_user_decrypt_success(
         &self,
         kind: UserDecryptKind,
@@ -601,12 +610,36 @@ impl FhevmMockWrapper {
             user,
             vec![target],
             UsageLimit::Unlimited,
+            DEFAULT_USER_DECRYPT_SHARES,
+        );
+    }
+
+    /// Same as `on_user_decrypt_success` but with a caller-chosen number of shares.
+    ///
+    /// Shares beyond [`DEFAULT_USER_DECRYPT_SHARES`] arrive one block apart, as a straggler
+    /// party answering after consensus.
+    pub fn on_user_decrypt_success_with_share_count(
+        &self,
+        kind: UserDecryptKind,
+        handles: Vec<B256>,
+        user: Address,
+        target: mock_server::SubscriptionTarget,
+        share_count: usize,
+    ) {
+        self.register_user_decrypt_success(
+            kind,
+            handles,
+            user,
+            vec![target],
+            UsageLimit::Unlimited,
+            share_count,
         );
     }
 
     /// Same as `on_user_decrypt_success` but allows custom per-event targets (cycled if shorter).
     ///
-    /// User decryption emits **10 events** (3+3+3+1 block pattern). If fewer targets are provided,
+    /// User decryption emits **10 events** (nine shares in a 3-3-3 block pattern, plus the
+    /// consensus event in the third block). If fewer targets are provided,
     /// they cycle. Example: `[Only([0]), Only([1])]` becomes `[0,1,0,1,0,1,0,1,0,1]` across the 10 events.
     /// Uses Once usage limit for redundancy tests that register multiple patterns.
     pub fn on_user_decrypt_success_with_targets(
@@ -616,7 +649,14 @@ impl FhevmMockWrapper {
         user: Address,
         targets: Vec<mock_server::SubscriptionTarget>,
     ) {
-        self.register_user_decrypt_success(kind, handles, user, targets, UsageLimit::Once);
+        self.register_user_decrypt_success(
+            kind,
+            handles,
+            user,
+            targets,
+            UsageLimit::Once,
+            DEFAULT_USER_DECRYPT_SHARES,
+        );
     }
 
     /// Register user decryption that reverts with specified reason.
@@ -639,6 +679,7 @@ impl FhevmMockWrapper {
         user: Address,
         targets: Vec<mock_server::SubscriptionTarget>,
         usage_limit: UsageLimit,
+        share_count: usize,
     ) {
         // Readiness is armed by the test setup for whichever source is configured — the on-chain
         // `set_readiness_*` patterns or the `CtAttestationMock` buckets — never from here.
@@ -649,9 +690,9 @@ impl FhevmMockWrapper {
             "Registering user decryption success with multi-block pattern"
         );
 
-        // Generate mock data for 9 shares and signatures
-        let user_shares = generate_mock_user_shares(9);
-        let signatures = generate_mock_signatures(9);
+        // Generate mock data for the requested number of shares and signatures
+        let user_shares = generate_mock_user_shares(share_count);
+        let signatures = generate_mock_signatures(share_count);
         let extra_data = Bytes::from(vec![0x00]); // Same extraData for all events in a decryption
 
         // Build the request log (immediate response). Pick the event
@@ -672,116 +713,46 @@ impl FhevmMockWrapper {
             ),
         };
 
-        // Build events using hard-coded 3-3-3-1 block pattern (targets resolved later)
-        let events: Vec<(Duration, Log)> = vec![
-            // Block N+1: 3 individual events (indexShare 0, 1, 2)
-            (
-                Duration::from_millis(BLOCK_DELAY_1_MS),
+        // Targets are resolved later.
+        let mut events: Vec<(Duration, Log)> = Vec::with_capacity(share_count + 1);
+        let block_delays = [BLOCK_DELAY_1_MS, BLOCK_DELAY_2_MS, BLOCK_DELAY_3_MS];
+        for index in 0..share_count.min(DEFAULT_USER_DECRYPT_SHARES) {
+            events.push((
+                Duration::from_millis(block_delays[index / SHARES_PER_BLOCK]),
                 build_individual_user_decrypt_response(
                     self.decryption_contract,
                     id,
-                    0,
-                    user_shares[0].clone(),
-                    signatures[0].clone(),
+                    index as u64,
+                    user_shares[index].clone(),
+                    signatures[index].clone(),
                     extra_data.clone(),
                 ),
-            ),
-            (
-                Duration::from_millis(BLOCK_DELAY_1_MS),
+            ));
+        }
+
+        // Same delay as the last quorum share: the contract emits both from one call.
+        events.push((
+            Duration::from_millis(CONSENSUS_DELAY_MS),
+            build_user_decrypt_threshold_reached(self.decryption_contract, id),
+        ));
+
+        // Stragglers, one per block after consensus.
+        for index in DEFAULT_USER_DECRYPT_SHARES..share_count {
+            let block = (index - DEFAULT_USER_DECRYPT_SHARES) as u64;
+            events.push((
+                Duration::from_millis(
+                    FIRST_STRAGGLER_DELAY_MS + block * EXTRA_SHARE_BLOCK_DELAY_MS,
+                ),
                 build_individual_user_decrypt_response(
                     self.decryption_contract,
                     id,
-                    1,
-                    user_shares[1].clone(),
-                    signatures[1].clone(),
+                    index as u64,
+                    user_shares[index].clone(),
+                    signatures[index].clone(),
                     extra_data.clone(),
                 ),
-            ),
-            (
-                Duration::from_millis(BLOCK_DELAY_1_MS),
-                build_individual_user_decrypt_response(
-                    self.decryption_contract,
-                    id,
-                    2,
-                    user_shares[2].clone(),
-                    signatures[2].clone(),
-                    extra_data.clone(),
-                ),
-            ),
-            // Block N+2: 3 individual events (indexShare 3, 4, 5)
-            (
-                Duration::from_millis(BLOCK_DELAY_2_MS),
-                build_individual_user_decrypt_response(
-                    self.decryption_contract,
-                    id,
-                    3,
-                    user_shares[3].clone(),
-                    signatures[3].clone(),
-                    extra_data.clone(),
-                ),
-            ),
-            (
-                Duration::from_millis(BLOCK_DELAY_2_MS),
-                build_individual_user_decrypt_response(
-                    self.decryption_contract,
-                    id,
-                    4,
-                    user_shares[4].clone(),
-                    signatures[4].clone(),
-                    extra_data.clone(),
-                ),
-            ),
-            (
-                Duration::from_millis(BLOCK_DELAY_2_MS),
-                build_individual_user_decrypt_response(
-                    self.decryption_contract,
-                    id,
-                    5,
-                    user_shares[5].clone(),
-                    signatures[5].clone(),
-                    extra_data.clone(),
-                ),
-            ),
-            // Block N+3: 3 individual events (indexShare 6, 7, 8)
-            (
-                Duration::from_millis(BLOCK_DELAY_3_MS),
-                build_individual_user_decrypt_response(
-                    self.decryption_contract,
-                    id,
-                    6,
-                    user_shares[6].clone(),
-                    signatures[6].clone(),
-                    extra_data.clone(),
-                ),
-            ),
-            (
-                Duration::from_millis(BLOCK_DELAY_3_MS),
-                build_individual_user_decrypt_response(
-                    self.decryption_contract,
-                    id,
-                    7,
-                    user_shares[7].clone(),
-                    signatures[7].clone(),
-                    extra_data.clone(),
-                ),
-            ),
-            (
-                Duration::from_millis(BLOCK_DELAY_3_MS),
-                build_individual_user_decrypt_response(
-                    self.decryption_contract,
-                    id,
-                    8,
-                    user_shares[8].clone(),
-                    signatures[8].clone(),
-                    extra_data.clone(),
-                ),
-            ),
-            // Block N+4: 1 consensus event
-            (
-                Duration::from_millis(BLOCK_DELAY_4_MS),
-                build_user_decrypt_threshold_reached(self.decryption_contract, id),
-            ),
-        ];
+            ));
+        }
 
         // Resolve per-event targets (cycle supplied list, default to All)
         let event_targets = self.resolve_targets(events.len(), targets);

@@ -138,7 +138,6 @@ export type BlueGreenScenario = {
   };
   gcs: {
     source?: CoprocessorInstanceSource;
-    stackVersion: string;
     /** Generate Green services now, but do not start them until the rollout explicitly releases them. */
     deferredStart?: boolean;
     env?: Record<string, string>;
@@ -166,7 +165,7 @@ export type ResolvedBlueGreenScenario = {
     threshold: number;
   };
   bcs: ResolvedBlueGreenScenarioFleet;
-  gcs: ResolvedBlueGreenScenarioFleet & { stackVersion: string; deferredStart: boolean };
+  gcs: ResolvedBlueGreenScenarioFleet & { deferredStart: boolean };
   kms: ResolvedKmsTopology;
 };
 
