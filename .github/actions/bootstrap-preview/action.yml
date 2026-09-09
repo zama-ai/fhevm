@@ -55,7 +55,7 @@ runs:
       env:
         IMAGE_REPO: hub.zama.org/ghcr/zama-ai/kms
       shell: bash
-      run: |
+      run: | # zizmor: ignore[github-env] -- PCR labels are validated as hex before writing.
         image="${IMAGE_REPO}/core-service-enclave:${KMS_CORE_TAG}"
         docker pull "${image}"
         inspect=$(docker inspect "${image}")
@@ -181,7 +181,7 @@ runs:
     - name: Capture host head block (blockchain-dev)
       if: env.USE_BLOCKCHAIN_DEV == 'true'
       shell: bash
-      run: |
+      run: | # zizmor: ignore[github-env] -- The validated RPC hex is converted to an integer.
         raw=$(bash ci/preview-env/scripts/cluster-rpc.sh "${HOST_HTTP}" \
           '{"jsonrpc":"2.0","id":1,"method":"eth_blockNumber","params":[]}')
         hex=$(jq -r '.result' <<<"${raw}")
