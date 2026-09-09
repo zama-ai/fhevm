@@ -78,8 +78,8 @@ const signature = await confidentialTransfer({ solanaChain: chain, aclProgramAdd
   fromAccount: address(required('TRANSFER_FROM_ACCOUNT')),
   toAccount: address(required('TRANSFER_TO_ACCOUNT')),
   toOwner: address(required('TRANSFER_RECIPIENT')),
-  fromBalanceValue: address(required('TRANSFER_FROM_BALANCE')),
-  toBalanceValue: address(required('TRANSFER_TO_BALANCE')),
+  fromState: address(required('TRANSFER_FROM_STATE')),
+  toState: address(required('TRANSFER_TO_STATE')),
   hostConfig,
 });
 const inputHandle = inputProof.getInputHandles()[0]?.bytes32Hex;

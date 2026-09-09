@@ -186,8 +186,8 @@ export const createRealTwoHolderDependencies = (config: Partial<TwoHolderConfig>
           TRANSFER_UNDERLYING_MINT: scenario.underlyingMint,
           TRANSFER_FROM_ACCOUNT: alice.tokenAccount,
           TRANSFER_TO_ACCOUNT: bob.tokenAccount,
-          TRANSFER_FROM_BALANCE: alice.encryptedState,
-          TRANSFER_TO_BALANCE: bob.encryptedState,
+          TRANSFER_FROM_STATE: alice.encryptedState,
+          TRANSFER_TO_STATE: bob.encryptedState,
         },
       });
       parseTransferWorkerResult(result.stdout);

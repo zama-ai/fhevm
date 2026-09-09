@@ -13,12 +13,17 @@
     // sources via @sdk-src for internals the published package deliberately does not export —
     // bun resolves both aliases natively at runtime (no SDK build needed), and the published
     // `@fhevm/sdk` surface is unaffected.
+    // Public SDK entries and demo internals must share one source type graph.
     "paths": {
+      "@fhevm/sdk/chains": ["../../sdk/js-sdk/src/core/chains/index.ts"],
+      "@fhevm/sdk/solana": ["../../sdk/js-sdk/src/solana/index.ts"],
+      "@fhevm/sdk/types": ["../../sdk/js-sdk/src/core/types/index.ts"],
       "@demo-dapp/*": ["../../solana/demo-dapp/src/*"],
       "@sdk-src/*": ["../../sdk/js-sdk/src/*"]
     }
   },
   "include": [
+    "solana-two-holder-transfer.ts",
     "src/cli.ts",
     "src/layout.ts",
     "src/types.ts",
