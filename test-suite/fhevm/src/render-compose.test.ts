@@ -535,7 +535,6 @@ version: 1
 kind: blue-green
 gcs:
   source: { mode: local }
-  stackVersion: "0.15.0"
 `),
     );
     const bgState: State = { ...state, scenario: blueGreenScenario };
@@ -558,9 +557,8 @@ gcs:
       expect(doc.services["coprocessor-gcs-upgrade-controller"]?.container_name).toBe(
         "coprocessor-gcs-upgrade-controller",
       );
-      // GCS builds from local HEAD compiled at the newer version (build arg enables the override feature).
+      // GCS builds from local HEAD.
       expect(doc.services["coprocessor-gcs-host-listener"]?.build).toBeDefined();
-      expect(doc.services["coprocessor-gcs-host-listener"]?.build?.args?.BUILD_STACK_VERSION).toBe("0.15.0");
       // GCS reuses BCS's db-migration — no `coprocessor-gcs-db-migration`.
       expect(doc.services["coprocessor-gcs-db-migration"]).toBeUndefined();
     });
@@ -583,7 +581,6 @@ bcs:
   source: { mode: registry, tag: v0.14.0-10 }
 gcs:
   source: { mode: registry, tag: target-sha }
-  stackVersion: "0.15.0"
 `),
     );
     const bgState: State = { ...state, scenario: blueGreenScenario };
@@ -616,7 +613,6 @@ version: 1
 kind: blue-green
 gcs:
   source: { mode: local }
-  stackVersion: "0.15.0"
   deferredStart: true
 `),
     );
@@ -644,7 +640,6 @@ topology:
   threshold: 2
 gcs:
   source: { mode: local }
-  stackVersion: "0.15.0"
 `),
     );
     const bgState: State = { ...state, scenario: multiOpBlueGreen };
@@ -691,7 +686,6 @@ bcs:
     tag: v0.13.0
 gcs:
   source: { mode: local }
-  stackVersion: "0.15.0"
 `),
     );
     const bgState: State = { ...state, scenario: realUpgradeScenario };
@@ -707,6 +701,7 @@ gcs:
             image?: string;
             build?: { args?: Record<string, string> } | undefined;
             environment?: Record<string, string>;
+            depends_on?: Record<string, unknown>;
           }
         >;
       };
@@ -722,6 +717,12 @@ gcs:
       // db-migration is force-local so GCS gets the v0.14 schema.
       expect(doc.services["coprocessor-db-migration"]?.build).toBeDefined();
       expect(doc.services["coprocessor-db-migration"]?.image).not.toContain(":v0.13.0");
+      // The BCS release creates the database first; the HEAD migration runs after it.
+      expect(doc.services["coprocessor-bcs-db-migration"]?.image).toContain(":v0.13.0");
+      expect(doc.services["coprocessor-bcs-db-migration"]?.build).toBeUndefined();
+      expect(doc.services["coprocessor-db-migration"]?.depends_on).toMatchObject({
+        "coprocessor-bcs-db-migration": { condition: "service_completed_successfully" },
+      });
       expect(doc.services["coprocessor-gcs-tfhe-worker"]?.build).toBeDefined();
       expect(
         doc.services["coprocessor-host-listener"]?.environment
@@ -753,7 +754,6 @@ bcs:
     tag: v0.14.0-7
 gcs:
   source: { mode: local }
-  stackVersion: "0.15.0"
 `),
     );
     const bgState: State = { ...state, scenario: pinnedBcsScenario };
@@ -789,7 +789,6 @@ bcs:
     tag: v0.14.0-10
 gcs:
   source: { mode: local }
-  stackVersion: "0.15.0"
 `),
     );
     hotfixScenario.bcs.source = { mode: "registry", tag: "04fb072", compatTag: "v0.14.0-10" };
@@ -821,7 +820,6 @@ bcs:
     tag: v0.14.0-10
 gcs:
   source: { mode: local }
-  stackVersion: "0.15.1"
 `),
     );
     upgradedScenario.bcs.source = { mode: "registry", tag: "15abcde", compatTag: "v0.15.0" };

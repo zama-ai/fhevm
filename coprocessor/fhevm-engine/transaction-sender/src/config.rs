@@ -47,8 +47,8 @@ pub struct ConfigSettings {
     pub graceful_shutdown_timeout: Duration,
 
     /// Used during blue/green (GCS) upgrade migrations. True when this binary
-    /// is the incoming green stack (its `STACK_VERSION` is newer than the live
-    /// `versioning.stack_version`; auto-detected via `resolve_gcs_mode`).
+    /// is the incoming green stack (its `CONSENSUS_PROTOCOL_VERSION` is newer than the live
+    /// `versioning.consensus_version`; auto-detected via `resolve_gcs_mode`).
     ///
     /// When true, the txn-sender starts fully parked and does nothing until the
     /// cutover finalizes — `execute_cutover` fires `event_stack_version_upgraded`
