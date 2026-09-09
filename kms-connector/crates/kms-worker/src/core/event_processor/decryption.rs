@@ -8,7 +8,6 @@ use crate::core::{
     },
     solana::{
         event_parity::check_event_permit_parity,
-        failure::FailureClass,
         kms_pair::{KmsPairFailure, KmsPairValidator},
         pipeline::{AuthorizationContext, authorize_request},
         request::SolanaUserDecryptRequest,
@@ -588,18 +587,7 @@ where
             &typed_request,
         )
         .await
-        .map_err(|failure| {
-            let kind = RequestCheckKind::Acl;
-            let message = anyhow!("Solana user-decryption authorization failed: {failure}");
-            match failure.class() {
-                FailureClass::Terminal => {
-                    RequestCheckError::irrecoverable(kind, ErrorCode::Unprocessable, message)
-                }
-                FailureClass::Transient | FailureClass::Retryable => {
-                    RequestCheckError::recoverable(kind, ErrorCode::UpstreamTransient, message)
-                }
-            }
-        })?;
+        .map_err(RequestCheckError::from)?;
 
         // The per-entry audit fields live in the pipeline's own log event; this line only says
         // which branches the request exercised.

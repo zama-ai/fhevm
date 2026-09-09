@@ -25,8 +25,8 @@ use super::watermark::{WatermarkFailure, WindowFailure};
 /// What a client should do about a rejection.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum FailureClass {
-    /// Nothing about this request will ever be authorized. Rebuilding the request may help;
-    /// repeating it will not.
+    /// Stop processing this request. A later grant or operator repair may permit a new request;
+    /// this classification does not claim that chain state can never change.
     Terminal,
     /// The request may be authorized from a later observation point, unchanged.
     Transient,
@@ -328,9 +328,9 @@ impl DelegationFailure {
     /// a coherent node authorizes, so terminal would let one bad response kill a valid request,
     /// which is the same reasoning as [`SnapshotError::DecidingReadOlderThanDiscovery`] above.
     ///
-    /// Every other outcome is a statement about a record that was read: a revoked or expired
-    /// grant will not come back, and a record of the wrong shape, the wrong owner or the wrong
-    /// tuple is not this delegation at all.
+    /// Every other outcome rejects the record that was read. A revoked or expired grant does
+    /// not authorize this observation; a later renewal requires a new request. A record of the
+    /// wrong shape, owner or tuple is not this delegation at all.
     pub fn class(&self) -> FailureClass {
         match self {
             Self::Absent { .. } | Self::NewerThanObservation { .. } => FailureClass::Transient,

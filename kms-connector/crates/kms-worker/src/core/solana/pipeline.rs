@@ -277,26 +277,24 @@ where
             .handles()
             .iter()
             .zip(&accounts)
-            .map(|(entry, account)| LeafQuery {
-                encrypted_value_account: account.account_key(),
-                handle: entry.handle(),
-                kind: LeafKind::Allowed {
-                    key: entry.allowed_key(),
-                },
+            .map(|(entry, account)| {
+                (
+                    LeafQuery {
+                        encrypted_value_account: account.account_key(),
+                        handle: entry.handle(),
+                        kind: LeafKind::Allowed {
+                            key: entry.allowed_key(),
+                        },
+                    },
+                    (account, entry.handle(), entry.allowed_key()),
+                )
             }),
     );
-    let bindings = verify_proofs_with_one_retry(proofs, &batch, |position, outcome| {
-        let query = &batch.queries()[position];
-        let account = accounts
-            .iter()
-            .find(|account| account.account_key() == query.encrypted_value_account)
-            .expect("query planned from resolved account");
-        let LeafKind::Allowed { key } = query.kind else {
-            unreachable!("user decrypt query")
-        };
-        check_handle_binding(account, query.handle, key, outcome)
-    })
-    .await?;
+    let bindings =
+        verify_proofs_with_one_retry(proofs, &batch, |(account, handle, key), outcome| {
+            check_handle_binding(account, *handle, *key, outcome)
+        })
+        .await?;
 
     let mut entries = Vec::with_capacity(request.handles().len());
     let mut delegated = Vec::new();

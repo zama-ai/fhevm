@@ -240,6 +240,17 @@ where
                     )
                     .await
             }
+            ProtocolEventKind::UserDecryptionV3(req) => {
+                response_publisher
+                    .publish_user_decryption_error(
+                        req.decryptionId,
+                        error.code,
+                        &details,
+                        &req.extraData,
+                        &event.otlp_context,
+                    )
+                    .await
+            }
             kind => {
                 error!(
                     "Unexpected HTTP-sourced {kind}: only decryption requests can be HTTP-sourced"

@@ -25,39 +25,41 @@ use zama_solana_acl::{AclError, MmrProof, authorize_historical, authorize_public
 
 /// Verify every peer against the same observation, then retry only unresolved, retryable queries.
 /// A failed refresh cannot erase an earlier result. Counts classify failures, never successes.
-pub async fn verify_proofs_with_one_retry<P: HostProofReader>(
+pub async fn verify_proofs_with_one_retry<P: HostProofReader, T: Sync>(
     reader: &P,
-    batch: &ProofBatch,
-    verify: impl Fn(usize, &LeafProofOutcome) -> Result<(), HandleBindingFailure>,
+    batch: &ProofBatch<T>,
+    verify: impl Fn(&T, &LeafProofOutcome) -> Result<(), HandleBindingFailure>,
 ) -> Result<Vec<Result<(), HandleBindingFailure>>, ProofReadError> {
-    let candidates = reader.read_proofs(batch.queries()).await?;
-    check_length(batch.queries().len(), candidates.len())?;
+    let queries = batch.queries();
+    let candidates = reader.read_proofs(&queries).await?;
+    check_length(queries.len(), candidates.len())?;
     let mut results: Vec<_> = candidates
         .iter()
-        .enumerate()
-        .map(|(position, candidates)| {
-            verify_candidates(candidates, |candidate| verify(position, candidate))
+        .zip(batch.contexts())
+        .map(|(candidates, context)| {
+            verify_candidates(candidates, |candidate| verify(context, candidate))
         })
         .collect();
     let unresolved: Vec<_> = results
         .iter()
+        .zip(batch.contexts())
         .enumerate()
-        .filter_map(|(position, result)| match result {
-            Err(error) if error.class() == FailureClass::Retryable => Some(position),
+        .filter_map(|(position, (result, context))| match result {
+            Err(error) if error.class() == FailureClass::Retryable => Some((position, context)),
             _ => None,
         })
         .collect();
     if !unresolved.is_empty() {
         let queries: Vec<_> = unresolved
             .iter()
-            .map(|&position| batch.queries()[position])
+            .map(|&(position, _)| queries[position])
             .collect();
         if let Ok(again) = reader.read_proofs(&queries).await
             && check_length(queries.len(), again.len()).is_ok()
         {
-            for (position, candidates) in unresolved.into_iter().zip(again) {
+            for ((position, context), candidates) in unresolved.into_iter().zip(again) {
                 results[position] =
-                    verify_candidates(&candidates, |candidate| verify(position, candidate));
+                    verify_candidates(&candidates, |candidate| verify(context, candidate));
             }
         }
     }

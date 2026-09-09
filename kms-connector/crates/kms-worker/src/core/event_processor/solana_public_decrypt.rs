@@ -104,13 +104,16 @@ where
     let encrypted_value_account =
         resolve_encrypted_value_account(&observation, program_id, extra.encrypted_value_account)?;
 
-    let batch = ProofBatch::new([LeafQuery {
-        encrypted_value_account: encrypted_value_account.account_key(),
-        handle,
-        kind: LeafKind::Public,
-    }]);
-    let bindings = verify_proofs_with_one_retry(proofs, &batch, |_, outcome| {
-        check_public_binding(&encrypted_value_account, handle, outcome)
+    let batch = ProofBatch::new([(
+        LeafQuery {
+            encrypted_value_account: encrypted_value_account.account_key(),
+            handle,
+            kind: LeafKind::Public,
+        },
+        (&encrypted_value_account, handle),
+    )]);
+    let bindings = verify_proofs_with_one_retry(proofs, &batch, |(account, handle), outcome| {
+        check_public_binding(account, *handle, outcome)
     })
     .await?;
     bindings[0].clone()?;

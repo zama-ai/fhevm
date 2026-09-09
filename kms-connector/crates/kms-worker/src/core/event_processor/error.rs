@@ -224,3 +224,18 @@ impl From<Erc1271Error> for RequestCheckError {
         Self::new(kind, err.into())
     }
 }
+
+impl From<crate::core::solana::failure::AuthorizationFailure> for RequestCheckError {
+    fn from(failure: crate::core::solana::failure::AuthorizationFailure) -> Self {
+        use crate::core::solana::failure::FailureClass;
+        let message = anyhow!("Solana user-decryption authorization failed: {failure}");
+        match failure.class() {
+            FailureClass::Terminal => {
+                Self::irrecoverable(RequestCheckKind::Acl, ErrorCode::Unprocessable, message)
+            }
+            FailureClass::Transient | FailureClass::Retryable => {
+                Self::recoverable(RequestCheckKind::Acl, ErrorCode::UpstreamTransient, message)
+            }
+        }
+    }
+}

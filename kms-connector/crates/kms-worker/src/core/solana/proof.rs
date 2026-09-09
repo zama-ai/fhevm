@@ -87,33 +87,38 @@ pub trait HostProofReader: Send + Sync {
     ) -> impl Future<Output = Result<Vec<Vec<LeafProofOutcome>>, ProofReadError>> + Send;
 }
 
-/// An ordered, duplicate-free batch of queries, with the position of each.
+/// An ordered, duplicate-free batch of queries and their verification context.
 ///
-/// Duplicates collapse so a request naming one handle twice costs one query, and the position
-/// lookup is what lets the per-entry rules find their outcome again.
-#[derive(Clone, PartialEq, Eq, Debug, Default)]
-pub struct ProofBatch(Vec<LeafQuery>);
+/// Repeated queries retain the first context. Callers derive that context from the same
+/// validated snapshot, so deduplication cannot change what authorizes the leaf.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct ProofBatch<T>(Vec<(LeafQuery, T)>);
 
-impl ProofBatch {
-    /// Collects queries, preserving first-seen order and dropping repeats.
-    pub fn new(queries: impl IntoIterator<Item = LeafQuery>) -> Self {
-        let mut ordered: Vec<LeafQuery> = Vec::new();
-        for query in queries {
-            if !ordered.contains(&query) {
-                ordered.push(query);
+impl<T> ProofBatch<T> {
+    /// Collects queries with their context, preserving first-seen order and dropping repeats.
+    pub fn new(queries: impl IntoIterator<Item = (LeafQuery, T)>) -> Self {
+        let mut ordered: Vec<(LeafQuery, T)> = Vec::new();
+        for (query, context) in queries {
+            if !ordered.iter().any(|(planned, _)| *planned == query) {
+                ordered.push((query, context));
             }
         }
         Self(ordered)
     }
 
     /// The queries, in read order.
-    pub fn queries(&self) -> &[LeafQuery] {
-        &self.0
+    pub fn queries(&self) -> Vec<LeafQuery> {
+        self.0.iter().map(|(query, _)| *query).collect()
+    }
+
+    /// Verification contexts, in the same order as the queries.
+    pub fn contexts(&self) -> impl Iterator<Item = &T> {
+        self.0.iter().map(|(_, context)| context)
     }
 
     /// Where `query` sits in the batch, if it was planned.
     pub fn position(&self, query: &LeafQuery) -> Option<usize> {
-        self.0.iter().position(|planned| planned == query)
+        self.0.iter().position(|(planned, _)| planned == query)
     }
 }
 

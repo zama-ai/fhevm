@@ -836,7 +836,7 @@ async fn peer_candidates_and_failed_refreshes_preserve_valid_bindings() {
         handle: handle(0x64, FHE_TYPE_UINT64),
         ..query
     };
-    let batch = ProofBatch::new([query, missing]);
+    let batch = ProofBatch::new([(query, query.handle), (missing, missing.handle)]);
     let valid = answer(&fixture, sealed, key);
     let invalid = LeafProofOutcome::Found {
         leaf_index: 0,
@@ -861,8 +861,8 @@ async fn peer_candidates_and_failed_refreshes_preserve_valid_bindings() {
                 ])),
                 calls: Mutex::new(Vec::new()),
             };
-            let results = verify_proofs_with_one_retry(&reader, &batch, |position, outcome| {
-                check_handle_binding(&account, batch.queries()[position].handle, key, outcome)
+            let results = verify_proofs_with_one_retry(&reader, &batch, |handle, outcome| {
+                check_handle_binding(&account, *handle, key, outcome)
             })
             .await
             .unwrap();
