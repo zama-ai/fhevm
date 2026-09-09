@@ -680,7 +680,7 @@ library Impl {
     }
 
     /**
-     * @notice              Verifies the ciphertext (FHEVMExecutor) and allows transient (ACL).
+     * @notice              Verifies the ciphertext through FHEVMExecutor.
      * @param inputHandle   Input handle.
      * @param inputProof    Input proof.
      * @param toType        Input type.
@@ -689,7 +689,6 @@ library Impl {
     function verify(bytes32 inputHandle, bytes memory inputProof, FheType toType) internal returns (bytes32 result) {
         CoprocessorConfig storage $ = getCoprocessorConfig();
         result = IFHEVMExecutor($.CoprocessorAddress).verifyInput(inputHandle, msg.sender, inputProof, toType);
-        IACL($.ACLAddress).allowTransient(result, msg.sender);
     }
 
     /**
