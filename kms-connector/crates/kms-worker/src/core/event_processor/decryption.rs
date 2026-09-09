@@ -350,7 +350,7 @@ where
             .await
             .map_err(|e| ProcessingError::Recoverable(anyhow::Error::from(e)))?
             .ok_or_else(|| {
-                ProcessingError::Irrecoverable(anyhow!("No transaction found with hash {tx_hash}!"))
+                ProcessingError::Recoverable(anyhow!("No transaction found with hash {tx_hash}!"))
             })
             .map(|tx| tx.input().to_vec())
     }
