@@ -156,8 +156,8 @@ async fn host_answering(
     });
     rpc.start().await.expect("the mock RPC starts");
 
-    let proof_request = serde_json::to_value(
-        kms_worker::core::solana::proof::leaf_proof_request_body(std::slice::from_ref(&query)),
+    let proof_request = serde_json::to_string(
+        &kms_worker::core::solana::proof::leaf_proof_request_body(std::slice::from_ref(&query)),
     )
     .unwrap();
     let proof_response = serde_json::json!({ "proofs": [wire_outcome(&outcome)] });
@@ -165,7 +165,7 @@ async fn host_answering(
     coprocessor.mock(move |when, then| {
         when.post()
             .path(LEAF_PROOFS_ROUTE)
-            .json(proof_request.clone());
+            .text(proof_request.clone());
         then.json(proof_response.clone());
     });
     coprocessor
@@ -254,8 +254,8 @@ async fn one_serving_coprocessor_carries_a_request_the_others_cannot() {
         then.error(StatusCode::INTERNAL_SERVER_ERROR, "leaf record unavailable");
     });
     failing.start().await.expect("the failing mock starts");
-    let proof_request = serde_json::to_value(
-        kms_worker::core::solana::proof::leaf_proof_request_body(std::slice::from_ref(&query)),
+    let proof_request = serde_json::to_string(
+        &kms_worker::core::solana::proof::leaf_proof_request_body(std::slice::from_ref(&query)),
     )
     .unwrap();
     let behind_response = serde_json::json!({
@@ -265,7 +265,7 @@ async fn one_serving_coprocessor_carries_a_request_the_others_cannot() {
     behind.mock(move |when, then| {
         when.post()
             .path(LEAF_PROOFS_ROUTE)
-            .json(proof_request.clone());
+            .text(proof_request.clone());
         then.json(behind_response.clone());
     });
     behind.start().await.expect("the behind mock starts");

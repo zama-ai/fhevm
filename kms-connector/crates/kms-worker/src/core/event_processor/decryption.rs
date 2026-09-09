@@ -1952,7 +1952,8 @@ mod tests {
 
         // A mock coprocessor serving the one leaf-proof read: the victim's allow leaf, sole leaf
         // of the account, whose proof is the empty sibling path.
-        let proof_request_body = serde_json::to_value(leaf_proof_request_body(&[LeafQuery {
+        // Mocktail compares bytes; converting through Value would reorder the typed fields.
+        let proof_request_body = serde_json::to_string(&leaf_proof_request_body(&[LeafQuery {
             encrypted_value_account: account_key,
             handle,
             kind: LeafKind::Allowed { key: victim_pubkey },
@@ -1965,7 +1966,7 @@ mod tests {
         proof_server.mock(move |when, then| {
             when.post()
                 .path(LEAF_PROOFS_PATH)
-                .json(proof_request_body.clone());
+                .text(proof_request_body.clone());
             then.json(proof_response.clone());
         });
         proof_server
