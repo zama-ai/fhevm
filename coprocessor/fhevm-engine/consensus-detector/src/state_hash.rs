@@ -358,8 +358,10 @@ async fn upload_pending_state_hashes(
         empty = EMPTY_BLOCK_STATE_HASH,
         opcode = crate::FHE_TRIVIAL_ENCRYPT_OPCODE,
     );
-    let pending: Vec<(i64, i64, String, Vec<u8>)> =
-        sqlx::query_as(&sql).bind(batch_limit).fetch_all(pool).await?;
+    let pending: Vec<(i64, i64, String, Vec<u8>)> = sqlx::query_as(&sql)
+        .bind(batch_limit)
+        .fetch_all(pool)
+        .await?;
 
     for row in pending {
         let chain_id = row.0;
@@ -524,7 +526,15 @@ async fn compute_and_upload_state_hashes(
     // are not produced because they would never be uploaded or consumed.
     if let Some((_, _, windows)) = crate::active_upgrade_windows(&mut *tx).await? {
         for (chain_id, start, end) in windows {
-            compute_and_insert_gcs(&mut tx, chain_id, start, end, batch_limit, GCS_SCHEMA_QUOTED).await?;
+            compute_and_insert_gcs(
+                &mut tx,
+                chain_id,
+                start,
+                end,
+                batch_limit,
+                GCS_SCHEMA_QUOTED,
+            )
+            .await?;
         }
 
         // Gateway-inputs track: only once the GCS gw-listener has a watermark and
