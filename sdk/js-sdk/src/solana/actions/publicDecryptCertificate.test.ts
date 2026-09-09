@@ -3,9 +3,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { FhevmRuntime } from '../../core/types/coreFhevmRuntime.js';
 import { RelayerAsyncRequest } from '../../core/modules/relayer/module/RelayerAsyncRequest.js';
 import { bytesToHex } from '../../core/base/bytes.js';
-import { hexToBytes, mmrLeafNode, publicDecryptLeafCommitment, type MmrProof } from '../proof.js';
+import { hexToBytes } from '../proof.js';
 import {
-  buildSolanaPublicDecryptMmrProofExtraData,
+  buildSolanaPublicDecryptExtraData,
   publicDecryptCertificate,
   type SolanaPublicDecryptCertificateParameters,
 } from './publicDecryptCertificate.js';
@@ -14,70 +14,30 @@ const handle = new Uint8Array(32);
 handle[22] = 0x80;
 const account = new Uint8Array(32).fill(4);
 const contextId = new Uint8Array(32).fill(5);
-const aclValueKey = new Uint8Array(32).fill(6);
-const proof: MmrProof = { leafIndex: 0n, siblings: [] };
-
-function u32LE(value: number): Uint8Array {
-  const out = new Uint8Array(4);
-  new DataView(out.buffer).setUint32(0, value, true);
-  return out;
-}
-
-function u64LE(value: bigint): Uint8Array {
-  const out = new Uint8Array(8);
-  new DataView(out.buffer).setBigUint64(0, value, true);
-  return out;
-}
-
-function concat(...parts: readonly Uint8Array[]): Uint8Array {
-  const out = new Uint8Array(parts.reduce((length, part) => length + part.length, 0));
-  let offset = 0;
-  for (const part of parts) {
-    out.set(part, offset);
-    offset += part.length;
-  }
-  return out;
-}
-
-const proofBlob = (mode = 0x02, includedProof = proof) =>
-  concat(
-    new Uint8Array([mode]),
-    u64LE(includedProof.leafIndex),
-    u32LE(includedProof.siblings.length),
-    ...includedProof.siblings,
-  );
 
 const parameters = (): SolanaPublicDecryptCertificateParameters => ({
   handle,
   contextId,
-  aclValueKey,
-  proofSlot: 1n,
   encryptedValueAccount: account,
-  peaks: [mmrLeafNode(publicDecryptLeafCommitment(account, 0n, handle))],
-  leafCount: 1n,
-  mmrProofBytes: proofBlob(),
   options: { fetchRetries: 1 },
 });
 
 const context = {
   chain: {
     id: 0x8000000000000000n,
-    fhevm: { relayerUrl: 'https://relayer.example.com', acl: { domainKeys: [] } },
+    fhevm: { relayerUrl: 'https://relayer.example.com' },
   },
   runtime: { config: { auth: { type: 'ApiKeyHeader', value: 'test' } } } as FhevmRuntime,
 };
 
-const requestExtraData = () =>
-  bytesToHex(buildSolanaPublicDecryptMmrProofExtraData(contextId, aclValueKey, 1n, proofBlob()));
+const requestExtraData = () => bytesToHex(buildSolanaPublicDecryptExtraData(contextId, account));
 
 ////////////////////////////////////////////////////////////////////////////////
-// The committed carrier byte vectors, run against the carrier's new owner.
+// The committed carrier byte vectors, run against this encoder.
 //
 // The fixture is shared with the connector (`solana_extra_data_byte_vectors.rs` runs the same
 // records against the Rust codec), and this runner is what keeps the two hand-mirrored layouts
-// pinned to each other. Only the version-0x03 records run here: the context-only 0x01 form was the
-// v0 user-decrypt wire, which this SDK no longer produces — its Rust half stays pinned by the
-// connector's own runner — and the `malformed` section exercises parsing, which only Rust does.
+// pinned to each other. The `malformed` section exercises parsing, which only Rust does.
 ////////////////////////////////////////////////////////////////////////////////
 
 /* eslint-disable @typescript-eslint/naming-convention -- the fixture's own field names are snake_case */
@@ -88,12 +48,11 @@ interface ExtraDataVectors {
     readonly name: string;
     readonly input: {
       readonly context_id_hex: string;
-      readonly acl_value_key_hex?: string;
-      readonly proof_slot?: string;
-      readonly mmr_proof_hex?: string;
+      readonly encrypted_value_account_hex: string;
     };
     readonly blob_hex: string;
   }>;
+  readonly malformed: ReadonlyArray<{ readonly name: string }>;
 }
 
 /* eslint-enable @typescript-eslint/naming-convention */
@@ -105,23 +64,30 @@ describe('committed extraData byte vectors (solana/test-fixtures/user-decrypt)',
       'utf8',
     ),
   ) as ExtraDataVectors;
-  const proofRecords = extraData.records.filter((record) => record.input.acl_value_key_hex !== undefined);
 
-  it('recognizes the fixture schema and finds the proof-carrying records', () => {
-    expect(extraData.schema).toBe('zama-solana-user-decrypt-extra-data/v1');
-    expect(proofRecords.length).toBeGreaterThan(0);
+  it('recognizes the fixture schema and finds records to run', () => {
+    expect(extraData.schema).toBe('zama-solana-public-decrypt-extra-data/v1');
+    expect(extraData.records.length).toBeGreaterThan(0);
+    expect(extraData.malformed.length).toBeGreaterThan(0);
   });
 
-  it.each(proofRecords.map((record) => [record.name, record] as const))('extraData blob: %s', (_name, record) => {
-    const blob = buildSolanaPublicDecryptMmrProofExtraData(
+  it.each(extraData.records.map((record) => [record.name, record] as const))('extraData blob: %s', (_name, record) => {
+    const blob = buildSolanaPublicDecryptExtraData(
       hexToBytes(`0x${record.input.context_id_hex}`),
-      hexToBytes(`0x${record.input.acl_value_key_hex ?? ''}`),
-      BigInt(record.input.proof_slot ?? '0'),
-      hexToBytes(`0x${record.input.mmr_proof_hex ?? ''}`),
+      hexToBytes(`0x${record.input.encrypted_value_account_hex}`),
     );
+    expect(blob).toHaveLength(65);
     expect(bytesToHex(blob)).toBe(`0x${record.blob_hex}`);
   });
+
+  it('refuses a field of the wrong width before anything is sent', () => {
+    expect(() => buildSolanaPublicDecryptExtraData(new Uint8Array(31), account)).toThrow('contextId must be 32 bytes');
+    expect(() => buildSolanaPublicDecryptExtraData(contextId, new Uint8Array(33))).toThrow(
+      'encryptedValueAccount must be 32 bytes',
+    );
+  });
 });
+
 const signature = 'ab'.repeat(65);
 const successResult = () => ({ decryptedValue: '00', signatures: [signature], extraData: requestExtraData() });
 
@@ -134,7 +100,7 @@ describe('publicDecryptCertificate', () => {
     vi.restoreAllMocks();
   });
 
-  it('verifies the canonical proof, follows the queued relayer path, and returns an untrusted claim', async () => {
+  it('follows the queued relayer path and returns an untrusted claim', async () => {
     vi.useFakeTimers();
     const fetchMock = vi
       .fn()
@@ -165,7 +131,6 @@ describe('publicDecryptCertificate', () => {
       abiEncodedCleartext: '00',
       signatures: [signature],
       extraData: requestExtraData(),
-      inclusionProof: proof,
     });
   });
 
@@ -215,31 +180,6 @@ describe('publicDecryptCertificate', () => {
 
     await expect(publicDecryptCertificate(context, parameters())).rejects.toThrow('gateway_not_reachable');
     expect(fetchMock).toHaveBeenCalledTimes(1);
-  });
-
-  it('rejects a non-public proof mode before the network', async () => {
-    await expect(
-      publicDecryptCertificate(context, { ...parameters(), mmrProofBytes: proofBlob(0x01) }),
-    ).rejects.toThrow('must use mode 0x02');
-  });
-
-  it('rejects a malformed proof blob instead of accepting a separate proof', async () => {
-    await expect(
-      publicDecryptCertificate(context, { ...parameters(), mmrProofBytes: concat(proofBlob(), new Uint8Array([0])) }),
-    ).rejects.toThrow('trailing byte');
-  });
-
-  it('rejects invalid inclusion', async () => {
-    const input = parameters();
-    await expect(publicDecryptCertificate(context, { ...input, peaks: [new Uint8Array(32)] })).rejects.toThrow(
-      'failed client-side verification',
-    );
-  });
-
-  it('rejects a proof slot that is not the pinned leaf count', async () => {
-    await expect(publicDecryptCertificate(context, { ...parameters(), proofSlot: 0n })).rejects.toThrow(
-      'proof slot must equal the pinned leaf count',
-    );
   });
 
   it('uses the requested extraData when the relayer omits the optional response field', async () => {

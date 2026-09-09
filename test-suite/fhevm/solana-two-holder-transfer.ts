@@ -7,7 +7,7 @@ import fs from 'node:fs/promises';
 import { defineFhevmSolanaChain } from '@fhevm/sdk/chains';
 import { createFhevmEncryptClient, setFhevmRuntimeConfig } from '@fhevm/sdk/solana';
 import type { Bytes32Hex } from '@fhevm/sdk/types';
-import { confidentialTransfer, TOKEN_PROGRAM_ADDRESS } from '@demo-dapp/vault/index.js';
+import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, confidentialTransfer, TOKEN_PROGRAM_ADDRESS } from '@demo-dapp/vault/index.js';
 import {
   address,
   createKeyPairSignerFromBytes,
@@ -47,14 +47,13 @@ const chainId = BigInt(required('TRANSFER_CHAIN_ID'));
 if ((chainId & (1n << 63n)) === 0n) throw new Error('transfer chain id is not a Solana high-bit chain id');
 const aclProgramAddress = bytes32(required('TRANSFER_ACL_PROGRAM'));
 if (addressHex(HOST_PROGRAM) !== aclProgramAddress) throw new Error('configured ACL program is not the fixed Zama host program');
-const chain = defineFhevmSolanaChain({
-  id: chainId,
-  fhevm: { relayerUrl: required('TRANSFER_RELAYER_URL'), acl: { domainKeys: [addressHex(required('TRANSFER_MINT'))] } },
-});
+const chain = defineFhevmSolanaChain({ id: chainId, fhevm: { relayerUrl: required('TRANSFER_RELAYER_URL') } });
 setFhevmRuntimeConfig({ auth: { type: 'ApiKeyHeader', value: process.env.ZAMA_FHEVM_API_KEY ?? 'local' } });
 const client = createFhevmEncryptClient({ chain, aclProgramAddress });
+// The attestation binds the amount to (user = owner, contract = the confidential-token program),
+// the contract identity the token requires for a transfer amount.
 const inputProof = await client.buildInputProof({
-  contractAddress: addressHex(required('TRANSFER_COMPUTE_SIGNER')),
+  contractAddress: addressHex(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS),
   userAddress: addressHex(owner.address),
   values: [{ type: 'uint64', value: 400n }],
 });

@@ -28,7 +28,7 @@ pub mod validation_messages {
     pub const MUST_NOT_BE_EMPTY: &str = "Must not be empty";
 
     pub const INVALID_EXTRA_DATA_FORMAT: &str =
-        "Must be 0x00, or a versioned format: 0x01 + 32-byte contextId (0x07-tagged first byte), 0x02 + 32-byte contextId (0x07-tagged) + 32-byte epochId (0x08-tagged), or Solana 0x03 MMR proof extraData";
+        "Must be 0x00, or a versioned format: 0x01 + 32-byte contextId (0x07-tagged first byte), 0x02 + 32-byte contextId (0x07-tagged) + 32-byte epochId (0x08-tagged), or Solana 0x03 + 32-byte contextId + 32-byte encrypted value account";
     pub const TIMESTAMP_MUST_NOT_BE_IN_FUTURE: &str = "Timestamp must not be in the future";
 }
 
@@ -134,16 +134,11 @@ pub fn validate_0x_hex_allow_empty(hex_str: &str) -> Result<(), ValidationError>
     validate_0x_hex(hex_str)
 }
 
-/// Solana `extraData` version byte (`0x03`): a versioned MMR-proof blob.
-/// The canonical layout and proof parsing live in the kms-connector
-/// `solana_extra_data` module.
-const EXTRA_DATA_SOLANA_VERSION_BYTE: &str = "03";
-
-/// Minimum byte length of a Solana `0x03` MMR-proof blob:
-/// version(1) + context_id(32) + acl_value_key(32) + proof_slot(8) + proof_len(4).
-const EXTRA_DATA_SOLANA_MMR_PROOF_MIN_BYTES: usize = 1 + 32 + 32 + 8 + 4;
-const EXTRA_DATA_SOLANA_MMR_PROOF_MIN_HEX_LEN: usize =
-    2 + EXTRA_DATA_SOLANA_MMR_PROOF_MIN_BYTES * 2;
+/// Solana public-decrypt `extraData` (`0x03`): `[version(1B) | contextId(32B) |
+/// encryptedValueAccount(32B)]`, 65 bytes. The canonical layout lives in the kms-connector
+/// `solana_extra_data` module; the connector reads the account and fetches the public leaf
+/// itself, so the carrier holds no proof.
+const EXTRA_DATA_SOLANA_HEX_LEN: usize = 2 + 65 * 2;
 
 /// OpenAPI schema for the decryption `extraData` request field.
 ///
@@ -159,7 +154,7 @@ pub fn extra_data_decryption_schema() -> utoipa::openapi::schema::Object {
         .description(Some(
             "Extra data forwarded verbatim to the gateway contract. Accepts `\"0x00\"`, version `0x01` \
              (`0x01` + 32-byte contextId), version `0x02` (`0x02` + 32-byte contextId + 32-byte epochId), \
-             or version `0x03` (Solana RFC-021 MMR-proof blob, variable length). \
+             or version `0x03` (Solana public decrypt: `0x03` + 32-byte contextId + 32-byte encrypted value account). \
              contextId must be 0x07-tagged and epochId must be 0x08-tagged (first byte of each).",
         ))
         // Deprecated `example` (singular) matches what `#[schema(example = ...)]`
@@ -179,8 +174,8 @@ pub fn extra_data_decryption_schema() -> utoipa::openapi::schema::Object {
 /// - `"0x02" + 128 hex chars`: Version 2 — `[version(1B) | contextId(32B) | epochId(32B)]`
 ///   = 65 bytes (130 hex chars + `"0x"` prefix = 132 chars). The contextId must be
 ///   0x07-tagged and the epochId must be 0x08-tagged (first byte of each, respectively).
-/// - `"0x03" + variable`: Version 3 (Solana, RFC-021) — MMR-proof blob
-///   `[version(1B) | contextId(32B) | aclValueKey(32B) | proofSlot(8B) | proofLen(4B) | proof]`.
+/// - `"0x03" + 128 hex chars`: Version 3 (Solana public decrypt) —
+///   `[version(1B) | contextId(32B) | encryptedValueAccount(32B)]` = 65 bytes.
 ///
 /// The contextId and epochId are opaque to the Relayer: they are not interpreted beyond
 /// their type tag, and the bytes are propagated verbatim to the Gateway.
@@ -202,11 +197,11 @@ pub fn validate_extra_data_field_decryption(extra_data: &str) -> Result<(), Vali
             validate_id_tag(bytes[1], CONTEXT_ID_TAG)?;
             validate_id_tag(bytes[33], EPOCH_ID_TAG)
         }
-        // Version 3 (Solana, RFC-021): variable-length MMR-proof blob. The 32-byte context id
-        // is opaque (the same bytes the gateway minted, including any 0x07 type tag); this
-        // path only checks blob shape.
-        s if s.len() >= 4 && s.starts_with("0x") && &s[2..4] == EXTRA_DATA_SOLANA_VERSION_BYTE => {
-            validate_solana_mmr_proof_extra_data(s)
+        // Version 3 (Solana public decrypt): the 32-byte context id is opaque (the same bytes the
+        // gateway minted, including any 0x07 type tag) and the account is whatever the connector
+        // will read; this path only checks the shape.
+        s if s.len() == EXTRA_DATA_SOLANA_HEX_LEN && s.starts_with("0x03") => {
+            decode_versioned_extra_data(s).map(|_| ())
         }
         _ => Err(ValidationError::new("validation_error")
             .with_message(validation_messages::INVALID_EXTRA_DATA_FORMAT.into())),
@@ -219,27 +214,6 @@ fn decode_versioned_extra_data(extra_data: &str) -> Result<Vec<u8>, ValidationEr
         ValidationError::new("validation_error")
             .with_message(validation_messages::INVALID_EXTRA_DATA_FORMAT.into())
     })
-}
-
-/// Validates the shape of a Solana (RFC-021) `0x03` MMR-proof extraData blob:
-/// `[version(1B) | contextId(32B) | aclValueKey(32B) | proofSlot(8B) | proofLen(4B) | proof]`.
-fn validate_solana_mmr_proof_extra_data(extra_data: &str) -> Result<(), ValidationError> {
-    if extra_data.len() < EXTRA_DATA_SOLANA_MMR_PROOF_MIN_HEX_LEN {
-        return Err(ValidationError::new("validation_error")
-            .with_message(validation_messages::INVALID_EXTRA_DATA_FORMAT.into()));
-    }
-    let bytes = decode_versioned_extra_data(extra_data)?;
-    let proof_len_offset = 1 + 32 + 32 + 8;
-    let proof_len = u32::from_be_bytes(
-        bytes[proof_len_offset..proof_len_offset + 4]
-            .try_into()
-            .expect("validated Solana MMR proof header length"),
-    ) as usize;
-    if bytes.len() != EXTRA_DATA_SOLANA_MMR_PROOF_MIN_BYTES + proof_len {
-        return Err(ValidationError::new("validation_error")
-            .with_message(validation_messages::INVALID_EXTRA_DATA_FORMAT.into()));
-    }
-    Ok(())
 }
 
 /// Checks that an id's type tag (the first byte of the 32-byte id) matches the expected one.
@@ -512,51 +486,43 @@ mod tests {
         assert!(validate_v3_attestation_type("garbage").is_err());
     }
 
-    fn solana_mmr_proof_extra_data_hex(proof_len: u32) -> String {
+    fn solana_public_decrypt_extra_data_hex() -> String {
         let mut bytes = vec![0x03u8];
         bytes.extend_from_slice(&[0u8; 32]); // context_id
-        bytes.extend_from_slice(&[7u8; 32]); // acl_value_key
-        bytes.extend_from_slice(&42u64.to_be_bytes()); // proof_slot
-        bytes.extend_from_slice(&proof_len.to_be_bytes());
-        bytes.extend(std::iter::repeat_n(0xabu8, proof_len as usize));
+        bytes.extend_from_slice(&[7u8; 32]); // encrypted value account
         format!("0x{}", hex::encode(bytes))
     }
 
     #[test]
-    fn extra_data_accepts_solana_v3_mmr_proof_blob() {
-        assert!(validate_extra_data_field_decryption(&solana_mmr_proof_extra_data_hex(0)).is_ok());
-        assert!(validate_extra_data_field_decryption(&solana_mmr_proof_extra_data_hex(3)).is_ok());
+    fn extra_data_accepts_the_solana_v3_carrier() {
+        assert!(
+            validate_extra_data_field_decryption(&solana_public_decrypt_extra_data_hex()).is_ok()
+        );
     }
 
     #[test]
-    fn extra_data_rejects_truncated_solana_v3_blob() {
-        // A 0x03 prefix shorter than the MMR-proof header is rejected.
+    fn extra_data_rejects_a_truncated_solana_v3_carrier() {
         let short = format!("0x03{}", "00".repeat(10));
         assert!(validate_extra_data_field_decryption(&short).is_err());
     }
 
     #[test]
-    fn extra_data_rejects_non_hex_solana_v3_blob() {
-        // Right length, 0x03 version, but non-hex payload.
-        let bad = format!(
-            "0x03{}",
-            "zz".repeat(EXTRA_DATA_SOLANA_MMR_PROOF_MIN_BYTES - 1)
-        );
+    fn extra_data_rejects_a_non_hex_solana_v3_carrier() {
+        let bad = format!("0x03{}", "zz".repeat(64));
         assert!(validate_extra_data_field_decryption(&bad).is_err());
     }
 
     #[test]
-    fn extra_data_rejects_solana_v3_mmr_proof_length_mismatch() {
-        let mut bytes = hex::decode(&solana_mmr_proof_extra_data_hex(3)[2..]).unwrap();
-        bytes.pop();
-        assert!(
-            validate_extra_data_field_decryption(&format!("0x{}", hex::encode(bytes))).is_err()
-        );
+    fn extra_data_rejects_a_solana_v3_carrier_with_a_trailing_byte() {
+        // Two byte strings for one carrier would leave the relayer and the connector disagreeing
+        // about which one the request carried.
+        let long = format!("{}00", solana_public_decrypt_extra_data_hex());
+        assert!(validate_extra_data_field_decryption(&long).is_err());
     }
 
     #[test]
-    fn extra_data_rejects_solana_0x02_mmr_proof_blob() {
-        let mut bytes = hex::decode(&solana_mmr_proof_extra_data_hex(3)[2..]).unwrap();
+    fn extra_data_rejects_a_0x02_blob_of_the_solana_v3_shape_with_untagged_ids() {
+        let mut bytes = hex::decode(&solana_public_decrypt_extra_data_hex()[2..]).unwrap();
         bytes[0] = 0x02;
         assert!(
             validate_extra_data_field_decryption(&format!("0x{}", hex::encode(bytes))).is_err()
@@ -645,10 +611,11 @@ mod tests {
     }
 
     #[test]
-    fn rejects_too_short_solana_v3_blob() {
-        // 0x03 is valid but requires the minimum header length; a short blob is rejected.
+    fn accepts_a_solana_v3_carrier_of_the_v2_length() {
+        // Same 65-byte length as v2, but the second identity is an account address rather than
+        // a tagged epoch id, so no tag is checked.
         let extra_data = format!("0x03{CONTEXT_ID_HEX}{EPOCH_ID_HEX}");
-        assert!(validate_extra_data_field_decryption(&extra_data).is_err());
+        assert!(validate_extra_data_field_decryption(&extra_data).is_ok());
     }
 
     #[test]

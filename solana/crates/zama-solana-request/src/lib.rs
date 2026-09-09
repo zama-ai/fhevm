@@ -23,7 +23,4 @@ pub use codec::{
     check_handle_list_parity, decode_solana_request, encode_solana_request,
     SolanaRequestDecodeError, SolanaRequestEncodeError, SOLANA_REQUEST_VERSION,
 };
-pub use wire::{
-    SolanaHandleEntryWire, SolanaUserDecryptRequestWire, MAX_ACCESS_PROOF_SIBLINGS,
-    MAX_REQUEST_HANDLES,
-};
+pub use wire::{SolanaHandleEntryWire, SolanaUserDecryptRequestWire, MAX_REQUEST_HANDLES};

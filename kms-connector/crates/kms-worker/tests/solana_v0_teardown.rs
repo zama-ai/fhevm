@@ -36,6 +36,48 @@ const FORBIDDEN: &[(&str, &str)] = &[
         "DelegationCounterMismatch",
         "the v0 delegation-counter failure; the counter does not participate in authorization",
     ),
+    (
+        "AccessEvidence",
+        "the two-path request evidence (current membership or a client-supplied proof); there is one path, an allow leaf the connector fetches",
+    ),
+    (
+        "access_proof",
+        "the client-supplied inclusion proof; proofs come from the coprocessors' leaf record",
+    ),
+    (
+        "proof_leaf_count",
+        "the client-claimed leaf count the proof was built against; the record's own count is what is compared",
+    ),
+    (
+        "authorize_current",
+        "the current-membership branch; there is no current-handle rule",
+    ),
+    // Spelled in two halves so the repository-wide vocabulary sweep does not read this gate's own
+    // token list as a survivor.
+    (
+        concat!("sub", "jects"),
+        "the on-chain member list; access is a sealed allow leaf per (handle, key)",
+    ),
+    (
+        concat!("compute_sub", "ject"),
+        "the derived identity of a delegated entry; the entry names its allowed key directly",
+    ),
+    (
+        "encrypted_value_id",
+        "the derived identity an entry used to claim; the entry names the account address, which its fields must derive",
+    ),
+    (
+        "allowed_acl_domain_keys",
+        "the permit's domain list; the permit signs (program, scope) pairs",
+    ),
+    (
+        "solana_v2_fetcher",
+        "the request-carried proof fetcher; the pipeline reads proofs through HostProofReader",
+    ),
+    (
+        "SolanaAclVerifier",
+        "the v2 verifier facade; authorization is the pipeline",
+    ),
 ];
 
 /// Source trees the gate patrols. `kms-worker` hosts the processor; `gw-listener` and

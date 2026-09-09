@@ -108,13 +108,7 @@ export const resumeSteadyStateServices = (state: State) => {
       "kms-connector-kms-worker",
       "kms-connector-tx-sender",
     ],
-    "relayer": [
-      "fhevm-relayer-db",
-      "fhevm-relayer",
-      ...(hostChainsForState(state).some((chain) => chain.type === "solana")
-        ? ["fhevm-solana-proof-db", "fhevm-solana-proof-service"]
-        : []),
-    ],
+    "relayer": ["fhevm-relayer-db", "fhevm-relayer"],
     "test-suite": [TEST_SUITE_CONTAINER],
   } satisfies Partial<Record<StepName, string[]>>;
 };

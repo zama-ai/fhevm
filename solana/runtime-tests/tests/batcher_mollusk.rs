@@ -42,10 +42,10 @@ use zama_solana_test_kit::signing::{
 };
 use zama_solana_test_kit::{
     anchor_error_check, anchor_ix, coprocessor_signer_address, cost_snapshot,
-    encrypted_value_account, ensure_system_accounts, event_authority, handle_for_chain,
-    host_config_account, kms_context_account, new_encrypted_value, read_account,
-    read_encrypted_value, read_spl_amount, serialized_account, spl_mint_account, spl_token_account,
-    system_account, Ctx, HostConfigParams, BALANCE_FHE_TYPE, DECIMALS,
+    deny_scope_record_account, encrypted_value_account, ensure_system_accounts, event_authority,
+    handle_for_chain, host_config_account, kms_context_account, new_encrypted_value, read_account,
+    read_encrypted_value, read_spl_amount, readonly, serialized_account, spl_mint_account,
+    spl_token_account, system_account, Ctx, HostConfigParams, BALANCE_FHE_TYPE, DECIMALS,
 };
 
 const KMS_CONTEXT_ID: [u8; 32] = {
@@ -103,18 +103,28 @@ fn read_join_record(context: &Ctx, address: Pubkey) -> batcher::JoinRecord {
     read_account(context, address)
 }
 
-/// Public-decrypt inclusion proof for the batch's single-burn encrypted value account (the
-/// sole leaf, at index 0, is the burned handle's public-decrypt commitment).
+/// Public-decrypt inclusion proof for the batch's single-burn encrypted value account. The burn
+/// allows the batch authority on the burned handle (leaf 0) and then seals it public (leaf 1).
 fn single_burn_public_decrypt_proof(
     burned_amount_value: Pubkey,
+    batch_authority: Pubkey,
     burned_handle: [u8; 32],
 ) -> host::instructions::MmrInclusionProof {
-    let leaves = vec![zama_solana_acl::public_decrypt_leaf_commitment(
-        burned_amount_value.to_bytes(),
-        0,
-        burned_handle,
-    )];
-    let proof = zama_solana_acl::mmr_build_proof(&leaves, 0).expect("proof for the sole burn leaf");
+    let leaves = vec![
+        zama_solana_acl::historical_access_leaf_commitment(
+            burned_amount_value.to_bytes(),
+            0,
+            burned_handle,
+            batch_authority.to_bytes(),
+        ),
+        zama_solana_acl::public_decrypt_leaf_commitment(
+            burned_amount_value.to_bytes(),
+            1,
+            burned_handle,
+        ),
+    ];
+    let proof =
+        zama_solana_acl::mmr_build_proof(&leaves, 1).expect("proof for the public burn leaf");
     host::instructions::MmrInclusionProof {
         leaf_index: proof.leaf_index,
         siblings: proof.siblings,
@@ -129,7 +139,6 @@ fn single_burn_public_decrypt_proof(
 struct ConfidentialMintKeys {
     mint: Pubkey,
     underlying_mint: Pubkey,
-    compute_signer: Pubkey,
     total_supply_authority: Pubkey,
     total_supply_value: Pubkey,
     vault_authority: Pubkey,
@@ -143,13 +152,8 @@ impl ConfidentialMintKeys {
         Self {
             mint,
             underlying_mint,
-            compute_signer: token::compute_signer_address(mint).0,
             total_supply_authority,
-            total_supply_value: token::total_supply_encrypted_value_address(
-                mint,
-                total_supply_authority,
-            )
-            .0,
+            total_supply_value: token::total_supply_encrypted_value_id(mint).address(),
             vault_authority: token::vault_authority_address(mint).0,
             vault_underlying: token::vault_token_account_address(
                 mint,
@@ -165,8 +169,6 @@ impl ConfidentialMintKeys {
             lamports: 1_000_000_000,
             data: serialized_account(token::ConfidentialMint {
                 authority,
-                domain: self.mint,
-                compute_signer: self.compute_signer,
                 underlying_mint: self.underlying_mint,
                 decimals: DECIMALS,
                 total_supply_encrypted_value: self.total_supply_value,
@@ -191,7 +193,7 @@ impl UserMintKeys {
         let token_account = token::token_account_address(mint.mint, user).0;
         Self {
             token_account,
-            balance_value: token::balance_encrypted_value_address(mint.mint, token_account).0,
+            balance_value: token::balance_encrypted_value_id(mint.mint, token_account).address(),
             transferred_value: token::encrypted_value_address(
                 mint.mint,
                 token_account,
@@ -259,11 +261,11 @@ impl BatchKeys {
             batch,
             batch_authority,
             join_token_account,
-            join_balance_value: token::balance_encrypted_value_address(
+            join_balance_value: token::balance_encrypted_value_id(
                 join_mint.mint,
                 join_token_account,
             )
-            .0,
+            .address(),
             join_transferred_value: token::encrypted_value_address(
                 join_mint.mint,
                 join_token_account,
@@ -277,11 +279,11 @@ impl BatchKeys {
             )
             .0,
             payout_token_account,
-            payout_balance_value: token::balance_encrypted_value_address(
+            payout_balance_value: token::balance_encrypted_value_id(
                 payout_mint.mint,
                 payout_token_account,
             )
-            .0,
+            .address(),
             payout_transferred_value: token::encrypted_value_address(
                 payout_mint.mint,
                 payout_token_account,
@@ -589,7 +591,6 @@ impl BatcherFixture {
             (&self.shares_cmint, shares_escrow),
         ] {
             accounts.insert(mint.mint, mint.mint_account(self.payer));
-            accounts.insert(mint.compute_signer, system_account(0));
             accounts.insert(mint.total_supply_authority, system_account(0));
             accounts.insert(mint.vault_authority, system_account(0));
             accounts.insert(
@@ -597,11 +598,10 @@ impl BatcherFixture {
                 spl_token_account(mint.underlying_mint, mint.vault_authority, escrow_amount),
             );
             let (_, total_supply) = new_encrypted_value(
-                mint.mint,
+                token::token_app(mint.mint),
                 mint.total_supply_authority,
                 token::encrypted_total_supply_label(),
                 mint.initial_total_supply,
-                &[mint.compute_signer],
             );
             accounts.insert(
                 mint.total_supply_value,
@@ -618,11 +618,10 @@ impl BatcherFixture {
                     self.confidential_token_account(mint, user.user, keys.balance_value),
                 );
                 let (_, balance) = new_encrypted_value(
-                    mint.mint,
+                    token::token_app(mint.mint),
                     keys.token_account,
                     token::encrypted_balance_label(),
                     keys.initial_balance,
-                    &[user.user, mint.compute_signer],
                 );
                 accounts.insert(keys.balance_value, encrypted_value_account(&balance));
             }
@@ -694,11 +693,9 @@ fn open_batch_ix(
             batch: keys.batch,
             batch_authority: keys.batch_authority,
             join_confidential_mint: fixture.join_mint().mint,
-            join_compute_signer: fixture.join_mint().compute_signer,
             batch_join_token_account: keys.join_token_account,
             batch_join_balance_value: keys.join_balance_value,
             payout_confidential_mint: fixture.payout_mint().mint,
-            payout_compute_signer: fixture.payout_mint().compute_signer,
             batch_payout_token_account: keys.payout_token_account,
             batch_payout_balance_value: keys.payout_balance_value,
             join_underlying_mint: fixture.join_mint().underlying_mint,
@@ -746,7 +743,6 @@ fn join_ix(
                 keys.batch_authority,
                 fixture.join_mint().underlying_mint,
             ),
-            join_compute_signer: fixture.join_mint().compute_signer,
             user_token_account: user_join.token_account,
             batch_join_token_account: keys.join_token_account,
             user_balance_value: user_join.balance_value,
@@ -782,7 +778,6 @@ fn quit_ix(fixture: &BatcherFixture, keys: &BatchKeys, user: &UserKeys) -> Instr
                 fixture.join_mint().underlying_mint,
             ),
             user_ata: owner_ata(user.user, fixture.join_mint().underlying_mint),
-            join_compute_signer: fixture.join_mint().compute_signer,
             batch_join_token_account: keys.join_token_account,
             user_token_account: user_join.token_account,
             batch_balance_value: keys.join_balance_value,
@@ -814,7 +809,6 @@ fn dispatch_ix(fixture: &BatcherFixture, keys: &BatchKeys) -> Instruction {
                 keys.batch_authority,
                 fixture.join_mint().underlying_mint,
             ),
-            join_compute_signer: fixture.join_mint().compute_signer,
             total_supply_authority: fixture.join_mint().total_supply_authority,
             batch_join_token_account: keys.join_token_account,
             batch_balance_value: keys.join_balance_value,
@@ -841,7 +835,6 @@ fn cancel_dispatch_ix(fixture: &BatcherFixture, keys: &BatchKeys) -> Instruction
             batch: keys.batch,
             batch_authority: keys.batch_authority,
             join_confidential_mint: fixture.join_mint().mint,
-            join_compute_signer: fixture.join_mint().compute_signer,
             total_supply_authority: fixture.join_mint().total_supply_authority,
             batch_join_token_account: keys.join_token_account,
             batch_balance_value: keys.join_balance_value,
@@ -896,7 +889,6 @@ fn settle_ix(
             batch_payout_token_account: keys.payout_token_account,
             payout_mint_vault_underlying: fixture.payout_mint().vault_underlying,
             payout_mint_vault_authority: fixture.payout_mint().vault_authority,
-            payout_compute_signer: fixture.payout_mint().compute_signer,
             payout_total_supply_authority: fixture.payout_mint().total_supply_authority,
             batch_payout_balance_value: keys.payout_balance_value,
             payout_total_supply_value: fixture.payout_mint().total_supply_value,
@@ -938,7 +930,6 @@ fn claim_ix(fixture: &BatcherFixture, keys: &BatchKeys, user: &UserKeys) -> Inst
                 fixture.payout_mint().underlying_mint,
             ),
             user_payout_ata: owner_ata(user.user, fixture.payout_mint().underlying_mint),
-            payout_compute_signer: fixture.payout_mint().compute_signer,
             batch_payout_token_account: keys.payout_token_account,
             user_payout_token_account: user_payout.token_account,
             batch_payout_balance_value: keys.payout_balance_value,
@@ -1029,12 +1020,11 @@ fn run_join(
             owner_ata(keys.batch_authority, fixture.join_mint().underlying_mint),
         ],
     );
-    let attestation =
-        amount_attestation_for(amount_handle, user.user, fixture.join_mint().compute_signer);
+    let attestation = amount_attestation_for(amount_handle, user.user, token::id());
     let ix = join_ix(fixture, keys, user, attestation);
     let result = context.process_and_validate_instruction(&ix, &[Check::success()]);
-    // The join issues the transfer's execution plus the batcher's re-materialization.
-    assert_eq!(ledger.evaluate_fhe_cpis(context, &result), 2);
+    // The join is one execution: the token's transfer writes the batcher's receipt itself.
+    assert_eq!(ledger.evaluate_fhe_cpis(context, &result), 1);
 }
 
 /// Dispatches the batch and returns the created-public burned handle.
@@ -1058,17 +1048,6 @@ fn run_dispatch(
     read_batch(context, keys.batch).burned_total_handle
 }
 
-fn run_cancel_dispatch(
-    context: &Ctx,
-    fixture: &BatcherFixture,
-    keys: &BatchKeys,
-    ledger: &mut CleartextLedger,
-) {
-    let result = context
-        .process_and_validate_instruction(&cancel_dispatch_ix(fixture, keys), &[Check::success()]);
-    assert_eq!(ledger.evaluate_fhe_cpis(context, &result), 1);
-}
-
 /// Settles the batch with a real KMS cert over `total`, replaying the wrap's
 /// execution when the batch is non-zero. Returns the instruction and result so the
 /// fixed-key lifecycle can snapshot cost; behavior-test callers ignore them.
@@ -1081,7 +1060,11 @@ fn run_settle(
     total: u64,
 ) -> (Instruction, InstructionResult) {
     let (signatures, extra_data) = amount_public_decrypt_cert(burned_handle, total);
-    let proof = single_burn_public_decrypt_proof(keys.burned_amount_value, burned_handle);
+    let proof = single_burn_public_decrypt_proof(
+        keys.burned_amount_value,
+        keys.batch_authority,
+        burned_handle,
+    );
     let pending_burn = keys.pending_burn(fixture.join_mint().mint);
     let ix = settle_ix(
         fixture,
@@ -1435,10 +1418,13 @@ fn mollusk_cancel_dispatch_restores_burn_and_allows_refunds() {
         999_700
     );
 
-    // Cancellation updates existing audiences without granting subjects. Enabling the Host deny
-    // policy must not make the batcher's empty-witness escape path fail.
+    // Cancellation re-allows the batch authority on its restored balance, so under the host's
+    // deny policy it carries the join mint's deny witness like every other token execution.
+    let (deny_record, deny_record_account) =
+        deny_scope_record_account(token::token_app(fixture.join_mint().mint), false);
     {
         let mut store = context.account_store.borrow_mut();
+        store.insert(deny_record, deny_record_account);
         let account = store
             .get_mut(&fixture.host_config)
             .expect("host config exists");
@@ -1456,6 +1442,7 @@ fn mollusk_cancel_dispatch_restores_burn_and_allows_refunds() {
         .borrow_mut()
         .insert(stranger, system_account(5_000_000_000));
     let mut unauthorized_cancel = cancel_dispatch_ix(&fixture, &keys);
+    unauthorized_cancel.accounts.push(readonly(deny_record));
     unauthorized_cancel.accounts[0].pubkey = stranger;
     context.process_and_validate_instruction(
         &unauthorized_cancel,
@@ -1473,7 +1460,10 @@ fn mollusk_cancel_dispatch_restores_burn_and_allows_refunds() {
         999_700
     );
 
-    run_cancel_dispatch(&context, &fixture, &keys, &mut ledger);
+    let mut cancel = cancel_dispatch_ix(&fixture, &keys);
+    cancel.accounts.push(readonly(deny_record));
+    let result = context.process_and_validate_instruction(&cancel, &[Check::success()]);
+    assert_eq!(ledger.evaluate_fhe_cpis(&context, &result), 1);
     let batch = read_batch(&context, keys.batch);
     assert_eq!(batch.status, batcher::BatchStatus::Refunding);
     assert_eq!(batch.burned_total_handle, [0; 32]);
@@ -1493,7 +1483,7 @@ fn mollusk_cancel_dispatch_restores_burn_and_allows_refunds() {
         &[batcher_error(batcher::BatcherError::BatchNotPending)],
     );
     context.process_and_validate_instruction(
-        &cancel_dispatch_ix(&fixture, &keys),
+        &cancel,
         &[batcher_error(batcher::BatcherError::BatchNotDispatched)],
     );
 
@@ -2276,7 +2266,7 @@ fn mollusk_join_quit_and_claim_respect_batch_status() {
     let attestation = amount_attestation_for(
         handle_for_chain(42, BALANCE_FHE_TYPE),
         fixture.alice.user,
-        fixture.join_mint().compute_signer,
+        token::id(),
     );
     context.process_and_validate_instruction(
         &join_ix(&fixture, &keys, &fixture.alice, attestation),
@@ -2431,11 +2421,7 @@ fn snapshot_lifecycle(
         fixture,
         &keys,
         &fixture.alice,
-        amount_attestation_for(
-            amount_handle,
-            fixture.alice.user,
-            fixture.join_mint().compute_signer,
-        ),
+        amount_attestation_for(amount_handle, fixture.alice.user, token::id()),
     );
     let join_result = context.process_and_validate_instruction(&join, &[Check::success()]);
     ledger.evaluate_fhe_cpis(context, &join_result);
@@ -2547,7 +2533,11 @@ fn mollusk_dust_total_settle_reverts_and_batch_stays_dispatched() {
     let burned_handle = run_dispatch(&context, &fixture, &keys, &mut ledger);
 
     let (signatures, extra_data) = amount_public_decrypt_cert(burned_handle, 100);
-    let proof = single_burn_public_decrypt_proof(keys.burned_amount_value, burned_handle);
+    let proof = single_burn_public_decrypt_proof(
+        keys.burned_amount_value,
+        keys.batch_authority,
+        burned_handle,
+    );
     let pending_burn = keys.pending_burn(fixture.join_mint().mint);
     let ix = settle_ix(
         &fixture,

@@ -96,9 +96,9 @@ pub struct HostAclChecker {
     /// host carries a base58 `acl_address` (the zama-host program) and has no EVM ACL
     /// contract to `eth_call`; its ACL is enforced authoritatively by the KMS Connector.
     /// Direct entries and public decrypts are not pre-checked here — their authorization
-    /// is membership in the encrypted value account, and this checker has no cheaper
-    /// reading of it than the connector's own. Delegated user-decrypt entries ARE: the v3
-    /// request carries the encrypted value id and the subject, which is everything the advisory
+    /// is an allow leaf sealed on the write, and this checker has no cheaper reading of it
+    /// than the connector's own. Delegated user-decrypt entries ARE: the v3 request names
+    /// the allowed key and the encrypted value account, which is everything the advisory
     /// negative-only pre-check (`check_solana_delegated_user_decrypt`) needs to read the
     /// delegation rows.
     solana_chains: HashMap<u64, SolanaHostChain>,
@@ -606,13 +606,13 @@ impl HostAclChecker {
             .handles
             .iter()
             .filter_map(|entry| {
-                let subject = <[u8; 32]>::try_from(entry.subject.as_slice()).ok()?;
-                let encrypted_value_id =
-                    <[u8; 32]>::try_from(entry.encrypted_value_id.as_slice()).ok()?;
-                (subject != user_pubkey).then(|| DelegatedEntry {
+                let allowed_key = <[u8; 32]>::try_from(entry.allowed_key.as_slice()).ok()?;
+                let encrypted_value_account =
+                    <[u8; 32]>::try_from(entry.encrypted_value_account.as_slice()).ok()?;
+                (allowed_key != user_pubkey).then(|| DelegatedEntry {
                     handle_hex: format!("0x{}", hex::encode(&entry.handle)),
-                    subject,
-                    encrypted_value_id,
+                    delegator: allowed_key,
+                    encrypted_value_account,
                 })
             })
             .collect();
@@ -620,12 +620,12 @@ impl HostAclChecker {
             return Ok(());
         }
 
-        // Round 1: the encrypted value accounts, to learn each entry's authority. Its slot is
+        // Round 1: the encrypted value accounts the entries name, to learn each entry's
+        // authority. Its slot is
         // the floor the row read must be served at or after — otherwise a load-balanced RPC can
         // answer round 2 from a replica behind round 1, and a grant confirmed between the two
         // reads as absent.
-        let encrypted_value_addresses =
-            encrypted_value_read_addresses(&delegated, chain.program_id);
+        let encrypted_value_addresses = encrypted_value_read_addresses(&delegated);
         let (discovery_slot, encrypted_value_accounts) = match self
             .solana_accounts_with_retry(job_id, chain, chain_id, &encrypted_value_addresses, None)
             .await?

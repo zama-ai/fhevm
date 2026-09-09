@@ -19,7 +19,7 @@ pub mod events;
 mod fhe;
 /// Instruction account contexts and handlers.
 pub mod instructions;
-/// Account layouts, PDA helpers, and token-domain labels.
+/// Account layouts, PDA helpers, and token value labels.
 pub mod state;
 
 use anchor_lang::prelude::*;
@@ -33,11 +33,10 @@ pub use events::*;
 use instructions::*;
 /// Re-export instruction account contexts for compatibility with existing tests.
 pub use instructions::{
-    AllowTokenAccountSubjects, AllowTotalSupplySubjects, CancelPendingBurn, ConfidentialBurn,
+    AllowBalanceViewers, AllowTotalSupplyViewers, CancelPendingBurn, ConfidentialBurn,
     ConfidentialBurnFromValue, ConfidentialTransfer, ConfidentialTransferFromValue, DiscloseSecp,
     InitializeMint, InitializeTokenAccount, MakeTokenAccountHandlePublic,
-    MakeTotalSupplyHandlePublic, RedeemBurnedAmount, RemoveTokenAccountSubject,
-    RemoveTotalSupplySubject, WrapUsdc,
+    MakeTotalSupplyHandlePublic, RedeemBurnedAmount, TransferReceipt, WrapUsdc,
 };
 /// Re-export account layouts and helper functions used by clients and tests.
 pub use state::*;
@@ -49,7 +48,7 @@ declare_id!("pS2gMMq6PNZKpjxiANeoN5XxJgwaFsUR6xaJkpUHcDg");
 pub mod confidential_token {
     use super::*;
 
-    /// Initializes a confidential mint and records its host ACL domain.
+    /// Initializes a confidential mint and creates its zero encrypted total supply.
     pub fn initialize_mint<'info>(ctx: Context<'info, InitializeMint<'info>>) -> Result<()> {
         instructions::initialize_mint(ctx)
     }
@@ -66,49 +65,28 @@ pub mod confidential_token {
         instructions::wrap_usdc(ctx, amount)
     }
 
-    /// Grants subjects on a token-account-scoped encrypted value by CPI to host
-    /// `allow_subjects`, signing as the token-account PDA
-    /// (`EncryptedValue.encrypted_value_account_authority`).
-    /// Owner-authorized; auditors remain decrypt-only subjects (fhevm-internal#1862 #13).
-    pub fn allow_token_account_subjects<'info>(
-        ctx: Context<'info, AllowTokenAccountSubjects<'info>>,
-        subjects: Vec<Pubkey>,
+    /// Re-writes the owner's balance onto a handle the owner and `viewers` may decrypt. Owner
+    /// authorized; the grant covers that handle, the next balance write allows the owner alone.
+    pub fn allow_balance_viewers<'info>(
+        ctx: Context<'info, AllowBalanceViewers<'info>>,
+        viewers: Vec<Pubkey>,
     ) -> Result<()> {
-        instructions::allow_token_account_subjects(ctx, subjects)
+        instructions::allow_balance_viewers(ctx, viewers)
     }
 
-    /// Removes one subject from a token-account-scoped encrypted value by CPI to host
-    /// `remove_subject`, signing as the token-account PDA
-    /// (`EncryptedValue.encrypted_value_account_authority`).
-    pub fn remove_token_account_subject<'info>(
-        ctx: Context<'info, RemoveTokenAccountSubject<'info>>,
-        subject: Pubkey,
+    /// Re-writes the encrypted total supply onto a handle `viewers` may decrypt. The mint
+    /// authority authorizes the operation; the total-supply PDA signs the host CPI.
+    pub fn allow_total_supply_viewers<'info>(
+        ctx: Context<'info, AllowTotalSupplyViewers<'info>>,
+        viewers: Vec<Pubkey>,
     ) -> Result<()> {
-        instructions::remove_token_account_subject(ctx, subject)
-    }
-
-    /// Grants decrypt subjects on the encrypted total supply. The existing mint authority
-    /// authorizes the operation; the total-supply PDA signs the host CPI.
-    pub fn allow_total_supply_subjects<'info>(
-        ctx: Context<'info, AllowTotalSupplySubjects<'info>>,
-        subjects: Vec<Pubkey>,
-    ) -> Result<()> {
-        instructions::allow_total_supply_subjects(ctx, subjects)
-    }
-
-    /// Removes one decrypt subject from the encrypted total supply. The existing mint authority
-    /// authorizes the operation; the total-supply PDA signs the host CPI.
-    pub fn remove_total_supply_subject(
-        ctx: Context<RemoveTotalSupplySubject>,
-        subject: Pubkey,
-    ) -> Result<()> {
-        instructions::remove_total_supply_subject(ctx, subject)
+        instructions::allow_total_supply_viewers(ctx, viewers)
     }
 
     /// Seals one token-account state handle publicly. The owner authorizes the request and the
     /// token-account PDA signs as encrypted value account authority.
-    pub fn make_token_account_handle_public(
-        ctx: Context<MakeTokenAccountHandlePublic>,
+    pub fn make_token_account_handle_public<'info>(
+        ctx: Context<'info, MakeTokenAccountHandlePublic<'info>>,
         kind: DisclosedValueKind,
         handle: [u8; 32],
     ) -> Result<()> {
@@ -117,8 +95,8 @@ pub mod confidential_token {
 
     /// Seals encrypted total supply publicly. The mint authority authorizes the request and the
     /// total-supply PDA signs as encrypted value account authority.
-    pub fn make_total_supply_handle_public(
-        ctx: Context<MakeTotalSupplyHandlePublic>,
+    pub fn make_total_supply_handle_public<'info>(
+        ctx: Context<'info, MakeTotalSupplyHandlePublic<'info>>,
         handle: [u8; 32],
     ) -> Result<()> {
         instructions::make_total_supply_handle_public(ctx, handle)
@@ -136,9 +114,9 @@ pub mod confidential_token {
     /// Burns an encrypted amount taken from an existing on-chain `EncryptedValue` (a computed or
     /// received handle) instead of a freshly attested client-side encryption — the burn-side analog
     /// of `confidential_transfer_from_value` (fhevm-internal#1755). The batcher uses this to burn an
-    /// execution's computed encrypted total, then requests the KMS burn certificate. The signing owner
-    /// must be in the amount value's subject set (the token spend gate); the amount is spent
-    /// read-only, and the burned-amount output is created publicly decryptable exactly as in
+    /// execution's computed encrypted total, then requests the KMS burn certificate. The signing
+    /// owner must control the amount value (the token spend gate); the amount is spent read-only,
+    /// and the burned-amount output is created publicly decryptable exactly as in
     /// `confidential_burn`, so `redeem_burned_amount` consumes it unchanged.
     pub fn confidential_burn_from_value<'info>(
         ctx: Context<'info, ConfidentialBurnFromValue<'info>>,
@@ -146,18 +124,21 @@ pub mod confidential_token {
         instructions::confidential_burn_from_value(ctx)
     }
 
-    /// Transfers an encrypted amount by updating the sender and recipient balance handles.
+    /// Transfers an encrypted amount by updating the sender and recipient balance handles. A
+    /// recipient program passes `receipt` (plus `receipt_value` and its signing
+    /// `receipt_authority`) to have the transferred amount accumulated into a value of its own.
     pub fn confidential_transfer<'info>(
         ctx: Context<'info, ConfidentialTransfer<'info>>,
         amount_attestation: zama_host::CoprocessorInputAttestation,
+        receipt: Option<TransferReceipt>,
     ) -> Result<()> {
-        instructions::confidential_transfer(ctx, amount_attestation)
+        instructions::confidential_transfer(ctx, amount_attestation, receipt)
     }
 
     /// Transfers an encrypted amount taken from an existing on-chain `EncryptedValue` (a computed or
     /// received handle) instead of a freshly attested client-side encryption — the path that lets a
-    /// contract be the sender of a computed amount (fhevm-internal#1680). The signing owner must be
-    /// in the amount value's subject set (the token spend gate); the amount is spent read-only.
+    /// contract be the sender of a computed amount (fhevm-internal#1680). The signing owner must
+    /// control the amount value (the token spend gate); the amount is spent read-only.
     pub fn confidential_transfer_from_value<'info>(
         ctx: Context<'info, ConfidentialTransferFromValue<'info>>,
     ) -> Result<()> {

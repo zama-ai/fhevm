@@ -1,14 +1,14 @@
 // checkBrowserReality — acceptance #5, run as a step of the solana-e2e workflow's demo phase.
 //
-// A Vite-origin dApp (#1761) reaches the relayer, the proof service and the faucet with browser
-// fetch(), so each must answer the exact dApp origin's CORS preflight (OPTIONS), and the protected
+// A Vite-origin dApp (#1761) reaches the relayer and the faucet with browser fetch(), so each
+// must answer the exact dApp origin's CORS preflight (OPTIONS), and the protected
 // faucet must accept only the current lifecycle boot capability, while the dApp session must be
 // same-origin and expose that same boot. This exercises exactly that, from a browser Origin, and
 // exits non-zero (naming the failing endpoint) if any check fails. TS rather than a bash curl script
 // because the header assertions are logic.
 //
-// Reads the seeded demo-config for the relayer + proof-service URLs; the faucet and dApp use their
-// lifecycle-owned loopback ports. The browser origin is deliberately the exact Vite origin.
+// Reads the seeded demo-config for the relayer URL; the faucet and dApp use their lifecycle-owned
+// loopback ports. The browser origin is deliberately the exact Vite origin.
 
 import { readDemoConfig } from "./config";
 import { readCurrentDemoAuthorization } from "./lifecycle";
@@ -97,7 +97,6 @@ const main = async (): Promise<void> => {
     // The relayer only carries the CORS layer when RELAYER_PERMISSIVE_CORS is set on its container;
     // this preflight is what proves the demo bring-up wired that env through to the relayer service.
     { name: "relayer", run: () => preflightAllowsOrigin("relayer", `${config.relayerUrl}/v2/input-proof`) },
-    { name: "proof-service", run: () => preflightAllowsOrigin("proof-service", `${config.proofServiceUrl}/health/readiness`) },
     {
       name: "faucet preflight",
       run: () =>

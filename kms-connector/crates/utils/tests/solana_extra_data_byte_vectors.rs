@@ -3,18 +3,17 @@
 //! The vectors live in `solana/test-fixtures/user-decrypt/extra_data_v1.json` next to the other
 //! cross-implementation fixture sets and are shared with the TypeScript mirror
 //! (`sdk/js-sdk/src/solana/actions/publicDecryptCertificate.test.ts`). They are hand-committed
-//! literals — deliberately few, with no generator: the layouts are frozen behind their version
-//! bytes, so a change that moves these bytes is a protocol change, not a fixture refresh.
+//! literals — deliberately few, with no generator: the layout is frozen behind its version byte,
+//! so a change that moves these bytes is a protocol change, not a fixture refresh.
 //!
-//! The carrier is owned by public decrypt now — see the `solana_extra_data` module docs for its
-//! status and removal condition. The TypeScript mirror runs only the version-0x03 records: the SDK
-//! no longer produces the context-only 0x01 form (that was the retired v0 user-decrypt wire, which
-//! moved to the sRFC-38 permit envelope), so the 0x01 records and the `malformed` section are
-//! pinned by this runner alone.
+//! The carrier names the encrypted value account a public handle lives in and nothing else; the
+//! `PublicDecryptLeaf` proof is fetched by the connector, never carried. The `malformed` section
+//! pins the strictness that makes the fixed width a real property: a longer blob, a shorter one,
+//! and any other version byte are all refused.
 
 use connector_utils::types::solana_extra_data::{
-    encode_solana_extra_data_context_only, encode_solana_extra_data_mmr_proof,
-    parse_solana_mmr_proof_extra_data,
+    SOLANA_PUBLIC_DECRYPT_EXTRA_DATA_LEN, encode_solana_public_decrypt_extra_data,
+    parse_solana_public_decrypt_extra_data,
 };
 use serde::Deserialize;
 
@@ -51,9 +50,7 @@ struct ExtraDataRecord {
 #[derive(Deserialize)]
 struct ExtraDataInput {
     context_id_hex: String,
-    acl_value_key_hex: Option<String>,
-    proof_slot: Option<String>,
-    mmr_proof_hex: Option<String>,
+    encrypted_value_account_hex: String,
 }
 
 #[derive(Deserialize)]
@@ -66,72 +63,40 @@ struct MalformedRecord {
 fn extra_data_vectors_encode_and_round_trip() {
     let file: ExtraDataFile =
         serde_json::from_str(&fixture("extra_data_v1.json")).expect("fixture parses");
-    assert_eq!(file.schema, "zama-solana-user-decrypt-extra-data/v1");
+    assert_eq!(file.schema, "zama-solana-public-decrypt-extra-data/v1");
     assert!(!file.records.is_empty());
 
     for record in &file.records {
         let context_id = key32(&record.input.context_id_hex);
+        let encrypted_value_account = key32(&record.input.encrypted_value_account_hex);
         let expected_blob = bytes(&record.blob_hex);
 
-        match &record.input.acl_value_key_hex {
-            // The context-only version is encoder-only on this side: it has no parser to
-            // round-trip through, and the strict proof-tail parser must reject it — the
-            // malformed list below pins that rejection.
-            None => {
-                assert_eq!(
-                    encode_solana_extra_data_context_only(context_id),
-                    expected_blob,
-                    "{}: encoder must produce the committed blob",
-                    record.name
-                );
-            }
-            Some(value_key_hex) => {
-                let acl_value_key = key32(value_key_hex);
-                let proof_slot: u64 = record
-                    .input
-                    .proof_slot
-                    .as_deref()
-                    .expect("a proof-tail record carries proof_slot")
-                    .parse()
-                    .expect("fixture proof_slot is a u64");
-                let mmr_proof = bytes(
-                    record
-                        .input
-                        .mmr_proof_hex
-                        .as_deref()
-                        .expect("a proof-tail record carries mmr_proof_hex"),
-                );
-
-                assert_eq!(
-                    encode_solana_extra_data_mmr_proof(
-                        context_id,
-                        acl_value_key,
-                        proof_slot,
-                        &mmr_proof
-                    ),
-                    expected_blob,
-                    "{}: encoder must produce the committed blob",
-                    record.name
-                );
-
-                // Every committed proof-tail blob must survive the strict parser with its
-                // fields intact.
-                let parsed =
-                    parse_solana_mmr_proof_extra_data(&expected_blob).unwrap_or_else(|| {
-                        panic!("{}: the strict parser must accept this blob", record.name)
-                    });
-                assert_eq!(parsed.context_id, context_id, "{}", record.name);
-                assert_eq!(parsed.acl_value_key, acl_value_key, "{}", record.name);
-                assert_eq!(parsed.proof_slot, proof_slot, "{}", record.name);
-                assert_eq!(parsed.mmr_proof_bytes, mmr_proof, "{}", record.name);
-            }
-        }
+        assert_eq!(
+            expected_blob.len(),
+            SOLANA_PUBLIC_DECRYPT_EXTRA_DATA_LEN,
+            "{}: the committed blob has the fixed width",
+            record.name
+        );
+        assert_eq!(
+            encode_solana_public_decrypt_extra_data(context_id, encrypted_value_account),
+            expected_blob,
+            "{}: encoder must produce the committed blob",
+            record.name
+        );
+        let parsed = parse_solana_public_decrypt_extra_data(&expected_blob)
+            .unwrap_or_else(|| panic!("{}: the strict parser must accept this blob", record.name));
+        assert_eq!(parsed.context_id, context_id, "{}", record.name);
+        assert_eq!(
+            parsed.encrypted_value_account, encrypted_value_account,
+            "{}",
+            record.name
+        );
     }
 
     assert!(!file.malformed.is_empty());
     for record in &file.malformed {
         assert!(
-            parse_solana_mmr_proof_extra_data(&bytes(&record.blob_hex)).is_none(),
+            parse_solana_public_decrypt_extra_data(&bytes(&record.blob_hex)).is_none(),
             "{}: the strict parser must reject this blob",
             record.name
         );

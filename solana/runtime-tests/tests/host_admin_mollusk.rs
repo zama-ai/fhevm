@@ -76,6 +76,7 @@ impl InitializeHostConfig {
             payer,
             vec![
                 (host_config, system_account(0)),
+                (host::rand_nonce_address().0, system_account(0)),
                 (program_data, program_data_acct),
             ],
         );
@@ -96,6 +97,7 @@ impl InitializeHostConfig {
                 admin: self.admin,
                 program_data: self.program_data,
                 host_config: self.host_config,
+                rand_nonce: host::rand_nonce_address().0,
                 system_program: system_program::ID,
                 event_authority: event_authority(host::id()),
                 program: host::id(),
@@ -119,6 +121,10 @@ fn mollusk_initialize_host_config_defaults_block_cap_to_unrestricted() {
     let init = InitializeHostConfig::new();
     init.run(&init.ix(init_args(vec![[0x11u8; 20]], 1)), Check::success());
     assert_eq!(init.config().hcu_block_cap_per_app, u64::MAX);
+    // The rand nonce is created with the config, at zero.
+    let rand_nonce: host::RandNonce =
+        zama_solana_test_kit::read_account(&init.context, host::rand_nonce_address().0);
+    assert_eq!(rand_nonce.nonce, 0);
 }
 
 #[test]

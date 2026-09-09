@@ -17,14 +17,24 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(target_os, values("solana"
 
 [dependencies]
 # Pure-Rust, solana-version-agnostic so the on-chain programs (solana 3.x), the
-# solana-proof-service, and the KMS connector (solana 2.x) can depend on this
-# one crate. SHA-256 via `sha2` is byte-identical to the on-chain syscall hasher.
+# coprocessor, and the KMS connector (solana 2.x) can depend on this one crate.
+# Software hashes are byte-identical to the on-chain syscall hashers.
 borsh = { version = "1", features = ["derive"] }
 
 [target.'cfg(not(target_os = "solana"))'.dependencies]
+# sha256: Anchor account discriminators. keccak256: leaf commitments and MMR
+# nodes, shared with the EVM ACL (RFC 034).
 sha2 = { version = "0.10", default-features = false }
+sha3 = { version = "0.10", default-features = false }
 
-# On SBF, hash via the sol_sha256 syscall (~100 CU) instead of software sha2
+# On SBF, hash via the syscalls (~100 CU) instead of software hashing
 # (thousands of CU per hash — enough to blow the per-tx budget on a transfer).
 [target.'cfg(target_os = "solana")'.dependencies]
 solana-sha256-hasher = { version = "3.1.0", default-features = false }
+solana-keccak-hasher = { version = "3.1.0", default-features = false }
+
+[dev-dependencies]
+# Leaf vector runner: reads and regenerates the shared normative records.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+hex = "0.4"

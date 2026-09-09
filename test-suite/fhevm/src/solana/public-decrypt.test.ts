@@ -7,23 +7,17 @@ const environment = (): Record<string, string> => ({
   PD_RELAYER_URL: 'http://127.0.0.1:3000',
   PD_HANDLE: hex32('1'),
   PD_CONTEXT_ID: hex32('2'),
-  PD_ACL_VALUE_KEY: hex32('3'),
-  PD_MMR_PROOF_SLOT: '1',
-  PD_MMR_ENCRYPTED_VALUE_ACCOUNT: hex32('4'),
-  PD_MMR_PEAKS: `${hex32('5')},${hex32('6')}`,
-  PD_MMR_LEAF_COUNT: '1',
-  PD_MMR_PROOF_BYTES: '0x02000000000000000000000000',
+  PD_ENCRYPTED_VALUE_ACCOUNT: hex32('4'),
 });
 const certificate = {
   handle: hex32('1'),
   abiEncodedCleartext: '000000000000002a',
   signatures: ['ab'.repeat(65)],
   extraData: '0x03',
-  inclusionProof: { leafIndex: 0n, siblings: [] },
 };
 
 describe('solana-public-decrypt', () => {
-  test('passes explicit witness inputs to the SDK without a separately decoded proof', async () => {
+  test('names the handle and its account to the SDK, and nothing proof-shaped', async () => {
     let received: unknown;
     const dependencies: PublicDecryptDependencies = {
       publicDecryptCertificate: async (input) => {
@@ -32,20 +26,16 @@ describe('solana-public-decrypt', () => {
       },
     };
     await runSolanaPublicDecrypt(environment(), dependencies);
-    expect(received).toMatchObject({
+    expect(received).toEqual({
       chainId: 9223372036854788153n,
       relayerUrl: 'http://127.0.0.1:3000',
+      apiKey: 'local',
       request: {
         handle: hex32('1'),
-        proofSlot: 1n,
-        leafCount: 1n,
-        peaks: [
-          Uint8Array.from(Buffer.from('5'.repeat(64), 'hex')),
-          Uint8Array.from(Buffer.from('6'.repeat(64), 'hex')),
-        ],
+        contextId: Uint8Array.from(Buffer.from('2'.repeat(64), 'hex')),
+        encryptedValueAccount: Uint8Array.from(Buffer.from('4'.repeat(64), 'hex')),
       },
     });
-    expect((received as { request: object }).request).not.toHaveProperty('proof');
   });
 
   test('requires every explicit public-decrypt input', async () => {
@@ -56,6 +46,15 @@ describe('solana-public-decrypt', () => {
         runSolanaPublicDecrypt(input, { publicDecryptCertificate: async () => certificate }),
       ).rejects.toThrow(`missing env ${name}`);
     }
+  });
+
+  test('rejects an account that is not 32 bytes', async () => {
+    await expect(
+      runSolanaPublicDecrypt(
+        { ...environment(), PD_ENCRYPTED_VALUE_ACCOUNT: '0xabcd' },
+        { publicDecryptCertificate: async () => certificate },
+      ),
+    ).rejects.toThrow('PD_ENCRYPTED_VALUE_ACCOUNT must be a 0x-prefixed 32-byte hex value');
   });
 
   test('interprets the certificate cleartext as unprefixed big-endian hex, never decimal', () => {

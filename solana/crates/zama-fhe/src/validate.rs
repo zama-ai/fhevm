@@ -5,65 +5,13 @@ use anchor_lang::prelude::Pubkey;
 use zama_host::{
     binary_output_type_ok, is_supported_fhe_type, is_supported_uint_fhe_type,
     scalar_is_zero_for_type, unary_output_type_ok, FheBinaryOpCode, FheExecuteOperand,
-    FheExecuteOutput, FheExecuteStep, FheUnaryOpCode,
+    FheExecuteOutput, FheExecuteStep, FheUnaryOpCode, PdaSeed,
 };
 
 use crate::accounts::{ExecutionAccountMeta, ExecutionEncryptedValueAccountAuthority};
 use crate::acl::EncryptedValueId;
 use crate::operand::{Operand, OperandKind};
 use crate::{FheExecutionBuildError, Result};
-
-/// Mirrors the host preflight rule (fhevm-internal#1853 W4): rand seeds are anchored to
-/// the execution's persistent writes, so an execution with a rand step and no persistent output is
-/// rejected here before it fails on-chain with `FheExecuteRandRequiresPersistentOutput`.
-pub(crate) fn validate_rand_steps_anchor_persistent_output(steps: &[FheExecuteStep]) -> Result<()> {
-    let has_rand = steps.iter().any(|step| {
-        matches!(
-            step,
-            FheExecuteStep::Rand { .. } | FheExecuteStep::RandBounded { .. }
-        )
-    });
-    if !has_rand {
-        return Ok(());
-    }
-    let persists = steps.iter().any(|step| {
-        matches!(
-            step,
-            FheExecuteStep::Binary {
-                output: FheExecuteOutput::StoredValue { .. },
-                ..
-            } | FheExecuteStep::Ternary {
-                output: FheExecuteOutput::StoredValue { .. },
-                ..
-            } | FheExecuteStep::TrivialEncrypt {
-                output: FheExecuteOutput::StoredValue { .. },
-                ..
-            } | FheExecuteStep::Rand {
-                output: FheExecuteOutput::StoredValue { .. },
-                ..
-            } | FheExecuteStep::Unary {
-                output: FheExecuteOutput::StoredValue { .. },
-                ..
-            } | FheExecuteStep::RandBounded {
-                output: FheExecuteOutput::StoredValue { .. },
-                ..
-            } | FheExecuteStep::Sum {
-                output: FheExecuteOutput::StoredValue { .. },
-                ..
-            } | FheExecuteStep::IsIn {
-                output: FheExecuteOutput::StoredValue { .. },
-                ..
-            } | FheExecuteStep::MulDiv {
-                output: FheExecuteOutput::StoredValue { .. },
-                ..
-            }
-        )
-    });
-    if !persists {
-        return Err(FheExecutionBuildError::RandRequiresPersistentOutput);
-    }
-    Ok(())
-}
 
 pub(crate) fn validate_lowered_execution(
     steps: &[FheExecuteStep],
@@ -89,6 +37,11 @@ pub(crate) fn validate_lowered_execution(
             .any(|candidate| candidate.pubkey == account.pubkey)
         {
             return Err(FheExecutionBuildError::InvalidRemainingAccountReference);
+        }
+        // A value authority is found by key, never by wire index: it counts as used by the
+        // operand or output whose authority it is.
+        if account.requires_value_authority() {
+            used_accounts[index] = true;
         }
     }
 
@@ -263,20 +216,32 @@ fn validate_lowered_output(
         FheExecuteOutput::StoredValue {
             output_encrypted_value_index,
             output_authority_index,
-            output_domain_index,
-            output_account_index,
+            output_program_index,
+            output_authority_key_index,
+            output_scope_index,
             output_label_index,
-            output_subject_indexes,
+            output_authority_seeds,
+            output_allow_indexes,
+            previous_handle_index,
             ..
         } => {
             mark_lowered_account(used_accounts, *output_encrypted_value_index)?;
             if let Some(index) = output_authority_index {
                 mark_lowered_account(used_accounts, *index)?;
             }
-            mark_lowered_dictionary_entry(used_dictionary, *output_domain_index)?;
-            mark_lowered_dictionary_entry(used_dictionary, *output_account_index)?;
+            mark_lowered_dictionary_entry(used_dictionary, *output_program_index)?;
+            mark_lowered_dictionary_entry(used_dictionary, *output_authority_key_index)?;
+            mark_lowered_dictionary_entry(used_dictionary, *output_scope_index)?;
             mark_lowered_dictionary_entry(used_dictionary, *output_label_index)?;
-            for index in output_subject_indexes {
+            for seed in output_authority_seeds {
+                if let PdaSeed::Interned { index } = seed {
+                    mark_lowered_dictionary_entry(used_dictionary, *index)?;
+                }
+            }
+            for index in output_allow_indexes {
+                mark_lowered_dictionary_entry(used_dictionary, *index)?;
+            }
+            if let Some(index) = previous_handle_index {
                 mark_lowered_dictionary_entry(used_dictionary, *index)?;
             }
         }
@@ -498,23 +463,18 @@ pub(crate) fn validate_uint_fhe_type(fhe_type: u8) -> Result<()> {
     }
 }
 
-pub(crate) fn validate_subjects(subjects: &[Pubkey]) -> Result<()> {
-    if subjects.is_empty() || subjects.len() > zama_solana_acl::MAX_ENCRYPTED_VALUE_SUBJECTS {
-        return Err(FheExecutionBuildError::InvalidSubjects);
-    }
-    for (index, subject) in subjects.iter().enumerate() {
-        if *subject == Pubkey::default() {
-            return Err(FheExecutionBuildError::InvalidSubjects);
-        }
-        if subjects[..index].contains(subject) {
-            return Err(FheExecutionBuildError::InvalidSubjects);
+/// Mirrors the host's `InvalidAllowKey`: no zero key, no duplicate. An empty list is legal.
+pub(crate) fn validate_allow_keys(keys: &[Pubkey]) -> Result<()> {
+    for (index, key) in keys.iter().enumerate() {
+        if *key == Pubkey::default() || keys[..index].contains(key) {
+            return Err(FheExecutionBuildError::InvalidAllowKey);
         }
     }
     Ok(())
 }
 
 pub(crate) fn validate_encrypted_value_id(key: &EncryptedValueId) -> Result<()> {
-    if key.domain.pubkey() == Pubkey::default()
+    if key.app.program == Pubkey::default()
         || key.encrypted_value_account_authority == Pubkey::default()
     {
         return Err(FheExecutionBuildError::InvalidEncryptedValueId);

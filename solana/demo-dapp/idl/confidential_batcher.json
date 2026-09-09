@@ -92,9 +92,6 @@
           ]
         },
         {
-          "name": "join_compute_signer"
-        },
-        {
           "name": "total_supply_authority"
         },
         {
@@ -203,7 +200,7 @@
         {
           "name": "batch_authority",
           "docs": [
-            "authority and the payout transfer's authority via invoke_signed."
+            "transfer's authority via invoke_signed."
           ],
           "pda": {
             "seeds": [
@@ -293,9 +290,6 @@
         },
         {
           "name": "user_payout_ata"
-        },
-        {
-          "name": "payout_compute_signer"
         },
         {
           "name": "batch_payout_token_account",
@@ -442,9 +436,6 @@
         },
         {
           "name": "batch_authority_ata"
-        },
-        {
-          "name": "join_compute_signer"
         },
         {
           "name": "total_supply_authority"
@@ -595,9 +586,9 @@
       "docs": [
         "Joins the pending batch with the batcher's join token: one user-signed",
         "transaction that CPIs the coprocessor-attested confidential transfer",
-        "into the batch's own token account, then re-materializes the",
-        "transferred amount into the user's joined encrypted value account (audience: user +",
-        "batch authority) in the same transaction. Repeated joins accumulate."
+        "into the batch's own token account; the token program accumulates the transferred",
+        "amount into the user's joined encrypted value account as the transfer's receipt",
+        "(decryptable by the user). Repeated joins accumulate."
       ],
       "discriminator": [
         206,
@@ -642,7 +633,7 @@
         {
           "name": "batch_authority",
           "docs": [
-            "batcher execution's compute subject and encrypted value account authority."
+            "receipt the token program writes."
           ],
           "pda": {
             "seeds": [
@@ -724,9 +715,6 @@
           "name": "batch_authority_ata"
         },
         {
-          "name": "join_compute_signer"
-        },
-        {
           "name": "user_token_account",
           "docs": [
             "by the token CPI."
@@ -751,14 +739,14 @@
         {
           "name": "user_transferred_value",
           "docs": [
-            "token CPI, then read as the batcher execution's operand."
+            "token CPI."
           ],
           "writable": true
         },
         {
           "name": "pending_join_value",
           "docs": [
-            "(accumulated) on repeat joins by the batcher execution."
+            "first join, accumulated on repeat joins. Pinned to its canonical address below."
           ],
           "writable": true
         },
@@ -924,9 +912,6 @@
           ]
         },
         {
-          "name": "join_compute_signer"
-        },
-        {
           "name": "batch_join_token_account",
           "writable": true
         },
@@ -939,9 +924,6 @@
           "docs": [
             "Confidential mint claims pay out in."
           ]
-        },
-        {
-          "name": "payout_compute_signer"
         },
         {
           "name": "batch_payout_token_account",
@@ -1143,7 +1125,7 @@
         {
           "name": "batch_authority",
           "docs": [
-            "the reset execution's compute subject and encrypted value account authority."
+            "execution's value authority."
           ],
           "pda": {
             "seeds": [
@@ -1222,9 +1204,6 @@
         },
         {
           "name": "user_ata"
-        },
-        {
-          "name": "join_compute_signer"
         },
         {
           "name": "batch_join_token_account",
@@ -1544,9 +1523,6 @@
         },
         {
           "name": "payout_mint_vault_authority"
-        },
-        {
-          "name": "payout_compute_signer"
         },
         {
           "name": "payout_total_supply_authority"
@@ -2394,20 +2370,6 @@
             "type": "pubkey"
           },
           {
-            "name": "domain",
-            "docs": [
-              "ACL domain key, currently equal to the mint pubkey."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "compute_signer",
-            "docs": [
-              "Program-controlled compute signer PDA."
-            ],
-            "type": "pubkey"
-          },
-          {
             "name": "underlying_mint",
             "docs": [
               "Underlying SPL mint wrapped by this confidential mint."
@@ -2488,7 +2450,7 @@
           {
             "name": "contract_address",
             "docs": [
-              "Attested contract identity — the input's ACL domain key (bytes32)."
+              "Attested contract identity — the application program the input is bound to (bytes32)."
             ],
             "type": {
               "array": [
@@ -2531,10 +2493,9 @@
     {
       "name": "JoinRecord",
       "docs": [
-        "Per-(batch, user) join record. The encrypted amount itself lives in the",
-        "batcher-owned `EncryptedValue` encrypted value account at `joined_encrypted_value`",
-        "(audience: the user, who can decrypt their pending amount, and the batch",
-        "authority, which computes refunds and claims from it)."
+        "Per-(batch, user) join record. The encrypted amount itself lives in the batcher-owned",
+        "`EncryptedValue` account at `joined_encrypted_value`: the user may decrypt their pending",
+        "amount, and the batch authority computes refunds and claims from it by signature."
       ],
       "type": {
         "kind": "struct",

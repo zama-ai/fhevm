@@ -4,7 +4,7 @@ import { generateKeyPairSigner, type Instruction, type TransactionSigner } from 
 
 import { BRINGUP_KMS_CONTEXT_ID, type GatewayBootstrapInputs } from "./addresses";
 import { bootstrapZamaHost, kmsCertificateThreshold, lifecycleComposeProject } from "./deploy";
-import { zamaHostProgramDataAddress } from "./fhe-execute";
+import { zamaHostProgramDataAddress } from "./provision";
 import { getDefineKmsContextInstructionDataDecoder } from "./internal/generated/zamaHost/instructions/defineKmsContext";
 import { getInitializeHostConfigInstructionDataDecoder } from "./internal/generated/zamaHost/instructions/initializeHostConfig";
 import { ZAMA_HOST_PROGRAM_ADDRESS } from "./internal/generated/zamaHost/programAddress.js";

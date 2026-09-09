@@ -85,3 +85,44 @@ See the [architecture documentation](./docs/architecture.md) for more detail.
 🌟 If you find this project helpful or interesting, please consider giving it a star on GitHub! Your support helps to grow the community and motivates further development.
 
 [![GitHub stars](https://img.shields.io/github/stars/zama-ai/fhevm?style=social)](https://github.com/zama-ai/fhevm/)
+
+## Solana decryption and the shared worker lifecycle
+
+Solana uses the same database picker, KMS worker, response publisher and stale-operation
+recovery as EVM. The chain-specific authorization step checks the signed permit, a coherent
+Solana account observation, and coprocessor MMR proofs against that observation. It does not
+introduce a separate worker restart policy.
+
+| Authorization outcome | Solana classification | Shared Connector handling |
+| --- | --- | --- |
+| Malformed request, invalid signature, deployment/scope mismatch, invalidated or expired permit | Terminal | Irrecoverable, `Unprocessable` |
+| RPC/proof transport failure, missing account/delegation that may reflect lag, unavailable KMS pair | Transient | Recoverable, `UpstreamTransient` |
+| Proof record behind, unknown account in proof record, mismatched proof or out-of-range leaf | Retryable | One selective proof refresh, then recoverable `UpstreamTransient` if unresolved |
+| No leaf in a record caught up with the observed account, revoked/expired delegation, incomplete proof history, inconsistent MMR state | Terminal | Irrecoverable, `Unprocessable` |
+| Internal proof-planning or request-encoding defect | Terminal | Fail closed through the existing irrecoverable path; inspect diagnostics rather than repeatedly retrying |
+
+The detailed classifications remain in `crates/kms-worker/src/core/solana/failure.rs`.
+A terminal outcome stops the current request; it does not mean that a later grant or operator
+repair can never make a new request succeed. Several EVM ACL denials remain recoverable,
+whereas Solana rejects an observed missing leaf or revoked grant without waiting for a future
+authorization change. Incomplete proof history requires operator recovery, not repeated reads.
+A failing peer does not override another peer's valid proof.
+
+Request source controls what happens after authorization:
+
+- **On-chain requests:** recoverable errors return to `pending`, with the existing decryption
+  attempt limit; irrecoverable errors become `failed`. Errors are logged and request status is
+  persisted. KMS aborts retain the existing `aborted` behavior.
+- **HTTP-sourced requests:** any processing error produces a stored error response for the
+  waiting caller, without internal request retries. The worker handles V3 rows this way too;
+  this does not add Solana support to the HTTP endpoint, which currently accepts EVM requests.
+
+Ordinary request errors do not exit the service. Event tasks are detached in the shared worker:
+this PR does not change panic supervision. Stale `under_process` rows can be recovered by the
+transaction sender's existing recovery routine. Improving supervision and distinguishing
+internal defects with a new shared API error code are separate Connector changes.
+
+`decryption_error_lifecycle` exercises the real picker and database publisher with injected
+processor outcomes for EVM V2 and Solana V3. It checks retry limits, HTTP error responses, and
+successful processing after a failed request. It does not exercise KMS cryptography or the
+HTTP endpoint; the authorization suites separately exercise permit and proof verification.

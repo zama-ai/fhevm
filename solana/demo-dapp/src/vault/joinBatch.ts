@@ -33,13 +33,12 @@ import type { FhevmSolanaChain } from '@sdk-src/core/types/fhevmSolanaChain.js';
 import type { Bytes32Hex } from '@sdk-src/core/types/primitives.js';
 import type { SolanaSubmitInputProofResult } from '@sdk-src/solana/actions/submitInputProof.js';
 import { getJoinInstructionAsync } from './internal/generated/confidentialBatcher/instructions/join.js';
-import { findComputeSignerPda } from './internal/generated/confidentialToken/pdas/computeSigner.js';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from './internal/generated/confidentialToken/programAddress.js';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from './internal/generated/confidentialToken/programAddress.js';
 import {
   EVENT_AUTHORITY_SEED,
   findBatchAuthorityPda,
-  pendingJoinValueAccount,
+  pendingJoinValueAddress,
   tokenAccountAddress,
 } from './internal/batcherPdas.js';
 import {
@@ -131,12 +130,12 @@ export async function joinBatch(
   if (base58.encode(hexToBytes(inputProof.aclContractAddress)) !== zamaHostProgramAddress) {
     throw new Error('input proof ACL does not match the configured Zama host program');
   }
-  const [joinComputeSigner] = await findComputeSignerPda({ mint: joinConfidentialMint });
   if (base58.encode(hexToBytes(inputProof.userAddress)) !== user.address) {
     throw new Error('input proof user does not match the joining user');
   }
-  if (base58.encode(hexToBytes(inputProof.contractAddress)) !== joinComputeSigner) {
-    throw new Error('input proof contract does not match the join mint compute signer');
+  // The token program re-checks this binding in-execution (`assert_amount_attestation_binding`).
+  if (base58.encode(hexToBytes(inputProof.contractAddress)) !== CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS) {
+    throw new Error('input proof contract does not match the confidential-token program');
   }
   const signatures = inputProofResult.signatures.map((signature, index) => {
     const bytes = hexToBytes(signature);
@@ -160,14 +159,12 @@ export async function joinBatch(
       parameters.joinUnderlyingMint,
       parameters.tokenProgram,
     ),
-    joinComputeSigner,
     userTokenAccount,
     batchJoinTokenAccount,
     userBalanceValue: await balanceValueAddress(joinConfidentialMint, userTokenAccount),
     batchBalanceValue: await balanceValueAddress(joinConfidentialMint, batchJoinTokenAccount),
     userTransferredValue: await transferredAmountValueAddress(joinConfidentialMint, userTokenAccount),
-    pendingJoinValue: (await pendingJoinValueAccount(parameters.batch, batchAuthority, user.address))
-      .encryptedValueAddress,
+    pendingJoinValue: await pendingJoinValueAddress(parameters.batch, batchAuthority, user.address),
     zamaEventAuthority: await eventAuthority(zamaHostProgramAddress),
     hostConfig: parameters.hostConfig,
     confidentialTokenEventAuthority: await eventAuthority(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS),

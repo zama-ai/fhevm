@@ -6,7 +6,7 @@
 //! The two schemes differ in what the envelope carries and where its signature is checked.
 //! The EVM one carries the unified EIP-712 User-Decryption Request as `attestedPayload`; the
 //! relayer never re-hashes it, because the gateway contract verifies the EIP-712 signature on
-//! chain (#1288). The Solana one carries a wallet-signed permit plus per-handle evidence; no
+//! chain (#1288). The Solana one carries a wallet-signed permit plus per-handle entries; no
 //! contract can check that signature, so the relayer verifies it against the locally rebuilt
 //! envelope before submitting, and each KMS party's connector verifies it again.
 
@@ -116,8 +116,9 @@ pub struct SolanaUserDecryptRequestJson {
     #[schema(example = "solana-srfc38-user-decrypt-v1")]
     pub attestation_type: String,
 
-    /// The Solana permit fields the `signature` covers, plus the per-handle evidence it
-    /// deliberately does not: evidence is self-authenticating against host state.
+    /// The Solana permit fields the `signature` covers, plus the per-handle entries it
+    /// deliberately does not: an entry names what to decrypt, and the connector checks it
+    /// against host state and the coprocessors' leaf record.
     #[validate(nested)]
     pub attested_payload: SolanaSrfc38UserDecryptPayloadJson,
 
@@ -131,14 +132,14 @@ pub struct SolanaUserDecryptRequestJson {
 }
 
 /// The Solana-native user-decryption payload: the eight signed permit fields (§3.1) plus the
-/// per-handle access evidence. No `userAddress`, no `nonce`, no EVM per-handle addresses.
+/// per-handle entries. No `userAddress`, no `nonce`, no EVM per-handle addresses.
 #[derive(Deserialize, Serialize, Clone, ToSchema, Validate, Derivative)]
 #[derivative(Debug)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SolanaSrfc38UserDecryptPayloadJson {
     /// The requester's 32-byte ed25519 pubkey: the wallet that signs this permit (`0x` + 64
-    /// hex). Not necessarily the subject of any entry — on a delegated entry the subject is
-    /// the delegator, and this key is the delegate acting on their behalf.
+    /// hex). Not necessarily the allowed key of any entry — on a delegated entry the allowed
+    /// key is the delegator, and this key is the delegate acting on their behalf.
     #[validate(custom(function = "crate::http::validate_0x_hex"))]
     pub user_pubkey: String,
 
@@ -147,9 +148,9 @@ pub struct SolanaSrfc38UserDecryptPayloadJson {
     #[validate(custom(function = "crate::http::validate_0x_hex"))]
     pub transport_key: String,
 
-    /// The signed ACL domain-key scope (each a 32-byte pubkey, `0x` + 64 hex). May be empty
-    /// (permissive mode).
-    pub allowed_acl_domain_keys: Vec<String>,
+    /// The signed scopes: each 64 bytes, the application program id followed by the scope
+    /// (`0x` + 128 hex), ascending. May be empty (permissive mode).
+    pub allowed_scopes: Vec<String>,
 
     /// Validity window (`startTimestamp` + `durationSeconds`), in seconds.
     #[validate(nested)]
@@ -171,21 +172,19 @@ pub struct SolanaSrfc38UserDecryptPayloadJson {
     pub handles: Vec<SolanaHandleJson>,
 }
 
-/// One Solana handle entry: the handle plus its self-authenticating access evidence. None of
-/// these fields are signed — a substituted value can fail the request but never widen access.
+/// One Solana handle entry: the handle, the key whose allow leaf authorizes it, and the account
+/// the handle lives in. None of these fields are signed — a substituted value can fail the
+/// request but never widen access — and none is a proof: the connector fetches the allow leaf
+/// from the coprocessors and verifies it against the account it reads.
 #[derive(Deserialize, Serialize, Clone, ToSchema, Derivative)]
 #[derivative(Debug)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SolanaHandleJson {
     /// The 32-byte ciphertext handle (`0x` + 64 hex).
     pub handle: String,
-    /// The 32-byte subject: the pubkey whose encrypted value this entry asks to decrypt — the
-    /// requester itself for a direct entry, the delegator for a delegated one (`0x` + 64 hex).
-    pub subject: String,
-    /// The 32-byte encrypted value ID naming the `EncryptedValue` account (`0x` + 64 hex).
-    pub encrypted_value_id: String,
-    /// The `leaf_count` the access proof was built against; `"0"` in current mode (decimal string).
-    pub proof_leaf_count: String,
-    /// Empty (`"0x"`) for current access; otherwise the borsh `MmrProof` blob (`0x` + hex).
-    pub access_proof: String,
+    /// The 32-byte key whose allow leaf on the handle authorizes the entry — the requester
+    /// itself for a direct entry, the delegator for a delegated one (`0x` + 64 hex).
+    pub allowed_key: String,
+    /// The 32-byte address of the `EncryptedValue` account the handle lives in (`0x` + 64 hex).
+    pub encrypted_value_account: String,
 }

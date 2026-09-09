@@ -43,6 +43,8 @@ pub enum BalanceHandleUpdateReason {
     BurnDebit,
     /// Pending burn cancelled back onto this account.
     CancelBurn,
+    /// Re-written to allow extra viewers on the new handle.
+    AllowViewers,
 }
 
 /// App-local total-supply history event.
@@ -79,6 +81,8 @@ pub enum TotalSupplyUpdateReason {
     Burn,
     /// Pending burn cancelled back onto confidential supply.
     CancelBurn,
+    /// Re-written to allow viewers on the new handle.
+    AllowViewers,
 }
 
 /// Emitted when `disclose_secp` publishes a KMS-certified cleartext for a token-scoped handle.
@@ -92,7 +96,7 @@ pub enum TotalSupplyUpdateReason {
 pub struct HandleDisclosedEvent {
     /// Event schema version.
     pub version: u8,
-    /// Confidential mint whose ACL domain scopes the disclosed encrypted value account.
+    /// Confidential mint whose application scopes the disclosed encrypted value account.
     pub mint: Pubkey,
     /// Disclosed handle, proven public by the host verifier.
     pub handle: [u8; 32],

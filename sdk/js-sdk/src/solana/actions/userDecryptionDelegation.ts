@@ -49,10 +49,10 @@ export const SOLANA_WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY =
  * The tuple a delegation record is keyed by.
  *
  * The scope worth knowing before granting: a delegation is keyed by an *authority*, never by an
- * encrypted value id. One grant therefore covers every value that names that authority and lists
- * the delegator as a subject — the balance, a transferred amount, a burned amount, and their
- * historical handles alike — for as long as the row is live. The domain is not one of the PDA's
- * seeds, so it does not narrow this either.
+ * encrypted value id. One grant therefore covers every value that names that authority and allows
+ * the delegator — the balance, a transferred amount, a burned amount, and their historical handles
+ * alike — for as long as the row is live. The scope is not one of the PDA's seeds, so it does not
+ * narrow this either.
  *
  * For the confidential-token program that scope is exactly the intended one: the token account
  * authority PDA is derived from the mint, which is also the domain, so a grant cannot reach

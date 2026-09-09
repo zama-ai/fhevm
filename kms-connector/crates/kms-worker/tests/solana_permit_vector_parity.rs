@@ -67,9 +67,10 @@ fn rule_name_of_form_error(error: &RequestFormError) -> Option<&'static str> {
     match error {
         RequestFormError::Permit(permit) => Some(match permit {
             PermitError::IdentityWidth { .. } => rule::IDENTITY_WIDTH,
-            PermitError::TooManyAclDomainKeys { .. } => rule::TOO_MANY_ACL_DOMAIN_KEYS,
-            PermitError::AclDomainKeysNotAscending { .. } => rule::ACL_DOMAIN_KEYS_NOT_ASCENDING,
-            PermitError::DuplicateAclDomainKey { .. } => rule::DUPLICATE_ACL_DOMAIN_KEY,
+            PermitError::ScopeWidth { .. } => rule::SCOPE_WIDTH,
+            PermitError::TooManyScopes { .. } => rule::TOO_MANY_SCOPES,
+            PermitError::ScopesNotAscending { .. } => rule::SCOPES_NOT_ASCENDING,
+            PermitError::DuplicateScope { .. } => rule::DUPLICATE_SCOPE,
             PermitError::DurationOutOfRange { .. } => rule::DURATION_OUT_OF_RANGE,
             PermitError::StartTimestampOutOfRange { .. } => rule::START_TIMESTAMP_OUT_OF_RANGE,
             PermitError::TransportKeyLength { .. } => rule::TRANSPORT_KEY_LENGTH,
@@ -82,9 +83,6 @@ fn rule_name_of_form_error(error: &RequestFormError) -> Option<&'static str> {
         // is either malformed or the Connector is rejecting it for the wrong reason.
         RequestFormError::SignatureWidth { .. }
         | RequestFormError::EntryIdentityWidth { .. }
-        | RequestFormError::AccessProofMalformed { .. }
-        | RequestFormError::AccessProofTrailingBytes { .. }
-        | RequestFormError::AccessProofTooManySiblings { .. }
         | RequestFormError::EmptyHandles
         | RequestFormError::TooManyHandles { .. } => None,
     }
@@ -109,16 +107,14 @@ enum Wrapper {
 
 impl Wrapper {
     fn entry(self) -> SolanaHandleEntryWire {
-        let (tag, subject_tag) = match self {
+        let (tag, key_tag) = match self {
             Self::First => (0x10, 0x71),
             Self::Second => (0x20, 0x72),
         };
         SolanaHandleEntryWire {
             handle: handle(tag, FHE_TYPE_UINT64).to_vec(),
-            subject: [subject_tag; 32].to_vec(),
-            encrypted_value_id: [subject_tag ^ 0xff; 32].to_vec(),
-            proof_leaf_count: 0,
-            access_proof: Vec::new(),
+            allowed_key: [key_tag; 32].to_vec(),
+            encrypted_value_account: [key_tag ^ 0xff; 32].to_vec(),
         }
     }
 }
@@ -136,8 +132,8 @@ fn wire_of(
             transport_key: record
                 .transport_key_bytes(file)
                 .expect("the record names a key in the file's table"),
-            allowed_acl_domain_keys: permit
-                .allowed_acl_domain_keys
+            allowed_scopes: permit
+                .allowed_scopes
                 .iter()
                 .map(|key| from_hex(key).expect("hex"))
                 .collect(),
@@ -322,9 +318,10 @@ fn typed_form_rules_are_decided_before_the_signature() {
     let file = vector_file();
     let typed_form_rules = [
         rule::IDENTITY_WIDTH,
-        rule::TOO_MANY_ACL_DOMAIN_KEYS,
-        rule::ACL_DOMAIN_KEYS_NOT_ASCENDING,
-        rule::DUPLICATE_ACL_DOMAIN_KEY,
+        rule::SCOPE_WIDTH,
+        rule::TOO_MANY_SCOPES,
+        rule::SCOPES_NOT_ASCENDING,
+        rule::DUPLICATE_SCOPE,
         rule::DURATION_OUT_OF_RANGE,
         rule::START_TIMESTAMP_OUT_OF_RANGE,
         rule::TRANSPORT_KEY_LENGTH,

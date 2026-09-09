@@ -25,7 +25,7 @@ import {
 import { base58 } from '@scure/base';
 
 import { joinBatch, type SolanaVaultJoinParameters } from './joinBatch.js';
-import { findComputeSignerPda } from './internal/generated/confidentialToken/pdas/computeSigner.js';
+import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from './internal/generated/confidentialToken/programAddress.js';
 import { getJoinInstructionDataDecoder } from './internal/generated/confidentialBatcher/instructions/join.js';
 import { TOKEN_PROGRAM_ADDRESS } from './internal/tokenValueAccount.js';
 
@@ -58,8 +58,7 @@ function proof(
 async function parameters(overrides: Partial<SolanaVaultJoinParameters> = {}): Promise<SolanaVaultJoinParameters> {
   const joinConfidentialMint = key(2);
   const user = signer(key(1));
-  const [computeSigner] = await findComputeSignerPda({ mint: joinConfidentialMint });
-  const inputProof = proof(user.address, computeSigner);
+  const inputProof = proof(user.address, CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS);
   return {
     rpc: {} as SolanaVaultJoinParameters['rpc'],
     rpcSubscriptions: {} as SolanaVaultJoinParameters['rpcSubscriptions'],
@@ -87,8 +86,7 @@ const context = { solanaChain: { id: CHAIN_ID } as never, aclProgramAddress: CAN
 async function sendableParameters(onTransactionSigned: NonNullable<SolanaVaultJoinParameters['onTransactionSigned']>) {
   const user = await generateKeyPairSigner();
   const joinConfidentialMint = key(2);
-  const [computeSigner] = await findComputeSignerPda({ mint: joinConfidentialMint });
-  const inputProof = proof(user.address, computeSigner);
+  const inputProof = proof(user.address, CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS);
   const simulate = vi.fn().mockReturnValue({ send: vi.fn().mockResolvedValue({ value: { err: null } }) });
   const params = await parameters({
     user,
@@ -210,7 +208,7 @@ describe('joinBatch (attested arm)', () => {
       'a non-u64 input',
       async () => {
         const p = await parameters();
-        const bad = proof(p.user.address, (await findComputeSignerPda({ mint: p.joinConfidentialMint }))[0], {
+        const bad = proof(p.user.address, CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, {
           bits: [8],
         });
         return { ...p, inputProof: bad, inputProofResult: { ...p.inputProofResult, handles: bad.getInputHandles() } };

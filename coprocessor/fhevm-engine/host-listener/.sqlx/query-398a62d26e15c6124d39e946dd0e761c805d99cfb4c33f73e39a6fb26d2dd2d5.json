@@ -1,0 +1,53 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT leaf_index, commitment, leaf_kind, handle, allowed_key, transaction_index\n        FROM solana_encrypted_value_leaves\n        WHERE encrypted_value_account = $1 AND leaf_index < $2\n        ORDER BY leaf_index\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "leaf_index",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "commitment",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 2,
+        "name": "leaf_kind",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 3,
+        "name": "handle",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 4,
+        "name": "allowed_key",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 5,
+        "name": "transaction_index",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "398a62d26e15c6124d39e946dd0e761c805d99cfb4c33f73e39a6fb26d2dd2d5"
+}

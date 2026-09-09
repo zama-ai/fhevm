@@ -60,7 +60,6 @@ export type ClaimInstruction<
   TAccountPayoutUnderlyingMint extends string | AccountMeta<string> = string,
   TAccountBatchAuthorityPayoutAta extends string | AccountMeta<string> = string,
   TAccountUserPayoutAta extends string | AccountMeta<string> = string,
-  TAccountPayoutComputeSigner extends string | AccountMeta<string> = string,
   TAccountBatchPayoutTokenAccount extends string | AccountMeta<string> = string,
   TAccountUserPayoutTokenAccount extends string | AccountMeta<string> = string,
   TAccountBatchPayoutBalanceValue extends string | AccountMeta<string> = string,
@@ -97,9 +96,6 @@ export type ClaimInstruction<
         ? ReadonlyAccount<TAccountBatchAuthorityPayoutAta>
         : TAccountBatchAuthorityPayoutAta,
       TAccountUserPayoutAta extends string ? ReadonlyAccount<TAccountUserPayoutAta> : TAccountUserPayoutAta,
-      TAccountPayoutComputeSigner extends string
-        ? ReadonlyAccount<TAccountPayoutComputeSigner>
-        : TAccountPayoutComputeSigner,
       TAccountBatchPayoutTokenAccount extends string
         ? WritableAccount<TAccountBatchPayoutTokenAccount>
         : TAccountBatchPayoutTokenAccount,
@@ -163,7 +159,6 @@ export type ClaimAsyncInput<
   TAccountPayoutUnderlyingMint extends string = string,
   TAccountBatchAuthorityPayoutAta extends string = string,
   TAccountUserPayoutAta extends string = string,
-  TAccountPayoutComputeSigner extends string = string,
   TAccountBatchPayoutTokenAccount extends string = string,
   TAccountUserPayoutTokenAccount extends string = string,
   TAccountBatchPayoutBalanceValue extends string = string,
@@ -184,7 +179,7 @@ export type ClaimAsyncInput<
   batcher: Address<TAccountBatcher>;
   /** The settled batch being claimed from. */
   batch: Address<TAccountBatch>;
-  /** authority and the payout transfer's authority via invoke_signed. */
+  /** transfer's authority via invoke_signed. */
   batchAuthority?: Address<TAccountBatchAuthority>;
   /** The user's join record; marked claimed here. */
   joinRecord?: Address<TAccountJoinRecord>;
@@ -196,7 +191,6 @@ export type ClaimAsyncInput<
   payoutUnderlyingMint: Address<TAccountPayoutUnderlyingMint>;
   batchAuthorityPayoutAta: Address<TAccountBatchAuthorityPayoutAta>;
   userPayoutAta: Address<TAccountUserPayoutAta>;
-  payoutComputeSigner: Address<TAccountPayoutComputeSigner>;
   /** validated by the token CPI and pinned below. */
   batchPayoutTokenAccount: Address<TAccountBatchPayoutTokenAccount>;
   /**
@@ -232,7 +226,6 @@ export async function getClaimInstructionAsync<
   TAccountPayoutUnderlyingMint extends string,
   TAccountBatchAuthorityPayoutAta extends string,
   TAccountUserPayoutAta extends string,
-  TAccountPayoutComputeSigner extends string,
   TAccountBatchPayoutTokenAccount extends string,
   TAccountUserPayoutTokenAccount extends string,
   TAccountBatchPayoutBalanceValue extends string,
@@ -259,7 +252,6 @@ export async function getClaimInstructionAsync<
     TAccountPayoutUnderlyingMint,
     TAccountBatchAuthorityPayoutAta,
     TAccountUserPayoutAta,
-    TAccountPayoutComputeSigner,
     TAccountBatchPayoutTokenAccount,
     TAccountUserPayoutTokenAccount,
     TAccountBatchPayoutBalanceValue,
@@ -288,7 +280,6 @@ export async function getClaimInstructionAsync<
     TAccountPayoutUnderlyingMint,
     TAccountBatchAuthorityPayoutAta,
     TAccountUserPayoutAta,
-    TAccountPayoutComputeSigner,
     TAccountBatchPayoutTokenAccount,
     TAccountUserPayoutTokenAccount,
     TAccountBatchPayoutBalanceValue,
@@ -334,10 +325,6 @@ export async function getClaimInstructionAsync<
       isWritable: false,
     },
     userPayoutAta: { value: input.userPayoutAta ?? null, isWritable: false },
-    payoutComputeSigner: {
-      value: input.payoutComputeSigner ?? null,
-      isWritable: false,
-    },
     batchPayoutTokenAccount: {
       value: input.batchPayoutTokenAccount ?? null,
       isWritable: true,
@@ -415,7 +402,6 @@ export async function getClaimInstructionAsync<
       getAccountMeta('payoutUnderlyingMint', accounts.payoutUnderlyingMint),
       getAccountMeta('batchAuthorityPayoutAta', accounts.batchAuthorityPayoutAta),
       getAccountMeta('userPayoutAta', accounts.userPayoutAta),
-      getAccountMeta('payoutComputeSigner', accounts.payoutComputeSigner),
       getAccountMeta('batchPayoutTokenAccount', accounts.batchPayoutTokenAccount),
       getAccountMeta('userPayoutTokenAccount', accounts.userPayoutTokenAccount),
       getAccountMeta('batchPayoutBalanceValue', accounts.batchPayoutBalanceValue),
@@ -444,7 +430,6 @@ export async function getClaimInstructionAsync<
     TAccountPayoutUnderlyingMint,
     TAccountBatchAuthorityPayoutAta,
     TAccountUserPayoutAta,
-    TAccountPayoutComputeSigner,
     TAccountBatchPayoutTokenAccount,
     TAccountUserPayoutTokenAccount,
     TAccountBatchPayoutBalanceValue,
@@ -472,7 +457,6 @@ export type ClaimInput<
   TAccountPayoutUnderlyingMint extends string = string,
   TAccountBatchAuthorityPayoutAta extends string = string,
   TAccountUserPayoutAta extends string = string,
-  TAccountPayoutComputeSigner extends string = string,
   TAccountBatchPayoutTokenAccount extends string = string,
   TAccountUserPayoutTokenAccount extends string = string,
   TAccountBatchPayoutBalanceValue extends string = string,
@@ -493,7 +477,7 @@ export type ClaimInput<
   batcher: Address<TAccountBatcher>;
   /** The settled batch being claimed from. */
   batch: Address<TAccountBatch>;
-  /** authority and the payout transfer's authority via invoke_signed. */
+  /** transfer's authority via invoke_signed. */
   batchAuthority: Address<TAccountBatchAuthority>;
   /** The user's join record; marked claimed here. */
   joinRecord: Address<TAccountJoinRecord>;
@@ -505,7 +489,6 @@ export type ClaimInput<
   payoutUnderlyingMint: Address<TAccountPayoutUnderlyingMint>;
   batchAuthorityPayoutAta: Address<TAccountBatchAuthorityPayoutAta>;
   userPayoutAta: Address<TAccountUserPayoutAta>;
-  payoutComputeSigner: Address<TAccountPayoutComputeSigner>;
   /** validated by the token CPI and pinned below. */
   batchPayoutTokenAccount: Address<TAccountBatchPayoutTokenAccount>;
   /**
@@ -541,7 +524,6 @@ export function getClaimInstruction<
   TAccountPayoutUnderlyingMint extends string,
   TAccountBatchAuthorityPayoutAta extends string,
   TAccountUserPayoutAta extends string,
-  TAccountPayoutComputeSigner extends string,
   TAccountBatchPayoutTokenAccount extends string,
   TAccountUserPayoutTokenAccount extends string,
   TAccountBatchPayoutBalanceValue extends string,
@@ -568,7 +550,6 @@ export function getClaimInstruction<
     TAccountPayoutUnderlyingMint,
     TAccountBatchAuthorityPayoutAta,
     TAccountUserPayoutAta,
-    TAccountPayoutComputeSigner,
     TAccountBatchPayoutTokenAccount,
     TAccountUserPayoutTokenAccount,
     TAccountBatchPayoutBalanceValue,
@@ -596,7 +577,6 @@ export function getClaimInstruction<
   TAccountPayoutUnderlyingMint,
   TAccountBatchAuthorityPayoutAta,
   TAccountUserPayoutAta,
-  TAccountPayoutComputeSigner,
   TAccountBatchPayoutTokenAccount,
   TAccountUserPayoutTokenAccount,
   TAccountBatchPayoutBalanceValue,
@@ -641,10 +621,6 @@ export function getClaimInstruction<
       isWritable: false,
     },
     userPayoutAta: { value: input.userPayoutAta ?? null, isWritable: false },
-    payoutComputeSigner: {
-      value: input.payoutComputeSigner ?? null,
-      isWritable: false,
-    },
     batchPayoutTokenAccount: {
       value: input.batchPayoutTokenAccount ?? null,
       isWritable: true,
@@ -711,7 +687,6 @@ export function getClaimInstruction<
       getAccountMeta('payoutUnderlyingMint', accounts.payoutUnderlyingMint),
       getAccountMeta('batchAuthorityPayoutAta', accounts.batchAuthorityPayoutAta),
       getAccountMeta('userPayoutAta', accounts.userPayoutAta),
-      getAccountMeta('payoutComputeSigner', accounts.payoutComputeSigner),
       getAccountMeta('batchPayoutTokenAccount', accounts.batchPayoutTokenAccount),
       getAccountMeta('userPayoutTokenAccount', accounts.userPayoutTokenAccount),
       getAccountMeta('batchPayoutBalanceValue', accounts.batchPayoutBalanceValue),
@@ -740,7 +715,6 @@ export function getClaimInstruction<
     TAccountPayoutUnderlyingMint,
     TAccountBatchAuthorityPayoutAta,
     TAccountUserPayoutAta,
-    TAccountPayoutComputeSigner,
     TAccountBatchPayoutTokenAccount,
     TAccountUserPayoutTokenAccount,
     TAccountBatchPayoutBalanceValue,
@@ -769,7 +743,7 @@ export type ParsedClaimInstruction<
     batcher: TAccountMetas[2];
     /** The settled batch being claimed from. */
     batch: TAccountMetas[3];
-    /** authority and the payout transfer's authority via invoke_signed. */
+    /** transfer's authority via invoke_signed. */
     batchAuthority: TAccountMetas[4];
     /** The user's join record; marked claimed here. */
     joinRecord: TAccountMetas[5];
@@ -781,27 +755,26 @@ export type ParsedClaimInstruction<
     payoutUnderlyingMint: TAccountMetas[9];
     batchAuthorityPayoutAta: TAccountMetas[10];
     userPayoutAta: TAccountMetas[11];
-    payoutComputeSigner: TAccountMetas[12];
     /** validated by the token CPI and pinned below. */
-    batchPayoutTokenAccount: TAccountMetas[13];
+    batchPayoutTokenAccount: TAccountMetas[12];
     /**
      * must already exist — the user initializes it once. Validated by the
      * token CPI and pinned below.
      */
-    userPayoutTokenAccount: TAccountMetas[14];
-    batchPayoutBalanceValue: TAccountMetas[15];
-    userPayoutBalanceValue: TAccountMetas[16];
+    userPayoutTokenAccount: TAccountMetas[13];
+    batchPayoutBalanceValue: TAccountMetas[14];
+    userPayoutBalanceValue: TAccountMetas[15];
     /** the token CPI. */
-    batchPayoutTransferredValue: TAccountMetas[17];
-    zamaEventAuthority: TAccountMetas[18];
+    batchPayoutTransferredValue: TAccountMetas[16];
+    zamaEventAuthority: TAccountMetas[17];
     /** ZamaHost program (FHE compute + ACL). */
-    zamaProgram: TAccountMetas[19];
-    hostConfig: TAccountMetas[20];
-    confidentialTokenEventAuthority: TAccountMetas[21];
+    zamaProgram: TAccountMetas[18];
+    hostConfig: TAccountMetas[19];
+    confidentialTokenEventAuthority: TAccountMetas[20];
     /** confidential-token program composed via CPI. */
-    confidentialTokenProgram: TAccountMetas[22];
+    confidentialTokenProgram: TAccountMetas[21];
     /** System program used for account creation. */
-    systemProgram: TAccountMetas[23];
+    systemProgram: TAccountMetas[22];
   };
   data: ClaimInstructionData;
 };
@@ -809,10 +782,10 @@ export type ParsedClaimInstruction<
 export function parseClaimInstruction<TProgram extends string, TAccountMetas extends readonly AccountMeta[]>(
   instruction: Instruction<TProgram> & InstructionWithAccounts<TAccountMetas> & InstructionWithData<ReadonlyUint8Array>,
 ): ParsedClaimInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 24) {
+  if (instruction.accounts.length < 23) {
     throw new SolanaError(SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS, {
       actualAccountMetas: instruction.accounts.length,
-      expectedAccountMetas: 24,
+      expectedAccountMetas: 23,
     });
   }
   let accountIndex = 0;
@@ -836,7 +809,6 @@ export function parseClaimInstruction<TProgram extends string, TAccountMetas ext
       payoutUnderlyingMint: getNextAccount(),
       batchAuthorityPayoutAta: getNextAccount(),
       userPayoutAta: getNextAccount(),
-      payoutComputeSigner: getNextAccount(),
       batchPayoutTokenAccount: getNextAccount(),
       userPayoutTokenAccount: getNextAccount(),
       batchPayoutBalanceValue: getNextAccount(),

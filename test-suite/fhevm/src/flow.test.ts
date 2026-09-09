@@ -384,8 +384,6 @@ describe("resumeRepairStep", () => {
       "kms-connector-tx-sender",
       "fhevm-relayer-db",
       "fhevm-relayer",
-      "fhevm-solana-proof-db",
-      "fhevm-solana-proof-service",
       "fhevm-test-suite-e2e-debug",
     ];
     expect(resumeRepairStep(state, running)).toBeUndefined();

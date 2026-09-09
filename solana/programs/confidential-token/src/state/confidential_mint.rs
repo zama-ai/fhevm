@@ -11,10 +11,6 @@ use anchor_lang::prelude::*;
 pub struct ConfidentialMint {
     /// Admin/authority that created the mint.
     pub authority: Pubkey,
-    /// ACL domain key, currently equal to the mint pubkey.
-    pub domain: Pubkey,
-    /// Program-controlled compute signer PDA.
-    pub compute_signer: Pubkey,
     /// Underlying SPL mint wrapped by this confidential mint.
     pub underlying_mint: Pubkey,
     /// Decimal precision inherited from the underlying mint.
@@ -25,5 +21,5 @@ pub struct ConfidentialMint {
 
 impl ConfidentialMint {
     /// Serialized size of the account body, excluding Anchor discriminator.
-    pub const SPACE: usize = 32 + 32 + 32 + 32 + 1 + 32;
+    pub const SPACE: usize = 32 + 32 + 1 + 32;
 }

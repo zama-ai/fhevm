@@ -38,8 +38,8 @@ pub struct Claim<'info> {
     /// The settled batch being claimed from.
     #[account(constraint = batch.batcher == batcher.key() @ BatcherError::BatchBatcherMismatch)]
     pub batch: Box<Account<'info, Batch>>,
-    /// CHECK: per-batch authority PDA; the claim execution's compute subject + encrypted value account
-    /// authority and the payout transfer's authority via invoke_signed.
+    /// CHECK: per-batch authority PDA; the claim execution's value authority and the payout
+    /// transfer's authority via invoke_signed.
     #[account(seeds = [BATCH_AUTHORITY_SEED, batch.key().as_ref()], bump = batch.authority_bump)]
     pub batch_authority: UncheckedAccount<'info>,
     /// The user's join record; marked claimed here.
@@ -63,8 +63,6 @@ pub struct Claim<'info> {
     pub batch_authority_payout_ata: UncheckedAccount<'info>,
     /// CHECK: ATA of `user` on `payout_underlying_mint`. Uninitialized → not frozen.
     pub user_payout_ata: UncheckedAccount<'info>,
-    /// CHECK: payout mint compute-signer PDA; validated by the token CPI.
-    pub payout_compute_signer: UncheckedAccount<'info>,
     /// CHECK: batch's confidential payout token account (transfer source);
     /// validated by the token CPI and pinned below.
     #[account(mut)]
@@ -122,6 +120,8 @@ pub fn claim<'info>(ctx: Context<'info, Claim<'info>>) -> Result<()> {
     let batch_key = ctx.accounts.batch.key();
     let user = ctx.accounts.user.key();
     let batch_authority = ctx.accounts.batch_authority.key();
+    let authority = BatchAuthoritySeeds::new(batch_key, ctx.accounts.batch.authority_bump);
+    let authority_seeds = authority.seeds();
     require_keys_eq!(
         ctx.accounts.batch_payout_token_account.key(),
         ct::token_account_address(payout_mint_key, batch_authority).0,
@@ -139,19 +139,13 @@ pub fn claim<'info>(ctx: Context<'info, Claim<'info>>) -> Result<()> {
     let joined = fhe::uint64_operand(&joined_value)?;
     let claim_binding = fhe::PersistentBinding::bind(
         ctx.accounts.claim_amount_value.to_account_info(),
-        zama_fhe::EncryptedValueId::new(
-            zama_fhe::Domain::new(batch_key),
+        batcher_encrypted_value_id(
+            batch_key,
             batch_authority,
-            zama_fhe::EncryptedValueLabel::new(encrypted_claim_amount_label(user)),
+            encrypted_claim_amount_label(user),
         ),
-        // The user decrypts their claimed amount; the batch authority spends
-        // it as the transfer amount; the payout mint's compute signer lets the
-        // transfer execution read it.
-        vec![
-            user,
-            batch_authority,
-            ctx.accounts.payout_confidential_mint.compute_signer,
-        ],
+        &authority_seeds,
+        [user],
     )?;
     let payout_received = ctx.accounts.batch.payout_received;
     let total_joined = ctx.accounts.batch.total_joined;
@@ -165,7 +159,7 @@ pub fn claim<'info>(ctx: Context<'info, Claim<'info>>) -> Result<()> {
             zama_event_authority: ctx.accounts.zama_event_authority.to_account_info(),
             zama_program: ctx.accounts.zama_program.to_account_info(),
             system_program: ctx.accounts.system_program.to_account_info(),
-            deny_subject_records: ctx.remaining_accounts,
+            remaining_accounts: ctx.remaining_accounts,
         },
         vec![
             claim_binding.account_info(),
@@ -183,8 +177,6 @@ pub fn claim<'info>(ctx: Context<'info, Claim<'info>>) -> Result<()> {
     )?;
 
     // Phase 2: transfer the freshly computed claim handle to the user.
-    let authority = BatchAuthoritySeeds::new(batch_key, ctx.accounts.batch.authority_bump);
-    let authority_seeds = authority.seeds();
     ct::cpi::confidential_transfer_from_value(CpiContext::new_with_signer(
         ctx.accounts.confidential_token_program.key(),
         ct::cpi::accounts::ConfidentialTransferFromValue {
@@ -196,7 +188,6 @@ pub fn claim<'info>(ctx: Context<'info, Claim<'info>>) -> Result<()> {
             to_ata: ctx.accounts.user_payout_ata.to_account_info(),
             from_account: ctx.accounts.batch_payout_token_account.to_account_info(),
             to_account: ctx.accounts.user_payout_token_account.to_account_info(),
-            compute_signer: ctx.accounts.payout_compute_signer.to_account_info(),
             from_balance_value: ctx.accounts.batch_payout_balance_value.to_account_info(),
             to_balance_value: ctx.accounts.user_payout_balance_value.to_account_info(),
             transferred_amount_value: ctx

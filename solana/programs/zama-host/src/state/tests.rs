@@ -91,12 +91,14 @@ fn handle_derivation_rand_uses_keccak() {
 
 #[test]
 fn rand_seed_is_distinct_across_every_uniqueness_axis() {
-    let subject = Pubkey::new_unique();
-    let anchor: Vec<u8> = [Pubkey::new_unique().to_bytes(), [7; 32]].concat();
-    let seed = |subject: Pubkey, anchor: &[u8], op_index: u16, slot_entropy: [u8; 32]| {
+    let app = AppScope {
+        program: Pubkey::new_unique(),
+        scope: [7; 32],
+    };
+    let seed = |nonce: u64, app: AppScope, op_index: u16, slot_entropy: [u8; 32]| {
         computed_eval_rand_seed(
-            subject,
-            anchor,
+            nonce,
+            app,
             op_index,
             &HandleDerivationContext {
                 chain_id: 13,
@@ -105,23 +107,34 @@ fn rand_seed_is_distinct_across_every_uniqueness_axis() {
             },
         )
     };
-    let base = seed(subject, &anchor, 0, [9; 32]);
+    let base = seed(5, app, 0, [9; 32]);
 
-    // Cross-subject: two signers in the same slot with the same anchor shape never share a seed.
-    assert_ne!(base, seed(Pubkey::new_unique(), &anchor, 0, [9; 32]));
-    // Same subject, same slot: a different persistent-write anchor (the consumed
-    // (key, previous_handle) tickets) gives a fresh seed.
-    let other_anchor: Vec<u8> = [Pubkey::new_unique().to_bytes(), [7; 32]].concat();
-    assert_ne!(base, seed(subject, &other_anchor, 0, [9; 32]));
-    // Sequential update of the same account: previous_handle advances, so the anchor differs.
-    let replaced_anchor: Vec<u8> = [anchor[..32].try_into().unwrap(), [8; 32]].concat();
-    assert_ne!(base, seed(subject, &replaced_anchor, 0, [9; 32]));
+    // Two executions in one slot consume different nonces, whatever else they share.
+    assert_ne!(base, seed(6, app, 0, [9; 32]));
+    // The application identity is bound in.
+    let other_app = AppScope {
+        program: Pubkey::new_unique(),
+        ..app
+    };
+    assert_ne!(base, seed(5, other_app, 0, [9; 32]));
+    assert_ne!(
+        base,
+        seed(
+            5,
+            AppScope {
+                scope: [8; 32],
+                ..app
+            },
+            0,
+            [9; 32]
+        )
+    );
     // Two rand steps in one execution differ by op_index.
-    assert_ne!(base, seed(subject, &anchor, 1, [9; 32]));
+    assert_ne!(base, seed(5, app, 1, [9; 32]));
     // Cross-slot: slot entropy differs.
-    assert_ne!(base, seed(subject, &anchor, 0, [10; 32]));
+    assert_ne!(base, seed(5, app, 0, [10; 32]));
     // Determinism: identical inputs reproduce the seed (DD-033 replay).
-    assert_eq!(base, seed(subject, &anchor, 0, [9; 32]));
+    assert_eq!(base, seed(5, app, 0, [9; 32]));
 }
 
 /// Builds a handle carrying `fhe_type` in byte 30 (the canonical type nibble read by

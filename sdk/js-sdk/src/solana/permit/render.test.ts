@@ -19,7 +19,8 @@ import {
   PERMIT_MAX_DURATION_SECONDS,
   PERMIT_MAX_START_TIMESTAMP,
   PERMIT_TEXT_HEADER,
-  PERMIT_TEXT_PERMISSIVE_DOMAINS_LINE,
+  PERMIT_SCOPE_LEN,
+  PERMIT_TEXT_PERMISSIVE_SCOPES_LINE,
   PERMIT_TRANSPORT_KEY_LEN,
   decodeSolanaPermitFields,
   renderPermitTimestamp,
@@ -33,6 +34,12 @@ import {
 
 const identity = (fill: number): Uint8Array => new Uint8Array(PERMIT_IDENTITY_LEN).fill(fill);
 const transportKeyOf = (fill: number): Uint8Array => new Uint8Array(PERMIT_TRANSPORT_KEY_LEN).fill(fill);
+const scopeOf = (program: Uint8Array, scope: Uint8Array): Uint8Array => {
+  const bytes = new Uint8Array(PERMIT_SCOPE_LEN);
+  bytes.set(program, 0);
+  bytes.set(scope, PERMIT_IDENTITY_LEN);
+  return bytes;
+};
 
 const routingOf = (contextFill: number, epochFill: number): Uint8Array => {
   const bytes = new Uint8Array(PERMIT_KMS_ROUTING_LEN);
@@ -45,7 +52,7 @@ const routingOf = (contextFill: number, epochFill: number): Uint8Array => {
 const BASE_WIRE: SolanaPermitWireFields = {
   userPubkey: identity(0x11),
   transportKey: transportKeyOf(0),
-  allowedAclDomainKeys: [],
+  allowedScopes: [],
   startTimestamp: 1_767_229_380n,
   durationSeconds: 604_800n,
   verifyingProgramId: identity(0x22),
@@ -59,9 +66,9 @@ const fieldsOf = (overrides: Partial<SolanaPermitWireFields> = {}): SolanaPermit
 const linesOf = (fields: SolanaPermitFields): readonly string[] => renderSolanaPermitText(fields).split('\n');
 
 /**
- * The base58 length counterexample pair, in signed order: two 32-byte keys whose base58 forms are 43
- * and 44 characters. Copied from the canon's reference record, because the point of the pair is that
- * these particular byte values straddle the width boundary.
+ * The base58 length counterexample pair: two 32-byte values whose base58 forms are 43 and 44
+ * characters. Copied from the canon's reference record, because the point of the pair is that these
+ * particular byte values straddle the width boundary.
  */
 const SHORT_BASE58_KEY = base58.decode('zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz');
 const LONG_BASE58_KEY = base58.decode('21111111111111111111111111111111111111111111');
@@ -201,7 +208,7 @@ describe('the canonical text', () => {
   });
 
   it('is printable ASCII and line feeds, and its last line carries no line feed', () => {
-    const text = renderSolanaPermitText(fieldsOf({ allowedAclDomainKeys: [identity(0x01)] }));
+    const text = renderSolanaPermitText(fieldsOf({ allowedScopes: [scopeOf(identity(0x01), identity(0x02))] }));
     expect(text).toMatch(/^[\x20-\x7e\n]*$/);
     expect(text.endsWith('\n')).toBe(false);
     expect(text).not.toContain('\r');
@@ -209,18 +216,21 @@ describe('the canonical text', () => {
   });
 
   it('names the permissive breadth on one line instead of an empty enumeration', () => {
-    const lines = linesOf(fieldsOf({ allowedAclDomainKeys: [] }));
-    expect(lines.at(-1)).toBe(PERMIT_TEXT_PERMISSIVE_DOMAINS_LINE);
-    expect(lines.filter((line) => line.startsWith('ACL domains ('))).toEqual([]);
+    const lines = linesOf(fieldsOf({ allowedScopes: [] }));
+    expect(lines.at(-1)).toBe(PERMIT_TEXT_PERMISSIVE_SCOPES_LINE);
+    expect(lines.filter((line) => line.startsWith('Scopes ('))).toEqual([]);
     expect(lines.filter((line) => line.startsWith('- '))).toEqual([]);
   });
 
-  it('enumerates a scoped list under its own count, in signed order', () => {
-    const lines = linesOf(fieldsOf({ allowedAclDomainKeys: [identity(0x01), identity(0x02)] }));
+  it('enumerates a scoped list under its own count, in signed order, one program/scope pair per line', () => {
+    const program = identity(0x01);
+    const lines = linesOf(
+      fieldsOf({ allowedScopes: [scopeOf(program, identity(0x02)), scopeOf(program, identity(0x03))] }),
+    );
     expect(lines.slice(-3)).toEqual([
-      'ACL domains (2):',
-      `- ${base58.encode(identity(0x01))}`,
-      `- ${base58.encode(identity(0x02))}`,
+      'Scopes (2):',
+      `- ${base58.encode(program)}/${base58.encode(identity(0x02))}`,
+      `- ${base58.encode(program)}/${base58.encode(identity(0x03))}`,
     ]);
   });
 
@@ -236,8 +246,12 @@ describe('the canonical text', () => {
   // measured these lines instead of reconstructing them would accept one of this pair and not the
   // other.
   it('leaves base58 identities at their natural width', () => {
-    const lines = linesOf(fieldsOf({ allowedAclDomainKeys: [SHORT_BASE58_KEY, LONG_BASE58_KEY] }));
-    expect(lines.slice(-2).map((line) => line.length - '- '.length)).toEqual([43, 44]);
+    const program = identity(0x01);
+    const lines = linesOf(
+      fieldsOf({ allowedScopes: [scopeOf(program, SHORT_BASE58_KEY), scopeOf(program, LONG_BASE58_KEY)] }),
+    );
+    const programPrefix = `- ${base58.encode(program)}/`;
+    expect(lines.slice(-2).map((line) => line.length - programPrefix.length)).toEqual([43, 44]);
   });
 
   it('writes integers in plain decimal, with zero as zero', () => {

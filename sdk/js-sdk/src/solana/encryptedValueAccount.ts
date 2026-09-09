@@ -1,5 +1,5 @@
-// Reading the host's EncryptedValue account: the live handle, the MMR leaf count, and the live
-// peaks a proof is verified against.
+// Reading the host's EncryptedValue account: who owns the value, the live handle, the MMR leaf
+// count, and the live peaks a proof is verified against.
 //
 // Hand-rolled on purpose. The struct is defined in the `zama-solana-acl` crate and used as an
 // account with a manually-computed discriminator; it is not declared in any program's `#[program]`
@@ -8,18 +8,13 @@
 // that duplication honest rather than silent.
 //
 // Assumed layout (borsh, after the 8-byte discriminator), mirroring the crate's field order:
-//   [domain: 32][encrypted_value_account_authority: 32][label: 32][current_handle: 32]
-//   [subjects: Vec<Pubkey>][leaf_count: u64][peaks: Vec<[u8; 32]>][bump: u8]
+//   [program: 32][encrypted_value_account_authority: 32][scope: 32][label: 32][current_handle: 32]
+//   [leaf_count: u64][peaks: Vec<[u8; 32]>][bump: u8]
 //
 // Two structural checks keep a drifted layout from decoding into shifted-but-plausible fields:
 // trailing realloc capacity must come in whole 32-byte vector elements (the account grows and
-// never shrinks, one element per step), and the peak count must equal the leaf count's set bits —
-// the MMR invariant, checked independently of the borsh walk. Each `subjects` element is a bare
-// 32-byte pubkey; if the on-chain entry ever grows past that, this decoder misaligns everything
-// after it, and whoever changes that layout must update this file in lockstep.
-//
-// Ported from the demo-dapp's `vault/reads.ts`, which is expected to consume this module once the
-// consumers move to the permit path.
+// never shrinks, one peak per step), and the peak count must equal the leaf count's set bits —
+// the MMR invariant, checked independently of the borsh walk.
 
 import {
   fetchEncodedAccount,
@@ -41,48 +36,58 @@ import {
 /** The RPC shape this module reads through — `@solana/kit`'s standard API surface. */
 export type SolanaRpc = Rpc<SolanaRpcApi>;
 
-/** The PDA seed prefix of an encrypted value account: `[seed, encrypted_value_id]`. */
+/** The PDA seed prefix of an encrypted value account: `[seed, program, authority, scope, label]`. */
 export const SOLANA_ENCRYPTED_VALUE_SEED = new TextEncoder().encode('encrypted-value');
 
+/** The four fields that, with the host program, name one encrypted value account. */
+export interface SolanaEncryptedValueSeeds {
+  /** The 32-byte application program the value belongs to. */
+  readonly program: Uint8Array;
+  /** The 32-byte PDA of `program` that controls the value. */
+  readonly encryptedValueAccountAuthority: Uint8Array;
+  /** The 32-byte program-declared scope within `program`. */
+  readonly scope: Uint8Array;
+  /** Which of the authority's values this is. */
+  readonly label: Uint8Array;
+}
+
 /**
- * The canonical address of the account an encrypted value id names.
- *
- * Two different 32-byte values meet here, and conflating them is the mistake this function exists
- * to prevent: the *id* is the identity requests carry on the wire and the Connector re-derives, the
- * *account address* is the PDA the state lives at and the historical-access leaves bind. This is
- * the same `find_program_address([seed, id], host_program)` the host and the Connector run.
+ * The canonical address of an encrypted value account: the same
+ * `find_program_address([seed, program, authority, scope, label], host_program)` the host program
+ * and the Connector run. Matches `zama_solana_acl::encrypted_value_seeds`.
  *
  * @param hostProgramId - The 32-byte zama-host program id.
- * @param encryptedValueId - The 32-byte encrypted value identity.
+ * @param seeds - The four identity fields of the value.
  */
 export async function solanaEncryptedValueAccountAddress(
   hostProgramId: Uint8Array,
-  encryptedValueId: Uint8Array,
+  seeds: SolanaEncryptedValueSeeds,
 ): Promise<Address> {
   const [address] = await getProgramDerivedAddress({
     programAddress: getAddressDecoder().decode(hostProgramId),
-    seeds: [SOLANA_ENCRYPTED_VALUE_SEED, encryptedValueId],
+    seeds: [SOLANA_ENCRYPTED_VALUE_SEED, seeds.program, seeds.encryptedValueAccountAuthority, seeds.scope, seeds.label],
   });
   return address;
 }
 
 /** The decoded account: identity fields as base58 addresses, value state as bytes. */
 export interface SolanaEncryptedValueState {
-  readonly domain: Address;
+  readonly program: Address;
   readonly encryptedValueAccountAuthority: Address;
+  readonly scope: Uint8Array;
   readonly label: Uint8Array;
   readonly currentHandle: Uint8Array;
-  readonly subjects: readonly Address[];
   readonly leafCount: bigint;
   readonly peaks: readonly Uint8Array[];
+  readonly bump: number;
 }
 
 const encryptedValueBodyDecoder = getStructDecoder([
-  ['domain', fixDecoderSize(getBytesDecoder(), 32)],
+  ['program', fixDecoderSize(getBytesDecoder(), 32)],
   ['encryptedValueAccountAuthority', fixDecoderSize(getBytesDecoder(), 32)],
+  ['scope', fixDecoderSize(getBytesDecoder(), 32)],
   ['label', fixDecoderSize(getBytesDecoder(), 32)],
   ['currentHandle', fixDecoderSize(getBytesDecoder(), 32)],
-  ['subjects', getArrayDecoder(fixDecoderSize(getBytesDecoder(), 32), { size: getU32Decoder() })],
   ['leafCount', getU64Decoder()],
   ['peaks', getArrayDecoder(fixDecoderSize(getBytesDecoder(), 32), { size: getU32Decoder() })],
   ['bump', getU8Decoder()],
@@ -123,13 +128,14 @@ export function decodeSolanaEncryptedValueState(data: Uint8Array, accountName: s
   }
   const addressDecoder = getAddressDecoder();
   return {
-    domain: addressDecoder.decode(decoded.domain),
+    program: addressDecoder.decode(decoded.program),
     encryptedValueAccountAuthority: addressDecoder.decode(decoded.encryptedValueAccountAuthority),
+    scope: new Uint8Array(decoded.scope),
     label: new Uint8Array(decoded.label),
     currentHandle: new Uint8Array(decoded.currentHandle),
-    subjects: decoded.subjects.map((subject) => addressDecoder.decode(subject)),
     leafCount: decoded.leafCount,
     peaks: decoded.peaks.map((peak) => new Uint8Array(peak)),
+    bump: decoded.bump,
   };
 }
 
@@ -137,8 +143,8 @@ export function decodeSolanaEncryptedValueState(data: Uint8Array, accountName: s
  * Reads one EncryptedValue account and decodes it.
  *
  * One read is one snapshot: the current handle, the leaf count and the peaks come out of the same
- * account data, which is what lets a proof fetched for that snapshot be verified against these
- * peaks without a second read racing the first.
+ * account data, which is what lets a proof built for that snapshot be verified against these peaks
+ * without a second read racing the first.
  *
  * @param rpc - The Solana RPC to read through.
  * @param address - The account's address.

@@ -19,9 +19,6 @@ const chain = {
   id: 9223372036854788153n,
   fhevm: {
     relayerUrl: 'http://relayer.local',
-    acl: { domainKeys: [asBytes32Hex(`0x${'11'.repeat(32)}`)] },
-    rpcUrl: 'http://rpc.local',
-    proofServiceUrl: 'http://proofs.local',
     verifyingProgramId: asBytes32Hex(`0x${'22'.repeat(32)}`),
   },
 } as const satisfies FhevmSolanaChain;

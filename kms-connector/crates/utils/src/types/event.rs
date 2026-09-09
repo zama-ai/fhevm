@@ -315,7 +315,7 @@ pub fn from_user_decryption_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
     let extra_data: Vec<u8> = row.try_get("extra_data")?;
 
     // `solana_request IS NOT NULL` identifies a Solana row. It is checked first because such a
-    // row has no top-level `signature`/subject/contract columns — those live inside the opaque
+    // row has no top-level `signature`/allowed-key/contract columns — those live inside the opaque
     // blob — so it must not fall into the EVM branches.
     let solana_request: Option<Vec<u8>> = match row.try_get::<Option<Vec<u8>>, _>("solana_request")
     {

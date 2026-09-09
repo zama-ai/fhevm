@@ -1,7 +1,7 @@
 // Strict decoding of the wire form into typed fields.
 //
 // Everything checkable without live state is checked here, before any text is rendered and before
-// any signature is looked at: identity widths, the ACL-domain count and ordering, the
+// any signature is looked at: identity widths, the scope widths, count and ordering, the
 // validity-window bounds, the transport-key length, and the version and length of the KMS routing
 // field. A permit that survives this step renders totally — the renderer has no failure path.
 //
@@ -32,10 +32,11 @@ import {
   PERMIT_IDENTITY_LEN,
   PERMIT_KMS_ROUTING_LEN,
   PERMIT_KMS_ROUTING_VERSION,
-  PERMIT_MAX_ACL_DOMAIN_KEYS,
+  PERMIT_MAX_SCOPES,
   PERMIT_MAX_DURATION_SECONDS,
   PERMIT_MAX_START_TIMESTAMP,
   PERMIT_MIN_DURATION_SECONDS,
+  PERMIT_SCOPE_LEN,
   PERMIT_TRANSPORT_KEY_LEN,
 } from './types.js';
 
@@ -63,7 +64,7 @@ export function decodeSolanaPermitFields(wire: SolanaPermitWireFields): SolanaPe
   }
   const transportKey = Uint8Array.from(wire.transportKey);
 
-  const allowedAclDomainKeys = decodeAclDomainKeys(wire.allowedAclDomainKeys);
+  const allowedScopes = decodeScopes(wire.allowedScopes);
 
   const startTimestamp = readU64(wire.startTimestamp, 'startTimestamp');
   if (startTimestamp > PERMIT_MAX_START_TIMESTAMP) {
@@ -87,7 +88,7 @@ export function decodeSolanaPermitFields(wire: SolanaPermitWireFields): SolanaPe
   return {
     userPubkey,
     transportKey,
-    allowedAclDomainKeys,
+    allowedScopes,
     startTimestamp,
     durationSeconds,
     verifyingProgramId,
@@ -138,41 +139,46 @@ function decodeIdentity(bytes: Uint8Array, field: SolanaPermitIdentityField): Ui
 }
 
 /**
- * Decodes the ACL-domain list: widths first, by index, so a malformed entry is named by its
- * position; then the count; then the strict byte-order ascent between neighbors. Equality is
- * reported as a duplicate rather than as a failed ascent, because that is the mistake a caller
- * actually made — and strict ascent between neighbors is the whole ordering rule, since a list in
- * which every key exceeds its predecessor cannot repeat a key anywhere.
+ * Decodes the scope list: widths first, by index, so a malformed entry is named by its position;
+ * then the count; then the strict byte-order ascent between neighbors. Equality is reported as a
+ * duplicate rather than as a failed ascent, because that is the mistake a caller actually made —
+ * and strict ascent between neighbors is the whole ordering rule, since a list in which every
+ * entry exceeds its predecessor cannot repeat an entry anywhere.
  *
- * @param keys - The claimed domain keys, in the order they would be signed.
+ * @param scopes - The claimed `program ‖ scope` entries, in the order they would be signed.
  */
-function decodeAclDomainKeys(keys: readonly Uint8Array[]): readonly Uint8Array[] {
-  const decoded = keys.map((key, index) => decodeIdentity(key, { field: 'aclDomainKey', index }));
-  if (decoded.length > PERMIT_MAX_ACL_DOMAIN_KEYS) {
-    throw new SolanaPermitError({ code: 'TooManyAclDomainKeys', count: decoded.length });
+function decodeScopes(scopes: readonly Uint8Array[]): readonly Uint8Array[] {
+  const decoded = scopes.map((scope, index) => {
+    if (scope.length !== PERMIT_SCOPE_LEN) {
+      throw new SolanaPermitError({ code: 'ScopeWidth', index, length: scope.length });
+    }
+    return Uint8Array.from(scope);
+  });
+  if (decoded.length > PERMIT_MAX_SCOPES) {
+    throw new SolanaPermitError({ code: 'TooManyScopes', count: decoded.length });
   }
   let previous: Uint8Array | undefined;
-  for (const [index, key] of decoded.entries()) {
+  for (const [index, scope] of decoded.entries()) {
     if (previous !== undefined) {
-      const order = compareBytes(previous, key);
+      const order = compareBytes(previous, scope);
       if (order === 0) {
-        throw new SolanaPermitError({ code: 'DuplicateAclDomainKey', index });
+        throw new SolanaPermitError({ code: 'DuplicateScope', index });
       }
       if (order > 0) {
-        throw new SolanaPermitError({ code: 'AclDomainKeysNotAscending', index });
+        throw new SolanaPermitError({ code: 'ScopesNotAscending', index });
       }
     }
-    previous = key;
+    previous = scope;
   }
   return decoded;
 }
 
 /**
  * Byte-order comparison: negative when `a` sorts below `b`, zero on equality. Both inputs are
- * 32-byte identities by the time this runs, so length never decides.
+ * 64-byte scopes by the time this runs, so length never decides.
  *
- * @param a - The earlier key in list order.
- * @param b - The later key in list order.
+ * @param a - The earlier scope in list order.
+ * @param b - The later scope in list order.
  */
 function compareBytes(a: Uint8Array, b: Uint8Array): number {
   for (let index = 0; index < a.length && index < b.length; index += 1) {

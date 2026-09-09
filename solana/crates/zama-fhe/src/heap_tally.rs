@@ -185,14 +185,14 @@ pub(crate) const FHE_EXECUTE_FIXED_CPI_ACCOUNTS: usize = 9;
 /// fits the whole instruction, not just its own construction. Kept honest by the invoke
 /// measurement in `heap_budget`, which runs the real assembly under a counting allocator.
 ///
-/// Assumes the minimal invoke: zero per-transaction deny-subject witnesses (each deny record an
-/// app's transaction adds costs one more `AccountMeta` plus one more `AccountInfo` slot,
-/// ~90 bytes, out of the reserve), and every fixed account present — an absent optional HCU
-/// witness only makes the real cost smaller than charged.
+/// Assumes the minimal invoke: no deny-record witness (the one an app passes while the deny list
+/// is enabled costs one more `AccountMeta` plus one more `AccountInfo` slot, ~90 bytes, out of
+/// the reserve), and every fixed account present — an absent optional witness only makes the
+/// real cost smaller than charged.
 pub(crate) fn invoke_table_heap_bytes(
     remaining_accounts: usize,
     dynamic_accounts: usize,
-    output_authorities: usize,
+    value_authorities: usize,
 ) -> usize {
     let account_info_size = std::mem::size_of::<anchor_lang::prelude::AccountInfo<'static>>();
     let account_meta_size =
@@ -218,6 +218,6 @@ pub(crate) fn invoke_table_heap_bytes(
     // `resolve_accounts` sizes its dynamic-account and authority-witness tables from the counts
     // the execution itself requires, and its resolved table holds every remaining account.
     let resolve_bytes =
-        (dynamic_accounts + output_authorities + remaining_accounts) * account_info_size;
+        (dynamic_accounts + value_authorities + remaining_accounts) * account_info_size;
     table(account_meta_size) + table(account_info_size) + fixed_info_temporaries + resolve_bytes
 }

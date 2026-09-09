@@ -24,8 +24,8 @@ pub struct Quit<'info> {
     /// The pending batch being quit.
     #[account(constraint = batch.batcher == batcher.key() @ BatcherError::BatchBatcherMismatch)]
     pub batch: Box<Account<'info, Batch>>,
-    /// CHECK: per-batch authority PDA; transfer authority for the refund and
-    /// the reset execution's compute subject and encrypted value account authority.
+    /// CHECK: per-batch authority PDA; transfer authority for the refund and the reset
+    /// execution's value authority.
     #[account(seeds = [BATCH_AUTHORITY_SEED, batch.key().as_ref()], bump = batch.authority_bump)]
     pub batch_authority: UncheckedAccount<'info>,
     /// The user's join record for this batch.
@@ -42,8 +42,6 @@ pub struct Quit<'info> {
     pub batch_authority_ata: UncheckedAccount<'info>,
     /// CHECK: ATA of `user` on `join_underlying_mint`. Uninitialized → not frozen.
     pub user_ata: UncheckedAccount<'info>,
-    /// CHECK: join mint compute-signer PDA; validated by the token CPI.
-    pub join_compute_signer: UncheckedAccount<'info>,
     /// CHECK: batch's confidential join token account (refund source);
     /// validated by the token CPI and pinned below.
     #[account(mut)]
@@ -119,9 +117,9 @@ pub fn quit<'info>(ctx: Context<'info, Quit<'info>>) -> Result<()> {
     );
 
     // Phase 1: exact refund — the joined encrypted value account IS the transfer amount. The
-    // batch authority signs via invoke_signed; the token's spend gate accepts
-    // it because every joined encrypted value account carries the batch authority in its
-    // audience from creation.
+    // batch authority signs via invoke_signed; the token's spend gate accepts it because the
+    // batch authority controls every joined value, and the host admits the read by that same
+    // signature.
     let authority = BatchAuthoritySeeds::new(batch_key, ctx.accounts.batch.authority_bump);
     let authority_seeds = authority.seeds();
     ct::cpi::confidential_transfer_from_value(CpiContext::new_with_signer(
@@ -135,7 +133,6 @@ pub fn quit<'info>(ctx: Context<'info, Quit<'info>>) -> Result<()> {
             to_ata: ctx.accounts.user_ata.to_account_info(),
             from_account: ctx.accounts.batch_join_token_account.to_account_info(),
             to_account: ctx.accounts.user_token_account.to_account_info(),
-            compute_signer: ctx.accounts.join_compute_signer.to_account_info(),
             from_balance_value: ctx.accounts.batch_balance_value.to_account_info(),
             to_balance_value: ctx.accounts.user_balance_value.to_account_info(),
             transferred_amount_value: ctx.accounts.batch_transferred_value.to_account_info(),
@@ -159,16 +156,13 @@ pub fn quit<'info>(ctx: Context<'info, Quit<'info>>) -> Result<()> {
     // place), so a later re-join of the same batch accumulates from zero.
     let reset_binding = fhe::PersistentBinding::bind(
         ctx.accounts.pending_join_value.to_account_info(),
-        zama_fhe::EncryptedValueId::new(
-            zama_fhe::Domain::new(batch_key),
+        batcher_encrypted_value_id(
+            batch_key,
             batch_authority,
-            zama_fhe::EncryptedValueLabel::new(encrypted_pending_join_label(user)),
+            encrypted_pending_join_label(user),
         ),
-        vec![
-            user,
-            batch_authority,
-            ctx.accounts.join_confidential_mint.compute_signer,
-        ],
+        &authority_seeds,
+        [user],
     )?;
     fhe::execute_as_batch_authority(
         fhe::BatchAuthorityExecute {
@@ -180,7 +174,7 @@ pub fn quit<'info>(ctx: Context<'info, Quit<'info>>) -> Result<()> {
             zama_event_authority: ctx.accounts.zama_event_authority.to_account_info(),
             zama_program: ctx.accounts.zama_program.to_account_info(),
             system_program: ctx.accounts.system_program.to_account_info(),
-            deny_subject_records: ctx.remaining_accounts,
+            remaining_accounts: ctx.remaining_accounts,
         },
         vec![reset_binding.account_info()],
         |builder| {

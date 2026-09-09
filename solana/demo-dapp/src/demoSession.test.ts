@@ -24,7 +24,6 @@ const validResponse = {
     rpcUrl: "http://127.0.0.1:8899",
     wsUrl: "ws://127.0.0.1:8900",
     relayerUrl: "http://127.0.0.1:3000",
-    proofServiceUrl: "http://127.0.0.1:8088",
     aclProgram: "0x4cd3022dff504a675caf2d9b4f4014d0b3dc3ea17ffb97ba355cec5a933a30ee",
     userDecryptContextId: "123",
     kmsSigners: [`0x${"01".repeat(20)}`],

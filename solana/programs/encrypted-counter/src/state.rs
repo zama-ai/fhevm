@@ -4,7 +4,7 @@
 //! `counter_mollusk` fixtures.
 
 use anchor_lang::prelude::*;
-use zama_fhe::{Domain, EncryptedValueId, EncryptedValueLabel};
+use zama_fhe::{AppScope, EncryptedValueId, EncryptedValueLabel};
 
 /// Seed of the per-owner counter state PDA.
 pub const COUNTER_SEED: &[u8] = b"counter";
@@ -24,10 +24,19 @@ pub fn counter_authority_address(counter: Pubkey) -> (Pubkey, u8) {
     Pubkey::find_program_address(&[COUNTER_AUTHORITY_SEED, counter.as_ref()], &crate::id())
 }
 
-/// The counter's encrypted value: domain is the counter account, authority its PDA.
+/// The application one counter is to the host: this program, scoped to the counter account.
+/// HCU metering and the deny list key on it.
+pub fn counter_app(counter: Pubkey) -> AppScope {
+    AppScope {
+        program: crate::id(),
+        scope: counter.to_bytes(),
+    }
+}
+
+/// The counter's encrypted value: the counter's application, authority its PDA.
 pub fn count_encrypted_value_id(counter: Pubkey) -> EncryptedValueId {
     EncryptedValueId::new(
-        Domain::new(counter),
+        counter_app(counter),
         counter_authority_address(counter).0,
         EncryptedValueLabel::new(encrypted_count_label()),
     )

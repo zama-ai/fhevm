@@ -74,8 +74,8 @@ pub fn solana_transaction_id(signature_bytes: &[u8]) -> TransactionHash {
     TransactionHash::from(digest)
 }
 
-// Only referenced by `solana_reconstruct` (feature-gated) outside of tests.
-#[cfg_attr(not(feature = "solana-reconstruct"), allow(dead_code))]
+// Only referenced by `solana_grpc_listener` (feature-gated) outside of tests.
+#[cfg_attr(not(feature = "solana-grpc"), allow(dead_code))]
 pub(crate) fn material_request(handle: [u8; 32]) -> SolanaMaterialRequest {
     SolanaMaterialRequest {
         handle: Handle::from(handle),
@@ -610,7 +610,6 @@ mod tests {
         let mapped = to_tfhe_event(FheBinaryOp {
             version: EVENT_VERSION,
             op: FheBinaryOpCode::Add,
-            subject: [0; 32],
             lhs: [1; 32],
             rhs: [2; 32],
             scalar: false,
@@ -637,7 +636,6 @@ mod tests {
         let mapped = to_tfhe_event(FheBinaryOp {
             version: EVENT_VERSION,
             op: FheBinaryOpCode::Ge,
-            subject: [0; 32],
             lhs: [1; 32],
             rhs: [2; 32],
             scalar: false,
@@ -664,7 +662,6 @@ mod tests {
         let mapped = to_tfhe_ternary_event(FheTernaryOp {
             version: EVENT_VERSION,
             op: FheTernaryOpCode::IfThenElse,
-            subject: [0; 32],
             control: [1; 32],
             if_true: [2; 32],
             if_false: [3; 32],
@@ -693,7 +690,6 @@ mod tests {
 
         let mapped = to_trivial_encrypt_event(TrivialEncrypt {
             version: EVENT_VERSION,
-            subject: [0; 32],
             plaintext,
             fhe_type: 5,
             result: [8; 32],
@@ -716,7 +712,6 @@ mod tests {
     fn maps_random_to_existing_tfhe_event() {
         let mapped = to_fhe_rand_event(FheRand {
             version: EVENT_VERSION,
-            subject: [0; 32],
             seed: [7; 16],
             fhe_type: 5,
             result: [8; 32],
@@ -778,7 +773,6 @@ mod tests {
         let event = to_tfhe_event(FheBinaryOp {
             version: EVENT_VERSION,
             op: FheBinaryOpCode::Sub,
-            subject: [0; 32],
             lhs: [1; 32],
             rhs: [2; 32],
             scalar: true,
@@ -823,7 +817,6 @@ mod tests {
             [
                 SolanaHostRecord::TrivialEncrypt(TrivialEncrypt {
                     version: EVENT_VERSION,
-                    subject: [0; 32],
                     plaintext: [55; 32],
                     fhe_type: 5,
                     result: [3; 32],
@@ -893,7 +886,6 @@ mod tests {
             [
                 SolanaHostRecord::TrivialEncrypt(TrivialEncrypt {
                     version: EVENT_VERSION,
-                    subject: [0; 32],
                     plaintext: [55; 32],
                     fhe_type: 5,
                     result: [3; 32],
@@ -925,7 +917,6 @@ mod tests {
             [
                 SolanaHostRecord::TrivialEncrypt(TrivialEncrypt {
                     version: EVENT_VERSION,
-                    subject: [0; 32],
                     plaintext: {
                         let mut plaintext = [0_u8; 32];
                         plaintext[31] = 1;
@@ -936,7 +927,6 @@ mod tests {
                 }),
                 SolanaHostRecord::FheRand(FheRand {
                     version: EVENT_VERSION,
-                    subject: [0; 32],
                     seed: [2; 16],
                     fhe_type: 5,
                     result: [2; 32],
@@ -944,7 +934,6 @@ mod tests {
                 SolanaHostRecord::FheTernaryOp(FheTernaryOp {
                     version: EVENT_VERSION,
                     op: FheTernaryOpCode::IfThenElse,
-                    subject: [0; 32],
                     control: [1; 32],
                     if_true: [2; 32],
                     if_false: [1; 32],

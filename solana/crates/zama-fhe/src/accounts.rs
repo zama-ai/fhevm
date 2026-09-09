@@ -17,7 +17,9 @@ use crate::execution::FheExecution;
 pub enum ExecutionAccountPurpose {
     PersistentInputAcl,
     PersistentOutputAcl,
-    PersistentOutputAuthority,
+    /// A persistent value's authority that is not the execution's fixed CPI signer; it signs
+    /// for every read and write of that value.
+    PersistentValueAuthority,
 }
 
 /// At most one of each [`ExecutionAccountPurpose`]. Three variants, so a stack array — never a
@@ -78,11 +80,11 @@ impl PurposeList {
     pub(crate) fn requires_dynamic_account(&self) -> bool {
         self.as_slice()
             .iter()
-            .any(|purpose| *purpose != ExecutionAccountPurpose::PersistentOutputAuthority)
+            .any(|purpose| *purpose != ExecutionAccountPurpose::PersistentValueAuthority)
     }
 
-    pub(crate) fn requires_output_authority(&self) -> bool {
-        self.contains(ExecutionAccountPurpose::PersistentOutputAuthority)
+    pub(crate) fn requires_value_authority(&self) -> bool {
+        self.contains(ExecutionAccountPurpose::PersistentValueAuthority)
     }
 }
 
@@ -125,8 +127,8 @@ impl ExecutionAccountRequirement {
         self.purposes.requires_dynamic_account()
     }
 
-    pub fn requires_output_authority(&self) -> bool {
-        self.purposes.requires_output_authority()
+    pub fn requires_value_authority(&self) -> bool {
+        self.purposes.requires_value_authority()
     }
 }
 
@@ -171,8 +173,8 @@ impl ExecutionAccountMeta {
         self.purposes.requires_dynamic_account()
     }
 
-    pub(crate) fn requires_output_authority(&self) -> bool {
-        self.purposes.requires_output_authority()
+    pub(crate) fn requires_value_authority(&self) -> bool {
+        self.purposes.requires_value_authority()
     }
 }
 
@@ -188,8 +190,8 @@ impl From<&ExecutionAccountMeta> for ExecutionAccountRequirement {
 }
 
 /// The encrypted value account authority that signs the fixed ZamaHost `fhe_execute` CPI account —
-/// the execution-wide one, as opposed to the per-output authority an
-/// [`ExecutionOutputAuthorityRequirement`] names.
+/// the execution-wide one, as opposed to the per-value authority an
+/// [`ExecutionValueAuthorityRequirement`] names.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ExecutionEncryptedValueAccountAuthority(Pubkey);
 
@@ -203,13 +205,13 @@ impl ExecutionEncryptedValueAccountAuthority {
     }
 }
 
-/// Output authority required by an execution.
+/// A persistent value authority required to sign an execution.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ExecutionOutputAuthorityRequirement {
+pub struct ExecutionValueAuthorityRequirement {
     pub(crate) pubkey: Pubkey,
 }
 
-impl ExecutionOutputAuthorityRequirement {
+impl ExecutionValueAuthorityRequirement {
     pub fn pubkey(&self) -> Pubkey {
         self.pubkey
     }
@@ -232,13 +234,13 @@ pub enum ExecutionAccountResolutionError {
     DynamicAccountNotWritable {
         requirement: ExecutionAccountRequirement,
     },
-    /// The same persistent output authority witness was supplied more than once.
-    DuplicateOutputAuthority { pubkey: Pubkey },
-    /// A supplied output authority is not required by this execution.
-    UnexpectedOutputAuthority { pubkey: Pubkey },
-    /// A required persistent output authority witness could not be resolved.
-    MissingOutputAuthority {
-        authority: ExecutionOutputAuthorityRequirement,
+    /// The same value authority witness was supplied more than once.
+    DuplicateValueAuthority { pubkey: Pubkey },
+    /// A supplied value authority is not required by this execution.
+    UnexpectedValueAuthority { pubkey: Pubkey },
+    /// A required value authority witness could not be resolved.
+    MissingValueAuthority {
+        authority: ExecutionValueAuthorityRequirement,
     },
 }
 
@@ -248,11 +250,11 @@ impl ExecutionAccountResolutionError {
         match self {
             Self::DuplicateDynamicAccount { pubkey }
             | Self::UnexpectedDynamicAccount { pubkey }
-            | Self::DuplicateOutputAuthority { pubkey }
-            | Self::UnexpectedOutputAuthority { pubkey } => *pubkey,
+            | Self::DuplicateValueAuthority { pubkey }
+            | Self::UnexpectedValueAuthority { pubkey } => *pubkey,
             Self::MissingDynamicAccount { requirement }
             | Self::DynamicAccountNotWritable { requirement } => requirement.pubkey(),
-            Self::MissingOutputAuthority { authority } => authority.pubkey(),
+            Self::MissingValueAuthority { authority } => authority.pubkey(),
         }
     }
 }
@@ -282,7 +284,7 @@ impl<'info> ResolvedExecutionAccounts<'info> {
 pub(crate) fn resolve_execution_accounts<'info>(
     execution: &FheExecution,
     dynamic_accounts: impl IntoIterator<Item = AccountInfo<'info>>,
-    output_authorities: impl IntoIterator<Item = AccountInfo<'info>>,
+    value_authorities: impl IntoIterator<Item = AccountInfo<'info>>,
 ) -> std::result::Result<ResolvedExecutionAccounts<'info>, ExecutionAccountResolutionError> {
     // Collected into tables sized from the counts the execution itself requires (a successful
     // resolution supplies exactly those), never from the caller's iterator hint: on the
@@ -292,9 +294,9 @@ pub(crate) fn resolve_execution_accounts<'info>(
     let mut dynamic_accounts_table = Vec::with_capacity(execution.cost.dynamic_accounts);
     dynamic_accounts_table.extend(dynamic_accounts);
     let dynamic_accounts = dynamic_accounts_table;
-    let mut output_authorities_table = Vec::with_capacity(execution.cost.output_authorities);
-    output_authorities_table.extend(output_authorities);
-    let output_authorities = output_authorities_table;
+    let mut value_authorities_table = Vec::with_capacity(execution.cost.value_authorities);
+    value_authorities_table.extend(value_authorities);
+    let value_authorities = value_authorities_table;
 
     for (index, account) in dynamic_accounts.iter().enumerate() {
         let pubkey = account.key();
@@ -318,28 +320,28 @@ pub(crate) fn resolve_execution_accounts<'info>(
         }
     }
 
-    for (index, authority) in output_authorities.iter().enumerate() {
+    for (index, authority) in value_authorities.iter().enumerate() {
         let pubkey = authority.key();
-        if output_authorities[index + 1..]
+        if value_authorities[index + 1..]
             .iter()
             .any(|candidate| candidate.key() == pubkey)
         {
-            return Err(ExecutionAccountResolutionError::DuplicateOutputAuthority { pubkey });
+            return Err(ExecutionAccountResolutionError::DuplicateValueAuthority { pubkey });
         }
         if !execution
-            .output_authorities()
+            .value_authorities()
             .any(|required| required == pubkey)
         {
-            return Err(ExecutionAccountResolutionError::UnexpectedOutputAuthority { pubkey });
+            return Err(ExecutionAccountResolutionError::UnexpectedValueAuthority { pubkey });
         }
     }
 
-    for authority in execution.output_authority_requirements() {
-        if !output_authorities
+    for authority in execution.value_authority_requirements() {
+        if !value_authorities
             .iter()
             .any(|candidate| candidate.key() == authority.pubkey())
         {
-            return Err(ExecutionAccountResolutionError::MissingOutputAuthority { authority });
+            return Err(ExecutionAccountResolutionError::MissingValueAuthority { authority });
         }
     }
 
@@ -348,13 +350,13 @@ pub(crate) fn resolve_execution_accounts<'info>(
     // instruction anyway.
     let mut accounts = Vec::with_capacity(execution.remaining_accounts.len());
     for required in &execution.remaining_accounts {
-        let account = if required.requires_output_authority() {
-            output_authorities
+        let account = if required.requires_value_authority() {
+            value_authorities
                 .iter()
                 .find(|candidate| candidate.key() == required.pubkey)
                 .cloned()
-                .ok_or(ExecutionAccountResolutionError::MissingOutputAuthority {
-                    authority: ExecutionOutputAuthorityRequirement {
+                .ok_or(ExecutionAccountResolutionError::MissingValueAuthority {
+                    authority: ExecutionValueAuthorityRequirement {
                         pubkey: required.pubkey,
                     },
                 })?

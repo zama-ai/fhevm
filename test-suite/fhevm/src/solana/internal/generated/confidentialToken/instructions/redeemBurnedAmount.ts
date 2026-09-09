@@ -191,8 +191,8 @@ export type RedeemBurnedAmountAsyncInput<
   destinationUsdc: Address<TAccountDestinationUsdc>;
   vaultAuthority?: Address<TAccountVaultAuthority>;
   /**
-   * Burned amount `EncryptedValue` encrypted value account whose handle is redeemed. Bound to the mint/token
-   * account/owner by `assert_burned_amount_value_account`; its canonical PDA, layout, host ownership,
+   * Burned amount `EncryptedValue` account whose handle is redeemed. Bound to the mint/token
+   * account by `assert_burned_amount_value_account`; its canonical PDA, layout, host ownership,
    * and the exact-handle MMR inclusion proof are validated by the `verify_public_decrypt` CPI.
    */
   burnedAmountValue: Address<TAccountBurnedAmountValue>;
@@ -399,8 +399,8 @@ export type RedeemBurnedAmountInput<
   destinationUsdc: Address<TAccountDestinationUsdc>;
   vaultAuthority: Address<TAccountVaultAuthority>;
   /**
-   * Burned amount `EncryptedValue` encrypted value account whose handle is redeemed. Bound to the mint/token
-   * account/owner by `assert_burned_amount_value_account`; its canonical PDA, layout, host ownership,
+   * Burned amount `EncryptedValue` account whose handle is redeemed. Bound to the mint/token
+   * account by `assert_burned_amount_value_account`; its canonical PDA, layout, host ownership,
    * and the exact-handle MMR inclusion proof are validated by the `verify_public_decrypt` CPI.
    */
   burnedAmountValue: Address<TAccountBurnedAmountValue>;
@@ -583,8 +583,8 @@ export type ParsedRedeemBurnedAmountInstruction<
     destinationUsdc: TAccountMetas[5];
     vaultAuthority: TAccountMetas[6];
     /**
-     * Burned amount `EncryptedValue` encrypted value account whose handle is redeemed. Bound to the mint/token
-     * account/owner by `assert_burned_amount_value_account`; its canonical PDA, layout, host ownership,
+     * Burned amount `EncryptedValue` account whose handle is redeemed. Bound to the mint/token
+     * account by `assert_burned_amount_value_account`; its canonical PDA, layout, host ownership,
      * and the exact-handle MMR inclusion proof are validated by the `verify_public_decrypt` CPI.
      */
     burnedAmountValue: TAccountMetas[7];

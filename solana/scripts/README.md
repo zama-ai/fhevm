@@ -10,7 +10,7 @@ Run from `solana/` unless a path below says otherwise.
 |---|---|---|
 | `bash scripts/check-zama-host-idl.sh` | Before Mollusk tests; CI IDL/ABI parity | `target/deploy` only |
 | `python3 scripts/check-pda-seeds.py` | Check explicit handwritten TypeScript/Rust PDA-seed counterparts | no |
-| `bash scripts/sync-zama-host-idl.sh` | After an intentional IDL/ABI change | all four committed IDLs + ABI goldens |
+| `bash scripts/sync-zama-host-idl.sh` | After an intentional IDL/ABI change | all six committed IDLs + ABI goldens |
 | `bash scripts/update-cost-snapshots.sh` | After an intentional CU / ix-shape change | `runtime-tests/cost-snapshots/*.json` |
 | `bash scripts/update-permit-vectors.sh` | After an intentional permit-canon change | `test-fixtures/permit/permit_v1.json` |
 | `bash scripts/update-permit-invalidation-fixture.sh` | After an intentional `PermitInvalidation` layout / seed change | `test-fixtures/permit/permit_invalidation_account_v1.json` |
@@ -25,5 +25,4 @@ against a running stack (CI: `solana-e2e`).
 | Path | Role |
 |---|---|
 | `check_solana_abi.py` | Called by `check-` / `sync-zama-host-idl.sh`; owns the one list of committed IDLs, copying them out of `target/idl` with `--write` and comparing them back without it |
-| `check_proof_store_idl.py` | Called by `check-zama-host-idl.sh` + `solana-proof-service-tests`; partitions proof-store decode.rs against vendored `zama_host` IDL |
 | `e2e/test-keypairs/` | Well-known local program keypairs for reproducible deploys |

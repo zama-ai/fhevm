@@ -2,17 +2,14 @@ import { PreflightError } from "../errors";
 
 export const SOLANA_CURRENT_USER_DECRYPT_PROFILE = "solana-current-user-decrypt";
 export const SOLANA_CURRENT_USER_DECRYPT_DESCRIPTION =
-  "Decrypt one current Solana handle through the public SDK and assert its plaintext.";
+  "Decrypt one Solana handle through the public SDK's permit path and assert its plaintext.";
 
 type Environment = Readonly<Record<string, string | undefined>>;
 
 type CurrentUserDecryptSdkInput = {
   chainId: bigint;
   relayerUrl: string;
-  rpcUrl: string;
-  proofServiceUrl: string;
   verifyingProgramId: string;
-  allowedAclDomainKeys: readonly string[];
   apiKey: string;
   secretKey: Uint8Array;
   trust: {
@@ -24,10 +21,11 @@ type CurrentUserDecryptSdkInput = {
   };
   request: {
     handle: Uint8Array;
-    encryptedValueId: Uint8Array;
+    /** The `EncryptedValue` account the handle lives in; the Connector reads it and proves the leaf. */
+    encryptedValueAccount: Uint8Array;
     durationSeconds: bigint;
     /** The delegator's pubkey on a delegated entry; absent on a direct one. */
-    subject?: Uint8Array | undefined;
+    allowedKey?: Uint8Array | undefined;
   };
 };
 type CurrentUserDecryptSdkCall = (
@@ -83,17 +81,11 @@ const runPublicSdkUserDecrypt: CurrentUserDecryptSdkCall = async (input) => {
   const solana = await import(solanaModule);
   const chain = solana.defineFhevmSolanaChain({
     id: input.chainId,
-    fhevm: {
-      relayerUrl: input.relayerUrl,
-      acl: { domainKeys: input.allowedAclDomainKeys },
-      rpcUrl: input.rpcUrl,
-      proofServiceUrl: input.proofServiceUrl,
-      verifyingProgramId: input.verifyingProgramId,
-    },
+    fhevm: { relayerUrl: input.relayerUrl, verifyingProgramId: input.verifyingProgramId },
   });
   solana.setFhevmRuntimeConfig({ auth: { type: "ApiKeyHeader", value: input.apiKey } });
   const client = solana.createFhevmDecryptClient({ chain, trust: input.trust });
-  // The permit path: one wallet signature mints a session, the request runs under it.
+  // The permit path: one wallet signature mints a permissive session, the request runs under it.
   const wallet = solana.solanaPermitWalletFromSecretKey(input.secretKey);
   const session = await client.signPermit({ wallet, durationSeconds: input.request.durationSeconds });
   return client.userDecrypt({
@@ -101,27 +93,18 @@ const runPublicSdkUserDecrypt: CurrentUserDecryptSdkCall = async (input) => {
     entries: [
       {
         handle: input.request.handle,
-        encryptedValueId: input.request.encryptedValueId,
-        ...(input.request.subject !== undefined ? { subject: input.request.subject } : {}),
+        encryptedValueAccount: input.request.encryptedValueAccount,
+        ...(input.request.allowedKey !== undefined ? { allowedKey: input.request.allowedKey } : {}),
       },
     ],
   });
 };
 
-/** Runs the current-handle Solana user-decrypt flow through the public SDK's permit path. */
+/** Runs the Solana user-decrypt flow through the public SDK's permit path. */
 export const runSolanaCurrentUserDecrypt = async (
   environment: Environment = process.env,
   dependencies: CurrentUserDecryptDependencies = {},
 ): Promise<bigint> => {
-  const allowedAclDomainKeys = required(environment, "UD_ALLOWED_DOMAIN_KEYS")
-    .split(",")
-    .map((value) => value.trim())
-    .filter(Boolean)
-    .map((value) => bytes32Hex(value, "UD_ALLOWED_DOMAIN_KEYS"));
-  if (allowedAclDomainKeys.length === 0) {
-    throw new PreflightError("UD_ALLOWED_DOMAIN_KEYS must contain at least one key");
-  }
-
   const handle = required(environment, "UD_HANDLE");
   bytes32Hex(handle, "UD_HANDLE");
   const expected = BigInt(required(environment, "UD_EXPECTED"));
@@ -141,10 +124,7 @@ export const runSolanaCurrentUserDecrypt = async (
   const clearValues = await userDecrypt({
     chainId: BigInt(required(environment, "UD_CONTRACTS_CHAIN_ID")),
     relayerUrl: required(environment, "UD_RELAYER_URL"),
-    rpcUrl: required(environment, "UD_RPC_URL"),
-    proofServiceUrl: required(environment, "UD_PROOF_SERVICE_URL"),
     verifyingProgramId: bytes32Hex(required(environment, "UD_VERIFYING_PROGRAM_ID"), "UD_VERIFYING_PROGRAM_ID"),
-    allowedAclDomainKeys,
     apiKey: environment.ZAMA_FHEVM_API_KEY ?? "local",
     secretKey: bytes32(environment, "UD_SECRET_KEY"),
     trust: {
@@ -166,12 +146,12 @@ export const runSolanaCurrentUserDecrypt = async (
     },
     request: {
       handle: bytes(handle, "UD_HANDLE"),
-      encryptedValueId: bytes32(environment, "UD_ACL_VALUE_KEY"),
+      encryptedValueAccount: bytes32(environment, "UD_ENCRYPTED_VALUE_ACCOUNT"),
       durationSeconds: BigInt(environment.UD_DURATION_SECONDS ?? "3600"),
-      // Optional: the delegated form. The signer stays UD_SECRET_KEY (the delegate); the
-      // subject names whose value is asked for.
-      ...(environment.UD_SUBJECT !== undefined && environment.UD_SUBJECT !== ""
-        ? { subject: bytes32(environment, "UD_SUBJECT") }
+      // Optional: the delegated form. The signer stays UD_SECRET_KEY (the delegate); the allowed
+      // key names whose allow on the handle is asked under.
+      ...(environment.UD_ALLOWED_KEY !== undefined && environment.UD_ALLOWED_KEY !== ""
+        ? { allowedKey: bytes32(environment, "UD_ALLOWED_KEY") }
         : {}),
     },
   });

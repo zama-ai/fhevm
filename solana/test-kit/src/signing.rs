@@ -54,7 +54,7 @@ pub(crate) fn secp_sign(key: &SigningKey, digest: &[u8; 32]) -> [u8; 65] {
 
 /// Builds a coprocessor-signed `fromExternal` attestation over `amount_handle`, binding it to
 /// (`user`, `contract`), signed by the default single coprocessor key. Consumers check
-/// `user == transfer authority` and `contract == the consuming program's compute-signer PDA`;
+/// `user == transfer authority` and `contract == the consuming program`;
 /// the host re-verifies the signature(s) in-execution.
 pub fn amount_attestation_for(
     amount_handle: [u8; 32],

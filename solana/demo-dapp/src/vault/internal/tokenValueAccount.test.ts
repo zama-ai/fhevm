@@ -1,44 +1,29 @@
 import { describe, expect, it } from 'vitest';
 import { address, getProgramDerivedAddress, type Address } from '@solana/kit';
 import { base58 } from '@scure/base';
-import { sha256 } from '@noble/hashes/sha2.js';
 
-import { ZAMA_HOST_PROGRAM_ADDRESS } from './generated/confidentialToken/programAddress.js';
-import { confidentialBalanceValueAccount } from './tokenValueAccount.js';
+import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, ZAMA_HOST_PROGRAM_ADDRESS } from './generated/confidentialToken/programAddress.js';
+import { balanceValueAddress } from './tokenValueAccount.js';
 
 const utf8 = (value: string): Uint8Array => new TextEncoder().encode(value);
-const concat = (...parts: Uint8Array[]): Uint8Array => {
-  const result = new Uint8Array(parts.reduce((size, part) => size + part.length, 0));
-  let offset = 0;
-  for (const part of parts) {
-    result.set(part, offset);
-    offset += part.length;
-  }
-  return result;
-};
 const addr = (fill: number): Address => address(base58.encode(new Uint8Array(32).fill(fill)));
 
-describe('confidentialBalanceValueAccount', () => {
-  it('derives the canonical encrypted value ID and host PDA for the balance label', async () => {
+describe('balanceValueAddress', () => {
+  // The seeds the host derives an encrypted value account from, in the crate's order: the tag,
+  // the token program, the token account (authority), the mint (scope), the fixed balance label.
+  it('is the host PDA of (token program, token account, mint, balance label)', async () => {
     const mint = addr(3);
     const tokenAccount = addr(4);
-    const expectedKey = sha256(
-      concat(
-        utf8('zama-encrypted-value-key-v1'),
-        base58.decode(mint),
+    const [expected] = await getProgramDerivedAddress({
+      programAddress: ZAMA_HOST_PROGRAM_ADDRESS,
+      seeds: [
+        utf8('encrypted-value'),
+        base58.decode(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS),
         base58.decode(tokenAccount),
+        base58.decode(mint),
         utf8('balance_________________________'),
-      ),
-    );
-    const expectedAddress = (
-      await getProgramDerivedAddress({
-        programAddress: ZAMA_HOST_PROGRAM_ADDRESS,
-        seeds: [utf8('encrypted-value'), expectedKey],
-      })
-    )[0];
-
-    const actual = await confidentialBalanceValueAccount(mint, tokenAccount);
-    expect(Array.from(actual.aclValueKey)).toEqual(Array.from(expectedKey));
-    expect(actual.encryptedValueAddress).toBe(expectedAddress);
+      ],
+    });
+    expect(await balanceValueAddress(mint, tokenAccount)).toBe(expected);
   });
 });

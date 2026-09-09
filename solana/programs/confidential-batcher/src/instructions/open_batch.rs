@@ -39,8 +39,6 @@ pub struct OpenBatch<'info> {
     pub batch_authority: UncheckedAccount<'info>,
     /// Confidential mint users join batches with.
     pub join_confidential_mint: Box<Account<'info, ct::ConfidentialMint>>,
-    /// CHECK: join mint compute-signer PDA; validated by the token CPI.
-    pub join_compute_signer: UncheckedAccount<'info>,
     /// CHECK: batch's confidential join token account; created by the token CPI.
     #[account(mut)]
     pub batch_join_token_account: UncheckedAccount<'info>,
@@ -49,8 +47,6 @@ pub struct OpenBatch<'info> {
     pub batch_join_balance_value: UncheckedAccount<'info>,
     /// Confidential mint claims pay out in.
     pub payout_confidential_mint: Box<Account<'info, ct::ConfidentialMint>>,
-    /// CHECK: payout mint compute-signer PDA; validated by the token CPI.
-    pub payout_compute_signer: UncheckedAccount<'info>,
     /// CHECK: batch's confidential payout token account; created by the token CPI.
     #[account(mut)]
     pub batch_payout_token_account: UncheckedAccount<'info>,
@@ -149,16 +145,14 @@ pub fn open_batch(ctx: Context<OpenBatch>, authority_funding_lamports: u64) -> R
     let batch_key = ctx.accounts.batch.key();
     let authority = BatchAuthoritySeeds::new(batch_key, ctx.bumps.batch_authority);
     let authority_seeds = authority.seeds();
-    for (mint, compute_signer, token_account, balance_value) in [
+    for (mint, token_account, balance_value) in [
         (
             &ctx.accounts.join_confidential_mint,
-            &ctx.accounts.join_compute_signer,
             &ctx.accounts.batch_join_token_account,
             &ctx.accounts.batch_join_balance_value,
         ),
         (
             &ctx.accounts.payout_confidential_mint,
-            &ctx.accounts.payout_compute_signer,
             &ctx.accounts.batch_payout_token_account,
             &ctx.accounts.batch_payout_balance_value,
         ),
@@ -169,7 +163,6 @@ pub fn open_batch(ctx: Context<OpenBatch>, authority_funding_lamports: u64) -> R
                 payer: ctx.accounts.batch_authority.to_account_info(),
                 owner: ctx.accounts.batch_authority.to_account_info(),
                 mint: mint.to_account_info(),
-                compute_signer: compute_signer.to_account_info(),
                 token_account: token_account.to_account_info(),
                 balance_encrypted_value: balance_value.to_account_info(),
                 zama_event_authority: ctx.accounts.zama_event_authority.to_account_info(),

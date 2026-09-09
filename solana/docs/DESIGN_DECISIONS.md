@@ -353,7 +353,7 @@ Note: the per-instruction label-scoping described here was dissolved in fhevm-in
 DD-040). The `request_disclose_amount` / `disclose_amount` (and balance) instructions no longer exist;
 disclosure is now the single generic `disclose_secp` consumer of the host `verify_public_decrypt`
 verifier. In place of per-instruction label-scoping, the token binds the disclosed `EncryptedValue`
-encrypted value account to the mint's ACL domain.
+encrypted value account to the mint's scope.
 
 Context:
 
@@ -599,7 +599,7 @@ Status: product-open
 
 Context:
 
-`acl_storage_rationale.md` Part 5 describes two Solana token profiles: a staged inbound-credit profile
+Two Solana token profiles were weighed: a staged inbound-credit profile
 (recommended default for public-receivable tokens, where the recipient applies pending funds under
 their own transaction timing) and an immediate available-balance profile (EVM-style, where the sender
 updates the recipient's balance directly). The latter lets a sender force an update of the recipient's
@@ -924,9 +924,9 @@ The accepted design is eager materialization from confirmed instruction reconstr
 separate finality gate; KMS revalidates confirmed authorization at the plaintext-release boundary.
 
 The accepted product rule treats a valid confirmed authorization as sufficient. Coprocessor work is
-therefore scheduled from confirmed ingestion. The KMS ACL read and the proof-service confirmed RPC /
-Yellowstone path (`getAccountInfo` peak cross-check, completed-block ingest, bounded RPC recovery)
-use explicit confirmed commitment; KMS remains the only plaintext-release boundary.
+therefore scheduled from confirmed ingestion. The KMS connector's ACL read and the host listener's
+confirmed Yellowstone ingest use explicit confirmed commitment; KMS remains the only
+plaintext-release boundary.
 
 Decision provenance: accepted by the Solana feature owner during the review of
 [`zama-ai/fhevm#3122`](https://github.com/zama-ai/fhevm/pull/3122) on 2026-07-13. The accepted trade-off
@@ -1210,6 +1210,16 @@ deny-list bypass); `previous_handle`/`previous_subjects` still pin the outgoing 
 updates stateless-replayable (DD-033). This lets a per-sender encrypted value account (e.g. confidential-token's
 `transferred_amount`) re-target its audience across recipients instead of reverting.
 
+Amendment (RFC 035, DD-047/DD-048): the account no longer stores who may decrypt. Its seeds are
+`["encrypted-value", program, encrypted_value_account_authority, scope, label]` — four fixed-width
+fields after the tag, stored in the clear, no derived id — and its body is those four, the current
+handle, `leaf_count`, the peaks and the bump (`181 + 32·peaks` bytes, at most 2229). The
+`subjects` vector, `MAX_ENCRYPTED_VALUE_SUBJECTS`, `previous_subjects`, `allow_subjects`,
+`remove_subject` and `authorize_current` are deleted. A write declares the keys allowed on the
+handle it installs and the host seals one keccak `HistoricalAccessLeaf` per key, then the public
+leaf when the output is `make_public`; a user decrypt of the current handle proves the same leaf a
+historical one does. "Subject" left the vocabulary with the list (GLOSSARY.md).
+
 ## DD-033: No ACL-Lifecycle Events — Self-Describing Args + Instruction-Replay Indexing
 
 Status: adopted
@@ -1279,7 +1289,11 @@ before a decrypt request; plaintext is released only after KMS authorization suc
 
 ## DD-035: Standalone Untrusted Solana MMR Proof Service
 
-Status: adopted
+Status: superseded by DD-048 (RFC 035). The `solana-proof-service` workspace is deleted. The leaf
+record lives in each coprocessor's host listener, derived in the same database transaction as the
+compute rows and served over `POST /v1/solana/leaf-proofs` behind an API key; the KMS connector
+fetches every proof from there and verifies it against the peaks it read on chain, and a
+client-supplied proof is rejected. What follows is decision history.
 
 Context:
 
@@ -1312,7 +1326,12 @@ That optional in-process integration remains a known product gap.
 
 ## DD-036: Burn-Redemption Consume Authorizes By MMR Public-Decrypt Proof, Not Live Handle
 
-Status: adopted
+Status: adopted, then amended by DD-045 — the live-handle check is back. The heading and the
+Decision below record the original design. `redeem_burned_amount` now requires
+`current_handle == burned_handle` as well as the public-decrypt proof and the certificate; the
+`PendingBurn` account is what keeps the burned handle current. The survives-a-later-update
+property this record secured now lives on the disclosure path, where `disclose_secp` never reads
+`current_handle`. Read the DD-045 amendment below before quoting this record.
 
 Context:
 
@@ -1413,9 +1432,9 @@ in [`FUTURE_DESIGN.md`](./FUTURE_DESIGN.md); this list is the short index.
   low-63-bit allocation for canonical MAINNET/DEVNET Solana host chain ids remains a deployment-config
   decision, tracked separately.
 - Rent/archival policy for the `EncryptedValue` MMR itself (DD-032): the account no longer needs
-  per-update PDA closes (one stable PDA is reused for an encrypted value account's whole life), but growth of
-  `peaks`/`subjects` over a long-lived encrypted value account's history still needs a compaction story if rent becomes
-  a product issue.
+  per-update PDA closes (one stable PDA is reused for an encrypted value account's whole life); its
+  growth is bounded at 64 peaks (2229 bytes) for all time, so compaction is a rent question, not a
+  liveness one.
 - General `HostConfig` config-version rotation semantics beyond the KMS-context pointer.
 - Full production KMS-connector wiring and real ZKPoK / transciphering behind the input attestation
   (both PoC shortcuts today, DD-028).
@@ -1426,25 +1445,24 @@ in [`FUTURE_DESIGN.md`](./FUTURE_DESIGN.md); this list is the short index.
   remains the plaintext-release boundary.
 - `fhe_execute` supports `RandBounded`; the replaced standalone bounded-random instructions were
   removed with the old model (DD-032).
-- The relayer's Solana user-decrypt path does not call the MMR proof service in-process
-  (DD-035). Clients fetch proofs from standalone `solana-proof-service` via `PROOF_SERVICE_URL`
-  before submitting to `/v3/user-decrypt`. When optional in-process integration lands, the
-  user-decrypt dedup hash must also cover the proof fields (`acl_value_key`, `proof_slot`, proof
-  bytes).
-- Proof-service high availability (DD-035): a single standalone instance with Yellowstone ingest +
-  PostgreSQL persistent store (plus bounded confirmed RPC recovery) is the whole story today;
-  replication/failover is unaddressed.
+- Leaf-record availability (DD-048): the connector fans out to every configured coprocessor and
+  one behind or unreachable cannot sink a request another can serve, but an account first seen by a
+  coprocessor through an update has no served proofs until that listener is replayed from before
+  the account's creation (`history_complete`). The replay/bootstrap policy is operational and
+  undocumented beyond the listener's own flags.
 - The old 4-phase receiver-callback flow was deleted with the legacy model, but a Solana-native
   composition pattern for contract-to-contract confidential calls has not been designed to replace
   it.
-- Subject-list overflow beyond `MAX_ENCRYPTED_VALUE_SUBJECTS` (8 subjects per `EncryptedValue`) is
-  deferred; there is no overflow/paging account yet.
+- There is no per-value cap on allows any more (RFC 035): allows are leaves, and the app-side wall
+  is the builder's heap budget (INVARIANTS #54). Whether a policy cap on allows per write is wanted
+  for indexers is open.
 - **Mint-as-PDA authority consolidation (fhevm-internal#1862 Wave 3) — DEFERRED / not necessary.**
-  Evaluated collapsing `ConfidentialMint` into a PDA and folding `fhe-compute` + `total-supply`
-  authorities into the mint. Kept the current shape: mint stays a non-PDA keypair account; compute
-  signer and total-supply write authority remain separate mint-scoped PDAs; vault-authority and
-  per-owner token-account PDAs unchanged. Consolidation would touch every CPI and vault path without
-  reducing attack surface enough to justify the churn.
+  Evaluated collapsing `ConfidentialMint` into a PDA and folding the total-supply authority into
+  the mint. Kept the current shape: mint stays a non-PDA keypair account; the total-supply write
+  authority remains a mint-scoped PDA; vault-authority and per-owner token-account PDAs unchanged.
+  (The separate `fhe-compute` signer this bullet once weighed is gone: RFC 035 has no compute
+  identity, the mint is the token program's `scope`.) Consolidation would touch every CPI and vault
+  path without reducing attack surface enough to justify the churn.
 - **Compliance / freeze / TokenInterface (fhevm-internal#1862) — PARTIALLY CLOSED by DD-045.** Product stance:
   no token-owned sanctions list; host deny remains grant-path only; compliance for underlying exit
   is the SPL freeze authority on the wrapped mint (mockUSDC OK in PoC). Wrap and redeem freeze-check
@@ -1508,6 +1526,11 @@ Consequences:
   validation, not an argument.
 - #1665 must remove the op event only after migrating created-public handle recovery off it — treat the
   event as an ABI surface whose last consumer must move first.
+
+Note (RFC 035): the proof service that was the event's last consumer is gone (DD-048), and the
+host listener's leaf record recomputes created-public handles from instruction data plus streamed
+block entropy without reading it. `PublicOutputsProducedEvent` is still emitted (DD-044) and now
+has no consumer in this repository; retiring it is #1665's call.
 
 ## DD-038: One Host-Owned Born-Public Lifecycle Batch Replaces Per-Operation Events
 
@@ -1592,6 +1615,26 @@ that is rejected here as speculative (see #1708 Option B) until a concrete multi
 it. The trust registry (`set_hcu_app_trusted`) already lets an admin bypass the cap for a specific
 subject, which covers the known trusted-app cases without a registry.
 
+Amendment (RFC 035, DD-047): `compute_subject` is deleted. The meter and trust records key on the
+application `(program, scope)` — `["hcu-block-meter", program, scope]`, `["hcu-trusted", program,
+scope]` — where `program` is proven on every write from the output authority's seeds and `scope`
+is what that program declares. That closes the rotation vectors above **for a caller outside the
+program**: a fresh keypair is not a PDA of any program, so it cannot be an output authority, and a
+caller cannot mint applications under a program it does not control. It does not bound the program
+itself. A program declares its own `scope`, so it can create any number of scopes and hold a
+separate per-slot meter for each, at the cost of one `HcuBlockMeter` rent per scope. The
+granularity note above therefore still stands, with `(program, scope)` in place of the identity it
+used to key on: a finite cap binds one application only as far as that application declines to
+spread itself across scopes. See DD-047's consequences and INVARIANTS #41.
+Every output the default authority controls must
+share one application (`FheExecuteMixedScopes`); an output under an additional signing authority
+is metered as that execution's but deny-checked as its own. The persist-nothing residual keeps its guard: under a finite
+block cap an execution that binds no stored operand and no persistent output has no application to
+meter and is rejected (`FheExecuteUnanchoredUnderBlockCap`). The "registry Option B" this section
+deferred had two halves, and the verified program answers one of them: an application identity a
+caller cannot forge, with the program as its own registry entry. The other half, aggregating one
+finite cap across the several identities a single application may hold, is still not built.
+
 ## DD-040: App Public-Decrypt Is A Stateless Pull-Oracle Verifier, Not A Request Lifecycle
 
 Status: adopted
@@ -1615,8 +1658,12 @@ context_id`, the last 32 bytes the verified context id, well under the 1024-byte
 (`host_config`, `kms_context`, `encrypted_value`) are read-only. An app CPIs it, asserts the returned
 handle equals the handle it pinned at request time, then applies its own state transition; act-once
 and timeout live in the app's own state machine (a settled flag + deadline), which it needs anyway.
-This generalizes the DD-036 precedent (burn-redemption already authorizes by MMR public-decrypt proof
-+ cert rather than live state) instead of the token's witness pattern.
+This generalizes the DD-036 precedent (burn-redemption authorizes by MMR public-decrypt proof
++ cert) instead of the token's witness pattern. Note that DD-036's "rather than live state" half no
+longer holds for redemption: DD-045 restored `current_handle == burned_handle` there, because one
+`PendingBurn` per token account keeps the burned handle current. This verifier is the path where
+authorizing a handle the account has since replaced still works, since it reads no live handle at
+all.
 
 Any live context, not a current-only pin (fhevm-internal#1765):
 
@@ -1748,6 +1795,8 @@ the account is gone, and a new burn cannot start until that close has committed.
 
 ## DD-041: Coprocessor Input Trust Is A Registered n-of-m Signer Set In `HostConfig`
 
+Status: adopted
+
 Input `CiphertextVerification` attestations are now verified against a **registered coprocessor
 signer set + configurable threshold**, matching EVM `InputVerifier`'s trust model, instead of the
 prior single hardcoded `coprocessor_signer` at threshold 1. The n-of-m recovery machinery already
@@ -1798,6 +1847,8 @@ Relates to DD-007 (input verification model) and closes the FUTURE_DESIGN §1 / 
 coprocessor signer at threshold 1" fragile item.
 
 ## DD-042: Confidential Vaults Are A Batcher-Gateway In Front Of A Public Share-Mint Vault
+
+Status: adopted
 
 Confidential yield on Solana is built as a **confidential batcher in front of an ordinary public
 vault**, not as a vault whose own accounting is encrypted. The batcher collects encrypted deposits,
@@ -1922,6 +1973,8 @@ token/host CPI passes deny-list records and HCU accounts (`deny_subject_record`,
 
 ## DD-043: Two Derivation Regimes — Content-Addressed Deterministic Handles, Persistent-Write-Anchored Rand Seeds (`context_id` deleted)
 
+Status: adopted
+
 Decision (fhevm-internal#1853 W3+W4). Handle derivation is unified on keccak (the recorded
 2026-07-06 team position: EVM-side handle math is keccak, and both are same-price syscalls) and
 split into exactly two regimes, mirroring `FHEVMExecutor`:
@@ -1932,17 +1985,19 @@ split into exactly two regimes, mirroring `FHEVMExecutor`:
    an identical computation derives the identical handle, which is the same value by construction
    (EVM's exact behavior; a second party can only reproduce a result whose inputs it was
    independently authorized on, and the DAG is public in instruction data regardless).
-2. **Rand / rand-bounded seeds** are compulsorily fresh: `H(domain, compute_subject, the batch's
-   persistent-write anchor, op_index, program_id, chain_id, previous_bank_hash, unix_timestamp)`.
-   The persistent-write anchor is every persistent output's live `(account key, create/update tag,
-   current_handle, leaf_count)` state in wire order. `leaf_count` is read by the host, not declared
-   by the caller, and advances whenever an outgoing handle is sealed. Therefore an account that
-   cycles back to an earlier content-addressed handle still produces a new seed. The host emits the
-   resolved random seeds through a signed event-CPI frame so the listener does not need caller
-   hints or historical account reads. A batch containing a rand step must therefore
-   declare at least one persistent output (preflight `FheExecuteRandRequiresPersistentOutput`); the
-   excluded all-transient class is provably useless — no ACL record, no decrypt path, no
-   `make_public`, so its randomness is unobservable by everyone including the author.
+2. **Rand / rand-bounded seeds** are compulsorily fresh. As amended by RFC 035:
+   `H("FHE_eval_seed", rand_nonce, op_index, program, scope, host program id, chain_id,
+   previous_bank_hash, unix_timestamp)`. `rand_nonce` is the host's `RandNonce` singleton
+   (`["rand-nonce"]`), which every execution with a rand step must pass and which the host
+   advances (`FheExecuteRandNonceMissing` otherwise): a global counter, consumed once, never
+   caller-supplied, so two executions in one slot cannot share a seed whatever they persist.
+   `(program, scope)` is the execution's verified application (DD-047), so a seed is bound to the
+   values it will land in. The host emits the resolved seeds through the event CPI
+   (`FheExecuteRandomSeedsEvent`) so the listener needs no historical account read. The original
+   design anchored freshness to the execution's persistent writes instead — every persistent
+   output's live `(account, tag, handle, leaf_count)` in wire order — which forced a rand step to
+   declare a persistent output; the nonce removes that requirement and the account-state
+   dependence with it.
 
 `context_id` is deleted from `FheExecuteArgs` (−32 B per batch), `EvalContextId` from the SDK, and
 `transfer_eval_context` from the confidential token. Its two jobs are covered better: handle
@@ -1951,17 +2006,13 @@ was only caller-supplied *advice* (two batches sharing a `context_id` in one slo
 rand seeds), where the anchor is *enforced*.
 
 Properties that must survive any refactor:
-- Every declared persistent output is always written, and duplicate persistent-output accounts within a
-  batch are rejected (`ExecutionAccountTable::claim_persistent_output`) — these make the anchor a consumed
-  ticket.
-- Sequential writes to one account advance `leaf_count`, even if the current handle and subjects
-  later return to earlier values; a reverted batch does not advance it or emit a usable seed.
-- No seed-steering: the preimage is fully determined by the caller's own signed batch + slot
-  context; front-running the pinned handle makes the batch fail loudly, never compute on an
-  attacker-chosen seed.
-- **Standing invariant**: no close/expiry/reopen path exists for `EncryptedValue` (the lifecycle
-  is deliberately sealed). If one is ever added (#1705, #1710), close-then-recreate can reset the
-  live version anchor, and this argument must be re-derived.
+- The rand nonce is consumed exactly once per execution and advances monotonically; a reverted
+  execution does not advance it or emit a usable seed.
+- No seed-steering: the preimage is the host's own counter plus slot context plus the verified
+  application; nothing in it is chosen by the caller.
+- Duplicate persistent-output accounts within an execution are still rejected
+  (`ExecutionAccountTable::claim_persistent_output`), for the decode cache and the
+  read-after-write rule, not for seed freshness any more.
 
 ## DD-044: Every Event Goes Through The Event CPI, Or Is Not Emitted At All (`emit-events` deleted)
 
@@ -2191,7 +2242,7 @@ Why not ship an allocator:
    step of each other — an allocator spending a raised frame would gain that shape at most one
    step before the trace stops it anyway. The one axis a raised frame would genuinely extend —
    persistent updates of MMR-mature values, whose decode cost grows with on-chain state
-   (`mature_updates_peaks_8/32/55`: 11, 6, 4 steps) — is bounded by history the app accumulated
+   (`mature_updates_peaks_8`, `mature_updates_peaks_32` and `mature_updates` at the peak cap: 19, 7, 4 steps) — is bounded by history the app accumulated
    itself, not by anything a transaction can request more of. Storage rent and compute dominate
    cost.
 
@@ -2202,3 +2253,143 @@ it. Deleted.
 
 Reopening condition: a benchmark showing a real application blocked by the measured shape
 boundaries after the copy-reduction work (argument clone, decode-once, packet pre-sizing) landed.
+
+## DD-047: The Application Is `(program, scope)` — Program Verified, Scope Declared (RFC 035)
+
+Status: adopted (fhevm-internal RFC 035)
+
+Context:
+
+Everything the host had to attribute to "the app" — the HCU block meter and trust record, the
+deny list, permit scoping, the rand seed — keyed on `compute_subject`, a signer the caller chose.
+DD-039 closed the cheap rotation bypasses but left the honest statement that a caller with a
+throwaway output account could still mint a fresh identity per execution, because nothing tied the
+signer to a program. The EVM has no such problem: `msg.sender` *is* the contract.
+
+Decision:
+
+The application identity is the pair `(program, scope)` carried by every encrypted value account.
+`program` is never taken on the caller's word: on every persistent write the output's authority must
+be a PDA of `program`, proven by the seeds the execution declares (interned or literal, bump last —
+`assert_authority_is_program_pda`, `EncryptedValueAuthorityNotProgramPda`). Only `program` can sign
+for such an authority, so only `program` can write a value that claims it. `scope` is whatever
+`program` declares within itself — the mint for the token program, one constant for a program with
+a single namespace — and is trustworthy exactly as half of the pair. Both are seeds of the account
+(`["encrypted-value", program, authority, scope, label]`), so the identity is the address.
+
+An execution runs as one application: every stored operand and output its default authority
+controls must carry the same pair (`FheExecuteMixedScopes`). That pair is what the block meter
+charges (`["hcu-block-meter", program, scope]`), the trust record names (`["hcu-trusted", program,
+scope]`), the permit scopes to (`allowedScopes`), the rand seed binds, and the input attestation's
+`contract_address` must equal (`program`). A value an additional signing authority admits (the
+token writing a receipt into a batcher-owned value) keeps its own application and does not fold,
+but the deny list is not scoped that way: a write is an allow in the value's own application, so
+the execution passes the deny record of every application it touches (`["deny-scope", program,
+scope]`), whoever signed for the value.
+`compute_subject` is deleted from the host, the SDK, the token program and the deposit app;
+reading a stored value into a computation is admitted by its authority's signature and nothing
+else.
+
+Rationale:
+
+A PDA is the one thing on Solana that a program, and only that program, can sign for — the
+`msg.sender` analog the port had been missing. Verifying the program through the authority costs one
+`create_program_address` per output and buys an unforgeable identity with no registry: the program
+is its own registry entry (the "Option B" DD-039 deferred). Declaring the scope rather than deriving
+it keeps the host ignorant of app seed layouts while still letting the token program meter per
+mint.
+
+Consequences:
+
+- Wallets cannot own values. A value's authority is a program PDA, so the test suite drives two
+  specimen programs (`encrypted-counter`, `dep-chain`) instead of a wallet-signed `fhe_execute`;
+  the live operator matrix moved to the pure conformance layer (TESTING_STRATEGY.md).
+- The execution's application is known at build time: the SDK's `AppScope` is a builder input, and
+  the deny record and meter an app must pass are derivable from it.
+- FUTURE_DESIGN §2 (canonicalize the compute-authority-PDA convention) is resolved.
+- **A self-declared identifier can carry consent but never coercion.** Since `program` declares
+  its own `scope`, the pair works for every consumer where the *affected party* signs the literal
+  value it is agreeing to — permit `allowedScopes`, the admin-written trust record, value identity
+  — because nothing can be substituted for a value the party named. It cannot work for a consumer
+  meant to restrain the program itself: a program with unbounded scopes has unbounded per-slot
+  meters (INVARIANTS #41), and a `["deny-scope", program, scope]` record is escaped by declaring
+  another scope. That is not an implementation weakness to tighten; whoever chooses the identifier
+  cannot be bound by it. Rent is the only cost of a fresh scope, and rent is not a bound.
+  Consequently the deny list holds against the case it is for — a legitimate application
+  misbehaving, which cannot rotate away from the balances addressed under its own scope — and not
+  against an attacker with no state to lose, for whom the levers are fees and the block cap. A
+  lever that must bind a program regardless of its cooperation has to key on the one field the
+  program cannot change, its program id (`["deny-program", program]`, or a program-level ceiling);
+  neither is built, and EVM has no program-level ban either, so neither is a parity gap.
+  A create-time check that `scope` names an existing account owned by `program` would ground the
+  identifier — the reference confidential token already satisfies it, since its scope is the
+  address of a keypair-generated, program-owned `ConfidentialMint` — and would stop a program from
+  forwarding a caller-supplied scope and so handing out host-level trust or metering it was never
+  granted. It would not make the deny list or the meter binding. Because grounding is transitive
+  (updates and metering read the stored scope, `preflight.rs` `fold_app`), such a check has to be
+  unconditional and land before any encrypted value exists that will not be wiped; it cannot be
+  retrofitted onto values already written.
+
+## DD-048: Allows Are Sealed On The Write; The Deny List Names Applications; One Connector Path (RFC 035)
+
+Status: adopted (fhevm-internal RFC 035)
+
+Context:
+
+The account carried a mutable `subjects` list (capped at eight) beside the MMR, and a decrypt had
+three paths: current membership, a historical leaf proof, a public leaf proof. The historical and
+public proofs came from a standalone proof service, fetched by the client and embedded in the
+signed request; the connector verified them, and the relayer passed them through. The deny list
+named keys, and was consulted wherever a key joined the list.
+
+Decision:
+
+1. **Allows are sealed on the write.** A persistent output declares the keys allowed on the handle
+   it installs (`PersistentOutput::allow`); the host seals one `HistoricalAccessLeaf` per key in
+   list order, then the `PublicDecryptLeaf` when the output is `make_public`. The account stores no
+   list. There is no instruction to add or remove an allow afterwards — the next write declares
+   the next handle's allows (the token program's `allow_balance_viewers` /
+   `allow_total_supply_viewers` are exactly that: a re-write by the authority). A viewer is a
+   viewer: it decrypts, and cannot grant, seal or write.
+2. **One decrypt path.** A user decrypt proves the allow leaf; the current handle and a replaced
+   one authorize the same way, so `authorize_current` is gone. A public decrypt proves the public
+   leaf. Both proofs are fetched by the KMS connector from the coprocessors' leaf record
+   (`POST /v1/solana/leaf-proofs`, API key; every configured coprocessor asked concurrently, the
+   answers merged — a proof beats no proof, more history beats less — one retry when the record is
+   behind the account's `leaf_count`) and verified against the peaks the connector read on chain.
+   A request names only the encrypted value account and, for a delegated entry, the delegator as
+   allowed key; a client-supplied proof is rejected. Public-decrypt `extraData` v3 is exactly
+   `0x03 ‖ context id ‖ encrypted value account` (65 bytes).
+3. **The leaf record lives in the host listener.** Leaves are recomputed from the confirmed
+   instruction stream and stored in the same database transaction as the compute rows, so the two
+   cannot disagree about which blocks were applied. The standalone `solana-proof-service`, the
+   relayer's proof passthrough, and the SDK's RPC evidence and proof-service clients are deleted
+   (DD-035 superseded).
+4. **The deny list names applications.** `set_deny_scope` writes `DenyScopeRecord` at
+   `["deny-scope", program, scope]`; it gates every allow the host would seal — each persistent
+   write and `make_handle_public`, because sealing a public leaf is an allow. A denied key is not a
+   concept any more: an application is denied, or it is not.
+
+Rationale:
+
+A stored list was a second source of truth beside the MMR, needed a cap, needed admin
+instructions, and made "current" a special case the connector had to read live. Sealing every
+allow as a leaf leaves one authorization fact per (handle, key), permanent, proven the same way
+whether the handle is current or replaced. Fetching proofs connector-side removes the client from
+the trust path entirely — the client could never authorize anything, but it could carry stale or
+malformed evidence into a signed request — and lets the coprocessors, which already hold every
+instruction, own the record instead of a fourth service replaying the chain. Denying an application
+rather than a key matches what a host operator can actually judge (a program and its scope) and
+what the EVM `blockAccount` denies in practice (a contract).
+
+Consequences:
+
+- Account layout: `181 + 32·peaks`, at most 2229 bytes (INVARIANTS Part II, MMR_ACL_MVP.md).
+- `fhe_execute` wire: `previous_subjects` and `output_subjects` gone; `allows` per persistent
+  output; the deny record an execution passes is its application's.
+- The connector pipeline is one explicit sequence with one observation point
+  (`kms-worker/src/core/solana/pipeline.rs`); the relayer pre-checks dead delegation rows
+  advisorily and nothing else (INVARIANTS #50).
+- Delegation records are consumed (INVARIANTS #27 closed).
+- A handle with no allows and no public leaf is undecryptable by everyone, including its author;
+  that is the author's choice, not a stranding.

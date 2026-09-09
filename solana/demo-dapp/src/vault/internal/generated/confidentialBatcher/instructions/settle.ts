@@ -79,7 +79,6 @@ export type SettleInstruction<
   TAccountBatchPayoutTokenAccount extends string | AccountMeta<string> = string,
   TAccountPayoutMintVaultUnderlying extends string | AccountMeta<string> = string,
   TAccountPayoutMintVaultAuthority extends string | AccountMeta<string> = string,
-  TAccountPayoutComputeSigner extends string | AccountMeta<string> = string,
   TAccountPayoutTotalSupplyAuthority extends string | AccountMeta<string> = string,
   TAccountBatchPayoutBalanceValue extends string | AccountMeta<string> = string,
   TAccountPayoutTotalSupplyValue extends string | AccountMeta<string> = string,
@@ -146,9 +145,6 @@ export type SettleInstruction<
       TAccountPayoutMintVaultAuthority extends string
         ? ReadonlyAccount<TAccountPayoutMintVaultAuthority>
         : TAccountPayoutMintVaultAuthority,
-      TAccountPayoutComputeSigner extends string
-        ? ReadonlyAccount<TAccountPayoutComputeSigner>
-        : TAccountPayoutComputeSigner,
       TAccountPayoutTotalSupplyAuthority extends string
         ? ReadonlyAccount<TAccountPayoutTotalSupplyAuthority>
         : TAccountPayoutTotalSupplyAuthority,
@@ -253,7 +249,6 @@ export type SettleAsyncInput<
   TAccountBatchPayoutTokenAccount extends string = string,
   TAccountPayoutMintVaultUnderlying extends string = string,
   TAccountPayoutMintVaultAuthority extends string = string,
-  TAccountPayoutComputeSigner extends string = string,
   TAccountPayoutTotalSupplyAuthority extends string = string,
   TAccountBatchPayoutBalanceValue extends string = string,
   TAccountPayoutTotalSupplyValue extends string = string,
@@ -314,7 +309,6 @@ export type SettleAsyncInput<
   /** by the token CPI. */
   payoutMintVaultUnderlying: Address<TAccountPayoutMintVaultUnderlying>;
   payoutMintVaultAuthority: Address<TAccountPayoutMintVaultAuthority>;
-  payoutComputeSigner: Address<TAccountPayoutComputeSigner>;
   payoutTotalSupplyAuthority: Address<TAccountPayoutTotalSupplyAuthority>;
   batchPayoutBalanceValue: Address<TAccountBatchPayoutBalanceValue>;
   payoutTotalSupplyValue: Address<TAccountPayoutTotalSupplyValue>;
@@ -362,7 +356,6 @@ export async function getSettleInstructionAsync<
   TAccountBatchPayoutTokenAccount extends string,
   TAccountPayoutMintVaultUnderlying extends string,
   TAccountPayoutMintVaultAuthority extends string,
-  TAccountPayoutComputeSigner extends string,
   TAccountPayoutTotalSupplyAuthority extends string,
   TAccountBatchPayoutBalanceValue extends string,
   TAccountPayoutTotalSupplyValue extends string,
@@ -399,7 +392,6 @@ export async function getSettleInstructionAsync<
     TAccountBatchPayoutTokenAccount,
     TAccountPayoutMintVaultUnderlying,
     TAccountPayoutMintVaultAuthority,
-    TAccountPayoutComputeSigner,
     TAccountPayoutTotalSupplyAuthority,
     TAccountBatchPayoutBalanceValue,
     TAccountPayoutTotalSupplyValue,
@@ -438,7 +430,6 @@ export async function getSettleInstructionAsync<
     TAccountBatchPayoutTokenAccount,
     TAccountPayoutMintVaultUnderlying,
     TAccountPayoutMintVaultAuthority,
-    TAccountPayoutComputeSigner,
     TAccountPayoutTotalSupplyAuthority,
     TAccountBatchPayoutBalanceValue,
     TAccountPayoutTotalSupplyValue,
@@ -519,10 +510,6 @@ export async function getSettleInstructionAsync<
     },
     payoutMintVaultAuthority: {
       value: input.payoutMintVaultAuthority ?? null,
-      isWritable: false,
-    },
-    payoutComputeSigner: {
-      value: input.payoutComputeSigner ?? null,
       isWritable: false,
     },
     payoutTotalSupplyAuthority: {
@@ -624,7 +611,6 @@ export async function getSettleInstructionAsync<
       getAccountMeta('batchPayoutTokenAccount', accounts.batchPayoutTokenAccount),
       getAccountMeta('payoutMintVaultUnderlying', accounts.payoutMintVaultUnderlying),
       getAccountMeta('payoutMintVaultAuthority', accounts.payoutMintVaultAuthority),
-      getAccountMeta('payoutComputeSigner', accounts.payoutComputeSigner),
       getAccountMeta('payoutTotalSupplyAuthority', accounts.payoutTotalSupplyAuthority),
       getAccountMeta('batchPayoutBalanceValue', accounts.batchPayoutBalanceValue),
       getAccountMeta('payoutTotalSupplyValue', accounts.payoutTotalSupplyValue),
@@ -663,7 +649,6 @@ export async function getSettleInstructionAsync<
     TAccountBatchPayoutTokenAccount,
     TAccountPayoutMintVaultUnderlying,
     TAccountPayoutMintVaultAuthority,
-    TAccountPayoutComputeSigner,
     TAccountPayoutTotalSupplyAuthority,
     TAccountBatchPayoutBalanceValue,
     TAccountPayoutTotalSupplyValue,
@@ -701,7 +686,6 @@ export type SettleInput<
   TAccountBatchPayoutTokenAccount extends string = string,
   TAccountPayoutMintVaultUnderlying extends string = string,
   TAccountPayoutMintVaultAuthority extends string = string,
-  TAccountPayoutComputeSigner extends string = string,
   TAccountPayoutTotalSupplyAuthority extends string = string,
   TAccountBatchPayoutBalanceValue extends string = string,
   TAccountPayoutTotalSupplyValue extends string = string,
@@ -762,7 +746,6 @@ export type SettleInput<
   /** by the token CPI. */
   payoutMintVaultUnderlying: Address<TAccountPayoutMintVaultUnderlying>;
   payoutMintVaultAuthority: Address<TAccountPayoutMintVaultAuthority>;
-  payoutComputeSigner: Address<TAccountPayoutComputeSigner>;
   payoutTotalSupplyAuthority: Address<TAccountPayoutTotalSupplyAuthority>;
   batchPayoutBalanceValue: Address<TAccountBatchPayoutBalanceValue>;
   payoutTotalSupplyValue: Address<TAccountPayoutTotalSupplyValue>;
@@ -810,7 +793,6 @@ export function getSettleInstruction<
   TAccountBatchPayoutTokenAccount extends string,
   TAccountPayoutMintVaultUnderlying extends string,
   TAccountPayoutMintVaultAuthority extends string,
-  TAccountPayoutComputeSigner extends string,
   TAccountPayoutTotalSupplyAuthority extends string,
   TAccountBatchPayoutBalanceValue extends string,
   TAccountPayoutTotalSupplyValue extends string,
@@ -847,7 +829,6 @@ export function getSettleInstruction<
     TAccountBatchPayoutTokenAccount,
     TAccountPayoutMintVaultUnderlying,
     TAccountPayoutMintVaultAuthority,
-    TAccountPayoutComputeSigner,
     TAccountPayoutTotalSupplyAuthority,
     TAccountBatchPayoutBalanceValue,
     TAccountPayoutTotalSupplyValue,
@@ -885,7 +866,6 @@ export function getSettleInstruction<
   TAccountBatchPayoutTokenAccount,
   TAccountPayoutMintVaultUnderlying,
   TAccountPayoutMintVaultAuthority,
-  TAccountPayoutComputeSigner,
   TAccountPayoutTotalSupplyAuthority,
   TAccountBatchPayoutBalanceValue,
   TAccountPayoutTotalSupplyValue,
@@ -965,10 +945,6 @@ export function getSettleInstruction<
     },
     payoutMintVaultAuthority: {
       value: input.payoutMintVaultAuthority ?? null,
-      isWritable: false,
-    },
-    payoutComputeSigner: {
-      value: input.payoutComputeSigner ?? null,
       isWritable: false,
     },
     payoutTotalSupplyAuthority: {
@@ -1055,7 +1031,6 @@ export function getSettleInstruction<
       getAccountMeta('batchPayoutTokenAccount', accounts.batchPayoutTokenAccount),
       getAccountMeta('payoutMintVaultUnderlying', accounts.payoutMintVaultUnderlying),
       getAccountMeta('payoutMintVaultAuthority', accounts.payoutMintVaultAuthority),
-      getAccountMeta('payoutComputeSigner', accounts.payoutComputeSigner),
       getAccountMeta('payoutTotalSupplyAuthority', accounts.payoutTotalSupplyAuthority),
       getAccountMeta('batchPayoutBalanceValue', accounts.batchPayoutBalanceValue),
       getAccountMeta('payoutTotalSupplyValue', accounts.payoutTotalSupplyValue),
@@ -1094,7 +1069,6 @@ export function getSettleInstruction<
     TAccountBatchPayoutTokenAccount,
     TAccountPayoutMintVaultUnderlying,
     TAccountPayoutMintVaultAuthority,
-    TAccountPayoutComputeSigner,
     TAccountPayoutTotalSupplyAuthority,
     TAccountBatchPayoutBalanceValue,
     TAccountPayoutTotalSupplyValue,
@@ -1163,22 +1137,21 @@ export type ParsedSettleInstruction<
     /** by the token CPI. */
     payoutMintVaultUnderlying: TAccountMetas[21];
     payoutMintVaultAuthority: TAccountMetas[22];
-    payoutComputeSigner: TAccountMetas[23];
-    payoutTotalSupplyAuthority: TAccountMetas[24];
-    batchPayoutBalanceValue: TAccountMetas[25];
-    payoutTotalSupplyValue: TAccountMetas[26];
-    zamaEventAuthority: TAccountMetas[27];
+    payoutTotalSupplyAuthority: TAccountMetas[23];
+    batchPayoutBalanceValue: TAccountMetas[24];
+    payoutTotalSupplyValue: TAccountMetas[25];
+    zamaEventAuthority: TAccountMetas[26];
     /** ZamaHost program (FHE compute + ACL). */
-    zamaProgram: TAccountMetas[28];
-    confidentialTokenEventAuthority: TAccountMetas[29];
+    zamaProgram: TAccountMetas[27];
+    confidentialTokenEventAuthority: TAccountMetas[28];
     /** confidential-token program composed via CPI. */
-    confidentialTokenProgram: TAccountMetas[30];
+    confidentialTokenProgram: TAccountMetas[29];
     /** demo-vault program composed via CPI. */
-    demoVaultProgram: TAccountMetas[31];
+    demoVaultProgram: TAccountMetas[30];
     /** SPL token program. */
-    tokenProgram: TAccountMetas[32];
+    tokenProgram: TAccountMetas[31];
     /** System program used for account creation. */
-    systemProgram: TAccountMetas[33];
+    systemProgram: TAccountMetas[32];
   };
   data: SettleInstructionData;
 };
@@ -1186,10 +1159,10 @@ export type ParsedSettleInstruction<
 export function parseSettleInstruction<TProgram extends string, TAccountMetas extends readonly AccountMeta[]>(
   instruction: Instruction<TProgram> & InstructionWithAccounts<TAccountMetas> & InstructionWithData<ReadonlyUint8Array>,
 ): ParsedSettleInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 34) {
+  if (instruction.accounts.length < 33) {
     throw new SolanaError(SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS, {
       actualAccountMetas: instruction.accounts.length,
-      expectedAccountMetas: 34,
+      expectedAccountMetas: 33,
     });
   }
   let accountIndex = 0;
@@ -1224,7 +1197,6 @@ export function parseSettleInstruction<TProgram extends string, TAccountMetas ex
       batchPayoutTokenAccount: getNextAccount(),
       payoutMintVaultUnderlying: getNextAccount(),
       payoutMintVaultAuthority: getNextAccount(),
-      payoutComputeSigner: getNextAccount(),
       payoutTotalSupplyAuthority: getNextAccount(),
       batchPayoutBalanceValue: getNextAccount(),
       payoutTotalSupplyValue: getNextAccount(),

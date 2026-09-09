@@ -31,18 +31,14 @@ import type { SolanaZkProof } from '@sdk-src/core/types/zkProof-p.js';
 import type { FhevmSolanaChain } from '@sdk-src/core/types/fhevmSolanaChain.js';
 import type { Bytes32Hex } from '@sdk-src/core/types/primitives.js';
 import type { SolanaSubmitInputProofResult } from '@sdk-src/solana/actions/submitInputProof.js';
-import { deriveEncryptedValueId } from '@sdk-src/solana/proof.js';
-import { getConfidentialTransferInstructionAsync } from '../internal/generated/confidentialToken/instructions/confidentialTransfer.js';
-import { findComputeSignerPda } from '../internal/generated/confidentialToken/pdas/computeSigner.js';
+import { getConfidentialTransferInstruction } from '../internal/generated/confidentialToken/instructions/confidentialTransfer.js';
 import {
   CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
   ZAMA_HOST_PROGRAM_ADDRESS,
 } from '../internal/generated/confidentialToken/programAddress.js';
-import { associatedTokenAddress } from '../internal/tokenValueAccount.js';
+import { associatedTokenAddress, transferredAmountValueAddress } from '../internal/tokenValueAccount.js';
 
 const EVENT_AUTHORITY_SEED = new TextEncoder().encode('__event_authority');
-const ENCRYPTED_VALUE_SEED = new TextEncoder().encode('encrypted-value');
-const ENCRYPTED_TRANSFERRED_AMOUNT_LABEL = new TextEncoder().encode('transferred_amount______________');
 
 export type SolanaConfidentialTransferParameters = {
   readonly rpc: Rpc<SolanaRpcApi>;
@@ -73,15 +69,6 @@ async function pda(programAddress: Address, seeds: Uint8Array[]): Promise<Addres
   return (await getProgramDerivedAddress({ programAddress, seeds }))[0];
 }
 
-async function transferredAmountValue(
-  zamaHostProgramAddress: Address,
-  mint: Address,
-  fromAccount: Address,
-): Promise<Address> {
-  const encryptedValueId = deriveEncryptedValueId(base58.decode(mint), base58.decode(fromAccount), ENCRYPTED_TRANSFERRED_AMOUNT_LABEL);
-  return pda(zamaHostProgramAddress, [ENCRYPTED_VALUE_SEED, encryptedValueId]);
-}
-
 /** Builds, simulates, sends, and confirms one confidential-token transfer. */
 export async function confidentialTransfer(
   fhevm: { readonly solanaChain: FhevmSolanaChain; readonly aclProgramAddress: Bytes32Hex },
@@ -110,12 +97,12 @@ export async function confidentialTransfer(
     throw new Error('input proof ACL does not match the configured Zama host program');
   }
 
-  const [computeSigner] = await findComputeSignerPda({ mint });
   if (base58.encode(hexToBytes(inputProof.userAddress)) !== owner.address) {
     throw new Error('input proof user does not match the transfer owner');
   }
-  if (base58.encode(hexToBytes(inputProof.contractAddress)) !== computeSigner) {
-    throw new Error('input proof contract does not match the mint compute signer');
+  // The token program re-checks this binding in-execution (`assert_amount_attestation_binding`).
+  if (base58.encode(hexToBytes(inputProof.contractAddress)) !== CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS) {
+    throw new Error('input proof contract does not match the confidential-token program');
   }
   const signatures = inputProofResult.signatures.map((signature, index) => {
     const bytes = hexToBytes(signature);
@@ -132,7 +119,7 @@ export async function confidentialTransfer(
 
   const tokenEventAuthority = await pda(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, [EVENT_AUTHORITY_SEED]);
   const zamaEventAuthority = await pda(zamaHostProgramAddress, [EVENT_AUTHORITY_SEED]);
-  const transferInstruction = await getConfidentialTransferInstructionAsync({
+  const transferInstruction = getConfidentialTransferInstruction({
     owner,
     payer: feePayer,
     mint,
@@ -143,7 +130,7 @@ export async function confidentialTransfer(
     toAccount: parameters.toAccount,
     fromBalanceValue: parameters.fromBalanceValue,
     toBalanceValue: parameters.toBalanceValue,
-    transferredAmountValue: await transferredAmountValue(zamaHostProgramAddress, mint, parameters.fromAccount),
+    transferredAmountValue: await transferredAmountValueAddress(mint, parameters.fromAccount),
     zamaEventAuthority,
     zamaProgram: zamaHostProgramAddress,
     hostConfig: parameters.hostConfig,
@@ -161,6 +148,8 @@ export async function confidentialTransfer(
       extraData: hexToBytes(inputProofResult.extraData),
       signatures,
     },
+    // A plain transfer leaves no transferred-amount receipt for a recipient program.
+    receipt: null,
   });
   const instruction =
     parameters.denyRecords !== undefined && parameters.denyRecords.length > 0

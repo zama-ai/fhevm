@@ -1,56 +1,50 @@
 {
-  "schema": "zama-solana-user-decrypt-extra-data/v1",
-  "description": "Literal byte vectors for the Solana user-decrypt extraData blob — the hand-mirrored codec in kms-connector/crates/utils/src/types/solana_extra_data.rs (encode_solana_extra_data_context_only / encode_solana_extra_data_mmr_proof / parse_solana_mmr_proof_extra_data, Rust) and sdk/js-sdk/src/solana/actions/publicDecryptCertificate.ts (buildSolanaPublicDecryptMmrProofExtraData, TypeScript — the v0x03 records only; the context-only v0x01 form has no TS encoder anymore). Encoders on both sides must produce blob_hex from input; the strict Rust parser must round-trip every record and reject every malformed entry. All hex is lowercase and unprefixed; proof_slot is a decimal string. Hand-committed literals, deliberately few — the layouts are versioned (v0x01 context-only, v0x03 MMR-proof tail) and change only with a new version byte.",
+  "schema": "zama-solana-public-decrypt-extra-data/v1",
+  "description": "Literal byte vectors for the Solana public-decrypt extraData blob — the hand-mirrored codec in kms-connector/crates/utils/src/types/solana_extra_data.rs (encode_solana_public_decrypt_extra_data / parse_solana_public_decrypt_extra_data, Rust) and sdk/js-sdk/src/solana/actions/publicDecryptCertificate.ts (buildSolanaPublicDecryptExtraData, TypeScript). The blob is 0x03 ‖ context_id(32) ‖ encrypted_value_account(32), exactly 65 bytes: the connector fetches the PublicDecryptLeaf proof itself from the coprocessors' leaf record, so nothing but the account the handle lives in travels here. Encoders on both sides must produce blob_hex from input; the strict parser must round-trip every record and reject every malformed entry. All hex is lowercase and unprefixed. Hand-committed literals, deliberately few — the layout is versioned and changes only with a new version byte.",
   "records": [
     {
-      "name": "context-only-v1",
-      "description": "v0x01: version byte then the 32-byte context id, nothing else.",
-      "input": {
-        "context_id_hex": "0707070707070707070707070707070707070707070707070707070707070707"
-      },
-      "blob_hex": "010707070707070707070707070707070707070707070707070707070707070707"
-    },
-    {
-      "name": "mmr-proof-v3",
-      "description": "v0x03: version, context id, acl_value_key, proof_slot 42 (8 bytes BE), 3-byte length prefix (4 bytes BE), proof bytes verbatim.",
+      "name": "public-decrypt-v3",
+      "description": "v0x03: version, the 32-byte KMS context id, the 32-byte encrypted value account address.",
       "input": {
         "context_id_hex": "0707070707070707070707070707070707070707070707070707070707070707",
-        "acl_value_key_hex": "0909090909090909090909090909090909090909090909090909090909090909",
-        "proof_slot": "42",
-        "mmr_proof_hex": "010203"
+        "encrypted_value_account_hex": "0909090909090909090909090909090909090909090909090909090909090909"
       },
-      "blob_hex": "0307070707070707070707070707070707070707070707070707070707070707070909090909090909090909090909090909090909090909090909090909090909000000000000002a00000003010203"
+      "blob_hex": "0307070707070707070707070707070707070707070707070707070707070707070909090909090909090909090909090909090909090909090909090909090909"
     },
     {
-      "name": "current-acl-empty-proof-v3",
-      "description": "v0x03 with slot 0 and an empty proof: a current-ACL decrypt that names an encrypted value account still uses the proof-tail version so the acl_value_key survives the wire.",
+      "name": "public-decrypt-v3-zero-context",
+      "description": "v0x03 with an all-zero context id: the parser reads the fields positionally and gives no byte value a meaning of its own.",
       "input": {
-        "context_id_hex": "0707070707070707070707070707070707070707070707070707070707070707",
-        "acl_value_key_hex": "0909090909090909090909090909090909090909090909090909090909090909",
-        "proof_slot": "0",
-        "mmr_proof_hex": ""
+        "context_id_hex": "0000000000000000000000000000000000000000000000000000000000000000",
+        "encrypted_value_account_hex": "a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0"
       },
-      "blob_hex": "0307070707070707070707070707070707070707070707070707070707070707070909090909090909090909090909090909090909090909090909090909090909000000000000000000000000"
+      "blob_hex": "030000000000000000000000000000000000000000000000000000000000000000a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0"
     }
   ],
   "malformed": [
     {
       "name": "trailing-byte",
-      "derived_from": "mmr-proof-v3",
-      "mutation": "one extra 0x00 byte appended after the proof — the length prefix no longer covers the body exactly",
-      "blob_hex": "0307070707070707070707070707070707070707070707070707070707070707070909090909090909090909090909090909090909090909090909090909090909000000000000002a0000000301020300"
+      "derived_from": "public-decrypt-v3",
+      "mutation": "one extra 0x00 byte appended — the blob is fixed-width and a longer one is not this layout",
+      "blob_hex": "030707070707070707070707070707070707070707070707070707070707070707090909090909090909090909090909090909090909090909090909090909090900"
     },
     {
-      "name": "truncated-proof",
-      "derived_from": "mmr-proof-v3",
-      "mutation": "last proof byte removed — the body is one byte shorter than the length prefix claims",
-      "blob_hex": "0307070707070707070707070707070707070707070707070707070707070707070909090909090909090909090909090909090909090909090909090909090909000000000000002a000000030102"
+      "name": "truncated-account",
+      "derived_from": "public-decrypt-v3",
+      "mutation": "last account byte removed — a 64-byte blob names no account",
+      "blob_hex": "03070707070707070707070707070707070707070707070707070707070707070709090909090909090909090909090909090909090909090909090909090909"
     },
     {
-      "name": "context-only-to-strict-parser",
-      "derived_from": "context-only-v1",
-      "mutation": "none — a well-formed v0x01 blob fed to the strict v0x03 parser must be rejected, not defaulted",
+      "name": "context-only-v1",
+      "derived_from": "public-decrypt-v3",
+      "mutation": "the retired v0x01 context-only form — a well-formed blob of another version must be rejected, not defaulted to any account",
       "blob_hex": "010707070707070707070707070707070707070707070707070707070707070707"
+    },
+    {
+      "name": "unknown-version",
+      "derived_from": "public-decrypt-v3",
+      "mutation": "the version byte replaced with 0x09 — the body is otherwise identical and must not be parsed under this layout",
+      "blob_hex": "0907070707070707070707070707070707070707070707070707070707070707070909090909090909090909090909090909090909090909090909090909090909"
     }
   ]
 }

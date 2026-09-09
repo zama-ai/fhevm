@@ -37,7 +37,7 @@ import {
   getAddressFromResolvedInstructionAccount,
   type ResolvedInstructionAccount,
 } from '@solana/program-client-core';
-import { findComputeSignerPda, findTokenAccountPda } from '../pdas/index.js';
+import { findTokenAccountPda } from '../pdas/index.js';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '../programAddress.js';
 
 export const INITIALIZE_TOKEN_ACCOUNT_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([
@@ -53,7 +53,6 @@ export type InitializeTokenAccountInstruction<
   TAccountPayer extends string | AccountMeta<string> = string,
   TAccountOwner extends string | AccountMeta<string> = string,
   TAccountMint extends string | AccountMeta<string> = string,
-  TAccountComputeSigner extends string | AccountMeta<string> = string,
   TAccountTokenAccount extends string | AccountMeta<string> = string,
   TAccountBalanceEncryptedValue extends string | AccountMeta<string> = string,
   TAccountZamaEventAuthority extends string | AccountMeta<string> = string,
@@ -74,7 +73,6 @@ export type InitializeTokenAccountInstruction<
         : TAccountPayer,
       TAccountOwner extends string ? ReadonlyAccount<TAccountOwner> : TAccountOwner,
       TAccountMint extends string ? ReadonlyAccount<TAccountMint> : TAccountMint,
-      TAccountComputeSigner extends string ? ReadonlyAccount<TAccountComputeSigner> : TAccountComputeSigner,
       TAccountTokenAccount extends string ? WritableAccount<TAccountTokenAccount> : TAccountTokenAccount,
       TAccountBalanceEncryptedValue extends string
         ? WritableAccount<TAccountBalanceEncryptedValue>
@@ -126,7 +124,6 @@ export type InitializeTokenAccountAsyncInput<
   TAccountPayer extends string = string,
   TAccountOwner extends string = string,
   TAccountMint extends string = string,
-  TAccountComputeSigner extends string = string,
   TAccountTokenAccount extends string = string,
   TAccountBalanceEncryptedValue extends string = string,
   TAccountZamaEventAuthority extends string = string,
@@ -141,13 +138,12 @@ export type InitializeTokenAccountAsyncInput<
   /** Pays rent for the token account and its initial encrypted balance. */
   payer: TransactionSigner<TAccountPayer>;
   /**
-   * Account owner. The canonical token-account PDA, stored owner, and
-   * encrypted-value ACL audience are all derived from this address.
+   * Account owner. The canonical token-account PDA, stored owner, and the key allowed to
+   * decrypt the balance are all derived from this address.
    */
   owner: Address<TAccountOwner>;
   /** Confidential mint this account belongs to. */
   mint: Address<TAccountMint>;
-  computeSigner?: Address<TAccountComputeSigner>;
   tokenAccount?: Address<TAccountTokenAccount>;
   balanceEncryptedValue: Address<TAccountBalanceEncryptedValue>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
@@ -158,12 +154,12 @@ export type InitializeTokenAccountAsyncInput<
   /** System program used for account creation. */
   systemProgram?: Address<TAccountSystemProgram>;
   /**
-   * canonical `["hcu-block-meter", compute_signer]` PDA. Supplied by an untrusted mint under a
+   * canonical `["hcu-block-meter", program, mint]` PDA. Supplied by an untrusted mint under a
    * metering-band cap; omitted when the mint is trusted or the cap is unrestricted.
    */
   hcuBlockMeter?: Address<TAccountHcuBlockMeter>;
   /**
-   * canonical `["hcu-trusted", compute_signer]` PDA. Present + valid bypasses the cap; absent
+   * canonical `["hcu-trusted", program, mint]` PDA. Present + valid bypasses the cap; absent
    * means the mint is metered.
    */
   hcuTrustedAppRecord?: Address<TAccountHcuTrustedAppRecord>;
@@ -175,7 +171,6 @@ export async function getInitializeTokenAccountInstructionAsync<
   TAccountPayer extends string,
   TAccountOwner extends string,
   TAccountMint extends string,
-  TAccountComputeSigner extends string,
   TAccountTokenAccount extends string,
   TAccountBalanceEncryptedValue extends string,
   TAccountZamaEventAuthority extends string,
@@ -192,7 +187,6 @@ export async function getInitializeTokenAccountInstructionAsync<
     TAccountPayer,
     TAccountOwner,
     TAccountMint,
-    TAccountComputeSigner,
     TAccountTokenAccount,
     TAccountBalanceEncryptedValue,
     TAccountZamaEventAuthority,
@@ -211,7 +205,6 @@ export async function getInitializeTokenAccountInstructionAsync<
     TAccountPayer,
     TAccountOwner,
     TAccountMint,
-    TAccountComputeSigner,
     TAccountTokenAccount,
     TAccountBalanceEncryptedValue,
     TAccountZamaEventAuthority,
@@ -232,7 +225,6 @@ export async function getInitializeTokenAccountInstructionAsync<
     payer: { value: input.payer ?? null, isWritable: true },
     owner: { value: input.owner ?? null, isWritable: false },
     mint: { value: input.mint ?? null, isWritable: false },
-    computeSigner: { value: input.computeSigner ?? null, isWritable: false },
     tokenAccount: { value: input.tokenAccount ?? null, isWritable: true },
     balanceEncryptedValue: {
       value: input.balanceEncryptedValue ?? null,
@@ -256,11 +248,6 @@ export async function getInitializeTokenAccountInstructionAsync<
   const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
   // Resolve default values.
-  if (!accounts.computeSigner.value) {
-    accounts.computeSigner.value = await findComputeSignerPda({
-      mint: getAddressFromResolvedInstructionAccount('mint', accounts.mint.value),
-    });
-  }
   if (!accounts.tokenAccount.value) {
     accounts.tokenAccount.value = await findTokenAccountPda({
       mint: getAddressFromResolvedInstructionAccount('mint', accounts.mint.value),
@@ -281,7 +268,6 @@ export async function getInitializeTokenAccountInstructionAsync<
       getAccountMeta('payer', accounts.payer),
       getAccountMeta('owner', accounts.owner),
       getAccountMeta('mint', accounts.mint),
-      getAccountMeta('computeSigner', accounts.computeSigner),
       getAccountMeta('tokenAccount', accounts.tokenAccount),
       getAccountMeta('balanceEncryptedValue', accounts.balanceEncryptedValue),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
@@ -300,7 +286,6 @@ export async function getInitializeTokenAccountInstructionAsync<
     TAccountPayer,
     TAccountOwner,
     TAccountMint,
-    TAccountComputeSigner,
     TAccountTokenAccount,
     TAccountBalanceEncryptedValue,
     TAccountZamaEventAuthority,
@@ -318,7 +303,6 @@ export type InitializeTokenAccountInput<
   TAccountPayer extends string = string,
   TAccountOwner extends string = string,
   TAccountMint extends string = string,
-  TAccountComputeSigner extends string = string,
   TAccountTokenAccount extends string = string,
   TAccountBalanceEncryptedValue extends string = string,
   TAccountZamaEventAuthority extends string = string,
@@ -333,13 +317,12 @@ export type InitializeTokenAccountInput<
   /** Pays rent for the token account and its initial encrypted balance. */
   payer: TransactionSigner<TAccountPayer>;
   /**
-   * Account owner. The canonical token-account PDA, stored owner, and
-   * encrypted-value ACL audience are all derived from this address.
+   * Account owner. The canonical token-account PDA, stored owner, and the key allowed to
+   * decrypt the balance are all derived from this address.
    */
   owner: Address<TAccountOwner>;
   /** Confidential mint this account belongs to. */
   mint: Address<TAccountMint>;
-  computeSigner: Address<TAccountComputeSigner>;
   tokenAccount: Address<TAccountTokenAccount>;
   balanceEncryptedValue: Address<TAccountBalanceEncryptedValue>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
@@ -350,12 +333,12 @@ export type InitializeTokenAccountInput<
   /** System program used for account creation. */
   systemProgram?: Address<TAccountSystemProgram>;
   /**
-   * canonical `["hcu-block-meter", compute_signer]` PDA. Supplied by an untrusted mint under a
+   * canonical `["hcu-block-meter", program, mint]` PDA. Supplied by an untrusted mint under a
    * metering-band cap; omitted when the mint is trusted or the cap is unrestricted.
    */
   hcuBlockMeter?: Address<TAccountHcuBlockMeter>;
   /**
-   * canonical `["hcu-trusted", compute_signer]` PDA. Present + valid bypasses the cap; absent
+   * canonical `["hcu-trusted", program, mint]` PDA. Present + valid bypasses the cap; absent
    * means the mint is metered.
    */
   hcuTrustedAppRecord?: Address<TAccountHcuTrustedAppRecord>;
@@ -367,7 +350,6 @@ export function getInitializeTokenAccountInstruction<
   TAccountPayer extends string,
   TAccountOwner extends string,
   TAccountMint extends string,
-  TAccountComputeSigner extends string,
   TAccountTokenAccount extends string,
   TAccountBalanceEncryptedValue extends string,
   TAccountZamaEventAuthority extends string,
@@ -384,7 +366,6 @@ export function getInitializeTokenAccountInstruction<
     TAccountPayer,
     TAccountOwner,
     TAccountMint,
-    TAccountComputeSigner,
     TAccountTokenAccount,
     TAccountBalanceEncryptedValue,
     TAccountZamaEventAuthority,
@@ -402,7 +383,6 @@ export function getInitializeTokenAccountInstruction<
   TAccountPayer,
   TAccountOwner,
   TAccountMint,
-  TAccountComputeSigner,
   TAccountTokenAccount,
   TAccountBalanceEncryptedValue,
   TAccountZamaEventAuthority,
@@ -422,7 +402,6 @@ export function getInitializeTokenAccountInstruction<
     payer: { value: input.payer ?? null, isWritable: true },
     owner: { value: input.owner ?? null, isWritable: false },
     mint: { value: input.mint ?? null, isWritable: false },
-    computeSigner: { value: input.computeSigner ?? null, isWritable: false },
     tokenAccount: { value: input.tokenAccount ?? null, isWritable: true },
     balanceEncryptedValue: {
       value: input.balanceEncryptedValue ?? null,
@@ -460,7 +439,6 @@ export function getInitializeTokenAccountInstruction<
       getAccountMeta('payer', accounts.payer),
       getAccountMeta('owner', accounts.owner),
       getAccountMeta('mint', accounts.mint),
-      getAccountMeta('computeSigner', accounts.computeSigner),
       getAccountMeta('tokenAccount', accounts.tokenAccount),
       getAccountMeta('balanceEncryptedValue', accounts.balanceEncryptedValue),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
@@ -479,7 +457,6 @@ export function getInitializeTokenAccountInstruction<
     TAccountPayer,
     TAccountOwner,
     TAccountMint,
-    TAccountComputeSigner,
     TAccountTokenAccount,
     TAccountBalanceEncryptedValue,
     TAccountZamaEventAuthority,
@@ -502,34 +479,33 @@ export type ParsedInitializeTokenAccountInstruction<
     /** Pays rent for the token account and its initial encrypted balance. */
     payer: TAccountMetas[0];
     /**
-     * Account owner. The canonical token-account PDA, stored owner, and
-     * encrypted-value ACL audience are all derived from this address.
+     * Account owner. The canonical token-account PDA, stored owner, and the key allowed to
+     * decrypt the balance are all derived from this address.
      */
     owner: TAccountMetas[1];
     /** Confidential mint this account belongs to. */
     mint: TAccountMetas[2];
-    computeSigner: TAccountMetas[3];
-    tokenAccount: TAccountMetas[4];
-    balanceEncryptedValue: TAccountMetas[5];
-    zamaEventAuthority: TAccountMetas[6];
+    tokenAccount: TAccountMetas[3];
+    balanceEncryptedValue: TAccountMetas[4];
+    zamaEventAuthority: TAccountMetas[5];
     /** ZamaHost program used to create the initial balance handle. */
-    zamaProgram: TAccountMetas[7];
+    zamaProgram: TAccountMetas[6];
     /** ZamaHost config used for handle derivation. */
-    hostConfig: TAccountMetas[8];
+    hostConfig: TAccountMetas[7];
     /** System program used for account creation. */
-    systemProgram: TAccountMetas[9];
+    systemProgram: TAccountMetas[8];
     /**
-     * canonical `["hcu-block-meter", compute_signer]` PDA. Supplied by an untrusted mint under a
+     * canonical `["hcu-block-meter", program, mint]` PDA. Supplied by an untrusted mint under a
      * metering-band cap; omitted when the mint is trusted or the cap is unrestricted.
      */
-    hcuBlockMeter?: TAccountMetas[10] | undefined;
+    hcuBlockMeter?: TAccountMetas[9] | undefined;
     /**
-     * canonical `["hcu-trusted", compute_signer]` PDA. Present + valid bypasses the cap; absent
+     * canonical `["hcu-trusted", program, mint]` PDA. Present + valid bypasses the cap; absent
      * means the mint is metered.
      */
-    hcuTrustedAppRecord?: TAccountMetas[11] | undefined;
-    eventAuthority: TAccountMetas[12];
-    program: TAccountMetas[13];
+    hcuTrustedAppRecord?: TAccountMetas[10] | undefined;
+    eventAuthority: TAccountMetas[11];
+    program: TAccountMetas[12];
   };
   data: InitializeTokenAccountInstructionData;
 };
@@ -540,10 +516,10 @@ export function parseInitializeTokenAccountInstruction<
 >(
   instruction: Instruction<TProgram> & InstructionWithAccounts<TAccountMetas> & InstructionWithData<ReadonlyUint8Array>,
 ): ParsedInitializeTokenAccountInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 14) {
+  if (instruction.accounts.length < 13) {
     throw new SolanaError(SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS, {
       actualAccountMetas: instruction.accounts.length,
-      expectedAccountMetas: 14,
+      expectedAccountMetas: 13,
     });
   }
   let accountIndex = 0;
@@ -562,7 +538,6 @@ export function parseInitializeTokenAccountInstruction<
       payer: getNextAccount(),
       owner: getNextAccount(),
       mint: getNextAccount(),
-      computeSigner: getNextAccount(),
       tokenAccount: getNextAccount(),
       balanceEncryptedValue: getNextAccount(),
       zamaEventAuthority: getNextAccount(),

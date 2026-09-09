@@ -1,18 +1,16 @@
 // What to do when a request does not come back with an answer.
 //
-// Three actions exist, and classification exists to pick one: resolve the evidence again and submit a
-// new request, submit the same request again later, or stop. None of them involves the wallet —
-// evidence lives outside the signed permit, so a rebuilt proof and a bounded retry are new requests
-// under the signature the user already gave.
+// Two actions exist, and classification exists to pick one: submit the same request again later, or
+// stop. Neither involves the wallet — a bounded retry is a new submission under the signature the
+// user already gave.
 //
-// The Connector has its own taxonomy for why it refused a request, with the same three actions in it.
-// That classification does not reach a client: when the Connector refuses, no response is produced,
-// and what the SDK observes is a request that was accepted and never answered. So the action is
-// inferred here from what is observable — the relayer's machine-readable label, the HTTP-level
-// overload signal, and the absence of an answer — rather than read off the wire. The one case where
-// the inference matters is the unanswered request: both of its evidence-related causes, a proof that
-// an append has moved past and a handle an update has replaced, are repaired by resolving the evidence
-// again, which is why they need not be told apart.
+// The Connector has its own taxonomy for why it refused a request. That classification does not
+// reach a client: when the Connector refuses, no response is produced, and what the SDK observes is a
+// request that was accepted and never answered. So the action is inferred here from what is
+// observable — the relayer's machine-readable label, the HTTP-level overload signal, and the absence
+// of an answer — rather than read off the wire. The unanswered request is retried unchanged: its one
+// transient cause a client can act on is a leaf the coprocessors had not indexed yet when the
+// Connector asked, and the same bytes a moment later are the repair.
 
 /** What the transport saw instead of an answer. */
 export type SolanaUserDecryptRejection =
@@ -22,16 +20,11 @@ export type SolanaUserDecryptRejection =
   | { readonly kind: 'overloaded'; readonly retryAfterSeconds: number }
   /** The job ran and ended in failure. */
   | { readonly kind: 'failed'; readonly label: string; readonly message?: string }
-  /**
-   * The job was accepted and produced nothing. This is what a Connector refusal looks like from
-   * here, and the two evidence-related causes behind it are the ones a client can act on.
-   */
+  /** The job was accepted and produced nothing. This is what a Connector refusal looks like from here. */
   | { readonly kind: 'unanswered' };
 
 /** What to do about a rejection. */
 export type SolanaUserDecryptRecovery =
-  /** Resolve the evidence again and submit the request the new evidence makes. */
-  | { readonly action: 'resolve-again' }
   /** Submit the same bytes again, no sooner than this many seconds from now. */
   | { readonly action: 'retry-unchanged'; readonly afterSeconds: number }
   /** Nothing this layer can do repairs it. */
@@ -91,7 +84,7 @@ export function classifySolanaUserDecryptRejection(rejection: SolanaUserDecryptR
           rejection.retryAfterSeconds > 0 ? rejection.retryAfterSeconds : SOLANA_USER_DECRYPT_DEFAULT_RETRY_SECONDS,
       };
     case 'unanswered':
-      return { action: 'resolve-again' };
+      return { action: 'retry-unchanged', afterSeconds: SOLANA_USER_DECRYPT_DEFAULT_RETRY_SECONDS };
   }
 }
 

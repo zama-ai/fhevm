@@ -1,35 +1,32 @@
 name: solana-e2e
 
 # Brings up a fresh lifecycle-owned demo stack with the Solana host (`bun run demo up`) and runs
-# the typed bun:test scenario suite (test-suite/fhevm/e2e/scenarios) against it: the decrypt
-# vertical (input ZK + on-chain secp256k1 bind -> compute -> public-decrypt -> PURE-SDK
-# user-decrypt, no kms checkout), the fhe_execute operator wiring, the confidential-transfer arc,
-# and the token consume arc (wrap -> burn -> seal -> certified decrypt -> redeem -> disclose) with
-# its adversarial context-mismatch tail. Every assertion is typed — the retired full-vertical.sh
-# label greps (and the checker that policed them) have no successor because the failure mode is
-# structurally gone.
+# the typed bun:test scenario suite (test-suite/fhevm/e2e/scenarios) against it: the fhe vertical
+# (input ZK + on-chain secp256k1 bind -> compute -> public-decrypt -> PURE-SDK user-decrypt, no
+# kms checkout), the delegated user-decrypt, the confidential-transfer arc, the token vertical
+# (wrap -> burn -> seal -> certified decrypt -> redeem -> disclose) with its adversarial
+# context-mismatch tail, the deposit arc and the load smoke. Every assertion is typed — the
+# retired full-vertical.sh label greps (and the checker that policed them) have no successor
+# because the failure mode is structurally gone.
 #
-# Computation ingestion is Yellowstone off-chain reconstruction: the coprocessor is fed by gRPC.
-# Created-public lifecycle outputs also emit their narrow CPI event because their public-leaf
-# append is not reconstructible from the computation alone.
+# Computation ingestion is Yellowstone off-chain reconstruction: the coprocessor is fed by gRPC,
+# and the host listener recomputes every allow leaf from the confirmed instruction stream.
 #
 # The lifecycle bring-up also deploys and seeds the confidential-vault demo (#1760). After the e2e
 # phases, the same job refreshes that still-owned boot:
 #   - `bun run demo reseed`: re-deploy the two demo programs, seed fresh, rotate authorization
 #   - deposit-arc smoke (bun run demo:smoke): the live exercise of the vault's full forward path
 #     (fund -> init accounts -> wrap -> join -> dispatch -> settle -> claim -> decrypt), hard-gated
-#   - browser-reality: CORS preflight against relayer (with RELAYER_PERMISSIVE_CORS set) + proof
-#     service, and the faucet endpoints callable from a browser origin
+#   - browser-reality: CORS preflight against the relayer (with RELAYER_PERMISSIVE_CORS set), and
+#     the faucet endpoints callable from a browser origin
 # The two demo programs (demo_vault, confidential_batcher) deploy from committed keypairs under
 # solana/scripts/demo/demo-keypairs/ (see its README).
 on:
-  # Auto-run on PRs targeting the Solana feature branch *or* the stacked recovery
-  # base used by vertical cutover PRs (#3214/#3215). workflow_dispatch remains for
+  # Auto-run on PRs targeting the Solana feature branch. workflow_dispatch remains for
   # manual re-runs / demo rehearsals with custom values at an arbitrary head.
   pull_request:
     branches:
       - feature/solana
-      - elias/solana-proof-service-recovery
   workflow_dispatch:
     inputs:
       deposit-amount:
@@ -67,13 +64,12 @@ jobs:
       packages: "read" # pull repo-owned images from ghcr.io
     env:
       DEMO_DEPOSIT_AMOUNT: ${{ inputs.deposit-amount || '1000' }}
-      # Opt-in permissive CORS for the demo dApp origin (relayer + proof service default OFF; only
-      # demo mode sets these). Set at the job level so the relayer and proof-service containers come
-      # up with the demo CORS layer on at bring-up time; each is delivered to its container via a
-      # ${..._PERMISSIVE_CORS:-} passthrough in the respective compose file. Intentional in this
-      # per-PR lane: the browser-reality step below asserts the demo CORS behavior every run.
+      # Opt-in permissive CORS for the demo dApp origin (relayer default OFF; only demo mode sets
+      # this). Set at the job level so the relayer container comes up with the demo CORS layer on at
+      # bring-up time, delivered via the ${RELAYER_PERMISSIVE_CORS:-} passthrough in its compose
+      # file. Intentional in this per-PR lane: the browser-reality step below asserts the demo CORS
+      # behavior every run.
       RELAYER_PERMISSIVE_CORS: "1"
-      SOLANA_PROOF_PERMISSIVE_CORS: "1"
       # Acceptance clients read the protected token file directly. Never persist the fragment token
       # in GitHub Actions logs; interactive local runs keep printing the launch URL by default.
       DEMO_PRINT_LAUNCH_URL: "0"
@@ -237,7 +233,7 @@ jobs:
         # demo layer.
         if: ${{ !cancelled() && steps.demo-reseed.outcome == 'success' }}
         working-directory: test-suite/fhevm
-        # fetch() OPTIONS preflights (relayer with RELAYER_PERMISSIVE_CORS on, proof service, faucet)
+        # fetch() OPTIONS preflights (relayer with RELAYER_PERMISSIVE_CORS on, faucet)
         # from the exact 127.0.0.1 dApp origin, then exercise the current boot capability against the
         # protected faucet and the same-origin, current-boot Vite session. TS, not bash: the
         # assertions are logic.

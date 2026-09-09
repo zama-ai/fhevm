@@ -78,7 +78,7 @@ shell or CI runner that is known to preserve descendants after the command retur
 when the manifest's exact process start identities and Docker container IDs are still healthy.
 `doctor` also checks Docker CPU/memory, the pinned kms-core image manifest, committed demo
 keypairs, and runtime-directory writability. `status` probes the validator, listener process,
-faucet, dApp, KMS, relayer, and proof-service readiness, plus the Docker state/health of every
+faucet, dApp, KMS, and relayer readiness, plus the Docker state/health of every
 container captured for the scenario. `logs` resolves every Docker alias from those exact owned
 container IDs; the optional `fhevm-` name prefix may be omitted.
 

@@ -32,14 +32,13 @@ function claim(overrides: Partial<SolanaPublicDecryptCertificateClaim> = {}): So
     abiEncodedCleartext: hex(cleartextBytes),
     signatures: [hex(signatureBytes)],
     extraData: `0x${hex(extraDataBytes)}`,
-    inclusionProof,
     ...overrides,
   };
 }
 
 describe('verifyPublicDecryptArgsFromClaim', () => {
   it('decodes every claim field into the verifier wire types', () => {
-    const args = verifyPublicDecryptArgsFromClaim(claim());
+    const args = verifyPublicDecryptArgsFromClaim(claim(), inclusionProof);
     expect(Array.from(args.handle)).toEqual(Array.from(handleBytes));
     expect(Array.from(args.cleartext)).toEqual(Array.from(cleartextBytes));
     expect(args.signatures).toHaveLength(1);
@@ -50,17 +49,19 @@ describe('verifyPublicDecryptArgsFromClaim', () => {
   });
 
   it('rejects a non-32-byte handle', () => {
-    expect(() => verifyPublicDecryptArgsFromClaim(claim({ handle: '0xabcd' }))).toThrow(/handle must be 32 bytes/);
+    expect(() => verifyPublicDecryptArgsFromClaim(claim({ handle: '0xabcd' }), inclusionProof)).toThrow(
+      /handle must be 32 bytes/,
+    );
   });
 
   it('rejects a non-32-byte cleartext', () => {
-    expect(() => verifyPublicDecryptArgsFromClaim(claim({ abiEncodedCleartext: '2a' }))).toThrow(
+    expect(() => verifyPublicDecryptArgsFromClaim(claim({ abiEncodedCleartext: '2a' }), inclusionProof)).toThrow(
       /cleartext must be a 32-byte uint256/,
     );
   });
 
   it('rejects a non-65-byte signature', () => {
-    expect(() => verifyPublicDecryptArgsFromClaim(claim({ signatures: ['1122'] }))).toThrow(
+    expect(() => verifyPublicDecryptArgsFromClaim(claim({ signatures: ['1122'] }), inclusionProof)).toThrow(
       /signature\[0\] must be 65 bytes/,
     );
   });
@@ -71,7 +72,11 @@ describe('buildVerifyPublicDecryptInstruction', () => {
     const kmsContext = addr(2);
     const encryptedValue = addr(3);
     const hostConfig = addr(4);
-    const instruction = await buildVerifyPublicDecryptInstruction({ hostConfig, kmsContext, encryptedValue }, claim());
+    const instruction = await buildVerifyPublicDecryptInstruction(
+      { hostConfig, kmsContext, encryptedValue },
+      claim(),
+      inclusionProof,
+    );
 
     expect(instruction.programAddress).toBe(ZAMA_HOST_PROGRAM_ADDRESS);
     expect(instruction.accounts?.map((a: { readonly address: Address }) => a.address)).toEqual([

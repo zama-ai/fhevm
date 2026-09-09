@@ -59,7 +59,6 @@ export type QuitInstruction<
   TAccountJoinUnderlyingMint extends string | AccountMeta<string> = string,
   TAccountBatchAuthorityAta extends string | AccountMeta<string> = string,
   TAccountUserAta extends string | AccountMeta<string> = string,
-  TAccountJoinComputeSigner extends string | AccountMeta<string> = string,
   TAccountBatchJoinTokenAccount extends string | AccountMeta<string> = string,
   TAccountUserTokenAccount extends string | AccountMeta<string> = string,
   TAccountBatchBalanceValue extends string | AccountMeta<string> = string,
@@ -95,7 +94,6 @@ export type QuitInstruction<
         : TAccountJoinUnderlyingMint,
       TAccountBatchAuthorityAta extends string ? ReadonlyAccount<TAccountBatchAuthorityAta> : TAccountBatchAuthorityAta,
       TAccountUserAta extends string ? ReadonlyAccount<TAccountUserAta> : TAccountUserAta,
-      TAccountJoinComputeSigner extends string ? ReadonlyAccount<TAccountJoinComputeSigner> : TAccountJoinComputeSigner,
       TAccountBatchJoinTokenAccount extends string
         ? WritableAccount<TAccountBatchJoinTokenAccount>
         : TAccountBatchJoinTokenAccount,
@@ -152,7 +150,6 @@ export type QuitAsyncInput<
   TAccountJoinUnderlyingMint extends string = string,
   TAccountBatchAuthorityAta extends string = string,
   TAccountUserAta extends string = string,
-  TAccountJoinComputeSigner extends string = string,
   TAccountBatchJoinTokenAccount extends string = string,
   TAccountUserTokenAccount extends string = string,
   TAccountBatchBalanceValue extends string = string,
@@ -174,7 +171,7 @@ export type QuitAsyncInput<
   batcher: Address<TAccountBatcher>;
   /** The pending batch being quit. */
   batch: Address<TAccountBatch>;
-  /** the reset execution's compute subject and encrypted value account authority. */
+  /** execution's value authority. */
   batchAuthority?: Address<TAccountBatchAuthority>;
   /** The user's join record for this batch. */
   joinRecord?: Address<TAccountJoinRecord>;
@@ -183,7 +180,6 @@ export type QuitAsyncInput<
   joinUnderlyingMint: Address<TAccountJoinUnderlyingMint>;
   batchAuthorityAta: Address<TAccountBatchAuthorityAta>;
   userAta: Address<TAccountUserAta>;
-  joinComputeSigner: Address<TAccountJoinComputeSigner>;
   /** validated by the token CPI and pinned below. */
   batchJoinTokenAccount: Address<TAccountBatchJoinTokenAccount>;
   /** so the refund can only land with the quitting user, never back on the batch account. */
@@ -216,7 +212,6 @@ export async function getQuitInstructionAsync<
   TAccountJoinUnderlyingMint extends string,
   TAccountBatchAuthorityAta extends string,
   TAccountUserAta extends string,
-  TAccountJoinComputeSigner extends string,
   TAccountBatchJoinTokenAccount extends string,
   TAccountUserTokenAccount extends string,
   TAccountBatchBalanceValue extends string,
@@ -242,7 +237,6 @@ export async function getQuitInstructionAsync<
     TAccountJoinUnderlyingMint,
     TAccountBatchAuthorityAta,
     TAccountUserAta,
-    TAccountJoinComputeSigner,
     TAccountBatchJoinTokenAccount,
     TAccountUserTokenAccount,
     TAccountBatchBalanceValue,
@@ -270,7 +264,6 @@ export async function getQuitInstructionAsync<
     TAccountJoinUnderlyingMint,
     TAccountBatchAuthorityAta,
     TAccountUserAta,
-    TAccountJoinComputeSigner,
     TAccountBatchJoinTokenAccount,
     TAccountUserTokenAccount,
     TAccountBatchBalanceValue,
@@ -309,10 +302,6 @@ export async function getQuitInstructionAsync<
       isWritable: false,
     },
     userAta: { value: input.userAta ?? null, isWritable: false },
-    joinComputeSigner: {
-      value: input.joinComputeSigner ?? null,
-      isWritable: false,
-    },
     batchJoinTokenAccount: {
       value: input.batchJoinTokenAccount ?? null,
       isWritable: true,
@@ -392,7 +381,6 @@ export async function getQuitInstructionAsync<
       getAccountMeta('joinUnderlyingMint', accounts.joinUnderlyingMint),
       getAccountMeta('batchAuthorityAta', accounts.batchAuthorityAta),
       getAccountMeta('userAta', accounts.userAta),
-      getAccountMeta('joinComputeSigner', accounts.joinComputeSigner),
       getAccountMeta('batchJoinTokenAccount', accounts.batchJoinTokenAccount),
       getAccountMeta('userTokenAccount', accounts.userTokenAccount),
       getAccountMeta('batchBalanceValue', accounts.batchBalanceValue),
@@ -420,7 +408,6 @@ export async function getQuitInstructionAsync<
     TAccountJoinUnderlyingMint,
     TAccountBatchAuthorityAta,
     TAccountUserAta,
-    TAccountJoinComputeSigner,
     TAccountBatchJoinTokenAccount,
     TAccountUserTokenAccount,
     TAccountBatchBalanceValue,
@@ -447,7 +434,6 @@ export type QuitInput<
   TAccountJoinUnderlyingMint extends string = string,
   TAccountBatchAuthorityAta extends string = string,
   TAccountUserAta extends string = string,
-  TAccountJoinComputeSigner extends string = string,
   TAccountBatchJoinTokenAccount extends string = string,
   TAccountUserTokenAccount extends string = string,
   TAccountBatchBalanceValue extends string = string,
@@ -469,7 +455,7 @@ export type QuitInput<
   batcher: Address<TAccountBatcher>;
   /** The pending batch being quit. */
   batch: Address<TAccountBatch>;
-  /** the reset execution's compute subject and encrypted value account authority. */
+  /** execution's value authority. */
   batchAuthority: Address<TAccountBatchAuthority>;
   /** The user's join record for this batch. */
   joinRecord: Address<TAccountJoinRecord>;
@@ -478,7 +464,6 @@ export type QuitInput<
   joinUnderlyingMint: Address<TAccountJoinUnderlyingMint>;
   batchAuthorityAta: Address<TAccountBatchAuthorityAta>;
   userAta: Address<TAccountUserAta>;
-  joinComputeSigner: Address<TAccountJoinComputeSigner>;
   /** validated by the token CPI and pinned below. */
   batchJoinTokenAccount: Address<TAccountBatchJoinTokenAccount>;
   /** so the refund can only land with the quitting user, never back on the batch account. */
@@ -511,7 +496,6 @@ export function getQuitInstruction<
   TAccountJoinUnderlyingMint extends string,
   TAccountBatchAuthorityAta extends string,
   TAccountUserAta extends string,
-  TAccountJoinComputeSigner extends string,
   TAccountBatchJoinTokenAccount extends string,
   TAccountUserTokenAccount extends string,
   TAccountBatchBalanceValue extends string,
@@ -537,7 +521,6 @@ export function getQuitInstruction<
     TAccountJoinUnderlyingMint,
     TAccountBatchAuthorityAta,
     TAccountUserAta,
-    TAccountJoinComputeSigner,
     TAccountBatchJoinTokenAccount,
     TAccountUserTokenAccount,
     TAccountBatchBalanceValue,
@@ -564,7 +547,6 @@ export function getQuitInstruction<
   TAccountJoinUnderlyingMint,
   TAccountBatchAuthorityAta,
   TAccountUserAta,
-  TAccountJoinComputeSigner,
   TAccountBatchJoinTokenAccount,
   TAccountUserTokenAccount,
   TAccountBatchBalanceValue,
@@ -602,10 +584,6 @@ export function getQuitInstruction<
       isWritable: false,
     },
     userAta: { value: input.userAta ?? null, isWritable: false },
-    joinComputeSigner: {
-      value: input.joinComputeSigner ?? null,
-      isWritable: false,
-    },
     batchJoinTokenAccount: {
       value: input.batchJoinTokenAccount ?? null,
       isWritable: true,
@@ -674,7 +652,6 @@ export function getQuitInstruction<
       getAccountMeta('joinUnderlyingMint', accounts.joinUnderlyingMint),
       getAccountMeta('batchAuthorityAta', accounts.batchAuthorityAta),
       getAccountMeta('userAta', accounts.userAta),
-      getAccountMeta('joinComputeSigner', accounts.joinComputeSigner),
       getAccountMeta('batchJoinTokenAccount', accounts.batchJoinTokenAccount),
       getAccountMeta('userTokenAccount', accounts.userTokenAccount),
       getAccountMeta('batchBalanceValue', accounts.batchBalanceValue),
@@ -702,7 +679,6 @@ export function getQuitInstruction<
     TAccountJoinUnderlyingMint,
     TAccountBatchAuthorityAta,
     TAccountUserAta,
-    TAccountJoinComputeSigner,
     TAccountBatchJoinTokenAccount,
     TAccountUserTokenAccount,
     TAccountBatchBalanceValue,
@@ -732,7 +708,7 @@ export type ParsedQuitInstruction<
     batcher: TAccountMetas[2];
     /** The pending batch being quit. */
     batch: TAccountMetas[3];
-    /** the reset execution's compute subject and encrypted value account authority. */
+    /** execution's value authority. */
     batchAuthority: TAccountMetas[4];
     /** The user's join record for this batch. */
     joinRecord: TAccountMetas[5];
@@ -741,26 +717,25 @@ export type ParsedQuitInstruction<
     joinUnderlyingMint: TAccountMetas[7];
     batchAuthorityAta: TAccountMetas[8];
     userAta: TAccountMetas[9];
-    joinComputeSigner: TAccountMetas[10];
     /** validated by the token CPI and pinned below. */
-    batchJoinTokenAccount: TAccountMetas[11];
+    batchJoinTokenAccount: TAccountMetas[10];
     /** so the refund can only land with the quitting user, never back on the batch account. */
-    userTokenAccount: TAccountMetas[12];
-    batchBalanceValue: TAccountMetas[13];
-    userBalanceValue: TAccountMetas[14];
+    userTokenAccount: TAccountMetas[11];
+    batchBalanceValue: TAccountMetas[12];
+    userBalanceValue: TAccountMetas[13];
     /** a transfer FROM the batch account); replaced by the token CPI. */
-    batchTransferredValue: TAccountMetas[15];
+    batchTransferredValue: TAccountMetas[14];
     /** amount, then reset to an encrypted zero by the batcher execution. */
-    pendingJoinValue: TAccountMetas[16];
-    zamaEventAuthority: TAccountMetas[17];
+    pendingJoinValue: TAccountMetas[15];
+    zamaEventAuthority: TAccountMetas[16];
     /** ZamaHost program (FHE compute + ACL). */
-    zamaProgram: TAccountMetas[18];
-    hostConfig: TAccountMetas[19];
-    confidentialTokenEventAuthority: TAccountMetas[20];
+    zamaProgram: TAccountMetas[17];
+    hostConfig: TAccountMetas[18];
+    confidentialTokenEventAuthority: TAccountMetas[19];
     /** confidential-token program composed via CPI. */
-    confidentialTokenProgram: TAccountMetas[21];
+    confidentialTokenProgram: TAccountMetas[20];
     /** System program used for account creation. */
-    systemProgram: TAccountMetas[22];
+    systemProgram: TAccountMetas[21];
   };
   data: QuitInstructionData;
 };
@@ -768,10 +743,10 @@ export type ParsedQuitInstruction<
 export function parseQuitInstruction<TProgram extends string, TAccountMetas extends readonly AccountMeta[]>(
   instruction: Instruction<TProgram> & InstructionWithAccounts<TAccountMetas> & InstructionWithData<ReadonlyUint8Array>,
 ): ParsedQuitInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 23) {
+  if (instruction.accounts.length < 22) {
     throw new SolanaError(SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS, {
       actualAccountMetas: instruction.accounts.length,
-      expectedAccountMetas: 23,
+      expectedAccountMetas: 22,
     });
   }
   let accountIndex = 0;
@@ -793,7 +768,6 @@ export function parseQuitInstruction<TProgram extends string, TAccountMetas exte
       joinUnderlyingMint: getNextAccount(),
       batchAuthorityAta: getNextAccount(),
       userAta: getNextAccount(),
-      joinComputeSigner: getNextAccount(),
       batchJoinTokenAccount: getNextAccount(),
       userTokenAccount: getNextAccount(),
       batchBalanceValue: getNextAccount(),

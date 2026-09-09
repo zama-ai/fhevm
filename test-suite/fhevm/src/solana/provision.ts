@@ -52,7 +52,8 @@ import {
 } from "./spl";
 
 import { findHostConfigPda } from "./internal/generated/zamaHost/pdas/index.js";
-import { vaultModule, sdkHandleModule, sdkProofModule } from "./lazy-modules";
+import { ZAMA_HOST_PROGRAM_ADDRESS } from "./internal/generated/zamaHost/programAddress.js";
+import { vaultModule, sdkHandleModule } from "./lazy-modules";
 
 // The vault/SDK loaders live in lazy-modules.ts — see there for why they must stay dynamic
 // imports (the offline `bun test src` run has no SDK dependency graph to resolve).
@@ -63,6 +64,8 @@ import { vaultModule, sdkHandleModule, sdkProofModule } from "./lazy-modules";
 const PROVISIONING_COMPUTE_UNIT_LIMIT = 1_400_000;
 const LAMPORTS_PER_SOL = 1_000_000_000n;
 const EUINT64_FHE_TYPE_ID = 5;
+// Byte-identical to `confidential_token::state`: the label of a token account's balance value.
+const BALANCE_LABEL = new TextEncoder().encode("balance_________________________");
 
 const addressEncoder = getAddressEncoder();
 const encodeAddress = (value: Address): Uint8Array => new Uint8Array(addressEncoder.encode(value));
@@ -76,9 +79,27 @@ export const hostConfigAddress = async (): Promise<Address> => {
   return hostConfig;
 };
 
+/** The zama-host program's Anchor event-authority PDA (`[b"__event_authority"]`). */
+export const zamaEventAuthorityAddress = async (): Promise<Address> => {
+  const [eventAuthority] = await getProgramDerivedAddress({
+    programAddress: ZAMA_HOST_PROGRAM_ADDRESS,
+    seeds: [new TextEncoder().encode("__event_authority")],
+  });
+  return eventAuthority;
+};
+
+/** BPF upgradeable loader `ProgramData` PDA for zama-host (`[program_id]` under the loader). */
+export const zamaHostProgramDataAddress = async (): Promise<Address> => {
+  const [programData] = await getProgramDerivedAddress({
+    programAddress: "BPFLoaderUpgradeab1e11111111111111111111111" as Address,
+    seeds: [addressEncoder.encode(ZAMA_HOST_PROGRAM_ADDRESS)],
+  });
+  return programData;
+};
+
 export type SendTransactionOptions = {
   /**
-   * Skip the RPC preflight simulation. Raw `fhe_execute` sends need this: the result-handle
+   * Skip the RPC preflight simulation. Sends that CPI `fhe_execute` need this: the result-handle
    * entropy reads the SlotHashes sysvar via `sol_get_sysvar`, which real execution populates but
    * preflight simulation may not (the retired live-client carried the same flag).
    */
@@ -210,13 +231,12 @@ export const mintSplTo = async (
 /**
  * Creates a confidential mint wrapping `underlyingMint` plus its underlying-token escrow — the
  * `vault_usdc` ATA `wrap_usdc` requires to pre-exist. Two transactions, mirroring the seeder's
- * live-verified sequence (steps 3 and 3b in `demo/seed.ts`). Returns the mint and its
- * compute-signer PDA (the contract identity input proofs bind to).
+ * live-verified sequence (steps 3 and 3b in `demo/seed.ts`). Returns the mint.
  */
 export const createConfidentialMint = async (
   context: SolanaProvisioningContext,
   params: { readonly authority: TransactionSigner; readonly underlyingMint: Address },
-): Promise<{ readonly mint: Address; readonly computeSigner: Address }> => {
+): Promise<Address> => {
   const vault = await vaultModule();
   const mint = await generateKeyPairSigner();
   const hostConfig = await hostConfigAddress();
@@ -235,7 +255,7 @@ export const createConfidentialMint = async (
     underlyingMint: params.underlyingMint,
   });
   await context.sendTransaction(params.authority, [escrow.instruction]);
-  return { mint: mint.address, computeSigner: await vault.computeSignerAddress(mint.address) };
+  return mint.address;
 };
 
 /** Creates `owner`'s canonical zero-balance confidential token account if it does not exist yet. */
@@ -307,7 +327,6 @@ export type BalanceState = {
   owner: string;
   tokenAccount: string;
   encryptedValueAccount: string;
-  encryptedValueId: string;
   currentHandle: string;
   chainId: string;
 };
@@ -318,11 +337,9 @@ export type BalanceState = {
  * consumes it. Ported assertions, in order:
  * - the confidential token account PDA exists and is owned by the confidential-token program (its
  *   `(mint, owner)` identity is pinned by the PDA derivation itself, so the body is not re-decoded);
- * - the balance `EncryptedValue` account decodes cleanly (realloc-aware, MMR invariant — enforced
- *   inside `getEncryptedValueState`) and its body matches the canonical derivation: `domain` is the
- *   mint, the authority is the token account, and the (domain, authority, label) triple re-derives
- *   the canonical encrypted value ID — which pins the balance label;
- * - the ACL subjects are exactly [owner, mint compute signer];
+ * - the balance `EncryptedValue` account decodes cleanly (MMR invariant — enforced inside
+ *   `getEncryptedValueState`) and its body is the canonical balance identity: the token program,
+ *   the token account as authority, the mint as scope, and the balance label;
  * - the current handle is a version-0 euint64 handle (all-zero rejected: type 0 is not euint64);
  * - the handle's embedded chain id matches the on-chain `HostConfig.chain_id`, read through
  *   `readHostChainId` — which itself checks the account discriminator, the pinned layout offset,
@@ -337,11 +354,10 @@ export const readTokenBalanceState = async (
   params: { readonly mint: Address; readonly owner: Address },
 ): Promise<BalanceState> => {
   const vault = await vaultModule();
-  const { deriveEncryptedValueId } = await sdkProofModule();
   const { bytes32HexToHandle } = await sdkHandleModule();
   const { mint, owner } = params;
   const tokenAccount = await vault.tokenAccountAddress(mint, owner);
-  const { aclValueKey, encryptedValueAddress } = await vault.confidentialBalanceValueAccount(mint, tokenAccount);
+  const encryptedValueAddress = await vault.balanceValueAddress(mint, tokenAccount);
 
   const tokenAccountInfo = await fetchEncodedAccount(context.rpc, tokenAccount, { commitment: "confirmed" });
   if (!tokenAccountInfo.exists || tokenAccountInfo.programAddress !== vault.CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS) {
@@ -349,17 +365,13 @@ export const readTokenBalanceState = async (
   }
 
   const state = await vault.getEncryptedValueState(context.rpc, encryptedValueAddress, { commitment: "confirmed" });
-  const derivedId = deriveEncryptedValueId(
-    encodeAddress(state.domain),
-    encodeAddress(state.encryptedValueAccountAuthority),
-    state.label,
-  );
-  if (state.domain !== mint || state.encryptedValueAccountAuthority !== tokenAccount || !bytesEqual(derivedId, aclValueKey)) {
+  if (
+    state.program !== vault.CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS ||
+    state.encryptedValueAccountAuthority !== tokenAccount ||
+    !bytesEqual(state.scope, encodeAddress(mint)) ||
+    !bytesEqual(state.label, BALANCE_LABEL)
+  ) {
     throw new Error("balance encrypted value body does not match its canonical derivation");
-  }
-  const computeSigner = await vault.computeSignerAddress(mint);
-  if (state.subjects.length !== 2 || state.subjects[0] !== owner || state.subjects[1] !== computeSigner) {
-    throw new Error("balance encrypted value subjects are not exactly owner + mint compute signer");
   }
 
   const currentHandle = `0x${Buffer.from(state.currentHandle).toString("hex")}` as Bytes32Hex;
@@ -379,7 +391,6 @@ export const readTokenBalanceState = async (
     owner,
     tokenAccount,
     encryptedValueAccount: encryptedValueAddress,
-    encryptedValueId: `0x${Buffer.from(aclValueKey).toString("hex")}`,
     currentHandle,
     chainId: chainId.toString(),
   };

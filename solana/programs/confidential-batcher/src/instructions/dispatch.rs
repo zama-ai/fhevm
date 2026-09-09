@@ -30,8 +30,6 @@ pub struct Dispatch<'info> {
     pub join_underlying_mint: UncheckedAccount<'info>,
     /// CHECK: ATA of `batch_authority` on `join_underlying_mint`. Uninitialized → not frozen.
     pub batch_authority_ata: UncheckedAccount<'info>,
-    /// CHECK: join mint compute-signer PDA; validated by the token CPI.
-    pub join_compute_signer: UncheckedAccount<'info>,
     /// CHECK: mint-scoped total-supply authority PDA; validated by the token CPI.
     pub total_supply_authority: UncheckedAccount<'info>,
     /// CHECK: batch's confidential join token account; validated by the
@@ -111,7 +109,6 @@ pub fn dispatch(ctx: Context<Dispatch>) -> Result<()> {
             underlying_mint: ctx.accounts.join_underlying_mint.to_account_info(),
             owner_ata: ctx.accounts.batch_authority_ata.to_account_info(),
             token_account: ctx.accounts.batch_join_token_account.to_account_info(),
-            compute_signer: ctx.accounts.join_compute_signer.to_account_info(),
             total_supply_authority: ctx.accounts.total_supply_authority.to_account_info(),
             balance_value: ctx.accounts.batch_balance_value.to_account_info(),
             total_supply_value: ctx.accounts.total_supply_value.to_account_info(),

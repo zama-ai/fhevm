@@ -94,6 +94,7 @@ gateway:
         max_attempts: 3
         retry_interval_ms: 1000
     gw_ciphertext_check:
+      source: gateway_chain
       retry:
         max_attempts: 45
         retry_interval_ms: 2000
@@ -109,6 +110,9 @@ gateway:
       max_concurrency: 250
       capacity: 11000
       safety_margin: 1000
+  gw_event_not_found_retry:
+    max_retries: 3
+    retry_delay_ms: 1000
   contracts:
     decryption_address: "0xF0bFB159C7381F7CB332586004d8247252C5b816"
     input_verification_address: "0x3b12Fc766Eb598b285998877e8E90F3e43a1F8d2"
@@ -138,6 +142,7 @@ http:
   metrics:
     histogram_buckets: [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 40]
   api_retry_after_seconds: 4
+  enable_admin_endpoint: false
   # Dynamic retry-after configuration for V2 handlers
   # Computes Retry-After based on queue size, drain rate, and processing stage
   retry_after:
@@ -205,6 +210,7 @@ storage:
     max_lifetime_secs: 1800
   sql_health_check_timeout_secs: 5
   cron:
+    expiry_enabled: false
     # 60s for interval check
     timeout_cron_interval: "60s"
     # 30 mins timeout logic
@@ -223,3 +229,16 @@ shutdown:
   # Covers the lag until the pod's removal from the service endpoints reaches the ingress
   # controller. Shutdown as a whole must finish inside terminationGracePeriodSeconds.
   lb_propagation_wait: "5s"
+  lock_release_timeout: "3s"
+
+dispatcher_lock:
+  standby_poll_interval: "2s"
+  holder_heartbeat_interval: "5s"
+  query_timeout: "3s"
+  exit_after_consecutive_failures: 3
+  connect_timeout: "5s"
+  idle_session_timeout: "60s"
+  key_override: null
+  sweep:
+    interval: "500ms"
+    max_attempts: 5

@@ -1,6 +1,5 @@
 import type { Address } from '@solana/kit';
 
-import { findComputeSignerPda } from './internal/generated/confidentialToken/pdas/computeSigner.js';
 import { findTotalSupplyAuthorityPda } from './internal/generated/confidentialToken/pdas/totalSupplyAuthority.js';
 import { findVaultAuthorityPda as findMintVaultAuthorityPda } from './internal/generated/confidentialToken/pdas/vaultAuthority.js';
 import {
@@ -15,7 +14,7 @@ import {
 } from './internal/generated/confidentialBatcher/pdas/index.js';
 import {
   batchAddress,
-  encryptedValueAddress,
+  burnedAmountValueAddress,
   pendingBurnAddress,
   tokenAccountAddress,
 } from './internal/batcherPdas.js';
@@ -88,15 +87,9 @@ export async function deriveBatchAddresses(roots: VaultDemoRoots, batchIndex: bi
     batchPayoutTokenAccount,
     batchJoinUnderlying,
     batchPayoutUnderlying,
-    // Burned amount: domain = join mint, encrypted value account authority = batch join token
-    // account, encrypted value label = `burned_amount`. Payout balance: domain = payout mint,
-    // encrypted value account authority = batch payout token
-    // account, label = `balance`.
-    batchBurnedAmountValue: await encryptedValueAddress(
-      roots.joinConfidentialMint,
-      batchJoinTokenAccount,
-      new TextEncoder().encode('burned_amount___________________'),
-    ),
+    // Burned amount: the join mint's `burned_amount` value of the batch's join token account.
+    // Payout balance: the payout mint's `balance` value of the batch's payout token account.
+    batchBurnedAmountValue: await burnedAmountValueAddress(roots.joinConfidentialMint, batchJoinTokenAccount),
     batchPayoutBalanceValue: await balanceValueAddress(roots.payoutConfidentialMint, batchPayoutTokenAccount),
   };
 }
@@ -134,7 +127,6 @@ export interface SolanaVaultSettleAccounts {
   readonly batchPayoutTokenAccount: Address;
   readonly payoutMintVaultUnderlying: Address;
   readonly payoutMintVaultAuthority: Address;
-  readonly payoutComputeSigner: Address;
   readonly payoutTotalSupplyAuthority: Address;
   readonly batchPayoutBalanceValue: Address;
   readonly payoutTotalSupplyValue: Address;
@@ -182,7 +174,6 @@ export const SETTLE_ALT_FIELD_ORDER = [
   'batchPayoutTokenAccount',
   'payoutMintVaultUnderlying',
   'payoutMintVaultAuthority',
-  'payoutComputeSigner',
   'payoutTotalSupplyAuthority',
   'batchPayoutBalanceValue',
   'payoutTotalSupplyValue',
@@ -199,7 +190,6 @@ export async function deriveSettleAccounts(
 ): Promise<SolanaVaultSettleAccounts> {
   const [joinMintVaultAuthority] = await findMintVaultAuthorityPda({ mint: roots.joinConfidentialMint });
   const [payoutMintVaultAuthority] = await findMintVaultAuthorityPda({ mint: roots.payoutConfidentialMint });
-  const [payoutComputeSigner] = await findComputeSignerPda({ mint: roots.payoutConfidentialMint });
   const [payoutTotalSupplyAuthority] = await findTotalSupplyAuthorityPda({ mint: roots.payoutConfidentialMint });
   const [vaultAuthority] = await findDemoVaultAuthorityPda({ vault: roots.vault });
   const [vaultTokenAccount] = await findVaultTokenAccountPda({ vault: roots.vault });
@@ -231,7 +221,6 @@ export async function deriveSettleAccounts(
       TOKEN_PROGRAM_ADDRESS,
     ),
     payoutMintVaultAuthority,
-    payoutComputeSigner,
     payoutTotalSupplyAuthority,
     batchPayoutBalanceValue: batch.batchPayoutBalanceValue,
     // Total supply: domain = payout mint, encrypted value account authority = its total-supply

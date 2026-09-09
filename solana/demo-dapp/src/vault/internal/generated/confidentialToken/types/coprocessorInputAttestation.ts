@@ -43,7 +43,7 @@ export type CoprocessorInputAttestation = {
   handleIndex: number;
   /** Attested user identity (bytes32). */
   userAddress: ReadonlyUint8Array;
-  /** Attested contract identity — the input's ACL domain key (bytes32). */
+  /** Attested contract identity — the application program the input is bound to (bytes32). */
   contractAddress: ReadonlyUint8Array;
   /** Gateway-side contract chain id the attestation binds. */
   contractChainId: bigint;
@@ -62,7 +62,7 @@ export type CoprocessorInputAttestationArgs = {
   handleIndex: number;
   /** Attested user identity (bytes32). */
   userAddress: ReadonlyUint8Array;
-  /** Attested contract identity — the input's ACL domain key (bytes32). */
+  /** Attested contract identity — the application program the input is bound to (bytes32). */
   contractAddress: ReadonlyUint8Array;
   /** Gateway-side contract chain id the attestation binds. */
   contractChainId: number | bigint;

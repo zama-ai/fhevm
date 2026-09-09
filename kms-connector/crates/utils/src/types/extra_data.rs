@@ -43,10 +43,10 @@ pub struct ExtraData {
 /// - Bytes 33..65: epoch ID (32 bytes, big-endian U256)
 /// - Bytes 65..: optional additional data (ignored)
 ///
-/// Format (v3, Solana MMR proof):
+/// Format (v3, Solana encrypted value account; exactly 65 bytes):
 /// - Byte 0: version (`0x03`)
 /// - Bytes 1..33: context ID (32 bytes, big-endian U256)
-/// - Bytes 33..: Solana MMR-proof blob (ignored)
+/// - Bytes 33..65: the encrypted value account whose public leaf the certificate is about
 ///
 /// Empty or `0x00` → both context_id and epoch_id are `None`.
 /// Version `0x01` → epoch_id is `None`.
@@ -224,13 +224,13 @@ mod tests {
     }
 
     #[test]
-    fn solana_v3_mmr_proof_blob_returns_context_only() {
+    fn solana_v3_extra_data_returns_context_only() {
         let context_id = U256::from(42u64);
-        let acl_value_key = U256::from(7u64);
+        let encrypted_value_account = U256::from(7u64);
         let proof = [0x01u8, 0x02, 0x03];
         let mut data = vec![EXTRA_DATA_V3_VERSION];
         data.extend_from_slice(&context_id.to_be_bytes::<32>());
-        data.extend_from_slice(&acl_value_key.to_be_bytes::<32>());
+        data.extend_from_slice(&encrypted_value_account.to_be_bytes::<32>());
         data.extend_from_slice(&69u64.to_be_bytes());
         data.extend_from_slice(&(proof.len() as u32).to_be_bytes());
         data.extend_from_slice(&proof);

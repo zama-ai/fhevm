@@ -1,11 +1,14 @@
-//! Solana host listener: reconstructs coprocessor work from confirmed Yellowstone
-//! sealed blocks and ingests it into the shared database.
+//! Solana host listener: reconstructs coprocessor work and the RFC 035 leaf record
+//! from confirmed Yellowstone sealed blocks, ingests both into the shared database,
+//! and serves leaf inclusion proofs over HTTP.
 
 use std::{str::FromStr, time::Duration};
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use solana_client::nonblocking::rpc_client::RpcClient;
+use solana_client::{
+    nonblocking::rpc_client::RpcClient, rpc_request::RpcRequest,
+};
 use solana_commitment_config::CommitmentConfig;
 use solana_sdk::pubkey::Pubkey;
 use tokio_util::sync::CancellationToken;
@@ -14,8 +17,13 @@ use tracing::{info, Level};
 use fhevm_engine_common::{chain_id::ChainId, telemetry, utils::DatabaseURL};
 use host_listener::{
     cmd::DEFAULT_DEPENDENCE_CACHE_SIZE,
-    database::tfhe_event_propagate::Database,
-    solana_grpc_listener::{run, SolanaGrpcListenerConfig, StartPosition},
+    database::{
+        solana_leaves::load_checkpoint, tfhe_event_propagate::Database,
+    },
+    http_server::HttpServer,
+    solana_grpc_listener::{
+        run, BlockCheckpoint, SolanaGrpcListenerConfig, StartPosition,
+    },
     solana_reconstruct::{parse_host_config, HOST_CONFIG_SEED},
 };
 
@@ -36,6 +44,11 @@ struct Args {
     #[arg(long, default_value = "http://127.0.0.1:10000")]
     grpc_url: String,
 
+    /// Existing confirmed block to replay inclusively on an empty database. Must be within
+    /// Yellowstone retention and precede the host activity to reconstruct. A saved checkpoint wins.
+    #[arg(long)]
+    start_slot: Option<u64>,
+
     /// Optional `x-token` auth metadata for the gRPC endpoint.
     #[arg(long)]
     grpc_x_token: Option<String>,
@@ -47,6 +60,14 @@ struct Args {
     /// Dependence-chain cache size.
     #[arg(long, default_value_t = DEFAULT_DEPENDENCE_CACHE_SIZE)]
     dependence_cache_size: u16,
+
+    /// Port of the HTTP server: health routes and the leaf-proof route.
+    #[arg(long, default_value_t = 8080)]
+    http_port: u16,
+
+    /// Bearer API key the leaf-proof route requires.
+    #[arg(long, env = "SOLANA_PROOF_API_KEY")]
+    proof_api_key: String,
 
     #[arg(long, default_value_t = Level::INFO)]
     log_level: Level,
@@ -102,6 +123,41 @@ async fn main() -> Result<()> {
     .await
     .context("connect coprocessor database")?;
 
+    let pool = db.pool.read().await.clone();
+    // Resume after the last block whose compute rows and leaves were committed; the
+    // leaf record can only be continued from where it stopped.
+    let start = match load_checkpoint(&pool).await.context("load checkpoint")? {
+        Some(checkpoint) => {
+            info!(
+                slot = checkpoint.slot,
+                "resuming after the recorded checkpoint"
+            );
+            StartPosition::Resume(BlockCheckpoint {
+                slot: checkpoint.slot,
+                block_hash: checkpoint.block_hash,
+            })
+        }
+        None => match args.start_slot {
+            Some(slot) => {
+                // Anchor to an actual block, so a provider silently starting at the tip is rejected.
+                // RPC supplies only its identity; reconstruction still uses Yellowstone sysvars.
+                let block: serde_json::Value = rpc.send(RpcRequest::GetBlock, serde_json::json!([
+                    slot, {"commitment": "confirmed", "transactionDetails": "none", "rewards": false}
+                ])).await.with_context(|| format!("fetch bootstrap block {slot}"))?;
+                let block_hash = block["blockhash"].as_str().context(
+                    "bootstrap slot must identify an existing confirmed block",
+                )?;
+                StartPosition::ReplayFrom(BlockCheckpoint {
+                    slot,
+                    block_hash: solana_sdk::hash::Hash::from_str(block_hash)
+                        .context("parse bootstrap block hash")?
+                        .to_bytes(),
+                })
+            }
+            None => StartPosition::Tip,
+        },
+    };
+
     let cancel = CancellationToken::new();
     let signal_cancel = cancel.clone();
     tokio::spawn(async move {
@@ -111,7 +167,21 @@ async fn main() -> Result<()> {
         }
     });
 
-    run(
+    let http_server = HttpServer::new(
+        pool,
+        args.proof_api_key,
+        args.http_port,
+        cancel.clone(),
+    );
+    let http_cancel = cancel.clone();
+    let http_task = tokio::spawn(async move {
+        let result = http_server.start().await;
+        // A dead proof route must not leave the listener running silently.
+        http_cancel.cancel();
+        result
+    });
+
+    let listener_result = run(
         &db,
         &SolanaGrpcListenerConfig {
             grpc_url: args.grpc_url,
@@ -119,8 +189,11 @@ async fn main() -> Result<()> {
             program_id: program_id.to_string(),
             chain_id: host_config_chain_id,
         },
-        StartPosition::Tip,
-        cancel,
+        start,
+        cancel.clone(),
     )
-    .await
+    .await;
+    cancel.cancel();
+    http_task.await.context("join HTTP server")??;
+    listener_result
 }

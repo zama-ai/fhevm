@@ -90,8 +90,8 @@ pub use error::{IdentityField, PermitError};
 pub use fingerprint::transport_key_fingerprint;
 pub use render::render_canonical_text;
 pub use types::{
-    AclDomainKeys, Identity, KmsRouting, PermitFields, PermitWireFields, Signature, TransportKey,
-    IDENTITY_LEN, KMS_ROUTING_EXTRA_DATA_LEN, KMS_ROUTING_VERSION_BYTE, MAX_ACL_DOMAIN_KEYS,
-    MAX_DURATION_SECONDS, MAX_START_TIMESTAMP, MIN_DURATION_SECONDS, SIGNATURE_LEN,
-    TRANSPORT_KEY_LEN,
+    AllowedScopes, ApplicationScope, Identity, KmsRouting, PermitFields, PermitWireFields,
+    Signature, TransportKey, IDENTITY_LEN, KMS_ROUTING_EXTRA_DATA_LEN, KMS_ROUTING_VERSION_BYTE,
+    MAX_ALLOWED_SCOPES, MAX_DURATION_SECONDS, MAX_START_TIMESTAMP, MIN_DURATION_SECONDS, SCOPE_LEN,
+    SIGNATURE_LEN, TRANSPORT_KEY_LEN,
 };

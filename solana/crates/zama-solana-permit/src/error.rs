@@ -16,19 +16,26 @@ pub enum PermitError {
         /// The width that arrived.
         len: usize,
     },
-    /// More ACL-domain keys than the protocol allows.
-    TooManyAclDomainKeys {
+    /// A scope entry was not exactly 64 bytes.
+    ScopeWidth {
+        /// Which entry of the scope list.
+        index: usize,
+        /// The width that arrived.
+        len: usize,
+    },
+    /// More scopes than the protocol allows.
+    TooManyScopes {
         /// The count that arrived.
         count: usize,
     },
-    /// ACL-domain keys are not strictly ascending in byte order.
-    AclDomainKeysNotAscending {
-        /// Index of the key that does not exceed its predecessor.
+    /// Scopes are not strictly ascending in byte order.
+    ScopesNotAscending {
+        /// Index of the entry that does not exceed its predecessor.
         index: usize,
     },
-    /// The same ACL-domain key appears twice.
-    DuplicateAclDomainKey {
-        /// Index of the repeated key.
+    /// The same scope appears twice.
+    DuplicateScope {
+        /// Index of the repeated entry.
         index: usize,
     },
     /// The validity window is zero-length or longer than a year.
@@ -76,8 +83,6 @@ pub enum IdentityField {
     UserPubkey,
     /// The deployment's program id.
     VerifyingProgramId,
-    /// An entry of the ACL-domain list, at this index.
-    AclDomainKey(usize),
 }
 
 impl fmt::Display for PermitError {
@@ -86,14 +91,17 @@ impl fmt::Display for PermitError {
             Self::IdentityWidth { field, len } => {
                 write!(f, "identity {field:?} is {len} bytes, expected 32")
             }
-            Self::TooManyAclDomainKeys { count } => {
-                write!(f, "{count} ACL domain keys exceeds the permitted maximum")
+            Self::ScopeWidth { index, len } => {
+                write!(f, "scope at index {index} is {len} bytes, expected 64")
             }
-            Self::AclDomainKeysNotAscending { index } => {
-                write!(f, "ACL domain key at index {index} is not above its predecessor in byte order")
+            Self::TooManyScopes { count } => {
+                write!(f, "{count} scopes exceeds the permitted maximum")
             }
-            Self::DuplicateAclDomainKey { index } => {
-                write!(f, "ACL domain key at index {index} is a duplicate")
+            Self::ScopesNotAscending { index } => {
+                write!(f, "scope at index {index} is not above its predecessor in byte order")
+            }
+            Self::DuplicateScope { index } => {
+                write!(f, "scope at index {index} is a duplicate")
             }
             Self::DurationOutOfRange { duration_seconds } => {
                 write!(f, "duration {duration_seconds} is outside the permitted range")

@@ -72,7 +72,8 @@ user-decryption-signature = { path = "../shared/user-decryption-signature" }
 # relayer is never softer or harder than the kms-connector on the same permit vectors.
 zama-solana-permit = { path = "../solana/crates/zama-solana-permit" }
 zama-solana-request = { path = "../solana/crates/zama-solana-request" }
-# Solana ACL: the strict borsh `MmrProof` form the relayer validates `accessProof` against.
+# Solana ACL: the encrypted value account and delegation record decoders the advisory
+# delegation pre-check reads host state through — the connector's own crate, so one decoder.
 zama-solana-acl = { path = "../solana/crates/zama-solana-acl" }
 # Canonical `hostPayload` serialization forwarded into the host-generic gateway calldata.
 borsh = { version = "1", features = ["derive"] }

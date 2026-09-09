@@ -1,12 +1,12 @@
 //! Lowers builder operands/outputs to the interned wire format.
 //!
 //! Intern tables are [`TalliedVec`]s that grow through a [`HeapBudget`]. Exact-size
-//! allocations (attestation embeds, subject index lists) go through [`HeapBudget::admit`] and
+//! allocations (attestation embeds, allow index lists) go through [`HeapBudget::admit`] and
 //! [`TalliedVec::try_with_capacity`]. Purpose lists are a stack array and never touch the heap.
 //! On drop, an uncommitted step rolls back interned tables in place so a failed step leaves
 //! the builder as it found them.
 
-use zama_host::{CoprocessorInputAttestation, FheExecuteOperand, FheExecuteOutput};
+use zama_host::{CoprocessorInputAttestation, FheExecuteOperand, FheExecuteOutput, PdaSeed};
 
 use crate::accounts::{
     ExecutionAccountMeta, ExecutionAccountPurpose, ExecutionEncryptedValueAccountAuthority,
@@ -110,22 +110,28 @@ impl<'b> StepTables<'b> {
             .iter()
             .position(|candidate| candidate.pubkey == required.pubkey)
         {
-            let meta = &self.remaining_accounts[index];
+            let meta = self
+                .remaining_accounts
+                .get_mut(index)
+                .expect("position returned a valid index");
             let undo = MetaPromotion {
                 was_writable: meta.is_writable,
                 was_signer: meta.is_signer,
                 purposes_len: meta.purposes.len(),
             };
-            let meta = self
-                .remaining_accounts
-                .get_mut(index)
-                .expect("position returned a valid index");
             meta.is_writable |= required.is_writable;
             meta.is_signer |= required.is_signer;
             for purpose in required.purposes {
                 meta.purposes.try_insert(purpose);
             }
-            self.promotions.try_push(self.budget, (index, undo))?;
+            // A lookup that changed nothing needs no undo record: a reduction reading one
+            // value sixty times would otherwise grow the promotion log sixty entries deep.
+            let promoted = meta.is_writable != undo.was_writable
+                || meta.is_signer != undo.was_signer
+                || meta.purposes.len() != undo.purposes_len;
+            if promoted {
+                self.promotions.try_push(self.budget, (index, undo))?;
+            }
             return u8::try_from(index)
                 .map_err(|_| FheExecutionBuildError::TooManyRemainingAccounts);
         }
@@ -148,6 +154,23 @@ impl<'b> StepTables<'b> {
         Ok(index)
     }
 
+    /// The signer slot for a persistent value's authority: none when it is the execution's fixed
+    /// CPI signer, otherwise a readonly signing remaining account.
+    fn value_authority_index(
+        &mut self,
+        authority: anchor_lang::prelude::Pubkey,
+        execution_authority: ExecutionEncryptedValueAccountAuthority,
+    ) -> Result<Option<u8>> {
+        if authority == execution_authority.pubkey() {
+            return Ok(None);
+        }
+        self.account_index(ExecutionAccountMeta::readonly_signer(
+            authority,
+            ExecutionAccountPurpose::PersistentValueAuthority,
+        ))
+        .map(Some)
+    }
+
     fn persistent_already_written(&self, encrypted_value: &anchor_lang::prelude::Pubkey) -> bool {
         self.persistent_producers.contains(encrypted_value)
     }
@@ -163,6 +186,7 @@ impl<'b> StepTables<'b> {
 
 pub(crate) fn lower_operand(
     tables: &mut StepTables<'_>,
+    execution_authority: ExecutionEncryptedValueAccountAuthority,
     produced_count: usize,
     verified_inputs: &[CoprocessorInputAttestation],
     operand: Operand,
@@ -177,6 +201,12 @@ pub(crate) fn lower_operand(
                 persistent.encrypted_value,
                 ExecutionAccountPurpose::PersistentInputAcl,
             ))?;
+            // Reading a value is admitted by its authority's signature: the host looks the
+            // signer up by key, so the slot is not referenced from the wire.
+            tables.value_authority_index(
+                persistent.encrypted_value_account_authority,
+                execution_authority,
+            )?;
             Ok(FheExecuteOperand::StoredValue {
                 handle_index,
                 encrypted_value_index,
@@ -214,16 +244,16 @@ pub(crate) fn lower_operand(
 
 pub(crate) fn lower_output(
     tables: &mut StepTables<'_>,
-    encrypted_value_account_authority: ExecutionEncryptedValueAccountAuthority,
+    execution_authority: ExecutionEncryptedValueAccountAuthority,
     output: Output,
 ) -> Result<FheExecuteOutput> {
     match output.0 {
         OutputKind::Transient => Ok(FheExecuteOutput::Transient),
         OutputKind::Persistent(output) => {
-            // Lowering owns the output, so the binding moves the subject list and previous
-            // state instead of cloning them — a persistent output allocates nothing here for
-            // data the app already built (the interned dictionary entries and the subject
-            // index list are the step's only new bytes).
+            // Lowering owns the output, so the binding moves the seed and allow lists instead
+            // of cloning them — a persistent output allocates nothing here for data the app
+            // already built (the interned dictionary entries and the allow index list are the
+            // step's only new bytes).
             let binding = output.into_binding()?;
             let encrypted_value = binding.encrypted_value;
             let output_encrypted_value_index =
@@ -231,37 +261,43 @@ pub(crate) fn lower_output(
                     encrypted_value,
                     ExecutionAccountPurpose::PersistentOutputAcl,
                 ))?;
-            // Both sides are encrypted value account authorities; what differs is the scope. The
-            // local is the one this *output* declares, the parameter is the execution's fixed CPI
-            // signer. Equal means the output rides that signer and needs no extra account.
             let output_authority = binding.encrypted_value_account_authority;
             let output_authority_index =
-                if output_authority == encrypted_value_account_authority.pubkey() {
-                    None
-                } else {
-                    Some(tables.account_index(ExecutionAccountMeta::readonly_signer(
-                        output_authority,
-                        ExecutionAccountPurpose::PersistentOutputAuthority,
-                    ))?)
-                };
-            // One exact allocation for the index list, sized explicitly so the tally is exact.
-            let mut output_subject_indexes =
-                TalliedVec::try_with_capacity(tables.budget(), binding.subjects.len())?;
-            for subject in &binding.subjects {
-                let index = tables.dictionary_index(subject.to_bytes())?;
-                output_subject_indexes.try_push(tables.budget(), index)?;
+                tables.value_authority_index(output_authority, execution_authority)?;
+            // Seeds move in place: a 32-byte literal becomes an interned index (the mint or
+            // owner is usually already in the dictionary as the scope or authority), anything
+            // else stays a literal. No new allocation either way.
+            let mut output_authority_seeds = binding.authority_seeds;
+            for seed in &mut output_authority_seeds {
+                if let PdaSeed::Literal { bytes } = seed {
+                    if let Ok(entry) = <[u8; 32]>::try_from(bytes.as_slice()) {
+                        *seed = PdaSeed::Interned {
+                            index: tables.dictionary_index(entry)?,
+                        };
+                    }
+                }
             }
+            // One exact allocation for the allow index list, sized explicitly so the tally is exact.
+            let mut output_allow_indexes =
+                TalliedVec::try_with_capacity(tables.budget(), binding.allows.len())?;
+            for key in &binding.allows {
+                let index = tables.dictionary_index(key.to_bytes())?;
+                output_allow_indexes.try_push(tables.budget(), index)?;
+            }
+            let previous_handle_index = binding
+                .previous_handle
+                .map(|handle| tables.dictionary_index(handle))
+                .transpose()?;
             let output = FheExecuteOutput::StoredValue {
                 output_encrypted_value_index,
                 output_authority_index,
-                output_domain_index: tables.dictionary_index(binding.domain.pubkey().to_bytes())?,
-                output_account_index: tables.dictionary_index(output_authority.to_bytes())?,
+                output_program_index: tables.dictionary_index(binding.app.program.to_bytes())?,
+                output_authority_key_index: tables.dictionary_index(output_authority.to_bytes())?,
+                output_scope_index: tables.dictionary_index(binding.app.scope)?,
                 output_label_index: tables.dictionary_index(binding.label)?,
-                output_subject_indexes: output_subject_indexes.into_inner(),
-                previous_state: binding.previous.map(|previous| zama_host::PreviousState {
-                    handle: previous.handle,
-                    subjects: previous.subjects,
-                }),
+                output_authority_seeds,
+                output_allow_indexes: output_allow_indexes.into_inner(),
+                previous_handle_index,
                 make_public: binding.make_public,
             };
             tables.record_persistent_producer(encrypted_value)?;

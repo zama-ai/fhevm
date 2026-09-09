@@ -12,11 +12,6 @@ type VaultModule = typeof import("@demo-dapp/vault/index.js");
 let vaultModulePromise: Promise<VaultModule> | undefined;
 export const vaultModule = (): Promise<VaultModule> => (vaultModulePromise ??= import("@demo-dapp/vault/index.js"));
 
-type SdkProofModule = typeof import("@sdk-src/solana/proof.js");
-let sdkProofModulePromise: Promise<SdkProofModule> | undefined;
-export const sdkProofModule = (): Promise<SdkProofModule> =>
-  (sdkProofModulePromise ??= import("@sdk-src/solana/proof.js"));
-
 type SdkHandleModule = typeof import("@sdk-src/core/handle/FhevmHandle.js");
 let sdkHandleModulePromise: Promise<SdkHandleModule> | undefined;
 export const sdkHandleModule = (): Promise<SdkHandleModule> =>

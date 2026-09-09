@@ -51,7 +51,7 @@ services:
       - "3000:3000"
     # Solana host-chain config may reference host.docker.internal for the host-native validator.
     # Docker Desktop provides that name; on Linux (CI) map it to the host gateway — same as the
-    # KMS worker (kms-connector-docker-compose.yml). MMR proofs are served by solana-proof-service.
+    # KMS worker (kms-connector-docker-compose.yml).
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

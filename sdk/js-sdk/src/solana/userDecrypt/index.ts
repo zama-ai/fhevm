@@ -9,14 +9,12 @@ export {
   solanaUserDecryptRequestBits,
 } from './request.js';
 export type {
+  SolanaUserDecryptHandleEntry,
   SolanaUserDecryptHandleJson,
   SolanaUserDecryptPayloadJson,
   SolanaUserDecryptRequestFailure,
   SolanaUserDecryptRequestJson,
 } from './request.js';
-
-export { SolanaAccessEvidenceIntegrityError, resolveSolanaAccessEvidence } from './evidence.js';
-export type { SolanaAccessEvidence, SolanaAccessEvidenceSource, SolanaHandleRequest } from './evidence.js';
 
 export { executeSolanaUserDecrypt, solanaUserDecryptLinkInputs } from './execute.js';
 export type { SolanaPermitSession, SolanaUserDecryptVerification } from './execute.js';
@@ -43,15 +41,6 @@ export type {
   SolanaUserDecryptLinkInputs,
   SolanaUserDecryptPlaintext,
 } from './response.js';
-
-export {
-  SOLANA_ACCESS_PROOF_LAGGING_DELAY_MS,
-  SOLANA_ACCESS_PROOF_LAGGING_RETRIES,
-  fetchSolanaHistoricalAccessProof,
-} from './proofService.js';
-export type { SolanaAccessProofServiceConfig, SolanaHistoricalAccessProof } from './proofService.js';
-
-export { createSolanaRpcAccessEvidenceSource } from './rpcEvidence.js';
 
 export { createSolanaUserDecryptRelayerTransport } from './relayerTransport.js';
 

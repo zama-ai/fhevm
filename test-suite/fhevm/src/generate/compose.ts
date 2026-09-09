@@ -175,9 +175,6 @@ const COMPONENT_BUILD_SPECS: Record<string, Record<string, Record<string, unknow
       args: { RUST_IMAGE_VERSION: RELAYER_RUST_IMAGE_VERSION },
     }),
   },
-  "solana-proof-service": {
-    "solana-proof-service": buildSpec("../../..", "solana-proof-service/Dockerfile"),
-  },
   "gateway-mocked-payment": {
     "gateway-deploy-mocked-zama-oft": buildSpec("../../../gateway-contracts", "Dockerfile"),
     "gateway-set-relayer-mocked-payment": buildSpec("../../../gateway-contracts", "Dockerfile"),

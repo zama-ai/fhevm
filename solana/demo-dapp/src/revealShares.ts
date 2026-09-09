@@ -5,18 +5,13 @@ import {
   setFhevmRuntimeConfig,
   type SolanaDecryptTrust,
 } from '@fhevm/sdk/solana';
-import {
-  confidentialBalanceValueAccount,
-  decryptPosition,
-  getEncryptedValueState,
-  tokenAccountAddress,
-} from './vault/index.js';
+import { balanceValueAddress, decryptPosition, getEncryptedValueState, tokenAccountAddress } from './vault/index.js';
 
 import type { DemoSession } from './demoSession';
 import { permitSessionFor } from './permitCache';
 import { recordDecryptionEvidence } from './evidenceStore';
 
-type Bytes32Hex = Parameters<typeof defineFhevmSolanaChain>[0]['fhevm']['acl']['domainKeys'][number];
+type Bytes32Hex = NonNullable<Parameters<typeof defineFhevmSolanaChain>[0]['fhevm']['verifyingProgramId']>;
 
 export type RevealedBalance = {
   readonly handle: string;
@@ -64,22 +59,20 @@ const revealConfidentialBalance = async (
   label: 'cShares' | 'cUSDC',
 ): Promise<RevealedBalance> => {
   const tokenAccount = await tokenAccountAddress(mint, session.signer.address);
-  const balance = await confidentialBalanceValueAccount(mint, tokenAccount);
-  const state = await getEncryptedValueState(
-    createSolanaRpc(session.config.rpcUrl),
-    balance.encryptedValueAddress,
-    { commitment: 'confirmed' },
-  );
-  const encodedDomain = `0x${Array.from(getAddressEncoder().encode(mint), (byte) =>
-    byte.toString(16).padStart(2, '0'),
-  ).join('')}` as Bytes32Hex;
+  const encryptedValueAccount = await balanceValueAddress(mint, tokenAccount);
+  const state = await getEncryptedValueState(createSolanaRpc(session.config.rpcUrl), encryptedValueAccount, {
+    commitment: 'confirmed',
+  });
+  const encodeAddress = (value: Address): Uint8Array => new Uint8Array(getAddressEncoder().encode(value));
+  // The permit covers this token program's values under this mint, and nothing else.
+  const permitScope = {
+    program: handleHex(encodeAddress(session.config.programs.token)) as Bytes32Hex,
+    scope: handleHex(encodeAddress(mint)) as Bytes32Hex,
+  };
   const chain = defineFhevmSolanaChain({
     id: BigInt(session.config.chainId),
     fhevm: {
       relayerUrl: session.config.relayerUrl,
-      acl: { domainKeys: [encodedDomain] },
-      rpcUrl: session.config.rpcUrl,
-      proofServiceUrl: session.config.proofServiceUrl,
       verifyingProgramId: session.config.aclProgram as Bytes32Hex,
     },
   });
@@ -100,24 +93,24 @@ const revealConfidentialBalance = async (
   const client = createFhevmDecryptClient({ chain, trust });
   await client.ready;
   const startedAt = performance.now();
-  // One confirmation per (wallet, domain, KMS route) and validity window: repeated views of the
-  // same private balance reuse the signed permit instead of prompting the wallet again.
+  // One confirmation per (wallet, permit scope, KMS route) and validity window: repeated views of
+  // the same private balance reuse the signed permit instead of prompting the wallet again.
   const permit = await permitSessionFor(
     {
       walletAddress: permitWallet.account.address,
       chainId: session.config.chainId,
-      domainKey: encodedDomain,
+      permitScope: `${permitScope.program}/${permitScope.scope}`,
       kmsContextId: trust.kmsContextId,
       kmsEpochId: trust.kmsEpochId,
     },
-    () => client.signPermit({ wallet: permitWallet, durationSeconds: 3_600n }),
+    () => client.signPermit({ wallet: permitWallet, durationSeconds: 3_600n, allowedScopes: [permitScope] }),
   );
   let jobId: string | null = null;
   let queuedAt: number | null = null;
   let responseAt: number | null = null;
   const [clearValue] = await decryptPosition(client, {
     session: permit,
-    entries: [{ handle: state.currentHandle, encryptedValueId: balance.aclValueKey }],
+    entries: [{ handle: state.currentHandle, encryptedValueAccount: encodeAddress(encryptedValueAccount) }],
     options: {
       timeout: 60_000,
       onProgress: (progress) => {
@@ -152,10 +145,9 @@ const revealConfidentialBalance = async (
 export const readClaimedSharesHandle = async (session: DemoSession): Promise<string> => {
   const mint = session.config.mints.payoutConfidential;
   const tokenAccount = await tokenAccountAddress(mint, session.signer.address);
-  const balance = await confidentialBalanceValueAccount(mint, tokenAccount);
   const state = await getEncryptedValueState(
     createSolanaRpc(session.config.rpcUrl),
-    balance.encryptedValueAddress,
+    await balanceValueAddress(mint, tokenAccount),
     { commitment: 'confirmed' },
   );
   return handleHex(state.currentHandle);
@@ -164,10 +156,9 @@ export const readClaimedSharesHandle = async (session: DemoSession): Promise<str
 export const readClaimedUsdcHandle = async (session: DemoSession): Promise<string> => {
   const mint = session.config.mints.joinConfidential;
   const tokenAccount = await tokenAccountAddress(mint, session.signer.address);
-  const balance = await confidentialBalanceValueAccount(mint, tokenAccount);
   const state = await getEncryptedValueState(
     createSolanaRpc(session.config.rpcUrl),
-    balance.encryptedValueAddress,
+    await balanceValueAddress(mint, tokenAccount),
     { commitment: 'confirmed' },
   );
   return handleHex(state.currentHandle);
@@ -178,14 +169,12 @@ export const readConfidentialBalanceEvidence = async (
   mint: DemoSession['config']['mints']['joinConfidential'],
 ): Promise<ConfidentialBalanceEvidence> => {
   const tokenAccount = await tokenAccountAddress(mint, session.signer.address);
-  const balance = await confidentialBalanceValueAccount(mint, tokenAccount);
-  const state = await getEncryptedValueState(
-    createSolanaRpc(session.config.rpcUrl),
-    balance.encryptedValueAddress,
-    { commitment: 'confirmed' },
-  );
+  const encryptedValue = await balanceValueAddress(mint, tokenAccount);
+  const state = await getEncryptedValueState(createSolanaRpc(session.config.rpcUrl), encryptedValue, {
+    commitment: 'confirmed',
+  });
   return {
-    encryptedValue: balance.encryptedValueAddress,
+    encryptedValue,
     handle: handleHex(state.currentHandle),
     tokenAccount,
   };

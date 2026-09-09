@@ -149,7 +149,7 @@ mod helpers {
         let wallet = SigningKey::from_bytes(&[0x42; 32]);
         let user_pubkey = wallet.verifying_key().to_bytes();
         let transport_key = vec![0u8; 869];
-        let allowed_acl_domain_key = [0x05u8; 32];
+        let allowed_scope = [[0x05u8; 32], [0x06u8; 32]].concat();
         let verifying_program_id = [0x02u8; 32];
         let chain_id = 0x8000_0000_0000_0000u64 | 1;
         let mut extra_data = vec![0x02u8];
@@ -160,7 +160,7 @@ mod helpers {
         let permit = PermitFields::decode(&PermitWireFields {
             user_pubkey: user_pubkey.to_vec(),
             transport_key: transport_key.clone(),
-            allowed_acl_domain_keys: vec![allowed_acl_domain_key.to_vec()],
+            allowed_scopes: vec![allowed_scope.clone()],
             start_timestamp,
             duration_seconds,
             verifying_program_id: verifying_program_id.to_vec(),
@@ -175,7 +175,7 @@ mod helpers {
             "attestedPayload": {
                 "userPubkey": format!("0x{}", hex::encode(user_pubkey)),
                 "transportKey": format!("0x{}", hex::encode(&transport_key)),
-                "allowedAclDomainKeys": [format!("0x{}", hex::encode(allowed_acl_domain_key))],
+                "allowedScopes": [format!("0x{}", hex::encode(&allowed_scope))],
                 "requestValidity": {
                     "startTimestamp": start_timestamp.to_string(),
                     "durationSeconds": duration_seconds.to_string(),
@@ -186,11 +186,9 @@ mod helpers {
                 "extraData": format!("0x{}", hex::encode(&extra_data)),
                 "handles": [{
                     "handle": random_handle(),
-                    // The subject of a direct entry is the requester itself.
-                    "subject": format!("0x{}", hex::encode(user_pubkey)),
-                    "encryptedValueId": random_0x_hex(32),
-                    "proofLeafCount": "0",
-                    "accessProof": "0x",
+                    // The allowed key of a direct entry is the requester itself.
+                    "allowedKey": format!("0x{}", hex::encode(user_pubkey)),
+                    "encryptedValueAccount": random_0x_hex(32),
                 }],
             },
             "signature": format!("0x{}", hex::encode(signature)),

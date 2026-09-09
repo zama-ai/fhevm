@@ -21,7 +21,7 @@ pub struct UserDecryptionDelegation {
     /// Delegate allowed to request user decryption.
     pub delegate: Pubkey,
     /// The encrypted value account authority the delegation is scoped over. A delegation covers
-    /// every value of that authority in every domain: the domain is not one of the PDA's seeds.
+    /// every value of that authority in every scope: the scope is not one of the PDA's seeds.
     pub encrypted_value_account_authority: Pubkey,
     /// Slot after which the delegation is invalid.
     pub expiration_slot: u64,

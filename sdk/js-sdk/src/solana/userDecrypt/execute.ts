@@ -7,7 +7,6 @@
 // single source, and a verification that read the routing from configuration again could disagree
 // with what the wallet actually signed.
 
-import type { SolanaAccessEvidenceSource, SolanaHandleRequest } from './evidence.js';
 import type { SolanaPermitFields, SolanaPermitWarning, SolanaSignedPermit } from '../permit/index.js';
 import type {
   SolanaGatewayEip712Domain,
@@ -17,6 +16,7 @@ import type {
   SolanaUserDecryptLinkInputs,
   SolanaUserDecryptPlaintext,
 } from './response.js';
+import type { SolanaUserDecryptHandleEntry } from './request.js';
 import type { SolanaUserDecryptClock, SolanaUserDecryptTransport } from './session.js';
 import { runSolanaUserDecrypt } from './session.js';
 import { verifySolanaUserDecryptResponse } from './response.js';
@@ -71,8 +71,7 @@ export function solanaUserDecryptLinkInputs(
  * Runs one user decryption end to end: the retry session to an answer, then its verification.
  *
  * @param run.session - The signed permit and its transport keypair.
- * @param run.requests - The handles to decrypt, in the order they will be requested.
- * @param run.evidence - Where per-handle evidence comes from.
+ * @param run.entries - The handles to decrypt, in the order they will be requested.
  * @param run.transport - Submits a request and waits for its outcome.
  * @param run.clock - Used for the backoff between attempts.
  * @param run.attempts - Submission budget; the session's default applies when absent.
@@ -82,8 +81,7 @@ export function solanaUserDecryptLinkInputs(
  */
 export async function executeSolanaUserDecrypt(run: {
   readonly session: SolanaPermitSession;
-  readonly requests: readonly SolanaHandleRequest[];
-  readonly evidence: SolanaAccessEvidenceSource;
+  readonly entries: readonly SolanaUserDecryptHandleEntry[];
   readonly transport: SolanaUserDecryptTransport<readonly SolanaSigncryptedShare[]>;
   readonly clock: SolanaUserDecryptClock;
   readonly attempts?: number | undefined;
@@ -91,8 +89,7 @@ export async function executeSolanaUserDecrypt(run: {
 }): Promise<readonly SolanaUserDecryptPlaintext[]> {
   const { response: shares } = await runSolanaUserDecrypt({
     signedPermit: run.session.signedPermit,
-    requests: run.requests,
-    evidence: run.evidence,
+    entries: run.entries,
     transport: run.transport,
     clock: run.clock,
     ...(run.attempts === undefined ? {} : { attempts: run.attempts }),
@@ -101,7 +98,7 @@ export async function executeSolanaUserDecrypt(run: {
   return verifySolanaUserDecryptResponse({
     link: solanaUserDecryptLinkInputs(
       run.session.signedPermit.fields,
-      run.requests.map((request) => request.handle),
+      run.entries.map((entry) => entry.handle),
     ),
     shares,
     keyPair: run.session.keyPair,

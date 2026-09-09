@@ -8,7 +8,7 @@ license.workspace = true
 default = []
 test_bypass_key_extraction = []
 solana-grpc = ["dep:yellowstone-grpc-proto", "dep:tonic", "dep:zama-solana-transaction"]
-solana-reconstruct = ["dep:zama-host", "dep:anchor-lang", "dep:zama-solana-acl"]
+solana-reconstruct = ["dep:zama-host", "dep:anchor-lang", "dep:zama-solana-acl", "dep:axum", "dep:utoipa"]
 
 [[bin]]
 path = "src/bin/main.rs"
@@ -48,6 +48,7 @@ bigdecimal = { workspace = true }
 bs58 = "0.5.1"
 clap = { workspace = true }
 futures-util = { workspace = true }
+hex = { workspace = true }
 lru = { workspace = true }
 prometheus = { workspace = true }
 reqwest = { workspace = true }
@@ -58,6 +59,7 @@ sha2 = "0.10"
 sha3 = { workspace = true }
 sqlx = { workspace = true }
 tfhe = { workspace = true }
+thiserror = { workspace = true }
 time = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
@@ -94,8 +96,11 @@ yellowstone-grpc-proto = { git = "https://github.com/rpcpool/yellowstone-grpc", 
 zama-host = { path = "../../../solana/programs/zama-host", default-features = false, features = ["no-entrypoint", "decode"], optional = true }
 # AnchorDeserialize for reusing zama-host's FheExecuteArgs to decode the fhe_execute batch.
 anchor-lang = { version = "1.0.2", optional = true }
-# derive_encrypted_value_id for persistent fhe_execute output bindings (same parity rationale).
+# Leaf commitments and MMR of the RFC 035 leaf record (same parity rationale).
 zama-solana-acl = { path = "../../../solana/crates/zama-solana-acl", optional = true }
+# The leaf-proof HTTP interface the KMS connector reads, with its committed OpenAPI document.
+axum = { workspace = true, optional = true }
+utoipa = { workspace = true, optional = true }
 zama-solana-transaction = { path = "../../../solana/crates/zama-solana-transaction", optional = true }
 
 # local dependencies

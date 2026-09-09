@@ -4,6 +4,8 @@ pub mod contracts;
 pub mod database;
 pub mod generated;
 pub mod health_check;
+#[cfg(feature = "solana-reconstruct")]
+pub mod http_server;
 pub mod kms_generation;
 pub mod poller;
 pub mod protocol_config;

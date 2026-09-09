@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  confidentialBalanceValueAccount: vi.fn(),
+  balanceValueAddress: vi.fn(),
   createFhevmDecryptClient: vi.fn(),
   decryptPosition: vi.fn(),
   getAccountInfo: vi.fn(),
@@ -20,7 +20,7 @@ vi.mock('@fhevm/sdk/solana', () => ({
   setFhevmRuntimeConfig: vi.fn(),
 }));
 vi.mock('./vault/index.js', () => ({
-  confidentialBalanceValueAccount: mocks.confidentialBalanceValueAccount,
+  balanceValueAddress: mocks.balanceValueAddress,
   decryptPosition: mocks.decryptPosition,
   getEncryptedValueState: mocks.getEncryptedValueState,
   tokenAccountAddress: mocks.tokenAccountAddress,
@@ -53,7 +53,6 @@ const session = {
     },
     relayerUrl: 'http://127.0.0.1:3000',
     rpcUrl: 'http://127.0.0.1:8899',
-    proofServiceUrl: 'http://127.0.0.1:8080',
     aclProgram: `0x${'22'.repeat(32)}`,
     userDecryptContextId: '0',
     kmsSigners: [`0x${'01'.repeat(20)}`],
@@ -84,10 +83,7 @@ describe('confidential balance reveal evidence', () => {
     mocks.signPermit.mockResolvedValue(PERMIT_SESSION);
     mocks.createFhevmDecryptClient.mockReturnValue({ ready: Promise.resolve(), signPermit: mocks.signPermit });
     mocks.tokenAccountAddress.mockResolvedValue('token-account');
-    mocks.confidentialBalanceValueAccount.mockResolvedValue({
-      aclValueKey: new Uint8Array(32),
-      encryptedValueAddress: 'encrypted-value-account',
-    });
+    mocks.balanceValueAddress.mockResolvedValue('encrypted-value-account');
     mocks.getEncryptedValueState.mockResolvedValue({ currentHandle: new Uint8Array(32).fill(0x12) });
   });
 
@@ -132,12 +128,17 @@ describe('confidential balance reveal evidence', () => {
     expect(JSON.stringify(readDecryptionEvidence(session))).not.toContain('72');
 
     // The permit is minted once through the session's wallet, and the request runs under it.
-    expect(mocks.signPermit).toHaveBeenCalledExactlyOnceWith({ wallet: PERMIT_WALLET, durationSeconds: 3_600n });
+    // The mocked address encoder yields zero bytes, so both halves of the scope read as zero here.
+    expect(mocks.signPermit).toHaveBeenCalledExactlyOnceWith({
+      wallet: PERMIT_WALLET,
+      durationSeconds: 3_600n,
+      allowedScopes: [{ program: `0x${'00'.repeat(32)}`, scope: `0x${'00'.repeat(32)}` }],
+    });
     const [client, parameters] = mocks.decryptPosition.mock.calls[0] ?? [];
     expect(client).toBe(mocks.createFhevmDecryptClient.mock.results[0]?.value);
     expect(parameters).toMatchObject({
       session: PERMIT_SESSION,
-      entries: [{ handle: new Uint8Array(32).fill(0x12), encryptedValueId: new Uint8Array(32) }],
+      entries: [{ handle: new Uint8Array(32).fill(0x12), encryptedValueAccount: new Uint8Array(32) }],
     });
   });
 

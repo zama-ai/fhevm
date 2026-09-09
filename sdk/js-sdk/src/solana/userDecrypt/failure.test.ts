@@ -100,7 +100,10 @@ describe('a job that produced nothing', () => {
   // past, and a handle an update replaced while the request was in flight — are both fixed by
   // resolving the evidence again, so they need not be told apart to be acted on.
   it('resolves the evidence again rather than resubmitting the same bytes', () => {
-    expect(classifySolanaUserDecryptRejection({ kind: 'unanswered' })).toEqual({ action: 'resolve-again' });
+    expect(classifySolanaUserDecryptRejection({ kind: 'unanswered' })).toEqual({
+      action: 'retry-unchanged',
+      afterSeconds: SOLANA_USER_DECRYPT_DEFAULT_RETRY_SECONDS,
+    });
   });
 });
 

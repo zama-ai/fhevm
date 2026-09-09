@@ -44,16 +44,20 @@ fn account_info(pubkey: Pubkey, is_writable: bool) -> AccountInfo<'static> {
     AccountInfo::new(key, false, is_writable, lamports, data, owner, false)
 }
 
-fn encrypted_value_id(account: Pubkey, label_tag: u8) -> EncryptedValueId {
-    EncryptedValueId::new(
-        Domain::new(Pubkey::new_unique()),
-        account,
-        EncryptedValueLabel::new(handle(label_tag)),
-    )
+/// The one application every test value belongs to: an execution may not mix two.
+fn app() -> AppScope {
+    AppScope {
+        program: Pubkey::new_from_array([0xA9; 32]),
+        scope: [0xA5; 32],
+    }
 }
 
-fn subjects(subject: Pubkey) -> Vec<Pubkey> {
-    vec![subject]
+fn encrypted_value_id(account: Pubkey, label_tag: u8) -> EncryptedValueId {
+    EncryptedValueId::new(app(), account, EncryptedValueLabel::new(handle(label_tag)))
+}
+
+fn foreign_operand(handle: [u8; 32]) -> Operand {
+    Operand::persistent(handle, &encrypted_value_id(Pubkey::new_unique(), 0xEE))
 }
 
 fn scalar_operand_u64(value: u64) -> Operand {
@@ -90,10 +94,9 @@ fn batch_build_runs_closure_and_finishes_batch() {
             builder.add(
                 incremented,
                 Scalar::<Uint<64>>::u64(2),
-                Output::persistent(PersistentOutput::create(
-                    output_key,
-                    subjects(primary_authority),
-                )),
+                Output::persistent(
+                    PersistentOutput::create(output_key, &[]).allow(primary_authority),
+                ),
             )?;
             Ok(())
         },
@@ -140,7 +143,7 @@ fn builder_rejects_post_write_persistent_alias() {
     builder
         .trivial_encrypt_u64(
             7,
-            Output::persistent(PersistentOutput::create(key.clone(), subjects(authority))),
+            Output::persistent(PersistentOutput::create(key.clone(), &[]).allow(authority)),
         )
         .unwrap();
 
@@ -174,10 +177,9 @@ fn batch_build_lowers_verified_input_operand() {
             builder.add(
                 amount,
                 Scalar::<Uint<64>>::u64(1),
-                Output::persistent(PersistentOutput::create(
-                    output_key,
-                    subjects(primary_authority),
-                )),
+                Output::persistent(
+                    PersistentOutput::create(output_key, &[]).allow(primary_authority),
+                ),
             )?;
             Ok(())
         },
@@ -232,7 +234,7 @@ fn batch_build_propagates_closure_and_finish_errors() {
         |builder| {
             builder.binary_op(
                 FheBinaryOpCode::Ge,
-                Operand::persistent(balance_handle(1), Pubkey::new_unique()),
+                foreign_operand(balance_handle(1)),
                 scalar_operand_u64(2),
                 FheType::UINT64,
                 Output::transient(),
@@ -381,10 +383,7 @@ fn resolve_accounts_requires_the_cpi_authority_witness() {
         .add(
             balance,
             Scalar::<Uint<64>>::u64(1),
-            Output::persistent(PersistentOutput::create(
-                output_key,
-                subjects(primary_authority),
-            )),
+            Output::persistent(PersistentOutput::create(output_key, &[]).allow(primary_authority)),
         )
         .unwrap();
     let execution = builder.finish().unwrap();
@@ -402,8 +401,8 @@ fn resolve_accounts_requires_the_cpi_authority_witness() {
         .unwrap_err();
     assert_eq!(
         missing,
-        ExecutionAccountResolutionError::MissingOutputAuthority {
-            authority: ExecutionOutputAuthorityRequirement {
+        ExecutionAccountResolutionError::MissingValueAuthority {
+            authority: ExecutionValueAuthorityRequirement {
                 pubkey: primary_authority,
             }
         }
@@ -440,10 +439,7 @@ fn lowers_mixed_batch_to_stable_remaining_account_indices() {
             success,
             debit_candidate,
             balance,
-            Output::persistent(PersistentOutput::create(
-                output_key,
-                subjects(primary_authority),
-            )),
+            Output::persistent(PersistentOutput::create(output_key, &[]).allow(primary_authority)),
         )
         .unwrap();
 
@@ -530,10 +526,9 @@ fn dynamic_account_requirements_expose_order_roles_and_purposes() {
             builder.add(
                 input,
                 Scalar::<Uint<64>>::u64(2),
-                Output::persistent(PersistentOutput::create(
-                    output_key,
-                    subjects(extra_authority),
-                )),
+                Output::persistent(
+                    PersistentOutput::create(output_key, &[]).allow(extra_authority),
+                ),
             )?;
             Ok(())
         },
@@ -558,12 +553,12 @@ fn dynamic_account_requirements_expose_order_roles_and_purposes() {
     );
     assert_eq!(
         requirements[2].purposes(),
-        &[ExecutionAccountPurpose::PersistentOutputAuthority]
+        &[ExecutionAccountPurpose::PersistentValueAuthority]
     );
     assert!(requirements[1].is_writable());
     assert!(requirements[2].is_signer());
     assert!(!requirements[2].requires_dynamic_account());
-    assert!(requirements[2].requires_output_authority());
+    assert!(requirements[2].requires_value_authority());
 }
 
 #[test]
@@ -581,7 +576,7 @@ fn lowers_explicit_output_authority_witness() {
         .add(
             balance,
             Scalar::<Uint<64>>::u64(2),
-            Output::persistent(PersistentOutput::create(output_key, subjects(authority))),
+            Output::persistent(PersistentOutput::create(output_key, &[]).allow(authority)),
         )
         .unwrap();
 
@@ -600,26 +595,22 @@ fn lowers_explicit_output_authority_witness() {
             ),
             ExecutionAccountMeta::readonly_signer(
                 authority,
-                ExecutionAccountPurpose::PersistentOutputAuthority,
+                ExecutionAccountPurpose::PersistentValueAuthority,
             ),
         ]
     );
     assert_eq!(
-        execution
-            .additional_output_authorities()
-            .collect::<Vec<_>>(),
+        execution.additional_value_authorities().collect::<Vec<_>>(),
         vec![authority]
     );
-    let authority_requirements = execution
-        .output_authority_requirements()
-        .collect::<Vec<_>>();
+    let authority_requirements = execution.value_authority_requirements().collect::<Vec<_>>();
     assert_eq!(
         authority_requirements,
         vec![
-            ExecutionOutputAuthorityRequirement {
+            ExecutionValueAuthorityRequirement {
                 pubkey: primary_authority,
             },
-            ExecutionOutputAuthorityRequirement { pubkey: authority },
+            ExecutionValueAuthorityRequirement { pubkey: authority },
         ]
     );
     match &execution.args.steps[0] {
@@ -654,10 +645,7 @@ fn resolve_accounts_orders_and_validates_batch_requirements() {
         .add(
             input,
             Scalar::<Uint<64>>::u64(2),
-            Output::persistent(PersistentOutput::create(
-                output_key,
-                subjects(extra_authority),
-            )),
+            Output::persistent(PersistentOutput::create(output_key, &[]).allow(extra_authority)),
         )
         .unwrap();
     let execution = builder.finish().unwrap();
@@ -762,7 +750,7 @@ fn resolve_accounts_orders_and_validates_batch_requirements() {
         .unwrap_err();
     assert_eq!(
         duplicate_authority,
-        ExecutionAccountResolutionError::DuplicateOutputAuthority {
+        ExecutionAccountResolutionError::DuplicateValueAuthority {
             pubkey: extra_authority
         }
     );
@@ -782,7 +770,7 @@ fn resolve_accounts_orders_and_validates_batch_requirements() {
         .unwrap_err();
     assert!(matches!(
         unexpected_authority,
-        ExecutionAccountResolutionError::UnexpectedOutputAuthority { .. }
+        ExecutionAccountResolutionError::UnexpectedValueAuthority { .. }
     ));
 
     let missing_authority = execution
@@ -796,8 +784,8 @@ fn resolve_accounts_orders_and_validates_batch_requirements() {
         .unwrap_err();
     assert_eq!(
         missing_authority,
-        ExecutionAccountResolutionError::MissingOutputAuthority {
-            authority: ExecutionOutputAuthorityRequirement {
+        ExecutionAccountResolutionError::MissingValueAuthority {
+            authority: ExecutionValueAuthorityRequirement {
                 pubkey: extra_authority,
             }
         }
@@ -820,10 +808,7 @@ fn resolve_accounts_rejects_known_accounts_in_wrong_bucket() {
         .add(
             input,
             Scalar::<Uint<64>>::u64(2),
-            Output::persistent(PersistentOutput::create(
-                output_key,
-                subjects(extra_authority),
-            )),
+            Output::persistent(PersistentOutput::create(output_key, &[]).allow(extra_authority)),
         )
         .unwrap();
     let execution = builder.finish().unwrap();
@@ -863,7 +848,7 @@ fn resolve_accounts_rejects_known_accounts_in_wrong_bucket() {
         .unwrap_err();
     assert_eq!(
         input_acl_in_authority_bucket,
-        ExecutionAccountResolutionError::UnexpectedOutputAuthority { pubkey: input_acl }
+        ExecutionAccountResolutionError::UnexpectedValueAuthority { pubkey: input_acl }
     );
 
     let output_acl_in_authority_bucket = execution
@@ -881,7 +866,7 @@ fn resolve_accounts_rejects_known_accounts_in_wrong_bucket() {
         .unwrap_err();
     assert_eq!(
         output_acl_in_authority_bucket,
-        ExecutionAccountResolutionError::UnexpectedOutputAuthority { pubkey: output_acl }
+        ExecutionAccountResolutionError::UnexpectedValueAuthority { pubkey: output_acl }
     );
 }
 
@@ -894,10 +879,9 @@ fn lowers_create_steps() {
         FheExecutionBuilder::new(encrypted_value_account_authority(primary_authority));
     let trivial = builder.trivial_encrypt_u64(1, Output::transient()).unwrap();
     builder
-        .rand_u64(Output::persistent(PersistentOutput::create(
-            output_key,
-            subjects(primary_authority),
-        )))
+        .rand_u64(Output::persistent(
+            PersistentOutput::create(output_key, &[]).allow(primary_authority),
+        ))
         .unwrap();
     builder
         .add(trivial, Scalar::<Uint<64>>::u64(1), Output::transient())
@@ -942,7 +926,7 @@ fn rejects_invalid_references_and_types() {
     let error = builder
         .binary_op(
             FheBinaryOpCode::Ge,
-            Operand::persistent(balance_handle(1), Pubkey::new_unique()),
+            foreign_operand(balance_handle(1)),
             scalar_operand_u64(2),
             FheType::UINT64,
             Output::transient(),
@@ -1013,7 +997,10 @@ fn validates_encrypted_value_account_authority_and_persistent_account_pubkeys() 
     );
 
     let invalid_encrypted_value_id = EncryptedValueId::new(
-        Domain::new(Pubkey::default()),
+        AppScope {
+            program: Pubkey::default(),
+            scope: [1; 32],
+        },
         Pubkey::new_unique(),
         EncryptedValueLabel::new(handle(5)),
     );
@@ -1023,14 +1010,15 @@ fn validates_encrypted_value_account_authority_and_persistent_account_pubkeys() 
         FheExecutionBuildError::InvalidEncryptedValueId
     );
     assert_eq!(
-        PersistentOutput::create(invalid_encrypted_value_id, subjects(Pubkey::new_unique()))
+        PersistentOutput::create(invalid_encrypted_value_id, &[])
+            .allow(Pubkey::new_unique())
             .binding()
             .unwrap_err(),
         FheExecutionBuildError::InvalidEncryptedValueId
     );
 
     let invalid_account_key = EncryptedValueId::new(
-        Domain::new(Pubkey::new_unique()),
+        app(),
         Pubkey::default(),
         EncryptedValueLabel::new(handle(5)),
     );
@@ -1039,7 +1027,8 @@ fn validates_encrypted_value_account_authority_and_persistent_account_pubkeys() 
         FheExecutionBuildError::InvalidEncryptedValueId
     );
     assert_eq!(
-        PersistentOutput::create(invalid_account_key, subjects(Pubkey::new_unique()))
+        PersistentOutput::create(invalid_account_key, &[])
+            .allow(Pubkey::new_unique())
             .binding()
             .unwrap_err(),
         FheExecutionBuildError::InvalidEncryptedValueId
@@ -1051,7 +1040,7 @@ fn binary_validation_rejects_host_type_mismatches() {
     let primary_authority = Pubkey::new_unique();
     let mut builder =
         FheExecutionBuilder::new(encrypted_value_account_authority(primary_authority));
-    let bool_lhs = Operand::persistent(typed_handle(1, FheType::BOOL.byte()), Pubkey::new_unique());
+    let bool_lhs = foreign_operand(typed_handle(1, FheType::BOOL.byte()));
     let error = builder
         .binary_op(
             FheBinaryOpCode::Add,
@@ -1070,11 +1059,8 @@ fn binary_validation_rejects_host_type_mismatches() {
     let error = builder
         .binary_op(
             FheBinaryOpCode::Add,
-            Operand::persistent(balance_handle(1), Pubkey::new_unique()),
-            Operand::persistent(
-                typed_handle(2, FheType::UINT32.byte()),
-                Pubkey::new_unique(),
-            ),
+            foreign_operand(balance_handle(1)),
+            foreign_operand(typed_handle(2, FheType::UINT32.byte())),
             FheType::UINT64,
             Output::transient(),
         )
@@ -1091,7 +1077,7 @@ fn unary_validation_rejects_same_type_cast_and_bad_operand_types() {
     assert!(builder
         .unary_op(
             FheUnaryOpCode::Cast,
-            Operand::persistent(balance_handle(1), Pubkey::new_unique()),
+            foreign_operand(balance_handle(1)),
             FheType::UINT32,
             Output::transient(),
         )
@@ -1101,7 +1087,7 @@ fn unary_validation_rejects_same_type_cast_and_bad_operand_types() {
         builder
             .unary_op(
                 FheUnaryOpCode::Cast,
-                Operand::persistent(balance_handle(1), Pubkey::new_unique()),
+                foreign_operand(balance_handle(1)),
                 FheType::UINT64,
                 Output::transient(),
             )
@@ -1112,7 +1098,7 @@ fn unary_validation_rejects_same_type_cast_and_bad_operand_types() {
     assert!(builder
         .unary_op(
             FheUnaryOpCode::Cast,
-            Operand::persistent(typed_handle(2, FheType::BOOL.byte()), Pubkey::new_unique()),
+            foreign_operand(typed_handle(2, FheType::BOOL.byte())),
             FheType::UINT32,
             Output::transient(),
         )
@@ -1122,7 +1108,7 @@ fn unary_validation_rejects_same_type_cast_and_bad_operand_types() {
         builder
             .unary_op(
                 FheUnaryOpCode::Cast,
-                Operand::persistent(balance_handle(1), Pubkey::new_unique()),
+                foreign_operand(balance_handle(1)),
                 FheType::BOOL,
                 Output::transient(),
             )
@@ -1132,7 +1118,7 @@ fn unary_validation_rejects_same_type_cast_and_bad_operand_types() {
     assert_eq!(
         validate_unary_step(
             FheUnaryOpCode::Cast,
-            &Operand::persistent(balance_handle(1), Pubkey::new_unique()),
+            &foreign_operand(balance_handle(1)),
             7u8,
             0,
             |_| None,
@@ -1144,7 +1130,7 @@ fn unary_validation_rejects_same_type_cast_and_bad_operand_types() {
         builder
             .unary_op(
                 FheUnaryOpCode::Cast,
-                Operand::persistent(typed_handle(3, 7u8), Pubkey::new_unique()),
+                foreign_operand(typed_handle(3, 7u8)),
                 FheType::UINT64,
                 Output::transient(),
             )
@@ -1155,7 +1141,7 @@ fn unary_validation_rejects_same_type_cast_and_bad_operand_types() {
         builder
             .unary_op(
                 FheUnaryOpCode::Cast,
-                Operand::persistent(typed_handle(4, 8u8), Pubkey::new_unique()),
+                foreign_operand(typed_handle(4, 8u8)),
                 FheType::UINT64,
                 Output::transient(),
             )
@@ -1165,7 +1151,7 @@ fn unary_validation_rejects_same_type_cast_and_bad_operand_types() {
     assert_eq!(
         validate_unary_step(
             FheUnaryOpCode::Cast,
-            &Operand::persistent(balance_handle(1), Pubkey::new_unique()),
+            &foreign_operand(balance_handle(1)),
             8u8,
             0,
             |_| None,
@@ -1178,7 +1164,7 @@ fn unary_validation_rejects_same_type_cast_and_bad_operand_types() {
         builder
             .unary_op(
                 FheUnaryOpCode::Neg,
-                Operand::persistent(typed_handle(1, FheType::BOOL.byte()), Pubkey::new_unique()),
+                foreign_operand(typed_handle(1, FheType::BOOL.byte())),
                 FheType::BOOL,
                 Output::transient(),
             )
@@ -1268,7 +1254,7 @@ fn builder_exposes_the_host_operator_type_surface() {
     .unwrap();
     assert!(builder.eq(bool_c, bool_d, Output::transient()).is_ok());
 
-    let u256 = Operand::persistent(typed_handle(3, 8u8), Pubkey::new_unique());
+    let u256 = foreign_operand(typed_handle(3, 8u8));
     assert_eq!(
         validate_binary_step(FheBinaryOpCode::Xor, &u256, &u256, 8u8, 0, |_| None).unwrap_err(),
         FheExecutionBuildError::UnsupportedFheType
@@ -1288,50 +1274,41 @@ fn builder_exposes_the_host_operator_type_surface() {
 }
 
 #[test]
-fn persistent_output_validates_raw_subjects() {
+fn persistent_output_validates_allow_keys() {
     let key = encrypted_value_id(Pubkey::new_unique(), 1);
+    // No allows is a legal write: the handle is simply decryptable by nobody yet.
+    assert!(PersistentOutput::create(key.clone(), &[]).binding().is_ok());
     assert_eq!(
-        PersistentOutput::create(key.clone(), vec![])
+        PersistentOutput::create(key.clone(), &[])
+            .allow(Pubkey::default())
             .binding()
             .unwrap_err(),
-        FheExecutionBuildError::InvalidSubjects
-    );
-    assert_eq!(
-        PersistentOutput::create(key.clone(), vec![Pubkey::default()])
-            .binding()
-            .unwrap_err(),
-        FheExecutionBuildError::InvalidSubjects
+        FheExecutionBuildError::InvalidAllowKey
     );
     let duplicate = Pubkey::new_unique();
     assert_eq!(
-        PersistentOutput::create(key.clone(), vec![duplicate, duplicate])
+        PersistentOutput::create(key, &[])
+            .allow(duplicate)
+            .allow(duplicate)
             .binding()
             .unwrap_err(),
-        FheExecutionBuildError::InvalidSubjects
-    );
-    assert_eq!(
-        PersistentOutput::create(
-            key,
-            (0..=zama_solana_acl::MAX_ENCRYPTED_VALUE_SUBJECTS)
-                .map(|_| Pubkey::new_unique())
-                .collect(),
-        )
-        .binding()
-        .unwrap_err(),
-        FheExecutionBuildError::InvalidSubjects
+        FheExecutionBuildError::InvalidAllowKey
     );
 }
 
 #[test]
 fn persistent_output_create_matches_batch_lowering() {
     let primary_authority = Pubkey::new_unique();
-    let subject = Pubkey::new_unique();
+    let allowed = Pubkey::new_unique();
     let output_key = encrypted_value_id(primary_authority, 42);
-    let output = PersistentOutput::create(output_key.clone(), subjects(subject));
+    // A 32-byte seed interns; the tag and the bump stay literal.
+    let seed_owner = Pubkey::new_unique();
+    let seeds: [&[u8]; 3] = [b"balance", seed_owner.as_ref(), &[254]];
+    let output = PersistentOutput::create(output_key.clone(), &seeds).allow(allowed);
     let binding = output.binding().unwrap();
 
     assert_eq!(binding.encrypted_value(), output_key.address());
-    assert_eq!(binding.domain(), output_key.domain());
+    assert_eq!(binding.app(), output_key.app());
     assert_eq!(
         binding.encrypted_value_account_authority(),
         output_key.encrypted_value_account_authority()
@@ -1340,90 +1317,214 @@ fn persistent_output_create_matches_batch_lowering() {
         binding.encrypted_value_label(),
         output_key.encrypted_value_label().bytes()
     );
-    assert_eq!(binding.subjects(), subjects(subject));
+    assert_eq!(binding.allows(), &[allowed]);
     assert_eq!(binding.previous_handle(), None);
-    assert_eq!(binding.previous_subjects(), None);
 
     let mut builder =
         FheExecutionBuilder::new(encrypted_value_account_authority(primary_authority));
     builder
         .trivial_encrypt_u64(
             7,
-            Output::persistent(PersistentOutput::create(output_key, subjects(subject))),
+            Output::persistent(PersistentOutput::create(output_key, &seeds).allow(allowed)),
         )
         .unwrap();
     let execution = builder.finish().unwrap();
+    assert_eq!(execution.app(), Some(app()));
     match &execution.args.steps[0] {
         FheExecuteStep::TrivialEncrypt {
             output:
                 FheExecuteOutput::StoredValue {
                     output_encrypted_value_index,
-                    output_domain_index,
-                    output_account_index,
+                    output_program_index,
+                    output_authority_key_index,
+                    output_scope_index,
                     output_label_index,
-                    output_subject_indexes,
-                    previous_state,
+                    output_authority_seeds,
+                    output_allow_indexes,
+                    previous_handle_index,
                     ..
                 },
             ..
         } => {
+            let dictionary = &execution.args;
             let output_encrypted_value =
                 execution.remaining_accounts[*output_encrypted_value_index as usize].pubkey;
             assert_eq!(output_encrypted_value, binding.encrypted_value());
             assert_eq!(
-                execution.args.dictionary_key(*output_domain_index).unwrap(),
-                binding.domain().pubkey()
+                dictionary.dictionary_key(*output_program_index).unwrap(),
+                app().program
             );
             assert_eq!(
-                execution
-                    .args
-                    .dictionary_key(*output_account_index)
+                dictionary
+                    .dictionary_key(*output_authority_key_index)
                     .unwrap(),
                 binding.encrypted_value_account_authority()
             );
             assert_eq!(
-                execution
-                    .args
-                    .dictionary_bytes(*output_label_index)
-                    .unwrap(),
+                dictionary.dictionary_bytes(*output_scope_index).unwrap(),
+                app().scope
+            );
+            assert_eq!(
+                dictionary.dictionary_bytes(*output_label_index).unwrap(),
                 binding.encrypted_value_label()
             );
-            let output_subjects: Vec<Pubkey> = output_subject_indexes
+            assert_eq!(
+                *output_authority_seeds,
+                vec![
+                    zama_host::PdaSeed::Literal {
+                        bytes: b"balance".to_vec()
+                    },
+                    zama_host::PdaSeed::Interned {
+                        index: dictionary
+                            .dictionary
+                            .iter()
+                            .position(|entry| *entry == seed_owner.to_bytes())
+                            .unwrap() as u8
+                    },
+                    zama_host::PdaSeed::Literal { bytes: vec![254] },
+                ]
+            );
+            let allows: Vec<Pubkey> = output_allow_indexes
                 .iter()
-                .map(|index| execution.args.dictionary_key(*index).unwrap())
+                .map(|index| dictionary.dictionary_key(*index).unwrap())
                 .collect();
-            assert_eq!(output_subjects, binding.subjects());
-            assert_eq!(*previous_state, binding.previous_state());
+            assert_eq!(allows, binding.allows());
+            assert_eq!(*previous_handle_index, None);
         }
         other => panic!("unexpected step: {other:?}"),
     }
 }
 
 #[test]
-fn persistent_output_update_carries_current_state() {
+fn persistent_output_update_echoes_the_current_handle() {
     let primary_authority = Pubkey::new_unique();
-    let subject = Pubkey::new_unique();
     let output_key = encrypted_value_id(primary_authority, 42);
-    let previous_handle = balance_handle(1);
-    let previous_subjects = vec![subject];
-    let current = zama_host::EncryptedValue {
-        domain: primary_authority,
-        encrypted_value_account_authority: Pubkey::new_unique(),
-        label: [42; 32],
-        current_handle: previous_handle,
-        subjects: previous_subjects.clone(),
-        leaf_count: 7,
-        peaks: vec![],
-        bump: 1,
-    };
-    let output = PersistentOutput::update(output_key, subjects(subject), &current);
-    let binding = output.binding().unwrap();
+    let current_handle = balance_handle(1);
+    let binding = PersistentOutput::update(output_key.clone(), current_handle)
+        .binding()
+        .unwrap();
+    assert_eq!(binding.previous_handle(), Some(current_handle));
 
-    assert_eq!(binding.previous_handle(), Some(previous_handle));
+    let mut builder =
+        FheExecutionBuilder::new(encrypted_value_account_authority(primary_authority));
+    builder
+        .trivial_encrypt_u64(
+            7,
+            Output::persistent(PersistentOutput::update(output_key, current_handle)),
+        )
+        .unwrap();
+    let execution = builder.finish().unwrap();
+    assert_eq!(execution.cost().persistent_updates, 1);
+    match &execution.args.steps[0] {
+        FheExecuteStep::TrivialEncrypt {
+            output:
+                FheExecuteOutput::StoredValue {
+                    previous_handle_index: Some(index),
+                    output_authority_seeds,
+                    ..
+                },
+            ..
+        } => {
+            assert_eq!(
+                execution.args.dictionary_bytes(*index).unwrap(),
+                current_handle
+            );
+            assert!(output_authority_seeds.is_empty());
+        }
+        other => panic!("unexpected step: {other:?}"),
+    }
+}
+
+/// Reading a value whose authority is not the execution's fixed signer needs that authority to
+/// sign: the builder adds the signer slot and the CPI resolver demands the witness.
+#[test]
+fn persistent_operand_with_its_own_authority_requires_that_signer() {
+    let primary_authority = Pubkey::new_unique();
+    let other_authority = Pubkey::new_unique();
+    let input_key = encrypted_value_id(other_authority, 1);
+    let input = Uint64Handle::persistent(balance_handle(1), input_key.clone()).unwrap();
+    let execution = FheExecution::build(
+        encrypted_value_account_authority(primary_authority),
+        |builder| {
+            builder.add(input, Scalar::<Uint<64>>::u64(1), Output::transient())?;
+            Ok(())
+        },
+    )
+    .unwrap();
     assert_eq!(
-        binding.previous_subjects(),
-        Some(previous_subjects.as_slice())
+        execution.remaining_accounts,
+        vec![
+            ExecutionAccountMeta::readonly(
+                input_key.address(),
+                ExecutionAccountPurpose::PersistentInputAcl
+            ),
+            ExecutionAccountMeta::readonly_signer(
+                other_authority,
+                ExecutionAccountPurpose::PersistentValueAuthority,
+            ),
+        ]
     );
+    assert_eq!(
+        execution.additional_value_authorities().collect::<Vec<_>>(),
+        vec![other_authority]
+    );
+}
+
+/// One execution, one application: a second `(program, scope)` is refused where it appears,
+/// whether as an operand or as an output, and the builder is left untouched.
+#[test]
+fn mixed_scopes_are_rejected_at_the_step_that_mixes() {
+    let authority = Pubkey::new_unique();
+    let other_app = AppScope {
+        program: Pubkey::new_unique(),
+        scope: [7; 32],
+    };
+    let same =
+        Uint64Handle::persistent(balance_handle(1), encrypted_value_id(authority, 1)).unwrap();
+    let other = Uint64Handle::persistent(
+        balance_handle(2),
+        EncryptedValueId::new(other_app, authority, EncryptedValueLabel::new([2; 32])),
+    )
+    .unwrap();
+    let mut builder = FheExecutionBuilder::new(encrypted_value_account_authority(authority));
+    builder
+        .add(same, Scalar::<Uint<64>>::u64(1), Output::transient())
+        .unwrap();
+    let steps_before = builder.steps.len();
+    assert_eq!(
+        builder
+            .add(other, Scalar::<Uint<64>>::u64(1), Output::transient())
+            .unwrap_err(),
+        FheExecutionBuildError::MixedScopes
+    );
+    assert_eq!(
+        builder
+            .trivial_encrypt_u64(
+                1,
+                Output::persistent(PersistentOutput::create(
+                    EncryptedValueId::new(other_app, authority, EncryptedValueLabel::new([3; 32])),
+                    &[],
+                )),
+            )
+            .unwrap_err(),
+        FheExecutionBuildError::MixedScopes
+    );
+    assert_eq!(builder.steps.len(), steps_before);
+    assert_eq!(builder.finish().unwrap().app(), Some(app()));
+}
+
+#[test]
+fn transient_only_execution_has_no_application() {
+    let execution = FheExecution::build(
+        encrypted_value_account_authority(Pubkey::new_unique()),
+        |builder| {
+            builder.trivial_encrypt_u64(1, Output::transient())?;
+            Ok(())
+        },
+    )
+    .unwrap();
+    assert_eq!(execution.app(), None);
+    assert!(!execution.has_rand_step());
 }
 
 #[test]
@@ -1472,15 +1573,12 @@ fn lowers_bounded_rand_step_and_rejects_non_power_of_two_bounds() {
     builder
         .rand_bounded_u64(
             BoundedU64UpperBound::power_of_two(1 << 20).unwrap(),
-            // Bounded randomness inherits `RandRequiresPersistentOutput`: a transient output would
-            // leave a block-entropy-derived handle with no ACL record to bind it to.
-            Output::persistent(PersistentOutput::create(
-                encrypted_value_id(primary_authority, 7),
-                subjects(primary_authority),
-            )),
+            Output::transient(),
         )
         .unwrap();
     let execution = builder.finish().unwrap();
+    // A rand step needs the host's nonce account on the invoke; the execution says so.
+    assert!(execution.has_rand_step());
     let mut expected_bound = [0u8; 32];
     expected_bound[24..].copy_from_slice(&(1u64 << 20).to_be_bytes());
     assert!(matches!(
@@ -1495,24 +1593,6 @@ fn lowers_bounded_rand_step_and_rejects_non_power_of_two_bounds() {
     assert_eq!(
         BoundedU64UpperBound::power_of_two(3).unwrap_err(),
         FheExecutionBuildError::InvalidRandomUpperBound
-    );
-
-    // The rule the comment above claims this step inherits. Asserted rather than described: no other
-    // builder-level test covers it for any rand variant, so without this line `validate.rs`'s
-    // persistent-output requirement is only checked on-chain. Note where it fires — adding the step
-    // succeeds, and it is `finish` that rejects the execution, because the requirement is about the
-    // execution as a whole (some later step may be the one that persists).
-    let mut transient_builder =
-        FheExecutionBuilder::new(encrypted_value_account_authority(primary_authority));
-    transient_builder
-        .rand_bounded_u64(
-            BoundedU64UpperBound::power_of_two(1 << 20).unwrap(),
-            Output::transient(),
-        )
-        .unwrap();
-    assert_eq!(
-        transient_builder.finish().unwrap_err(),
-        FheExecutionBuildError::RandRequiresPersistentOutput
     );
 }
 
@@ -1589,7 +1669,7 @@ fn step_tables_rollback_undoes_promotions_and_appends() {
         tables
             .account_index(ExecutionAccountMeta::readonly_signer(
                 shared,
-                ExecutionAccountPurpose::PersistentOutputAuthority,
+                ExecutionAccountPurpose::PersistentValueAuthority,
             ))
             .unwrap(),
         0
@@ -1621,10 +1701,7 @@ fn step_that_fails_after_interning_leaves_the_builder_untouched() {
     builder
         .trivial_encrypt_u64(
             7,
-            Output::persistent(PersistentOutput::create(
-                written_key.clone(),
-                subjects(authority),
-            )),
+            Output::persistent(PersistentOutput::create(written_key.clone(), &[]).allow(authority)),
         )
         .unwrap();
     let accounts_before = builder.remaining_accounts.clone();

@@ -22,7 +22,6 @@ const sampleConfig = (): SolanaDemoConfig => ({
   rpcUrl: "http://127.0.0.1:8899",
   wsUrl: "ws://127.0.0.1:8900",
   relayerUrl: "http://127.0.0.1:3000",
-  proofServiceUrl: "http://127.0.0.1:8088",
   gatewayRpcUrl: "http://127.0.0.1:8546",
   aclProgram: `0x${"ab".repeat(32)}`,
   userDecryptContextId: "42",

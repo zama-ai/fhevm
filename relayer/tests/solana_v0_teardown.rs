@@ -43,6 +43,45 @@ const FORBIDDEN: &[(&str, &str)] = &[
         "solana_allowed_acl_domain_keys",
         "a v0 typed Solana field on the EVM payload; the ACL scope rides in the permit",
     ),
+    // The pre-RFC-035 proof passthrough: the SDK fetched an MMR proof and the relayer carried it
+    // to the connector. The connector reads the allow leaf itself now, so no entry field names a
+    // proof, a leaf count, a subject, or an encrypted value id.
+    (
+        "accessProof",
+        "the proof blob the entry used to carry; the connector fetches the leaf proof itself",
+    ),
+    (
+        "access_proof",
+        "the proof blob the entry used to carry; the connector fetches the leaf proof itself",
+    ),
+    (
+        "proofLeafCount",
+        "the leaf count a carried proof was built against; nothing is carried",
+    ),
+    (
+        "proof_leaf_count",
+        "the leaf count a carried proof was built against; nothing is carried",
+    ),
+    (
+        "encryptedValueId",
+        "the entry named the value by id and the reader derived the address; it names the account now",
+    ),
+    (
+        "encrypted_value_id",
+        "the entry named the value by id and the reader derived the address; it names the account now",
+    ),
+    (
+        "allowedAclDomainKeys",
+        "the permit v1 scope list of domain keys; permit v2 scopes are (program, scope) pairs",
+    ),
+    (
+        "allowed_acl_domain_keys",
+        "the permit v1 scope list of domain keys; permit v2 scopes are (program, scope) pairs",
+    ),
+    (
+        "MmrProof",
+        "the proof type the relayer decoded on the way through; it decodes no proof",
+    ),
 ];
 
 fn rust_sources(dir: &Path, out: &mut Vec<PathBuf>) {

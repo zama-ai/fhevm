@@ -21,7 +21,7 @@ export function DepositJourney({ controller }: { readonly controller: DemoContro
   const complete = settled && lifecycle.claimed;
   const activityLabel = complete
     ? 'Deposit complete'
-    : lifecycle?.kind === 'proving'
+    : lifecycle?.kind === 'dispatched'
       ? 'Settlement in progress'
       : settled
         ? 'Receiving cShares'
@@ -70,7 +70,7 @@ export function DepositJourney({ controller }: { readonly controller: DemoContro
               </div>
             </div>
 
-            {(lifecycle?.kind === 'awaiting-dispatch' || lifecycle?.kind === 'proving') && (
+            {(lifecycle?.kind === 'awaiting-dispatch' || lifecycle?.kind === 'dispatched') && (
               <SettlementProgress lifecycle={lifecycle} action={operatorAction} />
             )}
 

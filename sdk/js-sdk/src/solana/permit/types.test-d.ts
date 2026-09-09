@@ -19,7 +19,7 @@ const identity = new Uint8Array(32);
 const wire = {
   userPubkey: identity,
   transportKey: new Uint8Array(869),
-  allowedAclDomainKeys: [],
+  allowedScopes: [],
   startTimestamp: 1_767_229_380n,
   durationSeconds: 604_800n,
   verifyingProgramId: identity,
@@ -55,7 +55,7 @@ expectTypeOf(decodeSolanaPermitFields(wire)).toEqualTypeOf<SolanaPermitFields>()
 const fabricated: SolanaPermitFields = {
   userPubkey: identity,
   transportKey: new Uint8Array(869),
-  allowedAclDomainKeys: [],
+  allowedScopes: [],
   startTimestamp: 1_767_229_380n,
   durationSeconds: 604_800n,
   verifyingProgramId: identity,

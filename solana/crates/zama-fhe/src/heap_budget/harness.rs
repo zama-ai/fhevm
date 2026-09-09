@@ -51,7 +51,7 @@ static ALLOCATOR: CountingAllocator = CountingAllocator;
 /// keystone: a shape silently dropping out (a structural regression grew the tally) or joining
 /// (the budget widened) both fail until the change that moved the frontier updates this
 /// number and the documented tables with it.
-pub(crate) const ADMITTED_FRONTIER_SHAPES: usize = 49;
+pub(crate) const ADMITTED_FRONTIER_SHAPES: usize = 57;
 
 /// A boxed shape constructor, so the frontier can hold shapes of different closure types.
 pub(crate) type ShapeBuilder =
@@ -82,7 +82,7 @@ pub(crate) fn balance_handle(tag: u8) -> [u8; 32] {
 
 /// Runs one build-plus-packet measurement, or reports the typed error the builder rejected the
 /// shape with. Everything the closure captures is built by the caller before the measurement
-/// starts: ids, subject lists, previous values, and attestations are the app's own data, not
+/// starts: ids, allow lists, previous handles, and attestations are the app's own data, not
 /// what the builder allocates on the app's behalf.
 pub(crate) fn try_measure<F>(
     name: String,

@@ -4,10 +4,10 @@
   "attestation_type": "solana-srfc38-user-decrypt-v1",
   "permit_source": {
     "file": "../permit/permit_v1.json",
-    "record": "reference-permit-two-domains",
+    "record": "reference-permit-two-scopes",
     "derivation": "Take the record's `permit` and `signature`. Every hex field gains a `0x` prefix; every u64 field stays the decimal string it already is; `start_timestamp`/`duration_seconds` move under `requestValidity`; `transport_key` is resolved through the file's `transport_keys` table. Field names go from snake_case to camelCase."
   },
-  "composition": "request = { attestationType, attestedPayload: { userPubkey, transportKey, allowedAclDomainKeys, requestValidity, verifyingProgramId, chainId, extraData, handles, ...payload_extra }, signature } — the permit fields derived as above, `handles` and `payload_extra` taken from the record.",
+  "composition": "request = { attestationType, attestedPayload: { userPubkey, transportKey, allowedScopes, requestValidity, verifyingProgramId, chainId, extraData, handles, ...payload_extra }, signature } — the permit fields derived as above, `handles` and `payload_extra` taken from the record.",
   "rejected_by_values": {
     "json-shape": "The typed envelope refuses to deserialize: an unknown key, or a missing one.",
     "payload-rules": "Deserializes, and the payload validator refuses it.",
@@ -16,28 +16,13 @@
   },
   "accepted": [
     {
-      "name": "current-access-one-handle",
-      "comment": "The ordinary request: one handle whose access is current, so there is no proof to carry. `proofLeafCount` is \"0\" and `accessProof` is the empty blob — not omitted, because the field is not optional.",
+      "name": "direct-entry-one-handle",
+      "comment": "The ordinary request: one handle, the signer's own key as the allowed key, and the encrypted value account the handle lives in. The entry carries no proof: the connector fetches the allow leaf from the coprocessors and verifies it against the account it reads itself.",
       "handles": [
         {
           "handle": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a18b4cddfda76385ae0000",
-          "subject": "0xc11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
-          "encryptedValueId": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1",
-          "proofLeafCount": "0",
-          "accessProof": "0x"
-        }
-      ]
-    },
-    {
-      "name": "historical-access-one-handle",
-      "comment": "The same handle after an update replaced it: the entry carries the leaf count the proof was built against and a bare borsh MmrProof — no mode byte, unlike the public-decrypt transport blob.",
-      "handles": [
-        {
-          "handle": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a18b4cddfda76385ae0000",
-          "subject": "0xc11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
-          "encryptedValueId": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1",
-          "proofLeafCount": "8",
-          "accessProof": "0x030000000000000003000000111111111111111111111111111111111111111111111111111111111111111122222222222222222222222222222222222222222222222222222222222222223333333333333333333333333333333333333333333333333333333333333333"
+          "allowedKey": "0xc11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
+          "encryptedValueAccount": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1"
         }
       ]
     },
@@ -47,37 +32,29 @@
       "handles": [
         {
           "handle": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a18b4cddfda76385ae0000",
-          "subject": "0xc11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
-          "encryptedValueId": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1",
-          "proofLeafCount": "0",
-          "accessProof": "0x"
+          "allowedKey": "0xc11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
+          "encryptedValueAccount": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1"
         },
         {
           "handle": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a18b4cddfda76385ae0000",
-          "subject": "0xc11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
-          "encryptedValueId": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1",
-          "proofLeafCount": "0",
-          "accessProof": "0x"
+          "allowedKey": "0xc11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
+          "encryptedValueAccount": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1"
         }
       ]
     },
     {
       "name": "delegated-entry-beside-a-direct-one",
-      "comment": "Two handles with different subjects: one the signer's own, one a delegator's. The subject is per entry precisely so a single permit can carry both, and the signer's own key appears only once, in the permit.",
+      "comment": "Two handles with different allowed keys: one the signer's own, one a delegator's. The allowed key is per entry precisely so a single permit can carry both, and the signer's own key appears only once, in the permit.",
       "handles": [
         {
           "handle": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a18b4cddfda76385ae0000",
-          "subject": "0xc11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
-          "encryptedValueId": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1",
-          "proofLeafCount": "0",
-          "accessProof": "0x"
+          "allowedKey": "0xc11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
+          "encryptedValueAccount": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1"
         },
         {
           "handle": "0xb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b28b4cddfda76385ae0000",
-          "subject": "0xd0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0",
-          "encryptedValueId": "0xe2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2",
-          "proofLeafCount": "0",
-          "accessProof": "0x"
+          "allowedKey": "0xd0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0",
+          "encryptedValueAccount": "0xe2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2"
         }
       ]
     }
@@ -87,41 +64,37 @@
       "name": "unknown-key-in-the-payload",
       "comment": "A field from the retired v0 shape. The envelope denies unknown keys, so a client that keeps sending a nonce is told rather than silently having it ignored.",
       "rejected_by": "json-shape",
-      "payload_extra": { "solanaNonce": "0x0000000000000000000000000000000000000000000000000000000000000000" },
+      "payload_extra": {
+        "solanaNonce": "0x0000000000000000000000000000000000000000000000000000000000000000"
+      },
       "handles": [
         {
           "handle": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a18b4cddfda76385ae0000",
-          "subject": "0xc11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
-          "encryptedValueId": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1",
-          "proofLeafCount": "0",
-          "accessProof": "0x"
+          "allowedKey": "0xc11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
+          "encryptedValueAccount": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1"
         }
       ]
     },
     {
-      "name": "handle-entry-without-its-subject",
-      "comment": "No entry field is optional. A missing subject cannot default to the signer: on a delegated entry that would silently ask for the wrong pubkey's value.",
+      "name": "handle-entry-without-its-allowed-key",
+      "comment": "No entry field is optional. A missing allowed key cannot default to the signer: on a delegated entry that would silently ask for the wrong pubkey's value.",
       "rejected_by": "json-shape",
       "handles": [
         {
           "handle": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a18b4cddfda76385ae0000",
-          "encryptedValueId": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1",
-          "proofLeafCount": "0",
-          "accessProof": "0x"
+          "encryptedValueAccount": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1"
         }
       ]
     },
     {
-      "name": "handle-entry-under-the-retired-key-name",
-      "comment": "The v0 entry called this field `owner`. It is `subject` now, because on a delegated entry the pubkey is the delegator rather than any owner of the request — and the old name is refused rather than accepted as a synonym.",
+      "name": "handle-entry-with-a-proof-field",
+      "comment": "The pre-RFC-035 entry carried a proof field beside its identities. No proof field exists now — the connector reads the allow leaf itself — and a client still sending one is refused rather than having it ignored.",
       "rejected_by": "json-shape",
       "handles": [
         {
           "handle": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a18b4cddfda76385ae0000",
-          "subject": "0xc11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
-          "owner": "0xc11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
-          "encryptedValueId": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1",
-          "proofLeafCount": "0",
+          "allowedKey": "0xc11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
+          "encryptedValueAccount": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1",
           "accessProof": "0x"
         }
       ]
@@ -133,44 +106,26 @@
       "handles": []
     },
     {
-      "name": "access-proof-with-a-trailing-byte",
-      "comment": "A well-formed proof followed by one byte nobody reads. Accepting it would make two blobs mean the same proof, and the relayer and the connector would have to agree on which one the request carried.",
-      "rejected_by": "request-decode",
-      "handles": [
-        {
-          "handle": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a18b4cddfda76385ae0000",
-          "subject": "0xc11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
-          "encryptedValueId": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1",
-          "proofLeafCount": "8",
-          "accessProof": "0x03000000000000000300000011111111111111111111111111111111111111111111111111111111111111112222222222222222222222222222222222222222222222222222222222222222333333333333333333333333333333333333333333333333333333333333333399"
-        }
-      ]
-    },
-    {
-      "name": "access-proof-that-is-not-a-proof",
-      "comment": "Three bytes that decode as nothing. Non-empty means historical mode, and historical mode means a proof.",
-      "rejected_by": "request-decode",
-      "handles": [
-        {
-          "handle": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a18b4cddfda76385ae0000",
-          "subject": "0xc11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
-          "encryptedValueId": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1",
-          "proofLeafCount": "8",
-          "accessProof": "0xffffff"
-        }
-      ]
-    },
-    {
       "name": "handle-of-the-wrong-width",
       "comment": "Thirty-one bytes. A handle carries its host chain id in fixed positions, so a short one is not a handle with a missing byte — it is a different reading of every field.",
       "rejected_by": "request-decode",
       "handles": [
         {
           "handle": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a18b4cddfda76385ae00",
-          "subject": "0xc11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
-          "encryptedValueId": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1",
-          "proofLeafCount": "0",
-          "accessProof": "0x"
+          "allowedKey": "0xc11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
+          "encryptedValueAccount": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1"
+        }
+      ]
+    },
+    {
+      "name": "encrypted-value-account-of-the-wrong-width",
+      "comment": "Thirty-three bytes. The account is a Solana address, and the connector reads it by that address; a blob of another width is not an address with a stray byte.",
+      "rejected_by": "request-decode",
+      "handles": [
+        {
+          "handle": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a18b4cddfda76385ae0000",
+          "allowedKey": "0xc11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
+          "encryptedValueAccount": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e100"
         }
       ]
     },
@@ -181,10 +136,8 @@
       "handles": [
         {
           "handle": "0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c380000000000000010000",
-          "subject": "0xc11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
-          "encryptedValueId": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1",
-          "proofLeafCount": "0",
-          "accessProof": "0x"
+          "allowedKey": "0xc11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
+          "encryptedValueAccount": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1"
         }
       ]
     }

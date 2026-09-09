@@ -18,21 +18,18 @@ byte-tight `fhe_execute`. Admin-gated rotation via `set_coprocessor_signers`.
 - A gateway-sync authority that mirrors the EVM `GatewayConfig` coprocessor registry into
   `set_coprocessor_signers`, instead of admin-driven rotation.
 - The real proof / transciphering service that produces the attested ciphertext behind the signature.
-- If a coprocessor quorum ever needs to carry more than a few signatures alongside a deep-encrypted value account
+- If a coprocessor quorum ever needs to carry more than a few signatures alongside a deep-history
   public-decrypt proof, the transaction may exceed one packet — see the DD-041 fit table and the
   fhevm-internal#1704 scratch-account two-tx fallback.
 
-## 2. Canonicalize the compute-authority-PDA binding convention
+## 2. Canonicalize the compute-authority-PDA binding convention — RESOLVED (DD-047)
 
-The host enforces only `attestation.contract_address == compute_subject` (the msg.sender analog).
-The convention that `compute_subject` is an app compute-authority PDA (e.g. `[b"fhe-compute", mint]`)
-is **app policy**, not protocol-enforced. `FheExecutionBuilder` cannot assert it because `compute_subject` is
-only known at execution time.
-
-**Decision needed:** lift the PDA-binding discipline to a protocol-level assertion, or codify it as an
-SDK guardrail (documented convention + `zama-fhe` helper), or leave it as app responsibility. If
-protocol-level, define how the host recognizes an app's canonical compute PDA without coupling to a
-specific seed layout.
+The host now verifies the program: every persistent output's authority must be a PDA of the
+declared `program`, proven by the seeds the execution declares
+(`assert_authority_is_program_pda`), and the attestation's `contract_address` must equal that
+verified program. The "compute-authority PDA" convention became the protocol rule, with no
+coupling to a seed layout because the seeds travel with the execution. What remains open is only
+the naming of the attested contract on the gateway side (a program id, not a signing PDA).
 
 ## 3. Operator / delegated-transfer model
 
@@ -56,8 +53,8 @@ privileged receiver logic). It is not a receiver callback and must not be docume
 ## 5. Gateway RFC-021 reconciliation and host-listener event surface
 
 The Solana input path uses the gateway `InputVerification.verifyProofRequestSolana` +
-`VerifyProofRequestSolana` bytes32 entrypoint (kept, not renamed to V2 — DD-030). User-decrypt uses the
-typed `userDecryptionRequestSolana` entrypoint (DD-026).
+`VerifyProofRequestSolana` bytes32 entrypoint (kept, not renamed to V2 — DD-030). User-decrypt uses the host-generic
+`userDecryptionRequest` overload with the `solana-srfc38-user-decrypt-v1` payload (DD-026).
 
 **Requirement:** keep the PoC ↔ RFC-021 mirror in sync as the gateway evolves. The Solana
 host-listener reconstructs from confirmed Yellowstone instructions and inserts directly, while KMS

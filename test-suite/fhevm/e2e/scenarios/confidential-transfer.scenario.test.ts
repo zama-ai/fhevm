@@ -39,7 +39,7 @@ describe("solana confidential-transfer scenario", () => {
       const env = loadEnv();
       const personas = await loadPersonas(env);
 
-      // Precondition (the suite may run right after a relayer/proof-service (re)start): gate on
+      // Precondition (the suite may run right after a relayer (re)start): gate on
       // the stack's health before submitting.
       await ensureUp(env);
 

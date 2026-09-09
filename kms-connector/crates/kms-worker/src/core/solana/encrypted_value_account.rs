@@ -1,28 +1,26 @@
-//! Encrypted value account resolution: presence, program ownership, type, identity binding, and the
-//! authority the account names.
+//! Encrypted value account resolution: presence, program ownership, type, address binding, and
+//! the authority and application the account names.
 //!
-//! A handle entry names the object that authorizes it — the encrypted value account, identified by
-//! its encrypted value ID — and the chain of checks here is what turns that unsigned claim into a
-//! validated account. Program ownership is the sole trust anchor: no party other than the host
-//! program can produce data in an account the host program owns. Everything the later rules read
-//! (its authority, the ACL domain, the current handle, the subject set, the MMR commitments)
-//! comes from this validated account and from nowhere else.
+//! A handle entry names the object that authorizes it — the encrypted value account, by address —
+//! and the chain of checks here is what turns that unsigned claim into a validated account.
+//! Program ownership is the sole trust anchor: no party other than the host program can produce
+//! data in an account the host program owns. Everything the later rules read (its authority, its
+//! `(program, scope)`, the MMR commitments) comes from this validated account and from nowhere
+//! else.
 //!
-//! Trailing account bytes are legal and ignored. The account is realloc-grown to its high-water
-//! mark and never shrunk, so rejecting a tail would be a denial of service against every encrypted
-//! value account that ever held more subjects than it holds now. This is the deliberate opposite of
-//! the access-proof rule, where a tail is a rejection — the asymmetry is normative and should not
-//! be "fixed" into symmetry.
+//! Trailing account bytes are legal and ignored. The account is realloc-grown by one peak at a
+//! time and never shrunk, so rejecting a tail would refuse every account whose MMR once had more
+//! peaks than it has now.
 
 use super::snapshot::{HostSnapshot, SnapshotError};
 use crate::core::solana_acl::{SolanaPubkeyBytes, WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY};
+use solana_pubkey::Pubkey;
 use zama_solana_acl::{AclError, EncryptedValue, decode_on_chain_account};
 
-/// An encrypted value account that passed presence, ownership, type and identity binding.
+/// An encrypted value account that passed presence, ownership, type and address binding.
 ///
 /// No public constructor: [`resolve_encrypted_value_account`] is the only way in, which is what
-/// makes "read the encrypted value account authority from something that was never validated"
-/// unwritable.
+/// makes "read the authority from something that was never validated" unwritable.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct ResolvedEncryptedValueAccount {
     account_key: SolanaPubkeyBytes,
@@ -30,21 +28,26 @@ pub struct ResolvedEncryptedValueAccount {
 }
 
 impl ResolvedEncryptedValueAccount {
-    /// The encrypted value account's address, which the historical leaf commitment binds.
+    /// The encrypted value account's address, which every leaf commitment binds.
     pub fn account_key(&self) -> SolanaPubkeyBytes {
         self.account_key
     }
 
-    /// The authority this encrypted value account belongs to, which every later rule is read
+    /// The authority this encrypted value account belongs to, which the delegation rule is read
     /// against. Taken from the account and never from a request field.
     pub fn encrypted_value_account_authority(&self) -> SolanaPubkeyBytes {
         self.encrypted_value.encrypted_value_account_authority
     }
 
-    /// The ACL domain this encrypted value account belongs to, likewise account-sourced. This is
-    /// the value the signed scope is tested against.
-    pub fn domain(&self) -> SolanaPubkeyBytes {
-        self.encrypted_value.domain
+    /// The application program the value belongs to, verified by the host on every write.
+    pub fn program(&self) -> SolanaPubkeyBytes {
+        self.encrypted_value.program
+    }
+
+    /// The program-declared scope within `program`. Meaningful only as the pair
+    /// `(program, scope)`, which is what the signed permit scope is tested against.
+    pub fn scope(&self) -> SolanaPubkeyBytes {
+        self.encrypted_value.scope
     }
 
     /// The decoded account, for the handle-binding rules.
@@ -53,35 +56,33 @@ impl ResolvedEncryptedValueAccount {
     }
 }
 
-/// The canonical encrypted value account address for an encrypted value ID under this deployment.
+/// The address an encrypted value account with these fields must live at: the PDA of its own
+/// seeds under the stored bump. `None` when the stored bump yields no valid address.
 pub fn encrypted_value_account_address(
     program_id: SolanaPubkeyBytes,
-    encrypted_value_id: [u8; 32],
-) -> (SolanaPubkeyBytes, u8) {
-    crate::core::solana_encrypted_value_acl::encrypted_value_acl_address(
-        program_id,
-        encrypted_value_id,
-    )
+    value: &EncryptedValue,
+) -> Option<SolanaPubkeyBytes> {
+    let bump = [value.bump];
+    let mut seeds: Vec<&[u8]> = value.seeds().to_vec();
+    seeds.push(&bump);
+    Pubkey::create_program_address(&seeds, &Pubkey::new_from_array(program_id))
+        .ok()
+        .map(|address| address.to_bytes())
 }
 
 /// Resolves one entry's encrypted value account against the snapshot.
 ///
-/// In order: the account exists in the snapshot; it is owned by the deployment's program; its data
-/// carries the encrypted value account discriminator and borsh-decodes; its own fields reproduce
-/// the claimed encrypted value ID; and the authority it names is not the wildcard sentinel. The
-/// identity check is the backstop that makes a substituted encrypted value account a rejection
-/// rather than a redirection: an attacker naming a victim's encrypted value ID while supplying a
-/// different account fails it.
+/// In order: the account exists in the snapshot; it is owned by the deployment's program; its
+/// data carries the encrypted value account discriminator and borsh-decodes; its own fields
+/// derive the address it was read at; and the authority it names is not the wildcard sentinel.
+/// The address check is the backstop that makes a well-formed account found anywhere else a
+/// rejection: an account's fields are its identity, and an account that does not live where its
+/// fields say is not that identity's account.
 pub fn resolve_encrypted_value_account(
     snapshot: &HostSnapshot,
     program_id: SolanaPubkeyBytes,
-    encrypted_value_id: [u8; 32],
+    account_key: SolanaPubkeyBytes,
 ) -> Result<ResolvedEncryptedValueAccount, EncryptedValueAccountFailure> {
-    // The address is derived from the claimed identity, never supplied: a request naming another
-    // account does not redirect the read, it only names an encrypted value ID whose own account is
-    // read.
-    let (account_key, _) = encrypted_value_account_address(program_id, encrypted_value_id);
-
     // h1: present at this observation point.
     let account = snapshot
         .account(&account_key)?
@@ -97,9 +98,10 @@ pub fn resolve_encrypted_value_account(
         });
     }
 
-    // h3: an encrypted value account and not another account type of the same program. Decoding is
-    // the shared crate's, so the discriminator and the body layout are the ones the host program
-    // writes; trailing bytes past the body are accepted, which is what a realloc-grown account has.
+    // h3: an encrypted value account and not another account type of the same program. Decoding
+    // is the shared crate's, so the discriminator and the body layout are the ones the host
+    // program writes; trailing bytes past the body are accepted, which is what a realloc-grown
+    // account has.
     let encrypted_value = decode_on_chain_account(&account.data).map_err(|error| match error {
         AclError::BadDiscriminator => {
             EncryptedValueAccountFailure::WrongAccountType { account_key }
@@ -109,22 +111,17 @@ pub fn resolve_encrypted_value_account(
         // cannot produce them, and enumerating them keeps a new one from landing here silently.
         AclError::MmrInconsistent
         | AclError::MmrPeakCapacityExceeded
-        | AclError::SubjectCapacityExceeded
-        | AclError::HandleMismatch
-        | AclError::SubjectMissing
         | AclError::HistoricalProofInvalid
         | AclError::PublicDecryptProofInvalid => {
             EncryptedValueAccountFailure::Malformed { account_key }
         }
     })?;
 
-    // h4: the account's own fields reproduce the identity it was named by. The backstop that
-    // makes a substituted encrypted value account a rejection rather than a redirection.
-    let derived = encrypted_value.encrypted_value_id();
-    if derived != encrypted_value_id {
-        return Err(EncryptedValueAccountFailure::EncryptedValueIdMismatch {
+    // h4: the account's own fields derive the address it was read at.
+    let derived = encrypted_value_account_address(program_id, &encrypted_value);
+    if derived != Some(account_key) {
+        return Err(EncryptedValueAccountFailure::AddressMismatch {
             account_key,
-            claimed: encrypted_value_id,
             derived,
         });
     }
@@ -132,8 +129,8 @@ pub fn resolve_encrypted_value_account(
     // h5: the authority the account names is a real authority, not the wildcard sentinel. The
     // authority-specific delegation address is derived from this value, and with the sentinel in
     // it that derivation lands on the wildcard row itself — the authority-specific check would be
-    // structurally a wildcard check. No legal account carries it: the authority signs
-    // `fhe_execute`, and the sentinel has no key.
+    // structurally a wildcard check. No legal account carries it: the authority is a PDA of the
+    // application program, and the sentinel is not one.
     if encrypted_value.encrypted_value_account_authority
         == WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY
     {
@@ -179,19 +176,18 @@ pub enum EncryptedValueAccountFailure {
         /// The address that was read.
         account_key: SolanaPubkeyBytes,
     },
-    /// The account's own fields derive a different encrypted value ID than the one claimed.
-    #[error("encrypted value account {account_key:?} fields derive a different encrypted value ID")]
-    EncryptedValueIdMismatch {
+    /// The account's own fields derive a different address than the one it was read at.
+    #[error(
+        "encrypted value account {account_key:?} does not live at the address its fields derive"
+    )]
+    AddressMismatch {
         /// The address that was read.
         account_key: SolanaPubkeyBytes,
-        /// What the request claimed.
-        claimed: [u8; 32],
-        /// What the account's fields derive.
-        derived: [u8; 32],
+        /// What the account's fields derive, if the stored bump yields an address at all.
+        derived: Option<SolanaPubkeyBytes>,
     },
-    /// The account names the wildcard sentinel as its authority. No legal account does — the
-    /// authority signs `fhe_execute` — and resolving it would send the authority-specific
-    /// delegation check to the wildcard row.
+    /// The account names the wildcard sentinel as its authority. No legal account does, and
+    /// resolving it would send the authority-specific delegation check to the wildcard row.
     #[error("encrypted value account {account_key:?} names the wildcard sentinel as its authority")]
     SentinelAuthority {
         /// The address that was read.

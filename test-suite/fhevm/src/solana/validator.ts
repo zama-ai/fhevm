@@ -21,7 +21,7 @@ import { until } from "../utils/until";
 export const VALIDATOR_RPC_URL = "http://127.0.0.1:8899";
 export const VALIDATOR_WS_URL = "ws://127.0.0.1:8900";
 /** The two PoC programs the side-stack deploys, in deploy order. */
-export const SOLANA_E2E_PROGRAMS = ["zama_host", "confidential_token"] as const;
+export const SOLANA_E2E_PROGRAMS = ["zama_host", "confidential_token", "encrypted_counter", "dep_chain"] as const;
 
 const SOLANA_DIR = path.join(REPO_ROOT, "solana");
 

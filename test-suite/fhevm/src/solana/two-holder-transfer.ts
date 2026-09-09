@@ -28,7 +28,6 @@ export const SOLANA_TWO_HOLDER_TRANSFER_DESCRIPTION =
   "Transfer an SDK-encrypted euint64 between two real Solana holders and decrypt both latest balances.";
 
 const RPC_URL = "http://127.0.0.1:8899";
-const PROOF_SERVICE_URL = "http://127.0.0.1:8088";
 const GATEWAY_RPC_URL = "http://127.0.0.1:8546";
 const HOST_RPC_URL = "http://127.0.0.1:8545";
 const WS_URL = "ws://127.0.0.1:8900";
@@ -43,7 +42,6 @@ export type Holder = { owner: string; keypairPath: string; secretKey: string };
 export type TwoHolderScenario = {
   mint: string;
   underlyingMint: string;
-  computeSigner: string;
   alice: Holder;
   bob: Holder;
 };
@@ -57,7 +55,6 @@ export type TwoHolderConfig = {
   readonly rpcUrl: string;
   readonly wsUrl: string;
   readonly relayerUrl: string;
-  readonly proofServiceUrl: string;
   readonly gatewayRpcUrl: string;
   readonly hostRpcUrl: string;
   readonly aclProgram: string;
@@ -116,7 +113,6 @@ const resolveConfig = (config: Partial<TwoHolderConfig>): TwoHolderConfig => ({
   rpcUrl: config.rpcUrl ?? RPC_URL,
   wsUrl: config.wsUrl ?? WS_URL,
   relayerUrl: config.relayerUrl ?? RELAYER_URL,
-  proofServiceUrl: config.proofServiceUrl ?? PROOF_SERVICE_URL,
   gatewayRpcUrl: config.gatewayRpcUrl ?? GATEWAY_RPC_URL,
   hostRpcUrl: config.hostRpcUrl ?? HOST_RPC_URL,
   aclProgram: config.aclProgram ?? ACL_PROGRAM,
@@ -159,14 +155,11 @@ export const createRealTwoHolderDependencies = (config: Partial<TwoHolderConfig>
         recipient: alice.signer.address,
         baseUnits: 1_000_000n,
       });
-      const { mint, computeSigner } = await createConfidentialMint(context, {
-        authority: alice.signer,
-        underlyingMint,
-      });
+      const mint = await createConfidentialMint(context, { authority: alice.signer, underlyingMint });
       await initializeConfidentialTokenAccount(context, { payer: alice.signer, owner: alice.signer.address, mint });
       await wrapUnderlying(context, { owner: alice.signer, mint, underlyingMint, amount: 1000n });
       await initializeConfidentialTokenAccount(context, { payer: bob.signer, owner: bob.signer.address, mint });
-      return { mint, underlyingMint, computeSigner, alice: alice.holder, bob: bob.holder };
+      return { mint, underlyingMint, alice: alice.holder, bob: bob.holder };
     },
     async readBalance(scenario, holder) {
       return readTokenBalanceState(context, { mint: address(scenario.mint), owner: address(holder.owner) });
@@ -191,7 +184,6 @@ export const createRealTwoHolderDependencies = (config: Partial<TwoHolderConfig>
           TRANSFER_RECIPIENT: scenario.bob.owner,
           TRANSFER_MINT: scenario.mint,
           TRANSFER_UNDERLYING_MINT: scenario.underlyingMint,
-          TRANSFER_COMPUTE_SIGNER: scenario.computeSigner,
           TRANSFER_FROM_ACCOUNT: alice.tokenAccount,
           TRANSFER_TO_ACCOUNT: bob.tokenAccount,
           TRANSFER_FROM_BALANCE: alice.encryptedValueAccount,
@@ -212,17 +204,14 @@ export const createRealTwoHolderDependencies = (config: Partial<TwoHolderConfig>
       const hex20 = (bytes: Uint8Array): string => `0x${Buffer.from(bytes).toString("hex")}`;
       return runSolanaCurrentUserDecrypt({
         UD_RELAYER_URL: cfg.relayerUrl,
-        UD_RPC_URL: cfg.rpcUrl,
-        UD_PROOF_SERVICE_URL: cfg.proofServiceUrl,
         UD_CONTRACTS_CHAIN_ID: state.chainId,
         UD_HANDLE: state.currentHandle,
+        // The balance account the probe derived and verified; the Connector reads it and proves
+        // the owner's allow leaf itself.
+        UD_ENCRYPTED_VALUE_ACCOUNT: `0x${Buffer.from(getAddressEncoder().encode(address(state.encryptedValueAccount))).toString("hex")}`,
         UD_SECRET_KEY: holder.secretKey,
         UD_CONTEXT_ID: cfg.userDecryptContext ?? bytes32HexFromId(kmsPair.kmsContextId),
         UD_EPOCH_ID: bytes32HexFromId(kmsPair.kmsEpochId),
-        UD_ALLOWED_DOMAIN_KEYS: `0x${Buffer.from(getAddressEncoder().encode(address(scenario.mint))).toString("hex")}`,
-        // The env var and the v3 request field keep the wire name `aclValueKey`; what the probe
-        // reports is the encrypted value ID it derives.
-        UD_ACL_VALUE_KEY: state.encryptedValueId,
         UD_VERIFYING_PROGRAM_ID: cfg.aclProgram,
         UD_KMS_SIGNERS: gateway.kmsSigners.map(hex20).join(","),
         UD_GATEWAY_CHAIN_ID: gateway.gatewayChainId.toString(),

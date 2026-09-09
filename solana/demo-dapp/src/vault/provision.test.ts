@@ -168,13 +168,13 @@ describe('vault provisioning builders', () => {
       recentSlot: 100n,
       authorityFundingLamports: 100_000_000n,
     });
-    // open_batch + create_lookup_table + the wire-limit-chunked extends (23 addresses -> 20 + 3),
+    // open_batch + create_lookup_table + the wire-limit-chunked extends (22 addresses -> 20 + 2),
     // in submission order.
     expect(result.instructions).toHaveLength(4);
     // The first (open_batch) targets the batcher program; the ALT pair targets the ALT program.
     expect(result.instructions[0]!.programAddress).toBe(CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS);
     // Pin the current table size so account-set growth requires an intentional test update. The
     // address contents and pending-burn membership are covered in derive.test.ts.
-    expect(result.lookupTableAddresses.length).toBe(23);
+    expect(result.lookupTableAddresses.length).toBe(22);
   });
 });

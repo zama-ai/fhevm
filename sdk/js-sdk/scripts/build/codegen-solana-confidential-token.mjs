@@ -32,6 +32,12 @@ function demoIdlUrl(name) {
   return fileURLToPath(new URL(`../../../../solana/demo-dapp/idl/${name}`, import.meta.url));
 }
 
+// The specimen consumer programs' IDLs live inside each program directory, so the specimen stays
+// self-contained for anyone copying it (synced by solana/scripts/sync-zama-host-idl.sh).
+function specimenIdlUrl(program, name) {
+  return fileURLToPath(new URL(`../../../../solana/programs/${program}/idl/${name}`, import.meta.url));
+}
+
 function snapshot(path) {
   if (!existsSync(path)) return new Map();
   path = realpathSync(path);
@@ -74,11 +80,12 @@ const targets = [
       ]),
       // coprocessorInputAttestation backs confidentialTransfer/wrapUsdc; mmrInclusionProof is the
       // disclose_secp `proof` argument (the flat leaf_index/siblings pair was folded into this
-      // Anchor-native struct by #3252/#3248 — keeping it lets the regenerated builder resolve).
-      definedTypes: new Set(['coprocessorInputAttestation', 'disclosedValueKind', 'mmrInclusionProof']),
-      // computeSigner defaults confidentialTransfer; the rest default the newly-kept builders
-      // (wrapUsdc → vaultAuthority/totalSupplyAuthority, initializeTokenAccount → tokenAccount).
-      pdas: new Set(['computeSigner', 'vaultAuthority', 'totalSupplyAuthority', 'tokenAccount']),
+      // Anchor-native struct by #3252/#3248 — keeping it lets the regenerated builder resolve);
+      // transferReceipt is confidentialTransfer's optional receipt argument.
+      definedTypes: new Set(['coprocessorInputAttestation', 'disclosedValueKind', 'mmrInclusionProof', 'transferReceipt']),
+      // The PDAs the kept builders default (wrapUsdc → vaultAuthority/totalSupplyAuthority,
+      // initializeTokenAccount → tokenAccount).
+      pdas: new Set(['vaultAuthority', 'totalSupplyAuthority', 'tokenAccount']),
     },
     programAddress(program, anchorIdl) {
       const zamaHostProgramAddress = anchorIdl.instructions
@@ -123,45 +130,24 @@ const targets = [
     },
   },
   {
-    // The zama-host client for the e2e scenario suite (test-suite/fhevm/e2e/scenarios): the raw
-    // fhe_execute driver plus the allow/seal instructions the scenarios use to stand up decryptable
-    // handles — the surfaces the retired Rust live-client used to build with anchor-client. They are
-    // test-harness surfaces, not product ones (apps reach fhe_execute through their own programs'
-    // CPIs), so they render into the test-suite instead of widening the SDK's tiny zama-host client
-    // above. The FheExecute* type closure is kept as named types because the scenarios compose
-    // steps/outputs programmatically. initializeHostConfig + defineKmsContext are the bring-up
-    // bootstrap pair (test-suite/fhevm/src/solana/deploy.ts) — the live-client's last
-    // production duty, now typed.
+    // The zama-host client for the bring-up bootstrap pair (test-suite/fhevm/src/solana/deploy.ts):
+    // initializeHostConfig + defineKmsContext — the retired live-client's last production duty,
+    // now typed. Nothing else: a wallet cannot sign fhe_execute or make_handle_public (RFC 035
+    // proves every value authority to be a PDA of its program), so the scenarios stand up values
+    // through the encrypted-counter specimen below instead of a raw driver.
     idlPath: idlUrl('zama_host.json'),
     generatedPath: `${sdkRoot}/../../test-suite/fhevm/src/solana/internal/generated/zamaHost`,
     keep: {
-      instructions: new Set([
-        'fheExecute',
-        'allowSubjects',
-        'makeHandlePublic',
-        'initializeHostConfig',
-        'defineKmsContext',
-      ]),
-      // fheExecuteArgs itself is not a defined-type node: Codama inlines the single-arg struct
-      // into the fheExecute instruction, so only the types its fields reference are kept here.
-      // InitializeHostConfigArgs gets the same inlining; KmsThresholds survives as a named type
-      // because define_kms_context takes it alongside other args.
-      definedTypes: new Set([
-        'coprocessorInputAttestation',
-        'fheBinaryOpCode',
-        'fheExecuteOperand',
-        'fheExecuteOutput',
-        'fheExecuteStep',
-        'fheTernaryOpCode',
-        'fheUnaryOpCode',
-        'kmsThresholds',
-        'previousState',
-      ]),
+      instructions: new Set(['initializeHostConfig', 'defineKmsContext']),
+      // InitializeHostConfigArgs is inlined into its instruction by Codama; KmsThresholds survives
+      // as a named type because define_kms_context takes it alongside other args.
+      definedTypes: new Set(['kmsThresholds']),
       // The HostConfig singleton is read back live (chain-id cross-check in
       // test-suite/fhevm/src/solana/provision.ts). Keeping the account node gives that read a
       // generated decoder instead of a hand-written discriminator + field offset.
       accounts: new Set(['hostConfig']),
-      pdas: new Set(['hostConfig', 'kmsContext']),
+      // randNonce: initialize_host_config defaults the host's rand-nonce PDA.
+      pdas: new Set(['hostConfig', 'kmsContext', 'randNonce']),
     },
     programAddress(program) {
       return (
@@ -175,8 +161,7 @@ const targets = [
     // The confidential-token client for the e2e scenario suite: the burn/redeem pair the token
     // vertical drives directly. These stay OUT of the demo-dapp client above on purpose — the
     // demo never burns or redeems (redeem_burned_amount there is a batcher-internal CPI inside
-    // settle), so they render into the test-suite as harness surfaces, exactly like the raw
-    // fhe_execute driver.
+    // settle), so they render into the test-suite as harness surfaces.
     idlPath: idlUrl('confidential_token.json'),
     generatedPath: `${sdkRoot}/../../test-suite/fhevm/src/solana/internal/generated/confidentialToken`,
     keep: {
@@ -187,7 +172,7 @@ const targets = [
       // The PDA nodes the two generated builders default their accounts from. tokenAccount is
       // deliberately absent: its seeds (owner, mint) cannot be defaulted, so the builders take
       // the address as input and the helper would render dead.
-      pdas: new Set(['computeSigner', 'totalSupplyAuthority', 'pendingBurn', 'vaultAuthority']),
+      pdas: new Set(['totalSupplyAuthority', 'pendingBurn', 'vaultAuthority']),
     },
     programAddress(program, anchorIdl) {
       const zamaHostProgramAddress = anchorIdl.instructions
@@ -201,6 +186,45 @@ const targets = [
         `import type { Address } from '@solana/kit';\n\n` +
         `export const CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS = '${program.publicKey}' as Address<'${program.publicKey}'>;\n` +
         `export const ZAMA_HOST_PROGRAM_ADDRESS = '${zamaHostProgramAddress}' as Address<'${zamaHostProgramAddress}'>;\n`
+      );
+    },
+  },
+  {
+    // The encrypted-counter specimen client for the e2e scenario suite: the program-owned value the
+    // decrypt scenarios stand up (initialize) and update (increment). RFC 035 proves every value
+    // authority to be a PDA of its program, so the scenarios drive this specimen — the smallest
+    // complete consumer — instead of signing fhe_execute from a wallet.
+    idlPath: specimenIdlUrl('encrypted-counter', 'encrypted_counter.json'),
+    generatedPath: `${sdkRoot}/../../test-suite/fhevm/src/solana/internal/generated/encryptedCounter`,
+    keep: {
+      instructions: new Set(['initialize', 'increment']),
+      definedTypes: new Set(),
+      // Both builders default the counter and its authority from the owner.
+      pdas: new Set(['counter', 'counterAuthority']),
+    },
+    programAddress(program) {
+      return (
+        `/** This code was AUTOGENERATED from the committed encrypted-counter IDL. */\n` +
+        `import type { Address } from '@solana/kit';\n\n` +
+        `export const ENCRYPTED_COUNTER_PROGRAM_ADDRESS = '${program.publicKey}' as Address<'${program.publicKey}'>;\n`
+      );
+    },
+  },
+  {
+    // The dep-chain specimen client for the load-smoke scenario: `extend` packs the host's full
+    // 32-step ceiling into one dependent execution, the shape the coprocessor cannot parallelize.
+    idlPath: specimenIdlUrl('dep-chain', 'dep_chain.json'),
+    generatedPath: `${sdkRoot}/../../test-suite/fhevm/src/solana/internal/generated/depChain`,
+    keep: {
+      instructions: new Set(['initialize', 'extend']),
+      definedTypes: new Set(),
+      pdas: new Set(['chain', 'chainAuthority']),
+    },
+    programAddress(program) {
+      return (
+        `/** This code was AUTOGENERATED from the committed dep-chain IDL. */\n` +
+        `import type { Address } from '@solana/kit';\n\n` +
+        `export const DEP_CHAIN_PROGRAM_ADDRESS = '${program.publicKey}' as Address<'${program.publicKey}'>;\n`
       );
     },
   },

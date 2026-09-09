@@ -1,0 +1,248 @@
+{
+  "schema": "zama-solana-leaf-vectors/v1",
+  "description": "Leaf commitments, MMR peaks and one inclusion proof per encrypted value account history, as the zama-host program seals them. Every implementation that hashes ACL leaves must reproduce these bytes.",
+  "regenerate_with": "bash scripts/update-leaf-vectors.sh",
+  "hash": "keccak256",
+  "prefixes": {
+    "historical_access_leaf": "ZAMA_HIST_ACCESS_LEAF_V1",
+    "public_decrypt_leaf": "ZAMA_PUBLIC_DECRYPT_LEAF_V1",
+    "mmr_leaf_node": "ZAMA_MMR_LEAF_V1",
+    "mmr_node": "ZAMA_MMR_NODE_V1"
+  },
+  "vectors": [
+    {
+      "id": "single-allow",
+      "comment": "One allow on the created handle: a one-leaf MMR whose proof has no siblings.",
+      "encrypted_value_account": "acacacacacacacacacacacacacacacacacacacacacacacacacacacacacacacac",
+      "events": [
+        {
+          "kind": "allowed",
+          "handle": "1010101010101010101010101010101010101010101010101010101010101010",
+          "key": "0101010101010101010101010101010101010101010101010101010101010101"
+        }
+      ],
+      "leaves": [
+        "bd831c7fc4667344d16a4aa95eee1dedfebeeb2534c7bb728e1f2911fdee92d2"
+      ],
+      "leaf_count": "1",
+      "peaks": [
+        "c5e0c23b0a4aa865935bca0356dc80ae5be4449fc013fcd4c300d37336d84e64"
+      ],
+      "proof": {
+        "leaf_index": "0",
+        "siblings": []
+      }
+    },
+    {
+      "id": "create-two-allows-then-public-update",
+      "comment": "Create allowing two keys, then an update that allows one key and goes public: four leaves, two mountains, proof for the public leaf.",
+      "encrypted_value_account": "acacacacacacacacacacacacacacacacacacacacacacacacacacacacacacacac",
+      "events": [
+        {
+          "kind": "allowed",
+          "handle": "1010101010101010101010101010101010101010101010101010101010101010",
+          "key": "0101010101010101010101010101010101010101010101010101010101010101"
+        },
+        {
+          "kind": "allowed",
+          "handle": "1010101010101010101010101010101010101010101010101010101010101010",
+          "key": "0202020202020202020202020202020202020202020202020202020202020202"
+        },
+        {
+          "kind": "allowed",
+          "handle": "1111111111111111111111111111111111111111111111111111111111111111",
+          "key": "0101010101010101010101010101010101010101010101010101010101010101"
+        },
+        {
+          "kind": "marked_public",
+          "handle": "1111111111111111111111111111111111111111111111111111111111111111"
+        }
+      ],
+      "leaves": [
+        "bd831c7fc4667344d16a4aa95eee1dedfebeeb2534c7bb728e1f2911fdee92d2",
+        "49f109f22b9b6712fbf247e4d4b2ce632e5ed7182c0246efdb084bfc5c4c320a",
+        "04904be8aeefa33f1d078c63ed6351730595c3913a4903592c9799c002e74532",
+        "7e5a33473f33a0f5f4f184aa2b05338303eb9502c492a51f6714e5f01147bf3e"
+      ],
+      "leaf_count": "4",
+      "peaks": [
+        "d23bb861130bfb8a6b2fdc299286581ef14f7460d0fcbb7d4e4d9e22e931ed3d"
+      ],
+      "proof": {
+        "leaf_index": "3",
+        "siblings": [
+          "68ba08a7608b4cf1400ec16920a13dfa783af0be196341271be0a852667e5eba",
+          "932a50a64f5cbe06dfae1407301dd3a78db00098bc45a37a5ca8a1697a65a96d"
+        ]
+      }
+    },
+    {
+      "id": "same-events-other-account",
+      "comment": "The previous history under another account address: every leaf differs, because the account is bound into each commitment.",
+      "encrypted_value_account": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "events": [
+        {
+          "kind": "allowed",
+          "handle": "1010101010101010101010101010101010101010101010101010101010101010",
+          "key": "0101010101010101010101010101010101010101010101010101010101010101"
+        },
+        {
+          "kind": "allowed",
+          "handle": "1010101010101010101010101010101010101010101010101010101010101010",
+          "key": "0202020202020202020202020202020202020202020202020202020202020202"
+        },
+        {
+          "kind": "allowed",
+          "handle": "1111111111111111111111111111111111111111111111111111111111111111",
+          "key": "0101010101010101010101010101010101010101010101010101010101010101"
+        },
+        {
+          "kind": "marked_public",
+          "handle": "1111111111111111111111111111111111111111111111111111111111111111"
+        }
+      ],
+      "leaves": [
+        "92f043ed44f1262405c5c0988267b9095f9474e1d44404f1bd05376f167f135d",
+        "343f71aaab89cc4898acd49501c79e5d24a73f7db63ffe10297f4483c38596f6",
+        "04c5d02753b6c7f0d7a771131355fae6f89ed4aeed7dc0a5e28397263fcb2968",
+        "8c11348fa5be04fdcdb0d80dbf91eb7aef5cca8a3ac91c39f7beb95398cbb851"
+      ],
+      "leaf_count": "4",
+      "peaks": [
+        "5d71166af14c79646f0925c21767e2d341320f08acbbd5f7cccb6fd24fd822cc"
+      ],
+      "proof": {
+        "leaf_index": "3",
+        "siblings": [
+          "b8621d8b3df5f00f8e9833d60a93a93a2634beace7ccb910b01ae6990c7f68bf",
+          "025a19059ad91be02cb412e0f862dd2f3728daf99e4e0c55ae72a1dc5b85abb2"
+        ]
+      }
+    },
+    {
+      "id": "seventeen-allows",
+      "comment": "Seventeen allows across three handles: peaks of heights 4 and 0, proof for a leaf deep in the first mountain.",
+      "encrypted_value_account": "acacacacacacacacacacacacacacacacacacacacacacacacacacacacacacacac",
+      "events": [
+        {
+          "kind": "allowed",
+          "handle": "1010101010101010101010101010101010101010101010101010101010101010",
+          "key": "2020202020202020202020202020202020202020202020202020202020202020"
+        },
+        {
+          "kind": "allowed",
+          "handle": "1010101010101010101010101010101010101010101010101010101010101010",
+          "key": "2121212121212121212121212121212121212121212121212121212121212121"
+        },
+        {
+          "kind": "allowed",
+          "handle": "1010101010101010101010101010101010101010101010101010101010101010",
+          "key": "2222222222222222222222222222222222222222222222222222222222222222"
+        },
+        {
+          "kind": "allowed",
+          "handle": "1010101010101010101010101010101010101010101010101010101010101010",
+          "key": "2323232323232323232323232323232323232323232323232323232323232323"
+        },
+        {
+          "kind": "allowed",
+          "handle": "1010101010101010101010101010101010101010101010101010101010101010",
+          "key": "2424242424242424242424242424242424242424242424242424242424242424"
+        },
+        {
+          "kind": "allowed",
+          "handle": "1010101010101010101010101010101010101010101010101010101010101010",
+          "key": "2525252525252525252525252525252525252525252525252525252525252525"
+        },
+        {
+          "kind": "allowed",
+          "handle": "1010101010101010101010101010101010101010101010101010101010101010",
+          "key": "2626262626262626262626262626262626262626262626262626262626262626"
+        },
+        {
+          "kind": "allowed",
+          "handle": "1010101010101010101010101010101010101010101010101010101010101010",
+          "key": "2727272727272727272727272727272727272727272727272727272727272727"
+        },
+        {
+          "kind": "allowed",
+          "handle": "1111111111111111111111111111111111111111111111111111111111111111",
+          "key": "2828282828282828282828282828282828282828282828282828282828282828"
+        },
+        {
+          "kind": "allowed",
+          "handle": "1111111111111111111111111111111111111111111111111111111111111111",
+          "key": "2929292929292929292929292929292929292929292929292929292929292929"
+        },
+        {
+          "kind": "allowed",
+          "handle": "1111111111111111111111111111111111111111111111111111111111111111",
+          "key": "2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a"
+        },
+        {
+          "kind": "allowed",
+          "handle": "1111111111111111111111111111111111111111111111111111111111111111",
+          "key": "2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b"
+        },
+        {
+          "kind": "allowed",
+          "handle": "1111111111111111111111111111111111111111111111111111111111111111",
+          "key": "2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c"
+        },
+        {
+          "kind": "allowed",
+          "handle": "1111111111111111111111111111111111111111111111111111111111111111",
+          "key": "2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d"
+        },
+        {
+          "kind": "allowed",
+          "handle": "1111111111111111111111111111111111111111111111111111111111111111",
+          "key": "2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e"
+        },
+        {
+          "kind": "allowed",
+          "handle": "1111111111111111111111111111111111111111111111111111111111111111",
+          "key": "2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f"
+        },
+        {
+          "kind": "allowed",
+          "handle": "1212121212121212121212121212121212121212121212121212121212121212",
+          "key": "3030303030303030303030303030303030303030303030303030303030303030"
+        }
+      ],
+      "leaves": [
+        "046e570d01f4ce5aebd620a3131a1250873269c43fca618e5886c21c4df9b664",
+        "2bae0b57ffb45c08e072a5d3c79f60b932d8005465fe989b80f35c07cadcc26b",
+        "4afaf00d565d3b89856f7b6cadc7e3e6f41736bc17e275692846182ae1ac1c5d",
+        "b77059b3d7c57daeae40fcd07174461d6a948d6e6b66fd00175fbc41883bd857",
+        "3af0d7a5379447e86aa2634439bbef0ec13c9f5288548e1fde64360c338d8f78",
+        "3ec718790f6b3594665fde38d49217a69b13e6da36ef2214d1b528a938894c60",
+        "fc27cb51c6bbaa631ee0229f7dee489c140907db77a8fa6481e5b23aae7aac6b",
+        "c82ac3d36b7b179edcb4120c2212eaa45af34279784a959cb26fc9ef46c7ffb7",
+        "7f9f6f76a12378af9562538633d5fdc483924927681806ce400a3e1213343397",
+        "4c4017dca3f89a17cba7d4e31c04cad354d5cda9d1a11dbda8126f5534c29866",
+        "99f8e8ec044c5068e3ae9a35991e33de20e69debd3ff1ca59175a2adc79d6d65",
+        "f838401d3e9ffa74152eb68617bd94ed8c814849742f971ec5510d7c3565d67c",
+        "92f777eb962c6d0051e093c4fa33dd747c0d2330ebcea1fbeb04bcd8ab4e112c",
+        "dae705050e4a5eded8f3c0ef772aa804503d36fd8f0160e52fbb533b2c1b0936",
+        "deb3be1990804c0a3bf55de98c5c325e9ac3c9aa94d81d5224721ed691b80ded",
+        "5e11b1f574ea15dac0ebf27acd71125b4fd5cc33bb6d066a5cd187eaf5a33239",
+        "3d3875b321e843fa4a5eeed93e46c03024ab37654ed52c0bfc1972b368aa5f7f"
+      ],
+      "leaf_count": "17",
+      "peaks": [
+        "2e1691bdaa426745273af4a270058ee65c9f620df95f6be02c353fbd42f3161b",
+        "74a76ab2cca4c93cd79fff9c2c30b32b850f89cf7e744c2a992371a145a5026c"
+      ],
+      "proof": {
+        "leaf_index": "5",
+        "siblings": [
+          "10bccb4e2c16930b17ee8bc87817e5cd9dff6e19d8864cefb687b1a381522017",
+          "ecae98ec862980a0f702cfe099360af049a68483ce16fd91d3cf38715f027005",
+          "e6f27c82d92a6eea15c8e1c63a28b87188b15f952f5560f727830354312e8a96",
+          "b318bf81a19765cb76a83f298d3f6dd92693a108b6ebfdd2ef5485c0ee202d4b"
+        ]
+      }
+    }
+  ]
+}

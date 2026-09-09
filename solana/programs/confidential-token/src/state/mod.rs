@@ -1,4 +1,4 @@
-//! Account layouts, PDA helpers, and token-domain labels.
+//! Account layouts, PDA helpers, and token value labels.
 //!
 //! Public API surface: off-chain callers that have to derive a token PDA or name an encrypted value
 //! the same way the program does — `runtime-tests`' Mollusk fixtures, and the demo dapp's TypeScript
@@ -20,11 +20,15 @@ pub use crate::constants::*;
 
 use anchor_lang::prelude::*;
 use anchor_spl::associated_token::get_associated_token_address_with_program_id;
-use zama_host;
+use zama_fhe::{AppScope, EncryptedValueId, EncryptedValueLabel};
 
-/// Returns the compute signer PDA for a confidential mint.
-pub fn compute_signer_address(mint: Pubkey) -> (Pubkey, u8) {
-    Pubkey::find_program_address(&[b"fhe-compute", mint.as_ref()], &crate::ID)
+/// The application one confidential mint is to the host: this program, scoped to the mint. HCU
+/// metering, the deny list and every encrypted value's address key on it.
+pub fn token_app(mint: Pubkey) -> AppScope {
+    AppScope {
+        program: crate::ID,
+        scope: mint.to_bytes(),
+    }
 }
 
 /// Returns the mint-scoped encrypted value account authority PDA for the encrypted total supply.
@@ -66,20 +70,29 @@ pub fn pending_burn_address(mint: Pubkey, token_account: Pubkey) -> (Pubkey, u8)
     )
 }
 
-/// Returns the canonical `EncryptedValue` PDA for a token balance field.
-pub fn balance_encrypted_value_address(domain: Pubkey, authority: Pubkey) -> (Pubkey, u8) {
-    encrypted_value_address(domain, authority, encrypted_balance_label())
+/// The id of a token value: the mint's application, the controlling PDA, and the field label.
+pub fn token_value_id(mint: Pubkey, authority: Pubkey, label: [u8; 32]) -> EncryptedValueId {
+    EncryptedValueId::new(token_app(mint), authority, EncryptedValueLabel::new(label))
 }
 
-/// Returns the canonical `EncryptedValue` PDA for the encrypted total supply field.
-pub fn total_supply_encrypted_value_address(domain: Pubkey, authority: Pubkey) -> (Pubkey, u8) {
-    encrypted_value_address(domain, authority, encrypted_total_supply_label())
+/// The id of a token account's balance, controlled by the token account PDA.
+pub fn balance_encrypted_value_id(mint: Pubkey, token_account: Pubkey) -> EncryptedValueId {
+    token_value_id(mint, token_account, encrypted_balance_label())
 }
 
-/// Returns the canonical `EncryptedValue` PDA for an arbitrary label, delegating
-/// key derivation to ZamaHost so app and host agree exactly.
-pub fn encrypted_value_address(domain: Pubkey, authority: Pubkey, label: [u8; 32]) -> (Pubkey, u8) {
-    zama_host::encrypted_value_address(encrypted_value_id_bytes(domain, authority, label))
+/// The id of a mint's encrypted total supply, controlled by the `total-supply` PDA.
+pub fn total_supply_encrypted_value_id(mint: Pubkey) -> EncryptedValueId {
+    token_value_id(
+        mint,
+        total_supply_authority_address(mint).0,
+        encrypted_total_supply_label(),
+    )
+}
+
+/// Returns the canonical `EncryptedValue` PDA for a token value, delegating key derivation to
+/// ZamaHost so app and host agree exactly.
+pub fn encrypted_value_address(mint: Pubkey, authority: Pubkey, label: [u8; 32]) -> (Pubkey, u8) {
+    token_value_id(mint, authority, label).address_with_bump()
 }
 
 /// Fixed encrypted value label for confidential balances.
@@ -105,11 +118,6 @@ pub fn encrypted_burned_amount_label() -> [u8; 32] {
 /// Fixed encrypted value label for the all-or-zero transferred amount.
 pub fn encrypted_transferred_amount_label() -> [u8; 32] {
     *b"transferred_amount______________"
-}
-
-/// Delegates encrypted-value-ID derivation to the shared ACL crate so app and host agree exactly.
-fn encrypted_value_id_bytes(domain: Pubkey, authority: Pubkey, label: [u8; 32]) -> [u8; 32] {
-    zama_solana_acl::derive_encrypted_value_id(domain.to_bytes(), authority.to_bytes(), label)
 }
 
 #[cfg(test)]

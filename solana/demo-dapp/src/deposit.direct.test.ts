@@ -31,7 +31,6 @@ vi.mock('@fhevm/sdk/solana', () => ({
 vi.mock('./vault/index.js', () => ({
   TOKEN_PROGRAM_ADDRESS: 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
   buildWrapUsdcInstruction: mocks.buildWrap,
-  computeSignerAddress: vi.fn().mockResolvedValue('11111111111111111111111111111111'),
   deriveBatchAddresses: vi.fn(),
   deriveJoinRecordAddress: vi.fn().mockResolvedValue('11111111111111111111111111111111'),
   getBatchByIndex: vi.fn(),
@@ -75,6 +74,7 @@ const session = {
     aclProgram: '11111111111111111111111111111111',
     hostConfig: '11111111111111111111111111111111',
     mints: { joinConfidential: '11111111111111111111111111111111' },
+    programs: { token: '11111111111111111111111111111111' },
     batchers: { deposit: { batcher: '11111111111111111111111111111111' } },
   },
   signer: { address: '11111111111111111111111111111111' },

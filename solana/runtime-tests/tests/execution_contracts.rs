@@ -315,7 +315,7 @@ fn token_redeem_consumes_stateless_verifier_with_value_account_binding() {
         );
     }
     assert!(
-        !TOKEN_REDEEM.contains("deny_subject"),
+        !TOKEN_REDEEM.contains("deny_scope"),
         "redemption must not consult the grant deny-list"
     );
     // The token layer must not re-pin a request-time context id or hand-roll secp verification.

@@ -143,13 +143,13 @@ export type DiscloseSecpInput<
   TAccountEventAuthority extends string = string,
   TAccountProgram extends string = string,
 > = {
-  /** Confidential mint whose ACL domain scopes the disclosed encrypted value account and event. */
+  /** Confidential mint whose application scopes the disclosed encrypted value account and event. */
   mint: Address<TAccountMint>;
   /** Confidential token account for account-scoped kinds. Must be absent for total supply. */
   tokenAccount?: Address<TAccountTokenAccount>;
   /**
    * The `EncryptedValue` encrypted value account the disclosed handle belongs to.
-   * CPI; this handler additionally binds its `domain` to `mint`.
+   * CPI; this handler additionally binds it to one exact token state field of `mint`.
    */
   encryptedValue: Address<TAccountEncryptedValue>;
   /** Host config carrying the current KMS context id and gateway EIP-712 domain. */
@@ -262,13 +262,13 @@ export type ParsedDiscloseSecpInstruction<
 > = {
   programAddress: Address<TProgram>;
   accounts: {
-    /** Confidential mint whose ACL domain scopes the disclosed encrypted value account and event. */
+    /** Confidential mint whose application scopes the disclosed encrypted value account and event. */
     mint: TAccountMetas[0];
     /** Confidential token account for account-scoped kinds. Must be absent for total supply. */
     tokenAccount?: TAccountMetas[1] | undefined;
     /**
      * The `EncryptedValue` encrypted value account the disclosed handle belongs to.
-     * CPI; this handler additionally binds its `domain` to `mint`.
+     * CPI; this handler additionally binds it to one exact token state field of `mint`.
      */
     encryptedValue: TAccountMetas[2];
     /** Host config carrying the current KMS context id and gateway EIP-712 domain. */

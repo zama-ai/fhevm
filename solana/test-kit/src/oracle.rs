@@ -545,23 +545,26 @@ impl CleartextLedger {
                 .expect("every emitted FHE batch must be valid in cleartext");
             for (step, value) in args.steps.iter().zip(outputs) {
                 let zama_host::FheExecuteOutput::StoredValue {
-                    output_domain_index,
-                    output_account_index,
+                    output_program_index,
+                    output_authority_key_index,
+                    output_scope_index,
                     output_label_index,
                     ..
                 } = execution_step_output(step)
                 else {
                     continue;
                 };
-                let encrypted_value_id = zama_solana_acl::derive_encrypted_value_id(
-                    args.dictionary_bytes(*output_domain_index)
-                        .expect("valid dictionary index"),
-                    args.dictionary_bytes(*output_account_index)
-                        .expect("valid dictionary index"),
-                    args.dictionary_bytes(*output_label_index)
-                        .expect("valid dictionary index"),
-                );
-                let address = zama_host::encrypted_value_address(encrypted_value_id).0;
+                let dictionary = |index: u8| {
+                    args.dictionary_bytes(index)
+                        .expect("valid dictionary index")
+                };
+                let address = zama_host::encrypted_value_address(
+                    Pubkey::new_from_array(dictionary(*output_program_index)),
+                    Pubkey::new_from_array(dictionary(*output_authority_key_index)),
+                    dictionary(*output_scope_index),
+                    dictionary(*output_label_index),
+                )
+                .0;
                 let persisted = read_encrypted_value(context, address);
                 self.values.insert(persisted.current_handle, value);
                 persistent_outputs += 1;

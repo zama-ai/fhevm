@@ -24,7 +24,7 @@ export const PERMIT_WARN_ABOVE_DURATION_SECONDS = 604_800n;
  * currently made to them.
  */
 export const PERMIT_PERMISSIVE_WARNING =
-  'This permit places no restriction on which ACL domains may be decrypted under it: for as long as ' +
+  'This permit places no restriction on which programs or scopes may be decrypted under it: for as long as ' +
   'it is valid it covers every handle the signer can access, including every delegation currently ' +
   'made to the signer — not only handles of their own. It lasts longer than a week.';
 

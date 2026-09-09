@@ -30,10 +30,11 @@ use crate::{FheExecutionBuildError, Result};
 
 impl<'id> FheExecutionBuilder<'id> {
     /// Introduces a coprocessor-attested external input as a transient operand — the Solana analog
-    /// of EVM `FHE.fromExternal`. The host re-verifies the attestation in-execution and requires the
-    /// caller to be the attested contract (`compute_subject == contract_address`); derived outputs
-    /// are then unconstrained, exactly like EVM `allowTransient(input, msg.sender)`. The returned
-    /// value is an operand usable only in later steps of this builder.
+    /// of EVM `FHE.fromExternal`. The host re-verifies the attestation in-execution and requires
+    /// the attested contract to be the execution's application program (the one whose persistent
+    /// values the execution reads or writes); derived outputs are then unconstrained, exactly
+    /// like EVM `allowTransient(input, msg.sender)`. The returned value is an operand usable only
+    /// in later steps of this builder.
     pub fn verified_input<T: FheTyped>(
         &mut self,
         attestation: CoprocessorInputAttestation,

@@ -1364,7 +1364,6 @@ type DemoHealth = {
   readonly dapp: boolean;
   readonly kmsCore: boolean;
   readonly relayer: boolean;
-  readonly proof: boolean;
   readonly hostRpc: boolean;
   readonly gatewayRpc: boolean;
   readonly minio: boolean;
@@ -1397,7 +1396,6 @@ const demoHealth = async (manifest: DemoManifest): Promise<DemoHealth> => {
     dapp,
     kmsReady,
     relayerEndpoint,
-    proofEndpoint,
     hostRpc,
     gatewayRpc,
     minio,
@@ -1413,7 +1411,6 @@ const demoHealth = async (manifest: DemoManifest): Promise<DemoHealth> => {
       /KMS Server service socket address/,
     ),
     httpHealthy("http://127.0.0.1:3000/healthz"),
-    httpHealthy("http://127.0.0.1:8088/health/readiness"),
     evmRpcHealthy(8545),
     evmRpcHealthy(8546),
     httpHealthy("http://127.0.0.1:9000/minio/health/ready"),
@@ -1442,7 +1439,6 @@ const demoHealth = async (manifest: DemoManifest): Promise<DemoHealth> => {
     dapp: exactEndpointReady(exact.get("dapp") === true, dapp),
     kmsCore: containerReady("kms-core") && kmsReady,
     relayer: containerReady("fhevm-relayer") && relayerEndpoint,
-    proof: containerReady("fhevm-solana-proof-service") && proofEndpoint,
     hostRpc: containerReady("host-node") && hostRpc,
     gatewayRpc: containerReady("gateway-node") && gatewayRpc,
     minio: containerReady("fhevm-minio") && minio,
@@ -1462,7 +1458,6 @@ const allDemoHealthReady = (health: DemoHealth): boolean =>
   health.dapp &&
   health.kmsCore &&
   health.relayer &&
-  health.proof &&
   health.hostRpc &&
   health.gatewayRpc &&
   health.minio &&
@@ -1475,7 +1470,6 @@ export const reseedHealthReady = (health: DemoHealth): boolean =>
   health.listener &&
   health.kmsCore &&
   health.relayer &&
-  health.proof &&
   health.hostRpc &&
   health.gatewayRpc &&
   health.minio &&
@@ -1492,7 +1486,6 @@ const assertDemoHealthReady = (health: DemoHealth): void => {
     "dapp",
     "kmsCore",
     "relayer",
-    "proof",
     "hostRpc",
     "gatewayRpc",
     "minio",
@@ -1676,10 +1669,6 @@ export const upDemo = async ({
         "http://127.0.0.1:5173/api/demo-encryption-key-meta",
         "demo dApp API",
         isDemoDappApiResponseHealthy,
-      );
-      await waitForHttp(
-        "http://127.0.0.1:8088/health/readiness",
-        "Solana proof service",
       );
       assertDemoHealthReady(await demoHealth(manifest));
       manifest = { ...manifest, state: "running" };
@@ -2216,10 +2205,6 @@ export const reseedDemo = async ({
         "demo dApp API",
         isDemoDappApiResponseHealthy,
       );
-      await waitForHttp(
-        "http://127.0.0.1:8088/health/readiness",
-        "Solana proof service",
-      );
       assertDemoHealthReady(await demoHealth(nextManifest));
       await writeDemoManifest({ ...nextManifest, state: "running" });
       const result = {
@@ -2300,7 +2285,6 @@ export const statusDemo = async (): Promise<boolean> => {
     ["dapp", serviceHealth.dapp],
     ["kmsCore", serviceHealth.kmsCore],
     ["relayer", serviceHealth.relayer],
-    ["proof", serviceHealth.proof],
     ["hostRpc", serviceHealth.hostRpc],
     ["gatewayRpc", serviceHealth.gatewayRpc],
     ["minio", serviceHealth.minio],
@@ -2350,11 +2334,7 @@ const streamLogCommands = async (
   }
 };
 
-const containerLogAliases = (name: string): readonly string[] => [
-  name,
-  name.replace(/^fhevm-/, ""),
-  name === "fhevm-solana-proof-service" ? "proof" : "",
-];
+const containerLogAliases = (name: string): readonly string[] => [name, name.replace(/^fhevm-/, "")];
 
 export const resolveOwnedLogContainers = (
   manifest: Pick<DemoManifest, "containers">,

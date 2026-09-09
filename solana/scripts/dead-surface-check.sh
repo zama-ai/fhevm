@@ -79,8 +79,11 @@ RUST_ROOTS=(
   solana/crates
   solana/runtime-tests
   solana/test-kit
-  solana-proof-service
   coprocessor/fhevm-engine/host-listener/src
+  # The relayer's Solana adapter (the ACL pre-check and the delegation pre-check) speaks this
+  # vocabulary natively; the rest of the relayer is EVM prose whose "durable" and "superseded"
+  # are its own words, not retired ACL names.
+  relayer/src/host
 )
 
 # TypeScript the Solana workstream owns. The demo dapp holds the vault module (moved out of the
@@ -106,7 +109,7 @@ SCRIPT_ROOTS=(
 
 # Two scopes, because three of the retired words are ordinary technical English outside the FHE
 # core. `plan` names a docker-compose stack plan all over test-suite/fhevm, `pool` names a Postgres
-# connection pool all over the listener and the proof service, and `namespace` names a Kubernetes
+# connection pool all over the listener, and `namespace` names a Kubernetes
 # namespace in the workflows. Sweeping those trees for those words would produce either noise or an
 # exception list so long it stops meaning anything, so they are swept in CORE only — the sources
 # that speak the Solana FHE vocabulary natively, where the word can only be the retired sense.
@@ -174,7 +177,6 @@ done
 SENTINEL_ROOTS=(
   solana/programs
   solana/crates
-  solana-proof-service
   sdk/js-sdk/src/solana
   solana/demo-dapp/src
   test-suite/fhevm
@@ -199,9 +201,9 @@ SENTINEL_FILES=(
 # Check 5's pinned justification prose, as `file|phrase`. The v0 `actions/userDecrypt.ts` entry
 # died with the file; its successor reuse — the permit's verifying program doubling as the host
 # program id the evidence source derives accounts under — is justified where it happens.
-RETROFIT_JUSTIFICATIONS=(
-  "sdk/js-sdk/src/solana/clients/decorators/permitDecrypt.ts|verifying program IS the host program"
-)
+# Empty since RFC 035: the one entry (the permit's verifying program reused as the host program id
+# of the SDK's RPC evidence source) went with that source. The check stays for the next one.
+RETROFIT_JUSTIFICATIONS=()
 # The self-test cannot violate check 5 by planting a file — it would have to delete prose from a real
 # one — so it adds an entry through the environment instead. Same code path, both arms.
 [ -n "${DEAD_SURFACE_EXTRA_RETROFIT:-}" ] && \
@@ -520,8 +522,30 @@ if run_check 3; then
   # never match `*_value_key`, because `_` is a word character to grep — so two connector test names
   # kept the word, and the one exception the entry does need was being granted by accident rather
   # than stated. `acl_value_key` is that exception, named now.
+  # No exception any more: the connector's `acl_value_key` went with the client-supplied proof it
+  # keyed (RFC 035 — the connector reads the encrypted value account and fetches the proof itself).
   check_alias 'value_key identifier — renamed to encrypted_value_id' kms \
-    'acl_value_key' -iE 'value_key' --exclude-dir=utils
+    '' -iE 'value_key'
+  # Deliberate records of the retirement (the teardown gates, INVARIANTS #47, DD-035) say the
+  # service is gone; the EVM input-proof service is another thing.
+  check_alias 'proof service — the leaf record lives in the host listener' kms \
+    'is gone|proof-service client|external input proof service' -iE 'proof[ _-]service'
+  # Reject the retired ACL collection and mutation API, not ordinary English or unrelated
+  # variables called "subject" (for example a polling condition or TLS certificate field).
+  check_alias 'subject — say allow / viewer; the account keeps no list' kms \
+    '' -iE '\bsubject[ _-]set\b|\.subjects\b|\bsubjects[[:space:]]*:|output_subject_indexes|previous_subjects|allow_subjects|remove_subject|SubjectSet'
+  # Reading a value into a computation is admitted by its authority's signature; there is no
+  # separate compute identity to name.
+  check_alias 'compute subject / compute signer — reads are admitted by the value authority' kms \
+    '' -iE 'compute[ _-]?(subject|signer)|computeSubject|computeSigner|fhe-compute'
+  # The ACL "domain" became the application `(program, scope)`. Swept as the ACL sense only:
+  # "ACL domain", "mint domain", the `Domain` type, `.domain` fields and `domain_index` wire names.
+  # EIP-712 signing domains and hash domain separation are other senses and never matched; the
+  # connector's `self.domain` is its EIP-712 domain and is the one `.domain` field excepted. The
+  # permit now signs `allowed_scopes`; nothing in its crate carries the old name.
+  check_alias 'domain — say application (program, scope)' kms \
+    'self\.domain|url\.domain\(\)' \
+    -iE '\bacl[ _-]domains?\b|mint[ _-]domain|self[ _-]domain|Domain::new|zama_fhe::Domain|\bDomain<|domain_index|\.domain\b|domain: Pubkey|\bdomain key'
   # The encrypted-value ID components are domain / encrypted_value_account_authority /
   # encrypted_value_label. `acl_domain_key` is NOT swept: it is the normative field name of the signed
   # Solana permit (`allowed_acl_domain_keys` in the user-decryption specification) and of the v3 wire,
@@ -583,8 +607,8 @@ if run_check 3; then
   check_alias 'plan — one fhe_execute invocation is an execution' core \
     'const plan = await|plan === null|plan\.instructions|plan\.initializesAccount' \
     -iE '\bplans?\b'
-  # dictionary <- pool. CORE-only: the listener and the proof service are full of Postgres connection
-  # pools, and neither is swept here. Inside the FHE core the only collection that could be called a
+  # dictionary <- pool. CORE-only: the listener is full of Postgres connection
+  # pools, and it is not swept here. Inside the FHE core the only collection that could be called a
   # pool is the dictionary. The single exception is a vault's liquidity pool in the confidential
   # vaults writeup, which is the finance sense of the word.
   check_alias 'pool — the interning structure is the dictionary' core \
@@ -622,7 +646,7 @@ if run_check 3; then
     'ACL and lineage resolution' -iE '\blineage\b'
   # The adjective matters: "value account" describes every SPL token account, so dropping
   # "encrypted" turns the one distinguishing fact — that this account holds an *encrypted* value's
-  # handle, subject list and MMR — into a generic phrase. The struct is `EncryptedValue`; the
+  # handle and MMR peaks — into a generic phrase. The struct is `EncryptedValue`; the
   # adjective is the part that must survive in prose.
   #
   # ERE has no negative lookbehind, so the correct phrase is excluded by the line-level exception
@@ -725,7 +749,7 @@ if run_check 5; then
   # The other §8 shape: a field with no Solana meaning filled with a *reused* real value rather than
   # a zero. There is no constant to grep for, so the check pins the explanation — delete the prose
   # and this fails, because the prose is the only way a reader learns the field is inert.
-  for entry in "${RETROFIT_JUSTIFICATIONS[@]}"; do
+  for entry in ${RETROFIT_JUSTIFICATIONS[@]+"${RETROFIT_JUSTIFICATIONS[@]}"}; do
     file=${entry%%|*}
     phrase=${entry#*|}
     [ -f "$file" ] || { echo "MISSING RETROFIT FILE: ${file} (update RETROFIT_JUSTIFICATIONS)"; fail=1; continue; }
@@ -759,8 +783,8 @@ if run_check 6; then
   # wider than that — every Rust and TypeScript root plus the connector crates — so an export a
   # service calls still reads as alive.
   #
-  # Deliberately not collected: solana-proof-service, the host listener's src, and
-  # kms-connector/crates. Widening to them means triaging roughly six hundred more declarations —
+  # Deliberately not collected: the host listener's src and kms-connector/crates. Widening to
+  # them means triaging roughly six hundred more declarations —
   # audience lines, dropped `pub`s, and deletions — across two services and a tree the EVM stack
   # shares, which is its own piece of work rather than a side effect of a vocabulary pass. Said out
   # loud here so the gap is a decision on the record instead of something a reader has to infer from
@@ -898,8 +922,8 @@ fi
 if run_check 7; then
   echo "== 7. every swept root is a CI trigger for this script =="
   # The script only protects a tree if a change to that tree runs it. It used to run inside
-  # build-and-test, gated on `solana`, so an edit to the proof service, the listener, the
-  # kms-connector, the SDK's Solana surface, or the test suite could add a retired name with the sweep
+  # build-and-test, gated on `solana`, so an edit to the listener, the kms-connector, the
+  # SDK's Solana surface, or the test suite could add a retired name with the sweep
   # never executing. The dedicated `dead-surface` job fixed that, and this check keeps the two lists in
   # step: every root swept below must be covered by a path in the job's paths-filter.
   TRIGGER_WORKFLOW='.github/workflows/solana-tests.yml'
@@ -988,6 +1012,10 @@ PersistentEvalTarget|eval — say execution; evaluate is the verb
 born-public|born / birth — renamed to created-public / create
 are born with|born / birth — renamed to created-public / create
 value_key|value_key identifier — renamed to encrypted_value_id
+the proof service answers|proof service — the leaf record lives in the host listener
+the subject set|subject — say allow / viewer; the account keeps no list
+compute_subject|compute subject / compute signer — reads are admitted by the value authority
+ACL domain key|domain — say application (program, scope)
 app_account|app_account / app_authority — renamed to encrypted_value_account_authority
 app_authority|app_account / app_authority — renamed to encrypted_value_account_authority
 app context|app context — say encrypted value account authority

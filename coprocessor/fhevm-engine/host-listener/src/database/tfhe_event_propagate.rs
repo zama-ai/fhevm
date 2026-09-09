@@ -1819,7 +1819,7 @@ impl Database {
         Ok(inserted)
     }
 
-    /// Remove one subject-scoped allow for a handle.
+    /// Remove one key's allow for a handle.
     pub async fn delete_allowed_handle(
         &self,
         tx: &mut Transaction<'_>,

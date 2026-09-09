@@ -6,16 +6,15 @@ const EXTRA_DATA_V1_LENGTH: usize = 33; // 1 (version) + 32 (context_id)
 const EXTRA_DATA_V2_VERSION: u8 = 0x02; // RFC 005: context_id + epoch_id
 const EXTRA_DATA_V2_LENGTH: usize = 65; // 1 (version) + 32 (context_id) + 32 (epoch_id)
 
-const EXTRA_DATA_SOLANA_VERSION: u8 = 0x03; // Solana MMR-proof blob
-const EXTRA_DATA_SOLANA_MIN_LENGTH: usize = 33; // 1 (version) + 32 (context_id); tail not parsed here
+const EXTRA_DATA_SOLANA_VERSION: u8 = 0x03; // Solana public decrypt: context_id + encrypted value account
+const EXTRA_DATA_SOLANA_LENGTH: usize = 65; // 1 (version) + 32 (context_id) + 32 (account)
 
 /// Parse context ID from extra_data bytes.
 ///
 /// - v1: `[0x01 | context_id(32)]` — exactly 33 bytes (host parity)
 /// - v2: `[0x02 | context_id(32) | epoch_id(32)]`
-/// - v3 (Solana): `[0x03 | context_id(32) | …]` — only the shared
-///   `version ‖ context_id` prefix is read; the Solana-specific tail
-///   (acl_value_key, proof_slot, MMR proof) is opaque to the relayer.
+/// - v3 (Solana public decrypt): `[0x03 | context_id(32) | encrypted_value_account(32)]` —
+///   only the shared `version ‖ context_id` prefix is read; the account is the connector's.
 /// - empty or `0x00`: returns `U256::ZERO` (use static default)
 /// - unknown version or truncated: returns `Err`
 pub fn parse_context_id_from_extra_data(extra_data: &[u8]) -> Result<U256, ExtraDataError> {
@@ -29,7 +28,7 @@ pub fn parse_context_id_from_extra_data(extra_data: &[u8]) -> Result<U256, Extra
         // Host `extract_kms_context_id` requires v1 to be exactly 33 bytes.
         EXTRA_DATA_V1_VERSION => ExpectedLength::Exactly(EXTRA_DATA_V1_LENGTH),
         EXTRA_DATA_V2_VERSION => ExpectedLength::AtLeast(EXTRA_DATA_V2_LENGTH),
-        EXTRA_DATA_SOLANA_VERSION => ExpectedLength::AtLeast(EXTRA_DATA_SOLANA_MIN_LENGTH),
+        EXTRA_DATA_SOLANA_VERSION => ExpectedLength::Exactly(EXTRA_DATA_SOLANA_LENGTH),
         _ => return Err(ExtraDataError::UnsupportedVersion(version)),
     };
     let len = extra_data.len();
@@ -161,17 +160,22 @@ mod tests {
 
     #[test]
     fn valid_solana_v3_returns_context_id() {
-        // Solana 0x03 blob: [0x03 | context_id(32) | acl_value_key(32) | proof_slot(8) | len(4) | proof].
-        // Only the shared version+context_id prefix is read; the tail is opaque.
+        // Solana 0x03 carrier: [0x03 | context_id(32) | encrypted_value_account(32)].
+        // Only the shared version+context_id prefix is read; the account is opaque here.
         let context_id = U256::from(0x1234u64);
         let mut data = vec![EXTRA_DATA_SOLANA_VERSION];
         data.extend_from_slice(&context_id.to_be_bytes::<32>());
-        data.extend_from_slice(&[7u8; 32]); // acl_value_key
-        data.extend_from_slice(&42u64.to_be_bytes()); // proof_slot
-        data.extend_from_slice(&3u32.to_be_bytes()); // proof len
-        data.extend_from_slice(&[0x01, 0x02, 0x03]); // proof
+        data.extend_from_slice(&[7u8; 32]); // encrypted value account
 
         assert_eq!(parse_context_id_from_extra_data(&data).unwrap(), context_id);
+    }
+
+    #[test]
+    fn solana_v3_with_trailing_bytes_returns_error() {
+        let mut data = vec![EXTRA_DATA_SOLANA_VERSION];
+        data.extend_from_slice(&[0u8; 64]);
+        data.push(0xff);
+        assert!(parse_context_id_from_extra_data(&data).is_err());
     }
 
     #[test]

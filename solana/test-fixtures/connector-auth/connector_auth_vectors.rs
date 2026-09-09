@@ -8,15 +8,18 @@
 //! Three conventions carry weight and are not stylistic.
 //!
 //! * **State is part of the record.** Each record carries the account set it was authorized
-//!   against: pubkey, owning program, and raw data. A rule that reads an account cannot be
-//!   pinned by a request alone, and paraphrasing the account ("an encrypted value account whose handle moved on") would make
+//!   against — pubkey, owning program, and raw data — and what the coprocessors' leaf record
+//!   answered for every leaf the request named. A rule that reads state cannot be pinned by a
+//!   request alone, and paraphrasing the state ("a record one leaf behind the chain") would make
 //!   the record depend on whoever wrote the paraphrase.
 //! * **Every 64-bit number is a decimal string.** A JSON number reaches a TypeScript consumer as
-//!   a double and silently loses precision above 2^53; chain ids and slots both go there.
+//!   a double and silently loses precision above 2^53; chain ids, slots and leaf counts all go
+//!   there.
 //! * **A rejection names both its rule and its class.** The rule says which check refused the
-//!   request; the class says whether repeating it can ever help. Neither field is derivable from
-//!   the other: an inclusion proof that does not verify is terminal when the claimed leaf count is
-//!   behind the observed one and retryable when it is not, under one rule name.
+//!   request; the class says whether repeating it can ever help. The two are recorded separately
+//!   because a consumer acts on the class and reviews the rule, and because the same observable
+//!   outcome — no proof — is terminal from a record with the chain's history and retryable from
+//!   one behind it.
 //!
 //! Only serde is required, so this file compiles in any consumer's test target. The permit fields
 //! use the same names and encodings as the permit set on purpose: a consumer that already reads
@@ -162,8 +165,9 @@ pub struct WirePermit {
     pub user_pubkey: String,
     /// Name of the transport key in the file's `transport_keys` table.
     pub transport_key: String,
-    /// ACL domain keys, hex, in the order signed.
-    pub allowed_acl_domain_keys: Vec<String>,
+    /// Allowed scopes, hex, in the order signed: each is 64 bytes, the application program id
+    /// followed by the scope. Empty means permissive.
+    pub allowed_scopes: Vec<String>,
     /// Validity-window start, decimal string.
     pub start_timestamp: String,
     /// Validity-window length, decimal string.
@@ -181,15 +185,11 @@ pub struct WirePermit {
 pub struct WireHandleEntry {
     /// Ciphertext handle, hex.
     pub handle: String,
-    /// Subject, hex: the pubkey whose encrypted value this entry asks to decrypt — the
-    /// requester itself for a direct entry, the delegator for a delegated one.
-    pub subject: String,
-    /// Encrypted value account identity, hex.
-    pub encrypted_value_id: String,
-    /// The leaf count the access proof was built against, decimal string; `"0"` in current mode.
-    pub proof_leaf_count: String,
-    /// Access proof, hex; empty for current access.
-    pub access_proof: String,
+    /// The key whose allow leaf on the handle authorizes the entry, hex: the requester itself for
+    /// a direct entry, the delegator for a delegated one.
+    pub allowed_key: String,
+    /// The encrypted value account the handle lives in, hex.
+    pub encrypted_value_account: String,
 }
 
 /// The state a record is authorized against.
@@ -203,6 +203,48 @@ pub struct Observation {
     pub kms_pair_status: KmsPairStatus,
     /// The accounts that exist at this observation. Any account not listed does not exist.
     pub accounts: Vec<RecordedAccount>,
+    /// What the coprocessors' leaf record answers, one entry per distinct (encrypted value
+    /// account, handle, allowed key) the request names, in first-seen order. The record is
+    /// constant for the observation: a repeated read gets the same answers. A query not listed is
+    /// an account unknown to the record.
+    pub leaf_record: Vec<RecordedLeafProof>,
+}
+
+/// The leaf record's answer to one query.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RecordedLeafProof {
+    /// The encrypted value account asked about, hex.
+    pub encrypted_value_account: String,
+    /// The handle asked about, hex.
+    pub handle: String,
+    /// The key whose allow leaf was asked for, hex.
+    pub allowed_key: String,
+    /// What the record said.
+    pub status: LeafProofStatus,
+    /// For `found`: the leaf's position, decimal string.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub leaf_index: Option<String>,
+    /// For `found` and `not_found`: how many leaves the record has sealed for the account,
+    /// decimal string.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub leaf_count: Option<String>,
+    /// For `found`: the sibling path from the leaf to its peak, hex, leaf end first.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub siblings: Vec<String>,
+}
+
+/// The four things a leaf record can say about a query.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LeafProofStatus {
+    /// The leaf is sealed; a proof follows.
+    Found,
+    /// The record knows the account and has no such leaf in the history it has sealed.
+    NotFound,
+    /// The record has never seen the account.
+    UnknownAccount,
+    /// The record's history for the account has a gap.
+    HistoryIncomplete,
 }
 
 /// One account of an observation.
@@ -247,12 +289,6 @@ pub mod rule {
     pub const EMPTY_HANDLES: &str = "empty-handles";
     /// The request names more handles than one atomic account snapshot can cover.
     pub const TOO_MANY_HANDLES: &str = "too-many-handles";
-    /// An access proof does not decode.
-    pub const ACCESS_PROOF_MALFORMED: &str = "access-proof-malformed";
-    /// An access proof decoded with bytes left over.
-    pub const ACCESS_PROOF_TRAILING_BYTES: &str = "access-proof-trailing-bytes";
-    /// An access proof carries more siblings than the tree can produce.
-    pub const ACCESS_PROOF_TOO_MANY_SIBLINGS: &str = "access-proof-too-many-siblings";
     /// The encrypted value account does not exist at this observation.
     pub const ENCRYPTED_VALUE_ACCOUNT_ABSENT: &str = "encrypted-value-account-absent";
     /// The encrypted value account belongs to another program.
@@ -261,22 +297,27 @@ pub mod rule {
     pub const ENCRYPTED_VALUE_ACCOUNT_WRONG_TYPE: &str = "encrypted-value-account-wrong-type";
     /// The account carries the encrypted value account type but its body does not decode.
     pub const ENCRYPTED_VALUE_ACCOUNT_MALFORMED: &str = "encrypted-value-account-malformed";
-    /// The encrypted value account's own fields derive a different identity than the one claimed.
-    pub const ENCRYPTED_VALUE_ID_MISMATCH: &str = "encrypted-value-id-mismatch";
+    /// The encrypted value account's own fields do not derive the address it was read from.
+    pub const ENCRYPTED_VALUE_ACCOUNT_ADDRESS_MISMATCH: &str =
+        "encrypted-value-account-address-mismatch";
     /// The encrypted value account names the wildcard sentinel as its authority.
     pub const ENCRYPTED_VALUE_ACCOUNT_SENTINEL_AUTHORITY: &str =
         "encrypted-value-account-sentinel-authority";
-    /// The named handle is not the encrypted value account's current handle.
-    pub const HANDLE_NOT_CURRENT: &str = "handle-not-current";
-    /// The subject is not a current member of the encrypted value account.
-    pub const SUBJECT_NOT_A_MEMBER: &str = "subject-not-a-member";
-    /// The proof did not establish inclusion against the observed peaks — because it did not
-    /// verify, or because it names a leaf position the observation does not have. Both are the
-    /// same observable fact from the outside, and both are classified by the leaf count the
-    /// request claimed: below the observed one means rebuild, at or above it means retry.
-    pub const INCLUSION_PROOF_DOES_NOT_VERIFY: &str = "inclusion-proof-does-not-verify";
-    /// The encrypted value account's ACL domain is outside the signed scope.
-    pub const DOMAIN_NOT_ALLOWED: &str = "domain-not-allowed";
+    /// The leaf record has sealed at least as much history as the observation shows and holds no
+    /// allow leaf for the key on the handle.
+    pub const NO_ALLOW_LEAF: &str = "no-allow-leaf";
+    /// The leaf record has sealed less history than the observation shows and holds no leaf yet.
+    pub const LEAF_RECORD_BEHIND: &str = "leaf-record-behind";
+    /// The leaf record has never seen the encrypted value account.
+    pub const LEAF_RECORD_UNKNOWN_ACCOUNT: &str = "leaf-record-unknown-account";
+    /// The leaf record's history for the account has a gap.
+    pub const LEAF_HISTORY_INCOMPLETE: &str = "leaf-history-incomplete";
+    /// The record served a leaf at a position the observation does not have yet.
+    pub const LEAF_RECORD_AHEAD: &str = "leaf-record-ahead";
+    /// The record served a proof that does not reach any peak the observation holds.
+    pub const LEAF_PROOF_DOES_NOT_VERIFY: &str = "leaf-proof-does-not-verify";
+    /// The encrypted value account's (program, scope) is outside the signed scopes.
+    pub const SCOPE_NOT_ALLOWED: &str = "scope-not-allowed";
     /// No delegation record exists for the tuple at this observation.
     pub const DELEGATION_ABSENT: &str = "delegation-absent";
     /// The delegation was revoked.
@@ -308,19 +349,19 @@ pub mod rule {
         HOST_PAUSED,
         EMPTY_HANDLES,
         TOO_MANY_HANDLES,
-        ACCESS_PROOF_MALFORMED,
-        ACCESS_PROOF_TRAILING_BYTES,
-        ACCESS_PROOF_TOO_MANY_SIBLINGS,
         ENCRYPTED_VALUE_ACCOUNT_ABSENT,
         ENCRYPTED_VALUE_ACCOUNT_FOREIGN_OWNER,
         ENCRYPTED_VALUE_ACCOUNT_WRONG_TYPE,
         ENCRYPTED_VALUE_ACCOUNT_MALFORMED,
-        ENCRYPTED_VALUE_ID_MISMATCH,
+        ENCRYPTED_VALUE_ACCOUNT_ADDRESS_MISMATCH,
         ENCRYPTED_VALUE_ACCOUNT_SENTINEL_AUTHORITY,
-        HANDLE_NOT_CURRENT,
-        SUBJECT_NOT_A_MEMBER,
-        INCLUSION_PROOF_DOES_NOT_VERIFY,
-        DOMAIN_NOT_ALLOWED,
+        NO_ALLOW_LEAF,
+        LEAF_RECORD_BEHIND,
+        LEAF_RECORD_UNKNOWN_ACCOUNT,
+        LEAF_HISTORY_INCOMPLETE,
+        LEAF_RECORD_AHEAD,
+        LEAF_PROOF_DOES_NOT_VERIFY,
+        SCOPE_NOT_ALLOWED,
         DELEGATION_ABSENT,
         DELEGATION_REVOKED,
         DELEGATION_EXPIRED,

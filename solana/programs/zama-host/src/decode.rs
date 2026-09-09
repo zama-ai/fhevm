@@ -11,28 +11,21 @@ use anchor_lang::{AnchorDeserialize, Discriminator};
 pub use anchor_lang::event::EVENT_IX_TAG_LE;
 
 /// One zama-host instruction an off-chain consumer reconstructs state from:
-/// the `fhe_execute` execution plus the three `EncryptedValue` ACL mutations.
+/// the `fhe_execute` execution (which allows keys inline on every persistent
+/// write) plus the one standalone `EncryptedValue` ACL mutation.
 /// Payloads are decoded through the generated `crate::instruction` structs and
 /// their `Discriminator` consts, so the fields are the handler arguments.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ZamaHostInstruction {
     FheExecute(crate::state::FheExecuteArgs),
-    AllowSubjects {
-        subjects: Vec<anchor_lang::prelude::Pubkey>,
-    },
-    RemoveSubject {
-        subject: anchor_lang::prelude::Pubkey,
-    },
-    MakeHandlePublic {
-        handle: [u8; 32],
-    },
+    MakeHandlePublic { handle: [u8; 32] },
 }
 
 /// A discriminator matched one of the decoded instructions but its payload
 /// did not deserialize. Consumers decide whether that halts ingestion.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MalformedInstruction {
-    /// Snake-case handler name, e.g. `"allow_subjects"`.
+    /// Snake-case handler name, e.g. `"make_handle_public"`.
     pub instruction: &'static str,
     pub message: String,
 }
@@ -69,24 +62,6 @@ pub fn decode_instruction(
         |args: crate::instruction::FheExecute| { ZamaHostInstruction::FheExecute(args.args) }
     );
     arm!(
-        AllowSubjects,
-        "allow_subjects",
-        |args: crate::instruction::AllowSubjects| {
-            ZamaHostInstruction::AllowSubjects {
-                subjects: args.subjects,
-            }
-        }
-    );
-    arm!(
-        RemoveSubject,
-        "remove_subject",
-        |args: crate::instruction::RemoveSubject| {
-            ZamaHostInstruction::RemoveSubject {
-                subject: args.subject,
-            }
-        }
-    );
-    arm!(
         MakeHandlePublic,
         "make_handle_public",
         |args: crate::instruction::MakeHandlePublic| {
@@ -107,15 +82,14 @@ pub fn is_fhe_execute_instruction(instruction_data: &[u8]) -> bool {
 
 /// Whether `instruction_data` is the event self-CPI carrying event `T`
 /// (Anchor event tag followed by `T`'s event discriminator).
-pub fn is_event_cpi<T: Discriminator>(instruction_data: &[u8]) -> bool {
+fn is_event_cpi<T: Discriminator>(instruction_data: &[u8]) -> bool {
     instruction_data.starts_with(EVENT_IX_TAG_LE)
         && instruction_data.get(8..16) == Some(T::DISCRIMINATOR)
 }
 
 /// Strips the event self-CPI envelope (tag + `T`'s discriminator) and returns
-/// the raw event payload, for callers that decode it with stricter rules than
-/// [`decode_event_cpi`] (e.g. rejecting trailing bytes).
-pub fn strip_event_cpi_envelope<T: Discriminator>(instruction_data: &[u8]) -> Option<&[u8]> {
+/// the raw event payload.
+fn strip_event_cpi_envelope<T: Discriminator>(instruction_data: &[u8]) -> Option<&[u8]> {
     if !is_event_cpi::<T>(instruction_data) {
         return None;
     }
@@ -154,14 +128,6 @@ mod tests {
             sha256_discriminator("global", "fhe_execute")
         );
         assert_eq!(
-            crate::instruction::AllowSubjects::DISCRIMINATOR,
-            sha256_discriminator("global", "allow_subjects")
-        );
-        assert_eq!(
-            crate::instruction::RemoveSubject::DISCRIMINATOR,
-            sha256_discriminator("global", "remove_subject")
-        );
-        assert_eq!(
             crate::instruction::MakeHandlePublic::DISCRIMINATOR,
             sha256_discriminator("global", "make_handle_public")
         );
@@ -177,7 +143,6 @@ mod tests {
 
     #[test]
     fn decode_instruction_roundtrips_each_variant_and_accepts_trailing_bytes() {
-        let subject = anchor_lang::prelude::Pubkey::new_from_array([9; 32]);
         let cases: Vec<(Vec<u8>, ZamaHostInstruction)> = vec![
             {
                 let args = crate::instruction::MakeHandlePublic { handle: [7; 32] };
@@ -189,10 +154,21 @@ mod tests {
                 )
             },
             {
-                let args = crate::instruction::RemoveSubject { subject };
-                let mut data = crate::instruction::RemoveSubject::DISCRIMINATOR.to_vec();
+                let args = crate::instruction::FheExecute {
+                    args: crate::state::FheExecuteArgs {
+                        account_count: 0,
+                        dictionary: vec![[1; 32]],
+                        steps: vec![crate::state::FheExecuteStep::TrivialEncrypt {
+                            plaintext: [0; 32],
+                            fhe_type: 5,
+                            output: crate::state::FheExecuteOutput::Transient,
+                        }],
+                    },
+                };
+                let mut data = crate::instruction::FheExecute::DISCRIMINATOR.to_vec();
                 args.serialize(&mut data).unwrap();
-                (data, ZamaHostInstruction::RemoveSubject { subject })
+                let expected = ZamaHostInstruction::FheExecute(args.args.clone());
+                (data, expected)
             },
         ];
         for (mut data, expected) in cases {
@@ -210,9 +186,9 @@ mod tests {
 
     #[test]
     fn matched_discriminator_with_malformed_payload_is_an_error() {
-        let data = crate::instruction::AllowSubjects::DISCRIMINATOR.to_vec();
-        // No borsh body at all: Vec<Pubkey> needs at least a length prefix.
+        let data = crate::instruction::FheExecute::DISCRIMINATOR.to_vec();
+        // No borsh body at all: the args need at least their length prefixes.
         let error = decode_instruction(&data).unwrap_err();
-        assert_eq!(error.instruction, "allow_subjects");
+        assert_eq!(error.instruction, "fhe_execute");
     }
 }

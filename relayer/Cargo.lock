@@ -5795,6 +5795,19 @@ name = "solana-hash"
 version = "4.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0df9b01495ed31100aca97a7f5862d5e19ab1636d60d1a9f02391408dd9dec84"
+dependencies = [
+ "five8",
+]
+
+[[package]]
+name = "solana-keccak-hasher"
+version = "3.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ed1c0d16d6fdeba12291a1f068cdf0d479d9bff1141bf44afd7aa9d485f65ef8"
+dependencies = [
+ "solana-define-syscall 4.0.1",
+ "solana-hash",
+]
 
 [[package]]
 name = "solana-program-error"
@@ -7371,6 +7384,8 @@ version = "0.1.0"
 dependencies = [
  "borsh",
  "sha2 0.10.9",
+ "sha3 0.10.9",
+ "solana-keccak-hasher",
  "solana-sha256-hasher",
 ]
 

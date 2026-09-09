@@ -292,7 +292,7 @@ export function useDemoController() {
           commit(generation, { depositLifecycle: next, depositLifecycleError: null });
           if (next.kind === 'awaiting-dispatch' && next.remainingSlots === 0n) {
             await advanceOperator(session, position, 'deposit', 'dispatch', generation);
-          } else if (next.kind === 'proving' && next.proofReady) {
+          } else if (next.kind === 'dispatched') {
             await advanceOperator(session, position, 'deposit', 'settle', generation);
           } else if (next.kind === 'settled' && !next.claimed) {
             await advanceOperator(session, position, 'deposit', 'claim', generation);
@@ -346,7 +346,7 @@ export function useDemoController() {
           commit(generation, { redeemLifecycle: next, redeemOperatorError: null });
           if (next.kind === 'awaiting-dispatch' && next.remainingSlots === 0n) {
             await advanceOperator(session, position, 'redeem', 'dispatch', generation);
-          } else if (next.kind === 'proving' && next.proofReady) {
+          } else if (next.kind === 'dispatched') {
             await advanceOperator(session, position, 'redeem', 'settle', generation);
           } else if (next.kind === 'settled' && !next.claimed) {
             await advanceOperator(session, position, 'redeem', 'claim', generation);
@@ -372,7 +372,7 @@ export function useDemoController() {
     }
     const generation = state.generation;
     void refreshVaultMetrics(generation);
-  }, [commit, refreshVaultMetrics, state.connection, state.generation]);
+  }, [commit, currentDepositClaimed, refreshVaultMetrics, state.connection, state.generation]);
 
   const disconnect = useCallback(() => {
     const generation = sessionGeneration.current + 1;

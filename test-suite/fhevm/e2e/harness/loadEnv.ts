@@ -6,7 +6,7 @@
 //
 // Source for NOW: the local clean-e2e stack. Every value below is exactly what the current e2e
 // runtime provides, traced to where it lands:
-//   - urls/ids: the clean-e2e bring-up (validator RPC/WS, relayer, solana-proof-service, the
+//   - urls/ids: the clean-e2e bring-up (validator RPC/WS, relayer, the
 //     RFC-021 host chain id, ACL program, KMS context ids) and
 //     `test-suite/fhevm/src/solana/two-holder-transfer.ts` (RPC/WS/relayer/ACL constants).
 //   - coprocessor DB container: `test-suite/fhevm/src/layout.ts` (COPROCESSOR_DB_CONTAINER).
@@ -40,7 +40,6 @@ export type TestEnv = {
   readonly rpcUrl: string;
   readonly wsUrl: string;
   readonly relayerUrl: string;
-  readonly proofServiceUrl: string;
   readonly gatewayRpcUrl: string;
   /** Primary EVM host chain RPC — where the deployed `ProtocolConfig` declares the active KMS pair. */
   readonly hostRpcUrl: string;
@@ -64,7 +63,6 @@ type TestEnvOverrides = {
   rpcUrl: string;
   wsUrl: string;
   relayerUrl: string;
-  proofServiceUrl: string;
   gatewayRpcUrl: string;
   hostRpcUrl: string;
   chainId: string;
@@ -81,7 +79,6 @@ const LOCAL_DEFAULTS = {
   rpcUrl: "http://127.0.0.1:8899",
   wsUrl: "ws://127.0.0.1:8900",
   relayerUrl: "http://127.0.0.1:3000",
-  proofServiceUrl: "http://127.0.0.1:8088",
   gatewayRpcUrl: "http://127.0.0.1:8546",
   hostRpcUrl: "http://127.0.0.1:8545",
   chainId: "9223372036854788153",
@@ -124,7 +121,6 @@ const envOverrides = (env: NodeJS.ProcessEnv): Partial<TestEnvOverrides> => {
     ...pick("rpcUrl", "SOLANA_RPC_URL"),
     ...pick("wsUrl", "SOLANA_WS_URL"),
     ...pick("relayerUrl", "SOLANA_RELAYER_URL"),
-    ...pick("proofServiceUrl", "PROOF_SERVICE_URL"),
     ...pick("gatewayRpcUrl", "GW_RPC"),
     ...pick("hostRpcUrl", "HOST_RPC"),
     ...pick("chainId", "SOLANA_HOST_CHAIN_ID"),
@@ -148,7 +144,6 @@ export const resolveEnv = (
     rpcUrl: merged.rpcUrl,
     wsUrl: merged.wsUrl,
     relayerUrl: merged.relayerUrl,
-    proofServiceUrl: merged.proofServiceUrl,
     gatewayRpcUrl: merged.gatewayRpcUrl,
     hostRpcUrl: merged.hostRpcUrl,
     chainId: solanaChainId(merged.chainId),

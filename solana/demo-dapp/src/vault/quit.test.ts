@@ -28,7 +28,6 @@ describe('buildQuitInstruction', () => {
       joinUnderlyingMint: addr(16),
       batchAuthorityAta: addr(17),
       userAta: addr(18),
-      joinComputeSigner: addr(6),
       batchJoinTokenAccount: addr(7),
       userTokenAccount: addr(8),
       batchBalanceValue: addr(9),
@@ -42,7 +41,7 @@ describe('buildQuitInstruction', () => {
 
     expect(instruction.programAddress).toBe(CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS);
     const addresses = instruction.accounts!.map((a) => a.address);
-    expect(addresses).toHaveLength(23);
+    expect(addresses).toHaveLength(22);
     expect(addresses[0]).toBe(user.address); // user signer first
     expect(addresses[3]).toBe(addr(4)); // batch
 

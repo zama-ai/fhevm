@@ -1,20 +1,10 @@
-import {
-  fetchEncodedAccount,
-  fixDecoderSize,
-  getAddressDecoder,
-  getArrayDecoder,
-  getBytesDecoder,
-  getStructDecoder,
-  getU32Decoder,
-  getU64Decoder,
-  getU8Decoder,
-  type Address,
-  type FetchAccountConfig,
-  type Rpc,
-  type SolanaRpcApi,
-} from '@solana/kit';
+import type { Address, FetchAccountConfig, Rpc, SolanaRpcApi } from '@solana/kit';
 
-import type { Bytes32 } from '@sdk-src/core/types/primitives.js';
+import {
+  fetchSolanaEncryptedValueState,
+  type SolanaEncryptedValueState,
+} from '@sdk-src/solana/encryptedValueAccount.js';
+import { ZAMA_HOST_PROGRAM_ADDRESS } from './internal/generated/confidentialToken/programAddress.js';
 import { fetchBatch, type Batch } from './internal/generated/confidentialBatcher/accounts/batch.js';
 import { fetchBatcher, type Batcher } from './internal/generated/confidentialBatcher/accounts/batcher.js';
 import { fetchJoinRecord, type JoinRecord } from './internal/generated/confidentialBatcher/accounts/joinRecord.js';
@@ -81,94 +71,14 @@ export async function getBatchByIndex(
 }
 
 /**
- * The subset of an `EncryptedValue` encrypted value account the settle phases need: the live handle, the MMR leaf
- * count, and the live peaks that a proof is verified against.
- *
- * (a) DELIBERATE, REVIEWED DEVIATION — hand-rolled, not generated. Every other account decoder in
- *     this module is Codama-generated, but `EncryptedValue` cannot be: it is defined in the
- *     `zama-solana-acl` crate and used as an Anchor `Account` with a manually-computed discriminator,
- *     and is NOT declared in any program's `#[program]`, so it never appears in an Anchor IDL and
- *     Codama has nothing to generate from. This declarative codec is therefore maintained by hand.
- *
- * (b) ASSUMED ON-CHAIN LAYOUT (borsh, after the 8-byte account discriminator), mirroring the crate's
- *     `#[derive(BorshDeserialize)]` field order in `solana/crates/zama-solana-acl/src/lib.rs`:
- *       [8-byte discriminator][domain: 32][encryptedValueAccountAuthority: 32][label: 32]
- *       [currentHandle: 32][subjects: Vec<Pubkey>][leafCount: u64][peaks: Vec<32>][bump: u8]
- *     The discriminator is sliced off before this decoder runs. The settle phases only consume
- *     `currentHandle`/`leafCount`/`peaks`; the identity fields (`domain`, authority, `label`,
- *     `subjects`) are returned too so live balance-state probes can assert the account body matches
- *     its canonical derivation.
- *
- * (c) FRAGILITY — each `subjects` element is decoded as a bare 32-byte pubkey. If the on-chain
- *     subject entry ever grows past a bare pubkey, its element size stops being 32 and THIS
- *     decoder can misalign everything after it (`leafCount`, `peaks`, `bump`). The structural
- *     checks below reject impossible MMR shapes and non-32-byte trailing capacity. Anyone who
- *     changes that layout MUST still update the decoder here in lockstep. Do not treat 32 as
- *     incidental.
+ * Reads the burned-amount value's `EncryptedValue` account: the live handle, the MMR leaf count and
+ * the peaks a settle proof is verified against. The decoder is the SDK's — the account is defined
+ * in the `zama-solana-acl` crate, appears in no IDL, and is hand-mirrored in exactly one place.
  */
-const encryptedValueBodyDecoder = getStructDecoder([
-  ['domain', fixDecoderSize(getBytesDecoder(), 32)],
-  ['encryptedValueAccountAuthority', fixDecoderSize(getBytesDecoder(), 32)],
-  ['label', fixDecoderSize(getBytesDecoder(), 32)],
-  ['currentHandle', fixDecoderSize(getBytesDecoder(), 32)],
-  ['subjects', getArrayDecoder(fixDecoderSize(getBytesDecoder(), 32), { size: getU32Decoder() })],
-  ['leafCount', getU64Decoder()],
-  ['peaks', getArrayDecoder(fixDecoderSize(getBytesDecoder(), 32), { size: getU32Decoder() })],
-  ['bump', getU8Decoder()],
-]);
-
-const ENCRYPTED_VALUE_DISCRIMINATOR_SIZE = 8;
-const ENCRYPTED_VALUE_VECTOR_ELEMENT_SIZE = 32;
-
-const popcount = (value: bigint): number => {
-  let count = 0;
-  for (let remaining = value; remaining > 0n; remaining >>= 1n) count += Number(remaining & 1n);
-  return count;
-};
-
-export async function getEncryptedValueState(
+export function getEncryptedValueState(
   rpc: SolanaRpc,
   address: Address,
   config?: FetchAccountConfig,
-): Promise<{
-  domain: Address;
-  encryptedValueAccountAuthority: Address;
-  label: Uint8Array;
-  currentHandle: Bytes32;
-  subjects: Address[];
-  leafCount: bigint;
-  peaks: Uint8Array[];
-}> {
-  const account = await fetchEncodedAccount(rpc, address, config);
-  if (!account.exists) throw new Error(`EncryptedValue account ${address} does not exist`);
-  const body = account.data.slice(ENCRYPTED_VALUE_DISCRIMINATOR_SIZE);
-  // `EncryptedValue` realloc-grows but never shrinks, so a shorter current `subjects`/`peaks`
-  // serialization may leave stale high-water capacity after the live borsh value. Each capacity
-  // step is exactly one 32-byte vector element. Reject any other trailing shape, and independently
-  // verify the MMR invariant so a misaligned hand-written decoder still fails loudly.
-  const [decoded, offset] = encryptedValueBodyDecoder.read(body, 0);
-  const trailingCapacity = body.length - offset;
-  const expectedPeakCount = popcount(decoded.leafCount);
-  if (
-    trailingCapacity < 0 ||
-    trailingCapacity % ENCRYPTED_VALUE_VECTOR_ELEMENT_SIZE !== 0 ||
-    decoded.peaks.length !== expectedPeakCount
-  ) {
-    throw new Error(
-      `EncryptedValue account ${address}: decoded ${decoded.peaks.length} MMR peaks for leaf count ` +
-        `${decoded.leafCount} and consumed ${offset} of ${body.length} body bytes (after the ` +
-        `${ENCRYPTED_VALUE_DISCRIMINATOR_SIZE}-byte discriminator) — the on-chain layout has drifted ` +
-        `from this decoder. Re-check the crate's EncryptedValue struct and update reads.ts.`,
-    );
-  }
-  const addressDecoder = getAddressDecoder();
-  return {
-    domain: addressDecoder.decode(decoded.domain),
-    encryptedValueAccountAuthority: addressDecoder.decode(decoded.encryptedValueAccountAuthority),
-    label: new Uint8Array(decoded.label),
-    currentHandle: new Uint8Array(decoded.currentHandle) as Bytes32,
-    subjects: decoded.subjects.map((subject) => addressDecoder.decode(subject)),
-    leafCount: decoded.leafCount,
-    peaks: decoded.peaks.map((peak) => new Uint8Array(peak)),
-  };
+): Promise<SolanaEncryptedValueState> {
+  return fetchSolanaEncryptedValueState(rpc, address, config, ZAMA_HOST_PROGRAM_ADDRESS);
 }

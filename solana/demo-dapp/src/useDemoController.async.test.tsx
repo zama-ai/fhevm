@@ -66,7 +66,7 @@ const position = {
 };
 const awaiting = { kind: 'awaiting-dispatch' as const, remainingSlots: 1n };
 const dispatchable = { kind: 'awaiting-dispatch' as const, remainingSlots: 0n };
-const proofReady = { kind: 'proving' as const, proofReady: true };
+const proving = { kind: 'dispatched' as const };
 const settled = {
   kind: 'settled' as const,
   totalJoined: 100_000_000n,
@@ -172,8 +172,8 @@ describe('useDemoController generation safety', () => {
     expect(controller.state.depositOperatorAction).toBe(null);
   });
 
-  test('automatically settles when the proof is ready', async () => {
-    mocks.lifecycle.mockResolvedValue(proofReady);
+  test('automatically settles a dispatched batch', async () => {
+    mocks.lifecycle.mockResolvedValue(proving);
     await connect(controller);
     await flush();
 
@@ -193,12 +193,11 @@ describe('useDemoController generation safety', () => {
   });
 
   test('refreshes the lifecycle after an automatic action succeeds', async () => {
-    const proving = { kind: 'proving' as const, proofReady: false };
-    mocks.lifecycle.mockResolvedValueOnce(dispatchable).mockResolvedValueOnce(proving);
+    mocks.lifecycle.mockResolvedValueOnce(dispatchable).mockResolvedValueOnce(awaiting);
     await connect(controller);
     await flush();
 
-    expect(controller.state.depositLifecycle).toEqual(proving);
+    expect(controller.state.depositLifecycle).toEqual(awaiting);
   });
 
   test('does not advance a batch before its slot boundary', async () => {
@@ -561,13 +560,14 @@ describe('useDemoController generation safety', () => {
     const before = { totalAssets: 100n, totalShares: 100n };
     const after = { totalAssets: 107n, totalShares: 100n };
     mocks.lifecycle.mockResolvedValue(settled);
-    mocks.metrics.mockRejectedValueOnce(new Error('metrics unavailable')).mockResolvedValue(before);
+    mocks.metrics.mockRejectedValue(new Error('metrics unavailable'));
     mocks.harvest.mockResolvedValue({ before, after });
     await connect(controller);
     await flush();
     expect(controller.state.vaultMetrics).toBe(null);
     expect(controller.state.harvestError).toBe('metrics unavailable');
 
+    mocks.metrics.mockResolvedValue(before);
     controller.actions.fastForwardOneYear();
     await flush();
     expect(mocks.harvest).toHaveBeenCalledTimes(1);
@@ -617,6 +617,23 @@ describe('useDemoController generation safety', () => {
       after: { totalAssets: 107_000_000n, totalShares: 100_000_000n },
     });
     await flush();
+  });
+
+  test('refreshes an empty vault after the first deposit is claimed', async () => {
+    const funded = { totalAssets: 100_000_000n, totalShares: 100_000_000n };
+    mocks.metrics.mockResolvedValueOnce({ totalAssets: 0n, totalShares: 0n }).mockResolvedValue(funded);
+    await connect(controller);
+    await flush();
+    expect(controller.state.vaultMetrics?.totalShares).toBe(0n);
+
+    mocks.lifecycle.mockResolvedValue(settled);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_500);
+    });
+    await flush();
+
+    expect(controller.state.depositLifecycle).toEqual(settled);
+    expect(controller.state.vaultMetrics).toEqual(funded);
   });
 
   test('refreshes vault metrics after a completed redemption', async () => {
