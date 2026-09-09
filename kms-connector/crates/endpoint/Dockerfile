@@ -2,7 +2,7 @@
 
 ARG RUST_IMAGE_VERSION
 
-# Stage 1: Build kms-worker
+# Stage 1: Build endpoint
 FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:${RUST_IMAGE_VERSION} AS builder
 
 # The profile used to run `cargo build`
@@ -58,22 +58,22 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     fi && \
     git config --global --add safe.directory /app && \
     cargo fetch && \
-    cargo build --profile=${CARGO_PROFILE} -p kms-worker && \
+    cargo build --profile=${CARGO_PROFILE} -p endpoint && \
     if [ -n "${SCCACHE_BUCKET}" ] && command -v sccache >/dev/null 2>&1; then sccache --show-stats; fi && \
-    cp target/${CARGO_PROFILE}/kms-worker /tmp/kms-worker
+    cp target/${CARGO_PROFILE}/endpoint /tmp/endpoint
 
 # Stage 2: Runtime image
 FROM cgr.dev/zama.ai/glibc-dynamic:16.2.0 AS prod
 
 COPY --from=builder /etc/group /etc/group
 COPY --from=builder /etc/passwd /etc/passwd
-COPY --from=builder --chown=fhevm:fhevm /tmp/kms-worker /app/kms-connector/bin/kms-worker
+COPY --from=builder --chown=fhevm:fhevm /tmp/endpoint /app/kms-connector/bin/endpoint
 
 USER fhevm:fhevm
 
-ENTRYPOINT ["/app/kms-connector/bin/kms-worker", "start"]
+ENTRYPOINT ["/app/kms-connector/bin/endpoint", "start"]
 
 HEALTHCHECK --start-period=5s --interval=1m --timeout=3s --retries=3 \
-    CMD ["/app/kms-connector/bin/kms-worker", "health", "--endpoint", "http://127.0.0.1:9100/healthz"]
+    CMD ["/app/kms-connector/bin/endpoint", "health", "--endpoint", "http://127.0.0.1:9100/healthz"]
 
 FROM prod AS dev
