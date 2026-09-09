@@ -265,6 +265,30 @@ const injectCiphertextDrift = async (options: {
   }
 };
 
+/** The release the green binaries were built as, read from a running GCS service. */
+const gcsBinaryRelease = async (): Promise<string> => {
+  const ps = await run(["docker", "ps", "--format", "{{.Names}}"], { allowFailure: true });
+  if (ps.code !== 0) {
+    throw new PreflightError(ps.stderr.trim() || "docker ps failed");
+  }
+  const container = ps.stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => /^coprocessor(\d+)?-gcs-upgrade-controller$/.test(line));
+  if (!container) {
+    throw new Error("no GCS upgrade-controller container is running");
+  }
+  const result = await run(
+    ["docker", "exec", container, "/usr/local/bin/upgrade-controller", "--stack-version"],
+    { allowFailure: true },
+  );
+  const release = result.stdout.trim();
+  if (result.code !== 0 || release === "") {
+    throw new Error(`could not read the release from ${container}: ${result.stderr.trim()}`);
+  }
+  return release;
+};
+
 /** Lists running coprocessor gateway-listener containers. */
 const coprocessorGwListeners = async () => {
   const result = await run(["docker", "ps", "--format", "{{.Names}}"], { allowFailure: true });
@@ -989,14 +1013,23 @@ const runBlueGreenProfile = async (
     );
   }
 
-  const gcsStackVersion = state.scenario.gcs.stackVersion;
-  const gcsVersionLive = `v${gcsStackVersion}`;
+  // The proposal names the release the GCS image was built as.
+  const gcsStackVersion = await gcsBinaryRelease();
+  const gcsVersionLive = gcsStackVersion;
   const opCount = state.scenario.topology.count;
 
   const operatorDatabases: string[] = [];
   for (let index = 0; index < opCount; index += 1) {
     operatorDatabases.push(coprocessorDatabaseName(index));
   }
+
+  const activeConsensusVersion = Number(
+    await psqlQuery(operatorDatabases[0], "SELECT consensus_version FROM versioning WHERE singleton = TRUE;"),
+  );
+  if (!Number.isSafeInteger(activeConsensusVersion) || activeConsensusVersion < 0) {
+    throw new Error(`invalid active consensus version ${activeConsensusVersion}`);
+  }
+  const gcsConsensusVersion = activeConsensusVersion + 1;
 
   const MIN_BLUE_GREEN_TRAFFIC_STREAMS = 2;
   const CROSS_CUTOVER_CHAIN_DEPTH = 5;
@@ -1302,6 +1335,18 @@ const runBlueGreenProfile = async (
         traffic.errored,
       ]);
     }
+
+    // Cutover takes the consensus version from the binary, so it must have moved too.
+    for (const db of operatorDatabases) {
+      const consensus = await psqlQuery(
+        db,
+        "SELECT consensus_version FROM versioning WHERE singleton = TRUE;",
+      );
+      if (Number(consensus) !== gcsConsensusVersion) {
+        throw new Error(`${db}.versioning consensus ${consensus}, expected ${gcsConsensusVersion}`);
+      }
+    }
+    console.log(`OK:   consensus ${gcsConsensusVersion} active on every operator`);
 
     // BCS has no upgrade_state row — retires implicitly via `resolve_gcs_mode`.
     console.log(`\n[10/11] verify FSM final state`);

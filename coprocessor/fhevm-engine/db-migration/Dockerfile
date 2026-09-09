@@ -105,16 +105,18 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
       export AWS_ACCESS_KEY_ID="$(cat /run/secrets/sccache_aws_access_key_id)"; \
       export AWS_SECRET_ACCESS_KEY="$(cat /run/secrets/sccache_aws_secret_access_key)"; \
     fi && \
-    cargo build --release -p fhevm-engine-common --bin resolve_database_url && \
+    cargo build --release -p fhevm-engine-common --bin resolve_database_url --bin bootstrap_versioning && \
     if [ -n "${SCCACHE_BUCKET}" ] && command -v sccache >/dev/null 2>&1; then sccache --show-stats; fi && \
     mkdir -p /out && \
-    cp target/release/resolve_database_url /out/
+    cp target/release/resolve_database_url /out/ && \
+    cp target/release/bootstrap_versioning /out/
 
 # Stage 2: Runtime image
 FROM cgr.dev/zama.ai/postgres:17 AS prod
 
 COPY  --from=builder --chown=fhevm:fhevm /usr/local/cargo/bin/sqlx /usr/local/bin/sqlx
 COPY  --from=builder --chown=fhevm:fhevm /out/resolve_database_url /usr/local/bin/resolve_database_url
+COPY  --from=builder --chown=fhevm:fhevm /out/bootstrap_versioning /usr/local/bin/bootstrap_versioning
 COPY  --from=builder --chown=fhevm:fhevm /app/initialize_db.sh /initialize_db.sh
 COPY  --from=builder --chown=fhevm:fhevm /app/coprocessor/fhevm-engine/db-migration/prepare_database_url.sh /prepare_database_url.sh
 COPY  --from=builder --chown=fhevm:fhevm /app/migrations /migrations

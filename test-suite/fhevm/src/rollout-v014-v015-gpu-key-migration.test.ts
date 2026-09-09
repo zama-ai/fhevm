@@ -67,7 +67,6 @@ describe("RFC 029 rollout gates", () => {
     expect(scenario.gcs.source).toEqual({ mode: "local" });
     expect(scenario.gcs.env?.FORCE_LEGACY_SERVER_KEY).toBe("true");
     expect(scenario.gcs.deferredStart).toBe(true);
-    expect(scenario.gcs.stackVersion).toBe("0.15.0");
     expect(scenario.hostChains).toHaveLength(2);
     expect(scenario.kms).toEqual({ mode: "threshold", parties: 4, threshold: 1, fheParams: "Test" });
   });
