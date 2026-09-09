@@ -1,0 +1,1442 @@
+[
+  {
+    "type": "constructor",
+    "inputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "UPGRADE_INTERFACE_VERSION",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "addToBlockHCUWhitelist",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "checkHCUForCast",
+    "inputs": [
+      {
+        "name": "resultType",
+        "type": "uint8",
+        "internalType": "enum FheType"
+      },
+      {
+        "name": "ct",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "result",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "caller",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "checkHCUForFheAdd",
+    "inputs": [
+      {
+        "name": "resultType",
+        "type": "uint8",
+        "internalType": "enum FheType"
+      },
+      {
+        "name": "scalarByte",
+        "type": "bytes1",
+        "internalType": "bytes1"
+      },
+      {
+        "name": "lhs",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "rhs",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "result",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "caller",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "checkHCUForFheBitAnd",
+    "inputs": [
+      {
+        "name": "resultType",
+        "type": "uint8",
+        "internalType": "enum FheType"
+      },
+      {
+        "name": "scalarByte",
+        "type": "bytes1",
+        "internalType": "bytes1"
+      },
+      {
+        "name": "lhs",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "rhs",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "result",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "caller",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "checkHCUForFheBitOr",
+    "inputs": [
+      {
+        "name": "resultType",
+        "type": "uint8",
+        "internalType": "enum FheType"
+      },
+      {
+        "name": "scalarByte",
+        "type": "bytes1",
+        "internalType": "bytes1"
+      },
+      {
+        "name": "lhs",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "rhs",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "result",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "caller",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "checkHCUForFheBitXor",
+    "inputs": [
+      {
+        "name": "resultType",
+        "type": "uint8",
+        "internalType": "enum FheType"
+      },
+      {
+        "name": "scalarByte",
+        "type": "bytes1",
+        "internalType": "bytes1"
+      },
+      {
+        "name": "lhs",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "rhs",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "result",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "caller",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "checkHCUForFheDiv",
+    "inputs": [
+      {
+        "name": "resultType",
+        "type": "uint8",
+        "internalType": "enum FheType"
+      },
+      {
+        "name": "scalarByte",
+        "type": "bytes1",
+        "internalType": "bytes1"
+      },
+      {
+        "name": "lhs",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "result",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "caller",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "checkHCUForFheEq",
+    "inputs": [
+      {
+        "name": "resultType",
+        "type": "uint8",
+        "internalType": "enum FheType"
+      },
+      {
+        "name": "scalarByte",
+        "type": "bytes1",
+        "internalType": "bytes1"
+      },
+      {
+        "name": "lhs",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "rhs",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "result",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "caller",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "checkHCUForFheGe",
+    "inputs": [
+      {
+        "name": "resultType",
+        "type": "uint8",
+        "internalType": "enum FheType"
+      },
+      {
+        "name": "scalarByte",
+        "type": "bytes1",
+        "internalType": "bytes1"
+      },
+      {
+        "name": "lhs",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "rhs",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "result",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "caller",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "checkHCUForFheGt",
+    "inputs": [
+      {
+        "name": "resultType",
+        "type": "uint8",
+        "internalType": "enum FheType"
+      },
+      {
+        "name": "scalarByte",
+        "type": "bytes1",
+        "internalType": "bytes1"
+      },
+      {
+        "name": "lhs",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "rhs",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "result",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "caller",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "checkHCUForFheLe",
+    "inputs": [
+      {
+        "name": "resultType",
+        "type": "uint8",
+        "internalType": "enum FheType"
+      },
+      {
+        "name": "scalarByte",
+        "type": "bytes1",
+        "internalType": "bytes1"
+      },
+      {
+        "name": "lhs",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "rhs",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "result",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "caller",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "checkHCUForFheLt",
+    "inputs": [
+      {
+        "name": "resultType",
+        "type": "uint8",
+        "internalType": "enum FheType"
+      },
+      {
+        "name": "scalarByte",
+        "type": "bytes1",
+        "internalType": "bytes1"
+      },
+      {
+        "name": "lhs",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "rhs",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "result",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "caller",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "checkHCUForFheMax",
+    "inputs": [
+      {
+        "name": "resultType",
+        "type": "uint8",
+        "internalType": "enum FheType"
+      },
+      {
+        "name": "scalarByte",
+        "type": "bytes1",
+        "internalType": "bytes1"
+      },
+      {
+        "name": "lhs",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "rhs",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "result",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "caller",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "checkHCUForFheMin",
+    "inputs": [
+      {
+        "name": "resultType",
+        "type": "uint8",
+        "internalType": "enum FheType"
+      },
+      {
+        "name": "scalarByte",
+        "type": "bytes1",
+        "internalType": "bytes1"
+      },
+      {
+        "name": "lhs",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "rhs",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "result",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "caller",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "checkHCUForFheMul",
+    "inputs": [
+      {
+        "name": "resultType",
+        "type": "uint8",
+        "internalType": "enum FheType"
+      },
+      {
+        "name": "scalarByte",
+        "type": "bytes1",
+        "internalType": "bytes1"
+      },
+      {
+        "name": "lhs",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "rhs",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "result",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "caller",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "checkHCUForFheNe",
+    "inputs": [
+      {
+        "name": "resultType",
+        "type": "uint8",
+        "internalType": "enum FheType"
+      },
+      {
+        "name": "scalarByte",
+        "type": "bytes1",
+        "internalType": "bytes1"
+      },
+      {
+        "name": "lhs",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "rhs",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "result",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "caller",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "checkHCUForFheNeg",
+    "inputs": [
+      {
+        "name": "resultType",
+        "type": "uint8",
+        "internalType": "enum FheType"
+      },
+      {
+        "name": "ct",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "result",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "caller",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "checkHCUForFheNot",
+    "inputs": [
+      {
+        "name": "resultType",
+        "type": "uint8",
+        "internalType": "enum FheType"
+      },
+      {
+        "name": "ct",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "result",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "caller",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "checkHCUForFheRand",
+    "inputs": [
+      {
+        "name": "resultType",
+        "type": "uint8",
+        "internalType": "enum FheType"
+      },
+      {
+        "name": "result",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "caller",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "checkHCUForFheRandBounded",
+    "inputs": [
+      {
+        "name": "resultType",
+        "type": "uint8",
+        "internalType": "enum FheType"
+      },
+      {
+        "name": "result",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "caller",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "checkHCUForFheRem",
+    "inputs": [
+      {
+        "name": "resultType",
+        "type": "uint8",
+        "internalType": "enum FheType"
+      },
+      {
+        "name": "scalarByte",
+        "type": "bytes1",
+        "internalType": "bytes1"
+      },
+      {
+        "name": "lhs",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "result",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "caller",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "checkHCUForFheRotl",
+    "inputs": [
+      {
+        "name": "resultType",
+        "type": "uint8",
+        "internalType": "enum FheType"
+      },
+      {
+        "name": "scalarByte",
+        "type": "bytes1",
+        "internalType": "bytes1"
+      },
+      {
+        "name": "lhs",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "rhs",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "result",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "caller",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "checkHCUForFheRotr",
+    "inputs": [
+      {
+        "name": "resultType",
+        "type": "uint8",
+        "internalType": "enum FheType"
+      },
+      {
+        "name": "scalarByte",
+        "type": "bytes1",
+        "internalType": "bytes1"
+      },
+      {
+        "name": "lhs",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "rhs",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "result",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "caller",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "checkHCUForFheShl",
+    "inputs": [
+      {
+        "name": "resultType",
+        "type": "uint8",
+        "internalType": "enum FheType"
+      },
+      {
+        "name": "scalarByte",
+        "type": "bytes1",
+        "internalType": "bytes1"
+      },
+      {
+        "name": "lhs",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "rhs",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "result",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "caller",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "checkHCUForFheShr",
+    "inputs": [
+      {
+        "name": "resultType",
+        "type": "uint8",
+        "internalType": "enum FheType"
+      },
+      {
+        "name": "scalarByte",
+        "type": "bytes1",
+        "internalType": "bytes1"
+      },
+      {
+        "name": "lhs",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "rhs",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "result",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "caller",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "checkHCUForFheSub",
+    "inputs": [
+      {
+        "name": "resultType",
+        "type": "uint8",
+        "internalType": "enum FheType"
+      },
+      {
+        "name": "scalarByte",
+        "type": "bytes1",
+        "internalType": "bytes1"
+      },
+      {
+        "name": "lhs",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "rhs",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "result",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "caller",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "checkHCUForIfThenElse",
+    "inputs": [
+      {
+        "name": "resultType",
+        "type": "uint8",
+        "internalType": "enum FheType"
+      },
+      {
+        "name": "lhs",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "middle",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "rhs",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "result",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "caller",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "checkHCUForTrivialEncrypt",
+    "inputs": [
+      {
+        "name": "resultType",
+        "type": "uint8",
+        "internalType": "enum FheType"
+      },
+      {
+        "name": "result",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "caller",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "getBlockMeter",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "blockNumber",
+        "type": "uint48",
+        "internalType": "uint48"
+      },
+      {
+        "name": "usedHCU",
+        "type": "uint48",
+        "internalType": "uint48"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getFHEVMExecutorAddress",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getGlobalHCUCapPerBlock",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint48",
+        "internalType": "uint48"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getMaxHCUDepthPerTx",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint48",
+        "internalType": "uint48"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getMaxHCUPerTx",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint48",
+        "internalType": "uint48"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getVersion",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "stateMutability": "pure"
+  },
+  {
+    "type": "function",
+    "name": "initializeFromEmptyProxy",
+    "inputs": [
+      {
+        "name": "hcuCapPerBlock",
+        "type": "uint48",
+        "internalType": "uint48"
+      },
+      {
+        "name": "maxHCUDepthPerTx",
+        "type": "uint48",
+        "internalType": "uint48"
+      },
+      {
+        "name": "maxHCUPerTx",
+        "type": "uint48",
+        "internalType": "uint48"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "isBlockHCUWhitelisted",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "proxiableUUID",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "reinitializeV2",
+    "inputs": [
+      {
+        "name": "hcuCapPerBlock",
+        "type": "uint48",
+        "internalType": "uint48"
+      },
+      {
+        "name": "maxHCUDepthPerTx",
+        "type": "uint48",
+        "internalType": "uint48"
+      },
+      {
+        "name": "maxHCUPerTx",
+        "type": "uint48",
+        "internalType": "uint48"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "removeFromBlockHCUWhitelist",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setHCUPerBlock",
+    "inputs": [
+      {
+        "name": "hcuPerBlock",
+        "type": "uint48",
+        "internalType": "uint48"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setMaxHCUDepthPerTx",
+    "inputs": [
+      {
+        "name": "maxHCUDepthPerTx",
+        "type": "uint48",
+        "internalType": "uint48"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setMaxHCUPerTx",
+    "inputs": [
+      {
+        "name": "maxHCUPerTx",
+        "type": "uint48",
+        "internalType": "uint48"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "upgradeToAndCall",
+    "inputs": [
+      {
+        "name": "newImplementation",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "data",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "payable"
+  },
+  {
+    "type": "event",
+    "name": "BlockHCUWhitelistAdded",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "BlockHCUWhitelistRemoved",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "HCUPerBlockSet",
+    "inputs": [
+      {
+        "name": "hcuPerBlock",
+        "type": "uint48",
+        "indexed": false,
+        "internalType": "uint48"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "Initialized",
+    "inputs": [
+      {
+        "name": "version",
+        "type": "uint64",
+        "indexed": false,
+        "internalType": "uint64"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "MaxHCUDepthPerTxSet",
+    "inputs": [
+      {
+        "name": "maxHCUDepthPerTx",
+        "type": "uint48",
+        "indexed": false,
+        "internalType": "uint48"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "MaxHCUPerTxSet",
+    "inputs": [
+      {
+        "name": "maxHCUPerTx",
+        "type": "uint48",
+        "indexed": false,
+        "internalType": "uint48"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "Upgraded",
+    "inputs": [
+      {
+        "name": "implementation",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "error",
+    "name": "AddressEmptyCode",
+    "inputs": [
+      {
+        "name": "target",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "AlreadyBlockHCUWhitelisted",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "CallerMustBeFHEVMExecutorContract",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ERC1967InvalidImplementation",
+    "inputs": [
+      {
+        "name": "implementation",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "ERC1967NonPayable",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "FailedCall",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "HCUBlockLimitExceeded",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "HCUPerBlockBelowMaxPerTx",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "HCUTransactionDepthLimitExceeded",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "HCUTransactionLimitExceeded",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidInitialization",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "MaxHCUPerTxBelowDepth",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotBlockHCUWhitelisted",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "NotHostOwner",
+    "inputs": [
+      {
+        "name": "sender",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "NotInitializing",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotInitializingFromEmptyProxy",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "OnlyScalarOperationsAreSupported",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "UUPSUnauthorizedCallContext",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "UUPSUnsupportedProxiableUUID",
+    "inputs": [
+      {
+        "name": "slot",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "UnsupportedOperation",
+    "inputs": []
+  }
+]

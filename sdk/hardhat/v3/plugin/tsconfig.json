@@ -1,0 +1,9 @@
+{
+  "//": [
+    "Solution file: `npm run lint` typechecks every project through it. Emits nothing itself.",
+    "Sources and tests are SEPARATE projects: the tests import the built payload (pkg/_esm), whose",
+    "copy of the `NetworkConnection.fhevm` augmentation must not sit in one program with the source copy."
+  ],
+  "files": [],
+  "references": [{ "path": "./pkg/tsconfig.json" }, { "path": "./test/tsconfig.json" }]
+}

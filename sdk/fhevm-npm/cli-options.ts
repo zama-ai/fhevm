@@ -1,0 +1,797 @@
+import { Command, Option } from 'commander';
+import { resolve } from 'node:path';
+
+import { defaultWorkspaceRoot } from './base/paths.ts';
+import { type Verbosity, increaseVerbosity } from './base/verbosity.ts';
+
+export const commandNames = [
+  'names',
+  'dependencies',
+  'pinned-dependencies',
+  'package-json',
+  'package-json-paths',
+  'workspaces',
+  'ownership',
+  'scripts',
+  'lockfiles',
+  'manifest-coverage',
+  'published-files',
+  'foundry',
+  'json-schemas',
+  'lint-policy',
+  'tsconfig-paths',
+  'tsc-mode',
+  'commit-scope',
+  'cleartext-config',
+  'generations',
+] as const;
+export type CommandName = (typeof commandNames)[number];
+
+export type CliOptions = {
+  readonly command:
+    | CommandName
+    | 'check-fhevm-chains-origin'
+    | 'check-mirror'
+    | 'check-vendored-origin'
+    | 'clean-forge-dependencies'
+    | 'generate-chain-constants'
+    | 'generate-cleartext-config'
+    | 'generate-exports'
+    | 'install-forge-dependencies'
+    | 'list-packages'
+    | 'version-apply'
+    | 'version-check'
+    | 'version-list'
+    | 'publish-check'
+    | 'publish-order'
+    | 'publish-pack'
+    | 'publish-render'
+    | 'sync-fhevm-chains'
+    | 'sync-vendored'
+    | 'test-consumer'
+    | 'test-consumer-regenerate-package-lock';
+  readonly workspaceRoot: string;
+  readonly manifestFile: string;
+  readonly verbosity: Verbosity;
+  readonly sortPackageJson: boolean;
+} & (
+  | { readonly command: CommandName }
+  | { readonly command: 'check-mirror'; readonly packageSelector: string }
+  | { readonly command: 'check-vendored-origin'; readonly packageSelector?: string }
+  | { readonly command: 'generate-chain-constants'; readonly check: boolean }
+  | { readonly command: 'generate-cleartext-config'; readonly check: boolean }
+  | { readonly command: 'generate-exports'; readonly exportManifestFile: string; readonly check: boolean }
+  | { readonly command: 'install-forge-dependencies'; readonly packageSelector?: string }
+  | {
+      readonly command: 'clean-forge-dependencies';
+      readonly packageSelector?: string;
+      readonly dryRun: boolean;
+      readonly force: boolean;
+    }
+  | { readonly command: 'list-packages' }
+  | {
+      readonly command: 'publish-check';
+      readonly payload: string;
+      readonly outDir?: string;
+      readonly checkNpmjs: boolean;
+      readonly retries: number;
+      readonly retryDelaySeconds: number;
+    }
+  | { readonly command: 'publish-order' }
+  | { readonly command: 'publish-pack'; readonly payload: string; readonly outDir?: string }
+  | { readonly command: 'publish-render'; readonly payload: string; readonly json: boolean }
+  | { readonly command: 'version-apply'; readonly dryRun: boolean; readonly checkNpmjs: boolean }
+  | { readonly command: 'version-check' }
+  | { readonly command: 'version-list'; readonly checkNpmjs: boolean; readonly json: boolean }
+  | { readonly command: 'check-fhevm-chains-origin' }
+  | { readonly command: 'sync-fhevm-chains'; readonly commit?: string; readonly latest: boolean }
+  | { readonly command: 'sync-vendored'; readonly check: boolean }
+  | { readonly command: 'test-consumer-regenerate-package-lock'; readonly packageSelector?: string }
+  | {
+      readonly command: 'test-consumer';
+      readonly packageSelector?: string;
+      readonly all: boolean;
+      readonly output?: string;
+      readonly testFile?: string;
+      readonly force: boolean;
+      readonly buildLinkedDependencies: boolean;
+      readonly run: boolean;
+      readonly list: boolean;
+      readonly ci: boolean;
+    }
+);
+
+type RawOptions = {
+  readonly root: string;
+  readonly verbose: Verbosity;
+};
+
+type RawTestConsumerOptions = {
+  readonly all: boolean;
+  readonly output?: string;
+  readonly testFile?: string;
+  readonly force: boolean;
+  readonly buildLinkedDependencies: boolean;
+  readonly run: boolean;
+  readonly list: boolean;
+  readonly ci: boolean;
+};
+
+export function parseCliOptions(argv: readonly string[]): CliOptions {
+  const program = new Command()
+    .name('fhevm-npm')
+    .description('Validate the npm workspace policy from npm-manifest.json.')
+    .showHelpAfterError()
+    .showSuggestionAfterError()
+    .addOption(new Option('-r, --root <path>', 'sdk workspace root').default(defaultWorkspaceRoot))
+    .option(
+      '-v, --verbose',
+      'increase verbosity; repeat up to -vvvv (-vv preserves the previous verbose behavior)',
+      increaseVerbosity,
+      0,
+    );
+
+  let selected: CommandName | undefined;
+  let generateExports: { readonly exportManifestFile: string; readonly check: boolean } | undefined;
+  let generateCleartextConfig: { readonly check: boolean } | undefined;
+  let generateChainConstants: { readonly check: boolean } | undefined;
+  let sortPackageJson = false;
+  let vendoredPackageSelector: string | undefined;
+  let checkAllVendored = false;
+  let mirrorPackageSelector: string | undefined;
+  let forgeDependencyPackageSelector: string | undefined;
+  let installAllForgeDependencies = false;
+  let cleanForgeDependencies:
+    { readonly packageSelector?: string; readonly dryRun: boolean; readonly force: boolean } | undefined;
+  let listPackagesSelected = false;
+  let listVersions: { readonly checkNpmjs: boolean; readonly json: boolean } | undefined;
+  let versionCheckSelected = false;
+  let versionApply: { readonly dryRun: boolean; readonly checkNpmjs: boolean } | undefined;
+  let publishOrderSelected = false;
+  let publishRender: { readonly payload: string; readonly json: boolean } | undefined;
+  let publishPack: { readonly payload: string; readonly outDir?: string } | undefined;
+  let publishCheck:
+    | {
+        readonly payload: string;
+        readonly outDir?: string;
+        readonly checkNpmjs: boolean;
+        readonly retries: number;
+        readonly retryDelaySeconds: number;
+      }
+    | undefined;
+  let syncVendored: { readonly check: boolean } | undefined;
+  let syncFhevmChains: { readonly commit?: string; readonly latest: boolean } | undefined;
+  let checkFhevmChainsOrigin = false;
+  let regenerateConsumerPackageLocks = false;
+  let regenerateConsumerPackageLockSelector: string | undefined;
+  let testConsumer:
+    | {
+        readonly packageSelector?: string;
+        readonly all: boolean;
+        readonly output?: string;
+        readonly testFile?: string;
+        readonly force: boolean;
+        readonly buildLinkedDependencies: boolean;
+        readonly run: boolean;
+        readonly list: boolean;
+        readonly ci: boolean;
+      }
+    | undefined;
+  // The validation group: every read-only policy check, one level down so `fhevm-npm check` lists them
+  // instead of the top level carrying nineteen check-* siblings.
+  const check = program
+    .command('check')
+    .description('Check the workspace against the project rules. Only reads files, never changes them.');
+  check
+    .command('names')
+    .description('Check every package name, its -dev suffix and its private flag.')
+    .action(() => {
+      selected = 'names';
+    });
+  check
+    .command('dependencies')
+    .description('Check that each package declares the dependencies it actually uses.')
+    .action(() => {
+      selected = 'dependencies';
+    });
+  check
+    .command('pinned-dependencies')
+    .description('Check that shared dependencies all use the one version pinned in the manifest.')
+    .action(() => {
+      selected = 'pinned-dependencies';
+    });
+  check
+    .command('package-json')
+    .description('Check package.json required fields, ordering and formatting.')
+    .option(
+      '--sort',
+      "sort top-level entries and each package.json 'scripts' field; 'workspaces' order is left alone",
+      false,
+    )
+    .action((options: { readonly sort: boolean }) => {
+      selected = 'package-json';
+      sortPackageJson = options.sort;
+    });
+  check
+    .command('package-json-paths')
+    .description('Check that paths written in package.json really exist. Build the packages first.')
+    .addHelpText(
+      'after',
+      `
+Prerequisite:
+  Build the project first because package.json entry points may reference generated files.
+`,
+    )
+    .action(() => {
+      selected = 'package-json-paths';
+    });
+  check
+    .command('workspaces')
+    .description('Check the workspace member list, and that no two packages claim the same name.')
+    .action(() => {
+      selected = 'workspaces';
+    });
+  check
+    .command('generations')
+    .description('Check that packages depend on the current generation, not an older one.')
+    .action(() => {
+      selected = 'generations';
+    });
+  check
+    .command('ownership')
+    .description('Check that each published package has exactly one dev package owning it.')
+    .action(() => {
+      selected = 'ownership';
+    });
+  check
+    .command('scripts')
+    .description('Check that every package defines the standard scripts it is expected to have.')
+    .addHelpText(
+      'after',
+      `
+Checked scripts:
+  compile        Required on every dev owner of a published package.
+  build          Optional everyday sweep; when present it must reach fmt:check, lint and compile.
+  clean          Required on every dev owner of a published package.
+  forge:fmt      Required on every package owning Solidity except mirror-only payloads; published payloads use their dev owner.
+  forge:fmt:check Required on every package owning Solidity except mirror-only payloads; published payloads use their dev owner.
+  forge:lint     Required on every package owning Solidity except mirror-only payloads; published payloads use their dev owner.
+  lint           Required on every dev package, shared helper and internal consumer.
+  pack:tarball   Required on every dev owner of an npm-distributed package.
+  eslint.config.js The only package-level ESLint config filename; required beside every non-published package that owns a lint script.
+  prettier:check Required on every dev package, shared helper and internal consumer; must exclude Solidity.
+  prettier:write Required on every dev package, shared helper and internal consumer; must exclude Solidity.
+  prettier.config.js The only package-level Prettier config filename; references the root prettier.base.mjs.
+                     Required at the workspace root too, beside the base it re-exports (5.1.6's sole exception:
+                     Prettier does not discover 'prettier.base.mjs', so sdk-level files need it).
+  check:publint  Required on every dev owner of an npm-distributed package.
+  test:consumer  Required on every dev owner of an npm-distributed package; mirror-only consumer projects are exempt.
+  fmt            Required on every dev package, shared helper and internal consumer.
+  fmt:check      Required wherever fmt is.
+  check          Required on every dev owner of an npm-distributed package.
+  check:vendored-origin Required when the package declares vendored content.
+  check:mirror   Optional until the mirror spec lands.
+  test           Required in every consumer registered in npm-manifest.json#consumerTests.
+`,
+    )
+    .action(() => {
+      selected = 'scripts';
+    });
+  check
+    .command('lockfiles')
+    .description('Check that each package-lock.json sits where it belongs, and nowhere else.')
+    .action(() => {
+      selected = 'lockfiles';
+    });
+  check
+    .command('foundry')
+    .description('Check the installed forge version against the one pinned in the manifest.')
+    .action(() => {
+      selected = 'foundry';
+    });
+  check
+    .command('lint-policy')
+    .description('Check that Forge is the only Solidity linter in use.')
+    .action(() => {
+      selected = 'lint-policy';
+    });
+  check
+    .command('json-schemas')
+    .description('Check every committed JSON config file against its schema.')
+    .action(() => {
+      selected = 'json-schemas';
+    });
+  check
+    .command('manifest-coverage')
+    .description('Check that the manifest lists every package on disk, and nothing that is not.')
+    .action(() => {
+      selected = 'manifest-coverage';
+    });
+  check
+    .command('published-files')
+    .description('Check that a published package ships exactly the files it is meant to.')
+    .action(() => {
+      selected = 'published-files';
+    });
+  check
+    .command('mirror <package>')
+    .description("Compare one package's mirrored files against a fresh clone of the upstream repo.")
+    .action((packageSelector: string) => {
+      mirrorPackageSelector = packageSelector;
+    });
+  check
+    .command('vendored-origin [package]')
+    .description('Check that copied-in folders still match the commit they were taken from.')
+    .action((packageSelector: string | undefined) => {
+      vendoredPackageSelector = packageSelector;
+      checkAllVendored = packageSelector === undefined;
+    });
+  check
+    .command('tsconfig-paths')
+    .description('Check that paths written in tsconfig files really exist.')
+    .action(() => {
+      selected = 'tsconfig-paths';
+    });
+  check
+    .command('commit-scope')
+    .description('Check that nothing outside the sdk folder is about to be committed.')
+    .action(() => {
+      selected = 'commit-scope';
+    });
+  check
+    .command('cleartext-config')
+    .description('Check that the files built from cleartext-config.json are up to date.')
+    .action(() => {
+      selected = 'cleartext-config';
+    });
+  check
+    .command('tsc-mode')
+    .description('Check that no script runs tsc against a tsconfig that only lists references.')
+    .addHelpText(
+      'after',
+      `
+Why:
+  A solution-style tsconfig (empty 'files' plus 'references') only orchestrates other projects. Project
+  mode loads it, checks zero files, and exits 0, so the script passes without type-checking anything.
+  Build mode ('tsc -b') is the only driver that walks the references.
+`,
+    )
+    .action(() => {
+      selected = 'tsc-mode';
+    });
+  // Rendering a committed file from a config it reads: `--check` on each compares instead of writing.
+  const generate = program
+    .command('generate')
+    .description('Rebuild a committed file from the config file it is derived from.');
+  generate
+    .command('exports <manifest>')
+    .description("Write a package's index and export tests from its export manifest.")
+    .option('--check', 'compare the outputs against the manifest instead of writing them', false)
+    .action((manifest: string, options: { readonly check: boolean }) => {
+      generateExports = { exportManifestFile: resolve(manifest), check: options.check };
+    });
+  generate
+    .command('cleartext-config')
+    .description('Write every file that is built from cleartext-config.json.')
+    .option('--check', 'compare the outputs against the JSON instead of writing them', false)
+    .action((options: { readonly check: boolean }) => {
+      generateCleartextConfig = { check: options.check };
+    });
+  generate
+    .command('chain-constants')
+    .description('Write the TypeScript chain address list from fhevm-chains.config.json.')
+    .option('--check', 'compare the face against the JSON instead of writing it', false)
+    .action((options: { readonly check: boolean }) => {
+      generateChainConstants = { check: options.check };
+    });
+  // Distinct from `generate`: these copy from a source of truth, or fetch from the protocol registry.
+  const sync = program
+    .command('sync')
+    .description('Copy a tracked file back into line with the original it came from.');
+  sync
+    .command('vendored')
+    .description('Copy every vendored file from the package that owns the original.')
+    .option('--check', 'compare instead of writing, and fail on any difference', false)
+    .action((options: { readonly check: boolean }) => {
+      syncVendored = { check: options.check };
+    });
+  sync
+    .command('fhevm-chains')
+    .description('Fetch the latest chain addresses from the protocol registry.')
+    .option('--latest', "pin to the registry's current HEAD", false)
+    .option('--commit <sha>', 'pin to an explicit registry commit (full 40-hex sha)')
+    .action((options: { readonly latest: boolean; readonly commit?: string }) => {
+      syncFhevmChains = { commit: options.commit, latest: options.latest };
+    });
+  check
+    .command('fhevm-chains-origin')
+    .description("Check that the chain addresses match the protocol registry's latest commit.")
+    .action(() => {
+      checkFhevmChainsOrigin = true;
+    });
+  program
+    .command('install-forge-dependencies [package]')
+    .description('Install Solidity dependencies for one package, or for all of them.')
+    .action((packageSelector: string | undefined) => {
+      forgeDependencyPackageSelector = packageSelector;
+      installAllForgeDependencies = packageSelector === undefined;
+    });
+  program
+    .command('clean-forge-dependencies [package]')
+    .description('Delete installed Solidity dependency folders, after asking you to confirm.')
+    .option('--dry-run', 'list what would go, delete nothing', false)
+    .option('-f, --force', 'skip the confirmation prompt; required when stdin is not a terminal', false)
+    .action((packageSelector: string | undefined, options: { readonly dryRun: boolean; readonly force: boolean }) => {
+      cleanForgeDependencies = { packageSelector, dryRun: options.dryRun, force: options.force };
+    });
+  program
+    .command('list-packages')
+    .description('List every package the manifest knows about, with its kind.')
+    .action(() => {
+      listPackagesSelected = true;
+    });
+  // One level of nesting, in the shape FHEVM_NPM_CLI_PLAN.md gives the whole CLI: `version` groups the
+  // commands about sdk/versions.json and prints its own usage when called bare. Completion lists the
+  // group as one word; completing its subcommands belongs to that plan's renderer work.
+  const version = program
+    .command('version')
+    .description('Read or update versions.json, the one file holding every published version.');
+  version
+    .command('list')
+    .description('List every published package with its version and where it ships.')
+    .option('--check-npmjs', 'ask registry.npmjs.org whether each npm-distributed version is published', false)
+    .option('--json', 'print the entries as JSON instead of a table', false)
+    .action((options: { readonly checkNpmjs: boolean; readonly json: boolean }) => {
+      listVersions = { checkNpmjs: options.checkNpmjs, json: options.json };
+    });
+  version
+    .command('check')
+    .description('Check that every package.json version matches versions.json.')
+    .action(() => {
+      versionCheckSelected = true;
+    });
+  version
+    .command('apply')
+    .description('Update every package.json and lockfile to match versions.json.')
+    .option('--dry-run', 'print the central edit and the derived writes without changing any file', false)
+    .option('--check-npmjs', 'refuse a changed npm-distributed version that registry.npmjs.org already has', false)
+    .action((options: { readonly dryRun: boolean; readonly checkNpmjs: boolean }) => {
+      versionApply = { dryRun: options.dryRun, checkNpmjs: options.checkNpmjs };
+    });
+  // The publication group: what npmjs.com will see, and in which order payloads must get there.
+  const publish = program
+    .command('publish')
+    .description('Preview and test what npm would publish. Never actually publishes anything.');
+  publish
+    .command('order')
+    .description('Print the order the packages have to be published in.')
+    .action(() => {
+      publishOrderSelected = true;
+    });
+  publish
+    .command('render <payload>')
+    .description("Show a package's package.json exactly as npmjs.com would see it.")
+    .option('--json', 'print the full rendered package.json instead of a diff', false)
+    .action((payload: string, options: { readonly json: boolean }) => {
+      publishRender = { payload, json: options.json };
+    });
+  publish
+    .command('pack <payload>')
+    .description('Build the tarball npm would publish, and print where it was saved.')
+    .option('-o, --out-dir <dir>', 'override npm-manifest.json#tarballs.relPath')
+    .action((payload: string, options: { readonly outDir?: string }) => {
+      publishPack = { payload, outDir: options.outDir };
+    });
+  publish
+    .command('check <payload>')
+    .description('Build the tarball and check that it is safe to publish.')
+    .option(
+      '-o, --out-dir <dir>',
+      'where `publish pack` put the tarball; defaults to npm-manifest.json#tarballs.relPath',
+    )
+    .option('--check-npmjs', 'consult registry.npmjs.org', false)
+    .option('--retries <n>', 'attempts for a dependency version the registry does not have yet', '5')
+    .option('--retry-delay <seconds>', 'pause between attempts', '10')
+    .action(
+      (
+        payload: string,
+        options: {
+          readonly outDir?: string;
+          readonly checkNpmjs: boolean;
+          readonly retries: string;
+          readonly retryDelay: string;
+        },
+      ) => {
+        publishCheck = {
+          payload,
+          outDir: options.outDir,
+          checkNpmjs: options.checkNpmjs,
+          retries: positiveInteger(options.retries, '--retries'),
+          retryDelaySeconds: positiveInteger(options.retryDelay, '--retry-delay'),
+        };
+      },
+    );
+  program
+    .command('test-consumer [package]')
+    .description('Install a test project that uses a package the way a real user would.')
+    .option('-l, --list', 'list every registered consumer with its payload, owner, format and lockfile', false)
+    .option('-a, --all', 'run every registered consumer, serially, in source order', false)
+    .option('-o, --output <path>', 'persistent installation directory')
+    .option('--test-file <path>', "select one fixture-relative file for the consumer's 'test:file' script")
+    .option(
+      '--build-linked-dependencies',
+      'ask the SDK Makefile to build dev owners of direct and recursively linked local candidates',
+      false,
+    )
+    .option('--run', "run the consumer's 'test' script after installation", false)
+    .option(
+      '--ci',
+      'refuse a non-member consumer that has no committed lockfile (a committed lockfile is always replayed)',
+      false,
+    )
+    .option('-f, --force', 'replace an existing output directory', false)
+    .action((packageSelector: string | undefined, options: RawTestConsumerOptions) => {
+      testConsumer = {
+        packageSelector,
+        all: options.all,
+        output: options.output,
+        testFile: options.testFile,
+        force: options.force,
+        buildLinkedDependencies: options.buildLinkedDependencies,
+        run: options.run,
+        list: options.list,
+        ci: options.ci,
+      };
+    });
+  program
+    .command('test-consumer-regenerate-package-lock [package]')
+    .description('Rebuild the package-lock.json of the standalone test projects.')
+    .action((packageSelector: string | undefined) => {
+      regenerateConsumerPackageLocks = true;
+      regenerateConsumerPackageLockSelector = packageSelector;
+    });
+
+  program.parse([...argv], { from: 'user' });
+  if (
+    selected === undefined &&
+    mirrorPackageSelector === undefined &&
+    !checkAllVendored &&
+    vendoredPackageSelector === undefined &&
+    !installAllForgeDependencies &&
+    forgeDependencyPackageSelector === undefined &&
+    cleanForgeDependencies === undefined &&
+    !listPackagesSelected &&
+    listVersions === undefined &&
+    !versionCheckSelected &&
+    versionApply === undefined &&
+    !publishOrderSelected &&
+    publishRender === undefined &&
+    publishPack === undefined &&
+    publishCheck === undefined &&
+    !regenerateConsumerPackageLocks &&
+    testConsumer === undefined &&
+    syncVendored === undefined &&
+    generateExports === undefined &&
+    generateCleartextConfig === undefined &&
+    generateChainConstants === undefined &&
+    syncFhevmChains === undefined &&
+    !checkFhevmChainsOrigin
+  ) {
+    program.help({ error: true });
+    throw new Error('unreachable');
+  }
+  const options = program.opts<RawOptions>();
+  const workspaceRoot = resolve(options.root);
+  if (syncVendored !== undefined) {
+    return {
+      command: 'sync-vendored',
+      workspaceRoot,
+      manifestFile: resolve(workspaceRoot, 'npm-manifest.json'),
+      verbosity: options.verbose,
+      sortPackageJson: false,
+      ...syncVendored,
+    };
+  }
+  if (syncFhevmChains !== undefined) {
+    return {
+      command: 'sync-fhevm-chains',
+      workspaceRoot,
+      manifestFile: resolve(workspaceRoot, 'npm-manifest.json'),
+      verbosity: options.verbose,
+      sortPackageJson: false,
+      ...syncFhevmChains,
+    };
+  }
+  if (checkFhevmChainsOrigin) {
+    return {
+      command: 'check-fhevm-chains-origin',
+      workspaceRoot,
+      manifestFile: resolve(workspaceRoot, 'npm-manifest.json'),
+      verbosity: options.verbose,
+      sortPackageJson: false,
+    };
+  }
+  if (generateCleartextConfig !== undefined) {
+    return {
+      command: 'generate-cleartext-config',
+      workspaceRoot,
+      manifestFile: resolve(workspaceRoot, 'npm-manifest.json'),
+      verbosity: options.verbose,
+      sortPackageJson: false,
+      ...generateCleartextConfig,
+    };
+  }
+  if (generateChainConstants !== undefined) {
+    return {
+      command: 'generate-chain-constants',
+      workspaceRoot,
+      manifestFile: resolve(workspaceRoot, 'npm-manifest.json'),
+      verbosity: options.verbose,
+      sortPackageJson: false,
+      ...generateChainConstants,
+    };
+  }
+  if (generateExports !== undefined) {
+    return {
+      command: 'generate-exports',
+      workspaceRoot,
+      manifestFile: resolve(workspaceRoot, 'npm-manifest.json'),
+      verbosity: options.verbose,
+      sortPackageJson: false,
+      ...generateExports,
+    };
+  }
+  if (regenerateConsumerPackageLocks) {
+    return {
+      command: 'test-consumer-regenerate-package-lock',
+      workspaceRoot,
+      manifestFile: resolve(workspaceRoot, 'npm-manifest.json'),
+      verbosity: options.verbose,
+      sortPackageJson: false,
+      packageSelector: regenerateConsumerPackageLockSelector,
+    };
+  }
+  if (mirrorPackageSelector !== undefined) {
+    return {
+      command: 'check-mirror',
+      workspaceRoot,
+      manifestFile: resolve(workspaceRoot, 'npm-manifest.json'),
+      verbosity: options.verbose,
+      sortPackageJson: false,
+      packageSelector: mirrorPackageSelector,
+    };
+  }
+  if (checkAllVendored || vendoredPackageSelector !== undefined) {
+    return {
+      command: 'check-vendored-origin',
+      workspaceRoot,
+      manifestFile: resolve(workspaceRoot, 'npm-manifest.json'),
+      verbosity: options.verbose,
+      sortPackageJson: false,
+      packageSelector: vendoredPackageSelector,
+    };
+  }
+  if (cleanForgeDependencies !== undefined) {
+    return {
+      command: 'clean-forge-dependencies',
+      workspaceRoot,
+      manifestFile: resolve(workspaceRoot, 'npm-manifest.json'),
+      verbosity: options.verbose,
+      sortPackageJson: false,
+      ...cleanForgeDependencies,
+    };
+  }
+  if (installAllForgeDependencies || forgeDependencyPackageSelector !== undefined) {
+    return {
+      command: 'install-forge-dependencies',
+      workspaceRoot,
+      manifestFile: resolve(workspaceRoot, 'npm-manifest.json'),
+      verbosity: options.verbose,
+      sortPackageJson: false,
+      packageSelector: forgeDependencyPackageSelector,
+    };
+  }
+  if (testConsumer !== undefined) {
+    return {
+      command: 'test-consumer',
+      workspaceRoot,
+      manifestFile: resolve(workspaceRoot, 'npm-manifest.json'),
+      verbosity: options.verbose,
+      sortPackageJson: false,
+      ...testConsumer,
+    };
+  }
+  if (listPackagesSelected) {
+    return {
+      command: 'list-packages',
+      workspaceRoot,
+      manifestFile: resolve(workspaceRoot, 'npm-manifest.json'),
+      verbosity: options.verbose,
+      sortPackageJson: false,
+    };
+  }
+  if (publishOrderSelected) {
+    return {
+      command: 'publish-order',
+      workspaceRoot,
+      manifestFile: resolve(workspaceRoot, 'npm-manifest.json'),
+      verbosity: options.verbose,
+      sortPackageJson: false,
+    };
+  }
+  if (publishCheck !== undefined) {
+    return {
+      command: 'publish-check',
+      ...publishCheck,
+      workspaceRoot,
+      manifestFile: resolve(workspaceRoot, 'npm-manifest.json'),
+      verbosity: options.verbose,
+      sortPackageJson: false,
+    };
+  }
+  if (publishPack !== undefined) {
+    return {
+      command: 'publish-pack',
+      ...publishPack,
+      workspaceRoot,
+      manifestFile: resolve(workspaceRoot, 'npm-manifest.json'),
+      verbosity: options.verbose,
+      sortPackageJson: false,
+    };
+  }
+  if (publishRender !== undefined) {
+    return {
+      command: 'publish-render',
+      ...publishRender,
+      workspaceRoot,
+      manifestFile: resolve(workspaceRoot, 'npm-manifest.json'),
+      verbosity: options.verbose,
+      sortPackageJson: false,
+    };
+  }
+  if (versionApply !== undefined) {
+    return {
+      command: 'version-apply',
+      dryRun: versionApply.dryRun,
+      checkNpmjs: versionApply.checkNpmjs,
+      workspaceRoot,
+      manifestFile: resolve(workspaceRoot, 'npm-manifest.json'),
+      verbosity: options.verbose,
+      sortPackageJson: false,
+    };
+  }
+  if (versionCheckSelected) {
+    return {
+      command: 'version-check',
+      workspaceRoot,
+      manifestFile: resolve(workspaceRoot, 'npm-manifest.json'),
+      verbosity: options.verbose,
+      sortPackageJson: false,
+    };
+  }
+  if (listVersions !== undefined) {
+    return {
+      command: 'version-list',
+      checkNpmjs: listVersions.checkNpmjs,
+      json: listVersions.json,
+      workspaceRoot,
+      manifestFile: resolve(workspaceRoot, 'npm-manifest.json'),
+      verbosity: options.verbose,
+      sortPackageJson: false,
+    };
+  }
+  if (selected === undefined) throw new Error('unreachable');
+  return {
+    command: selected,
+    workspaceRoot,
+    manifestFile: resolve(workspaceRoot, 'npm-manifest.json'),
+    verbosity: options.verbose,
+    sortPackageJson,
+  };
+}
+
+// Commander hands option values over as strings; the two retry knobs must be whole non-negative numbers.
+function positiveInteger(value: string, flag: string): number {
+  if (!/^\d+$/.test(value)) throw new Error(`${flag} expects a non-negative integer, got '${value}'`);
+  return Number(value);
+}

@@ -1,0 +1,10 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "include": ["pkg/src"],
+  "exclude": ["pkg/src/**/*.test.ts", "pkg/_esm/**", "pkg/_types/**"],
+  "compilerOptions": {
+    "sourceMap": true,
+    "rootDir": "./pkg/src",
+    "types": ["node"]
+  }
+}
