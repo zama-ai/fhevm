@@ -15,8 +15,8 @@
     "fmt": "npm run prettier:write",
     "fmt:check": "npm run prettier:check",
     "generate": "npm run generate:chain-constants && npm run generate:cleartext-config",
-    "generate:chain-constants": "node ../fhevm-npm/fhevm-npm.ts generate-chain-constants",
-    "generate:cleartext-config": "node ../fhevm-npm/fhevm-npm.ts generate-cleartext-config",
+    "generate:chain-constants": "node ../fhevm-npm/fhevm-npm.ts generate chain-constants",
+    "generate:cleartext-config": "node ../fhevm-npm/fhevm-npm.ts generate cleartext-config",
     "lint": "eslint && tsc -p ./tsconfig.json --noEmit",
     "prettier:check": "prettier --check .",
     "prettier:write": "prettier --write ."

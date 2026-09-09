@@ -147,7 +147,7 @@ test('check-fhevm-chains-origin follows the registry HEAD: address drift is red,
     const moved = registry().replace(ADDR('b'), ADDR('0'));
     const drifted = await checkFhevmChainsOrigin({ workspaceRoot: workspace, reader: fakeReader(moved, head) });
     assert.match(drifted.violations[0]?.message ?? '', /main head \(bbbbbbbbbbbb\)/);
-    assert.match(drifted.violations[0]?.message ?? '', /sync-fhevm-chains --latest/);
+    assert.match(drifted.violations[0]?.message ?? '', /sync fhevm-chains --latest/);
   } finally {
     rmSync(workspace, { recursive: true, force: true });
   }

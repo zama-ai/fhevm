@@ -368,15 +368,19 @@ Why:
     .action(() => {
       selected = 'tsc-mode';
     });
-  program
-    .command('generate-exports <manifest>')
+  // Rendering a committed file from a config it reads: `--check` on each compares instead of writing.
+  const generate = program
+    .command('generate')
+    .description('Render a committed file from the configuration it is derived from.');
+  generate
+    .command('exports <manifest>')
     .description("Render a package's export manifest into its index and consumer export tests.")
     .option('--check', 'compare the outputs against the manifest instead of writing them', false)
     .action((manifest: string, options: { readonly check: boolean }) => {
       generateExports = { exportManifestFile: resolve(manifest), check: options.check };
     });
-  program
-    .command('generate-cleartext-config')
+  generate
+    .command('cleartext-config')
     .description(
       'Render sdk/cleartext-config.json into every file generated from it: the TypeScript face in ' +
         "common-vendored/src (copied to each generation's pkg/ts by sync-vendored), and each " +
@@ -386,8 +390,8 @@ Why:
     .action((options: { readonly check: boolean }) => {
       generateCleartextConfig = { check: options.check };
     });
-  program
-    .command('generate-chain-constants')
+  generate
+    .command('chain-constants')
     .description(
       'Render sdk/fhevm-chains.config.json into its TypeScript face, common-vendored/src/fhevm-chains.ts: every ' +
         'deployed host-contract and gateway address by network group (sync-vendored copies it to the packages that carry one).',
@@ -396,8 +400,12 @@ Why:
     .action((options: { readonly check: boolean }) => {
       generateChainConstants = { check: options.check };
     });
-  program
-    .command('sync-vendored')
+  // Distinct from `generate`: these copy from a source of truth, or fetch from the protocol registry.
+  const sync = program
+    .command('sync')
+    .description('Bring a tracked copy back in line with the source it is taken from.');
+  sync
+    .command('vendored')
     .description(
       'Write every vendored destination from its source of truth: the shared TypeScript from ' +
         'common-vendored/manifest.json, and the pinned Solidity plus its provenance from npm-manifest.json.',
@@ -406,8 +414,8 @@ Why:
     .action((options: { readonly check: boolean }) => {
       syncVendored = { check: options.check };
     });
-  program
-    .command('sync-fhevm-chains')
+  sync
+    .command('fhevm-chains')
     .description(
       'Write fhevm-chains.config.json — every fhevm host-contract and gateway address, one section per ' +
         "network group of fhevm-network-groups.config.json — from the protocol registry at a pinned commit (default: the file's recorded pin).",

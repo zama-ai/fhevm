@@ -1,4 +1,4 @@
-// Declared in common-vendored/src/ethereumLibTypes.ts and copied here by `fhevm-npm sync-vendored`, so an
+// Declared in common-vendored/src/ethereumLibTypes.ts and copied here by `fhevm-npm sync vendored`, so an
 // adapter can be copied out of this repo without dragging the package in. Re-exported, not redeclared.
 import type {
   AbstractEthereumHistory,

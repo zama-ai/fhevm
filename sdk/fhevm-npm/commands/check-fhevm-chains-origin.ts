@@ -27,7 +27,7 @@ export async function checkFhevmChainsOrigin(options: {
   });
 
   if (!existsSync(path)) {
-    return violation('missing — run `fhevm-npm sync-fhevm-chains --latest` to create it');
+    return violation('missing — run `fhevm-npm sync fhevm-chains --latest` to create it');
   }
   const pinned = pinnedCommit(options.workspaceRoot);
   if (pinned === undefined) throw new Error('unreachable: the file exists');
@@ -39,7 +39,7 @@ export async function checkFhevmChainsOrigin(options: {
     return violation(
       `differs from what the registry's main head (${head.slice(0, 12)}) renders — the addresses have ` +
         `changed since the recorded sync (${pinned.slice(0, 12)}), or the file was edited by hand: ` +
-        'run `fhevm-npm sync-fhevm-chains --latest`',
+        'run `fhevm-npm sync fhevm-chains --latest`',
     );
   }
   return {

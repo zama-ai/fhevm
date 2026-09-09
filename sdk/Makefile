@@ -507,7 +507,7 @@ check-npm-cli-pre-build: # Internal: run fhevm-npm checks that do not require ge
 	$(call run-fhevm-npm,check foundry)
 	$(call run-fhevm-npm,check lint-policy)
 	$(call run-fhevm-npm,check cleartext-config)
-	$(call run-fhevm-npm,sync-vendored --check)
+	$(call run-fhevm-npm,sync vendored --check)
 
 # Not wired into `check-pre` or `ci`: the mirror spec is not implemented yet. Running it today reports 7
 # violations, but they are the spec's gaps rather than real drift — it has not been taught about the
@@ -763,7 +763,7 @@ publish-check: ## Is PAYLOAD's tarball fit for npmjs.com (no file: spec, central
 	$(call run-fhevm-npm,publish check $(PAYLOAD))
 
 sync-common-vendored: ## Write every vendored destination from its source of truth
-	$(call run-fhevm-npm,sync-vendored)
+	$(call run-fhevm-npm,sync vendored)
 
 # Read-only: re-renders every face of sdk/cleartext-config.json in memory and fails if a committed one
 # differs. The direct guard for the faces nothing else reads back — scripts/cleartext-config.sh above all.
@@ -777,13 +777,13 @@ check-vendored-origin: ## Does each local vendored folder match its declared ori
 # legitimate (does each vendored folder match its declared origin?). Green on both is the only state
 # meaning every copy is current and accounted for. The cheaper compare runs first, to fail fast.
 check-vendored: ## Audit vendored content: copies current AND matching their declared origins
-	$(call run-fhevm-npm,sync-vendored --check)
+	$(call run-fhevm-npm,sync vendored --check)
 	$(call run-fhevm-npm,check vendored-origin)
 
 # Both need the network and an authenticated `gh` (the protocol registry is private), so neither is in
 # `check-pre` or `ci` — run them when touching chain addresses, or from a CI job that holds a token.
 sync-fhevm-chains: ## Write fhevm-chains.config.json from the protocol registry's main head
-	$(call run-fhevm-npm,sync-fhevm-chains --latest)
+	$(call run-fhevm-npm,sync fhevm-chains --latest)
 
 check-fhevm-chains: ## Is fhevm-chains.config.json current with the protocol registry's main head
 	$(call run-fhevm-npm,check fhevm-chains-origin)

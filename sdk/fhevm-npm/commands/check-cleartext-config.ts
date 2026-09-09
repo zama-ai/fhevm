@@ -21,9 +21,9 @@ export const checkCleartextConfig: CheckCommand = (context) => {
         packageKey: faceKey(output.path),
         message:
           output.status === 'missing'
-            ? `generated face is missing — run \`fhevm-npm generate-cleartext-config\` (a step of \`make generate\`)`
+            ? `generated face is missing — run \`fhevm-npm generate cleartext-config\` (a step of \`make generate\`)`
             : `generated face differs from sdk/cleartext-config.json — regenerate with ` +
-              `\`fhevm-npm generate-cleartext-config\` (never edit the face)`,
+              `\`fhevm-npm generate cleartext-config\` (never edit the face)`,
       })),
   };
 };

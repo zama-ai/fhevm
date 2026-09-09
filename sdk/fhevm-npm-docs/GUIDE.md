@@ -45,8 +45,8 @@ npm run generate -w @fhevm/host-contracts-cleartext-v13-dev
 # A single package's `generate` assumes vendored content is already in sync (it is committed, so
 # this holds unless you changed common-vendored/, a vendored pin, or sdk/cleartext-config.json —
 # in that case regenerate the vendored sources and sync first):
-./fhevm-npm-cli generate-cleartext-config
-./fhevm-npm-cli sync-vendored
+./fhevm-npm-cli generate cleartext-config
+./fhevm-npm-cli sync vendored
 
 # To AUDIT vendored content without writing anything (fails on any difference): copies are current
 # (sync would write nothing) AND each vendored folder matches its declared origin (git commit).
@@ -60,7 +60,7 @@ make check-cleartext-config
 # Deployed chain addresses (sdk/fhevm-chains.config.json): every fhevm host-contract and gateway
 # address on mainnet and testnet, rendered from the private protocol registry (source.commit records
 # the revision of the last sync). Both need the network and an authenticated `gh`.
-./fhevm-npm-cli sync-fhevm-chains --latest          # catch up with the registry's main head
+./fhevm-npm-cli sync fhevm-chains --latest          # catch up with the registry's main head
 make check-fhevm-chains                             # read-only: is the file current with that head?
                                                     # (registry commits that touch no fhevm address stay green)
 

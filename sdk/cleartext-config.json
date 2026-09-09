@@ -5,7 +5,7 @@
     "",
     "Above every generation on purpose. Every face is GENERATED from this file by `fhevm-npm",
     "generate-cleartext-config`: the TypeScript module in `common-vendored/src` (synced into each",
-    "generation's `pkg/ts/` by `fhevm-npm sync-vendored`), each generation's",
+    "generation's `pkg/ts/` by `fhevm-npm sync vendored`), each generation's",
     "`create2-deploy/script/FhevmCleartextConfig.sol`, and each generation's `scripts/cleartext-config.sh`",
     "(sourced by the launchers). This is the one place a value is DECIDED; every copy is a face of it. See",
     "host-contracts-cleartext/RULES.md rule 23.",
