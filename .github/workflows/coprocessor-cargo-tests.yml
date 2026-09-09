@@ -58,6 +58,7 @@ jobs:
       matrix:
         include:
           # Split across three machines because this job is by far the slowest.
+          # Coverage builds and restored caches exceed the default runner disk.
           - service: tfhe-worker-1
             use_nextest: true
             package: tfhe-worker
@@ -65,7 +66,7 @@ jobs:
             needs_foundry: false
             shard: 1
             shards: 3
-            runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64
+            runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/volume=80gb
           - service: tfhe-worker-2
             use_nextest: true
             package: tfhe-worker
@@ -73,7 +74,7 @@ jobs:
             needs_foundry: false
             shard: 2
             shards: 3
-            runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64
+            runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/volume=80gb
           - service: tfhe-worker-3
             use_nextest: true
             package: tfhe-worker
@@ -81,7 +82,7 @@ jobs:
             needs_foundry: false
             shard: 3
             shards: 3
-            runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64
+            runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/volume=80gb
           - service: sns-worker
             package: sns-worker
             needs_localstack: true
