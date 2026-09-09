@@ -34,11 +34,11 @@ export {
   buildPublicLeafProof,
   mmrBuildProof,
   mmrPeaksFromLeaves,
-  reconstructSolanaEncryptedValueAccount,
+  reconstructSolanaStateHistory,
   verifyHistoricalAccessProof,
   verifyPublicDecryptProof,
 } from './proof.js';
-export type { MmrProof, SolanaEncryptedValueAccountEvent, SolanaReconstructedEncryptedValueAccount } from './proof.js';
+export type { MmrProof, SolanaStateHistoryEvent, SolanaReconstructedStateHistory } from './proof.js';
 
 export { buildSolanaPublicDecryptExtraData } from './actions/publicDecryptCertificate.js';
 export type {
@@ -56,7 +56,7 @@ export type {
 export {
   SOLANA_USER_DECRYPTION_DELEGATION_SEED,
   SOLANA_WILDCARD_AUTHORITY_WARNING,
-  SOLANA_WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY,
+  SOLANA_WILDCARD_AUTHORITY,
   buildDelegateForUserDecryptionInstruction,
   buildRevokeDelegationForUserDecryptionInstruction,
   decodeSolanaUserDecryptionDelegation,

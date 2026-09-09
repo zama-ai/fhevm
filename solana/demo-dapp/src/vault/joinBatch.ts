@@ -43,10 +43,7 @@ import {
   joinStateAddress,
   tokenAccountAddress,
 } from './internal/batcherPdas.js';
-import {
-  associatedTokenAddress,
-  balanceValueAddress,
-} from './internal/tokenValueAccount.js';
+import { associatedTokenAddress, tokenStateAddress } from './internal/tokenAccounts.js';
 
 /**
  * Joins a batch with a coprocessor-attested confidential amount of the batcher's join token. This
@@ -164,8 +161,8 @@ export async function joinBatch(
     ),
     userTokenAccount,
     batchJoinTokenAccount,
-    userBalanceValue: await balanceValueAddress(joinConfidentialMint, userTokenAccount),
-    batchBalanceValue: await balanceValueAddress(joinConfidentialMint, batchJoinTokenAccount),
+    userBalanceState: await tokenStateAddress(joinConfidentialMint, userTokenAccount),
+    batchBalanceState: await tokenStateAddress(joinConfidentialMint, batchJoinTokenAccount),
     joinState,
     scratch,
     instructions: INSTRUCTIONS_SYSVAR,
@@ -188,7 +185,11 @@ export async function joinBatch(
     (m) => setTransactionMessageFeePayerSigner(parameters.payer, m),
     (m) => setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, m),
     (m) => setTransactionMessageComputeUnitLimit(parameters.computeUnitLimit ?? 400_000, m),
-    (m) => appendTransactionMessageInstructions([instruction, closeScratchInstruction(scratch, parameters.payer.address)], m),
+    (m) =>
+      appendTransactionMessageInstructions(
+        [instruction, closeScratchInstruction(scratch, parameters.payer.address)],
+        m,
+      ),
   );
   const unsignedTransaction = compileTransaction(message);
   assertIsTransactionWithinSizeLimit(unsignedTransaction);

@@ -2,7 +2,7 @@ import type { Address, FetchAccountConfig, Instruction, Rpc, SolanaRpcApi, Trans
 
 import { fetchVault } from './internal/generated/demoVault/accounts/vault.js';
 import { getHarvestInstruction } from './internal/generated/demoVault/instructions/harvest.js';
-import { associatedTokenAddress, TOKEN_PROGRAM_ADDRESS } from './internal/tokenValueAccount.js';
+import { associatedTokenAddress, TOKEN_PROGRAM_ADDRESS } from './internal/tokenAccounts.js';
 
 type SolanaRpc = Rpc<SolanaRpcApi>;
 

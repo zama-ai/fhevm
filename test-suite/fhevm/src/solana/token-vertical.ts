@@ -50,7 +50,7 @@ export type ConfidentialBurnTarget = {
   readonly tokenAccount: Address;
   readonly pendingBurn: Address;
   /** The burned-amount `EncryptedValue` account: the certificate's account + the proof's leaves. */
-  readonly burnedAmountValue: Address;
+  readonly burnedAmountState: Address;
 };
 
 /** Derives the burn-facing accounts for `owner`'s confidential token account under `mint`. */
@@ -60,7 +60,7 @@ export const confidentialBurnTarget = async (mint: Address, owner: Address): Pro
   return {
     tokenAccount,
     pendingBurn: await vault.pendingBurnAddress(mint, tokenAccount),
-    burnedAmountValue: await vault.burnedAmountValueAddress(mint, tokenAccount),
+    burnedAmountState: await vault.tokenStateAddress(mint, tokenAccount),
   };
 };
 
@@ -93,8 +93,8 @@ export const confidentialBurn = async (
       SPL_TOKEN_PROGRAM_ADDRESS,
     ),
     tokenAccount: target.tokenAccount,
-    balanceValue: await vault.balanceValueAddress(params.mint, target.tokenAccount),
-    totalSupplyValue: await vault.totalSupplyValueAddress(params.mint, totalSupplyAuthority),
+    balanceState: await vault.tokenStateAddress(params.mint, target.tokenAccount),
+    totalSupplyState: await vault.tokenStateAddress(params.mint, totalSupplyAuthority),
     pendingBurn: target.pendingBurn,
     zamaEventAuthority: await eventAuthority(ZAMA_HOST_PROGRAM_ADDRESS),
     hostConfig: await hostConfigAddress(),
@@ -143,7 +143,7 @@ export const redeemBurnedAmount = async (
       params.underlyingMint,
       SPL_TOKEN_PROGRAM_ADDRESS,
     ),
-    burnedAmountValue: target.burnedAmountValue,
+    burnedAmountState: target.burnedAmountState,
     hostConfig: await hostConfigAddress(),
     kmsContext: await kmsContextAddress(),
     eventAuthority: await eventAuthority(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS),
@@ -174,7 +174,7 @@ export const sealBurnedAmountHandle = async (
       owner: params.owner,
       mint: params.mint,
       tokenAccount: target.tokenAccount,
-      encryptedValue: target.burnedAmountValue,
+      encryptedState: target.burnedAmountState,
       hostConfig: await hostConfigAddress(),
       kind: vault.DisclosedValueKind.BurnedAmount,
       handle: params.handle,
@@ -201,7 +201,7 @@ export const discloseBurnedAmount = async (
     {
       mint: params.mint,
       tokenAccount: target.tokenAccount,
-      encryptedValue: target.burnedAmountValue,
+      encryptedState: target.burnedAmountState,
       kmsContext: await kmsContextAddress(),
       hostConfig: await hostConfigAddress(),
     },

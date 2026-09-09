@@ -1,6 +1,6 @@
 use crate::core::{config::Config, event_processor::ProcessingError};
 use alloy::primitives::U256;
-use connector_utils::types::{extra_data::parse_extra_data, u256_to_request_id, KmsGrpcRequest};
+use connector_utils::types::{KmsGrpcRequest, extra_data::parse_extra_data, u256_to_request_id};
 use fhevm_host_bindings::kms_generation::KMSGeneration::{
     CrsgenRequest, KeygenRequest, PrepKeygenRequest,
 };

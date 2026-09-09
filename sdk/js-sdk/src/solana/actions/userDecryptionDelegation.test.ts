@@ -12,7 +12,7 @@ import { base58 } from '@scure/base';
 
 import {
   SOLANA_USER_DECRYPTION_DELEGATION_SEED,
-  SOLANA_WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY,
+  SOLANA_WILDCARD_AUTHORITY,
   buildDelegateForUserDecryptionInstruction,
   buildRevokeDelegationForUserDecryptionInstruction,
   decodeSolanaUserDecryptionDelegation,
@@ -213,12 +213,12 @@ describe('buildRevokeDelegationForUserDecryptionInstruction', () => {
 
 describe('solanaDelegationWarnings', () => {
   it('exports the sentinel the wildcard row carries in place of an authority', () => {
-    expect(SOLANA_WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY).toBe(addr(0xff));
+    expect(SOLANA_WILDCARD_AUTHORITY).toBe(addr(0xff));
   });
 
   it('flags a wildcard-authority grant', () => {
     const warnings = solanaDelegationWarnings({
-      encryptedStateAuthority: SOLANA_WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY,
+      encryptedStateAuthority: SOLANA_WILDCARD_AUTHORITY,
     });
     expect(warnings).toHaveLength(1);
     expect(warnings[0]!.code).toBe('WildcardAuthority');
@@ -342,7 +342,7 @@ describe('fetchSolanaUserDecryptionDelegation', () => {
         SOLANA_USER_DECRYPTION_DELEGATION_SEED,
         encoder.encode(delegator),
         encoder.encode(delegate),
-        encoder.encode(SOLANA_WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY),
+        encoder.encode(SOLANA_WILDCARD_AUTHORITY),
       ],
     });
     const bytesHex =
@@ -366,7 +366,7 @@ describe('fetchSolanaUserDecryptionDelegation', () => {
     );
     expect(rows.exact).toBeNull();
     expect(rows.wildcard?.delegationCounter).toBe(7n);
-    expect(rows.wildcard?.encryptedStateAuthority).toBe(SOLANA_WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY);
+    expect(rows.wildcard?.encryptedStateAuthority).toBe(SOLANA_WILDCARD_AUTHORITY);
   });
 
   // The Connector's rule, mirrored: the address is not taken as proof of what the record says.
@@ -375,7 +375,7 @@ describe('fetchSolanaUserDecryptionDelegation', () => {
   it('throws on a record naming a tuple other than the one its address derives from', async () => {
     const wildcardAddress = await solanaUserDecryptionDelegationAddress({
       ...tuple,
-      encryptedStateAuthority: SOLANA_WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY,
+      encryptedStateAuthority: SOLANA_WILDCARD_AUTHORITY,
     });
     // The exact-tuple record (authority 0x33) sitting at the wildcard address.
     await expect(

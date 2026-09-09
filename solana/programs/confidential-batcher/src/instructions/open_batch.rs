@@ -42,17 +42,17 @@ pub struct OpenBatch<'info> {
     /// CHECK: batch's confidential join token account; created by the token CPI.
     #[account(mut)]
     pub batch_join_token_account: UncheckedAccount<'info>,
-    /// CHECK: batch join balance encrypted value account; created by the host CPI.
+    /// CHECK: batch join balance encrypted State; created by the host CPI.
     #[account(mut)]
-    pub batch_join_balance_value: UncheckedAccount<'info>,
+    pub batch_join_balance_state: UncheckedAccount<'info>,
     /// Confidential mint claims pay out in.
     pub payout_confidential_mint: Box<Account<'info, ct::ConfidentialMint>>,
     /// CHECK: batch's confidential payout token account; created by the token CPI.
     #[account(mut)]
     pub batch_payout_token_account: UncheckedAccount<'info>,
-    /// CHECK: batch payout balance encrypted value account; created by the host CPI.
+    /// CHECK: batch payout balance encrypted State; created by the host CPI.
     #[account(mut)]
-    pub batch_payout_balance_value: UncheckedAccount<'info>,
+    pub batch_payout_balance_state: UncheckedAccount<'info>,
     /// SPL mint the join confidential mint wraps (vault underlying for deposit
     /// batchers, vault shares for redeem batchers).
     pub join_underlying_mint: Box<Account<'info, SplMint>>,
@@ -145,16 +145,16 @@ pub fn open_batch(ctx: Context<OpenBatch>, authority_funding_lamports: u64) -> R
     let batch_key = ctx.accounts.batch.key();
     let authority = BatchAuthoritySeeds::new(batch_key, ctx.bumps.batch_authority);
     let authority_seeds = authority.seeds();
-    for (mint, token_account, balance_value) in [
+    for (mint, token_account, balance_state) in [
         (
             &ctx.accounts.join_confidential_mint,
             &ctx.accounts.batch_join_token_account,
-            &ctx.accounts.batch_join_balance_value,
+            &ctx.accounts.batch_join_balance_state,
         ),
         (
             &ctx.accounts.payout_confidential_mint,
             &ctx.accounts.batch_payout_token_account,
-            &ctx.accounts.batch_payout_balance_value,
+            &ctx.accounts.batch_payout_balance_state,
         ),
     ] {
         ct::cpi::initialize_token_account(CpiContext::new_with_signer(
@@ -164,7 +164,7 @@ pub fn open_batch(ctx: Context<OpenBatch>, authority_funding_lamports: u64) -> R
                 owner: ctx.accounts.batch_authority.to_account_info(),
                 mint: mint.to_account_info(),
                 token_account: token_account.to_account_info(),
-                balance_encrypted_value: balance_value.to_account_info(),
+                balance_encrypted_state: balance_state.to_account_info(),
                 zama_event_authority: ctx.accounts.zama_event_authority.to_account_info(),
                 zama_program: ctx.accounts.zama_program.to_account_info(),
                 host_config: ctx.accounts.host_config.to_account_info(),

@@ -77,13 +77,13 @@ export type DelegateForUserDecryptionInstruction<
 export type DelegateForUserDecryptionInstructionData = {
   discriminator: ReadonlyUint8Array;
   delegate: Address;
-  encryptedValueAccountAuthority: Address;
+  authority: Address;
   expirationSlot: bigint;
 };
 
 export type DelegateForUserDecryptionInstructionDataArgs = {
   delegate: Address;
-  encryptedValueAccountAuthority: Address;
+  authority: Address;
   expirationSlot: number | bigint;
 };
 
@@ -92,7 +92,7 @@ export function getDelegateForUserDecryptionInstructionDataEncoder(): FixedSizeE
     getStructEncoder([
       ['discriminator', fixEncoderSize(getBytesEncoder(), 8)],
       ['delegate', getAddressEncoder()],
-      ['encryptedValueAccountAuthority', getAddressEncoder()],
+      ['authority', getAddressEncoder()],
       ['expirationSlot', getU64Encoder()],
     ]),
     (value) => ({
@@ -106,7 +106,7 @@ export function getDelegateForUserDecryptionInstructionDataDecoder(): FixedSizeD
   return getStructDecoder([
     ['discriminator', fixDecoderSize(getBytesDecoder(), 8)],
     ['delegate', getAddressDecoder()],
-    ['encryptedValueAccountAuthority', getAddressDecoder()],
+    ['authority', getAddressDecoder()],
     ['expirationSlot', getU64Decoder()],
   ]);
 }
@@ -138,7 +138,7 @@ export type DelegateForUserDecryptionAsyncInput<
   /** System program used for account creation. */
   systemProgram?: Address<TAccountSystemProgram>;
   delegate: DelegateForUserDecryptionInstructionDataArgs['delegate'];
-  encryptedValueAccountAuthority: DelegateForUserDecryptionInstructionDataArgs['encryptedValueAccountAuthority'];
+  authority: DelegateForUserDecryptionInstructionDataArgs['authority'];
   expirationSlot: DelegateForUserDecryptionInstructionDataArgs['expirationSlot'];
 };
 
@@ -235,7 +235,7 @@ export type DelegateForUserDecryptionInput<
   /** System program used for account creation. */
   systemProgram?: Address<TAccountSystemProgram>;
   delegate: DelegateForUserDecryptionInstructionDataArgs['delegate'];
-  encryptedValueAccountAuthority: DelegateForUserDecryptionInstructionDataArgs['encryptedValueAccountAuthority'];
+  authority: DelegateForUserDecryptionInstructionDataArgs['authority'];
   expirationSlot: DelegateForUserDecryptionInstructionDataArgs['expirationSlot'];
 };
 

@@ -174,6 +174,38 @@ fn scratch_cannot_close_before_the_final_instruction() {
 }
 
 #[test]
+fn nested_scratch_close_rolls_back_the_whole_transaction() {
+    let fixture = Fixture::new(0);
+    let mut svm = host_svm();
+    svm.add_program(&delegator_vault::ID, "delegator_vault");
+    let mut nested_close = anchor_ix(
+        delegator_vault::ID,
+        delegator_vault::accounts::CloseScratchViaCpi {
+            instructions: Instructions::id(),
+            zama_host: host::ID,
+        },
+        delegator_vault::instruction::CloseScratchViaCpi {},
+    );
+    nested_close.accounts.extend([
+        AccountMeta::new(fixture.scratch, false),
+        AccountMeta::new(fixture.payer, false),
+    ]);
+    // The valid final close lets open succeed; the intervening CPI must still be rejected.
+    let result = svm.process_transaction_instructions(
+        &[fixture.open(), nested_close, fixture.close()],
+        &fixture.accounts,
+    );
+    assert_eq!(
+        result.program_result,
+        TransactionProgramResult::Failure(
+            1,
+            ProgramError::Custom(6000 + host::ZamaHostError::TransientCloseMissing as u32)
+        )
+    );
+    assert_eq!(result.resulting_accounts, fixture.accounts);
+}
+
+#[test]
 fn active_workspace_cannot_be_reopened() {
     let fixture = Fixture::new(0);
     let result = host_svm().process_transaction_instructions(
@@ -280,6 +312,16 @@ fn two_slots_share_history_and_stale_slot_writes_roll_back() {
     let mut two = [0; 32];
     two[31] = 2;
     let args = host::FheExecuteArgs {
+        returned_results: vec![
+            host::ExecutionResultRef {
+                step_index: 0,
+                output_index: 0,
+            },
+            host::ExecutionResultRef {
+                step_index: 1,
+                output_index: 0,
+            },
+        ],
         account_count: 1,
         dictionary: vec![[11; 32], [12; 32], fixture.payer.to_bytes()],
         steps: vec![
@@ -299,7 +341,7 @@ fn two_slots_share_history_and_stale_slot_writes_roll_back() {
         host::ID,
         host::accounts::FheExecute {
             payer: fixture.payer,
-            encrypted_value_account_authority: fixture.authority,
+            authority: fixture.authority,
             host_config: config,
             system_program: anchor_lang::prelude::system_program::ID,
             hcu_block_meter: None,
@@ -308,7 +350,7 @@ fn two_slots_share_history_and_stale_slot_writes_roll_back() {
             event_authority,
             program: host::ID,
         },
-        host::instruction::FheExecute { args },
+        host::instruction::FheExecute { args: args.clone() },
     );
     instruction
         .accounts
@@ -341,6 +383,72 @@ fn two_slots_share_history_and_stale_slot_writes_roll_back() {
         .collect();
     assert_eq!(state.peaks, zama_solana_acl::mmr_peaks_from_leaves(&leaves));
     assert_eq!(result.return_data, handles.concat());
+    // Selection order is independent of execution order; omitted results stay off the channel.
+    for selected in [
+        vec![],
+        vec![1],
+        vec![1, 0],
+        vec![1, 1],
+        vec![1; host::MAX_RETURNED_HANDLES],
+    ] {
+        let mut selected_args = args.clone();
+        selected_args.returned_results = selected
+            .iter()
+            .map(|&step_index| host::ExecutionResultRef {
+                step_index,
+                output_index: 0,
+            })
+            .collect();
+        let mut selected_ix = instruction.clone();
+        selected_ix.data = host::instruction::FheExecute {
+            args: selected_args,
+        }
+        .data();
+        let selected_result = svm.process_transaction_instructions(&[selected_ix], &accounts);
+        assert!(
+            selected_result.raw_result.is_ok(),
+            "{:?}",
+            selected_result.raw_result
+        );
+        let expected: Vec<u8> = selected.iter().flat_map(|&i| handles[i as usize]).collect();
+        assert_eq!(selected_result.return_data, expected);
+        assert_eq!(
+            selected_result.resulting_accounts,
+            result.resulting_accounts
+        );
+    }
+    for invalid in [
+        vec![host::ExecutionResultRef {
+            step_index: 2,
+            output_index: 0,
+        }],
+        vec![host::ExecutionResultRef {
+            step_index: 0,
+            output_index: 1,
+        }],
+        vec![
+            host::ExecutionResultRef {
+                step_index: 0,
+                output_index: 0
+            };
+            host::MAX_RETURNED_HANDLES + 1
+        ],
+    ] {
+        let mut invalid_args = args.clone();
+        invalid_args.returned_results = invalid;
+        let mut invalid_ix = instruction.clone();
+        invalid_ix.data = host::instruction::FheExecute { args: invalid_args }.data();
+        let invalid_result = svm.process_transaction_instructions(&[invalid_ix], &accounts);
+        assert_eq!(
+            invalid_result.program_result,
+            TransactionProgramResult::Failure(
+                0,
+                ProgramError::Custom(6000 + host::ZamaHostError::InvalidReturnSelection as u32)
+            )
+        );
+        assert_eq!(invalid_result.resulting_accounts, accounts);
+    }
+
     let stale = svm.process_transaction_instructions(&[instruction], &result.resulting_accounts);
     assert_eq!(
         stale.program_result,
@@ -365,6 +473,7 @@ fn maximum_result_grants_fit_one_execution_and_leave_no_account() {
         (event_authority, empty_system_account()),
     ]);
     let args = host::FheExecuteArgs {
+        returned_results: Vec::new(),
         account_count: 2,
         dictionary: vec![],
         steps: (0..host::MAX_TRANSIENT_GRANTS)
@@ -394,7 +503,7 @@ fn maximum_result_grants_fit_one_execution_and_leave_no_account() {
         host::ID,
         host::accounts::FheExecute {
             payer: fixture.payer,
-            encrypted_value_account_authority: fixture.authority,
+            authority: fixture.authority,
             host_config: config,
             system_program: anchor_lang::prelude::system_program::ID,
             hcu_block_meter: None,
@@ -503,6 +612,7 @@ fn grant_then_consume(case: GrantConsumptionCase) -> TransactionResult {
         _ => 2,
     };
     let args = host::FheExecuteArgs {
+        returned_results: Vec::new(),
         account_count: if matches!(case, GrantConsumptionCase::WrongConsumer) {
             3
         } else {
@@ -543,7 +653,7 @@ fn grant_then_consume(case: GrantConsumptionCase) -> TransactionResult {
         host::ID,
         host::accounts::FheExecute {
             payer: initiating.payer,
-            encrypted_value_account_authority: initiating.authority,
+            authority: initiating.authority,
             host_config: config,
             system_program: anchor_lang::prelude::system_program::ID,
             hcu_block_meter: None,
@@ -606,7 +716,7 @@ fn transient_result_requires_the_consumer_state_authority_signature() {
         TransactionProgramResult::Failure(
             1,
             ProgramError::Custom(
-                6000 + host::ZamaHostError::EncryptedValueAccountAuthorityMismatch as u32
+                6000 + host::ZamaHostError::EncryptedStateAccountAuthorityMismatch as u32
             )
         )
     );
@@ -633,6 +743,7 @@ fn result_grant_rejects_a_scratch_opened_for_another_initiating_state() {
         (event_authority, empty_system_account()),
     ]);
     let args = host::FheExecuteArgs {
+        returned_results: Vec::new(),
         account_count: 2,
         dictionary: vec![],
         steps: vec![host::FheExecuteStep::TrivialEncrypt {
@@ -656,7 +767,7 @@ fn result_grant_rejects_a_scratch_opened_for_another_initiating_state() {
         host::ID,
         host::accounts::FheExecute {
             payer: initiating.payer,
-            encrypted_value_account_authority: initiating.authority,
+            authority: initiating.authority,
             host_config: config,
             system_program: anchor_lang::prelude::system_program::ID,
             hcu_block_meter: None,

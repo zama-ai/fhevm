@@ -9,7 +9,6 @@ import { encryptedStateHandle } from '@sdk-src/solana/encryptedState.js';
 // `./spl.ts`. Binding to explicit signers (instead of the ambient Solana CLI identity
 // the live-client read from `$HOME`) is what lets the arc target any stack the harness injects.
 
-
 import {
   appendTransactionMessageInstructions,
   assertIsTransactionWithBlockhashLifetime,
@@ -31,14 +30,11 @@ import {
   type Rpc,
   type SolanaRpcApi,
   type TransactionSigner,
-} from "@solana/kit";
+} from '@solana/kit';
 
-import type { Bytes32Hex } from "@sdk-src/core/types/primitives.js";
+import type { Bytes32Hex } from '@sdk-src/core/types/primitives.js';
 
-import {
-  decodeHostConfig,
-  HOST_CONFIG_DISCRIMINATOR,
-} from "./internal/generated/zamaHost/accounts/index.js";
+import { decodeHostConfig, HOST_CONFIG_DISCRIMINATOR } from './internal/generated/zamaHost/accounts/index.js';
 
 import {
   SPL_MINT_ACCOUNT_SPACE,
@@ -50,11 +46,11 @@ import {
   initializeMint2Instruction,
   mintToInstruction,
   setComputeUnitLimitInstruction,
-} from "./spl";
+} from './spl';
 
-import { findHostConfigPda } from "./internal/generated/zamaHost/pdas/index.js";
-import { ZAMA_HOST_PROGRAM_ADDRESS } from "./internal/generated/zamaHost/programAddress.js";
-import { vaultModule, sdkHandleModule } from "./lazy-modules";
+import { findHostConfigPda } from './internal/generated/zamaHost/pdas/index.js';
+import { ZAMA_HOST_PROGRAM_ADDRESS } from './internal/generated/zamaHost/programAddress.js';
+import { vaultModule, sdkHandleModule } from './lazy-modules';
 
 // The vault/SDK loaders live in lazy-modules.ts — see there for why they must stay dynamic
 // imports (the offline `bun test src` run has no SDK dependency graph to resolve).
@@ -66,7 +62,7 @@ const PROVISIONING_COMPUTE_UNIT_LIMIT = 1_400_000;
 const LAMPORTS_PER_SOL = 1_000_000_000n;
 const EUINT64_FHE_TYPE_ID = 5;
 // Byte-identical to `confidential_token::state`: the label of a token account's balance value.
-const BALANCE_LABEL = new TextEncoder().encode("balance_________________________");
+const BALANCE_LABEL = new TextEncoder().encode('balance_________________________');
 
 const addressEncoder = getAddressEncoder();
 const encodeAddress = (value: Address): Uint8Array => new Uint8Array(addressEncoder.encode(value));
@@ -84,7 +80,7 @@ export const hostConfigAddress = async (): Promise<Address> => {
 export const zamaEventAuthorityAddress = async (): Promise<Address> => {
   const [eventAuthority] = await getProgramDerivedAddress({
     programAddress: ZAMA_HOST_PROGRAM_ADDRESS,
-    seeds: [new TextEncoder().encode("__event_authority")],
+    seeds: [new TextEncoder().encode('__event_authority')],
   });
   return eventAuthority;
 };
@@ -92,7 +88,7 @@ export const zamaEventAuthorityAddress = async (): Promise<Address> => {
 /** BPF upgradeable loader `ProgramData` PDA for zama-host (`[program_id]` under the loader). */
 export const zamaHostProgramDataAddress = async (): Promise<Address> => {
   const [programData] = await getProgramDerivedAddress({
-    programAddress: "BPFLoaderUpgradeab1e11111111111111111111111" as Address,
+    programAddress: 'BPFLoaderUpgradeab1e11111111111111111111111' as Address,
     seeds: [addressEncoder.encode(ZAMA_HOST_PROGRAM_ADDRESS)],
   });
   return programData;
@@ -142,13 +138,13 @@ export const createProvisioningContext = (
       const signedTransaction = await signTransactionMessageWithSigners(message);
       assertIsTransactionWithBlockhashLifetime(signedTransaction);
       await sendAndConfirm(signedTransaction, {
-        commitment: "confirmed",
+        commitment: 'confirmed',
         ...(options.skipPreflight ? { skipPreflight: true } : {}),
       });
     },
     async airdropSol(recipient, sol) {
       const signature = await rpc
-        .requestAirdrop(recipient, lamports(sol * LAMPORTS_PER_SOL), { commitment: "confirmed" })
+        .requestAirdrop(recipient, lamports(sol * LAMPORTS_PER_SOL), { commitment: 'confirmed' })
         .send();
       const deadline = Date.now() + 30_000;
       for (;;) {
@@ -156,7 +152,7 @@ export const createProvisioningContext = (
         const status = value[0];
         if (status?.err) throw new Error(`airdrop to ${recipient} failed: ${JSON.stringify(status.err)}`);
         const level = status?.confirmationStatus;
-        if (level === "confirmed" || level === "finalized") return;
+        if (level === 'confirmed' || level === 'finalized') return;
         if (Date.now() >= deadline) throw new Error(`airdrop to ${recipient} did not confirm within 30s`);
         await Bun.sleep(500);
       }
@@ -177,9 +173,9 @@ export type GeneratedKeypair = {
  * user-decrypt secret key.
  */
 export const generateSolanaKeypair = async (): Promise<GeneratedKeypair> => {
-  const pair = (await crypto.subtle.generateKey("Ed25519", true, ["sign", "verify"])) as CryptoKeyPair;
-  const pkcs8 = new Uint8Array(await crypto.subtle.exportKey("pkcs8", pair.privateKey));
-  const publicKey = new Uint8Array(await crypto.subtle.exportKey("raw", pair.publicKey));
+  const pair = (await crypto.subtle.generateKey('Ed25519', true, ['sign', 'verify'])) as CryptoKeyPair;
+  const pkcs8 = new Uint8Array(await crypto.subtle.exportKey('pkcs8', pair.privateKey));
+  const publicKey = new Uint8Array(await crypto.subtle.exportKey('raw', pair.publicKey));
   const bytes = new Uint8Array(64);
   // An Ed25519 PKCS#8 blob is a fixed 16-byte DER header followed by the 32-byte seed.
   bytes.set(pkcs8.subarray(pkcs8.length - 32), 0);
@@ -202,7 +198,11 @@ export const createSplMint = async (
       space: SPL_MINT_ACCOUNT_SPACE,
       owner: SPL_TOKEN_PROGRAM_ADDRESS,
     }),
-    initializeMint2Instruction({ mint: mint.address, decimals: params.decimals, mintAuthority: params.authority.address }),
+    initializeMint2Instruction({
+      mint: mint.address,
+      decimals: params.decimals,
+      mintAuthority: params.authority.address,
+    }),
   ]);
   return mint.address;
 };
@@ -217,14 +217,15 @@ export const mintSplTo = async (
     readonly baseUnits: bigint;
   },
 ): Promise<Address> => {
-  const ata = await associatedTokenAddress(
-    params.recipient,
-    params.mint,
-    SPL_TOKEN_PROGRAM_ADDRESS,
-  );
+  const ata = await associatedTokenAddress(params.recipient, params.mint, SPL_TOKEN_PROGRAM_ADDRESS);
   await context.sendTransaction(params.authority, [
     createIdempotentAtaInstruction({ payer: params.authority, ata, owner: params.recipient, mint: params.mint }),
-    mintToInstruction({ mint: params.mint, destination: ata, authority: params.authority, baseUnits: params.baseUnits }),
+    mintToInstruction({
+      mint: params.mint,
+      destination: ata,
+      authority: params.authority,
+      baseUnits: params.baseUnits,
+    }),
   ]);
   return ata;
 };
@@ -304,19 +305,19 @@ export const wrapUnderlying = async (
  */
 export const readHostChainId = async (context: SolanaProvisioningContext): Promise<bigint> => {
   const vault = await vaultModule();
-  const configInfo = await fetchEncodedAccount(context.rpc, await hostConfigAddress(), { commitment: "confirmed" });
+  const configInfo = await fetchEncodedAccount(context.rpc, await hostConfigAddress(), { commitment: 'confirmed' });
   if (
     !configInfo.exists ||
     configInfo.programAddress !== vault.ZAMA_HOST_PROGRAM_ADDRESS ||
     !bytesEqual(configInfo.data.subarray(0, 8), new Uint8Array(HOST_CONFIG_DISCRIMINATOR))
   ) {
-    throw new Error("HostConfig account is missing or has the wrong owner or discriminator");
+    throw new Error('HostConfig account is missing or has the wrong owner or discriminator');
   }
   // Decoded by the generated Codama client, so the field layout tracks the committed IDL instead
   // of a hand-maintained byte offset. The discriminator constant is generated from it too.
   const { data: config } = decodeHostConfig(configInfo);
   if ((config.chainId & (1n << 63n)) === 0n) {
-    throw new Error("HostConfig chain id is missing the Solana high bit");
+    throw new Error('HostConfig chain id is missing the Solana high bit');
   }
   return config.chainId;
 };
@@ -338,7 +339,7 @@ export type BalanceState = {
  * consumes it. Ported assertions, in order:
  * - the confidential token account PDA exists and is owned by the confidential-token program (its
  *   `(mint, owner)` identity is pinned by the PDA derivation itself, so the body is not re-decoded);
- * - the balance `EncryptedValue` account decodes cleanly (MMR invariant — enforced inside
+ * - the balance `EncryptedState` account decodes cleanly (MMR invariant — enforced inside
  *   `getEncryptedState`) and its body is the canonical balance identity: the token program,
  *   the token account as authority, the mint as scope, and the balance label;
  * - the current handle is a version-0 euint64 handle (all-zero rejected: type 0 is not euint64);
@@ -358,23 +359,23 @@ export const readTokenBalanceState = async (
   const { bytes32HexToHandle } = await sdkHandleModule();
   const { mint, owner } = params;
   const tokenAccount = await vault.tokenAccountAddress(mint, owner);
-  const encryptedValueAddress = await vault.balanceValueAddress(mint, tokenAccount);
+  const encryptedStateAddress = await vault.tokenStateAddress(mint, tokenAccount);
 
-  const tokenAccountInfo = await fetchEncodedAccount(context.rpc, tokenAccount, { commitment: "confirmed" });
+  const tokenAccountInfo = await fetchEncodedAccount(context.rpc, tokenAccount, { commitment: 'confirmed' });
   if (!tokenAccountInfo.exists || tokenAccountInfo.programAddress !== vault.CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS) {
     throw new Error(`confidential token account for (${mint}, ${owner}) is missing or not program-owned`);
   }
 
-  const state = await vault.getEncryptedState(context.rpc, encryptedValueAddress, { commitment: "confirmed" });
+  const state = await vault.getEncryptedState(context.rpc, encryptedStateAddress, { commitment: 'confirmed' });
   if (
     state.program !== vault.CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS ||
     state.authority !== tokenAccount ||
     !bytesEqual(state.scope, encodeAddress(mint))
   ) {
-    throw new Error("balance encrypted value body does not match its canonical derivation");
+    throw new Error('balance encrypted value body does not match its canonical derivation');
   }
 
-  const currentHandle = `0x${Buffer.from(encryptedStateHandle(state, BALANCE_LABEL)).toString("hex")}` as Bytes32Hex;
+  const currentHandle = `0x${Buffer.from(encryptedStateHandle(state, BALANCE_LABEL)).toString('hex')}` as Bytes32Hex;
   const handle = bytes32HexToHandle(currentHandle); // throws on a bad handle version or FHE type id
   if (handle.fheTypeId !== EUINT64_FHE_TYPE_ID) {
     throw new Error(`balance handle is not a euint64 handle (FHE type id ${handle.fheTypeId})`);
@@ -382,7 +383,7 @@ export const readTokenBalanceState = async (
 
   const chainId = await readHostChainId(context);
   if (handle.chainId !== chainId) {
-    throw new Error("balance handle chain id does not match the Solana HostConfig");
+    throw new Error('balance handle chain id does not match the Solana HostConfig');
   }
 
   return {
@@ -390,7 +391,7 @@ export const readTokenBalanceState = async (
     mint,
     owner,
     tokenAccount,
-    encryptedState: encryptedValueAddress,
+    encryptedState: encryptedStateAddress,
     currentHandle,
     chainId: chainId.toString(),
   };

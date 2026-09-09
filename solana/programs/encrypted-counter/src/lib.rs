@@ -16,8 +16,7 @@ pub use state::*;
 
 use anchor_lang::prelude::*;
 use zama_fhe::{
-    ExecutionCpiAccounts, ExecutionEncryptedValueAccountAuthority, FheExecution, Output, Scalar,
-    State, Uint,
+    ExecutionAuthority, ExecutionCpiAccounts, FheExecution, Output, Scalar, State, Uint,
 };
 use zama_host::program::ZamaHost;
 
@@ -62,7 +61,7 @@ pub mod encrypted_counter {
         let state = State::new(&account);
         let output = state.set(count_key()).allow(ctx.accounts.owner.key());
         let execution = FheExecution::build(
-            ExecutionEncryptedValueAccountAuthority::new(ctx.accounts.counter_authority.key()),
+            ExecutionAuthority::new(ctx.accounts.counter_authority.key()),
             |builder| {
                 builder.trivial_encrypt_u64(0, Output::state(output))?;
                 Ok(())
@@ -78,7 +77,7 @@ pub mod encrypted_counter {
         execution.invoke(
             ExecutionCpiAccounts {
                 payer: ctx.accounts.owner.to_account_info(),
-                encrypted_value_account_authority: ctx.accounts.counter_authority.to_account_info(),
+                authority: ctx.accounts.counter_authority.to_account_info(),
                 host_config: ctx.accounts.host_config.to_account_info(),
                 deny_scope_records: ctx.remaining_accounts.to_vec(),
                 system_program: ctx.accounts.system_program.to_account_info(),
@@ -102,7 +101,7 @@ pub mod encrypted_counter {
             .map_err(invalid_execution)?;
         let output = state.set(count_key()).allow(ctx.accounts.owner.key());
         let execution = FheExecution::build_returning(
-            ExecutionEncryptedValueAccountAuthority::new(ctx.accounts.counter_authority.key()),
+            ExecutionAuthority::new(ctx.accounts.counter_authority.key()),
             |builder| {
                 builder.add(
                     operand,
@@ -124,7 +123,7 @@ pub mod encrypted_counter {
         let handle = execution.invoke(
             ExecutionCpiAccounts {
                 payer: ctx.accounts.owner.to_account_info(),
-                encrypted_value_account_authority: ctx.accounts.counter_authority.to_account_info(),
+                authority: ctx.accounts.counter_authority.to_account_info(),
                 host_config: ctx.accounts.host_config.to_account_info(),
                 deny_scope_records: ctx.remaining_accounts.to_vec(),
                 system_program: ctx.accounts.system_program.to_account_info(),

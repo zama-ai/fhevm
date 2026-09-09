@@ -1,8 +1,8 @@
-import type { Bytes32Hex } from "@sdk-src/core/types/primitives.js";
-import type { SolanaDecryptTrust } from "@sdk-src/solana/index.js";
-import { PreflightError } from "../errors";
+import type { Bytes32Hex } from '@sdk-src/core/types/primitives.js';
+import type { SolanaDecryptTrust } from '@sdk-src/solana/index.js';
+import { PreflightError } from '../errors';
 
-export const SOLANA_CURRENT_USER_DECRYPT_PROFILE = "solana-current-user-decrypt";
+export const SOLANA_CURRENT_USER_DECRYPT_PROFILE = 'solana-current-user-decrypt';
 export const SOLANA_CURRENT_USER_DECRYPT_DESCRIPTION =
   "Decrypt one Solana handle through the public SDK's permit path and assert its plaintext.";
 
@@ -17,16 +17,14 @@ type CurrentUserDecryptSdkInput = {
   trust: SolanaDecryptTrust;
   request: {
     handle: Uint8Array;
-    /** The `EncryptedValue` account the handle lives in; the Connector reads it and proves the leaf. */
+    /** The `EncryptedState` account the handle lives in; the Connector reads it and proves the leaf. */
     encryptedState: Uint8Array;
     durationSeconds: bigint;
     /** The delegator's pubkey on a delegated entry; absent on a direct one. */
     allowedKey?: Uint8Array | undefined;
   };
 };
-type CurrentUserDecryptSdkCall = (
-  input: CurrentUserDecryptSdkInput,
-) => Promise<readonly { value: unknown }[]>;
+type CurrentUserDecryptSdkCall = (input: CurrentUserDecryptSdkInput) => Promise<readonly { value: unknown }[]>;
 
 export type CurrentUserDecryptDependencies = {
   userDecrypt?: CurrentUserDecryptSdkCall;
@@ -34,18 +32,18 @@ export type CurrentUserDecryptDependencies = {
 
 const required = (environment: Environment, name: string): string => {
   const value = environment[name];
-  if (value === undefined || value === "") {
+  if (value === undefined || value === '') {
     throw new PreflightError(`missing env ${name}`);
   }
   return value;
 };
 
 const bytes = (value: string, name: string): Uint8Array => {
-  const hex = value.startsWith("0x") ? value.slice(2) : value;
+  const hex = value.startsWith('0x') ? value.slice(2) : value;
   if (hex.length % 2 !== 0 || !/^[0-9a-f]*$/i.test(hex)) {
     throw new PreflightError(`${name} must be an even-length hex string`);
   }
-  return Uint8Array.from(Buffer.from(hex, "hex"));
+  return Uint8Array.from(Buffer.from(hex, 'hex'));
 };
 
 const bytes32 = (environment: Environment, name: string): Uint8Array => {
@@ -73,13 +71,13 @@ const evmAddress = (value: string, name: string): `0x${string}` => {
 // The source-file SDK dependency exports types from generated `_types`, which is absent in clean
 // CLI checkouts. Keep this structural seam narrow; the real vertical checks the public SDK call.
 const runPublicSdkUserDecrypt: CurrentUserDecryptSdkCall = async (input) => {
-  const solanaModule = "@fhevm/sdk/solana";
-  const solana = await import(solanaModule) as typeof import("@sdk-src/solana/index.js");
+  const solanaModule = '@fhevm/sdk/solana';
+  const solana = (await import(solanaModule)) as typeof import('@sdk-src/solana/index.js');
   const chain = solana.defineFhevmSolanaChain({
     id: input.chainId,
     fhevm: { relayerUrl: input.relayerUrl, verifyingProgramId: input.verifyingProgramId },
   });
-  solana.setFhevmRuntimeConfig({ auth: { type: "ApiKeyHeader", value: input.apiKey } });
+  solana.setFhevmRuntimeConfig({ auth: { type: 'ApiKeyHeader', value: input.apiKey } });
   const client = solana.createFhevmDecryptClient({ chain, trust: input.trust });
   // The permit path: one wallet signature mints a permissive session, the request runs under it.
   const wallet = solana.solanaPermitWalletFromSecretKey(input.secretKey);
@@ -101,53 +99,53 @@ export const runSolanaCurrentUserDecrypt = async (
   environment: Environment = process.env,
   dependencies: CurrentUserDecryptDependencies = {},
 ): Promise<bigint> => {
-  const handle = required(environment, "UD_HANDLE");
-  bytes32Hex(handle, "UD_HANDLE");
-  const expected = BigInt(required(environment, "UD_EXPECTED"));
+  const handle = required(environment, 'UD_HANDLE');
+  bytes32Hex(handle, 'UD_HANDLE');
+  const expected = BigInt(required(environment, 'UD_EXPECTED'));
 
   // The trust configuration: whom the client believes. Signer party ids follow the registry order,
   // the same first-is-party-one assumption the EVM SDK path makes.
-  const kmsSigners = required(environment, "UD_KMS_SIGNERS")
-    .split(",")
+  const kmsSigners = required(environment, 'UD_KMS_SIGNERS')
+    .split(',')
     .map((value) => value.trim())
     .filter(Boolean)
-    .map((value, index) => ({ partyId: index + 1, address: evmAddress(value, "UD_KMS_SIGNERS") }));
+    .map((value, index) => ({ partyId: index + 1, address: evmAddress(value, 'UD_KMS_SIGNERS') }));
   if (kmsSigners.length === 0) {
-    throw new PreflightError("UD_KMS_SIGNERS must contain at least one address");
+    throw new PreflightError('UD_KMS_SIGNERS must contain at least one address');
   }
 
   const userDecrypt = dependencies.userDecrypt ?? runPublicSdkUserDecrypt;
   const clearValues = await userDecrypt({
-    chainId: BigInt(required(environment, "UD_CONTRACTS_CHAIN_ID")),
-    relayerUrl: required(environment, "UD_RELAYER_URL"),
-    verifyingProgramId: bytes32Hex(required(environment, "UD_VERIFYING_PROGRAM_ID"), "UD_VERIFYING_PROGRAM_ID"),
-    apiKey: environment.ZAMA_FHEVM_API_KEY ?? "local",
-    secretKey: bytes32(environment, "UD_SECRET_KEY"),
+    chainId: BigInt(required(environment, 'UD_CONTRACTS_CHAIN_ID')),
+    relayerUrl: required(environment, 'UD_RELAYER_URL'),
+    verifyingProgramId: bytes32Hex(required(environment, 'UD_VERIFYING_PROGRAM_ID'), 'UD_VERIFYING_PROGRAM_ID'),
+    apiKey: environment.ZAMA_FHEVM_API_KEY ?? 'local',
+    secretKey: bytes32(environment, 'UD_SECRET_KEY'),
     trust: {
       kmsSigners,
-      kmsContextId: bytes32Hex(required(environment, "UD_CONTEXT_ID"), "UD_CONTEXT_ID"),
+      kmsContextId: bytes32Hex(required(environment, 'UD_CONTEXT_ID'), 'UD_CONTEXT_ID'),
       // Required, no zero fallback: the Connector only serves the pair the deployed protocol
       // configuration declares, so a guessed epoch fails before the request reaches KMS.
-      kmsEpochId: bytes32Hex(required(environment, "UD_EPOCH_ID"), "UD_EPOCH_ID"),
-      fheParameter: environment.UD_FHE_PARAMETER ?? "test",
+      kmsEpochId: bytes32Hex(required(environment, 'UD_EPOCH_ID'), 'UD_EPOCH_ID'),
+      fheParameter: environment.UD_FHE_PARAMETER ?? 'test',
       gatewayEip712Domain: {
-        name: "Decryption",
-        version: "1",
-        chainId: BigInt(required(environment, "UD_GATEWAY_CHAIN_ID")),
+        name: 'Decryption',
+        version: '1',
+        chainId: BigInt(required(environment, 'UD_GATEWAY_CHAIN_ID')),
         verifyingContract: evmAddress(
-          required(environment, "UD_GATEWAY_DECRYPTION_CONTRACT"),
-          "UD_GATEWAY_DECRYPTION_CONTRACT",
+          required(environment, 'UD_GATEWAY_DECRYPTION_CONTRACT'),
+          'UD_GATEWAY_DECRYPTION_CONTRACT',
         ),
       },
     },
     request: {
-      handle: bytes(handle, "UD_HANDLE"),
-      encryptedState: bytes32(environment, "UD_ENCRYPTED_STATE"),
-      durationSeconds: BigInt(environment.UD_DURATION_SECONDS ?? "3600"),
+      handle: bytes(handle, 'UD_HANDLE'),
+      encryptedState: bytes32(environment, 'UD_ENCRYPTED_STATE'),
+      durationSeconds: BigInt(environment.UD_DURATION_SECONDS ?? '3600'),
       // Optional: the delegated form. The signer stays UD_SECRET_KEY (the delegate); the allowed
       // key names whose allow on the handle is asked under.
-      ...(environment.UD_ALLOWED_KEY !== undefined && environment.UD_ALLOWED_KEY !== ""
-        ? { allowedKey: bytes32(environment, "UD_ALLOWED_KEY") }
+      ...(environment.UD_ALLOWED_KEY !== undefined && environment.UD_ALLOWED_KEY !== ''
+        ? { allowedKey: bytes32(environment, 'UD_ALLOWED_KEY') }
         : {}),
     },
   });
@@ -156,8 +154,13 @@ export const runSolanaCurrentUserDecrypt = async (
   }
 
   const decrypted = clearValues[0]!.value;
-  if (typeof decrypted !== "bigint" && typeof decrypted !== "number" && typeof decrypted !== "boolean" && typeof decrypted !== "string") {
-    throw new Error("user-decrypt returned a non-scalar cleartext");
+  if (
+    typeof decrypted !== 'bigint' &&
+    typeof decrypted !== 'number' &&
+    typeof decrypted !== 'boolean' &&
+    typeof decrypted !== 'string'
+  ) {
+    throw new Error('user-decrypt returned a non-scalar cleartext');
   }
   const value = BigInt(decrypted);
   if (value !== expected) {

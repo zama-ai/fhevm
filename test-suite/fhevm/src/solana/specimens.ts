@@ -43,7 +43,7 @@ export type SpecimenValue = {
   /** The program's authority PDA: the value's `encrypted_value_account_authority`. */
   readonly authority: Address;
   /** The value's `EncryptedValue` account. */
-  readonly encryptedValue: Address;
+  readonly encryptedState: Address;
 };
 
 /** A specimen value right after a write, with the handle that write installed. */
@@ -64,7 +64,7 @@ const specimenValue = async (
   authority,
   // The specimen's application is `(program, scope = its state PDA)`; the value hangs off the
   // authority PDA under that scope.
-  encryptedValue: await solanaEncryptedStateAddress(addressBytes(ZAMA_HOST_PROGRAM_ADDRESS), {
+  encryptedState: await solanaEncryptedStateAddress(addressBytes(ZAMA_HOST_PROGRAM_ADDRESS), {
     program: addressBytes(program),
     authority: addressBytes(authority),
     scope: addressBytes(state),
@@ -98,7 +98,7 @@ const hostAccounts = async () => ({
 export const buildInitializeCounterInstruction = async (owner: TransactionSigner): Promise<Instruction> =>
   getInitializeCounterInstructionAsync({
     owner,
-    encryptedState: (await counterValue(owner.address)).encryptedValue,
+    encryptedState: (await counterValue(owner.address)).encryptedState,
     ...(await hostAccounts()),
   });
 
@@ -106,7 +106,7 @@ export const buildInitializeCounterInstruction = async (owner: TransactionSigner
 export const buildIncrementCounterInstruction = async (owner: TransactionSigner, amount: bigint): Promise<Instruction> =>
   getIncrementInstructionAsync({
     owner,
-    encryptedState: (await counterValue(owner.address)).encryptedValue,
+    encryptedState: (await counterValue(owner.address)).encryptedState,
     ...(await hostAccounts()),
     amount,
   });
@@ -123,7 +123,7 @@ const writeSpecimenValue = async (
   instruction: Instruction,
 ): Promise<SpecimenHandle> => {
   await context.sendTransaction(owner, [instruction], { skipPreflight: true });
-  return { value, handle: await currentHandle(context, value.encryptedValue, value.key) };
+  return { value, handle: await currentHandle(context, value.encryptedState, value.key) };
 };
 
 /** Creates `owner`'s counter at 0. */
@@ -156,7 +156,7 @@ export const initializeChain = async (
     context,
     owner,
     value,
-    await getInitializeChainInstructionAsync({ owner, encryptedState: value.encryptedValue, ...(await hostAccounts()) }),
+    await getInitializeChainInstructionAsync({ owner, encryptedState: value.encryptedState, ...(await hostAccounts()) }),
   );
 };
 
@@ -177,7 +177,7 @@ export const extendChain = async (
     value,
     await getExtendInstructionAsync({
       owner,
-      encryptedState: value.encryptedValue,
+      encryptedState: value.encryptedState,
       ...(await hostAccounts()),
       links: params.links,
       amount: params.amount,

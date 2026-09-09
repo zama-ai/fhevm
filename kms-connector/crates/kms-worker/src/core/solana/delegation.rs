@@ -37,20 +37,20 @@ use crate::core::solana_acl::{SolanaPubkeyBytes, decode_user_decryption_delegati
 /// The sentinel a wildcard row carries in place of an encrypted state authority.
 /// Reserved by the host program, which is why no real encrypted state authority can
 /// collide with it.
-pub use crate::core::solana_acl::WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY;
+pub use crate::core::solana_acl::WILDCARD_AUTHORITY;
 
-/// The canonical delegation-record address for a `(delegator, delegate, encrypted_value_account_authority)` tuple.
+/// The canonical delegation-record address for a `(delegator, delegate, authority)` tuple.
 pub fn delegation_address(
     program_id: SolanaPubkeyBytes,
     delegator: SolanaPubkeyBytes,
     delegate: SolanaPubkeyBytes,
-    encrypted_value_account_authority: SolanaPubkeyBytes,
+    authority: SolanaPubkeyBytes,
 ) -> (SolanaPubkeyBytes, u8) {
     crate::core::solana_acl::user_decryption_delegation_address(
         program_id,
         delegator,
         delegate,
-        encrypted_value_account_authority,
+        authority,
     )
 }
 
@@ -68,7 +68,7 @@ pub fn wildcard_delegation_address(
         program_id,
         delegator,
         delegate,
-        WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY,
+        WILDCARD_AUTHORITY,
     )
 }
 
@@ -85,7 +85,7 @@ pub enum AuthorizedRow {
     Wildcard,
 }
 
-/// Checks that `delegator` has a live delegation to `delegate` covering `encrypted_value_account_authority` at this
+/// Checks that `delegator` has a live delegation to `delegate` covering `authority` at this
 /// observation point: the row for that authority, or the delegator's wildcard row. Names the row
 /// that carried the grant.
 ///
@@ -96,14 +96,14 @@ pub fn check_delegation(
     program_id: SolanaPubkeyBytes,
     delegator: SolanaPubkeyBytes,
     delegate: SolanaPubkeyBytes,
-    encrypted_value_account_authority: SolanaPubkeyBytes,
+    authority: SolanaPubkeyBytes,
 ) -> Result<AuthorizedRow, DelegationFailure> {
     let exact = match check_row(
         snapshot,
         program_id,
         delegator,
         delegate,
-        encrypted_value_account_authority,
+        authority,
     )? {
         RowOutcome::Live => return Ok(AuthorizedRow::Exact),
         RowOutcome::NotLive(reason) => reason,
@@ -113,7 +113,7 @@ pub fn check_delegation(
         program_id,
         delegator,
         delegate,
-        WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY,
+        WILDCARD_AUTHORITY,
     )? {
         RowOutcome::Live => return Ok(AuthorizedRow::Wildcard),
         RowOutcome::NotLive(reason) => reason,
@@ -143,19 +143,19 @@ enum RowOutcome {
     NotLive(DelegationFailure),
 }
 
-/// Evaluates the single row at the canonical address of `(delegator, delegate, encrypted_value_account_authority)`.
+/// Evaluates the single row at the canonical address of `(delegator, delegate, authority)`.
 fn check_row(
     snapshot: &HostSnapshot,
     program_id: SolanaPubkeyBytes,
     delegator: SolanaPubkeyBytes,
     delegate: SolanaPubkeyBytes,
-    encrypted_value_account_authority: SolanaPubkeyBytes,
+    authority: SolanaPubkeyBytes,
 ) -> Result<RowOutcome, SnapshotError> {
     let (account_key, canonical_bump) = delegation_address(
         program_id,
         delegator,
         delegate,
-        encrypted_value_account_authority,
+        authority,
     );
 
     let Some(account) = snapshot.account(&account_key)? else {
@@ -190,7 +190,7 @@ fn check_row(
     // The address is not taken as proof of what the record says.
     if record.delegator != delegator
         || record.delegate != delegate
-        || record.encrypted_value_account_authority != encrypted_value_account_authority
+        || record.authority != authority
     {
         return Ok(RowOutcome::NotLive(DelegationFailure::TupleMismatch {
             account_key,

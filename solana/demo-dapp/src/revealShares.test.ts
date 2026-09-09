@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  balanceValueAddress: vi.fn(),
+  tokenStateAddress: vi.fn(),
   createFhevmDecryptClient: vi.fn(),
   userDecrypt: vi.fn(),
   getAccountInfo: vi.fn(),
@@ -20,7 +20,7 @@ vi.mock('@fhevm/sdk/solana', () => ({
   setFhevmRuntimeConfig: vi.fn(),
 }));
 vi.mock('./vault/index.js', () => ({
-  balanceValueAddress: mocks.balanceValueAddress,
+  tokenStateAddress: mocks.tokenStateAddress,
   getEncryptedState: mocks.getEncryptedState,
   tokenAccountAddress: mocks.tokenAccountAddress,
 }));
@@ -80,10 +80,18 @@ describe('confidential balance reveal evidence', () => {
       },
     });
     mocks.signPermit.mockResolvedValue(PERMIT_SESSION);
-    mocks.createFhevmDecryptClient.mockReturnValue({ ready: Promise.resolve(), signPermit: mocks.signPermit, userDecrypt: mocks.userDecrypt });
+    mocks.createFhevmDecryptClient.mockReturnValue({
+      ready: Promise.resolve(),
+      signPermit: mocks.signPermit,
+      userDecrypt: mocks.userDecrypt,
+    });
     mocks.tokenAccountAddress.mockResolvedValue('token-account');
-    mocks.balanceValueAddress.mockResolvedValue('encrypted-value-account');
-    mocks.getEncryptedState.mockResolvedValue({ slots: [{ key: new TextEncoder().encode('balance_________________________'), handle: new Uint8Array(32).fill(0x12) }] });
+    mocks.tokenStateAddress.mockResolvedValue('encrypted-value-account');
+    mocks.getEncryptedState.mockResolvedValue({
+      slots: [
+        { key: new TextEncoder().encode('balance_________________________'), handle: new Uint8Array(32).fill(0x12) },
+      ],
+    });
   });
 
   test('records successful SDK correlation without persisting the clear value', async () => {
@@ -177,24 +185,20 @@ describe('confidential balance account discovery', () => {
     mocks.getAccountInfo.mockReturnValueOnce({
       send: vi.fn().mockResolvedValue({ value: null }),
     });
-    await expect(
-      hasConfidentialBalanceAccount(session, session.config.mints.joinConfidential),
-    ).resolves.toBe(false);
+    await expect(hasConfidentialBalanceAccount(session, session.config.mints.joinConfidential)).resolves.toBe(false);
 
     mocks.getAccountInfo.mockReturnValueOnce({
       send: vi.fn().mockResolvedValue({ value: { owner: session.config.programs.token } }),
     });
-    await expect(
-      hasConfidentialBalanceAccount(session, session.config.mints.joinConfidential),
-    ).resolves.toBe(true);
+    await expect(hasConfidentialBalanceAccount(session, session.config.mints.joinConfidential)).resolves.toBe(true);
   });
 
   test('rejects a canonical account owned by another program', async () => {
     mocks.getAccountInfo.mockReturnValue({
       send: vi.fn().mockResolvedValue({ value: { owner: 'unexpected-program' } }),
     });
-    await expect(
-      hasConfidentialBalanceAccount(session, session.config.mints.joinConfidential),
-    ).rejects.toThrow('unexpected program');
+    await expect(hasConfidentialBalanceAccount(session, session.config.mints.joinConfidential)).rejects.toThrow(
+      'unexpected program',
+    );
   });
 });

@@ -6,7 +6,7 @@
 //! cannot hold different opinions about the layout. What is local is the validated type: it
 //! has no public constructor, so "authorize a request nobody validated" is not expressible.
 //!
-//! Three absences are deliberate. No `encrypted_value_account_authority` field and no
+//! Three absences are deliberate. No `authority` field and no
 //! `(program, scope)` field, in either the wire form or the validated form: both are properties
 //! of the handle's encrypted state, and the only way to learn them is to read and
 //! validate that account. A request cannot name them, so a substituted authority is not a check

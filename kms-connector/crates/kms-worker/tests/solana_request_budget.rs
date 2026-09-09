@@ -47,13 +47,8 @@ fn request_naming(wallet: &Wallet, handles: &[[u8; 32]]) -> SolanaUserDecryptReq
     for (index, handle) in handles.iter().enumerate() {
         let mut label = LABEL;
         label[0..2].copy_from_slice(&(index as u16).to_be_bytes());
-        let mut encrypted_state = EncryptedStateFixture::in_application(
-            APP_PROGRAM,
-            AUTHORITY,
-            SCOPE,
-            label,
-            *handle,
-        );
+        let mut encrypted_state =
+            EncryptedStateFixture::in_application(APP_PROGRAM, AUTHORITY, SCOPE, label, *handle);
         encrypted_state.allow(wallet.pubkey());
         builder = builder.direct(&encrypted_state, *handle);
     }

@@ -4,7 +4,7 @@
 //! `dep_chain_mollusk` fixtures.
 
 use anchor_lang::prelude::*;
-use zama_fhe::{AppScope, StateId};
+use zama_fhe::StateId;
 
 /// Seed of the per-owner chain state PDA.
 pub const CHAIN_SEED: &[u8] = b"dep-chain";
@@ -22,15 +22,6 @@ pub fn chain_address(owner: Pubkey) -> (Pubkey, u8) {
 
 pub fn chain_authority_address(chain: Pubkey) -> (Pubkey, u8) {
     Pubkey::find_program_address(&[CHAIN_AUTHORITY_SEED, chain.as_ref()], &crate::id())
-}
-
-/// The application one chain is to the host: this program, scoped to the chain account.
-/// HCU metering and the deny list key on it.
-pub fn chain_app(chain: Pubkey) -> AppScope {
-    AppScope {
-        program: crate::id(),
-        scope: chain.to_bytes(),
-    }
 }
 
 /// The chain's encrypted tail value: the chain's application, authority its PDA.

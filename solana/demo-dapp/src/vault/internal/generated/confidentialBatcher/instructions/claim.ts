@@ -63,8 +63,8 @@ export type ClaimInstruction<
   TAccountUserPayoutAta extends string | AccountMeta<string> = string,
   TAccountBatchPayoutTokenAccount extends string | AccountMeta<string> = string,
   TAccountUserPayoutTokenAccount extends string | AccountMeta<string> = string,
-  TAccountBatchPayoutBalanceValue extends string | AccountMeta<string> = string,
-  TAccountUserPayoutBalanceValue extends string | AccountMeta<string> = string,
+  TAccountBatchPayoutBalanceState extends string | AccountMeta<string> = string,
+  TAccountUserPayoutBalanceState extends string | AccountMeta<string> = string,
   TAccountZamaEventAuthority extends string | AccountMeta<string> = string,
   TAccountZamaProgram extends string | AccountMeta<string> = '6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu',
   TAccountHostConfig extends string | AccountMeta<string> = string,
@@ -103,12 +103,12 @@ export type ClaimInstruction<
       TAccountUserPayoutTokenAccount extends string
         ? WritableAccount<TAccountUserPayoutTokenAccount>
         : TAccountUserPayoutTokenAccount,
-      TAccountBatchPayoutBalanceValue extends string
-        ? WritableAccount<TAccountBatchPayoutBalanceValue>
-        : TAccountBatchPayoutBalanceValue,
-      TAccountUserPayoutBalanceValue extends string
-        ? WritableAccount<TAccountUserPayoutBalanceValue>
-        : TAccountUserPayoutBalanceValue,
+      TAccountBatchPayoutBalanceState extends string
+        ? WritableAccount<TAccountBatchPayoutBalanceState>
+        : TAccountBatchPayoutBalanceState,
+      TAccountUserPayoutBalanceState extends string
+        ? WritableAccount<TAccountUserPayoutBalanceState>
+        : TAccountUserPayoutBalanceState,
       TAccountZamaEventAuthority extends string
         ? ReadonlyAccount<TAccountZamaEventAuthority>
         : TAccountZamaEventAuthority,
@@ -160,8 +160,8 @@ export type ClaimAsyncInput<
   TAccountUserPayoutAta extends string = string,
   TAccountBatchPayoutTokenAccount extends string = string,
   TAccountUserPayoutTokenAccount extends string = string,
-  TAccountBatchPayoutBalanceValue extends string = string,
-  TAccountUserPayoutBalanceValue extends string = string,
+  TAccountBatchPayoutBalanceState extends string = string,
+  TAccountUserPayoutBalanceState extends string = string,
   TAccountZamaEventAuthority extends string = string,
   TAccountZamaProgram extends string = string,
   TAccountHostConfig extends string = string,
@@ -169,7 +169,7 @@ export type ClaimAsyncInput<
   TAccountConfidentialTokenProgram extends string = string,
   TAccountSystemProgram extends string = string,
 > = {
-  /** Pays the claim encrypted value account and transfer output rent. Anyone. */
+  /** Pays the claim encrypted State and transfer output rent. Anyone. */
   payer: TransactionSigner<TAccountPayer>;
   /** seeds. Not a signer — claims are permissionless pulls. */
   user: Address<TAccountUser>;
@@ -196,8 +196,8 @@ export type ClaimAsyncInput<
    * token CPI and pinned below.
    */
   userPayoutTokenAccount: Address<TAccountUserPayoutTokenAccount>;
-  batchPayoutBalanceValue: Address<TAccountBatchPayoutBalanceValue>;
-  userPayoutBalanceValue: Address<TAccountUserPayoutBalanceValue>;
+  batchPayoutBalanceState: Address<TAccountBatchPayoutBalanceState>;
+  userPayoutBalanceState: Address<TAccountUserPayoutBalanceState>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
   /** ZamaHost program (FHE compute + ACL). */
   zamaProgram?: Address<TAccountZamaProgram>;
@@ -225,8 +225,8 @@ export async function getClaimInstructionAsync<
   TAccountUserPayoutAta extends string,
   TAccountBatchPayoutTokenAccount extends string,
   TAccountUserPayoutTokenAccount extends string,
-  TAccountBatchPayoutBalanceValue extends string,
-  TAccountUserPayoutBalanceValue extends string,
+  TAccountBatchPayoutBalanceState extends string,
+  TAccountUserPayoutBalanceState extends string,
   TAccountZamaEventAuthority extends string,
   TAccountZamaProgram extends string,
   TAccountHostConfig extends string,
@@ -251,8 +251,8 @@ export async function getClaimInstructionAsync<
     TAccountUserPayoutAta,
     TAccountBatchPayoutTokenAccount,
     TAccountUserPayoutTokenAccount,
-    TAccountBatchPayoutBalanceValue,
-    TAccountUserPayoutBalanceValue,
+    TAccountBatchPayoutBalanceState,
+    TAccountUserPayoutBalanceState,
     TAccountZamaEventAuthority,
     TAccountZamaProgram,
     TAccountHostConfig,
@@ -279,8 +279,8 @@ export async function getClaimInstructionAsync<
     TAccountUserPayoutAta,
     TAccountBatchPayoutTokenAccount,
     TAccountUserPayoutTokenAccount,
-    TAccountBatchPayoutBalanceValue,
-    TAccountUserPayoutBalanceValue,
+    TAccountBatchPayoutBalanceState,
+    TAccountUserPayoutBalanceState,
     TAccountZamaEventAuthority,
     TAccountZamaProgram,
     TAccountHostConfig,
@@ -324,12 +324,12 @@ export async function getClaimInstructionAsync<
       value: input.userPayoutTokenAccount ?? null,
       isWritable: true,
     },
-    batchPayoutBalanceValue: {
-      value: input.batchPayoutBalanceValue ?? null,
+    batchPayoutBalanceState: {
+      value: input.batchPayoutBalanceState ?? null,
       isWritable: true,
     },
-    userPayoutBalanceValue: {
-      value: input.userPayoutBalanceValue ?? null,
+    userPayoutBalanceState: {
+      value: input.userPayoutBalanceState ?? null,
       isWritable: true,
     },
     zamaEventAuthority: {
@@ -392,8 +392,8 @@ export async function getClaimInstructionAsync<
       getAccountMeta('userPayoutAta', accounts.userPayoutAta),
       getAccountMeta('batchPayoutTokenAccount', accounts.batchPayoutTokenAccount),
       getAccountMeta('userPayoutTokenAccount', accounts.userPayoutTokenAccount),
-      getAccountMeta('batchPayoutBalanceValue', accounts.batchPayoutBalanceValue),
-      getAccountMeta('userPayoutBalanceValue', accounts.userPayoutBalanceValue),
+      getAccountMeta('batchPayoutBalanceState', accounts.batchPayoutBalanceState),
+      getAccountMeta('userPayoutBalanceState', accounts.userPayoutBalanceState),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
       getAccountMeta('zamaProgram', accounts.zamaProgram),
       getAccountMeta('hostConfig', accounts.hostConfig),
@@ -420,8 +420,8 @@ export async function getClaimInstructionAsync<
     TAccountUserPayoutAta,
     TAccountBatchPayoutTokenAccount,
     TAccountUserPayoutTokenAccount,
-    TAccountBatchPayoutBalanceValue,
-    TAccountUserPayoutBalanceValue,
+    TAccountBatchPayoutBalanceState,
+    TAccountUserPayoutBalanceState,
     TAccountZamaEventAuthority,
     TAccountZamaProgram,
     TAccountHostConfig,
@@ -447,8 +447,8 @@ export type ClaimInput<
   TAccountUserPayoutAta extends string = string,
   TAccountBatchPayoutTokenAccount extends string = string,
   TAccountUserPayoutTokenAccount extends string = string,
-  TAccountBatchPayoutBalanceValue extends string = string,
-  TAccountUserPayoutBalanceValue extends string = string,
+  TAccountBatchPayoutBalanceState extends string = string,
+  TAccountUserPayoutBalanceState extends string = string,
   TAccountZamaEventAuthority extends string = string,
   TAccountZamaProgram extends string = string,
   TAccountHostConfig extends string = string,
@@ -456,7 +456,7 @@ export type ClaimInput<
   TAccountConfidentialTokenProgram extends string = string,
   TAccountSystemProgram extends string = string,
 > = {
-  /** Pays the claim encrypted value account and transfer output rent. Anyone. */
+  /** Pays the claim encrypted State and transfer output rent. Anyone. */
   payer: TransactionSigner<TAccountPayer>;
   /** seeds. Not a signer — claims are permissionless pulls. */
   user: Address<TAccountUser>;
@@ -483,8 +483,8 @@ export type ClaimInput<
    * token CPI and pinned below.
    */
   userPayoutTokenAccount: Address<TAccountUserPayoutTokenAccount>;
-  batchPayoutBalanceValue: Address<TAccountBatchPayoutBalanceValue>;
-  userPayoutBalanceValue: Address<TAccountUserPayoutBalanceValue>;
+  batchPayoutBalanceState: Address<TAccountBatchPayoutBalanceState>;
+  userPayoutBalanceState: Address<TAccountUserPayoutBalanceState>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
   /** ZamaHost program (FHE compute + ACL). */
   zamaProgram?: Address<TAccountZamaProgram>;
@@ -512,8 +512,8 @@ export function getClaimInstruction<
   TAccountUserPayoutAta extends string,
   TAccountBatchPayoutTokenAccount extends string,
   TAccountUserPayoutTokenAccount extends string,
-  TAccountBatchPayoutBalanceValue extends string,
-  TAccountUserPayoutBalanceValue extends string,
+  TAccountBatchPayoutBalanceState extends string,
+  TAccountUserPayoutBalanceState extends string,
   TAccountZamaEventAuthority extends string,
   TAccountZamaProgram extends string,
   TAccountHostConfig extends string,
@@ -538,8 +538,8 @@ export function getClaimInstruction<
     TAccountUserPayoutAta,
     TAccountBatchPayoutTokenAccount,
     TAccountUserPayoutTokenAccount,
-    TAccountBatchPayoutBalanceValue,
-    TAccountUserPayoutBalanceValue,
+    TAccountBatchPayoutBalanceState,
+    TAccountUserPayoutBalanceState,
     TAccountZamaEventAuthority,
     TAccountZamaProgram,
     TAccountHostConfig,
@@ -565,8 +565,8 @@ export function getClaimInstruction<
   TAccountUserPayoutAta,
   TAccountBatchPayoutTokenAccount,
   TAccountUserPayoutTokenAccount,
-  TAccountBatchPayoutBalanceValue,
-  TAccountUserPayoutBalanceValue,
+  TAccountBatchPayoutBalanceState,
+  TAccountUserPayoutBalanceState,
   TAccountZamaEventAuthority,
   TAccountZamaProgram,
   TAccountHostConfig,
@@ -609,12 +609,12 @@ export function getClaimInstruction<
       value: input.userPayoutTokenAccount ?? null,
       isWritable: true,
     },
-    batchPayoutBalanceValue: {
-      value: input.batchPayoutBalanceValue ?? null,
+    batchPayoutBalanceState: {
+      value: input.batchPayoutBalanceState ?? null,
       isWritable: true,
     },
-    userPayoutBalanceValue: {
-      value: input.userPayoutBalanceValue ?? null,
+    userPayoutBalanceState: {
+      value: input.userPayoutBalanceState ?? null,
       isWritable: true,
     },
     zamaEventAuthority: {
@@ -666,8 +666,8 @@ export function getClaimInstruction<
       getAccountMeta('userPayoutAta', accounts.userPayoutAta),
       getAccountMeta('batchPayoutTokenAccount', accounts.batchPayoutTokenAccount),
       getAccountMeta('userPayoutTokenAccount', accounts.userPayoutTokenAccount),
-      getAccountMeta('batchPayoutBalanceValue', accounts.batchPayoutBalanceValue),
-      getAccountMeta('userPayoutBalanceValue', accounts.userPayoutBalanceValue),
+      getAccountMeta('batchPayoutBalanceState', accounts.batchPayoutBalanceState),
+      getAccountMeta('userPayoutBalanceState', accounts.userPayoutBalanceState),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
       getAccountMeta('zamaProgram', accounts.zamaProgram),
       getAccountMeta('hostConfig', accounts.hostConfig),
@@ -694,8 +694,8 @@ export function getClaimInstruction<
     TAccountUserPayoutAta,
     TAccountBatchPayoutTokenAccount,
     TAccountUserPayoutTokenAccount,
-    TAccountBatchPayoutBalanceValue,
-    TAccountUserPayoutBalanceValue,
+    TAccountBatchPayoutBalanceState,
+    TAccountUserPayoutBalanceState,
     TAccountZamaEventAuthority,
     TAccountZamaProgram,
     TAccountHostConfig,
@@ -711,7 +711,7 @@ export type ParsedClaimInstruction<
 > = {
   programAddress: Address<TProgram>;
   accounts: {
-    /** Pays the claim encrypted value account and transfer output rent. Anyone. */
+    /** Pays the claim encrypted State and transfer output rent. Anyone. */
     payer: TAccountMetas[0];
     /** seeds. Not a signer — claims are permissionless pulls. */
     user: TAccountMetas[1];
@@ -738,8 +738,8 @@ export type ParsedClaimInstruction<
      * token CPI and pinned below.
      */
     userPayoutTokenAccount: TAccountMetas[14];
-    batchPayoutBalanceValue: TAccountMetas[15];
-    userPayoutBalanceValue: TAccountMetas[16];
+    batchPayoutBalanceState: TAccountMetas[15];
+    userPayoutBalanceState: TAccountMetas[16];
     zamaEventAuthority: TAccountMetas[17];
     /** ZamaHost program (FHE compute + ACL). */
     zamaProgram: TAccountMetas[18];
@@ -786,8 +786,8 @@ export function parseClaimInstruction<TProgram extends string, TAccountMetas ext
       userPayoutAta: getNextAccount(),
       batchPayoutTokenAccount: getNextAccount(),
       userPayoutTokenAccount: getNextAccount(),
-      batchPayoutBalanceValue: getNextAccount(),
-      userPayoutBalanceValue: getNextAccount(),
+      batchPayoutBalanceState: getNextAccount(),
+      userPayoutBalanceState: getNextAccount(),
       zamaEventAuthority: getNextAccount(),
       zamaProgram: getNextAccount(),
       hostConfig: getNextAccount(),

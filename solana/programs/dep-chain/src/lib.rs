@@ -34,8 +34,7 @@ pub use state::*;
 
 use anchor_lang::prelude::*;
 use zama_fhe::{
-    ExecutionCpiAccounts, ExecutionEncryptedValueAccountAuthority, FheExecution,
-    Output, Scalar, State, Uint,
+    ExecutionAuthority, ExecutionCpiAccounts, FheExecution, Output, Scalar, State, Uint,
 };
 use zama_host::program::ZamaHost;
 
@@ -87,9 +86,11 @@ pub mod dep_chain {
         let account =
             zama_host::EncryptedState::try_deserialize(&mut &info.try_borrow_data()?[..])?;
         let state = State::new(&account);
-        let output = state.set(encrypted_tail_label()).allow(ctx.accounts.owner.key());
+        let output = state
+            .set(encrypted_tail_label())
+            .allow(ctx.accounts.owner.key());
         let execution = FheExecution::build(
-            ExecutionEncryptedValueAccountAuthority::new(ctx.accounts.chain_authority.key()),
+            ExecutionAuthority::new(ctx.accounts.chain_authority.key()),
             |builder| {
                 builder.trivial_encrypt_u64(0, Output::state(output))?;
                 Ok(())
@@ -105,7 +106,7 @@ pub mod dep_chain {
         execution.invoke(
             ExecutionCpiAccounts {
                 payer: ctx.accounts.owner.to_account_info(),
-                encrypted_value_account_authority: ctx.accounts.chain_authority.to_account_info(),
+                authority: ctx.accounts.chain_authority.to_account_info(),
                 host_config: ctx.accounts.host_config.to_account_info(),
                 deny_scope_records: ctx.remaining_accounts.to_vec(),
                 system_program: ctx.accounts.system_program.to_account_info(),
@@ -131,10 +132,14 @@ pub mod dep_chain {
         );
         let chain = ctx.accounts.chain.key();
         let state = State::new(&ctx.accounts.encrypted_state);
-        let operand = state.get::<Uint<64>>(encrypted_tail_label()).map_err(invalid_execution)?;
-        let output = state.set(encrypted_tail_label()).allow(ctx.accounts.owner.key());
+        let operand = state
+            .get::<Uint<64>>(encrypted_tail_label())
+            .map_err(invalid_execution)?;
+        let output = state
+            .set(encrypted_tail_label())
+            .allow(ctx.accounts.owner.key());
         let execution = FheExecution::build(
-            ExecutionEncryptedValueAccountAuthority::new(ctx.accounts.chain_authority.key()),
+            ExecutionAuthority::new(ctx.accounts.chain_authority.key()),
             |builder| {
                 if links == 1 {
                     builder.add(
@@ -173,7 +178,7 @@ pub mod dep_chain {
         execution.invoke(
             ExecutionCpiAccounts {
                 payer: ctx.accounts.owner.to_account_info(),
-                encrypted_value_account_authority: ctx.accounts.chain_authority.to_account_info(),
+                authority: ctx.accounts.chain_authority.to_account_info(),
                 host_config: ctx.accounts.host_config.to_account_info(),
                 deny_scope_records: ctx.remaining_accounts.to_vec(),
                 system_program: ctx.accounts.system_program.to_account_info(),
@@ -236,7 +241,7 @@ pub struct Extend<'info> {
     /// CHECK: PDA signing the host CPI as the encrypted-value authority.
     #[account(seeds = [CHAIN_AUTHORITY_SEED, chain.key().as_ref()], bump = chain.authority_bump)]
     pub chain_authority: UncheckedAccount<'info>,
-    /// Stable tail encrypted value account; read for the current handle and replaced by this
+    /// Stable tail encrypted State; read for the current handle and replaced by this
     /// execution.
     #[account(mut, address = chain_state_id(chain.key()).address() @ DepChainError::TailValueInvalid)]
     pub encrypted_state: Box<Account<'info, zama_host::EncryptedState>>,

@@ -12,8 +12,8 @@
 //! singleton by the deployment, so every key is computable up front.
 //!
 //! A delegated entry breaks the up-front part. Its delegation record lives at a PDA seeded by
-//! `(delegator, delegate, encrypted_value_account_authority)`, and the authoritative
-//! `encrypted_value_account_authority` is a field of the encrypted state — a request cannot
+//! `(delegator, delegate, authority)`, and the authoritative
+//! `authority` is a field of the encrypted state — a request cannot
 //! supply it (see [`super::request`]). So a first read is needed to learn it. That read is a
 //! **discovery read**: it produces addresses, not decisions, and its account values are discarded.
 //! The second read covers the first read's whole key set alongside the delegation records, and it
@@ -25,7 +25,7 @@
 //! single deciding snapshot does not already give. Nor can the discarded read smuggle a stale value
 //! in: the delegation address it produced is re-derived from the deciding snapshot's own encrypted
 //! value account inside [`super::delegation::check_delegation`], and an encrypted state that
-//! resolves at a given address has exactly one `encrypted_value_account_authority`, because that
+//! resolves at a given address has exactly one `authority`, because that
 //! field is one of the seeds the address is derived from. A discovery read
 //! that named the wrong record therefore surfaces as a key the deciding snapshot never read,
 //! reported as the key-planning defect it is.

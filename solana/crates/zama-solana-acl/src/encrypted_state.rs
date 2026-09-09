@@ -1,4 +1,4 @@
-//! Current encrypted slots and the authority's durable decrypt history.
+//! Current encrypted slots and the authority's persistent decrypt history.
 
 use borsh::{BorshDeserialize, BorshSerialize};
 

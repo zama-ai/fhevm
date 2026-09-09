@@ -15,7 +15,7 @@ export type SolanaDiscloseSecpAccounts = {
   /** Confidential token account for account-scoped state; omit only for total supply. */
   readonly tokenAccount?: Address | undefined;
   /** The encrypted state whose history authorizes the disclosed handle. */
-  readonly encryptedValue: Address;
+  readonly encryptedState: Address;
   /** KMS context PDA for the host's current context id. */
   readonly kmsContext: Address;
   /** ZamaHost config account forwarded to the host verifier. */
@@ -50,7 +50,7 @@ export async function buildDiscloseSecpInstruction(
   return getDiscloseSecpInstruction({
     mint: accounts.mint,
     ...(accounts.tokenAccount !== undefined ? { tokenAccount: accounts.tokenAccount } : {}),
-    encryptedValue: accounts.encryptedValue,
+    encryptedState: accounts.encryptedState,
     kmsContext: accounts.kmsContext,
     hostConfig: accounts.hostConfig,
     eventAuthority: await tokenEventAuthority(),

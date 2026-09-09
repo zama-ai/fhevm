@@ -66,7 +66,7 @@ export type SettleInstruction<
   TAccountJoinMintVaultUnderlying extends string | AccountMeta<string> = string,
   TAccountJoinMintVaultAuthority extends string | AccountMeta<string> = string,
   TAccountBatchJoinUnderlying extends string | AccountMeta<string> = string,
-  TAccountBatchBurnedAmountValue extends string | AccountMeta<string> = string,
+  TAccountBatchBurnedAmountState extends string | AccountMeta<string> = string,
   TAccountPendingBurn extends string | AccountMeta<string> = string,
   TAccountHostConfig extends string | AccountMeta<string> = string,
   TAccountKmsContext extends string | AccountMeta<string> = string,
@@ -80,8 +80,8 @@ export type SettleInstruction<
   TAccountPayoutMintVaultUnderlying extends string | AccountMeta<string> = string,
   TAccountPayoutMintVaultAuthority extends string | AccountMeta<string> = string,
   TAccountPayoutTotalSupplyAuthority extends string | AccountMeta<string> = string,
-  TAccountBatchPayoutBalanceValue extends string | AccountMeta<string> = string,
-  TAccountPayoutTotalSupplyValue extends string | AccountMeta<string> = string,
+  TAccountBatchPayoutBalanceState extends string | AccountMeta<string> = string,
+  TAccountPayoutTotalSupplyState extends string | AccountMeta<string> = string,
   TAccountZamaEventAuthority extends string | AccountMeta<string> = string,
   TAccountZamaProgram extends string | AccountMeta<string> = '6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu',
   TAccountConfidentialTokenEventAuthority extends string | AccountMeta<string> = string,
@@ -118,9 +118,9 @@ export type SettleInstruction<
       TAccountBatchJoinUnderlying extends string
         ? WritableAccount<TAccountBatchJoinUnderlying>
         : TAccountBatchJoinUnderlying,
-      TAccountBatchBurnedAmountValue extends string
-        ? ReadonlyAccount<TAccountBatchBurnedAmountValue>
-        : TAccountBatchBurnedAmountValue,
+      TAccountBatchBurnedAmountState extends string
+        ? ReadonlyAccount<TAccountBatchBurnedAmountState>
+        : TAccountBatchBurnedAmountState,
       TAccountPendingBurn extends string ? WritableAccount<TAccountPendingBurn> : TAccountPendingBurn,
       TAccountHostConfig extends string ? ReadonlyAccount<TAccountHostConfig> : TAccountHostConfig,
       TAccountKmsContext extends string ? ReadonlyAccount<TAccountKmsContext> : TAccountKmsContext,
@@ -148,12 +148,12 @@ export type SettleInstruction<
       TAccountPayoutTotalSupplyAuthority extends string
         ? ReadonlyAccount<TAccountPayoutTotalSupplyAuthority>
         : TAccountPayoutTotalSupplyAuthority,
-      TAccountBatchPayoutBalanceValue extends string
-        ? WritableAccount<TAccountBatchPayoutBalanceValue>
-        : TAccountBatchPayoutBalanceValue,
-      TAccountPayoutTotalSupplyValue extends string
-        ? WritableAccount<TAccountPayoutTotalSupplyValue>
-        : TAccountPayoutTotalSupplyValue,
+      TAccountBatchPayoutBalanceState extends string
+        ? WritableAccount<TAccountBatchPayoutBalanceState>
+        : TAccountBatchPayoutBalanceState,
+      TAccountPayoutTotalSupplyState extends string
+        ? WritableAccount<TAccountPayoutTotalSupplyState>
+        : TAccountPayoutTotalSupplyState,
       TAccountZamaEventAuthority extends string
         ? ReadonlyAccount<TAccountZamaEventAuthority>
         : TAccountZamaEventAuthority,
@@ -176,7 +176,7 @@ export type SettleInstructionData = {
   cleartextTotal: bigint;
   signatures: Array<ReadonlyUint8Array>;
   extraData: ReadonlyUint8Array;
-  /** Index of the proven leaf within the encrypted value account's MMR. */
+  /** Index of the proven leaf within the encrypted State's MMR. */
   leafIndex: bigint;
   /** Authentication path from the leaf up to its mountain peak. */
   siblings: Array<ReadonlyUint8Array>;
@@ -187,7 +187,7 @@ export type SettleInstructionDataArgs = {
   cleartextTotal: number | bigint;
   signatures: Array<ReadonlyUint8Array>;
   extraData: ReadonlyUint8Array;
-  /** Index of the proven leaf within the encrypted value account's MMR. */
+  /** Index of the proven leaf within the encrypted State's MMR. */
   leafIndex: number | bigint;
   /** Authentication path from the leaf up to its mountain peak. */
   siblings: Array<ReadonlyUint8Array>;
@@ -236,7 +236,7 @@ export type SettleAsyncInput<
   TAccountJoinMintVaultUnderlying extends string = string,
   TAccountJoinMintVaultAuthority extends string = string,
   TAccountBatchJoinUnderlying extends string = string,
-  TAccountBatchBurnedAmountValue extends string = string,
+  TAccountBatchBurnedAmountState extends string = string,
   TAccountPendingBurn extends string = string,
   TAccountHostConfig extends string = string,
   TAccountKmsContext extends string = string,
@@ -250,8 +250,8 @@ export type SettleAsyncInput<
   TAccountPayoutMintVaultUnderlying extends string = string,
   TAccountPayoutMintVaultAuthority extends string = string,
   TAccountPayoutTotalSupplyAuthority extends string = string,
-  TAccountBatchPayoutBalanceValue extends string = string,
-  TAccountPayoutTotalSupplyValue extends string = string,
+  TAccountBatchPayoutBalanceState extends string = string,
+  TAccountPayoutTotalSupplyState extends string = string,
   TAccountZamaEventAuthority extends string = string,
   TAccountZamaProgram extends string = string,
   TAccountConfidentialTokenEventAuthority extends string = string,
@@ -286,7 +286,7 @@ export type SettleAsyncInput<
   joinMintVaultAuthority: Address<TAccountJoinMintVaultAuthority>;
   /** Batch's plain SPL account receiving the redeemed batch total. */
   batchJoinUnderlying?: Address<TAccountBatchJoinUnderlying>;
-  batchBurnedAmountValue: Address<TAccountBatchBurnedAmountValue>;
+  batchBurnedAmountState: Address<TAccountBatchBurnedAmountState>;
   pendingBurn: Address<TAccountPendingBurn>;
   hostConfig: Address<TAccountHostConfig>;
   /** verifier CPI. */
@@ -310,8 +310,8 @@ export type SettleAsyncInput<
   payoutMintVaultUnderlying: Address<TAccountPayoutMintVaultUnderlying>;
   payoutMintVaultAuthority: Address<TAccountPayoutMintVaultAuthority>;
   payoutTotalSupplyAuthority: Address<TAccountPayoutTotalSupplyAuthority>;
-  batchPayoutBalanceValue: Address<TAccountBatchPayoutBalanceValue>;
-  payoutTotalSupplyValue: Address<TAccountPayoutTotalSupplyValue>;
+  batchPayoutBalanceState: Address<TAccountBatchPayoutBalanceState>;
+  payoutTotalSupplyState: Address<TAccountPayoutTotalSupplyState>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
   /** ZamaHost program (FHE compute + ACL). */
   zamaProgram?: Address<TAccountZamaProgram>;
@@ -343,7 +343,7 @@ export async function getSettleInstructionAsync<
   TAccountJoinMintVaultUnderlying extends string,
   TAccountJoinMintVaultAuthority extends string,
   TAccountBatchJoinUnderlying extends string,
-  TAccountBatchBurnedAmountValue extends string,
+  TAccountBatchBurnedAmountState extends string,
   TAccountPendingBurn extends string,
   TAccountHostConfig extends string,
   TAccountKmsContext extends string,
@@ -357,8 +357,8 @@ export async function getSettleInstructionAsync<
   TAccountPayoutMintVaultUnderlying extends string,
   TAccountPayoutMintVaultAuthority extends string,
   TAccountPayoutTotalSupplyAuthority extends string,
-  TAccountBatchPayoutBalanceValue extends string,
-  TAccountPayoutTotalSupplyValue extends string,
+  TAccountBatchPayoutBalanceState extends string,
+  TAccountPayoutTotalSupplyState extends string,
   TAccountZamaEventAuthority extends string,
   TAccountZamaProgram extends string,
   TAccountConfidentialTokenEventAuthority extends string,
@@ -379,7 +379,7 @@ export async function getSettleInstructionAsync<
     TAccountJoinMintVaultUnderlying,
     TAccountJoinMintVaultAuthority,
     TAccountBatchJoinUnderlying,
-    TAccountBatchBurnedAmountValue,
+    TAccountBatchBurnedAmountState,
     TAccountPendingBurn,
     TAccountHostConfig,
     TAccountKmsContext,
@@ -393,8 +393,8 @@ export async function getSettleInstructionAsync<
     TAccountPayoutMintVaultUnderlying,
     TAccountPayoutMintVaultAuthority,
     TAccountPayoutTotalSupplyAuthority,
-    TAccountBatchPayoutBalanceValue,
-    TAccountPayoutTotalSupplyValue,
+    TAccountBatchPayoutBalanceState,
+    TAccountPayoutTotalSupplyState,
     TAccountZamaEventAuthority,
     TAccountZamaProgram,
     TAccountConfidentialTokenEventAuthority,
@@ -417,7 +417,7 @@ export async function getSettleInstructionAsync<
     TAccountJoinMintVaultUnderlying,
     TAccountJoinMintVaultAuthority,
     TAccountBatchJoinUnderlying,
-    TAccountBatchBurnedAmountValue,
+    TAccountBatchBurnedAmountState,
     TAccountPendingBurn,
     TAccountHostConfig,
     TAccountKmsContext,
@@ -431,8 +431,8 @@ export async function getSettleInstructionAsync<
     TAccountPayoutMintVaultUnderlying,
     TAccountPayoutMintVaultAuthority,
     TAccountPayoutTotalSupplyAuthority,
-    TAccountBatchPayoutBalanceValue,
-    TAccountPayoutTotalSupplyValue,
+    TAccountBatchPayoutBalanceState,
+    TAccountPayoutTotalSupplyState,
     TAccountZamaEventAuthority,
     TAccountZamaProgram,
     TAccountConfidentialTokenEventAuthority,
@@ -475,8 +475,8 @@ export async function getSettleInstructionAsync<
       value: input.batchJoinUnderlying ?? null,
       isWritable: true,
     },
-    batchBurnedAmountValue: {
-      value: input.batchBurnedAmountValue ?? null,
+    batchBurnedAmountState: {
+      value: input.batchBurnedAmountState ?? null,
       isWritable: false,
     },
     pendingBurn: { value: input.pendingBurn ?? null, isWritable: true },
@@ -516,12 +516,12 @@ export async function getSettleInstructionAsync<
       value: input.payoutTotalSupplyAuthority ?? null,
       isWritable: false,
     },
-    batchPayoutBalanceValue: {
-      value: input.batchPayoutBalanceValue ?? null,
+    batchPayoutBalanceState: {
+      value: input.batchPayoutBalanceState ?? null,
       isWritable: true,
     },
-    payoutTotalSupplyValue: {
-      value: input.payoutTotalSupplyValue ?? null,
+    payoutTotalSupplyState: {
+      value: input.payoutTotalSupplyState ?? null,
       isWritable: true,
     },
     zamaEventAuthority: {
@@ -598,7 +598,7 @@ export async function getSettleInstructionAsync<
       getAccountMeta('joinMintVaultUnderlying', accounts.joinMintVaultUnderlying),
       getAccountMeta('joinMintVaultAuthority', accounts.joinMintVaultAuthority),
       getAccountMeta('batchJoinUnderlying', accounts.batchJoinUnderlying),
-      getAccountMeta('batchBurnedAmountValue', accounts.batchBurnedAmountValue),
+      getAccountMeta('batchBurnedAmountState', accounts.batchBurnedAmountState),
       getAccountMeta('pendingBurn', accounts.pendingBurn),
       getAccountMeta('hostConfig', accounts.hostConfig),
       getAccountMeta('kmsContext', accounts.kmsContext),
@@ -612,8 +612,8 @@ export async function getSettleInstructionAsync<
       getAccountMeta('payoutMintVaultUnderlying', accounts.payoutMintVaultUnderlying),
       getAccountMeta('payoutMintVaultAuthority', accounts.payoutMintVaultAuthority),
       getAccountMeta('payoutTotalSupplyAuthority', accounts.payoutTotalSupplyAuthority),
-      getAccountMeta('batchPayoutBalanceValue', accounts.batchPayoutBalanceValue),
-      getAccountMeta('payoutTotalSupplyValue', accounts.payoutTotalSupplyValue),
+      getAccountMeta('batchPayoutBalanceState', accounts.batchPayoutBalanceState),
+      getAccountMeta('payoutTotalSupplyState', accounts.payoutTotalSupplyState),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
       getAccountMeta('zamaProgram', accounts.zamaProgram),
       getAccountMeta('confidentialTokenEventAuthority', accounts.confidentialTokenEventAuthority),
@@ -636,7 +636,7 @@ export async function getSettleInstructionAsync<
     TAccountJoinMintVaultUnderlying,
     TAccountJoinMintVaultAuthority,
     TAccountBatchJoinUnderlying,
-    TAccountBatchBurnedAmountValue,
+    TAccountBatchBurnedAmountState,
     TAccountPendingBurn,
     TAccountHostConfig,
     TAccountKmsContext,
@@ -650,8 +650,8 @@ export async function getSettleInstructionAsync<
     TAccountPayoutMintVaultUnderlying,
     TAccountPayoutMintVaultAuthority,
     TAccountPayoutTotalSupplyAuthority,
-    TAccountBatchPayoutBalanceValue,
-    TAccountPayoutTotalSupplyValue,
+    TAccountBatchPayoutBalanceState,
+    TAccountPayoutTotalSupplyState,
     TAccountZamaEventAuthority,
     TAccountZamaProgram,
     TAccountConfidentialTokenEventAuthority,
@@ -673,7 +673,7 @@ export type SettleInput<
   TAccountJoinMintVaultUnderlying extends string = string,
   TAccountJoinMintVaultAuthority extends string = string,
   TAccountBatchJoinUnderlying extends string = string,
-  TAccountBatchBurnedAmountValue extends string = string,
+  TAccountBatchBurnedAmountState extends string = string,
   TAccountPendingBurn extends string = string,
   TAccountHostConfig extends string = string,
   TAccountKmsContext extends string = string,
@@ -687,8 +687,8 @@ export type SettleInput<
   TAccountPayoutMintVaultUnderlying extends string = string,
   TAccountPayoutMintVaultAuthority extends string = string,
   TAccountPayoutTotalSupplyAuthority extends string = string,
-  TAccountBatchPayoutBalanceValue extends string = string,
-  TAccountPayoutTotalSupplyValue extends string = string,
+  TAccountBatchPayoutBalanceState extends string = string,
+  TAccountPayoutTotalSupplyState extends string = string,
   TAccountZamaEventAuthority extends string = string,
   TAccountZamaProgram extends string = string,
   TAccountConfidentialTokenEventAuthority extends string = string,
@@ -723,7 +723,7 @@ export type SettleInput<
   joinMintVaultAuthority: Address<TAccountJoinMintVaultAuthority>;
   /** Batch's plain SPL account receiving the redeemed batch total. */
   batchJoinUnderlying: Address<TAccountBatchJoinUnderlying>;
-  batchBurnedAmountValue: Address<TAccountBatchBurnedAmountValue>;
+  batchBurnedAmountState: Address<TAccountBatchBurnedAmountState>;
   pendingBurn: Address<TAccountPendingBurn>;
   hostConfig: Address<TAccountHostConfig>;
   /** verifier CPI. */
@@ -747,8 +747,8 @@ export type SettleInput<
   payoutMintVaultUnderlying: Address<TAccountPayoutMintVaultUnderlying>;
   payoutMintVaultAuthority: Address<TAccountPayoutMintVaultAuthority>;
   payoutTotalSupplyAuthority: Address<TAccountPayoutTotalSupplyAuthority>;
-  batchPayoutBalanceValue: Address<TAccountBatchPayoutBalanceValue>;
-  payoutTotalSupplyValue: Address<TAccountPayoutTotalSupplyValue>;
+  batchPayoutBalanceState: Address<TAccountBatchPayoutBalanceState>;
+  payoutTotalSupplyState: Address<TAccountPayoutTotalSupplyState>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
   /** ZamaHost program (FHE compute + ACL). */
   zamaProgram?: Address<TAccountZamaProgram>;
@@ -780,7 +780,7 @@ export function getSettleInstruction<
   TAccountJoinMintVaultUnderlying extends string,
   TAccountJoinMintVaultAuthority extends string,
   TAccountBatchJoinUnderlying extends string,
-  TAccountBatchBurnedAmountValue extends string,
+  TAccountBatchBurnedAmountState extends string,
   TAccountPendingBurn extends string,
   TAccountHostConfig extends string,
   TAccountKmsContext extends string,
@@ -794,8 +794,8 @@ export function getSettleInstruction<
   TAccountPayoutMintVaultUnderlying extends string,
   TAccountPayoutMintVaultAuthority extends string,
   TAccountPayoutTotalSupplyAuthority extends string,
-  TAccountBatchPayoutBalanceValue extends string,
-  TAccountPayoutTotalSupplyValue extends string,
+  TAccountBatchPayoutBalanceState extends string,
+  TAccountPayoutTotalSupplyState extends string,
   TAccountZamaEventAuthority extends string,
   TAccountZamaProgram extends string,
   TAccountConfidentialTokenEventAuthority extends string,
@@ -816,7 +816,7 @@ export function getSettleInstruction<
     TAccountJoinMintVaultUnderlying,
     TAccountJoinMintVaultAuthority,
     TAccountBatchJoinUnderlying,
-    TAccountBatchBurnedAmountValue,
+    TAccountBatchBurnedAmountState,
     TAccountPendingBurn,
     TAccountHostConfig,
     TAccountKmsContext,
@@ -830,8 +830,8 @@ export function getSettleInstruction<
     TAccountPayoutMintVaultUnderlying,
     TAccountPayoutMintVaultAuthority,
     TAccountPayoutTotalSupplyAuthority,
-    TAccountBatchPayoutBalanceValue,
-    TAccountPayoutTotalSupplyValue,
+    TAccountBatchPayoutBalanceState,
+    TAccountPayoutTotalSupplyState,
     TAccountZamaEventAuthority,
     TAccountZamaProgram,
     TAccountConfidentialTokenEventAuthority,
@@ -853,7 +853,7 @@ export function getSettleInstruction<
   TAccountJoinMintVaultUnderlying,
   TAccountJoinMintVaultAuthority,
   TAccountBatchJoinUnderlying,
-  TAccountBatchBurnedAmountValue,
+  TAccountBatchBurnedAmountState,
   TAccountPendingBurn,
   TAccountHostConfig,
   TAccountKmsContext,
@@ -867,8 +867,8 @@ export function getSettleInstruction<
   TAccountPayoutMintVaultUnderlying,
   TAccountPayoutMintVaultAuthority,
   TAccountPayoutTotalSupplyAuthority,
-  TAccountBatchPayoutBalanceValue,
-  TAccountPayoutTotalSupplyValue,
+  TAccountBatchPayoutBalanceState,
+  TAccountPayoutTotalSupplyState,
   TAccountZamaEventAuthority,
   TAccountZamaProgram,
   TAccountConfidentialTokenEventAuthority,
@@ -910,8 +910,8 @@ export function getSettleInstruction<
       value: input.batchJoinUnderlying ?? null,
       isWritable: true,
     },
-    batchBurnedAmountValue: {
-      value: input.batchBurnedAmountValue ?? null,
+    batchBurnedAmountState: {
+      value: input.batchBurnedAmountState ?? null,
       isWritable: false,
     },
     pendingBurn: { value: input.pendingBurn ?? null, isWritable: true },
@@ -951,12 +951,12 @@ export function getSettleInstruction<
       value: input.payoutTotalSupplyAuthority ?? null,
       isWritable: false,
     },
-    batchPayoutBalanceValue: {
-      value: input.batchPayoutBalanceValue ?? null,
+    batchPayoutBalanceState: {
+      value: input.batchPayoutBalanceState ?? null,
       isWritable: true,
     },
-    payoutTotalSupplyValue: {
-      value: input.payoutTotalSupplyValue ?? null,
+    payoutTotalSupplyState: {
+      value: input.payoutTotalSupplyState ?? null,
       isWritable: true,
     },
     zamaEventAuthority: {
@@ -1018,7 +1018,7 @@ export function getSettleInstruction<
       getAccountMeta('joinMintVaultUnderlying', accounts.joinMintVaultUnderlying),
       getAccountMeta('joinMintVaultAuthority', accounts.joinMintVaultAuthority),
       getAccountMeta('batchJoinUnderlying', accounts.batchJoinUnderlying),
-      getAccountMeta('batchBurnedAmountValue', accounts.batchBurnedAmountValue),
+      getAccountMeta('batchBurnedAmountState', accounts.batchBurnedAmountState),
       getAccountMeta('pendingBurn', accounts.pendingBurn),
       getAccountMeta('hostConfig', accounts.hostConfig),
       getAccountMeta('kmsContext', accounts.kmsContext),
@@ -1032,8 +1032,8 @@ export function getSettleInstruction<
       getAccountMeta('payoutMintVaultUnderlying', accounts.payoutMintVaultUnderlying),
       getAccountMeta('payoutMintVaultAuthority', accounts.payoutMintVaultAuthority),
       getAccountMeta('payoutTotalSupplyAuthority', accounts.payoutTotalSupplyAuthority),
-      getAccountMeta('batchPayoutBalanceValue', accounts.batchPayoutBalanceValue),
-      getAccountMeta('payoutTotalSupplyValue', accounts.payoutTotalSupplyValue),
+      getAccountMeta('batchPayoutBalanceState', accounts.batchPayoutBalanceState),
+      getAccountMeta('payoutTotalSupplyState', accounts.payoutTotalSupplyState),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
       getAccountMeta('zamaProgram', accounts.zamaProgram),
       getAccountMeta('confidentialTokenEventAuthority', accounts.confidentialTokenEventAuthority),
@@ -1056,7 +1056,7 @@ export function getSettleInstruction<
     TAccountJoinMintVaultUnderlying,
     TAccountJoinMintVaultAuthority,
     TAccountBatchJoinUnderlying,
-    TAccountBatchBurnedAmountValue,
+    TAccountBatchBurnedAmountState,
     TAccountPendingBurn,
     TAccountHostConfig,
     TAccountKmsContext,
@@ -1070,8 +1070,8 @@ export function getSettleInstruction<
     TAccountPayoutMintVaultUnderlying,
     TAccountPayoutMintVaultAuthority,
     TAccountPayoutTotalSupplyAuthority,
-    TAccountBatchPayoutBalanceValue,
-    TAccountPayoutTotalSupplyValue,
+    TAccountBatchPayoutBalanceState,
+    TAccountPayoutTotalSupplyState,
     TAccountZamaEventAuthority,
     TAccountZamaProgram,
     TAccountConfidentialTokenEventAuthority,
@@ -1114,7 +1114,7 @@ export type ParsedSettleInstruction<
     joinMintVaultAuthority: TAccountMetas[8];
     /** Batch's plain SPL account receiving the redeemed batch total. */
     batchJoinUnderlying: TAccountMetas[9];
-    batchBurnedAmountValue: TAccountMetas[10];
+    batchBurnedAmountState: TAccountMetas[10];
     pendingBurn: TAccountMetas[11];
     hostConfig: TAccountMetas[12];
     /** verifier CPI. */
@@ -1138,8 +1138,8 @@ export type ParsedSettleInstruction<
     payoutMintVaultUnderlying: TAccountMetas[21];
     payoutMintVaultAuthority: TAccountMetas[22];
     payoutTotalSupplyAuthority: TAccountMetas[23];
-    batchPayoutBalanceValue: TAccountMetas[24];
-    payoutTotalSupplyValue: TAccountMetas[25];
+    batchPayoutBalanceState: TAccountMetas[24];
+    payoutTotalSupplyState: TAccountMetas[25];
     zamaEventAuthority: TAccountMetas[26];
     /** ZamaHost program (FHE compute + ACL). */
     zamaProgram: TAccountMetas[27];
@@ -1184,7 +1184,7 @@ export function parseSettleInstruction<TProgram extends string, TAccountMetas ex
       joinMintVaultUnderlying: getNextAccount(),
       joinMintVaultAuthority: getNextAccount(),
       batchJoinUnderlying: getNextAccount(),
-      batchBurnedAmountValue: getNextAccount(),
+      batchBurnedAmountState: getNextAccount(),
       pendingBurn: getNextAccount(),
       hostConfig: getNextAccount(),
       kmsContext: getNextAccount(),
@@ -1198,8 +1198,8 @@ export function parseSettleInstruction<TProgram extends string, TAccountMetas ex
       payoutMintVaultUnderlying: getNextAccount(),
       payoutMintVaultAuthority: getNextAccount(),
       payoutTotalSupplyAuthority: getNextAccount(),
-      batchPayoutBalanceValue: getNextAccount(),
-      payoutTotalSupplyValue: getNextAccount(),
+      batchPayoutBalanceState: getNextAccount(),
+      payoutTotalSupplyState: getNextAccount(),
       zamaEventAuthority: getNextAccount(),
       zamaProgram: getNextAccount(),
       confidentialTokenEventAuthority: getNextAccount(),

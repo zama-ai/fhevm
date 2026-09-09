@@ -387,9 +387,7 @@ fn token_fixture() -> TokenFixture {
     let host_config = seed_host_config(&mut svm, host_program_id, alice.pubkey());
     create_spl_mint(&mut svm, &alice, &underlying_mint, 6);
     let total_supply_authority = token::total_supply_authority_address(mint.pubkey()).0;
-    let total_supply_encrypted_value = token::total_supply_encrypted_value_id(mint.pubkey())
-        .0
-        .address();
+    let total_supply_encrypted_state = token::total_supply_slot(mint.pubkey()).0.address();
 
     send_with_signers(
         &mut svm,
@@ -401,7 +399,7 @@ fn token_fixture() -> TokenFixture {
                 mint: mint.pubkey(),
                 underlying_mint: underlying_mint.pubkey(),
                 total_supply_authority,
-                total_supply_encrypted_value,
+                total_supply_encrypted_state,
                 zama_event_authority: event_authority(host_program_id),
                 zama_program: host_program_id,
                 host_config,
@@ -420,12 +418,8 @@ fn token_fixture() -> TokenFixture {
 
     let alice_token = token_account_address(token_program_id, mint.pubkey(), alice.pubkey());
     let bob_token = token_account_address(token_program_id, mint.pubkey(), bob.pubkey());
-    let alice_current_compute_acl = token::balance_encrypted_value_id(mint.pubkey(), alice_token)
-        .0
-        .address();
-    let bob_current_compute_acl = token::balance_encrypted_value_id(mint.pubkey(), bob_token)
-        .0
-        .address();
+    let alice_current_compute_acl = token::balance_slot(mint.pubkey(), alice_token).0.address();
+    let bob_current_compute_acl = token::balance_slot(mint.pubkey(), bob_token).0.address();
 
     initialize_token_account(
         &mut svm,
@@ -437,7 +431,7 @@ fn token_fixture() -> TokenFixture {
             host_config,
             mint: mint.pubkey(),
             token_account: alice_token,
-            balance_encrypted_value: alice_current_compute_acl,
+            balance_encrypted_state: alice_current_compute_acl,
         },
     );
     initialize_token_account(
@@ -450,7 +444,7 @@ fn token_fixture() -> TokenFixture {
             host_config,
             mint: mint.pubkey(),
             token_account: bob_token,
-            balance_encrypted_value: bob_current_compute_acl,
+            balance_encrypted_state: bob_current_compute_acl,
         },
     );
     let alice_initial = current_handle(&svm, alice_current_compute_acl);
@@ -494,7 +488,7 @@ struct TokenAccountInit {
     host_config: Pubkey,
     mint: Pubkey,
     token_account: Pubkey,
-    balance_encrypted_value: Pubkey,
+    balance_encrypted_state: Pubkey,
 }
 
 fn initialize_token_account(
@@ -513,7 +507,7 @@ fn initialize_token_account(
                 owner,
                 mint: init.mint,
                 token_account: init.token_account,
-                balance_encrypted_value: init.balance_encrypted_value,
+                balance_encrypted_state: init.balance_encrypted_state,
                 zama_event_authority: event_authority(init.host_program_id),
                 zama_program: init.host_program_id,
                 host_config: init.host_config,
@@ -557,8 +551,8 @@ fn transfer_ix(
             to_ata: fixture.bob_ata,
             from_account: fixture.alice_token,
             to_account: fixture.bob_token,
-            from_balance_value: output.alice,
-            to_balance_value: output.bob,
+            from_state: output.alice,
+            to_state: output.bob,
             zama_event_authority: event_authority(fixture.host_program_id),
             zama_program: fixture.host_program_id,
             host_config: fixture.host_config,
@@ -736,9 +730,7 @@ fn current_handle(svm: &LiteSVM, address: Pubkey) -> [u8; 32] {
     let account = svm.get_account(&address).expect("expected token State");
     let state = EncryptedState::try_deserialize(&mut account.data.as_slice())
         .expect("valid EncryptedState");
-    state
-        .get(&token::encrypted_balance_label())
-        .expect("balance slot")
+    state.get(&token::balance_key()).expect("balance slot")
 }
 
 fn serialized_account<T: AccountSerialize>(account: T) -> Vec<u8> {

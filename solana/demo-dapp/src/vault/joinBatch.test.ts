@@ -34,7 +34,7 @@ import {
   getCloseScratchInstructionDataDecoder,
 } from '@sdk-src/solana/internal/generated/zamaHost/instructions/closeScratch.js';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '@sdk-src/solana/internal/generated/zamaHost/programAddress.js';
-import { TOKEN_PROGRAM_ADDRESS } from './internal/tokenValueAccount.js';
+import { TOKEN_PROGRAM_ADDRESS } from './internal/tokenAccounts.js';
 
 const CHAIN_ID = (1n << 63n) | 12345n;
 const CANONICAL_ACL = bytesToHex(base58.decode('6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu'));

@@ -86,11 +86,7 @@ fn extra_data_vectors_encode_and_round_trip() {
         let parsed = parse_solana_public_decrypt_extra_data(&expected_blob)
             .unwrap_or_else(|| panic!("{}: the strict parser must accept this blob", record.name));
         assert_eq!(parsed.context_id, context_id, "{}", record.name);
-        assert_eq!(
-            parsed.encrypted_state, encrypted_state,
-            "{}",
-            record.name
-        );
+        assert_eq!(parsed.encrypted_state, encrypted_state, "{}", record.name);
     }
 
     assert!(!file.malformed.is_empty());

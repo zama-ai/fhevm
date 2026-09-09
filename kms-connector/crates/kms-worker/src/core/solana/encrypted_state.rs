@@ -12,7 +12,7 @@
 //! added without shrinking after a shorter encoding, so the allocated tail is not state data.
 
 use super::snapshot::{HostSnapshot, SnapshotError};
-use crate::core::solana_acl::{SolanaPubkeyBytes, WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY};
+use crate::core::solana_acl::{SolanaPubkeyBytes, WILDCARD_AUTHORITY};
 use solana_pubkey::Pubkey;
 use zama_solana_acl::{AclError, EncryptedState, decode_encrypted_state};
 
@@ -127,7 +127,7 @@ pub fn resolve_encrypted_state(
     // it that derivation lands on the wildcard row itself — the authority-specific check would be
     // structurally a wildcard check. No legal account carries it: the authority is a PDA of the
     // application program, and the sentinel is not one.
-    if encrypted_state.authority == WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY {
+    if encrypted_state.authority == WILDCARD_AUTHORITY {
         return Err(EncryptedStateFailure::SentinelAuthority { account_key });
     }
 

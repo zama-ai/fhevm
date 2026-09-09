@@ -125,7 +125,7 @@ impl AuthorizedRequest {
 struct DelegatedEntryAudit {
     index: usize,
     delegator: SolanaPubkeyBytes,
-    encrypted_value_account_authority: SolanaPubkeyBytes,
+    authority: SolanaPubkeyBytes,
     handle: HandleBytes,
     authorizing_row: AuthorizedRow,
 }
@@ -141,10 +141,10 @@ impl std::fmt::Debug for DelegatedEntryAudit {
                 &format_args!("{}", alloy::hex::encode(self.delegator)),
             )
             .field(
-                "encrypted_value_account_authority",
+                "authority",
                 &format_args!(
                     "{}",
-                    alloy::hex::encode(self.encrypted_value_account_authority)
+                    alloy::hex::encode(self.authority)
                 ),
             )
             .field(
@@ -326,19 +326,19 @@ where
     }
 
     let mut audit = Vec::with_capacity(delegated.len());
-    for (index, delegator, encrypted_value_account_authority, handle) in delegated {
+    for (index, delegator, authority, handle) in delegated {
         let authorizing_row = check_delegation(
             &observation,
             program_id,
             delegator,
             signer,
-            encrypted_value_account_authority,
+            authority,
         )
         .map_err(|source| AuthorizationFailure::Delegation { index, source })?;
         audit.push(DelegatedEntryAudit {
             index,
             delegator,
-            encrypted_value_account_authority,
+            authority,
             handle,
             authorizing_row,
         });

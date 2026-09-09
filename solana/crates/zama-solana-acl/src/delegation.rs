@@ -21,12 +21,12 @@ use crate::AclError;
 /// Seed of the delegation record PDA: `[seed, delegator, delegate, authority]`.
 pub const DELEGATION_SEED: &[u8] = b"user-decryption-delegation";
 
-/// The sentinel a wildcard row carries in place of an encrypted value account authority.
-/// No real authority can collide with it: an encrypted value account authority must sign
+/// The sentinel a wildcard row carries in place of an encrypted State authority.
+/// No real authority can collide with it: an encrypted State authority must sign
 /// `fhe_execute`, and the sentinel has no key — and the connector independently refuses any
-/// encrypted value account naming it (its resolution guard), so an account carrying the
+/// encrypted State naming it (its resolution guard), so an account carrying the
 /// sentinel never reaches a row read.
-pub const WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY: [u8; 32] = [0xff; 32];
+pub const WILDCARD_AUTHORITY: [u8; 32] = [0xff; 32];
 
 const ANCHOR_DISCRIMINATOR_LEN: usize = 8;
 const BODY_LEN: usize = 32 + 32 + 32 + 8 + 8 + 8 + 1 + 1;
@@ -36,7 +36,7 @@ const BODY_LEN: usize = 32 + 32 + 32 + 8 + 8 + 8 + 1 + 1;
 pub struct UserDecryptionDelegationRecord {
     pub delegator: [u8; 32],
     pub delegate: [u8; 32],
-    pub encrypted_value_account_authority: [u8; 32],
+    pub authority: [u8; 32],
     /// The last slot the delegation is live at, inclusive. Zeroed by a revocation.
     pub expiration_slot: u64,
     /// Strictly monotonic across grants, re-grants and revocations. Authorizes nothing.
@@ -68,7 +68,7 @@ pub const USER_DECRYPTION_DELEGATION_DISCRIMINATOR: [u8; ANCHOR_DISCRIMINATOR_LE
 /// Decodes an account's raw data, discriminator included, into a delegation record.
 ///
 /// Strict on both ends: the account is exactly discriminator + body (the record is never
-/// realloc-grown, unlike the encrypted value account), and every field decodes or the whole
+/// realloc-grown, unlike the encrypted State), and every field decodes or the whole
 /// account is refused.
 pub fn decode_user_decryption_delegation(
     data: &[u8],
@@ -88,7 +88,7 @@ pub fn decode_user_decryption_delegation(
     Ok(UserDecryptionDelegationRecord {
         delegator: bytes32(body, 0),
         delegate: bytes32(body, 32),
-        encrypted_value_account_authority: bytes32(body, 64),
+        authority: bytes32(body, 64),
         expiration_slot: u64_le(body, 96),
         delegation_counter: u64_le(body, 104),
         last_update_slot: u64_le(body, 112),
@@ -117,7 +117,7 @@ mod tests {
         UserDecryptionDelegationRecord {
             delegator: [0x11; 32],
             delegate: [0x22; 32],
-            encrypted_value_account_authority: [0x33; 32],
+            authority: [0x33; 32],
             expiration_slot: 500,
             delegation_counter: 7,
             last_update_slot: 400,
@@ -130,7 +130,7 @@ mod tests {
         let mut data = USER_DECRYPTION_DELEGATION_DISCRIMINATOR.to_vec();
         data.extend_from_slice(&record.delegator);
         data.extend_from_slice(&record.delegate);
-        data.extend_from_slice(&record.encrypted_value_account_authority);
+        data.extend_from_slice(&record.authority);
         data.extend_from_slice(&record.expiration_slot.to_le_bytes());
         data.extend_from_slice(&record.delegation_counter.to_le_bytes());
         data.extend_from_slice(&record.last_update_slot.to_le_bytes());

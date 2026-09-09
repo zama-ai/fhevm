@@ -245,8 +245,7 @@ fn an_invalidation_record_naming_another_user_is_rejected() {
 fn an_account_that_is_not_an_invalidation_record_is_rejected() {
     let user = Wallet::new(1).pubkey();
     let (key, _) = permit_invalidation_address(PROGRAM_ID, user);
-    let encrypted_state =
-        EncryptedStateFixture::allowing(handle(0x10, FHE_TYPE_UINT64), user);
+    let encrypted_state = EncryptedStateFixture::allowing(handle(0x10, FHE_TYPE_UINT64), user);
     let world = World::running_at_slot(1).with_account(key, encrypted_state.account());
 
     let failure =

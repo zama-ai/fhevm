@@ -136,7 +136,7 @@ const loadDemoOperatorSession = async (demoBootId: string) => {
   }
   const url = process.env.DEMO_PROOF_URL;
   const apiKey = process.env.DEMO_PROOF_API_KEY;
-  if (!url || !apiKey) throw new Error('Demo proof service configuration is missing');
+  if (!url || !apiKey) throw new Error('Demo listener proof endpoint configuration is missing');
   return { config, keeper, proofService: { url, apiKey } };
 };
 

@@ -99,7 +99,7 @@ pub fn close_scratch(ctx: Context<CloseScratch>) -> Result<()> {
     );
     let accounts = ctx.remaining_accounts;
     require!(
-        !accounts.is_empty() && accounts.len() % 2 == 0,
+        !accounts.is_empty() && accounts.len().is_multiple_of(2),
         ZamaHostError::TransientAccountInvalid
     );
     for (index, pair) in accounts.chunks_exact(2).enumerate() {

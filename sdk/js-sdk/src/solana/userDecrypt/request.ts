@@ -50,7 +50,7 @@ export interface SolanaUserDecryptHandleEntry {
    * direct entry, the delegator on a delegated one.
    */
   readonly allowedKey: Uint8Array;
-  /** The 32-byte address of the `EncryptedValue` account the handle lives in. */
+  /** The 32-byte address of the `EncryptedState` account the handle lives in. */
   readonly encryptedState: Uint8Array;
 }
 

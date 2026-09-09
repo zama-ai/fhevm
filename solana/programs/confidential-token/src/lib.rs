@@ -31,7 +31,7 @@ pub use errors::*;
 /// Re-export events and instruction argument enums for generated clients and tests.
 pub use events::*;
 use instructions::*;
-/// Re-export instruction account contexts for compatibility with existing tests.
+/// Re-export instruction account contexts for generated Anchor CPI paths.
 pub use instructions::{
     AllowBalanceViewers, AllowTotalSupplyViewers, CancelPendingBurn, ConfidentialBurn,
     ConfidentialBurnFromValue, ConfidentialTransfer, ConfidentialTransferFromValue, DiscloseSecp,
@@ -84,7 +84,7 @@ pub mod confidential_token {
     }
 
     /// Seals one token-account state handle publicly. The owner authorizes the request and the
-    /// token-account PDA signs as encrypted value account authority.
+    /// token-account PDA signs as encrypted State authority.
     pub fn make_token_account_handle_public<'info>(
         ctx: Context<'info, MakeTokenAccountHandlePublic<'info>>,
         kind: DisclosedValueKind,
@@ -94,7 +94,7 @@ pub mod confidential_token {
     }
 
     /// Seals encrypted total supply publicly. The mint authority authorizes the request and the
-    /// total-supply PDA signs as encrypted value account authority.
+    /// total-supply PDA signs as encrypted State authority.
     pub fn make_total_supply_handle_public<'info>(
         ctx: Context<'info, MakeTotalSupplyHandlePublic<'info>>,
         handle: [u8; 32],
@@ -111,7 +111,7 @@ pub mod confidential_token {
         instructions::confidential_burn(ctx, amount_attestation)
     }
 
-    /// Burns an encrypted amount taken from an existing on-chain `EncryptedValue` (a computed or
+    /// Burns an encrypted amount taken from an existing on-chain `EncryptedState` (a computed or
     /// received handle) instead of a freshly attested client-side encryption — the burn-side analog
     /// of `confidential_transfer_from_value` (fhevm-internal#1755). The batcher uses this to burn an
     /// execution's computed encrypted total, then requests the KMS burn certificate. The signing
@@ -135,7 +135,7 @@ pub mod confidential_token {
         instructions::confidential_transfer(ctx, amount_attestation)
     }
 
-    /// Transfers an encrypted amount taken from an existing on-chain `EncryptedValue` (a computed or
+    /// Transfers an encrypted amount taken from an existing on-chain `EncryptedState` (a computed or
     /// received handle) instead of a freshly attested client-side encryption — the path that lets a
     /// contract be the sender of a computed amount (fhevm-internal#1680). The signing owner must
     /// control the amount value (the token spend gate); the amount is spent read-only.

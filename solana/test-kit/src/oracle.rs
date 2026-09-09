@@ -25,9 +25,7 @@ use zama_host::{
     HandleDerivationContext,
 };
 
-use crate::{
-    decode_fhe_execute_args, execution_step_output, read_encrypted_value, Ctx, BALANCE_FHE_TYPE,
-};
+use crate::{decode_fhe_execute_args, execution_step_output, Ctx, BALANCE_FHE_TYPE};
 
 pub type Handle = [u8; 32];
 pub type ClearInputs = HashMap<Handle, TypedClearValue>;
@@ -38,8 +36,7 @@ fn resolve_handle_operand(
     produced: &[Handle],
 ) -> Option<Handle> {
     match operand {
-        FheExecuteOperand::StoredValue { handle_index, .. }
-        | FheExecuteOperand::StateSlot { handle_index, .. }
+        FheExecuteOperand::StateSlot { handle_index, .. }
         | FheExecuteOperand::TransientResult { handle_index, .. } => {
             dictionary.get(*handle_index as usize).copied()
         }
@@ -514,8 +511,7 @@ fn resolve_encrypted(
     produced: &[ClearValue],
 ) -> Result<ClearValue, String> {
     let (handle, value) = match operand {
-        FheExecuteOperand::StoredValue { handle_index, .. }
-        | FheExecuteOperand::StateSlot { handle_index, .. }
+        FheExecuteOperand::StateSlot { handle_index, .. }
         | FheExecuteOperand::TransientResult { handle_index, .. } => {
             let handle = resolve_pool_bytes(dictionary, *handle_index)?;
             (handle, inputs.get(&handle))
@@ -639,7 +635,7 @@ fn random_biguint(random: &mut StdRng) -> BigUint {
 pub struct FheReplay {
     /// Distinct `fhe_execute` CPIs decoded from the inner instructions.
     pub executions: usize,
-    /// Persistent (`StoredValue`) outputs bound to their end-of-instruction handles.
+    /// Persistent (`FheHandle`) outputs bound to their end-of-instruction handles.
     pub persistent_outputs: usize,
 }
 
@@ -684,7 +680,7 @@ impl CleartextLedger {
 
     /// Replays every `fhe_execute` CPI the instruction issued — in order, so a later execution
     /// can consume an earlier execution's persisted outputs. Each instruction writes any
-    /// encrypted value account at most once, so binding results to the end-of-instruction
+    /// encrypted State at most once, so binding results to the end-of-instruction
     /// persisted handles is exact.
     pub fn replay_fhe_cpis(&mut self, context: &Ctx, result: &InstructionResult) -> FheReplay {
         let message = result
@@ -803,7 +799,6 @@ impl CleartextLedger {
                     if matches!(
                         execution_step_output(step),
                         zama_host::FheExecuteOutput::State { slot: Some(_), .. }
-                            | zama_host::FheExecuteOutput::StoredValue { .. }
                     ) {
                         persistent_outputs += 1;
                     }
@@ -827,30 +822,6 @@ impl CleartextLedger {
                     persistent_outputs += 1;
                     continue;
                 }
-                let zama_host::FheExecuteOutput::StoredValue {
-                    output_program_index,
-                    output_authority_key_index,
-                    output_scope_index,
-                    output_label_index,
-                    ..
-                } = execution_step_output(step)
-                else {
-                    continue;
-                };
-                let dictionary = |index: u8| {
-                    args.dictionary_bytes(index)
-                        .expect("valid dictionary index")
-                };
-                let address = zama_host::encrypted_value_address(
-                    Pubkey::new_from_array(dictionary(*output_program_index)),
-                    Pubkey::new_from_array(dictionary(*output_authority_key_index)),
-                    dictionary(*output_scope_index),
-                    dictionary(*output_label_index),
-                )
-                .0;
-                let persisted = read_encrypted_value(context, address);
-                self.values.insert(persisted.current_handle, value);
-                persistent_outputs += 1;
             }
         }
         FheReplay {
@@ -899,18 +870,5 @@ impl CleartextLedger {
             leaf_index: proof.leaf_index,
             siblings: proof.siblings,
         }
-    }
-
-    /// The `u64` cleartext behind the current handle of the encrypted value account at
-    /// `encrypted_value`.
-    pub fn u64_at(&self, context: &Ctx, encrypted_value: Pubkey) -> u64 {
-        let handle = read_encrypted_value(context, encrypted_value).current_handle;
-        let value = self
-            .values
-            .get(&handle)
-            .expect("missing cleartext value for persisted handle");
-        assert_eq!(value.fhe_type, BALANCE_FHE_TYPE);
-        assert_eq!(value.value[..24], [0; 24], "cleartext value exceeds u64");
-        u64::from_be_bytes(value.value[24..].try_into().unwrap())
     }
 }

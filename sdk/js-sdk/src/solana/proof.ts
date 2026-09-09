@@ -1,7 +1,7 @@
 import { keccak_256 } from '@noble/hashes/sha3.js';
 
 /**
- * Client-side MMR primitives for the Zama Solana `EncryptedValue` ACL (RFC 035).
+ * Client-side MMR primitives for the Zama Solana `EncryptedState` ACL (RFC 035).
  *
  * Every hash primitive here MUST be byte-identical to the Rust shared crate
  * (`solana/crates/zama-solana-acl`), which is the single source of truth run identically on-chain,
@@ -9,7 +9,7 @@ import { keccak_256 } from '@noble/hashes/sha3.js';
  * (`solana/test-fixtures/leaves/leaves_v1.json`) are what prove the agreement.
  *
  * Two uses. A dapp that knows an encrypted value account's history rebuilds its leaf list with
- * {@link reconstructSolanaEncryptedValueAccount}, checks the peaks against the on-chain account and
+ * {@link reconstructSolanaStateHistory}, checks the peaks against the on-chain account and
  * builds the public-leaf inclusion proof `verify_public_decrypt` takes on chain. A verifier that
  * received a proof checks it with {@link verifyPublicDecryptProof} or
  * {@link verifyHistoricalAccessProof} before acting on it.
@@ -98,7 +98,7 @@ export function mmrNode(left: Uint8Array, right: Uint8Array): Uint8Array {
 
 /**
  * Matches `zama_solana_acl::historical_access_leaf_commitment`: the preimage of a
- * `HistoricalAccessLeaf { encrypted_value_account, leaf_index, handle, key }` — one allow of
+ * `HistoricalAccessLeaf { encrypted_state_account, leaf_index, handle, key }` — one allow of
  * `key` on `handle`.
  */
 export function historicalAccessLeafCommitment(
@@ -115,7 +115,7 @@ export function historicalAccessLeafCommitment(
 
 /**
  * Matches `zama_solana_acl::public_decrypt_leaf_commitment`: the preimage of a
- * `PublicDecryptLeaf { encrypted_value_account, leaf_index, handle }`.
+ * `PublicDecryptLeaf { encrypted_state_account, leaf_index, handle }`.
  */
 export function publicDecryptLeafCommitment(
   encryptedState: Uint8Array,
@@ -142,16 +142,16 @@ export const MAX_MMR_SIBLINGS = 64;
 
 /**
  * One leaf-appending operation in an encrypted value account's history, in chronological order.
- * Mirrors `zama_solana_acl::encrypted_value_account::EncryptedValueAccountEvent`.
+ * Mirrors `zama_solana_acl::history::StateHistoryEvent`.
  */
-export type SolanaEncryptedValueAccountEvent =
+export type SolanaStateHistoryEvent =
   /** One `allow` of `key` on `handle`, sealed by the write that installed `handle`. */
   | { readonly kind: 'allowed'; readonly handle: Uint8Array; readonly key: Uint8Array }
   /** `handle` was made publicly decryptable. */
   | { readonly kind: 'markedPublic'; readonly handle: Uint8Array };
 
 /** The full ordered leaf list of an encrypted value account plus the MMR state it implies. */
-export type SolanaReconstructedEncryptedValueAccount = {
+export type SolanaReconstructedStateHistory = {
   readonly leaves: readonly Uint8Array[];
   readonly leafCount: bigint;
   readonly peaks: readonly Uint8Array[];
@@ -160,7 +160,7 @@ export type SolanaReconstructedEncryptedValueAccount = {
 /**
  * Rebuilds the full ordered leaf list from an account's chronological events, exactly as the host
  * program appends them: one commitment per event, the leaf index bound into each from a single
- * running counter. Matches `zama_solana_acl::encrypted_value_account::reconstruct`.
+ * running counter. Matches `zama_solana_acl::encrypted_state_account::reconstruct`.
  *
  * The caller cross-checks `peaks` and `leafCount` against the on-chain account before trusting a
  * proof built from this: a missed or reordered event yields a different leaf list whose peaks
@@ -169,10 +169,10 @@ export type SolanaReconstructedEncryptedValueAccount = {
  * @param encryptedState - The 32-byte account address the leaves bind.
  * @param events - The account's history, oldest first.
  */
-export function reconstructSolanaEncryptedValueAccount(
+export function reconstructSolanaStateHistory(
   encryptedState: Uint8Array,
-  events: readonly SolanaEncryptedValueAccountEvent[],
-): SolanaReconstructedEncryptedValueAccount {
+  events: readonly SolanaStateHistoryEvent[],
+): SolanaReconstructedStateHistory {
   const leaves = events.map((event, index) => {
     const leafIndex = BigInt(index);
     switch (event.kind) {
@@ -200,10 +200,10 @@ export function reconstructSolanaEncryptedValueAccount(
 export function buildPublicLeafProof(
   account: Uint8Array,
   live: { readonly leafCount: bigint; readonly peaks: readonly Uint8Array[] },
-  history: readonly SolanaEncryptedValueAccountEvent[],
+  history: readonly SolanaStateHistoryEvent[],
   publicLeafIndex: bigint,
 ): MmrProof {
-  const rebuilt = reconstructSolanaEncryptedValueAccount(account, history);
+  const rebuilt = reconstructSolanaStateHistory(account, history);
   const samePeaks =
     rebuilt.leafCount === live.leafCount &&
     rebuilt.peaks.length === live.peaks.length &&

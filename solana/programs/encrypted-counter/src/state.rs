@@ -4,7 +4,7 @@
 //! `counter_mollusk` fixtures.
 
 use anchor_lang::prelude::*;
-use zama_fhe::{AppScope, StateId};
+use zama_fhe::StateId;
 
 /// Seed of the per-owner counter state PDA.
 pub const COUNTER_SEED: &[u8] = b"counter";
@@ -22,15 +22,6 @@ pub fn counter_address(owner: Pubkey) -> (Pubkey, u8) {
 
 pub fn counter_authority_address(counter: Pubkey) -> (Pubkey, u8) {
     Pubkey::find_program_address(&[COUNTER_AUTHORITY_SEED, counter.as_ref()], &crate::id())
-}
-
-/// The application one counter is to the host: this program, scoped to the counter account.
-/// HCU metering and the deny list key on it.
-pub fn counter_app(counter: Pubkey) -> AppScope {
-    AppScope {
-        program: crate::id(),
-        scope: counter.to_bytes(),
-    }
 }
 
 /// The host dictionary controlled by the counter's authority PDA.

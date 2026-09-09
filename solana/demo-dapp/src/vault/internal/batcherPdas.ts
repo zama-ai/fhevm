@@ -11,7 +11,7 @@ const encoder = new TextEncoder();
 const BATCH_SEED = encoder.encode('batch');
 const TOKEN_ACCOUNT_SEED = encoder.encode('token-account');
 const PENDING_BURN_SEED = encoder.encode('pending-burn');
-/** Fixed confidential-token label for the all-or-zero burned amount (`encrypted_burned_amount_label`). */
+/** Fixed confidential-token label for the all-or-zero burned amount (`burned_amount_key`). */
 /**
  * Anchor event-CPI authority seed (`__event_authority`). Both the zama-host and confidential-token
  * programs derive their event authority from this seed, so the vault builders that emit through
@@ -28,9 +28,9 @@ function addressBytes(value: Address): Uint8Array {
 }
 
 /**
- * The canonical `EncryptedValue` PDA of a confidential-token value: the token program's value,
+ * The canonical `EncryptedState` PDA of a confidential-token value: the token program's value,
  * scoped to its mint, controlled by `authority` (a token account, or a mint's total-supply
- * authority), under one of the program's fixed labels (`token_value_id` in the token program).
+ * authority), under one of the program's fixed labels (`token_slot` in the token program).
  */
 export function tokenStateAddress(mint: Address, authority: Address): Promise<Address> {
   return solanaEncryptedStateAddress(addressBytes(ZAMA_HOST_PROGRAM_ADDRESS), {
@@ -57,15 +57,6 @@ export async function tokenAccountAddress(mint: Address, owner: Address): Promis
 /** The single PendingBurn for a confidential token account (`pending_burn_address`). */
 export async function pendingBurnAddress(mint: Address, tokenAccount: Address): Promise<Address> {
   return pda(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, [PENDING_BURN_SEED, addressBytes(mint), addressBytes(tokenAccount)]);
-}
-
-/**
- * The batch's burned-amount value on the join mint: the token program's `burned_amount` value of
- * the batch's join token account. It is `batchBurnedAmountValue` in the settle account set and the
- * account a settle certificate is requested for.
- */
-export function burnedAmountValueAddress(joinMint: Address, batchJoinTokenAccount: Address): Promise<Address> {
-  return tokenStateAddress(joinMint, batchJoinTokenAccount);
 }
 
 export async function joinStateAddress(batch: Address, user: Address): Promise<Address> {

@@ -2,7 +2,7 @@
 //!
 //! Public API surface: app programs. The requirement accessors
 //! ([`FheExecution::dynamic_account_requirements`],
-//! [`FheExecution::value_authority_requirements`]) are how a caller that assembles the
+//! [`FheExecution::state_authority_requirements`]) are how a caller that assembles the
 //! transaction's account list — an off-chain client or a wrapping instruction — learns which
 //! dynamic accounts the execution needs and in which roles; resolution itself re-reads the
 //! account metas directly.
@@ -16,8 +16,8 @@ use crate::accounts::{
     resolve_execution_accounts, ExecutionAccountResolutionError, ResolvedExecutionAccounts,
 };
 use crate::accounts::{
-    ExecutionAccountMeta, ExecutionAccountRequirement, ExecutionEncryptedValueAccountAuthority,
-    ExecutionValueAuthorityRequirement,
+    ExecutionAccountMeta, ExecutionAccountRequirement, ExecutionAuthority,
+    ExecutionAuthorityRequirement,
 };
 use crate::builder::FheExecutionBuilder;
 #[cfg(feature = "cpi")]
@@ -33,7 +33,7 @@ use anchor_lang::prelude::AccountInfo;
 /// args or dynamic account roles.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FheExecution {
-    pub(crate) encrypted_value_account_authority: ExecutionEncryptedValueAccountAuthority,
+    pub(crate) authority: ExecutionAuthority,
     /// The application every persistent value belongs to; `None` for a transient-only execution.
     pub(crate) app: Option<AppScope>,
     /// Whether the execution has a rand step, and so must carry the host's rand nonce account.
@@ -59,9 +59,9 @@ impl FheExecution {
     ///
     /// ```
     /// use anchor_lang::prelude::Pubkey;
-    /// use zama_fhe::{FheExecution, ExecutionEncryptedValueAccountAuthority, Output, Scalar, Uint};
+    /// use zama_fhe::{FheExecution, ExecutionAuthority, Output, Scalar, Uint};
     ///
-    /// let authority = ExecutionEncryptedValueAccountAuthority::new(Pubkey::new_unique());
+    /// let authority = ExecutionAuthority::new(Pubkey::new_unique());
     /// let execution = FheExecution::build(authority, |builder| {
     ///     let value = builder.trivial_encrypt_u64(7, Output::transient())?;
     ///     builder.add(value, Scalar::<Uint<64>>::u64(1), Output::transient())?;
@@ -74,9 +74,9 @@ impl FheExecution {
     ///
     /// ```compile_fail
     /// use anchor_lang::prelude::Pubkey;
-    /// use zama_fhe::{FheExecution, ExecutionEncryptedValueAccountAuthority, Output, Scalar, Uint};
+    /// use zama_fhe::{FheExecution, ExecutionAuthority, Output, Scalar, Uint};
     ///
-    /// let authority = ExecutionEncryptedValueAccountAuthority::new(Pubkey::new_unique());
+    /// let authority = ExecutionAuthority::new(Pubkey::new_unique());
     /// FheExecution::build(authority, |outer| {
     ///     let borrowed = outer.trivial_encrypt_u64(7, Output::transient())?;
     ///     FheExecution::build(authority, |inner| {
@@ -88,20 +88,19 @@ impl FheExecution {
     /// })
     /// .unwrap();
     /// ```
-    pub fn build<F>(
-        encrypted_value_account_authority: ExecutionEncryptedValueAccountAuthority,
-        build: F,
-    ) -> Result<Self>
+    pub fn build<F>(authority: ExecutionAuthority, build: F) -> Result<Self>
     where
         F: for<'id> FnOnce(&mut FheExecutionBuilder<'id>) -> Result<()>,
     {
-        let mut builder = FheExecutionBuilder::new(encrypted_value_account_authority);
+        let mut builder = FheExecutionBuilder::new(authority);
         build(&mut builder)?;
         builder.finish()
     }
 
+    /// Returns only the produced value selected by the closure, preserving its FHE type.
+    /// Return bytes convey a handle, not permission: cross-program use still requires a grant.
     pub fn build_returning<T: crate::FheTyped, F>(
-        authority: ExecutionEncryptedValueAccountAuthority,
+        authority: ExecutionAuthority,
         build: F,
     ) -> Result<ReturningFheExecution<T>>
     where
@@ -112,24 +111,19 @@ impl FheExecution {
         let crate::operand::OperandKind::Transient { producer_index } = selected.operand().0 else {
             return Err(crate::FheExecutionBuildError::ResultNotProduced);
         };
-        let mut execution = builder.finish()?;
-        execution.cost.invoke_heap_bytes += execution.args.steps.len() * 32;
-        if execution.cost.build_heap_bytes
-            + execution.cost.packet_bytes
-            + execution.cost.invoke_heap_bytes
-            > crate::BUILD_HEAP_BUDGET_BYTES
-        {
-            return Err(crate::FheExecutionBuildError::ExceedsBuildHeapBudget);
-        }
+        let execution = builder.finish_returning(vec![zama_host::ExecutionResultRef {
+            step_index: producer_index,
+            output_index: 0,
+        }])?;
         Ok(ReturningFheExecution {
             execution,
-            producer_index,
+            return_index: 0,
             marker: std::marker::PhantomData,
         })
     }
 
-    pub fn encrypted_value_account_authority(&self) -> ExecutionEncryptedValueAccountAuthority {
-        self.encrypted_value_account_authority
+    pub fn authority(&self) -> ExecutionAuthority {
+        self.authority
     }
 
     /// The application this execution runs as — the `(program, scope)` of every persistent value
@@ -165,9 +159,9 @@ impl FheExecution {
     /// `remaining_accounts` order for this execution.
     ///
     /// `dynamic_accounts` must contain only non-authority execution accounts: persistent input
-    /// and writable persistent output `EncryptedValue` accounts. `value_authorities` must contain
-    /// signer witnesses for every persistent value whose authority is not the fixed CPI
-    /// `encrypted_value_account_authority`.
+    /// and writable persistent output `EncryptedState` accounts. `value_authorities` must contain
+    /// signer witnesses for every State whose authority is not the fixed CPI
+    /// `authority`.
     pub fn resolve_accounts<'info>(
         &self,
         dynamic_accounts: impl IntoIterator<Item = AccountInfo<'info>>,
@@ -177,29 +171,29 @@ impl FheExecution {
         resolve_execution_accounts(self, dynamic_accounts, value_authorities)
     }
 
-    /// Every authority that must sign: the fixed CPI signer first, then each persistent value's
+    /// Every authority that must sign: the fixed CPI signer first, then each State’s
     /// own authority that differs from it.
-    pub fn value_authority_requirements(
+    pub fn state_authority_requirements(
         &self,
-    ) -> impl Iterator<Item = ExecutionValueAuthorityRequirement> + '_ {
-        std::iter::once(ExecutionValueAuthorityRequirement {
-            pubkey: self.encrypted_value_account_authority.pubkey(),
+    ) -> impl Iterator<Item = ExecutionAuthorityRequirement> + '_ {
+        std::iter::once(ExecutionAuthorityRequirement {
+            pubkey: self.authority.pubkey(),
         })
         .chain(
             self.additional_value_authorities()
-                .map(|pubkey| ExecutionValueAuthorityRequirement { pubkey }),
+                .map(|pubkey| ExecutionAuthorityRequirement { pubkey }),
         )
     }
 
     pub fn value_authorities(&self) -> impl Iterator<Item = Pubkey> + '_ {
-        self.value_authority_requirements()
+        self.state_authority_requirements()
             .map(|requirement| requirement.pubkey())
     }
 
     pub fn additional_value_authorities(&self) -> impl Iterator<Item = Pubkey> + '_ {
         self.remaining_accounts
             .iter()
-            .filter(|account| account.requires_value_authority())
+            .filter(|account| account.requires_state_authority())
             .map(|account| account.pubkey)
     }
 
@@ -294,6 +288,10 @@ mod tests {
     #[test]
     fn hand_assembled_packet_matches_the_generated_wrapper() {
         let args = FheExecuteArgs {
+            returned_results: vec![zama_host::ExecutionResultRef {
+                step_index: 1,
+                output_index: 0,
+            }],
             account_count: 3,
             dictionary: vec![[7u8; 32]],
             steps: vec![
@@ -321,7 +319,7 @@ mod tests {
 /// An execution paired with the produced value its caller wants returned.
 pub struct ReturningFheExecution<T> {
     execution: FheExecution,
-    producer_index: u8,
+    return_index: u8,
     marker: std::marker::PhantomData<T>,
 }
 
@@ -337,10 +335,10 @@ impl<T> ReturningFheExecution<T> {
         resolved: &ResolvedExecutionAccounts<'info>,
         signer_seeds: &[&[&[u8]]],
     ) -> anchor_lang::prelude::Result<[u8; 32]> {
-        let count = self.execution.args.steps.len();
+        let count = self.execution.args.returned_results.len();
         self.execution.invoke(accounts, resolved, signer_seeds)?;
         let data = anchor_lang::solana_program::program::get_return_data();
-        select_returned_handle(data, count, self.producer_index).ok_or_else(|| {
+        select_returned_handle(data, count, self.return_index).ok_or_else(|| {
             anchor_lang::solana_program::program_error::ProgramError::InvalidInstructionData.into()
         })
     }
@@ -367,38 +365,43 @@ mod returning_tests {
 
     #[test]
     fn selected_result_stays_paired_with_its_execution_and_checks_return_data() {
-        let execution = FheExecution::build_returning(
-            ExecutionEncryptedValueAccountAuthority::new(Pubkey::new_unique()),
-            |fhe| {
+        let execution =
+            FheExecution::build_returning(ExecutionAuthority::new(Pubkey::new_unique()), |fhe| {
                 fhe.trivial_encrypt_u64(1, Output::transient())?;
                 let selected = fhe.trivial_encrypt_u64(2, Output::transient())?;
                 fhe.trivial_encrypt_u64(3, Output::transient())?;
                 Ok(selected)
-            },
-        )
-        .unwrap();
-        assert_eq!(execution.producer_index, 1);
-        let data = [[1; 32], [2; 32], [3; 32]].concat();
+            })
+            .unwrap();
+        assert_eq!(
+            execution.execution.args.returned_results,
+            vec![zama_host::ExecutionResultRef {
+                step_index: 1,
+                output_index: 0
+            }]
+        );
+        assert_eq!(execution.return_index, 0);
+        let data = vec![2; 32];
         assert_eq!(
             select_returned_handle(
                 Some((zama_host::ID, data.clone())),
-                3,
-                execution.producer_index
+                1,
+                execution.return_index
             ),
             Some([2; 32])
         );
         assert_eq!(
-            select_returned_handle(Some((Pubkey::new_unique(), data.clone())), 3, 1),
+            select_returned_handle(Some((Pubkey::new_unique(), data.clone())), 1, 0),
             None
         );
         assert_eq!(
-            select_returned_handle(Some((zama_host::ID, data.clone())), 2, 1),
+            select_returned_handle(Some((zama_host::ID, data.clone())), 2, 0),
             None
         );
         assert_eq!(
-            select_returned_handle(Some((zama_host::ID, data)), 3, 3),
+            select_returned_handle(Some((zama_host::ID, data)), 1, 1),
             None
         );
-        assert_eq!(select_returned_handle(None, 3, 1), None);
+        assert_eq!(select_returned_handle(None, 1, 0), None);
     }
 }

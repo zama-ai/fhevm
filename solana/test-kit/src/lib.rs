@@ -299,11 +299,6 @@ pub fn read_account<T: AccountDeserialize>(context: &Ctx, address: Pubkey) -> T 
     T::try_deserialize(&mut account.data.as_slice()).expect("account should deserialize")
 }
 
-/// Reads the canonical `EncryptedValue` at `address` from the context store.
-pub fn read_encrypted_value(context: &Ctx, address: Pubkey) -> host::EncryptedValue {
-    read_account(context, address)
-}
-
 /// Reads the canonical `EncryptedState` at `address` from the context store.
 pub fn read_encrypted_state(context: &Ctx, address: Pubkey) -> host::EncryptedState {
     read_account(context, address)
@@ -314,21 +309,6 @@ pub fn read_state_handle(context: &Ctx, address: Pubkey, key: [u8; 32]) -> [u8; 
     read_encrypted_state(context, address)
         .get(&key)
         .expect("encrypted state slot should exist")
-}
-
-/// Reads the `EncryptedValue` at `address` out of a stateless instruction result.
-pub fn read_encrypted_value_from_result(
-    result: &mollusk_svm::result::InstructionResult,
-    address: Pubkey,
-) -> host::EncryptedValue {
-    let account = result
-        .resulting_accounts
-        .iter()
-        .find(|(key, _)| *key == address)
-        .map(|(_, account)| account)
-        .expect("encrypted value account present in result");
-    let mut data: &[u8] = &account.data;
-    host::EncryptedValue::try_deserialize(&mut data).expect("valid EncryptedValue account")
 }
 
 /// Amount held by the token account at `address` — classic SPL Token or Token-2022, decided by
@@ -541,44 +521,6 @@ pub fn deny_scope_record_account(app: host::AppScope, denied: bool) -> (Pubkey, 
             rent_epoch: 0,
         },
     )
-}
-
-/// Builds a canonical `EncryptedValue` with no history at the PDA derived from
-/// `(app.program, encrypted_value_account_authority, app.scope, label)`.
-pub fn new_encrypted_value(
-    app: host::AppScope,
-    encrypted_value_account_authority: Pubkey,
-    encrypted_value_label: [u8; 32],
-    handle: [u8; 32],
-) -> (Pubkey, host::EncryptedValue) {
-    let (address, bump) = host::encrypted_value_address(
-        app.program,
-        encrypted_value_account_authority,
-        app.scope,
-        encrypted_value_label,
-    );
-    let value = host::EncryptedValue {
-        program: app.program,
-        encrypted_value_account_authority,
-        scope: app.scope,
-        label: encrypted_value_label,
-        current_handle: handle,
-        leaf_count: 0,
-        peaks: Vec::new(),
-        bump,
-    };
-    (address, value)
-}
-
-/// Wraps an `EncryptedValue` into an account entry for direct account-map seeding.
-pub fn encrypted_value_account(value: &host::EncryptedValue) -> Account {
-    Account {
-        lamports: 10_000_000_000,
-        data: serialized_account(value.clone()),
-        owner: host::id(),
-        executable: false,
-        rent_epoch: 0,
-    }
 }
 
 /// Builds a canonical encrypted state with the supplied initial slots and no

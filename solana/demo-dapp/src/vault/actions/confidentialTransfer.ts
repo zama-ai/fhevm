@@ -36,7 +36,7 @@ import {
   CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
   ZAMA_HOST_PROGRAM_ADDRESS,
 } from '../internal/generated/confidentialToken/programAddress.js';
-import { associatedTokenAddress } from '../internal/tokenValueAccount.js';
+import { associatedTokenAddress } from '../internal/tokenAccounts.js';
 
 const EVENT_AUTHORITY_SEED = new TextEncoder().encode('__event_authority');
 
@@ -57,8 +57,8 @@ export type SolanaConfidentialTransferParameters = {
   readonly toAccount: Address;
   /** Recipient owner; used to derive the destination freeze ATA. */
   readonly toOwner: Address;
-  readonly fromBalanceValue: Address;
-  readonly toBalanceValue: Address;
+  readonly fromState: Address;
+  readonly toState: Address;
   readonly hostConfig: Address;
   readonly hcuBlockMeter?: Address | undefined;
   readonly hcuTrustedAppRecord?: Address | undefined;
@@ -128,8 +128,8 @@ export async function confidentialTransfer(
     toAta: await associatedTokenAddress(parameters.toOwner, parameters.underlyingMint, parameters.tokenProgram),
     fromAccount: parameters.fromAccount,
     toAccount: parameters.toAccount,
-    fromBalanceValue: parameters.fromBalanceValue,
-    toBalanceValue: parameters.toBalanceValue,
+    fromState: parameters.fromState,
+    toState: parameters.toState,
     zamaEventAuthority,
     zamaProgram: zamaHostProgramAddress,
     hostConfig: parameters.hostConfig,

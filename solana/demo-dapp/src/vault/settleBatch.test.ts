@@ -102,7 +102,7 @@ async function options(overrides: { burnedHandle?: Uint8Array; extraLeaves?: num
     } as unknown as SolanaVaultSettleOptions['rpc'],
     rpcSubscriptions: {} as SolanaVaultSettleOptions['rpcSubscriptions'],
     runtime: {} as never,
-    proofService: { url: "http://proof-service", apiKey: "test" },
+    proofService: { url: 'http://listener-proof-endpoint', apiKey: 'test' },
     roots: roots(),
     contextId: new Uint8Array(32),
     lookupTableAddress: addr(200),
@@ -134,7 +134,7 @@ describe('settleBatch', () => {
     expect(certificate.mock.calls[0]![1]).toEqual({
       handle: `0x${hex(BURNED_HANDLE)}`,
       contextId: opts.contextId,
-      encryptedState: base58.decode(batchAddresses.batchBurnedAmountValue),
+      encryptedState: base58.decode(batchAddresses.batchBurnedAmountState),
       options: undefined,
     });
 

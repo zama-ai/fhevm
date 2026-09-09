@@ -7,14 +7,14 @@ use super::*;
 #[derive(Accounts)]
 #[event_cpi]
 pub struct DiscloseSecp<'info> {
-    /// Confidential mint whose application scopes the disclosed encrypted value account and event.
+    /// Confidential mint whose application scopes the disclosed encrypted State and event.
     pub mint: Box<Account<'info, ConfidentialMint>>,
     /// Confidential token account for account-scoped kinds. Must be absent for total supply.
     pub token_account: Option<Box<Account<'info, ConfidentialTokenAccount>>>,
-    /// The `EncryptedValue` encrypted value account the disclosed handle belongs to.
+    /// The `EncryptedState` encrypted State the disclosed handle belongs to.
     /// CHECK: canonical PDA, layout, and host ownership are validated by the `verify_public_decrypt`
     /// CPI; this handler additionally binds it to one exact token state field of `mint`.
-    pub encrypted_value: UncheckedAccount<'info>,
+    pub encrypted_state: UncheckedAccount<'info>,
     /// Host config carrying the current KMS context id and gateway EIP-712 domain.
     pub host_config: Box<Account<'info, zama_host::HostConfig>>,
     /// KMS context PDA for the id the certificate commits to (any live context; validated by the
@@ -39,17 +39,24 @@ pub fn disclose_secp(
     assert_host_config_allows_token_response(&ctx.accounts.host_config)?;
     let mint_key = ctx.accounts.mint.key();
 
-    let value = fhe::read_state(&ctx.accounts.encrypted_value.to_account_info())?;
+    let value = fhe::read_state(&ctx.accounts.encrypted_state.to_account_info())?;
     let expected_authority = if let Some(token_account) = &ctx.accounts.token_account {
         assert_confidential_token_account_shape(token_account, mint_key, token_account.owner)?;
         token_account.key()
     } else {
         total_supply_authority_address(mint_key).0
     };
-    require!(value.program == crate::ID && value.scope == mint_key.to_bytes() && value.authority == expected_authority,
-        ConfidentialTokenError::DisclosedValueBindingMismatch);
-    require_keys_eq!(ctx.accounts.encrypted_value.key(), encrypted_state_address(mint_key, expected_authority).0,
-        ConfidentialTokenError::DisclosedValueBindingMismatch);
+    require!(
+        value.program == crate::ID
+            && value.scope == mint_key.to_bytes()
+            && value.authority == expected_authority,
+        ConfidentialTokenError::DisclosedValueBindingMismatch
+    );
+    require_keys_eq!(
+        ctx.accounts.encrypted_state.key(),
+        encrypted_state_address(mint_key, expected_authority).0,
+        ConfidentialTokenError::DisclosedValueBindingMismatch
+    );
 
     let certified_cleartext = fhe::verify_public_decrypt(fhe::VerifyPublicDecrypt {
         expected_handle: handle,
@@ -57,13 +64,13 @@ pub fn disclose_secp(
         signatures,
         extra_data,
         proof,
-        encrypted_value: ctx.accounts.encrypted_value.to_account_info(),
+        encrypted_state: ctx.accounts.encrypted_state.to_account_info(),
         host_config: &ctx.accounts.host_config,
         kms_context: ctx.accounts.kms_context.to_account_info(),
         zama_program: &ctx.accounts.zama_program,
     })?;
 
-    // Token encrypted value accounts are euint64 today, so the certified uint256 cleartext must fit in 64 bits: the
+    // Token encrypted States are euint64 today, so the certified uint256 cleartext must fit in 64 bits: the
     // high 24 bytes must be zero for the low-64-bit truncation below to be lossless. Reject anything
     // wider rather than silently discarding high bits.
     require!(
@@ -75,7 +82,7 @@ pub fn disclose_secp(
         version: APP_EVENT_VERSION,
         mint: mint_key,
         handle,
-        encrypted_value: ctx.accounts.encrypted_value.key(),
+        encrypted_state: ctx.accounts.encrypted_state.key(),
         authority: expected_authority,
         cleartext_amount: u64::from_be_bytes(
             certified_cleartext[24..]

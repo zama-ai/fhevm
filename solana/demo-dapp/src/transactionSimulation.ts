@@ -1,8 +1,4 @@
-import {
-  createSolanaRpc,
-  getBase64EncodedWireTransaction,
-  type Transaction,
-} from "@solana/kit";
+import { createSolanaRpc, getBase64EncodedWireTransaction, type Transaction } from '@solana/kit';
 
 type SimulationValue = {
   readonly err: unknown;
@@ -10,17 +6,12 @@ type SimulationValue = {
 };
 
 const stringifyError = (error: unknown): string =>
-  JSON.stringify(error, (_key, value: unknown) =>
-    typeof value === "bigint" ? value.toString() : value,
-  );
+  JSON.stringify(error, (_key, value: unknown) => (typeof value === 'bigint' ? value.toString() : value));
 
-export const assertSimulationSucceeded = (
-  label: string,
-  simulation: SimulationValue,
-): void => {
+export const assertSimulationSucceeded = (label: string, simulation: SimulationValue): void => {
   if (simulation.err === null) return;
   const error = stringifyError(simulation.err);
-  const logs = simulation.logs?.join("\n") ?? "";
+  const logs = simulation.logs?.join('\n') ?? '';
   throw new Error(
     logs.length > 0
       ? `${label} failed local simulation: ${error}\n${logs}`
@@ -37,8 +28,8 @@ const simulateTransactionLocally = async (
   const wireTransaction = getBase64EncodedWireTransaction(transaction);
   const simulation = await rpc
     .simulateTransaction(wireTransaction, {
-      commitment: "confirmed",
-      encoding: "base64",
+      commitment: 'confirmed',
+      encoding: 'base64',
       sigVerify,
     })
     .send();

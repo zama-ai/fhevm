@@ -1,15 +1,15 @@
 use crate::core::{
     config::Config,
     event_processor::{
+        CiphertextManager, HostRpcClient, ProcessingError, RequestCheckError, RequestCheckKind,
         ciphertext::VerifiedCiphertexts,
         context::ContextManager,
-        solana_public_decrypt::{check_solana_handles_public_decrypt, SolanaHost},
-        CiphertextManager, HostRpcClient, ProcessingError, RequestCheckError, RequestCheckKind,
+        solana_public_decrypt::{SolanaHost, check_solana_handles_public_decrypt},
     },
     solana::{
         event_parity::check_event_permit_parity,
         kms_pair::{KmsPairFailure, KmsPairValidator},
-        pipeline::{authorize_request, AuthorizationContext},
+        pipeline::{AuthorizationContext, authorize_request},
         request::SolanaUserDecryptRequest,
     },
     solana_acl::{HandleBytes, SolanaPubkeyBytes},
@@ -17,21 +17,20 @@ use crate::core::{
 use alloy::{
     consensus::Transaction,
     hex,
-    primitives::{map::DefaultHashBuilder, Address, Bytes, FixedBytes, B256, U256},
+    primitives::{Address, B256, Bytes, FixedBytes, U256, map::DefaultHashBuilder},
     providers::Provider,
     sol_types::{Eip712Domain, SolCall},
 };
 use anyhow::anyhow;
 use connector_utils::types::extra_data::ExtraData;
 use connector_utils::types::{
-    extra_data::parse_extra_data, handle::extract_chain_id_from_handle, u256_to_request_id,
-    KmsGrpcRequest,
+    KmsGrpcRequest, extra_data::parse_extra_data, handle::extract_chain_id_from_handle,
+    u256_to_request_id,
 };
 use fhevm_gateway_bindings::decryption::Decryption::{
-    self, delegatedUserDecryptionRequestCall,
-    userDecryptionRequest_2Call as userDecryptionRequestCall, DecryptionInstance, HandleEntry,
-    UserDecryptionRequest_3 as UserDecryptionRequestV2,
-    UserDecryptionRequest_4 as UserDecryptionRequestV3,
+    self, DecryptionInstance, HandleEntry, UserDecryptionRequest_3 as UserDecryptionRequestV2,
+    UserDecryptionRequest_4 as UserDecryptionRequestV3, delegatedUserDecryptionRequestCall,
+    userDecryptionRequest_2Call as userDecryptionRequestCall,
 };
 use futures::{
     future::try_join_all,
@@ -919,9 +918,9 @@ mod tests {
     use crate::core::solana::proof::HttpHostProofReader;
     use crate::core::solana::request::{SolanaHandleEntryWire, SolanaUserDecryptRequestWire};
     use alloy::{
-        providers::{mock::Asserter, ProviderBuilder},
+        providers::{ProviderBuilder, mock::Asserter},
         rpc::types::Transaction as RpcTransaction,
-        signers::{local::PrivateKeySigner, SignerSync},
+        signers::{SignerSync, local::PrivateKeySigner},
         sol_types::SolValue,
     };
     use connector_utils::{
@@ -935,7 +934,7 @@ mod tests {
     use fhevm_host_bindings::acl::ACL;
     use rstest::rstest;
     use user_decryption_signature::{
-        compute_user_decrypt_digest, default_user_decrypt_domain, ERC1271_MAGIC_VALUE,
+        ERC1271_MAGIC_VALUE, compute_user_decrypt_digest, default_user_decrypt_domain,
     };
     use zama_solana_request::encode_solana_request;
 
@@ -1797,19 +1796,19 @@ mod tests {
     ) -> (Result<UserDecryptionExtraData, RequestCheckError>, Vec<u8>) {
         use crate::core::solana::deployment::DeploymentIdentity;
         use crate::core::solana::proof::{
-            leaf_proof_request_body, LeafKind, LeafQuery, LEAF_PROOFS_PATH,
+            LEAF_PROOFS_PATH, LeafKind, LeafQuery, leaf_proof_request_body,
         };
         use crate::core::solana::snapshot::{multiple_accounts_request_body, plan_first_read};
-        use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine};
+        use base64::{Engine, engine::general_purpose::STANDARD as BASE64_STANDARD};
         use mocktail::server::MockServer;
         use ring::signature::{Ed25519KeyPair, KeyPair};
         use solana_pubkey::Pubkey;
         use zama_solana_acl::{
+            ENCRYPTED_STATE_SEED, EncryptedSlot, EncryptedState, HostConfigRecord,
             encrypted_state_discriminator, historical_access_leaf_commitment, mmr_leaf_node,
-            EncryptedSlot, EncryptedState, HostConfigRecord, ENCRYPTED_STATE_SEED,
         };
         use zama_solana_permit::{
-            build_envelope, Identity, KmsRouting, PermitFields, PermitWireFields, TRANSPORT_KEY_LEN,
+            Identity, KmsRouting, PermitFields, PermitWireFields, TRANSPORT_KEY_LEN, build_envelope,
         };
 
         // The one deployment every fixture is built against, matching what the Solana test backend
@@ -2148,10 +2147,12 @@ mod tests {
 
         match result {
             Err(error) if error.kind == ProcessingErrorKind::Irrecoverable => {
-                assert!(error
-                    .source
-                    .to_string()
-                    .contains("requires the version-4 extraData"));
+                assert!(
+                    error
+                        .source
+                        .to_string()
+                        .contains("requires the version-4 extraData")
+                );
             }
             other => panic!("expected Solana public-decrypt rejection, got {other:?}"),
         }
@@ -2255,10 +2256,12 @@ mod tests {
 
         for result in [public, legacy, evm_unified, solana] {
             match result {
-                Err(error) if error.kind == ProcessingErrorKind::Recoverable => assert!(error
-                    .source
-                    .to_string()
-                    .contains("No host-chain ACL backend configured")),
+                Err(error) if error.kind == ProcessingErrorKind::Recoverable => assert!(
+                    error
+                        .source
+                        .to_string()
+                        .contains("No host-chain ACL backend configured")
+                ),
                 other => panic!("expected recoverable unknown-backend error, got {other:?}"),
             }
         }

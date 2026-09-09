@@ -16,7 +16,7 @@ pub type HandleBytes = [u8; 32];
 // off-chain reader (this connector's authoritative check, the relayer's advisory pre-check)
 // decodes the same bytes through one implementation.
 pub use zama_solana_acl::UserDecryptionDelegationRecord;
-pub use zama_solana_acl::WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY;
+pub use zama_solana_acl::WILDCARD_AUTHORITY;
 pub use zama_solana_acl::delegation::DELEGATION_SEED;
 
 pub const HOST_CONFIG_SEED: &[u8] = b"host-config";
@@ -80,7 +80,7 @@ pub fn user_decryption_delegation_address(
     host_program_id: SolanaPubkeyBytes,
     delegator: SolanaPubkeyBytes,
     delegate: SolanaPubkeyBytes,
-    encrypted_value_account_authority: SolanaPubkeyBytes,
+    authority: SolanaPubkeyBytes,
 ) -> (SolanaPubkeyBytes, u8) {
     let host_program_id = Pubkey::new_from_array(host_program_id);
     let (address, bump) = Pubkey::find_program_address(
@@ -88,7 +88,7 @@ pub fn user_decryption_delegation_address(
             DELEGATION_SEED,
             delegator.as_ref(),
             delegate.as_ref(),
-            encrypted_value_account_authority.as_ref(),
+            authority.as_ref(),
         ],
         &host_program_id,
     );
@@ -124,7 +124,7 @@ mod tests {
             record: UserDecryptionDelegationRecord {
                 delegator: OWNER,
                 delegate: DELEGATE,
-                encrypted_value_account_authority: AUTHORITY,
+                authority: AUTHORITY,
                 expiration_slot: OBSERVED_SLOT + 20,
                 delegation_counter: 9,
                 last_update_slot: OBSERVED_SLOT - 1,
@@ -139,7 +139,7 @@ mod tests {
         let mut data = anchor_account_discriminator("UserDecryptionDelegation").to_vec();
         data.extend_from_slice(&record.delegator);
         data.extend_from_slice(&record.delegate);
-        data.extend_from_slice(&record.encrypted_value_account_authority);
+        data.extend_from_slice(&record.authority);
         data.extend_from_slice(&record.expiration_slot.to_le_bytes());
         data.extend_from_slice(&record.delegation_counter.to_le_bytes());
         data.extend_from_slice(&record.last_update_slot.to_le_bytes());

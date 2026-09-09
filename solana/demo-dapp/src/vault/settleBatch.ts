@@ -102,13 +102,18 @@ export async function settleBatch(
     {
       handle: bytesToHex(burnedTotalHandle),
       contextId: options.contextId,
-      encryptedState: base58.decode(accounts.batchBurnedAmountValue),
+      encryptedState: base58.decode(accounts.batchBurnedAmountState),
       options: options.certificateOptions,
     },
   );
 
   const cleartextTotal = settleTotalFromCleartext(hexToBytes(claim.abiEncodedCleartext));
-  const inclusionProof = await publicProof(rpc, options.proofService, accounts.batchBurnedAmountValue, burnedTotalHandle);
+  const inclusionProof = await publicProof(
+    rpc,
+    options.proofService,
+    accounts.batchBurnedAmountState,
+    burnedTotalHandle,
+  );
 
   const signatures = claim.signatures.map((signature, index) => {
     const bytes = hexToBytes(signature);
@@ -144,7 +149,7 @@ export async function settleBatch(
     joinUnderlyingMint: accounts.joinUnderlyingMint,
     joinMintVaultUnderlying: accounts.joinMintVaultUnderlying,
     joinMintVaultAuthority: accounts.joinMintVaultAuthority,
-    batchBurnedAmountValue: accounts.batchBurnedAmountValue,
+    batchBurnedAmountState: accounts.batchBurnedAmountState,
     pendingBurn: accounts.pendingBurn,
     hostConfig: accounts.hostConfig,
     kmsContext: accounts.kmsContext,
@@ -157,8 +162,8 @@ export async function settleBatch(
     payoutMintVaultUnderlying: accounts.payoutMintVaultUnderlying,
     payoutMintVaultAuthority: accounts.payoutMintVaultAuthority,
     payoutTotalSupplyAuthority: accounts.payoutTotalSupplyAuthority,
-    batchPayoutBalanceValue: accounts.batchPayoutBalanceValue,
-    payoutTotalSupplyValue: accounts.payoutTotalSupplyValue,
+    batchPayoutBalanceState: accounts.batchPayoutBalanceState,
+    payoutTotalSupplyState: accounts.payoutTotalSupplyState,
     zamaEventAuthority,
     confidentialTokenEventAuthority,
     cleartextTotal,

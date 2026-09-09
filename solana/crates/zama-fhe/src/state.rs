@@ -1,7 +1,7 @@
 use anchor_lang::prelude::Pubkey;
 
 use crate::operand::{Operand, OperandKind};
-use crate::{AppScope, FheExecutionBuildError, FheTyped, Result, StoredValue};
+use crate::{AppScope, FheExecutionBuildError, FheHandle, FheTyped, Result};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct StateId {
@@ -51,12 +51,12 @@ impl<'a> State<'a> {
         self.id
     }
 
-    pub fn get<T: FheTyped>(&self, key: [u8; 32]) -> Result<StoredValue<T>> {
+    pub fn get<T: FheTyped>(&self, key: [u8; 32]) -> Result<FheHandle<T>> {
         let handle = self
             .account
             .get(&key)
             .ok_or(FheExecutionBuildError::MissingStateSlot)?;
-        StoredValue::from_handle_operand(
+        FheHandle::from_handle_operand(
             handle,
             Operand(OperandKind::StateSlot {
                 state: self.id,
@@ -85,14 +85,28 @@ impl<'a> State<'a> {
         }
     }
 
-    pub fn granted<T: FheTyped>(&self, handle: [u8; 32], initiating: StateId) -> Result<StoredValue<T>> {
+    pub fn granted<T: FheTyped>(
+        &self,
+        handle: [u8; 32],
+        initiating: StateId,
+    ) -> Result<FheHandle<T>> {
         self.granted_from_scratch(handle, initiating.scratch_address())
     }
 
-    pub fn granted_from_scratch<T: FheTyped>(&self, handle: [u8; 32], scratch: Pubkey) -> Result<StoredValue<T>> {
-        StoredValue::from_handle_operand(handle, Operand(OperandKind::Granted { consumer: self.id, scratch, handle }))
+    pub fn granted_from_scratch<T: FheTyped>(
+        &self,
+        handle: [u8; 32],
+        scratch: Pubkey,
+    ) -> Result<FheHandle<T>> {
+        FheHandle::from_handle_operand(
+            handle,
+            Operand(OperandKind::Granted {
+                consumer: self.id,
+                scratch,
+                handle,
+            }),
+        )
     }
-
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -123,7 +137,7 @@ impl StateOutput {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{ExecutionEncryptedValueAccountAuthority, FheExecution, Output, Scalar, Uint};
+    use crate::{ExecutionAuthority, FheExecution, Output, Scalar, Uint};
 
     #[test]
     fn slots_share_history_and_a_failed_rewrite_does_not_poison_the_builder() {
@@ -137,26 +151,23 @@ mod tests {
             bump: 0,
         };
         let state = State::new(&account);
-        let execution = FheExecution::build(
-            ExecutionEncryptedValueAccountAuthority::new(account.authority),
-            |fhe| {
-                let first = fhe.trivial_encrypt_u64(
-                    1,
-                    Output::state(state.set([1; 32]).allow(account.authority)),
-                )?;
-                assert_eq!(
-                    fhe.trivial_encrypt_u64(2, Output::state(state.set([1; 32])))
-                        .unwrap_err(),
-                    FheExecutionBuildError::PersistentOperandWrittenEarlier
-                );
-                fhe.add(
-                    first,
-                    Scalar::<Uint<64>>::u64(1),
-                    Output::state(state.set([2; 32]).make_public()),
-                )?;
-                Ok(())
-            },
-        )
+        let execution = FheExecution::build(ExecutionAuthority::new(account.authority), |fhe| {
+            let first = fhe.trivial_encrypt_u64(
+                1,
+                Output::state(state.set([1; 32]).allow(account.authority)),
+            )?;
+            assert_eq!(
+                fhe.trivial_encrypt_u64(2, Output::state(state.set([1; 32])))
+                    .unwrap_err(),
+                FheExecutionBuildError::StateSlotWrittenEarlier
+            );
+            fhe.add(
+                first,
+                Scalar::<Uint<64>>::u64(1),
+                Output::state(state.set([2; 32]).make_public()),
+            )?;
+            Ok(())
+        })
         .unwrap();
         let counts: Vec<_> = execution
             .args

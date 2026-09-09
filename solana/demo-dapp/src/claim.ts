@@ -55,14 +55,9 @@ const buildClaimInstructions = async (
   if (claimed) return null;
 
   const payoutTokenAccount = await tokenAccountAddress(roots.payoutConfidentialMint, user);
-  const account = (
-    await rpc.getAccountInfo(payoutTokenAccount, { commitment: 'confirmed', encoding: 'base64' }).send()
-  ).value;
-  if (
-    account !== null &&
-    account.owner !== session.config.programs.token &&
-    account.owner !== SYSTEM_PROGRAM_ADDRESS
-  ) {
+  const account = (await rpc.getAccountInfo(payoutTokenAccount, { commitment: 'confirmed', encoding: 'base64' }).send())
+    .value;
+  if (account !== null && account.owner !== session.config.programs.token && account.owner !== SYSTEM_PROGRAM_ADDRESS) {
     throw new Error(`Payout account ${payoutTokenAccount} is owned by an unexpected program`);
   }
 
@@ -79,7 +74,7 @@ const buildClaimInstructions = async (
     );
   }
   instructions.push(
-    ...await buildVaultClaimInstructions({
+    ...(await buildVaultClaimInstructions({
       payer: session.keeper,
       user,
       batcher: roots.batcher,
@@ -88,7 +83,7 @@ const buildClaimInstructions = async (
       payoutUnderlyingMint: roots.payoutUnderlyingMint,
       tokenProgram: TOKEN_PROGRAM_ADDRESS,
       hostConfig: session.config.hostConfig,
-    }),
+    })),
   );
   return { instructions, initializesAccount };
 };

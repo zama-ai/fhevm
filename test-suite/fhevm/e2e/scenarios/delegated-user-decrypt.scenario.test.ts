@@ -73,7 +73,7 @@ const delegatedDecrypt = (
   params: { readonly value: SpecimenValue; readonly handle: Uint8Array; readonly delegateSecretKey: string },
 ): Promise<bigint> =>
   userDecryptExpect(setup.config, {
-    encryptedValue: params.value.encryptedValue,
+    encryptedState: params.value.encryptedState,
     handle: params.handle,
     secretKey: params.delegateSecretKey,
     allowedKey: params.value.owner,
@@ -175,7 +175,7 @@ describe("solana delegated user-decrypt", () => {
       }) as typeof fetch;
       try {
         const entries = [
-          { handle, encryptedState: addressBytes(value.encryptedValue), allowedKey: addressBytes(value.owner) },
+          { handle, encryptedState: addressBytes(value.encryptedState), allowedKey: addressBytes(value.owner) },
         ];
         const first = await client.userDecrypt({ session, entries });
         const second = await client.userDecrypt({ session, entries });
@@ -262,7 +262,7 @@ describe("solana delegated user-decrypt", () => {
         await executeVaultTransaction(connection, squad, members[0]!, index);
       }
       const value = await counterValue(vaultAddress);
-      const handle = await currentHandle(context, value.encryptedValue, value.key);
+      const handle = await currentHandle(context, value.encryptedState, value.key);
       await stack.waitForSnsCommit(hex(handle));
 
       // The proposal's inner instruction: vault -> delegate, the vault paying its own rent.

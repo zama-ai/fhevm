@@ -166,8 +166,7 @@ export function useDemoController() {
   const refreshWalletBalances = useCallback(
     async (session: DemoSession, generation: number) => {
       const requestGeneration = ++walletBalancesRequestGeneration.current;
-      const isCurrent = () =>
-        session.isActive() && walletBalancesRequestGeneration.current === requestGeneration;
+      const isCurrent = () => session.isActive() && walletBalancesRequestGeneration.current === requestGeneration;
       commit(generation, {
         publicUsdcBalance: null,
         hasConfidentialUsdc: null,
@@ -209,10 +208,7 @@ export function useDemoController() {
       action: OperatorAction,
       generation: number,
     ) => {
-      if (
-        sessionGeneration.current !== generation ||
-        operatorGeneration.current[direction] === generation
-      ) {
+      if (sessionGeneration.current !== generation || operatorGeneration.current[direction] === generation) {
         return;
       }
       operatorGeneration.current[direction] = generation;
@@ -336,9 +332,7 @@ export function useDemoController() {
               redeemOperatorError: null,
               revealedUsdc: null,
               revealUsdcError: null,
-              ...(state.redeemPercentage === 100
-                ? { hasPrivateShares: false, revealedShares: null }
-                : {}),
+              ...(state.redeemPercentage === 100 ? { hasPrivateShares: false, revealedShares: null } : {}),
             });
             void refreshVaultMetrics(generation);
             return;
@@ -363,7 +357,15 @@ export function useDemoController() {
       canceled = true;
       if (timeout !== undefined) window.clearTimeout(timeout);
     };
-  }, [advanceOperator, commit, refreshVaultMetrics, state.connection, state.generation, state.redeem, state.redeemPercentage]);
+  }, [
+    advanceOperator,
+    commit,
+    refreshVaultMetrics,
+    state.connection,
+    state.generation,
+    state.redeem,
+    state.redeemPercentage,
+  ]);
 
   useEffect(() => {
     if (state.connection.kind !== 'ready') {
@@ -471,11 +473,7 @@ export function useDemoController() {
       revealUsdcError: null,
     });
     try {
-      await ensureDemoFunding(
-        session.config,
-        session.signer.address,
-        source === 'usdc' ? usdcToBaseUnits(amount) : 0n,
-      );
+      await ensureDemoFunding(session.config, session.signer.address, source === 'usdc' ? usdcToBaseUnits(amount) : 0n);
       session.assertActive();
       const target = await prepareDemoDepositBatch();
       session.assertActive();
@@ -502,12 +500,7 @@ export function useDemoController() {
   };
 
   const revealShares = async () => {
-    if (
-      state.connection.kind !== 'ready' ||
-      state.hasConfidentialShares !== true ||
-      operationInFlight.current
-    )
-      return;
+    if (state.connection.kind !== 'ready' || state.hasConfidentialShares !== true || operationInFlight.current) return;
     const session = state.connection.session;
     const generation = state.generation;
     const mutationGeneration = privateBalanceMutationGeneration.current;

@@ -24,7 +24,7 @@ export type SolanaVerifyPublicDecryptArgs = {
  * the fixed-size fields. `handle` and `cleartext` are the 32-byte handle and 32-byte big-endian
  * `uint256` cleartext the KMS signed over; each signature is a 65-byte secp256k1 recoverable
  * signature. The proof is the MMR public-leaf inclusion path for `handle`, built by the caller from
- * the account's history (`reconstructSolanaEncryptedValueAccount` + `mmrBuildProof`): the certificate
+ * the account's history (`reconstructSolanaStateHistory` + `mmrBuildProof`): the certificate
  * does not carry it, because the Connector fetches its own.
  */
 export function verifyPublicDecryptArgsFromClaim(

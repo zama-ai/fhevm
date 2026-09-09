@@ -7,7 +7,7 @@ import {
 import { findTotalSupplyAuthorityPda } from './generated/confidentialToken/pdas/totalSupplyAuthority.js';
 // The `__event_authority` seed and the canonical token-value derivation are owned by batcherPdas;
 // import them rather than re-declaring the seed / re-implementing the derivation here.
-import { EVENT_AUTHORITY_SEED, tokenStateAddress } from './batcherPdas.js';
+import { EVENT_AUTHORITY_SEED } from './batcherPdas.js';
 
 // Slot key shared with confidential_token::state.
 export const BALANCE_KEY = new TextEncoder().encode('balance_________________________');
@@ -21,13 +21,7 @@ const encodeAddress = (value: Address): Uint8Array => new Uint8Array(addressEnco
 const pda = async (programAddress: Address, seeds: Uint8Array[]): Promise<Address> =>
   (await getProgramDerivedAddress({ programAddress, seeds }))[0];
 
-/** The confidential balance value of `tokenAccount` under `mint` (label `balance`). */
-export const balanceValueAddress = (mint: Address, tokenAccount: Address): Promise<Address> =>
-  tokenStateAddress(mint, tokenAccount);
-
-/** The total-supply value of `mint` (authority = its total-supply authority). */
-export const totalSupplyValueAddress = (mint: Address, totalSupplyAuthority: Address): Promise<Address> =>
-  tokenStateAddress(mint, totalSupplyAuthority);
+export { tokenStateAddress } from './batcherPdas.js';
 
 /** The mint's total-supply authority PDA under the compiled confidential-token program. */
 export const totalSupplyAuthorityAddress = async (mint: Address): Promise<Address> =>
@@ -46,13 +40,5 @@ export const TOKEN_PROGRAM_ADDRESS = SPL_TOKEN_PROGRAM_ADDRESS;
  * Associated token account for `owner` and SPL `mint` under `tokenProgram`
  * (`get_associated_token_address_with_program_id`).
  */
-export const associatedTokenAddress = (
-  owner: Address,
-  mint: Address,
-  tokenProgram: Address,
-): Promise<Address> =>
-  pda(ASSOCIATED_TOKEN_PROGRAM_ADDRESS, [
-    encodeAddress(owner),
-    encodeAddress(tokenProgram),
-    encodeAddress(mint),
-  ]);
+export const associatedTokenAddress = (owner: Address, mint: Address, tokenProgram: Address): Promise<Address> =>
+  pda(ASSOCIATED_TOKEN_PROGRAM_ADDRESS, [encodeAddress(owner), encodeAddress(tokenProgram), encodeAddress(mint)]);

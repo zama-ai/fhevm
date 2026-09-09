@@ -34,18 +34,18 @@ pub fn create_encrypted_state(
     let authority = ctx.accounts.authority.key();
     let seeds: Vec<&[u8]> = args.authority_seeds.iter().map(Vec::as_slice).collect();
     let derived = Pubkey::create_program_address(&seeds, &args.program)
-        .map_err(|_| error!(ZamaHostError::EncryptedValueAuthorityNotProgramPda))?;
+        .map_err(|_| error!(ZamaHostError::EncryptedStateAuthorityNotProgramPda))?;
     require_keys_eq!(
         derived,
         authority,
-        ZamaHostError::EncryptedValueAuthorityNotProgramPda
+        ZamaHostError::EncryptedStateAuthorityNotProgramPda
     );
     let (address, bump) = encrypted_state_address(args.program, authority, args.scope);
     let info = ctx.accounts.encrypted_state.to_account_info();
     require_keys_eq!(
         address,
         info.key(),
-        ZamaHostError::EncryptedValuePdaMismatch
+        ZamaHostError::EncryptedStatePdaMismatch
     );
     create_pda_strict(
         &ctx.accounts.payer.to_account_info(),

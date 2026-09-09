@@ -27,7 +27,7 @@ pub struct DelegateForUserDecryption<'info> {
 pub fn delegate_for_user_decryption(
     ctx: Context<DelegateForUserDecryption>,
     delegate: Pubkey,
-    encrypted_value_account_authority: Pubkey,
+    authority: Pubkey,
     expiration_slot: u64,
 ) -> Result<()> {
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
@@ -35,31 +35,22 @@ pub fn delegate_for_user_decryption(
     let clock = Clock::get()?;
     let delegator = ctx.accounts.delegator.key();
     require!(
-        delegate != Pubkey::default() && encrypted_value_account_authority != Pubkey::default(),
+        delegate != Pubkey::default() && authority != Pubkey::default(),
         ZamaHostError::InvalidDelegation
     );
     require!(
-        delegate.to_bytes() != WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY_BYTES,
+        delegate.to_bytes() != WILDCARD_AUTHORITY_BYTES,
         ZamaHostError::InvalidDelegation
     );
     require_keys_neq!(delegator, delegate, ZamaHostError::InvalidDelegation);
-    require_keys_neq!(
-        delegator,
-        encrypted_value_account_authority,
-        ZamaHostError::InvalidDelegation
-    );
-    require_keys_neq!(
-        delegate,
-        encrypted_value_account_authority,
-        ZamaHostError::InvalidDelegation
-    );
+    require_keys_neq!(delegator, authority, ZamaHostError::InvalidDelegation);
+    require_keys_neq!(delegate, authority, ZamaHostError::InvalidDelegation);
     require!(
         expiration_slot > clock.slot,
         ZamaHostError::InvalidDelegation
     );
 
-    let (expected, bump) =
-        user_decryption_delegation_address(delegator, delegate, encrypted_value_account_authority);
+    let (expected, bump) = user_decryption_delegation_address(delegator, delegate, authority);
     require_keys_eq!(
         expected,
         ctx.accounts.delegation_record.key(),
@@ -76,7 +67,7 @@ pub fn delegate_for_user_decryption(
             crate::state::DELEGATION_SEED,
             delegator.as_ref(),
             delegate.as_ref(),
-            encrypted_value_account_authority.as_ref(),
+            authority.as_ref(),
             &[bump],
         ],
     )?;
@@ -89,8 +80,8 @@ pub fn delegate_for_user_decryption(
             );
             require_keys_eq!(record.delegate, delegate, ZamaHostError::InvalidDelegation);
             require_keys_eq!(
-                record.encrypted_value_account_authority,
-                encrypted_value_account_authority,
+                record.authority,
+                authority,
                 ZamaHostError::InvalidDelegation
             );
             require!(
@@ -113,7 +104,7 @@ pub fn delegate_for_user_decryption(
         &UserDecryptionDelegation {
             delegator,
             delegate,
-            encrypted_value_account_authority,
+            authority,
             expiration_slot,
             delegation_counter,
             last_update_slot: clock.slot,

@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use host_listener::database::solana_leaves::{
     load_checkpoint, load_encrypted_state_histories, load_recorded_leaves,
     reduce_block_leaves, store_block_leaves, store_checkpoint,
-    EncryptedStateWrite, LeafSource, StoredCheckpoint, TransactionLeafSources,
+    EncryptedStateWrite, StoredCheckpoint, TransactionStateWrites,
 };
 use host_listener::http_server::{
     ErrorCode, ErrorResponse, HttpServer, LeafProof, LeafProofRequest,
@@ -32,14 +32,14 @@ fn write(
     handle: [u8; 32],
     allowed_keys: Vec<[u8; 32]>,
     make_public: bool,
-) -> LeafSource {
-    LeafSource::State(EncryptedStateWrite {
+) -> EncryptedStateWrite {
+    EncryptedStateWrite {
         encrypted_state: ACCOUNT,
         previous_leaf_count,
         handle,
         allowed_keys,
         make_public,
-    })
+    }
 }
 
 #[tokio::test]
@@ -71,7 +71,7 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
     let existing = load_encrypted_state_histories(&mut tx, &[ACCOUNT]).await?;
     assert!(existing.is_empty());
     let first = reduce_block_leaves(
-        &[TransactionLeafSources {
+        &[TransactionStateWrites {
             transaction_index: 0,
             sources: vec![write(0, [0x10; 32], vec![OWNER], false)],
         }],
@@ -93,7 +93,7 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
     assert_eq!(existing.len(), 1);
     assert_eq!(existing[&ACCOUNT].leaf_count, 1);
     let second = reduce_block_leaves(
-        &[TransactionLeafSources {
+        &[TransactionStateWrites {
             transaction_index: 2,
             sources: vec![write(1, [0x11; 32], vec![OWNER], true)],
         }],
@@ -255,15 +255,15 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
     // An account first seen through an update serves no proof.
     let mut tx = pool.begin().await?;
     let incomplete = reduce_block_leaves(
-        &[TransactionLeafSources {
+        &[TransactionStateWrites {
             transaction_index: 0,
-            sources: vec![LeafSource::State(EncryptedStateWrite {
+            sources: vec![EncryptedStateWrite {
                 encrypted_state: [0xBB; 32],
                 previous_leaf_count: 7,
                 handle: [0x21; 32],
                 allowed_keys: vec![OWNER],
                 make_public: false,
-            })],
+            }],
         }],
         BTreeMap::new(),
     )?;

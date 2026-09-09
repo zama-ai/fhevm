@@ -515,7 +515,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       // Claim into Alice's initially empty payout balance, then decrypt that balance to verify
       // the transfer credited the full proportional payout. No separate claim output is stored.
       const payoutMint = config.mints.payoutConfidential;
-      const claimValueAccount = await vault.balanceValueAddress(payoutMint, await vault.tokenAccountAddress(payoutMint, alice.address));
+      const claimValueAccount = await vault.tokenStateAddress(payoutMint, await vault.tokenAccountAddress(payoutMint, alice.address));
       console.log(`deposit-arc claim: alice claiming her payout from batch ${batchBeforeJoin.index} (${batch})...`);
       await send(
         alice,

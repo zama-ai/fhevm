@@ -17,12 +17,12 @@ export async function publicProof(
       body: JSON.stringify({ leaves: [{ encryptedState: bytesToHex(base58.decode(state)), handle: bytesToHex(handle), kind: 'public' }] }),
       signal: AbortSignal.timeout(5_000),
     });
-    if (!response.ok) throw new Error(`public proof service returned HTTP ${response.status}`);
+    if (!response.ok) throw new Error(`public listener proof endpoint returned HTTP ${response.status}`);
     const body = await response.json() as { proofs?: { status: string; leafIndex?: number; siblings?: string[] }[] };
     const answer = body.proofs?.[0];
     if (answer?.status === 'found') {
       if (!Number.isSafeInteger(answer.leafIndex) || answer.leafIndex! < 0 || !Array.isArray(answer.siblings)) {
-        throw new Error('public proof service returned a malformed proof');
+        throw new Error('public listener proof endpoint returned a malformed proof');
       }
       const proof = { leafIndex: BigInt(answer.leafIndex!), siblings: answer.siblings.map(hexToBytes) };
       const live = await fetchSolanaEncryptedState(rpc, state, { commitment: 'confirmed' }, ZAMA_HOST_PROGRAM_ADDRESS);

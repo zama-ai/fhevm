@@ -120,8 +120,7 @@ fn resolve_operand(
     produced: &[[u8; 32]],
 ) -> Option<[u8; 32]> {
     match operand {
-        FheExecuteOperand::StoredValue { handle_index, .. }
-        | FheExecuteOperand::StateSlot { handle_index, .. }
+        FheExecuteOperand::StateSlot { handle_index, .. }
         | FheExecuteOperand::TransientResult { handle_index, .. } => {
             dictionary.get(usize::from(*handle_index)).copied()
         }
@@ -583,6 +582,7 @@ mod tests {
             FheExecuteOutput, FheExecuteStep,
         };
         let execution = FheExecuteArgs {
+            returned_results: Vec::new(),
             account_count: 0,
             dictionary: vec![[2u8; 32]],
             steps: vec![
@@ -656,6 +656,7 @@ mod tests {
     #[test]
     fn fhe_execute_walk_chains_transient_handles() {
         let execution = FheExecuteArgs {
+            returned_results: Vec::new(),
             account_count: 0,
             dictionary: vec![[2u8; 32]],
             steps: vec![
@@ -705,22 +706,22 @@ mod tests {
         // On-chain preflight requires a rand execution to anchor at least one persistent
         // output (fhevm-internal#1853 W4), so the fixture binds one.
         let execution = FheExecuteArgs {
+            returned_results: Vec::new(),
             account_count: 1,
             dictionary: vec![[0xA1; 32], [0xA2; 32], [0xA3; 32], [0xA4; 32]],
             steps: vec![FheExecuteStep::RandBounded {
                 upper_bound,
                 fhe_type: 5,
-                output: FheExecuteOutput::StoredValue {
-                    output_encrypted_value_index: 0,
-                    output_authority_index: None,
-                    output_program_index: 0,
-                    output_authority_key_index: 1,
-                    output_scope_index: 1,
-                    output_label_index: 2,
-                    output_authority_seeds: vec![],
-                    output_allow_indexes: vec![3],
-                    previous_handle_index: None,
+                output: FheExecuteOutput::State {
+                    state_index: 0,
+                    previous_leaf_count: 0,
+                    slot: Some(zama_host::SlotWrite {
+                        key_index: 2,
+                        previous_handle_index: None,
+                    }),
+                    allow_indexes: vec![3],
                     make_public: false,
+                    grants: vec![],
                 },
             }],
         };
@@ -752,6 +753,7 @@ mod tests {
         // The execution ends in a rand step, so it anchors a persistent output
         // (fhevm-internal#1853 W4); dictionary entries 1..=4 are its identity and allow list.
         let execution = FheExecuteArgs {
+            returned_results: Vec::new(),
             account_count: 1,
             dictionary: vec![
                 [2u8; 32], [0xA1; 32], [0xA2; 32], [0xA3; 32], [0xA4; 32],
@@ -803,17 +805,16 @@ mod tests {
                 FheExecuteStep::RandBounded {
                     upper_bound: ub,
                     fhe_type: 5,
-                    output: FheExecuteOutput::StoredValue {
-                        output_encrypted_value_index: 0,
-                        output_authority_index: None,
-                        output_program_index: 1,
-                        output_authority_key_index: 2,
-                        output_scope_index: 2,
-                        output_label_index: 3,
-                        output_authority_seeds: vec![],
-                        output_allow_indexes: vec![4],
-                        previous_handle_index: None,
+                    output: FheExecuteOutput::State {
+                        state_index: 0,
+                        previous_leaf_count: 0,
+                        slot: Some(zama_host::SlotWrite {
+                            key_index: 3,
+                            previous_handle_index: None,
+                        }),
+                        allow_indexes: vec![4],
                         make_public: false,
+                        grants: vec![],
                     },
                 },
             ],
@@ -908,6 +909,7 @@ mod tests {
     fn fhe_execute_walk_rejects_forward_transient_reference() {
         // A first step referencing a not-yet-produced step -> None.
         let execution = FheExecuteArgs {
+            returned_results: Vec::new(),
             account_count: 0,
             dictionary: vec![[2u8; 32]],
             steps: vec![FheExecuteStep::Binary {
@@ -928,6 +930,7 @@ mod tests {
     #[test]
     fn fhe_execute_walk_extracts_state_output() {
         let execution = FheExecuteArgs {
+            returned_results: Vec::new(),
             account_count: 1,
             dictionary: vec![[0xB1; 32], [0xB2; 32]],
             steps: vec![FheExecuteStep::TrivialEncrypt {
@@ -964,6 +967,7 @@ mod tests {
     #[test]
     fn transient_has_no_state_output() {
         let execution = FheExecuteArgs {
+            returned_results: Vec::new(),
             account_count: 0,
             dictionary: vec![],
             steps: vec![FheExecuteStep::TrivialEncrypt {
@@ -980,6 +984,7 @@ mod tests {
     #[test]
     fn rejects_state_output_dictionary_overflow() {
         let execution = FheExecuteArgs {
+            returned_results: Vec::new(),
             account_count: 1,
             dictionary: vec![[0xA1; 32]],
             steps: vec![FheExecuteStep::TrivialEncrypt {

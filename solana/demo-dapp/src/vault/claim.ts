@@ -3,17 +3,13 @@ import { scratchAddress } from './internal/batcherPdas.js';
 import type { Address, Instruction, TransactionSigner } from '@solana/kit';
 
 import { getClaimInstructionAsync } from './internal/generated/confidentialBatcher/instructions/claim.js';
-import {
-  findBatchAuthorityPda,
-  joinStateAddress,
-  tokenAccountAddress,
-} from './internal/batcherPdas.js';
+import { findBatchAuthorityPda, joinStateAddress, tokenAccountAddress } from './internal/batcherPdas.js';
 import {
   associatedTokenAddress,
-  balanceValueAddress,
+  tokenStateAddress,
   tokenEventAuthorityAddress,
   zamaEventAuthorityAddress,
-} from './internal/tokenValueAccount.js';
+} from './internal/tokenAccounts.js';
 
 /**
  * Roots for a permissionless claim. The builder derives the JoinRecord state, temporary scratch,
@@ -70,8 +66,8 @@ export async function buildClaimInstructions(parameters: SolanaVaultClaimParamet
     userPayoutAta: await associatedTokenAddress(user, parameters.payoutUnderlyingMint, parameters.tokenProgram),
     batchPayoutTokenAccount,
     userPayoutTokenAccount,
-    batchPayoutBalanceValue: await balanceValueAddress(payoutConfidentialMint, batchPayoutTokenAccount),
-    userPayoutBalanceValue: await balanceValueAddress(payoutConfidentialMint, userPayoutTokenAccount),
+    batchPayoutBalanceState: await tokenStateAddress(payoutConfidentialMint, batchPayoutTokenAccount),
+    userPayoutBalanceState: await tokenStateAddress(payoutConfidentialMint, userPayoutTokenAccount),
     zamaEventAuthority: await zamaEventAuthorityAddress(),
     hostConfig: parameters.hostConfig,
     confidentialTokenEventAuthority: await tokenEventAuthorityAddress(),

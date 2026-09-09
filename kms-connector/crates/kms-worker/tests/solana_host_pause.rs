@@ -84,8 +84,7 @@ async fn the_switch_is_read_on_the_first_read_of_a_delegated_request() {
     let signer = Wallet::new(1);
     let delegator = Wallet::new(2);
     let handle = handle(0x32, FHE_TYPE_UINT64);
-    let encrypted_state =
-        EncryptedStateFixture::allowing(handle, delegator.pubkey());
+    let encrypted_state = EncryptedStateFixture::allowing(handle, delegator.pubkey());
     let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), 100);
     let request = RequestBuilder::new(&signer)
         .delegated(&encrypted_state, handle, delegator.pubkey())

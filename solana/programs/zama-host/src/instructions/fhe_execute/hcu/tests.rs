@@ -72,15 +72,16 @@ fn add_scalar(ty: u8, lhs_producer: u8) -> FheExecuteStep {
         output: FheExecuteOutput::Transient,
     }
 }
-fn add_persistent(ty: u8, lhs_producer: u8) -> FheExecuteStep {
+fn add_state_slot(ty: u8, lhs_producer: u8) -> FheExecuteStep {
     FheExecuteStep::Binary {
         op: FheBinaryOpCode::Add,
         lhs: FheExecuteOperand::EarlierStep {
             producer_index: lhs_producer,
         },
-        rhs: FheExecuteOperand::StoredValue {
+        rhs: FheExecuteOperand::StateSlot {
             handle_index: 0,
-            encrypted_value_index: 0,
+            state_index: 0,
+            key_index: 0,
         },
         output_fhe_type: ty,
         output: FheExecuteOutput::Transient,
@@ -373,13 +374,15 @@ fn meter_comparison_prices_dictionary_and_verified_input_width() {
     let handle = handle_of(EU64);
     let stored = FheExecuteStep::Binary {
         op: FheBinaryOpCode::Ge,
-        lhs: FheExecuteOperand::StoredValue {
+        lhs: FheExecuteOperand::StateSlot {
             handle_index: 0,
-            encrypted_value_index: 0,
+            state_index: 0,
+            key_index: 0,
         },
-        rhs: FheExecuteOperand::StoredValue {
+        rhs: FheExecuteOperand::StateSlot {
             handle_index: 0,
-            encrypted_value_index: 0,
+            state_index: 0,
+            key_index: 0,
         },
         output_fhe_type: EBOOL,
         output: FheExecuteOutput::Transient,
@@ -631,7 +634,7 @@ fn meter_operands_never_add_to_total() {
         trivial(EU64),
         add_local(EU64, 0, 0),
         add_scalar(EU64, 1),
-        add_persistent(EU64, 2),
+        add_state_slot(EU64, 2),
     ];
     let m = meter_execution(&steps, &[], u64::MAX, u64::MAX).unwrap();
     let expected = trivial_encrypt_hcu(EU64).unwrap()
@@ -642,14 +645,14 @@ fn meter_operands_never_add_to_total() {
 }
 
 #[test]
-fn meter_persistent_input_is_zero_depth_leaf() {
-    // A persistent operand contributes depth 0 (in-execution reset), so a
-    // chain split across a persistent boundary resets depth there rather than carrying it forward.
-    let steps = vec![trivial(EU64), add_persistent(EU64, 0)];
+fn meter_state_slot_input_is_zero_depth_leaf() {
+    // A State-slot operand contributes depth 0 (in-execution reset), so a
+    // chain split across a State boundary resets depth there rather than carrying it forward.
+    let steps = vec![trivial(EU64), add_state_slot(EU64, 0)];
     let m = meter_execution(&steps, &[], u64::MAX, u64::MAX).unwrap();
     let t = trivial_encrypt_hcu(EU64).unwrap();
     let add = binary_op_hcu(FheBinaryOpCode::Add, EU64, false).unwrap();
-    assert_eq!(*m.step_depths.last().unwrap(), add + t); // add + max(depth(a)=t, persistent=0)
+    assert_eq!(*m.step_depths.last().unwrap(), add + t); // add + max(depth(a)=t, State slot=0)
 }
 
 // ---- disabled at deploy ----

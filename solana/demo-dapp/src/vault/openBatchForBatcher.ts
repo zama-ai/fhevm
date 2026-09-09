@@ -2,11 +2,7 @@ import type { TransactionSigner } from '@solana/kit';
 
 import { openBatch, type SolanaVaultOpenBatchResult } from './openBatch.js';
 import { deriveBatchAddresses, deriveSettleLookupTableAddresses, type VaultDemoRoots } from './derive.js';
-import {
-  balanceValueAddress,
-  tokenEventAuthorityAddress,
-  zamaEventAuthorityAddress,
-} from './internal/tokenValueAccount.js';
+import { tokenStateAddress, tokenEventAuthorityAddress, zamaEventAuthorityAddress } from './internal/tokenAccounts.js';
 import { batchAddress } from './internal/batcherPdas.js';
 
 export type SolanaVaultOpenBatchForBatcherParameters = {
@@ -25,7 +21,7 @@ export type SolanaVaultOpenBatchForBatcherParameters = {
 /**
  * Opens one batch on a batcher from its {@link VaultDemoRoots} — the single call the demo seeder makes
  * per batcher. It derives every one of `open_batch`'s accounts (batch, the batch's join/payout
- * token accounts and their balance encrypted value accounts, and the two
+ * token accounts and their balance encrypted States, and the two
  * Anchor event authorities) from the roots and the batch index, assembles the settle lookup-table
  * address set, and delegates to {@link openBatch} for the create/extend instructions. The seeder never
  * hand-rolls these accounts; the risky derivation stays here on the tested SDK surface.
@@ -45,10 +41,10 @@ export async function openBatchForBatcher(
       batch: batch.batch,
       joinConfidentialMint: roots.joinConfidentialMint,
       batchJoinTokenAccount: batch.batchJoinTokenAccount,
-      batchJoinBalanceValue: await balanceValueAddress(roots.joinConfidentialMint, batch.batchJoinTokenAccount),
+      batchJoinBalanceState: await tokenStateAddress(roots.joinConfidentialMint, batch.batchJoinTokenAccount),
       payoutConfidentialMint: roots.payoutConfidentialMint,
       batchPayoutTokenAccount: batch.batchPayoutTokenAccount,
-      batchPayoutBalanceValue: batch.batchPayoutBalanceValue,
+      batchPayoutBalanceState: batch.batchPayoutBalanceState,
       joinUnderlyingMint: roots.joinUnderlyingMint,
       payoutUnderlyingMint: roots.payoutUnderlyingMint,
       zamaEventAuthority: await zamaEventAuthorityAddress(),

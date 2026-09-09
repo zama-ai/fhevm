@@ -1,7 +1,7 @@
 # Solana PoC Design Decisions
 
 This document is the stable rationale index for the Solana FHEVM PoC: why the current design exists.
-Every statement here is true against the code on this branch. For the EVM mapping see
+Older entries preserve the rationale at the time of their adoption. DD-049 supersedes the account, permission, and composition interfaces of DD-032/033/036/039/047/048; consult it for the current model. For the EVM mapping see
 [`EVM_PARITY.md`](./EVM_PARITY.md); for forward requirements see [`FUTURE_DESIGN.md`](./FUTURE_DESIGN.md).
 
 Status meanings:
@@ -2393,3 +2393,35 @@ Consequences:
 - Delegation records are consumed (INVARIANTS #27 closed).
 - A handle with no allows and no public leaf is undecryptable by everyone, including its author;
   that is the author's choice, not a stranding.
+
+
+## DD-049 — Shared encrypted State and transaction-local result grants
+
+**Status:** adopted in RFC35 / PR3883. No compatibility with the retired PoC account model.
+
+A host-owned `EncryptedState` PDA uses `(program, authority, scope)` identity, with bounded
+slot keys and one shared MMR. State creation proves the program-owned authority; execution
+requires its signature. Slot keys are not PDA seeds. Each batch participant's JoinRecord
+is the authority of its contribution State, scoped to the batch.
+
+`State` outputs independently choose a slot write, exact-handle private/public permission
+leaves, and scratch grants. Scratch grants authorize an exact produced handle for a consumer
+State whose authority must sign use. Scratch opens and closes in one transaction, with a
+mandatory final top-level close and the recorded rent refund destination. It is not a decryption
+permission or a restriction on what authorized computations can subsequently reveal.
+
+Execution-level `returned_results` selects `(step_index, output_index)` pairs; current operations
+have output index zero. At most 32 handles are returned in requested order, including duplicates;
+empty selection returns none. Return bytes do not authorize use. Token transfer returns its
+result and the batcher performs its own contribution update; there is no transferred-amount
+register or token-owned accumulator API. Burn retains its result slot and PendingBurn lifecycle.
+
+Decryption uses State-based v4 extraData and exact-handle MMR proofs. Current-slot publication
+and fresh slotless permissions are supported. Adding new private/public permissions to a
+history-only handle is deferred to fhevm-internal#2007. Generic disclosure authenticates
+State/handle/cleartext, not a token-kind label. Original token events establish provenance.
+
+This supersedes older per-value PDA seeds, StoredValue/PersistentOutput APIs, standalone
+`make_handle_public`, v3 account extraData, and receipt-based transfer composition in this log.
+The existing input-attestation, threshold-KMS, program-upgrade and confirmed-RPC trust
+assumptions still apply. Resource limits remain shape-dependent; see runtime cost snapshots.

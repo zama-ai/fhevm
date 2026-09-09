@@ -9,7 +9,7 @@ use anchor_lang::prelude::*;
 pub enum DepChainError {
     #[msg("FHE execution failed to build or resolve")]
     InvalidFheExecution,
-    #[msg("tail encrypted value account mismatch")]
+    #[msg("tail encrypted State mismatch")]
     TailValueInvalid,
     #[msg("chain length must be between 1 and 32 steps")]
     InvalidChainLength,

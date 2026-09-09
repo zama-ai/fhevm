@@ -90,7 +90,7 @@
         {
           "name": "encrypted_state",
           "docs": [
-            "Stable tail encrypted value account; read for the current handle and replaced by this",
+            "Stable tail encrypted State; read for the current handle and replaced by this",
             "execution."
           ],
           "writable": true
@@ -245,7 +245,7 @@
     {
       "code": 6001,
       "name": "TailValueInvalid",
-      "msg": "tail encrypted value account mismatch"
+      "msg": "tail encrypted State mismatch"
     },
     {
       "code": 6002,

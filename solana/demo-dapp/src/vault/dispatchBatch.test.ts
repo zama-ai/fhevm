@@ -122,7 +122,7 @@ describe('buildDispatchBatchInstruction', () => {
     expect(addresses[7]).toBe('W4dfnWqZVyik2iMYeP2jHGDfRJbZxzbXfgysxQS1VYK'); // totalSupplyAuthority
     expect(addresses[8]).toBe('8iRxqzbzVoCDyN5ruCrtDs3HEJXL6S5khbmijMta8j6z'); // batchJoinTokenAccount
     expect(addresses[9]).toBe('Fc46oMpQnJjHqM1YNvc6TYgqRjTRyqu71rVKXAedUt4B'); // batchBalanceValue
-    expect(addresses[10]).toBe('DrFSFawwrBQYoX7SiF3dbV3U9TFJNeJvZsQWVA2uKuKD'); // totalSupplyValue
+    expect(addresses[10]).toBe('DrFSFawwrBQYoX7SiF3dbV3U9TFJNeJvZsQWVA2uKuKD'); // totalSupplyState
     // addresses[11] = batchBurnedAmountValue; addresses[12] = pendingBurn
     expect(addresses[12]).toBe('7usNGbH9WupMAsyDeqdUEoKrjisKcgusGjDiju4vNog'); // zamaEventAuthority
     expect(addresses[15]).toBe('2KQ5N8YEUTk8hQWXBnkGjsvKPzm2rh2nFH6PeoVt7q8U'); // tokenEventAuthority

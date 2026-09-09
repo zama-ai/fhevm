@@ -12,20 +12,24 @@ pub use anchor_lang::event::EVENT_IX_TAG_LE;
 
 /// One zama-host instruction an off-chain consumer reconstructs state from:
 /// the `fhe_execute` execution (which allows keys inline on every persistent
-/// write) plus the one standalone `EncryptedValue` ACL mutation.
+/// write) plus the one standalone `EncryptedState` ACL mutation.
 /// Payloads are decoded through the generated `crate::instruction` structs and
 /// their `Discriminator` consts, so the fields are the handler arguments.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ZamaHostInstruction {
     FheExecute(crate::state::FheExecuteArgs),
-    MakeHandlePublic { handle: [u8; 32] },
+    MakeStateHandlePublic {
+        key: [u8; 32],
+        handle: [u8; 32],
+        previous_leaf_count: u64,
+    },
 }
 
 /// A discriminator matched one of the decoded instructions but its payload
 /// did not deserialize. Consumers decide whether that halts ingestion.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MalformedInstruction {
-    /// Snake-case handler name, e.g. `"make_handle_public"`.
+    /// Snake-case handler name, e.g. `"make_state_handle_public"`.
     pub instruction: &'static str,
     pub message: String,
 }
@@ -62,11 +66,13 @@ pub fn decode_instruction(
         |args: crate::instruction::FheExecute| { ZamaHostInstruction::FheExecute(args.args) }
     );
     arm!(
-        MakeHandlePublic,
-        "make_handle_public",
-        |args: crate::instruction::MakeHandlePublic| {
-            ZamaHostInstruction::MakeHandlePublic {
+        MakeStateHandlePublic,
+        "make_state_handle_public",
+        |args: crate::instruction::MakeStateHandlePublic| {
+            ZamaHostInstruction::MakeStateHandlePublic {
+                key: args.key,
                 handle: args.handle,
+                previous_leaf_count: args.previous_leaf_count,
             }
         }
     );
@@ -128,8 +134,8 @@ mod tests {
             sha256_discriminator("global", "fhe_execute")
         );
         assert_eq!(
-            crate::instruction::MakeHandlePublic::DISCRIMINATOR,
-            sha256_discriminator("global", "make_handle_public")
+            crate::instruction::MakeStateHandlePublic::DISCRIMINATOR,
+            sha256_discriminator("global", "make_state_handle_public")
         );
         assert_eq!(
             crate::events::PublicOutputsProducedEvent::DISCRIMINATOR,
@@ -145,17 +151,29 @@ mod tests {
     fn decode_instruction_roundtrips_each_variant_and_accepts_trailing_bytes() {
         let cases: Vec<(Vec<u8>, ZamaHostInstruction)> = vec![
             {
-                let args = crate::instruction::MakeHandlePublic { handle: [7; 32] };
-                let mut data = crate::instruction::MakeHandlePublic::DISCRIMINATOR.to_vec();
+                let args = crate::instruction::MakeStateHandlePublic {
+                    key: [8; 32],
+                    handle: [7; 32],
+                    previous_leaf_count: 0,
+                };
+                let mut data = crate::instruction::MakeStateHandlePublic::DISCRIMINATOR.to_vec();
                 args.serialize(&mut data).unwrap();
                 (
                     data,
-                    ZamaHostInstruction::MakeHandlePublic { handle: [7; 32] },
+                    ZamaHostInstruction::MakeStateHandlePublic {
+                        key: [8; 32],
+                        handle: [7; 32],
+                        previous_leaf_count: 0,
+                    },
                 )
             },
             {
                 let args = crate::instruction::FheExecute {
                     args: crate::state::FheExecuteArgs {
+                        returned_results: vec![crate::ExecutionResultRef {
+                            step_index: 0,
+                            output_index: 0,
+                        }],
                         account_count: 0,
                         dictionary: vec![[1; 32]],
                         steps: vec![crate::state::FheExecuteStep::TrivialEncrypt {

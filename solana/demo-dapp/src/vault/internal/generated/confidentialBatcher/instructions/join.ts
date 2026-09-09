@@ -71,8 +71,8 @@ export type JoinInstruction<
   TAccountBatchAuthorityAta extends string | AccountMeta<string> = string,
   TAccountUserTokenAccount extends string | AccountMeta<string> = string,
   TAccountBatchJoinTokenAccount extends string | AccountMeta<string> = string,
-  TAccountUserBalanceValue extends string | AccountMeta<string> = string,
-  TAccountBatchBalanceValue extends string | AccountMeta<string> = string,
+  TAccountUserBalanceState extends string | AccountMeta<string> = string,
+  TAccountBatchBalanceState extends string | AccountMeta<string> = string,
   TAccountJoinState extends string | AccountMeta<string> = string,
   TAccountScratch extends string | AccountMeta<string> = string,
   TAccountInstructions extends string | AccountMeta<string> = string,
@@ -109,8 +109,8 @@ export type JoinInstruction<
       TAccountBatchJoinTokenAccount extends string
         ? WritableAccount<TAccountBatchJoinTokenAccount>
         : TAccountBatchJoinTokenAccount,
-      TAccountUserBalanceValue extends string ? WritableAccount<TAccountUserBalanceValue> : TAccountUserBalanceValue,
-      TAccountBatchBalanceValue extends string ? WritableAccount<TAccountBatchBalanceValue> : TAccountBatchBalanceValue,
+      TAccountUserBalanceState extends string ? WritableAccount<TAccountUserBalanceState> : TAccountUserBalanceState,
+      TAccountBatchBalanceState extends string ? WritableAccount<TAccountBatchBalanceState> : TAccountBatchBalanceState,
       TAccountJoinState extends string ? WritableAccount<TAccountJoinState> : TAccountJoinState,
       TAccountScratch extends string ? WritableAccount<TAccountScratch> : TAccountScratch,
       TAccountInstructions extends string ? ReadonlyAccount<TAccountInstructions> : TAccountInstructions,
@@ -217,8 +217,8 @@ export type JoinAsyncInput<
   TAccountBatchAuthorityAta extends string = string,
   TAccountUserTokenAccount extends string = string,
   TAccountBatchJoinTokenAccount extends string = string,
-  TAccountUserBalanceValue extends string = string,
-  TAccountBatchBalanceValue extends string = string,
+  TAccountUserBalanceState extends string = string,
+  TAccountBatchBalanceState extends string = string,
   TAccountJoinState extends string = string,
   TAccountScratch extends string = string,
   TAccountInstructions extends string = string,
@@ -253,8 +253,8 @@ export type JoinAsyncInput<
   userTokenAccount: Address<TAccountUserTokenAccount>;
   /** validated by the token CPI and pinned below. */
   batchJoinTokenAccount: Address<TAccountBatchJoinTokenAccount>;
-  userBalanceValue: Address<TAccountUserBalanceValue>;
-  batchBalanceValue: Address<TAccountBatchBalanceValue>;
+  userBalanceState: Address<TAccountUserBalanceState>;
+  batchBalanceState: Address<TAccountBatchBalanceState>;
   joinState: Address<TAccountJoinState>;
   scratch: Address<TAccountScratch>;
   instructions: Address<TAccountInstructions>;
@@ -290,8 +290,8 @@ export async function getJoinInstructionAsync<
   TAccountBatchAuthorityAta extends string,
   TAccountUserTokenAccount extends string,
   TAccountBatchJoinTokenAccount extends string,
-  TAccountUserBalanceValue extends string,
-  TAccountBatchBalanceValue extends string,
+  TAccountUserBalanceState extends string,
+  TAccountBatchBalanceState extends string,
   TAccountJoinState extends string,
   TAccountScratch extends string,
   TAccountInstructions extends string,
@@ -316,8 +316,8 @@ export async function getJoinInstructionAsync<
     TAccountBatchAuthorityAta,
     TAccountUserTokenAccount,
     TAccountBatchJoinTokenAccount,
-    TAccountUserBalanceValue,
-    TAccountBatchBalanceValue,
+    TAccountUserBalanceState,
+    TAccountBatchBalanceState,
     TAccountJoinState,
     TAccountScratch,
     TAccountInstructions,
@@ -344,8 +344,8 @@ export async function getJoinInstructionAsync<
     TAccountBatchAuthorityAta,
     TAccountUserTokenAccount,
     TAccountBatchJoinTokenAccount,
-    TAccountUserBalanceValue,
-    TAccountBatchBalanceValue,
+    TAccountUserBalanceState,
+    TAccountBatchBalanceState,
     TAccountJoinState,
     TAccountScratch,
     TAccountInstructions,
@@ -389,12 +389,12 @@ export async function getJoinInstructionAsync<
       value: input.batchJoinTokenAccount ?? null,
       isWritable: true,
     },
-    userBalanceValue: {
-      value: input.userBalanceValue ?? null,
+    userBalanceState: {
+      value: input.userBalanceState ?? null,
       isWritable: true,
     },
-    batchBalanceValue: {
-      value: input.batchBalanceValue ?? null,
+    batchBalanceState: {
+      value: input.batchBalanceState ?? null,
       isWritable: true,
     },
     joinState: { value: input.joinState ?? null, isWritable: true },
@@ -460,8 +460,8 @@ export async function getJoinInstructionAsync<
       getAccountMeta('batchAuthorityAta', accounts.batchAuthorityAta),
       getAccountMeta('userTokenAccount', accounts.userTokenAccount),
       getAccountMeta('batchJoinTokenAccount', accounts.batchJoinTokenAccount),
-      getAccountMeta('userBalanceValue', accounts.userBalanceValue),
-      getAccountMeta('batchBalanceValue', accounts.batchBalanceValue),
+      getAccountMeta('userBalanceState', accounts.userBalanceState),
+      getAccountMeta('batchBalanceState', accounts.batchBalanceState),
       getAccountMeta('joinState', accounts.joinState),
       getAccountMeta('scratch', accounts.scratch),
       getAccountMeta('instructions', accounts.instructions),
@@ -488,8 +488,8 @@ export async function getJoinInstructionAsync<
     TAccountBatchAuthorityAta,
     TAccountUserTokenAccount,
     TAccountBatchJoinTokenAccount,
-    TAccountUserBalanceValue,
-    TAccountBatchBalanceValue,
+    TAccountUserBalanceState,
+    TAccountBatchBalanceState,
     TAccountJoinState,
     TAccountScratch,
     TAccountInstructions,
@@ -515,8 +515,8 @@ export type JoinInput<
   TAccountBatchAuthorityAta extends string = string,
   TAccountUserTokenAccount extends string = string,
   TAccountBatchJoinTokenAccount extends string = string,
-  TAccountUserBalanceValue extends string = string,
-  TAccountBatchBalanceValue extends string = string,
+  TAccountUserBalanceState extends string = string,
+  TAccountBatchBalanceState extends string = string,
   TAccountJoinState extends string = string,
   TAccountScratch extends string = string,
   TAccountInstructions extends string = string,
@@ -551,8 +551,8 @@ export type JoinInput<
   userTokenAccount: Address<TAccountUserTokenAccount>;
   /** validated by the token CPI and pinned below. */
   batchJoinTokenAccount: Address<TAccountBatchJoinTokenAccount>;
-  userBalanceValue: Address<TAccountUserBalanceValue>;
-  batchBalanceValue: Address<TAccountBatchBalanceValue>;
+  userBalanceState: Address<TAccountUserBalanceState>;
+  batchBalanceState: Address<TAccountBatchBalanceState>;
   joinState: Address<TAccountJoinState>;
   scratch: Address<TAccountScratch>;
   instructions: Address<TAccountInstructions>;
@@ -588,8 +588,8 @@ export function getJoinInstruction<
   TAccountBatchAuthorityAta extends string,
   TAccountUserTokenAccount extends string,
   TAccountBatchJoinTokenAccount extends string,
-  TAccountUserBalanceValue extends string,
-  TAccountBatchBalanceValue extends string,
+  TAccountUserBalanceState extends string,
+  TAccountBatchBalanceState extends string,
   TAccountJoinState extends string,
   TAccountScratch extends string,
   TAccountInstructions extends string,
@@ -614,8 +614,8 @@ export function getJoinInstruction<
     TAccountBatchAuthorityAta,
     TAccountUserTokenAccount,
     TAccountBatchJoinTokenAccount,
-    TAccountUserBalanceValue,
-    TAccountBatchBalanceValue,
+    TAccountUserBalanceState,
+    TAccountBatchBalanceState,
     TAccountJoinState,
     TAccountScratch,
     TAccountInstructions,
@@ -641,8 +641,8 @@ export function getJoinInstruction<
   TAccountBatchAuthorityAta,
   TAccountUserTokenAccount,
   TAccountBatchJoinTokenAccount,
-  TAccountUserBalanceValue,
-  TAccountBatchBalanceValue,
+  TAccountUserBalanceState,
+  TAccountBatchBalanceState,
   TAccountJoinState,
   TAccountScratch,
   TAccountInstructions,
@@ -685,12 +685,12 @@ export function getJoinInstruction<
       value: input.batchJoinTokenAccount ?? null,
       isWritable: true,
     },
-    userBalanceValue: {
-      value: input.userBalanceValue ?? null,
+    userBalanceState: {
+      value: input.userBalanceState ?? null,
       isWritable: true,
     },
-    batchBalanceValue: {
-      value: input.batchBalanceValue ?? null,
+    batchBalanceState: {
+      value: input.batchBalanceState ?? null,
       isWritable: true,
     },
     joinState: { value: input.joinState ?? null, isWritable: true },
@@ -745,8 +745,8 @@ export function getJoinInstruction<
       getAccountMeta('batchAuthorityAta', accounts.batchAuthorityAta),
       getAccountMeta('userTokenAccount', accounts.userTokenAccount),
       getAccountMeta('batchJoinTokenAccount', accounts.batchJoinTokenAccount),
-      getAccountMeta('userBalanceValue', accounts.userBalanceValue),
-      getAccountMeta('batchBalanceValue', accounts.batchBalanceValue),
+      getAccountMeta('userBalanceState', accounts.userBalanceState),
+      getAccountMeta('batchBalanceState', accounts.batchBalanceState),
       getAccountMeta('joinState', accounts.joinState),
       getAccountMeta('scratch', accounts.scratch),
       getAccountMeta('instructions', accounts.instructions),
@@ -773,8 +773,8 @@ export function getJoinInstruction<
     TAccountBatchAuthorityAta,
     TAccountUserTokenAccount,
     TAccountBatchJoinTokenAccount,
-    TAccountUserBalanceValue,
-    TAccountBatchBalanceValue,
+    TAccountUserBalanceState,
+    TAccountBatchBalanceState,
     TAccountJoinState,
     TAccountScratch,
     TAccountInstructions,
@@ -817,8 +817,8 @@ export type ParsedJoinInstruction<
     userTokenAccount: TAccountMetas[10];
     /** validated by the token CPI and pinned below. */
     batchJoinTokenAccount: TAccountMetas[11];
-    userBalanceValue: TAccountMetas[12];
-    batchBalanceValue: TAccountMetas[13];
+    userBalanceState: TAccountMetas[12];
+    batchBalanceState: TAccountMetas[13];
     joinState: TAccountMetas[14];
     scratch: TAccountMetas[15];
     instructions: TAccountMetas[16];
@@ -865,8 +865,8 @@ export function parseJoinInstruction<TProgram extends string, TAccountMetas exte
       batchAuthorityAta: getNextAccount(),
       userTokenAccount: getNextAccount(),
       batchJoinTokenAccount: getNextAccount(),
-      userBalanceValue: getNextAccount(),
-      batchBalanceValue: getNextAccount(),
+      userBalanceState: getNextAccount(),
+      batchBalanceState: getNextAccount(),
       joinState: getNextAccount(),
       scratch: getNextAccount(),
       instructions: getNextAccount(),

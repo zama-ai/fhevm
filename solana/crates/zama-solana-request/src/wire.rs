@@ -4,7 +4,7 @@
 //! form a sender controls, and the consumer that authorizes turns it into its own validated
 //! type. Nothing here is trusted and nothing here is checked.
 //!
-//! Three absences are deliberate: no `encrypted_value_account_authority` field, no
+//! Three absences are deliberate: no `authority` field, no
 //! `(program, scope)` field, and no proof. The first two are properties of the handle's
 //! encrypted state, and the only way to learn them is to read and validate that
 //! account. A request cannot name them, so a substituted authority is not a check that can
@@ -25,7 +25,7 @@
 //!     handle: vec![0; 32],
 //!     allowed_key: vec![0; 32],
 //!     encrypted_state: vec![0; 32],
-//!     encrypted_value_account_authority: vec![0; 32],
+//!     authority: vec![0; 32],
 //! };
 //! ```
 //!

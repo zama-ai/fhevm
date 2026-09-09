@@ -31,7 +31,7 @@ pub fn token_app(mint: Pubkey) -> AppScope {
     }
 }
 
-/// Returns the mint-scoped encrypted value account authority PDA for the encrypted total supply.
+/// Returns the mint-scoped encrypted State authority PDA for the encrypted total supply.
 pub fn total_supply_authority_address(mint: Pubkey) -> (Pubkey, u8) {
     Pubkey::find_program_address(&[b"total-supply", mint.as_ref()], &crate::ID)
 }
@@ -71,19 +71,19 @@ pub fn pending_burn_address(mint: Pubkey, token_account: Pubkey) -> (Pubkey, u8)
 }
 
 /// The id of a token value: the mint's application, the controlling PDA, and the field label.
-pub fn token_value_id(mint: Pubkey, authority: Pubkey, key: [u8; 32]) -> (StateId, [u8; 32]) {
+pub fn token_slot(mint: Pubkey, authority: Pubkey, key: [u8; 32]) -> (StateId, [u8; 32]) {
     (StateId::new(crate::ID, authority, mint.to_bytes()), key)
 }
 
-pub fn balance_encrypted_value_id(mint: Pubkey, token_account: Pubkey) -> (StateId, [u8; 32]) {
-    token_value_id(mint, token_account, encrypted_balance_label())
+pub fn balance_slot(mint: Pubkey, token_account: Pubkey) -> (StateId, [u8; 32]) {
+    token_slot(mint, token_account, balance_key())
 }
 
-pub fn total_supply_encrypted_value_id(mint: Pubkey) -> (StateId, [u8; 32]) {
-    token_value_id(
+pub fn total_supply_slot(mint: Pubkey) -> (StateId, [u8; 32]) {
+    token_slot(
         mint,
         total_supply_authority_address(mint).0,
-        encrypted_total_supply_label(),
+        total_supply_key(),
     )
 }
 
@@ -92,28 +92,23 @@ pub fn encrypted_state_address(mint: Pubkey, authority: Pubkey) -> (Pubkey, u8) 
 }
 
 /// Fixed encrypted value label for confidential balances.
-pub fn encrypted_balance_label() -> [u8; 32] {
+pub fn balance_key() -> [u8; 32] {
     *b"balance_________________________"
 }
 
 /// Fixed encrypted value label for the encrypted total supply.
-pub fn encrypted_total_supply_label() -> [u8; 32] {
+pub fn total_supply_key() -> [u8; 32] {
     *b"total_supply____________________"
 }
 
 /// Fixed encrypted value label for externally verified transfer amounts.
-pub fn encrypted_transfer_amount_label() -> [u8; 32] {
+pub fn transfer_input_key() -> [u8; 32] {
     *b"transfer_amount_________________"
 }
 
-/// Fixed encrypted value label for the all-or-zero burned amount.
-pub fn encrypted_burned_amount_label() -> [u8; 32] {
+/// Slot holding the all-or-zero burn result until redemption or cancellation.
+pub fn burned_amount_key() -> [u8; 32] {
     *b"burned_amount___________________"
-}
-
-/// Fixed encrypted value label for the all-or-zero transferred amount.
-pub fn encrypted_transferred_amount_label() -> [u8; 32] {
-    *b"transferred_amount______________"
 }
 
 #[cfg(test)]

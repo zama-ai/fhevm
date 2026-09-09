@@ -8,7 +8,7 @@ export type SolanaMakeTokenAccountHandlePublicParameters = {
   readonly owner: TransactionSigner;
   readonly mint: Address;
   readonly tokenAccount: Address;
-  readonly encryptedValue: Address;
+  readonly encryptedState: Address;
   readonly hostConfig: Address;
   readonly kind: DisclosedValueKindArgs;
   readonly handle: ReadonlyUint8Array;
@@ -23,7 +23,7 @@ export async function buildMakeTokenAccountHandlePublicInstruction(
     owner: parameters.owner,
     mint: parameters.mint,
     tokenAccount: parameters.tokenAccount,
-    encryptedValue: parameters.encryptedValue,
+    encryptedState: parameters.encryptedState,
     hostConfig: parameters.hostConfig,
     kind: parameters.kind,
     handle: parameters.handle,

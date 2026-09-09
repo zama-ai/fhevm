@@ -36,7 +36,7 @@ use kms_worker::core::solana::{
     request::SolanaUserDecryptRequest,
     snapshot::{SnapshotAccount, SnapshotError, SnapshotKeys},
 };
-use kms_worker::core::solana_acl::{SolanaPubkeyBytes, WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY};
+use kms_worker::core::solana_acl::{SolanaPubkeyBytes, WILDCARD_AUTHORITY};
 use solana_support::*;
 
 const OBSERVED_SLOT: u64 = 500;
@@ -176,10 +176,10 @@ async fn a_batch_mixes_a_direct_entry_and_two_delegators() {
     second_encrypted_state.allow(second_delegator.pubkey());
     let mut first_delegation =
         DelegationFixture::live(first_delegator.pubkey(), signer.pubkey(), OBSERVED_SLOT);
-    first_delegation.encrypted_value_account_authority = first_authority;
+    first_delegation.authority = first_authority;
     let mut second_delegation =
         DelegationFixture::live(second_delegator.pubkey(), signer.pubkey(), OBSERVED_SLOT);
-    second_delegation.encrypted_value_account_authority = second_authority;
+    second_delegation.authority = second_authority;
 
     let request = RequestBuilder::new(&signer)
         .direct(&own_encrypted_state, own)
@@ -671,7 +671,7 @@ async fn delegation_outcomes_about_a_record_that_exists_stay_terminal() {
     // moves the record's own address, so a mismatch only exists when the record is placed by
     // address rather than derived from itself.
     let mut mismatched = DelegationFixture::live(stranger.pubkey(), signer.pubkey(), OBSERVED_SLOT);
-    mismatched.encrypted_value_account_authority = AUTHORITY;
+    mismatched.authority = AUTHORITY;
 
     for (what, delegation) in [
         ("revoked", revoked),
@@ -704,7 +704,7 @@ async fn a_delegation_for_another_authority_does_not_authorize() {
     let live = handle(0x32, FHE_TYPE_UINT64);
     let encrypted_state = EncryptedStateFixture::allowing(live, delegator.pubkey());
     let mut elsewhere = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), OBSERVED_SLOT);
-    elsewhere.encrypted_value_account_authority = other_authority;
+    elsewhere.authority = other_authority;
     let request = RequestBuilder::new(&signer)
         .delegated(&encrypted_state, live, delegator.pubkey())
         .typed();
@@ -739,7 +739,7 @@ async fn a_delegation_record_naming_another_tuple_is_rejected() {
     let (expected_key, _) = expected.address();
     // A record for a different delegator, planted at the address the request will read.
     let mut foreign = DelegationFixture::live(stranger.pubkey(), signer.pubkey(), OBSERVED_SLOT);
-    foreign.encrypted_value_account_authority = AUTHORITY;
+    foreign.authority = AUTHORITY;
     let request = RequestBuilder::new(&signer)
         .delegated(&encrypted_state, live, delegator.pubkey())
         .typed();
@@ -932,7 +932,7 @@ fn a_live_authority_specific_row_is_named_as_the_exact_row() {
         PROGRAM_ID,
         delegator,
         delegate,
-        exact.encrypted_value_account_authority,
+        exact.authority,
     )
     .expect("a live authority-specific row authorizes");
 
@@ -959,7 +959,7 @@ fn a_live_wildcard_row_is_named_as_the_wildcard_row() {
         PROGRAM_ID,
         delegator,
         delegate,
-        exact.encrypted_value_account_authority,
+        exact.authority,
     )
     .expect("a live wildcard row authorizes an authority with no row of its own");
 
@@ -988,7 +988,7 @@ fn with_both_rows_live_the_authority_specific_row_is_the_one_named() {
         PROGRAM_ID,
         delegator,
         delegate,
-        exact.encrypted_value_account_authority,
+        exact.authority,
     )
     .expect("two live rows authorize");
 
@@ -1015,7 +1015,7 @@ async fn a_sentinel_authority_in_the_encrypted_state_rejects_a_delegated_entry()
     let live = handle(0x36, FHE_TYPE_UINT64);
     let mut encrypted_state = EncryptedStateFixture::in_application(
         APP_PROGRAM,
-        WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY,
+        WILDCARD_AUTHORITY,
         SCOPE,
         LABEL,
         live,
@@ -1058,7 +1058,7 @@ async fn a_sentinel_authority_in_the_encrypted_state_rejects_a_direct_entry_too(
     let live = handle(0x37, FHE_TYPE_UINT64);
     let mut encrypted_state = EncryptedStateFixture::in_application(
         APP_PROGRAM,
-        WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY,
+        WILDCARD_AUTHORITY,
         SCOPE,
         LABEL,
         live,
@@ -1107,7 +1107,7 @@ fn a_delegation_key_the_snapshot_never_read_is_an_error_not_a_verdict() {
         PROGRAM_ID,
         delegator,
         delegate,
-        revoked.encrypted_value_account_authority,
+        revoked.authority,
     )
     .expect_err("a missing key cannot authorize");
 
@@ -1139,10 +1139,10 @@ async fn a_mixed_batch_failure_names_the_entry_whose_delegation_is_dead() {
     second_encrypted_state.allow(second_delegator.pubkey());
     let mut first_delegation =
         DelegationFixture::live(first_delegator.pubkey(), signer.pubkey(), OBSERVED_SLOT);
-    first_delegation.encrypted_value_account_authority = first_authority;
+    first_delegation.authority = first_authority;
     let mut second_delegation =
         DelegationFixture::live(second_delegator.pubkey(), signer.pubkey(), OBSERVED_SLOT);
-    second_delegation.encrypted_value_account_authority = second_authority;
+    second_delegation.authority = second_authority;
     second_delegation.revoked = true;
 
     let request = RequestBuilder::new(&signer)

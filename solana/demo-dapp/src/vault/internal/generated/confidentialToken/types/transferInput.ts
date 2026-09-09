@@ -24,7 +24,7 @@ import {
   type ReadonlyUint8Array,
 } from '@solana/kit';
 
-/** A durable slot or an exact transient grant addressed to the sender token state. */
+/** A persistent slot or an exact transient grant addressed to the sender token state. */
 export type TransferInput =
   | { __kind: 'Slot'; key: ReadonlyUint8Array }
   | { __kind: 'Grant'; handle: ReadonlyUint8Array };

@@ -55,13 +55,7 @@ dictionary, persistent, update, allow, application…).
 6. **[HOLDS]** Updating a persistent value requires echoing its exact current
    handle; a stale echo fails the whole execution (no lost-update). The new
    handle's allows are declared afresh on the write; the old handle's stay sealed.
-7. **[HOLDS]** Every encrypted value account lives at the canonical PDA of its
-   four identity seeds `(program, authority, scope, label)`, which it stores in
-   the clear and every reader rederives, so an account cannot claim a different
-   identity. `program` is verified on every write, not declared: the authority
-   must be a PDA of it, proven by the seeds the execution declares
-   (`EncryptedValueAuthorityNotProgramPda`), which is what makes the application
-   `(program, scope)` unforgeable (DD-047).
+7. **[HOLDS]** Every encrypted State lives at `["encrypted-state", program, authority, scope]` and stores those identity fields plus its canonical bump. Creation proves that authority is a PDA of program. Readers rederive the address and validate the stored shape. Slot keys are not address seeds.
 8. **[HOLDS]** Sealed history (the MMR) is append-only: a handle sealed public
    stays provable after any number of later updates.
 9. **[RETIRED]** The instruction that removed a viewer went with the stored list
@@ -69,22 +63,20 @@ dictionary, persistent, update, allow, application…).
    no public leaf is undecryptable by everyone, which is its author's choice, not
    a stranding — the next write declares the next handle's allows.
 10. **[HOLDS]** Every allow the host seals passes the deny list when it is
-    enabled: a persistent write (create or update, every allowed key and the
-    public leaf alike) and `make_handle_public` require the value's
+    enabled: a State output (with or without a slot write, every allowed key and the
+    public leaf alike) and `make_state_handle_public` require the value's
     application record `["deny-scope", program, scope]` to be present, at its
     canonical address, and not denied (`DenyRecordMissing` / `ScopeDenied`);
     with the list disabled no record may be passed. An `fhe_execute` checks
-    every application whose value it touches, including one written under an
-    additional signing authority (the transfer receipt), so a denied
+    every application whose value it touches, including a result-grant consumer State, so a denied
     application cannot be written into from another program's execution. The
     deny list names applications, not keys (DD-048): a denied key can still
     be allowed by a clean application, and user-decryption delegation is a
     separate access path with no deny check.
-11. **[HOLDS]** Only the encrypted value account authority writes a value: it
-    signs every persistent create or update and `make_handle_public`, and it is
-    a PDA of the value's `program` (#7). A viewer is not a co-admin — an allow
-    grants decrypt and nothing else, and no instruction adds or removes an
-    allow after the write (DD-048). Confidential-token ships owner-gated
+11. **[HOLDS]** Only the State authority writes its slots or appends permissions: it
+    signs State creation, State outputs and `make_state_handle_public`, and it is
+    a PDA of the State's `program` (#7). A viewer is not a co-admin — an allow
+    grants decrypt and nothing else, and later new permissions on history-only handles are deferred to #2007 (DD-048). Confidential-token ships owner-gated
     wrappers that `invoke_signed` as the **token-account** PDA
     (`allow_balance_viewers`, which re-writes the balance onto a handle allowed
     to the viewers, and `make_token_account_handle_public`); the mint authority
@@ -92,9 +84,9 @@ dictionary, persistent, update, allow, application…).
     authority PDA (`allow_total_supply_viewers`,
     `make_total_supply_handle_public`). (fhevm-internal#1862 #13; RFC 035.)
     Related token/Host lifecycle guardrails are:
-    - **11b [HOLDS].** `make_handle_public` requires the signer to equal
-      `EncryptedValue.encrypted_value_account_authority` and the handle to be the
-      current one. A viewer cannot make a handle public. The deny list is
+    - **11b [HOLDS].** `make_state_handle_public` requires the signer to equal
+      `EncryptedState.authority` and the handle to be the
+      current handle in the named slot. A viewer cannot directly publish through this authority-only instruction; history-only publication and EVM-style re-sharing are deferred to #2007. The deny list is
       consulted for the value's application, because sealing a public leaf is an
       allow (#10). Confidential-token owner/mint-authority wrappers validate the
       exact state field and sign as the token-account/total-supply PDA.
@@ -106,7 +98,7 @@ dictionary, persistent, update, allow, application…).
       Parallel burns for one token account are deliberately deferred; applications
       can aggregate an amount or use separate app-owned token accounts.
     - **11d [HOLDS].** `cancel_pending_burn` requires the pending burned handle to equal
-      the burned-amount encrypted value account's current handle. A stale or mismatched
+      the State’s current burned-amount slot handle. A stale or mismatched
       pending burn cannot restore value.
     - **11e [HOLDS].** `cancel_pending_burn` restores both confidential balance and
       encrypted `total_supply` (mirrors wrap's dual add; undoes burn's dual sub).
@@ -119,40 +111,21 @@ dictionary, persistent, update, allow, application…).
       registry / observer / on-chain gov surface in this PoC (out of scope;
       zama-ai/fhevm-internal#1634).
 
-62. **[HOLDS]** Computing on a value requires its authority's signature on that
-    execution; decrypting it requires a sealed leaf. The two rights are
-    separate and neither implies the other. Reading a persistent value as an
-    execution operand is admitted only by its stored
-    `encrypted_value_account_authority` having signed — as `fhe_execute`'s
-    default authority signer, or as any signing remaining account
-    (`fhe_execute/preflight.rs`, `mark_signer`). That is how one program
-    consents to another computing on its value: the owning program signs for
-    its PDA through `invoke_signed`, which is what makes the
-    confidential-token receipt and batcher flows composable. A value admitted
-    that way is **not** folded into the builder's application — it is metered
-    to its own authority's (#41) — but it is deny-checked like every other
-    application the execution touches (#10). The converse halves both hold: an
-    allow grants decrypt and never compute (#11), and being the authority
-    admits compute but never decrypt, which always needs a leaf (#8, #45).
-    The account keeps no list of who may decrypt — every allow is a leaf
-    (DD-048) — and there is no separate compute identity to name; both went
-    with RFC 035. (fhevm-internal#1891.)
-53. **[ANTI]** `make_handle_public` is not idempotent. Sealing a handle that is
+62. **[HOLDS]** A State-slot input requires its State authority’s signature and the exact current handle. A result shared between invocations requires an exact handle/consumer-State grant in canonical scratch, plus the consumer authority’s signature. Grants can authorize derived outputs, including decryptable outputs; scratch expiry does not confine information flow. Decrypt permission still requires an MMR leaf and is not implied by compute authority. Ordinary computation requires no MMR proof. Each JoinRecord is the authority of its contribution State, scoped to its batch.
+53. **[ANTI]** `make_state_handle_public` is not idempotent. Sealing a handle that is
     already sealed appends a second leaf committing to the same
     `(account, handle)` fact: it authorizes nothing the first leaf did not, and
     its cost is bounded — peaks are one per set bit of `leaf_count`, capped at
     `MAX_MMR_PEAKS` (64) — and funded by the caller's own payer. Guarding it
     on-chain would need the account to remember which handle is sealed, which is
-    new `EncryptedValue` state in four consumers; a state-free guard could only
+    new `EncryptedState` state in four consumers; a state-free guard could only
     read back the last leaf when `leaf_count` is odd, so the same call would be
     accepted or rejected by parity. Pinned by
-    `mollusk_make_handle_public_twice_appends_an_equivalent_leaf`.
+    `mollusk_make_state_handle_public_twice_appends_an_equivalent_leaf`.
 
 ## C. Execution
 
-12. **[HOLDS]** An execution is atomic: preflight validates the whole of it —
-    indexes, accounts, types, costs — before any state is touched; a failing
-    execution mutates nothing.
+12. **[HOLDS]** An execution is atomic. Admission, account and return-selection checks precede the execution walk; step semantics are validated during the walk. Any later failure rolls back the entire transaction, including earlier writes and nonce changes.
 13. **[HOLDS]** Every dictionary index is bounds-checked by all three consumers
     (program, SDK, listener); an unreferenced dictionary entry rejects the
     execution.
@@ -165,9 +138,8 @@ dictionary, persistent, update, allow, application…).
     otherwise) and advances it; the nonce is bound into every rand seed, so two
     executions can never derive the same seed, whatever they persist (DD-043).
     The nonce is host state, never caller-supplied, so a caller cannot steer it.
-17. **[HOLDS]** `account_count` declared inside the instruction data must equal
-    the accounts actually delivered (the execution's bytes are self-describing).
-18. **[HOLDS]** Values from two different builders cannot be mixed into one
+17. **[HOLDS]** Every encrypted State lives at `["encrypted-state", program, authority, scope]` and stores those identity fields plus its canonical bump. Creation proves that authority is a PDA of program. Readers rederive the address and validate the stored shape. Slot keys are not address seeds.
+8. **[HOLDS]** Values from two different builders cannot be mixed into one
     execution: [`FheExecution::build`] hands each builder an invariant `'id` lifetime
     that its transient values carry, so a foreign value is a compile error
     rather than a runtime check. It replaced a runtime scope tag that was inert
@@ -233,19 +205,8 @@ dictionary, persistent, update, allow, application…).
 26. **[RISK]** `cleartext` is one 32-byte word ("today's results fit"): an FHE
     type outgrowing it changes the certificate format, the entrypoint
     signature, and the return layout together.
-27. **[HOLDS]** User-decryption delegation records are consumed. A delegated
-    entry names the delegator as its allowed key; the KMS connector reads the
-    delegation record — the row for the encrypted value account's authority or
-    the delegator's wildcard row — in the deciding snapshot and requires it
-    live at that slot (not revoked, not expired, not written after the
-    observation), then authorizes the delegate against the delegator's allow
-    leaf (`kms-worker/src/core/solana/delegation.rs`). The relayer refuses
-    dead rows advisorily before the gateway fee (#50). No event is emitted on
-    delegation (DD-044): readers read the record.
-
-## E. Reconstruction & off-chain services
-
-28. **[HOLDS]** Handles the listener re-derives are byte-identical to the
+27. **[HOLDS]** Every encrypted State lives at `["encrypted-state", program, authority, scope]` and stores those identity fields plus its canonical bump. Creation proves that authority is a PDA of program. Readers rederive the address and validate the stored shape. Slot keys are not address seeds.
+8. **[HOLDS]** Handles the listener re-derives are byte-identical to the
     on-chain ones, because the listener imports the program's own derivation
     functions and argument types rather than reimplementing them (fixtures and
     the e2e derivation check this too).
@@ -278,7 +239,7 @@ dictionary, persistent, update, allow, application…).
     account state, never from event bytes.
 36. **[HOLDS]** `HostConfig.paused` freezes both halves of the plaintext path:
     the production-shaped host instructions (`fhe_execute`,
-    `make_handle_public`, `delegate_for_user_decryption`, and the token
+    `make_state_handle_public`, `delegate_for_user_decryption`, and the token
     cash-out paths of 11f), and connector user decryption — the KMS connector's
     authorization reads the `HostConfig` PDA in the account read it already
     makes and refuses while paused (transiently: the same request authorizes
@@ -295,12 +256,8 @@ dictionary, persistent, update, allow, application…).
     lever the operator can switch off is not the user's lever.
     Not gated: `verify_public_decrypt` (DD-040, already-sealed leaves reveal
     nothing new) and the admin setters, pause included.
-37. **[HOLDS]** HCU enforcement ships disabled (unrestricted defaults) and is
-    opt-in per knob; `u64::MAX` is the single "unlimited" sentinel on every
-    knob (`0` is rejected on the per-tx limits and means "ban untrusted apps"
-    only on the block cap). When finite, the ordering invariant
-    `block cap ≥ max per tx ≥ max depth` is enforced at set time.
-38. **[ASSUMPTION]** The host admin key is a single trusted key. This is a POC:
+37. **[HOLDS]** Every encrypted State lives at `["encrypted-state", program, authority, scope]` and stores those identity fields plus its canonical bump. Creation proves that authority is a PDA of program. Readers rederive the address and validate the stored shape. Slot keys are not address seeds.
+8. **[ASSUMPTION]** The host admin key is a single trusted key. This is a POC:
     there is no multisig and no timelock. The initial admin must be the BPF
     upgrade authority (`ProgramData.upgrade_authority_address`). After init,
     `set_admin` rotates in one instruction: the current admin signs; a new
@@ -378,8 +335,7 @@ dictionary, persistent, update, allow, application…).
     set the watermark forward, which is the only mechanism that would reach
     such a permit. Bounding exposure from a pre-dated permit is therefore the
     signer's job (short windows), not revocation's.
-45. **[HOLDS]** The connector authorizes against the canonical encrypted value
-    account PDA, program-owned, rederived from the seeds the account carries,
+45. **[HOLDS]** The connector authorizes against the canonical EncryptedState PDA, program-owned, rederived from the seeds the account carries,
     using the same compiled `zama_solana_acl` code the on-chain program runs
     (decode, seeds, MMR verification, both authorize functions). The leaf proof
     comes from the coprocessors' leaf record (`POST /v1/solana/leaf-proofs`,
@@ -401,11 +357,7 @@ dictionary, persistent, update, allow, application…).
 
 ## H. Reference confidential applications
 
-55. **[HOLDS]** Token disclosure binds the requested kind to the complete
-    confidential-token state field: scope (the mint), canonical encrypted value
-    account address, encrypted value account authority, encrypted value label,
-    and current or historically sealed handle. A valid certificate for another
-    field in the same mint cannot be relabelled in the emitted disclosure event.
+55. **[HOLDS]** Generic token disclosure binds the mint scope, canonical State and its authority, exact handle and certified cleartext. `HandleDisclosedEvent` does not authenticate a token-kind label. Consumers identify transfer/burn provenance from the original token events; they must not infer it from a caller-provided kind. Historical public leaves remain usable after slot replacement.
 56. **[HOLDS]** An underlying mint's owner pins one token program. Wrap and
     redeem require that program to own the underlying mint and both token
     accounts. Classic Token and extension-free Token-2022 are supported.
@@ -424,8 +376,7 @@ dictionary, persistent, update, allow, application…).
     total supply onto a handle with new viewers (`allow_total_supply_viewers`)
     or seal its handle public (`make_total_supply_handle_public`). The wrapper
     signs the Host CPI as the canonical total-supply authority PDA; callers
-    cannot substitute another encrypted value account, encrypted value account
-    authority, label, or scope.
+    cannot substitute another State, State authority, slot key, or scope.
 59. **[HOLDS]** `ConfidentialMint.authority` is the wrapper's policy authority.
     It is distinct from the authority that can upgrade the Zama Host program.
     Future governance may own the mint authority without acquiring Host upgrade
@@ -435,8 +386,7 @@ dictionary, persistent, update, allow, application…).
     authority from #59, not the Zama Host upgrade authority. Cancellation restores the batch's confidential join balance and
     encrypted total supply, closes the pending burn, and moves the batch to the
     refund-only `Refunding` state. That state accepts user quits but rejects new
-    joins, dispatch, settlement, and repeated cancellation, so a failed KMS or
-    vault settlement cannot trap participant funds or reuse a burned amount.
+    joins, dispatch, settlement, and repeated cancellation, so recovery from failed KMS or vault settlement requires that authority’s cooperation. Redeem and cancellation cannot consume the same pending burn twice.
 
 ---
 
@@ -548,3 +498,12 @@ not when the threat model changes.
 
 39. **[RETIRED]** App-layer invariants were folded into this register rather
     than split into a second source of truth (#55–#60).
+
+## RFC35 State and result-sharing checks
+
+- **[HOLDS]** State outputs may write a slot, append decrypt permissions for a fresh result, and grant transient use. Slotless output is not a stored-register compatibility path.
+- **[HOLDS]** Slot writes compare the previous handle; State outputs compare the previous shared leaf count. A stale write reverts the whole transaction.
+- **[HOLDS]** Scratch opening requires its initiating State authority; grants bind exact produced handles and consumer States. Close must be the matching final top-level host instruction and refunds only the recorded payer. Closure removes grants; failure rolls back the transaction.
+- **[HOLDS]** Return selections are checked before nonce/state mutation: at most 32, valid producing step, output index zero for current operators. Return order follows the selection list, including duplicates. Empty selection clears return data after event CPIs. Returning a handle grants no permission.
+- **[ANTI]** Current publication verifies a named slot. Adding a new recipient or public permission for a handle existing only in history is deferred to fhevm-internal#2007. Existing historical private decrypt remains supported; do not claim full EVM re-sharing parity.
+- **[HOLDS]** Generic disclosure verifies State, exact handle and certificate cleartext. It does not authenticate a token-specific kind. Transfer/burn events identify their handles; PendingBurn separately enforces redemption/cancellation and replay protection.

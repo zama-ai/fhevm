@@ -30,7 +30,7 @@
         {
           "name": "payer",
           "docs": [
-            "Pays for encrypted value account growth on the host."
+            "Pays for encrypted State growth on the host."
           ],
           "writable": true,
           "signer": true
@@ -85,9 +85,9 @@
           }
         },
         {
-          "name": "balance_value",
+          "name": "balance_state",
           "docs": [
-            "Stable balance encrypted value account; read for the current handle and replaced."
+            "Stable balance encrypted State; read for the current handle and replaced."
           ],
           "writable": true
         },
@@ -158,7 +158,7 @@
         {
           "name": "payer",
           "docs": [
-            "Pays for encrypted value account growth."
+            "Pays for encrypted State growth."
           ],
           "writable": true,
           "signer": true
@@ -205,7 +205,7 @@
           }
         },
         {
-          "name": "total_supply_value",
+          "name": "total_supply_state",
           "docs": [
             "Encrypted total-supply value; read for the current handle and replaced."
           ],
@@ -325,16 +325,16 @@
           }
         },
         {
-          "name": "balance_value",
+          "name": "balance_state",
           "docs": [
-            "Stable balance encrypted value account; read for the current handle and replaced by this execution."
+            "Stable balance encrypted State; read for the current handle and replaced by this execution."
           ],
           "writable": true
         },
         {
-          "name": "total_supply_value",
+          "name": "total_supply_state",
           "docs": [
-            "Stable total-supply encrypted value account; read for the current handle and replaced by this execution."
+            "Stable total-supply encrypted State; read for the current handle and replaced by this execution."
           ],
           "writable": true
         },
@@ -497,16 +497,16 @@
           }
         },
         {
-          "name": "balance_value",
+          "name": "balance_state",
           "docs": [
-            "Stable balance encrypted value account; read for the current handle and replaced by this execution."
+            "Stable balance encrypted State; read for the current handle and replaced by this execution."
           ],
           "writable": true
         },
         {
-          "name": "total_supply_value",
+          "name": "total_supply_state",
           "docs": [
-            "Stable total-supply encrypted value account; read for the current handle and replaced by this execution."
+            "Stable total-supply encrypted State; read for the current handle and replaced by this execution."
           ],
           "writable": true
         },
@@ -578,7 +578,7 @@
     {
       "name": "confidential_burn_from_value",
       "docs": [
-        "Burns an encrypted amount taken from an existing on-chain `EncryptedValue` (a computed or",
+        "Burns an encrypted amount taken from an existing on-chain `EncryptedState` (a computed or",
         "received handle) instead of a freshly attested client-side encryption — the burn-side analog",
         "of `confidential_transfer_from_value` (fhevm-internal#1755). The batcher uses this to burn an",
         "execution's computed encrypted total, then requests the KMS burn certificate. The signing",
@@ -600,8 +600,8 @@
         {
           "name": "owner",
           "docs": [
-            "Token owner and burn authority. Must control `amount_value` (the spend gate).",
-            "Not `mut`: rent for the burned-amount encrypted value account's first bind is paid by `payer`, so the owner",
+            "Token owner and burn authority. Must control `amount_state` (the spend gate).",
+            "Not `mut`: rent for the burned-amount encrypted State's first bind is paid by `payer`, so the owner",
             "may be a program PDA (the batcher) that only authorizes the burn via `invoke_signed`."
           ],
           "signer": true
@@ -609,7 +609,7 @@
         {
           "name": "payer",
           "docs": [
-            "Pays rent for the burned-amount encrypted value account on its first bind."
+            "Pays rent for the burned-amount encrypted State on its first bind."
           ],
           "writable": true,
           "signer": true
@@ -663,16 +663,16 @@
           }
         },
         {
-          "name": "balance_value",
+          "name": "balance_state",
           "docs": [
-            "Stable balance encrypted value account; read for the current handle and replaced by this execution."
+            "Stable balance encrypted State; read for the current handle and replaced by this execution."
           ],
           "writable": true
         },
         {
-          "name": "total_supply_value",
+          "name": "total_supply_state",
           "docs": [
-            "Stable total-supply encrypted value account; read for the current handle and replaced by this execution."
+            "Stable total-supply encrypted State; read for the current handle and replaced by this execution."
           ],
           "writable": true
         },
@@ -684,11 +684,11 @@
           "writable": true
         },
         {
-          "name": "amount_value",
+          "name": "amount_state",
           "docs": [
             "The existing encrypted amount to burn: a computed `euint64` handle. Read-only persistent",
             "operand — never replaced, never consumed. Its address is the canonical PDA of its own",
-            "`(program, authority, scope, label)` fields, so an encrypted value account from any app may",
+            "`(program, authority, scope, label)` fields, so an encrypted State from any app may",
             "be passed here when that app's value authority is the signing `owner` (a program PDA",
             "authorizing through `invoke_signed`), or when it is one of the burner's own token values."
           ]
@@ -780,7 +780,7 @@
         {
           "name": "payer",
           "docs": [
-            "Pays rent for the transferred-amount encrypted value account on its first bind."
+            "Pays rent for the transferred-amount encrypted State on its first bind."
           ],
           "writable": true,
           "signer": true
@@ -812,17 +812,16 @@
           "writable": true
         },
         {
-          "name": "from_balance_value",
+          "name": "from_state",
           "docs": [
-            "Sender's stable balance `EncryptedValue` encrypted value account; read for the current",
-            "handle and replaced in place by this execution's CPI."
+            "Sender state: the host reads and updates its balance slot."
           ],
           "writable": true
         },
         {
-          "name": "to_balance_value",
+          "name": "to_state",
           "docs": [
-            "Recipient's stable balance `EncryptedValue` encrypted value account."
+            "Recipient state: the host reads and updates its balance slot."
           ],
           "writable": true
         },
@@ -900,7 +899,7 @@
     {
       "name": "confidential_transfer_from_value",
       "docs": [
-        "Transfers an encrypted amount taken from an existing on-chain `EncryptedValue` (a computed or",
+        "Transfers an encrypted amount taken from an existing on-chain `EncryptedState` (a computed or",
         "received handle) instead of a freshly attested client-side encryption — the path that lets a",
         "contract be the sender of a computed amount (fhevm-internal#1680). The signing owner must",
         "control the amount value (the token spend gate); the amount is spent read-only."
@@ -919,14 +918,14 @@
         {
           "name": "owner",
           "docs": [
-            "Sender and transfer authority. Must control `amount_value` (the spend gate)."
+            "Sender and transfer authority. Must control `amount_state` (the spend gate)."
           ],
           "signer": true
         },
         {
           "name": "payer",
           "docs": [
-            "Pays rent for the transferred-amount encrypted value account on its first bind."
+            "Pays rent for the transferred-amount encrypted State on its first bind."
           ],
           "writable": true,
           "signer": true
@@ -958,17 +957,16 @@
           "writable": true
         },
         {
-          "name": "from_balance_value",
+          "name": "from_state",
           "docs": [
-            "Sender's stable balance `EncryptedValue` encrypted value account; read for the current",
-            "handle and replaced in place by this execution's CPI."
+            "Sender state: the host reads and updates its balance slot."
           ],
           "writable": true
         },
         {
-          "name": "to_balance_value",
+          "name": "to_state",
           "docs": [
-            "Recipient's stable balance `EncryptedValue` encrypted value account."
+            "Recipient state: the host reads and updates its balance slot."
           ],
           "writable": true
         },
@@ -1063,7 +1061,7 @@
         {
           "name": "mint",
           "docs": [
-            "Confidential mint whose application scopes the disclosed encrypted value account and event."
+            "Confidential mint whose application scopes the disclosed encrypted State and event."
           ]
         },
         {
@@ -1074,9 +1072,9 @@
           "optional": true
         },
         {
-          "name": "encrypted_value",
+          "name": "encrypted_state",
           "docs": [
-            "The `EncryptedValue` encrypted value account the disclosed handle belongs to.",
+            "The `EncryptedState` encrypted State the disclosed handle belongs to.",
             "CPI; this handler additionally binds it to one exact token state field of `mint`."
           ]
         },
@@ -1224,7 +1222,7 @@
           }
         },
         {
-          "name": "total_supply_encrypted_value",
+          "name": "total_supply_encrypted_state",
           "writable": true
         },
         {
@@ -1348,7 +1346,7 @@
           }
         },
         {
-          "name": "balance_encrypted_value",
+          "name": "balance_encrypted_state",
           "writable": true
         },
         {
@@ -1404,7 +1402,7 @@
       "name": "make_token_account_handle_public",
       "docs": [
         "Seals one token-account state handle publicly. The owner authorizes the request and the",
-        "token-account PDA signs as encrypted value account authority."
+        "token-account PDA signs as encrypted State authority."
       ],
       "discriminator": [
         59,
@@ -1469,7 +1467,7 @@
           }
         },
         {
-          "name": "encrypted_value",
+          "name": "encrypted_state",
           "writable": true
         },
         {
@@ -1508,7 +1506,7 @@
       "name": "make_total_supply_handle_public",
       "docs": [
         "Seals encrypted total supply publicly. The mint authority authorizes the request and the",
-        "total-supply PDA signs as encrypted value account authority."
+        "total-supply PDA signs as encrypted State authority."
       ],
       "discriminator": [
         235,
@@ -1565,7 +1563,7 @@
           }
         },
         {
-          "name": "total_supply_value",
+          "name": "total_supply_state",
           "docs": [
             "Encrypted total-supply value whose current handle is sealed."
           ],
@@ -1688,10 +1686,10 @@
           }
         },
         {
-          "name": "burned_amount_value",
+          "name": "burned_amount_state",
           "docs": [
-            "Burned amount `EncryptedValue` account whose handle is redeemed. Bound to the mint/token",
-            "account by `assert_burned_amount_value_account`; its canonical PDA, layout, host ownership,",
+            "Burned amount `EncryptedState` account whose handle is redeemed. Bound to the mint/token",
+            "account by `assert_burned_amount_state_account`; its canonical PDA, layout, host ownership,",
             "and the exact-handle MMR inclusion proof are validated by the `verify_public_decrypt` CPI."
           ]
         },
@@ -1921,16 +1919,16 @@
           }
         },
         {
-          "name": "balance_value",
+          "name": "balance_state",
           "docs": [
-            "Stable balance encrypted value account; read for the current handle and replaced by this execution."
+            "Stable balance encrypted State; read for the current handle and replaced by this execution."
           ],
           "writable": true
         },
         {
-          "name": "total_supply_value",
+          "name": "total_supply_state",
           "docs": [
-            "Stable total-supply encrypted value account; read for the current handle and replaced by this execution."
+            "Stable total-supply encrypted State; read for the current handle and replaced by this execution."
           ],
           "writable": true
         },
@@ -2192,7 +2190,7 @@
     },
     {
       "code": 6012,
-      "name": "CurrentEncryptedValueMismatch",
+      "name": "CurrentEncryptedStateMismatch",
       "msg": "current encrypted value does not match token account state"
     },
     {
@@ -2233,7 +2231,7 @@
     {
       "code": 6020,
       "name": "PublicDecryptProofInvalid",
-      "msg": "public-decrypt MMR proof is invalid for this encrypted value account"
+      "msg": "public-decrypt MMR proof is invalid for this encrypted State"
     },
     {
       "code": 6021,
@@ -2362,13 +2360,13 @@
     },
     {
       "code": 6046,
-      "name": "EncryptedValueAuthorityMismatch",
-      "msg": "encrypted value account authority does not match token account"
+      "name": "EncryptedStateAuthorityMismatch",
+      "msg": "encrypted State authority does not match token account"
     },
     {
       "code": 6047,
-      "name": "TokenEncryptedValueMismatch",
-      "msg": "token encrypted value account is not canonical"
+      "name": "TokenEncryptedStateMismatch",
+      "msg": "token encrypted State is not canonical"
     },
     {
       "code": 6048,
@@ -2378,7 +2376,7 @@
     {
       "code": 6049,
       "name": "ResultGrantMismatch",
-      "msg": "transfer receipt descriptor and accounts must be passed together"
+      "msg": "invalid result grant accounts or self-transfer result request"
     }
   ],
   "types": [
@@ -2466,7 +2464,7 @@
             }
           },
           {
-            "name": "old_encrypted_value",
+            "name": "old_encrypted_state",
             "docs": [
               "Previous ZamaHost ACL record."
             ],
@@ -2485,7 +2483,7 @@
             }
           },
           {
-            "name": "new_encrypted_value",
+            "name": "new_encrypted_state",
             "docs": [
               "New ZamaHost ACL record."
             ],
@@ -2558,7 +2556,7 @@
             }
           },
           {
-            "name": "burned_encrypted_value",
+            "name": "burned_encrypted_state",
             "docs": [
               "ACL record for `burned_handle`."
             ],
@@ -2630,7 +2628,7 @@
             }
           },
           {
-            "name": "burned_encrypted_value",
+            "name": "burned_encrypted_state",
             "docs": [
               "ZamaHost ACL record for `burned_handle`."
             ],
@@ -2644,8 +2642,8 @@
       "docs": [
         "Confidential mint state for the token PoC.",
         "",
-        "The total supply's current handle and access encrypted value account live in the",
-        "`EncryptedValue` account at `total_supply_encrypted_value`."
+        "The total supply's current handle and access encrypted State live in the",
+        "`EncryptedState` account at `total_supply_encrypted_state`."
       ],
       "type": {
         "kind": "struct",
@@ -2679,8 +2677,8 @@
       "docs": [
         "Confidential token account state.",
         "",
-        "The balance's current handle and access encrypted value account live in the",
-        "`EncryptedValue` account at `balance_encrypted_value`, not here — addressing",
+        "The balance's current handle and access encrypted State live in the",
+        "`EncryptedState` account at `balance_encrypted_state`, not here — addressing",
         "is stable per token account, so no nonce/sequence bookkeeping is needed."
       ],
       "type": {
@@ -2773,7 +2771,7 @@
             }
           },
           {
-            "name": "transferred_encrypted_value",
+            "name": "transferred_encrypted_state",
             "docs": [
               "ZamaHost ACL record for `transferred_handle`."
             ],
@@ -2882,7 +2880,7 @@
     {
       "name": "DisclosedValueKind",
       "docs": [
-        "Token state field disclosed by [`HandleDisclosedEvent`]."
+        "Current token state slot selected when requesting public decryption."
       ],
       "type": {
         "kind": "enum",
@@ -2982,13 +2980,9 @@
     {
       "name": "HandleDisclosedEvent",
       "docs": [
-        "Emitted when `disclose_secp` publishes a KMS-certified cleartext for a token-scoped handle.",
-        "",
-        "This is the single app-level disclosure event after the `DisclosureRequest` lifecycle was",
-        "dissolved (fhevm-internal#1704): it covers both former balance and amount disclosures. It carries",
-        "no request witness or `request_hash` — there is no per-request PDA anymore. The request side is",
-        "the owner or mint authority sealing a public-decrypt leaf through the token wrapper that signs",
-        "the Host `make_handle_public` CPI as the field's encrypted value account authority."
+        "Emits a verified handle and cleartext under the token's state.",
+        "The original operation event identifies what the handle represents; this event does not",
+        "certify a slot key or value kind. Publication must already have been authorized."
       ],
       "type": {
         "kind": "struct",
@@ -3003,7 +2997,7 @@
           {
             "name": "mint",
             "docs": [
-              "Confidential mint whose application scopes the disclosed encrypted value account."
+              "Confidential mint whose application scopes the disclosed encrypted State."
             ],
             "type": "pubkey"
           },
@@ -3020,9 +3014,9 @@
             }
           },
           {
-            "name": "encrypted_value",
+            "name": "encrypted_state",
             "docs": [
-              "ZamaHost `EncryptedValue` encrypted value account the handle belongs to."
+              "ZamaHost `EncryptedState` encrypted State the handle belongs to."
             ],
             "type": "pubkey"
           },
@@ -3321,7 +3315,7 @@
           {
             "name": "leaf_index",
             "docs": [
-              "Index of the proven leaf within the encrypted value account's MMR."
+              "Index of the proven leaf within the encrypted State's MMR."
             ],
             "type": "u64"
           },
@@ -3442,9 +3436,9 @@
             }
           },
           {
-            "name": "burned_encrypted_value",
+            "name": "burned_encrypted_state",
             "docs": [
-              "Shared `burned_amount` EncryptedValue account for the token account."
+              "Shared `burned_amount` EncryptedState account for the token account."
             ],
             "type": "pubkey"
           }
@@ -3490,7 +3484,7 @@
             }
           },
           {
-            "name": "old_encrypted_value",
+            "name": "old_encrypted_state",
             "docs": [
               "Previous ZamaHost ACL record."
             ],
@@ -3509,7 +3503,7 @@
             }
           },
           {
-            "name": "new_encrypted_value",
+            "name": "new_encrypted_state",
             "docs": [
               "New ZamaHost ACL record."
             ],
@@ -3558,7 +3552,7 @@
     {
       "name": "TransferInput",
       "docs": [
-        "A durable slot or an exact transient grant addressed to the sender token state."
+        "A persistent slot or an exact transient grant addressed to the sender token state."
       ],
       "type": {
         "kind": "enum",

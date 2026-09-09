@@ -17,14 +17,14 @@
 #![allow(dead_code)]
 
 use kms_worker::core::solana::{
-    delegation::WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY,
+    delegation::WILDCARD_AUTHORITY,
     deployment::{DeploymentIdentity, SOLANA_CHAIN_TYPE_BIT},
     kms_pair::{KmsPairFailure, KmsPairValidator},
     proof::{HostProofReader, LeafKind, LeafProofOutcome, LeafQuery, ProofReadError},
     request::{SolanaHandleEntryWire, SolanaUserDecryptRequest, SolanaUserDecryptRequestWire},
     snapshot::{
-        HostSnapshot, HostStateReader, SnapshotAccount, SnapshotError, SnapshotKeys,
-        SYSTEM_PROGRAM_ID,
+        HostSnapshot, HostStateReader, SYSTEM_PROGRAM_ID, SnapshotAccount, SnapshotError,
+        SnapshotKeys,
     },
 };
 use kms_worker::core::solana_acl::SolanaPubkeyBytes;
@@ -34,13 +34,13 @@ use solana_pubkey::Pubkey;
 use std::collections::BTreeMap;
 use std::sync::Mutex;
 use zama_solana_acl::{
+    EncryptedSlot, EncryptedState, HOST_CONFIG_SEED, HostConfigRecord, MmrProof,
     encode_host_config, encrypted_state_discriminator, historical_access_leaf_commitment,
-    mmr_append, mmr_build_proof, public_decrypt_leaf_commitment, EncryptedSlot, EncryptedState,
-    HostConfigRecord, MmrProof, HOST_CONFIG_SEED,
+    mmr_append, mmr_build_proof, public_decrypt_leaf_commitment,
 };
 use zama_solana_permit::{
-    build_envelope, Identity, KmsRouting, PermitFields, PermitWireFields, Signature,
-    TRANSPORT_KEY_LEN,
+    Identity, KmsRouting, PermitFields, PermitWireFields, Signature, TRANSPORT_KEY_LEN,
+    build_envelope,
 };
 
 /// The host deployment every fixture is built against.
@@ -545,7 +545,7 @@ pub struct DelegationFixture {
     /// Who received it.
     pub delegate: SolanaPubkeyBytes,
     /// Which authority it covers.
-    pub encrypted_value_account_authority: SolanaPubkeyBytes,
+    pub authority: SolanaPubkeyBytes,
     /// Last slot it is valid at.
     pub expiration_slot: u64,
     /// The counter no rule reads and no signature commits to.
@@ -566,7 +566,7 @@ impl DelegationFixture {
         Self {
             delegator,
             delegate,
-            encrypted_value_account_authority: AUTHORITY,
+            authority: AUTHORITY,
             expiration_slot: observed_slot + 100,
             delegation_counter: 1,
             last_update_slot: observed_slot.saturating_sub(1),
@@ -582,7 +582,7 @@ impl DelegationFixture {
         observed_slot: u64,
     ) -> Self {
         Self {
-            encrypted_value_account_authority: WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY,
+            authority: WILDCARD_AUTHORITY,
             ..Self::live(delegator, delegate, observed_slot)
         }
     }
@@ -593,7 +593,7 @@ impl DelegationFixture {
             PROGRAM_ID,
             self.delegator,
             self.delegate,
-            self.encrypted_value_account_authority,
+            self.authority,
         )
     }
 
@@ -603,7 +603,7 @@ impl DelegationFixture {
         let mut data = user_decryption_delegation_discriminator().to_vec();
         data.extend_from_slice(&self.delegator);
         data.extend_from_slice(&self.delegate);
-        data.extend_from_slice(&self.encrypted_value_account_authority);
+        data.extend_from_slice(&self.authority);
         data.extend_from_slice(&self.expiration_slot.to_le_bytes());
         data.extend_from_slice(&self.delegation_counter.to_le_bytes());
         data.extend_from_slice(&self.last_update_slot.to_le_bytes());

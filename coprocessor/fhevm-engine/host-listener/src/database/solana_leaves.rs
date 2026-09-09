@@ -31,17 +31,11 @@ pub struct EncryptedStateWrite {
     pub make_public: bool,
 }
 
-/// One host instruction that seals leaves, in on-chain order.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum LeafSource {
-    State(EncryptedStateWrite),
-}
-
 /// The leaf sources of one confirmed transaction.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct TransactionLeafSources {
+pub struct TransactionStateWrites {
     pub transaction_index: u64,
-    pub sources: Vec<LeafSource>,
+    pub sources: Vec<EncryptedStateWrite>,
 }
 
 /// The persisted proof-history cursor of one encrypted state account.
@@ -115,7 +109,7 @@ pub enum LeafReduceError {
 /// state first seen above leaf zero is tracked with `history_complete = false`:
 /// its cursor advances, but no leaf or proof is stored.
 pub fn reduce_block_leaves(
-    transactions: &[TransactionLeafSources],
+    transactions: &[TransactionStateWrites],
     existing: BTreeMap<[u8; 32], EncryptedStateHistory>,
 ) -> Result<BlockLeafReduction, LeafReduceError> {
     let mut reduction = BlockLeafReduction {
@@ -124,7 +118,7 @@ pub fn reduce_block_leaves(
     };
     for transaction in transactions {
         for source in &transaction.sources {
-            let LeafSource::State(write) = source;
+            let write = source;
             apply_write(&mut reduction, write, transaction.transaction_index)?;
         }
     }
@@ -473,18 +467,20 @@ mod tests {
         handle: [u8; 32],
         allowed_keys: Vec<[u8; 32]>,
         make_public: bool,
-    ) -> LeafSource {
-        LeafSource::State(EncryptedStateWrite {
+    ) -> EncryptedStateWrite {
+        EncryptedStateWrite {
             encrypted_state: STATE,
             previous_leaf_count,
             handle,
             allowed_keys,
             make_public,
-        })
+        }
     }
 
-    fn transaction(sources: Vec<LeafSource>) -> TransactionLeafSources {
-        TransactionLeafSources {
+    fn transaction(
+        sources: Vec<EncryptedStateWrite>,
+    ) -> TransactionStateWrites {
+        TransactionStateWrites {
             transaction_index: 3,
             sources,
         }

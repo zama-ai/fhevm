@@ -129,7 +129,7 @@ export type ExtendAsyncInput<
   chain?: Address<TAccountChain>;
   chainAuthority?: Address<TAccountChainAuthority>;
   /**
-   * Stable tail encrypted value account; read for the current handle and replaced by this
+   * Stable tail encrypted State; read for the current handle and replaced by this
    * execution.
    */
   encryptedState: Address<TAccountEncryptedState>;
@@ -258,7 +258,7 @@ export type ExtendInput<
   chain: Address<TAccountChain>;
   chainAuthority: Address<TAccountChainAuthority>;
   /**
-   * Stable tail encrypted value account; read for the current handle and replaced by this
+   * Stable tail encrypted State; read for the current handle and replaced by this
    * execution.
    */
   encryptedState: Address<TAccountEncryptedState>;
@@ -371,7 +371,7 @@ export type ParsedExtendInstruction<
     chain: TAccountMetas[1];
     chainAuthority: TAccountMetas[2];
     /**
-     * Stable tail encrypted value account; read for the current handle and replaced by this
+     * Stable tail encrypted State; read for the current handle and replaced by this
      * execution.
      */
     encryptedState: TAccountMetas[3];

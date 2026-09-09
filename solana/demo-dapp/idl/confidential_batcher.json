@@ -99,11 +99,11 @@
           "writable": true
         },
         {
-          "name": "batch_balance_value",
+          "name": "batch_balance_state",
           "writable": true
         },
         {
-          "name": "total_supply_value",
+          "name": "total_supply_state",
           "writable": true
         },
         {
@@ -171,7 +171,7 @@
         {
           "name": "payer",
           "docs": [
-            "Pays the claim encrypted value account and transfer output rent. Anyone."
+            "Pays the claim encrypted State and transfer output rent. Anyone."
           ],
           "writable": true,
           "signer": true
@@ -305,11 +305,11 @@
           "writable": true
         },
         {
-          "name": "batch_payout_balance_value",
+          "name": "batch_payout_balance_state",
           "writable": true
         },
         {
-          "name": "user_payout_balance_value",
+          "name": "user_payout_balance_state",
           "writable": true
         },
         {
@@ -439,14 +439,14 @@
           "writable": true
         },
         {
-          "name": "batch_balance_value",
+          "name": "batch_balance_state",
           "docs": [
             "replaced as the burn's balance output (the whole-balance alias)."
           ],
           "writable": true
         },
         {
-          "name": "total_supply_value",
+          "name": "total_supply_state",
           "writable": true
         },
         {
@@ -570,9 +570,9 @@
       "docs": [
         "Joins the pending batch with the batcher's join token: one user-signed",
         "transaction that CPIs the coprocessor-attested confidential transfer",
-        "into the batch's own token account; the token program accumulates the transferred",
-        "amount into the user's joined encrypted value account as the transfer's receipt",
-        "(decryptable by the user). Repeated joins accumulate."
+        "into the batch's token account. The token returns the transferred handle and grants",
+        "the JoinRecord State access through scratch. The batcher adds it to the user's",
+        "contribution slot (decryptable by the user). Repeated joins accumulate."
       ],
       "discriminator": [
         206,
@@ -713,11 +713,11 @@
           "writable": true
         },
         {
-          "name": "user_balance_value",
+          "name": "user_balance_state",
           "writable": true
         },
         {
-          "name": "batch_balance_value",
+          "name": "batch_balance_state",
           "writable": true
         },
         {
@@ -897,7 +897,7 @@
           "writable": true
         },
         {
-          "name": "batch_join_balance_value",
+          "name": "batch_join_balance_state",
           "writable": true
         },
         {
@@ -911,7 +911,7 @@
           "writable": true
         },
         {
-          "name": "batch_payout_balance_value",
+          "name": "batch_payout_balance_state",
           "writable": true
         },
         {
@@ -1063,7 +1063,7 @@
         "Leaves a pending batch before dispatch, or a refunding batch after dispatch cancellation:",
         "transfers the user's exact",
         "recorded amount back from the batch account (all-or-nothing) and",
-        "resets the joined encrypted value account to zero."
+        "resets the joined encrypted State to zero."
       ],
       "discriminator": [
         191,
@@ -1201,11 +1201,11 @@
           "writable": true
         },
         {
-          "name": "batch_balance_value",
+          "name": "batch_balance_state",
           "writable": true
         },
         {
-          "name": "user_balance_value",
+          "name": "user_balance_state",
           "writable": true
         },
         {
@@ -1397,7 +1397,7 @@
           }
         },
         {
-          "name": "batch_burned_amount_value"
+          "name": "batch_burned_amount_state"
         },
         {
           "name": "pending_burn",
@@ -1502,11 +1502,11 @@
           "name": "payout_total_supply_authority"
         },
         {
-          "name": "batch_payout_balance_value",
+          "name": "batch_payout_balance_state",
           "writable": true
         },
         {
-          "name": "payout_total_supply_value",
+          "name": "payout_total_supply_state",
           "writable": true
         },
         {
@@ -1809,8 +1809,8 @@
     },
     {
       "code": 6012,
-      "name": "EncryptedValueInvalid",
-      "msg": "encrypted value account is invalid"
+      "name": "EncryptedStateInvalid",
+      "msg": "encrypted State is invalid"
     },
     {
       "code": 6013,
@@ -2330,8 +2330,8 @@
       "docs": [
         "Confidential mint state for the token PoC.",
         "",
-        "The total supply's current handle and access encrypted value account live in the",
-        "`EncryptedValue` account at `total_supply_encrypted_value`."
+        "The total supply's current handle and access encrypted State live in the",
+        "`EncryptedState` account at `total_supply_encrypted_state`."
       ],
       "type": {
         "kind": "struct",
@@ -2461,7 +2461,7 @@
       "name": "JoinRecord",
       "docs": [
         "Per-(batch, user) join record. The encrypted amount itself lives in the batcher-owned",
-        "`EncryptedValue` account at `joined_encrypted_value`: the user may decrypt their pending",
+        "`EncryptedState` account at `joined_encrypted_state`: the user may decrypt their pending",
         "amount, and the batch authority computes refunds and claims from it by signature."
       ],
       "type": {
@@ -2529,16 +2529,16 @@
             "type": "pubkey"
           },
           {
-            "name": "joined_encrypted_value",
+            "name": "joined_encrypted_state",
             "docs": [
-              "`EncryptedValue` encrypted value account holding the user's accumulated joined amount."
+              "`EncryptedState` encrypted State holding the user's accumulated joined amount."
             ],
             "type": "pubkey"
           },
           {
             "name": "joined_handle",
             "docs": [
-              "Current handle of the joined encrypted value account after this join."
+              "Current handle of the joined encrypted State after this join."
             ],
             "type": {
               "array": [
@@ -2564,7 +2564,7 @@
           {
             "name": "leaf_index",
             "docs": [
-              "Index of the proven leaf within the encrypted value account's MMR."
+              "Index of the proven leaf within the encrypted State's MMR."
             ],
             "type": "u64"
           },
@@ -2617,7 +2617,7 @@
           {
             "name": "claim_state",
             "docs": [
-              "`EncryptedValue` encrypted value account holding the claimed payout amount."
+              "`EncryptedState` encrypted State holding the claimed payout amount."
             ],
             "type": "pubkey"
           },
@@ -2640,7 +2640,7 @@
       "name": "QuitBatch",
       "docs": [
         "Emitted when a user quits a pending batch: the exact recorded amount was",
-        "transferred back and the joined encrypted value account reset to zero."
+        "transferred back and the joined encrypted State reset to zero."
       ],
       "type": {
         "kind": "struct",

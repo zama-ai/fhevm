@@ -6,9 +6,8 @@ use zama_host::{CoprocessorInputAttestation, MAX_FHE_EXECUTION_STEPS};
 
 use crate::builder::FheExecutionBuilder;
 use crate::{
-    AppScope, Encrypted, EncryptedValueId, EncryptedValueLabel,
-    ExecutionEncryptedValueAccountAuthority, FheExecution, Output, PersistentOutput, Scalar, Uint,
-    Uint64Handle,
+    AppScope, Encrypted, ExecutionAuthority, FheExecution, Output, Scalar, State, StateOutput,
+    Uint, Uint64Handle,
 };
 
 use super::harness::balance_handle;
@@ -24,6 +23,22 @@ fn fresh_app() -> AppScope {
     }
 }
 
+pub(crate) fn shape_state(handle: [u8; 32]) -> zama_host::EncryptedState {
+    let app = fresh_app();
+    zama_host::EncryptedState {
+        program: app.program,
+        authority: Pubkey::new_unique(),
+        scope: app.scope,
+        slots: vec![zama_host::EncryptedSlot {
+            key: [0; 32],
+            handle,
+        }],
+        leaf_count: 0,
+        peaks: vec![],
+        bump: 0,
+    }
+}
+
 /// `count` distinct allowed keys with `tag` in their first byte.
 fn allow_keys(tag: u8, count: usize) -> impl Iterator<Item = Pubkey> {
     (0..count).map(move |key| {
@@ -35,8 +50,8 @@ fn allow_keys(tag: u8, count: usize) -> impl Iterator<Item = Pubkey> {
     })
 }
 
-fn allow_all(output: PersistentOutput, keys: impl Iterator<Item = Pubkey>) -> PersistentOutput {
-    keys.fold(output, PersistentOutput::allow)
+fn allow_all(output: StateOutput, keys: impl Iterator<Item = Pubkey>) -> StateOutput {
+    keys.fold(output, StateOutput::allow)
 }
 
 /// Whether a persist-heavy shape's outputs create their accounts or update existing ones.
@@ -54,28 +69,24 @@ pub(crate) fn persist_shape_data(
     kind: PersistKind,
     outputs: usize,
     allows_per_output: usize,
-) -> (Uint64Handle, Vec<PersistentOutput>) {
-    let authority = Pubkey::new_unique();
-    let app = fresh_app();
-    let input = Uint64Handle::persistent(
-        balance_handle(1),
-        EncryptedValueId::new(app, authority, EncryptedValueLabel::new([0xfe; 32])),
-    )
-    .expect("input handle");
-    let seed_owner = Pubkey::new_unique();
+) -> (Uint64Handle, Vec<StateOutput>) {
+    let mut account = shape_state(balance_handle(1));
+    if kind == PersistKind::Update {
+        account
+            .slots
+            .extend((0..outputs).map(|index| zama_host::EncryptedSlot {
+                key: [index as u8; 32],
+                handle: balance_handle(0xB0 + index as u8),
+            }));
+    }
+    let state = State::new(&account);
+    let input = state.get([0; 32]).expect("input handle");
     let outputs = (0..outputs)
         .map(|index| {
-            let id =
-                EncryptedValueId::new(app, authority, EncryptedValueLabel::new([index as u8; 32]));
-            let output = match kind {
-                PersistKind::Create => {
-                    PersistentOutput::create(id, &[b"balance", seed_owner.as_ref(), &[255]])
-                }
-                PersistKind::Update => {
-                    PersistentOutput::update(id, balance_handle(0xB0 + index as u8))
-                }
-            };
-            allow_all(output, allow_keys(0x40 + index as u8, allows_per_output))
+            allow_all(
+                state.set([index as u8; 32]),
+                allow_keys(0x40 + index as u8, allows_per_output),
+            )
         })
         .collect();
     (input, outputs)
@@ -88,14 +99,14 @@ pub(crate) fn persist_shape_data(
 pub(crate) fn chain_with_outputs(
     steps: usize,
     input: Uint64Handle,
-    outputs: Vec<PersistentOutput>,
+    outputs: Vec<StateOutput>,
 ) -> impl for<'id> FnOnce(&mut FheExecutionBuilder<'id>) -> crate::Result<()> {
     move |builder| {
         let mut value = Encrypted::from(input);
         let mut outputs = outputs.into_iter();
         for _ in 0..steps {
             let output = match outputs.next() {
-                Some(persistent) => Output::persistent(persistent),
+                Some(persistent) => Output::state(persistent),
                 None => Output::transient(),
             };
             value = builder.add(value, Scalar::<Uint<64>>::u64(1), output)?;
@@ -154,7 +165,7 @@ pub(crate) fn max_buildable_attestation_count() -> usize {
     (1..=MAX_FHE_EXECUTION_STEPS)
         .take_while(|count| {
             FheExecution::build(
-                ExecutionEncryptedValueAccountAuthority::new(Pubkey::new_unique()),
+                ExecutionAuthority::new(Pubkey::new_unique()),
                 attestation_shape(*count),
             )
             .is_ok()
@@ -180,19 +191,13 @@ pub(crate) fn persist_shape(
 pub(crate) fn shared_audience_public_creates_shape(
     creates: usize,
 ) -> impl for<'id> FnOnce(&mut FheExecutionBuilder<'id>) -> crate::Result<()> {
-    let authority = Pubkey::new_unique();
-    let app = fresh_app();
-    let input = Uint64Handle::persistent(
-        balance_handle(1),
-        EncryptedValueId::new(app, authority, EncryptedValueLabel::new([0xfd; 32])),
-    )
-    .expect("input handle");
+    let account = shape_state(balance_handle(1));
+    let state = State::new(&account);
+    let input = state.get([0; 32]).expect("input handle");
     let outputs = (0..creates)
         .map(|index| {
-            let id =
-                EncryptedValueId::new(app, authority, EncryptedValueLabel::new([index as u8; 32]));
             allow_all(
-                PersistentOutput::create(id, &[b"balance", &[255]]).make_public(),
+                state.set([index as u8; 32]).make_public(),
                 allow_keys(0x60, WIDE_ALLOW_LIST),
             )
         })
@@ -216,12 +221,8 @@ pub(crate) fn reduction_shape(
     steps: usize,
     operands: usize,
 ) -> impl for<'id> FnOnce(&mut FheExecutionBuilder<'id>) -> crate::Result<()> {
-    let authority = Pubkey::new_unique();
-    let input = Uint64Handle::persistent(
-        balance_handle(2),
-        EncryptedValueId::new(fresh_app(), authority, EncryptedValueLabel::new([0xfd; 32])),
-    )
-    .expect("input handle");
+    let account = shape_state(balance_handle(2));
+    let input: Uint64Handle = State::new(&account).get([0; 32]).expect("input handle");
     move |builder| {
         let mut value = Encrypted::from(input);
         for _ in 0..steps {
@@ -254,11 +255,7 @@ pub(crate) fn mixed_ops_shape(
         }
         builder.is_in(value, (0..8).map(|_| value), Output::transient())?;
         let output = outputs.into_iter().next().expect("one create");
-        builder.add(
-            value,
-            Scalar::<Uint<64>>::u64(1),
-            Output::persistent(output),
-        )?;
+        builder.add(value, Scalar::<Uint<64>>::u64(1), Output::state(output))?;
         Ok(())
     }
 }

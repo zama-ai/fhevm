@@ -1,12 +1,12 @@
 //! Anchor program for the Solana FHEVM host PoC.
 //!
 //! `zama-host` owns the protocol-facing parts of the PoC: the append-only
-//! `EncryptedValue` ACL/MMR model, handle derivation, fhe_execute, public-decrypt
+//! `EncryptedState` ACL/MMR model, handle derivation, fhe_execute, public-decrypt
 //! state and the small set of account witnesses that a future
 //! Gateway/KMS request must verify.
 //!
 //! The program intentionally keeps app semantics outside this crate. App
-//! programs, such as `confidential-token`, decide which encrypted value account authorities,
+//! programs, such as `confidential-token`, decide which encrypted State authorities,
 //! scopes and labels they authorize and which keys each write allows, then call this program by
 //! CPI to create or verify host-owned ACL state.
 
@@ -174,15 +174,10 @@ pub mod zama_host {
     pub fn delegate_for_user_decryption(
         ctx: Context<DelegateForUserDecryption>,
         delegate: Pubkey,
-        encrypted_value_account_authority: Pubkey,
+        authority: Pubkey,
         expiration_slot: u64,
     ) -> Result<()> {
-        instructions::delegate_for_user_decryption(
-            ctx,
-            delegate,
-            encrypted_value_account_authority,
-            expiration_slot,
-        )
+        instructions::delegate_for_user_decryption(ctx, delegate, authority, expiration_slot)
     }
 
     pub fn revoke_delegation_for_user_decryption(
@@ -204,7 +199,7 @@ pub mod zama_host {
         instructions::fhe_execute(ctx, args)
     }
 
-    // ---- EncryptedValue ACL model ----
+    // ---- EncryptedState ACL model ----
 
     /// Seals the value's current handle as publicly decryptable. Every other allow happens
     /// inline on the `fhe_execute` write that produces the handle.
@@ -215,13 +210,6 @@ pub mod zama_host {
         previous_leaf_count: u64,
     ) -> Result<()> {
         instructions::make_state_handle_public(ctx, key, handle, previous_leaf_count)
-    }
-
-    pub fn make_handle_public(
-        ctx: Context<MakeEncryptedValueHandlePublic>,
-        handle: [u8; 32],
-    ) -> Result<()> {
-        instructions::make_handle_public(ctx, handle)
     }
 
     /// Stateless pull-oracle verifier (fhevm-internal#1704, #1765): verifies a KMS public-decrypt

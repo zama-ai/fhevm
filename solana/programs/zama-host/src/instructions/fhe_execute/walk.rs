@@ -150,13 +150,7 @@ impl ExecutionState<'_, '_, '_> {
                 );
                 Ok(ResolvedOperand::encrypted(handle))
             }
-            FheExecuteOperand::StoredValue {
-                handle_index,
-                encrypted_value_index,
-            } => {
-                let handle = self.dictionary_bytes(*handle_index)?;
-                self.resolve_persistent_operand(handle, u16::from(*encrypted_value_index))
-            }
+
             FheExecuteOperand::EarlierStep { producer_index } => self
                 .produced
                 .get(*producer_index as usize)
@@ -200,7 +194,6 @@ impl ExecutionState<'_, '_, '_> {
 /// operand types, compute the produced handle, and accept the output.
 pub(super) fn walk_steps<'info>(
     execution: &mut ExecutionState<'_, '_, 'info>,
-    ctx: &Context<'info, FheExecute<'info>>,
     args: &FheExecuteArgs,
     handle_context: &ExecutionHandleContext,
 ) -> Result<()> {
@@ -230,7 +223,7 @@ pub(super) fn walk_steps<'info>(
                     rhs.scalar,
                     *output_fhe_type,
                 );
-                execution.accept_output(ctx, op_index, result, output)?;
+                execution.accept_output(op_index, result, output)?;
             }
             FheExecuteStep::Ternary {
                 op,
@@ -256,7 +249,7 @@ pub(super) fn walk_steps<'info>(
                     if_false.handle,
                     *output_fhe_type,
                 );
-                execution.accept_output(ctx, op_index, result, output)?;
+                execution.accept_output(op_index, result, output)?;
             }
             FheExecuteStep::TrivialEncrypt {
                 plaintext,
@@ -265,14 +258,14 @@ pub(super) fn walk_steps<'info>(
             } => {
                 assert_supported_fhe_type(*fhe_type)?;
                 let result = handle_context.trivial_result(*plaintext, *fhe_type);
-                execution.accept_output(ctx, op_index, result, output)?;
+                execution.accept_output(op_index, result, output)?;
             }
             FheExecuteStep::Rand { fhe_type, output } => {
                 assert_supported_fhe_type(*fhe_type)?;
                 let seed = handle_context.rand_seed(op_index)?;
                 let result =
                     computed_rand_handle(seed, *fhe_type, handle_context.derivation.chain_id);
-                execution.accept_output(ctx, op_index, result, output)?;
+                execution.accept_output(op_index, result, output)?;
             }
             FheExecuteStep::Unary {
                 op,
@@ -283,7 +276,7 @@ pub(super) fn walk_steps<'info>(
                 let operand = execution.resolve_encrypted_operand(operand)?;
                 assert_unary_operand_type(*op, operand.handle, *output_fhe_type)?;
                 let result = handle_context.unary_result(*op, operand.handle, *output_fhe_type);
-                execution.accept_output(ctx, op_index, result, output)?;
+                execution.accept_output(op_index, result, output)?;
             }
             FheExecuteStep::RandBounded {
                 upper_bound,
@@ -298,7 +291,7 @@ pub(super) fn walk_steps<'info>(
                     *fhe_type,
                     handle_context.derivation.chain_id,
                 );
-                execution.accept_output(ctx, op_index, result, output)?;
+                execution.accept_output(op_index, result, output)?;
             }
             FheExecuteStep::Sum {
                 operands,
@@ -313,7 +306,7 @@ pub(super) fn walk_steps<'info>(
                 let operand_handles: Vec<[u8; 32]> = resolved.iter().map(|r| r.handle).collect();
                 assert_sum_operand_types(&operand_handles, *fhe_type)?;
                 let result = handle_context.sum_result(&operand_handles, *fhe_type);
-                execution.accept_output(ctx, op_index, result, output)?;
+                execution.accept_output(op_index, result, output)?;
             }
             FheExecuteStep::IsIn {
                 value,
@@ -331,7 +324,7 @@ pub(super) fn walk_steps<'info>(
                 assert_is_in_operand_types(value_resolved.handle, &set_handles, *fhe_type)?;
                 let result =
                     handle_context.is_in_result(value_resolved.handle, &set_handles, *fhe_type);
-                execution.accept_output(ctx, op_index, result, output)?;
+                execution.accept_output(op_index, result, output)?;
             }
             FheExecuteStep::MulDiv {
                 factor1,
@@ -356,7 +349,7 @@ pub(super) fn walk_steps<'info>(
                     *divisor,
                     *output_fhe_type,
                 );
-                execution.accept_output(ctx, op_index, result, output)?;
+                execution.accept_output(op_index, result, output)?;
             }
         }
     }

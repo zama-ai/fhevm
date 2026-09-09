@@ -44,20 +44,20 @@ use kms_worker::core::solana::{
     handle_binding::HandleBindingFailure,
     kms_pair::{KmsPairFailure, KmsPairValidator},
     pause::PauseFailure,
-    pipeline::{authorize_request, AuthorizationContext},
+    pipeline::{AuthorizationContext, authorize_request},
     proof::{LeafKind, LeafProofOutcome, LeafQuery},
     request::{
-        RequestFormError, SolanaHandleEntryWire, SolanaUserDecryptRequest,
-        SolanaUserDecryptRequestWire, MAX_REQUEST_HANDLES,
+        MAX_REQUEST_HANDLES, RequestFormError, SolanaHandleEntryWire, SolanaUserDecryptRequest,
+        SolanaUserDecryptRequestWire,
     },
     snapshot::SnapshotAccount,
-    watermark::{permit_invalidation_address, WatermarkFailure, WindowFailure},
+    watermark::{WatermarkFailure, WindowFailure, permit_invalidation_address},
 };
-use kms_worker::core::solana_acl::{SolanaPubkeyBytes, WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY};
+use kms_worker::core::solana_acl::{SolanaPubkeyBytes, WILDCARD_AUTHORITY};
 use schema::{
-    from_hex, rule, to_hex, ConnectorAuthVector, ConnectorAuthVectorFile, Deployment, FailureClass,
-    KmsPairStatus, LeafProofStatus, Observation, RecordedAccount, RecordedLeafProof, VectorResult,
-    WireHandleEntry, WirePermit, WireRequest, CONNECTOR_AUTH_VECTOR_SCHEMA,
+    CONNECTOR_AUTH_VECTOR_SCHEMA, ConnectorAuthVector, ConnectorAuthVectorFile, Deployment,
+    FailureClass, KmsPairStatus, LeafProofStatus, Observation, RecordedAccount, RecordedLeafProof,
+    VectorResult, WireHandleEntry, WirePermit, WireRequest, from_hex, rule, to_hex,
 };
 use solana_support::*;
 use std::collections::{BTreeMap, BTreeSet};
@@ -386,10 +386,10 @@ fn accepting_scenarios() -> Vec<Scenario> {
     encrypted_state_b.allow(second_delegator.pubkey());
     let mut delegation_a =
         DelegationFixture::live(first_delegator.pubkey(), signer.pubkey(), OBSERVED_SLOT);
-    delegation_a.encrypted_value_account_authority = authority_a;
+    delegation_a.authority = authority_a;
     let mut delegation_b =
         DelegationFixture::live(second_delegator.pubkey(), signer.pubkey(), OBSERVED_SLOT);
-    delegation_b.encrypted_value_account_authority = authority_b;
+    delegation_b.authority = authority_b;
     assert_eq!(
         BTreeSet::from([
             own_encrypted_state.account_key,
@@ -1209,7 +1209,7 @@ fn delegation_scenarios() -> Vec<Scenario> {
     let (expected_key, _) = delegation.address();
     let mut other_tuple =
         DelegationFixture::live(Wallet::new(9).pubkey(), signer.pubkey(), OBSERVED_SLOT);
-    other_tuple.encrypted_value_account_authority = AUTHORITY;
+    other_tuple.authority = AUTHORITY;
     out.push(Scenario::rejected(
         "delegation-record-of-another-tuple",
         "A record sitting at the canonical address while naming a different tuple is refused: the \
@@ -1289,7 +1289,7 @@ fn delegation_scenarios() -> Vec<Scenario> {
     let sentinel_live = handle(0x2f, FHE_TYPE_UINT64);
     let mut sentinel_encrypted_state = EncryptedStateFixture::in_application(
         APP_PROGRAM,
-        WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY,
+        WILDCARD_AUTHORITY,
         SCOPE,
         LABEL,
         sentinel_live,

@@ -44,8 +44,8 @@ use zama_solana_transaction::{
 
 use crate::database::solana_leaves::{
     load_encrypted_state_histories, reduce_block_leaves, store_block_leaves,
-    store_checkpoint, EncryptedStateWrite, LeafSource, StoredCheckpoint,
-    TransactionLeafSources,
+    store_checkpoint, EncryptedStateWrite, StoredCheckpoint,
+    TransactionStateWrites,
 };
 use crate::database::tfhe_event_propagate::Database;
 use crate::solana_adapter::{
@@ -268,7 +268,7 @@ pub async fn run(
 ///
 /// `remaining_index` is relative to
 /// `remaining_accounts`, which follow the 9 named `fhe_execute` accounts — payer,
-/// encrypted_value_account_authority, host_config, system_program, hcu_block_meter,
+/// authority, host_config, system_program, hcu_block_meter,
 /// hcu_trusted_app_record, rand_nonce, then `#[event_cpi]`'s event_authority + program
 /// (see `FheExecute` in fhe_execute.rs). The three optional accounts are always present
 /// in the account list (as program-id placeholders when `None`): the event_cpi pair
@@ -979,7 +979,7 @@ async fn apply_block(
         stats.material_requests += transaction_stats.material_requests;
         stats.inserted_rows += transaction_stats.inserted_rows;
         if !records.leaf_sources.is_empty() {
-            leaf_sources.push(TransactionLeafSources {
+            leaf_sources.push(TransactionStateWrites {
                 transaction_index: transaction.info.index,
                 sources: records.leaf_sources,
             });
@@ -989,9 +989,7 @@ async fn apply_block(
     let mut touched: Vec<[u8; 32]> = leaf_sources
         .iter()
         .flat_map(|transaction| transaction.sources.iter())
-        .map(|source| match source {
-            LeafSource::State(write) => write.encrypted_state,
-        })
+        .map(|source| source.encrypted_state)
         .collect();
     touched.sort_unstable();
     touched.dedup();
@@ -1073,7 +1071,7 @@ fn reconstruct_context(
 #[derive(Debug, Default)]
 struct ReconstructedTransaction {
     records: Vec<crate::solana_adapter::SolanaHostRecord>,
-    leaf_sources: Vec<LeafSource>,
+    leaf_sources: Vec<EncryptedStateWrite>,
 }
 
 #[derive(Debug)]
@@ -1193,15 +1191,13 @@ fn reconstruct_records_for_insert(
                     .push(SolanaHostRecord::MaterialRequest(material_request(
                         output.handle,
                     )));
-                reconstructed.leaf_sources.push(LeafSource::State(
-                    EncryptedStateWrite {
-                        encrypted_state,
-                        previous_leaf_count: output.previous_leaf_count,
-                        handle: output.handle,
-                        allowed_keys: output.allowed_keys,
-                        make_public: output.make_public,
-                    },
-                ));
+                reconstructed.leaf_sources.push(EncryptedStateWrite {
+                    encrypted_state,
+                    previous_leaf_count: output.previous_leaf_count,
+                    handle: output.handle,
+                    allowed_keys: output.allowed_keys,
+                    make_public: output.make_public,
+                });
             }
             continue;
         }
@@ -1226,15 +1222,13 @@ fn reconstruct_records_for_insert(
                 .push(SolanaHostRecord::MaterialRequest(material_request(
                     handle,
                 )));
-            reconstructed.leaf_sources.push(LeafSource::State(
-                EncryptedStateWrite {
-                    encrypted_state,
-                    previous_leaf_count,
-                    handle,
-                    allowed_keys: Vec::new(),
-                    make_public: true,
-                },
-            ));
+            reconstructed.leaf_sources.push(EncryptedStateWrite {
+                encrypted_state,
+                previous_leaf_count,
+                handle,
+                allowed_keys: Vec::new(),
+                make_public: true,
+            });
         }
     }
     Ok(ReconstructionOutcome::Complete(reconstructed))
@@ -1389,7 +1383,7 @@ mod fhe_execute_acl_tests {
     use std::collections::HashMap;
     use zama_host::state::{FheExecuteArgs, FheExecuteOutput, FheExecuteStep};
 
-    use crate::database::solana_leaves::{EncryptedStateWrite, LeafSource};
+    use crate::database::solana_leaves::EncryptedStateWrite;
     use crate::solana_reconstruct::DecodedInstruction;
 
     const ZAMA_HOST: &str = "ZamaHost11111111111111111111111111111111";
@@ -1436,6 +1430,7 @@ mod fhe_execute_acl_tests {
         let execute = DecodedInstruction {
             program: ZAMA_HOST.to_owned(),
             data: encoded_execution(FheExecuteArgs {
+                returned_results: Vec::new(),
                 account_count: 0,
                 dictionary: vec![],
                 steps: vec![FheExecuteStep::Rand {
@@ -1491,6 +1486,7 @@ mod fhe_execute_acl_tests {
     #[test]
     fn state_output_reconstructs_address_cursor_and_leaves() {
         let args = FheExecuteArgs {
+            returned_results: Vec::new(),
             account_count: 1,
             dictionary: vec![[0x33; 32]],
             steps: vec![FheExecuteStep::TrivialEncrypt {
@@ -1526,24 +1522,23 @@ mod fhe_execute_acl_tests {
         let ReconstructionOutcome::Complete(reconstructed) = outcome else {
             panic!("expected covered transaction")
         };
-        let handle = match &reconstructed.leaf_sources[0] {
-            LeafSource::State(write) => write.handle,
-        };
+        let handle = reconstructed.leaf_sources[0].handle;
         assert_eq!(
             reconstructed.leaf_sources,
-            vec![LeafSource::State(EncryptedStateWrite {
+            vec![EncryptedStateWrite {
                 encrypted_state: STATE,
                 previous_leaf_count: 4,
                 handle,
                 allowed_keys: vec![[0x33; 32]],
                 make_public: true,
-            })]
+            }]
         );
     }
 
     #[test]
     fn grants_only_output_reconstructs_without_decrypt_permissions() {
         let args = FheExecuteArgs {
+            returned_results: Vec::new(),
             account_count: 2,
             dictionary: vec![],
             steps: vec![FheExecuteStep::TrivialEncrypt {
@@ -1583,7 +1578,7 @@ mod fhe_execute_acl_tests {
             panic!("expected covered transaction")
         };
         assert_eq!(reconstructed.leaf_sources.len(), 1);
-        let LeafSource::State(write) = &reconstructed.leaf_sources[0];
+        let write = &reconstructed.leaf_sources[0];
         assert_eq!(write.encrypted_state, STATE);
         assert_eq!(write.previous_leaf_count, 4);
         assert!(write.allowed_keys.is_empty());
@@ -1593,6 +1588,7 @@ mod fhe_execute_acl_tests {
     #[test]
     fn state_output_with_missing_account_fails_ingest() {
         let args = FheExecuteArgs {
+            returned_results: Vec::new(),
             account_count: 1,
             dictionary: vec![],
             steps: vec![FheExecuteStep::TrivialEncrypt {
@@ -1674,13 +1670,13 @@ mod fhe_execute_acl_tests {
         };
         assert_eq!(
             reconstructed.leaf_sources,
-            vec![LeafSource::State(EncryptedStateWrite {
+            vec![EncryptedStateWrite {
                 encrypted_state: STATE,
                 previous_leaf_count: 8,
                 handle: [0x22; 32],
                 allowed_keys: vec![],
                 make_public: true,
-            })]
+            }]
         );
     }
 }

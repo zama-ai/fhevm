@@ -20,16 +20,16 @@ use zama_host::{
     FheExecuteStep,
 };
 use zama_solana_test_kit::{
-    cost_snapshot, empty_system_account, encrypted_value_account, event_authority,
+    cost_snapshot, empty_system_account, encrypted_state_account, event_authority,
     funded_system_account, handle_for_chain, host_svm as mollusk, label,
-    new_encrypted_value as new_encrypted_value_account, readonly, signing, system_program_account,
-    u256_be, writable, HostConfigParams,
+    new_encrypted_state_with_slot as new_state_with_slot, readonly, signing,
+    system_program_account, u256_be, writable, HostConfigParams,
 };
 
 mod host_fixtures;
 use host_fixtures::{
     fhe_execute_ix, fixture_scope, host_config_account, persistent_creates_batch,
-    sole_value_authority, CreatedPublicBatch,
+    sole_state_authority, state_authority, CreatedPublicBatch,
 };
 
 /// Allow keys per output on the wide-allow shapes. The host caps nothing here — each allow is one
@@ -157,18 +157,17 @@ fn dependent_chain_case(steps: usize, program: Pubkey) -> ProbeCase {
         "the chain shape needs a first read and a final persist"
     );
     let payer = program;
-    let authority = sole_value_authority(program);
+    let authority = sole_state_authority(program);
     let scope = fixture_scope();
     let (host_config, host_config_account) = host_config_account(payer);
     let balance_handle = handle_for_chain(0x61, 5);
-    let (balance_address, balance_value) = new_encrypted_value_account(
+    let (balance_address, balance_state) = new_state_with_slot(
         authority.app(scope),
         authority.key,
         label("boundary-chain-balance"),
         balance_handle,
     );
     let output_label = label("boundary-chain-output");
-    let output_address = authority.value_address(scope, output_label);
 
     let mut dictionary = ExecutionDictionary::default();
     let one = dictionary.intern(u256_be(1));
@@ -176,9 +175,10 @@ fn dependent_chain_case(steps: usize, program: Pubkey) -> ProbeCase {
     let mut chain = Vec::with_capacity(steps);
     chain.push(FheExecuteStep::Binary {
         op: FheBinaryOpCode::Add,
-        lhs: FheExecuteOperand::StoredValue {
+        lhs: FheExecuteOperand::StateSlot {
             handle_index: balance_handle_index,
-            encrypted_value_index: 0,
+            state_index: 0,
+            key_index: dictionary.intern(label("boundary-chain-balance")),
         },
         rhs: FheExecuteOperand::Scalar { value_index: one },
         output_fhe_type: 5,
@@ -186,15 +186,7 @@ fn dependent_chain_case(steps: usize, program: Pubkey) -> ProbeCase {
     });
     for index in 1..steps {
         let output = if index == steps - 1 {
-            authority.stored_output(
-                &mut dictionary,
-                1,
-                scope,
-                output_label,
-                &[payer],
-                None,
-                false,
-            )
+            authority.state_output(&mut dictionary, 0, output_label, &[payer], None, 0, false)
         } else {
             FheExecuteOutput::Transient
         };
@@ -213,11 +205,12 @@ fn dependent_chain_case(steps: usize, program: Pubkey) -> ProbeCase {
         authority.key,
         host_config,
         FheExecuteArgs {
+            returned_results: Vec::new(),
             account_count: 0,
             dictionary: dictionary.into_entries(),
             steps: chain,
         },
-        vec![readonly(balance_address), writable(output_address)],
+        vec![writable(balance_address)],
     );
     ProbeCase {
         instruction,
@@ -227,13 +220,12 @@ fn dependent_chain_case(steps: usize, program: Pubkey) -> ProbeCase {
             (authority.key, empty_system_account()),
             (host_config, host_config_account),
             (event_authority(host::id()), Account::default()),
-            (balance_address, encrypted_value_account(&balance_value)),
-            (output_address, empty_system_account()),
+            (balance_address, encrypted_state_account(&balance_state)),
         ],
     }
 }
 
-/// Every step updates its own mature `EncryptedValue` carrying `peak_count` MMR peaks and
+/// Every step updates its own mature `EncryptedState` carrying `peak_count` MMR peaks and
 /// re-allows the wide allow set, so each account decode allocates what the given maturity forces
 /// and each write seals the widest leaf run. The leaf count keeps eight trailing zero bits so
 /// the appends per account stay cheap — the shape stresses decode allocation, not MMR merge
@@ -241,7 +233,7 @@ fn dependent_chain_case(steps: usize, program: Pubkey) -> ProbeCase {
 /// which is why this axis is swept per maturity instead of enforced at build time.
 fn mature_updates_case(steps: usize, peak_count: u32, program: Pubkey) -> ProbeCase {
     let payer = program;
-    let authority = sole_value_authority(program);
+    let authority = sole_state_authority(program);
     let scope = fixture_scope();
     let (host_config, host_config_account) = host_config_account(payer);
     let allows = allow_keys(0x70, WIDE_ALLOW_COUNT);
@@ -268,22 +260,36 @@ fn mature_updates_case(steps: usize, peak_count: u32, program: Pubkey) -> ProbeC
     for step_index in 0..steps {
         let value_label = label(&format!("boundary-mature-{step_index}"));
         let handle = handle_for_chain(0x80 + step_index as u8, 5);
-        let (address, mut value) =
-            new_encrypted_value_account(authority.app(scope), authority.key, value_label, handle);
+        let state_authority =
+            state_authority(program, Pubkey::new_from_array([step_index as u8 + 1; 32]));
+        let (address, mut value) = new_state_with_slot(
+            state_authority.app(scope),
+            state_authority.key,
+            value_label,
+            handle,
+        );
         value.leaf_count = leaf_count;
         value.peaks = peaks.clone();
+        let state_index = metas.len() as u8;
         metas.push(writable(address));
-        accounts.push((address, encrypted_value_account(&value)));
+        if state_authority.key != authority.key {
+            metas.push(solana_sdk::instruction::AccountMeta::new_readonly(
+                state_authority.key,
+                true,
+            ));
+            accounts.push((state_authority.key, empty_system_account()));
+        }
+        accounts.push((address, encrypted_state_account(&value)));
         update_steps.push(FheExecuteStep::TrivialEncrypt {
             plaintext: [step_index as u8 + 1; 32],
             fhe_type: 5,
-            output: authority.stored_output(
+            output: authority.state_output(
                 &mut dictionary,
-                step_index as u8,
-                scope,
+                state_index,
                 value_label,
                 &allows,
                 Some(handle),
+                leaf_count,
                 false,
             ),
         });
@@ -293,6 +299,7 @@ fn mature_updates_case(steps: usize, peak_count: u32, program: Pubkey) -> ProbeC
         authority.key,
         host_config,
         FheExecuteArgs {
+            returned_results: Vec::new(),
             account_count: 0,
             dictionary: dictionary.into_entries(),
             steps: update_steps,
@@ -313,7 +320,7 @@ fn mature_updates_case(steps: usize, peak_count: u32, program: Pubkey) -> ProbeC
 /// to anchor it; every other operand is a scalar.
 fn attestation_per_step_case(steps: usize, program: Pubkey) -> ProbeCase {
     let payer = program;
-    let authority = sole_value_authority(program);
+    let authority = sole_state_authority(program);
     let scope = fixture_scope();
     let signer_key = signing::coprocessor_signing_key();
     let (host_config, host_config_account) =
@@ -323,7 +330,7 @@ fn attestation_per_step_case(steps: usize, program: Pubkey) -> ProbeCase {
             ..HostConfigParams::new(payer)
         });
     let anchor_handle = handle_for_chain(0x8F, 5);
-    let (anchor_address, anchor_value) = new_encrypted_value_account(
+    let (anchor_address, anchor_value) = new_state_with_slot(
         authority.app(scope),
         authority.key,
         label("boundary-attestation-anchor"),
@@ -351,9 +358,10 @@ fn attestation_per_step_case(steps: usize, program: Pubkey) -> ProbeCase {
                 std::slice::from_ref(&signer_key),
             );
             let rhs = if step_index == 0 {
-                FheExecuteOperand::StoredValue {
+                FheExecuteOperand::StateSlot {
                     handle_index: anchor_handle_index,
-                    encrypted_value_index: 0,
+                    state_index: 0,
+                    key_index: dictionary.intern(label("boundary-attestation-anchor")),
                 }
             } else {
                 FheExecuteOperand::Scalar {
@@ -376,6 +384,7 @@ fn attestation_per_step_case(steps: usize, program: Pubkey) -> ProbeCase {
         authority.key,
         host_config,
         FheExecuteArgs {
+            returned_results: Vec::new(),
             account_count: 0,
             dictionary: dictionary.into_entries(),
             steps: attestation_steps,
@@ -390,7 +399,7 @@ fn attestation_per_step_case(steps: usize, program: Pubkey) -> ProbeCase {
             (authority.key, empty_system_account()),
             (host_config, host_config_account),
             (event_authority(host::id()), Account::default()),
-            (anchor_address, encrypted_value_account(&anchor_value)),
+            (anchor_address, encrypted_state_account(&anchor_value)),
         ],
     }
 }
@@ -401,7 +410,7 @@ fn all_created_public_case(steps: usize, program: Pubkey) -> ProbeCase {
         steps,
         &all,
         program,
-        sole_value_authority(program),
+        sole_state_authority(program),
         true,
         std::slice::from_ref(&program),
     )
@@ -417,7 +426,7 @@ fn all_private_creates_case(steps: usize, program: Pubkey) -> ProbeCase {
         steps,
         &all,
         program,
-        sole_value_authority(program),
+        sole_state_authority(program),
         false,
         std::slice::from_ref(&program),
     )
@@ -432,7 +441,7 @@ fn mixed_chain_creates_case(steps: usize, program: Pubkey) -> ProbeCase {
         steps,
         &creates,
         program,
-        sole_value_authority(program),
+        sole_state_authority(program),
         true,
         std::slice::from_ref(&program),
     )
@@ -450,7 +459,7 @@ fn allow_heavy_creates_case(steps: usize, program: Pubkey) -> ProbeCase {
         steps,
         &all,
         program,
-        sole_value_authority(program),
+        sole_state_authority(program),
         false,
         &allows,
     )
@@ -468,7 +477,7 @@ fn allow_heavy_public_creates_case(steps: usize, program: Pubkey) -> ProbeCase {
         steps,
         &all,
         program,
-        sole_value_authority(program),
+        sole_state_authority(program),
         true,
         &allows,
     )
@@ -481,7 +490,7 @@ fn allow_heavy_public_creates_case(steps: usize, program: Pubkey) -> ProbeCase {
 /// proportionally and meters every operand's HCU.
 fn reduction_heavy_case(steps: usize, program: Pubkey) -> ProbeCase {
     let payer = program;
-    let authority = sole_value_authority(program);
+    let authority = sole_state_authority(program);
     let (host_config, host_config_account) = host_config_account(payer);
     let mut steps_vec = Vec::with_capacity(steps);
     steps_vec.push(FheExecuteStep::TrivialEncrypt {
@@ -506,6 +515,7 @@ fn reduction_heavy_case(steps: usize, program: Pubkey) -> ProbeCase {
         authority.key,
         host_config,
         FheExecuteArgs {
+            returned_results: Vec::new(),
             account_count: 0,
             dictionary: ExecutionDictionary::default().into_entries(),
             steps: steps_vec,
@@ -529,21 +539,11 @@ fn reduction_heavy_case(steps: usize, program: Pubkey) -> ProbeCase {
 enum WallPin {
     /// No app-side model speaks about this shape's wall; the snapshot alone pins it.
     SnapshotOnly,
-    /// The builder never admits a create count the host measured as failing: builder cap
-    /// `<= max_ok`. After the 1-CPI common-path create, private creates reach the host step
-    /// cap; the builder still caps at 20 because public-create host heap binds there.
-    BuilderCapCoversWall,
-    /// Invariant #61's measured half. On this axis pair the wall is the HOST's own CPI frame —
-    /// the sealed leaves and the public-outputs event payload grow with creates x
-    /// allows-per-output — and it sits well below the trace cap, which the one-allow sweeps
-    /// could not see. The builder models only the app's CPI frame (build + packet + invoke
-    /// tables), and no app-side number can see this driver: with a shared allow set the
-    /// dictionary interns eight keys once, so the builder admits the trace-capped twenty such
-    /// creates (`the_builder_admits_what_the_host_heap_cannot_hold` in zama-fhe's
-    /// `heap_budget/` pins `build()` Ok at 15, 16, and 20) while the host survives fewer. Until
-    /// the host's side gets its own typed ceiling (or a policy cap on the public payload), this
-    /// wall is measured, not typed: the snapshot pins it, and the boundary matrix is the
-    /// guidance — fhevm-internal#1872.
+    /// The workload reaches the protocol step limit without a runtime resource failure.
+    FullStepCapacity,
+    /// The builder admits more steps than the host heap can execute. Retain this explicit
+    /// measured gap: issue #1872 retained shape-specific runtime limits rather than adding
+    /// a host allocator admission model. Callers must fit the measured shape, not just the step cap.
     HostHeapGap,
 }
 
@@ -577,13 +577,13 @@ fn boundary_shapes() -> Vec<BoundaryShape> {
         shape(
             "fhe_execute_boundary/all_created_public",
             1,
-            WallPin::BuilderCapCoversWall,
+            WallPin::HostHeapGap,
             Box::new(|steps| all_created_public_case(steps, Pubkey::new_from_array([0x31; 32]))),
         ),
         shape(
             "fhe_execute_boundary/all_private_creates",
             1,
-            WallPin::BuilderCapCoversWall,
+            WallPin::FullStepCapacity,
             Box::new(|steps| all_private_creates_case(steps, Pubkey::new_from_array([0x36; 32]))),
         ),
         shape(
@@ -649,11 +649,11 @@ fn boundary_shapes() -> Vec<BoundaryShape> {
 fn assert_wall_pin(profile: &str, pin: &WallPin, sweep: &SweptBoundary) {
     match pin {
         WallPin::SnapshotOnly => {}
-        WallPin::BuilderCapCoversWall => {
+        WallPin::FullStepCapacity => {
             assert!(
-                zama_fhe::MAX_PERSISTENT_CREATES <= sweep.max_ok,
-                "{profile}: the builder admits {} created-public outputs but the host wall is {}",
-                zama_fhe::MAX_PERSISTENT_CREATES,
+                host::MAX_FHE_EXECUTION_STEPS == sweep.max_ok,
+                "{profile}: expected {} steps to fit but the host wall is {}",
+                host::MAX_FHE_EXECUTION_STEPS,
                 sweep.max_ok,
             );
         }
@@ -663,17 +663,14 @@ fn assert_wall_pin(profile: &str, pin: &WallPin, sweep: &SweptBoundary) {
                 "{profile}: the wide-allow public wall moved off the host heap — re-read \
                  the WallPin::HostHeapGap doc",
             );
-            // The gap's direction, asserted so it cannot drift silently: the host wall sits
-            // strictly below the trace-capped count the builder admits. If this ever fails the
-            // gap has closed — retire invariant #61, the builder-side pin, and this arm
-            // together.
+            // A closed gap should update the documented limitation and this assertion.
             assert!(
-                sweep.max_ok < zama_fhe::MAX_PERSISTENT_CREATES,
+                sweep.max_ok < host::MAX_FHE_EXECUTION_STEPS,
                 "{profile}: the host's CPI frame now holds every builder-admitted \
-                 shared-allow public create ({} measured vs {} admitted) — invariant #61's \
+                 public State output ({} measured vs {} admitted) — invariant #61's \
                  gap has closed",
                 sweep.max_ok,
-                zama_fhe::MAX_PERSISTENT_CREATES,
+                host::MAX_FHE_EXECUTION_STEPS,
             );
         }
     }

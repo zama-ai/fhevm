@@ -144,8 +144,7 @@ async fn a_handle_update_does_not_reach_a_request_for_the_replaced_handle() {
 async fn a_handle_update_leaves_the_new_handle_unallowed_until_a_leaf_is_sealed() {
     let signer = Wallet::new(1);
     let replacement = handle(0x13, FHE_TYPE_UINT64);
-    let mut after =
-        EncryptedStateFixture::allowing(handle(0x12, FHE_TYPE_UINT64), signer.pubkey());
+    let mut after = EncryptedStateFixture::allowing(handle(0x12, FHE_TYPE_UINT64), signer.pubkey());
     after.update(replacement);
     let request = RequestBuilder::new(&signer)
         .direct(&after, replacement)

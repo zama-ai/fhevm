@@ -137,11 +137,7 @@ fn handles_embedding_different_chain_ids_are_rejected() {
     let encrypted_state = EncryptedStateFixture::allowing(local, wallet.pubkey());
     let request = RequestBuilder::new(&wallet)
         .direct(&encrypted_state, local)
-        .entry(
-            foreign,
-            wallet.pubkey(),
-            encrypted_state.account_key,
-        )
+        .entry(foreign, wallet.pubkey(), encrypted_state.account_key)
         .typed();
 
     let failure = check_deployment(&request, &deployment()).expect_err("one request, one cluster");

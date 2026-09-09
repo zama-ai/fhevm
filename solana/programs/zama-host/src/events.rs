@@ -13,7 +13,7 @@
 //!   rather than the event. Authorization still comes from host-owned account state and never from
 //!   event bytes; what the event CPI buys is that a reader sees the change, not that it may trust it.
 //! - **Not emitted at all.** Everything else, which is most of it: per-step compute shapes (they live
-//!   in `records.rs` as decoded op records), `EncryptedValue` ACL mutations (indexers rebuild MMR
+//!   in `records.rs` as decoded op records), `EncryptedState` ACL mutations (indexers rebuild MMR
 //!   leaves through the shared `zama_solana_acl` crate), and user-decryption delegation. The listener
 //!   reconstructs these from instruction data over Yellowstone, which is the normal path for anything
 //!   reconstructible. Delegating is a user ability rather than administration, which is why its event
@@ -26,8 +26,8 @@ use anchor_lang::prelude::*;
 pub struct ProducedPublicOutput {
     /// Zero-based step index within the execution.
     pub step_index: u16,
-    /// Host-owned persistent `EncryptedValue` account bound by the step.
-    pub encrypted_value: Pubkey,
+    /// Host-owned persistent `EncryptedState` account bound by the step.
+    pub encrypted_state: Pubkey,
     /// Block-entropy-derived output handle written to the account.
     pub output_handle: [u8; 32],
 }

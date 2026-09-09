@@ -22,9 +22,9 @@ pub(crate) struct TransferAccounts<'a, 'info> {
     pub(crate) from_account: &'a Account<'info, ConfidentialTokenAccount>,
     pub(crate) to_account: &'a Account<'info, ConfidentialTokenAccount>,
     /// Sender state: read and update its balance slot.
-    pub(crate) from_balance_value: AccountInfo<'info>,
+    pub(crate) from_state: AccountInfo<'info>,
     /// Recipient state: read and update its balance slot.
-    pub(crate) to_balance_value: AccountInfo<'info>,
+    pub(crate) to_state: AccountInfo<'info>,
     pub(crate) zama_event_authority: &'a UncheckedAccount<'info>,
     pub(crate) zama_program: &'a Program<'info, ZamaHost>,
     pub(crate) host_config: &'a Account<'info, zama_host::HostConfig>,
@@ -55,15 +55,32 @@ pub(crate) struct ResultGrantAccounts<'info> {
 }
 
 impl<'info> ResultGrantAccounts<'info> {
-    pub(crate) fn bind(state: Option<&UncheckedAccount<'info>>, scratch: Option<&UncheckedAccount<'info>>, authority: Option<&Signer<'info>>) -> Result<Option<Self>> {
+    pub(crate) fn bind(
+        state: Option<&UncheckedAccount<'info>>,
+        scratch: Option<&UncheckedAccount<'info>>,
+        authority: Option<&Signer<'info>>,
+    ) -> Result<Option<Self>> {
         match (state, scratch, authority) {
             (None, None, None) => Ok(None),
             (Some(state), Some(scratch), Some(authority)) => {
                 let account = fhe::read_state(&state.to_account_info())?;
-                require_keys_eq!(account.authority, authority.key(), ConfidentialTokenError::ResultGrantMismatch);
+                require_keys_eq!(
+                    account.authority,
+                    authority.key(),
+                    ConfidentialTokenError::ResultGrantMismatch
+                );
                 let id = zama_fhe::State::new(&account).id();
-                require_keys_eq!(scratch.key(), id.scratch_address(), ConfidentialTokenError::ResultGrantMismatch);
-                Ok(Some(Self { state: state.to_account_info(), scratch: scratch.to_account_info(), authority: authority.to_account_info(), id }))
+                require_keys_eq!(
+                    scratch.key(),
+                    id.scratch_address(),
+                    ConfidentialTokenError::ResultGrantMismatch
+                );
+                Ok(Some(Self {
+                    state: state.to_account_info(),
+                    scratch: scratch.to_account_info(),
+                    authority: authority.to_account_info(),
+                    id,
+                }))
             }
             _ => err!(ConfidentialTokenError::ResultGrantMismatch),
         }
@@ -72,8 +89,15 @@ impl<'info> ResultGrantAccounts<'info> {
 
 pub(crate) enum TransferAmountSource<'info> {
     Attested(zama_host::CoprocessorInputAttestation),
-    StateSlot { amount_value: AccountInfo<'info>, authority: Option<AccountInfo<'info>>, key: [u8; 32] },
-    Grant { scratch: AccountInfo<'info>, handle: [u8; 32] },
+    StateSlot {
+        amount_state: AccountInfo<'info>,
+        authority: Option<AccountInfo<'info>>,
+        key: [u8; 32],
+    },
+    Grant {
+        scratch: AccountInfo<'info>,
+        handle: [u8; 32],
+    },
 }
 
 pub(crate) struct TransferOutcome {
@@ -82,14 +106,14 @@ pub(crate) struct TransferOutcome {
     pub(crate) from_token_account: Pubkey,
     pub(crate) old_from_handle: [u8; 32],
     pub(crate) new_from_handle: [u8; 32],
-    pub(crate) from_encrypted_value: Pubkey,
+    pub(crate) from_encrypted_state: Pubkey,
     pub(crate) transferred_handle: [u8; 32],
-    pub(crate) transferred_encrypted_value: Pubkey,
+    pub(crate) transferred_encrypted_state: Pubkey,
     pub(crate) to_owner: Pubkey,
     pub(crate) to_token_account: Pubkey,
     pub(crate) old_to_handle: [u8; 32],
     pub(crate) new_to_handle: [u8; 32],
-    pub(crate) to_encrypted_value: Pubkey,
+    pub(crate) to_encrypted_state: Pubkey,
 }
 
 #[inline(never)]
@@ -127,31 +151,34 @@ pub(crate) fn execute_transfer<'info>(
         &accounts.to_ata,
     )?;
     require_keys_eq!(
-        accounts.from_balance_value.key(),
+        accounts.from_state.key(),
         encrypted_state_address(mint_key, from.key()).0,
-        ConfidentialTokenError::CurrentEncryptedValueMismatch
+        ConfidentialTokenError::CurrentEncryptedStateMismatch
     );
     require_keys_eq!(
-        accounts.to_balance_value.key(),
+        accounts.to_state.key(),
         encrypted_state_address(mint_key, to.key()).0,
-        ConfidentialTokenError::CurrentEncryptedValueMismatch
+        ConfidentialTokenError::CurrentEncryptedStateMismatch
     );
     let from_key = from.key();
     let to_key = to.key();
     let from_owner = from.owner;
     let to_owner = to.owner;
-    let from_encrypted_value = accounts.from_balance_value.key();
-    let to_encrypted_value = accounts.to_balance_value.key();
+    let from_encrypted_state = accounts.from_state.key();
+    let to_encrypted_state = accounts.to_state.key();
     if from_key == to_key {
-        require!(accounts.result_grant.is_none(), ConfidentialTokenError::ResultGrantMismatch);
+        require!(
+            accounts.result_grant.is_none(),
+            ConfidentialTokenError::ResultGrantMismatch
+        );
         assert_no_remaining_accounts(accounts.remaining_accounts)?;
         return Ok(None);
     }
 
-    let from_balance = fhe::read_state(&accounts.from_balance_value)?;
-    let to_balance = fhe::read_state(&accounts.to_balance_value)?;
-    let old_from_handle = fhe::state_handle(&from_balance, encrypted_balance_label())?;
-    let old_to_handle = fhe::state_handle(&to_balance, encrypted_balance_label())?;
+    let from_balance = fhe::read_state(&accounts.from_state)?;
+    let to_balance = fhe::read_state(&accounts.to_state)?;
+    let old_from_handle = fhe::state_handle(&from_balance, balance_key())?;
+    let old_to_handle = fhe::state_handle(&to_balance, balance_key())?;
 
     let (new_from_handle, transferred_handle, new_to_handle) = compute_transfer_handles(
         &accounts,
@@ -161,7 +188,7 @@ pub(crate) fn execute_transfer<'info>(
         &to_balance,
     )?;
 
-    let transferred_encrypted_value = accounts.from_balance_value.key();
+    let transferred_encrypted_state = accounts.from_state.key();
 
     Ok(Some(TransferOutcome {
         mint: mint_key,
@@ -169,14 +196,14 @@ pub(crate) fn execute_transfer<'info>(
         from_token_account: from_key,
         old_from_handle,
         new_from_handle,
-        from_encrypted_value,
+        from_encrypted_state,
         transferred_handle,
-        transferred_encrypted_value,
+        transferred_encrypted_state,
         to_owner,
         to_token_account: to_key,
         old_to_handle,
         new_to_handle,
-        to_encrypted_value,
+        to_encrypted_state,
     }))
 }
 
@@ -190,36 +217,72 @@ fn build_transfer_execution(
 ) -> Result<zama_fhe::ReturningFheExecution<zama_fhe::Uint<64>>> {
     let from_state = Box::new(zama_fhe::State::new(from_account));
     let to_state = Box::new(zama_fhe::State::new(to_account));
-    let from_balance = from_state.get::<zama_fhe::Uint<64>>(encrypted_balance_label()).map_err(invalid_execution)?;
-    let to_balance = to_state.get::<zama_fhe::Uint<64>>(encrypted_balance_label()).map_err(invalid_execution)?;
+    let from_balance = from_state
+        .get::<zama_fhe::Uint<64>>(balance_key())
+        .map_err(invalid_execution)?;
+    let to_balance = to_state
+        .get::<zama_fhe::Uint<64>>(balance_key())
+        .map_err(invalid_execution)?;
     let existing_operand = match (amount_source, stored_amount) {
-        (TransferAmountSource::StateSlot { key, .. }, Some(state)) => Some(fhe::uint64_operand(state, *key)?),
+        (TransferAmountSource::StateSlot { key, .. }, Some(state)) => {
+            Some(fhe::uint64_operand(state, *key)?)
+        }
         (TransferAmountSource::Grant { scratch, handle }, _) => {
             // The host validates the scratch's initiating state and the exact consumer grant.
-            Some(zama_fhe::State::new(from_account).granted_from_scratch(*handle, scratch.key()).map_err(invalid_execution)?)
+            Some(
+                zama_fhe::State::new(from_account)
+                    .granted_from_scratch(*handle, scratch.key())
+                    .map_err(invalid_execution)?,
+            )
         }
         _ => None,
     };
     let mut result_output = from_state.result().allow(accounts.from_account.owner);
-    if accounts.to_account.owner != accounts.from_account.owner { result_output = result_output.allow(accounts.to_account.owner); }
-    if let Some(grant) = &accounts.result_grant { result_output = result_output.allow_transient(grant.id, grant.id); }
+    if accounts.to_account.owner != accounts.from_account.owner {
+        result_output = result_output.allow(accounts.to_account.owner);
+    }
+    if let Some(grant) = &accounts.result_grant {
+        result_output = result_output.allow_transient(grant.id, grant.id);
+    }
     let result_output = Box::new(result_output);
     zama_fhe::FheExecution::build_returning(
-        zama_fhe::ExecutionEncryptedValueAccountAuthority::new(accounts.from_account.key()),
+        zama_fhe::ExecutionAuthority::new(accounts.from_account.key()),
         |fhe| {
             let amount = match amount_source {
-                TransferAmountSource::Attested(attestation) => fhe.verified_input(attestation.clone())?,
+                TransferAmountSource::Attested(attestation) => {
+                    fhe.verified_input(attestation.clone())?
+                }
                 _ => existing_operand.expect("state or grant operand").into(),
             };
             let success = fhe.ge(from_balance, amount, zama_fhe::Output::transient())?;
             let debit = fhe.sub(from_balance, amount, zama_fhe::Output::transient())?;
-            let remaining = fhe.if_then_else(success, debit, from_balance, zama_fhe::Output::transient())?;
-            let transferred = fhe.sub(from_balance, remaining, zama_fhe::Output::state(*result_output))?;
-            fhe.add(remaining, zama_fhe::Scalar::<zama_fhe::Uint<64>>::u64(0), zama_fhe::Output::state(from_state.set(encrypted_balance_label()).allow(accounts.from_account.owner)))?;
-            fhe.add(to_balance, transferred, zama_fhe::Output::state(to_state.set(encrypted_balance_label()).allow(accounts.to_account.owner)))?;
+            let remaining =
+                fhe.if_then_else(success, debit, from_balance, zama_fhe::Output::transient())?;
+            let transferred = fhe.sub(
+                from_balance,
+                remaining,
+                zama_fhe::Output::state(*result_output),
+            )?;
+            fhe.add(
+                remaining,
+                zama_fhe::Scalar::<zama_fhe::Uint<64>>::u64(0),
+                zama_fhe::Output::state(
+                    from_state
+                        .set(balance_key())
+                        .allow(accounts.from_account.owner),
+                ),
+            )?;
+            fhe.add(
+                to_balance,
+                transferred,
+                zama_fhe::Output::state(
+                    to_state.set(balance_key()).allow(accounts.to_account.owner),
+                ),
+            )?;
             Ok(transferred)
         },
-    ).map_err(invalid_execution)
+    )
+    .map_err(invalid_execution)
 }
 
 fn compute_transfer_handles<'info>(
@@ -230,21 +293,47 @@ fn compute_transfer_handles<'info>(
     to_account: &zama_host::EncryptedState,
 ) -> Result<([u8; 32], [u8; 32], [u8; 32])> {
     let stored_amount = match amount_source {
-        TransferAmountSource::StateSlot { amount_value, .. } => Some(Box::new(fhe::read_state(amount_value)?)),
+        TransferAmountSource::StateSlot { amount_state, .. } => {
+            Some(Box::new(fhe::read_state(amount_state)?))
+        }
         _ => None,
     };
-    let execution = build_transfer_execution(accounts, amount_source, from_account, to_account, stored_amount.as_deref())?;
-    let mut dynamic = vec![accounts.from_balance_value.clone(), accounts.to_balance_value.clone()];
-    let mut authorities = vec![fhe::ValueAuthority::token_account(accounts.from_account)?, fhe::ValueAuthority::token_account(accounts.to_account)?];
-    let mut add_account = |info: AccountInfo<'info>| { if !dynamic.iter().any(|a| a.key() == info.key()) { dynamic.push(info); } };
+    let execution = build_transfer_execution(
+        accounts,
+        amount_source,
+        from_account,
+        to_account,
+        stored_amount.as_deref(),
+    )?;
+    let mut dynamic = vec![accounts.from_state.clone(), accounts.to_state.clone()];
+    let mut authorities = vec![
+        fhe::StateAuthority::token_account(accounts.from_account)?,
+        fhe::StateAuthority::token_account(accounts.to_account)?,
+    ];
+    let mut add_account = |info: AccountInfo<'info>| {
+        if !dynamic.iter().any(|a| a.key() == info.key()) {
+            dynamic.push(info);
+        }
+    };
     match amount_source {
-        TransferAmountSource::StateSlot { amount_value, authority, .. } => {
-            add_account(amount_value.clone());
+        TransferAmountSource::StateSlot {
+            amount_state,
+            authority,
+            ..
+        } => {
+            add_account(amount_state.clone());
             if let Some(authority) = authority {
-                if !authorities.iter().any(|a| a.key() == authority.key()) { authorities.push(fhe::ValueAuthority::external(authority.clone())); }
+                if !authorities.iter().any(|a| a.key() == authority.key()) {
+                    authorities.push(fhe::StateAuthority::external(authority.clone()));
+                }
             }
-            if stored_amount.as_ref().is_some_and(|s| s.authority == accounts.transfer_authority.key()) {
-                authorities.push(fhe::ValueAuthority::external(accounts.transfer_authority.to_account_info()));
+            if stored_amount
+                .as_ref()
+                .is_some_and(|s| s.authority == accounts.transfer_authority.key())
+            {
+                authorities.push(fhe::StateAuthority::external(
+                    accounts.transfer_authority.to_account_info(),
+                ));
             }
         }
         TransferAmountSource::Grant { scratch, .. } => add_account(scratch.clone()),
@@ -253,21 +342,40 @@ fn compute_transfer_handles<'info>(
     if let Some(grant) = &accounts.result_grant {
         add_account(grant.state.clone());
         add_account(grant.scratch.clone());
-        if !authorities.iter().any(|a| a.key() == grant.authority.key()) { authorities.push(fhe::ValueAuthority::external(grant.authority.clone())); }
+        if !authorities.iter().any(|a| a.key() == grant.authority.key()) {
+            authorities.push(fhe::StateAuthority::external(grant.authority.clone()));
+        }
     }
-    let resolved = fhe::ExecutionAccountSet::for_execution(execution.execution(), dynamic, authorities)?;
+    let resolved =
+        fhe::ExecutionAccountSet::for_execution(execution.execution(), dynamic, authorities)?;
     let handle = fhe::execute_returning(fhe::Execute {
         context: fhe::ExecuteContext {
-            payer: accounts.payer, event_authority: accounts.zama_event_authority, zama_program: accounts.zama_program,
+            payer: accounts.payer,
+            event_authority: accounts.zama_event_authority,
+            zama_program: accounts.zama_program,
             host_config: accounts.host_config,
-            deny_scope_records: fhe::deny_scope_records(accounts.host_config, accounts.remaining_accounts,
-                std::iter::once(token_app(mint_key)).chain(stored_amount.as_ref().map(|s| zama_fhe::AppScope { program: s.program, scope: s.scope })).chain(accounts.result_grant.as_ref().map(|g| g.id.app())))?,
+            deny_scope_records: fhe::deny_scope_records(
+                accounts.host_config,
+                accounts.remaining_accounts,
+                std::iter::once(token_app(mint_key))
+                    .chain(stored_amount.as_ref().map(|s| zama_fhe::AppScope {
+                        program: s.program,
+                        scope: s.scope,
+                    }))
+                    .chain(accounts.result_grant.as_ref().map(|g| g.id.app())),
+            )?,
             system_program: accounts.system_program,
-            hcu_block_meter: accounts.hcu_block_meter.clone(), hcu_trusted_app_record: accounts.hcu_trusted_app_record.clone(),
+            hcu_block_meter: accounts.hcu_block_meter.clone(),
+            hcu_trusted_app_record: accounts.hcu_trusted_app_record.clone(),
         },
-        accounts: &resolved, execution,
+        accounts: &resolved,
+        execution,
     })?;
-    Ok((fhe::state_handle(&fhe::read_state(&accounts.from_balance_value)?, encrypted_balance_label())?, handle, fhe::state_handle(&fhe::read_state(&accounts.to_balance_value)?, encrypted_balance_label())?))
+    Ok((
+        fhe::state_handle(&fhe::read_state(&accounts.from_state)?, balance_key())?,
+        handle,
+        fhe::state_handle(&fhe::read_state(&accounts.to_state)?, balance_key())?,
+    ))
 }
 
 /// Re-writes `value` onto a fresh handle of the same amount (`value + 0`) allowed to `allows`,
@@ -277,15 +385,13 @@ pub(crate) fn rewrite_allowing<'info>(
     context: fhe::ExecuteContext<'_, 'info>,
     value: &Account<'info, zama_host::EncryptedState>,
     id: (zama_fhe::StateId, [u8; 32]),
-    authority: fhe::ValueAuthority<'info>,
+    authority: fhe::StateAuthority<'info>,
     allows: impl IntoIterator<Item = Pubkey>,
 ) -> Result<[u8; 32]> {
     let operand = fhe::uint64_operand(value, id.1)?;
     let output = fhe::SlotOutput::new(value.to_account_info(), id, &authority, allows)?;
     let execution = zama_fhe::FheExecution::build(
-        zama_fhe::ExecutionEncryptedValueAccountAuthority::new(
-            value.authority,
-        ),
+        zama_fhe::ExecutionAuthority::new(value.authority),
         |builder| {
             builder.add(
                 operand,
@@ -344,19 +450,18 @@ pub(crate) fn assert_amount_attestation_binding(
 /// so the spender must be that authority (another program's PDA signing through
 /// `invoke_signed`), or own the token account whose values this program signs for. The amount
 /// must be a confidential balance type.
-pub(crate) fn assert_amount_value_spendable(
-    amount_value: &zama_host::EncryptedState,
+pub(crate) fn assert_amount_state_spendable(
+    amount_state: &zama_host::EncryptedState,
     key: [u8; 32],
     spender: Pubkey,
     spender_token_account: Pubkey,
 ) -> Result<()> {
     require!(
-        zama_host::handle_fhe_type(fhe::state_handle(amount_value, key)?) == BALANCE_FHE_TYPE,
+        zama_host::handle_fhe_type(fhe::state_handle(amount_state, key)?) == BALANCE_FHE_TYPE,
         ConfidentialTokenError::AmountHandleTypeMismatch
     );
     require!(
-        amount_value.authority == spender
-            || amount_value.authority == spender_token_account,
+        amount_state.authority == spender || amount_state.authority == spender_token_account,
         ConfidentialTokenError::AmountSpendAuthorityMismatch
     );
     Ok(())
@@ -375,7 +480,7 @@ pub(crate) fn assert_token_value(
             && value.scope == mint.to_bytes()
             && value.authority == authority
             && value.get(&label).is_some(),
-        ConfidentialTokenError::TokenEncryptedValueMismatch
+        ConfidentialTokenError::TokenEncryptedStateMismatch
     );
     Ok(())
 }
@@ -383,8 +488,8 @@ pub(crate) fn assert_token_value(
 /// Encrypted value account checks for the redeem path: burned-amount handle type and the exact
 /// token state field. The caller separately requires the pending handle to be current and proves
 /// its publicness through the exact-handle MMR proof verified by `verify_public_decrypt`.
-pub(crate) fn assert_burned_amount_value_account(
-    amount_value: &Account<zama_host::EncryptedState>,
+pub(crate) fn assert_burned_amount_state_account(
+    amount_state: &Account<zama_host::EncryptedState>,
     burned_handle: [u8; 32],
     mint: Pubkey,
     token_account: Pubkey,
@@ -393,15 +498,10 @@ pub(crate) fn assert_burned_amount_value_account(
         zama_host::handle_fhe_type(burned_handle) == BALANCE_FHE_TYPE,
         ConfidentialTokenError::AmountHandleTypeMismatch
     );
-    assert_token_value(
-        amount_value,
-        mint,
-        token_account,
-        encrypted_burned_amount_label(),
-    )
-    .map_err(|_| error!(ConfidentialTokenError::AmountAclMismatch))?;
+    assert_token_value(amount_state, mint, token_account, burned_amount_key())
+        .map_err(|_| error!(ConfidentialTokenError::AmountAclMismatch))?;
     require_keys_eq!(
-        amount_value.key(),
+        amount_state.key(),
         encrypted_state_address(mint, token_account).0,
         ConfidentialTokenError::AmountAclMismatch
     );

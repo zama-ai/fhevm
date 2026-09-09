@@ -24,10 +24,7 @@ mod solana_support;
 use kms_worker::core::solana::{
     delegation::{AuthorizedRow, DelegationFailure, check_delegation},
     deployment::DeploymentIdentity,
-    encrypted_state::{
-        EncryptedStateFailure, ResolvedEncryptedState,
-        resolve_encrypted_state,
-    },
+    encrypted_state::{EncryptedStateFailure, ResolvedEncryptedState, resolve_encrypted_state},
     failure::{AuthorizationFailure, FailureClass},
     handle_binding::{HandleBindingFailure, check_handle_binding},
     pipeline::{AuthorizationContext, authorize_request},
@@ -99,8 +96,7 @@ async fn authorizing_a_delegated_request_reads_host_state_twice_and_never_more()
     let signer = Wallet::new(1);
     let delegator = Wallet::new(2);
     let handle = handle(0x20, FHE_TYPE_UINT64);
-    let encrypted_state =
-        EncryptedStateFixture::allowing(handle, delegator.pubkey());
+    let encrypted_state = EncryptedStateFixture::allowing(handle, delegator.pubkey());
     let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), 100);
     let request = RequestBuilder::new(&signer)
         .delegated(&encrypted_state, handle, delegator.pubkey())
@@ -145,8 +141,7 @@ async fn the_second_read_carries_over_every_key_of_the_first() {
     let signer = Wallet::new(1);
     let delegator = Wallet::new(2);
     let handle = handle(0x21, FHE_TYPE_UINT64);
-    let encrypted_state =
-        EncryptedStateFixture::allowing(handle, delegator.pubkey());
+    let encrypted_state = EncryptedStateFixture::allowing(handle, delegator.pubkey());
     let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), 100);
     let request = RequestBuilder::new(&signer)
         .delegated(&encrypted_state, handle, delegator.pubkey())
@@ -207,8 +202,7 @@ async fn a_delegated_entry_plans_both_of_its_delegation_rows() {
     let other_authority: SolanaPubkeyBytes = [0x5a; 32];
     let mut other_label = LABEL;
     other_label[0] = b'a';
-    let first_encrypted_state =
-        EncryptedStateFixture::allowing(first_handle, delegator.pubkey());
+    let first_encrypted_state = EncryptedStateFixture::allowing(first_handle, delegator.pubkey());
     let mut second_encrypted_state = EncryptedStateFixture::in_application(
         APP_PROGRAM,
         other_authority,
@@ -220,16 +214,8 @@ async fn a_delegated_entry_plans_both_of_its_delegation_rows() {
     let app_row = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), 100);
     let wildcard_row = DelegationFixture::live_wildcard(delegator.pubkey(), signer.pubkey(), 100);
     let request = RequestBuilder::new(&signer)
-        .delegated(
-            &first_encrypted_state,
-            first_handle,
-            delegator.pubkey(),
-        )
-        .delegated(
-            &second_encrypted_state,
-            second_handle,
-            delegator.pubkey(),
-        )
+        .delegated(&first_encrypted_state, first_handle, delegator.pubkey())
+        .delegated(&second_encrypted_state, second_handle, delegator.pubkey())
         .typed();
     let world = World::running_at_slot(100)
         .with_encrypted_state(&first_encrypted_state)
@@ -327,8 +313,7 @@ async fn the_deciding_read_drops_the_config_singleton() {
     let signer = Wallet::new(1);
     let delegator = Wallet::new(2);
     let handle = handle(0x29, FHE_TYPE_UINT64);
-    let encrypted_state =
-        EncryptedStateFixture::allowing(handle, delegator.pubkey());
+    let encrypted_state = EncryptedStateFixture::allowing(handle, delegator.pubkey());
     let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), 100);
     let request = RequestBuilder::new(&signer)
         .delegated(&encrypted_state, handle, delegator.pubkey())
@@ -393,8 +378,7 @@ async fn a_slot_change_between_the_two_reads_does_not_fail_the_request() {
     let signer = Wallet::new(1);
     let delegator = Wallet::new(2);
     let handle = handle(0x22, FHE_TYPE_UINT64);
-    let encrypted_state =
-        EncryptedStateFixture::allowing(handle, delegator.pubkey());
+    let encrypted_state = EncryptedStateFixture::allowing(handle, delegator.pubkey());
     let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), 100);
     let request = RequestBuilder::new(&signer)
         .delegated(&encrypted_state, handle, delegator.pubkey())
@@ -433,8 +417,7 @@ async fn a_deciding_read_older_than_the_discovery_read_is_refused_transiently() 
     let signer = Wallet::new(1);
     let delegator = Wallet::new(2);
     let handle = handle(0x25, FHE_TYPE_UINT64);
-    let encrypted_state =
-        EncryptedStateFixture::allowing(handle, delegator.pubkey());
+    let encrypted_state = EncryptedStateFixture::allowing(handle, delegator.pubkey());
     let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), 100);
     let request = RequestBuilder::new(&signer)
         .delegated(&encrypted_state, handle, delegator.pubkey())
@@ -478,8 +461,7 @@ async fn two_reads_at_the_same_slot_authorize() {
     let signer = Wallet::new(1);
     let delegator = Wallet::new(2);
     let handle = handle(0x26, FHE_TYPE_UINT64);
-    let encrypted_state =
-        EncryptedStateFixture::allowing(handle, delegator.pubkey());
+    let encrypted_state = EncryptedStateFixture::allowing(handle, delegator.pubkey());
     let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), 100);
     let request = RequestBuilder::new(&signer)
         .delegated(&encrypted_state, handle, delegator.pubkey())
@@ -791,10 +773,7 @@ fn authorization_checks_take_the_observation_and_never_a_reader() {
         &HostSnapshot,
         SolanaPubkeyBytes,
         [u8; 32],
-    ) -> Result<
-        ResolvedEncryptedState,
-        EncryptedStateFailure,
-    > = resolve_encrypted_state;
+    ) -> Result<ResolvedEncryptedState, EncryptedStateFailure> = resolve_encrypted_state;
 
     let _read_watermark: fn(
         &HostSnapshot,

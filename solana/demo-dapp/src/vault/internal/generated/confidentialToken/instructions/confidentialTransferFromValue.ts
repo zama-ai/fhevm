@@ -60,8 +60,8 @@ export type ConfidentialTransferFromValueInstruction<
   TAccountToAta extends string | AccountMeta<string> = string,
   TAccountFromAccount extends string | AccountMeta<string> = string,
   TAccountToAccount extends string | AccountMeta<string> = string,
-  TAccountFromBalanceValue extends string | AccountMeta<string> = string,
-  TAccountToBalanceValue extends string | AccountMeta<string> = string,
+  TAccountFromState extends string | AccountMeta<string> = string,
+  TAccountToState extends string | AccountMeta<string> = string,
   TAccountAmountState extends string | AccountMeta<string> = string,
   TAccountAmountAuthority extends string | AccountMeta<string> = string,
   TAccountAmountScratch extends string | AccountMeta<string> = string,
@@ -90,8 +90,8 @@ export type ConfidentialTransferFromValueInstruction<
       TAccountToAta extends string ? ReadonlyAccount<TAccountToAta> : TAccountToAta,
       TAccountFromAccount extends string ? WritableAccount<TAccountFromAccount> : TAccountFromAccount,
       TAccountToAccount extends string ? WritableAccount<TAccountToAccount> : TAccountToAccount,
-      TAccountFromBalanceValue extends string ? WritableAccount<TAccountFromBalanceValue> : TAccountFromBalanceValue,
-      TAccountToBalanceValue extends string ? WritableAccount<TAccountToBalanceValue> : TAccountToBalanceValue,
+      TAccountFromState extends string ? WritableAccount<TAccountFromState> : TAccountFromState,
+      TAccountToState extends string ? WritableAccount<TAccountToState> : TAccountToState,
       TAccountAmountState extends string ? ReadonlyAccount<TAccountAmountState> : TAccountAmountState,
       TAccountAmountAuthority extends string
         ? ReadonlySignerAccount<TAccountAmountAuthority> & AccountSignerMeta<TAccountAmountAuthority>
@@ -161,8 +161,8 @@ export type ConfidentialTransferFromValueInput<
   TAccountToAta extends string = string,
   TAccountFromAccount extends string = string,
   TAccountToAccount extends string = string,
-  TAccountFromBalanceValue extends string = string,
-  TAccountToBalanceValue extends string = string,
+  TAccountFromState extends string = string,
+  TAccountToState extends string = string,
   TAccountAmountState extends string = string,
   TAccountAmountAuthority extends string = string,
   TAccountAmountScratch extends string = string,
@@ -175,9 +175,9 @@ export type ConfidentialTransferFromValueInput<
   TAccountEventAuthority extends string = string,
   TAccountProgram extends string = string,
 > = {
-  /** Sender and transfer authority. Must control `amount_value` (the spend gate). */
+  /** Sender and transfer authority. Must control `amount_state` (the spend gate). */
   owner: TransactionSigner<TAccountOwner>;
-  /** Pays rent for the transferred-amount encrypted value account on its first bind. */
+  /** Pays rent for the transferred-amount encrypted State on its first bind. */
   payer: TransactionSigner<TAccountPayer>;
   /** Confidential mint. */
   mint: Address<TAccountMint>;
@@ -187,13 +187,10 @@ export type ConfidentialTransferFromValueInput<
   /** Sender token account. */
   fromAccount: Address<TAccountFromAccount>;
   toAccount: Address<TAccountToAccount>;
-  /**
-   * Sender's stable balance `EncryptedValue` encrypted value account; read for the current
-   * handle and replaced in place by this execution's CPI.
-   */
-  fromBalanceValue: Address<TAccountFromBalanceValue>;
-  /** Recipient's stable balance `EncryptedValue` encrypted value account. */
-  toBalanceValue: Address<TAccountToBalanceValue>;
+  /** Sender state: the host reads and updates its balance slot. */
+  fromState: Address<TAccountFromState>;
+  /** Recipient state: the host reads and updates its balance slot. */
+  toState: Address<TAccountToState>;
   amountState?: Address<TAccountAmountState>;
   amountAuthority?: TransactionSigner<TAccountAmountAuthority>;
   amountScratch?: Address<TAccountAmountScratch>;
@@ -225,8 +222,8 @@ export function getConfidentialTransferFromValueInstruction<
   TAccountToAta extends string,
   TAccountFromAccount extends string,
   TAccountToAccount extends string,
-  TAccountFromBalanceValue extends string,
-  TAccountToBalanceValue extends string,
+  TAccountFromState extends string,
+  TAccountToState extends string,
   TAccountAmountState extends string,
   TAccountAmountAuthority extends string,
   TAccountAmountScratch extends string,
@@ -249,8 +246,8 @@ export function getConfidentialTransferFromValueInstruction<
     TAccountToAta,
     TAccountFromAccount,
     TAccountToAccount,
-    TAccountFromBalanceValue,
-    TAccountToBalanceValue,
+    TAccountFromState,
+    TAccountToState,
     TAccountAmountState,
     TAccountAmountAuthority,
     TAccountAmountScratch,
@@ -274,8 +271,8 @@ export function getConfidentialTransferFromValueInstruction<
   TAccountToAta,
   TAccountFromAccount,
   TAccountToAccount,
-  TAccountFromBalanceValue,
-  TAccountToBalanceValue,
+  TAccountFromState,
+  TAccountToState,
   TAccountAmountState,
   TAccountAmountAuthority,
   TAccountAmountScratch,
@@ -301,11 +298,8 @@ export function getConfidentialTransferFromValueInstruction<
     toAta: { value: input.toAta ?? null, isWritable: false },
     fromAccount: { value: input.fromAccount ?? null, isWritable: true },
     toAccount: { value: input.toAccount ?? null, isWritable: true },
-    fromBalanceValue: {
-      value: input.fromBalanceValue ?? null,
-      isWritable: true,
-    },
-    toBalanceValue: { value: input.toBalanceValue ?? null, isWritable: true },
+    fromState: { value: input.fromState ?? null, isWritable: true },
+    toState: { value: input.toState ?? null, isWritable: true },
     amountState: { value: input.amountState ?? null, isWritable: false },
     amountAuthority: {
       value: input.amountAuthority ?? null,
@@ -352,8 +346,8 @@ export function getConfidentialTransferFromValueInstruction<
       getAccountMeta('toAta', accounts.toAta),
       getAccountMeta('fromAccount', accounts.fromAccount),
       getAccountMeta('toAccount', accounts.toAccount),
-      getAccountMeta('fromBalanceValue', accounts.fromBalanceValue),
-      getAccountMeta('toBalanceValue', accounts.toBalanceValue),
+      getAccountMeta('fromState', accounts.fromState),
+      getAccountMeta('toState', accounts.toState),
       getAccountMeta('amountState', accounts.amountState),
       getAccountMeta('amountAuthority', accounts.amountAuthority),
       getAccountMeta('amountScratch', accounts.amountScratch),
@@ -380,8 +374,8 @@ export function getConfidentialTransferFromValueInstruction<
     TAccountToAta,
     TAccountFromAccount,
     TAccountToAccount,
-    TAccountFromBalanceValue,
-    TAccountToBalanceValue,
+    TAccountFromState,
+    TAccountToState,
     TAccountAmountState,
     TAccountAmountAuthority,
     TAccountAmountScratch,
@@ -402,9 +396,9 @@ export type ParsedConfidentialTransferFromValueInstruction<
 > = {
   programAddress: Address<TProgram>;
   accounts: {
-    /** Sender and transfer authority. Must control `amount_value` (the spend gate). */
+    /** Sender and transfer authority. Must control `amount_state` (the spend gate). */
     owner: TAccountMetas[0];
-    /** Pays rent for the transferred-amount encrypted value account on its first bind. */
+    /** Pays rent for the transferred-amount encrypted State on its first bind. */
     payer: TAccountMetas[1];
     /** Confidential mint. */
     mint: TAccountMetas[2];
@@ -414,13 +408,10 @@ export type ParsedConfidentialTransferFromValueInstruction<
     /** Sender token account. */
     fromAccount: TAccountMetas[6];
     toAccount: TAccountMetas[7];
-    /**
-     * Sender's stable balance `EncryptedValue` encrypted value account; read for the current
-     * handle and replaced in place by this execution's CPI.
-     */
-    fromBalanceValue: TAccountMetas[8];
-    /** Recipient's stable balance `EncryptedValue` encrypted value account. */
-    toBalanceValue: TAccountMetas[9];
+    /** Sender state: the host reads and updates its balance slot. */
+    fromState: TAccountMetas[8];
+    /** Recipient state: the host reads and updates its balance slot. */
+    toState: TAccountMetas[9];
     amountState?: TAccountMetas[10] | undefined;
     amountAuthority?: TAccountMetas[11] | undefined;
     amountScratch?: TAccountMetas[12] | undefined;
@@ -477,8 +468,8 @@ export function parseConfidentialTransferFromValueInstruction<
       toAta: getNextAccount(),
       fromAccount: getNextAccount(),
       toAccount: getNextAccount(),
-      fromBalanceValue: getNextAccount(),
-      toBalanceValue: getNextAccount(),
+      fromState: getNextAccount(),
+      toState: getNextAccount(),
       amountState: getNextOptionalAccount(),
       amountAuthority: getNextOptionalAccount(),
       amountScratch: getNextOptionalAccount(),

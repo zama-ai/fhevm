@@ -60,8 +60,8 @@ export type ConfidentialBurnInstruction<
   TAccountOwnerAta extends string | AccountMeta<string> = string,
   TAccountTokenAccount extends string | AccountMeta<string> = string,
   TAccountTotalSupplyAuthority extends string | AccountMeta<string> = string,
-  TAccountBalanceValue extends string | AccountMeta<string> = string,
-  TAccountTotalSupplyValue extends string | AccountMeta<string> = string,
+  TAccountBalanceState extends string | AccountMeta<string> = string,
+  TAccountTotalSupplyState extends string | AccountMeta<string> = string,
   TAccountPendingBurn extends string | AccountMeta<string> = string,
   TAccountZamaEventAuthority extends string | AccountMeta<string> = string,
   TAccountZamaProgram extends string | AccountMeta<string> = '6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu',
@@ -86,8 +86,8 @@ export type ConfidentialBurnInstruction<
       TAccountTotalSupplyAuthority extends string
         ? ReadonlyAccount<TAccountTotalSupplyAuthority>
         : TAccountTotalSupplyAuthority,
-      TAccountBalanceValue extends string ? WritableAccount<TAccountBalanceValue> : TAccountBalanceValue,
-      TAccountTotalSupplyValue extends string ? WritableAccount<TAccountTotalSupplyValue> : TAccountTotalSupplyValue,
+      TAccountBalanceState extends string ? WritableAccount<TAccountBalanceState> : TAccountBalanceState,
+      TAccountTotalSupplyState extends string ? WritableAccount<TAccountTotalSupplyState> : TAccountTotalSupplyState,
       TAccountPendingBurn extends string ? WritableAccount<TAccountPendingBurn> : TAccountPendingBurn,
       TAccountZamaEventAuthority extends string
         ? ReadonlyAccount<TAccountZamaEventAuthority>
@@ -145,8 +145,8 @@ export type ConfidentialBurnAsyncInput<
   TAccountOwnerAta extends string = string,
   TAccountTokenAccount extends string = string,
   TAccountTotalSupplyAuthority extends string = string,
-  TAccountBalanceValue extends string = string,
-  TAccountTotalSupplyValue extends string = string,
+  TAccountBalanceState extends string = string,
+  TAccountTotalSupplyState extends string = string,
   TAccountPendingBurn extends string = string,
   TAccountZamaEventAuthority extends string = string,
   TAccountZamaProgram extends string = string,
@@ -166,10 +166,10 @@ export type ConfidentialBurnAsyncInput<
   /** Token account whose balance is decreased. */
   tokenAccount: Address<TAccountTokenAccount>;
   totalSupplyAuthority?: Address<TAccountTotalSupplyAuthority>;
-  /** Stable balance encrypted value account; read for the current handle and replaced by this execution. */
-  balanceValue: Address<TAccountBalanceValue>;
-  /** Stable total-supply encrypted value account; read for the current handle and replaced by this execution. */
-  totalSupplyValue: Address<TAccountTotalSupplyValue>;
+  /** Stable balance encrypted State; read for the current handle and replaced by this execution. */
+  balanceState: Address<TAccountBalanceState>;
+  /** Stable total-supply encrypted State; read for the current handle and replaced by this execution. */
+  totalSupplyState: Address<TAccountTotalSupplyState>;
   /** A burn is rejected before execution while this account is already initialized. */
   pendingBurn: Address<TAccountPendingBurn>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
@@ -201,8 +201,8 @@ export async function getConfidentialBurnInstructionAsync<
   TAccountOwnerAta extends string,
   TAccountTokenAccount extends string,
   TAccountTotalSupplyAuthority extends string,
-  TAccountBalanceValue extends string,
-  TAccountTotalSupplyValue extends string,
+  TAccountBalanceState extends string,
+  TAccountTotalSupplyState extends string,
   TAccountPendingBurn extends string,
   TAccountZamaEventAuthority extends string,
   TAccountZamaProgram extends string,
@@ -221,8 +221,8 @@ export async function getConfidentialBurnInstructionAsync<
     TAccountOwnerAta,
     TAccountTokenAccount,
     TAccountTotalSupplyAuthority,
-    TAccountBalanceValue,
-    TAccountTotalSupplyValue,
+    TAccountBalanceState,
+    TAccountTotalSupplyState,
     TAccountPendingBurn,
     TAccountZamaEventAuthority,
     TAccountZamaProgram,
@@ -243,8 +243,8 @@ export async function getConfidentialBurnInstructionAsync<
     TAccountOwnerAta,
     TAccountTokenAccount,
     TAccountTotalSupplyAuthority,
-    TAccountBalanceValue,
-    TAccountTotalSupplyValue,
+    TAccountBalanceState,
+    TAccountTotalSupplyState,
     TAccountPendingBurn,
     TAccountZamaEventAuthority,
     TAccountZamaProgram,
@@ -270,9 +270,9 @@ export async function getConfidentialBurnInstructionAsync<
       value: input.totalSupplyAuthority ?? null,
       isWritable: false,
     },
-    balanceValue: { value: input.balanceValue ?? null, isWritable: true },
-    totalSupplyValue: {
-      value: input.totalSupplyValue ?? null,
+    balanceState: { value: input.balanceState ?? null, isWritable: true },
+    totalSupplyState: {
+      value: input.totalSupplyState ?? null,
       isWritable: true,
     },
     pendingBurn: { value: input.pendingBurn ?? null, isWritable: true },
@@ -319,8 +319,8 @@ export async function getConfidentialBurnInstructionAsync<
       getAccountMeta('ownerAta', accounts.ownerAta),
       getAccountMeta('tokenAccount', accounts.tokenAccount),
       getAccountMeta('totalSupplyAuthority', accounts.totalSupplyAuthority),
-      getAccountMeta('balanceValue', accounts.balanceValue),
-      getAccountMeta('totalSupplyValue', accounts.totalSupplyValue),
+      getAccountMeta('balanceState', accounts.balanceState),
+      getAccountMeta('totalSupplyState', accounts.totalSupplyState),
       getAccountMeta('pendingBurn', accounts.pendingBurn),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
       getAccountMeta('zamaProgram', accounts.zamaProgram),
@@ -341,8 +341,8 @@ export async function getConfidentialBurnInstructionAsync<
     TAccountOwnerAta,
     TAccountTokenAccount,
     TAccountTotalSupplyAuthority,
-    TAccountBalanceValue,
-    TAccountTotalSupplyValue,
+    TAccountBalanceState,
+    TAccountTotalSupplyState,
     TAccountPendingBurn,
     TAccountZamaEventAuthority,
     TAccountZamaProgram,
@@ -362,8 +362,8 @@ export type ConfidentialBurnInput<
   TAccountOwnerAta extends string = string,
   TAccountTokenAccount extends string = string,
   TAccountTotalSupplyAuthority extends string = string,
-  TAccountBalanceValue extends string = string,
-  TAccountTotalSupplyValue extends string = string,
+  TAccountBalanceState extends string = string,
+  TAccountTotalSupplyState extends string = string,
   TAccountPendingBurn extends string = string,
   TAccountZamaEventAuthority extends string = string,
   TAccountZamaProgram extends string = string,
@@ -383,10 +383,10 @@ export type ConfidentialBurnInput<
   /** Token account whose balance is decreased. */
   tokenAccount: Address<TAccountTokenAccount>;
   totalSupplyAuthority: Address<TAccountTotalSupplyAuthority>;
-  /** Stable balance encrypted value account; read for the current handle and replaced by this execution. */
-  balanceValue: Address<TAccountBalanceValue>;
-  /** Stable total-supply encrypted value account; read for the current handle and replaced by this execution. */
-  totalSupplyValue: Address<TAccountTotalSupplyValue>;
+  /** Stable balance encrypted State; read for the current handle and replaced by this execution. */
+  balanceState: Address<TAccountBalanceState>;
+  /** Stable total-supply encrypted State; read for the current handle and replaced by this execution. */
+  totalSupplyState: Address<TAccountTotalSupplyState>;
   /** A burn is rejected before execution while this account is already initialized. */
   pendingBurn: Address<TAccountPendingBurn>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
@@ -418,8 +418,8 @@ export function getConfidentialBurnInstruction<
   TAccountOwnerAta extends string,
   TAccountTokenAccount extends string,
   TAccountTotalSupplyAuthority extends string,
-  TAccountBalanceValue extends string,
-  TAccountTotalSupplyValue extends string,
+  TAccountBalanceState extends string,
+  TAccountTotalSupplyState extends string,
   TAccountPendingBurn extends string,
   TAccountZamaEventAuthority extends string,
   TAccountZamaProgram extends string,
@@ -438,8 +438,8 @@ export function getConfidentialBurnInstruction<
     TAccountOwnerAta,
     TAccountTokenAccount,
     TAccountTotalSupplyAuthority,
-    TAccountBalanceValue,
-    TAccountTotalSupplyValue,
+    TAccountBalanceState,
+    TAccountTotalSupplyState,
     TAccountPendingBurn,
     TAccountZamaEventAuthority,
     TAccountZamaProgram,
@@ -459,8 +459,8 @@ export function getConfidentialBurnInstruction<
   TAccountOwnerAta,
   TAccountTokenAccount,
   TAccountTotalSupplyAuthority,
-  TAccountBalanceValue,
-  TAccountTotalSupplyValue,
+  TAccountBalanceState,
+  TAccountTotalSupplyState,
   TAccountPendingBurn,
   TAccountZamaEventAuthority,
   TAccountZamaProgram,
@@ -485,9 +485,9 @@ export function getConfidentialBurnInstruction<
       value: input.totalSupplyAuthority ?? null,
       isWritable: false,
     },
-    balanceValue: { value: input.balanceValue ?? null, isWritable: true },
-    totalSupplyValue: {
-      value: input.totalSupplyValue ?? null,
+    balanceState: { value: input.balanceState ?? null, isWritable: true },
+    totalSupplyState: {
+      value: input.totalSupplyState ?? null,
       isWritable: true,
     },
     pendingBurn: { value: input.pendingBurn ?? null, isWritable: true },
@@ -529,8 +529,8 @@ export function getConfidentialBurnInstruction<
       getAccountMeta('ownerAta', accounts.ownerAta),
       getAccountMeta('tokenAccount', accounts.tokenAccount),
       getAccountMeta('totalSupplyAuthority', accounts.totalSupplyAuthority),
-      getAccountMeta('balanceValue', accounts.balanceValue),
-      getAccountMeta('totalSupplyValue', accounts.totalSupplyValue),
+      getAccountMeta('balanceState', accounts.balanceState),
+      getAccountMeta('totalSupplyState', accounts.totalSupplyState),
       getAccountMeta('pendingBurn', accounts.pendingBurn),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
       getAccountMeta('zamaProgram', accounts.zamaProgram),
@@ -551,8 +551,8 @@ export function getConfidentialBurnInstruction<
     TAccountOwnerAta,
     TAccountTokenAccount,
     TAccountTotalSupplyAuthority,
-    TAccountBalanceValue,
-    TAccountTotalSupplyValue,
+    TAccountBalanceState,
+    TAccountTotalSupplyState,
     TAccountPendingBurn,
     TAccountZamaEventAuthority,
     TAccountZamaProgram,
@@ -580,10 +580,10 @@ export type ParsedConfidentialBurnInstruction<
     /** Token account whose balance is decreased. */
     tokenAccount: TAccountMetas[4];
     totalSupplyAuthority: TAccountMetas[5];
-    /** Stable balance encrypted value account; read for the current handle and replaced by this execution. */
-    balanceValue: TAccountMetas[6];
-    /** Stable total-supply encrypted value account; read for the current handle and replaced by this execution. */
-    totalSupplyValue: TAccountMetas[7];
+    /** Stable balance encrypted State; read for the current handle and replaced by this execution. */
+    balanceState: TAccountMetas[6];
+    /** Stable total-supply encrypted State; read for the current handle and replaced by this execution. */
+    totalSupplyState: TAccountMetas[7];
     /** A burn is rejected before execution while this account is already initialized. */
     pendingBurn: TAccountMetas[8];
     zamaEventAuthority: TAccountMetas[9];
@@ -637,8 +637,8 @@ export function parseConfidentialBurnInstruction<TProgram extends string, TAccou
       ownerAta: getNextAccount(),
       tokenAccount: getNextAccount(),
       totalSupplyAuthority: getNextAccount(),
-      balanceValue: getNextAccount(),
-      totalSupplyValue: getNextAccount(),
+      balanceState: getNextAccount(),
+      totalSupplyState: getNextAccount(),
       pendingBurn: getNextAccount(),
       zamaEventAuthority: getNextAccount(),
       zamaProgram: getNextAccount(),

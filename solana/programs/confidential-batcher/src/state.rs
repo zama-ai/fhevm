@@ -99,7 +99,7 @@ impl Batch {
 }
 
 /// Per-(batch, user) join record. The encrypted amount itself lives in the batcher-owned
-/// `EncryptedValue` account at `joined_encrypted_value`: the user may decrypt their pending
+/// `EncryptedState` account at `joined_encrypted_state`: the user may decrypt their pending
 /// amount, and the batch authority computes refunds and claims from it by signature.
 #[account]
 #[derive(InitSpace)]
@@ -150,48 +150,6 @@ pub fn batch_payout_underlying_address(batch: Pubkey) -> (Pubkey, u8) {
     Pubkey::find_program_address(&[BATCH_PAYOUT_UNDERLYING_SEED, batch.as_ref()], &crate::ID)
 }
 
-/// Encrypted-value label for a user's accumulated joined batch amount.
-pub fn encrypted_pending_join_label(user: Pubkey) -> [u8; 32] {
-    solana_sha256_hasher::hashv(&[b"batcher-pending-join", user.as_ref()]).to_bytes()
-}
-
-/// Encrypted-value label for a user's claimed payout amount.
-pub fn encrypted_claim_amount_label(user: Pubkey) -> [u8; 32] {
-    solana_sha256_hasher::hashv(&[b"batcher-claim-amount", user.as_ref()]).to_bytes()
-}
-
-/// The application one batch is to the host: this program, scoped to the batch.
-pub fn batch_app(batch: Pubkey) -> zama_fhe::AppScope {
-    zama_fhe::AppScope {
-        program: crate::id(),
-        scope: batch.to_bytes(),
-    }
-}
-
-/// The id of a batcher value: the batch's application, controlled by the batch authority, with a
-/// per-user label.
-pub fn batcher_encrypted_value_id(
-    batch: Pubkey,
-    batch_authority: Pubkey,
-    encrypted_value_label: [u8; 32],
-) -> zama_fhe::EncryptedValueId {
-    zama_fhe::EncryptedValueId::new(
-        batch_app(batch),
-        batch_authority,
-        zama_fhe::EncryptedValueLabel::new(encrypted_value_label),
-    )
-}
-
-/// Returns the canonical `EncryptedValue` PDA for a batcher value, delegating to zama-fhe so the
-/// batcher and host agree exactly.
-pub fn batcher_encrypted_value_address(
-    batch: Pubkey,
-    batch_authority: Pubkey,
-    encrypted_value_label: [u8; 32],
-) -> (Pubkey, u8) {
-    batcher_encrypted_value_id(batch, batch_authority, encrypted_value_label).address_with_bump()
-}
-
 /// Computes the informational payout rate of a settled batch, rounded DOWN
 /// and saturating at u64::MAX:
 /// `rate = payout_received * RATE_SCALE / total_joined`.
@@ -205,6 +163,14 @@ pub fn payout_rate(payout_received: u64, total_joined: u64) -> Result<u64> {
     require!(total_joined > 0, BatcherError::InvalidFheExecution);
     let rate = (payout_received as u128) * (RATE_SCALE as u128) / (total_joined as u128);
     Ok(u64::try_from(rate).unwrap_or(u64::MAX))
+}
+
+pub fn join_state_id(batch: Pubkey, record: Pubkey) -> zama_fhe::StateId {
+    zama_fhe::StateId::new(crate::ID, record, batch.to_bytes())
+}
+
+pub fn joined_amount_key() -> [u8; 32] {
+    *b"joined_amount___________________"
 }
 
 #[cfg(test)]
@@ -306,26 +272,4 @@ mod tests {
     fn zero_total_rate_is_rejected() {
         assert!(payout_rate(10, 0).is_err());
     }
-
-    #[test]
-    fn labels_are_distinct_per_user_and_per_purpose() {
-        let alice = Pubkey::new_unique();
-        let bob = Pubkey::new_unique();
-        assert_ne!(
-            encrypted_pending_join_label(alice),
-            encrypted_pending_join_label(bob)
-        );
-        assert_ne!(
-            encrypted_pending_join_label(alice),
-            encrypted_claim_amount_label(alice)
-        );
-    }
-}
-
-pub fn join_state_id(batch: Pubkey, record: Pubkey) -> zama_fhe::StateId {
-    zama_fhe::StateId::new(crate::ID, record, batch.to_bytes())
-}
-
-pub fn joined_amount_key() -> [u8; 32] {
-    *b"joined_amount___________________"
 }

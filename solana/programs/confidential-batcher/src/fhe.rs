@@ -1,7 +1,7 @@
 //! Batcher FHE execution under each JoinRecord authority.
 
-use anchor_lang::prelude::*;
 use crate::errors::BatcherError;
+use anchor_lang::prelude::*;
 
 pub(crate) fn invalid_execution(
     error: zama_fhe::FheExecutionBuildError,
@@ -11,9 +11,17 @@ pub(crate) fn invalid_execution(
 }
 
 pub(crate) fn read_state(info: &AccountInfo) -> Result<zama_host::EncryptedState> {
-    require_keys_eq!(*info.owner, zama_host::ID, BatcherError::EncryptedValueInvalid);
+    require_keys_eq!(
+        *info.owner,
+        zama_host::ID,
+        BatcherError::EncryptedStateInvalid
+    );
     let state = zama_host::EncryptedState::try_deserialize(&mut &info.try_borrow_data()?[..])?;
-    require_keys_eq!(info.key(), state.canonical_address().0, BatcherError::DerivedAccountMismatch);
+    require_keys_eq!(
+        info.key(),
+        state.canonical_address().0,
+        BatcherError::DerivedAccountMismatch
+    );
     Ok(state)
 }
 
@@ -36,20 +44,35 @@ impl<'info> JoinExecute<'_, 'info> {
         execution: zama_fhe::ReturningFheExecution<zama_fhe::Uint<64>>,
         dynamic: Vec<AccountInfo<'info>>,
     ) -> Result<[u8; 32]> {
-        let resolved = execution.execution().resolve_accounts(dynamic, [self.record.clone()]).map_err(|error| { msg!("invalid execution accounts: {:?}", error); error!(BatcherError::InvalidFheExecution) })?;
+        let resolved = execution
+            .execution()
+            .resolve_accounts(dynamic, [self.record.clone()])
+            .map_err(|error| {
+                msg!("invalid execution accounts: {:?}", error);
+                error!(BatcherError::InvalidFheExecution)
+            })?;
         let bump = [self.bump];
-        let seeds: &[&[u8]] = &[crate::constants::JOIN_RECORD_SEED, self.batch.as_ref(), self.user.as_ref(), &bump];
-        execution.invoke(zama_fhe::ExecutionCpiAccounts {
-            payer: self.payer,
-            encrypted_value_account_authority: self.record,
-            host_config: self.host_config,
-            deny_scope_records: self.deny_records.to_vec(),
-            system_program: self.system_program,
-            hcu_block_meter: None,
-            hcu_trusted_app_record: None,
-            rand_nonce: None,
-            event_authority: self.event_authority,
-            program: self.program,
-        }, &resolved, &[seeds])
+        let seeds: &[&[u8]] = &[
+            crate::constants::JOIN_RECORD_SEED,
+            self.batch.as_ref(),
+            self.user.as_ref(),
+            &bump,
+        ];
+        execution.invoke(
+            zama_fhe::ExecutionCpiAccounts {
+                payer: self.payer,
+                authority: self.record,
+                host_config: self.host_config,
+                deny_scope_records: self.deny_records.to_vec(),
+                system_program: self.system_program,
+                hcu_block_meter: None,
+                hcu_trusted_app_record: None,
+                rand_nonce: None,
+                event_authority: self.event_authority,
+                program: self.program,
+            },
+            &resolved,
+            &[seeds],
+        )
     }
 }

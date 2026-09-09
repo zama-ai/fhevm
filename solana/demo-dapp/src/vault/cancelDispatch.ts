@@ -1,18 +1,13 @@
 import type { Address, Instruction, TransactionSigner } from '@solana/kit';
 
 import { getCancelDispatchInstructionAsync } from './internal/generated/confidentialBatcher/instructions/cancelDispatch.js';
+import { findBatchAuthorityPda, pendingBurnAddress, tokenAccountAddress } from './internal/batcherPdas.js';
 import {
-  findBatchAuthorityPda,
-  pendingBurnAddress,
-  tokenAccountAddress,
-} from './internal/batcherPdas.js';
-import {
-  balanceValueAddress,
+  tokenStateAddress,
   tokenEventAuthorityAddress,
   totalSupplyAuthorityAddress,
-  totalSupplyValueAddress,
   zamaEventAuthorityAddress,
-} from './internal/tokenValueAccount.js';
+} from './internal/tokenAccounts.js';
 
 export type SolanaVaultCancelDispatchParameters = {
   /** Join-mint wrapper authority; also pays optional batch-authority funding. */
@@ -40,8 +35,8 @@ export async function buildCancelDispatchInstruction(
     joinConfidentialMint: mint,
     totalSupplyAuthority,
     batchJoinTokenAccount,
-    batchBalanceValue: await balanceValueAddress(mint, batchJoinTokenAccount),
-    totalSupplyValue: await totalSupplyValueAddress(mint, totalSupplyAuthority),
+    batchBalanceState: await tokenStateAddress(mint, batchJoinTokenAccount),
+    totalSupplyState: await tokenStateAddress(mint, totalSupplyAuthority),
     pendingBurn: await pendingBurnAddress(mint, batchJoinTokenAccount),
     hostConfig: parameters.hostConfig,
     zamaEventAuthority: await zamaEventAuthorityAddress(),

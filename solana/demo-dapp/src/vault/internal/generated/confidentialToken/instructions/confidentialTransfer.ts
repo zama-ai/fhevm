@@ -60,8 +60,8 @@ export type ConfidentialTransferInstruction<
   TAccountToAta extends string | AccountMeta<string> = string,
   TAccountFromAccount extends string | AccountMeta<string> = string,
   TAccountToAccount extends string | AccountMeta<string> = string,
-  TAccountFromBalanceValue extends string | AccountMeta<string> = string,
-  TAccountToBalanceValue extends string | AccountMeta<string> = string,
+  TAccountFromState extends string | AccountMeta<string> = string,
+  TAccountToState extends string | AccountMeta<string> = string,
   TAccountZamaEventAuthority extends string | AccountMeta<string> = string,
   TAccountZamaProgram extends string | AccountMeta<string> = '6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu',
   TAccountHostConfig extends string | AccountMeta<string> = string,
@@ -90,8 +90,8 @@ export type ConfidentialTransferInstruction<
       TAccountToAta extends string ? ReadonlyAccount<TAccountToAta> : TAccountToAta,
       TAccountFromAccount extends string ? WritableAccount<TAccountFromAccount> : TAccountFromAccount,
       TAccountToAccount extends string ? WritableAccount<TAccountToAccount> : TAccountToAccount,
-      TAccountFromBalanceValue extends string ? WritableAccount<TAccountFromBalanceValue> : TAccountFromBalanceValue,
-      TAccountToBalanceValue extends string ? WritableAccount<TAccountToBalanceValue> : TAccountToBalanceValue,
+      TAccountFromState extends string ? WritableAccount<TAccountFromState> : TAccountFromState,
+      TAccountToState extends string ? WritableAccount<TAccountToState> : TAccountToState,
       TAccountZamaEventAuthority extends string
         ? ReadonlyAccount<TAccountZamaEventAuthority>
         : TAccountZamaEventAuthority,
@@ -158,8 +158,8 @@ export type ConfidentialTransferInput<
   TAccountToAta extends string = string,
   TAccountFromAccount extends string = string,
   TAccountToAccount extends string = string,
-  TAccountFromBalanceValue extends string = string,
-  TAccountToBalanceValue extends string = string,
+  TAccountFromState extends string = string,
+  TAccountToState extends string = string,
   TAccountZamaEventAuthority extends string = string,
   TAccountZamaProgram extends string = string,
   TAccountHostConfig extends string = string,
@@ -174,7 +174,7 @@ export type ConfidentialTransferInput<
 > = {
   /** Sender and transfer authority. */
   owner: TransactionSigner<TAccountOwner>;
-  /** Pays rent for the transferred-amount encrypted value account on its first bind. */
+  /** Pays rent for the transferred-amount encrypted State on its first bind. */
   payer: TransactionSigner<TAccountPayer>;
   /** Confidential mint. */
   mint: Address<TAccountMint>;
@@ -184,13 +184,10 @@ export type ConfidentialTransferInput<
   /** Sender token account. */
   fromAccount: Address<TAccountFromAccount>;
   toAccount: Address<TAccountToAccount>;
-  /**
-   * Sender's stable balance `EncryptedValue` encrypted value account; read for the current
-   * handle and replaced in place by this execution's CPI.
-   */
-  fromBalanceValue: Address<TAccountFromBalanceValue>;
-  /** Recipient's stable balance `EncryptedValue` encrypted value account. */
-  toBalanceValue: Address<TAccountToBalanceValue>;
+  /** Sender state: the host reads and updates its balance slot. */
+  fromState: Address<TAccountFromState>;
+  /** Recipient state: the host reads and updates its balance slot. */
+  toState: Address<TAccountToState>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
   /** ZamaHost program used for FHE operations. */
   zamaProgram?: Address<TAccountZamaProgram>;
@@ -222,8 +219,8 @@ export function getConfidentialTransferInstruction<
   TAccountToAta extends string,
   TAccountFromAccount extends string,
   TAccountToAccount extends string,
-  TAccountFromBalanceValue extends string,
-  TAccountToBalanceValue extends string,
+  TAccountFromState extends string,
+  TAccountToState extends string,
   TAccountZamaEventAuthority extends string,
   TAccountZamaProgram extends string,
   TAccountHostConfig extends string,
@@ -246,8 +243,8 @@ export function getConfidentialTransferInstruction<
     TAccountToAta,
     TAccountFromAccount,
     TAccountToAccount,
-    TAccountFromBalanceValue,
-    TAccountToBalanceValue,
+    TAccountFromState,
+    TAccountToState,
     TAccountZamaEventAuthority,
     TAccountZamaProgram,
     TAccountHostConfig,
@@ -271,8 +268,8 @@ export function getConfidentialTransferInstruction<
   TAccountToAta,
   TAccountFromAccount,
   TAccountToAccount,
-  TAccountFromBalanceValue,
-  TAccountToBalanceValue,
+  TAccountFromState,
+  TAccountToState,
   TAccountZamaEventAuthority,
   TAccountZamaProgram,
   TAccountHostConfig,
@@ -298,11 +295,8 @@ export function getConfidentialTransferInstruction<
     toAta: { value: input.toAta ?? null, isWritable: false },
     fromAccount: { value: input.fromAccount ?? null, isWritable: true },
     toAccount: { value: input.toAccount ?? null, isWritable: true },
-    fromBalanceValue: {
-      value: input.fromBalanceValue ?? null,
-      isWritable: true,
-    },
-    toBalanceValue: { value: input.toBalanceValue ?? null, isWritable: true },
+    fromState: { value: input.fromState ?? null, isWritable: true },
+    toState: { value: input.toState ?? null, isWritable: true },
     zamaEventAuthority: {
       value: input.zamaEventAuthority ?? null,
       isWritable: false,
@@ -349,8 +343,8 @@ export function getConfidentialTransferInstruction<
       getAccountMeta('toAta', accounts.toAta),
       getAccountMeta('fromAccount', accounts.fromAccount),
       getAccountMeta('toAccount', accounts.toAccount),
-      getAccountMeta('fromBalanceValue', accounts.fromBalanceValue),
-      getAccountMeta('toBalanceValue', accounts.toBalanceValue),
+      getAccountMeta('fromState', accounts.fromState),
+      getAccountMeta('toState', accounts.toState),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
       getAccountMeta('zamaProgram', accounts.zamaProgram),
       getAccountMeta('hostConfig', accounts.hostConfig),
@@ -375,8 +369,8 @@ export function getConfidentialTransferInstruction<
     TAccountToAta,
     TAccountFromAccount,
     TAccountToAccount,
-    TAccountFromBalanceValue,
-    TAccountToBalanceValue,
+    TAccountFromState,
+    TAccountToState,
     TAccountZamaEventAuthority,
     TAccountZamaProgram,
     TAccountHostConfig,
@@ -399,7 +393,7 @@ export type ParsedConfidentialTransferInstruction<
   accounts: {
     /** Sender and transfer authority. */
     owner: TAccountMetas[0];
-    /** Pays rent for the transferred-amount encrypted value account on its first bind. */
+    /** Pays rent for the transferred-amount encrypted State on its first bind. */
     payer: TAccountMetas[1];
     /** Confidential mint. */
     mint: TAccountMetas[2];
@@ -409,13 +403,10 @@ export type ParsedConfidentialTransferInstruction<
     /** Sender token account. */
     fromAccount: TAccountMetas[6];
     toAccount: TAccountMetas[7];
-    /**
-     * Sender's stable balance `EncryptedValue` encrypted value account; read for the current
-     * handle and replaced in place by this execution's CPI.
-     */
-    fromBalanceValue: TAccountMetas[8];
-    /** Recipient's stable balance `EncryptedValue` encrypted value account. */
-    toBalanceValue: TAccountMetas[9];
+    /** Sender state: the host reads and updates its balance slot. */
+    fromState: TAccountMetas[8];
+    /** Recipient state: the host reads and updates its balance slot. */
+    toState: TAccountMetas[9];
     zamaEventAuthority: TAccountMetas[10];
     /** ZamaHost program used for FHE operations. */
     zamaProgram: TAccountMetas[11];
@@ -472,8 +463,8 @@ export function parseConfidentialTransferInstruction<
       toAta: getNextAccount(),
       fromAccount: getNextAccount(),
       toAccount: getNextAccount(),
-      fromBalanceValue: getNextAccount(),
-      toBalanceValue: getNextAccount(),
+      fromState: getNextAccount(),
+      toState: getNextAccount(),
       zamaEventAuthority: getNextAccount(),
       zamaProgram: getNextAccount(),
       hostConfig: getNextAccount(),

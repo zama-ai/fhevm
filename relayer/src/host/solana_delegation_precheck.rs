@@ -44,7 +44,7 @@
 use zama_solana_acl::decode_encrypted_state;
 use zama_solana_acl::delegation::{
     decode_user_decryption_delegation, UserDecryptionDelegationRecord,
-    WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY,
+    WILDCARD_AUTHORITY,
 };
 
 /// One fetched account, exactly as the RPC returned it.
@@ -109,7 +109,7 @@ pub(crate) fn entry_verdict(inputs: &EntryVerdictInputs) -> EntryVerdict {
         inputs.program_id,
         inputs.delegator,
         inputs.delegate,
-        WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY,
+        WILDCARD_AUTHORITY,
         inputs.slot,
     );
 
@@ -147,7 +147,7 @@ pub(crate) fn resolve_encrypted_state_authority(
         return None;
     }
     // The sentinel-authority case is the connector's own guard; this check stands aside.
-    if state.authority == WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY {
+    if state.authority == WILDCARD_AUTHORITY {
         return None;
     }
     Some(state.authority)
@@ -202,7 +202,7 @@ fn names_tuple(
 ) -> bool {
     record.delegator == delegator
         && record.delegate == delegate
-        && record.encrypted_value_account_authority == authority
+        && record.authority == authority
 }
 
 /// One delegated entry as admission handed it over: the claimed identities, plus the handle
@@ -389,7 +389,7 @@ fn solana_delegation_row_addresses(
     };
     (
         row(authority),
-        row(&WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY),
+        row(&WILDCARD_AUTHORITY),
     )
 }
 
@@ -452,7 +452,7 @@ mod tests {
         let mut data = USER_DECRYPTION_DELEGATION_DISCRIMINATOR.to_vec();
         data.extend_from_slice(&record.delegator);
         data.extend_from_slice(&record.delegate);
-        data.extend_from_slice(&record.encrypted_value_account_authority);
+        data.extend_from_slice(&record.authority);
         data.extend_from_slice(&record.expiration_slot.to_le_bytes());
         data.extend_from_slice(&record.delegation_counter.to_le_bytes());
         data.extend_from_slice(&record.last_update_slot.to_le_bytes());
@@ -468,7 +468,7 @@ mod tests {
         UserDecryptionDelegationRecord {
             delegator: DELEGATOR,
             delegate: DELEGATE,
-            encrypted_value_account_authority: AUTHORITY,
+            authority: AUTHORITY,
             expiration_slot: SLOT + 100,
             delegation_counter: 1,
             last_update_slot: SLOT - 10,
@@ -479,7 +479,7 @@ mod tests {
 
     fn live_wildcard() -> UserDecryptionDelegationRecord {
         UserDecryptionDelegationRecord {
-            encrypted_value_account_authority: WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY,
+            authority: WILDCARD_AUTHORITY,
             ..live_exact()
         }
     }

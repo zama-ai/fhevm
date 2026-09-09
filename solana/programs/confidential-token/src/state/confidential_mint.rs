@@ -4,8 +4,8 @@ use anchor_lang::prelude::*;
 
 /// Confidential mint state for the token PoC.
 ///
-/// The total supply's current handle and access encrypted value account live in the
-/// `EncryptedValue` account at `total_supply_encrypted_value`.
+/// The total supply's current handle and access encrypted State live in the
+/// `EncryptedState` account at `total_supply_encrypted_state`.
 #[account]
 #[derive(InitSpace)]
 pub struct ConfidentialMint {
@@ -15,7 +15,6 @@ pub struct ConfidentialMint {
     pub underlying_mint: Pubkey,
     /// Decimal precision inherited from the underlying mint.
     pub decimals: u8,
-
 }
 
 impl ConfidentialMint {

@@ -1,7 +1,7 @@
 //! Evaluates ordered instruction-local FHE executions.
 //!
 //! Two signers cover two authorities, and they are only sometimes the same key: `payer` funds rent
-//! for persistent output accounts; `encrypted_value_account_authority` is the default authority
+//! for persistent output accounts; `authority` is the default authority
 //! that signs for persistent values read and written. Every persistent value an execution touches
 //! is admitted by its own authority's signature — found among the default signer and the signing
 //! remaining accounts — and nothing else: an application program signs for its PDAs by CPI and
@@ -10,10 +10,8 @@
 use anchor_lang::prelude::*;
 
 use super::common::*;
-use super::encrypted_value::{
-    append_public_decrypt_leaf, grow_account_if_needed, seal_allow_leaves,
-};
 use super::input_verification::verify_input_attestation;
+use super::state_history::grow_account_if_needed;
 use crate::{
     errors::ZamaHostError,
     events::{
@@ -38,7 +36,7 @@ use walk::{walk_steps, ExecutionHandleContext, RandContext};
 
 /// Accounts for one composed, instruction-local fhe_execute.
 ///
-/// Persistent input and output `EncryptedValue` accounts are supplied in
+/// Persistent input and output `EncryptedState` accounts are supplied in
 /// `remaining_accounts` and referenced by index from [`FheExecuteArgs`].
 #[derive(Accounts)]
 #[event_cpi]
@@ -50,7 +48,7 @@ pub struct FheExecute<'info> {
     /// an authority of its own. An output that sets `authority_index` points at a remaining account
     /// instead, and that account must sign and must equal the authority the output declares; an
     /// operand's authority may likewise be any signing remaining account.
-    pub encrypted_value_account_authority: Signer<'info>,
+    pub authority: Signer<'info>,
     /// Singleton config PDA. Read-only: the cap is read from here, but the writable per-slot
     /// counter is the separate `hcu_block_meter`, never this singleton — so the hot path takes no
     /// write lock on the config.
@@ -93,6 +91,7 @@ pub fn fhe_execute<'info>(
         usize::from(args.account_count) == ctx.remaining_accounts.len(),
         ZamaHostError::FheExecuteAccountCountMismatch
     );
+    validate_returned_results(&args)?;
     let rand_nonce = consume_rand_nonce(&mut ctx, &args)?;
     // The account table owns every remaining-accounts invariant for the execution:
     // duplicate rejection (at construction), the used-account bitmap (marked in
@@ -141,26 +140,45 @@ pub fn fhe_execute<'info>(
     // leaves partial writes behind only until the runtime reverts the transaction, which discards
     // every account write — so no validate-only pre-pass is needed for atomicity. The event CPI
     // stays last so no event describes state that did not commit.
-    let (created_public_outputs, produced) =
-        execute_steps(&mut account_table, &ctx, &args, app, &handle_context)?;
+    let (created_public_outputs, produced) = execute_steps(
+        &mut account_table,
+        &args,
+        app,
+        &handle_context,
+        &ctx.accounts.host_config,
+    )?;
     account_table.flush_states(
         &ctx.accounts.payer.to_account_info(),
         &ctx.accounts.system_program.to_account_info(),
     )?;
     emit_execution_random_seeds(&ctx, random_seeds)?;
     emit_public_outputs_produced(&ctx, created_public_outputs)?;
-    return_execution_handles(&produced);
+    return_execution_handles(&produced, &args.returned_results);
+    Ok(())
+}
+
+fn validate_returned_results(args: &FheExecuteArgs) -> Result<()> {
+    require!(
+        args.returned_results.len() <= crate::MAX_RETURNED_HANDLES,
+        ZamaHostError::InvalidReturnSelection
+    );
+    for result in &args.returned_results {
+        require!(
+            usize::from(result.step_index) < args.steps.len() && result.output_index == 0,
+            ZamaHostError::InvalidReturnSelection
+        );
+    }
     Ok(())
 }
 
 #[inline(never)]
-fn return_execution_handles(produced: &[ProducedValue]) {
-    // 32 handles exactly fill Solana's 1024-byte return-data limit; no length prefix.
-    let mut bytes = [0u8; MAX_FHE_EXECUTION_STEPS * 32];
-    for (chunk, value) in bytes.chunks_exact_mut(32).zip(produced) {
-        chunk.copy_from_slice(&value.handle);
+fn return_execution_handles(produced: &[ProducedValue], selected: &[crate::ExecutionResultRef]) {
+    let mut bytes = [0u8; crate::MAX_RETURNED_HANDLES * 32];
+    for (chunk, result) in bytes.chunks_exact_mut(32).zip(selected) {
+        chunk.copy_from_slice(&produced[usize::from(result.step_index)].handle);
     }
-    anchor_lang::solana_program::program::set_return_data(&bytes[..produced.len() * 32]);
+    // Set even an empty result after event CPIs, so their return data cannot leak to callers.
+    anchor_lang::solana_program::program::set_return_data(&bytes[..selected.len() * 32]);
 }
 
 /// Takes the host's rand nonce for this execution and advances it, when the execution has a rand
@@ -215,10 +233,10 @@ fn collect_execution_random_seeds(
 #[inline(never)]
 fn execute_steps<'a, 'info>(
     table: &mut ExecutionAccountTable<'a, 'info>,
-    ctx: &Context<'info, FheExecute<'info>>,
     args: &FheExecuteArgs,
     app: Option<AppScope>,
     handle_context: &ExecutionHandleContext,
+    host_config: &HostConfig,
 ) -> Result<(Vec<ProducedPublicOutput>, Vec<ProducedValue>)> {
     let mut execution = ExecutionState {
         table,
@@ -227,9 +245,9 @@ fn execute_steps<'a, 'info>(
         created_public_outputs: Vec::new(),
         app,
         chain_id: handle_context.derivation.chain_id,
-        host_config: ctx.accounts.host_config.as_ref(),
+        host_config,
     };
-    walk_steps(&mut execution, ctx, args, handle_context)?;
+    walk_steps(&mut execution, args, handle_context)?;
     Ok((execution.created_public_outputs, execution.produced))
 }
 
@@ -257,20 +275,6 @@ impl<'info> ExecutionState<'_, '_, 'info> {
     }
 
     #[inline(never)]
-    fn resolve_persistent_operand(
-        &mut self,
-        handle: [u8; 32],
-        encrypted_value_index: u16,
-    ) -> Result<ResolvedOperand> {
-        let chain_id = self.chain_id;
-        let value = self
-            .table
-            .canonical_encrypted_value(encrypted_value_index)?;
-        assert_current_handle(value, handle, chain_id)?;
-        Ok(ResolvedOperand::encrypted(handle))
-    }
-
-    #[inline(never)]
     fn resolve_verified_input_operand(
         &mut self,
         attestation: &CoprocessorInputAttestation,
@@ -286,13 +290,11 @@ impl<'info> ExecutionState<'_, '_, 'info> {
     #[inline(never)]
     fn accept_output(
         &mut self,
-        ctx: &Context<'info, FheExecute<'info>>,
         op_index: u16,
         result: [u8; 32],
         output: &FheExecuteOutput,
     ) -> Result<()> {
         let created_public_output = accept_execution_output(
-            ctx,
             self.table,
             self.dictionary,
             &mut self.produced,
@@ -309,7 +311,6 @@ impl<'info> ExecutionState<'_, '_, 'info> {
 
 #[inline(never)]
 fn accept_execution_output<'info>(
-    ctx: &Context<'info, FheExecute<'info>>,
     table: &mut ExecutionAccountTable<'_, 'info>,
     dictionary: &[[u8; 32]],
     produced: &mut Vec<ProducedValue>,
@@ -344,77 +345,15 @@ fn accept_execution_output<'info>(
             )?;
             make_public.then_some(ProducedPublicOutput {
                 step_index: op_index,
-                encrypted_value: state,
+                encrypted_state: state,
                 output_handle: result,
             })
         }
         FheExecuteOutput::Transient => None,
-        FheExecuteOutput::StoredValue {
-            output_encrypted_value_index,
-            output_authority_index,
-            output_program_index,
-            output_authority_key_index,
-            output_scope_index,
-            output_label_index,
-            output_authority_seeds,
-            output_allow_indexes,
-            previous_handle_index,
-            make_public,
-        } => {
-            let declared = DeclaredOutput {
-                app: AppScope {
-                    program: dictionary_key(dictionary, *output_program_index)?,
-                    scope: dictionary_bytes(dictionary, *output_scope_index)?,
-                },
-                authority: dictionary_key(dictionary, *output_authority_key_index)?,
-                label: dictionary_bytes(dictionary, *output_label_index)?,
-                authority_seeds: output_authority_seeds,
-                allows: resolve_dictionary_keys(dictionary, output_allow_indexes)?,
-                previous_handle: previous_handle_index
-                    .map(|index| dictionary_bytes(dictionary, index))
-                    .transpose()?,
-                make_public: *make_public,
-            };
-            let authority = persistent_output_authority(
-                table,
-                ctx,
-                output_authority_index.map(u16::from),
-                declared.authority,
-            )?;
-            require_keys_eq!(
-                authority.key(),
-                declared.authority,
-                ZamaHostError::EncryptedValueAccountAuthorityMismatch
-            );
-            let encrypted_value = bind_execution_output(
-                ctx,
-                table,
-                dictionary,
-                u16::from(*output_encrypted_value_index),
-                result,
-                &declared,
-            )?;
-            make_public.then(|| ProducedPublicOutput {
-                step_index: op_index,
-                encrypted_value,
-                output_handle: result,
-            })
-        }
     };
 
     produced.push(ProducedValue { handle: result });
     Ok(created_public_output)
-}
-
-/// A persistent output's declaration, resolved out of the dictionary.
-struct DeclaredOutput<'a> {
-    app: AppScope,
-    authority: Pubkey,
-    label: [u8; 32],
-    authority_seeds: &'a [PdaSeed],
-    allows: Vec<Pubkey>,
-    previous_handle: Option<[u8; 32]>,
-    make_public: bool,
 }
 
 fn resolve_dictionary_keys(dictionary: &[[u8; 32]], indexes: &[u8]) -> Result<Vec<Pubkey>> {
@@ -422,33 +361,6 @@ fn resolve_dictionary_keys(dictionary: &[[u8; 32]], indexes: &[u8]) -> Result<Ve
         .iter()
         .map(|index| dictionary_key(dictionary, *index))
         .collect()
-}
-
-/// The signer that admits a persistent output: the named remaining account, or the default
-/// authority signer.
-fn persistent_output_authority<'info>(
-    table: &ExecutionAccountTable<'_, 'info>,
-    ctx: &Context<'info, FheExecute<'info>>,
-    authority_index: Option<u16>,
-    output_authority: Pubkey,
-) -> Result<AccountInfo<'info>> {
-    let authority = match authority_index {
-        Some(index) => {
-            let authority = table.account(index)?;
-            require!(authority.is_signer, ZamaHostError::InvalidFheExecuteAccount);
-            require_keys_eq!(
-                authority.key(),
-                output_authority,
-                ZamaHostError::EncryptedValueAccountAuthorityMismatch
-            );
-            authority.clone()
-        }
-        None => ctx
-            .accounts
-            .encrypted_value_account_authority
-            .to_account_info(),
-    };
-    Ok(authority)
 }
 
 #[derive(Clone)]
@@ -485,135 +397,6 @@ impl ResolvedOperand {
     }
 }
 
-#[inline(never)]
-fn bind_execution_output<'info>(
-    ctx: &Context<'info, FheExecute<'info>>,
-    table: &mut ExecutionAccountTable<'_, 'info>,
-    dictionary: &[[u8; 32]],
-    output_encrypted_value_index: u16,
-    result: [u8; 32],
-    declared: &DeclaredOutput<'_>,
-) -> Result<Pubkey> {
-    assert_allow_keys(&declared.allows)?;
-
-    let output_info = table.account(output_encrypted_value_index)?;
-    let output_pda = table.expected_output_pda(declared.app, declared.authority, declared.label);
-    require_keys_eq!(
-        output_info.key(),
-        output_pda.key,
-        ZamaHostError::EncryptedValuePdaMismatch
-    );
-    // One write per account per execution: the read-after-write operand rule relies on it.
-    table.claim_persistent_output(output_info.key())?;
-    // Explicit on the update path; `create_pda_strict` enforces it on create.
-    require!(
-        output_info.is_writable,
-        ZamaHostError::InvalidFheExecuteAccount
-    );
-
-    let mut value = if output_info.owner == &crate::ID {
-        // Update: the declared previous handle must be the stored one, so an execution built on
-        // stale state fails instead of overwriting a newer handle, and indexers replay the write
-        // from instruction data alone. The stored program was proven on create and the canonical
-        // address check above binds the declared identity to it, so seeds are not re-proven.
-        require!(
-            declared.authority_seeds.is_empty(),
-            ZamaHostError::InvalidFheExecuteAccount
-        );
-        let mut value = table.take_canonical_encrypted_value(output_encrypted_value_index)?;
-        require!(
-            declared.previous_handle == Some(value.current_handle),
-            ZamaHostError::PreviousStateMismatch
-        );
-        value.current_handle = result;
-        value
-    } else {
-        // Create: nothing to replace, and the authority must be proven a PDA of the declared
-        // program, or another program could claim this `(program, scope)` for its own values.
-        require!(
-            declared.previous_handle.is_none(),
-            ZamaHostError::PreviousStateMismatch
-        );
-        assert_authority_is_program_pda(
-            dictionary,
-            declared.authority_seeds,
-            declared.app.program,
-            declared.authority,
-        )?;
-        EncryptedValue {
-            program: declared.app.program,
-            encrypted_value_account_authority: declared.authority,
-            scope: declared.app.scope,
-            label: declared.label,
-            current_handle: result,
-            leaf_count: 0,
-            peaks: Vec::new(),
-            bump: output_pda.bump,
-        }
-    };
-    // Leaf order: one historical-access leaf per allowed key on the NEW handle, in declared
-    // order, then the public leaf last. Byte-identical to what the coprocessor recomputes from the
-    // instruction and to `make_handle_public`.
-    seal_allow_leaves(output_info, &mut value, result, &declared.allows)?;
-    if declared.make_public {
-        append_public_decrypt_leaf(output_info, &mut value, result)?;
-    }
-    let space = zama_solana_acl::EncryptedValue::account_size(value.peaks.len());
-    if output_info.owner == &crate::ID {
-        grow_account_if_needed(
-            &ctx.accounts.payer.to_account_info(),
-            output_info,
-            &ctx.accounts.system_program.to_account_info(),
-            space,
-        )?;
-    } else {
-        let program = declared.app.program.to_bytes();
-        let authority = declared.authority.to_bytes();
-        let [seed, program, authority, scope, label] = zama_solana_acl::encrypted_value_seeds(
-            &program,
-            &authority,
-            &declared.app.scope,
-            &declared.label,
-        );
-        create_pda_strict(
-            &ctx.accounts.payer.to_account_info(),
-            output_info,
-            &ctx.accounts.system_program.to_account_info(),
-            space,
-            &[seed, program, authority, scope, label, &[output_pda.bump]],
-        )?;
-    }
-    write_account(output_info, &value)?;
-    Ok(output_info.key())
-}
-
-/// Proves `authority` is a PDA of `program`: the declared seeds (bump last) must derive it. This
-/// is what makes `(program, scope)` unforgeable — only `program` can sign for such an authority.
-fn assert_authority_is_program_pda(
-    dictionary: &[[u8; 32]],
-    seeds: &[PdaSeed],
-    program: Pubkey,
-    authority: Pubkey,
-) -> Result<()> {
-    let mut resolved: Vec<&[u8]> = Vec::with_capacity(seeds.len());
-    for seed in seeds {
-        resolved.push(match seed {
-            PdaSeed::Interned { index } => dictionary
-                .get(*index as usize)
-                .ok_or_else(|| error!(ZamaHostError::FheExecuteDictionaryIndexOutOfBounds))?,
-            PdaSeed::Literal { bytes } => bytes,
-        });
-    }
-    let derived = Pubkey::create_program_address(&resolved, &program)
-        .map_err(|_| error!(ZamaHostError::EncryptedValueAuthorityNotProgramPda))?;
-    require_keys_eq!(
-        derived,
-        authority,
-        ZamaHostError::EncryptedValueAuthorityNotProgramPda
-    );
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -626,47 +409,6 @@ mod tests {
         assert_eq!(
             MAX_FHE_EXECUTION_STEPS, 32,
             "EVM_PARITY.md FHEVMExecutor row"
-        );
-    }
-
-    #[test]
-    fn authority_pda_proof_accepts_the_programs_pda_and_nothing_else() {
-        let program = Pubkey::new_unique();
-        let mint = Pubkey::new_unique();
-        let (authority, bump) =
-            Pubkey::find_program_address(&[b"token-account", mint.as_ref()], &program);
-        let dictionary = [mint.to_bytes()];
-        let seeds = [
-            PdaSeed::Literal {
-                bytes: b"token-account".to_vec(),
-            },
-            PdaSeed::Interned { index: 0 },
-            PdaSeed::Literal { bytes: vec![bump] },
-        ];
-        assert!(assert_authority_is_program_pda(&dictionary, &seeds, program, authority).is_ok());
-
-        // The same seeds under another program derive another address: the authority is not
-        // that program's PDA.
-        assert_eq!(
-            assert_authority_is_program_pda(&dictionary, &seeds, Pubkey::new_unique(), authority)
-                .unwrap_err(),
-            error!(ZamaHostError::EncryptedValueAuthorityNotProgramPda)
-        );
-        // A wallet with no seeds at all is not a PDA of anything.
-        assert!(
-            assert_authority_is_program_pda(&dictionary, &[], program, Pubkey::new_unique())
-                .is_err()
-        );
-        // An interned seed past the dictionary fails as a dictionary error.
-        assert_eq!(
-            assert_authority_is_program_pda(
-                &dictionary,
-                &[PdaSeed::Interned { index: 1 }],
-                program,
-                authority
-            )
-            .unwrap_err(),
-            error!(ZamaHostError::FheExecuteDictionaryIndexOutOfBounds)
         );
     }
 }

@@ -24,6 +24,21 @@ impl EncryptedState {
         encrypted_state_address(self.program, self.authority, self.scope)
     }
 
+    pub(crate) fn validate(&self, address: Pubkey) -> Result<()> {
+        zama_solana_acl::encrypted_state::validate_state_shape(
+            self.slots.iter().map(|slot| slot.key),
+            self.leaf_count,
+            self.peaks.len(),
+        )
+        .map_err(|_| error!(ZamaHostError::InvalidFheExecuteAccount))?;
+        let (expected, bump) = self.canonical_address();
+        require!(
+            address == expected && self.bump == bump,
+            ZamaHostError::EncryptedStatePdaMismatch
+        );
+        Ok(())
+    }
+
     pub fn set(
         &mut self,
         key: [u8; 32],
@@ -88,6 +103,26 @@ mod tests {
             peaks: vec![],
             bump: 0,
         }
+    }
+
+    #[test]
+    fn canonical_validation_rejects_wrong_bump_address_and_duplicate_slots() {
+        let mut state = empty_state();
+        let (address, bump) = state.canonical_address();
+        state.bump = bump;
+        state.validate(address).unwrap();
+        assert!(state.validate(Pubkey::new_unique()).is_err());
+        state.bump ^= 1;
+        assert!(state.validate(address).is_err());
+        state.bump = bump;
+        state.slots = vec![
+            EncryptedSlot {
+                key: [1; 32],
+                handle: [2; 32]
+            };
+            2
+        ];
+        assert!(state.validate(address).is_err());
     }
 
     #[test]

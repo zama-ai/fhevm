@@ -42,7 +42,7 @@ export const SOLANA_USER_DECRYPTION_DELEGATION_SEED = new TextEncoder().encode('
  * refuses any encrypted value account that names it as its authority, so it exists only as the
  * scope of a wildcard grant.
  */
-export const SOLANA_WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY =
+export const SOLANA_WILDCARD_AUTHORITY =
   'JEKNVnkbo3jma5nREBBJCDoXFVeKkD56V3xKrvRmWxFG' as Address<'JEKNVnkbo3jma5nREBBJCDoXFVeKkD56V3xKrvRmWxFG'>;
 
 /**
@@ -68,7 +68,7 @@ export type SolanaUserDecryptionDelegationTuple = {
   /**
    * The encrypted value account authority the delegation is scoped over — every value of that
    * authority, not one value id (see the type's own note) — or
-   * [`SOLANA_WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY`] for a grant across every authority of
+   * [`SOLANA_WILDCARD_AUTHORITY`] for a grant across every authority of
    * the delegator's.
    */
   readonly encryptedStateAuthority: Address;
@@ -120,7 +120,7 @@ export type SolanaDelegationWarning = {
 export function solanaDelegationWarnings(params: {
   readonly encryptedStateAuthority: Address;
 }): SolanaDelegationWarning[] {
-  if (params.encryptedStateAuthority === SOLANA_WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY) {
+  if (params.encryptedStateAuthority === SOLANA_WILDCARD_AUTHORITY) {
     return [{ code: 'WildcardAuthority', message: SOLANA_WILDCARD_AUTHORITY_WARNING }];
   }
   return [];
@@ -190,7 +190,7 @@ export async function buildDelegateForUserDecryptionInstruction(
       hostConfig,
       delegationRecord,
       delegate: params.delegate,
-      encryptedValueAccountAuthority: params.encryptedStateAuthority,
+      authority: params.encryptedStateAuthority,
       expirationSlot: params.expirationSlot,
     },
     { programAddress },
@@ -246,7 +246,7 @@ export async function buildRevokeDelegationForUserDecryptionInstruction(
 // Reading the record
 ////////////////////////////////////////////////////////////////////////////////
 //
-// Hand-rolled like the EncryptedValue decoder, and for the same reason: the record is written by
+// Hand-rolled like the EncryptedState decoder, and for the same reason: the record is written by
 // the host program but read here without the framework, so the layout lives in two places by
 // construction. The account is a fixed 130 bytes — the 8-byte discriminator and a 122-byte body —
 // pinned byte-for-byte against the program's serializer by the Rust cross-pin fixtures.
@@ -385,7 +385,7 @@ export async function fetchSolanaUserDecryptionDelegation(
   const { programAddress = ZAMA_HOST_PROGRAM_ADDRESS, ...fetchConfig } = config ?? {};
   const wildcardTuple: SolanaUserDecryptionDelegationTuple = {
     ...tuple,
-    encryptedStateAuthority: SOLANA_WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY,
+    encryptedStateAuthority: SOLANA_WILDCARD_AUTHORITY,
   };
   const [exactPda, wildcardPda] = await Promise.all([
     solanaUserDecryptionDelegationPda(tuple, programAddress),
