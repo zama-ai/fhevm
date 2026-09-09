@@ -1632,7 +1632,7 @@ export const kmsConnectorRuntimeReplacementServices = (state: Pick<State, "scena
  *
  * The existing databases, MinIO buckets, generated KMS material, contract
  * discovery and proof cache are deliberately copied through untouched.  This
- * path changes image source for the three long-lived connector services only;
+ * path changes image source for the long-lived connector services only;
  * it must never run a migration or replay the ordinary deployment pipeline.
  */
 export const adoptE2ePublicKmsConnectorOverride = (state: State): State => {
@@ -1668,7 +1668,7 @@ export const adoptE2ePublicKmsConnectorOverride = (state: State): State => {
     }
     // A prior build/recreate attempt may have failed after persisting its
     // intent. Reuse precisely that state so a retry can only replay the same
-    // three runtime services; it can never fall through to db migration.
+    // runtime services; it can never fall through to db migration.
     return state;
   }
 
