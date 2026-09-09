@@ -87,10 +87,10 @@ Key inputs (all have sensible defaults — you rarely set more than a couple):
     labels stay on Anvil). Not with `deploy_polygon`.
   - `testnets`: public **Sepolia** (`11155111`) + **Polygon Amoy** (`80002`) as the
     two host chains, the `blockchain-dev` Nitro as gateway. RPC URLs (Secret `rpc`) and
-    the treasury key (Secret `funder`) come from AWS Secrets Manager via the gitops
-    `sync-secrets` chart — no GitHub secrets; an admin must create
-    `zws-dev/fhevm-preview-funder` (`private-key`) holding Sepolia ETH + Amoy POL.
-    Slow (12 s blocks) and it spends real testnet gas.
+    faucet keys (Secrets `eth-faucet`, `polygon-faucet`) come from AWS Secrets Manager via
+    the gitops `sync-secrets` chart — no GitHub secrets. Keys are `zws-dev/ethereum-faucet`
+    and `zws-dev/polygon-faucet` (`private-key`), the same AWS secrets gitops uses for the
+    zws-dev faucets. Slow (12 s blocks) and it spends real testnet gas.
   Both external modes still deploy **this preview's own contracts**, which remain
   on the shared chains after teardown.
 

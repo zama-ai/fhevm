@@ -2,7 +2,7 @@
 # Fund every address this preview signs with; no-op on Anvil (prefunded).
 # blockchain-dev: PoW faucets for host + gateway (Job). testnets: treasury key for Sepolia/Amoy (runner), Nitro faucet for the gateway (Job).
 # Env: CHAIN_MODE, NAMESPACE, HOST_HTTP, GATEWAY_HTTP, HOST_FAUCET, GATEWAY_FAUCET, WALLETS_JSON, COPROC_WALLETS_JSON, ROLES_JSON_PATH;
-#      testnets also POLYGON_HTTP, HOST_CHAIN_ID, POLYGON_CHAIN_ID, FUNDER_PRIVATE_KEY, NODE_PATH.
+#      testnets also POLYGON_HTTP, HOST_CHAIN_ID, POLYGON_CHAIN_ID, ETH_FUNDER_PRIVATE_KEY, POLYGON_FUNDER_PRIVATE_KEY, NODE_PATH.
 set -euo pipefail
 
 if [[ "${EXTERNAL_CHAINS:-false}" != "true" ]]; then
@@ -55,13 +55,19 @@ if [[ "${CHAIN_MODE}" == "testnets" ]]; then
   : "${POLYGON_HTTP:?}"
   : "${HOST_CHAIN_ID:?}"
   : "${POLYGON_CHAIN_ID:?}"
-  : "${FUNDER_PRIVATE_KEY:?}"
+  : "${ETH_FUNDER_PRIVATE_KEY:?}"
+  : "${POLYGON_FUNDER_PRIVATE_KEY:?}"
   deployer=$(python3 -c 'import json,os; print(json.load(open(os.environ["ROLES_JSON_PATH"]))["roles"]["9"]["address"])')
-  echo "Funding role wallets on Sepolia + Amoy from the treasury key..."
-  CHAINS_JSON=$(jq -cn --arg h "${HOST_HTTP}" --arg hc "${HOST_CHAIN_ID}" \
-                        --arg p "${POLYGON_HTTP}" --arg pc "${POLYGON_CHAIN_ID}" \
-    '[{label:"sepolia",rpcUrl:$h,chainId:$hc},{label:"amoy",rpcUrl:$p,chainId:$pc}]')
-  ADDRESSES="${role_addresses}" DEPLOYER_ADDRESS="${deployer}" CHAINS_JSON="${CHAINS_JSON}" \
+  echo "Funding role wallets on Sepolia (ethereum-faucet) and Amoy (polygon-faucet)..."
+  sepolia_json=$(jq -cn --arg h "${HOST_HTTP}" --arg hc "${HOST_CHAIN_ID}" \
+    '[{label:"sepolia",rpcUrl:$h,chainId:$hc}]')
+  amoy_json=$(jq -cn --arg p "${POLYGON_HTTP}" --arg pc "${POLYGON_CHAIN_ID}" \
+    '[{label:"amoy",rpcUrl:$p,chainId:$pc}]')
+  ADDRESSES="${role_addresses}" DEPLOYER_ADDRESS="${deployer}" \
+    FUNDER_PRIVATE_KEY="${ETH_FUNDER_PRIVATE_KEY}" CHAINS_JSON="${sepolia_json}" \
+    node "${script_dir}/fund-wallets-treasury.cjs"
+  ADDRESSES="${role_addresses}" DEPLOYER_ADDRESS="${deployer}" \
+    FUNDER_PRIVATE_KEY="${POLYGON_FUNDER_PRIVATE_KEY}" CHAINS_JSON="${amoy_json}" \
     node "${script_dir}/fund-wallets-treasury.cjs"
   # Only the Nitro gateway has a faucet on this path.
   fund_targets="gateway"

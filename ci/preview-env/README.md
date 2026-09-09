@@ -36,8 +36,9 @@ ci/preview-env/
 │   ├── values-coprocessor-infra-e2e.yaml    # crossplane/coprocessor-infra overlay: S3 only
 │   └── values-postgres-coprocessor-e2e.yaml # `common` chart overlay: in-cluster Postgres, dedicated to coprocessor
 ├── testnets/
-│   ├── values-rpc.yaml                 # sync-secrets: Sepolia/Amoy RPC URLs → Secret rpc (chain_mode=testnets)
-│   └── values-funder.yaml               # sync-secrets: treasury key → Secret funder (chain_mode=testnets)
+│   ├── values-rpc.yaml                 # sync-secrets: Sepolia/Amoy RPC URLs → Secret rpc
+│   ├── values-eth-faucet.yaml        # sync-secrets: zws-dev/ethereum-faucet → Secret eth-faucet
+│   └── values-polygon-faucet.yaml    # sync-secrets: zws-dev/polygon-faucet → Secret polygon-faucet
 ├── host-chain/
 │   ├── values-anvil-host-e2e.yaml       # anvil-node overlay, host chain
 │   ├── values-anvil-host-polygon-e2e.yaml   # anvil-node overlay, Polygon host chain (deploy_polygon)
@@ -223,7 +224,7 @@ time by `apply-chain-env.sh` for the two external modes.
 |------|---------------|---------|---------|---------|
 | `anvil` (default) | per-namespace Anvil `12345` (+ Anvil Amoy `80002` with `deploy_polygon`) | per-namespace Anvil `54321` | Foundry junk mnemonic, 120 prefunded accounts | none needed |
 | `blockchain-dev` | shared zws-dev Geth `--dev` `1337` (`http://ethereum-rpc-node.blockchain-dev:8545`, WS same port, 5 s blocks) | shared Nitro `412346` (HTTP `:8547`, WS `:8548`) | fresh mnemonic per run | in-cluster PoW faucets (host + gateway) |
-| `testnets` | public **Sepolia `11155111`** + **Polygon Amoy `80002`**, RPC URLs from AWS Secrets Manager via ExternalSecret (`deploy_polygon` implied) | shared Nitro `412346` | fresh mnemonic per run | host chains from a treasury key (also from AWS SM); gateway from the Nitro faucet |
+| `testnets` | public **Sepolia `11155111`** + **Polygon Amoy `80002`**, RPC URLs from AWS via sync-secrets (`deploy_polygon` implied) | shared Nitro `412346` | fresh mnemonic per run | Sepolia from `zws-dev/ethereum-faucet`, Amoy from `zws-dev/polygon-faucet`; gateway from the Nitro faucet |
 
 Both external modes still deploy **this preview's own** host + gateway contracts, derive the
 same HD index map (`#0` gateway deployer, `#3` relayer, `#9` host/ACL owner, `#10+` KMS /
@@ -244,19 +245,19 @@ The two host chains are the real public testnets, so this is the only preview sh
 **two host chains on real block times** (12 s / ~2 s). What it needs and what it changes:
 
 - **Secrets come from AWS Secrets Manager via the gitops `sync-secrets` chart**
-  (`testnets/values-rpc.yaml` + `testnets/values-funder.yaml`, installed by
-  `deploy-rpc-secret.sh` against `ClusterSecretStore/secret-store`):
+  (`testnets/values-rpc.yaml`, `values-eth-faucet.yaml`, `values-polygon-faucet.yaml`,
+  installed by `deploy-rpc-secret.sh` against `ClusterSecretStore/secret-store`):
   - Secret **`rpc`**: `ethereum-rpc-url`, `ethereum-rpc-ws-url`, `polygon-rpc-url`,
     `polygon-rpc-ws-url` from the existing `zws-dev/external-eth-rpcs` /
     `zws-dev/external-polygon-rpcs` entries (same keys gitops gives the coprocessor).
-  - Secret **`funder`**: `private-key` from **`zws-dev/fhevm-preview-funder`** (an admin
-    creates this one: a fresh key holding Sepolia ETH and Amoy POL). Same split as
-    gitops faucets — the treasury key is not in `rpc`. No GitHub secrets.
+  - Secret **`eth-faucet`**: `private-key` from **`zws-dev/ethereum-faucet`** (Sepolia).
+  - Secret **`polygon-faucet`**: `private-key` from **`zws-dev/polygon-faucet`** (Amoy).
+    Same AWS secrets gitops uses for the zws-dev faucets. No GitHub secrets.
 - **In-cluster consumers read Secret `rpc` directly** (`secretKeyRef`): contracts Jobs (`RPC_URL`,
   `CANONICAL_RPC_URL`), listeners (`APP_BLOCKCHAIN__RPC_URL`), coprocessor `chains[]`
   (`httpUrlValueFrom`/`wsUrlValueFrom`), kms-connector (`$(RPC_ETH_URL)` / `$(RPC_POLYGON_URL)`
   through `commonConfig.env`), relayer, test-suite and the e2e Workflows. Only the runner-side
-  treasury funder reads Secret `funder`, masked, from `deploy-rpc-secret.sh`.
+  funder reads the faucet Secrets, masked, from `deploy-rpc-secret.sh`.
 - **Funding.** `fund-wallets-treasury.cjs` tops up `#0-#4` to 0.2 and `#9` to 1.0 on both chains
   (`FLOOR_WEI` / `DEPLOYER_FLOOR_WEI`) and fails fast if the treasury cannot cover the shortfall.
   Gateway-side wallets (KMS / coprocessor tx-senders, `#0`, `#3`) still come from the Nitro faucet.

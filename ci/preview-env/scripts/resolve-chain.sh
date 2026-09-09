@@ -63,13 +63,14 @@ case "${CHAIN_MODE}" in
     ;;
 
   testnets)
-    # RPC URLs + treasury key come from AWS via sync-secrets (deploy-rpc-secret.sh -> Secrets `rpc` + `funder`);
-    # in-cluster consumers secretKeyRef `rpc`; runner-side treasury reads `funder`.
+    # RPC URLs + faucet keys come from AWS via sync-secrets (deploy-rpc-secret.sh ->
+    # Secrets `rpc`, `eth-faucet`, `polygon-faucet`); in-cluster consumers secretKeyRef `rpc`.
     {
       echo "CHAIN_MODE=testnets"
       echo "EXTERNAL_CHAINS=true"
       echo "RPC_SECRET_NAME=rpc"
-      echo "FUNDER_SECRET_NAME=funder"
+      echo "ETH_FAUCET_SECRET_NAME=eth-faucet"
+      echo "POLYGON_FAUCET_SECRET_NAME=polygon-faucet"
       # Amoy is the second host chain: deploy_polygon-gated steps run, minus the Anvil node (EXTERNAL_CHAINS gate).
       echo "DEPLOY_POLYGON=true"
       echo "GATEWAY_HTTP=${NITRO_HTTP}"

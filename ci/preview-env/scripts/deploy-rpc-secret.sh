@@ -1,21 +1,25 @@
 #!/usr/bin/env bash
 # chain_mode=testnets: install sync-secrets (same chart gitops uses) so ESO
-# materialises Secret `rpc` (Sepolia + Amoy URLs) and Secret `funder`
-# (treasury key). Export them masked for runner-side steps that cannot mount.
+# materialises Secret `rpc` (Sepolia + Amoy URLs) and the two faucet keys
+# (`eth-faucet`, `polygon-faucet`). Export them masked for runner-side steps
+# that cannot mount.
 # Env: NAMESPACE, SYNC_SECRETS_CHART, SYNC_SECRETS_CHART_VERSION,
-# RPC_SECRET_NAME, FUNDER_SECRET_NAME.
+# RPC_SECRET_NAME, ETH_FAUCET_SECRET_NAME, POLYGON_FAUCET_SECRET_NAME.
 set -euo pipefail
 
 : "${NAMESPACE:?}"
 : "${SYNC_SECRETS_CHART:?}"
 : "${SYNC_SECRETS_CHART_VERSION:?}"
 : "${RPC_SECRET_NAME:?}"
-: "${FUNDER_SECRET_NAME:?}"
+: "${ETH_FAUCET_SECRET_NAME:?}"
+: "${POLYGON_FAUCET_SECRET_NAME:?}"
 
 helm upgrade --install preview-rpc "${SYNC_SECRETS_CHART}" --version "${SYNC_SECRETS_CHART_VERSION}" \
   -n "${NAMESPACE}" -f ci/preview-env/testnets/values-rpc.yaml
-helm upgrade --install preview-funder "${SYNC_SECRETS_CHART}" --version "${SYNC_SECRETS_CHART_VERSION}" \
-  -n "${NAMESPACE}" -f ci/preview-env/testnets/values-funder.yaml
+helm upgrade --install preview-eth-faucet "${SYNC_SECRETS_CHART}" --version "${SYNC_SECRETS_CHART_VERSION}" \
+  -n "${NAMESPACE}" -f ci/preview-env/testnets/values-eth-faucet.yaml
+helm upgrade --install preview-polygon-faucet "${SYNC_SECRETS_CHART}" --version "${SYNC_SECRETS_CHART_VERSION}" \
+  -n "${NAMESPACE}" -f ci/preview-env/testnets/values-polygon-faucet.yaml
 
 wait_es() {
   local name="$1"
@@ -24,7 +28,8 @@ wait_es() {
 }
 
 wait_es preview-rpc
-wait_es preview-funder
+wait_es preview-eth-faucet
+wait_es preview-polygon-faucet
 
 read_key() {
   local secret="$1" key="$2" value
@@ -41,6 +46,7 @@ read_key() {
   echo "HOST_WS=$(read_key "${RPC_SECRET_NAME}" ethereum-rpc-ws-url)"
   echo "POLYGON_HTTP=$(read_key "${RPC_SECRET_NAME}" polygon-rpc-url)"
   echo "POLYGON_WS=$(read_key "${RPC_SECRET_NAME}" polygon-rpc-ws-url)"
-  echo "FUNDER_PRIVATE_KEY=$(read_key "${FUNDER_SECRET_NAME}" private-key)"
+  echo "ETH_FUNDER_PRIVATE_KEY=$(read_key "${ETH_FAUCET_SECRET_NAME}" private-key)"
+  echo "POLYGON_FUNDER_PRIVATE_KEY=$(read_key "${POLYGON_FAUCET_SECRET_NAME}" private-key)"
 } >> "${GITHUB_ENV}"
-echo "Secrets ${RPC_SECRET_NAME} (Sepolia + Amoy HTTP/WS) and ${FUNDER_SECRET_NAME} (treasury key) synced via sync-secrets; values exported masked."
+echo "Secrets ${RPC_SECRET_NAME} (Sepolia + Amoy HTTP/WS), ${ETH_FAUCET_SECRET_NAME}, ${POLYGON_FAUCET_SECRET_NAME} synced via sync-secrets; values exported masked."
