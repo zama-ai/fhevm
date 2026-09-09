@@ -105,6 +105,15 @@ set_named_env "${keygen}" ".scDeploy.env" MNEMONIC "${MNEMONIC}"
 if rpc_from_secret; then set_named_env_secret "${keygen}" ".scDeploy.env" RPC_URL ethereum-rpc-url; else set_named_env "${keygen}" ".scDeploy.env" RPC_URL "${HOST_HTTP}"; fi
 set_named_env "${keygen}" ".scDeploy.env" DEPLOYER_PRIVATE_KEY "${DEPLOYER_KEY_9}"
 set_named_env "${keygen}" ".scDeploy.env" CHAIN_ID "${HOST_CHAIN_ID}"
+if [[ "${CHAIN_MODE}" == "testnets" ]]; then
+  # The kms-connector's Ethereum listener polls from the FINALIZED block, and Sepolia
+  # finalizes two epochs (~13 min) behind head. Keygen needs two such round trips
+  # (PrepKeygenRequest -> response tx -> KeygenRequest -> response tx), i.e. ~30 min, so
+  # the 15-minute default expires long before ActivateKey can possibly be emitted. 35m
+  # covers that with slack; crsgen is a single round trip and fits well inside it.
+  # KEYGEN_TIMEOUT (resolve-chain.sh) must stay above 2x this - both waits are one pod.
+  set_named_env "${keygen}" ".scDeploy.env" CEREMONY_TIMEOUT_MS "${CEREMONY_TIMEOUT_MS:-2100000}"
+fi
 
 # --- listener ---
 lis="${root}/listener/values-listener-e2e.yaml"

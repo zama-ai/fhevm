@@ -100,6 +100,7 @@ scDeploy:
       const ABI = ['event ActivateKey(uint256 keyId, uint256 existingKeyId, string[] kmsNodeStorageUrls, tuple(uint8 keyType, bytes digest)[] keyDigests)'];
       const WINDOW = Number(process.env.LOG_QUERY_WINDOW || 1000);
       const LOOKBACK = Number(process.env.LOG_QUERY_LOOKBACK || 5000);
+      const TIMEOUT_MS = Number(process.env.CEREMONY_TIMEOUT_MS || 15 * 60 * 1000);
       async function waitForEvent(provider, contract, eventName, timeoutMs) {
         const deadline = Date.now() + timeoutMs;
         let cursor = Math.max(0, (await provider.getBlockNumber()) - LOOKBACK);
@@ -119,7 +120,7 @@ scDeploy:
       (async () => {
         const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
         const contract = new ethers.Contract(process.env.KMS_GENERATION_CONTRACT_ADDRESS, ABI, provider);
-        const keyEvent = await waitForEvent(provider, contract, 'ActivateKey', 15 * 60 * 1000);
+        const keyEvent = await waitForEvent(provider, contract, 'ActivateKey', TIMEOUT_MS);
         // KMS_ACTIVE_KEY_ID must be the 64-hex-char zero-padded form (NOT decimal) - the
         // KMS nodes publish key/CRS blobs to S3 under their raw uint256 request ID
         // rendered as hex with no 0x prefix (confirmed by listing the actual bucket:
@@ -159,6 +160,7 @@ scDeploy:
       const ABI = ['event ActivateCrs(uint256 crsId, string[] kmsNodeStorageUrls, bytes crsDigest)'];
       const WINDOW = Number(process.env.LOG_QUERY_WINDOW || 1000);
       const LOOKBACK = Number(process.env.LOG_QUERY_LOOKBACK || 5000);
+      const TIMEOUT_MS = Number(process.env.CEREMONY_TIMEOUT_MS || 15 * 60 * 1000);
       async function waitForEvent(provider, contract, eventName, timeoutMs) {
         const deadline = Date.now() + timeoutMs;
         let cursor = Math.max(0, (await provider.getBlockNumber()) - LOOKBACK);
@@ -178,7 +180,7 @@ scDeploy:
       (async () => {
         const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
         const contract = new ethers.Contract(process.env.KMS_GENERATION_CONTRACT_ADDRESS, ABI, provider);
-        const crsEvent = await waitForEvent(provider, contract, 'ActivateCrs', 15 * 60 * 1000);
+        const crsEvent = await waitForEvent(provider, contract, 'ActivateCrs', TIMEOUT_MS);
         // See the matching comment on keyId above - same hex-padded (not decimal) S3
         // object-key requirement applies here.
         const crsId = crsEvent.args.crsId.toString(16).padStart(64, '0');

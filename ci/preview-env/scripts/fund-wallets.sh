@@ -20,7 +20,8 @@ fi
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 python_src="${script_dir}/fund-wallets.py"
 
-# Role wallets sign on both sides; KMS/coprocessor tx-senders only on the gateway.
+# Role wallets sign on both sides; the coprocessor tx-senders only on the gateway.
+# The KMS tx-senders also sign on the canonical host chain - see the testnets branch below.
 role_addresses=$(python3 - <<'PY'
 import json, os
 roles = json.load(open(os.environ["ROLES_JSON_PATH"]))["roles"]
@@ -66,6 +67,20 @@ if [[ "${CHAIN_MODE}" == "testnets" ]]; then
   ADDRESSES="${role_addresses}" DEPLOYER_ADDRESS="${deployer}" \
     FUNDER_PRIVATE_KEY="${ETH_FUNDER_PRIVATE_KEY}" CHAINS_JSON="${sepolia_json}" \
     node "${script_dir}/fund-wallets-treasury.cjs"
+  # Since RFC013 KMSGeneration lives on the canonical HOST chain, so each party's
+  # kms-connector tx-sender signs PrepKeygen/Keygen/Crsgen responses on Sepolia - the
+  # gateway faucet Job below is not enough. Left unfunded they burn their 4 retries on
+  # "insufficient funds ... balance 0", the ceremony never reaches consensus, and the
+  # keygen wait times out. Only those few ceremony txs land here (decryption responses
+  # go to the gateway), so they need a far smaller float than a test signer.
+  kms_tx_senders=$(python3 -c 'import json,os; print("\n".join(w["address"] for w in json.loads(os.environ.get("WALLETS_JSON") or "[]")))')
+  if [[ -n "${kms_tx_senders}" ]]; then
+    echo "Funding KMS tx-senders on Sepolia (KMSGeneration responses)..."
+    ADDRESSES="${kms_tx_senders}" DEPLOYER_ADDRESS="${deployer}" \
+      FLOOR_WEI="50000000000000000" \
+      FUNDER_PRIVATE_KEY="${ETH_FUNDER_PRIVATE_KEY}" CHAINS_JSON="${sepolia_json}" \
+      node "${script_dir}/fund-wallets-treasury.cjs"
+  fi
   # Polygon's canonical-snapshot flow deploys a throwaway proxy set before the
   # final contracts, and Amoy gas prices can make that exceed the 1-token default.
   ADDRESSES="${role_addresses}" DEPLOYER_ADDRESS="${deployer}" \

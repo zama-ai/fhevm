@@ -261,7 +261,14 @@ The two host chains are the real public testnets, so this is the only preview sh
 - **Funding.** `fund-wallets-treasury.cjs` tops up `#0-#4` to 0.2 and deployer
   `#9` to 1.0 ETH on Sepolia / 2.0 POL on Amoy (`FLOOR_WEI` /
   `DEPLOYER_FLOOR_WEI`), and fails fast if either faucet cannot cover the shortfall.
-  Gateway-side wallets (KMS / coprocessor tx-senders, `#0`, `#3`) still come from the Nitro faucet.
+  The **KMS tx-senders also get 0.05 ETH each on Sepolia**: since RFC013 KMSGeneration
+  sits on the canonical host chain, so they sign the keygen/crsgen responses there and
+  the ceremony stalls at "insufficient funds" without it. Their decryption responses,
+  the coprocessor tx-senders, `#0` and `#3` are gateway-side and come from the Nitro faucet.
+- **Ceremony timing.** The kms-connector's Ethereum listener polls from the *finalized*
+  block, ~13 min behind head on Sepolia. Keygen spans two such round trips, so
+  `apply-chain-env.sh` raises the in-pod wait to `CEREMONY_TIMEOUT_MS=35m` (15 m elsewhere)
+  and `KEYGEN_TIMEOUT=80m` gives helm room for both ceremonies in the one pod.
 - **Second host chain reuses the `deploy_polygon` path**: the same Polygon overlays, with
   RPC/chain ids patched to Amoy and the Anvil Polygon node skipped. Amoy mirrors the ETH
   ProtocolConfig (canonical source) exactly as the Anvil Polygon does.
