@@ -191,13 +191,27 @@ jobs:
       nb_coprocessor: ${{ steps.check.outputs.nb_coprocessor }}
       use_blockchain_dev: ${{ steps.check.outputs.use_blockchain_dev }}
       overrides_json: ${{ steps.parse_overrides.outputs.overrides_json }}
+      stack_version: ${{ steps.stack_version.outputs.stack_version }}
     steps:
-      - name: Checkout parse-overrides script
+      - name: Checkout parse-overrides script and the stack version
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
-          sparse-checkout: ci/preview-env/scripts/parse-overrides.cjs
+          sparse-checkout: |
+            ci/preview-env/scripts/parse-overrides.cjs
+            coprocessor/fhevm-engine/fhevm-engine-common/src/lib.rs
           sparse-checkout-cone-mode: false
+      # The GCS tag suffix and pod label follow the compiled release, so read it
+      # from the source constant instead of pinning it here.
+      - id: stack_version
+        run: |
+          version="$(grep -m1 -oE '^\s*"[0-9]+\.[0-9]+\.[0-9]+"' \
+            coprocessor/fhevm-engine/fhevm-engine-common/src/lib.rs | tr -d ' "')"
+          if [[ -z "${version}" ]]; then
+            echo "::error::could not read stack_version!() from fhevm-engine-common/src/lib.rs"
+            exit 1
+          fi
+          echo "stack_version=${version}" >> "$GITHUB_OUTPUT"
       - id: parse_overrides
         env:
           OVERRIDES_RAW: ${{ inputs.overrides }}
@@ -347,10 +361,6 @@ jobs:
     uses: ./.github/workflows/coprocessor-docker-build.yml
     permissions: *docker_permissions
     secrets: *docker_secrets
-    with:
-      # Blue-green GCS is compiled as 0.15.0 and published as <sha>-gcs0.15.0.
-      # BCS stays the registry pin v0.14.0-7. Empty keeps the SHA / 0.14.0 baseline.
-      build_stack_version: ${{ needs.check-labels.outputs.blue_green == 'true' && '0.15.0' || '' }}
 
   build-listener:
     name: build/listener
@@ -482,6 +492,9 @@ jobs:
       REDIS_CHART_VERSION: ${{ fromJSON(needs.check-labels.outputs.overrides_json).redis_chart_version }}
       # Previous-release pin for the BCS fleet (compiled STACK_VERSION=0.14.0).
       BCS_IMAGE_TAG: "v0.14.0-7"
+      # Release the GCS fleet is compiled at; names the proposal and the
+      # gcs-<release> schema the assertions read.
+      GCS_VERSION: v${{ needs.check-labels.outputs.stack_version }}
       # In-namespace Jaeger's OTLP gRPC endpoint.
       # Only consumed when OBSERVABILITY is true.
       OTLP_ENDPOINT: "http://jaeger:4317"
@@ -524,7 +537,7 @@ jobs:
             echo "::error::blue-green requires GCS images (build_images=true). coprocessor_tfhe_worker tag is empty."
             exit 1
           fi
-          echo "RFC-021 blue-green: N=${NB_COPROCESSOR} BCS=${BCS_IMAGE_TAG} GCS=${gcs} (compiled 0.15.0)"
+          echo "RFC-021 blue-green: N=${NB_COPROCESSOR} BCS=${BCS_IMAGE_TAG} GCS=${gcs} (compiled ${GCS_VERSION#v})"
 
       ######################################################################
       # CHART SOURCES: every in-repo chart installs from this checkout's
@@ -941,9 +954,10 @@ jobs:
         #
         # RFC-021 blue-green: that release is the BCS fleet (pinned
         # BCS_IMAGE_TAG). A second release coprocessor-<i>-gcs is the GCS
-        # fleet (HEAD images compiled as 0.15.0). Gateway registration stays N.
+        # fleet (HEAD images at the compiled release). Gateway registration stays N.
         env:
           COPROC_WALLETS_JSON: ${{ steps.coproc-wallets.outputs.wallets_json }}
+          GCS_STACK_VERSION: ${{ needs.check-labels.outputs.stack_version }}
         run: bash ci/preview-env/scripts/deploy-coprocessor.sh
 
       - name: Deploy polygon coprocessor consumer (per-party Polygon consumer)
@@ -1155,7 +1169,7 @@ jobs:
           body: |
             :rocket: **e2e preview environment deployed** in namespace `${{ env.NAMESPACE }}` on zws-dev.
 
-            Topology: **${{ env.NB_KMS_CORE }}** KMS core ${{ env.NB_KMS_CORE == '1' && 'party' || 'parties' }} · **${{ env.NB_COPROCESSOR }}** coprocessor ${{ env.NB_COPROCESSOR == '1' && 'party' || 'parties' }} (each a full independent stack: its own Postgres, S3 bucket, tx-sender identity, `listener` producer, Redis broker and host-listener-consumer).${{ env.BLUE_GREEN == 'true' && ' **RFC-021 blue-green:** each party also runs a GCS fleet (`coprocessor-<i>-gcs`, compiled 0.15.0) beside BCS (`v0.14.0-7`). Gateway registration stays N.' || '' }}${{ env.DEPLOY_POLYGON == 'true' && ' Plus a **second Polygon Amoy (80002)** host chain (fresh anvil, reusing the ETH KMS key via canonical ProtocolConfig mirror).' || '' }}
+            Topology: **${{ env.NB_KMS_CORE }}** KMS core ${{ env.NB_KMS_CORE == '1' && 'party' || 'parties' }} · **${{ env.NB_COPROCESSOR }}** coprocessor ${{ env.NB_COPROCESSOR == '1' && 'party' || 'parties' }} (each a full independent stack: its own Postgres, S3 bucket, tx-sender identity, `listener` producer, Redis broker and host-listener-consumer).${{ env.BLUE_GREEN == 'true' && format(' **RFC-021 blue-green:** each party also runs a GCS fleet (`coprocessor-<i>-gcs`, compiled {0}) beside BCS (`{1}`). Gateway registration stays N.', env.GCS_VERSION, env.BCS_IMAGE_TAG) || '' }}${{ env.DEPLOY_POLYGON == 'true' && ' Plus a **second Polygon Amoy (80002)** host chain (fresh anvil, reusing the ETH KMS key via canonical ProtocolConfig mirror).' || '' }}
 
             Connect:
             ```bash
@@ -1176,7 +1190,7 @@ jobs:
             echo
             echo "Namespace \`${NAMESPACE}\` on zws-dev."
             echo
-            echo "Topology: **${NB_KMS_CORE}** KMS core parties · **${NB_COPROCESSOR}** coprocessor parties (each a full independent stack: its own Postgres, S3 bucket, tx-sender identity, listener producer, Redis broker and host-listener-consumer)$([[ "${BLUE_GREEN}" == "true" ]] && echo " · RFC-021 blue-green (BCS v0.14.0-7 + GCS from this build compiled 0.15.0)")$([[ "${DEPLOY_POLYGON}" == "true" ]] && echo " · a second Polygon Amoy (80002) host chain reusing the ETH KMS key"). Note: each coprocessor party requests substantial tfhe/sns worker capacity on the coprocessor nodepool, so nb_coprocessor > 1 multiplies the cluster resources needed."
+            echo "Topology: **${NB_KMS_CORE}** KMS core parties · **${NB_COPROCESSOR}** coprocessor parties (each a full independent stack: its own Postgres, S3 bucket, tx-sender identity, listener producer, Redis broker and host-listener-consumer)$([[ "${BLUE_GREEN}" == "true" ]] && echo " · RFC-021 blue-green (BCS ${BCS_IMAGE_TAG} + GCS from this build compiled ${GCS_VERSION#v})")$([[ "${DEPLOY_POLYGON}" == "true" ]] && echo " · a second Polygon Amoy (80002) host chain reusing the ETH KMS key"). Note: each coprocessor party requests substantial tfhe/sns worker capacity on the coprocessor nodepool, so nb_coprocessor > 1 multiplies the cluster resources needed."
             echo
             echo "Connect:"
             echo '```bash'
