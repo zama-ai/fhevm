@@ -19,7 +19,10 @@ use crate::http::utils::BounceChecker;
 use crate::http::{parse_and_validate, AppResponse};
 use crate::logging::PublicDecryptStep;
 use crate::metrics::http::{self as http_metrics, HttpEndpoint, HttpMethod};
-use crate::metrics::{observe_raw_eta_seconds, HttpApiVersion, RetryAfterRequestType};
+use crate::metrics::{
+    increment_request_cache, observe_raw_eta_seconds, HttpApiVersion, RequestCacheResult,
+    RetryAfterRequestType,
+};
 use crate::orchestrator::{ContentHasher, Orchestrator};
 use crate::readiness::throttler::PublicDecryptReadinessTask;
 use crate::store::sql::models::req_status_enum_model::ReqStatus;
@@ -248,6 +251,10 @@ impl PublicDecryptHandler {
 
         // Only dispatch event for new requests (deduplication)
         if matches!(insert_result, PublicDecryptInsertResult::Inserted { .. }) {
+            increment_request_cache(
+                RetryAfterRequestType::PublicDecrypt,
+                RequestCacheResult::Miss,
+            );
             let event_data = PublicDecryptEventData::ReqRcvdFromUser {
                 decrypt_request: request.clone(),
             };
@@ -272,6 +279,10 @@ impl PublicDecryptHandler {
                 "Dispatched event to orchestrator"
             );
         } else {
+            increment_request_cache(
+                RetryAfterRequestType::PublicDecrypt,
+                RequestCacheResult::Hit,
+            );
             info!(
                 step = %PublicDecryptStep::DedupHit,
                 req_id = %request_id,

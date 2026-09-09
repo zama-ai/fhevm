@@ -8,8 +8,8 @@
 mod common;
 
 use crate::common::utils::{
-    assert_retry_after_header_present, sign_v3_user_decrypt_envelope, user_decrypt_test_signer,
-    TestSetup,
+    assert_retry_after_header_present, create_user_decrypt_wait_config, request_cache_total,
+    sign_v3_user_decrypt_envelope, spare_shares_count_and_sum, user_decrypt_test_signer, TestSetup,
 };
 use crate::common::validation_helper::{
     expect_v2_malformed_json, expect_v2_missing_field, expect_v2_validation_error, test_endpoint,
@@ -25,6 +25,25 @@ use rand::{rng, RngExt};
 use serde_json::json;
 use std::str::FromStr;
 use std::time::{SystemTime, UNIX_EPOCH};
+use tempfile::TempDir;
+
+mod constants {
+    // Optimistic user-decryption wait window, shared with the v2 tests.
+    //
+    // The mock KMS committee answers with `share_count` shares: the first 9 over a
+    // 3-3-3 block pattern with the consensus event alongside the ninth, then one
+    // straggler share per block. `user_decrypt_shares_threshold` is 9 in the test
+    // config, so with `additional_shares = A` the relayer's target is `9 + A`.
+
+    /// Share threshold configured in `tests/relayer-test-config.yaml`.
+    pub const SHARES_THRESHOLD: usize = 9;
+    /// Window long enough that it cannot expire before the straggler share lands.
+    pub const WAIT_WINDOW_LONG_SECS: u32 = 20;
+    /// A completion this quick cannot have come from the long window expiring.
+    pub const TARGET_REACHED_MAX_SECS: u64 = 10;
+    /// Polling budget for a request that ends on its shares.
+    pub const POLL_BUDGET_SECS: u64 = 15;
+}
 
 mod helpers {
     use super::*;
@@ -73,6 +92,69 @@ mod helpers {
                 })
             })
             .collect()
+    }
+
+    /// POST a v3 envelope, expect 202, return the job id.
+    pub async fn submit_v3(setup: &TestSetup, payload: &serde_json::Value) -> String {
+        let response = reqwest::Client::new()
+            .post(v3_user_decrypt_post_url(setup))
+            .header("Content-Type", "application/json")
+            .timeout(std::time::Duration::from_secs(10))
+            .json(payload)
+            .send()
+            .await
+            .expect("POST failed");
+        assert_eq!(response.status(), reqwest::StatusCode::ACCEPTED);
+        let post_response: UserDecryptPostResponseJson = response
+            .json()
+            .await
+            .expect("Failed to parse POST response");
+        assert_eq!(post_response.status, ApiResponseStatus::Queued);
+        post_response.result.job_id
+    }
+
+    /// Poll the v3 GET until it leaves 202, within `budget`; return (status, body).
+    pub async fn poll_v3_until_terminal_within(
+        setup: &TestSetup,
+        job_id: &str,
+        budget: std::time::Duration,
+    ) -> (reqwest::StatusCode, UserDecryptStatusResponseJson) {
+        let deadline = std::time::Instant::now() + budget;
+        while std::time::Instant::now() < deadline {
+            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+            let response = reqwest::Client::new()
+                .get(v3_user_decrypt_get_url(setup, job_id))
+                .timeout(std::time::Duration::from_secs(10))
+                .send()
+                .await
+                .expect("GET failed");
+            let status = response.status();
+            if status != reqwest::StatusCode::ACCEPTED {
+                let body: UserDecryptStatusResponseJson =
+                    response.json().await.expect("Failed to parse GET response");
+                return (status, body);
+            }
+        }
+        panic!("v3 job {job_id} did not reach a terminal state within {budget:?}");
+    }
+
+    /// Every collected share is returned, ordered by share index.
+    pub fn assert_shares_ordered_by_index(body: &UserDecryptStatusResponseJson, expected: usize) {
+        let result = body
+            .result
+            .as_ref()
+            .expect("Succeeded response should carry a result");
+        assert_eq!(
+            result.result.len(),
+            expected,
+            "Response should carry every collected share"
+        );
+        for (index, item) in result.result.iter().enumerate() {
+            assert_eq!(
+                item.payload[0], index as u8,
+                "Shares should be ordered by share index"
+            );
+        }
     }
 
     pub fn extract_user_address_from_v3_envelope(payload: &serde_json::Value) -> Address {
@@ -536,6 +618,121 @@ async fn v3_e2e_succeeds_against_mocked_gateway() {
         }
         break;
     }
+
+    setup.shutdown().await;
+}
+
+// ---------------------------------------------------------------------------
+// Optimistic user-decryption wait window and dedup metric on the v3 surface
+// ---------------------------------------------------------------------------
+//
+// `GET /v3/user-decrypt/{job_id}` delegates to the v2 handler, so the wait
+// window and the spare-share histogram already apply to v3; these tests pin
+// that down on the v3 routes. The dedup counter is recorded by the v3 POST
+// itself, which has its own insert branch.
+
+/// The wait ends as soon as the extra share arrives, and the v3 GET returns it.
+#[tokio::test]
+async fn v3_wait_window_returns_extra_share() {
+    let temp_config_dir = TempDir::new().expect("Failed to create temp dir");
+    let temp_config_path =
+        create_user_decrypt_wait_config(&temp_config_dir, 1, constants::WAIT_WINDOW_LONG_SECS)
+            .expect("Failed to create wait-window config");
+    let setup = TestSetup::new_with_config_path(Some(temp_config_path))
+        .await
+        .expect("Failed to create test setup");
+
+    // Metrics are asserted as deltas: the Prometheus registry is process-global.
+    let metrics_endpoint = setup.settings.metrics.endpoint.clone();
+    let (spare_count_before, spare_sum_before) =
+        spare_shares_count_and_sum(&metrics_endpoint).await;
+    let cache_miss_before = request_cache_total(&metrics_endpoint, "user_decrypt", "miss").await;
+
+    let payload = helpers::create_v3_envelope();
+    let handles = helpers::extract_handles_from_v3_envelope(&payload);
+    let user_address = helpers::extract_user_address_from_v3_envelope(&payload);
+    // 10 emitted, target 10: the boundary where the target is met exactly.
+    setup.fhevm_mock.on_user_decrypt_success_with_share_count(
+        UserDecryptKind::Unified,
+        handles,
+        user_address,
+        ethereum_rpc_mock::SubscriptionTarget::All,
+        constants::SHARES_THRESHOLD + 1,
+    );
+
+    let started = std::time::Instant::now();
+    let job_id = helpers::submit_v3(&setup, &payload).await;
+    let (status, body) = helpers::poll_v3_until_terminal_within(
+        &setup,
+        &job_id,
+        std::time::Duration::from_secs(constants::POLL_BUDGET_SECS),
+    )
+    .await;
+    let elapsed = started.elapsed();
+
+    assert_eq!(status, reqwest::StatusCode::OK);
+    assert_eq!(body.status, ApiResponseStatus::Succeeded);
+    helpers::assert_shares_ordered_by_index(&body, constants::SHARES_THRESHOLD + 1);
+    assert!(
+        elapsed < std::time::Duration::from_secs(constants::TARGET_REACHED_MAX_SECS),
+        "Wait should end on the extra share, not on window expiry, took {:?}",
+        elapsed
+    );
+
+    let (spare_count_after, spare_sum_after) = spare_shares_count_and_sum(&metrics_endpoint).await;
+    assert_eq!(spare_count_after - spare_count_before, 1.0);
+    assert_eq!(
+        spare_sum_after - spare_sum_before,
+        1.0,
+        "One share beyond the quorum is one spare"
+    );
+    let cache_miss_after = request_cache_total(&metrics_endpoint, "user_decrypt", "miss").await;
+    assert_eq!(
+        cache_miss_after - cache_miss_before,
+        1.0,
+        "A new v3 request should count as one dedup miss"
+    );
+
+    setup.shutdown().await;
+}
+
+/// A repeated v3 POST returns the same job id and counts as one dedup hit.
+#[tokio::test]
+async fn v3_duplicate_post_counts_dedup_hit() {
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+    let metrics_endpoint = setup.settings.metrics.endpoint.clone();
+    let cache_miss_before = request_cache_total(&metrics_endpoint, "user_decrypt", "miss").await;
+    let cache_hit_before = request_cache_total(&metrics_endpoint, "user_decrypt", "hit").await;
+
+    let payload = helpers::create_v3_envelope();
+    let handles = helpers::extract_handles_from_v3_envelope(&payload);
+    let user_address = helpers::extract_user_address_from_v3_envelope(&payload);
+    setup.fhevm_mock.on_user_decrypt_success(
+        UserDecryptKind::Unified,
+        handles,
+        user_address,
+        ethereum_rpc_mock::SubscriptionTarget::All,
+    );
+
+    let first_job_id = helpers::submit_v3(&setup, &payload).await;
+    let second_job_id = helpers::submit_v3(&setup, &payload).await;
+    assert_eq!(
+        first_job_id, second_job_id,
+        "The same envelope must map to the same job"
+    );
+
+    let cache_miss_after = request_cache_total(&metrics_endpoint, "user_decrypt", "miss").await;
+    let cache_hit_after = request_cache_total(&metrics_endpoint, "user_decrypt", "hit").await;
+    assert_eq!(
+        cache_miss_after - cache_miss_before,
+        1.0,
+        "The first POST is the only dedup miss"
+    );
+    assert_eq!(
+        cache_hit_after - cache_hit_before,
+        1.0,
+        "The repeated POST is one dedup hit"
+    );
 
     setup.shutdown().await;
 }

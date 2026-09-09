@@ -26,8 +26,8 @@ use crate::http::{parse_and_validate, AppResponse};
 use crate::logging::UserDecryptStep;
 use crate::metrics::http::{self as http_metrics, HttpEndpoint, HttpMethod};
 use crate::metrics::{
-    observe_raw_eta_seconds, observe_signature_precheck, HttpApiVersion, RetryAfterRequestType,
-    SignaturePreCheckOutcome,
+    increment_request_cache, observe_raw_eta_seconds, observe_signature_precheck, HttpApiVersion,
+    RequestCacheResult, RetryAfterRequestType, SignaturePreCheckOutcome,
 };
 use crate::orchestrator::{ContentHasher, Orchestrator};
 use crate::readiness::throttler::UserDecryptReadinessTask;
@@ -297,6 +297,7 @@ impl UserDecryptHandler {
         };
 
         if matches!(insert_result, UserDecryptInsertResult::Inserted { .. }) {
+            increment_request_cache(RetryAfterRequestType::UserDecrypt, RequestCacheResult::Miss);
             let request_data = UserDecryptEventData::ReqRcvdFromUser {
                 decrypt_request: user_decrypt_request,
             };
@@ -319,6 +320,7 @@ impl UserDecryptHandler {
                 "Dispatched v3 event to orchestrator"
             );
         } else {
+            increment_request_cache(RetryAfterRequestType::UserDecrypt, RequestCacheResult::Hit);
             info!(
                 step = %UserDecryptStep::DedupHit,
                 req_id = %request_id,
@@ -410,6 +412,11 @@ pub async fn user_decrypt_post_v3(
 }
 
 /// Check v3 user-decryption status.
+///
+/// Once the threshold is reached the relayer may keep returning 202 briefly
+/// while it waits for a few extra shares (optimistic wait window). The
+/// succeeded result therefore contains at least `threshold` shares and may
+/// contain more, ordered by share index.
 #[utoipa::path(
     get,
     path = "/v3/user-decrypt/{job_id}",
