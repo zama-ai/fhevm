@@ -1,7 +1,6 @@
 import { Command, Option } from 'commander';
 import { resolve } from 'node:path';
 
-import type { CompletionCommand, CompletionShell } from './base/sh-completion.ts';
 import { defaultWorkspaceRoot } from './base/paths.ts';
 import { type Verbosity, increaseVerbosity } from './base/verbosity.ts';
 
@@ -35,7 +34,6 @@ export type CliOptions = {
     | 'check-mirror'
     | 'check-vendored-origin'
     | 'clean-forge-dependencies'
-    | 'sh-completion'
     | 'generate-chain-constants'
     | 'generate-cleartext-config'
     | 'generate-exports'
@@ -60,11 +58,6 @@ export type CliOptions = {
   | { readonly command: CommandName }
   | { readonly command: 'check-mirror'; readonly packageSelector: string }
   | { readonly command: 'check-vendored-origin'; readonly packageSelector?: string }
-  | {
-      readonly command: 'sh-completion';
-      readonly shell: CompletionShell;
-      readonly commands: readonly CompletionCommand[];
-    }
   | { readonly command: 'generate-chain-constants'; readonly check: boolean }
   | { readonly command: 'generate-cleartext-config'; readonly check: boolean }
   | { readonly command: 'generate-exports'; readonly exportManifestFile: string; readonly check: boolean }
@@ -142,7 +135,6 @@ export function parseCliOptions(argv: readonly string[]): CliOptions {
   let generateExports: { readonly exportManifestFile: string; readonly check: boolean } | undefined;
   let generateCleartextConfig: { readonly check: boolean } | undefined;
   let generateChainConstants: { readonly check: boolean } | undefined;
-  let completion: { readonly shell: CompletionShell; readonly commands: readonly CompletionCommand[] } | undefined;
   let sortPackageJson = false;
   let vendoredPackageSelector: string | undefined;
   let checkAllVendored = false;
@@ -377,25 +369,6 @@ Why:
     .option('--check', 'compare the outputs against the manifest instead of writing them', false)
     .action((manifest: string, options: { readonly check: boolean }) => {
       generateExports = { exportManifestFile: resolve(manifest), check: options.check };
-    });
-  program
-    .command('sh-completion <shell>')
-    .description('Print a tab-completion script for zsh or bash, rendered from the live command list.')
-    .action((shell: string) => {
-      if (shell !== 'zsh' && shell !== 'bash') {
-        throw new Error(`sh-completion: unsupported shell '${shell}' — expected zsh or bash`);
-      }
-      // Introspected from the registry itself, so a new command or option is completed without any
-      // hand-kept list. Flags are the bare tokens; the first positional's name selects value completion.
-      completion = {
-        shell,
-        commands: program.commands.map((cmd) => ({
-          name: cmd.name(),
-          description: cmd.description(),
-          flags: cmd.options.flatMap((option) => option.flags.split(/[,\s]+/).filter((t) => t.startsWith('-'))),
-          argument: cmd.registeredArguments[0]?.name(),
-        })),
-      };
     });
   program
     .command('generate-cleartext-config')
@@ -639,7 +612,6 @@ Why:
     generateExports === undefined &&
     generateCleartextConfig === undefined &&
     generateChainConstants === undefined &&
-    completion === undefined &&
     syncFhevmChains === undefined &&
     !checkFhevmChainsOrigin
   ) {
@@ -675,16 +647,6 @@ Why:
       manifestFile: resolve(workspaceRoot, 'npm-manifest.json'),
       verbosity: options.verbose,
       sortPackageJson: false,
-    };
-  }
-  if (completion !== undefined) {
-    return {
-      command: 'sh-completion',
-      workspaceRoot,
-      manifestFile: resolve(workspaceRoot, 'npm-manifest.json'),
-      verbosity: options.verbose,
-      sortPackageJson: false,
-      ...completion,
     };
   }
   if (generateCleartextConfig !== undefined) {

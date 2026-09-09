@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 import type { CheckCommand } from './base/command.ts';
-import { renderCompletionScript } from './base/sh-completion.ts';
 import { printReport } from './base/diagnostics.ts';
 import { hasDetailedOutput } from './base/verbosity.ts';
 import { type CommandName, parseCliOptions } from './cli-options.ts';
@@ -93,17 +92,6 @@ async function main(): Promise<void> {
     const report = await checkFhevmChainsOrigin({ workspaceRoot: options.workspaceRoot });
     printReport(report, options.verbosity);
     if (report.violations.length > 0) process.exitCode = 1;
-    return;
-  }
-  if (options.command === 'sh-completion') {
-    // Package keys are a convenience for selector arguments; completion still renders outside a workspace.
-    let packageKeys: readonly string[] = [];
-    try {
-      packageKeys = Object.keys(loadNpmManifest(options.manifestFile).packages);
-    } catch {
-      // No manifest reachable: complete commands and flags only.
-    }
-    process.stdout.write(renderCompletionScript(options.shell, options.commands, packageKeys));
     return;
   }
   const manifest = loadNpmManifest(options.manifestFile);

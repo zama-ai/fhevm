@@ -52,17 +52,6 @@ The package exposes the same entry point as the `fhevm-npm` bin, so an installed
 fhevm-npm [options] <command>
 ```
 
-Tab completion is rendered from the live command registry, so it never drifts from the CLI:
-
-```sh
-# zsh — one of (regenerate after the CLI gains a command):
-fhevm-npm sh-completion zsh > ~/.zfunc/_fhevm-npm-cli     # with ~/.zfunc in $fpath, before compinit
-source <(fhevm-npm sh-completion zsh)                     # in ~/.zshrc, after compinit
-
-# bash:
-source <(fhevm-npm sh-completion bash)                    # in ~/.bashrc
-```
-
 Verbosity is global and cumulative:
 
 - no `-v`: print violations and command-specific result banners; successful npm subprocesses are silent;
