@@ -31,22 +31,24 @@ wait_es preview-rpc
 wait_es preview-eth-faucet
 wait_es preview-polygon-faucet
 
-read_key() {
-  local secret="$1" key="$2" value
-  value=$(kubectl get secret -n "${NAMESPACE}" "${secret}" -o json \
+# Mask and write straight to GITHUB_ENV: ::add-mask:: must reach the step's own
+# stdout, so it cannot be emitted from inside a command substitution.
+export_key() {
+  local var="$1" secret="$2" key="$3" encoded value
+  encoded=$(kubectl get secret -n "${NAMESPACE}" "${secret}" -o json \
     | jq -r --arg k "${key}" '.data[$k] // empty')
+  [[ -n "${encoded}" ]] || { echo "::error::secret ${secret} has no ${key}" >&2; exit 1; }
+  # $() already drops trailing newlines, which GITHUB_ENV would reject anyway.
+  value=$(printf '%s' "${encoded}" | base64 -d)
   [[ -n "${value}" ]] || { echo "::error::secret ${secret} has an empty ${key}" >&2; exit 1; }
-  value=$(printf '%s' "${value}" | base64 -d)
   echo "::add-mask::${value}"
-  echo "${value}"
+  echo "${var}=${value}" >> "${GITHUB_ENV}"
 }
 
-{
-  echo "HOST_HTTP=$(read_key "${RPC_SECRET_NAME}" ethereum-rpc-url)"
-  echo "HOST_WS=$(read_key "${RPC_SECRET_NAME}" ethereum-rpc-ws-url)"
-  echo "POLYGON_HTTP=$(read_key "${RPC_SECRET_NAME}" polygon-rpc-url)"
-  echo "POLYGON_WS=$(read_key "${RPC_SECRET_NAME}" polygon-rpc-ws-url)"
-  echo "ETH_FUNDER_PRIVATE_KEY=$(read_key "${ETH_FAUCET_SECRET_NAME}" private-key)"
-  echo "POLYGON_FUNDER_PRIVATE_KEY=$(read_key "${POLYGON_FAUCET_SECRET_NAME}" private-key)"
-} >> "${GITHUB_ENV}"
+export_key HOST_HTTP "${RPC_SECRET_NAME}" ethereum-rpc-url
+export_key HOST_WS "${RPC_SECRET_NAME}" ethereum-rpc-ws-url
+export_key POLYGON_HTTP "${RPC_SECRET_NAME}" polygon-rpc-url
+export_key POLYGON_WS "${RPC_SECRET_NAME}" polygon-rpc-ws-url
+export_key ETH_FUNDER_PRIVATE_KEY "${ETH_FAUCET_SECRET_NAME}" private-key
+export_key POLYGON_FUNDER_PRIVATE_KEY "${POLYGON_FAUCET_SECRET_NAME}" private-key
 echo "Secrets ${RPC_SECRET_NAME} (Sepolia + Amoy HTTP/WS), ${ETH_FAUCET_SECRET_NAME}, ${POLYGON_FAUCET_SECRET_NAME} synced via sync-secrets; values exported masked."
