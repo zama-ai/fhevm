@@ -2,7 +2,7 @@
 # Relayer migrate, relayer, and idle test-suite (common chart).
 # Usage: deploy-relayer.sh <migrate|relayer|test-suite>
 # Env: NAMESPACE, COMMON_CHART, COMMON_CHART_VERSION, TAGS_JSON,
-# NB_KMS_CORE, DEPLOY_POLYGON, POLYGON_HTTP, POLYGON_CHAIN_ID (relayer only).
+# NB_KMS_CORE, DEPLOY_POLYGON, POLYGON_HTTP, POLYGON_CHAIN_ID, RPC_SECRET_NAME (relayer only).
 set -euo pipefail
 
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -29,11 +29,15 @@ case "${kind}" in
       "${relayer_values}"
     echo "Relayer user_decrypt_shares_threshold=${reconstruct} (KMS parties: ${NB_KMS_CORE})"
     if [[ "${DEPLOY_POLYGON}" == "true" ]]; then
-      # Second host chain: the Polygon anvil by default, a public Amoy RPC on testnets.
-      POLYGON_URL="${POLYGON_HTTP:-http://anvil-host-polygon-anvil-node:8545}" \
-      POLYGON_ID="${POLYGON_CHAIN_ID:-80002}" yq -i '.env += [
+      # Second host chain: the Polygon anvil URL, or the `rpc` Secret on testnets (RPC_SECRET_NAME set).
+      if [[ -n "${RPC_SECRET_NAME:-}" ]]; then
+        url_entry='{"name": "APP_HOST_CHAINS__1__URL", "valueFrom": {"secretKeyRef": {"name": "'"${RPC_SECRET_NAME}"'", "key": "polygon-rpc-url"}}}'
+      else
+        url_entry='{"name": "APP_HOST_CHAINS__1__URL", "value": "'"${POLYGON_HTTP:-http://anvil-host-polygon-anvil-node:8545}"'"}'
+      fi
+      POLYGON_ID="${POLYGON_CHAIN_ID:-80002}" URL_ENTRY="${url_entry}" yq -i '.env += [
         {"name": "APP_HOST_CHAINS__1__CHAIN_ID", "value": strenv(POLYGON_ID)},
-        {"name": "APP_HOST_CHAINS__1__URL", "value": strenv(POLYGON_URL)},
+        (strenv(URL_ENTRY) | fromjson),
         {"name": "APP_HOST_CHAINS__1__ACL_ADDRESS", "valueFrom": {"configMapKeyRef": {"name": "polygon-sc-addresses", "key": "acl.address"}}}
       ] | (.env[] | select(has("value")) | .value) style="double"' "${relayer_values}"
     fi

@@ -35,8 +35,8 @@ ci/preview-env/
 ├── coprocessor-infra/
 │   ├── values-coprocessor-infra-e2e.yaml    # crossplane/coprocessor-infra overlay: S3 only
 │   └── values-postgres-coprocessor-e2e.yaml # `common` chart overlay: in-cluster Postgres, dedicated to coprocessor
-├── erpc/
-│   └── values-erpc-e2e.yaml            # listener chart, eRPC only: public Sepolia/Amoy proxy (chain_mode=testnets)
+├── testnets/
+│   └── externalsecret-rpc.yaml         # ExternalSecret: Sepolia/Amoy RPC URLs + funder key from AWS Secrets Manager (chain_mode=testnets)
 ├── host-chain/
 │   ├── values-anvil-host-e2e.yaml       # anvil-node overlay, host chain
 │   ├── values-anvil-host-polygon-e2e.yaml   # anvil-node overlay, Polygon host chain (deploy_polygon)
@@ -222,7 +222,7 @@ time by `apply-chain-env.sh` for the two external modes.
 |------|---------------|---------|---------|---------|
 | `anvil` (default) | per-namespace Anvil `12345` (+ Anvil Amoy `80002` with `deploy_polygon`) | per-namespace Anvil `54321` | Foundry junk mnemonic, 120 prefunded accounts | none needed |
 | `blockchain-dev` | shared zws-dev Geth `--dev` `1337` (`http://ethereum-rpc-node.blockchain-dev:8545`, WS same port, 5 s blocks) | shared Nitro `412346` (HTTP `:8547`, WS `:8548`) | fresh mnemonic per run | in-cluster PoW faucets (host + gateway) |
-| `testnets` | public **Sepolia `11155111`** + **Polygon Amoy `80002`** via the in-cluster eRPC public proxy (`deploy_polygon` implied) | shared Nitro `412346` | fresh mnemonic per run | host chains from a treasury key on the runner; gateway from the Nitro faucet |
+| `testnets` | public **Sepolia `11155111`** + **Polygon Amoy `80002`**, RPC URLs from AWS Secrets Manager via ExternalSecret (`deploy_polygon` implied) | shared Nitro `412346` | fresh mnemonic per run | host chains from a treasury key (also from AWS SM); gateway from the Nitro faucet |
 
 Both external modes still deploy **this preview's own** host + gateway contracts, derive the
 same HD index map (`#0` gateway deployer, `#3` relayer, `#9` host/ACL owner, `#10+` KMS /
@@ -242,22 +242,21 @@ of blocks. Incompatible with `deploy_polygon` (no Amoy node in `blockchain-dev`)
 The two host chains are the real public testnets, so this is the only preview shape with
 **two host chains on real block times** (12 s / ~2 s). What it needs and what it changes:
 
-- **RPC without secrets.** Host chains are reached through an in-cluster **eRPC** proxy
-  (`erpc/values-erpc-e2e.yaml`, release `preview-erpc`): the listener chart's bundled eRPC
-  with the `erpc-public.yaml` profile — public endpoints from chainlist / chainid.network /
-  viem with scoring, hedging and failover. Consumers use
-  `http://preview-erpc:4000/listener-indexer/evm/<chainId>`. This is the repo's existing
-  pattern for public chains. `deploy-erpc.sh` smoke-tests `eth_chainId` for both networks
-  before anything else runs. The `RPC_URL_SEPOLIA` / `RPC_URL_AMOY` secrets (the ones
-  `host-contracts-prepare-coprocessor-upgrade.yml` reads) are an **optional override** that
-  bypasses the proxy with a dedicated endpoint when public nodes rate-limit.
-- **Funding.** One required secret, `PREVIEW_TESTNETS_FUNDER_PRIVATE_KEY` — a treasury
-  address holding **Sepolia ETH and Amoy POL**. `fund-wallets-treasury.cjs` runs on the
-  runner (it cannot reach the ClusterIP proxy, so it uses the public endpoints or the
-  override), tops up `#0-#4` to 0.2 and `#9` to 1.0 on both chains (`FLOOR_WEI` /
-  `DEPLOYER_FLOOR_WEI`) and fails fast if the treasury cannot cover the shortfall.
-  Gateway-side wallets (KMS / coprocessor tx-senders, `#0`, `#3`) still come from the
-  Nitro faucet.
+- **Secrets come from AWS Secrets Manager via ExternalSecret** — the same mechanism gitops uses
+  for the coprocessor (`testnets/externalsecret-rpc.yaml`, applied by `deploy-rpc-secret.sh`):
+  `ClusterSecretStore/secret-store` → Secret `rpc` in the namespace with `ethereum-rpc-url`,
+  `ethereum-rpc-ws-url`, `polygon-rpc-url`, `polygon-rpc-ws-url` (from the existing
+  `zws-dev/external-eth-rpcs` / `zws-dev/external-polygon-rpcs` entries) plus
+  `funder-private-key` (from **`zws-dev/fhevm-preview-funder`, property `private-key` — an admin
+  creates this one**: a fresh key holding Sepolia ETH and Amoy POL). No GitHub secrets.
+- **In-cluster consumers read the Secret directly** (`secretKeyRef`): contracts Jobs (`RPC_URL`,
+  `CANONICAL_RPC_URL`), listeners (`APP_BLOCKCHAIN__RPC_URL`), coprocessor `chains[]`
+  (`httpUrlValueFrom`/`wsUrlValueFrom`), kms-connector (`$(RPC_ETH_URL)` / `$(RPC_POLYGON_URL)`
+  through `commonConfig.env`), relayer, test-suite and the e2e Workflows. Only the runner-side
+  treasury funder receives the values, masked, from `deploy-rpc-secret.sh`.
+- **Funding.** `fund-wallets-treasury.cjs` tops up `#0-#4` to 0.2 and `#9` to 1.0 on both chains
+  (`FLOOR_WEI` / `DEPLOYER_FLOOR_WEI`) and fails fast if the treasury cannot cover the shortfall.
+  Gateway-side wallets (KMS / coprocessor tx-senders, `#0`, `#3`) still come from the Nitro faucet.
 - **Second host chain reuses the `deploy_polygon` path**: the same Polygon overlays, with
   RPC/chain ids patched to Amoy and the Anvil Polygon node skipped. Amoy mirrors the ETH
   ProtocolConfig (canonical source) exactly as the Anvil Polygon does.
@@ -424,7 +423,7 @@ deployed. Every Polygon step in the workflow is gated on `deploy_polygon == 'tru
 - ~~Add multichain support~~ — done, see "Multichain: second Polygon host chain
   (`deploy_polygon`)" above (opt-in; ETH + Polygon Amoy sharing one KMS key).
 - ~~Deploy against real public testnets~~ — done, see "Chain modes" above
-  (`chain_mode=testnets`: Sepolia + Amoy via the eRPC public proxy, Nitro gateway).
+  (`chain_mode=testnets`: Sepolia + Amoy with RPC URLs + funder key from AWS Secrets Manager, Nitro gateway).
 - Wire RFC-021 blue-green onto `chain_mode=testnets`: `propose-coprocessor-upgrade.sh` /
   `assert-gcs-dry-run.sh` are single-chain (scalar `upgrade_state` reads, one-element
   windows array), which is what keeps `enable_blue_green` rejected there today. This is

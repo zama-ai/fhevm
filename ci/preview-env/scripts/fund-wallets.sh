@@ -2,7 +2,7 @@
 # Fund every address this preview signs with; no-op on Anvil (prefunded).
 # blockchain-dev: PoW faucets for host + gateway (Job). testnets: treasury key for Sepolia/Amoy (runner), Nitro faucet for the gateway (Job).
 # Env: CHAIN_MODE, NAMESPACE, HOST_HTTP, GATEWAY_HTTP, HOST_FAUCET, GATEWAY_FAUCET, WALLETS_JSON, COPROC_WALLETS_JSON, ROLES_JSON_PATH;
-#      testnets also FUNDER_RPC_SEPOLIA, FUNDER_RPC_AMOY, HOST_CHAIN_ID, POLYGON_CHAIN_ID, FUNDER_PRIVATE_KEY, NODE_PATH.
+#      testnets also POLYGON_HTTP, HOST_CHAIN_ID, POLYGON_CHAIN_ID, FUNDER_PRIVATE_KEY, NODE_PATH.
 set -euo pipefail
 
 if [[ "${EXTERNAL_CHAINS:-false}" != "true" ]]; then
@@ -50,16 +50,16 @@ PY
 
 fund_targets="host,gateway"
 if [[ "${CHAIN_MODE}" == "testnets" ]]; then
-  # Runner-side, so it gets public/override endpoints, not the ClusterIP eRPC proxy.
-  : "${FUNDER_RPC_SEPOLIA:?}"
-  : "${FUNDER_RPC_AMOY:?}"
+  # HOST_HTTP/POLYGON_HTTP were read from the synced `rpc` Secret by deploy-rpc-secret.sh.
+  : "${HOST_HTTP:?}"
+  : "${POLYGON_HTTP:?}"
   : "${HOST_CHAIN_ID:?}"
   : "${POLYGON_CHAIN_ID:?}"
   : "${FUNDER_PRIVATE_KEY:?}"
   deployer=$(python3 -c 'import json,os; print(json.load(open(os.environ["ROLES_JSON_PATH"]))["roles"]["9"]["address"])')
   echo "Funding role wallets on Sepolia + Amoy from the treasury key..."
-  CHAINS_JSON=$(jq -cn --arg h "${FUNDER_RPC_SEPOLIA}" --arg hc "${HOST_CHAIN_ID}" \
-                        --arg p "${FUNDER_RPC_AMOY}" --arg pc "${POLYGON_CHAIN_ID}" \
+  CHAINS_JSON=$(jq -cn --arg h "${HOST_HTTP}" --arg hc "${HOST_CHAIN_ID}" \
+                        --arg p "${POLYGON_HTTP}" --arg pc "${POLYGON_CHAIN_ID}" \
     '[{label:"sepolia",rpcUrl:$h,chainId:$hc},{label:"amoy",rpcUrl:$p,chainId:$pc}]')
   ADDRESSES="${role_addresses}" DEPLOYER_ADDRESS="${deployer}" CHAINS_JSON="${CHAINS_JSON}" \
     node "${script_dir}/fund-wallets-treasury.cjs"

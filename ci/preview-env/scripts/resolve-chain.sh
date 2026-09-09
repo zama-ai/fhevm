@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Resolve chain endpoints/ids for CHAIN_MODE (anvil | blockchain-dev | testnets) into $GITHUB_ENV.
-# testnets = public Sepolia 11155111 + Amoy 80002 via the in-cluster eRPC proxy, Nitro 412346 gateway; forces DEPLOY_POLYGON.
+# testnets = public Sepolia 11155111 + Amoy 80002 (RPC URLs from AWS Secrets Manager via ExternalSecret), Nitro 412346 gateway; forces DEPLOY_POLYGON.
 set -euo pipefail
 
 CHAIN_MODE="${CHAIN_MODE:-anvil}"
@@ -22,16 +22,6 @@ NITRO_HTTP="http://gateway-rpc-node.blockchain-dev:8547"
 NITRO_WS="ws://gateway-rpc-node.blockchain-dev:8548"
 NITRO_CHAIN_ID="412346"
 NITRO_FAUCET="http://gateway-faucet-blockchain-dev-powfaucet.blockchain-dev:8080"
-
-# http(s):// -> ws(s):// on the same host, for providers serving WS on the HTTP endpoint.
-derive_ws() {
-  local url="$1"
-  case "${url}" in
-    https://*) echo "wss://${url#https://}" ;;
-    http://*) echo "ws://${url#http://}" ;;
-    *) echo "${url}" ;;
-  esac
-}
 
 case "${CHAIN_MODE}" in
   anvil)
@@ -73,28 +63,14 @@ case "${CHAIN_MODE}" in
     ;;
 
   testnets)
-    : "${FUNDER_PRIVATE_KEY:?chain_mode=testnets needs the PREVIEW_TESTNETS_FUNDER_PRIVATE_KEY secret (treasury holding Sepolia ETH + Amoy POL)}"
-    # Default: the eRPC public proxy (deploy-erpc.sh); RPC_URL_SEPOLIA/RPC_URL_AMOY optionally bypass it with a dedicated endpoint.
-    erpc="http://preview-erpc:4000/listener-indexer/evm"
-    host_http="${RPC_URL_SEPOLIA:-${erpc}/11155111}"
-    polygon_http="${RPC_URL_AMOY:-${erpc}/80002}"
-    # No host WS consumer on this topology (built-in hostListener disabled); derived only to fill the values.
-    host_ws=$(derive_ws "${host_http}")
-    polygon_ws=$(derive_ws "${polygon_http}")
-    # The runner-side funder cannot reach the ClusterIP proxy: public endpoints (same defaults as environments.ts) or the override.
-    funder_sepolia="${RPC_URL_SEPOLIA:-https://ethereum-sepolia-rpc.publicnode.com}"
-    funder_amoy="${RPC_URL_AMOY:-https://rpc-amoy.polygon.technology}"
+    # RPC URLs + treasury key come from AWS Secrets Manager via ExternalSecret (deploy-rpc-secret.sh -> Secret `rpc`);
+    # in-cluster consumers use secretKeyRef, runner-side steps get HOST_HTTP/POLYGON_HTTP/FUNDER_PRIVATE_KEY from that step.
     {
       echo "CHAIN_MODE=testnets"
       echo "EXTERNAL_CHAINS=true"
+      echo "RPC_SECRET_NAME=rpc"
       # Amoy is the second host chain: deploy_polygon-gated steps run, minus the Anvil node (EXTERNAL_CHAINS gate).
       echo "DEPLOY_POLYGON=true"
-      echo "HOST_HTTP=${host_http}"
-      echo "HOST_WS=${host_ws}"
-      echo "POLYGON_HTTP=${polygon_http}"
-      echo "POLYGON_WS=${polygon_ws}"
-      echo "FUNDER_RPC_SEPOLIA=${funder_sepolia}"
-      echo "FUNDER_RPC_AMOY=${funder_amoy}"
       echo "GATEWAY_HTTP=${NITRO_HTTP}"
       echo "GATEWAY_WS=${NITRO_WS}"
       echo "HOST_CHAIN_ID=11155111"
@@ -115,7 +91,6 @@ case "${CHAIN_MODE}" in
       echo "CONTRACTS_DEPLOY_TIMEOUT=30m"
       echo "KEYGEN_TIMEOUT=60m"
     } >> "${GITHUB_ENV}"
-    rpc_src="eRPC public proxy"; [[ -n "${RPC_URL_SEPOLIA:-}${RPC_URL_AMOY:-}" ]] && rpc_src="RPC_URL_* override"
-    echo "Chain mode: testnets (host 11155111 Sepolia, polygon 80002 Amoy via ${rpc_src}, gateway ${NITRO_CHAIN_ID} Nitro)"
+    echo "Chain mode: testnets (host 11155111 Sepolia, polygon 80002 Amoy from AWS Secrets Manager, gateway ${NITRO_CHAIN_ID} Nitro)"
     ;;
 esac

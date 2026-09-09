@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Patch preview-env Helm values in the working tree for an external chain mode (blockchain-dev | testnets); no-op on Anvil.
-# Keys/mnemonic/RPCs come from env (resolve-chain.sh + generate-mnemonic.cjs).
+# Keys/mnemonic/RPCs come from env (resolve-chain.sh + generate-mnemonic.cjs). With RPC_SECRET_NAME set (testnets),
+# host RPC URLs are wired as secretKeyRef into Secret ${RPC_SECRET_NAME} instead of literals.
 set -euo pipefail
 
 if [[ "${EXTERNAL_CHAINS:-false}" != "true" ]]; then
@@ -42,6 +43,26 @@ set_named_env() {
   fi
 }
 
+# Upsert an env entry as valueFrom.secretKeyRef (drops any literal value): $1 file, $2 yq path to env array, $3 name, $4 secret key.
+set_named_env_secret() {
+  local file="$1" arr="$2" name="$3" key="$4"
+  NAME="${name}" yq -i "${arr} |= map(select(.name != strenv(NAME)))" "${file}"
+  NAME="${name}" SECRET="${RPC_SECRET_NAME}" KEY="${key}" yq -i \
+    "${arr} += [{\"name\": strenv(NAME), \"valueFrom\": {\"secretKeyRef\": {\"name\": strenv(SECRET), \"key\": strenv(KEY)}}}]" \
+    "${file}"
+}
+# Point a coprocessor chains[] entry at the RPC Secret: $1 file, $2 chain name, $3 http key, $4 ws key.
+set_chain_urls_secret() {
+  local file="$1" chain="$2" http_key="$3" ws_key="$4"
+  CHAIN="${chain}" SECRET="${RPC_SECRET_NAME}" HTTP_KEY="${http_key}" WS_KEY="${ws_key}" yq -i '
+    (.chains[] | select(.name == strenv(CHAIN))) |= (
+      del(.httpUrl) | del(.wsUrl) |
+      .httpUrlValueFrom = {"secretKeyRef": {"name": strenv(SECRET), "key": strenv(HTTP_KEY)}} |
+      .wsUrlValueFrom = {"secretKeyRef": {"name": strenv(SECRET), "key": strenv(WS_KEY)}}
+    )' "${file}"
+}
+rpc_from_secret() { [[ -n "${RPC_SECRET_NAME:-}" ]]; }
+
 # Replace a poller extraArgs flag (--name=value) wholesale so a stale default never survives.
 set_poller_flag() {
   local file="$1" flag="$2" value="$3"
@@ -74,14 +95,14 @@ set_named_env "${add}" ".scDeploy.env" HOST_CHAIN_CHAIN_ID_0 "${HOST_CHAIN_ID}"
 # --- host contracts / keygen ---
 host="${root}/host-chain/values-host-contracts-e2e.yaml"
 set_named_env "${host}" ".scDeploy.env" MNEMONIC "${MNEMONIC}"
-set_named_env "${host}" ".scDeploy.env" RPC_URL "${HOST_HTTP}"
+if rpc_from_secret; then set_named_env_secret "${host}" ".scDeploy.env" RPC_URL ethereum-rpc-url; else set_named_env "${host}" ".scDeploy.env" RPC_URL "${HOST_HTTP}"; fi
 set_named_env "${host}" ".scDeploy.env" DEPLOYER_PRIVATE_KEY "${DEPLOYER_KEY_9}"
 set_named_env "${host}" ".scDeploy.env" CHAIN_ID_GATEWAY "${GATEWAY_CHAIN_ID}"
 set_named_env "${host}" ".scDeploy.env" CHAIN_ID "${HOST_CHAIN_ID}"
 
 keygen="${root}/host-chain/values-host-trigger-keygen-e2e.yaml"
 set_named_env "${keygen}" ".scDeploy.env" MNEMONIC "${MNEMONIC}"
-set_named_env "${keygen}" ".scDeploy.env" RPC_URL "${HOST_HTTP}"
+if rpc_from_secret; then set_named_env_secret "${keygen}" ".scDeploy.env" RPC_URL ethereum-rpc-url; else set_named_env "${keygen}" ".scDeploy.env" RPC_URL "${HOST_HTTP}"; fi
 set_named_env "${keygen}" ".scDeploy.env" DEPLOYER_PRIVATE_KEY "${DEPLOYER_KEY_9}"
 set_named_env "${keygen}" ".scDeploy.env" CHAIN_ID "${HOST_CHAIN_ID}"
 
@@ -92,6 +113,11 @@ HOST_CHAIN_ID="${HOST_CHAIN_ID}" HOST_HTTP="${HOST_HTTP}" HOST_FINALITY_DEPTH="$
   .listeners[0].config.blockchain.rpc_url = strenv(HOST_HTTP) |
   .listeners[0].config.blockchain.finality_depth = env(HOST_FINALITY_DEPTH)
 ' "${lis}"
+# Secret mode: the env override wins over config.yaml, so the literal above never reaches a pod.
+if rpc_from_secret; then
+  yq -i '.listeners[0].config.blockchain.rpc_url = "set-by-APP_BLOCKCHAIN__RPC_URL"' "${lis}"
+  set_named_env_secret "${lis}" ".env" APP_BLOCKCHAIN__RPC_URL ethereum-rpc-url
+fi
 
 # --- coprocessor + poller ---
 for f in "${root}/coprocessor/values-coprocessor-e2e.yaml" \
@@ -114,6 +140,13 @@ for f in "${root}/coprocessor/values-coprocessor-bcs-e2e.yaml" \
 done
 GATEWAY_WS="${GATEWAY_WS}" yq -i '.commonConfig.gatewayUrl.value = strenv(GATEWAY_WS)' \
   "${root}/coprocessor/values-coprocessor-e2e.yaml"
+if rpc_from_secret; then
+  for f in "${root}/coprocessor/values-coprocessor-e2e.yaml" "${root}/coprocessor/values-coprocessor-poller-e2e.yaml"; do
+    set_chain_urls_secret "${f}" host ethereum-rpc-url ethereum-rpc-ws-url
+    # Only the (disabled) built-in hostListener reads these; keep the real URL out of the values file.
+    yq -i '.commonConfig.hostChainHttpUrl = "unused-on-testnets" | .commonConfig.hostChainWsUrl = "unused-on-testnets"' "${f}"
+  done
+fi
 
 poller="${root}/coprocessor/values-coprocessor-poller-e2e.yaml"
 set_poller_flag "${poller}" "--seed-start-block" "${POLLER_SEED_START_BLOCK}"
@@ -128,12 +161,22 @@ GATEWAY_CHAIN_ID="${GATEWAY_CHAIN_ID}" HOST_CHAIN_ID="${HOST_CHAIN_ID}" yq -i '
   .commonConfig.gatewayChainId = strenv(GATEWAY_CHAIN_ID) |
   .commonConfig.ethereumChainId = strenv(HOST_CHAIN_ID)
 ' "${kms}"
+if rpc_from_secret; then
+  set_named_env_secret "${kms}" ".commonConfig.env" RPC_ETH_URL ethereum-rpc-url
+  # shellcheck disable=SC2016  # literal for k8s env / shell expansion inside the pod
+  yq -i '.commonConfig.ethereumUrl = "$(RPC_ETH_URL)"' "${kms}"
+fi
 
 # --- relayer ---
 rel="${root}/relayer/values-relayer-e2e.yaml"
 set_named_env "${rel}" ".env" APP_HOST_CHAINS__0__CHAIN_ID "${HOST_CHAIN_ID}"
-set_named_env "${rel}" ".env" APP_HOST_CHAINS__0__URL "${HOST_HTTP}"
-set_named_env "${rel}" ".env" APP_PROTOCOL_CONFIG__ETHEREUM_HTTP_RPC_URL "${HOST_HTTP}"
+if rpc_from_secret; then
+  set_named_env_secret "${rel}" ".env" APP_HOST_CHAINS__0__URL ethereum-rpc-url
+  set_named_env_secret "${rel}" ".env" APP_PROTOCOL_CONFIG__ETHEREUM_HTTP_RPC_URL ethereum-rpc-url
+else
+  set_named_env "${rel}" ".env" APP_HOST_CHAINS__0__URL "${HOST_HTTP}"
+  set_named_env "${rel}" ".env" APP_PROTOCOL_CONFIG__ETHEREUM_HTTP_RPC_URL "${HOST_HTTP}"
+fi
 set_named_env "${rel}" ".env" APP_GATEWAY__BLOCKCHAIN_RPC__HTTP_URL "${GATEWAY_HTTP}"
 set_named_env "${rel}" ".env" APP_GATEWAY__BLOCKCHAIN_RPC__READ_HTTP_URL "${GATEWAY_HTTP}"
 set_named_env "${rel}" ".env" APP_GATEWAY__BLOCKCHAIN_RPC__CHAIN_ID "${GATEWAY_CHAIN_ID}"
@@ -146,7 +189,7 @@ ts="${root}/test-suite/values-test-suite-e2e.yaml"
 set_named_env "${ts}" ".env" MNEMONIC "${MNEMONIC}"
 set_named_env "${ts}" ".env" CHAIN_ID_GATEWAY "${GATEWAY_CHAIN_ID}"
 set_named_env "${ts}" ".env" CHAIN_ID_HOST "${HOST_CHAIN_ID}"
-set_named_env "${ts}" ".env" RPC_URL "${HOST_HTTP}"
+if rpc_from_secret; then set_named_env_secret "${ts}" ".env" RPC_URL ethereum-rpc-url; else set_named_env "${ts}" ".env" RPC_URL "${HOST_HTTP}"; fi
 set_named_env "${ts}" ".env" GATEWAY_RPC_URL "${GATEWAY_HTTP}"
 set_named_env "${ts}" ".env" DEPLOYER_PRIVATE_KEY "${DEPLOYER_KEY_9}"
 set_named_env "${ts}" ".env" GATEWAY_DEPLOYER_PRIVATE_KEY "${DEPLOYER_KEY_0}"
@@ -169,19 +212,26 @@ set_wf_named() {
       "${file}"
   fi
 }
-# Shared identity/gateway env for every e2e workflow; the host RPC is per chain.
+set_wf_named_secret() {
+  local file="$1" name="$2" key="$3"
+  NAME="${name}" yq -i "(${wf_run_test_env}) |= map(select(.name != strenv(NAME)))" "${file}"
+  NAME="${name}" SECRET="${RPC_SECRET_NAME}" KEY="${key}" yq -i \
+    "(${wf_run_test_env}) += [{\"name\": strenv(NAME), \"valueFrom\": {\"secretKeyRef\": {\"name\": strenv(SECRET), \"key\": strenv(KEY)}}}]" \
+    "${file}"
+}
+# Shared identity/gateway env for every e2e workflow; the host RPC is per chain ($2 = literal URL, $3 = secret key).
 patch_workflow_common() {
-  local file="$1" host_rpc="$2"
+  local file="$1" host_rpc="$2" host_rpc_key="$3"
   set_wf_named "${file}" MNEMONIC "${MNEMONIC}"
   set_wf_named "${file}" CHAIN_ID_GATEWAY "${GATEWAY_CHAIN_ID}"
-  set_wf_named "${file}" RPC_URL "${host_rpc}"
+  if rpc_from_secret; then set_wf_named_secret "${file}" RPC_URL "${host_rpc_key}"; else set_wf_named "${file}" RPC_URL "${host_rpc}"; fi
   set_wf_named "${file}" GATEWAY_RPC_URL "${GATEWAY_HTTP}"
   set_wf_named "${file}" DEPLOYER_PRIVATE_KEY "${DEPLOYER_KEY_9}"
   set_wf_named "${file}" GATEWAY_DEPLOYER_PRIVATE_KEY "${DEPLOYER_KEY_0}"
 }
 patch_workflow_env() {
   local file="$1"
-  patch_workflow_common "${file}" "${HOST_HTTP}"
+  patch_workflow_common "${file}" "${HOST_HTTP}" ethereum-rpc-url
   set_wf_named "${file}" CHAIN_ID_HOST "${HOST_CHAIN_ID}"
   set_wf_named "${file}" NETWORK "${HARDHAT_NETWORK_TESTS}"
   set_wf_named "${file}" HARDHAT_NETWORK "${HARDHAT_NETWORK_TESTS}"
@@ -201,14 +251,22 @@ if [[ "${DEPLOY_POLYGON:-false}" == "true" ]]; then
 
   phost="${root}/host-chain/values-host-contracts-polygon-e2e.yaml"
   set_named_env "${phost}" ".scDeploy.env" MNEMONIC "${MNEMONIC}"
-  set_named_env "${phost}" ".scDeploy.env" RPC_URL "${POLYGON_HTTP}"
   set_named_env "${phost}" ".scDeploy.env" CHAIN_ID "${POLYGON_CHAIN_ID}"
   set_named_env "${phost}" ".scDeploy.env" DEPLOYER_PRIVATE_KEY "${DEPLOYER_KEY_9}"
   set_named_env "${phost}" ".scDeploy.env" CHAIN_ID_GATEWAY "${GATEWAY_CHAIN_ID}"
-  # deployCommands' canonical-ProtocolConfig export must hit the ETH host RPC.
-  HOST_HTTP="${HOST_HTTP}" yq -i \
-    '.scDeploy.deployCommands[] |= sub("http://anvil-host-anvil-node:8545"; strenv(HOST_HTTP))' \
-    "${phost}"
+  # deployCommands' canonical-ProtocolConfig export must hit the ETH host RPC: literal, or CANONICAL_RPC_URL from the Secret.
+  if rpc_from_secret; then
+    set_named_env_secret "${phost}" ".scDeploy.env" RPC_URL polygon-rpc-url
+    set_named_env_secret "${phost}" ".scDeploy.env" CANONICAL_RPC_URL ethereum-rpc-url
+    # $$ = literal $ for Go regexp replacement; the pod's shell expands ${CANONICAL_RPC_URL} later.
+    # shellcheck disable=SC2016
+    yq -i '.scDeploy.deployCommands[] |= sub("http://anvil-host-anvil-node:8545"; "$${CANONICAL_RPC_URL}")' "${phost}"
+  else
+    set_named_env "${phost}" ".scDeploy.env" RPC_URL "${POLYGON_HTTP}"
+    HOST_HTTP="${HOST_HTTP}" yq -i \
+      '.scDeploy.deployCommands[] |= sub("http://anvil-host-anvil-node:8545"; strenv(HOST_HTTP))' \
+      "${phost}"
+  fi
 
   padd="${root}/gateway-chain/values-gateway-add-host-chains-polygon-e2e.yaml"
   set_named_env "${padd}" ".scDeploy.env" MNEMONIC "${MNEMONIC}"
@@ -223,6 +281,10 @@ if [[ "${DEPLOY_POLYGON:-false}" == "true" ]]; then
     .listeners[0].config.blockchain.rpc_url = strenv(POLYGON_HTTP) |
     .listeners[0].config.blockchain.finality_depth = env(POLYGON_FINALITY_DEPTH)
   ' "${plis}"
+  if rpc_from_secret; then
+    yq -i '.listeners[0].config.blockchain.rpc_url = "set-by-APP_BLOCKCHAIN__RPC_URL"' "${plis}"
+    set_named_env_secret "${plis}" ".env" APP_BLOCKCHAIN__RPC_URL polygon-rpc-url
+  fi
 
   # Patch whichever of the "host"/"polygon" chains[] entries each coprocessor overlay carries.
   for f in "${root}/coprocessor/values-coprocessor-polygon-e2e.yaml" \
@@ -244,6 +306,14 @@ if [[ "${DEPLOY_POLYGON:-false}" == "true" ]]; then
     .commonConfig.hostChainHttpUrl = strenv(POLYGON_HTTP) |
     .commonConfig.hostChainWsUrl = strenv(POLYGON_WS)
   ' "${ppoller}"
+  if rpc_from_secret; then
+    for f in "${root}/coprocessor/values-coprocessor-polygon-e2e.yaml" \
+             "${root}/coprocessor/values-coprocessor-polygon-consumer-e2e.yaml" "${ppoller}"; do
+      yq -e '.chains[] | select(.name == "host")' "${f}" >/dev/null 2>&1 && set_chain_urls_secret "${f}" host ethereum-rpc-url ethereum-rpc-ws-url
+      set_chain_urls_secret "${f}" polygon polygon-rpc-url polygon-rpc-ws-url
+    done
+    yq -i '.commonConfig.hostChainHttpUrl = "unused-on-testnets" | .commonConfig.hostChainWsUrl = "unused-on-testnets"' "${ppoller}"
+  fi
   set_poller_flag "${ppoller}" "--seed-start-block" "${POLLER_SEED_START_BLOCK}"
   set_poller_flag "${ppoller}" "--finality-lag" "${POLYGON_FINALITY_LAG}"
 
@@ -252,10 +322,15 @@ if [[ "${DEPLOY_POLYGON:-false}" == "true" ]]; then
     .commonConfig.polygonUrl = strenv(POLYGON_HTTP) |
     .commonConfig.polygonChainId = strenv(POLYGON_CHAIN_ID)
   ' "${pkms}"
+  if rpc_from_secret; then
+    set_named_env_secret "${kms}" ".commonConfig.env" RPC_POLYGON_URL polygon-rpc-url
+    # shellcheck disable=SC2016  # literal for k8s env / shell expansion inside the pod
+    yq -i '.commonConfig.polygonUrl = "$(RPC_POLYGON_URL)"' "${pkms}"
+  fi
 
   # The Polygon DAG picks its network via `-n polygonAmoy`, so no NETWORK override here.
   pwf="${root}/test-suite/values-test-suite-workflow-polygon-e2e.yaml"
-  patch_workflow_common "${pwf}" "${POLYGON_HTTP}"
+  patch_workflow_common "${pwf}" "${POLYGON_HTTP}" polygon-rpc-url
   set_wf_named "${pwf}" CHAIN_ID_HOST "${POLYGON_CHAIN_ID}"
 fi
 

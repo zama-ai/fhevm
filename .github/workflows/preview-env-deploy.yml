@@ -10,9 +10,9 @@ name: preview-env-deploy
 #   - anvil (default): per-namespace anvil host + gateway (+ anvil Polygon with deploy_polygon).
 #   - blockchain-dev: shared zws-dev Geth 1337 + Nitro 412346, wallets from the PoW faucets;
 #     the preview-env-blue-green label takes this path (Anvil's 80-block window closes during the dry-run e2e).
-#   - testnets: public Sepolia 11155111 + Amoy 80002 via an in-cluster eRPC public proxy (no API keys;
-#     RPC_URL_SEPOLIA/AMOY secrets optionally bypass it), Nitro gateway, hosts funded from
-#     PREVIEW_TESTNETS_FUNDER_PRIVATE_KEY. Implies deploy_polygon; slow (12s blocks), real testnet gas.
+#   - testnets: public Sepolia 11155111 + Amoy 80002, Nitro gateway. RPC URLs and the treasury key come
+#     from AWS Secrets Manager via an ExternalSecret (no GitHub secrets). Implies deploy_polygon; slow
+#     (12s blocks), real testnet gas.
 # Both external modes leave this preview's own contracts on the shared chains after teardown.
 #
 # Three PR labels control deployment (see check-labels below):
@@ -94,7 +94,7 @@ on:
           - "false"
           - "true"
       chain_mode:
-        description: "Which chains to deploy against. anvil: per-namespace Anvil (default). blockchain-dev: shared zws-dev Geth (host 1337) + Nitro (gateway 412346), wallets funded from the in-cluster faucets; the preview-env-blue-green PR label forces this. testnets: public Sepolia (11155111) + Polygon Amoy (80002) host chains via an in-cluster eRPC public-RPC proxy (no API keys; RPC_URL_SEPOLIA/RPC_URL_AMOY secrets optionally override), the blockchain-dev Nitro as gateway; host wallets funded from the PREVIEW_TESTNETS_FUNDER_PRIVATE_KEY treasury; implies deploy_polygon; slow and costs real testnet gas. Both external modes leave this preview's contracts on the shared chains after teardown."
+        description: "Which chains to deploy against. anvil: per-namespace Anvil (default). blockchain-dev: shared zws-dev Geth (host 1337) + Nitro (gateway 412346), wallets funded from the in-cluster faucets; the preview-env-blue-green PR label forces this. testnets: public Sepolia (11155111) + Polygon Amoy (80002) host chains with the blockchain-dev Nitro as gateway; RPC URLs and the treasury key are pulled from AWS Secrets Manager via ExternalSecret (zws-dev/external-eth-rpcs, external-polygon-rpcs, fhevm-preview-funder); implies deploy_polygon; slow and costs real testnet gas. Both external modes leave this preview's contracts on the shared chains after teardown."
         required: true
         type: choice
         default: "anvil"
@@ -519,11 +519,6 @@ jobs:
           harbor-token: ${{ secrets.HARBOR_READ_TOKEN }}
 
       - name: Resolve chain endpoints
-        # testnets only: treasury key required; RPC_URL_* (shared with prepare-coprocessor-upgrade) optionally bypass the eRPC proxy.
-        env:
-          RPC_URL_SEPOLIA: ${{ secrets.RPC_URL_SEPOLIA }}
-          RPC_URL_AMOY: ${{ secrets.RPC_URL_AMOY }}
-          FUNDER_PRIVATE_KEY: ${{ secrets.PREVIEW_TESTNETS_FUNDER_PRIVATE_KEY }}
         run: bash ci/preview-env/scripts/resolve-chain.sh
 
       - name: Fail fast on incompatible blue-green topology
@@ -571,6 +566,10 @@ jobs:
             kubectl wait --for=delete "namespace/${NAMESPACE}" --timeout=180s
           fi
           kubectl create namespace "${NAMESPACE}"
+
+      - name: Provision testnets secrets (ExternalSecret from AWS Secrets Manager)
+        if: env.CHAIN_MODE == 'testnets'
+        run: bash ci/preview-env/scripts/deploy-rpc-secret.sh
 
       - name: Grant dev-access groups RBAC on preview namespace
         run: |
@@ -803,20 +802,12 @@ jobs:
           WALLETS_JSON: ${{ steps.kms-wallets.outputs.wallets_json }}
           COPROC_WALLETS_JSON: ${{ steps.coproc-wallets.outputs.wallets_json }}
           # testnets only; ethers comes from the wallet-derivation install above.
-          FUNDER_PRIVATE_KEY: ${{ secrets.PREVIEW_TESTNETS_FUNDER_PRIVATE_KEY }}
           NODE_PATH: /tmp/wallet-tools/node_modules
         run: bash ci/preview-env/scripts/fund-wallets.sh
 
       - name: Apply external-chain values overlays
         if: env.EXTERNAL_CHAINS == 'true'
         run: bash ci/preview-env/scripts/apply-chain-env.sh
-
-      ######################################################################
-      # PUBLIC RPC PROXY (testnets): the listener chart's eRPC as its own release, up before anything talks to Sepolia/Amoy.
-      ######################################################################
-      - name: Deploy eRPC public-RPC proxy (testnets)
-        if: env.CHAIN_MODE == 'testnets'
-        run: bash ci/preview-env/scripts/deploy-erpc.sh
 
       ######################################################################
       # BLOCKCHAIN: per-PR anvil host + gateway chains, fully isolated.

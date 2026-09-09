@@ -45,8 +45,8 @@ launch options:
   --blue-green              enable_blue_green=true and nb_coprocessor=2
   --blockchain-dev          chain_mode=blockchain-dev: shared Geth/Nitro instead of Anvil
   --testnets                chain_mode=testnets: public Sepolia + Amoy hosts, Nitro gateway
-                            via the in-cluster eRPC public proxy (implies --polygon;
-                            needs the PREVIEW_TESTNETS_FUNDER_PRIVATE_KEY secret)
+                            (implies --polygon; RPC URLs + funder key come from AWS
+                            Secrets Manager via ExternalSecret)
   --tests                   automated_tests=true
   --polygon                 second Polygon host (incompatible with blue-green)
   --observability           in-namespace Prometheus/Grafana/Jaeger
