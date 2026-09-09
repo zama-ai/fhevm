@@ -211,7 +211,7 @@ kubectl port-forward -n <namespace> svc/jaeger 16686:16686    # http://localhost
   the workflow runs the e2e DAG for both `@fhevm/sdk` and `@zama-fhe/relayer-sdk`
   and posts a per-test pass/fail table to the PR comment / run summary.
   Combined with `preview-env-blue-green`, that DAG runs **twice**: once during
-  `DryRunStarted` (BCS live; CI asserts each party's `"gcs-0.15.0".computations`
+  `DryRunStarted` (BCS live; CI asserts each party's `"gcs-<release>".computations`
   is non-empty) and once after cutover (`versioning=v0.15`, GCS live).
 - **Without:** the stack is deployed with an idle test-suite Job — run tests
   yourself against the namespace, or re-label with `preview-env-e2e-tests`.
@@ -262,8 +262,7 @@ kubectl delete namespace <namespace>
 - **There are no auto-pins for fhevm's own images** (coprocessor, kms-connector,
   contracts, …). Charts come from your checkout; images resolve from your base
   commit unless built this run. Check the run summary **Images** table for
-  `built`, `base-sha`, or `dispatch-override`. Blue-green GCS workers publish
-  as `<sha>-gcs0.15.0`. **Exception:** dedicated **kms-core** is always an
+  `built`, `base-sha`, or `dispatch-override`. **Exception:** dedicated **kms-core** is always an
   external pin (`kms_core_version` + `kms_repo_ref` in `parse-overrides.cjs`) —
   PR labels cannot change it without editing that file or using dispatch.
 - **Unresolvable ⇒ the run fails.** If GHCR has pruned the base commit's tags and
