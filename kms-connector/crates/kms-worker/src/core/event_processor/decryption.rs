@@ -610,10 +610,7 @@ where
             .await
             .map_err(ProcessingError::transient)?
             .ok_or_else(|| {
-                ProcessingError::irrecoverable(
-                    ErrorCode::Unprocessable,
-                    anyhow!("No transaction found with hash {tx_hash}!"),
-                )
+                ProcessingError::transient(anyhow!("No transaction found with hash {tx_hash}!"))
             })?;
 
         if tx.to() != Some(decryption_address) {
