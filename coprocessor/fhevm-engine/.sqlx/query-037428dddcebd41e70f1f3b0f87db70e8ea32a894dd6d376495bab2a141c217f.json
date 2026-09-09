@@ -1,0 +1,43 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH released AS (\n                UPDATE dependence_chain\n                SET\n                    worker_id = NULL,\n                    lock_acquired_at = NULL,\n                    lock_expires_at = NULL,\n                    last_updated_at = COALESCE($4::timestamp, last_updated_at),\n                    status = CASE\n                        WHEN status = 'processing' AND $3::bool THEN 'processed'       -- mark as processed\n                        WHEN status = 'processing' AND NOT $3::bool THEN 'updated'     -- revert to updated so it can be re-acquired\n                        ELSE status\n                    END\n                WHERE worker_id = $1\n                AND dependence_chain_id = ANY($2)\n                -- Keyed on the status this row ACTUALLY reached, not on the\n                -- caller's intent: the CASE above declines to flip a chain the\n                -- listener refreshed to 'updated' while it was owned, and that\n                -- chain has new work rather than a discharged gate. Returning\n                -- $3 here instead would decrement its dependents anyway, and a\n                -- dependent could then open with a sibling producer unrun.\n                -- Plain identifier: sqlx's `!` non-null annotation applies to\n                -- a query's own output columns, not to a CTE's, where the\n                -- quoted name would be taken literally.\n                RETURNING dependence_chain_id, dependents,\n                          status = 'processed' AS marked_processed\n            ),\n            decrements AS (\n                SELECT dependent_id, count(*) AS n\n                FROM (\n                    SELECT unnest(released.dependents) AS dependent_id\n                    FROM released\n                    WHERE released.marked_processed\n                ) AS parent_dependents\n                GROUP BY dependent_id\n            ),\n            updated AS (\n                UPDATE dependence_chain dc\n                SET dependency_count = GREATEST(dc.dependency_count - decrements.n, 0)\n                FROM decrements\n                WHERE dc.dependence_chain_id = decrements.dependent_id\n                RETURNING dc.dependency_count\n            ),\n            notified AS (\n                SELECT pg_notify('work_available', '')\n                WHERE EXISTS (SELECT 1 FROM updated WHERE dependency_count = 0)\n            )\n            SELECT\n                (SELECT count(*) FROM released) AS \"released!\",\n                (SELECT count(*) FROM updated) AS \"dependents_updated!\",\n                (SELECT count(*) FROM notified) AS \"notified!\",\n                -- Returned rather than pruned here: see the separate statement\n                -- below for why it cannot be another CTE.\n                (SELECT COALESCE(array_agg(dependence_chain_id), ARRAY[]::bytea[])\n                   FROM released WHERE marked_processed) AS \"retired!\"\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "released!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "dependents_updated!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "notified!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "retired!",
+        "type_info": "ByteaArray"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "ByteaArray",
+        "Bool",
+        "Timestamp"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "037428dddcebd41e70f1f3b0f87db70e8ea32a894dd6d376495bab2a141c217f"
+}

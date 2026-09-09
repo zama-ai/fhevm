@@ -368,9 +368,7 @@ mod tests {
         use std::collections::BTreeSet;
         use test_harness::instance::{setup_test_db, ImportMode};
 
-        let instance = setup_test_db(ImportMode::WithKeysNoSns)
-            .await
-            .expect("test db");
+        let instance = setup_test_db(ImportMode::None).await.expect("test db");
         let pool = PgPoolOptions::new()
             .max_connections(2)
             .connect(instance.db_url())

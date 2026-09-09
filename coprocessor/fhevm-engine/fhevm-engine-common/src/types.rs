@@ -31,6 +31,8 @@ pub enum FhevmError {
     CiphertextCompressionPanic {
         message: String,
     },
+    #[cfg(feature = "gpu")]
+    GpuMemoryReservationError(crate::gpu_memory::GpuMemoryReservationError),
     CannotCompressScalar,
     CiphertextExpansionUnsupportedCiphertextKind(tfhe::FheTypes),
     FheOperationOnlyOneOperandCanBeScalar {
@@ -173,6 +175,10 @@ impl std::fmt::Display for FhevmError {
             }
             Self::CiphertextCompressionPanic { message } => {
                 write!(f, "panic while compressing ciphertext: {}", message)
+            }
+            #[cfg(feature = "gpu")]
+            Self::GpuMemoryReservationError(error) => {
+                write!(f, "GPU memory reservation failed: {error}")
             }
             Self::CannotCompressScalar => {
                 write!(f, "cannot compress scalar input")
@@ -597,21 +603,25 @@ impl SupportedFheCiphertexts {
     }
 
     #[cfg(feature = "gpu")]
-    pub fn decompress(ct_type: i16, list: &[u8], gpu_idx: usize) -> Result<Self> {
-        use crate::gpu_memory::{release_memory_on_gpu, reserve_memory_on_gpu};
+    pub fn decompress(
+        ct_type: i16,
+        list: &[u8],
+        gpu_idx: usize,
+        reservation_timeout: std::time::Duration,
+    ) -> Result<Self> {
+        use crate::gpu_memory::reserve_memory_on_gpu;
         let ctlist: CompressedCiphertextList = safe_deserialize(list)?;
         let mut reserved_mem = 0;
         if let Ok(Some(decomp_size)) = ctlist.get_decompression_size_on_gpu(gpu_idx) {
             reserved_mem = decomp_size;
         };
-        reserve_memory_on_gpu(reserved_mem, gpu_idx);
-        let res = Self::decompress_impl(ct_type, &ctlist);
-        release_memory_on_gpu(reserved_mem, gpu_idx);
-        res
+        let _reservation = reserve_memory_on_gpu(reserved_mem, gpu_idx, reservation_timeout)
+            .map_err(FhevmError::GpuMemoryReservationError)?;
+        Self::decompress_impl(ct_type, &ctlist)
     }
 
     #[cfg(not(feature = "gpu"))]
-    pub fn decompress(ct_type: i16, list: &[u8], _: usize) -> Result<Self> {
+    pub fn decompress(ct_type: i16, list: &[u8], _: usize, _: std::time::Duration) -> Result<Self> {
         let ctlist: CompressedCiphertextList = safe_deserialize(list)?;
         Self::decompress_impl(ct_type, &ctlist)
     }
@@ -862,6 +872,12 @@ impl SupportedFheOperations {
         }
     }
 
+    /// Whether this op produces multiple output ciphertexts. The output count
+    /// comes from the event, not from the opcode.
+    pub fn is_multi_output(&self) -> bool {
+        false
+    }
+
     pub fn supports_bool_inputs(&self) -> bool {
         matches!(
             self,
@@ -993,6 +1009,15 @@ pub const COMPUTED_HANDLE_INDEX_MARKER: u8 = 0xff;
 /// constant in `host-contracts/contracts/shared/Constants.sol`.
 pub const HANDLE_VERSION: u8 = 0;
 
+/// Ingest-time sanity ceiling against a malformed event declaring a huge group;
+/// fits one byte and `output_index SMALLINT`. Real caps are per-op and smaller.
+pub const MAX_MULTI_OUTPUT_ARITY: usize = u8::MAX as usize;
+
+/// Enforced at ingestion by the host-listener.
+pub fn is_valid_multi_output_arity(outputs: usize) -> bool {
+    outputs > 0 && outputs <= MAX_MULTI_OUTPUT_ARITY
+}
+
 pub fn get_ct_type(handle: &[u8]) -> Result<i16, FhevmError> {
     match handle.len() {
         HANDLE_LEN => Ok(handle[30] as i16),
@@ -1057,7 +1082,32 @@ pub type CoproSigner = std::sync::Arc<dyn Signer<Signature> + Send + Sync>;
 
 #[cfg(test)]
 mod tests {
-    use super::{FhevmError, SupportedFheCiphertexts, SupportedFheOperations};
+    use super::{
+        is_valid_multi_output_arity, FhevmError, SupportedFheCiphertexts, SupportedFheOperations,
+        MAX_MULTI_OUTPUT_ARITY,
+    };
+    use strum::IntoEnumIterator;
+
+    #[test]
+    fn multi_output_arity_bounds() {
+        assert!(!is_valid_multi_output_arity(0));
+        assert!(is_valid_multi_output_arity(1));
+        assert!(is_valid_multi_output_arity(MAX_MULTI_OUTPUT_ARITY));
+        assert!(!is_valid_multi_output_arity(MAX_MULTI_OUTPUT_ARITY + 1));
+    }
+
+    #[test]
+    fn max_multi_output_arity_fits_output_index_column() {
+        // output_index is SMALLINT
+        assert!(i16::try_from(MAX_MULTI_OUTPUT_ARITY).is_ok());
+    }
+
+    #[test]
+    fn no_operation_is_multi_output_yet() {
+        for op in SupportedFheOperations::iter() {
+            assert!(!op.is_multi_output(), "{op:?} is multi-output");
+        }
+    }
 
     #[test]
     fn compress_scalar_returns_error() {

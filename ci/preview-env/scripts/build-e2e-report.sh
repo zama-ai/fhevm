@@ -88,10 +88,14 @@ for wf in "${wfs[@]}"; do
   } >> "${sections}"
 done
 
+phase_suffix=""
+if [[ -n "${REPORT_PHASE:-}" ]]; then
+  phase_suffix=" — ${REPORT_PHASE}"
+fi
 if [[ "${overall_failed}" -gt 0 ]]; then
-  header="## :x: Automated e2e tests (SDK matrix): ${overall_failed} failure(s)"
+  header="## :x: Automated e2e tests (SDK matrix)${phase_suffix}: ${overall_failed} failure(s)"
 else
-  header="## :white_check_mark: Automated e2e tests (SDK matrix): all passed"
+  header="## :white_check_mark: Automated e2e tests (SDK matrix)${phase_suffix}: all passed"
 fi
 
 report=$(mktemp --suffix=.md)

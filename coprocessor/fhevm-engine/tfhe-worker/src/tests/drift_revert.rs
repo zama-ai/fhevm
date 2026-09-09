@@ -1,11 +1,11 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use crate::tests::shared_db::cloned_test_db;
 use fhevm_engine_common::drift_revert::{self, ReExec, RevertRunnerConfig, SignalStatus};
 use fhevm_engine_common::types::COMPUTED_HANDLE_INDEX_MARKER;
-use serial_test::serial;
 use sqlx::PgPool;
-use test_harness::instance::{setup_test_db, ImportMode};
+use test_harness::instance::ImportMode;
 use tokio_util::sync::CancellationToken;
 
 const CHAIN_A: i64 = 100;
@@ -102,9 +102,8 @@ async fn setup_chain_and_bridged_handle(
 }
 
 #[tokio::test]
-#[serial(db)]
 async fn on_drift_detected_creates_signal_with_correct_block() {
-    let db = setup_test_db(ImportMode::None).await.expect("setup db");
+    let db = cloned_test_db(ImportMode::None).await.expect("setup db");
     let pool = PgPool::connect(db.db_url()).await.unwrap();
 
     let block = 42;
@@ -123,9 +122,8 @@ async fn on_drift_detected_creates_signal_with_correct_block() {
 }
 
 #[tokio::test]
-#[serial(db)]
 async fn on_drift_detected_creates_signal_for_bridged_handle() {
-    let db = setup_test_db(ImportMode::None).await.expect("setup db");
+    let db = cloned_test_db(ImportMode::None).await.expect("setup db");
     let pool = PgPool::connect(db.db_url()).await.unwrap();
 
     let block = 42;
@@ -146,9 +144,8 @@ async fn on_drift_detected_creates_signal_for_bridged_handle() {
 }
 
 #[tokio::test]
-#[serial(db)]
 async fn on_drift_detected_picks_earliest_block_for_duplicate_handle() {
-    let db = setup_test_db(ImportMode::None).await.expect("setup db");
+    let db = cloned_test_db(ImportMode::None).await.expect("setup db");
     let pool = PgPool::connect(db.db_url()).await.unwrap();
 
     let earliest = 30;
@@ -193,9 +190,8 @@ async fn on_drift_detected_picks_earliest_block_for_duplicate_handle() {
 }
 
 #[tokio::test]
-#[serial(db)]
 async fn on_drift_detected_no_signal_when_handle_not_found() {
-    let db = setup_test_db(ImportMode::None).await.expect("setup db");
+    let db = cloned_test_db(ImportMode::None).await.expect("setup db");
     let pool = PgPool::connect(db.db_url()).await.unwrap();
 
     let unknown_handle: Vec<u8> = vec![0xFF; 32];
@@ -212,9 +208,8 @@ async fn on_drift_detected_no_signal_when_handle_not_found() {
 }
 
 #[tokio::test]
-#[serial(db)]
 async fn on_drift_detected_skips_for_input_handle() {
-    let db = setup_test_db(ImportMode::None).await.expect("setup db");
+    let db = cloned_test_db(ImportMode::None).await.expect("setup db");
     let pool = PgPool::connect(db.db_url()).await.unwrap();
 
     // Byte 21 != COMPUTED_HANDLE_INDEX_MARKER → ZK input handle.
@@ -233,9 +228,8 @@ async fn on_drift_detected_skips_for_input_handle() {
 }
 
 #[tokio::test]
-#[serial(db)]
 async fn on_drift_detected_skips_when_in_flight() {
-    let db = setup_test_db(ImportMode::None).await.expect("setup db");
+    let db = cloned_test_db(ImportMode::None).await.expect("setup db");
     let pool = PgPool::connect(db.db_url()).await.unwrap();
 
     let handle = setup_chain_and_computation(&pool, CHAIN_A, 10).await;
@@ -249,9 +243,8 @@ async fn on_drift_detected_skips_when_in_flight() {
 }
 
 #[tokio::test]
-#[serial(db)]
 async fn create_revert_signal_lowers_pending_to_earlier_block() {
-    let db = setup_test_db(ImportMode::None).await.expect("setup db");
+    let db = cloned_test_db(ImportMode::None).await.expect("setup db");
     let pool = PgPool::connect(db.db_url()).await.unwrap();
 
     setup_chain_and_computation(&pool, CHAIN_A, 10).await;
@@ -291,9 +284,8 @@ async fn create_revert_signal_lowers_pending_to_earlier_block() {
 }
 
 #[tokio::test]
-#[serial(db)]
 async fn create_revert_signal_does_not_lower_reverting_signal() {
-    let db = setup_test_db(ImportMode::None).await.expect("setup db");
+    let db = cloned_test_db(ImportMode::None).await.expect("setup db");
     let pool = PgPool::connect(db.db_url()).await.unwrap();
 
     setup_chain_and_computation(&pool, CHAIN_A, 10).await;
@@ -320,9 +312,8 @@ async fn create_revert_signal_does_not_lower_reverting_signal() {
 }
 
 #[tokio::test]
-#[serial(db)]
 async fn on_drift_detected_allows_new_signal_after_done() {
-    let db = setup_test_db(ImportMode::None).await.expect("setup db");
+    let db = cloned_test_db(ImportMode::None).await.expect("setup db");
     let pool = PgPool::connect(db.db_url()).await.unwrap();
 
     let handle = setup_chain_and_computation(&pool, CHAIN_A, 10).await;
@@ -351,10 +342,9 @@ async fn on_drift_detected_allows_new_signal_after_done() {
 }
 
 #[tokio::test]
-#[serial(db)]
 async fn runner_processes_concurrent_signals_from_multiple_chains() {
     const CHAIN_B: i64 = 200;
-    let db = setup_test_db(ImportMode::None).await.expect("setup db");
+    let db = cloned_test_db(ImportMode::None).await.expect("setup db");
     let pool = PgPool::connect(db.db_url()).await.unwrap();
 
     // Two chains with their own in-flight signals (pre-existing, e.g. created
@@ -402,9 +392,8 @@ async fn setup_failed_signal(pool: &PgPool) {
 }
 
 #[tokio::test]
-#[serial(db)]
 async fn runner_refuses_on_failed_latest() {
-    let db = setup_test_db(ImportMode::None).await.expect("setup db");
+    let db = cloned_test_db(ImportMode::None).await.expect("setup db");
     let pool = PgPool::connect(db.db_url()).await.unwrap();
     setup_failed_signal(&pool).await;
 
@@ -434,9 +423,8 @@ async fn insert_done_signals(pool: &PgPool, host_chain_id: i64, count: u32) {
 }
 
 #[tokio::test]
-#[serial(db)]
 async fn runner_marks_failed_when_too_many_recent_attempts() {
-    let db = setup_test_db(ImportMode::None).await.expect("setup db");
+    let db = cloned_test_db(ImportMode::None).await.expect("setup db");
     let pool = PgPool::connect(db.db_url()).await.unwrap();
 
     setup_chain_and_computation(&pool, CHAIN_A, 10).await;
@@ -463,10 +451,9 @@ async fn runner_marks_failed_when_too_many_recent_attempts() {
 }
 
 #[tokio::test]
-#[serial(db)]
 async fn runner_too_many_attempts_isolates_per_chain() {
     const CHAIN_B: i64 = 200;
-    let db = setup_test_db(ImportMode::None).await.expect("setup db");
+    let db = cloned_test_db(ImportMode::None).await.expect("setup db");
     let pool = PgPool::connect(db.db_url()).await.unwrap();
 
     // Many recent dones on B should NOT block reverts on A.
@@ -521,9 +508,8 @@ async fn runner_too_many_attempts_isolates_per_chain() {
 }
 
 #[tokio::test]
-#[serial(db)]
 async fn runner_too_many_attempts_ignores_old_dones_outside_window() {
-    let db = setup_test_db(ImportMode::None).await.expect("setup db");
+    let db = cloned_test_db(ImportMode::None).await.expect("setup db");
     let pool = PgPool::connect(db.db_url()).await.unwrap();
     setup_chain_and_computation(&pool, CHAIN_A, 10).await;
 
@@ -560,9 +546,8 @@ async fn runner_too_many_attempts_ignores_old_dones_outside_window() {
 }
 
 #[tokio::test]
-#[serial(db)]
 async fn waiter_refuses_on_failed_latest() {
-    let db = setup_test_db(ImportMode::None).await.expect("setup db");
+    let db = cloned_test_db(ImportMode::None).await.expect("setup db");
     let pool = PgPool::connect(db.db_url()).await.unwrap();
     setup_failed_signal(&pool).await;
 
@@ -575,9 +560,8 @@ async fn waiter_refuses_on_failed_latest() {
 }
 
 #[tokio::test]
-#[serial(db)]
 async fn runner_resumes_from_reverting_status_without_grace_period() {
-    let db = setup_test_db(ImportMode::None).await.expect("setup db");
+    let db = cloned_test_db(ImportMode::None).await.expect("setup db");
     let pool = PgPool::connect(db.db_url()).await.unwrap();
 
     // Insert host_chain and a couple of blocks of computations.
@@ -654,10 +638,9 @@ async fn runner_resumes_from_reverting_status_without_grace_period() {
 }
 
 #[tokio::test]
-#[serial(db)]
 async fn waiter_waits_until_all_chains_done() {
     const CHAIN_B: i64 = 200;
-    let db = setup_test_db(ImportMode::None).await.expect("setup db");
+    let db = cloned_test_db(ImportMode::None).await.expect("setup db");
     let pool = PgPool::connect(db.db_url()).await.unwrap();
 
     setup_chain_and_computation(&pool, CHAIN_A, 10).await;
@@ -704,9 +687,8 @@ async fn waiter_waits_until_all_chains_done() {
 }
 
 #[tokio::test]
-#[serial(db)]
 async fn waiter_bails_when_revert_fails_during_wait() {
-    let db = setup_test_db(ImportMode::None).await.expect("setup db");
+    let db = cloned_test_db(ImportMode::None).await.expect("setup db");
     let pool = PgPool::connect(db.db_url()).await.unwrap();
     setup_chain_and_computation(&pool, CHAIN_A, 10).await;
     let id = drift_revert::create_revert_signal(&pool, CHAIN_A, 10)
@@ -742,10 +724,9 @@ async fn waiter_bails_when_revert_fails_during_wait() {
 }
 
 #[tokio::test]
-#[serial(db)]
 async fn waiter_bails_on_old_failed_even_when_newer_is_done() {
     const CHAIN_B: i64 = 200;
-    let db = setup_test_db(ImportMode::None).await.expect("setup db");
+    let db = cloned_test_db(ImportMode::None).await.expect("setup db");
     let pool = PgPool::connect(db.db_url()).await.unwrap();
 
     setup_chain_and_computation(&pool, CHAIN_A, 10).await;
@@ -816,9 +797,8 @@ impl ReExec for MockReExec {
 }
 
 #[tokio::test]
-#[serial(db)]
 async fn signal_watcher_reexecs_on_pending_signal() {
-    let db = setup_test_db(ImportMode::None).await.expect("setup db");
+    let db = cloned_test_db(ImportMode::None).await.expect("setup db");
     let pool = PgPool::connect(db.db_url()).await.unwrap();
     let cancel = CancellationToken::new();
     let mock = MockReExec::new();
@@ -841,9 +821,8 @@ async fn signal_watcher_reexecs_on_pending_signal() {
 }
 
 #[tokio::test]
-#[serial(db)]
 async fn signal_watcher_exits_cleanly_on_cancel() {
-    let db = setup_test_db(ImportMode::None).await.expect("setup db");
+    let db = cloned_test_db(ImportMode::None).await.expect("setup db");
     let pool = PgPool::connect(db.db_url()).await.unwrap();
     let cancel = CancellationToken::new();
     let mock = MockReExec::new();
@@ -862,9 +841,8 @@ async fn signal_watcher_exits_cleanly_on_cancel() {
 }
 
 #[tokio::test]
-#[serial(db)]
 async fn handle_pending_signal_runner_marks_done() {
-    let db = setup_test_db(ImportMode::None).await.expect("setup db");
+    let db = cloned_test_db(ImportMode::None).await.expect("setup db");
     let pool = PgPool::connect(db.db_url()).await.unwrap();
 
     setup_chain_and_computation(&pool, CHAIN_A, 50).await;
@@ -885,9 +863,8 @@ async fn handle_pending_signal_runner_marks_done() {
 }
 
 #[tokio::test]
-#[serial(db)]
 async fn handle_pending_signal_waiter_blocks_until_done() {
-    let db = setup_test_db(ImportMode::None).await.expect("setup db");
+    let db = cloned_test_db(ImportMode::None).await.expect("setup db");
     let pool = PgPool::connect(db.db_url()).await.unwrap();
 
     setup_chain_and_computation(&pool, CHAIN_A, 50).await;
@@ -919,9 +896,8 @@ async fn handle_pending_signal_waiter_blocks_until_done() {
 }
 
 #[tokio::test]
-#[serial(db)]
 async fn handle_pending_signal_waiter_exits_on_cancel() {
-    let db = setup_test_db(ImportMode::None).await.expect("setup db");
+    let db = cloned_test_db(ImportMode::None).await.expect("setup db");
     let pool = PgPool::connect(db.db_url()).await.unwrap();
 
     setup_chain_and_computation(&pool, CHAIN_A, 50).await;
@@ -950,9 +926,8 @@ async fn handle_pending_signal_waiter_exits_on_cancel() {
 }
 
 #[tokio::test]
-#[serial(db)]
 async fn execute_revert_deletes_computations_after_offending_block() {
-    let db = setup_test_db(ImportMode::None).await.expect("setup db");
+    let db = cloned_test_db(ImportMode::None).await.expect("setup db");
     let pool = PgPool::connect(db.db_url()).await.unwrap();
 
     // Set up blocks 1..=10 with one computation each.
@@ -1009,9 +984,8 @@ async fn execute_revert_deletes_computations_after_offending_block() {
 }
 
 #[tokio::test]
-#[serial(db)]
 async fn execute_revert_refuses_when_offending_block_le_1() {
-    let db = setup_test_db(ImportMode::None).await.expect("setup db");
+    let db = cloned_test_db(ImportMode::None).await.expect("setup db");
     let pool = PgPool::connect(db.db_url()).await.unwrap();
 
     sqlx::query(
@@ -1038,9 +1012,8 @@ async fn execute_revert_refuses_when_offending_block_le_1() {
 }
 
 #[tokio::test]
-#[serial(db)]
 async fn init_handles_pending_signal_and_spawns_watcher() {
-    let db = setup_test_db(ImportMode::None).await.expect("setup db");
+    let db = cloned_test_db(ImportMode::None).await.expect("setup db");
     let pool = PgPool::connect(db.db_url()).await.unwrap();
     let cancel = CancellationToken::new();
 

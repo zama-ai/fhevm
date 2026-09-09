@@ -1,0 +1,9 @@
+version: 1
+kind: coprocessor-consensus
+name: Three Of Three
+description: >-
+  Three independent coprocessors requiring unanimous consensus. This is the CPU/GPU homogeneous topology for the
+  materialization byte-consensus tests.
+topology:
+  count: 3
+  threshold: 3

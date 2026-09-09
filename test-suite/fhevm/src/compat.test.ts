@@ -5,6 +5,7 @@ import {
   LEGACY_RELAYER_MIGRATE_IMAGE_REPOSITORY,
   MODERN_RELAYER_IMAGE_REPOSITORY,
   MODERN_RELAYER_MIGRATE_IMAGE_REPOSITORY,
+  assertSupportedBundleScenario,
   bootstrapUsesHostKmsGeneration,
   canonicalProtocolConfigSeedingUsesEnv,
   compatArgPolicyForPinnedTag,
@@ -19,6 +20,7 @@ import {
   requiresLegacyRelayerUrl,
   requiresModernHostAddressArtifacts,
   supportsCanonicalProtocolConfigSeeding,
+  replaceRegistrySourceTag,
   supportsConsensusDetector,
   supportsHostListenerConsumer,
   supportsUpgradeController,
@@ -28,6 +30,75 @@ import { testDefaultScenario } from "./test-fixtures";
 import type { LocalOverride } from "./types";
 
 describe("compat", () => {
+  test("registry SHA replacements retain and semantic tags reset command compatibility", () => {
+    const hotfix = replaceRegistrySourceTag({ mode: "registry", tag: "v0.14.0-7" }, "04fb072");
+    expect(hotfix).toEqual({ mode: "registry", tag: "04fb072", compatTag: "v0.14.0-7" });
+    expect(replaceRegistrySourceTag(hotfix, "15abcde", "v0.15.0")).toEqual({
+      mode: "registry",
+      tag: "15abcde",
+      compatTag: "v0.15.0",
+    });
+    expect(replaceRegistrySourceTag(hotfix, "v0.15.0")).toEqual({ mode: "registry", tag: "v0.15.0" });
+  });
+
+  test("multi-node consensus topologies need one coprocessor revision, not a local build", () => {
+    const scenario = testDefaultScenario({
+      topology: { count: 3, threshold: 3 },
+      instances: [0, 1, 2].map((index) => ({ index, source: { mode: "inherit" as const }, env: {}, args: {} })),
+    });
+    const versions = {
+      target: "latest-main" as const,
+      lockName: "latest-main.json",
+      env: { COPROCESSOR_TFHE_WORKER_VERSION: "v0.15.0" } as Record<string, string>,
+      sources: [],
+    };
+    // The published bundle on every node is one revision: the orchestrated CI
+    // path runs exactly this, with no override at all.
+    expect(() => assertSupportedBundleScenario({ versions, overrides: [], scenario })).not.toThrow();
+    // A full local build on every node is one revision too.
+    expect(() =>
+      assertSupportedBundleScenario({ versions, overrides: [{ group: "coprocessor" }], scenario }),
+    ).not.toThrow();
+    // A service-scoped override mixes local and published services.
+    expect(() =>
+      assertSupportedBundleScenario({
+        versions,
+        overrides: [{ group: "coprocessor", services: ["coprocessor-host-listener"] }],
+        scenario,
+      }),
+    ).toThrow("service-scoped coprocessor override (coprocessor-host-listener)");
+    // Instances on different sources are different revisions.
+    const mixed = testDefaultScenario({
+      topology: { count: 3, threshold: 3 },
+      instances: [
+        { index: 0, source: { mode: "local" }, env: {}, args: {} },
+        { index: 1, source: { mode: "registry", tag: "v0.14.0" }, env: {}, args: {} },
+        { index: 2, source: { mode: "inherit" }, env: {}, args: {} },
+      ],
+    });
+    expect(() => assertSupportedBundleScenario({ versions, overrides: [], scenario: mixed })).toThrow(
+      /instance sources differ: .*local \(instance 0\).*registry:v0\.14\.0 \(instance 1\).*bundle \(instance 2\)/,
+    );
+    // An explicit registry tag equal to the bundle's is the same revision.
+    const pinnedToBundle = testDefaultScenario({
+      topology: { count: 2, threshold: 2 },
+      instances: [
+        { index: 0, source: { mode: "registry", tag: "v0.15.0" }, env: {}, args: {} },
+        { index: 1, source: { mode: "inherit" }, env: {}, args: {} },
+      ],
+    });
+    expect(() => assertSupportedBundleScenario({ versions, overrides: [], scenario: pinnedToBundle })).not.toThrow();
+    // A single node is never a consensus comparison; partial overrides stay legal there.
+    const single = testDefaultScenario({ topology: { count: 1, threshold: 1 } });
+    expect(() =>
+      assertSupportedBundleScenario({
+        versions,
+        overrides: [{ group: "coprocessor", services: ["coprocessor-host-listener"] }],
+        scenario: single,
+      }),
+    ).not.toThrow();
+  });
+
   test("flags relayer v1 vs test-suite v2 incompatibility", () => {
     const issues = validateBundleCompatibility({
       versions: {
@@ -772,7 +843,7 @@ describe("compat", () => {
     expect(supportsCanonicalProtocolConfigSeeding(stateFor("v0.13.0"))).toBe(false);
 
     // Ships the task, but it takes its input as command-line flags.
-    for (const version of ["v0.13.1", "v0.13.3", "v0.14.0-0", "v0.14.0-8"]) {
+    for (const version of ["v0.13.1", "v0.13.3", "v0.14.0-0", "v0.14.0-8", "v0.14.0-9"]) {
       expect(supportsCanonicalProtocolConfigSeeding(stateFor(version))).toBe(true);
       expect(canonicalProtocolConfigSeedingUsesEnv(stateFor(version))).toBe(false);
     }
@@ -786,7 +857,7 @@ describe("compat", () => {
     }
 
     // Builds at or above the build floor read the CANONICAL_* env variables.
-    for (const version of ["v0.14.0-9", "v0.14.0-10"]) {
+    for (const version of ["v0.14.0-10", "v0.14.0-11"]) {
       expect(canonicalProtocolConfigSeedingUsesEnv(stateFor(version))).toBe(true);
     }
 

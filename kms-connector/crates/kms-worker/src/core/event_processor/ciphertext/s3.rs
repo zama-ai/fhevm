@@ -140,7 +140,7 @@ impl BoundedClient {
         winning_buckets: &[String],
     ) -> Result<TypedCiphertext, ProcessingError> {
         // A handle that carries no valid FHE type is malformed; retrying cannot fix it.
-        let fhe_type = extract_fhe_type_from_handle(handle.as_slice()).map_err(|e| {
+        let fhe_type = extract_fhe_type_from_handle(&handle).map_err(|e| {
             ProcessingError::irrecoverable(
                 ErrorCode::Unprocessable,
                 anyhow!("cannot extract FHE type from handle {handle}: {e}"),
