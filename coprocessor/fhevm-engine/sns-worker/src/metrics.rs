@@ -1,7 +1,7 @@
 use std::sync::{LazyLock, OnceLock};
 
 use fhevm_engine_common::telemetry::{register_histogram, MetricsConfig};
-use prometheus::{register_int_counter, IntCounter};
+use prometheus::{register_int_counter, register_int_counter_vec, IntCounter, IntCounterVec};
 use prometheus::{register_int_gauge, Histogram, IntGauge};
 use sqlx::PgPool;
 use tokio::task::JoinHandle;
@@ -45,6 +45,34 @@ pub(crate) static AWS_UPLOAD_FAILURE_COUNTER: LazyLock<IntCounter> = LazyLock::n
     register_int_counter!(
         "coprocessor_sns_worker_aws_upload_failure_counter",
         "Number of failed AWS uploads in sns-worker"
+    )
+    .unwrap()
+});
+
+pub(crate) static S3_MIGRATION_SUCCESS_COUNTER: LazyLock<IntCounterVec> = LazyLock::new(|| {
+    register_int_counter_vec!(
+        "coprocessor_sns_worker_s3_migration_success_counter",
+        "Number of ciphertext handles successfully migrated to the current S3 format",
+        &["host_chain_id"]
+    )
+    .unwrap()
+});
+
+pub(crate) static S3_MIGRATION_INTERMEDIATE_ERROR_COUNTER: LazyLock<IntCounterVec> =
+    LazyLock::new(|| {
+        register_int_counter_vec!(
+            "coprocessor_sns_worker_s3_migration_intermediate_error_counter",
+            "Number of non-terminal S3 migration failures that remain eligible for retry",
+            &["host_chain_id", "error_type"]
+        )
+        .unwrap()
+    });
+
+pub(crate) static S3_MIGRATION_FINAL_ERROR_COUNTER: LazyLock<IntCounterVec> = LazyLock::new(|| {
+    register_int_counter_vec!(
+        "coprocessor_sns_worker_s3_migration_final_error_counter",
+        "Number of S3 migration failures that reached the configured retry limit",
+        &["host_chain_id", "error_type"]
     )
     .unwrap()
 });
