@@ -32,10 +32,27 @@ Run `make help` for the full list of available targets.
 
 ## Running tests
 
+Tests run under [nextest](https://nexte.st), which the test targets expect:
+
 ```bash
-make test-unit                    # Fast unit tests (no Postgres required)
-make test-all-no-long-running     # Full suite (requires Postgres)
+cargo install cargo-nextest --locked
 ```
+
+```bash
+make test          # Full suite, exactly as CI runs it (requires Postgres)
+make test-unit     # Unit tests from src/ only (no Postgres required)
+```
+
+Tests are split into groups, one per test binary. A group is either an API flow (`public-decrypt`) or a cross-cutting feature the flows share (`listener-redundancy`). While working on one, run just that group:
+
+```bash
+make test-groups                                    # List the available group names
+make test-group GROUP=public-decrypt                # One group, all its cases
+make test-group GROUP=public-decrypt CASE=acl       # Only cases matching a substring
+make test-group GROUP=public-decrypt SKIP=timeout   # Everything except the slow timeout cases
+```
+
+Tests run 8 at a time by default, the same as CI, and the pool spans every test binary rather than draining one binary at a time. Each test uses its own isolated schema and holds about three Postgres connections, so the ceiling is the server's `max_connections`: 100 in CI, 500 locally (`dev/docker-compose.yaml`). Append `TEST_THREADS=32` to any of the commands above for a faster local run, or `TEST_THREADS=1` to serialise one while debugging.
 
 ## Local Stack
 

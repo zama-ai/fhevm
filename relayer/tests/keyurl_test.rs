@@ -6,12 +6,20 @@
 mod common;
 
 use crate::common::utils::{
-    test_keyurl_expected_data_id, test_keyurl_expected_url, TestSetup, TEST_KEYURL_CRS_ID,
-    TEST_KEYURL_KEY_ID,
+    test_keyurl_expected_data_id, test_keyurl_expected_url, TestSetup, TEST_CONFIG_PATH,
+    TEST_KEYURL_CRS_ID, TEST_KEYURL_KEY_ID,
 };
 use alloy::primitives::U256;
 use rstest::rstest;
 use serde_json::Value;
+
+/// Static `/v2/keyurl` values wired into the `keyurl.source: config` test config.
+const CONFIG_MODE_KEY_DATA_ID: &str =
+    "0x0400000000000000000000000000000000000000000000000000000000000003";
+const CONFIG_MODE_KEY_URL: &str = "http://minio:9000/kms-public/PUB-p1/PublicKey/0400000000000000000000000000000000000000000000000000000000000003";
+const CONFIG_MODE_CRS_DATA_ID: &str =
+    "0x0400000000000000000000000000000000000000000000000000000000000004";
+const CONFIG_MODE_CRS_URL: &str = "http://minio:9000/kms-public/PUB-p1/CRS/0400000000000000000000000000000000000000000000000000000000000004";
 
 mod helpers {
     use super::*;
@@ -151,4 +159,78 @@ async fn test_keyurl_endpoints_success() {
     let _v2_body = helpers::validate_keyurl_v2_response(v2_response).await;
 
     setup.shutdown().await;
+}
+
+/// `keyurl.source: config` against a v0.13-style deployment: the host mock reverts the
+/// KMS-context getters (`register_missing_kms_context_getters`), so a relayer that still polled
+/// could not pass its startup gate — a served response proves no poller runs.
+#[rstest]
+#[tokio::test]
+async fn test_keyurl_v2_served_from_static_config() {
+    let temp_dir = tempfile::TempDir::new().expect("Failed to create temp dir");
+    let config_path = write_config_source_config(&temp_dir);
+
+    let setup = TestSetup::new_with_config_path(Some(config_path))
+        .await
+        .expect("Relayer should start in keyurl.source: config mode without any chain KMS context");
+
+    let response = reqwest::get(&helpers::keyurl_v2_url(&setup)).await.unwrap();
+    assert_eq!(response.status(), 200, "keyurl endpoint should return 200");
+    let body: Value = response.json().await.unwrap();
+
+    let fhe_public_key = &body["response"]["fheKeyInfo"][0]["fhePublicKey"];
+    assert_eq!(
+        fhe_public_key["dataId"].as_str().unwrap(),
+        CONFIG_MODE_KEY_DATA_ID,
+        "fhePublicKey.dataId should be the configured value"
+    );
+    assert_eq!(
+        fhe_public_key["urls"].as_array().unwrap(),
+        &vec![Value::String(CONFIG_MODE_KEY_URL.to_string())],
+        "fhePublicKey.urls should be the configured values"
+    );
+
+    let crs_2048 = &body["response"]["crs"]["2048"];
+    assert_eq!(
+        crs_2048["dataId"].as_str().unwrap(),
+        CONFIG_MODE_CRS_DATA_ID,
+        "crs.2048.dataId should be the configured value"
+    );
+    assert_eq!(
+        crs_2048["urls"].as_array().unwrap(),
+        &vec![Value::String(CONFIG_MODE_CRS_URL.to_string())],
+        "crs.2048.urls should be the configured values"
+    );
+
+    setup.shutdown().await;
+}
+
+/// Copy the integration test config, replacing its `keyurl` block with a `source: config` one.
+fn write_config_source_config(temp_dir: &tempfile::TempDir) -> std::path::PathBuf {
+    let mut config: serde_yaml::Value =
+        serde_yaml::from_str(&std::fs::read_to_string(TEST_CONFIG_PATH).expect("read test config"))
+            .expect("parse test config");
+
+    let keyurl = serde_yaml::from_str::<serde_yaml::Value>(&format!(
+        "source: config
+fhe_public_key:
+  data_id: \"{CONFIG_MODE_KEY_DATA_ID}\"
+  urls:
+    - \"{CONFIG_MODE_KEY_URL}\"
+crs:
+  data_id: \"{CONFIG_MODE_CRS_DATA_ID}\"
+  urls:
+    - \"{CONFIG_MODE_CRS_URL}\"
+"
+    ))
+    .expect("parse static keyurl block");
+    config["keyurl"] = keyurl;
+
+    let config_path = temp_dir.path().join("keyurl_source_config.yaml");
+    std::fs::write(
+        &config_path,
+        serde_yaml::to_string(&config).expect("serialize config"),
+    )
+    .expect("write config");
+    config_path
 }

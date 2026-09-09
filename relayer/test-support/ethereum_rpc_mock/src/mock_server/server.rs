@@ -56,6 +56,9 @@ use tracing::{debug, info};
 pub struct MockServerHandle {
     /// Server handle for lifecycle management
     server_handle: ServerHandle,
+    /// Address the server is bound to, and the address clients should use.
+    /// With `MockConfig.port` set to 0 this is the port the OS assigned.
+    addr: SocketAddr,
     /// Server URL for client connections
     url: String,
     /// Shutdown token for graceful shutdown coordination
@@ -66,12 +69,13 @@ impl MockServerHandle {
     /// Create a new server handle
     pub fn new(
         server_handle: ServerHandle,
-        url: String,
+        addr: SocketAddr,
         shutdown_token: CancellationToken,
     ) -> Self {
         Self {
             server_handle,
-            url,
+            addr,
+            url: format!("http://{}", addr),
             shutdown_token,
         }
     }
@@ -79,6 +83,16 @@ impl MockServerHandle {
     /// Get the server URL for client connections
     pub fn url(&self) -> &str {
         &self.url
+    }
+
+    /// The address the server is actually listening on.
+    pub fn addr(&self) -> SocketAddr {
+        self.addr
+    }
+
+    /// The port the server is actually listening on.
+    pub fn port(&self) -> u16 {
+        self.addr.port()
     }
 
     /// Shutdown the server gracefully
@@ -137,14 +151,18 @@ impl MockServer {
         }
     }
 
-    /// Start server and return handle for lifecycle management
+    /// Start server and return handle for lifecycle management.
+    ///
+    /// Set `MockConfig.port` to 0 to let the OS assign a port; the returned
+    /// handle reports the address bound. Tests should use that rather than
+    /// choosing a port in advance, which any other process is free to take
+    /// before the server binds it.
     pub async fn start(self) -> AnyhowResult<MockServerHandle> {
-        let addr = Self::parse_socket_addr(self.config.port)?;
-        let url = Self::create_server_url(addr);
+        let requested = Self::parse_socket_addr(self.config.port)?;
 
         info!(
             port = self.config.port,
-            address = %addr,
+            address = %requested,
             "Starting MockServer"
         );
 
@@ -158,19 +176,20 @@ impl MockServer {
             shutdown_token: self.shutdown_token.clone(),
         };
 
-        let server_handle = Self::start_server_on_addr(EthRpcApiServer::into_rpc(rpc_impl), addr)
-            .await
-            .with_context(|| format!("Failed to start mock server on {}", addr))?;
+        let (server_handle, addr) =
+            Self::start_server_on_addr(EthRpcApiServer::into_rpc(rpc_impl), requested)
+                .await
+                .with_context(|| format!("Failed to start mock server on {}", requested))?;
 
         info!(
-            port = self.config.port,
-            url = %url,
+            port = addr.port(),
+            url = %Self::create_server_url(addr),
             "MockServer started successfully"
         );
 
         Ok(MockServerHandle::new(
             server_handle,
-            url,
+            addr,
             self.shutdown_token,
         ))
     }
@@ -187,8 +206,12 @@ impl MockServer {
         format!("http://{}", addr)
     }
 
-    /// Start a JsonRPSee server on a specific address
-    async fn start_server_on_addr<T>(rpc_impl: T, addr: SocketAddr) -> AnyhowResult<ServerHandle>
+    /// Start a JsonRPSee server on a specific address, returning the handle and
+    /// the address actually bound (which differs from `addr` when its port is 0).
+    async fn start_server_on_addr<T>(
+        rpc_impl: T,
+        addr: SocketAddr,
+    ) -> AnyhowResult<(ServerHandle, SocketAddr)>
     where
         T: Into<jsonrpsee::Methods>,
     {
@@ -204,20 +227,25 @@ impl MockServer {
             .await
             .with_context(|| format!("Failed to create JsonRPSee server on {}", addr))?;
 
+        let bound = server
+            .local_addr()
+            .context("Failed to read the bound address of the mock server")?;
+
         // Start the server with registered methods
         let server_handle = server.start(rpc_impl.into());
 
         info!(
             component = "server_lifecycle",
-            bind_address = %addr,
+            bind_address = %bound,
             "JsonRPSee HTTP/WebSocket server ready for JSON-RPC requests and subscriptions"
         );
 
-        Ok(server_handle)
+        Ok((server_handle, bound))
     }
 
-    /// Get the URL the server will listen on when started
-    pub fn url(&self) -> String {
+    /// The URL this server was configured with. Meaningless when the configured
+    /// port is 0 — read [`MockServerHandle::url`] after starting instead.
+    pub fn configured_url(&self) -> String {
         format!("http://127.0.0.1:{}", self.config.port)
     }
 
@@ -375,7 +403,7 @@ mod tests {
         let server = MockServer::new(config.clone());
 
         assert_eq!(
-            server.url(),
+            server.configured_url(),
             "http://127.0.0.1:8545",
             "Server URL should match configured port"
         );

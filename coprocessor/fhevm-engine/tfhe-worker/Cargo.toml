@@ -5,6 +5,7 @@ default-run = "tfhe_worker"
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
+autobenches = false
 
 [dependencies]
 # workspace dependencies
@@ -67,16 +68,19 @@ path = "src/bin/utils.rs"
 name = "erc20"
 path = "benches/erc20.rs"
 harness = false
+required-features = ["bench"]
 
 [[bench]]
 name = "synthetics"
 path = "benches/synthetics.rs"
 harness = false
+required-features = ["bench"]
 
 [[bench]]
 name = "dex"
 path = "benches/dex.rs"
 harness = false
+required-features = ["bench"]
 
 [lints]
 workspace = true

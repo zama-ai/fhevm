@@ -198,7 +198,7 @@ fn default_operation_recovery_run_interval() -> Duration {
 }
 
 fn default_decryption_expiry() -> PgInterval {
-    PgInterval::try_from(Duration::from_hours(24)).unwrap()
+    PgInterval::try_from(Duration::from_hours(1)).unwrap()
 }
 
 fn default_operation_under_process_timeout() -> PgInterval {

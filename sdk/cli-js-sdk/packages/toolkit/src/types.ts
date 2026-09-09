@@ -6,6 +6,7 @@ export const NETWORKS = [
   "devnet",
   "devnet-amoy",
   "mainnet",
+  "polygon",
 ] as const;
 export type NetworkName = (typeof NETWORKS)[number];
 export const DEFAULT_NETWORK: NetworkName = "testnet";

@@ -241,7 +241,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         bytes memory extraData = abi.encodePacked(uint8(0x02), contextId, epochId);
 
         vm.prank(owner);
-        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, 0);
         keyId = kmsGeneration.getKeyCounter();
         uint256 prepKeygenId = _prepKeygenIdForKeyId(keyId);
 
@@ -280,7 +280,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         bytes memory extraData = abi.encodePacked(uint8(0x02), contextId, epochId);
 
         vm.prank(owner);
-        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, 0);
         keyId = kmsGeneration.getKeyCounter();
         uint256 prepKeygenId = _prepKeygenIdForKeyId(keyId);
 
@@ -331,7 +331,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         bytes memory extraData = abi.encodePacked(uint8(0x02), contextId, epochId);
 
         vm.prank(owner);
-        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, 0);
         keyId = kmsGeneration.getKeyCounter();
         uint256 prepKeygenId = _prepKeygenIdForKeyId(keyId);
 

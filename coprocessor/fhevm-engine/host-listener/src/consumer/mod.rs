@@ -57,6 +57,7 @@ pub struct ConsumerConfig {
     pub dependent_ops_max_per_chain: u32,
     pub chain_id: String,
     pub gcs_mode: bool,
+    pub disable_synthetic_ops: bool,
     pub canonical_protocol_config_chain_id: Option<u64>,
 }
 
@@ -376,6 +377,7 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         dependence_cross_block: config.dependence_cross_block,
         dependent_ops_max_per_chain: config.dependent_ops_max_per_chain,
         is_protocol_config_listener,
+        disable_synthetic_ops: config.disable_synthetic_ops,
     };
 
     // Runtime stack mode + `event_stack_version_upgraded` listener: at cutover

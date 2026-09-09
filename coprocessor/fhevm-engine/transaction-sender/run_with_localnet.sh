@@ -3,7 +3,9 @@ source ./../.env-test
 
 echo $DATABASE_URL
 
-cargo run --release -- \
+# stack-version-override lets BUILD_STACK_VERSION from the environment override
+# the hard-coded stack version baked into the binary (see fhevm-engine-common).
+cargo run --release --features fhevm-engine-common/stack-version-override -- \
 --gateway-url=${GATEWAY_WS_URL} \
 --private-key=${TX_SENDER_PRIVATE_KEY} \
 --ciphertext-commits-address=${CIPHERTEXT_COMMITS_ADDRESS} \

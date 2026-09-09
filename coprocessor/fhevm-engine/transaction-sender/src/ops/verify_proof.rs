@@ -10,6 +10,7 @@ use alloy::rpc::types::TransactionRequest;
 use alloy::sol;
 use alloy::{network::Ethereum, primitives::FixedBytes, sol_types::SolStruct};
 use async_trait::async_trait;
+use fhevm_engine_common::synthetic_input::SYNTHETIC_ZK_PROOF_ID_BASE;
 use fhevm_engine_common::telemetry;
 use sqlx::{Pool, Postgres};
 use std::convert::TryInto;
@@ -132,6 +133,11 @@ where
         Ok(())
     }
 
+    /// Deletes proofs that exhausted their retries.
+    ///
+    /// Skips synthetic blue-green rows (`zk_proof_id >= SYNTHETIC_ZK_PROOF_ID_BASE`): they are
+    /// never sent, so their `retry_count` never advances, but the guard also keeps this path
+    /// from racing the zkproof-worker for a row cutover cleanup owns.
     async fn remove_proofs_by_retry_count(&self) -> anyhow::Result<()> {
         let Some(mut tx) = begin_live_write(&self.db_pool).await? else {
             return Ok(());
@@ -143,8 +149,10 @@ where
         sqlx::query!(
             "DELETE FROM verify_proofs
              WHERE retry_count >= $1
-               AND verified = TRUE",
-            self.conf.verify_proof_resp_max_retries as i64
+               AND verified = TRUE
+               AND zk_proof_id < $2",
+            self.conf.verify_proof_resp_max_retries as i64,
+            SYNTHETIC_ZK_PROOF_ID_BASE
         )
         .execute(tx.as_mut())
         .await?;
@@ -344,15 +352,21 @@ where
         if self.conf.verify_proof_remove_after_max_retries {
             self.remove_proofs_by_retry_count().await?;
         }
+        // `zk_proof_id < $3` excludes synthetic blue-green dry-run inputs. Those are proved
+        // and verified locally by every operator so the Gateway consensus track can anchor
+        // while no user traffic exists, but no contract ever requested them — publishing a
+        // response would hit `VerifyProofNotRequested` on chain.
         let rows = sqlx::query!(
             "SELECT zk_proof_id, chain_id, contract_address, user_address, handles, verified, retry_count, extra_data, transaction_id
              FROM verify_proofs
              WHERE (verified = TRUE OR (verified = FALSE AND handles IS NOT NULL))
                AND retry_count < $1
+               AND zk_proof_id < $3
              ORDER BY zk_proof_id
              LIMIT $2",
             self.conf.verify_proof_resp_max_retries as i64,
-            self.conf.verify_proof_resp_batch_limit as i64
+            self.conf.verify_proof_resp_batch_limit as i64,
+            SYNTHETIC_ZK_PROOF_ID_BASE
         )
         .fetch_all(&self.db_pool)
         .await?;

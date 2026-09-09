@@ -72,11 +72,15 @@ where
         decryption_processor,
         kms_generation_processor,
         protocol_config_processor,
-        config.max_decryption_attempts,
         db.clone(),
     );
     let response_publisher = DbKmsResponsePublisher::new(db.clone());
-    let kms_worker = KmsWorker::new(event_picker, event_processor, response_publisher);
+    let kms_worker = KmsWorker::new(
+        event_picker,
+        event_processor,
+        response_publisher,
+        config.max_decryption_attempts,
+    );
     Ok(kms_worker)
 }
 

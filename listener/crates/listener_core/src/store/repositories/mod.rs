@@ -1,8 +1,10 @@
 pub mod block_repo;
 pub mod filter_repo;
+pub mod final_block_repo;
 use crate::store::client::PgClient;
 pub use block_repo::BlockRepository;
 pub use filter_repo::FilterRepository;
+pub use final_block_repo::FinalBlockRepository;
 use std::sync::Arc;
 
 /// Centralized container for all SQL repositories.
@@ -13,6 +15,7 @@ use std::sync::Arc;
 pub struct Repositories {
     pub blocks: BlockRepository,
     pub filters: FilterRepository,
+    pub final_blocks: FinalBlockRepository,
     chain_id: i64,
 }
 
@@ -21,7 +24,8 @@ impl Repositories {
     pub fn new(client: Arc<PgClient>, chain_id: i64) -> Self {
         Self {
             blocks: BlockRepository::new(client.clone(), chain_id),
-            filters: FilterRepository::new(client, chain_id),
+            filters: FilterRepository::new(client.clone(), chain_id),
+            final_blocks: FinalBlockRepository::new(client, chain_id),
             chain_id,
         }
     }

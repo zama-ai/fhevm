@@ -4,6 +4,8 @@ ARG RUST_IMAGE_VERSION
 FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:${RUST_IMAGE_VERSION} AS builder
 
 ARG CARGO_PROFILE=release
+# Compiled stack version; unset => baseline (0.14.0), GCS build passes a newer one.
+ARG BUILD_STACK_VERSION
 
 USER root
 
@@ -13,6 +15,7 @@ COPY listener ./listener
 COPY coprocessor/fhevm-engine ./coprocessor/fhevm-engine
 COPY coprocessor/proto ./coprocessor/proto
 COPY gateway-contracts/rust_bindings ./gateway-contracts/rust_bindings
+COPY host-contracts/rust_bindings ./host-contracts/rust_bindings
 COPY shared/ciphertext-attestation ./shared/ciphertext-attestation
 COPY .git/HEAD ./coprocessor/fhevm-engine/BUILD_ID
 
@@ -25,7 +28,8 @@ WORKDIR /app/coprocessor/fhevm-engine
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/app/coprocessor/fhevm-engine/target,sharing=locked \
     cargo fetch && \
-    SQLX_OFFLINE=true BUILD_ID=$(cat BUILD_ID) cargo build --profile=${CARGO_PROFILE} -p consensus-detector && \
+    FEATURES=""; if [ -n "${BUILD_STACK_VERSION}" ]; then FEATURES="--features fhevm-engine-common/stack-version-override"; export BUILD_STACK_VERSION="${BUILD_STACK_VERSION}"; fi && \
+    SQLX_OFFLINE=true BUILD_ID=$(cat BUILD_ID) cargo build --profile=${CARGO_PROFILE} -p consensus-detector ${FEATURES} && \
     cp target/${CARGO_PROFILE}/consensus-detector /tmp/consensus-detector
 
 # Stage 2: Runtime image

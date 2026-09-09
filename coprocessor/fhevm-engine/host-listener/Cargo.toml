@@ -57,6 +57,7 @@ url = "2.5.7"
 
 # local dependencies
 fhevm-engine-common = { path = "../fhevm-engine-common" }
+fhevm_host_bindings = { path = "../../../host-contracts/rust_bindings", default-features = false }
 # TODO: integrate github or better path when available
 consumer = { path = "../../../listener/crates/consumer" }
 primitives = { path = "../../../listener/crates/shared/primitives" }
@@ -73,11 +74,6 @@ tracing-test = { workspace = true }
 [dev-dependencies.host-listener]
 path = "."
 features = ["test_bypass_key_extraction"]
-
-[build-dependencies]
-foundry-compilers = { workspace = true }
-foundry-compilers-artifacts = "0.13"
-semver = { workspace = true }
 
 [lints]
 workspace = true

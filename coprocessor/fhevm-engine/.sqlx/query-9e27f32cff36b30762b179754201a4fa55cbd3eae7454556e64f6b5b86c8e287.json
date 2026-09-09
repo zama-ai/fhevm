@@ -1,0 +1,37 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE dependence_chain AS dc\n            SET\n                worker_id = NULL,\n                lock_acquired_at = NULL,\n                lock_expires_at = NULL,\n                status = CASE\n                    -- If the listener refreshed this DCID while it was owned,\n                    -- preserve its update so the new work is acquired again\n                    -- instead of being hidden as processed.\n                    WHEN dc.status = 'processing' THEN 'processed'\n                    ELSE dc.status\n                END\n            WHERE dc.worker_id = $1\n              AND dc.dependence_chain_id = ANY($2)\n              AND NOT EXISTS (\n                  SELECT 1\n                  FROM computations c\n                  WHERE c.dependence_chain_id = dc.dependence_chain_id\n                    AND c.is_allowed = TRUE\n                    AND c.is_completed = FALSE\n                    -- Mirror the work window's predicate exactly. A RETRYABLE\n                    -- stamp is NOT terminal: the window re-selects it and\n                    -- success heals it, so while it still has attempts it must\n                    -- keep the chain open — retiring on it would leave the row\n                    -- unreachable to every acquisition predicate.\n                    --\n                    -- Past the demote threshold the window has stopped\n                    -- selecting it, so it must stop counting here too, or the\n                    -- chain never retires and its dependents stay gated on work\n                    -- that is no longer being attempted in this lane. The row\n                    -- is NOT abandoned: the slow sweep re-arms the chain and\n                    -- resets the count.\n                    AND (c.is_error = FALSE\n                         OR (c.error_message LIKE '%' || $3 || '%'\n                             AND c.error_retry_count < $4))\n                    -- ...and mirror its TRANSACTION scope too. A row whose\n                    -- transaction holds a demoted sibling is not being\n                    -- attempted in this lane either, so counting it here would\n                    -- hold the chain open on work the window will not select.\n                    -- That is the state that made demotion inert: the chain\n                    -- never reached 'processed', so the sweep -- which only\n                    -- looks at processed chains -- never re-armed it.\n                    --\n                    -- CHAIN-LOCAL here, deliberately, where the work window\n                    -- is transaction-wide. The invariant is that a chain may\n                    -- only retire on a demotion the sweep will later re-arm,\n                    -- and `rearm_demoted_chains` selects chains that OWN the\n                    -- demoted row. Retiring on a demoted row belonging to a\n                    -- different chain -- a transaction's rows can span chains\n                    -- when a fork-exposed database retained siblings -- would\n                    -- retire this chain while the sweep re-armed the other\n                    -- one, and a 'processed' chain is not acquirable (the\n                    -- work-stealing branch needs `lock_expires_at < NOW()`,\n                    -- which retirement sets to NULL). The pending row would\n                    -- then be stranded until the listener happened to refresh\n                    -- the chain with new work.\n                    --\n                    -- The window has no such constraint and stays\n                    -- transaction-wide: if any row of a transaction is\n                    -- demoted the transaction cannot complete, so skipping it\n                    -- is right whichever chain holds that row, and\n                    -- over-waiting there costs a pass rather than progress.\n                    AND NOT EXISTS (\n                        SELECT 1\n                        FROM computations demoted\n                        WHERE demoted.transaction_id = c.transaction_id\n                          AND demoted.dependence_chain_id = c.dependence_chain_id\n                          AND demoted.is_completed = FALSE\n                          AND demoted.is_error = TRUE\n                          AND demoted.error_message LIKE '%' || $3 || '%'\n                          AND demoted.error_retry_count >= $4\n                    )\n              )\n            RETURNING\n                dc.dependence_chain_id,\n                dc.dependents,\n                dc.status = 'processed' AS \"marked_processed!\"\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "dependence_chain_id",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "dependents",
+        "type_info": "ByteaArray"
+      },
+      {
+        "ordinal": 2,
+        "name": "marked_processed!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "ByteaArray",
+        "Text",
+        "Int2"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "9e27f32cff36b30762b179754201a4fa55cbd3eae7454556e64f6b5b86c8e287"
+}

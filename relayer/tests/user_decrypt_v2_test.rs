@@ -10,7 +10,7 @@ use crate::common::validation_helper::{
     expect_v2_malformed_json, expect_v2_missing_field, expect_v2_validation_error, test_endpoint,
     test_endpoint_raw_body, with_invalid_field,
 };
-use alloy::primitives::{Address, B256};
+use alloy::primitives::Address;
 use ethereum_rpc_mock::fhevm::UserDecryptKind;
 use ethereum_rpc_mock::Response;
 use fhevm_relayer::http::endpoints::v2::types::error::ApiResponseStatus;
@@ -18,7 +18,6 @@ use fhevm_relayer::http::endpoints::v2::types::user_decrypt::{
     UserDecryptPostResponseJson, UserDecryptStatusResponseJson,
 };
 use fhevm_relayer::http::validation_messages as constants_validation;
-use rand::{rng, RngExt};
 use rstest::rstest;
 use serde_json::json;
 use std::str::FromStr;
@@ -51,87 +50,9 @@ mod constants {
 }
 
 mod helpers {
-    use super::*;
-    use crate::common::utils;
-
-    pub fn v2_user_decrypt_post_url(setup: &TestSetup) -> String {
-        format!("http://localhost:{}/v2/user-decrypt", setup.http_port)
-    }
-
-    pub fn v2_user_decrypt_get_url(setup: &TestSetup, job_id: &str) -> String {
-        format!(
-            "http://localhost:{}/v2/user-decrypt/{}",
-            setup.http_port, job_id
-        )
-    }
-
-    pub fn random_address() -> Address {
-        utils::random_address()
-    }
-
-    pub fn random_handle() -> String {
-        utils::random_handle()
-    }
-
-    pub fn random_signature() -> String {
-        let mut rng = rng();
-        (0..130)
-            .map(|_| rng.random_range(0..16))
-            .map(|digit| format!("{:x}", digit))
-            .collect()
-    }
-
-    pub fn random_public_key() -> String {
-        let mut rng = rng();
-        (0..64)
-            .map(|_| rng.random_range(0..16))
-            .map(|digit| format!("{:x}", digit))
-            .collect()
-    }
-
-    pub fn create_user_decrypt_payload(
-        chain_id: &str,
-        contract_address: Address,
-        user_address: Address,
-    ) -> serde_json::Value {
-        let handle = random_handle();
-
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-
-        json!({
-            "handleContractPairs": [{
-                "handle": handle,
-                "contractAddress": format!("{:?}", contract_address)
-            }],
-            "requestValidity": {
-                "startTimestamp": (now - 1).to_string(),
-                "durationDays": constants::REQUEST_VALIDITY_DAYS
-            },
-            "contractsChainId": chain_id,
-            "contractAddresses": [format!("{:?}", contract_address)],
-            "userAddress": format!("{:?}", user_address),
-            "signature": random_signature(),
-            "publicKey": random_public_key(),
-            "extraData": constants::EXTRA_DATA
-        })
-    }
-
-    pub fn extract_ciphertext_handles_from_user_payload(payload: &serde_json::Value) -> Vec<B256> {
-        payload["handleContractPairs"]
-            .as_array()
-            .unwrap_or(&vec![])
-            .iter()
-            .filter_map(|pair| {
-                pair["handle"].as_str().and_then(|s| {
-                    let cleaned = s.strip_prefix("0x").unwrap_or(s);
-                    B256::from_str(cleaned).ok()
-                })
-            })
-            .collect()
-    }
+    // The v2 POST → poll lifecycle and payload builders live in
+    // `common::flows` so the listener-redundancy suite can drive this flow too.
+    pub use crate::common::flows::user_decrypt::*;
 
     /// Validates UserDecrypt v2 response format compatibility with TKMS library
     /// for client-side plaintext reconstruction
@@ -181,51 +102,6 @@ mod helpers {
             v2_item.get("extra_data").is_none(),
             "v2 should not serialize extra_data field"
         );
-    }
-
-    /// Submit POST request and return job_id
-    pub async fn submit_request(setup: &TestSetup, payload: &serde_json::Value) -> String {
-        let response = reqwest::Client::new()
-            .post(v2_user_decrypt_post_url(setup))
-            .header("Content-Type", "application/json")
-            .timeout(std::time::Duration::from_secs(10))
-            .json(payload)
-            .send()
-            .await
-            .expect("Failed to send POST request");
-
-        assert_eq!(response.status(), reqwest::StatusCode::ACCEPTED);
-        let post_response: UserDecryptPostResponseJson = response
-            .json()
-            .await
-            .expect("Failed to parse POST response");
-        assert_eq!(post_response.status, ApiResponseStatus::Queued);
-        post_response.result.job_id
-    }
-
-    /// Poll GET endpoint until terminal state, return (status, body)
-    pub async fn poll_until_terminal(
-        setup: &TestSetup,
-        job_id: &str,
-    ) -> (reqwest::StatusCode, UserDecryptStatusResponseJson) {
-        let client = reqwest::Client::new();
-        for _ in 0..10 {
-            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-            let response = client
-                .get(v2_user_decrypt_get_url(setup, job_id))
-                .timeout(std::time::Duration::from_secs(10))
-                .send()
-                .await
-                .expect("Failed to send GET request");
-
-            let status = response.status();
-            if status != reqwest::StatusCode::ACCEPTED {
-                let body: UserDecryptStatusResponseJson =
-                    response.json().await.expect("Failed to parse GET response");
-                return (status, body);
-            }
-        }
-        panic!("Request did not reach terminal state in time");
     }
 }
 
@@ -580,6 +456,44 @@ async fn test_nonce_too_high_then_succeeds() {
     setup.shutdown().await;
 }
 
+/// The error a same-nonce collision between two dispatchers reports. It must cost a retry,
+/// not a terminal `failure` on the row.
+#[tokio::test]
+async fn test_replacement_underpriced_then_succeeds() {
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+    let contract_address = helpers::random_address();
+    let user_address = helpers::random_address();
+    let payload = helpers::create_user_decrypt_payload(
+        &setup.settings.gateway.blockchain_rpc.chain_id.to_string(),
+        contract_address,
+        user_address,
+    );
+    let handles = helpers::extract_ciphertext_handles_from_user_payload(&payload);
+
+    setup.fhevm_mock.queue_tx_responses_for_selector(
+        setup.fhevm_mock.decryption_contract,
+        constants::USER_DECRYPT_SELECTOR,
+        vec![Response::error(
+            "replacement transaction underpriced".to_string(),
+        )],
+    );
+    setup.fhevm_mock.on_user_decrypt_success(
+        UserDecryptKind::Direct,
+        handles.clone(),
+        user_address,
+        ethereum_rpc_mock::SubscriptionTarget::All,
+    );
+
+    let job_id = helpers::submit_request(&setup, &payload).await;
+    let (status, body) = helpers::poll_until_terminal(&setup, &job_id).await;
+
+    assert_eq!(status, reqwest::StatusCode::OK);
+    assert_eq!(body.status, ApiResponseStatus::Succeeded);
+    assert!(body.result.is_some());
+
+    setup.shutdown().await;
+}
+
 #[tokio::test]
 async fn test_max_retries_exceeded_fails() {
     let setup = TestSetup::new_with_low_retries()
@@ -594,7 +508,7 @@ async fn test_max_retries_exceeded_fails() {
     );
 
     // Set up readiness check to pass
-    setup.fhevm_mock.set_readiness_success();
+    setup.ct_attestation().serve_attestations().await;
 
     // Queue more errors than max_attempts (3 errors > 2 max_attempts)
     setup.fhevm_mock.queue_tx_responses_for_selector(
@@ -636,7 +550,7 @@ async fn test_contract_paused_returns_503() {
         user_address,
     );
 
-    setup.fhevm_mock.set_readiness_success();
+    setup.ct_attestation().serve_attestations().await;
     setup
         .fhevm_mock
         .on_user_decrypt_revert(UserDecryptKind::Direct, constants::REVERT_ENFORCED_PAUSE);
@@ -670,7 +584,7 @@ async fn test_invalid_signature_returns_400() {
         user_address,
     );
 
-    setup.fhevm_mock.set_readiness_success();
+    setup.ct_attestation().serve_attestations().await;
     setup
         .fhevm_mock
         .on_user_decrypt_revert(UserDecryptKind::Direct, constants::REVERT_INVALID_SIGNATURE);
@@ -700,7 +614,7 @@ async fn test_insufficient_balance_returns_503() {
         user_address,
     );
 
-    setup.fhevm_mock.set_readiness_success();
+    setup.ct_attestation().serve_attestations().await;
     setup.fhevm_mock.on_user_decrypt_revert(
         UserDecryptKind::Direct,
         constants::REVERT_INSUFFICIENT_BALANCE,
@@ -735,7 +649,7 @@ async fn test_insufficient_allowance_returns_503() {
         user_address,
     );
 
-    setup.fhevm_mock.set_readiness_success();
+    setup.ct_attestation().serve_attestations().await;
     setup.fhevm_mock.on_user_decrypt_revert(
         UserDecryptKind::Direct,
         constants::REVERT_INSUFFICIENT_ALLOWANCE,
@@ -770,7 +684,7 @@ async fn test_unknown_selector_returns_500() {
         user_address,
     );
 
-    setup.fhevm_mock.set_readiness_success();
+    setup.ct_attestation().serve_attestations().await;
     setup
         .fhevm_mock
         .on_user_decrypt_revert(UserDecryptKind::Direct, constants::REVERT_UNKNOWN_SELECTOR);
@@ -811,7 +725,7 @@ async fn test_retry_after_failure_creates_new_job_id() {
     );
 
     // Set up readiness check to pass
-    setup.fhevm_mock.set_readiness_success();
+    setup.ct_attestation().serve_attestations().await;
 
     // Configure mock to fail with max retries exceeded
     setup.fhevm_mock.queue_tx_responses_for_selector(
@@ -885,18 +799,18 @@ async fn test_retry_after_failure_creates_new_job_id() {
     setup.shutdown().await;
 }
 
-/// Test that a readiness check contract error (RPC node unavailable) correctly
-/// transitions the request from 'queued' to 'failure' so V2 clients see failure.
-/// Before the fix, update_status_to_failure_on_tx_failed silently no-oped because
-/// the request was still in 'queued' state (not 'processing' or 'tx_in_flight').
+/// Test that a terminal readiness failure — Coprocessors serving attestations over divergent
+/// ciphertext material, so no group ever reaches the majority threshold — transitions the request
+/// from 'queued' straight to 'failure', without burning the retry budget that an
+/// as-yet-unattested ciphertext is entitled to.
 #[tokio::test]
-async fn test_readiness_contract_error_returns_failure_v2() {
+async fn test_readiness_no_consensus_returns_failure_v2() {
     let setup = TestSetup::new_with_minimal_readiness()
         .await
         .expect("Failed to create test setup");
 
-    // Configure readiness checks to return RPC error (node unavailable)
-    setup.fhevm_mock.set_readiness_contract_error();
+    // Every Coprocessor signs valid attestations, but over different material
+    setup.ct_attestation().serve_divergent_attestations().await;
 
     let user_address = helpers::random_address();
     let contract_address = helpers::random_address();
@@ -915,15 +829,15 @@ async fn test_readiness_contract_error_returns_failure_v2() {
     assert_eq!(
         status,
         reqwest::StatusCode::INTERNAL_SERVER_ERROR,
-        "Expected 500 for readiness check contract error (RPC error is not a known revert)"
+        "Expected 500 when the Coprocessors cannot agree on the ciphertext material"
     );
     assert_eq!(body.status, ApiResponseStatus::Failed);
 
     let error = body.error.as_ref().expect("Error should be present");
     assert_eq!(
         error.label(),
-        "internal_server_error",
-        "Expected label 'internal_server_error' for readiness check contract error"
+        "no_attestation_consensus",
+        "Expected label 'no_attestation_consensus', distinct from the retryable timeout label"
     );
 
     setup.shutdown().await;
@@ -938,8 +852,8 @@ async fn test_readiness_timeout_returns_503_with_correct_label() {
         .await
         .expect("Failed to create test setup");
 
-    // Configure readiness checks to always return false (ciphertext never ready)
-    setup.fhevm_mock.set_readiness_failure();
+    // No Coprocessor has published an attestation for the handle
+    setup.ct_attestation().serve_nothing().await;
 
     let user_address = helpers::random_address();
     let contract_address = helpers::random_address();
@@ -967,6 +881,72 @@ async fn test_readiness_timeout_returns_503_with_correct_label() {
         "readiness_check_timed_out",
         "Expected label 'readiness_check_timed_out' for readiness timeout"
     );
+
+    setup.shutdown().await;
+}
+
+// The same readiness outcomes under `source: gateway_chain`. Worth repeating from
+// `public_decrypt_v2_test` only because this side calls a different overload
+// (`isUserDecryptionReady_1`) and maps its errors in a different processor. The delegated suite
+// adds nothing further: all three user-decrypt kinds share this overload and this processor. No
+// success twin either — the timeout test already pins this overload's decode.
+
+/// A ciphertext the Gateway never reports ready exhausts the retry budget and stays retryable.
+#[tokio::test]
+async fn test_gateway_chain_readiness_timeout_returns_503() {
+    let setup = TestSetup::new_with_gateway_chain_readiness()
+        .await
+        .expect("Failed to create test setup");
+
+    setup.fhevm_mock.set_readiness_failure();
+
+    let user_address = helpers::random_address();
+    let contract_address = helpers::random_address();
+    let payload = helpers::create_user_decrypt_payload(
+        &setup.settings.gateway.blockchain_rpc.chain_id.to_string(),
+        contract_address,
+        user_address,
+    );
+
+    let job_id = helpers::submit_request(&setup, &payload).await;
+    let (status, body) = helpers::poll_until_terminal(&setup, &job_id).await;
+
+    assert_eq!(status, reqwest::StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(body.status, ApiResponseStatus::Failed);
+    assert!(body.result.is_none());
+
+    let error = body.error.as_ref().expect("Error should be present");
+    assert_eq!(error.label(), "readiness_check_timed_out");
+
+    setup.shutdown().await;
+}
+
+/// An unreachable gateway read node is the relayer's own dependency failing, not the ciphertext
+/// being unready, so it ends on a 500 instead of the retryable readiness label.
+#[tokio::test]
+async fn test_gateway_chain_readiness_contract_error_returns_500() {
+    let setup = TestSetup::new_with_gateway_chain_readiness()
+        .await
+        .expect("Failed to create test setup");
+
+    setup.fhevm_mock.set_readiness_contract_error();
+
+    let user_address = helpers::random_address();
+    let contract_address = helpers::random_address();
+    let payload = helpers::create_user_decrypt_payload(
+        &setup.settings.gateway.blockchain_rpc.chain_id.to_string(),
+        contract_address,
+        user_address,
+    );
+
+    let job_id = helpers::submit_request(&setup, &payload).await;
+    let (status, body) = helpers::poll_until_terminal(&setup, &job_id).await;
+
+    assert_eq!(status, reqwest::StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(body.status, ApiResponseStatus::Failed);
+
+    let error = body.error.as_ref().expect("Error should be present");
+    assert_eq!(error.label(), "internal_server_error");
 
     setup.shutdown().await;
 }

@@ -153,6 +153,9 @@ pub enum ListenerStep {
     // Event processing (DEBUG — high-volume when multiple relayers share contracts)
     EventReceived,
     EventDuplicate,
+    EventUnroutable,
+    EventCompleted,
+    EventRedispatched,
     BlockProgressUpdated,
 
     // Degraded path (WARN)
@@ -169,6 +172,9 @@ impl fmt::Display for ListenerStep {
             Self::SubscriptionActive => "subscription_active",
             Self::EventReceived => "event_received",
             Self::EventDuplicate => "event_duplicate",
+            Self::EventUnroutable => "event_unroutable",
+            Self::EventCompleted => "event_completed",
+            Self::EventRedispatched => "event_redispatched",
             Self::BlockProgressUpdated => "block_progress_updated",
             Self::ProviderRetrying => "provider_retrying",
             Self::SubscriptionDropped => "subscription_dropped",
@@ -183,10 +189,11 @@ impl fmt::Display for ListenerStep {
 /// Normal operations are DEBUG, problems are WARN.
 #[derive(Debug, Clone, Copy)]
 pub enum WorkerStep {
-    // Normal ops (DEBUG)
+    // Normal ops (DEBUG/INFO)
     WorkerStarted,
     TickCompleted,
     RowsProcessed,
+    WorkerStopped,
 
     // Problems (WARN)
     WorkerPanicked,
@@ -199,6 +206,7 @@ impl fmt::Display for WorkerStep {
             Self::WorkerStarted => "worker_started",
             Self::TickCompleted => "tick_completed",
             Self::RowsProcessed => "rows_processed",
+            Self::WorkerStopped => "worker_stopped",
             Self::WorkerPanicked => "worker_panicked",
             Self::WorkerRestarting => "worker_restarting",
         };

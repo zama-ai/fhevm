@@ -210,7 +210,7 @@ impl RmqConsumer {
             .await
             .map_err(|e| ConsumerError::ConsumerRegistration {
                 consumer_tag: config.retry.base.consumer_tag.clone(),
-                source: e,
+                source: Box::new(e),
             })?;
 
         info!(
@@ -402,7 +402,7 @@ impl RmqConsumer {
             .await
             .map_err(|e| ConsumerError::ConsumerRegistration {
                 consumer_tag: config.base.consumer_tag.clone(),
-                source: e,
+                source: Box::new(e),
             })?;
 
         info!(
@@ -459,7 +459,7 @@ impl RmqConsumer {
             .await
             .map_err(|e| ConsumerError::ExchangeDeclaration {
                 exchange: exchange.to_string(),
-                source: e,
+                source: Box::new(e),
             })?;
         Ok(())
     }
@@ -509,7 +509,7 @@ impl RmqConsumer {
             .await
             .map_err(|e| ConsumerError::QueueDeclaration {
                 queue: config.base.queue.clone(),
-                source: e,
+                source: Box::new(e),
             })?;
 
         channel
@@ -524,7 +524,7 @@ impl RmqConsumer {
             .map_err(|e| ConsumerError::QueueBinding {
                 queue: config.base.queue.clone(),
                 exchange: config.base.exchange.clone(),
-                source: e,
+                source: Box::new(e),
             })?;
 
         let mut retry_args = FieldTable::default();
@@ -556,7 +556,7 @@ impl RmqConsumer {
             .await
             .map_err(|e| ConsumerError::QueueDeclaration {
                 queue: retry_queue.clone(),
-                source: e,
+                source: Box::new(e),
             })?;
 
         channel
@@ -571,7 +571,7 @@ impl RmqConsumer {
             .map_err(|e| ConsumerError::QueueBinding {
                 queue: retry_queue.clone(),
                 exchange: config.retry_exchange.clone(),
-                source: e,
+                source: Box::new(e),
             })?;
 
         let error_queue = format!("{}.error", config.base.queue);
@@ -587,7 +587,7 @@ impl RmqConsumer {
             .await
             .map_err(|e| ConsumerError::QueueDeclaration {
                 queue: error_queue.clone(),
-                source: e,
+                source: Box::new(e),
             })?;
 
         channel
@@ -602,7 +602,7 @@ impl RmqConsumer {
             .map_err(|e| ConsumerError::QueueBinding {
                 queue: error_queue.clone(),
                 exchange: config.dead_exchange.clone(),
-                source: e,
+                source: Box::new(e),
             })?;
 
         Ok(())
@@ -641,7 +641,7 @@ impl RmqConsumer {
             .await
             .map_err(|e| ConsumerError::QueueDeclaration {
                 queue: config.base.queue.clone(),
-                source: e,
+                source: Box::new(e),
             })?;
 
         channel
@@ -656,7 +656,7 @@ impl RmqConsumer {
             .map_err(|e| ConsumerError::QueueBinding {
                 queue: config.base.queue.clone(),
                 exchange: config.base.exchange.clone(),
-                source: e,
+                source: Box::new(e),
             })?;
 
         let mut cron_args = FieldTable::default();
@@ -687,7 +687,7 @@ impl RmqConsumer {
             .await
             .map_err(|e| ConsumerError::QueueDeclaration {
                 queue: cron_queue.clone(),
-                source: e,
+                source: Box::new(e),
             })?;
 
         channel
@@ -702,7 +702,7 @@ impl RmqConsumer {
             .map_err(|e| ConsumerError::QueueBinding {
                 queue: cron_queue.clone(),
                 exchange: config.retry_exchange.clone(),
-                source: e,
+                source: Box::new(e),
             })?;
 
         Ok(())

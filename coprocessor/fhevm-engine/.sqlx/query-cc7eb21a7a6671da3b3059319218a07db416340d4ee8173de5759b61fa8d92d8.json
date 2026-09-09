@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT c.output_handle,\n                (bool_or(c.is_error AND NOT c.is_completed\n                        AND (c.error_message IS NULL OR c.error_message NOT LIKE '%' || $2 || '%'))\n                 AND bool_and(NOT c.is_allowed OR (c.is_error AND NOT c.is_completed\n                        AND (c.error_message IS NULL OR c.error_message NOT LIKE '%' || $2 || '%')))) AS dead\n         FROM computations c\n         WHERE c.output_handle = ANY($1::BYTEA[])\n         GROUP BY c.output_handle",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "output_handle",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "dead",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "ByteaArray",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "cc7eb21a7a6671da3b3059319218a07db416340d4ee8173de5759b61fa8d92d8"
+}

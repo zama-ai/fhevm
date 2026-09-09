@@ -14,12 +14,10 @@ use crate::metrics::{
 
 /// HTTP handler for the `/v2/keyurl` endpoint.
 ///
-/// Reads the latest chain-sourced value from a [`tokio::sync::watch`] channel fed by the
-/// host-chain [`crate::host::keyurl_poller::KeyUrlPoller`]. The channel is seeded with the
-/// first successful poll at startup (the relayer gates startup on it), so a value is always
-/// present and reads are lock-free — no waiting or "not initialized" path is needed.
+/// Reads from a watch channel that always holds a value: the host-chain poller seeds it at
+/// startup under `source: chain`, and static config seeds it under `source: config`.
 pub struct KeyUrlHandler {
-    /// Receiver for the latest KeyUrl response, updated by the poller on each rotation.
+    /// Receiver for the served KeyUrl response; updated on each rotation in `chain` mode.
     keyurl_rx: watch::Receiver<KeyUrlResponseJson>,
 }
 
@@ -43,7 +41,6 @@ impl KeyUrlHandler {
     }
 
     pub async fn keyurl_v2(&self, headers: HeaderMap) -> impl IntoResponse {
-        // The watch channel always holds the latest chain-sourced value (seeded at startup).
         let response = self.keyurl_rx.borrow().clone();
 
         http_metrics::with_http_metrics(

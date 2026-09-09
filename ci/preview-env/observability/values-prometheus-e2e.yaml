@@ -1,0 +1,212 @@
+# In-namespace Prometheus for the fhevm e2e preview namespace (opt-in via the
+# `observability` dispatch input, see preview-env-deploy.yml). Scrapes every
+# service in the namespace that exposes a named `metrics` or `monitoring`
+# Discovery is Kubernetes endpoints SD filtered on those port names, NOT a
+# static target list and NOT ServiceMonitors: it needs no per-component config,
+# automatically follows the nb_coprocessor / nb_kms_core per-party fan-out
+# (coprocessor-<i>-*, kms-connector-<i>-*), and doesn't depend on
+# prometheus-operator CRDs existing cluster-wide. anvil-node and the contracts
+# Jobs expose no metrics at all - those stay blind spots.
+#
+# Everything here ships as RAW objects via the common chart's
+# `additionalResources` (applied verbatim, tpl-rendered - same mechanism as
+# ../test-suite/values-test-suite-workflow-e2e.yaml's Argo Workflows) rather
+# than the chart's own deployment/service keys: endpoints SD needs the pod to
+# run under a dedicated ServiceAccount, and additionalResources is the one
+# proven way to wire a custom SA with this chart. The Role only asks for
+# get/list/watch on services/endpoints/pods, all held by the deploying CI
+# principal (fhevm-ci-access -> `admin`), so RBAC escalation-prevention is
+# happy (see the pods/log note in values-test-suite-workflow-e2e.yaml).
+fullnameOverride: prometheus
+
+additionalResources:
+  - enabled: true
+    object:
+      apiVersion: v1
+      kind: ServiceAccount
+      metadata:
+        name: prometheus
+
+  - enabled: true
+    object:
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: Role
+      metadata:
+        name: prometheus-role
+      rules:
+        # Exactly what endpoints-role service discovery reads - nothing else
+        # (no secrets, no writes).
+        - apiGroups: [""]
+          resources: [services, endpoints, pods]
+          verbs: [get, list, watch]
+
+  - enabled: true
+    object:
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: RoleBinding
+      metadata:
+        name: prometheus-binding
+      roleRef:
+        apiGroup: rbac.authorization.k8s.io
+        kind: Role
+        name: prometheus-role
+      subjects:
+        - kind: ServiceAccount
+          name: prometheus
+          # Patched to the release namespace with yq at deploy time (a
+          # ServiceAccount subject on a namespaced RoleBinding must name it
+          # explicitly), same as values-test-suite-workflow-e2e.yaml.
+          namespace: PLACEHOLDER_NAMESPACE
+
+  - enabled: true
+    object:
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: prometheus-config
+      data:
+        prometheus.yml: |
+          global:
+            scrape_interval: 15s
+            evaluation_interval: 15s
+          scrape_configs:
+            # Every Service in THIS namespace with a named `metrics` or
+            # `monitoring` port (see this file's header for who that is).
+            # `job` is relabeled to the Service name so panels read
+            # "coprocessor-1-tfhe-worker", not one blob of "fhevm".
+            - job_name: fhevm
+              kubernetes_sd_configs:
+                - role: endpoints
+                  namespaces:
+                    own_namespace: true
+              relabel_configs:
+                - source_labels: [__meta_kubernetes_endpoint_port_name]
+                  regex: metrics|monitoring
+                  action: keep
+                - source_labels: [__meta_kubernetes_service_name]
+                  target_label: job
+                - source_labels: [__meta_kubernetes_service_name]
+                  target_label: service
+                - source_labels: [__meta_kubernetes_pod_name]
+                  target_label: pod
+            - job_name: prometheus
+              static_configs:
+                - targets: ["localhost:9090"]
+
+  # PVC (not emptyDir): a mid-run Prometheus pod reschedule must not wipe the
+  # metric history. Namespaced, so still torn down with the preview namespace.
+  - enabled: true
+    object:
+      apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
+        name: prometheus-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 10Gi
+
+  - enabled: true
+    object:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: prometheus
+        labels:
+          app: prometheus
+      spec:
+        replicas: 1
+        # Recreate, not RollingUpdate: the RWO data PVC can't be attached by
+        # the old and new pod at once on a re-deploy.
+        strategy:
+          type: Recreate
+        selector:
+          matchLabels:
+            app: prometheus
+        template:
+          metadata:
+            labels:
+              app: prometheus
+          spec:
+            serviceAccountName: prometheus
+            # prom/prometheus runs as nobody (65534); fsGroup makes the PVC
+            # writable for it.
+            securityContext:
+              runAsNonRoot: true
+              runAsUser: 65534
+              fsGroup: 65534
+            containers:
+              - name: prometheus
+                # Same version the in-repo listener/monitoring compose stack
+                # already runs (listener/docker-compose.yaml).
+                image: prom/prometheus:v3.9.1
+                imagePullPolicy: IfNotPresent
+                args:
+                  - --config.file=/etc/prometheus/prometheus.yml
+                  - --storage.tsdb.path=/prometheus
+                  # Preview envs live days, not weeks; 7d comfortably covers a
+                  # bench campaign without letting the TSDB grow unbounded.
+                  - --storage.tsdb.retention.time=7d
+                  # Size bound too, below the 10Gi PVC so Prometheus drop old
+                  # blocks, instead of filling up the volume.
+                  - --storage.tsdb.retention.size=8GB
+                ports:
+                  - name: web
+                    containerPort: 9090
+                readinessProbe:
+                  httpGet: {path: /-/ready, port: 9090}
+                  initialDelaySeconds: 5
+                  periodSeconds: 5
+                livenessProbe:
+                  httpGet: {path: /-/healthy, port: 9090}
+                  initialDelaySeconds: 10
+                  periodSeconds: 10
+                resources:
+                  requests:
+                    cpu: "250m"
+                    memory: "512Mi"
+                  limits:
+                    cpu: "1"
+                    memory: "2Gi"
+                volumeMounts:
+                  - name: config
+                    mountPath: /etc/prometheus
+                    readOnly: true
+                  - name: data
+                    mountPath: /prometheus
+            volumes:
+              - name: config
+                configMap:
+                  name: prometheus-config
+              - name: data
+                persistentVolumeClaim:
+                  claimName: prometheus-data
+            # Pins onto the zws-pool Karpenter node pool - see
+            # ../coprocessor-infra/values-postgres-coprocessor-e2e.yaml's
+            # matching note.
+            nodeSelector:
+              karpenter.sh/nodepool: zws-pool
+            tolerations:
+              - key: "karpenter.sh/nodepool"
+                operator: "Equal"
+                value: "zws-pool"
+                effect: "NoSchedule"
+
+  - enabled: true
+    object:
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: prometheus
+        labels:
+          app: prometheus
+      spec:
+        # Port deliberately NOT named metrics/monitoring, so the fhevm SD job
+        # above doesn't double-scrape it (self-scrape is the static
+        # localhost:9090 job).
+        ports:
+          - name: web
+            port: 9090
+        selector:
+          app: prometheus

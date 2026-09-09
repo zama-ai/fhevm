@@ -4,6 +4,7 @@ use prometheus::{Registry, TextEncoder};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio_util::sync::CancellationToken;
 use tracing::info;
 
 async fn wait_for_ready(addr: SocketAddr) -> anyhow::Result<()> {
@@ -45,6 +46,7 @@ pub async fn run_metrics_server(
     registry: Registry,
     endpoint: String,
     orchestrator: Arc<Orchestrator>,
+    shutdown: CancellationToken,
 ) -> SocketAddr {
     let addr: SocketAddr = endpoint.parse().expect("Invalid metrics endpoint address");
 
@@ -69,7 +71,9 @@ pub async fn run_metrics_server(
         .spawn_task_and_wait_ready(
             "metrics_server_axum",
             async move {
+                // Its own token, but cancelled alongside the rest, not after.
                 axum::serve(listener, app)
+                    .with_graceful_shutdown(shutdown.cancelled_owned())
                     .await
                     .expect("metrics server failed");
             },

@@ -18,7 +18,7 @@ database:
   db_url: postgres://postgres:postgres@localhost:5432/listener
   migration_max_attempts: 5
   pool:
-    max_connections: 10
+    max_connections: 12
     min_connections: 2
     # acquire_timeout_secs: 5
     # idle_timeout_secs: 600
@@ -66,6 +66,11 @@ blockchain:
   # network: bsc-mainnet
 
   finality_depth: 64
+  # Use the node's `finalized` block tag to determine the final block.
+  # When false, final = head - finality_depth.
+  finality_tag: true
+  # Enable the finality flow (fetch-final-block loop).
+  finality_active: true
   cleaner:
     active: true
     blocks_to_keep: 1000

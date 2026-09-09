@@ -25,9 +25,16 @@ const MSGLIB_ABI = ['function validatePacket(bytes packet)'];
 const BRIDGE_EVENTS_ABI = [
   'event HandleBridged(address indexed receiverDapp, bytes32 srcHandle, bytes32 dstHandle, bytes32 guid)',
 ];
+const ACL_ABI = [
+  'function isAllowedForDecryption(bytes32 handle) view returns (bool)',
+  'function isAllowed(bytes32 handle, address account) view returns (bool)',
+];
 
 const endpointIface = new ethers.Interface(ENDPOINT_ABI);
 const bridgeIface = new ethers.Interface(BRIDGE_EVENTS_ABI);
+
+/** ACL grant the app's bridge callback applies: public decrypt (empty payload) or allow(user). */
+export type ComposeGrant = { kind: 'public' } | { kind: 'account'; account: string };
 
 // Sends a tx and waits for the receipt, retrying on NONCE_EXPIRED
 export async function sendWithNonceRetry(
@@ -226,4 +233,25 @@ export async function waitForBridgedHandles(
     await new Promise((resolve) => setTimeout(resolve, 3_000));
   }
   throw new Error(`real-LZ delivery: no HandleBridged for guid ${guid} within ${timeoutMs}ms`);
+}
+
+/** HandleBridged fires in _lzReceive; the app's ACL grant runs in the later lzCompose delivery.
+ *  Polls the dst ACL until every handle reflects that grant, so callers don't race the compose leg. */
+export async function waitForComposeApplied(
+  dstProvider: ethers.Provider,
+  aclAddress: string,
+  dstHandles: string[],
+  grant: ComposeGrant,
+  timeoutMs: number,
+): Promise<void> {
+  const acl = new ethers.Contract(aclAddress, ACL_ABI, dstProvider);
+  const isApplied = (handle: string): Promise<boolean> =>
+    grant.kind === 'public' ? acl.isAllowedForDecryption(handle) : acl.isAllowed(handle, grant.account);
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const applied = await Promise.all(dstHandles.map((handle) => isApplied(handle)));
+    if (applied.every(Boolean)) return;
+    await new Promise((resolve) => setTimeout(resolve, 3_000));
+  }
+  throw new Error(`real-LZ lzCompose: ACL grant (${grant.kind}) not applied within ${timeoutMs}ms`);
 }

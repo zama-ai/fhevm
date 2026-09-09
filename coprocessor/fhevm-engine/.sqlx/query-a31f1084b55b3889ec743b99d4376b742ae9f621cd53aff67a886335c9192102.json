@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                SELECT p.dependence_chain_id AS \"id!\"\n                FROM unnest($1::bytea[]) AS p(dependence_chain_id)\n                WHERE NOT EXISTS (\n                    SELECT 1\n                    FROM dependence_chain parent\n                    JOIN dependence_chain child\n                      ON child.dependence_chain_id = ANY(parent.dependents)\n                    WHERE parent.dependence_chain_id = p.dependence_chain_id\n                      AND parent.status <> 'processed'\n                      AND child.dependency_count > 0\n                )\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "ByteaArray"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "a31f1084b55b3889ec743b99d4376b742ae9f621cd53aff67a886335c9192102"
+}

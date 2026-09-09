@@ -6,7 +6,7 @@ use connector_utils::tests::setup::{
 use kms_grpc::kms::v1::CiphertextFormat as GrpcCiphertextFormat;
 use kms_worker::core::{
     Config,
-    event_processor::{ProcessingError, ciphertext::s3::BoundedClient},
+    event_processor::{ProcessingErrorKind, ciphertext::s3::BoundedClient},
 };
 
 fn stored_handle() -> anyhow::Result<B256> {
@@ -63,7 +63,7 @@ async fn test_get_ciphertext_rejects_digest_mismatch() -> anyhow::Result<()> {
         .await
         .unwrap_err();
 
-    assert!(matches!(err, ProcessingError::Recoverable(_)));
+    assert!(err.kind == ProcessingErrorKind::Recoverable);
 
     Ok(())
 }
@@ -91,7 +91,7 @@ async fn test_get_unstored_ciphertext_is_unavailable() -> anyhow::Result<()> {
         .unwrap_err();
 
     // Unavailability is retryable: it surfaces as a recoverable error.
-    assert!(matches!(err, ProcessingError::Recoverable(_)));
+    assert!(err.kind == ProcessingErrorKind::Recoverable);
 
     Ok(())
 }
