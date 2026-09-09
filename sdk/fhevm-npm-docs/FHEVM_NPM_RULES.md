@@ -348,6 +348,12 @@ installation roots silently resolve different copies of the same package. The co
 `0.13.3` and `^0.13.3` install the same version today but diverge on the next patch release, so the pin fixes the
 range operator too. A pin no inventoried package declares is stale and fails validation.
 
+Each installation root's `package-lock.json` copies these specs out of the manifests it locks, so aligning a
+`package.json` without regenerating the lock leaves that copy behind and `npm ci` refuses the mismatch. The lockfile
+copies are therefore checked against the pin too, `node_modules` entries excluded — those are resolved output rather
+than a declared spec. Regenerate an installation root with `npm install --package-lock-only`, and an isolated consumer
+fixture with `fhevm-npm test-consumer-regenerate-package-lock`.
+
 ```jsonc
 // ✅ One spec named once, repeated by every consumer whatever its kind or dependency section.
 {

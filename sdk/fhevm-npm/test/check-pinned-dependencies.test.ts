@@ -35,7 +35,10 @@ test('rule 3.3.4 accepts a pinned dependency repeated verbatim in every field th
     }),
   ];
 
-  assert.deepEqual(validatePinnedDependencies(manifest, packages), []);
+  assert.deepEqual(
+    validatePinnedDependencies(manifest, packages, () => undefined),
+    [],
+  );
 });
 
 test('rule 3.3.4 rejects a spec that differs from the pin, including one that only differs by range operator', () => {
@@ -54,7 +57,7 @@ test('rule 3.3.4 rejects a spec that differs from the pin, including one that on
     }),
   ];
 
-  const violations = validatePinnedDependencies(manifest, packages);
+  const violations = validatePinnedDependencies(manifest, packages, () => undefined);
   assert.equal(violations.length, 2);
   assert.deepEqual(
     violations.map((violation) => violation.packageKey),
@@ -77,7 +80,7 @@ test('rule 3.3.4 reports every offending field of one package separately', () =>
     }),
   ];
 
-  const violations = validatePinnedDependencies(manifest, packages);
+  const violations = validatePinnedDependencies(manifest, packages, () => undefined);
   assert.equal(violations.length, 2);
   assert.deepEqual(
     violations.map((violation) => violation.rule),
@@ -97,7 +100,10 @@ test('rule 3.3.4 ignores a package that does not declare the pinned dependency a
     loadedPackage('./plugin/pkg', manifest.packages['./plugin/pkg']!, { name: 'plugin', private: true }),
   ];
 
-  assert.deepEqual(validatePinnedDependencies(manifest, packages), []);
+  assert.deepEqual(
+    validatePinnedDependencies(manifest, packages, () => undefined),
+    [],
+  );
 });
 
 test('rule 3.3.4 rejects a pin that no inventoried package declares', () => {
@@ -107,10 +113,49 @@ test('rule 3.3.4 rejects a pin that no inventoried package declares', () => {
     loadedPackage('./plugin', manifest.packages['./plugin']!, { name: 'plugin-dev', private: true }),
   ];
 
-  const violations = validatePinnedDependencies(manifest, packages);
+  const violations = validatePinnedDependencies(manifest, packages, () => undefined);
   assert.equal(violations.length, 1);
   assert.equal(violations[0]?.packageKey, './npm-manifest.json');
   assert.match(violations[0]?.message ?? '', /is unused/);
+});
+
+test('rule 3.3.4 rejects a lockfile still mirroring a pre-alignment spec', () => {
+  const manifest = manifestWithPin({ '@fhevm/sdk': '^0.13.4' });
+  const packages = [
+    root(manifest),
+    loadedPackage('./plugin', manifest.packages['./plugin']!, {
+      name: 'plugin-dev',
+      private: true,
+      devDependencies: { '@fhevm/sdk': '^0.13.4' },
+    }),
+  ];
+  const readLockfile = (file: string) =>
+    file === '/workspace/plugin/package-lock.json'
+      ? { '': { devDependencies: { '@fhevm/sdk': '^0.13.3' } } }
+      : undefined;
+
+  const violations = validatePinnedDependencies(manifest, packages, readLockfile);
+  assert.equal(violations.length, 1);
+  assert.equal(violations[0]?.packageKey, './plugin/package-lock.json');
+  assert.match(violations[0]?.message ?? '', /stale lockfile: '@fhevm\/sdk' in 'devDependencies' of '\.'/);
+});
+
+test('rule 3.3.4 ignores resolved node_modules entries inside a lockfile', () => {
+  const manifest = manifestWithPin({ '@fhevm/sdk': '^0.13.4' });
+  const packages = [
+    root(manifest),
+    loadedPackage('./plugin', manifest.packages['./plugin']!, {
+      name: 'plugin-dev',
+      private: true,
+      devDependencies: { '@fhevm/sdk': '^0.13.4' },
+    }),
+  ];
+  const readLockfile = () => ({
+    '': { devDependencies: { '@fhevm/sdk': '^0.13.4' } },
+    'node_modules/some-dep': { dependencies: { '@fhevm/sdk': '^0.13.1' } },
+  });
+
+  assert.deepEqual(validatePinnedDependencies(manifest, packages, readLockfile), []);
 });
 
 test('rule 3.3.4 is inert when the manifest pins nothing', () => {
@@ -124,7 +169,10 @@ test('rule 3.3.4 is inert when the manifest pins nothing', () => {
     }),
   ];
 
-  assert.deepEqual(validatePinnedDependencies(manifest, packages), []);
+  assert.deepEqual(
+    validatePinnedDependencies(manifest, packages, () => undefined),
+    [],
+  );
 });
 
 test('the manifest rejects a pinned spec that is not an exact, caret or tilde version', () => {
