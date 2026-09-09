@@ -157,6 +157,23 @@ fn missing_close_and_unsigned_open_leave_all_accounts_unchanged() {
 }
 
 #[test]
+fn scratch_cannot_close_before_the_final_instruction() {
+    let fixture = Fixture::new(0);
+    let result = host_svm().process_transaction_instructions(
+        &[fixture.open(), fixture.close(), fixture.close()],
+        &fixture.accounts,
+    );
+    assert_eq!(
+        result.program_result,
+        TransactionProgramResult::Failure(
+            1,
+            ProgramError::Custom(6000 + host::ZamaHostError::TransientCloseMissing as u32)
+        )
+    );
+    assert_eq!(result.resulting_accounts, fixture.accounts);
+}
+
+#[test]
 fn active_workspace_cannot_be_reopened() {
     let fixture = Fixture::new(0);
     let result = host_svm().process_transaction_instructions(
@@ -403,6 +420,16 @@ fn maximum_result_grants_fit_one_execution_and_leave_no_account() {
         .1;
     assert!(scratch.data.is_empty());
     assert_eq!(scratch.lamports, 0);
+    let state = &result
+        .resulting_accounts
+        .iter()
+        .find(|(key, _)| *key == fixture.state)
+        .unwrap()
+        .1;
+    let state = zama_solana_acl::decode_encrypted_state(&state.data).unwrap();
+    assert_eq!(state.leaf_count, 0);
+    assert!(state.peaks.is_empty());
+    assert!(state.slots.is_empty());
 }
 
 #[derive(Clone, Copy)]

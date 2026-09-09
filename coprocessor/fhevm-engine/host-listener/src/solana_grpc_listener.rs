@@ -1150,7 +1150,10 @@ fn reconstruct_records_for_insert(
                 .expect("covered fhe_execute requires reconstruction context");
             let random_seeds = instructions[instruction_index + 1..]
                 .iter()
-                .take_while(|later| !is_fhe_execute_instruction(&later.data))
+                .take_while(|later| {
+                    later.program != config.program_id
+                        || !is_fhe_execute_instruction(&later.data)
+                })
                 .filter(|later| later.program == config.program_id)
                 .find_map(|later| {
                     decode_fhe_execute_random_seeds_event(&later.data)
@@ -1429,6 +1432,63 @@ mod fhe_execute_acl_tests {
     }
 
     #[test]
+    fn random_seed_lookup_respects_program_discriminator_namespace() {
+        let execute = DecodedInstruction {
+            program: ZAMA_HOST.to_owned(),
+            data: encoded_execution(FheExecuteArgs {
+                account_count: 0,
+                dictionary: vec![],
+                steps: vec![FheExecuteStep::Rand {
+                    fhe_type: 5,
+                    output: FheExecuteOutput::Transient,
+                }],
+            }),
+            accounts: vec![],
+            top_level_index: 0,
+            is_inner: true,
+        };
+        let event = zama_host::FheExecuteRandomSeedsEvent {
+            version: zama_host::EVENT_VERSION,
+            seeds: vec![zama_host::FheExecuteRandomSeed {
+                step_index: 0,
+                seed: [7; 16],
+            }],
+        };
+        let seed_event = DecodedInstruction {
+            data: anchor_lang::event::EVENT_IX_TAG_LE
+                .iter()
+                .copied()
+                .chain(anchor_lang::Event::data(&event))
+                .collect(),
+            ..execute.clone()
+        };
+        for same_program in [false, true] {
+            let mut collision = execute.clone();
+            if !same_program {
+                collision.program = "foreign-program".to_owned();
+            }
+            let outcome = reconstruct_records_for_insert(
+                &config(),
+                &[execute.clone(), collision, seed_event.clone()],
+                42,
+                &HashMap::from([(42, [0x44; 32])]),
+                &HashMap::from([(42, 1_700_000_000)]),
+            );
+            if same_program {
+                assert!(outcome
+                    .unwrap_err()
+                    .to_string()
+                    .contains("incomplete fhe_execute reconstruction"));
+            } else {
+                assert!(matches!(
+                    outcome.unwrap(),
+                    ReconstructionOutcome::Complete(_)
+                ));
+            }
+        }
+    }
+
+    #[test]
     fn state_output_reconstructs_address_cursor_and_leaves() {
         let args = FheExecuteArgs {
             account_count: 1,
@@ -1479,6 +1539,55 @@ mod fhe_execute_acl_tests {
                 make_public: true,
             })]
         );
+    }
+
+    #[test]
+    fn grants_only_output_reconstructs_without_decrypt_permissions() {
+        let args = FheExecuteArgs {
+            account_count: 2,
+            dictionary: vec![],
+            steps: vec![FheExecuteStep::TrivialEncrypt {
+                plaintext: [7; 32],
+                fhe_type: 5,
+                output: FheExecuteOutput::State {
+                    state_index: 0,
+                    previous_leaf_count: 4,
+                    slot: None,
+                    allow_indexes: vec![],
+                    make_public: false,
+                    grants: vec![zama_host::ResultGrant {
+                        initiating_state_index: 0,
+                        consumer_state_index: 0,
+                        scratch_index: 1,
+                    }],
+                },
+            }],
+        };
+        let mut accounts: Vec<[u8; 32]> = (0..11).map(|n| [n; 32]).collect();
+        accounts[9] = STATE;
+        let outcome = reconstruct_records_for_insert(
+            &config(),
+            &[DecodedInstruction {
+                program: ZAMA_HOST.to_owned(),
+                data: encoded_execution(args),
+                accounts,
+                top_level_index: 0,
+                is_inner: true,
+            }],
+            42,
+            &HashMap::from([(42, [0x44; 32])]),
+            &HashMap::from([(42, 1_700_000_000)]),
+        )
+        .unwrap();
+        let ReconstructionOutcome::Complete(reconstructed) = outcome else {
+            panic!("expected covered transaction")
+        };
+        assert_eq!(reconstructed.leaf_sources.len(), 1);
+        let LeafSource::State(write) = &reconstructed.leaf_sources[0];
+        assert_eq!(write.encrypted_state, STATE);
+        assert_eq!(write.previous_leaf_count, 4);
+        assert!(write.allowed_keys.is_empty());
+        assert!(!write.make_public);
     }
 
     #[test]
