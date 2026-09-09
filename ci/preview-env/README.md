@@ -265,10 +265,12 @@ The two host chains are the real public testnets, so this is the only preview sh
   sits on the canonical host chain, so they sign the keygen/crsgen responses there and
   the ceremony stalls at "insufficient funds" without it. Their decryption responses,
   the coprocessor tx-senders, `#0` and `#3` are gateway-side and come from the Nitro faucet.
-- **Ceremony timing.** The kms-connector's Ethereum listener polls from the *finalized*
-  block, ~13 min behind head on Sepolia. Keygen spans two such round trips, so
-  `apply-chain-env.sh` raises the in-pod wait to `CEREMONY_TIMEOUT_MS=35m` (15 m elsewhere)
-  and `KEYGEN_TIMEOUT=80m` gives helm room for both ceremonies in the one pod.
+- **Ceremony timing.** The kms-connector's Ethereum listener pins its reads to the
+  *finalized* block, ~14 min behind head on Sepolia, and that is hardcoded in the
+  connector. Keygen spans two such round trips and was measured at **43 min** end to end,
+  so `apply-chain-env.sh` raises the in-pod waits to `KEYGEN_WAIT_TIMEOUT_MS=60m` and
+  `CRSGEN_WAIT_TIMEOUT_MS=40m` (both 15 m elsewhere), with `KEYGEN_TIMEOUT=110m` giving
+  helm room for both in the one pod. Budget ~70 min of wall clock here on a good run.
 - **Second host chain reuses the `deploy_polygon` path**: the same Polygon overlays, with
   RPC/chain ids patched to Amoy and the Anvil Polygon node skipped. Amoy mirrors the ETH
   ProtocolConfig (canonical source) exactly as the Anvil Polygon does.

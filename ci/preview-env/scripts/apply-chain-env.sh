@@ -106,13 +106,16 @@ if rpc_from_secret; then set_named_env_secret "${keygen}" ".scDeploy.env" RPC_UR
 set_named_env "${keygen}" ".scDeploy.env" DEPLOYER_PRIVATE_KEY "${DEPLOYER_KEY_9}"
 set_named_env "${keygen}" ".scDeploy.env" CHAIN_ID "${HOST_CHAIN_ID}"
 if [[ "${CHAIN_MODE}" == "testnets" ]]; then
-  # The kms-connector's Ethereum listener polls from the FINALIZED block, and Sepolia
-  # finalizes two epochs (~13 min) behind head. Keygen needs two such round trips
-  # (PrepKeygenRequest -> response tx -> KeygenRequest -> response tx), i.e. ~30 min, so
-  # the 15-minute default expires long before ActivateKey can possibly be emitted. 35m
-  # covers that with slack; crsgen is a single round trip and fits well inside it.
-  # KEYGEN_TIMEOUT (resolve-chain.sh) must stay above 2x this - both waits are one pod.
-  set_named_env "${keygen}" ".scDeploy.env" CEREMONY_TIMEOUT_MS "${CEREMONY_TIMEOUT_MS:-2100000}"
+  # gw-listener pins its Ethereum reads to the FINALIZED block (BlockId::finalized() in
+  # kms-connector/crates/gw-listener/src/core/ethereum.rs - not configurable), and Sepolia
+  # finalizes ~14 min behind head. Keygen needs two such round trips (PrepKeygenRequest ->
+  # response tx -> KeygenRequest -> response tx); measured end to end on Sepolia:
+  # PrepKeygenRequest 19:55:12 -> ActivateKey 20:38:24, i.e. 43 min. 60m leaves headroom
+  # for finality degrading further. Crsgen is a single round trip, so ~25 min; 40m keeps
+  # a genuine failure there from burning the full keygen budget.
+  # KEYGEN_TIMEOUT (resolve-chain.sh) must exceed their sum - both waits share one pod.
+  set_named_env "${keygen}" ".scDeploy.env" KEYGEN_WAIT_TIMEOUT_MS "${KEYGEN_WAIT_TIMEOUT_MS:-3600000}"
+  set_named_env "${keygen}" ".scDeploy.env" CRSGEN_WAIT_TIMEOUT_MS "${CRSGEN_WAIT_TIMEOUT_MS:-2400000}"
 fi
 
 # --- listener ---

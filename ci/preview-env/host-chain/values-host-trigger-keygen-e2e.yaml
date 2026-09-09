@@ -100,7 +100,7 @@ scDeploy:
       const ABI = ['event ActivateKey(uint256 keyId, uint256 existingKeyId, string[] kmsNodeStorageUrls, tuple(uint8 keyType, bytes digest)[] keyDigests)'];
       const WINDOW = Number(process.env.LOG_QUERY_WINDOW || 1000);
       const LOOKBACK = Number(process.env.LOG_QUERY_LOOKBACK || 5000);
-      const TIMEOUT_MS = Number(process.env.CEREMONY_TIMEOUT_MS || 15 * 60 * 1000);
+      const TIMEOUT_MS = Number(process.env.KEYGEN_WAIT_TIMEOUT_MS || 15 * 60 * 1000);
       async function waitForEvent(provider, contract, eventName, timeoutMs) {
         const deadline = Date.now() + timeoutMs;
         let cursor = Math.max(0, (await provider.getBlockNumber()) - LOOKBACK);
@@ -160,7 +160,7 @@ scDeploy:
       const ABI = ['event ActivateCrs(uint256 crsId, string[] kmsNodeStorageUrls, bytes crsDigest)'];
       const WINDOW = Number(process.env.LOG_QUERY_WINDOW || 1000);
       const LOOKBACK = Number(process.env.LOG_QUERY_LOOKBACK || 5000);
-      const TIMEOUT_MS = Number(process.env.CEREMONY_TIMEOUT_MS || 15 * 60 * 1000);
+      const TIMEOUT_MS = Number(process.env.CRSGEN_WAIT_TIMEOUT_MS || 15 * 60 * 1000);
       async function waitForEvent(provider, contract, eventName, timeoutMs) {
         const deadline = Date.now() + timeoutMs;
         let cursor = Math.max(0, (await provider.getBlockNumber()) - LOOKBACK);
