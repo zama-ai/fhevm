@@ -1333,9 +1333,8 @@ async fn cleanup_orphaned_dependence_chains(
 /// proposal-wide rather than per-chain. Like [`delete_bcs_chains_leftovers`], must run
 /// before the merge and the schema drop, while `gcs.*` still exists.
 ///
-/// Note: `verify_proofs` is left exactly as blue wrote it, so a proof green never
-/// re-verified stays `verified = TRUE` and the zkproof-worker, which only picks up
-/// `verified IS NULL`, will not re-derive the input ciphertexts deleted here.
+/// Note: `verify_proofs` is truncated at cutover so no BCS-era proof row (whose
+/// input ciphertexts are deleted above) is left behind for green to trip over.
 async fn delete_bcs_gw_leftovers(tx: &mut Transaction<'_, Postgres>) -> Result<(), Error> {
     let row: Option<(i64,)> = sqlx::query_as(
         "SELECT gw_start_block FROM upgrade_state
@@ -2514,7 +2513,11 @@ pub async fn handle_unanimity_consensus(
                 .bind(payload.chain_id)
                 .bind(payload.block_height)
                 .fetch_optional(pool)
-                .await?
+                .await
+                // Visibility-only: a missing gcs.state_hash (or any lookup
+                // error) must not fail consensus handling.
+                .ok()
+                .flatten()
                 .unwrap_or_else(|| "unknown".to_string());
                 info!(
                     chain_id = payload.chain_id,
@@ -4085,16 +4088,15 @@ mod tests {
             "a handle GCS reproduced must be restored by the merge"
         );
 
-        // `delete_bcs_gw_leftovers` deliberately leaves `verify_proofs` alone, so the
-        // proof green never re-verified stays verified and its deleted input
-        // ciphertext is not re-derived. Pinned here so re-arming the zkproof-worker
-        // has to update this expectation.
-        let verified: Option<bool> =
-            sqlx::query_scalar("SELECT verified FROM verify_proofs WHERE zk_proof_id = 100")
+        // `delete_bcs_gw_leftovers` truncates `verify_proofs` at cutover, so the
+        // BCS-era proof row is cleared along with the rest of the table. Pinned
+        // here so a change to that behavior has to update this expectation.
+        let remaining: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM verify_proofs WHERE zk_proof_id = 100")
                 .fetch_one(&pool)
                 .await
-                .expect("proof 100");
-        assert_eq!(verified, Some(true), "proof 100 is left as BCS wrote it");
+                .expect("verify_proofs count");
+        assert_eq!(remaining, 0, "proof 100 is truncated at cutover");
     }
 
     /// A handle BCS already committed (`txn_is_sent = true`) must stay committed
