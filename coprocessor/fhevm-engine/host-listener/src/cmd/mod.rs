@@ -1139,14 +1139,8 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
         crate::protocol_config::resolve_protocol_config_listener(
             args.protocol_config.chain_id,
             chain_id.as_u64(),
+            protocol_config_address,
         )?;
-    if is_protocol_config_listener && protocol_config_address.is_none() {
-        warn!(
-            chain_id = %chain_id,
-            "ProtocolConfig listener has no --protocol-config-address; \
-             ProtocolConfig.CoprocessorUpgradeProposed events will not be decoded"
-        );
-    }
     if args.database_url.as_str().is_empty() {
         error!("Database URL is required");
         panic!("Database URL is required");
