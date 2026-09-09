@@ -1630,6 +1630,9 @@ enum Outcome {
 /// observation.
 fn rule_name(failure: &AuthorizationFailure) -> &'static str {
     match failure {
+        AuthorizationFailure::MissingProofBinding { index } => {
+            panic!("connector proof planning defect at entry {index}: {failure}")
+        }
         AuthorizationFailure::Form(form) => match form {
             RequestFormError::EmptyHandles => rule::EMPTY_HANDLES,
             RequestFormError::TooManyHandles { .. } => rule::TOO_MANY_HANDLES,
