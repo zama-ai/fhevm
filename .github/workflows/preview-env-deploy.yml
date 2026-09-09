@@ -6,13 +6,14 @@ name: preview-env-deploy
 # dedicated KMS (real keygen), contracts, coprocessor, kms-connector, relayer
 # and test-suite. Nothing is shared across PRs.
 #
-# workflow_dispatch can set use_blockchain_dev=true to skip Anvil and point the
-# stack at the shared blockchain-dev Geth (host 1337) + Nitro (gateway 412346)
-# nodes instead. That path generates unique wallets, funds them from the
-# in-cluster faucets, and still deploys this preview's own contracts (which
-# remain on the shared chain after namespace teardown). The
-# preview-env-blue-green PR label takes the same chain path (Anvil's 80-block
-# window closes during the dry-run e2e while consensus-detector is held at 0).
+# chain_mode (resolve-chain.sh) picks the chains:
+#   - anvil (default): per-namespace anvil host + gateway (+ anvil Polygon with deploy_polygon).
+#   - blockchain-dev: shared zws-dev Geth 1337 + Nitro 412346, wallets from the PoW faucets;
+#     the preview-env-blue-green label takes this path (Anvil's 80-block window closes during the dry-run e2e).
+#   - testnets: public Sepolia 11155111 + Amoy 80002 via an in-cluster eRPC public proxy (no API keys;
+#     RPC_URL_SEPOLIA/AMOY secrets optionally bypass it), Nitro gateway, hosts funded from
+#     PREVIEW_TESTNETS_FUNDER_PRIVATE_KEY. Implies deploy_polygon; slow (12s blocks), real testnet gas.
+# Both external modes leave this preview's own contracts on the shared chains after teardown.
 #
 # Three PR labels control deployment (see check-labels below):
 #   - preview-env-e2e: deploy the PR branch. On PRs images are ALWAYS built
@@ -22,7 +23,7 @@ name: preview-env-deploy
 #   - preview-env-e2e-tests: same, plus auto-run the e2e test DAG and report
 #     pass/fail back to the PR.
 #   - preview-env-blue-green: deploy RFC-021 BCS+GCS on each party (forces
-#     nb_coprocessor=2) and use_blockchain_dev=true. Dispatch opt-in is
+#     nb_coprocessor=2) on chain_mode=blockchain-dev. Dispatch opt-in is
 #     enable_blue_green=true (plain nb_coprocessor=2 is two-party consensus
 #     only). With preview-env-e2e-tests (or automated_tests): propose after
 #     relayer, hold consensus-detector so the first e2e stays on blue (assert
@@ -65,7 +66,7 @@ on:
           - "3"
           - "5"
       enable_blue_green:
-        description: "RFC-021 BCS+GCS on each identity. Forces nb_coprocessor=2 when N=1. Incompatible with deploy_polygon. PR label preview-env-blue-green is the other gate."
+        description: "RFC-021 BCS+GCS on each identity. Forces nb_coprocessor=2 when N=1. Incompatible with deploy_polygon (and so with chain_mode=testnets). PR label preview-env-blue-green is the other gate."
         required: true
         type: choice
         default: "false"
@@ -85,21 +86,22 @@ on:
         required: false
         default: ""
       deploy_polygon:
-        description: "Also deploy a SECOND (Polygon Amoy, 80002) host chain: a fresh local anvil, its own host-contracts (reusing the ETH KMS key via canonical ProtocolConfig mirror), a per-party listener + coprocessor consumer/poller, and - when automated_tests is on - a Polygon e2e run. Roughly doubles the host-side stack. Incompatible with use_blockchain_dev."
+        description: "Also deploy a SECOND (Polygon Amoy, 80002) host chain: a fresh local anvil, its own host-contracts (reusing the ETH KMS key via canonical ProtocolConfig mirror), a per-party listener + coprocessor consumer/poller, and - when automated_tests is on - a Polygon e2e run. Roughly doubles the host-side stack. Incompatible with chain_mode=blockchain-dev; implied by chain_mode=testnets (real Amoy)."
         required: true
         type: choice
         default: "false"
         options:
           - "false"
           - "true"
-      use_blockchain_dev:
-        description: "Skip per-namespace Anvil and connect to the shared blockchain-dev Geth (host 1337) + Nitro (gateway 412346). Generates unique wallets and funds them from the blockchain-dev faucets. The preview-env-blue-green PR label forces this on. Incompatible with deploy_polygon. Contracts stay on the shared chain after teardown."
+      chain_mode:
+        description: "Which chains to deploy against. anvil: per-namespace Anvil (default). blockchain-dev: shared zws-dev Geth (host 1337) + Nitro (gateway 412346), wallets funded from the in-cluster faucets; the preview-env-blue-green PR label forces this. testnets: public Sepolia (11155111) + Polygon Amoy (80002) host chains via an in-cluster eRPC public-RPC proxy (no API keys; RPC_URL_SEPOLIA/RPC_URL_AMOY secrets optionally override), the blockchain-dev Nitro as gateway; host wallets funded from the PREVIEW_TESTNETS_FUNDER_PRIVATE_KEY treasury; implies deploy_polygon; slow and costs real testnet gas. Both external modes leave this preview's contracts on the shared chains after teardown."
         required: true
         type: choice
-        default: "false"
+        default: "anvil"
         options:
-          - "false"
-          - "true"
+          - "anvil"
+          - "blockchain-dev"
+          - "testnets"
 
 concurrency:
   # pull_request: one preview per PR, new pushes cancel the in-flight run.
@@ -159,9 +161,9 @@ env:
   # dispatch input, off by default (inputs.* is empty on PR runs, so PRs never
   # get Polygon).
   DEPLOY_POLYGON: ${{ inputs.deploy_polygon || 'false' }}
-  # Shared blockchain-dev Geth+Nitro instead of per-namespace Anvil. Empty on
-  # pull_request so labeled PRs never take this path.
-  USE_BLOCKCHAIN_DEV: ${{ inputs.use_blockchain_dev || 'false' }}
+  # anvil | blockchain-dev | testnets (see resolve-chain.sh). Empty on
+  # pull_request, so labeled PRs stay on Anvil unless a label overrides it.
+  CHAIN_MODE: ${{ inputs.chain_mode || 'anvil' }}
   #=====TAILSCALE============================================================
   TAILSCALE_HOSTNAME: tailscale-operator-zws-dev.diplodocus-boa.ts.net
 
@@ -189,7 +191,7 @@ jobs:
       observability: ${{ steps.check.outputs.observability }}
       blue_green: ${{ steps.check.outputs.blue_green }}
       nb_coprocessor: ${{ steps.check.outputs.nb_coprocessor }}
-      use_blockchain_dev: ${{ steps.check.outputs.use_blockchain_dev }}
+      chain_mode: ${{ steps.check.outputs.chain_mode }}
       overrides_json: ${{ steps.parse_overrides.outputs.overrides_json }}
       stack_version: ${{ steps.stack_version.outputs.stack_version }}
     steps:
@@ -226,7 +228,7 @@ jobs:
           DISPATCH_OBSERVABILITY: ${{ inputs.observability }}
           DISPATCH_NB_COPROCESSOR: ${{ inputs.nb_coprocessor || '1' }}
           DISPATCH_ENABLE_BLUE_GREEN: ${{ inputs.enable_blue_green || 'false' }}
-          DISPATCH_USE_BLOCKCHAIN_DEV: ${{ inputs.use_blockchain_dev || 'false' }}
+          DISPATCH_CHAIN_MODE: ${{ inputs.chain_mode || 'anvil' }}
           PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
         run: |
           # build_test_suite_only is a dispatch-only knob; label-triggered runs
@@ -242,7 +244,7 @@ jobs:
           # is two-party consensus). PRs: preview-env-blue-green label, N=2.
           echo "blue_green=false" >> "$GITHUB_OUTPUT"
           echo "nb_coprocessor=1" >> "$GITHUB_OUTPUT"
-          echo "use_blockchain_dev=false" >> "$GITHUB_OUTPUT"
+          echo "chain_mode=anvil" >> "$GITHUB_OUTPUT"
           if [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
             blue_green=false
             nb_coprocessor="${DISPATCH_NB_COPROCESSOR:-1}"
@@ -259,7 +261,7 @@ jobs:
             echo "observability=${DISPATCH_OBSERVABILITY:-false}" >> "$GITHUB_OUTPUT"
             echo "blue_green=${blue_green}" >> "$GITHUB_OUTPUT"
             echo "nb_coprocessor=${nb_coprocessor}" >> "$GITHUB_OUTPUT"
-            echo "use_blockchain_dev=${DISPATCH_USE_BLOCKCHAIN_DEV:-false}" >> "$GITHUB_OUTPUT"
+            echo "chain_mode=${DISPATCH_CHAIN_MODE:-anvil}" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           echo "PR labels: $PR_LABELS"
@@ -271,7 +273,7 @@ jobs:
           build_images=false
           automated_tests=false
           blue_green=false
-          use_blockchain_dev=false
+          chain_mode=anvil
           nb_coprocessor="${DISPATCH_NB_COPROCESSOR:-1}"
           # preview-env-e2e-tests: auto-run the e2e DAG AND deploy the env it needs,
           # so the PR-comment report path is reachable without a manual dispatch.
@@ -285,7 +287,7 @@ jobs:
           if echo "$PR_LABELS" | jq -e '.[] | select(. == "preview-env-blue-green")' > /dev/null; then
             blue_green=true
             should_deploy=true
-            use_blockchain_dev=true
+            chain_mode=blockchain-dev
             if [[ "${nb_coprocessor}" == "1" ]]; then
               nb_coprocessor=2
             fi
@@ -302,7 +304,7 @@ jobs:
             echo "automated_tests=${automated_tests}"
             echo "blue_green=${blue_green}"
             echo "nb_coprocessor=${nb_coprocessor}"
-            echo "use_blockchain_dev=${use_blockchain_dev}"
+            echo "chain_mode=${chain_mode}"
           } >> "$GITHUB_OUTPUT"
 
   ##########################################################################
@@ -477,7 +479,7 @@ jobs:
       NB_COPROCESSOR: ${{ needs.check-labels.outputs.nb_coprocessor }}
       # Overrides the workflow-level input default so the blue-green PR label
       # can force shared Geth/Nitro (inputs.* is empty on pull_request).
-      USE_BLOCKCHAIN_DEV: ${{ needs.check-labels.outputs.use_blockchain_dev }}
+      CHAIN_MODE: ${{ needs.check-labels.outputs.chain_mode }}
       # Pins from parse-overrides (always-defaults + dispatch overrides).
       # RELAYER_SDK_VERSION stays empty on PR so only @fhevm/sdk runs.
       CONTRACTS_CHART_VERSION: ${{ fromJSON(needs.check-labels.outputs.overrides_json).contracts_chart_version }}
@@ -517,6 +519,11 @@ jobs:
           harbor-token: ${{ secrets.HARBOR_READ_TOKEN }}
 
       - name: Resolve chain endpoints
+        # testnets only: treasury key required; RPC_URL_* (shared with prepare-coprocessor-upgrade) optionally bypass the eRPC proxy.
+        env:
+          RPC_URL_SEPOLIA: ${{ secrets.RPC_URL_SEPOLIA }}
+          RPC_URL_AMOY: ${{ secrets.RPC_URL_AMOY }}
+          FUNDER_PRIVATE_KEY: ${{ secrets.PREVIEW_TESTNETS_FUNDER_PRIVATE_KEY }}
         run: bash ci/preview-env/scripts/resolve-chain.sh
 
       - name: Fail fast on incompatible blue-green topology
@@ -529,7 +536,7 @@ jobs:
             exit 1
           fi
           if [[ "${DEPLOY_POLYGON}" == "true" ]]; then
-            echo "::error::RFC-021 first-iteration blue-green is incompatible with deploy_polygon."
+            echo "::error::RFC-021 first-iteration blue-green is single-chain: incompatible with deploy_polygon (and with chain_mode=testnets, which implies it)."
             exit 1
           fi
           gcs=$(jq -r .coprocessor_tfhe_worker <<<"${TAGS_JSON}")
@@ -723,11 +730,11 @@ jobs:
           signers_json=$(S3_ENDPOINT="${s3_endpoint}" node ci/preview-env/scripts/discover-kms-signers.mjs)
           echo "signers_json=${signers_json}" >> "$GITHUB_OUTPUT"
 
-      # TX-SENDER WALLETS: Anvil uses the well-known Foundry mnemonic (120
-      # prefunded accounts). blockchain-dev generates a fresh mnemonic and
-      # funds the derived addresses from the in-cluster faucets.
+      # TX-SENDER WALLETS: Anvil uses the prefunded Foundry mnemonic; external modes generate one and fund it
+      # (faucets on blockchain-dev, treasury + Nitro faucet on testnets).
       - name: Capture host head block (blockchain-dev)
-        if: env.USE_BLOCKCHAIN_DEV == 'true'
+        # testnets seeds the poller with a negative "behind head" offset instead.
+        if: env.CHAIN_MODE == 'blockchain-dev'
         run: |
           raw=$(bash ci/preview-env/scripts/cluster-rpc.sh "${HOST_HTTP}" \
             '{"jsonrpc":"2.0","id":1,"method":"eth_blockNumber","params":[]}')
@@ -737,6 +744,7 @@ jobs:
             exit 1
           fi
           echo "HEAD_BLOCK=$((hex))" >> "$GITHUB_ENV"
+          echo "POLLER_SEED_START_BLOCK=$((hex))" >> "$GITHUB_ENV"
           echo "blockchain-dev host head block $((hex))"
 
       - name: Install ethers for wallet derivation
@@ -744,8 +752,8 @@ jobs:
           mkdir -p /tmp/wallet-tools && cd /tmp/wallet-tools
           npm install --silent --no-save ethers@6
 
-      - name: Generate preview mnemonic (blockchain-dev)
-        if: env.USE_BLOCKCHAIN_DEV == 'true'
+      - name: Generate preview mnemonic (external chains)
+        if: env.EXTERNAL_CHAINS == 'true'
         env:
           NODE_PATH: /tmp/wallet-tools/node_modules
           ROLES_JSON_PATH: /tmp/preview-role-wallets.json
@@ -789,32 +797,42 @@ jobs:
           echo "Coprocessor HD offset: ${HD_OFFSET} (KMS parties: ${NB_KMS_CORE})"
           node ci/preview-env/scripts/derive-wallets.cjs
 
-      - name: Fund wallets from blockchain-dev faucets
-        if: env.USE_BLOCKCHAIN_DEV == 'true'
+      - name: Fund wallets (faucets / treasury)
+        if: env.EXTERNAL_CHAINS == 'true'
         env:
           WALLETS_JSON: ${{ steps.kms-wallets.outputs.wallets_json }}
           COPROC_WALLETS_JSON: ${{ steps.coproc-wallets.outputs.wallets_json }}
+          # testnets only; ethers comes from the wallet-derivation install above.
+          FUNDER_PRIVATE_KEY: ${{ secrets.PREVIEW_TESTNETS_FUNDER_PRIVATE_KEY }}
+          NODE_PATH: /tmp/wallet-tools/node_modules
         run: bash ci/preview-env/scripts/fund-wallets.sh
 
-      - name: Apply blockchain-dev values overlays
-        if: env.USE_BLOCKCHAIN_DEV == 'true'
+      - name: Apply external-chain values overlays
+        if: env.EXTERNAL_CHAINS == 'true'
         run: bash ci/preview-env/scripts/apply-chain-env.sh
 
       ######################################################################
+      # PUBLIC RPC PROXY (testnets): the listener chart's eRPC as its own release, up before anything talks to Sepolia/Amoy.
+      ######################################################################
+      - name: Deploy eRPC public-RPC proxy (testnets)
+        if: env.CHAIN_MODE == 'testnets'
+        run: bash ci/preview-env/scripts/deploy-erpc.sh
+
+      ######################################################################
       # BLOCKCHAIN: per-PR anvil host + gateway chains, fully isolated.
-      # Skipped when use_blockchain_dev points at the shared Geth/Nitro nodes.
+      # Skipped on the external chain modes (blockchain-dev, testnets).
       ######################################################################
       - name: Deploy anvil-host
-        if: env.USE_BLOCKCHAIN_DEV != 'true'
+        if: env.EXTERNAL_CHAINS != 'true'
         run: bash ci/preview-env/scripts/deploy-anvil.sh host
 
       - name: Deploy anvil-gateway
-        if: env.USE_BLOCKCHAIN_DEV != 'true'
+        if: env.EXTERNAL_CHAINS != 'true'
         run: bash ci/preview-env/scripts/deploy-anvil.sh gateway
 
       - name: Deploy anvil-host-polygon
-        # Second (Polygon Amoy, 80002) host chain - fresh local anvil, no fork.
-        if: env.DEPLOY_POLYGON == 'true' && env.USE_BLOCKCHAIN_DEV != 'true'
+        # Second (Polygon Amoy, 80002) host chain - fresh local anvil, no fork; testnets uses real Amoy.
+        if: env.DEPLOY_POLYGON == 'true' && env.EXTERNAL_CHAINS != 'true'
         run: bash ci/preview-env/scripts/deploy-anvil.sh host-polygon
 
       ######################################################################
@@ -1169,7 +1187,7 @@ jobs:
           body: |
             :rocket: **e2e preview environment deployed** in namespace `${{ env.NAMESPACE }}` on zws-dev.
 
-            Topology: **${{ env.NB_KMS_CORE }}** KMS core ${{ env.NB_KMS_CORE == '1' && 'party' || 'parties' }} · **${{ env.NB_COPROCESSOR }}** coprocessor ${{ env.NB_COPROCESSOR == '1' && 'party' || 'parties' }} (each a full independent stack: its own Postgres, S3 bucket, tx-sender identity, `listener` producer, Redis broker and host-listener-consumer).${{ env.BLUE_GREEN == 'true' && format(' **RFC-021 blue-green:** each party also runs a GCS fleet (`coprocessor-<i>-gcs`, compiled {0}) beside BCS (`{1}`). Gateway registration stays N.', env.GCS_VERSION, env.BCS_IMAGE_TAG) || '' }}${{ env.DEPLOY_POLYGON == 'true' && ' Plus a **second Polygon Amoy (80002)** host chain (fresh anvil, reusing the ETH KMS key via canonical ProtocolConfig mirror).' || '' }}
+            Topology: **${{ env.NB_KMS_CORE }}** KMS core ${{ env.NB_KMS_CORE == '1' && 'party' || 'parties' }} · **${{ env.NB_COPROCESSOR }}** coprocessor ${{ env.NB_COPROCESSOR == '1' && 'party' || 'parties' }} (each a full independent stack: its own Postgres, S3 bucket, tx-sender identity, `listener` producer, Redis broker and host-listener-consumer).${{ env.BLUE_GREEN == 'true' && format(' **RFC-021 blue-green:** each party also runs a GCS fleet (`coprocessor-<i>-gcs`, compiled {0}) beside BCS (`{1}`). Gateway registration stays N.', env.GCS_VERSION, env.BCS_IMAGE_TAG) || '' }}${{ env.DEPLOY_POLYGON == 'true' && ' Plus a **second Polygon Amoy (80002)** host chain (reusing the ETH KMS key via canonical ProtocolConfig mirror).' || '' }} Chain mode: **${{ env.CHAIN_MODE }}** (host `${{ env.HOST_CHAIN_ID }}`, gateway `${{ env.GATEWAY_CHAIN_ID }}`).
 
             Connect:
             ```bash
@@ -1190,7 +1208,7 @@ jobs:
             echo
             echo "Namespace \`${NAMESPACE}\` on zws-dev."
             echo
-            echo "Topology: **${NB_KMS_CORE}** KMS core parties · **${NB_COPROCESSOR}** coprocessor parties (each a full independent stack: its own Postgres, S3 bucket, tx-sender identity, listener producer, Redis broker and host-listener-consumer)$([[ "${BLUE_GREEN}" == "true" ]] && echo " · RFC-021 blue-green (BCS ${BCS_IMAGE_TAG} + GCS from this build compiled ${GCS_VERSION#v})")$([[ "${DEPLOY_POLYGON}" == "true" ]] && echo " · a second Polygon Amoy (80002) host chain reusing the ETH KMS key"). Note: each coprocessor party requests substantial tfhe/sns worker capacity on the coprocessor nodepool, so nb_coprocessor > 1 multiplies the cluster resources needed."
+            echo "Topology: **${NB_KMS_CORE}** KMS core parties · **${NB_COPROCESSOR}** coprocessor parties (each a full independent stack: its own Postgres, S3 bucket, tx-sender identity, listener producer, Redis broker and host-listener-consumer)$([[ "${BLUE_GREEN}" == "true" ]] && echo " · RFC-021 blue-green (BCS ${BCS_IMAGE_TAG} + GCS from this build compiled ${GCS_VERSION#v})")$([[ "${DEPLOY_POLYGON}" == "true" ]] && echo " · a second Polygon Amoy (80002) host chain reusing the ETH KMS key") · chain mode ${CHAIN_MODE} (host ${HOST_CHAIN_ID}, gateway ${GATEWAY_CHAIN_ID}). Note: each coprocessor party requests substantial tfhe/sns worker capacity on the coprocessor nodepool, so nb_coprocessor > 1 multiplies the cluster resources needed."
             echo
             echo "Connect:"
             echo '```bash'

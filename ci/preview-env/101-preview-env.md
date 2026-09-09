@@ -71,19 +71,28 @@ Key inputs (all have sensible defaults — you rarely set more than a couple):
   `3`/`5` stay N-party only. See `README.md`.
 - `enable_blue_green` — RFC-021 BCS+GCS on each identity (default `false`).
   Forces `nb_coprocessor=2` when N=1. The `preview-env-blue-green` PR label
-  is the other gate. Incompatible with `deploy_polygon`.
+  is the other gate. Incompatible with `deploy_polygon` (so also with
+  `chain_mode=testnets`).
 - `deploy_polygon` — also add a second Polygon Amoy (`80002`) host chain (default
   `false`). Fresh local anvil, reuses the ETH KMS key; roughly doubles the
   host-side stack. With `automated_tests` on it also runs a Polygon e2e suite.
   See the multichain section in `README.md`. Incompatible with
-  `use_blockchain_dev`.
-- `use_blockchain_dev` — skip per-namespace Anvil and connect to the shared
-  `blockchain-dev` Geth (host chain id `1337`) + Nitro (gateway `412346`).
-  Generates a unique mnemonic, funds the derived wallets from the in-cluster
-  faucets, and still deploys **this preview's own contracts**. The
-  `preview-env-blue-green` PR label forces this on (plain `preview-env-e2e`
-  labels stay on Anvil). After teardown the contracts remain on the shared
-  chain. Do not combine with `deploy_polygon`.
+  `chain_mode=blockchain-dev`; implied by `chain_mode=testnets` (real Amoy).
+- `chain_mode` — `anvil` (default), `blockchain-dev`, or `testnets`; see the
+  chain-modes section in `README.md`.
+  - `blockchain-dev`: skip per-namespace Anvil and connect to the shared
+    `blockchain-dev` Geth (host chain id `1337`) + Nitro (gateway `412346`).
+    Unique mnemonic per run, wallets funded from the in-cluster faucets. The
+    `preview-env-blue-green` PR label forces this on (plain `preview-env-e2e`
+    labels stay on Anvil). Not with `deploy_polygon`.
+  - `testnets`: public **Sepolia** (`11155111`) + **Polygon Amoy** (`80002`) as the
+    two host chains through an in-cluster eRPC public-RPC proxy (no API keys), the
+    `blockchain-dev` Nitro as gateway. Needs one secret,
+    `PREVIEW_TESTNETS_FUNDER_PRIVATE_KEY` (treasury holding Sepolia ETH + Amoy POL);
+    `RPC_URL_SEPOLIA` / `RPC_URL_AMOY` optionally swap the proxy for a dedicated
+    endpoint. Slow (12 s blocks) and it spends real testnet gas.
+  Both external modes still deploy **this preview's own contracts**, which remain
+  on the shared chains after teardown.
 
 **Versions** — one optional `overrides` JSON object (empty / `{}` = resolve as
 today). Allowed keys are listed in
@@ -160,6 +169,7 @@ helm-install; Actions stays the write path. `--ref` must already be on origin.
 ```bash
 ci/preview-env/preview-env launch --ref <your-branch> --tests
 ci/preview-env/preview-env launch --ref <your-branch> --blockchain-dev
+ci/preview-env/preview-env launch --ref <your-branch> --testnets --tests
 ci/preview-env/preview-env launch --ref <your-branch> --blue-green --blockchain-dev --tests
 ci/preview-env/preview-env launch --ref <your-branch> --set coprocessor_version=abc1234
 ci/preview-env/preview-env launch --ref <your-branch> --tests \
@@ -281,9 +291,14 @@ kubectl delete namespace <namespace>
   workers/Postgres/S3). Keep it `1` unless you're specifically testing multi-party.
 - **Manual (dispatch) envs never auto-destroy** — run **preview-env-destroy** with
   the namespace to clean up (see [Destroy an environment](#destroy-an-environment)).
-- **`use_blockchain_dev` on dispatch, or via `preview-env-blue-green`.** Plain
+- **`chain_mode=blockchain-dev` on dispatch, or via `preview-env-blue-green`.** Plain
   `preview-env-e2e` / `-tests` labels stay on Anvil. Faucet-funded wallets are
   unique per run. Destroying the namespace does **not** remove contracts from
   the shared Geth/Nitro — they stay on `blockchain-dev` (see explorers
   `host-explorer-blockchain-dev` / `gateway-explorer-blockchain-dev`).
   Automated tests use Hardhat network `zwsDev` (live path: HCU cheat tests skip).
+- **`chain_mode=testnets` costs real gas and leaves contracts on Sepolia + Amoy.**
+  Check the treasury balance before dispatching (the fund step fails fast if it
+  cannot cover the top-ups). Expect a much longer deploy: 12 s Sepolia blocks
+  stretch every hardhat step and the keygen ceremony. Etherscan / Polygonscan show
+  the deployed addresses (`host-sc-addresses` / `polygon-sc-addresses` ConfigMaps).

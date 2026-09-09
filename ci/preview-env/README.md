@@ -35,6 +35,8 @@ ci/preview-env/
 ├── coprocessor-infra/
 │   ├── values-coprocessor-infra-e2e.yaml    # crossplane/coprocessor-infra overlay: S3 only
 │   └── values-postgres-coprocessor-e2e.yaml # `common` chart overlay: in-cluster Postgres, dedicated to coprocessor
+├── erpc/
+│   └── values-erpc-e2e.yaml            # listener chart, eRPC only: public Sepolia/Amoy proxy (chain_mode=testnets)
 ├── host-chain/
 │   ├── values-anvil-host-e2e.yaml       # anvil-node overlay, host chain
 │   ├── values-anvil-host-polygon-e2e.yaml   # anvil-node overlay, Polygon host chain (deploy_polygon)
@@ -146,7 +148,7 @@ export const activeNetworkName = () => network.name;
 export const isLiveNetwork = () => LIVE_NETWORKS.has(activeNetworkName());
 ```
 
-This preview's **default** (PR labels + dispatch without `use_blockchain_dev`)
+This preview's **default** (PR labels + dispatch with `chain_mode=anvil`)
 runs the host chain as **`staging`** (chainId `12345` Anvil), which is **not**
 in that set, so `isLiveNetwork()` is `false` and the suite takes its **local /
 deterministic** path. That matters because the check is on the *name only*, not on
@@ -208,32 +210,74 @@ Access is `kubectl port-forward` from the dev laptop (Tailscale up, namespace
 admin via `coprocessor-dev-access`/`kms-dev-access`) — see
 [`101-preview-env.md`](./101-preview-env.md#observe-your-environment).
 
-## `use_blockchain_dev`: shared Geth + Nitro
+## Chain modes (`chain_mode`: `anvil` | `blockchain-dev` | `testnets`)
 
-`preview-env-deploy.yml` accepts `use_blockchain_dev=true` on **workflow_dispatch**,
-and the `preview-env-blue-green` PR label forces the same path (plain e2e labels
-stay on Anvil). That skips `anvil-host` / `anvil-gateway` and points the stack at
-the shared `blockchain-dev` namespace:
+`preview-env-deploy.yml` picks the chains via the `chain_mode` dispatch input
+(`ci/preview-env/scripts/resolve-chain.sh` resolves it; PR labels stay on Anvil except
+`preview-env-blue-green`, which forces `blockchain-dev`). Everything below the chain
+layer is identical across modes: the same charts, the same overlays, patched at deploy
+time by `apply-chain-env.sh` for the two external modes.
 
-| Chain | Node | In-cluster RPC | Chain ID |
-|-------|------|----------------|----------|
-| Host | Geth `--dev` | `http://ethereum-rpc-node.blockchain-dev:8545` (WS on the same port) | 1337 |
-| Gateway | Nitro `dev` | HTTP `:8547`, WS `:8548` | 412346 |
+| Mode | Host chain(s) | Gateway | Wallets | Funding |
+|------|---------------|---------|---------|---------|
+| `anvil` (default) | per-namespace Anvil `12345` (+ Anvil Amoy `80002` with `deploy_polygon`) | per-namespace Anvil `54321` | Foundry junk mnemonic, 120 prefunded accounts | none needed |
+| `blockchain-dev` | shared zws-dev Geth `--dev` `1337` (`http://ethereum-rpc-node.blockchain-dev:8545`, WS same port, 5 s blocks) | shared Nitro `412346` (HTTP `:8547`, WS `:8548`) | fresh mnemonic per run | in-cluster PoW faucets (host + gateway) |
+| `testnets` | public **Sepolia `11155111`** + **Polygon Amoy `80002`** via the in-cluster eRPC public proxy (`deploy_polygon` implied) | shared Nitro `412346` | fresh mnemonic per run | host chains from a treasury key on the runner; gateway from the Nitro faucet |
 
-The preview still deploys **its own** host + gateway contracts. Wallets are **not**
-the Anvil junk mnemonic: a unique mnemonic is generated, the same HD index map
-(`#0` gateway deployer, `#3` relayer, `#9` host/ACL owner, `#10+` KMS/coprocessor
-tx-senders) is derived, and every address is funded from the in-cluster PoW
-faucets (`host-faucet-…` / `gateway-faucet-…`). The mnemonic is stored as secret
-`preview-wallets-mnemonic` in the preview namespace.
+Both external modes still deploy **this preview's own** host + gateway contracts, derive the
+same HD index map (`#0` gateway deployer, `#3` relayer, `#9` host/ACL owner, `#10+` KMS /
+coprocessor tx-senders) from the generated mnemonic (stored as secret
+`preview-wallets-mnemonic` in the namespace), and leave the contracts on the shared chains
+after teardown.
 
-Because Geth has no `evm_*` cheats and `--slots-in-an-epoch`, automated tests use
-Hardhat network **`zwsDev`** (live path: HCU deterministic blocks skip). The
-coprocessor poller seeds at the **current host head**, not block 0 — the Geth
-dev chain already has millions of blocks (kms-enclave-dev history).
+### `blockchain-dev`
 
-Incompatible with `deploy_polygon` (no Amoy node in `blockchain-dev`). Destroying
-the Kubernetes namespace does not delete the on-chain contracts.
+Because Geth has no `evm_*` cheats and `--slots-in-an-epoch`, automated tests use Hardhat
+network **`zwsDev`** (live path: HCU deterministic blocks skip). The coprocessor poller
+seeds at the **current host head**, not block 0 — the Geth dev chain already has millions
+of blocks. Incompatible with `deploy_polygon` (no Amoy node in `blockchain-dev`).
+
+### `testnets` (Sepolia + Amoy)
+
+The two host chains are the real public testnets, so this is the only preview shape with
+**two host chains on real block times** (12 s / ~2 s). What it needs and what it changes:
+
+- **RPC without secrets.** Host chains are reached through an in-cluster **eRPC** proxy
+  (`erpc/values-erpc-e2e.yaml`, release `preview-erpc`): the listener chart's bundled eRPC
+  with the `erpc-public.yaml` profile — public endpoints from chainlist / chainid.network /
+  viem with scoring, hedging and failover. Consumers use
+  `http://preview-erpc:4000/listener-indexer/evm/<chainId>`. This is the repo's existing
+  pattern for public chains. `deploy-erpc.sh` smoke-tests `eth_chainId` for both networks
+  before anything else runs. The `RPC_URL_SEPOLIA` / `RPC_URL_AMOY` secrets (the ones
+  `host-contracts-prepare-coprocessor-upgrade.yml` reads) are an **optional override** that
+  bypasses the proxy with a dedicated endpoint when public nodes rate-limit.
+- **Funding.** One required secret, `PREVIEW_TESTNETS_FUNDER_PRIVATE_KEY` — a treasury
+  address holding **Sepolia ETH and Amoy POL**. `fund-wallets-treasury.cjs` runs on the
+  runner (it cannot reach the ClusterIP proxy, so it uses the public endpoints or the
+  override), tops up `#0-#4` to 0.2 and `#9` to 1.0 on both chains (`FLOOR_WEI` /
+  `DEPLOYER_FLOOR_WEI`) and fails fast if the treasury cannot cover the shortfall.
+  Gateway-side wallets (KMS / coprocessor tx-senders, `#0`, `#3`) still come from the
+  Nitro faucet.
+- **Second host chain reuses the `deploy_polygon` path**: the same Polygon overlays, with
+  RPC/chain ids patched to Amoy and the Anvil Polygon node skipped. Amoy mirrors the ETH
+  ProtocolConfig (canonical source) exactly as the Anvil Polygon does.
+- **Finality**: listeners run `finality_depth` 2 (Sepolia) / 3 (Amoy) and pollers
+  `--finality-lag` 2 / 3 (`HOST_FINALITY_*` / `POLYGON_FINALITY_*`), instead of the 0 / 1
+  that single-node Anvil and Geth `--dev` allow.
+- **Poller seed** is `--seed-start-block=-10` ("10 behind head", resolved by the poller at
+  startup) rather than a head captured early in the run — 12 s blocks make any captured
+  head drift far during the KMS deploy.
+- **Timeouts**: contracts `helm --wait` 30 m (was 10 m) and keygen 60 m (was 45 m).
+- **Tests** run on Hardhat networks `sepolia` (ETH) and `polygonAmoy` (both in
+  `LIVE_NETWORKS`, so the reduced live path).
+- **Cost and hygiene**: every run spends real testnet gas (~10 upgradeable contracts + the
+  keygen ceremony per chain, then e2e FHE txs) and leaves its contracts on Sepolia and Amoy
+  for good. Dispatch-only, no PR label.
+- **Not yet**: `enable_blue_green` (the blue-green scripts are single-chain today).
+
+To run `host-contracts` `task:prepareCoprocessorUpgrade` against this env, use
+`--environment devnet` (same Sepolia + Amoy chain set) with `RPC_URL_GATEWAY_DEVNET` pointed at a
+`kubectl port-forward` of the Nitro node.
 
 ## Multi-coprocessor (`nb_coprocessor`) and shared Redis
 
@@ -311,7 +355,7 @@ These are different models. `nb_coprocessor > 1` is N-party unless you opt into 
 | **N-party consensus** | N on-chain identities (wallet, S3, Postgres). Gateway `NUM_COPROCESSORS=N`. | `nb_coprocessor` in `{1,2,3,5}` |
 | **Blue-green (RFC-021)** | **Two fleets of the same identity**: BCS (live `v0.14.0-7`) + GCS (HEAD at its compiled release), shared DB/S3/wallet. Cutover is `ProtocolConfig.proposeCoprocessorUpgrade` then off-chain unanimity of all N operators. | PR label `preview-env-blue-green` (deploys, forces N=2) or dispatch `enable_blue_green=true` |
 
-Blue-green does **not** register 2N gateway slots. Per party the preview keeps one listener, one Redis, one poller; BCS and GCS `hostListenerConsumer`s share that broker. GCS also runs `upgrade-controller` and `consensus-detector`. Incompatible with `deploy_polygon` and with `nb_coprocessor=1`.
+Blue-green does **not** register 2N gateway slots. Per party the preview keeps one listener, one Redis, one poller; BCS and GCS `hostListenerConsumer`s share that broker. GCS also runs `upgrade-controller` and `consensus-detector`. Incompatible with `deploy_polygon` (hence with `chain_mode=testnets`) and with `nb_coprocessor=1`.
 
 With `automated_tests` (or the `preview-env-e2e-tests` label) the cutover is
 driven by in-window e2e traffic: propose **after** the relayer is ready, hold
@@ -379,3 +423,9 @@ deployed. Every Polygon step in the workflow is gated on `deploy_polygon == 'tru
   selection).
 - ~~Add multichain support~~ — done, see "Multichain: second Polygon host chain
   (`deploy_polygon`)" above (opt-in; ETH + Polygon Amoy sharing one KMS key).
+- ~~Deploy against real public testnets~~ — done, see "Chain modes" above
+  (`chain_mode=testnets`: Sepolia + Amoy via the eRPC public proxy, Nitro gateway).
+- Wire RFC-021 blue-green onto `chain_mode=testnets`: `propose-coprocessor-upgrade.sh` /
+  `assert-gcs-dry-run.sh` are single-chain (scalar `upgrade_state` reads, one-element
+  windows array), which is what keeps `enable_blue_green` rejected there today. This is
+  the multi-chain shape fhevm-internal#1884 asks for.
