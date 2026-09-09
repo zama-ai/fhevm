@@ -14,7 +14,7 @@
     }
   },
   "foundry": {
-    "version": "1.5.1-stable"
+    "version": "1.5.1-v1.5.1"
   },
   "tarballs": {
     "relPath": "./tarballs"

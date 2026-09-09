@@ -490,6 +490,7 @@ check-npm-cli: check-npm-cli-post-build # Internal: run every fhevm-npm check in
 # eslint configs, and neither is package metadata. A stamp whose inputs are incomplete SKIPS a check that
 # should have run. Re-running a cheap check costs seconds; missing one costs a broken release.
 check-npm-cli-pre-build: # Internal: run fhevm-npm checks that do not require generated output
+	$(call run-fhevm-npm,check foundry)
 	$(call run-fhevm-npm,check json-schemas)
 	$(call run-fhevm-npm,check manifest-coverage)
 	$(call run-fhevm-npm,version check)
@@ -504,7 +505,6 @@ check-npm-cli-pre-build: # Internal: run fhevm-npm checks that do not require ge
 	$(call run-fhevm-npm,check scripts)
 	$(call run-fhevm-npm,check tsc-mode)
 	$(call run-fhevm-npm,check lockfiles)
-	$(call run-fhevm-npm,check foundry)
 	$(call run-fhevm-npm,check lint-policy)
 	$(call run-fhevm-npm,check cleartext-config)
 	$(call run-fhevm-npm,sync vendored --check)
