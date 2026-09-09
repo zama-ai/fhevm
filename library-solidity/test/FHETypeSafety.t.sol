@@ -7,6 +7,7 @@ import {CoprocessorConfig} from "../lib/Impl.sol";
 import {HostContractsDeployerTestUtils} from "@fhevm-foundry/HostContractsDeployerTestUtils.sol";
 import {ACL} from "@fhevm-host-contracts/contracts/ACL.sol";
 import {FHEVMExecutor} from "@fhevm-host-contracts/contracts/FHEVMExecutor.sol";
+import {InputVerifier} from "@fhevm-host-contracts/contracts/InputVerifier.sol";
 import {FheType} from "@fhevm-host-contracts/contracts/shared/FheType.sol";
 import {aclAdd, fhevmExecutorAdd, kmsVerifierAdd} from "@fhevm-host-contracts/addresses/FHEVMHostAddresses.sol";
 
@@ -116,6 +117,7 @@ contract FHETypeSafetyTest is HostContractsDeployerTestUtils {
     TypeSafetyAdapter internal adapter;
     FHEVMExecutor internal executor;
     address internal constant OWNER = address(0xAA11);
+    uint256 internal constant INPUT_SIGNER_KEY = 0x123;
 
     function setUp() public {
         vm.warp(1_000_000);
@@ -138,6 +140,58 @@ contract FHETypeSafetyTest is HostContractsDeployerTestUtils {
             FheType.Uint160,
             FheType.Uint256
         ];
+    }
+
+    function test_VerifiedInputAllowsContractButNotCaller() public {
+        address[] memory signers = new address[](1);
+        signers[0] = vm.addr(INPUT_SIGNER_KEY);
+        (InputVerifier verifier, ) = _deployInputVerifier(OWNER, address(0x1234), uint64(block.chainid), signers, 1);
+
+        // One external Uint32 input: index 0, current chain, handle version 0.
+        bytes32 handle = bytes32(
+            (uint256(keccak256("verified input")) & ~uint256(type(uint88).max)) |
+                (uint256(uint64(block.chainid)) << 16) |
+                (uint256(uint8(FheType.Uint32)) << 8)
+        );
+        bytes memory proof = _signInput(verifier, handle);
+
+        assertEq(adapter.importHandle(FheType.Uint32, handle, proof), handle);
+        assertTrue(ACL(aclAdd).isAllowed(handle, address(adapter)));
+        assertFalse(ACL(aclAdd).isAllowed(handle, address(this)));
+        executor.checkHandleType(adapter.addScalar32(handle, 1), FheType.Uint32);
+
+        // The same caller cannot reuse the raw input with an empty proof in this transaction.
+        vm.expectRevert(abi.encodeWithSelector(FHE.SenderNotAllowedToUseHandle.selector, handle, address(this)));
+        adapter.importHandle(FheType.Uint32, handle, "");
+    }
+
+    function _signInput(InputVerifier verifier, bytes32 handle) internal view returns (bytes memory) {
+        (, string memory name, string memory version, uint256 chainId, address verifyingContract, , ) = verifier
+            .eip712Domain();
+        bytes32 domain = keccak256(
+            abi.encode(
+                keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
+                keccak256(bytes(name)),
+                keccak256(bytes(version)),
+                chainId,
+                verifyingContract
+            )
+        );
+        bytes32 structHash = keccak256(
+            abi.encode(
+                verifier.EIP712_INPUT_VERIFICATION_TYPEHASH(),
+                keccak256(abi.encodePacked(handle)),
+                address(this),
+                address(adapter),
+                block.chainid,
+                keccak256("")
+            )
+        );
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(
+            INPUT_SIGNER_KEY,
+            keccak256(abi.encodePacked("\x19\x01", domain, structHash))
+        );
+        return abi.encodePacked(uint8(1), uint8(1), handle, r, s, v);
     }
 
     function test_FromExternalRejectsEveryMismatchedTypePair() public {

@@ -55,6 +55,39 @@ describe('EncryptedERC20', function () {
     expect(totalSupply).to.equal(1000n);
   });
 
+  for (const operation of ['transfer', 'approve', 'transferFrom']) {
+    const signature =
+      operation === 'transferFrom' ? 'transferFrom(address,address,bytes32)' : `${operation}(address,bytes32)`;
+
+    it(`should reject ${operation} with a handle the caller cannot access`, async function () {
+      await (await this.erc20.mint(1000)).wait();
+      const amount = await this.erc20.balanceOf(this.signers.alice.address);
+      const args =
+        operation === 'transferFrom'
+          ? [this.signers.alice.address, this.signers.bob.address, amount]
+          : [this.signers.bob.address, amount];
+
+      await expect(this.erc20.connect(this.signers.bob)[signature](...args)).to.be.reverted;
+    });
+
+    it(`should allow ${operation} with a handle the caller can access`, async function () {
+      await (await this.erc20.mint(1000)).wait();
+      const amount = await this.erc20.balanceOf(this.signers.alice.address);
+      const args =
+        operation === 'transferFrom'
+          ? [this.signers.alice.address, this.signers.bob.address, amount]
+          : [this.signers.bob.address, amount];
+
+      if (operation === 'transferFrom') {
+        await (await this.erc20['approve(address,bytes32)'](this.signers.bob.address, amount)).wait();
+      }
+      const caller = operation === 'transferFrom' ? this.signers.bob : this.signers.alice;
+      await expect(this.erc20.connect(caller)[signature](...args))
+        .to.emit(this.erc20, operation === 'approve' ? 'Approval' : 'Transfer')
+        .withArgs(this.signers.alice.address, this.signers.bob.address);
+    });
+  }
+
   it('should transfer tokens between two users', async function () {
     const transaction = await this.erc20.mint(10000);
     const t1 = await transaction.wait();
