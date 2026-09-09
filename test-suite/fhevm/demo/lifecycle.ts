@@ -2105,7 +2105,7 @@ export const restartDemoSolanaListener = async (): Promise<void> =>
     }
     // Bootstrap commands must load before the stack installs its Solana dependency graph.
     const { readCoprocessorDatabaseUrl, startHostListener } = await import("../src/solana/deploy");
-    const { programIdsFor } = await import("../src/solana/host-deploy/program-profile");
+    const { programIdsFor } = await import("../../../solana/deploy/src/program-profile");
     const runtimeDir = path.join(DEMO_RUNTIME_DIR, manifest.bootId);
     const logDir = path.join(runtimeDir, 'logs');
     await stopOwnedProcess('listener', manifest.processes.listener);

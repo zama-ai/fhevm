@@ -17,14 +17,14 @@ import {
 } from '@solana/kit';
 import { createHash } from 'node:crypto';
 
-import { HOST_CONFIG_DISCRIMINATOR, getHostConfigDecoder } from '../internal/generated/zamaHost/accounts/hostConfig.js';
+import { HOST_CONFIG_DISCRIMINATOR, getHostConfigDecoder } from '../../../test-suite/fhevm/src/solana/internal/generated/zamaHost/accounts/hostConfig.js';
 import {
   getDefineKmsContextInstructionAsync,
   getInitializeHostConfigInstructionAsync,
-} from '../internal/generated/zamaHost/instructions/index.js';
-import { findHostConfigPda, findKmsContextPda, findRandNoncePda } from '../internal/generated/zamaHost/pdas/index.js';
-import { ZAMA_HOST_PROGRAM_ADDRESS } from '../internal/generated/zamaHost/programAddress.js';
-import { getKmsThresholdsDecoder } from '../internal/generated/zamaHost/types/kmsThresholds.js';
+} from '../../../test-suite/fhevm/src/solana/internal/generated/zamaHost/instructions/index.js';
+import { findHostConfigPda, findKmsContextPda, findRandNoncePda } from '../../../test-suite/fhevm/src/solana/internal/generated/zamaHost/pdas/index.js';
+import { ZAMA_HOST_PROGRAM_ADDRESS } from '../../../test-suite/fhevm/src/solana/internal/generated/zamaHost/programAddress.js';
+import { getKmsThresholdsDecoder } from '../../../test-suite/fhevm/src/solana/internal/generated/zamaHost/types/kmsThresholds.js';
 import { BRINGUP_KMS_CONTEXT_ID, SOLANA_HOST_CHAIN_ID } from './constants';
 import type { GatewayBootstrapInputs } from './gateway';
 import type { HostDeployContext } from './send';

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 
-import { evmAddressBytes, readGatewayBootstrapInputsFromEnv } from './gateway';
+import { evmAddressBytes, readGatewayBootstrapInputsFromEnv } from '../../../../../solana/deploy/src/gateway';
 
 const ADDRESS_A = '0x000000000000000000000000000000000000aaaa';
 const ADDRESS_B = '0x1111111111111111111111111111111111111111';

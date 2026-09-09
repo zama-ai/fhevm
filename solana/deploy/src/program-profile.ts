@@ -1,8 +1,8 @@
 import type { Address } from '@solana/kit';
 
-import preview from '../../../../../solana/deploy/profiles/preview-env/program-ids.json';
-import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '../internal/generated/confidentialToken/programAddress.js';
-import { ZAMA_HOST_PROGRAM_ADDRESS } from '../internal/generated/zamaHost/programAddress.js';
+import preview from '../profiles/preview-env/program-ids.json';
+import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '../../../test-suite/fhevm/src/solana/internal/generated/confidentialToken/programAddress.js';
+import { ZAMA_HOST_PROGRAM_ADDRESS } from '../../../test-suite/fhevm/src/solana/internal/generated/zamaHost/programAddress.js';
 
 export const SOLANA_PROGRAM_PROFILES = ['localnet', 'preview-env'] as const;
 export type SolanaProgramProfile = (typeof SOLANA_PROGRAM_PROFILES)[number];

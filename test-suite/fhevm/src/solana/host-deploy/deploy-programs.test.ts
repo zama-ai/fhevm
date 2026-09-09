@@ -3,8 +3,8 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { deployProgramArtifacts } from './deploy-programs';
-import { programIdsFor } from './program-profile';
+import { deployProgramArtifacts } from '../../../../../solana/deploy/src/deploy-programs';
+import { programIdsFor } from '../../../../../solana/deploy/src/program-profile';
 
 const originalPath = process.env.PATH;
 let directory: string | undefined;

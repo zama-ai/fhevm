@@ -1993,7 +1993,7 @@ export const adoptRunningE2eKmsConnectorOverride = async (
   await operations.waitForKmsConnector(nextState);
   await operations.postBootHealthGate(kmsConnectorHealthContainers(nextState));
   // Clear intent only after the replacement has passed every live gate. A
-  // failure before this point leaves the marker durable so retry/resume takes
+  // failure before this point leaves the marker persistent so retry/resume takes
   // this same no-deps runtime-only path instead of the migration-capable
   // ordinary KMS connector pipeline step.
   delete nextState.e2eKmsConnectorRuntimeAdoptionPending;

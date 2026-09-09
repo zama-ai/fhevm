@@ -18,8 +18,10 @@ import { readEnvFile } from '../utils/fs';
 import { run, runStreaming } from '../utils/process';
 import { until } from '../utils/until';
 import { SOLANA_HOST_CHAIN_ID, SOLANA_HOST_CHAIN_ID_I64, readGatewayBootstrapInputs } from './addresses';
-import { registerSolanaCoprocessorSql } from './host-deploy/coprocessor';
-import { deployHostPrograms } from './host-deploy/deploy-host';
+import { registerSolanaCoprocessorSql } from '../../../../solana/deploy/src/coprocessor';
+import { deployHostProgram } from '../../../../solana/deploy/src/deploy-host';
+import { deployProgramArtifacts } from '../../../../solana/deploy/src/deploy-programs';
+import { withDeploymentLock } from '../../../../solana/deploy/src/lock';
 import {
   SOLANA_E2E_PROGRAMS,
   VALIDATOR_RPC_URL,
@@ -29,7 +31,7 @@ import {
   startGeyserValidator,
 } from './validator';
 
-export { bootstrapZamaHost, kmsCertificateThreshold } from './host-deploy/bootstrap';
+export { bootstrapZamaHost, kmsCertificateThreshold } from '../../../../solana/deploy/src/bootstrap';
 
 const SOLANA_DIR = path.join(REPO_ROOT, 'solana');
 const ENGINE_DIR = path.join(REPO_ROOT, 'coprocessor', 'fhevm-engine');
@@ -40,19 +42,30 @@ const buildAndDeployPrograms = async (
 ): Promise<string> => {
   await runStreaming(['bash', 'scripts/build-programs.sh', 'localnet', ...SOLANA_E2E_PROGRAMS], { cwd: SOLANA_DIR });
   const artifactsDir = path.join(SOLANA_DIR, 'target', 'deploy');
-  const ids = await deployHostPrograms({
-    databaseUrl: await readCoprocessorDatabaseUrl(),
+  const databaseUrl = await readCoprocessorDatabaseUrl();
+  const ids = await deployHostProgram({
+    databaseUrl,
     rpcUrl: VALIDATOR_RPC_URL,
     deployerKeypairPath,
     artifactsDir,
     gateway,
     coprocessorThreshold: readIntegerEnv('COPROCESSOR_THRESHOLD', 1),
     kmsCorruptionThreshold: readIntegerEnv('KMS_THRESHOLD', 0),
-    programKeypairPaths: Object.fromEntries(
-      SOLANA_E2E_PROGRAMS.map((program) => [program, path.join(artifactsDir, `${program}-keypair.json`)]),
-    ),
-    programs: SOLANA_E2E_PROGRAMS,
+    programKeypairPath: path.join(artifactsDir, 'zama_host-keypair.json'),
   });
+  const specimens = SOLANA_E2E_PROGRAMS.filter((program) => program !== 'zama_host');
+  await withDeploymentLock(databaseUrl, VALIDATOR_RPC_URL, ids.zama_host!, (signal) =>
+    deployProgramArtifacts({
+      rpcUrl: VALIDATOR_RPC_URL,
+      deployerKeypairPath,
+      artifactsDir,
+      programs: specimens,
+      programKeypairPaths: Object.fromEntries(
+        specimens.map((program) => [program, path.join(artifactsDir, `${program}-keypair.json`)]),
+      ),
+      signal,
+    }),
+  );
   return ids.zama_host!;
 };
 

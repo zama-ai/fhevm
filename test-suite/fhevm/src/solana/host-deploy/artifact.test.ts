@@ -3,8 +3,8 @@ import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { writeSolanaAddressArtifact } from './artifact';
-import { parseKeypairBytes, resolveKeypairPath, writeKeypairJson } from './keypair';
+import { writeSolanaAddressArtifact } from '../../../../../solana/deploy/src/artifact';
+import { parseKeypairBytes, resolveKeypairPath, writeKeypairJson } from '../../../../../solana/deploy/src/keypair';
 
 describe('writeSolanaAddressArtifact', () => {
   test('writes chart-scrapable _ADDRESS keys', async () => {

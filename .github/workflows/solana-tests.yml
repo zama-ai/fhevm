@@ -229,6 +229,9 @@ jobs:
         working-directory: solana/demo-dapp
         run: bun install --frozen-lockfile
 
+      - name: Install the shared deployer dependency graph
+        run: bun install --cwd solana/deploy --frozen-lockfile
+
       - name: Install the test-suite's frozen dependency graph
         working-directory: test-suite/fhevm
         run: bun install --frozen-lockfile
@@ -386,5 +389,6 @@ jobs:
         env:
           SOLANA_DEPLOY_TEST_IMAGE: solana-programs:ci
         run: |
+          bun install --cwd solana/deploy --frozen-lockfile
           bun install --cwd test-suite/fhevm --frozen-lockfile
           bun test --cwd test-suite/fhevm e2e/deployment/solana-deployment.test.ts

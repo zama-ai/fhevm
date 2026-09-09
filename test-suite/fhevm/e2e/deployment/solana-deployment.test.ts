@@ -7,8 +7,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { REPO_ROOT } from '../../src/layout';
-import { withDeploymentLock } from '../../src/solana/host-deploy/lock';
-import { programIdsFor } from '../../src/solana/host-deploy/program-profile';
+import { withDeploymentLock } from '../../../../solana/deploy/src/lock';
+import { programIdsFor } from '../../../../solana/deploy/src/program-profile';
 import { findHostConfigPda } from '../../src/solana/internal/generated/zamaHost/pdas/hostConfig';
 import { validatorStartArgs } from '../../src/solana/validator';
 import { run, runStreaming } from '../../src/utils/process';
@@ -44,7 +44,7 @@ const deploy = (action = 'deploy', overrides: Record<string, string> = {}) => {
           'host',
           action,
         ]
-      : ['bun', 'run', 'src/solana/host-deploy/cli.ts', 'host', action],
+      : ['bun', 'run', '../../solana/deploy/src/cli.ts', 'host', action],
     {
       cwd: path.join(REPO_ROOT, 'test-suite/fhevm'),
       env: variables,

@@ -232,6 +232,10 @@ jobs:
         working-directory: solana/demo-dapp
         run: bun install --frozen-lockfile
 
+      - name: Install Solana deployer dependencies
+        working-directory: solana/deploy
+        run: bun install --frozen-lockfile
+
       - name: Install CLI deps
         working-directory: test-suite/fhevm
         run: bun install --frozen-lockfile

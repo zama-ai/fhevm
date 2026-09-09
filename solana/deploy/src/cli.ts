@@ -6,7 +6,7 @@ import path from 'node:path';
 import { writeSolanaAddressArtifact } from './artifact';
 import { SOLANA_DEPLOY_PROGRAMS, type SolanaDeployProgram } from './constants';
 import { registerSolanaCoprocessorSql } from './coprocessor';
-import { deployHostPrograms } from './deploy-host';
+import { deployHostProgram } from './deploy-host';
 import { deployProgramArtifacts } from './deploy-programs';
 import { readGatewayBootstrapInputsFromEnv } from './gateway';
 import { resolveKeypairPath } from './keypair';
@@ -87,13 +87,12 @@ const main = async () => {
     }
     const programs =
       target === 'host' ? (['zama_host'] as const) : SOLANA_DEPLOY_PROGRAMS.filter((p) => p !== 'zama_host');
+    const programKeypairPaths = await resolveProgramKeypairs(programs);
     const parameters = {
       rpcUrl: requiredEnv('SOLANA_RPC_URL'),
       databaseUrl: requiredEnv('SOLANA_DEPLOY_DATABASE_URL'),
       deployerKeypairPath: await resolveDeployerKeypairPath(),
       artifactsDir: ARTIFACTS_DIR,
-      programKeypairPaths: await resolveProgramKeypairs(programs),
-      programs,
       upgrade: action === 'upgrade',
       profile,
     };
@@ -104,15 +103,16 @@ const main = async () => {
       console.log(
         `coprocessor_signers=${gateway.coprocessorSigners.map(evmHex).join(',')}; kms_signers=${gateway.kmsSigners.map(evmHex).join(',')}`,
       );
-      ids = await deployHostPrograms({
+      ids = await deployHostProgram({
         ...parameters,
+        programKeypairPath: programKeypairPaths.zama_host,
         gateway,
         coprocessorThreshold: integerEnv('COPROCESSOR_THRESHOLD', 1),
         kmsCorruptionThreshold: integerEnv('KMS_THRESHOLD', 0),
       });
     } else {
       ids = await withDeploymentLock(parameters.databaseUrl, parameters.rpcUrl, programIds.zamaHost, (signal) =>
-        deployProgramArtifacts({ ...parameters, signal }),
+        deployProgramArtifacts({ ...parameters, programs, programKeypairPaths, signal }),
       );
     }
     await writeSolanaAddressArtifact(ADDRESSES_DIR, ids);

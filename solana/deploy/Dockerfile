@@ -47,14 +47,14 @@ RUN rustup show && bash scripts/build-programs.sh "$PROGRAM_PROFILE" \
       zama_host confidential_token demo_vault confidential_batcher
 
 FROM --platform=linux/amd64 oven/bun:1.3.14-debian AS bundle
-WORKDIR /src/test-suite/fhevm
+WORKDIR /src/solana/deploy
 COPY solana/deploy/package.json solana/deploy/bun.lock ./
 RUN bun install --frozen-lockfile --production
 COPY test-suite/fhevm/src/solana/internal/generated /src/test-suite/fhevm/src/solana/internal/generated
-COPY test-suite/fhevm/src/solana/host-deploy /src/test-suite/fhevm/src/solana/host-deploy
+COPY solana/deploy/src ./src
 COPY solana/deploy/profiles/preview-env/program-ids.json /src/solana/deploy/profiles/preview-env/program-ids.json
 # Bundle to one file so the runtime image does not need bun or a node_modules tree.
-RUN bun build src/solana/host-deploy/cli.ts --target=node --outfile=/out/cli.mjs
+RUN ln -s /src/solana/deploy/node_modules /src/test-suite/fhevm/node_modules && bun build src/cli.ts --target=node --outfile=/out/cli.mjs
 
 FROM --platform=linux/amd64 node:22-bookworm-slim AS prod
 ARG PROGRAM_PROFILE

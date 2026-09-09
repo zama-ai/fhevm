@@ -11,7 +11,7 @@ import {
   evmAddressBytes,
   readGatewayBootstrapInputs as readGatewayBootstrapInputsFromAddresses,
   type GatewayBootstrapInputs,
-} from "./host-deploy/gateway";
+} from "../../../../solana/deploy/src/gateway";
 import { DEFAULT_HOST_CHAIN_KEY, gatewayAddressesPath, hostChainAddressesPath } from "../layout";
 import { readEnvFile } from "../utils/fs";
 
@@ -19,7 +19,7 @@ export {
   BRINGUP_KMS_CONTEXT_ID,
   SOLANA_HOST_CHAIN_ID,
   SOLANA_HOST_CHAIN_ID_I64,
-} from "./host-deploy/constants";
+} from "../../../../solana/deploy/src/constants";
 export { evmAddressBytes, type GatewayBootstrapInputs };
 
 /**

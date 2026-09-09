@@ -17,6 +17,9 @@ flowchart LR
   CLI --> Chain[Solana programs and accounts]
 ```
 
+The deployment core and CLI live in `solana/deploy/src`; local harnesses import that
+implementation directly. Generated program clients remain in their existing shared tree.
+
 ## Build and run
 
 `solana/scripts/build-programs.sh` is the build entry point for the local harness,
@@ -25,6 +28,7 @@ builds the selected programs, including their Cargo dependencies. It does not ca
 source timestamps or maintain a separate artifact registry.
 
 ```sh
+bun install --cwd solana/deploy --frozen-lockfile
 bash solana/scripts/build-programs.sh localnet zama_host confidential_token
 # Default image profile is preview-env; localnet builds are used by packaged CLI tests.
 docker build -f solana/deploy/Dockerfile -t solana-programs:<sha> .
@@ -39,7 +43,8 @@ requires rebuilding; changing `SOLANA_RPC_URL` cannot change `declare_id!`. Test
 that Rust declarations, Anchor configuration and deployer profiles agree. Existing IDL
 and generated-client checks remain authoritative for the local client ABI.
 
-The local e2e harness builds and selects the host, token and two specimen programs. The
+The local e2e harness deploys and initializes the host first, then deploys the token and
+two specimen programs in a separate phase. The
 `host` image command selects only the host. `demos` selects confidential-token, demo-vault
 and confidential-batcher. Wallets, mints and example data remain separate test fixtures.
 
@@ -87,6 +92,7 @@ Image/chart overrides now use the validated `overrides` JSON input, adopting the
 from Fred's #3681. The workflow does not depend on his blue-green deployment topology.
 Solana images built by the workflow use its source revision, like the other components.
 
+The workflow invokes one shared bootstrap action for a fresh namespace.
 Initial bootstrap creates the gateway, KMS, canonical keys and databases once. Anvil is
 configured to save state to its existing PVC. Later Solana rollouts preserve bootstrap
 resources, verify recorded EVM contract code and canonical keys, then:
@@ -143,7 +149,11 @@ or a guarantee of crash-consistent recovery across the whole distributed stack.
 
 ## Feedback and acceptance
 
+Run from the repository root after installing the SDK and demo dependencies described above.
+
 ```sh
+bun install --cwd solana/deploy --frozen-lockfile
+bun install --cwd test-suite/fhevm --frozen-lockfile
 bun test --cwd test-suite/fhevm src
 python3 ci/preview-env/solana-host/test_charts.py
 bash solana/scripts/build-programs.sh localnet zama_host

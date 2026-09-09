@@ -29,7 +29,7 @@ import { REPO_ROOT } from '../../src/layout';
 import { readGatewayBootstrapInputs } from '../../src/solana/addresses';
 import { readCoprocessorDatabaseUrl } from '../../src/solana/deploy';
 import { userDecryptExpect } from '../../src/solana/fhe-vertical';
-import { deployHostPrograms } from '../../src/solana/host-deploy/deploy-host';
+import { deployHostProgram } from '../../../../solana/deploy/src/deploy-host';
 import { incrementCounter, initializeCounter } from '../../src/solana/specimens';
 import { runStreaming } from '../../src/utils/process';
 import { verticalSetup } from '../harness/solana/vertical';
@@ -103,14 +103,12 @@ test(
       kmsCorruptionThreshold: Number(process.env.KMS_THRESHOLD ?? 0),
     };
     const rollout = (directory: string, upgrade: boolean) =>
-      deployHostPrograms({
+      deployHostProgram({
         ...bootstrap,
         databaseUrl,
         rpcUrl: env.rpcUrl,
         deployerKeypairPath: env.roots.deployerKeypairPath,
         artifactsDir: directory,
-        programKeypairPaths: {},
-        programs: ['zama_host'],
         upgrade,
       });
     let upgraded = false;

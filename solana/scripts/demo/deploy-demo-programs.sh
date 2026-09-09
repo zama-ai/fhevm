@@ -25,4 +25,4 @@ SOLANA_DEPLOYER_KEYPAIR="$DEPLOYER_KEYPAIR" \
 SOLANA_ARTIFACTS_DIR="$SOLANA/target/deploy" \
 SOLANA_PROGRAM_PROFILE=localnet \
 ADDRESSES_DIR="$SOLANA/target/deploy" \
-bun run "$ROOT/test-suite/fhevm/src/solana/host-deploy/cli.ts" demos "${1:-deploy}"
+bun run "$ROOT/solana/deploy/src/cli.ts" demos "${1:-deploy}"

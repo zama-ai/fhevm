@@ -7,15 +7,15 @@ import { programIdsFor } from './program-profile';
 import { createHostDeployContext } from './send';
 
 /** The shared host lifecycle: validate bindings, deploy/upgrade, then complete initialization. */
-export const deployHostPrograms = async (
-  parameters: Parameters<typeof deployProgramArtifacts>[0] & {
+export const deployHostProgram = async (
+  parameters: Omit<Parameters<typeof deployProgramArtifacts>[0], 'programs' | 'programKeypairPaths'> & {
+    readonly programKeypairPath?: string;
     readonly databaseUrl: string;
     readonly gateway: GatewayBootstrapInputs;
     readonly coprocessorThreshold?: number;
     readonly kmsCorruptionThreshold?: number;
   },
 ) => {
-  if (!parameters.programs.includes('zama_host')) throw new Error('host deployment must select zama_host');
   const programAddress = programIdsFor(parameters.profile ?? 'localnet').zamaHost;
   return withDeploymentLock(parameters.databaseUrl, parameters.rpcUrl, programAddress, async (signal) => {
     const context = createHostDeployContext(parameters.rpcUrl, signal);
@@ -27,7 +27,12 @@ export const deployHostPrograms = async (
       kmsCorruptionThreshold: parameters.kmsCorruptionThreshold,
     };
     await bootstrapZamaHost(context, { ...bootstrap, validateOnly: true });
-    const ids = await deployProgramArtifacts({ ...parameters, signal });
+    const ids = await deployProgramArtifacts({
+      ...parameters,
+      programs: ['zama_host'],
+      programKeypairPaths: { zama_host: parameters.programKeypairPath },
+      signal,
+    });
     await bootstrapZamaHost(context, bootstrap);
     return ids;
   });

@@ -1,0 +1,534 @@
+name: Bootstrap preview stack
+description: Create the initial gateway, keys, databases and runtime for a fresh preview.
+inputs:
+  blockchain-actions-token:
+    description: Token to check out the KMS repository.
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Grant dev-access groups RBAC on preview namespace
+      shell: bash
+      run: |
+        kubectl create rolebinding fhevm-ci-dev-binding \
+          --clusterrole=admin \
+          --group=coprocessor-dev-access \
+          --group=kms-dev-access \
+          -n "${NAMESPACE}" \
+          --dry-run=client -o yaml | kubectl apply -f -
+
+    ######################################################################
+    # OBSERVABILITY (opt-in via the `observability` dispatch input): an
+    # in-namespace Prometheus + Jaeger (OTLP trace collector) + Grafana,
+    # all via the generic `common` chart with official public images.
+    # Public Docker Hub images, so no registry-credentials dependency.
+    ######################################################################
+    - name: Deploy observability stack (Prometheus + Grafana + Jaeger)
+      if: env.OBSERVABILITY == 'true'
+      shell: bash
+      run: bash ci/preview-env/scripts/deploy-observability.sh
+
+    ######################################################################
+    # DEDICATED KMS: reuse zama-ai/kms's own deploy pipeline
+    # (thresholdWithEnclave, 4 or 13 parties) instead of re-deriving the wiring.
+    # Side effect: deploy.sh also installs the namespace's
+    # "registry-credentials" Secret (the name every fhevm chart's
+    # imagePullSecrets hardcodes), so we don't install sync-secrets ourselves.
+    ######################################################################
+    - name: Sparse-checkout zama-ai/kms deploy scripts
+      uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      with:
+        repository: zama-ai/kms
+        ref: ${{ env.KMS_REPO_REF }}
+        token: ${{ inputs.blockchain-actions-token }}
+        persist-credentials: false
+        sparse-checkout: |
+          ci/scripts
+          ci/pr-preview/thresholdWithEnclave
+          ci/pr-preview/registry-credential
+          charts/kms-core
+        path: .kms-deploy
+
+    - name: Fetch enclave PCR values for KMS_CORE_TAG
+      # kms's enclave images are labeled with zama.kms.eif_pcr{0,1,2} (wired
+      # into kms-core's trustedReleases). deploy.sh reads them as PCR0/1/2.
+      env:
+        IMAGE_REPO: hub.zama.org/ghcr/zama-ai/kms
+      shell: bash
+      run: |
+        image="${IMAGE_REPO}/core-service-enclave:${KMS_CORE_TAG}"
+        docker pull "${image}"
+        inspect=$(docker inspect "${image}")
+        for n in 0 1 2; do
+          pcr=$(jq -r ".[0].Config.Labels[\"zama.kms.eif_pcr${n}\"]" <<<"${inspect}")
+          # jq emits the literal "null" for a missing label and command
+          # substitution never trips the step's -e, so an absent/empty PCR would
+          # otherwise be written verbatim to GITHUB_ENV and only blow up far
+          # later inside deploy.sh's --pcr${n} attestation wiring. Validate hex.
+          if [[ ! "${pcr}" =~ ^[0-9a-fA-F]+$ ]]; then
+            echo "::error::PCR${n} label zama.kms.eif_pcr${n} missing or non-hex on ${image} (got '${pcr}')"
+            exit 1
+          fi
+          echo "PCR${n}=${pcr}" >> "$GITHUB_ENV"
+        done
+
+    ######################################################################
+    # IN-CLUSTER DATABASES: plain Postgres StatefulSets via the generic
+    # `common` chart (not Crossplane/RDS, not Bitnami - its images left the
+    # free catalog). One instance per consumer (coprocessor, kms-connector,
+    # relayer), mirroring prod's per-RDS topology. Deployed early: no
+    # dependencies and ready in seconds.
+    ######################################################################
+    - name: Deploy in-cluster Postgres for coprocessor
+      # One instance PER COPROCESSOR PARTY (postgres-coprocessor-<i>): each
+      # independent coprocessor gets its own DB, same as postgres-connector-<i>
+      # below. fullnameOverride per release; launched in parallel (seconds each).
+      shell: bash
+      run: bash ci/preview-env/scripts/deploy-postgres.sh coprocessor
+
+    - name: Deploy in-cluster Postgres for kms-connector
+      # One instance PER PARTY (postgres-connector-<i>): one kms-connector
+      # release per kms-core party, each needing its own DB. fullnameOverride
+      # per release; launched in parallel since each takes only seconds.
+      shell: bash
+      run: bash ci/preview-env/scripts/deploy-postgres.sh connector
+
+    - name: Deploy in-cluster Postgres for listener
+      # One instance PER COPROCESSOR PARTY (postgres-listener-<i>): the
+      # dedicated listener producer keeps its own cursor DB, separate from the
+      # coprocessor DB (see listener/values-postgres-listener-e2e.yaml).
+      shell: bash
+      run: bash ci/preview-env/scripts/deploy-postgres.sh listener
+
+    - name: Deploy in-cluster Postgres for polygon listener
+      # One cursor DB PER COPROCESSOR PARTY for the Polygon listener
+      # (postgres-listener-polygon-<i>), separate from the ETH listener's so
+      # their schemas/migrations never collide. Same values file, new name.
+      if: env.DEPLOY_POLYGON == 'true'
+      shell: bash
+      run: bash ci/preview-env/scripts/deploy-postgres.sh listener-polygon
+
+    - name: Deploy in-cluster Postgres for relayer + relayer-migrate
+      shell: bash
+      run: bash ci/preview-env/scripts/deploy-postgres.sh relayer
+
+    - name: Deploy dedicated KMS (kms's own ci/scripts/deploy.sh)
+      working-directory: .kms-deploy
+      env:
+        # deploy.sh's parse_args takes CLI flags, not env vars, for these
+        # (--tag sets both KMS_CORE_TAG and KMS_CLIENT_TAG). TLS is the one
+        # env-var exception.
+        TLS: "true"
+      shell: bash
+      run: |
+        # kms-core OTLP tracing: only when the observability stack is
+        # deployed AND the pinned KMS_REPO_REF's deploy.sh already knows the
+        # flag.
+        tracing_args=()
+        if [[ "${OBSERVABILITY}" == "true" ]]; then
+          if grep -q -- "--tracing-endpoint" ci/scripts/lib/common.sh; then
+            tracing_args=(--tracing-endpoint "${OTLP_ENDPOINT}")
+          else
+            echo "::warning::KMS_REPO_REF (${KMS_REPO_REF}) predates deploy.sh's --tracing-endpoint - kms-core traces disabled for this run; bump the pin to enable them"
+          fi
+        fi
+        chmod +x ci/scripts/deploy.sh
+        ./ci/scripts/deploy.sh \
+          --target aws-ci \
+          --namespace "${NAMESPACE}" \
+          --deployment-type thresholdWithEnclave \
+          --tag "${KMS_CORE_TAG}" \
+          --num-parties "${NB_KMS_CORE}" \
+          --pcr0 "${PCR0}" --pcr1 "${PCR1}" --pcr2 "${PCR2}" \
+          "${tracing_args[@]}"
+
+    - name: Discover KMS party signer addresses (S3 public vault)
+      id: kms-identity
+      # Each party generates its own signer identity (VerfAddress) on boot,
+      # separate from keygen. deploy.sh only waits for pod readiness, which
+      # can precede identity generation by minutes under Nitro attestation.
+      #
+      # All parties share one S3 bucket, segmented by a "PUB-p<i>/" prefix.
+      # We resolve each party's VerfAddress OBJECT dynamically (newest key
+      # under its own PUB-p<i>/VerfAddress/ prefix) instead of assuming a
+      # single hardcoded handle: the handle drifts across kms-core versions,
+      # and a stale object left in the shared bucket would otherwise hand us a
+      # signer that no longer matches the running kms-core. A wrong signer here
+      # scrambles the on-chain signer<->tx-sender pairing and makes every
+      # prepKeygenResponse revert with KmsSignerDoesNotMatchTxSender, so keygen
+      # consensus is never reached and only preprocessing ever runs.
+      # FALLBACK_HANDLE is used only if anonymous bucket listing is disabled.
+      # Emits s3_endpoint and signers_json (one JSON blob, since step outputs
+      # can't be addressed by a looped name later).
+      env:
+        FALLBACK_HANDLE: "60b7070add74be3827160aa635fb255eeeeb88586c4debf7ab1134ddceb4beee"
+      shell: bash
+      run: |
+        s3_endpoint=$(kubectl get configmap "${NAMESPACE}-1" -n "${NAMESPACE}" \
+          -o jsonpath='{.data.CORE_CLIENT__S3_ENDPOINT}' 2>/dev/null || echo "")
+        if [[ -z "${s3_endpoint}" ]]; then
+          echo "::error::could not read public vault bucket from configmap ${NAMESPACE}-1"
+          exit 1
+        fi
+        echo "s3_endpoint=${s3_endpoint}" >> "$GITHUB_OUTPUT"
+
+        signers_json=$(S3_ENDPOINT="${s3_endpoint}" node ci/preview-env/scripts/discover-kms-signers.mjs)
+        echo "signers_json=${signers_json}" >> "$GITHUB_OUTPUT"
+
+    # TX-SENDER WALLETS: Anvil uses the well-known Foundry mnemonic (120
+    # prefunded accounts). blockchain-dev generates a fresh mnemonic and
+    # funds the derived addresses from the in-cluster faucets.
+    - name: Capture host head block (blockchain-dev)
+      if: env.USE_BLOCKCHAIN_DEV == 'true'
+      shell: bash
+      run: |
+        raw=$(bash ci/preview-env/scripts/cluster-rpc.sh "${HOST_HTTP}" \
+          '{"jsonrpc":"2.0","id":1,"method":"eth_blockNumber","params":[]}')
+        hex=$(jq -r '.result' <<<"${raw}")
+        if [[ ! "${hex}" =~ ^0x[0-9a-fA-F]+$ ]]; then
+          echo "::error::could not read host eth_blockNumber from ${HOST_HTTP} (got '${hex}'; raw='${raw}')"
+          exit 1
+        fi
+        echo "HEAD_BLOCK=$((hex))" >> "$GITHUB_ENV"
+        echo "blockchain-dev host head block $((hex))"
+
+    - name: Install ethers for wallet derivation
+      shell: bash
+      run: |
+        mkdir -p /tmp/wallet-tools && cd /tmp/wallet-tools
+        npm install --silent --no-save ethers@6
+
+    - name: Generate preview mnemonic (blockchain-dev)
+      if: env.USE_BLOCKCHAIN_DEV == 'true'
+      env:
+        NODE_PATH: /tmp/wallet-tools/node_modules
+        ROLES_JSON_PATH: /tmp/preview-role-wallets.json
+      shell: bash
+      run: |
+        node ci/preview-env/scripts/generate-mnemonic.cjs
+        echo "ROLES_JSON_PATH=/tmp/preview-role-wallets.json" >> "$GITHUB_ENV"
+        mnemonic=$(jq -r .mnemonic /tmp/preview-role-wallets.json)
+        kubectl create secret generic preview-wallets-mnemonic -n "${NAMESPACE}" \
+          --from-literal=mnemonic="${mnemonic}" \
+          --dry-run=client -o yaml | kubectl apply -f -
+
+    - name: Derive KMS tx-sender wallets
+      id: kms-wallets
+      # KMS tx-senders (submit KMS responses on-chain). Offset 10 to avoid
+      # indices used elsewhere in this namespace.
+      env:
+        NODE_PATH: /tmp/wallet-tools/node_modules
+        COUNT: ${{ env.NB_KMS_CORE }}
+        HD_OFFSET: "10"
+        OUTPUT_KEY: wallets_json
+        LABEL: KMS tx-sender
+      shell: bash
+      run: node ci/preview-env/scripts/derive-wallets.cjs
+
+    - name: Derive coprocessor tx-sender wallets
+      id: coproc-wallets
+      # Per-party coprocessor identity (tx-sender = signer).
+      env:
+        NODE_PATH: /tmp/wallet-tools/node_modules
+        COUNT: ${{ env.NB_COPROCESSOR }}
+        OUTPUT_KEY: wallets_json
+        LABEL: coprocessor tx-sender
+      shell: bash
+      run: |
+        # Start immediately after the KMS tx-sender range (10 .. 10+NB_KMS_CORE-1)
+        # so it never overlaps them for ANY party count - a fixed offset (e.g. 20)
+        # collides once nb_kms_core > 10 (the 13-party option spans 10..22),
+        # reusing a KMS wallet as a coprocessor tx-sender/signer. This also stays
+        # clear of the test signers (#0..#4) and the ACL owner (#9). GitHub
+        # expressions have no arithmetic, so compute the offset here.
+        HD_OFFSET=$((10 + NB_KMS_CORE))
+        export HD_OFFSET
+        echo "Coprocessor HD offset: ${HD_OFFSET} (KMS parties: ${NB_KMS_CORE})"
+        node ci/preview-env/scripts/derive-wallets.cjs
+
+    - name: Fund wallets from blockchain-dev faucets
+      if: env.USE_BLOCKCHAIN_DEV == 'true'
+      env:
+        WALLETS_JSON: ${{ steps.kms-wallets.outputs.wallets_json }}
+        COPROC_WALLETS_JSON: ${{ steps.coproc-wallets.outputs.wallets_json }}
+      shell: bash
+      run: bash ci/preview-env/scripts/fund-wallets.sh
+
+    - name: Apply blockchain-dev values overlays
+      if: env.USE_BLOCKCHAIN_DEV == 'true'
+      shell: bash
+      run: bash ci/preview-env/scripts/apply-chain-env.sh
+
+    ######################################################################
+    # BLOCKCHAIN: per-PR anvil host + gateway chains, fully isolated.
+    # Skipped when use_blockchain_dev points at the shared Geth/Nitro nodes.
+    ######################################################################
+    - name: Deploy anvil-host
+      if: env.USE_BLOCKCHAIN_DEV != 'true'
+      shell: bash
+      run: bash ci/preview-env/scripts/deploy-anvil.sh host
+
+    - name: Deploy anvil-gateway
+      if: env.USE_BLOCKCHAIN_DEV != 'true'
+      shell: bash
+      run: bash ci/preview-env/scripts/deploy-anvil.sh gateway
+
+    - name: Deploy anvil-host-polygon
+      # Second (Polygon Amoy, 80002) host chain - fresh local anvil, no fork.
+      if: env.DEPLOY_POLYGON == 'true' && env.USE_BLOCKCHAIN_DEV != 'true'
+      shell: bash
+      run: bash ci/preview-env/scripts/deploy-anvil.sh host-polygon
+
+    ######################################################################
+    # COPROCESSOR INFRA: real S3 bucket via Crossplane (same chart as
+    # fhevm-dev). Deployed BEFORE the contracts so the gateway-contracts
+    # wiring step can read the real bucket name and register it on-chain as
+    # the coprocessor's ciphertext S3 URL (COPROCESSOR_S3_BUCKET_URL_0) -
+    # otherwise the KMS worker fetches ct128 from a placeholder bucket and
+    # user-decrypt 404s. The claim reconciles asynchronously, so we poll
+    # rather than rely on `helm --wait` alone.
+    ######################################################################
+    - name: Deploy coprocessor-infra (Crossplane S3)
+      # One release PER COPROCESSOR PARTY (coprocessor-infra-<i>): each gets its
+      # own S3 bucket, its own IRSA ServiceAccount (coprocessor-<i>, consumed by
+      # that party's S3-touching workers) and its own bucket ConfigMap
+      # (coprocessor-<i>, holding S3_BUCKET_NAME). Per-party names come from
+      # --set; the base values file stays single.
+      shell: bash
+      run: bash ci/preview-env/scripts/deploy-coprocessor-infra.sh
+
+    - name: Wait for coprocessor-infra to reconcile
+      env:
+        NAME_PREFIX: coprocessor-infra-
+      shell: bash
+      run: bash ci/preview-env/scripts/wait-crossplane-s3.sh
+
+    ######################################################################
+    # CONTRACTS: gateway first, then host (needs gateway's Decryption /
+    # InputVerification addresses), then register the host chain into gateway.
+    ######################################################################
+    - name: Wire real KMS node info into gateway-contracts values
+      id: gateway-contracts-values
+      env:
+        TARGET: gateway
+        SIGNERS_JSON: ${{ steps.kms-identity.outputs.signers_json }}
+        WALLETS_JSON: ${{ steps.kms-wallets.outputs.wallets_json }}
+        COPROC_WALLETS_JSON: ${{ steps.coproc-wallets.outputs.wallets_json }}
+        S3_ENDPOINT: ${{ steps.kms-identity.outputs.s3_endpoint }}
+      shell: bash
+      run: bash ci/preview-env/scripts/wire-contracts-values.sh
+
+    - name: Deploy gateway-contracts
+      env:
+        # Via env (not inline ${{ }}) so the step-output value is never
+        # interpolated into the shell script itself (zizmor template-injection).
+        VALUES_FILE: ${{ steps.gateway-contracts-values.outputs.values_file }}
+      shell: bash
+      run: bash ci/preview-env/scripts/deploy-contracts.sh gateway
+
+    - name: Wire real KMS node info into host-contracts values
+      id: host-contracts-values
+      # Mirrors the gateway wiring, with host-contracts' own field names
+      # (KMS_NODE_IP_x vs KMS_NODE_IP_ADDRESS_x, KMS_GEN_THRESHOLD vs
+      # KMS_GENERATION_THRESHOLD) and only the coprocessor SIGNER on-chain (the
+      # host InputVerifier verifies each proof against COPROCESSOR_SIGNER_x, so
+      # they must be the SAME derived wallets the gateway registered).
+      env:
+        TARGET: host
+        SIGNERS_JSON: ${{ steps.kms-identity.outputs.signers_json }}
+        WALLETS_JSON: ${{ steps.kms-wallets.outputs.wallets_json }}
+        COPROC_WALLETS_JSON: ${{ steps.coproc-wallets.outputs.wallets_json }}
+        S3_ENDPOINT: ${{ steps.kms-identity.outputs.s3_endpoint }}
+      shell: bash
+      run: bash ci/preview-env/scripts/wire-contracts-values.sh
+
+    - name: Deploy host-contracts
+      env:
+        # Via env (not inline ${{ }}) so the step-output value is never
+        # interpolated into the shell script itself (zizmor template-injection).
+        VALUES_FILE: ${{ steps.host-contracts-values.outputs.values_file }}
+      shell: bash
+      run: bash ci/preview-env/scripts/deploy-contracts.sh host
+
+    - name: Register host chain into gateway
+      shell: bash
+      run: bash ci/preview-env/scripts/deploy-contracts.sh add-host-chains
+
+    ######################################################################
+    # POLYGON CONTRACTS (deploy_polygon only): deploy host-contracts on the
+    # Polygon anvil, mirroring the canonical ETH ProtocolConfig (reuses the
+    # ETH KMS key, no second keygen), then register chain 80002 into gateway.
+    # Runs AFTER the ETH host-contracts (needs its protocol_config as the
+    # canonical source) and gateway-contracts (Decryption/InputVerification).
+    ######################################################################
+    - name: Wire real KMS node info into host-contracts-polygon values
+      id: host-contracts-polygon-values
+      if: env.DEPLOY_POLYGON == 'true'
+      env:
+        TARGET: host-polygon
+        SIGNERS_JSON: ${{ steps.kms-identity.outputs.signers_json }}
+        WALLETS_JSON: ${{ steps.kms-wallets.outputs.wallets_json }}
+        COPROC_WALLETS_JSON: ${{ steps.coproc-wallets.outputs.wallets_json }}
+        S3_ENDPOINT: ${{ steps.kms-identity.outputs.s3_endpoint }}
+      shell: bash
+      run: bash ci/preview-env/scripts/wire-contracts-values.sh
+
+    - name: Deploy host-contracts-polygon
+      if: env.DEPLOY_POLYGON == 'true'
+      env:
+        VALUES_FILE: ${{ steps.host-contracts-polygon-values.outputs.values_file }}
+      shell: bash
+      run: bash ci/preview-env/scripts/deploy-contracts.sh host-polygon
+
+    - name: Register polygon host chain into gateway
+      if: env.DEPLOY_POLYGON == 'true'
+      shell: bash
+      run: bash ci/preview-env/scripts/deploy-contracts.sh add-host-chains-polygon
+
+    ######################################################################
+    # COPROCESSOR + KMS-CONNECTOR: real contract addresses (configMapKeyRef
+    # in the values files) + real dedicated-KMS endpoints. DB endpoints are
+    # already static in the values files (in-cluster Postgres).
+    ######################################################################
+    - name: Deploy coprocessor-redis (per-party host-listener-consumer broker)
+      # One Redis PER COPROCESSOR PARTY (coprocessor-redis-<i>): the broker
+      # between that party's listener producer and its host-listener-consumer
+      # (see values-coprocessor-redis-e2e.yaml). Deployed before the listener +
+      # coprocessor releases so redis://coprocessor-redis-<i>-master:6379
+      # resolves when they start.
+      shell: bash
+      run: bash ci/preview-env/scripts/deploy-party-deps.sh redis
+
+    - name: Deploy listener (per-party host-chain event producer)
+      # One listener PER COPROCESSOR PARTY (listener-<i>): indexes the host
+      # chain and publishes events to that party's Redis (coprocessor-redis-<i>),
+      # which the coprocessor host-listener-consumer then ingests. Replaces the
+      # coprocessor chart's built-in hostListener/poller (disabled in
+      # values-coprocessor-e2e.yaml). Its own cursor DB is postgres-listener-<i>.
+      shell: bash
+      run: bash ci/preview-env/scripts/deploy-party-deps.sh listener
+
+    - name: Deploy polygon listener (per-party Polygon event producer)
+      # One Polygon listener PER COPROCESSOR PARTY (listener-polygon-<i>):
+      # indexes the Polygon anvil and publishes chain-80002 events to the SAME
+      # per-party Redis the ETH listener uses; the coprocessor's polygon
+      # host-listener-consumer filters that chain out by --chain-id. Own cursor
+      # DB (postgres-listener-polygon-<i>).
+      if: env.DEPLOY_POLYGON == 'true'
+      shell: bash
+      run: bash ci/preview-env/scripts/deploy-party-deps.sh listener-polygon
+
+    - name: Deploy coprocessor
+      # One release PER COPROCESSOR PARTY (coprocessor-<i>), each with its own
+      # Postgres (postgres-coprocessor-<i>), IRSA SA + S3 bucket ConfigMap
+      # (coprocessor-<i>, from coprocessor-infra-<i>) and tx-sender/sns-worker
+      # identity (the derived coprocessor wallet, same address registered on the
+      # gateway as COPROCESSOR_*_ADDRESS_<i-1>; the sns-worker signs ciphertext
+      # attestations with it, and its own Redis broker (coprocessor-redis-<i>).
+      # Image tags are shared across parties.
+      #
+      # RFC-021 blue-green: that release is the BCS fleet (pinned
+      # BCS_IMAGE_TAG). A second release coprocessor-<i>-gcs is the GCS
+      # fleet (HEAD images compiled as 0.15.0). Gateway registration stays N.
+      env:
+        COPROC_WALLETS_JSON: ${{ steps.coproc-wallets.outputs.wallets_json }}
+      shell: bash
+      run: bash ci/preview-env/scripts/deploy-coprocessor.sh
+
+    - name: Deploy polygon coprocessor consumer (per-party Polygon consumer)
+      # One Polygon host-listener-consumer PER COPROCESSOR PARTY
+      # (coprocessor-polygon-<i>), as its OWN single-chain release. Deployed
+      # SEPARATELY from the ETH consumer (coprocessor-<i>) because the coprocessor
+      # chart glues consecutive per-chain YAML documents together, so two enabled
+      # consumers in one render collapse into one and the ETH consumer is silently
+      # dropped (see values-coprocessor-polygon-consumer-e2e.yaml). Shares this
+      # party's Postgres (host_chains already seeded by coprocessor-<i>'s
+      # dbMigration) and Redis; ingests chain-80002 events published by
+      # listener-polygon-<i>.
+      if: env.DEPLOY_POLYGON == 'true'
+      shell: bash
+      run: bash ci/preview-env/scripts/deploy-coprocessor-sidecars.sh polygon-consumer
+
+    - name: Deploy coprocessor-poller (per-party key/CRS activation)
+      # One poller release PER COPROCESSOR PARTY (coprocessor-poller-<i>), the
+      # DB-side background processor that, on a pending kms_key_activation /
+      # kms_crs_activation row, DOWNLOADS the ServerKey/PublicKey/CRS material
+      # from the KMS public-vault S3 and fills the `keys`/`crs` tables the
+      # tfhe/zkproof/sns workers read (see values-coprocessor-poller-e2e.yaml).
+      # Mirrors zama-zws/gitops's eth-coproc-listener-poller. Neither the
+      # listener producer nor the host-listener-consumer performs that S3
+      # download - only the poller does.
+      #
+      # ORDER MATTERS: this MUST run BEFORE "Trigger KMS keygen" below. The
+      # poller anchors at MAX(block) of the (currently empty) coprocessor DB,
+      # i.e. block 0 on a fresh anvil, and finalizes blocks IN ORDER as it
+      # walks forward. Started before keygen it finalizes the keygen blocks the
+      # moment they are mined, so `keys`/`crs` populate within seconds. Started
+      # AFTER keygen it would anchor past those blocks and have to grind the
+      # entire finalization backlog back down first (minutes), during which the
+      # activation gate (block_status='finalized') is unmet and every worker
+      # fails "No keys found in database". Shares postgres-coprocessor-<i> with
+      # the coprocessor-<i> release, which already ran dbMigration (this release
+      # has dbMigration disabled).
+      shell: bash
+      run: bash ci/preview-env/scripts/deploy-coprocessor-sidecars.sh poller
+
+    - name: Deploy polygon coprocessor-poller (per-party Polygon finalization)
+      # One Polygon poller PER COPROCESSOR PARTY (coprocessor-poller-polygon-<i>),
+      # as its OWN single-chain release (same separator-collision reason as the
+      # Polygon consumer above). Finalizes Polygon blocks so the Polygon consumer's
+      # block_status='finalized' gate is met. dbMigration disabled - coprocessor-<i>
+      # already seeded host_chains for both chains.
+      if: env.DEPLOY_POLYGON == 'true'
+      shell: bash
+      run: bash ci/preview-env/scripts/deploy-coprocessor-sidecars.sh poller-polygon
+
+    - name: Create kms-connector-tx-sender secrets
+      env:
+        WALLETS_JSON: ${{ steps.kms-wallets.outputs.wallets_json }}
+      shell: bash
+      run: |
+        # One Secret PER PARTY: kms-connector's chart needs the wallet Secret
+        # to exist before install (no literal option like coprocessor's txSender).
+        for i in $(seq 1 "${NB_KMS_CORE}"); do
+          private_key=$(jq -r --argjson party "${i}" '.[] | select(.party == $party) | .privateKey' <<<"${WALLETS_JSON}")
+          if [[ -z "${private_key}" || "${private_key}" == "null" ]]; then
+            echo "::error::no derived tx-sender wallet for party ${i} in wallets_json=${WALLETS_JSON}"
+            exit 1
+          fi
+          kubectl create secret generic "kms-connector-tx-sender-${i}" -n "${NAMESPACE}" \
+            --from-literal=kms-wallet="${private_key}" \
+            --dry-run=client -o yaml | kubectl apply -f -
+        done
+
+    - name: Deploy kms-connector
+      shell: bash
+      run: bash ci/preview-env/scripts/deploy-kms-connector.sh
+
+    ######################################################################
+    # KMS BOOTSTRAP: trigger the real FHE key + CRS generation on-chain, now
+    # that coprocessor + kms-connector are up to react to KMSGeneration
+    # events. Targets host-contracts (post-v0.13 migration; gateway no longer
+    # ships task:triggerKeygen). The Job polls on-chain for
+    # ActivateKey/ActivateCrs before exiting, so --wait-for-jobs means the
+    # key + CRS material exists, not just that the request was sent.
+    ######################################################################
+    - name: Trigger KMS keygen + CRS generation
+      shell: bash
+      run: bash ci/preview-env/scripts/deploy-contracts.sh trigger-keygen
+
+    ######################################################################
+    # RELAYER + TEST-SUITE: generic `common` chart + published images.
+    ######################################################################
+    - name: Deploy relayer-migrate
+      shell: bash
+      run: bash ci/preview-env/scripts/deploy-relayer.sh migrate
+
+    - name: Deploy relayer
+      shell: bash
+      run: bash ci/preview-env/scripts/deploy-relayer.sh relayer
+
+    - name: Deploy test-suite
+      shell: bash
+      run: bash ci/preview-env/scripts/deploy-relayer.sh test-suite
+

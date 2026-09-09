@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 
 import { BRINGUP_KMS_CONTEXT_ID, type GatewayBootstrapInputs } from './addresses';
 import { bootstrapZamaHost, kmsCertificateThreshold, lifecycleComposeProject } from './deploy';
-import { PREVIEW_ENV_ZAMA_HOST_PROGRAM_ADDRESS } from './host-deploy/program-profile';
+import { PREVIEW_ENV_ZAMA_HOST_PROGRAM_ADDRESS } from '../../../../solana/deploy/src/program-profile';
 import { getHostConfigEncoder } from './internal/generated/zamaHost/accounts/hostConfig';
 import {
   getDefineKmsContextInstructionDataDecoder,

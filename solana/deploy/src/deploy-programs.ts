@@ -4,8 +4,8 @@ import { access, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { DEP_CHAIN_PROGRAM_ADDRESS } from '../internal/generated/depChain/programAddress';
-import { ENCRYPTED_COUNTER_PROGRAM_ADDRESS } from '../internal/generated/encryptedCounter/programAddress';
+import { DEP_CHAIN_PROGRAM_ADDRESS } from '../../../test-suite/fhevm/src/solana/internal/generated/depChain/programAddress';
+import { ENCRYPTED_COUNTER_PROGRAM_ADDRESS } from '../../../test-suite/fhevm/src/solana/internal/generated/encryptedCounter/programAddress';
 import { type SolanaDeployProgram } from './constants';
 import { type SolanaProgramProfile, programIdsFor } from './program-profile';
 

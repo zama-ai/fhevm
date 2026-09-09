@@ -8,6 +8,8 @@ on:
   pull_request:
     paths:
       - "ci/preview-env/scripts/**"
+      - "ci/preview-env/solana-host/**"
+      - ".github/actions/bootstrap-preview/**"
       - ".github/workflows/preview-env-scripts-lint.yml"
 
 env:
@@ -33,7 +35,7 @@ jobs:
           curl -fsSL "${url}" | tar -xJ
           bin="shellcheck-v${SHELLCHECK_VERSION}/shellcheck"
           # -x follows `source`d files (e.g. lib.sh) via each script's directives.
-          "${bin}" -x ci/preview-env/scripts/*.sh
+          "${bin}" -x ci/preview-env/scripts/*.sh ci/preview-env/solana-host/*.sh
 
       - name: Setup Node
         uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2
