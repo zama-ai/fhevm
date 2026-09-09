@@ -310,11 +310,12 @@ where
                 key: entry.allowed_key(),
             },
         };
-        bindings[batch
+        batch
             .position(&query)
-            .expect("every entry's query was planned into the batch")]
-        .clone()
-        .map_err(|source| AuthorizationFailure::HandleBinding { index, source })?;
+            .and_then(|position| bindings.get(position))
+            .ok_or(AuthorizationFailure::MissingProofBinding { index })?
+            .clone()
+            .map_err(|source| AuthorizationFailure::HandleBinding { index, source })?;
 
         if entry.allowed_key() != signer {
             delegated.push((

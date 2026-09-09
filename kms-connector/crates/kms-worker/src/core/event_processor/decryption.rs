@@ -1964,11 +1964,12 @@ mod tests {
 
         // A mock coprocessor serving the one leaf-proof read: the victim's allow leaf, sole leaf
         // of the account, whose proof is the empty sibling path.
-        let proof_request_body = leaf_proof_request_body(&[LeafQuery {
+        let proof_request_body = serde_json::to_value(leaf_proof_request_body(&[LeafQuery {
             encrypted_value_account: account_key,
             handle,
             kind: LeafKind::Allowed { key: victim_pubkey },
-        }]);
+        }]))
+        .unwrap();
         let proof_response = serde_json::json!({
             "proofs": [{ "status": "found", "leafIndex": 0, "leafCount": 1, "siblings": [] }],
         });

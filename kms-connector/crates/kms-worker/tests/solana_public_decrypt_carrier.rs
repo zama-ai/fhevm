@@ -156,8 +156,10 @@ async fn host_answering(
     });
     rpc.start().await.expect("the mock RPC starts");
 
-    let proof_request =
-        kms_worker::core::solana::proof::leaf_proof_request_body(std::slice::from_ref(&query));
+    let proof_request = serde_json::to_value(
+        kms_worker::core::solana::proof::leaf_proof_request_body(std::slice::from_ref(&query)),
+    )
+    .unwrap();
     let proof_response = serde_json::json!({ "proofs": [wire_outcome(&outcome)] });
     let mut coprocessor = MockServer::new_http("coprocessor-leaf-proofs");
     coprocessor.mock(move |when, then| {
@@ -252,8 +254,10 @@ async fn one_serving_coprocessor_carries_a_request_the_others_cannot() {
         then.error(StatusCode::INTERNAL_SERVER_ERROR, "leaf record unavailable");
     });
     failing.start().await.expect("the failing mock starts");
-    let proof_request =
-        kms_worker::core::solana::proof::leaf_proof_request_body(std::slice::from_ref(&query));
+    let proof_request = serde_json::to_value(
+        kms_worker::core::solana::proof::leaf_proof_request_body(std::slice::from_ref(&query)),
+    )
+    .unwrap();
     let behind_response = serde_json::json!({
         "proofs": [wire_outcome(&LeafProofOutcome::NotFound { leaf_count: 0 })]
     });

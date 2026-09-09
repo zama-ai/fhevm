@@ -42,6 +42,12 @@ pub enum FailureClass {
 /// because "some handle failed scope" is not an actionable diagnostic for a batch.
 #[derive(Clone, PartialEq, Eq, Debug, thiserror::Error)]
 pub enum AuthorizationFailure {
+    /// Internal batch planning omitted an entry or its verification result.
+    #[error("entry {index}: planned proof binding is missing")]
+    MissingProofBinding {
+        /// Which entry.
+        index: usize,
+    },
     /// The typed form of the request is wrong.
     #[error("request form: {0}")]
     Form(#[from] RequestFormError),
@@ -114,7 +120,9 @@ impl AuthorizationFailure {
     pub fn class(&self) -> FailureClass {
         match self {
             Self::Form(source) => source.class(),
-            Self::SignatureMismatch | Self::UnusableUserPubkey => FailureClass::Terminal,
+            Self::SignatureMismatch
+            | Self::UnusableUserPubkey
+            | Self::MissingProofBinding { .. } => FailureClass::Terminal,
             Self::Deployment(source) => source.class(),
             Self::Window(source) => source.class(),
             Self::Watermark(source) => source.class(),
@@ -265,7 +273,7 @@ impl ProofReadError {
             Self::Unavailable { .. } | Self::ResponseLengthMismatch { .. } => {
                 FailureClass::Transient
             }
-            Self::TooManyQueries { .. } => FailureClass::Terminal,
+            Self::TooManyQueries { .. } | Self::RequestEncoding { .. } => FailureClass::Terminal,
         }
     }
 }

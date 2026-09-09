@@ -131,6 +131,12 @@ pub(super) fn check_length(requested: usize, returned: usize) -> Result<(), Proo
 /// Why a batch could not be read at all. Every variant says nothing about any leaf.
 #[derive(Clone, PartialEq, Eq, Debug, thiserror::Error)]
 pub enum ProofReadError {
+    /// The locally constructed request could not be encoded; retrying cannot repair it.
+    #[error("leaf proof request serialization failed: {reason}")]
+    RequestEncoding {
+        /// Serialization diagnostic.
+        reason: String,
+    },
     /// No coprocessor answered.
     #[error("leaf proof read failed: {reason}")]
     Unavailable {
@@ -203,7 +209,7 @@ struct LeafProofResponseWire {
 
 /// Builds the request body the coprocessor route expects. Split out so the shape is assertable
 /// against the shared vectors without a live service.
-pub fn leaf_proof_request_body(queries: &[LeafQuery]) -> serde_json::Value {
+pub fn leaf_proof_request_body(queries: &[LeafQuery]) -> impl Serialize {
     let leaves = queries
         .iter()
         .map(|query| LeafQueryWire {
@@ -219,7 +225,7 @@ pub fn leaf_proof_request_body(queries: &[LeafQuery]) -> serde_json::Value {
             },
         })
         .collect();
-    serde_json::to_value(LeafProofRequestWire { leaves }).expect("plain strings serialize")
+    LeafProofRequestWire { leaves }
 }
 
 /// Parses one coprocessor's answer to a batch.
@@ -331,8 +337,11 @@ impl HostProofReader for HttpHostProofReader {
                 count: queries.len(),
             });
         }
-        let body = serde_json::to_vec(&leaf_proof_request_body(queries))
-            .map_err(|error| unavailable(format!("request body does not serialize: {error}")))?;
+        let body = serde_json::to_vec(&leaf_proof_request_body(queries)).map_err(|error| {
+            ProofReadError::RequestEncoding {
+                reason: error.to_string(),
+            }
+        })?;
         let answers = join_all(
             self.routes
                 .iter()
@@ -400,7 +409,10 @@ mod tests {
                 kind: LeafKind::Public,
             },
         ];
-        assert_eq!(leaf_proof_request_body(&queries), fixture["request"]);
+        assert_eq!(
+            serde_json::to_value(leaf_proof_request_body(&queries)).unwrap(),
+            fixture["request"]
+        );
     }
 
     #[test]
