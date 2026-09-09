@@ -48,7 +48,7 @@ npx hardhat task:buildProposeCoprocessorUpgradeCalldata \
 ## Step 2 — Copy the proposal action
 
 Scroll to the end of the output. The `## Aragon proposal action` block prints the `target` (the
-`ProtocolConfig` address) and the `calldata` hex. Copy both. Pass `--use-internal-proxy-address` to
+`ProtocolConfig` address) and the `calldata` hex. Copy both. Pass `--use-internal-proxy-address true` to
 resolve the target from the `/addresses` directory if `PROTOCOL_CONFIG_CONTRACT_ADDRESS` is unset.
 
 ## Step 3 — Submit to the DAO
@@ -85,7 +85,7 @@ broadcast directly instead of going through the DAO. `task:proposeCoprocessorUpg
 build step and then sends the byte-identical calldata with `DEPLOYER_PRIVATE_KEY` — the sibling of the
 KMS-context `task:defineNewKmsContextAndEpoch` broadcast. It sends to the host `ProtocolConfig` on the
 network passed via `--network`; resolve the address from `PROTOCOL_CONFIG_CONTRACT_ADDRESS` or pass
-`--use-internal-proxy-address` to read it from the `addresses/` directory.
+`--use-internal-proxy-address true` to read it from the `addresses/` directory.
 
 ```sh
 cd host-contracts
@@ -93,7 +93,7 @@ DEPLOYER_PRIVATE_KEY=0x... npx hardhat --network sepolia task:proposeCoprocessor
   --environment devnet \
   --start-time "$(date -u -v+2H '+%Y-%m-%dT%H:%M:%SZ')" \
   --duration 30m --buffer 1h --proposal-id 1 --software-version v0.15.0 \
-  --use-internal-proxy-address
+  --use-internal-proxy-address true
 ```
 
 ## Chain set reference
