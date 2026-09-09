@@ -154,8 +154,8 @@ env:
   SYNC_SECRETS_CHART: oci://hub.zama.org/ghcr/zama-zws/helm-charts/sync-secrets
   SYNC_SECRETS_CHART_VERSION: "0.2.3"
   #=====KMS==================================================================
-  KMS_REPO_REF: "35edfa2f0656ee266e3299a004a83ac7d4fe2418"
-  KMS_CORE_TAG: "d27c3b5"
+  KMS_REPO_REF: "v0.14.1"
+  KMS_CORE_TAG: "v0.14.1"
   #=====REDIS================================================================
   REDIS_CHART: oci://hub.zama.org/cgr/zama.ai/iamguarded-charts/redis
   REDIS_CHART_VERSION: "25.3.8"

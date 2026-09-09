@@ -115,8 +115,8 @@ keys (keep them aligned to the same kms release):
 | `kms_core_version` | `KMS_CORE_TAG` | GHCR tag for `core-service-enclave` → `deploy.sh --tag`. CI reads PCR labels from this image before install. |
 | `kms_repo_ref` | `KMS_REPO_REF` | Git ref sparse-checked out of `zama-ai/kms` (`deploy.sh`, charts, threshold wiring). |
 
-Current defaults (also in `parse-overrides.cjs`): `kms_core_version=d27c3b5`,
-`kms_repo_ref=35edfa2f0656ee266e3299a004a83ac7d4fe2418`.
+Current defaults (also in `parse-overrides.cjs`): `kms_core_version=v0.14.1`,
+`kms_repo_ref=v0.14.1` (`zama-ai/kms` release `v0.14.1` / `75b85afd`).
 
 **kms-connector is not kms-core.** `kms_connector_version` /
 `kms_connector_chart_version` are fhevm-owned (same resolve/build rules as
@@ -144,8 +144,8 @@ Or `overrides` in the Actions form:
 
 ```json
 {
-  "kms_core_version": "abc1234",
-  "kms_repo_ref": "35edfa2f0656ee266e3299a004a83ac7d4fe2418"
+  "kms_core_version": "v0.14.1",
+  "kms_repo_ref": "v0.14.1"
 }
 ```
 
@@ -173,7 +173,7 @@ ci/preview-env/preview-env launch --ref <your-branch> --testnets --tests
 ci/preview-env/preview-env launch --ref <your-branch> --blue-green --blockchain-dev --tests
 ci/preview-env/preview-env launch --ref <your-branch> --set coprocessor_version=abc1234
 ci/preview-env/preview-env launch --ref <your-branch> --tests \
-  --set kms_core_version=d27c3b5 --set kms_repo_ref=35edfa2f0656ee266e3299a004a83ac7d4fe2418
+  --set kms_core_version=v0.14.1 --set kms_repo_ref=v0.14.1
 ```
 
 `--blue-green` sends `enable_blue_green=true` and `nb_coprocessor=2`.
