@@ -80,9 +80,6 @@ export const KMS_THRESHOLD_CONFIG_NAME = "kms-core-threshold.toml";
  *  cores skip the `3t+1` startup validation and boot idle, joining a committee dynamically when a
  *  context names them. Mounted into cores with party id > committeeSize. */
 export const KMS_THRESHOLD_SPARE_CONFIG_NAME = "kms-core-threshold-spare.toml";
-/** Per-party `kms-gen-keys` config filename. Core images whose `kms-gen-keys` no longer accepts
- *  the `--public-storage`/`--private-storage` argument form are driven from these files instead;
- *  the Solana (RFC-021) vertical pins such an image. */
 export const kmsThresholdGenKeysConfigName = (partyId: number): string =>
   `kms-gen-keys-threshold-${partyId}.toml`;
 /** Marker in the checked-in template where the per-cluster peer roster is injected. */
@@ -111,6 +108,7 @@ export const renderThresholdCoreConfig = (templateText: string, topology: Resolv
   }
   return templateText.replace(THRESHOLD_PEERS_MARKER, renderThresholdPeers(topology));
 };
+
 
 /** Spare-core config: drops the peer roster entirely (peers=None) so the core skips `3t+1`
  *  validation and boots idle. */
@@ -182,20 +180,15 @@ export const thresholdCoreEnv = (
  * to 4). The `--tls-*` flags shape the generated cert material — CN = the core name — which the
  * KMS context wiring surfaces as each node's caCert / mpcIdentity.
  *
- * The kms-gen-keys CLI differs across core images: older ones scope to signing keys with a
- * `--cmd signing-keys` selector (their `--cmd` default is `all`, which would also generate FHE
- * keys centrally), while newer ones dropped it and have the `threshold` subcommand emit the
- * signing keys + CA certs directly. Probe `--help` once and inject the selector only when the
- * image still understands it, so a pinned old or new CORE_VERSION both boot. AWS creds come from
- * the container env. */
+ * The kms-gen-keys CLI differs across core images. Argument-based versions use the `threshold`
+ * subcommand and some require `--cmd signing-keys` to avoid generating FHE keys centrally.
+ * Config-based versions accept only `--config-file`. Probe `--help` so both pinned formats boot.
+ * AWS creds come from the container env. */
 const genKeysCommand = (topology: ResolvedKmsTopology, opts: KmsRenderOptions) =>
   [
     "set -e",
     `echo "=== generating signing keys for ${topology.parties} parties ==="`,
-    // Probe per-image. Cores that still take the storage flags use the argument form; those that
-    // dropped them (the Solana-pinned core) are driven from the per-party gen-keys config files.
     `if kms-gen-keys --help 2>&1 | grep -q -- '--public-storage'; then`,
-    // Old cores need `--cmd signing-keys` + `--num-parties`; newer ones dropped both.
     `  if kms-gen-keys --help 2>&1 | grep -q -- '--cmd'; then CMD="--cmd signing-keys"; else CMD=""; fi`,
     `  if kms-gen-keys threshold --help 2>&1 | grep -q -- '--num-parties'; then NP="--num-parties ${topology.parties}"; else NP=""; fi`,
     ...kmsPartyIds(topology.parties).map(
@@ -219,6 +212,9 @@ const genKeysCommand = (topology: ResolvedKmsTopology, opts: KmsRenderOptions) =
  * (a dedicated component, so it never merges with the centralized `core`
  * template — no env/healthcheck conflicts to work around).
  */
+// The KMS core image is published amd64-only at every tag; pin the platform so the generated cores
+// run (emulated) on arm64 hosts, matching the hardcoded pin in core-docker-compose.yml.
+
 export const buildKmsThresholdOverride = (
   topology: ResolvedKmsTopology,
   opts: KmsRenderOptions,

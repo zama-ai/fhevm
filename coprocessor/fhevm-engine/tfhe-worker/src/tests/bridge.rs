@@ -1,9 +1,9 @@
 //! Tests for the confidential-bridge association worker.
 
 use crate::bridge::drain_associations;
-use serial_test::serial;
+use crate::tests::shared_db::{cloned_test_db, ClonedDb};
 use sqlx::PgPool;
-use test_harness::instance::{setup_test_db, DBInstance, ImportMode};
+use test_harness::instance::ImportMode;
 use tokio_util::sync::CancellationToken;
 
 const SRC_CHAIN: i64 = 100;
@@ -32,8 +32,8 @@ struct CopiedDigest {
 }
 
 /// Returns the `DBInstance` (kept alive by the caller) and a connected pool.
-async fn fresh_db() -> (DBInstance, PgPool) {
-    let db = setup_test_db(ImportMode::None).await.expect("setup db");
+async fn fresh_db() -> (ClonedDb, PgPool) {
+    let db = cloned_test_db(ImportMode::None).await.expect("setup db");
     let pool = PgPool::connect(db.db_url()).await.expect("connect pool");
     (db, pool)
 }
@@ -217,7 +217,6 @@ async fn in_publish_queue(pool: &PgPool, handle: &[u8], host_chain_id: i64) -> b
 }
 
 #[tokio::test]
-#[serial]
 async fn associates_ready_pair() {
     let (_db, pool) = fresh_db().await;
     let src = handle(1);
@@ -265,7 +264,6 @@ async fn associates_ready_pair() {
 }
 
 #[tokio::test]
-#[serial]
 async fn gcs_bridge_does_not_fall_back_to_public() {
     let (_db, pool) = fresh_db().await;
     let src = handle(3);
@@ -293,7 +291,6 @@ async fn gcs_bridge_does_not_fall_back_to_public() {
 }
 
 #[tokio::test]
-#[serial]
 async fn skips_when_source_approval_missing() {
     let (_db, pool) = fresh_db().await;
     let src = handle(1);
@@ -320,7 +317,6 @@ async fn skips_when_source_approval_missing() {
 }
 
 #[tokio::test]
-#[serial]
 async fn associates_when_source_event_arrives_last() {
     let (_db, pool) = fresh_db().await;
     let src = handle(1);
@@ -358,7 +354,6 @@ async fn associates_when_source_event_arrives_last() {
 }
 
 #[tokio::test]
-#[serial]
 async fn skips_events_from_orphaned_bridge_blocks() {
     let (_db, pool) = fresh_db().await;
     let src = handle(1);
@@ -451,7 +446,6 @@ async fn skips_events_from_orphaned_bridge_blocks() {
 }
 
 #[tokio::test]
-#[serial]
 async fn associates_pending_destination_block() {
     let (_db, pool) = fresh_db().await;
     let src = handle(1);
@@ -485,7 +479,6 @@ async fn associates_pending_destination_block() {
 }
 
 #[tokio::test]
-#[serial]
 async fn associates_only_when_source_fully_materialized() {
     let (_db, pool) = fresh_db().await;
     let src = handle(1);
@@ -537,7 +530,6 @@ async fn associates_only_when_source_fully_materialized() {
 }
 
 #[tokio::test]
-#[serial]
 async fn associates_only_once() {
     let (_db, pool) = fresh_db().await;
     let src = handle(1);
@@ -561,7 +553,6 @@ async fn associates_only_once() {
 }
 
 #[tokio::test]
-#[serial]
 async fn skips_pair_when_destination_already_materialized() {
     let (_db, pool) = fresh_db().await;
     let src = handle(1);
@@ -596,7 +587,6 @@ async fn skips_pair_when_destination_already_materialized() {
 }
 
 #[tokio::test]
-#[serial]
 async fn associate_pair_skips_digest_and_flag_when_copy_no_ops() {
     let (_db, pool) = fresh_db().await;
     let src = handle(1);
@@ -631,7 +621,6 @@ async fn associate_pair_skips_digest_and_flag_when_copy_no_ops() {
 }
 
 #[tokio::test]
-#[serial]
 async fn drains_across_multiple_batches() {
     let (_db, pool) = fresh_db().await;
 
@@ -658,7 +647,6 @@ async fn drains_across_multiple_batches() {
 /// retargets the digest to that chain, and leaves the source intact — a clone,
 /// not a move.
 #[tokio::test]
-#[serial]
 async fn associates_same_chain_pair() {
     let (_db, pool) = fresh_db().await;
     let src = handle(1);

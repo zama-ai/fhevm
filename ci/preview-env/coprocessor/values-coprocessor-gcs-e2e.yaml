@@ -1,0 +1,34 @@
+# GCS (green) overlay for RFC-021 preview-env. Applied on top of
+# values-coprocessor-e2e.yaml for release coprocessor-<i>-gcs.
+#
+# Same party identity as BCS (wallet, Postgres, Redis, S3, IRSA). Images
+# come from the coprocessor CI build with BUILD_STACK_VERSION=0.15.0,
+# tagged <sha>-gcs0.15.0 (not the baseline <sha>).
+# db-migration stays on the BCS release (HEAD migrator) so GCS schema tables
+# exist before this fleet starts. Control-plane binaries run only here.
+commonConfig:
+  stackVersion: "0.15.0"
+  extraSelectorLabels:
+    fhevm.zama.ai/fleet: gcs
+  canonicalProtocolConfigChainId: "12345"
+
+dbMigration:
+  enabled: false
+
+upgradeController:
+  enabled: true
+  image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/upgrade-controller, tag: latest}
+  serviceAccountName: coprocessor
+
+consensusDetector:
+  enabled: true
+  image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/consensus-detector, tag: latest}
+  serviceAccountName: coprocessor
+
+# Own Redis consumer group. Default service-name is host-listener-consumer,
+# same as BCS, so both fleets shared one group and split the stream — GCS
+# never saw CoprocessorUpgradeProposed (BCS v0.14.0-7 only notifies, no
+# upgrade_state write). Distinct id = both get every block.
+hostListenerConsumerShared:
+  args:
+    serviceName: host-listener-consumer-gcs

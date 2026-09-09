@@ -33,6 +33,7 @@ RUN --mount=type=bind,source=relayer/Cargo.toml,target=Cargo.toml \
     --mount=type=bind,source=solana/crates/zama-solana-permit,target=/solana/crates/zama-solana-permit \
     --mount=type=bind,source=solana/crates/zama-solana-acl,target=/solana/crates/zama-solana-acl \
     --mount=type=bind,source=solana/crates/zama-solana-request,target=/solana/crates/zama-solana-request \
+    --mount=type=bind,source=shared/ciphertext-attestation,target=/shared/ciphertext-attestation \
 #    --mount=type=bind,source=.git/HEAD,target=.git/HEAD \
 #    --mount=type=bind,source=.git/index,target=.git/index \
 #    --mount=type=bind,source=.git/objects,target=.git/objects \

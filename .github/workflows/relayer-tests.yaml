@@ -32,6 +32,9 @@ jobs:
             rust-files:
               - .github/workflows/relayer-tests.yaml
               - relayer/**
+              # The off-chain readiness verdict (retriable vs terminal) lives in this crate, so
+              # a change confined to it still has to run the relayer's own suites.
+              - shared/ciphertext-attestation/**
 
   unit-test:
     name: relayer-test/unit-test (bpr)
@@ -211,4 +214,6 @@ jobs:
 
       - name: Run tests
         working-directory: relayer
-        run: RUST_BACKTRACE=full make test-integration
+        # The Makefile assigns DATABASE_URL with `:=` from the compose file, beating the
+        # environment. dispatch_gate_test reads it for a database-wide advisory lock.
+        run: RUST_BACKTRACE=full make test-integration DATABASE_URL="$DATABASE_URL"

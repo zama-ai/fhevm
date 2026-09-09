@@ -1,10 +1,10 @@
 mod common;
 
 use crate::common::utils::{
-    assert_retry_after_header_present, create_timeout_test_config,
+    assert_retry_after_header_present, create_timeout_test_config, create_user_decrypt_wait_config,
     register_host_acl_allow_all_dynamic, register_host_acl_deny_all,
-    register_host_acl_partial_deny, register_host_acl_rpc_error, TestSetup, TEST_HOST_CHAIN_ID,
-    TEST_HOST_CHAIN_ID_2,
+    register_host_acl_partial_deny, register_host_acl_rpc_error, request_cache_total,
+    spare_shares_count_and_sum, TestSetup, TEST_HOST_CHAIN_ID, TEST_HOST_CHAIN_ID_2,
 };
 use crate::common::validation_helper::{
     expect_v2_malformed_json, expect_v2_missing_field, expect_v2_validation_error, test_endpoint,
@@ -50,6 +50,26 @@ mod constants {
     pub const USER_DECRYPT_SELECTOR: [u8; 4] =
         fhevm_relayer::gateway::arbitrum::bindings::Decryption::userDecryptionRequest_2Call::SELECTOR;
 
+    // Wait window. The mock lands the quorum by 1.5s and one straggler per block from 2s;
+    // with `additional_shares = A` the relayer's target is `SHARES_THRESHOLD + A`.
+
+    /// Share threshold configured in `tests/relayer-test-config.yaml`.
+    pub const SHARES_THRESHOLD: usize = 9;
+    /// Window long enough that it cannot expire before the straggler shares land,
+    /// with margin over TARGET_REACHED_MAX_SECS so the two stay distinguishable under load.
+    pub const WAIT_WINDOW_LONG_SECS: u32 = 30;
+    /// Window short enough that a test can afford to wait it out.
+    pub const WAIT_WINDOW_SHORT_SECS: u32 = 4;
+    /// A completion this quick cannot have come from the long window expiring. Well above
+    /// the ~2s a healthy run takes, since the whole suite runs 8-way parallel.
+    pub const TARGET_REACHED_MAX_SECS: u64 = 15;
+    /// Inside the short window, and after every share of a 9-share committee landed.
+    pub const INSIDE_WAIT_WINDOW_MS: u64 = 3000;
+    /// Time for every mock share event to land, stragglers included.
+    pub const SHARES_SETTLE_MS: u64 = 6000;
+    /// Budget for a poll that may have to outlast the short wait window.
+    pub const POLL_BUDGET_SECS: u64 = 25;
+
     // Contract error selectors for testing error classification
     // These match the selectors in src/gateway/arbitrum/transaction/contract_error_parser.rs
     pub const REVERT_ENFORCED_PAUSE: &str = "execution reverted: 0xd93c0665";
@@ -63,6 +83,9 @@ mod helpers {
     // The v2 POST → poll lifecycle and payload builders live in
     // `common::flows` so the listener-redundancy suite can drive this flow too.
     pub use crate::common::flows::user_decrypt::*;
+    use crate::common::utils::TestSetup;
+    use ethereum_rpc_mock::fhevm::UserDecryptKind;
+    use fhevm_relayer::http::endpoints::v2::types::user_decrypt::UserDecryptStatusResponseJson;
 
     /// Validates UserDecrypt v2 response format compatibility with TKMS library
     /// for client-side plaintext reconstruction
@@ -112,6 +135,88 @@ mod helpers {
             v2_item.get("extra_data").is_none(),
             "v2 should not serialize extra_data field"
         );
+    }
+    /// Submit a request whose mock KMS committee answers with `share_count` shares
+    pub async fn submit_against_mock_committee(setup: &TestSetup, share_count: usize) -> String {
+        let user_address = random_address();
+        let contract_address = random_address();
+        let payload = create_user_decrypt_payload(
+            &setup.settings.gateway.blockchain_rpc.chain_id.to_string(),
+            contract_address,
+            user_address,
+        );
+        let handles = extract_ciphertext_handles_from_user_payload(&payload);
+
+        setup.fhevm_mock.on_user_decrypt_success_with_share_count(
+            UserDecryptKind::Direct,
+            handles,
+            user_address,
+            ethereum_rpc_mock::SubscriptionTarget::All,
+            share_count,
+        );
+
+        submit_request(setup, &payload).await
+    }
+
+    /// Poll GET until terminal state within `budget`, return (status, body)
+    ///
+    /// Wider budget than `poll_until_terminal`, for requests that only complete once
+    /// the wait window has expired.
+    pub async fn poll_until_terminal_within(
+        setup: &TestSetup,
+        job_id: &str,
+        budget: std::time::Duration,
+    ) -> (reqwest::StatusCode, UserDecryptStatusResponseJson) {
+        let deadline = std::time::Instant::now() + budget;
+        while std::time::Instant::now() < deadline {
+            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+            let (status, _, body) = get_status(setup, job_id).await;
+            if status != reqwest::StatusCode::ACCEPTED {
+                return (status, body);
+            }
+        }
+        panic!("Request did not reach terminal state in time");
+    }
+
+    /// Send a single GET and return (status, retry_after_present, body)
+    pub async fn get_status(
+        setup: &TestSetup,
+        job_id: &str,
+    ) -> (reqwest::StatusCode, bool, UserDecryptStatusResponseJson) {
+        let response = reqwest::Client::new()
+            .get(v2_user_decrypt_get_url(setup, job_id))
+            .timeout(std::time::Duration::from_secs(10))
+            .send()
+            .await
+            .expect("Failed to send GET request");
+
+        let status = response.status();
+        let retry_after_present = response.headers().contains_key("retry-after");
+        let body: UserDecryptStatusResponseJson =
+            response.json().await.expect("Failed to parse GET response");
+        (status, retry_after_present, body)
+    }
+
+    /// Assert a succeeded body carries exactly `expected` shares, ordered by share index.
+    ///
+    /// The mock stamps the share index into the first byte of each share payload,
+    /// so the ordering guarantee of the response is directly observable.
+    pub fn assert_shares_ordered_by_index(body: &UserDecryptStatusResponseJson, expected: usize) {
+        let result = body
+            .result
+            .as_ref()
+            .expect("Succeeded response should carry a result");
+        assert_eq!(
+            result.result.len(),
+            expected,
+            "Response should carry every collected share"
+        );
+        for (index, item) in result.result.iter().enumerate() {
+            assert_eq!(
+                item.payload[0], index as u8,
+                "Shares should be ordered by share index"
+            );
+        }
     }
 }
 
@@ -480,6 +585,44 @@ async fn test_nonce_too_high_then_succeeds() {
     setup.shutdown().await;
 }
 
+/// The error a same-nonce collision between two dispatchers reports. It must cost a retry,
+/// not a terminal `failure` on the row.
+#[tokio::test]
+async fn test_replacement_underpriced_then_succeeds() {
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+    let contract_address = helpers::random_address();
+    let user_address = helpers::random_address();
+    let payload = helpers::create_user_decrypt_payload(
+        &setup.settings.gateway.blockchain_rpc.chain_id.to_string(),
+        contract_address,
+        user_address,
+    );
+    let handles = helpers::extract_ciphertext_handles_from_user_payload(&payload);
+
+    setup.fhevm_mock.queue_tx_responses_for_selector(
+        setup.fhevm_mock.decryption_contract,
+        constants::USER_DECRYPT_SELECTOR,
+        vec![Response::error(
+            "replacement transaction underpriced".to_string(),
+        )],
+    );
+    setup.fhevm_mock.on_user_decrypt_success(
+        UserDecryptKind::Direct,
+        handles.clone(),
+        user_address,
+        ethereum_rpc_mock::SubscriptionTarget::All,
+    );
+
+    let job_id = helpers::submit_request(&setup, &payload).await;
+    let (status, body) = helpers::poll_until_terminal(&setup, &job_id).await;
+
+    assert_eq!(status, reqwest::StatusCode::OK);
+    assert_eq!(body.status, ApiResponseStatus::Succeeded);
+    assert!(body.result.is_some());
+
+    setup.shutdown().await;
+}
+
 #[tokio::test]
 async fn test_max_retries_exceeded_fails() {
     let setup = TestSetup::new_with_low_retries()
@@ -494,7 +637,7 @@ async fn test_max_retries_exceeded_fails() {
     );
 
     // Set up readiness check to pass
-    setup.fhevm_mock.set_readiness_success();
+    setup.ct_attestation().serve_attestations().await;
 
     // Queue more errors than max_attempts (3 errors > 2 max_attempts)
     setup.fhevm_mock.queue_tx_responses_for_selector(
@@ -536,7 +679,7 @@ async fn test_contract_paused_returns_503() {
         user_address,
     );
 
-    setup.fhevm_mock.set_readiness_success();
+    setup.ct_attestation().serve_attestations().await;
     setup
         .fhevm_mock
         .on_user_decrypt_revert(UserDecryptKind::Direct, constants::REVERT_ENFORCED_PAUSE);
@@ -570,7 +713,7 @@ async fn test_invalid_signature_returns_400() {
         user_address,
     );
 
-    setup.fhevm_mock.set_readiness_success();
+    setup.ct_attestation().serve_attestations().await;
     setup
         .fhevm_mock
         .on_user_decrypt_revert(UserDecryptKind::Direct, constants::REVERT_INVALID_SIGNATURE);
@@ -600,7 +743,7 @@ async fn test_insufficient_balance_returns_503() {
         user_address,
     );
 
-    setup.fhevm_mock.set_readiness_success();
+    setup.ct_attestation().serve_attestations().await;
     setup.fhevm_mock.on_user_decrypt_revert(
         UserDecryptKind::Direct,
         constants::REVERT_INSUFFICIENT_BALANCE,
@@ -635,7 +778,7 @@ async fn test_insufficient_allowance_returns_503() {
         user_address,
     );
 
-    setup.fhevm_mock.set_readiness_success();
+    setup.ct_attestation().serve_attestations().await;
     setup.fhevm_mock.on_user_decrypt_revert(
         UserDecryptKind::Direct,
         constants::REVERT_INSUFFICIENT_ALLOWANCE,
@@ -670,7 +813,7 @@ async fn test_unknown_selector_returns_500() {
         user_address,
     );
 
-    setup.fhevm_mock.set_readiness_success();
+    setup.ct_attestation().serve_attestations().await;
     setup
         .fhevm_mock
         .on_user_decrypt_revert(UserDecryptKind::Direct, constants::REVERT_UNKNOWN_SELECTOR);
@@ -711,7 +854,7 @@ async fn test_retry_after_failure_creates_new_job_id() {
     );
 
     // Set up readiness check to pass
-    setup.fhevm_mock.set_readiness_success();
+    setup.ct_attestation().serve_attestations().await;
 
     // Configure mock to fail with max retries exceeded
     setup.fhevm_mock.queue_tx_responses_for_selector(
@@ -785,18 +928,18 @@ async fn test_retry_after_failure_creates_new_job_id() {
     setup.shutdown().await;
 }
 
-/// Test that a readiness check contract error (RPC node unavailable) correctly
-/// transitions the request from 'queued' to 'failure' so V2 clients see failure.
-/// Before the fix, update_status_to_failure_on_tx_failed silently no-oped because
-/// the request was still in 'queued' state (not 'processing' or 'tx_in_flight').
+/// Test that a terminal readiness failure — Coprocessors serving attestations over divergent
+/// ciphertext material, so no group ever reaches the majority threshold — transitions the request
+/// from 'queued' straight to 'failure', without burning the retry budget that an
+/// as-yet-unattested ciphertext is entitled to.
 #[tokio::test]
-async fn test_readiness_contract_error_returns_failure_v2() {
+async fn test_readiness_no_consensus_returns_failure_v2() {
     let setup = TestSetup::new_with_minimal_readiness()
         .await
         .expect("Failed to create test setup");
 
-    // Configure readiness checks to return RPC error (node unavailable)
-    setup.fhevm_mock.set_readiness_contract_error();
+    // Every Coprocessor signs valid attestations, but over different material
+    setup.ct_attestation().serve_divergent_attestations().await;
 
     let user_address = helpers::random_address();
     let contract_address = helpers::random_address();
@@ -815,15 +958,15 @@ async fn test_readiness_contract_error_returns_failure_v2() {
     assert_eq!(
         status,
         reqwest::StatusCode::INTERNAL_SERVER_ERROR,
-        "Expected 500 for readiness check contract error (RPC error is not a known revert)"
+        "Expected 500 when the Coprocessors cannot agree on the ciphertext material"
     );
     assert_eq!(body.status, ApiResponseStatus::Failed);
 
     let error = body.error.as_ref().expect("Error should be present");
     assert_eq!(
         error.label(),
-        "internal_server_error",
-        "Expected label 'internal_server_error' for readiness check contract error"
+        "no_attestation_consensus",
+        "Expected label 'no_attestation_consensus', distinct from the retryable timeout label"
     );
 
     setup.shutdown().await;
@@ -838,8 +981,8 @@ async fn test_readiness_timeout_returns_503_with_correct_label() {
         .await
         .expect("Failed to create test setup");
 
-    // Configure readiness checks to always return false (ciphertext never ready)
-    setup.fhevm_mock.set_readiness_failure();
+    // No Coprocessor has published an attestation for the handle
+    setup.ct_attestation().serve_nothing().await;
 
     let user_address = helpers::random_address();
     let contract_address = helpers::random_address();
@@ -867,6 +1010,72 @@ async fn test_readiness_timeout_returns_503_with_correct_label() {
         "readiness_check_timed_out",
         "Expected label 'readiness_check_timed_out' for readiness timeout"
     );
+
+    setup.shutdown().await;
+}
+
+// The same readiness outcomes under `source: gateway_chain`. Worth repeating from
+// `public_decrypt_v2_test` only because this side calls a different overload
+// (`isUserDecryptionReady_1`) and maps its errors in a different processor. The delegated suite
+// adds nothing further: all three user-decrypt kinds share this overload and this processor. No
+// success twin either — the timeout test already pins this overload's decode.
+
+/// A ciphertext the Gateway never reports ready exhausts the retry budget and stays retryable.
+#[tokio::test]
+async fn test_gateway_chain_readiness_timeout_returns_503() {
+    let setup = TestSetup::new_with_gateway_chain_readiness()
+        .await
+        .expect("Failed to create test setup");
+
+    setup.fhevm_mock.set_readiness_failure();
+
+    let user_address = helpers::random_address();
+    let contract_address = helpers::random_address();
+    let payload = helpers::create_user_decrypt_payload(
+        &setup.settings.gateway.blockchain_rpc.chain_id.to_string(),
+        contract_address,
+        user_address,
+    );
+
+    let job_id = helpers::submit_request(&setup, &payload).await;
+    let (status, body) = helpers::poll_until_terminal(&setup, &job_id).await;
+
+    assert_eq!(status, reqwest::StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(body.status, ApiResponseStatus::Failed);
+    assert!(body.result.is_none());
+
+    let error = body.error.as_ref().expect("Error should be present");
+    assert_eq!(error.label(), "readiness_check_timed_out");
+
+    setup.shutdown().await;
+}
+
+/// An unreachable gateway read node is the relayer's own dependency failing, not the ciphertext
+/// being unready, so it ends on a 500 instead of the retryable readiness label.
+#[tokio::test]
+async fn test_gateway_chain_readiness_contract_error_returns_500() {
+    let setup = TestSetup::new_with_gateway_chain_readiness()
+        .await
+        .expect("Failed to create test setup");
+
+    setup.fhevm_mock.set_readiness_contract_error();
+
+    let user_address = helpers::random_address();
+    let contract_address = helpers::random_address();
+    let payload = helpers::create_user_decrypt_payload(
+        &setup.settings.gateway.blockchain_rpc.chain_id.to_string(),
+        contract_address,
+        user_address,
+    );
+
+    let job_id = helpers::submit_request(&setup, &payload).await;
+    let (status, body) = helpers::poll_until_terminal(&setup, &job_id).await;
+
+    assert_eq!(status, reqwest::StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(body.status, ApiResponseStatus::Failed);
+
+    let error = body.error.as_ref().expect("Error should be present");
+    assert_eq!(error.label(), "internal_server_error");
 
     setup.shutdown().await;
 }
@@ -1659,6 +1868,295 @@ async fn test_cross_chain_acl_partial_deny() {
 
     let error = body.error.as_ref().expect("Expected error in response");
     assert_eq!(error.label(), "not_allowed_on_host_acl");
+
+    setup.shutdown().await;
+}
+
+// ---------------------------------------------------------------------------
+// Optimistic user-decryption wait window
+// ---------------------------------------------------------------------------
+//
+// The SDK needs 2t+1 *valid* shares to reconstruct a user decryption. At exactly
+// the threshold the tolerance is zero: one corrupted share and the decryption
+// fails. Each spare share absorbs one fault, and the wait window is what actually
+// delivers spares, because a distributed committee otherwise answers at exactly
+// the quorum. These tests vary how many shares the committee emits against the
+// configured target of `threshold + additional_shares`.
+
+/// `additional_shares = 0` disables the wait: no 202 hold, even with a long window.
+#[tokio::test]
+async fn test_wait_disabled_completes_at_threshold() {
+    let temp_config_dir = TempDir::new().expect("Failed to create temp dir");
+    let temp_config_path =
+        create_user_decrypt_wait_config(&temp_config_dir, 0, constants::WAIT_WINDOW_LONG_SECS)
+            .expect("Failed to create wait-window config");
+
+    let setup = TestSetup::new_with_config_path(Some(temp_config_path))
+        .await
+        .expect("Failed to create test setup");
+
+    // Deltas throughout: the Prometheus registry is a process-global OnceLock.
+    let metrics_endpoint = setup.settings.metrics.endpoint.clone();
+    let (spare_count_before, spare_sum_before) =
+        spare_shares_count_and_sum(&metrics_endpoint).await;
+    let cache_miss_before = request_cache_total(&metrics_endpoint, "user_decrypt", "miss").await;
+
+    // 9 emitted, target 9: the request is reconstructable as soon as the quorum lands.
+    let started = std::time::Instant::now();
+    let job_id = helpers::submit_against_mock_committee(&setup, constants::SHARES_THRESHOLD).await;
+    let (status, body) = helpers::poll_until_terminal_within(
+        &setup,
+        &job_id,
+        std::time::Duration::from_secs(constants::POLL_BUDGET_SECS),
+    )
+    .await;
+    let elapsed = started.elapsed();
+
+    assert_eq!(status, reqwest::StatusCode::OK);
+    assert_eq!(body.status, ApiResponseStatus::Succeeded);
+    helpers::assert_shares_ordered_by_index(&body, constants::SHARES_THRESHOLD);
+    // Far short of the configured window: the knob, not the clock, ended the wait.
+    assert!(
+        elapsed < std::time::Duration::from_secs(constants::TARGET_REACHED_MAX_SECS),
+        "Disabled wait should not hold the request, took {:?}",
+        elapsed
+    );
+
+    let (spare_count_after, spare_sum_after) = spare_shares_count_and_sum(&metrics_endpoint).await;
+    assert_eq!(spare_count_after - spare_count_before, 1.0);
+    assert_eq!(
+        spare_sum_after - spare_sum_before,
+        0.0,
+        "Returning exactly the quorum leaves the client no spare"
+    );
+    let cache_miss_after = request_cache_total(&metrics_endpoint, "user_decrypt", "miss").await;
+    assert_eq!(cache_miss_after - cache_miss_before, 1.0);
+
+    setup.shutdown().await;
+}
+
+/// The wait ends as soon as the extra share arrives, well inside the window.
+#[tokio::test]
+async fn test_wait_window_returns_extra_share() {
+    let temp_config_dir = TempDir::new().expect("Failed to create temp dir");
+    let temp_config_path =
+        create_user_decrypt_wait_config(&temp_config_dir, 1, constants::WAIT_WINDOW_LONG_SECS)
+            .expect("Failed to create wait-window config");
+
+    let setup = TestSetup::new_with_config_path(Some(temp_config_path))
+        .await
+        .expect("Failed to create test setup");
+
+    let metrics_endpoint = setup.settings.metrics.endpoint.clone();
+    let (spare_count_before, spare_sum_before) =
+        spare_shares_count_and_sum(&metrics_endpoint).await;
+
+    // 10 emitted, target 10: the boundary where the target is met exactly.
+    let started = std::time::Instant::now();
+    let job_id =
+        helpers::submit_against_mock_committee(&setup, constants::SHARES_THRESHOLD + 1).await;
+    let (status, body) = helpers::poll_until_terminal_within(
+        &setup,
+        &job_id,
+        std::time::Duration::from_secs(constants::POLL_BUDGET_SECS),
+    )
+    .await;
+    let elapsed = started.elapsed();
+
+    assert_eq!(status, reqwest::StatusCode::OK);
+    assert_eq!(body.status, ApiResponseStatus::Succeeded);
+    // One spare beyond the quorum, and it reached the client.
+    helpers::assert_shares_ordered_by_index(&body, constants::SHARES_THRESHOLD + 1);
+    assert!(
+        elapsed < std::time::Duration::from_secs(constants::TARGET_REACHED_MAX_SECS),
+        "Wait should end on the extra share, not on window expiry, took {:?}",
+        elapsed
+    );
+
+    let (spare_count_after, spare_sum_after) = spare_shares_count_and_sum(&metrics_endpoint).await;
+    assert_eq!(spare_count_after - spare_count_before, 1.0);
+    assert_eq!(
+        spare_sum_after - spare_sum_before,
+        1.0,
+        "One share beyond the quorum is one spare"
+    );
+
+    setup.shutdown().await;
+}
+
+/// Shares that land after the target is met are still returned.
+#[tokio::test]
+async fn test_wait_window_returns_late_shares() {
+    let temp_config_dir = TempDir::new().expect("Failed to create temp dir");
+    let temp_config_path =
+        create_user_decrypt_wait_config(&temp_config_dir, 2, constants::WAIT_WINDOW_LONG_SECS)
+            .expect("Failed to create wait-window config");
+
+    let setup = TestSetup::new_with_config_path(Some(temp_config_path))
+        .await
+        .expect("Failed to create test setup");
+
+    // 12 emitted, target 11: the target is met while a 12th share is still in flight.
+    let emitted = constants::SHARES_THRESHOLD + 3;
+    let started = std::time::Instant::now();
+    let job_id = helpers::submit_against_mock_committee(&setup, emitted).await;
+    let (status, body) = helpers::poll_until_terminal_within(
+        &setup,
+        &job_id,
+        std::time::Duration::from_secs(constants::POLL_BUDGET_SECS),
+    )
+    .await;
+    let elapsed = started.elapsed();
+
+    assert_eq!(status, reqwest::StatusCode::OK);
+    assert_eq!(body.status, ApiResponseStatus::Succeeded);
+    assert!(
+        elapsed < std::time::Duration::from_secs(constants::TARGET_REACHED_MAX_SECS),
+        "Wait should end on the target being met, not on window expiry, took {:?}",
+        elapsed
+    );
+    // The first completing poll can land either side of the 12th share, so only the
+    // target is guaranteed at this point.
+    let sealed = body.result.as_ref().expect("Result should be present");
+    assert!(
+        sealed.result.len() >= constants::SHARES_THRESHOLD + 2,
+        "Response should carry at least the target of {} shares, got {}",
+        constants::SHARES_THRESHOLD + 2,
+        sealed.result.len()
+    );
+
+    // Once every share has landed the count is deterministic: a completed request is
+    // re-read from the database on each GET, so the straggler is served too.
+    tokio::time::sleep(std::time::Duration::from_millis(
+        constants::SHARES_SETTLE_MS,
+    ))
+    .await;
+    let (status, _, body) = helpers::get_status(&setup, &job_id).await;
+    assert_eq!(status, reqwest::StatusCode::OK);
+    helpers::assert_shares_ordered_by_index(&body, emitted);
+
+    setup.shutdown().await;
+}
+
+/// An unreachable target holds at 202, then degrades to the quorum on expiry.
+///
+/// This is the negative case that matters most: the committee answers at exactly the
+/// quorum, the extra shares never arrive, and the request must still complete with
+/// what it has rather than erroring out.
+#[tokio::test]
+async fn test_wait_window_expiry_returns_quorum() {
+    let temp_config_dir = TempDir::new().expect("Failed to create temp dir");
+    let temp_config_path =
+        create_user_decrypt_wait_config(&temp_config_dir, 2, constants::WAIT_WINDOW_SHORT_SECS)
+            .expect("Failed to create wait-window config");
+
+    let setup = TestSetup::new_with_config_path(Some(temp_config_path))
+        .await
+        .expect("Failed to create test setup");
+
+    let metrics_endpoint = setup.settings.metrics.endpoint.clone();
+    let (spare_count_before, spare_sum_before) =
+        spare_shares_count_and_sum(&metrics_endpoint).await;
+
+    // 9 emitted, target 11: unreachable, so only the clock can end the wait.
+    let started = std::time::Instant::now();
+    let job_id = helpers::submit_against_mock_committee(&setup, constants::SHARES_THRESHOLD).await;
+
+    // All 9 shares are in by 1.5s, so a 202 here is the wait window and nothing else.
+    tokio::time::sleep(std::time::Duration::from_millis(
+        constants::INSIDE_WAIT_WINDOW_MS,
+    ))
+    .await;
+    let (status, retry_after_present, body) = helpers::get_status(&setup, &job_id).await;
+    assert_eq!(
+        status,
+        reqwest::StatusCode::ACCEPTED,
+        "Reconstructable request should stay queued while the window is open"
+    );
+    assert_eq!(body.status, ApiResponseStatus::Queued);
+    assert!(body.result.is_none());
+    assert!(
+        retry_after_present,
+        "202 response should have valid Retry-After header"
+    );
+
+    let (status, body) = helpers::poll_until_terminal_within(
+        &setup,
+        &job_id,
+        std::time::Duration::from_secs(constants::POLL_BUDGET_SECS),
+    )
+    .await;
+    let elapsed = started.elapsed();
+
+    assert_eq!(
+        status,
+        reqwest::StatusCode::OK,
+        "Expired window should degrade to the quorum, not fail"
+    );
+    assert_eq!(body.status, ApiResponseStatus::Succeeded);
+    assert!(body.error.is_none());
+    helpers::assert_shares_ordered_by_index(&body, constants::SHARES_THRESHOLD);
+    assert!(
+        elapsed >= std::time::Duration::from_secs(u64::from(constants::WAIT_WINDOW_SHORT_SECS)),
+        "Request should have waited out the window, took {:?}",
+        elapsed
+    );
+
+    // The zero-tolerance case the operator alerts on. The 202 holds in between must
+    // not have contributed observations of their own.
+    let (spare_count_after, spare_sum_after) = spare_shares_count_and_sum(&metrics_endpoint).await;
+    assert_eq!(
+        spare_count_after - spare_count_before,
+        1.0,
+        "Only the terminal 200 should record an observation"
+    );
+    assert_eq!(
+        spare_sum_after - spare_sum_before,
+        0.0,
+        "An expired window returned the quorum, so the client got no spare"
+    );
+
+    setup.shutdown().await;
+}
+
+/// Expiry returns every collected share, not just the threshold's worth.
+#[tokio::test]
+async fn test_wait_window_expiry_returns_all_collected() {
+    let temp_config_dir = TempDir::new().expect("Failed to create temp dir");
+    let temp_config_path =
+        create_user_decrypt_wait_config(&temp_config_dir, 3, constants::WAIT_WINDOW_SHORT_SECS)
+            .expect("Failed to create wait-window config");
+
+    let setup = TestSetup::new_with_config_path(Some(temp_config_path))
+        .await
+        .expect("Failed to create test setup");
+
+    // 11 emitted, target 12: two spares arrive, the third never does.
+    let emitted = constants::SHARES_THRESHOLD + 2;
+    let started = std::time::Instant::now();
+    let job_id = helpers::submit_against_mock_committee(&setup, emitted).await;
+    let (status, body) = helpers::poll_until_terminal_within(
+        &setup,
+        &job_id,
+        std::time::Duration::from_secs(constants::POLL_BUDGET_SECS),
+    )
+    .await;
+    let elapsed = started.elapsed();
+
+    assert_eq!(
+        status,
+        reqwest::StatusCode::OK,
+        "Expired window should degrade, not fail"
+    );
+    assert_eq!(body.status, ApiResponseStatus::Succeeded);
+    assert!(body.error.is_none());
+    // Short of the target, but still two spares more than the quorum.
+    helpers::assert_shares_ordered_by_index(&body, emitted);
+    assert!(
+        elapsed >= std::time::Duration::from_secs(u64::from(constants::WAIT_WINDOW_SHORT_SECS)),
+        "Request should have waited out the window, took {:?}",
+        elapsed
+    );
 
     setup.shutdown().await;
 }

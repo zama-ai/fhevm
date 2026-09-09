@@ -25,9 +25,9 @@ jobs:
   check-changes:
     name: solana-tests/check-changes
     permissions:
-      actions: 'read'
-      contents: 'read'
-      pull-requests: 'read'
+      actions: 'read' # Inspect workflow metadata for change detection.
+      contents: 'read' # Read repository files.
+      pull-requests: 'read' # Read changed files on pull requests.
     runs-on: ubuntu-latest
     outputs:
       changes-solana: ${{ steps.filter.outputs.solana }}

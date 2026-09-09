@@ -1,6 +1,6 @@
 # Coprocessor upgrade runbook
 
-This runbook covers the preparation of a `proposeCoprocessorUpgrade` proposal for the Aragon DAO. It applies whenever the coprocessor requires an on-chain upgrade proposal.
+This runbook covers the preparation of a `proposeCoprocessorUpgrade` proposal for the Aragon DAO. It applies to an upgrade that raises `CONSENSUS_PROTOCOL_VERSION`; a release that leaves that value alone rolls out one operator at a time, with no proposal and no cutover.
 
 ## What this produces
 
@@ -8,7 +8,13 @@ A hex string (calldata) intended for submission as the action of an Aragon DAO p
 
 ## Prerequisites
 
-- The new coprocessor version is built and the release tag is known (e.g. `v0.14.0`).
+- The new coprocessor version is built and the release tag is known (e.g. `v0.15.0`).
+- Its `CONSENSUS_PROTOCOL_VERSION` is one above the active `versioning.consensus_version`.
+
+`--software-version` takes the release tag, never the consensus version: `v0.15.0` for the
+v0.14 to v0.15 upgrade, `v0.15.1` for a v0.15 to v0.15.1 one. The consensus version is a
+counter compiled into the binary and is never named in a proposal.
+
 - The wall-clock start time for the dry-run evaluation window has been finalized.
 - The start time is far enough in the future for the DAO to vote first (the `--buffer` value, typically `2h` on mainnet).
 
@@ -16,14 +22,14 @@ A hex string (calldata) intended for submission as the action of an Aragon DAO p
 
 Navigate to **Actions** → **host-contracts-prepare-coprocessor-upgrade** → **Run workflow** and provide:
 
-| Input                | Value                                        |
-| -------------------- | -------------------------------------------- |
-| **Environment**      | `devnet`, `testnet`, or `mainnet`.           |
-| **Start time**       | ISO 8601 UTC, e.g. `2026-07-01T12:00:00Z`.   |
-| **Duration**         | Window length, e.g. `30m`.                   |
-| **Buffer**           | DAO lead time, e.g. `2h`.                    |
-| **Proposal id**      | Any positive integer (operator-chosen).      |
-| **Software version** | The coprocessor release tag, e.g. `v0.14.0`. |
+| Input                | Value                                                                                        |
+| -------------------- | -------------------------------------------------------------------------------------------- |
+| **Environment**      | `devnet`, `testnet`, or `mainnet`.                                                           |
+| **Start time**       | ISO 8601 UTC, e.g. `2026-07-01T12:00:00Z`.                                                   |
+| **Duration**         | Window length, e.g. `30m`.                                                                   |
+| **Buffer**           | DAO lead time, e.g. `2h`.                                                                    |
+| **Proposal id**      | Any positive integer (operator-chosen).                                                      |
+| **Software version** | The coprocessor release tag, e.g. `v0.15.0`. Must match the green binaries' `STACK_VERSION`. |
 
 Click **Run workflow** and wait for completion.
 
@@ -44,7 +50,7 @@ Create a new proposal with:
 - **Target contract**: the `ProtocolConfig` on the host chain (Ethereum for mainnet, Sepolia for testnet).
 - **Calldata**: the hex string copied in Step 2.
 
-Once the DAO vote passes and the proposal executes, the on-chain `proposeCoprocessorUpgrade` event fires and the upgrade window opens.
+Once the DAO vote passes and the proposal executes, the on-chain `proposeCoprocessorUpgrade` event fires and the upgrade window opens. Cutover then happens only if the proposal names the release the green binaries were built as, and that release is above the active one.
 
 ## Failure modes
 
@@ -67,7 +73,7 @@ npx hardhat task:prepareCoprocessorUpgrade \
   --duration 30m \
   --buffer 1h \
   --proposal-id 1 \
-  --software-version v0.14.0
+  --software-version v0.15.0
 ```
 
 Output and calldata are identical to the workflow run. The task exits non-zero (and prints the
@@ -88,7 +94,7 @@ cd host-contracts
 DEPLOYER_PRIVATE_KEY=0x... npx hardhat --network sepolia task:proposeCoprocessorUpgrade \
   --environment devnet \
   --start-time "$(date -u -v+2H '+%Y-%m-%dT%H:%M:%SZ')" \
-  --duration 30m --buffer 1h --proposal-id 1 --software-version v0.14.0 \
+  --duration 30m --buffer 1h --proposal-id 1 --software-version v0.15.0 \
   --use-internal-proxy-address
 ```
 

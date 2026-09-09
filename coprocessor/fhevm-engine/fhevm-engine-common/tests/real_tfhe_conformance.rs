@@ -58,8 +58,14 @@ fn run(
     inputs: &[SupportedFheCiphertexts],
     output_type: i16,
 ) -> SupportedFheCiphertexts {
-    perform_fhe_operation(operation as i16, inputs, 0, output_type)
-        .unwrap_or_else(|error| panic!("{operation:?} failed: {error}"))
+    perform_fhe_operation(
+        operation as i16,
+        inputs,
+        0,
+        output_type,
+        std::time::Duration::ZERO,
+    )
+    .unwrap_or_else(|error| panic!("{operation:?} failed: {error}"))
 }
 
 fn encrypted_bool(value: bool, keys: &TestKeys) -> SupportedFheCiphertexts {

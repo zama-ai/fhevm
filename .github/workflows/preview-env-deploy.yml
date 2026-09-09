@@ -10,15 +10,24 @@ name: preview-env-deploy
 # stack at the shared blockchain-dev Geth (host 1337) + Nitro (gateway 412346)
 # nodes instead. That path generates unique wallets, funds them from the
 # in-cluster faucets, and still deploys this preview's own contracts (which
-# remain on the shared chain after namespace teardown). PR labels ignore it.
+# remain on the shared chain after namespace teardown). The
+# preview-env-blue-green PR label takes the same chain path (Anvil's 80-block
+# window closes during the dry-run e2e while consensus-detector is held at 0).
 #
-# Two PR labels control deployment (see check-labels below):
+# Three PR labels control deployment (see check-labels below):
 #   - preview-env-e2e: deploy the PR branch. On PRs images are ALWAYS built
 #     fresh from the PR HEAD (only changed components; the rest resolve to the
 #     change-detection base commit's images). In-repo charts (charts/*) install
 #     from this branch's checkout.
 #   - preview-env-e2e-tests: same, plus auto-run the e2e test DAG and report
 #     pass/fail back to the PR.
+#   - preview-env-blue-green: deploy RFC-021 BCS+GCS on each party (forces
+#     nb_coprocessor=2) and use_blockchain_dev=true. Dispatch opt-in is
+#     enable_blue_green=true (plain nb_coprocessor=2 is two-party consensus
+#     only). With preview-env-e2e-tests (or automated_tests): propose after
+#     relayer, hold consensus-detector so the first e2e stays on blue (assert
+#     GCS computations > 0), enable the detector, wait for versioning=v0.15,
+#     then run e2e again on green. Incompatible with deploy_polygon and N=1.
 # The dedicated KMS (env.KMS_REPO_REF/KMS_CORE_TAG) is never built here.
 # (A pinned-only run with no builds is still possible via workflow_dispatch
 # with build_images=false.)
@@ -45,55 +54,24 @@ on:
         description: "Deploy the in-namespace observability stack (Prometheus + Grafana + Jaeger, see ci/preview-env/observability/) and enable OTLP tracing in components. Off by default."
         required: false
         default: "false"
-      host_contracts_version:
-        description: "Override the image tag for the host-contracts deployer image. Leave empty to resolve it automatically from the change-detection base commit."
-        required: false
-        default: ""
-      gateway_contracts_version:
-        description: "Override the image tag for the gateway-contracts deployer image. Leave empty to resolve it automatically from the change-detection base commit."
-        required: false
-        default: ""
-      contracts_chart_version:
-        description: "Override with a published contracts Helm chart version. Leave empty to deploy charts/contracts from the selected branch."
-        required: false
-        default: ""
-      coprocessor_version:
-        description: "Override the image tag for every coprocessor image. Leave empty to resolve it automatically from the change-detection base commit."
-        required: false
-        default: ""
-      coprocessor_chart_version:
-        description: "Override with a published coprocessor Helm chart version. Leave empty to deploy charts/coprocessor from the selected branch."
-        required: false
-        default: ""
-      coprocessor_infra_chart_version:
-        description: "Override the coprocessor-infra Helm chart version. Leave empty for the pin in the workflow env."
-        required: false
-        default: ""
       nb_coprocessor:
-        description: "Number of coprocessor parties to deploy"
+        description: "Coprocessor identities (wallets/DBs/S3). 2 is two-party consensus (one fleet each), not RFC-021. 3 and 5 are N-party only. Pair with enable_blue_green for BCS+GCS."
         required: true
         type: choice
         default: "1"
         options:
           - "1"
+          - "2"
           - "3"
           - "5"
-      kms_connector_version:
-        description: "Override the image tag for every kms-connector image. Leave empty to resolve it automatically from the change-detection base commit."
-        required: false
-        default: ""
-      kms_connector_chart_version:
-        description: "Override with a published kms-connector Helm chart version. Leave empty to deploy charts/kms-connector from the selected branch."
-        required: false
-        default: ""
-      kms_core_version:
-        description: "Override the image tag for the dedicated KMS's kms-core (zama-ai/kms, never built here). Leave empty for the pin in the workflow env."
-        required: false
-        default: ""
-      kms_repo_ref:
-        description: "Override the zama-ai/kms git ref for deploy scripts + tkms-infra/kms-core charts. Leave empty for the pin in the workflow env."
-        required: false
-        default: ""
+      enable_blue_green:
+        description: "RFC-021 BCS+GCS on each identity. Forces nb_coprocessor=2 when N=1. Incompatible with deploy_polygon. PR label preview-env-blue-green is the other gate."
+        required: true
+        type: choice
+        default: "false"
+        options:
+          - "false"
+          - "true"
       nb_kms_core:
         description: "Number of kms-core parties to deploy (1:1 with kms-connector + dedicated Postgres releases)"
         required: true
@@ -102,32 +80,8 @@ on:
         options:
           - "4"
           - "13"
-      relayer_version:
-        description: "Override the image tag for the relayer/relayer-migrate images. Leave empty to resolve it automatically from the change-detection base commit."
-        required: false
-        default: ""
-      relayer_sdk_version:
-        description: "Version of @zama-fhe/relayer-sdk to test. Set: run both e2e suites (fhevm-sdk then relayer-sdk) sequentially. Empty: run the @fhevm/sdk suite only."
-        required: false
-        default: "0.4.4"
-      test_suite_version:
-        description: "Override the image tag for the test-suite image. Leave empty to resolve it automatically from the change-detection base commit."
-        required: false
-        default: ""
-      common_chart_version:
-        description: "Override the generic `common` Helm chart version (postgres-*, relayer-migrate, relayer, test-suite). Leave empty for the pin in the workflow env."
-        required: false
-        default: ""
-      redis_chart_version:
-        description: "Override the Redis Helm chart version (per-party host-listener-consumer broker). Leave empty for the pin in the workflow env."
-        required: false
-        default: ""
-      listener_chart_version:
-        description: "Override with a published listener Helm chart version. Leave empty to deploy charts/listener from the selected branch."
-        required: false
-        default: ""
-      listener_version:
-        description: "Override the image tag for the listener/listener-core image. Leave empty to resolve it automatically from the change-detection base commit."
+      overrides:
+        description: "Optional JSON object of version/chart pins (empty / {} = resolve as today). Allowed keys: host_contracts_version, gateway_contracts_version, contracts_chart_version, coprocessor_version, coprocessor_chart_version, coprocessor_infra_chart_version, kms_connector_version, kms_connector_chart_version, kms_core_version, kms_repo_ref, relayer_version, relayer_sdk_version, test_suite_version, common_chart_version, redis_chart_version, listener_chart_version, listener_version. Unknown keys fail the run. Dispatch default for relayer_sdk_version is 0.4.4 when omitted."
         required: false
         default: ""
       deploy_polygon:
@@ -139,7 +93,7 @@ on:
           - "false"
           - "true"
       use_blockchain_dev:
-        description: "Skip per-namespace Anvil and connect to the shared blockchain-dev Geth (host 1337) + Nitro (gateway 412346). Generates unique wallets and funds them from the blockchain-dev faucets. Dispatch-only (PR labels stay on Anvil). Incompatible with deploy_polygon. Contracts stay on the shared chain after teardown."
+        description: "Skip per-namespace Anvil and connect to the shared blockchain-dev Geth (host 1337) + Nitro (gateway 412346). Generates unique wallets and funds them from the blockchain-dev faucets. The preview-env-blue-green PR label forces this on. Incompatible with deploy_polygon. Contracts stay on the shared chain after teardown."
         required: true
         type: choice
         default: "false"
@@ -161,9 +115,10 @@ permissions: {}
 # There are deliberately no pins for fhevm's own artifacts: in-repo charts
 # install from this workflow's checkout, and image tags resolve from the
 # change-detection base commit - a preview deploys what the branch actually
-# runs, not a hand-maintained release that has quietly gone stale. Any
-# *_version dispatch input overrides one of these for a single run (inputs.*
-# is empty on pull_request, so PR runs never override).
+# runs, not a hand-maintained release that has quietly gone stale. Version
+# and chart pins come from check-labels' overrides_json (empty image pins on
+# pull_request; dispatch may set them via the overrides input). Do not put
+# relayer_sdk_version=0.4.4 here: PRs must stay empty so only @fhevm/sdk runs.
 ##############################################################################
 env:
   # How far back from the base commit to look for a published image before
@@ -175,30 +130,30 @@ env:
   # Install sources are decided in the deploy job's "Resolve chart sources"
   # step; this prefix is only where a *_chart_version override is pulled from.
   FHEVM_CHARTS_OCI_PREFIX: oci://hub.zama.org/ghcr/zama-ai/fhevm/charts
-  # Always install charts/anvil-node from this checkout (the dispatch input
-  # for anvil-node chart version was dropped: GitHub caps workflow_dispatch
-  # at 25 inputs, and use_blockchain_dev took the last slot).
+  # Always install charts/anvil-node from this checkout (no anvil-node chart
+  # override key in overrides).
   ANVIL_NODE_CHART_VERSION: ""
-  CONTRACTS_CHART_VERSION: ${{ inputs.contracts_chart_version }}
-  COPROCESSOR_CHART_VERSION: ${{ inputs.coprocessor_chart_version }}
-  KMS_CONNECTOR_CHART_VERSION: ${{ inputs.kms_connector_chart_version }}
-  LISTENER_CHART_VERSION: ${{ inputs.listener_chart_version }}
-  #=====EXTERNAL PINS (dispatch inputs override)=============================
+  CONTRACTS_CHART_VERSION: ""
+  COPROCESSOR_CHART_VERSION: ""
+  KMS_CONNECTOR_CHART_VERSION: ""
+  LISTENER_CHART_VERSION: ""
+  #=====EXTERNAL PINS (overrides JSON / deploy job env)======================
   # Owned by other repos, so there is no commit of this repo to resolve them
   # from. Pinned to the same known-good releases zama-zws/gitops's fhevm-dev
-  # environment runs.
+  # environment runs. Deploy overwrites these from overrides_json.
   COPROCESSOR_INFRA_CHART: oci://hub.zama.org/ghcr/zama-zws/crossplane/coprocessor-infra
-  COPROCESSOR_INFRA_CHART_VERSION: ${{ inputs.coprocessor_infra_chart_version || '0.6.5' }}
-  # Empty (every PR run): run the @fhevm/sdk suite only, no relayer-sdk pass.
-  RELAYER_SDK_VERSION: ${{ inputs.relayer_sdk_version }}
+  COPROCESSOR_INFRA_CHART_VERSION: "0.6.5"
+  # Empty at workflow level: PR runs stay @fhevm/sdk only. Dispatch default
+  # 0.4.4 is applied in parse-overrides.cjs when EVENT_NAME=workflow_dispatch.
+  RELAYER_SDK_VERSION: ""
   COMMON_CHART: oci://hub.zama.org/ghcr/zama-zws/helm-charts/common
-  COMMON_CHART_VERSION: ${{ inputs.common_chart_version || '0.3.3' }}
+  COMMON_CHART_VERSION: "0.3.3"
   #=====KMS==================================================================
-  KMS_REPO_REF: ${{ inputs.kms_repo_ref || '35edfa2f0656ee266e3299a004a83ac7d4fe2418' }}
-  KMS_CORE_TAG: ${{ inputs.kms_core_version || 'd27c3b5' }}
+  KMS_REPO_REF: "35edfa2f0656ee266e3299a004a83ac7d4fe2418"
+  KMS_CORE_TAG: "d27c3b5"
   #=====REDIS================================================================
   REDIS_CHART: oci://hub.zama.org/cgr/zama.ai/iamguarded-charts/redis
-  REDIS_CHART_VERSION: ${{ inputs.redis_chart_version || '25.3.8' }}
+  REDIS_CHART_VERSION: "25.3.8"
   #=====POLYGON=============================================================
   # Second (Polygon Amoy, 80002) host chain: opt-in via the deploy_polygon
   # dispatch input, off by default (inputs.* is empty on PR runs, so PRs never
@@ -212,9 +167,10 @@ env:
 
 jobs:
   ##########################################################################
-  # Gate: only PRs labeled preview-env-e2e(-tests) get a preview. On PRs images
-  # are always built fresh from the PR branch. workflow_dispatch always deploys
-  # (the dispatch itself is the request); build_images comes from its input.
+  # Gate: PRs labeled preview-env-e2e(-tests) or preview-env-blue-green get a
+  # preview. On PRs images are always built fresh from the PR branch.
+  # workflow_dispatch always deploys (the dispatch itself is the request);
+  # build_images comes from its input.
   ##########################################################################
   check-labels:
     name: check-labels
@@ -223,14 +179,30 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       github.event.action != 'labeled' ||
       github.event.label.name == 'preview-env-e2e' ||
-      github.event.label.name == 'preview-env-e2e-tests'
+      github.event.label.name == 'preview-env-e2e-tests' ||
+      github.event.label.name == 'preview-env-blue-green'
     outputs:
       should_deploy: ${{ steps.check.outputs.should_deploy }}
       build_images: ${{ steps.check.outputs.build_images }}
       build_test_suite_only: ${{ steps.check.outputs.build_test_suite_only }}
       automated_tests: ${{ steps.check.outputs.automated_tests }}
       observability: ${{ steps.check.outputs.observability }}
+      blue_green: ${{ steps.check.outputs.blue_green }}
+      nb_coprocessor: ${{ steps.check.outputs.nb_coprocessor }}
+      use_blockchain_dev: ${{ steps.check.outputs.use_blockchain_dev }}
+      overrides_json: ${{ steps.parse_overrides.outputs.overrides_json }}
     steps:
+      - name: Checkout parse-overrides script
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+          sparse-checkout: ci/preview-env/scripts/parse-overrides.cjs
+          sparse-checkout-cone-mode: false
+      - id: parse_overrides
+        env:
+          OVERRIDES_RAW: ${{ inputs.overrides }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: node ci/preview-env/scripts/parse-overrides.cjs
       - id: check
         env:
           EVENT_NAME: ${{ github.event_name }}
@@ -238,6 +210,9 @@ jobs:
           DISPATCH_BUILD_TEST_SUITE_ONLY: ${{ inputs.build_test_suite_only }}
           DISPATCH_AUTOMATED_TESTS: ${{ inputs.automated_tests }}
           DISPATCH_OBSERVABILITY: ${{ inputs.observability }}
+          DISPATCH_NB_COPROCESSOR: ${{ inputs.nb_coprocessor || '1' }}
+          DISPATCH_ENABLE_BLUE_GREEN: ${{ inputs.enable_blue_green || 'false' }}
+          DISPATCH_USE_BLOCKCHAIN_DEV: ${{ inputs.use_blockchain_dev || 'false' }}
           PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
         run: |
           # build_test_suite_only is a dispatch-only knob; label-triggered runs
@@ -249,12 +224,28 @@ jobs:
           # observability is a dispatch-only knob for now (no PR label), off by
           # default.
           echo "observability=false" >> "$GITHUB_OUTPUT"
+          # RFC-021 dual fleet. Dispatch: enable_blue_green=true (plain N=2
+          # is two-party consensus). PRs: preview-env-blue-green label, N=2.
+          echo "blue_green=false" >> "$GITHUB_OUTPUT"
+          echo "nb_coprocessor=1" >> "$GITHUB_OUTPUT"
+          echo "use_blockchain_dev=false" >> "$GITHUB_OUTPUT"
           if [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
+            blue_green=false
+            nb_coprocessor="${DISPATCH_NB_COPROCESSOR:-1}"
+            if [[ "${DISPATCH_ENABLE_BLUE_GREEN}" == "true" ]]; then
+              blue_green=true
+              if [[ "${nb_coprocessor}" == "1" ]]; then
+                nb_coprocessor=2
+              fi
+            fi
             echo "should_deploy=true" >> "$GITHUB_OUTPUT"
             echo "build_images=${DISPATCH_BUILD_IMAGES}" >> "$GITHUB_OUTPUT"
             echo "build_test_suite_only=${DISPATCH_BUILD_TEST_SUITE_ONLY:-false}" >> "$GITHUB_OUTPUT"
             echo "automated_tests=${DISPATCH_AUTOMATED_TESTS:-false}" >> "$GITHUB_OUTPUT"
             echo "observability=${DISPATCH_OBSERVABILITY:-false}" >> "$GITHUB_OUTPUT"
+            echo "blue_green=${blue_green}" >> "$GITHUB_OUTPUT"
+            echo "nb_coprocessor=${nb_coprocessor}" >> "$GITHUB_OUTPUT"
+            echo "use_blockchain_dev=${DISPATCH_USE_BLOCKCHAIN_DEV:-false}" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           echo "PR labels: $PR_LABELS"
@@ -265,6 +256,9 @@ jobs:
           should_deploy=false
           build_images=false
           automated_tests=false
+          blue_green=false
+          use_blockchain_dev=false
+          nb_coprocessor="${DISPATCH_NB_COPROCESSOR:-1}"
           # preview-env-e2e-tests: auto-run the e2e DAG AND deploy the env it needs,
           # so the PR-comment report path is reachable without a manual dispatch.
           if echo "$PR_LABELS" | jq -e '.[] | select(. == "preview-env-e2e-tests")' > /dev/null; then
@@ -273,6 +267,14 @@ jobs:
           fi
           if echo "$PR_LABELS" | jq -e '.[] | select(. == "preview-env-e2e")' > /dev/null; then
             should_deploy=true
+          fi
+          if echo "$PR_LABELS" | jq -e '.[] | select(. == "preview-env-blue-green")' > /dev/null; then
+            blue_green=true
+            should_deploy=true
+            use_blockchain_dev=true
+            if [[ "${nb_coprocessor}" == "1" ]]; then
+              nb_coprocessor=2
+            fi
           fi
           # On PRs we always build fresh images from the PR branch: any preview
           # label that triggers a deploy also builds. There is no pinned-only PR
@@ -284,6 +286,9 @@ jobs:
             echo "should_deploy=${should_deploy}"
             echo "build_images=${build_images}"
             echo "automated_tests=${automated_tests}"
+            echo "blue_green=${blue_green}"
+            echo "nb_coprocessor=${nb_coprocessor}"
+            echo "use_blockchain_dev=${use_blockchain_dev}"
           } >> "$GITHUB_OUTPUT"
 
   ##########################################################################
@@ -342,6 +347,10 @@ jobs:
     uses: ./.github/workflows/coprocessor-docker-build.yml
     permissions: *docker_permissions
     secrets: *docker_secrets
+    with:
+      # Blue-green GCS is compiled as 0.15.0 and published as <sha>-gcs0.15.0.
+      # BCS stays the registry pin v0.14.0-7. Empty keeps the SHA / 0.14.0 baseline.
+      build_stack_version: ${{ needs.check-labels.outputs.blue_green == 'true' && '0.15.0' || '' }}
 
   build-listener:
     name: build/listener
@@ -412,8 +421,9 @@ jobs:
         env:
           NEEDS: ${{ toJSON(needs) }}
           EVENT_NAME: ${{ github.event_name }}
-          # Always a defined object ({} on pull_request), so inputs.* is safe.
-          INPUTS: ${{ toJSON(inputs) }}
+          # Parsed overrides_json (always a JSON object). Image pins are empty
+          # on pull_request; dispatch may set <component>_version keys.
+          INPUTS: ${{ needs.check-labels.outputs.overrides_json }}
           ACTOR: ${{ github.actor }}
           GHCR_USER: ${{ github.actor }}
           GHCR_READ_TOKEN: ${{ secrets.GHCR_READ_TOKEN }}
@@ -431,26 +441,47 @@ jobs:
   ##########################################################################
   deploy:
     name: deploy
-    needs: [check-labels, resolve-tags]
+    needs: [check-labels, resolve-tags, build-coprocessor]
     if: >-
       !cancelled() &&
       needs.check-labels.outputs.should_deploy == 'true' &&
-      needs.resolve-tags.result == 'success'
+      needs.resolve-tags.result == 'success' &&
+      (needs.check-labels.outputs.blue_green != 'true' || needs.build-coprocessor.result == 'success')
     runs-on: "runs-on=${{ github.run_id }}/runner=8cpu-linux-x64/spot=false"
-    # 90m covers a plain deploy; the automated_tests run adds the sequential
-    # e2e DAG (8 tests, each recompiling contracts), so allow headroom for it.
-    timeout-minutes: 150
+    # 90m covers a plain deploy; automated_tests adds the sequential e2e DAG
+    # (8 tests, each recompiling contracts). Blue-green + tests runs that DAG
+    # twice (DryRunStarted, then after cutover), so allow a second suite.
+    timeout-minutes: 360
     permissions:
       pull-requests: write # Required to comment on the PR with connection info
     env:
-      # Job-specific, computed from needs (everything else - version pins,
-      # override inputs - comes straight from the workflow-level env).
+      # Job-specific: topology from check-labels, image tags from resolve-tags,
+      # version/chart pins from overrides_json.
       NAMESPACE: ${{ needs.resolve-tags.outputs.namespace }}
       TAGS_JSON: ${{ needs.resolve-tags.outputs.tags_json }}
       # Gate for the automated e2e test workflow (see the test-suite-workflow
       # deploy + report steps): dispatch input or the preview-env-e2e-tests label.
       AUTOMATED_TESTS: ${{ needs.check-labels.outputs.automated_tests }}
       OBSERVABILITY: ${{ needs.check-labels.outputs.observability }}
+      BLUE_GREEN: ${{ needs.check-labels.outputs.blue_green }}
+      NB_COPROCESSOR: ${{ needs.check-labels.outputs.nb_coprocessor }}
+      # Overrides the workflow-level input default so the blue-green PR label
+      # can force shared Geth/Nitro (inputs.* is empty on pull_request).
+      USE_BLOCKCHAIN_DEV: ${{ needs.check-labels.outputs.use_blockchain_dev }}
+      # Pins from parse-overrides (always-defaults + dispatch overrides).
+      # RELAYER_SDK_VERSION stays empty on PR so only @fhevm/sdk runs.
+      CONTRACTS_CHART_VERSION: ${{ fromJSON(needs.check-labels.outputs.overrides_json).contracts_chart_version }}
+      COPROCESSOR_CHART_VERSION: ${{ fromJSON(needs.check-labels.outputs.overrides_json).coprocessor_chart_version }}
+      KMS_CONNECTOR_CHART_VERSION: ${{ fromJSON(needs.check-labels.outputs.overrides_json).kms_connector_chart_version }}
+      LISTENER_CHART_VERSION: ${{ fromJSON(needs.check-labels.outputs.overrides_json).listener_chart_version }}
+      COPROCESSOR_INFRA_CHART_VERSION: ${{ fromJSON(needs.check-labels.outputs.overrides_json).coprocessor_infra_chart_version }}
+      RELAYER_SDK_VERSION: ${{ fromJSON(needs.check-labels.outputs.overrides_json).relayer_sdk_version }}
+      COMMON_CHART_VERSION: ${{ fromJSON(needs.check-labels.outputs.overrides_json).common_chart_version }}
+      KMS_REPO_REF: ${{ fromJSON(needs.check-labels.outputs.overrides_json).kms_repo_ref }}
+      KMS_CORE_TAG: ${{ fromJSON(needs.check-labels.outputs.overrides_json).kms_core_version }}
+      REDIS_CHART_VERSION: ${{ fromJSON(needs.check-labels.outputs.overrides_json).redis_chart_version }}
+      # Previous-release pin for the BCS fleet (compiled STACK_VERSION=0.14.0).
+      BCS_IMAGE_TAG: "v0.14.0-7"
       # In-namespace Jaeger's OTLP gRPC endpoint.
       # Only consumed when OBSERVABILITY is true.
       OTLP_ENDPOINT: "http://jaeger:4317"
@@ -475,6 +506,26 @@ jobs:
       - name: Resolve chain endpoints
         run: bash ci/preview-env/scripts/resolve-chain.sh
 
+      - name: Fail fast on incompatible blue-green topology
+        run: |
+          if [[ "${BLUE_GREEN}" != "true" ]]; then
+            exit 0
+          fi
+          if [[ "${NB_COPROCESSOR}" == "1" ]]; then
+            echo "::error::RFC-021 blue-green requires nb_coprocessor > 1 (unanimity across N operators)."
+            exit 1
+          fi
+          if [[ "${DEPLOY_POLYGON}" == "true" ]]; then
+            echo "::error::RFC-021 first-iteration blue-green is incompatible with deploy_polygon."
+            exit 1
+          fi
+          gcs=$(jq -r .coprocessor_tfhe_worker <<<"${TAGS_JSON}")
+          if [[ -z "${gcs}" || "${gcs}" == "null" ]]; then
+            echo "::error::blue-green requires GCS images (build_images=true). coprocessor_tfhe_worker tag is empty."
+            exit 1
+          fi
+          echo "RFC-021 blue-green: N=${NB_COPROCESSOR} BCS=${BCS_IMAGE_TAG} GCS=${gcs} (compiled 0.15.0)"
+
       ######################################################################
       # CHART SOURCES: every in-repo chart installs from this checkout's
       # charts/ directory, so a PR's chart changes deploy without waiting for
@@ -485,25 +536,7 @@ jobs:
       # no `helm dependency build` is needed for the local paths.
       ######################################################################
       - name: Resolve chart sources (this checkout, or a pulled OCI override)
-        run: |
-          chart_source() {
-            local var="$1" name="$2" version="$3"
-            if [[ -z "${version}" ]]; then
-              echo "${var}=${GITHUB_WORKSPACE}/charts/${name}" >> "$GITHUB_ENV"
-              echo "${name}: charts/${name} from this checkout"
-              return
-            fi
-            local dir="${RUNNER_TEMP}/preview-charts/${name}"
-            mkdir -p "${dir}"
-            helm pull "${FHEVM_CHARTS_OCI_PREFIX}/${name}" --version "${version}" --untar --untardir "${dir}"
-            echo "${var}=${dir}/${name}" >> "$GITHUB_ENV"
-            echo "${name}: published OCI chart ${version} (dispatch override)"
-          }
-          chart_source ANVIL_NODE_CHART anvil-node "${ANVIL_NODE_CHART_VERSION}"
-          chart_source CONTRACTS_CHART contracts "${CONTRACTS_CHART_VERSION}"
-          chart_source COPROCESSOR_CHART coprocessor "${COPROCESSOR_CHART_VERSION}"
-          chart_source KMS_CONNECTOR_CHART kms-connector "${KMS_CONNECTOR_CHART_VERSION}"
-          chart_source LISTENER_CHART listener "${LISTENER_CHART_VERSION}"
+        run: bash ci/preview-env/scripts/resolve-charts.sh
 
       ######################################################################
       # NAMESPACE: destroy-then-recreate every run, cascading deletion of any
@@ -536,33 +569,7 @@ jobs:
       ######################################################################
       - name: Deploy observability stack (Prometheus + Grafana + Jaeger)
         if: env.OBSERVABILITY == 'true'
-        run: |
-          # Prometheus's RoleBinding SA subject must name the namespace
-          # explicitly - same yq patch as the test-suite-workflow release.
-          prom_values=$(mktemp --suffix=.yaml)
-          cp ci/preview-env/observability/values-prometheus-e2e.yaml "${prom_values}"
-          NS="${NAMESPACE}" yq -i \
-            '(.additionalResources[] | select(.object.kind == "RoleBinding") | .object.subjects[0].namespace) = strenv(NS)' \
-            "${prom_values}"
-          # Launched in parallel, but each PID is waited on individually.
-          pids=()
-          helm upgrade --install prometheus "${COMMON_CHART}" --version "${COMMON_CHART_VERSION}" \
-            -n "${NAMESPACE}" -f "${prom_values}" &
-          pids+=($!)
-          helm upgrade --install jaeger "${COMMON_CHART}" --version "${COMMON_CHART_VERSION}" \
-            -n "${NAMESPACE}" -f ci/preview-env/observability/values-jaeger-e2e.yaml &
-          pids+=($!)
-          helm upgrade --install grafana "${COMMON_CHART}" --version "${COMMON_CHART_VERSION}" \
-            -n "${NAMESPACE}" -f ci/preview-env/observability/values-grafana-e2e.yaml &
-          pids+=($!)
-          rc=0
-          for pid in "${pids[@]}"; do
-            wait "${pid}" || rc=1
-          done
-          if [[ "${rc}" -ne 0 ]]; then
-            echo "::error::at least one observability release failed to install - see the helm output above"
-            exit 1
-          fi
+        run: bash ci/preview-env/scripts/deploy-observability.sh
 
       ######################################################################
       # DEDICATED KMS: reuse zama-ai/kms's own deploy pipeline
@@ -618,55 +625,29 @@ jobs:
         # One instance PER COPROCESSOR PARTY (postgres-coprocessor-<i>): each
         # independent coprocessor gets its own DB, same as postgres-connector-<i>
         # below. fullnameOverride per release; launched in parallel (seconds each).
-        run: |
-          for i in $(seq 1 "${NB_COPROCESSOR}"); do
-            helm upgrade --install "postgres-coprocessor-${i}" "${COMMON_CHART}" --version "${COMMON_CHART_VERSION}" \
-              -n "${NAMESPACE}" -f ci/preview-env/coprocessor-infra/values-postgres-coprocessor-e2e.yaml \
-              --set-string "fullnameOverride=postgres-coprocessor-${i}" --wait &
-          done
-          wait
+        run: bash ci/preview-env/scripts/deploy-postgres.sh coprocessor
 
       - name: Deploy in-cluster Postgres for kms-connector
         # One instance PER PARTY (postgres-connector-<i>): one kms-connector
         # release per kms-core party, each needing its own DB. fullnameOverride
         # per release; launched in parallel since each takes only seconds.
-        run: |
-          for i in $(seq 1 "${NB_KMS_CORE}"); do
-            helm upgrade --install "postgres-connector-${i}" "${COMMON_CHART}" --version "${COMMON_CHART_VERSION}" \
-              -n "${NAMESPACE}" -f ci/preview-env/kms-connector/values-postgres-connector-e2e.yaml \
-              --set-string "fullnameOverride=postgres-connector-${i}" --wait &
-          done
-          wait
+        run: bash ci/preview-env/scripts/deploy-postgres.sh connector
 
       - name: Deploy in-cluster Postgres for listener
         # One instance PER COPROCESSOR PARTY (postgres-listener-<i>): the
         # dedicated listener producer keeps its own cursor DB, separate from the
         # coprocessor DB (see listener/values-postgres-listener-e2e.yaml).
-        run: |
-          for i in $(seq 1 "${NB_COPROCESSOR}"); do
-            helm upgrade --install "postgres-listener-${i}" "${COMMON_CHART}" --version "${COMMON_CHART_VERSION}" \
-              -n "${NAMESPACE}" -f ci/preview-env/listener/values-postgres-listener-e2e.yaml \
-              --set-string "fullnameOverride=postgres-listener-${i}" --wait &
-          done
-          wait
+        run: bash ci/preview-env/scripts/deploy-postgres.sh listener
 
       - name: Deploy in-cluster Postgres for polygon listener
         # One cursor DB PER COPROCESSOR PARTY for the Polygon listener
         # (postgres-listener-polygon-<i>), separate from the ETH listener's so
         # their schemas/migrations never collide. Same values file, new name.
         if: env.DEPLOY_POLYGON == 'true'
-        run: |
-          for i in $(seq 1 "${NB_COPROCESSOR}"); do
-            helm upgrade --install "postgres-listener-polygon-${i}" "${COMMON_CHART}" --version "${COMMON_CHART_VERSION}" \
-              -n "${NAMESPACE}" -f ci/preview-env/listener/values-postgres-listener-e2e.yaml \
-              --set-string "fullnameOverride=postgres-listener-polygon-${i}" --wait &
-          done
-          wait
+        run: bash ci/preview-env/scripts/deploy-postgres.sh listener-polygon
 
       - name: Deploy in-cluster Postgres for relayer + relayer-migrate
-        run: |
-          helm upgrade --install postgres-relayer "${COMMON_CHART}" --version "${COMMON_CHART_VERSION}" \
-            -n "${NAMESPACE}" -f ci/preview-env/relayer/values-postgres-relayer-e2e.yaml --wait
+        run: bash ci/preview-env/scripts/deploy-postgres.sh relayer
 
       - name: Deploy dedicated KMS (kms's own ci/scripts/deploy.sh)
         working-directory: .kms-deploy
@@ -812,22 +793,16 @@ jobs:
       ######################################################################
       - name: Deploy anvil-host
         if: env.USE_BLOCKCHAIN_DEV != 'true'
-        run: |
-          helm upgrade --install anvil-host "${ANVIL_NODE_CHART}" \
-            -n "${NAMESPACE}" -f ci/preview-env/host-chain/values-anvil-host-e2e.yaml --wait
+        run: bash ci/preview-env/scripts/deploy-anvil.sh host
 
       - name: Deploy anvil-gateway
         if: env.USE_BLOCKCHAIN_DEV != 'true'
-        run: |
-          helm upgrade --install anvil-gateway "${ANVIL_NODE_CHART}" \
-            -n "${NAMESPACE}" -f ci/preview-env/gateway-chain/values-anvil-gateway-e2e.yaml --wait
+        run: bash ci/preview-env/scripts/deploy-anvil.sh gateway
 
       - name: Deploy anvil-host-polygon
         # Second (Polygon Amoy, 80002) host chain - fresh local anvil, no fork.
         if: env.DEPLOY_POLYGON == 'true' && env.USE_BLOCKCHAIN_DEV != 'true'
-        run: |
-          helm upgrade --install anvil-host-polygon "${ANVIL_NODE_CHART}" \
-            -n "${NAMESPACE}" -f ci/preview-env/host-chain/values-anvil-host-polygon-e2e.yaml --wait
+        run: bash ci/preview-env/scripts/deploy-anvil.sh host-polygon
 
       ######################################################################
       # COPROCESSOR INFRA: real S3 bucket via Crossplane (same chart as
@@ -844,14 +819,7 @@ jobs:
         # that party's S3-touching workers) and its own bucket ConfigMap
         # (coprocessor-<i>, holding S3_BUCKET_NAME). Per-party names come from
         # --set; the base values file stays single.
-        run: |
-          for i in $(seq 1 "${NB_COPROCESSOR}"); do
-            helm upgrade --install "coprocessor-infra-${i}" "${COPROCESSOR_INFRA_CHART}" --version "${COPROCESSOR_INFRA_CHART_VERSION}" \
-              -n "${NAMESPACE}" -f ci/preview-env/coprocessor-infra/values-coprocessor-infra-e2e.yaml \
-              --set "coprocessorBucket.irsa.serviceAccountName=coprocessor-${i}" \
-              --set "coprocessorBucket.configMapTargetRef.name=coprocessor-${i}" --wait &
-          done
-          wait
+        run: bash ci/preview-env/scripts/deploy-coprocessor-infra.sh
 
       - name: Wait for coprocessor-infra to reconcile
         env:
@@ -877,11 +845,7 @@ jobs:
           # Via env (not inline ${{ }}) so the step-output value is never
           # interpolated into the shell script itself (zizmor template-injection).
           VALUES_FILE: ${{ steps.gateway-contracts-values.outputs.values_file }}
-        run: |
-          helm upgrade --install gateway-contracts "${CONTRACTS_CHART}" \
-            -n "${NAMESPACE}" -f "${VALUES_FILE}" \
-            --set-string "scDeploy.image.tag=$(jq -r .gateway_contracts <<<"${TAGS_JSON}")" \
-            --wait --wait-for-jobs --timeout=10m
+        run: bash ci/preview-env/scripts/deploy-contracts.sh gateway
 
       - name: Wire real KMS node info into host-contracts values
         id: host-contracts-values
@@ -903,18 +867,10 @@ jobs:
           # Via env (not inline ${{ }}) so the step-output value is never
           # interpolated into the shell script itself (zizmor template-injection).
           VALUES_FILE: ${{ steps.host-contracts-values.outputs.values_file }}
-        run: |
-          helm upgrade --install host-contracts "${CONTRACTS_CHART}" \
-            -n "${NAMESPACE}" -f "${VALUES_FILE}" \
-            --set-string "scDeploy.image.tag=$(jq -r .host_contracts <<<"${TAGS_JSON}")" \
-            --wait --wait-for-jobs --timeout=10m
+        run: bash ci/preview-env/scripts/deploy-contracts.sh host
 
       - name: Register host chain into gateway
-        run: |
-          helm upgrade --install gateway-add-host-chains "${CONTRACTS_CHART}" \
-            -n "${NAMESPACE}" -f ci/preview-env/gateway-chain/values-gateway-add-host-chains-e2e.yaml \
-            --set-string "scDeploy.image.tag=$(jq -r .gateway_contracts <<<"${TAGS_JSON}")" \
-            --wait --wait-for-jobs --timeout=10m
+        run: bash ci/preview-env/scripts/deploy-contracts.sh add-host-chains
 
       ######################################################################
       # POLYGON CONTRACTS (deploy_polygon only): deploy host-contracts on the
@@ -938,19 +894,11 @@ jobs:
         if: env.DEPLOY_POLYGON == 'true'
         env:
           VALUES_FILE: ${{ steps.host-contracts-polygon-values.outputs.values_file }}
-        run: |
-          helm upgrade --install host-contracts-polygon "${CONTRACTS_CHART}" \
-            -n "${NAMESPACE}" -f "${VALUES_FILE}" \
-            --set-string "scDeploy.image.tag=$(jq -r .host_contracts <<<"${TAGS_JSON}")" \
-            --wait --wait-for-jobs --timeout=10m
+        run: bash ci/preview-env/scripts/deploy-contracts.sh host-polygon
 
       - name: Register polygon host chain into gateway
         if: env.DEPLOY_POLYGON == 'true'
-        run: |
-          helm upgrade --install gateway-add-host-chains-polygon "${CONTRACTS_CHART}" \
-            -n "${NAMESPACE}" -f ci/preview-env/gateway-chain/values-gateway-add-host-chains-polygon-e2e.yaml \
-            --set-string "scDeploy.image.tag=$(jq -r .gateway_contracts <<<"${TAGS_JSON}")" \
-            --wait --wait-for-jobs --timeout=10m
+        run: bash ci/preview-env/scripts/deploy-contracts.sh add-host-chains-polygon
 
       ######################################################################
       # COPROCESSOR + KMS-CONNECTOR: real contract addresses (configMapKeyRef
@@ -963,13 +911,7 @@ jobs:
         # (see values-coprocessor-redis-e2e.yaml). Deployed before the listener +
         # coprocessor releases so redis://coprocessor-redis-<i>-master:6379
         # resolves when they start.
-        run: |
-          for i in $(seq 1 "${NB_COPROCESSOR}"); do
-            helm upgrade --install "coprocessor-redis-${i}" "${REDIS_CHART}" --version "${REDIS_CHART_VERSION}" \
-              -n "${NAMESPACE}" -f ci/preview-env/coprocessor/values-coprocessor-redis-e2e.yaml \
-              --set-string "fullnameOverride=coprocessor-redis-${i}" --wait &
-          done
-          wait
+        run: bash ci/preview-env/scripts/deploy-party-deps.sh redis
 
       - name: Deploy listener (per-party host-chain event producer)
         # One listener PER COPROCESSOR PARTY (listener-<i>): indexes the host
@@ -977,15 +919,7 @@ jobs:
         # which the coprocessor host-listener-consumer then ingests. Replaces the
         # coprocessor chart's built-in hostListener/poller (disabled in
         # values-coprocessor-e2e.yaml). Its own cursor DB is postgres-listener-<i>.
-        run: |
-          for i in $(seq 1 "${NB_COPROCESSOR}"); do
-            helm upgrade --install "listener-${i}" "${LISTENER_CHART}" \
-              -n "${NAMESPACE}" -f ci/preview-env/listener/values-listener-e2e.yaml \
-              --set-string "image.tag=$(jq -r .listener <<<"${TAGS_JSON}")" \
-              --set-string "env[0].value=postgresql://zama:zama@postgres-listener-${i}:5432/listener?sslmode=disable" \
-              --set-string "env[1].value=redis://coprocessor-redis-${i}-master:6379" &
-          done
-          wait
+        run: bash ci/preview-env/scripts/deploy-party-deps.sh listener
 
       - name: Deploy polygon listener (per-party Polygon event producer)
         # One Polygon listener PER COPROCESSOR PARTY (listener-polygon-<i>):
@@ -994,15 +928,7 @@ jobs:
         # host-listener-consumer filters that chain out by --chain-id. Own cursor
         # DB (postgres-listener-polygon-<i>).
         if: env.DEPLOY_POLYGON == 'true'
-        run: |
-          for i in $(seq 1 "${NB_COPROCESSOR}"); do
-            helm upgrade --install "listener-polygon-${i}" "${LISTENER_CHART}" \
-              -n "${NAMESPACE}" -f ci/preview-env/listener/values-listener-polygon-e2e.yaml \
-              --set-string "image.tag=$(jq -r .listener <<<"${TAGS_JSON}")" \
-              --set-string "env[0].value=postgresql://zama:zama@postgres-listener-polygon-${i}:5432/listener?sslmode=disable" \
-              --set-string "env[1].value=redis://coprocessor-redis-${i}-master:6379" &
-          done
-          wait
+        run: bash ci/preview-env/scripts/deploy-party-deps.sh listener-polygon
 
       - name: Deploy coprocessor
         # One release PER COPROCESSOR PARTY (coprocessor-<i>), each with its own
@@ -1012,68 +938,13 @@ jobs:
         # gateway as COPROCESSOR_*_ADDRESS_<i-1>; the sns-worker signs ciphertext
         # attestations with it, and its own Redis broker (coprocessor-redis-<i>).
         # Image tags are shared across parties.
+        #
+        # RFC-021 blue-green: that release is the BCS fleet (pinned
+        # BCS_IMAGE_TAG). A second release coprocessor-<i>-gcs is the GCS
+        # fleet (HEAD images compiled as 0.15.0). Gateway registration stays N.
         env:
           COPROC_WALLETS_JSON: ${{ steps.coproc-wallets.outputs.wallets_json }}
-        run: |
-          # deploy_polygon: append the Polygon SEED overlay. It adds Polygon (80002)
-          # to this release's chains[] so dbMigration seeds its host_chains row, with
-          # ALL Polygon roles DISABLED - the actual Polygon consumer/poller run in
-          # their own single-chain releases (deployed in the steps below), because
-          # the chart glues consecutive per-chain documents and two enabled consumers
-          # in one render collapse into one (see values-coprocessor-polygon-e2e.yaml).
-          # Extra -f applied after the base file.
-          polygon_args=()
-          if [[ "${DEPLOY_POLYGON}" == "true" ]]; then
-            polygon_args=(-f ci/preview-env/coprocessor/values-coprocessor-polygon-e2e.yaml)
-          fi
-          for i in $(seq 1 "${NB_COPROCESSOR}"); do
-            privkey=$(jq -r --argjson party "${i}" '.[] | select(.party == $party) | .privateKey' <<<"${COPROC_WALLETS_JSON}")
-            if [[ -z "${privkey}" || "${privkey}" == "null" ]]; then
-              echo "::error::no derived coprocessor wallet for party ${i} in coproc_wallets_json=${COPROC_WALLETS_JSON}"; exit 1
-            fi
-            # OTLP tracing, only when the observability stack is deployed.
-            tracing=()
-            if [[ "${OBSERVABILITY}" == "true" ]]; then
-              tracing=(
-                --set "commonConfig.tracing.enabled=true"
-                --set-string "commonConfig.tracing.endpoint=${OTLP_ENDPOINT}"
-                --set-string "gwListener.tracing.service=gw-listener-${i}"
-                --set-string "tfheWorker.tracing.service=tfhe-worker-${i}"
-                --set-string "zkProofWorker.tracing.service=zkproof-worker-${i}"
-                --set-string "snsWorker.tracing.service=sns-worker-${i}"
-                --set-string "txSender.tracing.service=tx-sender-${i}"
-                --set-string "hostListenerConsumerShared.tracing.service=host-listener-consumer-${i}"
-              )
-            fi
-            helm upgrade --install "coprocessor-${i}" "${COPROCESSOR_CHART}" \
-              -n "${NAMESPACE}" -f ci/preview-env/coprocessor/values-coprocessor-e2e.yaml \
-              "${polygon_args[@]}" \
-              --set-string "fullnameOverride=coprocessor-${i}" \
-              --set-string "commonConfig.databaseEndpoint.value=postgres-coprocessor-${i}:5432" \
-              --set-string "hostListenerShared.serviceAccountName=coprocessor-${i}" \
-              --set-string "hostListenerPollerShared.serviceAccountName=coprocessor-${i}" \
-              --set-string "hostListenerCatchupOnlyShared.serviceAccountName=coprocessor-${i}" \
-              --set-string "hostListenerConsumerShared.serviceAccountName=coprocessor-${i}" \
-              --set-string "tfheWorker.serviceAccountName=coprocessor-${i}" \
-              --set-string "zkProofWorker.serviceAccountName=coprocessor-${i}" \
-              --set-string "snsWorker.serviceAccountName=coprocessor-${i}" \
-              --set "snsWorker.config.s3BucketName.valueFrom.configMapKeyRef.name=coprocessor-${i}" \
-              --set-string "hostListenerConsumerShared.config.brokerUrl.value=redis://coprocessor-redis-${i}-master:6379" \
-              --set-string "txSender.wallet.secret.value=${privkey}" \
-              --set-string "snsWorker.wallet.secret.value=${privkey}" \
-              --set-string "dbMigration.image.tag=$(jq -r .coprocessor_db_migration <<<"${TAGS_JSON}")" \
-              --set-string "gwListener.image.tag=$(jq -r .coprocessor_gw_listener <<<"${TAGS_JSON}")" \
-              --set-string "hostListenerShared.image.tag=$(jq -r .coprocessor_host_listener <<<"${TAGS_JSON}")" \
-              --set-string "hostListenerPollerShared.image.tag=$(jq -r .coprocessor_host_listener <<<"${TAGS_JSON}")" \
-              --set-string "hostListenerCatchupOnlyShared.image.tag=$(jq -r .coprocessor_host_listener <<<"${TAGS_JSON}")" \
-              --set-string "hostListenerConsumerShared.image.tag=$(jq -r .coprocessor_host_listener <<<"${TAGS_JSON}")" \
-              --set-string "snsWorker.image.tag=$(jq -r .coprocessor_sns_worker <<<"${TAGS_JSON}")" \
-              --set-string "tfheWorker.image.tag=$(jq -r .coprocessor_tfhe_worker <<<"${TAGS_JSON}")" \
-              --set-string "txSender.image.tag=$(jq -r .coprocessor_tx_sender <<<"${TAGS_JSON}")" \
-              --set-string "zkProofWorker.image.tag=$(jq -r .coprocessor_zkproof_worker <<<"${TAGS_JSON}")" \
-              "${tracing[@]}"
-          done
-          sleep 60
+        run: bash ci/preview-env/scripts/deploy-coprocessor.sh
 
       - name: Deploy polygon coprocessor consumer (per-party Polygon consumer)
         # One Polygon host-listener-consumer PER COPROCESSOR PARTY
@@ -1086,16 +957,7 @@ jobs:
         # dbMigration) and Redis; ingests chain-80002 events published by
         # listener-polygon-<i>.
         if: env.DEPLOY_POLYGON == 'true'
-        run: |
-          for i in $(seq 1 "${NB_COPROCESSOR}"); do
-            helm upgrade --install "coprocessor-polygon-${i}" "${COPROCESSOR_CHART}" \
-              -n "${NAMESPACE}" -f ci/preview-env/coprocessor/values-coprocessor-polygon-consumer-e2e.yaml \
-              --set-string "commonConfig.databaseEndpoint.value=postgres-coprocessor-${i}:5432" \
-              --set-string "hostListenerConsumerShared.serviceAccountName=coprocessor-${i}" \
-              --set-string "hostListenerConsumerShared.config.brokerUrl.value=redis://coprocessor-redis-${i}-master:6379" \
-              --set-string "hostListenerConsumerShared.image.tag=$(jq -r .coprocessor_host_listener <<<"${TAGS_JSON}")" &
-          done
-          wait
+        run: bash ci/preview-env/scripts/deploy-coprocessor-sidecars.sh polygon-consumer
 
       - name: Deploy coprocessor-poller (per-party key/CRS activation)
         # One poller release PER COPROCESSOR PARTY (coprocessor-poller-<i>), the
@@ -1118,25 +980,7 @@ jobs:
         # fails "No keys found in database". Shares postgres-coprocessor-<i> with
         # the coprocessor-<i> release, which already ran dbMigration (this release
         # has dbMigration disabled).
-        run: |
-          for i in $(seq 1 "${NB_COPROCESSOR}"); do
-            # Same OTLP tracing gate as the coprocessor step above.
-            tracing=()
-            if [[ "${OBSERVABILITY}" == "true" ]]; then
-              tracing=(
-                --set "commonConfig.tracing.enabled=true"
-                --set-string "commonConfig.tracing.endpoint=${OTLP_ENDPOINT}"
-                --set-string "hostListenerPollerShared.tracing.service=host-listener-poller-${i}"
-              )
-            fi
-            helm upgrade --install "coprocessor-poller-${i}" "${COPROCESSOR_CHART}" \
-              -n "${NAMESPACE}" -f ci/preview-env/coprocessor/values-coprocessor-poller-e2e.yaml \
-              --set-string "commonConfig.databaseEndpoint.value=postgres-coprocessor-${i}:5432" \
-              --set-string "hostListenerPollerShared.serviceAccountName=coprocessor-${i}" \
-              --set-string "hostListenerPollerShared.image.tag=$(jq -r .coprocessor_host_listener <<<"${TAGS_JSON}")" \
-              "${tracing[@]}" &
-          done
-          wait
+        run: bash ci/preview-env/scripts/deploy-coprocessor-sidecars.sh poller
 
       - name: Deploy polygon coprocessor-poller (per-party Polygon finalization)
         # One Polygon poller PER COPROCESSOR PARTY (coprocessor-poller-polygon-<i>),
@@ -1145,15 +989,7 @@ jobs:
         # block_status='finalized' gate is met. dbMigration disabled - coprocessor-<i>
         # already seeded host_chains for both chains.
         if: env.DEPLOY_POLYGON == 'true'
-        run: |
-          for i in $(seq 1 "${NB_COPROCESSOR}"); do
-            helm upgrade --install "coprocessor-poller-polygon-${i}" "${COPROCESSOR_CHART}" \
-              -n "${NAMESPACE}" -f ci/preview-env/coprocessor/values-coprocessor-poller-polygon-e2e.yaml \
-              --set-string "commonConfig.databaseEndpoint.value=postgres-coprocessor-${i}:5432" \
-              --set-string "hostListenerPollerShared.serviceAccountName=coprocessor-${i}" \
-              --set-string "hostListenerPollerShared.image.tag=$(jq -r .coprocessor_host_listener <<<"${TAGS_JSON}")" &
-          done
-          wait
+        run: bash ci/preview-env/scripts/deploy-coprocessor-sidecars.sh poller-polygon
 
       - name: Create kms-connector-tx-sender secrets
         env:
@@ -1173,73 +1009,7 @@ jobs:
           done
 
       - name: Deploy kms-connector
-        run: |
-          # One kms-connector release PER party (kms-connector-<i>), each wired
-          # to its own co-located kms-core, DB (postgres-connector-<i>), and
-          # tx-sender Secret. Contract addresses are shared namespace-wide,
-          # discovered once and reused; this chart's *ContractAddresses are
-          # plain strings (no configMapKeyRef).
-          require_nonempty() {
-            if [[ -z "${2}" ]]; then
-              echo "::error::${1} is empty - refusing to deploy kms-connector with a broken config (see the step that should have populated it above)"
-              exit 1
-            fi
-          }
-          decryption=$(kubectl get configmap gw-sc-addresses -n "${NAMESPACE}" -o jsonpath='{.data.decryption\.address}')
-          gateway_config=$(kubectl get configmap gw-sc-addresses -n "${NAMESPACE}" -o jsonpath='{.data.gateway_config\.address}')
-          kms_generation=$(kubectl get configmap host-sc-addresses -n "${NAMESPACE}" -o jsonpath='{.data.kms_generation\.address}')
-          # protocol_config: chart 1.5.4 requires the ProtocolConfig address for
-          # every connector component (gw-listener/kms-worker/tx-sender all render
-          # KMS_CONNECTOR_PROTOCOL_CONFIG_CONTRACT__ADDRESS); missing it aborts
-          # startup with "ProtocolConfig address is not configured".
-          protocol_config=$(kubectl get configmap host-sc-addresses -n "${NAMESPACE}" -o jsonpath='{.data.protocol_config\.address}')
-          acl=$(kubectl get configmap host-sc-addresses -n "${NAMESPACE}" -o jsonpath='{.data.acl\.address}')
-          require_nonempty "gw-sc-addresses[decryption.address]" "${decryption}"
-          require_nonempty "gw-sc-addresses[gateway_config.address]" "${gateway_config}"
-          require_nonempty "host-sc-addresses[kms_generation.address]" "${kms_generation}"
-          require_nonempty "host-sc-addresses[protocol_config.address]" "${protocol_config}"
-          require_nonempty "host-sc-addresses[acl.address]" "${acl}"
-          # deploy_polygon: add the Polygon host chain to the kms-worker's
-          # hostChains (overlay) + inject its ACL (plain string, no configMapKeyRef
-          # support in this chart) so the KMS can verify Polygon ciphertext ACLs.
-          polygon_args=()
-          if [[ "${DEPLOY_POLYGON}" == "true" ]]; then
-            polygon_acl=$(kubectl get configmap polygon-sc-addresses -n "${NAMESPACE}" -o jsonpath='{.data.acl\.address}')
-            require_nonempty "polygon-sc-addresses[acl.address]" "${polygon_acl}"
-            polygon_args=(-f ci/preview-env/kms-connector/values-kms-connector-polygon-e2e.yaml
-              --set-string "commonConfig.polygonContractAddresses.acl=${polygon_acl}")
-          fi
-          # OTLP tracing, only when the observability stack is deployed.
-          tracing=()
-          if [[ "${OBSERVABILITY}" == "true" ]]; then
-            tracing=(
-              --set "commonConfig.tracing.enabled=true"
-              --set-string "commonConfig.tracing.endpoint=${OTLP_ENDPOINT}"
-            )
-          fi
-          for i in $(seq 1 "${NB_KMS_CORE}"); do
-            helm upgrade --install "kms-connector-${i}" "${KMS_CONNECTOR_CHART}" \
-              -n "${NAMESPACE}" -f ci/preview-env/kms-connector/values-kms-connector-e2e.yaml \
-              "${polygon_args[@]}" \
-              --set-string "commonConfig.gatewayContractAddresses.decryption=${decryption}" \
-              --set-string "commonConfig.gatewayContractAddresses.gatewayConfig=${gateway_config}" \
-              --set-string "commonConfig.ethereumContractAddresses.kmsGeneration=${kms_generation}" \
-              --set-string "commonConfig.ethereumContractAddresses.acl=${acl}" \
-              --set-string "commonConfig.ethereumContractAddresses.protocolConfig=${protocol_config}" \
-              --set-string "commonConfig.databaseUrl=postgresql://zama:zama@postgres-connector-${i}:5432/connector" \
-              --set-string "kmsConnectorKmsWorker.config.kmsCoreEndpoints=http://kms-core-${i}-core-${i}:50100" \
-              --set-string "kmsConnectorTxSender.wallet.secret.name=kms-connector-tx-sender-${i}" \
-              --set-string "kmsConnectorDbMigration.image.name=hub.zama.org/ghcr/zama-ai/fhevm/kms-connector/db-migration" \
-              --set-string "kmsConnectorDbMigration.image.tag=$(jq -r .kms_connector_db_migration <<<"${TAGS_JSON}")" \
-              --set-string "kmsConnectorGwListener.image.name=hub.zama.org/ghcr/zama-ai/fhevm/kms-connector/gw-listener" \
-              --set-string "kmsConnectorGwListener.image.tag=$(jq -r .kms_connector_gw_listener <<<"${TAGS_JSON}")" \
-              --set-string "kmsConnectorKmsWorker.image.name=hub.zama.org/ghcr/zama-ai/fhevm/kms-connector/kms-worker" \
-              --set-string "kmsConnectorKmsWorker.image.tag=$(jq -r .kms_connector_kms_worker <<<"${TAGS_JSON}")" \
-              --set-string "kmsConnectorTxSender.image.name=hub.zama.org/ghcr/zama-ai/fhevm/kms-connector/tx-sender" \
-              --set-string "kmsConnectorTxSender.image.tag=$(jq -r .kms_connector_tx_sender <<<"${TAGS_JSON}")" \
-              "${tracing[@]}"
-          done
-          sleep 60
+        run: bash ci/preview-env/scripts/deploy-kms-connector.sh
 
       ######################################################################
       # KMS BOOTSTRAP: trigger the real FHE key + CRS generation on-chain, now
@@ -1250,130 +1020,57 @@ jobs:
       # key + CRS material exists, not just that the request was sent.
       ######################################################################
       - name: Trigger KMS keygen + CRS generation
-        run: |
-          helm upgrade --install host-trigger-keygen "${CONTRACTS_CHART}" \
-            -n "${NAMESPACE}" -f ci/preview-env/host-chain/values-host-trigger-keygen-e2e.yaml \
-            --set-string "scDeploy.image.tag=$(jq -r .host_contracts <<<"${TAGS_JSON}")" \
-            --wait --wait-for-jobs --timeout=45m
+        run: bash ci/preview-env/scripts/deploy-contracts.sh trigger-keygen
 
       ######################################################################
       # RELAYER + TEST-SUITE: generic `common` chart + published images.
       ######################################################################
       - name: Deploy relayer-migrate
-        run: |
-          helm upgrade --install relayer-migrate "${COMMON_CHART}" --version "${COMMON_CHART_VERSION}" \
-            -n "${NAMESPACE}" -f ci/preview-env/relayer/values-relayer-migrate-e2e.yaml \
-            --set-string "image.tag=$(jq -r .relayer_migrate <<<"${TAGS_JSON}")" \
-            --wait --wait-for-jobs --timeout=5m
+        run: bash ci/preview-env/scripts/deploy-relayer.sh migrate
 
       - name: Deploy relayer
-        run: |
-          source ci/preview-env/scripts/lib.sh
-          # user_decrypt share reconstruction threshold MUST match the deployed
-          # KMS party count (n-t), same math wire-contracts-values.sh registers
-          # on-chain. The static value in values-relayer-e2e.yaml is only a
-          # placeholder: the relayer pre-seeds the default context (id 0) from it,
-          # so a hardcoded mismatch (e.g. a 13-party 9 against the default 4
-          # parties) would make context-0 user-decrypt wait for more shares than
-          # exist and hang to timeout. Override via the relayer's APP_ env
-          # (config-rs coerces the numeric string, same as CHAIN_ID below).
-          reconstruct=$(kms_reconstruct "${NB_KMS_CORE}")
-          relayer_values=$(mktemp --suffix=.yaml)
-          cp ci/preview-env/relayer/values-relayer-e2e.yaml "${relayer_values}"
-          UDST="${reconstruct}" yq -i \
-            '.env += [{"name": "APP_GATEWAY__CONTRACTS__USER_DECRYPT_SHARES_THRESHOLD", "value": strenv(UDST)}]' \
-            "${relayer_values}"
-          echo "Relayer user_decrypt_shares_threshold=${reconstruct} (KMS parties: ${NB_KMS_CORE})"
-          # deploy_polygon: add the Polygon host chain (host_chains[1]) so the
-          # relayer's host ACL readiness check covers Polygon ciphertexts. env is a
-          # list Helm replaces wholesale, so append to the same temp copy.
-          if [[ "${DEPLOY_POLYGON}" == "true" ]]; then
-            yq -i '.env += [
-              {"name": "APP_HOST_CHAINS__1__CHAIN_ID", "value": "80002"},
-              {"name": "APP_HOST_CHAINS__1__URL", "value": "http://anvil-host-polygon-anvil-node:8545"},
-              {"name": "APP_HOST_CHAINS__1__ACL_ADDRESS", "valueFrom": {"configMapKeyRef": {"name": "polygon-sc-addresses", "key": "acl.address"}}}
-            ] | (.env[] | select(has("value")) | .value) style="double"' "${relayer_values}"
-          fi
-          helm upgrade --install relayer "${COMMON_CHART}" --version "${COMMON_CHART_VERSION}" \
-            -n "${NAMESPACE}" -f "${relayer_values}" \
-            --set-string "image.tag=$(jq -r .relayer <<<"${TAGS_JSON}")"
+        run: bash ci/preview-env/scripts/deploy-relayer.sh relayer
 
       - name: Deploy test-suite
+        run: bash ci/preview-env/scripts/deploy-relayer.sh test-suite
+
+      # Propose only after the relayer can serve traffic, so the upgrade
+      # window covers in-window e2e instead of helm install time.
+      - name: Propose coprocessor upgrade (RFC-021)
+        if: env.BLUE_GREEN == 'true'
+        env:
+          PROPOSAL_ID: ${{ github.run_id }}
         run: |
-          helm upgrade --install test-suite "${COMMON_CHART}" --version "${COMMON_CHART_VERSION}" \
-            -n "${NAMESPACE}" -f ci/preview-env/test-suite/values-test-suite-e2e.yaml \
-            --set-string "image.tag=$(jq -r .test_suite <<<"${TAGS_JSON}")"
+          kubectl rollout status deploy/relayer -n "${NAMESPACE}" --timeout=5m
+          bash ci/preview-env/scripts/propose-coprocessor-upgrade.sh
 
       ######################################################################
       # AUTOMATED E2E TEST WORKFLOW (opt-in via automated_tests / label).
       # Deploys an Argo Workflow that runs the e2e DAG unattended, alongside
-      # the idle test-suite Job above. The image tag and RoleBinding subject
-      # namespace are patched into the values file with yq before install
-      # (they are raw objects the common chart applies verbatim).
+      # the idle test-suite Job above. On the RFC-021 path this runs twice:
+      # during DryRunStarted (BCS live, GCS must shadow computations > 0),
+      # then again after versioning flips to v0.15 (green).
       ######################################################################
       - name: Deploy automated e2e test workflow
         if: env.AUTOMATED_TESTS == 'true'
         env:
           E2E_IMAGE: hub.zama.org/ghcr/zama-ai/fhevm/test-suite/e2e:${{ fromJSON(needs.resolve-tags.outputs.tags_json).test_suite }}
+          E2E_PHASE: ${{ env.BLUE_GREEN == 'true' && 'dry-run' || 'default' }}
+        run: bash ci/preview-env/scripts/run-e2e-workflow.sh
+
+      - name: Assert GCS shadowed in-window work
+        if: env.BLUE_GREEN == 'true' && env.AUTOMATED_TESTS == 'true'
+        run: bash ci/preview-env/scripts/assert-gcs-dry-run.sh
+
+      - name: Enable consensus-detector (allow cutover)
+        if: env.BLUE_GREEN == 'true' && env.AUTOMATED_TESTS == 'true'
         run: |
-          set -euo pipefail
-
-          # Patch the run-test image on the Workflow object(s) in a values file.
-          patch_image() {
-            yq -i \
-              '(.additionalResources[] | select(.object.kind == "Workflow") | .object.spec.templates[] | select(.name == "run-test") | .script.image) = strenv(E2E_IMAGE)' \
-              "$1"
-          }
-
-          # A prior run in a reused namespace may leave completed Workflows of the
-          # same names; delete both so these installs re-trigger fresh runs.
-          kubectl delete workflow e2e-test-suite-fhevm-sdk e2e-test-suite-relayer-sdk e2e-test-suite-polygon \
-            -n "${NAMESPACE}" --ignore-not-found
-
-          # Deploy the two SDK suites as separate helm releases, ONE AFTER ANOTHER,
-          # so they don't interleave on-chain txs against the shared contracts.
-          # Release 1 (@fhevm/sdk) also owns the shared workflow-runner RBAC that
-          # release 2 (@zama-fhe/relayer-sdk) reuses, so it MUST deploy first.
-          f1=$(mktemp --suffix=.yaml)
-          cp ci/preview-env/test-suite/values-test-suite-workflow-e2e.yaml "${f1}"
-          NS="${NAMESPACE}" yq -i \
-            '(.additionalResources[] | select(.object.kind == "RoleBinding") | .object.subjects[0].namespace) = strenv(NS)' \
-            "${f1}"
-          patch_image "${f1}"
-          echo "Deploying @fhevm/sdk workflow (image ${E2E_IMAGE})..."
-          helm upgrade --install test-suite-workflow "${COMMON_CHART}" --version "${COMMON_CHART_VERSION}" \
-            -n "${NAMESPACE}" -f "${f1}"
-          bash ci/preview-env/scripts/wait-workflow.sh e2e-test-suite-fhevm-sdk
-
-          # Release 2 (@zama-fhe/relayer-sdk): only when a version is set, else the
-          # @fhevm/sdk suite runs alone. No RBAC of its own, reuses release 1's.
-          if [[ -n "${RELAYER_SDK_VERSION}" ]]; then
-            f2=$(mktemp --suffix=.yaml)
-            cp ci/preview-env/test-suite/values-test-suite-workflow-relayer-sdk-e2e.yaml "${f2}"
-            patch_image "${f2}"
-            # Wire the resolved relayer-sdk version into the run-test RELAYER_SDK_VERSION env.
-            yq -i \
-              '(.additionalResources[] | select(.object.kind == "Workflow") | .object.spec.templates[] | select(.name == "run-test") | .script.env[] | select(.name == "RELAYER_SDK_VERSION") | .value) = strenv(RELAYER_SDK_VERSION)' \
-              "${f2}"
-            echo "Deploying @zama-fhe/relayer-sdk workflow (image ${E2E_IMAGE})..."
-            helm upgrade --install test-suite-workflow-relayer "${COMMON_CHART}" --version "${COMMON_CHART_VERSION}" \
-              -n "${NAMESPACE}" -f "${f2}"
-            bash ci/preview-env/scripts/wait-workflow.sh e2e-test-suite-relayer-sdk
-          else
-            echo "RELAYER_SDK_VERSION empty - skipping the @zama-fhe/relayer-sdk suite."
-          fi
-
-          # Release 3 (Polygon @fhevm/sdk): only when deploy_polygon. Same DAG as
-          # release 1 but against the Polygon host chain (reuses release 1's RBAC).
-          if [[ "${DEPLOY_POLYGON}" == "true" ]]; then
-            f3=$(mktemp --suffix=.yaml)
-            cp ci/preview-env/test-suite/values-test-suite-workflow-polygon-e2e.yaml "${f3}"
-            patch_image "${f3}"
-            echo "Deploying Polygon @fhevm/sdk workflow (image ${E2E_IMAGE})..."
-            helm upgrade --install test-suite-workflow-polygon "${COMMON_CHART}" --version "${COMMON_CHART_VERSION}" \
-              -n "${NAMESPACE}" -f "${f3}"
-            bash ci/preview-env/scripts/wait-workflow.sh e2e-test-suite-polygon
-          fi
+          for i in $(seq 1 "${NB_COPROCESSOR}"); do
+            kubectl scale "deploy/coprocessor-${i}-gcs-consensus-detector" \
+              -n "${NAMESPACE}" --replicas=1
+            kubectl rollout status "deploy/coprocessor-${i}-gcs-consensus-detector" \
+              -n "${NAMESPACE}" --timeout=180s
+          done
 
       - name: Wait for e2e workflow and build report
         id: e2e_report
@@ -1388,14 +1085,56 @@ jobs:
           COPROCESSOR_TAG: ${{ fromJSON(needs.resolve-tags.outputs.tags_json).coprocessor_host_listener }}
           RELAYER_TAG: ${{ fromJSON(needs.resolve-tags.outputs.tags_json).relayer }}
           KMS_CONNECTOR_TAG: ${{ fromJSON(needs.resolve-tags.outputs.tags_json).kms_connector_gw_listener }}
+          REPORT_PHASE: ${{ env.BLUE_GREEN == 'true' && 'during DryRunStarted (BCS live, GCS shadowing)' || '' }}
         run: bash ci/preview-env/scripts/build-e2e-report.sh
+
+      - name: Assert RFC-021 cutover
+        if: env.BLUE_GREEN == 'true' && env.AUTOMATED_TESTS == 'true'
+        env:
+          SKIP_PROPOSE: "true"
+          ASSERT_CUTOVER: "true"
+          TIMEOUT_SECS: "600"
+        run: bash ci/preview-env/scripts/propose-coprocessor-upgrade.sh
+
+      - name: Deploy automated e2e after cutover
+        if: env.BLUE_GREEN == 'true' && env.AUTOMATED_TESTS == 'true'
+        env:
+          E2E_IMAGE: hub.zama.org/ghcr/zama-ai/fhevm/test-suite/e2e:${{ fromJSON(needs.resolve-tags.outputs.tags_json).test_suite }}
+          E2E_PHASE: green
+        run: bash ci/preview-env/scripts/run-e2e-workflow.sh
+
+      - name: Build e2e report after cutover
+        id: e2e_report_green
+        if: env.BLUE_GREEN == 'true' && env.AUTOMATED_TESTS == 'true'
+        env:
+          TEST_SUITE_TAG: ${{ fromJSON(needs.resolve-tags.outputs.tags_json).test_suite }}
+          HOST_CONTRACTS_TAG: ${{ fromJSON(needs.resolve-tags.outputs.tags_json).host_contracts }}
+          GATEWAY_CONTRACTS_TAG: ${{ fromJSON(needs.resolve-tags.outputs.tags_json).gateway_contracts }}
+          COPROCESSOR_TAG: ${{ fromJSON(needs.resolve-tags.outputs.tags_json).coprocessor_host_listener }}
+          RELAYER_TAG: ${{ fromJSON(needs.resolve-tags.outputs.tags_json).relayer }}
+          KMS_CONNECTOR_TAG: ${{ fromJSON(needs.resolve-tags.outputs.tags_json).kms_connector_gw_listener }}
+          REPORT_PHASE: "after RFC-021 cutover (GCS live)"
+        run: bash ci/preview-env/scripts/build-e2e-report.sh
+
+      - name: Combine e2e reports
+        id: e2e_report_combined
+        if: env.BLUE_GREEN == 'true' && env.AUTOMATED_TESTS == 'true'
+        env:
+          REPORT_BLUE: ${{ steps.e2e_report.outputs.report_path }}
+          REPORT_GREEN: ${{ steps.e2e_report_green.outputs.report_path }}
+        run: |
+          combined=$(mktemp --suffix=.md)
+          cat "${REPORT_BLUE}" > "${combined}"
+          echo >> "${combined}"
+          cat "${REPORT_GREEN}" >> "${combined}"
+          echo "report_path=${combined}" >> "$GITHUB_OUTPUT"
 
       - name: Comment e2e results on PR
         if: env.AUTOMATED_TESTS == 'true' && github.event_name == 'pull_request'
         uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9 # v5.0.0
         with:
           issue-number: ${{ github.event.pull_request.number }}
-          body-path: ${{ steps.e2e_report.outputs.report_path }}
+          body-path: ${{ steps.e2e_report_combined.outputs.report_path || steps.e2e_report.outputs.report_path }}
 
       ######################################################################
       # DIAGNOSTICS + PR COMMENT
@@ -1416,7 +1155,7 @@ jobs:
           body: |
             :rocket: **e2e preview environment deployed** in namespace `${{ env.NAMESPACE }}` on zws-dev.
 
-            Topology: **${{ env.NB_KMS_CORE }}** KMS core ${{ env.NB_KMS_CORE == '1' && 'party' || 'parties' }} · **${{ env.NB_COPROCESSOR }}** coprocessor ${{ env.NB_COPROCESSOR == '1' && 'party' || 'parties' }} (each a full independent stack: its own Postgres, S3 bucket, tx-sender identity, `listener` producer, Redis broker and host-listener-consumer).${{ env.DEPLOY_POLYGON == 'true' && ' Plus a **second Polygon Amoy (80002)** host chain (fresh anvil, reusing the ETH KMS key via canonical ProtocolConfig mirror).' || '' }}
+            Topology: **${{ env.NB_KMS_CORE }}** KMS core ${{ env.NB_KMS_CORE == '1' && 'party' || 'parties' }} · **${{ env.NB_COPROCESSOR }}** coprocessor ${{ env.NB_COPROCESSOR == '1' && 'party' || 'parties' }} (each a full independent stack: its own Postgres, S3 bucket, tx-sender identity, `listener` producer, Redis broker and host-listener-consumer).${{ env.BLUE_GREEN == 'true' && ' **RFC-021 blue-green:** each party also runs a GCS fleet (`coprocessor-<i>-gcs`, compiled 0.15.0) beside BCS (`v0.14.0-7`). Gateway registration stays N.' || '' }}${{ env.DEPLOY_POLYGON == 'true' && ' Plus a **second Polygon Amoy (80002)** host chain (fresh anvil, reusing the ETH KMS key via canonical ProtocolConfig mirror).' || '' }}
 
             Connect:
             ```bash
@@ -1437,7 +1176,7 @@ jobs:
             echo
             echo "Namespace \`${NAMESPACE}\` on zws-dev."
             echo
-            echo "Topology: **${NB_KMS_CORE}** KMS core parties · **${NB_COPROCESSOR}** coprocessor parties (each a full independent stack: its own Postgres, S3 bucket, tx-sender identity, listener producer, Redis broker and host-listener-consumer)$([[ "${DEPLOY_POLYGON}" == "true" ]] && echo ' · a second Polygon Amoy (80002) host chain reusing the ETH KMS key'). Note: each coprocessor party requests substantial tfhe/sns worker capacity on the coprocessor nodepool, so nb_coprocessor > 1 multiplies the cluster resources needed."
+            echo "Topology: **${NB_KMS_CORE}** KMS core parties · **${NB_COPROCESSOR}** coprocessor parties (each a full independent stack: its own Postgres, S3 bucket, tx-sender identity, listener producer, Redis broker and host-listener-consumer)$([[ "${BLUE_GREEN}" == "true" ]] && echo " · RFC-021 blue-green (BCS v0.14.0-7 + GCS from this build compiled 0.15.0)")$([[ "${DEPLOY_POLYGON}" == "true" ]] && echo " · a second Polygon Amoy (80002) host chain reusing the ETH KMS key"). Note: each coprocessor party requests substantial tfhe/sns worker capacity on the coprocessor nodepool, so nb_coprocessor > 1 multiplies the cluster resources needed."
             echo
             echo "Connect:"
             echo '```bash'

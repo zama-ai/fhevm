@@ -5,7 +5,7 @@ use crate::{
     gateway::arbitrum::bindings::{gateway_chain_event_for_log, gateway_chain_event_signatures},
     gateway::handled_events::{EventKey, HandledEvents, ObservedEvent, RangeObserved},
     logging::ListenerStep,
-    orchestrator::HealthCheck,
+    orchestrator::{DispatchGate, HealthCheck},
     store::sql::repositories::chain_cursor_repo::ChainCursorRepository,
 };
 use alloy::{
@@ -34,6 +34,10 @@ pub struct PollingListener {
     pool_index: usize,
     /// HTTP URL for this listener
     http_url: String,
+    /// Open only while this pod is the confirmed dispatcher. A non-holder
+    /// must neither handle gateway responses nor advance the shared chain cursor, so the poll
+    /// loop waits here rather than fetching.
+    gate: DispatchGate,
     shutdown: CancellationToken,
 }
 
@@ -44,6 +48,7 @@ impl PollingListener {
         handled_events: Arc<HandledEvents>,
         pool_index: usize,
         http_url: String,
+        gate: DispatchGate,
         shutdown: CancellationToken,
     ) -> anyhow::Result<Self> {
         // Enforce HTTP URL - polling listener requires HTTP, not WebSocket
@@ -61,6 +66,7 @@ impl PollingListener {
             handled_events,
             pool_index,
             http_url,
+            gate,
             shutdown,
         })
     }
@@ -69,6 +75,27 @@ impl PollingListener {
         tokio::select! {
             _ = tokio::time::sleep(dur) => {}
             _ = self.shutdown.cancelled() => {}
+        }
+    }
+
+    /// Wait until this pod is the dispatcher. Returns `true` if shutdown came first.
+    async fn wait_for_gate_or_shutdown(&self) -> bool {
+        if self.gate.is_open() {
+            return false;
+        }
+        info!(
+            instance_id = self.pool_index,
+            "Polling listener idle: not the dispatcher"
+        );
+        tokio::select! {
+            _ = self.gate.wait_open() => {
+                info!(
+                    instance_id = self.pool_index,
+                    "Polling listener resuming: this pod is now the dispatcher"
+                );
+                false
+            }
+            _ = self.shutdown.cancelled() => true,
         }
     }
 
@@ -134,6 +161,19 @@ impl PollingListener {
             .reconnect_config
             .retry_interval_ms;
 
+        // Wait for the gate *before* resolving the starting block: the resume point comes from
+        // the shared `gateway_chain_cursor` row, which whichever pod is the dispatcher keeps
+        // advancing. Reading it while another pod holds the lock would pin this listener to a
+        // position that is stale by however long this pod stands by - hours, at which point
+        // acquiring the lock would replay every block since.
+        if self.wait_for_gate_or_shutdown().await {
+            info!(
+                instance_id = self.pool_index,
+                "Polling listener stopping (shutdown before acquiring the dispatch lock)"
+            );
+            return Ok(());
+        }
+
         // Create provider
         let provider = self.create_provider()?;
 
@@ -167,6 +207,18 @@ impl PollingListener {
                     max_attempts = max_attempts,
                     "Polling listener exceeded max consecutive poll failures, will keep retrying"
                 );
+            }
+
+            // Re-check the gate every tick, not just at startup: a failed heartbeat closes it
+            // (`LockState::Unconfirmed`) without this pod losing the session, and events handled
+            // in that window could be a successor's. `last_processed_block` stays put while
+            // paused, so resuming replays the range that was skipped.
+            if self.wait_for_gate_or_shutdown().await {
+                info!(
+                    instance_id = self.pool_index,
+                    "Polling listener stopping (shutdown while not dispatching)"
+                );
+                return Ok(());
             }
 
             if !backlog_pending {

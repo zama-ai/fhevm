@@ -97,8 +97,16 @@ configmapFiles:
         readiness_checker:
           host_acl_check:
             retry: {max_attempts: 3, retry_interval_ms: 1000}
+          # `source` is set inline here (rather than by env, unlike keyurl.source below) because
+          # every other key in this block is already a static per-deploy value in this same YAML;
+          # only `gateway_config_address` is dynamic and comes from a ConfigMap via env below.
           gw_ciphertext_check:
+            source: coprocessor_attestations
             retry: {max_attempts: 75, retry_interval_ms: 3000}
+            head_timeout_ms: 5000
+            request_timeout_ms: 240000
+            registry_refresh_ms: 60000
+            max_concurrent_handles: 8
           public_decrypt: {max_concurrency: 250, capacity: 11000, safety_margin: 1000}
           user_decrypt: {max_concurrency: 250, capacity: 11000, safety_margin: 1000}
         contracts:
@@ -174,10 +182,35 @@ configmapFiles:
           input_proof_expiry: "7d"
           cron_startup_delay_after_recovery: "30s"
       shutdown:
-        # Covers the lag until the pod's removal from the service endpoints reaches
-        # the ingress controller. Shutdown must finish inside the grace period.
+        # Time this pod keeps serving after it stops reporting Ready, so the load
+        # balancer takes it out of rotation first.
         lb_propagation_wait: "5s"
-
+        # Bound on the last shutdown step, releasing the dispatcher lock: the unlock
+        # and the connection close share this budget.
+        lock_release_timeout: "3s"
+      dispatcher_lock:
+        # Interval between a standby's attempts to take the lock, and so the failover
+        # delay after the holder releases or dies.
+        standby_poll_interval: "2s"
+        # Interval between the holder's checks that its lock connection is alive.
+        holder_heartbeat_interval: "5s"
+        # Bound on each query the lock runs on its own connection: try-lock, epoch
+        # mint, heartbeat, unlock.
+        query_timeout: "3s"
+        # Failed round trips in a row before the pod exits and a standby takes over.
+        exit_after_consecutive_failures: 3
+        # Bound on opening the lock's connection at startup.
+        connect_timeout: "5s"
+        # Postgres-side timeout that frees the lock when a holder's node dies without
+        # closing its socket. Must exceed both intervals above. Needs Postgres 14+.
+        idle_session_timeout: "60s"
+        # Overrides the schema-derived lock key. Keep null, so every pod against one
+        # database resolves the same key.
+        key_override: null
+        sweep:
+          # Interval between the holder's scans for requests nobody is driving, and so
+          # the delay before such a request is picked up.
+          interval: "500ms"
 env:
   # --- host_chains (single entry - our per-PR anvil-host) ---
   - {name: APP_HOST_CHAINS__0__CHAIN_ID, value: "12345"}
@@ -215,6 +248,12 @@ env:
     valueFrom: {configMapKeyRef: {name: gw-sc-addresses, key: decryption.address}}
   - name: APP_GATEWAY__CONTRACTS__INPUT_VERIFICATION_ADDRESS
     valueFrom: {configMapKeyRef: {name: gw-sc-addresses, key: input_verification.address}}
+
+  # --- gateway.readiness_checker.gw_ciphertext_check (dynamic part - see YAML block above) ---
+  # GatewayConfig: Coprocessor registry (signers, S3 buckets, majority threshold) for the
+  # off-chain Coprocessor attestation readiness check.
+  - name: APP_GATEWAY__READINESS_CHECKER__GW_CIPHERTEXT_CHECK__GATEWAY_CONFIG_ADDRESS
+    valueFrom: {configMapKeyRef: {name: gw-sc-addresses, key: gateway_config.address}}
 
   # --- keyurl (KMSGeneration poller) ---
   # `keyurl.source` selects where /v2/keyurl comes from (settings.rs: KeyUrlConfig)

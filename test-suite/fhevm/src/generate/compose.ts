@@ -1,7 +1,8 @@
 /**
  * Generates compose overrides for local builds, scenario instances, and compatibility-adjusted service commands.
  */
-import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { readFileSync, statSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import YAML from "yaml";
@@ -123,44 +124,86 @@ const COPROCESSOR_RUST_IMAGE_VERSION = rustImageVersion("coprocessor/fhevm-engin
 const KMS_CONNECTOR_RUST_IMAGE_VERSION = rustImageVersion("kms-connector/rust-toolchain.toml");
 const RELAYER_RUST_IMAGE_VERSION = rustImageVersion("relayer/rust-toolchain.toml");
 
-const coprocessorBuildSpec = (target: string) =>
+/**
+ * Local connector images expose this revision from their health endpoint. It
+ * also provides the git-version fallback for linked-worktree Docker contexts,
+ * whose `.git` pointer cannot be resolved inside the builder container.
+ */
+export const localSourceRevision = () => {
+  try {
+    return execFileSync("git", ["describe", "--always", "--exclude", "*"], { cwd: REPO_ROOT, encoding: "utf8" }).trim() || "unknown";
+  } catch {
+    return "unknown";
+  }
+};
+const LOCAL_SOURCE_REVISION = localSourceRevision();
+
+// The locally bundled sqlx binary requires GLIBC_2.39. Trixie currently
+// provides glibc 2.41, whereas Bookworm's 2.36 fails before migrations start.
+// These Dockerfile stages add ca-certificates too: Debian slim has no system
+// root bundle and reqwest otherwise rejects every HTTPS connection at startup.
+const PUBLIC_E2E_COPROCESSOR_RUNTIME_BASE_IMAGE = "e2e-public-runtime";
+const PUBLIC_E2E_COPROCESSOR_DB_MIGRATION_RUNTIME_BASE_IMAGE = "e2e-public-db-migration-runtime";
+const PUBLIC_E2E_KMS_CONNECTOR_RUNTIME_BASE_IMAGE = "e2e-public-runtime";
+
+// This map is deliberately separate from COMPONENT_BUILD_SPECS: the public
+// runtime-base override is a persisted property of an E2E plan, not an ambient
+// Docker/Compose setting.  That keeps the production defaults in the
+// Dockerfile untouched and lets a resumed E2E run rebuild the same images.
+const COPROCESSOR_BUILD_TARGETS: Record<string, string> = {
+  "coprocessor-db-migration": "db-migration",
+  "coprocessor-host-listener": "host-listener",
+  "coprocessor-host-listener-poller": "host-listener",
+  "coprocessor-host-listener-consumer": "host-listener",
+  "coprocessor-gw-listener": "gw-listener",
+  "coprocessor-tfhe-worker": "tfhe-worker",
+  "coprocessor-zkproof-worker": "zkproof-worker",
+  "coprocessor-sns-worker": "sns-worker",
+  "coprocessor-transaction-sender": "transaction-sender",
+  "coprocessor-consensus-detector": "consensus-detector",
+  "coprocessor-upgrade-controller": "upgrade-controller",
+};
+
+const coprocessorBuildSpec = (target: string, e2ePublicRuntime = false) =>
   buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
     target,
-    args: { RUST_IMAGE_VERSION: COPROCESSOR_RUST_IMAGE_VERSION },
+    args: {
+      RUST_IMAGE_VERSION: COPROCESSOR_RUST_IMAGE_VERSION,
+      ...(e2ePublicRuntime
+        ? {
+            COPROCESSOR_RUNTIME_BASE_IMAGE: PUBLIC_E2E_COPROCESSOR_RUNTIME_BASE_IMAGE,
+            COPROCESSOR_DB_MIGRATION_RUNTIME_BASE_IMAGE: PUBLIC_E2E_COPROCESSOR_DB_MIGRATION_RUNTIME_BASE_IMAGE,
+          }
+        : {}),
+    },
   });
 
+// The connector DB migration has its own Dockerfile and does not use the
+// connector workspace runtime base. Only the three long-lived connector
+// services receive the E2E-only public-runtime switch.
+const kmsConnectorBuildSpec = (target: string, e2ePublicRuntime = false) =>
+  buildSpec("../../..", "kms-connector/Dockerfile.workspace", {
+    target,
+    args: {
+      RUST_IMAGE_VERSION: KMS_CONNECTOR_RUST_IMAGE_VERSION,
+      BUILD_ID: LOCAL_SOURCE_REVISION,
+      ...(e2ePublicRuntime ? { KMS_CONNECTOR_RUNTIME_BASE_IMAGE: PUBLIC_E2E_KMS_CONNECTOR_RUNTIME_BASE_IMAGE } : {}),
+    },
+  });
+
+const KMS_CONNECTOR_RUNTIME_BUILD_TARGETS: Record<string, string> = {
+  "kms-connector-gw-listener": "gw-listener",
+  "kms-connector-kms-worker": "kms-worker",
+  "kms-connector-tx-sender": "tx-sender",
+};
+
 const COMPONENT_BUILD_SPECS: Record<string, Record<string, Record<string, unknown>>> = {
-  coprocessor: {
-    "coprocessor-db-migration": coprocessorBuildSpec("db-migration"),
-    "coprocessor-host-listener": coprocessorBuildSpec("host-listener"),
-    "coprocessor-host-listener-poller": coprocessorBuildSpec("host-listener"),
-    "coprocessor-host-listener-consumer": coprocessorBuildSpec("host-listener"),
-    "coprocessor-gw-listener": coprocessorBuildSpec("gw-listener"),
-    "coprocessor-tfhe-worker": coprocessorBuildSpec("tfhe-worker"),
-    "coprocessor-zkproof-worker": coprocessorBuildSpec("zkproof-worker"),
-    "coprocessor-sns-worker": coprocessorBuildSpec("sns-worker"),
-    "coprocessor-transaction-sender": coprocessorBuildSpec("transaction-sender"),
-    "coprocessor-consensus-detector": coprocessorBuildSpec("consensus-detector"),
-    "coprocessor-upgrade-controller": coprocessorBuildSpec("upgrade-controller"),
-  },
   "kms-connector": {
     // connector-db was never workspace-built (sqlx-cli install, not a workspace member); it keeps
     // its own per-binary Dockerfile.
     "kms-connector-db-migration": buildSpec("../../..", "kms-connector/connector-db/Dockerfile", {
       // The Dockerfile's last stage is `dev`; pin `prod` so a local override build matches what CI publishes.
       target: "prod",
-      args: { RUST_IMAGE_VERSION: KMS_CONNECTOR_RUST_IMAGE_VERSION },
-    }),
-    "kms-connector-gw-listener": buildSpec("../../..", "kms-connector/Dockerfile.workspace", {
-      target: "gw-listener",
-      args: { RUST_IMAGE_VERSION: KMS_CONNECTOR_RUST_IMAGE_VERSION },
-    }),
-    "kms-connector-kms-worker": buildSpec("../../..", "kms-connector/Dockerfile.workspace", {
-      target: "kms-worker",
-      args: { RUST_IMAGE_VERSION: KMS_CONNECTOR_RUST_IMAGE_VERSION },
-    }),
-    "kms-connector-tx-sender": buildSpec("../../..", "kms-connector/Dockerfile.workspace", {
-      target: "tx-sender",
       args: { RUST_IMAGE_VERSION: KMS_CONNECTOR_RUST_IMAGE_VERSION },
     }),
   },
@@ -201,8 +244,21 @@ const COMPONENT_BUILD_SPECS: Record<string, Record<string, Record<string, unknow
     "test-suite-e2e-debug": buildSpec("../../..", "test-suite/e2e/Dockerfile"),
   },
 };
-const localBuildSpecFor = (component: string, service: string) => COMPONENT_BUILD_SPECS[component]?.[service];
-
+const localBuildSpecFor = (
+  component: string,
+  service: string,
+  e2ePublicRuntime = false,
+): Record<string, unknown> | undefined => {
+  if (component === "coprocessor") {
+    const target = COPROCESSOR_BUILD_TARGETS[service];
+    return target ? coprocessorBuildSpec(target, e2ePublicRuntime) : undefined;
+  }
+  if (component === "kms-connector") {
+    const target = KMS_CONNECTOR_RUNTIME_BUILD_TARGETS[service];
+    return target ? kmsConnectorBuildSpec(target, e2ePublicRuntime) : COMPONENT_BUILD_SPECS[component]?.[service];
+  }
+  return COMPONENT_BUILD_SPECS[component]?.[service];
+};
 const CANONICAL_HOST_ONLY_SERVICES = new Set([
   "host-sc-trigger-keygen",
   "host-sc-trigger-crsgen",
@@ -245,6 +301,76 @@ const rewriteComposePaths = (doc: ComposeDoc) => {
 /** Interpolates `${VAR}` placeholders inside a string using env vars. */
 const interpolateString = (value: string, vars: Record<string, string>) =>
   value.replace(/(?<!\$)\$\{([A-Z0-9_]+)\}/g, (match, key) => (key in vars ? vars[key] : match));
+
+/**
+ * Published GPU worker images are tagged `<revision>-cuda<version>-sm<arch>`.
+ * Keying off the tag keeps a CPU run untouched -- it never asks for a GPU it does
+ * not need -- and avoids threading a new flag or scenario field through.
+ */
+const GPU_WORKER_IMAGE = /-cuda[0-9][0-9.]*-sm[0-9]+$/;
+
+/**
+ * Gives a GPU worker image the driver and the devices, because neither arrives
+ * by default.
+ *
+ * Measured on a host whose docker default runtime is already `nvidia`: with
+ * NVIDIA_VISIBLE_DEVICES unset a container sees ZERO /dev/nvidia* devices, so a
+ * GPU image starts, serves, and computes nothing on the GPU. Setting it to `all`
+ * exposes six devices, and NVIDIA_DRIVER_CAPABILITIES=compute,utility injects
+ * libcuda.so.1.
+ *
+ * The device reservation is belt and braces: the env vars are what the nvidia
+ * runtime reads, the reservation is what makes compose ask for that runtime on a
+ * host where `runc` is the default. Relying on the host default is exactly how a
+ * GPU run becomes a CPU run without anyone noticing.
+ *
+ * NVIDIA_VISIBLE_DEVICES stays overridable so a caller can pin cards, and the
+ * device request follows the pin: Docker resolves a `count` request against
+ * every GPU on the host and sets NVIDIA_VISIBLE_DEVICES itself, so `count: all`
+ * next to a pin of `0` hands the container every card and two workers pinned
+ * to different cards end up competing for the same memory. A pinned service
+ * therefore requests exactly its `device_ids` (indexes or GPU UUIDs) with no
+ * `count`, and `none` or `void` requests no device at all.
+ */
+const applyGpuImageRuntime = (service: Record<string, unknown>, envVars: Record<string, string>) => {
+  const image = typeof service.image === "string" ? service.image : "";
+  // The override keeps the image as `...:${COPROCESSOR_TFHE_WORKER_VERSION}` so
+  // compose resolves it at run time. Testing the rendered string alone would
+  // therefore match nothing and this wiring would silently do nothing, so
+  // resolve the placeholder against the same env compose will use.
+  const placeholder = /\$\{([A-Z0-9_]+)\}/.exec(image);
+  const tag = placeholder ? (envVars[placeholder[1]] ?? "") : image;
+  if (!GPU_WORKER_IMAGE.test(tag)) return;
+  const environment: Record<string, unknown> = {
+    NVIDIA_VISIBLE_DEVICES: "all",
+    NVIDIA_DRIVER_CAPABILITIES: "compute,utility",
+    ...normalizeEnvironment(service.environment),
+  };
+  service.environment = environment;
+  const request = gpuDeviceRequest(String(environment.NVIDIA_VISIBLE_DEVICES ?? "all"));
+  if (!request) return;
+  service.deploy = {
+    ...(typeof service.deploy === "object" && service.deploy !== null ? service.deploy : {}),
+    resources: { reservations: { devices: [{ driver: "nvidia", ...request, capabilities: ["gpu"] }] } },
+  };
+};
+
+/**
+ * Maps an NVIDIA_VISIBLE_DEVICES pin onto a compose device request. `count` and
+ * `device_ids` are mutually exclusive in the compose spec, so exactly one is
+ * emitted; `none`/`void` (driver libraries, no device) yields no request.
+ */
+const gpuDeviceRequest = (visibleDevices: string): { count: "all" } | { device_ids: string[] } | undefined => {
+  const pin = visibleDevices.trim();
+  if (pin === "" || pin === "all") return { count: "all" };
+  if (pin === "none" || pin === "void") return undefined;
+  const ids = pin
+    .split(",")
+    .map((id) => id.trim())
+    .filter(Boolean);
+  return ids.length ? { device_ids: ids } : { count: "all" };
+};
+
 
 /** Normalizes compose environment syntax into a flat map before local overrides are merged. */
 const normalizeEnvironment = (value: unknown) => {
@@ -354,9 +480,10 @@ export const GCS_ONLY_SUFFIXES = new Set(["upgrade-controller", "consensus-detec
 /** Blue-green container names per operator: BCS (previous-release shape) + GCS fleet reusing BCS's db-migration. */
 export const blueGreenServiceNames = (
   state: Pick<State, "scenario" | "versions">,
-  options: { includeMigration: boolean },
+  options: { includeMigration: boolean; includeDeferredGreen?: boolean },
 ): string[] => {
   const includeConsumer = supportsHostListenerConsumer(state);
+  const greenDeferred = state.scenario.kind === "blue-green" && state.scenario.gcs.deferredStart;
   const names: string[] = [];
   for (let index = 0; index < topologyForState(state).count; index += 1) {
     const prefix = index === 0 ? "coprocessor-" : `coprocessor${index}-`;
@@ -366,10 +493,12 @@ export const blueGreenServiceNames = (
       if (suffix === "host-listener-consumer" && !includeConsumer) continue;
       names.push(`${prefix}${suffix}`);
     }
-    for (const suffix of GROUP_SERVICE_SUFFIXES.coprocessor) {
-      if (suffix.includes("migration")) continue;
-      if (suffix === "host-listener-consumer" && !includeConsumer) continue;
-      names.push(`${prefix}gcs-${suffix}`);
+    if (!greenDeferred || options.includeDeferredGreen) {
+      for (const suffix of GROUP_SERVICE_SUFFIXES.coprocessor) {
+        if (suffix.includes("migration")) continue;
+        if (suffix === "host-listener-consumer" && !includeConsumer) continue;
+        names.push(`${prefix}gcs-${suffix}`);
+      }
     }
   }
   return names;
@@ -444,24 +573,42 @@ const coprocessorBuildServices = (plan: Pick<StackSpec, "overrides">) => {
   return new Set(overrides.flatMap((override) => override.services ?? []));
 };
 
-/** Applies scenario image sourcing rules to one coprocessor service clone. */
+/**
+ * Applies scenario image sourcing rules to one coprocessor service clone, then
+ * the GPU runtime the chosen image needs.
+ *
+ * The GPU wiring keys on the image that will actually run, so it must follow
+ * the final selection here rather than the bundle's image: a registry pin or a
+ * local build replaces the bundle tag, and a CPU image carrying the nvidia env
+ * and a device reservation cannot start on a host without a GPU, while a GPU
+ * image pinned over a CPU bundle would silently compute on the CPU. Local
+ * builds use Dockerfile.workspace, which produces CPU images, so their
+ * `fhevm-local-*` tag never matches and they get no GPU wiring.
+ *
+ * `versions` is the resolved bundle: an inherited image keeps its
+ * `...:${COPROCESSOR_*_VERSION}` placeholder for compose to substitute, and the
+ * wiring resolves that placeholder against the same values.
+ */
 const applyCoprocessorSource = (
   service: Record<string, unknown>,
   serviceName: string,
   instance: ResolvedCoprocessorScenarioInstance,
   locallyBuilt: boolean,
+  e2ePublicRuntime: boolean,
+  versions: Record<string, string>,
 ) => {
   if (locallyBuilt) {
     service.image = retagLocal(service.image, localInstanceTag(instance.index));
-    service.build = localBuildSpecFor("coprocessor", serviceName);
-    return;
+    service.build = localBuildSpecFor("coprocessor", serviceName, e2ePublicRuntime);
+  } else {
+    if (instance.source.mode === "registry") {
+      service.image = rewriteImageTag(service.image, instance.source.tag);
+    }
+    if (service.image) {
+      delete service.build;
+    }
   }
-  if (instance.source.mode === "registry") {
-    service.image = rewriteImageTag(service.image, instance.source.tag);
-  }
-  if (service.image) {
-    delete service.build;
-  }
+  applyGpuImageRuntime(service, versions);
 };
 
 /**
@@ -476,10 +623,13 @@ const argPolicyForInstance = (
   compat: CoprocessorArgPolicy,
   instance: ResolvedCoprocessorScenarioInstance,
 ): CoprocessorArgPolicy =>
-  instance.source.mode === "registry" ? compatArgPolicyForPinnedTag(instance.source.tag) : compat;
+  instance.source.mode === "registry"
+    ? compatArgPolicyForPinnedTag(instance.source.compatTag ?? instance.source.tag)
+    : compat;
 
 // Green-side services omitted from BCS so it matches the previous-release shape.
 const GCS_ONLY_SERVICES = new Set([...GCS_ONLY_SUFFIXES].map((suffix) => `coprocessor-${suffix}`));
+
 
 /** Builds the generated coprocessor compose override across all scenario instances. */
 const buildCoprocessorOverride = async (plan: StackSpec) => {
@@ -506,11 +656,6 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
         : instance.source.mode === "inherit"
           ? inheritedBuildServices
           : new Set<string>();
-    // Blue-green: force db-migration to HEAD so GCS gets the current schema regardless of BCS's pin.
-    if (isBlueGreen) {
-      localServices.add("coprocessor-db-migration");
-    }
-    const argPolicy = argPolicyForInstance(compat, instance);
     const envName = instance.index === 0 ? "coprocessor" : `coprocessor.${instance.index}`;
     const envFileValue = envPath(envName);
     const instanceEnv = await readEnvFile(envFileValue);
@@ -524,18 +669,62 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
       }
       const suffix = name.replace(/^coprocessor-/, "");
       const serviceName = `${prefix}${suffix}`;
-      const locallyBuilt = localServices.has(name);
+      const greenDbMigration =
+        name === "coprocessor-db-migration" && isBlueGreen && !plan.blueGreen?.gcs.deferredStart;
+      const sourceInstance: ResolvedCoprocessorScenarioInstance = greenDbMigration
+        ? {
+            index: instance.index,
+            source: plan.blueGreen!.gcs.source,
+            env: plan.blueGreen!.gcs.env,
+            args: plan.blueGreen!.gcs.args,
+          }
+        : instance;
+      const locallyBuilt = greenDbMigration
+        ? sourceInstance.source.mode === "local"
+        : localServices.has(name);
+      const argPolicy = argPolicyForInstance(compat, sourceInstance);
       const adjusted = applyInstanceAdjustments(
         name,
         service,
         envFileValue,
         instanceEnv,
-        instance,
+        sourceInstance,
         locallyBuilt ? {} : argPolicy.coprocessorArgs,
         locallyBuilt ? {} : argPolicy.coprocessorDropFlags,
       );
       adjusted.container_name = serviceName;
-      applyCoprocessorSource(adjusted, name, instance, locallyBuilt);
+      if (name === "coprocessor-db-migration") {
+        if (isBlueGreen && instance.source.mode === "registry") {
+          // The pinned BCS release creates the database so the seeded versions match
+          // the running BCS binary; the HEAD migration then runs on top.
+          const bcsMigrationName = `${prefix}bcs-db-migration`;
+          const bcsMigration = applyInstanceAdjustments(
+            name,
+            service,
+            envFileValue,
+            instanceEnv,
+            instance,
+            {},
+            {},
+          );
+          bcsMigration.container_name = bcsMigrationName;
+          bcsMigration.image = rewriteImageTag(bcsMigration.image, instance.source.tag);
+          delete bcsMigration.build;
+          if (instance.index > 0 && bcsMigration.depends_on && typeof bcsMigration.depends_on === "object") {
+            bcsMigration.depends_on = rewriteCoprocessorDependsOn(
+              bcsMigration.depends_on as Record<string, unknown>,
+              prefix,
+              clonedServices,
+            );
+          }
+          services[bcsMigrationName] = bcsMigration;
+          adjusted.depends_on = {
+            ...(typeof adjusted.depends_on === "object" ? (adjusted.depends_on as Record<string, unknown>) : {}),
+            [bcsMigrationName]: { condition: "service_completed_successfully" },
+          };
+        }
+      }
+      applyCoprocessorSource(adjusted, name, sourceInstance, locallyBuilt, plan.e2ePublicRuntime, plan.versions.env);
       if (instance.index > 0 && adjusted.depends_on && typeof adjusted.depends_on === "object") {
         adjusted.depends_on = rewriteCoprocessorDependsOn(
           adjusted.depends_on as Record<string, unknown>,
@@ -562,6 +751,7 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
         env: gcs.env,
         args: gcs.args,
       };
+      const gcsArgPolicy = argPolicyForInstance(compat, gcsInstance);
       for (const [baseName, service] of Object.entries(doc.services)) {
         if (!includeConsumer && baseName === "coprocessor-host-listener-consumer") {
           continue;
@@ -571,28 +761,25 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
         }
         const suffix = baseName.replace(/^coprocessor-/, "");
         const serviceName = `${gcsPrefix}${suffix}`;
-        const buildSpec = localBuildSpecFor("coprocessor", baseName);
         // A service with a build spec runs the locally built binary, which speaks
         // the working tree's flag contract. Shimming it to any older contract
         // would feed it flags it does not accept — same guard as the BCS loop.
+        const buildSpec = localBuildSpecFor("coprocessor", baseName, plan.e2ePublicRuntime);
+        const locallyBuilt = gcs.source.mode === "local" && Boolean(buildSpec);
         const adjusted = applyInstanceAdjustments(
           baseName,
           service,
           gcsEnvFileValue,
           gcsInstanceEnv,
           gcsInstance,
-          buildSpec ? {} : compat.coprocessorArgs,
-          buildSpec ? {} : compat.coprocessorDropFlags,
+          locallyBuilt ? {} : gcsArgPolicy.coprocessorArgs,
+          locallyBuilt ? {} : gcsArgPolicy.coprocessorDropFlags,
         );
         adjusted.container_name = serviceName;
-        if (buildSpec) {
-          adjusted.image = retagLocal(service.image, `gcs-${gcs.stackVersion}`);
-          // GCS compiles the newer stack version (build arg enables the override feature),
-          // so its schema/version are gcs.stackVersion rather than the baseline.
-          adjusted.build = {
-            ...buildSpec,
-            args: { ...(buildSpec.args as Record<string, string> | undefined), BUILD_STACK_VERSION: gcs.stackVersion },
-          };
+        applyCoprocessorSource(adjusted, baseName, gcsInstance, locallyBuilt, plan.e2ePublicRuntime, plan.versions.env);
+        if (locallyBuilt && buildSpec) {
+          adjusted.image = retagLocal(service.image, "gcs-candidate");
+          adjusted.build = buildSpec;
         }
         if (bcsInstance.index > 0 && adjusted.depends_on && typeof adjusted.depends_on === "object") {
           adjusted.depends_on = rewriteCoprocessorDependsOn(
@@ -628,20 +815,29 @@ export const buildKmsConnectorOverride = async (plan: StackSpec) => {
   const doc = rewriteComposePaths(await loadComposeDoc("kms-connector"));
   const overridden = overriddenServicesForComponent(plan, "kms-connector");
   const services: Record<string, Record<string, unknown>> = {};
+  const buildOwners = new Set<string>();
   for (let party = 1; party <= plan.kms.parties; party += 1) {
     const prefix = `${kmsConnectorPrefix(party)}-`;
     const envFileValue = envPath(kmsConnectorEnvName(party));
+    const deployment = plan.kmsConnectorDeploymentByNodeId?.[party];
     for (const [name, service] of Object.entries(doc.services)) {
       const suffix = name.replace(/^kms-connector-/, "");
       const serviceName = `${prefix}${suffix}`;
       const next = structuredClone(service);
       next.container_name = serviceName;
       next.env_file = [envFileValue];
-      applyBuildPolicy(next, overridden.has(name));
-      if (party === 1 && overridden.has(name)) {
-        const build = localBuildSpecFor("kms-connector", name);
+      if (deployment && typeof next.image === "string") {
+        next.image = next.image.replace(/\$\{([^}]+)\}/g, (placeholder, key: string) =>
+          deployment.versions[key] ?? placeholder
+        );
+      }
+      const locallyBuilt = deployment ? deployment.locallyBuilt : overridden.has(name);
+      applyBuildPolicy(next, locallyBuilt);
+      if (locallyBuilt && !buildOwners.has(name)) {
+        const build = localBuildSpecFor("kms-connector", name, plan.e2ePublicRuntime);
         if (build) {
           next.build = build;
+          buildOwners.add(name);
         }
       }
       if (next.depends_on && typeof next.depends_on === "object") {
@@ -656,6 +852,55 @@ export const buildKmsConnectorOverride = async (plan: StackSpec) => {
     }
   }
   return { services };
+};
+
+/** The universal test-runner service that consensus restart and fault tests drive. */
+const TEST_SUITE_RUNNER_SERVICE = "test-suite-e2e-debug";
+const CONTAINER_DOCKER_SOCKET = "/var/run/docker.sock";
+
+/**
+ * Resolves the host Docker socket, when one is actually there. The path follows a
+ * `unix://` `DOCKER_HOST` and otherwise falls back to the default socket location; a
+ * remote daemon (`tcp://`), a rootless setup, or a missing socket all resolve to
+ * `undefined`. The gid is read off the socket itself rather than guessed.
+ */
+export const dockerSocketRuntime = (
+  env: NodeJS.ProcessEnv = process.env,
+): { path: string; gid: number } | undefined => {
+  const dockerHost = env.DOCKER_HOST ?? "";
+  if (dockerHost && !dockerHost.startsWith("unix://")) {
+    // A remote daemon (`tcp://`, `ssh://`) is not reachable through a local socket, so
+    // there is nothing to mount even when the default socket path happens to exist.
+    return undefined;
+  }
+  const socketPath = dockerHost ? dockerHost.slice("unix://".length) : CONTAINER_DOCKER_SOCKET;
+  try {
+    const stat = statSync(socketPath);
+    if (!stat.isSocket()) {
+      return undefined;
+    }
+    return { path: socketPath, gid: stat.gid };
+  } catch {
+    return undefined;
+  }
+};
+
+/**
+ * Hands the host Docker socket to the e2e runner so restart and fault tests can act on
+ * explicitly named containers; the socket is inert for ordinary E2E tests. This is
+ * generated rather than tracked in the static compose file because both halves are host
+ * facts: the socket group id is read from the socket at generation time (guessing it
+ * grants nothing), and a host without a socket must still be able to start the runner.
+ */
+const applyDockerSocketRuntime = (services: ComposeDoc["services"]) => {
+  const socket = dockerSocketRuntime();
+  if (!socket) {
+    return;
+  }
+  const service = services[TEST_SUITE_RUNNER_SERVICE] ?? {};
+  service.volumes = [`${socket.path}:${CONTAINER_DOCKER_SOCKET}`];
+  service.group_add = [String(socket.gid)];
+  services[TEST_SUITE_RUNNER_SERVICE] = service;
 };
 
 /** Builds the generated compose override for one component. */
@@ -689,11 +934,14 @@ const buildComposeOverride = async (component: string, plan: StackSpec) => {
     }
     const next = structuredClone(service);
     applyBuildPolicy(next, true);
-    const build = localBuildSpecFor(component, name);
+    const build = localBuildSpecFor(component, name, plan.e2ePublicRuntime);
     if (build) {
       next.build = build;
     }
     services[name] = next;
+  }
+  if (component === "test-suite") {
+    applyDockerSocketRuntime(services);
   }
   return { services };
 };
@@ -806,7 +1054,7 @@ const buildExtraCoprocessorListenerOverride = async (
       );
       adjusted.container_name = cloneName;
       // Extra chains keep their env canonical id (default chain), so they don't decode proposals.
-      applyCoprocessorSource(adjusted, baseName, instance, locallyBuilt);
+      applyCoprocessorSource(adjusted, baseName, instance, locallyBuilt, plan.e2ePublicRuntime, plan.versions.env);
       delete adjusted.depends_on;
       services[cloneName] = adjusted;
     }
@@ -832,29 +1080,26 @@ const buildExtraCoprocessorListenerOverride = async (
         const cloneName = `${gcsPrefix}${suffix}${chainSuffix}`;
         const baseService = doc.services[baseName];
         if (!baseService) continue;
-        // GCS is always local-built and retagged to its stack version, so — as in
-        // buildCoprocessorOverride — a built service speaks the working tree's
-        // flag contract and must not be shimmed to an older one.
-        const buildSpec = localBuildSpecFor("coprocessor", baseName);
+        // GCS is always local-built, so — as in buildCoprocessorOverride — a built
+        // service speaks the working tree's flag contract and must not be shimmed to
+        // an older one.
+        const buildSpec = localBuildSpecFor("coprocessor", baseName, plan.e2ePublicRuntime);
+        const locallyBuilt = gcs.source.mode === "local" && Boolean(buildSpec);
+        const gcsArgPolicy = argPolicyForInstance(compat, gcsInstance);
         const adjusted = applyInstanceAdjustments(
           baseName,
           baseService,
           envFileValue,
           instanceEnv,
           gcsInstance,
-          buildSpec ? {} : compat.coprocessorArgs,
-          buildSpec ? {} : compat.coprocessorDropFlags,
+          locallyBuilt ? {} : gcsArgPolicy.coprocessorArgs,
+          locallyBuilt ? {} : gcsArgPolicy.coprocessorDropFlags,
         );
         adjusted.container_name = cloneName;
-        if (buildSpec) {
-          adjusted.image = retagLocal(baseService.image, `gcs-${gcs.stackVersion}`);
-          adjusted.build = {
-            ...buildSpec,
-            args: {
-              ...(buildSpec.args as Record<string, string> | undefined),
-              BUILD_STACK_VERSION: gcs.stackVersion,
-            },
-          };
+        applyCoprocessorSource(adjusted, baseName, gcsInstance, locallyBuilt, plan.e2ePublicRuntime, plan.versions.env);
+        if (locallyBuilt && buildSpec) {
+          adjusted.image = retagLocal(baseService.image, "gcs-candidate");
+          adjusted.build = buildSpec;
         }
         delete adjusted.depends_on;
         services[cloneName] = adjusted;
@@ -870,6 +1115,9 @@ export const generatedComposeComponents = (plan: Pick<StackSpec, "overrides" | "
   new Set([
     "coprocessor",
     ...(plan.kms.mode === "centralized" && centralizedKmsCorePlatform() !== undefined ? ["core"] : []),
+    // Always generated: it carries the host Docker socket wiring for the e2e runner,
+    // which depends on host facts rather than on any local build override.
+    "test-suite",
     ...(plan.kms.mode === "threshold" ? ["core-threshold", "kms-connector"] : []),
     ...plan.overrides.flatMap((override) => GROUP_BUILD_COMPONENTS[override.group]),
   ]);

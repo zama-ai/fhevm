@@ -22,7 +22,8 @@ use crate::contracts::TfheContract::TfheContractEvents;
 use crate::database::dependence_chains::dependence_chains;
 use crate::database::ingest::populate_operand_boundary_masks;
 use crate::database::tfhe_event_propagate::{
-    ClearConst, Database, Handle, LogTfhe, Transaction, TransactionHash,
+    uniform_allowed_outputs, ClearConst, Database, Handle, LogTfhe,
+    Transaction, TransactionHash,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -171,9 +172,15 @@ pub async fn insert_solana_records(
     populate_operand_boundary_masks(&mut tfhe_logs)?;
     let mut inserted_rows = 0;
 
-    let chains =
-        dependence_chains(&mut tfhe_logs, &db.dependence_chain, false, true)
-            .await;
+    let chains = dependence_chains(
+        &mut tfhe_logs,
+        &db.dependence_chain,
+        &db.consumed_boundaries,
+        &db.sealed_chains,
+        false,
+        true,
+    )
+    .await;
 
     let mut inserted_compute = false;
     for log in &tfhe_logs {
@@ -236,9 +243,9 @@ pub fn to_log_tfhe(
     log_index: u64,
 ) -> LogTfhe {
     LogTfhe {
+        allowed_outputs: uniform_allowed_outputs(&event, is_allowed),
         event,
         transaction_hash: Some(transaction_id),
-        is_allowed,
         block_number: block.block_number,
         block_hash: FixedBytes::<32>::from(block.block_hash),
         block_timestamp: block.block_timestamp,
@@ -795,7 +802,7 @@ mod tests {
         assert_eq!(log.transaction_hash, Some(tx_id));
         assert_eq!(log.block_number, 42);
         assert_eq!(log.block_timestamp, block_timestamp);
-        assert!(log.is_allowed);
+        assert!(!log.allowed_outputs.is_empty());
         assert_eq!(log.log_index, Some(7));
         assert!(log.is_executor_minted);
         assert!(log.operand_boundary_mask.is_none());
@@ -834,7 +841,7 @@ mod tests {
 
         assert_eq!(tfhe_logs.len(), 1);
         assert!(
-            tfhe_logs[0].is_allowed,
+            !tfhe_logs[0].allowed_outputs.is_empty(),
             "eager compute: schedulable independent of the allow signal"
         );
         // The persistent handle is queued directly for material preparation.
@@ -902,7 +909,10 @@ mod tests {
         );
 
         assert_eq!(tfhe_logs.len(), 1);
-        assert!(tfhe_logs[0].is_allowed, "eager compute: always schedulable");
+        assert!(
+            !tfhe_logs[0].allowed_outputs.is_empty(),
+            "eager compute: always schedulable"
+        );
     }
 
     #[test]
@@ -958,9 +968,18 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![Some(0), Some(1), Some(2)]
         );
-        assert!(tfhe_logs[0].is_allowed, "eager compute: always schedulable");
-        assert!(tfhe_logs[1].is_allowed, "eager compute: always schedulable");
-        assert!(tfhe_logs[2].is_allowed, "eager compute: always schedulable");
+        assert!(
+            !tfhe_logs[0].allowed_outputs.is_empty(),
+            "eager compute: always schedulable"
+        );
+        assert!(
+            !tfhe_logs[1].allowed_outputs.is_empty(),
+            "eager compute: always schedulable"
+        );
+        assert!(
+            !tfhe_logs[2].allowed_outputs.is_empty(),
+            "eager compute: always schedulable"
+        );
         assert!(matches!(
             tfhe_logs[0].event.data,
             TfheContractEvents::TrivialEncrypt(_)

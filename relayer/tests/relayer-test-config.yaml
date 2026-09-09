@@ -110,9 +110,23 @@ gateway:
         max_attempts: 3
         retry_interval_ms: 1000
     gw_ciphertext_check:
+      # The gateway_chain source is covered by the tests that build their own config
+      # via TestSetup::new_with_gateway_chain_readiness.
+      source: coprocessor_attestations
       retry:
         max_attempts: 75
         retry_interval_ms: 3000
+      # Per-bucket S3 attestation HEAD request timeout.
+      head_timeout_ms: 5000
+      # Overall budget for one request's readiness check: all handles, all retries.
+      request_timeout_ms: 240000
+      # Coprocessor registry snapshot refresh interval.
+      registry_refresh_ms: 60000
+      # Handles probed concurrently within one attempt; also the per-bucket HEAD ceiling.
+      max_concurrent_handles: 8
+      # GatewayConfig: Coprocessor registry (signers, S3 buckets, majority
+      # threshold) for this check.
+      gateway_config_address: "0x576Ea67208b146E63C5255d0f90104E25e3e04c7"
     public_decrypt:
       max_concurrency: 250
       capacity: 11000
@@ -125,6 +139,8 @@ gateway:
     decryption_address: "0xB8Ae44365c45A7C5256b14F607CaE23BC040c354"
     input_verification_address: "0xE61cff9C581c7c91AEF682c2C10e8632864339ab"
     user_decrypt_shares_threshold: 9
+    user_decrypt_additional_shares: 0
+    user_decrypt_additional_shares_timeout_secs: 5
   # Retry configuration for gateway events arriving before gw_reference_id is stored.
   # This is a workaround for the race condition where send_raw_transaction_sync has high latency.
   # TODO: Replace with proper event buffering solution.
@@ -263,3 +279,21 @@ storage:
 shutdown:
   # No load balancer in front of the tests, so nothing has to notice the 503.
   lb_propagation_wait: "0s"
+  lock_release_timeout: "3s"
+
+# Near-production timings, except that `holder_heartbeat_interval + query_timeout` is also the
+# handover wait a fresh holder serves before its gate opens, so production values here would
+# put every test's first dispatch 8s after startup. The tests that exercise the lock itself
+# build their own `DispatcherLockConfig` (see `dispatcher_lock_test.rs::fast_config`).
+dispatcher_lock:
+  standby_poll_interval: "2s"
+  holder_heartbeat_interval: "500ms"
+  query_timeout: "500ms"
+  exit_after_consecutive_failures: 20
+  connect_timeout: "5s"
+  # Must exceed both intervals above.
+  idle_session_timeout: "60s"
+  key_override: null
+
+  sweep:
+    interval: "500ms"

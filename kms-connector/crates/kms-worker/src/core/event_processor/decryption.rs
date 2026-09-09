@@ -1,15 +1,15 @@
 use crate::core::{
     config::Config,
     event_processor::{
-        CiphertextManager, HostRpcClient, ProcessingError, RequestCheckError, RequestCheckKind,
         ciphertext::VerifiedCiphertexts,
         context::ContextManager,
-        solana_public_decrypt::{SolanaHost, check_solana_handles_public_decrypt},
+        solana_public_decrypt::{check_solana_handles_public_decrypt, SolanaHost},
+        CiphertextManager, HostRpcClient, ProcessingError, RequestCheckError, RequestCheckKind,
     },
     solana::{
         event_parity::check_event_permit_parity,
         kms_pair::{KmsPairFailure, KmsPairValidator},
-        pipeline::{AuthorizationContext, authorize_request},
+        pipeline::{authorize_request, AuthorizationContext},
         request::SolanaUserDecryptRequest,
     },
     solana_acl::{HandleBytes, SolanaPubkeyBytes},
@@ -17,20 +17,21 @@ use crate::core::{
 use alloy::{
     consensus::Transaction,
     hex,
-    primitives::{Address, B256, Bytes, FixedBytes, U256, map::DefaultHashBuilder},
+    primitives::{map::DefaultHashBuilder, Address, Bytes, FixedBytes, B256, U256},
     providers::Provider,
     sol_types::{Eip712Domain, SolCall},
 };
 use anyhow::anyhow;
 use connector_utils::types::extra_data::ExtraData;
 use connector_utils::types::{
-    KmsGrpcRequest, extra_data::parse_extra_data, handle::extract_chain_id_from_handle,
-    u256_to_request_id,
+    extra_data::parse_extra_data, handle::extract_chain_id_from_handle, u256_to_request_id,
+    KmsGrpcRequest,
 };
 use fhevm_gateway_bindings::decryption::Decryption::{
-    self, DecryptionInstance, HandleEntry, UserDecryptionRequest_3 as UserDecryptionRequestV2,
-    UserDecryptionRequest_4 as UserDecryptionRequestV3, delegatedUserDecryptionRequestCall,
-    userDecryptionRequest_2Call as userDecryptionRequestCall,
+    self, delegatedUserDecryptionRequestCall,
+    userDecryptionRequest_2Call as userDecryptionRequestCall, DecryptionInstance, HandleEntry,
+    UserDecryptionRequest_3 as UserDecryptionRequestV2,
+    UserDecryptionRequest_4 as UserDecryptionRequestV3,
 };
 use futures::{
     future::try_join_all,
@@ -175,7 +176,7 @@ where
         info!("Starting ACL check for {} handles...", handles.len());
 
         try_join_all(handles.iter().map(|handle| async move {
-            let ct_chain_id = extract_chain_id_from_handle(*handle).map_err(|e| {
+            let ct_chain_id = extract_chain_id_from_handle(handle).map_err(|e| {
                 RequestCheckError::irrecoverable(RequestCheckKind::Acl, ErrorCode::Unprocessable, e)
             })?;
 
@@ -246,7 +247,7 @@ where
         let contracts_map_ref = &contracts_map;
 
         try_join_all(handles.iter().map(|handle| async move {
-            let ct_chain_id = extract_chain_id_from_handle(*handle).map_err(|e| {
+            let ct_chain_id = extract_chain_id_from_handle(handle).map_err(|e| {
                 RequestCheckError::irrecoverable(RequestCheckKind::Acl, ErrorCode::Unprocessable, e)
             })?;
             let host_client = self.evm_acl_backend(ct_chain_id)?;
@@ -330,13 +331,13 @@ where
                     anyhow!("request contains no handles"),
                 )
             })
-            .map(|h| extract_chain_id_from_handle(h.handle))?
+            .map(|h| extract_chain_id_from_handle(&h.handle))?
             .map_err(|e| {
                 RequestCheckError::irrecoverable(RequestCheckKind::Acl, ErrorCode::Unprocessable, e)
             })?;
 
         for h in handles.iter() {
-            match extract_chain_id_from_handle(h.handle) {
+            match extract_chain_id_from_handle(&h.handle) {
                 Ok(id) if id == chain_id => (),
                 Ok(other) => {
                     return Err(RequestCheckError::irrecoverable(
@@ -508,7 +509,7 @@ where
                 )
             })
             .and_then(|handle| {
-                extract_chain_id_from_handle(B256::from(*handle)).map_err(|e| {
+                extract_chain_id_from_handle(&B256::from(*handle)).map_err(|e| {
                     RequestCheckError::irrecoverable(
                         RequestCheckKind::Acl,
                         ErrorCode::Unprocessable,
@@ -918,9 +919,9 @@ mod tests {
     use crate::core::solana::proof::HttpHostProofReader;
     use crate::core::solana::request::{SolanaHandleEntryWire, SolanaUserDecryptRequestWire};
     use alloy::{
-        providers::{ProviderBuilder, mock::Asserter},
+        providers::{mock::Asserter, ProviderBuilder},
         rpc::types::Transaction as RpcTransaction,
-        signers::{SignerSync, local::PrivateKeySigner},
+        signers::{local::PrivateKeySigner, SignerSync},
         sol_types::SolValue,
     };
     use connector_utils::{
@@ -934,7 +935,7 @@ mod tests {
     use fhevm_host_bindings::acl::ACL;
     use rstest::rstest;
     use user_decryption_signature::{
-        ERC1271_MAGIC_VALUE, compute_user_decrypt_digest, default_user_decrypt_domain,
+        compute_user_decrypt_digest, default_user_decrypt_domain, ERC1271_MAGIC_VALUE,
     };
     use zama_solana_request::encode_solana_request;
 
@@ -1014,7 +1015,7 @@ mod tests {
         let mock_provider = ProviderBuilder::new()
             .disable_recommended_fillers()
             .connect_mocked_client(asserter);
-        let chain_id = extract_chain_id_from_handle(handle).unwrap();
+        let chain_id = extract_chain_id_from_handle(&handle).unwrap();
         let host_chain_backends = match backend {
             TestHostBackend::Evm => HashMap::from([(
                 chain_id,
@@ -1127,7 +1128,7 @@ mod tests {
             .map_err(RequestCheckError::record)
             .unwrap_err();
 
-        let chain_id = extract_chain_id_from_handle(handle).unwrap();
+        let chain_id = extract_chain_id_from_handle(&handle).unwrap();
         let msg = err.to_string();
         assert!(msg.contains(&chain_id.to_string()), "{msg}");
         assert!(
@@ -1315,7 +1316,7 @@ mod tests {
             signature: Bytes::default(),
         };
 
-        let chain_id = extract_chain_id_from_handle(handle).unwrap();
+        let chain_id = extract_chain_id_from_handle(&handle).unwrap();
         let gateway_addr = Config::default().decryption_contract.address;
         let domain = default_user_decrypt_domain(chain_id, gateway_addr);
         let digest = compute_user_decrypt_digest(&payload, &domain);
@@ -1796,19 +1797,19 @@ mod tests {
     ) -> (Result<UserDecryptionExtraData, RequestCheckError>, Vec<u8>) {
         use crate::core::solana::deployment::DeploymentIdentity;
         use crate::core::solana::proof::{
-            LEAF_PROOFS_PATH, LeafKind, LeafQuery, leaf_proof_request_body,
+            leaf_proof_request_body, LeafKind, LeafQuery, LEAF_PROOFS_PATH,
         };
         use crate::core::solana::snapshot::{multiple_accounts_request_body, plan_first_read};
-        use base64::{Engine, engine::general_purpose::STANDARD as BASE64_STANDARD};
+        use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine};
         use mocktail::server::MockServer;
         use ring::signature::{Ed25519KeyPair, KeyPair};
         use solana_pubkey::Pubkey;
         use zama_solana_acl::{
-            EncryptedValue, HostConfigRecord, encrypted_value_discriminator, encrypted_value_seeds,
-            historical_access_leaf_commitment, mmr_leaf_node,
+            encrypted_value_discriminator, encrypted_value_seeds,
+            historical_access_leaf_commitment, mmr_leaf_node, EncryptedValue, HostConfigRecord,
         };
         use zama_solana_permit::{
-            Identity, KmsRouting, PermitFields, PermitWireFields, TRANSPORT_KEY_LEN, build_envelope,
+            build_envelope, Identity, KmsRouting, PermitFields, PermitWireFields, TRANSPORT_KEY_LEN,
         };
 
         // The one deployment every fixture is built against, matching what the Solana test backend
@@ -2148,12 +2149,10 @@ mod tests {
 
         match result {
             Err(error) if error.kind == ProcessingErrorKind::Irrecoverable => {
-                assert!(
-                    error
-                        .source
-                        .to_string()
-                        .contains("requires the version-3 extraData")
-                );
+                assert!(error
+                    .source
+                    .to_string()
+                    .contains("requires the version-3 extraData"));
             }
             other => panic!("expected Solana public-decrypt rejection, got {other:?}"),
         }
@@ -2257,12 +2256,10 @@ mod tests {
 
         for result in [public, legacy, evm_unified, solana] {
             match result {
-                Err(error) if error.kind == ProcessingErrorKind::Recoverable => assert!(
-                    error
-                        .source
-                        .to_string()
-                        .contains("No host-chain ACL backend configured")
-                ),
+                Err(error) if error.kind == ProcessingErrorKind::Recoverable => assert!(error
+                    .source
+                    .to_string()
+                    .contains("No host-chain ACL backend configured")),
                 other => panic!("expected recoverable unknown-backend error, got {other:?}"),
             }
         }

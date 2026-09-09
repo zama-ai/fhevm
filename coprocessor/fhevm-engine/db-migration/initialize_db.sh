@@ -176,6 +176,58 @@ run_block_scope_materialization_wave1_prerequisites() {
      ON host_chain_blocks_valid (chain_id, parent_hash);"
 }
 
+precreate_dcid_acquisition_index() {
+  # Pre-upgrade step for the batched-DCID work acquisition rollout.
+  #
+  # Migration 20260814120000 builds idx_computations_pending_dcid_schedule on
+  # `computations`, the hottest table in the pipeline. A plain CREATE INDEX
+  # takes a SHARE lock for the whole heap scan, stalling host-listener ingest
+  # and every worker. It cannot be CONCURRENTLY inside the migration: the
+  # migration images and coprocessor CI pin sqlx-cli 0.7.2, which has no
+  # `no_tx` support and wraps every migration in a transaction.
+  #
+  # So build it here instead, against the live database, before the migration
+  # runs; its CREATE INDEX IF NOT EXISTS then no-ops. precreate_index hard
+  # -fails on an INVALID leftover from an interrupted concurrent build, which
+  # a bare CREATE INDEX IF NOT EXISTS would silently skip forever.
+  #
+  # Guarded on the table existing: on a fresh database `computations` is
+  # created by a later migration and the in-migration build is instant anyway.
+  local has_table
+  has_table=$(psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -Atc \
+    "SELECT to_regclass('public.computations') IS NOT NULL;")
+  if [ "$has_table" != "t" ]; then
+    log "Skipping DCID acquisition index pre-creation (computations not created yet)"
+    return 0
+  fi
+
+  log "Pre-creating the DCID acquisition index concurrently..."
+  precreate_index "idx_computations_pending_dcid_schedule" \
+    "CREATE INDEX CONCURRENTLY idx_computations_pending_dcid_schedule \
+     ON computations (dependence_chain_id, schedule_order) \
+     WHERE is_completed = false AND is_allowed = true;"
+}
+
+precreate_pending_dcid_index() {
+  # Pre-upgrade step for migration 20260905120100, same pattern and rationale
+  # as precreate_dcid_acquisition_index above: the index is on `computations`,
+  # the migration cannot build it CONCURRENTLY under sqlx-cli 0.7.2, so build
+  # it here against the live database and let the migration no-op.
+  local has_table
+  has_table=$(psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -Atc \
+    "SELECT to_regclass('public.computations') IS NOT NULL;")
+  if [ "$has_table" != "t" ]; then
+    log "Skipping pending-DCID index pre-creation (computations not created yet)"
+    return 0
+  fi
+
+  log "Pre-creating the pending-DCID index concurrently..."
+  precreate_index "idx_computations_pending_dcid" \
+    "CREATE INDEX CONCURRENTLY idx_computations_pending_dcid \
+     ON computations (dependence_chain_id) \
+     WHERE is_completed = false;"
+}
+
 log "-------------- Start database initialization --------------"
 
 log "Creating database..."
@@ -203,7 +255,60 @@ repair_bridge_tables_migration_checksum() {
     \$\$;" || { log "Failed to repair bridge_tables migration checksum."; exit 1; }
 }
 
+# Sets DEPLOYMENT_MODE from the database: a setup marker means an interrupted
+# setup to finish, migration history means an upgrade, an empty database means a
+# new one.
+resolve_deployment_mode() {
+  local has_migration_history
+  local has_bootstrap_intent
+  has_migration_history="$(psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -Atc "SELECT to_regclass('public._sqlx_migrations') IS NOT NULL")"
+  has_bootstrap_intent="$(psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -Atc "SELECT to_regclass('public._fhevm_versioning_bootstrap') IS NOT NULL")"
+
+  if [ "$has_bootstrap_intent" != "t" ] && [ "$has_migration_history" = "t" ]; then
+    DEPLOYMENT_MODE="existing"
+  else
+    DEPLOYMENT_MODE="bootstrap"
+  fi
+  log "Deployment mode: $DEPLOYMENT_MODE"
+}
+
+# A new database gets the compiled versions. An upgrade keeps what it has.
+initialize_versions_for_deployment() {
+  if [ "$DEPLOYMENT_MODE" = "existing" ]; then
+    log "Existing database: keeping current versions."
+    return 0
+  fi
+  if ! command -v bootstrap_versioning >/dev/null 2>&1; then
+    log "ERROR: bootstrap_versioning was not found"
+    exit 1
+  fi
+  log "Setting initial database versions."
+  bootstrap_versioning || { log "ERROR: failed to set initial versions"; exit 1; }
+}
+
+# Add a marker before the first migration. It allows a failed setup to retry.
+prepare_version_bootstrap_intent() {
+  if [ "$DEPLOYMENT_MODE" = "existing" ]; then
+    return 0
+  fi
+
+  local has_bootstrap_intent
+  has_bootstrap_intent="$(psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -Atc "SELECT to_regclass('public._fhevm_versioning_bootstrap') IS NOT NULL")"
+  if [ "$has_bootstrap_intent" = "t" ]; then
+    log "Resuming database setup."
+    return 0
+  fi
+
+  run_sql "CREATE TABLE public._fhevm_versioning_bootstrap (
+             singleton BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (singleton),
+             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+           );
+           INSERT INTO public._fhevm_versioning_bootstrap (singleton) VALUES (TRUE);"
+}
+
 log "Running migrations..."
+resolve_deployment_mode
+prepare_version_bootstrap_intent
 if [ "${RUN_MIGRATIONS_UNTIL_REMOVE_TENANTS:-}" = "true" ]; then
   # Partial migrations — the host_chains table doesn't exist yet on this path,
   # so do not attempt to seed.
@@ -215,8 +320,11 @@ elif [ "${RUN_BLOCK_SCOPE_WAVE1_PREREQUISITES:-}" = "true" ]; then
   run_block_scope_materialization_wave1_prerequisites
 else
   repair_bridge_tables_migration_checksum
+  precreate_dcid_acquisition_index
+  precreate_pending_dcid_index
   sqlx migrate run --source "$MIGRATION_DIR" 2>&1 | log_stream || { log "Failed to run migrations."; exit 1; }
   seed_host_chains
+  initialize_versions_for_deployment
 fi
 
 log "Database initialization completed successfully in $((SECONDS / 60))m$((SECONDS % 60))s."

@@ -1,7 +1,7 @@
 use crate::{
     config::settings::GwEventNotFoundRetryConfig,
     core::{
-        errors::{EventProcessingError, READINESS_CHECK_TIMEOUT_MSG},
+        errors::EventProcessingError,
         event::{
             GatewayChainEventData, GatewayChainEventId, HandleContractPair, RelayerEvent,
             RelayerEventData, UserDecryptEventData, UserDecryptEventId, UserDecryptRequest,
@@ -13,7 +13,10 @@ use crate::{
         arbitrum::{
             bindings::Decryption,
             transaction::{
-                helper::{TransactionHelper, TransactionType, TxClaimOutcome, TxResult},
+                helper::{
+                    ReceiptRecordOutcome, TransactionHelper, TransactionType, TxClaimOutcome,
+                    TxResult,
+                },
                 tx_throttler::{DynTxHook, GatewayTxTask, TxThrottlingSender},
                 TxLifecycleHooks,
             },
@@ -220,12 +223,17 @@ impl GatewayHandler {
                     "Request queued for readiness check"
                 );
             }
-            // Those errors are putting request in failure mode.
-            // This introduce a new termination error, which is failure for readiness,
-            // should NEVER happen with the bouncer.
-            // NOTE: time_out instead ?
+            // A full queue here ends the request in `failure` on its first attempt. The intake
+            // bouncer is what keeps that unreachable, so reaching it means the bouncer's
+            // capacity no longer matches the throttler's.
             Err(e) => match e {
                 EventProcessingError::QueueFull => {
+                    error!(
+                        alert = true,
+                        int_job_id = %task.job_id,
+                        queue = "user_decrypt_readiness",
+                        "Readiness queue full past the intake bouncer"
+                    );
                     return Err(EventProcessingError::ProtocolOverload(
                         "Relayer is full for public readiness check, retry later.".to_string(),
                     ));
@@ -298,14 +306,19 @@ impl GatewayHandler {
             "Enqueuing user decrypt request to tx throttler"
         );
 
-        // PUSH TO QUEUE
-        // Catch error from here and pass the request to failure.
-        // This case MUST never happen on this flow.
-        // The request should never be injected in the system, and bounced after the cache check if the queue is full.
+        // A full queue here ends the request in `failure` on its first attempt. The intake
+        // bouncer is what keeps that unreachable, so reaching it means the bouncer's capacity
+        // no longer matches the throttler's.
         match self.tx_throttler.push(task).await {
             Ok(()) => {}
             Err(e) => match e {
                 EventProcessingError::QueueFull => {
+                    error!(
+                        alert = true,
+                        int_job_id = %job_id,
+                        queue = "user_decrypt_tx",
+                        "Transaction queue full past the intake bouncer"
+                    );
                     return Err(EventProcessingError::ProtocolOverload(
                         "Relayer is full, retry later.".to_string(),
                     ));
@@ -744,16 +757,28 @@ impl GatewayHandler {
         }
     }
 
-    /// Updates database status to "processing" after readiness check passes.
+    /// Updates database status to "processing" after readiness check passes. `rows_affected ==
+    /// 0` means this pod's epoch no longer owns the row (a stale write, refused by the fence)
+    /// or the row already moved past `queued` some other way; either way the send below must
+    /// not be skipped on account of it, so this only logs.
     async fn mark_processing(&self, job_id_hash: [u8; 32]) -> Result<(), EventProcessingError> {
-        self.user_decrypt_repo
+        let rows_affected = self
+            .user_decrypt_repo
             .update_status_to_processing(&job_id_hash[..])
             .await
-            .map(|_| ())
             .map_err(|e| EventProcessingError::SqlOperationFailed {
                 operation: "user_decrypt.update_status_to_processing".to_string(),
                 reason: e.to_string(),
-            })
+            })?;
+
+        if rows_affected == 0 {
+            info!(
+                job_id_hash = %hex::encode(job_id_hash),
+                "mark_processing did not apply (stale epoch or status already advanced)"
+            );
+        }
+
+        Ok(())
     }
 
     /// Handles errors during user decrypt processing.
@@ -781,7 +806,8 @@ impl GatewayHandler {
                 );
             }
 
-            EventProcessingError::ReadinessCheckTimedOut => {
+            EventProcessingError::ReadinessCheckTimedOut
+            | EventProcessingError::AttestationsNotReady { .. } => {
                 error!(
                     job_id = %event.job_id,
                     "Readiness check failed - updating database with timeout status"
@@ -796,16 +822,21 @@ impl GatewayHandler {
                 {
                     let job_id_hash = decrypt_request.content_hash();
 
-                    if let Err(db_err) = self
+                    match self
                         .user_decrypt_repo
-                        .update_status_to_timed_out(&job_id_hash[..], READINESS_CHECK_TIMEOUT_MSG)
+                        .update_status_to_timed_out(&job_id_hash[..], &error.to_string())
                         .await
                     {
-                        error!(
+                        Ok(0) => info!(
+                            job_id = %event.job_id,
+                            "timeout write refused (stale epoch or status already advanced)"
+                        ),
+                        Ok(_) => {}
+                        Err(db_err) => error!(
                             job_id = %event.job_id,
                             db_error = %db_err,
                             "Failed to update timeout status in database"
-                        );
+                        ),
                     }
                 }
             }
@@ -820,13 +851,18 @@ impl GatewayHandler {
                 return;
             }
 
+            // Grouped with the ACL failures because they share a shape: a readiness verdict that
+            // is terminal, reached before any gateway transaction, and whose message classifies
+            // the HTTP response — so the reason must be stored verbatim, unprefixed.
             EventProcessingError::NotAllowedOnHostAcl(_)
-            | EventProcessingError::HostAclFailed(_) => {
+            | EventProcessingError::HostAclFailed(_)
+            | EventProcessingError::NoAttestationConsensus { .. }
+            | EventProcessingError::GatewayNotReachable { .. } => {
                 let err_reason = error.to_string();
                 error!(
                     job_id = %event.job_id,
                     error = %err_reason,
-                    "Host ACL check failed"
+                    "Readiness check failed terminally"
                 );
 
                 if let RelayerEventData::UserDecrypt(UserDecryptEventData::ReadinessCheckFailed {
@@ -836,16 +872,21 @@ impl GatewayHandler {
                 {
                     let job_id_hash = decrypt_request.content_hash();
 
-                    if let Err(db_err) = self
+                    match self
                         .user_decrypt_repo
                         .update_status_to_failure_from_queued(&job_id_hash[..], &err_reason)
                         .await
                     {
-                        error!(
+                        Ok(0) => info!(
+                            job_id = %event.job_id,
+                            "failure write refused (stale epoch or status already advanced)"
+                        ),
+                        Ok(_) => {}
+                        Err(db_err) => error!(
                             job_id = %event.job_id,
                             db_error = %db_err,
                             "Failed to update failure status in database"
-                        );
+                        ),
                     }
                 }
             }
@@ -865,16 +906,21 @@ impl GatewayHandler {
                     let job_id_hash = decrypt_request.content_hash();
                     let err_reason = format!("Processing Failed: {}", error);
 
-                    if let Err(db_err) = self
+                    match self
                         .user_decrypt_repo
                         .update_status_to_failure_from_queued(&job_id_hash[..], &err_reason)
                         .await
                     {
-                        error!(
+                        Ok(0) => info!(
+                            job_id = %event.job_id,
+                            "failure write refused (stale epoch or status already advanced)"
+                        ),
+                        Ok(_) => {}
+                        Err(db_err) => error!(
                             job_id = %event.job_id,
                             db_error = %db_err,
                             "Failed to update failure status in database"
-                        );
+                        ),
                     }
                 }
 
@@ -886,16 +932,21 @@ impl GatewayHandler {
                     let job_id_hash = decrypt_request.content_hash();
                     let err_reason = format!("Processing Failed: {}", error);
 
-                    if let Err(db_err) = self
+                    match self
                         .user_decrypt_repo
                         .update_status_to_failure_from_queued(&job_id_hash[..], &err_reason)
                         .await
                     {
-                        error!(
+                        Ok(0) => info!(
+                            job_id = %event.job_id,
+                            "failure write refused (stale epoch or status already advanced)"
+                        ),
+                        Ok(_) => {}
+                        Err(db_err) => error!(
                             job_id = %event.job_id,
                             db_error = %db_err,
                             "Failed to update failure status in database"
-                        );
+                        ),
                     }
                 }
 
@@ -908,16 +959,21 @@ impl GatewayHandler {
                     let err_reason = format!("Processing Failed: {}", error);
 
                     // TODO(mano): Review if nested error logging is necessary or can be simplified
-                    if let Err(db_err) = self
+                    match self
                         .user_decrypt_repo
                         .update_status_to_failure_on_tx_failed(&job_id_hash[..], &err_reason)
                         .await
                     {
-                        error!(
+                        Ok(0) => info!(
+                            job_id = %event.job_id,
+                            "failure write refused (stale epoch or status already advanced)"
+                        ),
+                        Ok(_) => {}
+                        Err(db_err) => error!(
                             job_id = %event.job_id,
                             db_error = %db_err,
                             "Failed to update failure status in database"
-                        );
+                        ),
                     }
                 }
             }
@@ -969,7 +1025,7 @@ impl TxLifecycleHooks for GatewayHandler {
         &self,
         job_id: &JobId,
         receipt: &TxResult,
-    ) -> Result<(), EventProcessingError> {
+    ) -> Result<ReceiptRecordOutcome, EventProcessingError> {
         // The user-decrypt request emits one of the overloaded `UserDecryptionRequest` events
         // depending on the entry point, each with a distinct signature hash: legacy
         // `UserDecryptionRequest_0` (v2 direct and v2 delegated), RFC016 unified
@@ -1019,15 +1075,31 @@ impl TxLifecycleHooks for GatewayHandler {
             "Transaction confirmed, receipt received"
         );
 
-        self.user_decrypt_repo
+        let rows_affected = self
+            .user_decrypt_repo
             .update_status_to_receipt_received_on_tx_success(&job_id[..], &tx_hash, gw_reference_id)
             .await
-            .map(|_| ())
             .map_err(|e| EventProcessingError::SqlOperationFailed {
                 operation: "user_decrypt.update_status_to_receipt_received_on_tx_success"
                     .to_string(),
                 reason: e.to_string(),
-            })
+            })?;
+
+        if rows_affected == 0 {
+            // The `receipt_received` write lost either the `tx_in_flight` guard or the epoch
+            // fence, and `gw_reference_id` is deliberately NOT stored - see the same branch in
+            // `public_decrypt_handler` for why.
+            warn!(
+                int_job_id = %job_id,
+                gw_reference_id = %gw_reference_id,
+                "receipt_received write refused (row no longer tx_in_flight under this epoch - \
+                 a successor's claim got there first); \
+                 gw_reference_id not stored, a re-drive is expected to record its own receipt"
+            );
+            return Ok(ReceiptRecordOutcome::Refused);
+        }
+
+        Ok(ReceiptRecordOutcome::Recorded)
     }
 
     async fn on_failure(
@@ -1041,14 +1113,23 @@ impl TxLifecycleHooks for GatewayHandler {
             crate::metrics::transaction::track_revert_with_request_type(reason, "user_decrypt");
         }
 
-        self.user_decrypt_repo
+        let rows_affected = self
+            .user_decrypt_repo
             .update_status_to_failure_on_tx_failed(&job_id[..], err_reason)
             .await
-            .map(|_| ())
             .map_err(|e| EventProcessingError::SqlOperationFailed {
                 operation: "user_decrypt.update_status_to_failure_on_tx_failed".to_string(),
                 reason: e.to_string(),
-            })
+            })?;
+
+        if rows_affected == 0 {
+            info!(
+                int_job_id = %job_id,
+                "failure write refused (stale epoch or status already advanced)"
+            );
+        }
+
+        Ok(())
     }
 }
 

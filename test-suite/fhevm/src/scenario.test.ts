@@ -227,7 +227,6 @@ topology:
       expect(scenario.name).toBe("Blue-Green Upgrade");
       expect(scenario.bcs.source).toEqual({ mode: "registry", tag: "v0.14.0-7" });
       expect(scenario.gcs.source).toEqual({ mode: "local" });
-      expect(scenario.gcs.stackVersion).toBe("0.15.0");
       expect(scenario.hostChains).toHaveLength(1);
       // Default topology = single-operator dev flow.
       expect(scenario.topology).toEqual({ count: 1, threshold: 1 });
@@ -241,7 +240,7 @@ topology:
   count: 2
   threshold: 2
 gcs:
-  stackVersion: "0.15.0"
+  source: { mode: local }
 `);
       expect(parsed.topology).toEqual({ count: 2, threshold: 2 });
     });
@@ -255,7 +254,7 @@ topology:
   count: 2
   threshold: 3
 gcs:
-  stackVersion: "0.15.0"
+  source: { mode: local }
 `),
       ).toThrow("threshold must be between 1 and count");
     });
@@ -264,23 +263,10 @@ gcs:
       const parsed = parseBlueGreenScenario(`
 version: 1
 kind: blue-green
-gcs:
-  stackVersion: "1.2.3"
+gcs: {}
 `);
       expect(parsed.bcs).toBeUndefined();
       expect(parsed.gcs.source).toBeUndefined();
-      expect(parsed.gcs.stackVersion).toBe("1.2.3");
-    });
-
-    test("rejects invalid gcs.stackVersion", () => {
-      expect(() =>
-        parseBlueGreenScenario(`
-version: 1
-kind: blue-green
-gcs:
-  stackVersion: "not-a-version"
-`),
-      ).toThrow("gcs.stackVersion must be a semver-like string");
     });
 
     test("rejects missing gcs block", () => {
@@ -313,7 +299,6 @@ version: 1
 kind: blue-green
 gcs:
   source: { mode: "sha" }
-  stackVersion: "0.15.0"
 `),
       ).toThrow("source.mode must be inherit, local, or registry");
     });
@@ -326,7 +311,7 @@ kind: blue-green
 bcs:
   source: { mode: registry }
 gcs:
-  stackVersion: "0.15.0"
+  source: { mode: local }
 `),
       ).toThrow("tag is required for registry mode");
     });
@@ -338,9 +323,7 @@ gcs:
       });
       expect(resolved.kind).toBe("blue-green");
       // Narrow — hitting this branch is what makes downstream typing safe.
-      if (resolved.kind === "blue-green") {
-        expect(resolved.gcs.stackVersion).toBe("0.15.0");
-      }
+      if (resolved.kind === "blue-green") expect(resolved.gcs.source.mode).toBe("local");
     });
 
     test("--bcs-tag overrides bcs.source to registry mode with the given tag", async () => {
@@ -385,19 +368,31 @@ gcs:
       ).rejects.toThrow("not supported with blue-green");
     });
 
-    test("rejects non-local gcs.source at resolve", () => {
-      expect(() =>
-        resolveBlueGreenScenario(
-          "/tmp/bg-registry-gcs.yaml",
-          parseBlueGreenScenario(`
+    test("accepts a registry-pinned Green fleet", () => {
+      const resolved = resolveBlueGreenScenario(
+        "/tmp/bg-registry-gcs.yaml",
+        parseBlueGreenScenario(`
 version: 1
 kind: blue-green
 gcs:
   source: { mode: registry, tag: v0.15.0 }
-  stackVersion: "0.15.0"
+`),
+      );
+      expect(resolved.gcs.source).toEqual({ mode: "registry", tag: "v0.15.0" });
+    });
+
+    test("rejects an inherited Green fleet", () => {
+      expect(() =>
+        resolveBlueGreenScenario(
+          "/tmp/bg-inherited-gcs.yaml",
+          parseBlueGreenScenario(`
+version: 1
+kind: blue-green
+gcs:
+  source: { mode: inherit }
 `),
         ),
-      ).toThrow("must be local");
+      ).toThrow("must be local or registry");
     });
 
     test("accepts multiple host chains (multi-chain blue-green)", () => {
@@ -414,7 +409,7 @@ hostChains:
     chainId: "67890"
     rpcPort: 8547
 gcs:
-  stackVersion: "0.15.0"
+  source: { mode: local }
 `),
       );
       expect(resolved.hostChains.map((c) => c.chainId)).toEqual(["12345", "67890"]);
@@ -427,7 +422,7 @@ gcs:
         bcsTag: "1a3646e",
       });
       if (resolved.kind === "blue-green") {
-        expect(resolved.bcs.source).toEqual({ mode: "registry", tag: "1a3646e" });
+        expect(resolved.bcs.source).toEqual({ mode: "registry", tag: "1a3646e", compatTag: "v0.14.0-7" });
       }
     });
 
@@ -438,7 +433,7 @@ gcs:
         bcsTag: "1a3646e87b1234567890abcdef1234567890abcd",
       });
       if (resolved.kind === "blue-green") {
-        expect(resolved.bcs.source).toEqual({ mode: "registry", tag: "1a3646e" });
+        expect(resolved.bcs.source).toEqual({ mode: "registry", tag: "1a3646e", compatTag: "v0.14.0-7" });
       }
     });
 
@@ -449,7 +444,7 @@ gcs:
         bcsTag: "1A3646E87b1234567890AbCdEf1234567890abcd",
       });
       if (resolved.kind === "blue-green") {
-        expect(resolved.bcs.source).toEqual({ mode: "registry", tag: "1a3646e" });
+        expect(resolved.bcs.source).toEqual({ mode: "registry", tag: "1a3646e", compatTag: "v0.14.0-7" });
       }
     });
 

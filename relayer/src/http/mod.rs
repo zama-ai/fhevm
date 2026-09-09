@@ -4,6 +4,7 @@ pub mod middleware;
 pub mod openapi;
 pub mod retry_after;
 pub mod server;
+pub mod user_decrypt_wait;
 pub mod utils;
 
 // Re-export key types and functions for direct access
@@ -14,7 +15,7 @@ pub use endpoints::{
 
 pub use middleware::openapi_middleware;
 
-pub use retry_after::{DecryptQueueInfo, ReadinessQueueInfo, RequestQueueInfo, TxQueueInfo};
+pub use retry_after::{DecryptQueueInfo, ReadinessQueueInfo, TxQueueInfo};
 
 pub use utils::{
     // Other utilities

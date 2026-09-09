@@ -8,7 +8,7 @@ use crate::{
         job_id::JobId,
     },
     host::redact_alloy_error,
-    orchestrator::Orchestrator,
+    orchestrator::{DispatchGate, Orchestrator},
     readiness::{
         checker::{ReadinessCheckError, ReadinessChecker},
         throttler::{PublicDecryptReadinessTask, ReadinessWorker},
@@ -31,6 +31,7 @@ impl PublicDecryptReadinessProcessor {
         throttler_worker: ReadinessWorker<PublicDecryptReadinessTask>,
         readiness_checker: Arc<ReadinessChecker>,
         orchestrator: Arc<Orchestrator>,
+        gate: DispatchGate,
         shutdown: CancellationToken,
     ) -> anyhow::Result<()> {
         let task_name = "public_decrypt_readiness_processor";
@@ -43,7 +44,7 @@ impl PublicDecryptReadinessProcessor {
             // Run the consumer loop; exits once `shutdown` fires, which also cancels the
             // checks already running.
             throttler_worker
-                .run_consumer(shutdown, move |task: PublicDecryptReadinessTask| {
+                .run_consumer(gate, shutdown, move |task: PublicDecryptReadinessTask| {
                     // Clone dependencies for the individual task execution
                     let checker = readiness_checker.clone();
                     Self::process_single_task(checker, task, dispatcher.clone())
@@ -149,6 +150,40 @@ impl PublicDecryptReadinessProcessor {
                     &task.request,
                     task.job_id,
                     EventProcessingError::ContractCallFailed(redact_alloy_error(&e)),
+                )
+                .await;
+            }
+
+            Err(
+                e @ (ReadinessCheckError::NoAttestationConsensus { .. }
+                | ReadinessCheckError::RegistryError { .. }),
+            ) => {
+                // Operator log: a digest value may legitimately appear here. What a caller sees —
+                // the stored reason and the HTTP response — is decided solely by the `From` impl
+                // below.
+                error!(job_id = %task.job_id, error = ?e, "No Coprocessor attestation consensus");
+
+                Self::dispatch_failure(
+                    &dispatcher,
+                    &task.request,
+                    task.job_id,
+                    EventProcessingError::from(e),
+                )
+                .await;
+            }
+
+            Err(e @ ReadinessCheckError::AttestationsNotReady { .. }) => {
+                error!(
+                    job_id = %task.job_id,
+                    error = ?e,
+                    "Ciphertext attestation readiness check timed out"
+                );
+
+                Self::dispatch_timeout(
+                    &dispatcher,
+                    &task.request,
+                    task.job_id,
+                    EventProcessingError::from(e),
                 )
                 .await;
             }

@@ -56,8 +56,10 @@ gpu = ["tfhe/gpu"]
 latency = []
 throughput = []
 compact-hex = []
-# Gates the build-time stack version: with the feature `stack_version!()` reads
-# BUILD_STACK_VERSION; without it the version is the hard-coded baseline.
+# Local runs only: take the versions from BUILD_CONSENSUS_VERSION and
+# BUILD_STACK_VERSION so a second stack builds from the same tree. A cutover
+# needs both to move, so they are normally used together.
+consensus-version-override = []
 stack-version-override = []
 
 [build-dependencies]
@@ -70,6 +72,10 @@ path = "src/bin/generate_keys.rs"
 [[bin]]
 name = "resolve_database_url"
 path = "src/bin/resolve_database_url.rs"
+
+[[bin]]
+name = "bootstrap_versioning"
+path = "src/bin/bootstrap_versioning.rs"
 
 [lints]
 workspace = true

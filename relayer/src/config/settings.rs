@@ -7,6 +7,7 @@ use serde::{de::Error, Deserialize, Serialize};
 use std::collections::HashSet;
 use std::env;
 use std::fmt;
+use std::num::NonZeroUsize;
 use std::time::Duration;
 
 // Listener pool configuration limits
@@ -20,29 +21,10 @@ const MAX_DEDUP_TTL_SECONDS: u64 = 10;
 /// TODO: Replace with proper event buffering solution.
 #[derive(Debug, Deserialize, Clone)]
 pub struct GwEventNotFoundRetryConfig {
-    /// Maximum number of retry attempts (default: 3)
-    #[serde(default = "default_gw_event_retry_max_retries")]
+    /// Retry attempts before the event is treated as unmatched.
     pub max_retries: u32,
-    /// Delay between retries in milliseconds (default: 1000)
-    #[serde(default = "default_gw_event_retry_delay_ms")]
+    /// Delay between those attempts, in milliseconds.
     pub retry_delay_ms: u64,
-}
-
-fn default_gw_event_retry_max_retries() -> u32 {
-    3
-}
-
-fn default_gw_event_retry_delay_ms() -> u64 {
-    1000
-}
-
-impl Default for GwEventNotFoundRetryConfig {
-    fn default() -> Self {
-        Self {
-            max_retries: default_gw_event_retry_max_retries(),
-            retry_delay_ms: default_gw_event_retry_delay_ms(),
-        }
-    }
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -53,7 +35,6 @@ pub struct GatewayConfig {
     pub readiness_checker: ReadinessCheckConfig,
     pub contracts: ContractConfig,
     /// Retry config for gateway events arriving before gw_reference_id stored
-    #[serde(default)]
     pub gw_event_not_found_retry: GwEventNotFoundRetryConfig,
 }
 
@@ -61,6 +42,7 @@ impl GatewayConfig {
     pub fn validate(&self) -> Result<(), AppConfigError> {
         self.blockchain_rpc.validate()?;
         self.contracts.validate()?;
+        self.readiness_checker.gw_ciphertext_check.validate()?;
         self.readiness_checker.public_decrypt.validate()?;
         self.readiness_checker.user_decrypt.validate()?;
         self.tx_engine
@@ -334,9 +316,99 @@ fn default_host_acl_request_timeout_ms() -> u64 {
     10_000
 }
 
+/// `gateway.readiness_checker.gw_ciphertext_check` settings, tagged by `source`. Required with no
+/// default, so a deployment cannot silently pick which check gates decryptions — that choice
+/// decides whether a check the deployment never configured is the one standing between a request
+/// and a decryption.
+///
+/// `source: gateway_chain` demands only `retry`: exactly the shape that predates the off-chain
+/// Coprocessor attestation check, so an existing deployment upgrades by adding one key rather
+/// than five.
 #[derive(Debug, Deserialize, Clone)]
-pub struct GwCiphertextCheckConfig {
-    pub retry: RetrySettings,
+#[serde(tag = "source", rename_all = "snake_case")]
+pub enum GwCiphertextCheckConfig {
+    /// Ask the Gateway chain whether the ciphertext material exists, via
+    /// `Decryption.isPublicDecryptionReady` / `isUserDecryptionReady_1`.
+    GatewayChain { retry: RetrySettings },
+    /// Evaluate Coprocessor attestation consensus off-chain, per handle (RFC 023).
+    CoprocessorAttestations {
+        retry: RetrySettings,
+        /// Per-bucket S3 attestation `HEAD` request timeout, in milliseconds.
+        head_timeout_ms: u64,
+        /// Overall budget for one request's readiness check: every handle, every retry.
+        ///
+        /// `retry.max_attempts * retry.retry_interval_ms` bounds only the *sleeping* between attempts.
+        /// Since the check is off-chain, an attempt is no longer a single fast `eth_call` — it is a
+        /// bucket fan-out that can wait out `head_timeout_ms` per unresponsive Coprocessor — so the
+        /// wall clock needs its own bound. Whichever of the two limits is reached first ends the check.
+        request_timeout_ms: u64,
+        /// Coprocessor registry snapshot refresh interval, in milliseconds.
+        registry_refresh_ms: u64,
+        /// Handles probed concurrently within one attempt. Each handle fans out one `HEAD` per
+        /// Coprocessor bucket, so this also bounds per-bucket concurrency.
+        max_concurrent_handles: NonZeroUsize,
+        /// `GatewayConfig` contract, source of the Coprocessor registry (signers, S3 buckets and
+        /// majority threshold) used by this check. Only this check consumes it, so it lives here
+        /// rather than on the shared `contracts` block.
+        gateway_config_address: String,
+    },
+}
+
+impl GwCiphertextCheckConfig {
+    pub fn retry(&self) -> &RetrySettings {
+        match self {
+            Self::GatewayChain { retry } => retry,
+            Self::CoprocessorAttestations { retry, .. } => retry,
+        }
+    }
+
+    /// The retry settings, mutably. Both sources retry, so a caller tuning the retry budget need
+    /// not know which one is configured.
+    pub fn retry_mut(&mut self) -> &mut RetrySettings {
+        match self {
+            Self::GatewayChain { retry } => retry,
+            Self::CoprocessorAttestations { retry, .. } => retry,
+        }
+    }
+
+    pub fn validate(&self) -> Result<(), AppConfigError> {
+        let Self::CoprocessorAttestations {
+            head_timeout_ms,
+            request_timeout_ms,
+            registry_refresh_ms,
+            ..
+        } = self
+        else {
+            // The on-chain Gateway check carries only `retry`, which has no invariants of its own
+            // beyond what deserialization already enforces.
+            return Ok(());
+        };
+
+        if *head_timeout_ms == 0 {
+            return Err(AppConfigError::Config(
+                "gw_ciphertext_check.head_timeout_ms must be greater than 0".to_string(),
+            ));
+        }
+        if *request_timeout_ms == 0 {
+            return Err(AppConfigError::Config(
+                "gw_ciphertext_check.request_timeout_ms must be greater than 0".to_string(),
+            ));
+        }
+        // A budget below one probe's timeout can expire before any bucket has had the chance to
+        // answer, so every request would fail closed on the clock rather than on the attestations.
+        if request_timeout_ms < head_timeout_ms {
+            return Err(AppConfigError::Config(format!(
+                "gw_ciphertext_check.request_timeout_ms ({}) must be at least head_timeout_ms ({})",
+                request_timeout_ms, head_timeout_ms
+            )));
+        }
+        if *registry_refresh_ms == 0 {
+            return Err(AppConfigError::Config(
+                "gw_ciphertext_check.registry_refresh_ms must be greater than 0".to_string(),
+            ));
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -420,7 +492,6 @@ pub struct HttpConfig {
     /// Default retry-after seconds for queued API responses
     pub api_retry_after_seconds: u32,
     /// Enable admin endpoints for dynamic configuration updates
-    #[serde(default)]
     pub enable_admin_endpoint: bool,
     /// Dynamic retry-after configuration for V2 handlers
     pub retry_after: super::retry_after::RetryAfterConfig,
@@ -447,11 +518,108 @@ pub struct MetricsConfig {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct ShutdownConfig {
-    /// Covers the lag until the pod's removal from the service endpoints reaches the ingress
-    /// controller. Not the readiness probe's detection time - deletion drops the endpoint as
-    /// it sends SIGTERM, so the probe path never runs.
+    /// Time this pod keeps serving after it stops reporting Ready, so the load balancer takes
+    /// it out of rotation first. Added to every shutdown.
     #[serde(deserialize_with = "deserialize_human_duration")]
     pub lb_propagation_wait: Duration,
+    /// Bound on the last shutdown step, releasing the dispatcher lock: the unlock and the
+    /// connection close share this budget.
+    #[serde(deserialize_with = "deserialize_human_duration")]
+    pub lock_release_timeout: Duration,
+}
+
+/// The Postgres advisory lock that elects which replica dispatches. Every pod serves HTTP and
+/// is Ready; only the holder sends transactions to the gateway.
+#[derive(Debug, Deserialize, Clone)]
+pub struct DispatcherLockConfig {
+    /// Interval between a standby's attempts to take the lock. Also the failover delay after
+    /// the holder releases or dies.
+    #[serde(deserialize_with = "deserialize_human_duration")]
+    pub standby_poll_interval: Duration,
+    /// Interval between the holder's checks that its lock connection is alive.
+    #[serde(deserialize_with = "deserialize_human_duration")]
+    pub holder_heartbeat_interval: Duration,
+    /// Bound on each query the lock runs on its own connection: try-lock, epoch mint,
+    /// heartbeat, unlock.
+    #[serde(deserialize_with = "deserialize_human_duration")]
+    pub query_timeout: Duration,
+    /// Failed round trips in a row before the pod exits and a standby takes over. The count
+    /// resets on any query that completes.
+    pub exit_after_consecutive_failures: u32,
+    /// Bound on opening the lock's connection at startup.
+    #[serde(deserialize_with = "deserialize_human_duration")]
+    pub connect_timeout: Duration,
+    /// Postgres-side timeout that frees the lock when a holder's node dies without closing its
+    /// socket. Must exceed both intervals above (see [`Self::validate`]). Needs Postgres 14+.
+    #[serde(deserialize_with = "deserialize_human_duration")]
+    pub idle_session_timeout: Duration,
+    /// Overrides the schema-derived lock key. Set `null` in production, where every pod
+    /// against one database resolves the same key.
+    pub key_override: Option<i32>,
+    /// Re-dispatch of requests nobody is driving. Runs on the lock holder only.
+    pub sweep: SweepConfig,
+}
+
+impl DispatcherLockConfig {
+    pub fn validate(&self) -> Result<(), AppConfigError> {
+        // Both intervals build a `tokio::time::interval`, which panics on a zero period. The
+        // panic lands in the `JoinSet` and is reaped only at shutdown, so the pod goes Ready
+        // and dispatches nothing.
+        if self.holder_heartbeat_interval.is_zero() {
+            return Err(AppConfigError::Config(
+                "dispatcher_lock.holder_heartbeat_interval must be greater than 0".to_string(),
+            ));
+        }
+        if self.standby_poll_interval.is_zero() {
+            return Err(AppConfigError::Config(
+                "dispatcher_lock.standby_poll_interval must be greater than 0".to_string(),
+            ));
+        }
+        // A bound at or below the heartbeat reaps the session of a holder that is doing
+        // everything right, every time it pauses between heartbeats - a permanent failover
+        // loop, strictly worse than the dead-node window this setting exists to close.
+        if self.idle_session_timeout <= self.holder_heartbeat_interval {
+            return Err(AppConfigError::Config(format!(
+                "dispatcher_lock.idle_session_timeout ({:?}) must be greater than \
+                 dispatcher_lock.holder_heartbeat_interval ({:?}): at or below it, Postgres \
+                 reaps a healthy holder's session between heartbeats",
+                self.idle_session_timeout, self.holder_heartbeat_interval
+            )));
+        }
+        // Defensive since the bound moved to acquisition: only a pod that has held the lock
+        // carries the GUC, and none returns to polling. A value under the poll interval still
+        // describes a session Postgres would reap between two try-locks, so it stays rejected.
+        if self.idle_session_timeout <= self.standby_poll_interval {
+            return Err(AppConfigError::Config(format!(
+                "dispatcher_lock.idle_session_timeout ({:?}) must be greater than \
+                 dispatcher_lock.standby_poll_interval ({:?}): at or below it, Postgres reaps \
+                 an idle standby's session and it can never acquire the lock",
+                self.idle_session_timeout, self.standby_poll_interval
+            )));
+        }
+        self.sweep.validate()
+    }
+}
+
+/// Re-dispatches requests nobody is driving: one a standby accepted, one orphaned by a dead
+/// holder, or this pod's own work from before a restart.
+#[derive(Debug, Deserialize, Clone)]
+pub struct SweepConfig {
+    /// Interval between the holder's scans, and so the delay before such a request is picked
+    /// up. Every tick costs one Postgres query.
+    #[serde(deserialize_with = "deserialize_human_duration")]
+    pub interval: Duration,
+}
+
+impl SweepConfig {
+    pub fn validate(&self) -> Result<(), AppConfigError> {
+        if self.interval.is_zero() {
+            return Err(AppConfigError::Config(
+                "sweep.interval must be greater than 0".to_string(),
+            ));
+        }
+        Ok(())
+    }
 }
 
 /// Deserializes strings like "30s", "5m", "1d" into std::time::Duration.
@@ -468,8 +636,7 @@ where
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct CronConfig {
-    /// Whether the expiry (retention) worker is enabled. Defaults to false.
-    #[serde(default)]
+    /// Whether the expiry (retention) worker is enabled.
     pub expiry_enabled: bool,
     // We map the YAML key `timeout_cron_interval_secs` to this field,
     // but parse the string value into a Duration.
@@ -595,8 +762,12 @@ pub struct RetrySettings {
 pub struct ContractConfig {
     pub decryption_address: String,
     pub input_verification_address: String,
-    /// Number of shares required for user decryption threshold consensus
+    /// Number of shares required for user decryption threshold consensus.
     pub user_decrypt_shares_threshold: u32,
+    /// Extra shares to wait for beyond the threshold before returning (0 = off).
+    pub user_decrypt_additional_shares: u32,
+    /// Max wait for the extra shares after threshold is reached, seconds (0 = off).
+    pub user_decrypt_additional_shares_timeout_secs: u32,
 }
 
 /// User-decryption signature check configuration.
@@ -709,6 +880,8 @@ pub struct Settings {
     pub user_decrypt_signature_check: UserDecryptSignatureCheckConfig,
     /// Shutdown sequencing
     pub shutdown: ShutdownConfig,
+    /// HA dispatcher lock (session-level Postgres advisory lock), and the sweep it gates
+    pub dispatcher_lock: DispatcherLockConfig,
 }
 
 // Error type for application-specific configuration errors
@@ -765,6 +938,8 @@ impl Settings {
         // Validate cron startup delay (10% rule)
         settings.storage.cron.validate()?;
 
+        settings.dispatcher_lock.validate()?;
+
         // Ensure HTTP metrics configuration is provided
         if settings.http.metrics.histogram_buckets.is_empty() {
             return Err(AppConfigError::Config(
@@ -805,6 +980,16 @@ impl Settings {
         } = &self.keyurl
         {
             addresses.push(("keyurl.kms_generation_address", kms_generation_address));
+        }
+        if let GwCiphertextCheckConfig::CoprocessorAttestations {
+            gateway_config_address,
+            ..
+        } = &self.gateway.readiness_checker.gw_ciphertext_check
+        {
+            addresses.push((
+                "gw_ciphertext_check.gateway_config_address",
+                gateway_config_address,
+            ));
         }
 
         for (name, address) in addresses {
@@ -1159,6 +1344,232 @@ mod tests {
 
         // Verify the value was parsed correctly (value from local.yaml.example)
         assert_eq!(settings.gateway.contracts.user_decrypt_shares_threshold, 9);
+        // Optimistic wait-window knobs (values from local.yaml.example)
+        assert_eq!(settings.gateway.contracts.user_decrypt_additional_shares, 2);
+        assert_eq!(
+            settings
+                .gateway
+                .contracts
+                .user_decrypt_additional_shares_timeout_secs,
+            5
+        );
+    }
+
+    #[test]
+    fn test_user_decrypt_additional_shares_is_required() {
+        assert_field_is_required("gateway.contracts.user_decrypt_additional_shares");
+    }
+
+    #[test]
+    fn test_user_decrypt_additional_shares_timeout_is_required() {
+        assert_field_is_required("gateway.contracts.user_decrypt_additional_shares_timeout_secs");
+    }
+
+    /// Asserts that dropping `field` from the example config makes deserialization fail.
+    ///
+    /// Every off-chain attestation-readiness setting is explicit config with no silent fallback,
+    /// so a deployment that forgets one fails at startup instead of running on a guessed value.
+    fn assert_field_is_required(field: &str) {
+        let config_path = ConfigBuilder::from_example()
+            .expect("Failed to load example config")
+            .remove_field(field)
+            .to_temp_file()
+            .expect("Failed to create temp config file");
+
+        let config = Config::builder()
+            .add_source(File::from(config_path.as_path()).format(FileFormat::Yaml))
+            .build()
+            .expect("Failed to build config");
+
+        let result: Result<Settings, _> = config.try_deserialize();
+
+        assert!(
+            result.is_err(),
+            "Configuration parsing should fail when {field} is missing"
+        );
+
+        let error_msg = format!("{}", result.unwrap_err());
+        let leaf = field.rsplit('.').next().unwrap_or(field);
+        assert!(
+            error_msg.contains(leaf) || error_msg.contains("missing field"),
+            "Error should mention the missing {leaf} field, got: {error_msg}"
+        );
+    }
+
+    #[test]
+    fn test_gw_ciphertext_check_head_timeout_is_required() {
+        assert_field_is_required("gateway.readiness_checker.gw_ciphertext_check.head_timeout_ms");
+    }
+
+    #[test]
+    fn test_gw_ciphertext_check_registry_refresh_is_required() {
+        assert_field_is_required(
+            "gateway.readiness_checker.gw_ciphertext_check.registry_refresh_ms",
+        );
+    }
+
+    #[test]
+    fn test_gw_ciphertext_check_request_timeout_is_required() {
+        assert_field_is_required(
+            "gateway.readiness_checker.gw_ciphertext_check.request_timeout_ms",
+        );
+    }
+
+    #[test]
+    fn test_gw_ciphertext_check_max_concurrent_handles_is_required() {
+        assert_field_is_required(
+            "gateway.readiness_checker.gw_ciphertext_check.max_concurrent_handles",
+        );
+    }
+
+    #[test]
+    fn test_gw_ciphertext_check_gateway_config_address_is_required() {
+        // Without the GatewayConfig address there is no Coprocessor registry at all, so startup
+        // must fail rather than silently degrade the readiness gate.
+        assert_field_is_required(
+            "gateway.readiness_checker.gw_ciphertext_check.gateway_config_address",
+        );
+    }
+
+    /// The on-chain Gateway check never builds a Coprocessor registry, so it must not demand the
+    /// address that only feeds one.
+    #[test]
+    fn test_gw_ciphertext_check_gateway_chain_does_not_require_gateway_config_address() {
+        let settings = settings_new(
+            ConfigBuilder::from_example()
+                .expect("example config")
+                .set_field(
+                    "gateway.readiness_checker.gw_ciphertext_check",
+                    serde_yaml::from_str(
+                        "source: gateway_chain\nretry:\n  max_attempts: 75\n  retry_interval_ms: 3000\n",
+                    )
+                    .expect("valid gateway_chain block"),
+                ),
+        )
+        .expect("`source: gateway_chain` without `gateway_config_address` should still validate");
+
+        assert!(matches!(
+            settings.gateway.readiness_checker.gw_ciphertext_check,
+            GwCiphertextCheckConfig::GatewayChain { .. }
+        ));
+    }
+
+    /// Builds a `source: coprocessor_attestations` block, reconstructed per case since the enum
+    /// has no mutable fields to poke at directly the way a plain struct would.
+    fn attestation_check(
+        head_timeout_ms: u64,
+        request_timeout_ms: u64,
+        registry_refresh_ms: u64,
+    ) -> GwCiphertextCheckConfig {
+        GwCiphertextCheckConfig::CoprocessorAttestations {
+            retry: RetrySettings {
+                max_attempts: 3,
+                retry_interval_ms: 100,
+            },
+            head_timeout_ms,
+            request_timeout_ms,
+            registry_refresh_ms,
+            max_concurrent_handles: NonZeroUsize::new(8).unwrap(),
+            gateway_config_address: "0x576Ea67208b146E63C5255d0f90104E25e3e04c7".to_string(),
+        }
+    }
+
+    #[test]
+    fn test_gw_ciphertext_check_rejects_zero_timeouts() {
+        assert!(attestation_check(0, 240_000, 60_000).validate().is_err());
+        assert!(attestation_check(5_000, 0, 60_000).validate().is_err());
+        assert!(attestation_check(5_000, 240_000, 0).validate().is_err());
+        assert!(attestation_check(5_000, 240_000, 60_000).validate().is_ok());
+    }
+
+    #[test]
+    fn test_gw_ciphertext_check_rejects_budget_below_one_probe() {
+        // A request budget under a single bucket's HEAD timeout expires before any Coprocessor can
+        // answer, so every request would fail on the clock rather than on the attestations.
+        assert!(attestation_check(5_000, 4_999, 60_000).validate().is_err());
+        assert!(attestation_check(5_000, 5_000, 60_000).validate().is_ok());
+    }
+
+    #[test]
+    fn test_gw_ciphertext_check_source_is_required() {
+        let err = settings_load_error(
+            ConfigBuilder::from_example()
+                .expect("Failed to load example config")
+                .remove_field("gateway.readiness_checker.gw_ciphertext_check.source"),
+        );
+        assert!(
+            err.contains("gw_ciphertext_check.source"),
+            "Error should name the missing `source` field, got: {err}"
+        );
+    }
+
+    #[test]
+    fn test_gw_ciphertext_check_source_rejects_unknown_value() {
+        let err = settings_load_error(
+            ConfigBuilder::from_example()
+                .expect("Failed to load example config")
+                .set_field(
+                    "gateway.readiness_checker.gw_ciphertext_check.source",
+                    serde_yaml::Value::String("bogus".into()),
+                ),
+        );
+        assert!(
+            err.contains("unknown variant `bogus`")
+                && err.contains("`gateway_chain`")
+                && err.contains("`coprocessor_attestations`"),
+            "Error should reject `bogus` and name the valid variants, got: {err}"
+        );
+    }
+
+    /// `source: gateway_chain` carries only `retry` — exactly the shape that predates the
+    /// off-chain Coprocessor attestation check — and must not demand the attestation-only keys.
+    #[test]
+    fn test_gw_ciphertext_check_gateway_chain_accepts_retry_only() {
+        let settings = settings_new(
+            ConfigBuilder::from_example()
+                .expect("example config")
+                .set_field(
+                    "gateway.readiness_checker.gw_ciphertext_check",
+                    serde_yaml::from_str(
+                        "source: gateway_chain\nretry:\n  max_attempts: 75\n  retry_interval_ms: 3000\n",
+                    )
+                    .expect("valid gateway_chain block"),
+                ),
+        )
+        .expect("`source: gateway_chain` with only `retry` should deserialize and validate");
+
+        match &settings.gateway.readiness_checker.gw_ciphertext_check {
+            GwCiphertextCheckConfig::GatewayChain { retry } => {
+                assert_eq!(retry.max_attempts, 75);
+            }
+            other => panic!("expected gw_ciphertext_check.source: gateway_chain, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_gw_ciphertext_check_gateway_chain_requires_retry() {
+        let err = settings_load_error(
+            ConfigBuilder::from_example()
+                .expect("example config")
+                .set_field(
+                    "gateway.readiness_checker.gw_ciphertext_check",
+                    serde_yaml::from_str("source: gateway_chain\n")
+                        .expect("valid gateway_chain tag"),
+                ),
+        );
+        assert!(
+            err.contains("gw_ciphertext_check.retry") || err.contains("missing field"),
+            "Error should name the missing `retry` field, got: {err}"
+        );
+    }
+
+    // `head_timeout_ms`, `request_timeout_ms`, `registry_refresh_ms`, `max_concurrent_handles`,
+    // and `gateway_config_address` are covered by
+    // `test_gw_ciphertext_check_head_timeout_is_required` and friends above, run against the
+    // example's `source: coprocessor_attestations` block; `retry` is the remaining one of the six.
+    #[test]
+    fn test_gw_ciphertext_check_coprocessor_attestations_requires_retry() {
+        assert_field_is_required("gateway.readiness_checker.gw_ciphertext_check.retry");
     }
 
     #[test]
@@ -1955,6 +2366,32 @@ mod tests {
         // contracts: YAML has threshold=9, env has 5
         assert_eq!(settings.gateway.contracts.user_decrypt_shares_threshold, 5);
 
+        // gw_ciphertext_check: YAML has source: coprocessor_attestations, 5000/240000/60000; env
+        // overrides to 7000/300000/90000 and a different gateway_config_address (source and
+        // max_concurrent_handles come from the YAML base, untouched by env).
+        match &settings.gateway.readiness_checker.gw_ciphertext_check {
+            GwCiphertextCheckConfig::CoprocessorAttestations {
+                head_timeout_ms,
+                request_timeout_ms,
+                registry_refresh_ms,
+                max_concurrent_handles,
+                gateway_config_address,
+                ..
+            } => {
+                assert_eq!(*head_timeout_ms, 7000);
+                assert_eq!(*request_timeout_ms, 300000);
+                assert_eq!(*registry_refresh_ms, 90000);
+                assert_eq!(max_concurrent_handles.get(), 8);
+                assert_eq!(
+                    gateway_config_address,
+                    "0x1C5d0A5B44e0B3D1A3d1c05A0f5aC2C2b64f1d3C"
+                );
+            }
+            other => panic!(
+                "expected gw_ciphertext_check.source: coprocessor_attestations, got {other:?}"
+            ),
+        }
+
         // copro_kms_backoff_intervals: env overrides to different values
         assert_eq!(
             settings.http.retry_after.copro_kms_backoff_intervals.len(),
@@ -2052,5 +2489,91 @@ mod tests {
             }
             other => panic!("expected keyurl.source: config, got {other:?}"),
         }
+    }
+
+    /// Pins the example config's pair, since that is what an operator copies now that the
+    /// struct carries no defaults. A bound at or below the heartbeat has Postgres reap a
+    /// healthy holder between its heartbeats.
+    #[test]
+    #[serial] // Settings::new reads the environment
+    fn test_dispatcher_lock_idle_timeout_must_exceed_the_heartbeat() {
+        let shipped = settings_new(ConfigBuilder::from_example().expect("example config"))
+            .expect("the example config must load")
+            .dispatcher_lock;
+        shipped
+            .validate()
+            .expect("the values config/local.yaml.example ships must satisfy the invariant");
+
+        for idle in [Duration::from_secs(5), Duration::from_secs(1)] {
+            let err = DispatcherLockConfig {
+                idle_session_timeout: idle,
+                ..shipped.clone()
+            }
+            .validate()
+            .expect_err("an idle bound at or below the heartbeat must be rejected")
+            .to_string();
+            assert!(
+                err.contains("holder_heartbeat_interval"),
+                "the error must name the interval it was compared against, got: {err}"
+            );
+        }
+    }
+
+    /// A zero interval panics the lock task at spawn, and the `JoinSet` holds that panic until
+    /// shutdown - so the pod reaches Ready and never dispatches.
+    #[test]
+    #[serial] // Settings::new reads the environment
+    fn test_dispatcher_lock_rejects_zero_intervals() {
+        let shipped = settings_new(ConfigBuilder::from_example().expect("example config"))
+            .expect("the example config must load")
+            .dispatcher_lock;
+
+        let err = DispatcherLockConfig {
+            holder_heartbeat_interval: Duration::ZERO,
+            ..shipped.clone()
+        }
+        .validate()
+        .expect_err("a zero heartbeat interval must be rejected")
+        .to_string();
+        assert!(
+            err.contains("holder_heartbeat_interval"),
+            "the error must name the interval, got: {err}"
+        );
+
+        let err = DispatcherLockConfig {
+            standby_poll_interval: Duration::ZERO,
+            ..shipped.clone()
+        }
+        .validate()
+        .expect_err("a zero standby poll interval must be rejected")
+        .to_string();
+        assert!(
+            err.contains("standby_poll_interval"),
+            "the error must name the interval, got: {err}"
+        );
+    }
+
+    /// The standby side of the same bound: reaped between its try-locks, a standby's connection
+    /// is never reopened, so it exits on repeated failures instead of taking the lock.
+    #[test]
+    #[serial] // Settings::new reads the environment
+    fn test_dispatcher_lock_idle_timeout_must_exceed_the_standby_poll() {
+        let shipped = settings_new(ConfigBuilder::from_example().expect("example config"))
+            .expect("the example config must load")
+            .dispatcher_lock;
+
+        let err = DispatcherLockConfig {
+            holder_heartbeat_interval: Duration::from_secs(1),
+            standby_poll_interval: Duration::from_secs(30),
+            idle_session_timeout: Duration::from_secs(10),
+            ..shipped
+        }
+        .validate()
+        .expect_err("an idle bound at or below the standby poll must be rejected")
+        .to_string();
+        assert!(
+            err.contains("standby_poll_interval"),
+            "the error must name the interval it was compared against, got: {err}"
+        );
     }
 }
