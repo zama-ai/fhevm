@@ -16,7 +16,8 @@ const addresses = requireEnv('ADDRESSES')
   .map((a) => a.trim())
   .filter(Boolean);
 const deployerAddress = requireEnv('DEPLOYER_ADDRESS').toLowerCase();
-// 0.2 per test signer; 1.0 for #9, which pays ~10 upgradeable contracts + keygen per chain.
+// 0.2 per test signer; default 1.0 for #9. Callers can raise it per chain
+// (Amoy uses 2.0 because canonical snapshot preparation deploys extra proxies).
 const floorWei = BigInt(process.env.FLOOR_WEI || '200000000000000000');
 const deployerFloorWei = BigInt(process.env.DEPLOYER_FLOOR_WEI || '1000000000000000000');
 

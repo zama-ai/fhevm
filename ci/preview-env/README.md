@@ -258,8 +258,9 @@ The two host chains are the real public testnets, so this is the only preview sh
   (`httpUrlValueFrom`/`wsUrlValueFrom`), kms-connector (`$(RPC_ETH_URL)` / `$(RPC_POLYGON_URL)`
   through `commonConfig.env`), relayer, test-suite and the e2e Workflows. Only the runner-side
   funder reads the faucet Secrets, masked, from `deploy-rpc-secret.sh`.
-- **Funding.** `fund-wallets-treasury.cjs` tops up `#0-#4` to 0.2 and `#9` to 1.0 on both chains
-  (`FLOOR_WEI` / `DEPLOYER_FLOOR_WEI`) and fails fast if the treasury cannot cover the shortfall.
+- **Funding.** `fund-wallets-treasury.cjs` tops up `#0-#4` to 0.2 and deployer
+  `#9` to 1.0 ETH on Sepolia / 2.0 POL on Amoy (`FLOOR_WEI` /
+  `DEPLOYER_FLOOR_WEI`), and fails fast if either faucet cannot cover the shortfall.
   Gateway-side wallets (KMS / coprocessor tx-senders, `#0`, `#3`) still come from the Nitro faucet.
 - **Second host chain reuses the `deploy_polygon` path**: the same Polygon overlays, with
   RPC/chain ids patched to Amoy and the Anvil Polygon node skipped. Amoy mirrors the ETH

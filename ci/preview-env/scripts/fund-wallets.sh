@@ -66,7 +66,10 @@ if [[ "${CHAIN_MODE}" == "testnets" ]]; then
   ADDRESSES="${role_addresses}" DEPLOYER_ADDRESS="${deployer}" \
     FUNDER_PRIVATE_KEY="${ETH_FUNDER_PRIVATE_KEY}" CHAINS_JSON="${sepolia_json}" \
     node "${script_dir}/fund-wallets-treasury.cjs"
+  # Polygon's canonical-snapshot flow deploys a throwaway proxy set before the
+  # final contracts, and Amoy gas prices can make that exceed the 1-token default.
   ADDRESSES="${role_addresses}" DEPLOYER_ADDRESS="${deployer}" \
+    DEPLOYER_FLOOR_WEI="2000000000000000000" \
     FUNDER_PRIVATE_KEY="${POLYGON_FUNDER_PRIVATE_KEY}" CHAINS_JSON="${amoy_json}" \
     node "${script_dir}/fund-wallets-treasury.cjs"
   # Only the Nitro gateway has a faucet on this path.
