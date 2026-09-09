@@ -34,7 +34,7 @@ use host_listener::cmd::InfiniteLogIter;
 use host_listener::database::ingest::{
     ingest_block_logs, update_finalized_blocks, BlockLogs, IngestOptions,
 };
-use host_listener::database::tfhe_event_propagate::{Database, ToType};
+use host_listener::database::tfhe_event_propagate::{Chain, Database, ToType};
 
 mod common;
 use common::{
@@ -2140,5 +2140,250 @@ async fn test_host_listener_recovers_after_revert() -> Result<(), anyhow::Error>
     assert_eq!(acl, expected, "allowed_handles after revert");
 
     listener.abort();
+    Ok(())
+}
+
+/// Restart regression: the producer seal must survive a process restart.
+///
+/// `sealed_chains` is process-local and catchup replays `--catchup-margin`
+/// blocks on every restart. That replay rebuilds the fork-detection state but
+/// NOT the seal, because ingest skips `update_dependence_chain` when every
+/// computation insert is a duplicate. Without reconstruction the parent would
+/// resume absorbing continuations while its gated child — whose
+/// `dependency_count` is durable — waits behind all of them.
+///
+/// The seal is derived from that same durable state, so a fresh `Database`
+/// over the same rows must come up with the parent sealed again.
+#[tokio::test]
+#[serial(db)]
+async fn test_sealed_chain_survives_restart(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let test_instance =
+        test_harness::instance::setup_test_db(ImportMode::WithKeysNoSns)
+            .await?;
+    let chain_id = ChainId::try_from(42_u64)?;
+    let db = Database::new(&test_instance.db_url, chain_id, 128).await?;
+    let pool = db.pool.read().await.clone();
+
+    let parent = FixedBytes::<32>::from([0xD1; 32]);
+    let gated_child = FixedBytes::<32>::from([0xD2; 32]);
+    let discharged_child = FixedBytes::<32>::from([0xD3; 32]);
+    let quiet_parent = FixedBytes::<32>::from([0xD4; 32]);
+
+    // parent -> gated_child, still gated: seals the parent.
+    // quiet_parent -> discharged_child, gate already discharged: seals nothing.
+    for (chain, status, count, dependents) in [
+        (parent, "updated", 0_i32, vec![gated_child]),
+        (quiet_parent, "updated", 0_i32, vec![discharged_child]),
+        (gated_child, "updated", 1_i32, vec![]),
+        (discharged_child, "updated", 0_i32, vec![]),
+    ] {
+        let dependents: Vec<Vec<u8>> =
+            dependents.iter().map(|d| d.as_slice().to_vec()).collect();
+        sqlx::query(
+            "INSERT INTO dependence_chain(
+                dependence_chain_id, status, last_updated_at,
+                dependency_count, dependents, block_hash, block_height,
+                schedule_priority
+             ) VALUES ($1, $2, NOW(), $3, $4, $5, 1, 1)",
+        )
+        .bind(chain.as_slice())
+        .bind(status)
+        .bind(count)
+        .bind(&dependents)
+        .bind([0x0B_u8; 32].as_slice())
+        .execute(&pool)
+        .await?;
+    }
+
+    // A fresh Database is the restart: new process state over the same rows.
+    let restarted = Database::new(&test_instance.db_url, chain_id, 128).await?;
+    let sealed = restarted.sealed_chains.read().await;
+    assert!(
+        sealed.peek(&parent).is_some(),
+        "a parent with a still-gated dependent must come back sealed, or \
+         catchup will let it grow while that dependent waits"
+    );
+    assert!(
+        sealed.peek(&quiet_parent).is_none(),
+        "a parent whose dependent has discharged owes nothing and must not \
+         be sealed: that would fragment a chain for no benefit"
+    );
+    assert!(
+        sealed.peek(&gated_child).is_none(),
+        "being gated does not seal a chain; only gating another one does"
+    );
+    Ok(())
+}
+
+/// F1 regression: a new chain joining cross-block parents must be gated on
+/// exactly the parents that can still deliver a release decrement, AND that
+/// still owe it something. A parent gates only when it is both incomplete and
+/// has not yet materialized the specific boundary handle this child consumes:
+///
+///   * incomplete, handle not materialized -> gates, adopts the child, and is
+///     SEALED so it stops absorbing continuations the child would wait behind;
+///   * incomplete, handle already in `ciphertexts` -> owes nothing, because the
+///     worker reads the bytes from there; gating on it would make the child
+///     wait for unrelated work on a chain it no longer needs;
+///   * `processed` -> no future release will decrement it;
+///   * unknown (cache-drifted) -> no row to gate on.
+#[tokio::test]
+#[serial(db)]
+async fn test_cross_block_join_gates_on_incomplete_parents(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let test_instance =
+        test_harness::instance::setup_test_db(ImportMode::WithKeysNoSns)
+            .await?;
+    let chain_id = ChainId::try_from(42_u64)?;
+    let db = Database::new(&test_instance.db_url, chain_id, 128).await?;
+    let pool = db.pool.read().await.clone();
+
+    let parent_incomplete = FixedBytes::<32>::from([0xA1; 32]);
+    let parent_processed = FixedBytes::<32>::from([0xA2; 32]);
+    let parent_unknown = FixedBytes::<32>::from([0xA3; 32]);
+    let parent_materialized = FixedBytes::<32>::from([0xA4; 32]);
+    let child = FixedBytes::<32>::from([0xC1; 32]);
+    // One boundary handle per parent: the gate is armed per handle, not per
+    // chain, so the test has to name what the child actually waits for.
+    let handle_incomplete = FixedBytes::<32>::from([0xB1; 32]);
+    let handle_processed = FixedBytes::<32>::from([0xB2; 32]);
+    let handle_unknown = FixedBytes::<32>::from([0xB3; 32]);
+    let handle_materialized = FixedBytes::<32>::from([0xB4; 32]);
+    for (hash, status) in [
+        (parent_incomplete, "updated"),
+        (parent_processed, "processed"),
+        // Incomplete exactly like `parent_incomplete`; the ONLY difference is
+        // that its handle already exists below.
+        (parent_materialized, "updated"),
+    ] {
+        sqlx::query(
+            "INSERT INTO dependence_chain(
+                dependence_chain_id, status, last_updated_at,
+                dependency_count, dependents, block_hash, block_height,
+                schedule_priority
+             ) VALUES ($1, $2, NOW(), 0, '{}', $3, 1, 1)",
+        )
+        .bind(hash.as_slice())
+        .bind(status)
+        .bind([0x0B_u8; 32].as_slice())
+        .execute(&pool)
+        .await?;
+    }
+
+    // The materialized parent's boundary handle is already readable from
+    // `ciphertexts`, which is where the worker sources boundary operands.
+    sqlx::query(
+        "INSERT INTO ciphertexts(
+            tenant_id, handle, ciphertext, ciphertext_version, ciphertext_type
+         ) VALUES (1, $1, $2, 1, 1)",
+    )
+    .bind(handle_materialized.as_slice())
+    .bind([0xEE_u8; 8].as_slice())
+    .execute(&pool)
+    .await?;
+
+    let chains = vec![Chain {
+        hash: child,
+        dependencies: vec![],
+        split_dependencies: vec![
+            parent_incomplete,
+            parent_processed,
+            parent_unknown,
+            parent_materialized,
+        ],
+        outer_boundary_handles: vec![
+            (parent_incomplete, handle_incomplete),
+            (parent_processed, handle_processed),
+            (parent_unknown, handle_unknown),
+            (parent_materialized, handle_materialized),
+        ],
+        dependents: vec![],
+        allowed_handle: vec![],
+        size: 5,
+        before_size: 0,
+        new_chain: true,
+    }];
+    let mut tx = db.new_transaction().await?.expect("live stack transaction");
+    let block_summary = BlockSummary {
+        number: 2,
+        hash: FixedBytes::<32>::from([0x0C; 32]),
+        parent_hash: FixedBytes::<32>::from([0x0B; 32]),
+        timestamp: 1_700_000_000,
+    };
+    let now = time::OffsetDateTime::now_utc();
+    let block_timestamp = time::PrimitiveDateTime::new(now.date(), now.time());
+    db.update_dependence_chain(
+        &mut tx,
+        chains,
+        block_timestamp,
+        &block_summary,
+        &std::collections::HashSet::new(),
+    )
+    .await?;
+    tx.commit().await?;
+
+    let (count, status): (i32, String) = sqlx::query_as(
+        "SELECT dependency_count, status FROM dependence_chain
+         WHERE dependence_chain_id = $1",
+    )
+    .bind(child.as_slice())
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(count, 1, "only the incomplete parent gates the join chain");
+    assert_eq!(status, "updated");
+
+    let incomplete_dependents: Vec<Vec<u8>> = sqlx::query_scalar(
+        "SELECT unnest(dependents) FROM dependence_chain
+         WHERE dependence_chain_id = $1",
+    )
+    .bind(parent_incomplete.as_slice())
+    .fetch_all(&pool)
+    .await?;
+    assert_eq!(incomplete_dependents, vec![child.as_slice().to_vec()]);
+
+    let processed_dependents: Vec<Vec<u8>> = sqlx::query_scalar(
+        "SELECT unnest(dependents) FROM dependence_chain
+         WHERE dependence_chain_id = $1",
+    )
+    .bind(parent_processed.as_slice())
+    .fetch_all(&pool)
+    .await?;
+    assert!(
+        processed_dependents.is_empty(),
+        "a processed parent must not adopt the child: no future release \
+         will decrement it"
+    );
+
+    let materialized_dependents: Vec<Vec<u8>> = sqlx::query_scalar(
+        "SELECT unnest(dependents) FROM dependence_chain
+         WHERE dependence_chain_id = $1",
+    )
+    .bind(parent_materialized.as_slice())
+    .fetch_all(&pool)
+    .await?;
+    assert!(
+        materialized_dependents.is_empty(),
+        "an incomplete parent whose boundary handle is already materialized \
+         owes the child nothing: the worker reads the bytes from ciphertexts, \
+         so gating on it would park the child behind unrelated work"
+    );
+
+    // Only the parent that actually gates is sealed: it has work the child
+    // needs, so it must stop absorbing continuations the child would wait on.
+    let sealed = db.sealed_chains.read().await;
+    assert!(
+        sealed.peek(&parent_incomplete).is_some(),
+        "the gating parent is sealed against further linear extension"
+    );
+    assert!(
+        sealed.peek(&parent_materialized).is_none(),
+        "a parent that does not gate is not sealed: sealing it would fragment \
+         a chain for no benefit"
+    );
+    assert!(
+        sealed.peek(&parent_processed).is_none(),
+        "a processed parent is not sealed"
+    );
     Ok(())
 }

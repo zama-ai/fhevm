@@ -54,8 +54,10 @@ export type SignedDecryptionPermitV1 = SignedDecryptionPermitBase & {
  * Signed decryption permit produced by protocol v14 and above.
  *
  * Uses the unified `KmsUserDecryptEip712V2` EIP-712 shape — there is no longer
- * a separate delegated variant. The `encryptedDataOwnerAddress` is read from
- * `eip712.message.userAddress` and may differ from `signerAddress`.
+ * a separate delegated variant. `eip712.message.userAddress` always equals
+ * `signerAddress`; delegation is post-sign metadata carried alongside the
+ * signed message, not part of it, so `encryptedDataOwnerAddress` may differ
+ * from `signerAddress` even though the eip712 message never does.
  *
  * The `signature` is widened to {@link BytesHex} to carry ERC-1271 blobs (see
  * the `Signature` type parameter on {@link SignedDecryptionPermitBase}).

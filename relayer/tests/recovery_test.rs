@@ -24,11 +24,12 @@ use alloy::primitives::{Address, Bytes, B256};
 use common::test_schema::TestSchema;
 use common::utils::{
     http_port_of, random_handle, spawn_relayer, wire_settings_to_mocks, GatewayMock, HostMock,
-    TEST_CONFIG_PATH,
+    ReadinessSource, TEST_CONFIG_PATH,
 };
-use ethereum_rpc_mock::{fhevm::UserDecryptKind, SubscriptionTarget};
+use ethereum_rpc_mock::{
+    ct_attestation::CtAttestationMock, fhevm::UserDecryptKind, SubscriptionTarget,
+};
 use fhevm_relayer::config::settings::{Settings, StorageConfig};
-use fhevm_relayer::store::sql::repositories::Repositories;
 use fhevm_relayer::tracing::init_tracing_once;
 use serde_json::json;
 use std::slice;
@@ -39,11 +40,14 @@ use tokio_util::sync::CancellationToken;
 
 /// Test setup with two gateway mocks - one broken, one working
 struct RecoveryTestSetup {
-    /// Kept stuck on purpose: its readiness switch and its silence about response events are what
-    /// strand a request at the status under test.
+    /// Serves only the registry views; the broken gateway is otherwise driven through the shared
+    /// attestation buckets, and emits no response events.
     broken_gateway: GatewayMock,
     working_gateway: GatewayMock,
     host: HostMock,
+    /// Shared by both gateway mocks: the Coprocessor buckets are infrastructure independent of
+    /// which gateway node the relayer is pointed at, and they survive its restart.
+    ct_attestation: CtAttestationMock,
     /// Outlives the relayer restart — the requests recovery has to pick up live here.
     test_schema: TestSchema,
     http_port: Option<u16>,
@@ -62,9 +66,15 @@ impl RecoveryTestSetup {
             .expect("Failed to load configuration");
         init_tracing_once(&settings.log);
 
+        // Attested by default; per-status setup re-arms the buckets.
+        let ct_attestation = CtAttestationMock::start().await;
+        ct_attestation.serve_attestations().await;
+
         let host = HostMock::start(&settings).await?;
-        let broken_gateway = GatewayMock::start().await?;
-        let working_gateway = GatewayMock::start().await?;
+        let broken_gateway =
+            GatewayMock::start(ReadinessSource::CoprocessorAttestations(&ct_attestation)).await?;
+        let working_gateway =
+            GatewayMock::start(ReadinessSource::CoprocessorAttestations(&ct_attestation)).await?;
 
         tracing::info!(
             "Setting up recovery test - broken gateway: {}, working gateway: {}, host: {}, schema: {}",
@@ -78,6 +88,7 @@ impl RecoveryTestSetup {
             broken_gateway,
             working_gateway,
             host,
+            ct_attestation,
             test_schema,
             http_port: None,
             cancellation_token: CancellationToken::new(),
@@ -139,17 +150,17 @@ impl RecoveryTestSetup {
 
     /// Configure broken gateway for 'queued' status:
     /// - Readiness check fails, so requests stay in queued
-    fn configure_for_queued_stuck(&self) {
-        self.broken_gateway.fhevm.set_readiness_failure();
+    async fn configure_for_queued_stuck(&self) {
+        self.ct_attestation.serve_nothing().await;
         tracing::info!("Broken gateway configured for 'queued' stuck - readiness fails");
     }
 
     /// Configure broken gateway for 'processing' status:
     /// - Requests pass readiness check
     /// - Transaction is accepted but no response event is emitted
-    fn configure_for_processing_stuck(&self, _handles: &[String]) {
-        // Set readiness to pass so requests can leave queued status
-        self.broken_gateway.fhevm.set_readiness_success();
+    async fn configure_for_processing_stuck(&self, _handles: &[String]) {
+        // Attest the ciphertext so requests can leave queued status
+        self.ct_attestation.serve_attestations().await;
 
         // DON'T register any event patterns - this keeps transactions pending
         // without any events being emitted, so requests stay in 'processing' status
@@ -163,9 +174,9 @@ impl RecoveryTestSetup {
     /// - Requests pass readiness check and transaction is sent
     /// - No events emitted so request stays in processing/tx_in_flight
     #[allow(dead_code)]
-    fn configure_for_tx_in_flight_stuck(&self, _handles: &[String]) {
-        // Set readiness to pass so requests can leave queued status
-        self.broken_gateway.fhevm.set_readiness_success();
+    async fn configure_for_tx_in_flight_stuck(&self, _handles: &[String]) {
+        // Attest the ciphertext so requests can leave queued status
+        self.ct_attestation.serve_attestations().await;
 
         // DON'T register any event patterns - this keeps transactions pending
         // without any events being emitted, so requests stay in 'processing' or 'tx_in_flight' status
@@ -176,8 +187,8 @@ impl RecoveryTestSetup {
     }
 
     /// Configure working gateway to complete any request
-    fn configure_working_gateway(&self, handles: &[String]) {
-        self.working_gateway.fhevm.set_readiness_success();
+    async fn configure_working_gateway(&self, handles: &[String]) {
+        self.ct_attestation.serve_attestations().await;
 
         let b256_handles: Vec<B256> = handles
             .iter()
@@ -222,15 +233,34 @@ impl RecoveryTestSetup {
         )
     }
 
-    /// Get repositories for DB access
-    async fn get_repositories(&self) -> anyhow::Result<Repositories> {
-        let storage = self
-            .storage_settings
-            .as_ref()
-            .context("Storage settings not available")?;
-        Repositories::new(storage.clone())
+    /// Incomplete rows straight from SQL, for the diagnostic logging below. No repository method
+    /// reads them: the sweep selects the rows it drives inside its own claim `UPDATE`, so nothing
+    /// in the relayer queries incomplete rows separately.
+    async fn incomplete_public_decrypt_rows(&self) -> anyhow::Result<Vec<(Vec<u8>, String)>> {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(&self.test_schema.database_url())
             .await
-            .context("Failed to create repositories")
+            .context("Failed to connect diagnostic pool")?;
+        let rows = sqlx::query(
+            r#"
+            SELECT int_job_id, req_status::text AS status
+            FROM public_decrypt_req
+            WHERE req_status IN ('queued'::req_status, 'processing'::req_status,
+                                 'tx_in_flight'::req_status)
+            ORDER BY created_at ASC
+            "#,
+        )
+        .fetch_all(&pool)
+        .await
+        .context("Failed to query incomplete rows")?;
+        Ok(rows
+            .into_iter()
+            .map(|row| {
+                use sqlx::Row;
+                (row.get("int_job_id"), row.get("status"))
+            })
+            .collect())
     }
 
     /// Stop the relayer and drop the test schema.
@@ -403,7 +433,9 @@ async fn test_recovery_from_processing_status() {
 
     // Phase 1: Pre-generate handles and configure broken gateway
     let handle1 = random_handle();
-    setup.configure_for_processing_stuck(slice::from_ref(&handle1));
+    setup
+        .configure_for_processing_stuck(slice::from_ref(&handle1))
+        .await;
 
     // Phase 2: Start relayer with broken gateway
     tracing::info!("Phase 1: Starting relayer with broken gateway");
@@ -430,13 +462,8 @@ async fn test_recovery_from_processing_status() {
     sleep(Duration::from_secs(3)).await;
 
     // Verify via DB that at least one request is in processing/tx_in_flight
-    let repos = setup
-        .get_repositories()
-        .await
-        .expect("Failed to get repositories");
-    let incomplete = repos
-        .public_decrypt
-        .find_incomplete_requests()
+    let incomplete = setup
+        .incomplete_public_decrypt_rows()
         .await
         .expect("Failed to query DB");
     tracing::info!(
@@ -445,12 +472,11 @@ async fn test_recovery_from_processing_status() {
     );
 
     // Log details of what we found
-    for (job_id, _req_json, status, updated_at) in &incomplete {
+    for (job_id, status) in &incomplete {
         tracing::info!(
-            "  - Request int_job_id={} status={:?} updated_at={}",
+            "  - Request int_job_id={} status={}",
             hex::encode(job_id),
-            status,
-            updated_at
+            status
         );
     }
 
@@ -461,7 +487,7 @@ async fn test_recovery_from_processing_status() {
 
     // Phase 6: Configure and restart with working gateway
     tracing::info!("Phase 5: Starting relayer with working gateway");
-    setup.configure_working_gateway(&[handle1]);
+    setup.configure_working_gateway(&[handle1]).await;
 
     setup
         .start_relayer_with_gateway(setup.working_gateway.port, |_| {})
@@ -469,13 +495,8 @@ async fn test_recovery_from_processing_status() {
         .expect("Failed to start relayer with working gateway");
 
     // Query DB after restart to verify what recovery should have seen
-    let repos2 = setup
-        .get_repositories()
-        .await
-        .expect("Failed to get repositories");
-    let incomplete_after_restart = repos2
-        .public_decrypt
-        .find_incomplete_requests()
+    let incomplete_after_restart = setup
+        .incomplete_public_decrypt_rows()
         .await
         .expect("Failed to query DB");
     tracing::info!(
@@ -518,25 +539,20 @@ async fn test_recovery_from_queued_status() {
 
     // Phase 1: Pre-generate handles and configure broken gateway to fail readiness
     let handle1 = random_handle();
-    setup.configure_for_queued_stuck();
+    setup.configure_for_queued_stuck().await;
 
     // Phase 2: Start relayer with broken gateway (readiness fails)
     tracing::info!("Phase 1: Starting relayer with broken gateway (readiness fails)");
     setup
         .start_relayer_with_gateway(setup.broken_gateway.port, |settings| {
             // High retry limits so requests don't fail, just keep retrying readiness
-            settings
+            let retry = settings
                 .gateway
                 .readiness_checker
                 .gw_ciphertext_check
-                .retry
-                .max_attempts = 100;
-            settings
-                .gateway
-                .readiness_checker
-                .gw_ciphertext_check
-                .retry
-                .retry_interval_ms = 100;
+                .retry_mut();
+            retry.max_attempts = 100;
+            retry.retry_interval_ms = 100;
         })
         .await
         .expect("Failed to start relayer");
@@ -554,13 +570,8 @@ async fn test_recovery_from_queued_status() {
     sleep(Duration::from_secs(3)).await;
 
     // Verify via DB that request is in queued status
-    let repos = setup
-        .get_repositories()
-        .await
-        .expect("Failed to get repositories");
-    let incomplete = repos
-        .public_decrypt
-        .find_incomplete_requests()
+    let incomplete = setup
+        .incomplete_public_decrypt_rows()
         .await
         .expect("Failed to query DB");
     tracing::info!(
@@ -568,12 +579,11 @@ async fn test_recovery_from_queued_status() {
         incomplete.len()
     );
 
-    for (job_id, _req_json, status, updated_at) in &incomplete {
+    for (job_id, status) in &incomplete {
         tracing::info!(
-            "  - Request int_job_id={} status={:?} updated_at={}",
+            "  - Request int_job_id={} status={}",
             hex::encode(job_id),
-            status,
-            updated_at
+            status
         );
     }
 
@@ -584,7 +594,7 @@ async fn test_recovery_from_queued_status() {
 
     // Phase 6: Configure and restart with working gateway
     tracing::info!("Phase 5: Starting relayer with working gateway");
-    setup.configure_working_gateway(&[handle1]);
+    setup.configure_working_gateway(&[handle1]).await;
 
     setup
         .start_relayer_with_gateway(setup.working_gateway.port, |_| {})
@@ -592,13 +602,8 @@ async fn test_recovery_from_queued_status() {
         .expect("Failed to start relayer with working gateway");
 
     // Query DB after restart
-    let repos2 = setup
-        .get_repositories()
-        .await
-        .expect("Failed to get repositories");
-    let incomplete_after_restart = repos2
-        .public_decrypt
-        .find_incomplete_requests()
+    let incomplete_after_restart = setup
+        .incomplete_public_decrypt_rows()
         .await
         .expect("Failed to query DB");
     tracing::info!(
@@ -648,7 +653,9 @@ async fn test_recovery_from_tx_in_flight_status() {
 
     // Phase 1: Pre-generate handles and configure broken gateway
     let handle1 = random_handle();
-    setup.configure_for_processing_stuck(slice::from_ref(&handle1));
+    setup
+        .configure_for_processing_stuck(slice::from_ref(&handle1))
+        .await;
 
     // Phase 2: Start relayer with broken gateway
     tracing::info!(
@@ -676,13 +683,8 @@ async fn test_recovery_from_tx_in_flight_status() {
     sleep(Duration::from_secs(3)).await;
 
     // Verify via DB that request is in an incomplete status
-    let repos = setup
-        .get_repositories()
-        .await
-        .expect("Failed to get repositories");
-    let incomplete = repos
-        .public_decrypt
-        .find_incomplete_requests()
+    let incomplete = setup
+        .incomplete_public_decrypt_rows()
         .await
         .expect("Failed to query DB");
     tracing::info!(
@@ -690,12 +692,11 @@ async fn test_recovery_from_tx_in_flight_status() {
         incomplete.len()
     );
 
-    for (job_id, _req_json, status, updated_at) in &incomplete {
+    for (job_id, status) in &incomplete {
         tracing::info!(
-            "  - Request int_job_id={} status={:?} updated_at={}",
+            "  - Request int_job_id={} status={}",
             hex::encode(job_id),
-            status,
-            updated_at
+            status
         );
     }
 
@@ -706,7 +707,7 @@ async fn test_recovery_from_tx_in_flight_status() {
 
     // Phase 6: Configure and restart with working gateway
     tracing::info!("Phase 5: Starting relayer with working gateway");
-    setup.configure_working_gateway(&[handle1]);
+    setup.configure_working_gateway(&[handle1]).await;
 
     setup
         .start_relayer_with_gateway(setup.working_gateway.port, |_| {})
@@ -714,13 +715,8 @@ async fn test_recovery_from_tx_in_flight_status() {
         .expect("Failed to start relayer with working gateway");
 
     // Query DB after restart - recovery should have reset tx_in_flight → processing
-    let repos2 = setup
-        .get_repositories()
-        .await
-        .expect("Failed to get repositories");
-    let incomplete_after_restart = repos2
-        .public_decrypt
-        .find_incomplete_requests()
+    let incomplete_after_restart = setup
+        .incomplete_public_decrypt_rows()
         .await
         .expect("Failed to query DB");
     tracing::info!(

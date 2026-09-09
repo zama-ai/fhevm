@@ -96,6 +96,7 @@ info:
     | Label | HTTP | Guidance |
     |-------|------|----------|
     | `internal_server_error` | 500 | Contact operator with `requestId` |
+    | `no_attestation_consensus` | 500 | Contact operator with `requestId` |
     | `insufficient_balance` | 503 | Contact operator |
     | `insufficient_allowance` | 503 | Contact operator |
 
@@ -537,7 +538,7 @@ paths:
                     requestId: 550e8400-e29b-41d4-a716-446655440000
                     status: failed
         '500':
-          description: 'Internal server error. Error label is one of: `internal_server_error`, `host_acl_failed`'
+          description: 'Internal server error. Error label is one of: `internal_server_error`, `host_acl_failed`, `no_attestation_consensus`'
           content:
             application/json:
               schema:
@@ -559,13 +560,29 @@ paths:
                       message: Internal server error
                     requestId: 550e8400-e29b-41d4-a716-446655440000
                     status: failed
+                NoAttestationConsensus:
+                  summary: Coprocessors did not agree on the ciphertext material
+                  value:
+                    error:
+                      label: no_attestation_consensus
+                      message: Coprocessors did not agree on the ciphertext material
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
         '503':
-          description: 'Service unavailable. Error label is one of: `response_timed_out`, `readiness_check_timed_out`, `protocol_paused`, `insufficient_balance`, `insufficient_allowance`'
+          description: 'Service unavailable. Error label is one of: `response_timed_out`, `readiness_check_timed_out`, `protocol_paused`, `insufficient_balance`, `insufficient_allowance`, `gateway_not_reachable`'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/V2StatusFailed'
               examples:
+                GatewayNotReachable:
+                  summary: Coprocessor registry on the gateway chain is not usable
+                  value:
+                    error:
+                      label: gateway_not_reachable
+                      message: Coprocessor registry on the gateway chain is not usable
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
                 InsufficientAllowance:
                   summary: Insufficient allowance for transaction
                   value:
@@ -784,7 +801,7 @@ paths:
                     requestId: 550e8400-e29b-41d4-a716-446655440000
                     status: failed
         '500':
-          description: 'Internal server error. Error label is one of: `internal_server_error`, `host_acl_failed`'
+          description: 'Internal server error. Error label is one of: `internal_server_error`, `host_acl_failed`, `no_attestation_consensus`'
           content:
             application/json:
               schema:
@@ -806,13 +823,29 @@ paths:
                       message: Internal server error
                     requestId: 550e8400-e29b-41d4-a716-446655440000
                     status: failed
+                NoAttestationConsensus:
+                  summary: Coprocessors did not agree on the ciphertext material
+                  value:
+                    error:
+                      label: no_attestation_consensus
+                      message: Coprocessors did not agree on the ciphertext material
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
         '503':
-          description: 'Service unavailable. Error label is one of: `response_timed_out`, `readiness_check_timed_out`, `protocol_paused`, `insufficient_balance`, `insufficient_allowance`'
+          description: 'Service unavailable. Error label is one of: `response_timed_out`, `readiness_check_timed_out`, `protocol_paused`, `insufficient_balance`, `insufficient_allowance`, `gateway_not_reachable`'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/V2StatusFailed'
               examples:
+                GatewayNotReachable:
+                  summary: Coprocessor registry on the gateway chain is not usable
+                  value:
+                    error:
+                      label: gateway_not_reachable
+                      message: Coprocessor registry on the gateway chain is not usable
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
                 InsufficientAllowance:
                   summary: Insufficient allowance for transaction
                   value:
@@ -1026,7 +1059,7 @@ paths:
                     requestId: 550e8400-e29b-41d4-a716-446655440000
                     status: failed
         '500':
-          description: 'Internal server error. Error label is one of: `internal_server_error`, `host_acl_failed`'
+          description: 'Internal server error. Error label is one of: `internal_server_error`, `host_acl_failed`, `no_attestation_consensus`'
           content:
             application/json:
               schema:
@@ -1048,13 +1081,29 @@ paths:
                       message: Internal server error
                     requestId: 550e8400-e29b-41d4-a716-446655440000
                     status: failed
+                NoAttestationConsensus:
+                  summary: Coprocessors did not agree on the ciphertext material
+                  value:
+                    error:
+                      label: no_attestation_consensus
+                      message: Coprocessors did not agree on the ciphertext material
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
         '503':
-          description: 'Service unavailable. Error label is one of: `response_timed_out`, `readiness_check_timed_out`, `protocol_paused`, `insufficient_balance`, `insufficient_allowance`'
+          description: 'Service unavailable. Error label is one of: `response_timed_out`, `readiness_check_timed_out`, `protocol_paused`, `insufficient_balance`, `insufficient_allowance`, `gateway_not_reachable`'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/V2StatusFailed'
               examples:
+                GatewayNotReachable:
+                  summary: Coprocessor registry on the gateway chain is not usable
+                  value:
+                    error:
+                      label: gateway_not_reachable
+                      message: Coprocessor registry on the gateway chain is not usable
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
                 InsufficientAllowance:
                   summary: Insufficient allowance for transaction
                   value:
@@ -1906,6 +1955,7 @@ components:
       - insufficient_allowance
       - gateway_not_reachable
       - readiness_check_timed_out
+      - no_attestation_consensus
       - response_timed_out
     V2ErrorResponseBody:
       oneOf:

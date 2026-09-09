@@ -71,3 +71,26 @@ the harness itself and run in the ordinary suite without a stack.
 
 The multi-coprocessor topology launcher is provided separately (it is
 infrastructure, not part of this test suite).
+
+## Host daemon access
+
+Restart and fault scenarios act on explicitly named coprocessor containers, so
+the e2e runner container (`test-suite-e2e-debug`) is given the host Docker
+socket at `/var/run/docker.sock`. This is unrestricted control of the host
+daemon: anything running in that container can stop, start, or recreate **any**
+container on the host, not just the stack's. The socket is inert for ordinary
+E2E tests.
+
+The wiring is generated, not tracked in
+`test-suite/fhevm/docker-compose/test-suite-docker-compose.yml`: the local CLI
+emits it into the runtime compose override for the `test-suite` component
+(`dockerSocketRuntime` in `test-suite/fhevm/src/generate/compose.ts`) and only
+when a socket is actually present on the host — the path follows a `unix://`
+`DOCKER_HOST` and otherwise defaults to `/var/run/docker.sock`. A host with no
+socket (rootless Docker, or a remote `tcp://` daemon) simply gets no mount, and
+the runner container still starts; the fault scenarios are the only thing that
+needs the socket. The supplementary group id is read from the socket itself at
+generation time rather than guessed, so it matches whatever owns the socket on
+that host. Note that CI runners which grant socket access through an ACL
+(`setfacl`) rather than group ownership are not covered by a supplementary
+group, and the fault scenarios cannot drive the daemon there.

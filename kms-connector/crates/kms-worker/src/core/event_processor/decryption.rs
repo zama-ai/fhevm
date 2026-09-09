@@ -89,7 +89,7 @@ where
         info!("Starting ACL check for {} handles...", handles.len());
 
         try_join_all(handles.iter().map(|handle| async move {
-            let ct_chain_id = extract_chain_id_from_handle(*handle).map_err(|e| {
+            let ct_chain_id = extract_chain_id_from_handle(handle).map_err(|e| {
                 RequestCheckError::irrecoverable(RequestCheckKind::Acl, ErrorCode::Unprocessable, e)
             })?;
             let host_client = self.host_clients.get(&ct_chain_id).ok_or_else(|| {
@@ -156,7 +156,7 @@ where
         let contracts_map_ref = &contracts_map;
 
         try_join_all(handles.iter().map(|handle| async move {
-            let ct_chain_id = extract_chain_id_from_handle(*handle).map_err(|e| {
+            let ct_chain_id = extract_chain_id_from_handle(handle).map_err(|e| {
                 RequestCheckError::irrecoverable(RequestCheckKind::Acl, ErrorCode::Unprocessable, e)
             })?;
             let host_client = self.host_clients.get(&ct_chain_id).ok_or_else(|| {
@@ -245,13 +245,13 @@ where
                     anyhow!("request contains no handles"),
                 )
             })
-            .map(|h| extract_chain_id_from_handle(h.handle))?
+            .map(|h| extract_chain_id_from_handle(&h.handle))?
             .map_err(|e| {
                 RequestCheckError::irrecoverable(RequestCheckKind::Acl, ErrorCode::Unprocessable, e)
             })?;
 
         for h in request.handles.iter() {
-            match extract_chain_id_from_handle(h.handle) {
+            match extract_chain_id_from_handle(&h.handle) {
                 Ok(id) if id == chain_id => (),
                 Ok(other) => {
                     return Err(RequestCheckError::irrecoverable(
@@ -717,7 +717,7 @@ mod tests {
         let mock_provider = ProviderBuilder::new()
             .disable_recommended_fillers()
             .connect_mocked_client(asserter);
-        let chain_id = extract_chain_id_from_handle(handle).unwrap();
+        let chain_id = extract_chain_id_from_handle(&handle).unwrap();
         let host_clients = HashMap::from([(
             chain_id,
             HostRpcClient::new(
@@ -799,7 +799,7 @@ mod tests {
             .map_err(RequestCheckError::record)
             .unwrap_err();
 
-        let chain_id = extract_chain_id_from_handle(handle).unwrap();
+        let chain_id = extract_chain_id_from_handle(&handle).unwrap();
         let msg = err.to_string();
         assert!(msg.contains(&chain_id.to_string()), "{msg}");
         assert!(
@@ -987,7 +987,7 @@ mod tests {
             signature: Bytes::default(),
         };
 
-        let chain_id = extract_chain_id_from_handle(handle).unwrap();
+        let chain_id = extract_chain_id_from_handle(&handle).unwrap();
         let gateway_addr = Config::default().decryption_contract.address;
         let domain = default_user_decrypt_domain(chain_id, gateway_addr);
         let digest = compute_user_decrypt_digest(&payload, &domain);

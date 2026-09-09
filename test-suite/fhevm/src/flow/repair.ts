@@ -1,5 +1,6 @@
 import { supportsConsensusDetector, supportsHostListenerConsumer, supportsUpgradeController } from "../compat/compat";
-import { assertCoprocessorConsensus, hasLocalCoprocessorInstance } from "../scenario/resolve";
+import { GCS_ONLY_SUFFIXES } from "../generate/compose";
+import { hasLocalCoprocessorInstance } from "../scenario/resolve";
 import { topologyForState } from "../stack-spec/stack-spec";
 import {
   GROUP_BUILD_COMPONENTS,
@@ -25,6 +26,8 @@ const UPGRADE_VERSION_KEYS: Record<UpgradeGroup, string[]> = {
     "COPROCESSOR_TFHE_WORKER_VERSION",
     "COPROCESSOR_ZKPROOF_WORKER_VERSION",
     "COPROCESSOR_SNS_WORKER_VERSION",
+    "COPROCESSOR_CONSENSUS_DETECTOR_VERSION",
+    "COPROCESSOR_UPGRADE_CONTROLLER_VERSION",
   ],
   "kms-connector": [
     "CONNECTOR_DB_MIGRATION_VERSION",
@@ -164,13 +167,11 @@ export const resolveUpgradePlan = (
   }
   const group = groupValue as UpgradeGroup;
   const lockFileMode = options.lockFile === true;
-  // The upgrade/repair lifecycle still models the KMS tier as a single core + single connector. A
-  // threshold-mode cluster (N cores + N connectors, the dedicated `core-threshold` component) is not
-  // covered, so fail loudly rather than silently upgrade only party 1. Threshold stacks are
-  // recreated with a fresh `up` (the e2e workflow always boots from scratch).
-  if ((group === "kms" || group === "kms-core") && state.scenario.kms.mode === "threshold") {
+  // A threshold KMS Core and its matching Connector are one rollout unit. Generic group upgrades
+  // cannot preserve that boundary, so threshold deployments must use the paired operator primitive.
+  if ((group === "kms" || group === "kms-core" || group === "kms-connector") && state.scenario.kms.mode === "threshold") {
     throw new Error(
-      `upgrade ${group} is not supported for a threshold-mode KMS cluster (it would only touch party 1); recreate the stack with a fresh \`up\``,
+      `upgrade ${group} is not supported for a threshold-mode KMS cluster; use the operator-paired rollout primitive`,
     );
   }
   if (group === "kms") {
@@ -211,18 +212,25 @@ export const resolveUpgradePlan = (
     : [];
   const overrideServices = selectedServices.length ? [...new Set(selectedServices)] : fullGroupServices;
   const releaseServices = lockFileMode ? GROUP_BUILD_SERVICES[group] : overrideServices;
-  const scenario = assertCoprocessorConsensus(state.scenario, "repair.upgradePlan");
-  const instances: ResolvedCoprocessorScenarioInstance[] = scenario.instances.length
-    ? scenario.instances
-    : Array.from({ length: topologyForState(state).count }, (_, index) => ({
+  const scenario = state.scenario;
+  const coprocessorInstances: ResolvedCoprocessorScenarioInstance[] = scenario.kind === "blue-green"
+    ? Array.from({ length: scenario.topology.count }, (_, index) => ({
         index,
-        source: { mode: "inherit" },
-        env: {},
-        args: {},
-      }));
+        source: scenario.bcs.source,
+        env: scenario.bcs.env,
+        args: scenario.bcs.args,
+      }))
+    : scenario.instances.length
+      ? scenario.instances
+      : Array.from({ length: topologyForState(state).count }, (_, index) => ({
+          index,
+          source: { mode: "inherit" },
+          env: {},
+          args: {},
+        }));
   const plannedServices =
     group === "coprocessor"
-      ? instances.flatMap((instance) => {
+      ? coprocessorInstances.flatMap((instance) => {
           if (!lockFileMode && instance.source.mode === "registry") {
             return [];
           }
@@ -230,13 +238,16 @@ export const resolveUpgradePlan = (
             instance.source.mode === "local"
               ? instance.localServices ?? coprocessorServices(state)
               : releaseServices;
-          return selected.map((service) =>
+          const available = scenario.kind === "blue-green"
+            ? selected.filter((service) => !GCS_ONLY_SUFFIXES.has(service.replace(/^coprocessor-/, "")))
+            : selected;
+          return available.map((service) =>
             instance.index === 0 ? service : service.replace(/^coprocessor-/, `coprocessor${instance.index}-`),
           );
         })
       : selectedServices.length
-        ? [...new Set(selectedServices)]
-        : GROUP_BUILD_SERVICES[group];
+          ? [...new Set(selectedServices)]
+          : GROUP_BUILD_SERVICES[group];
   return upgradePlan(group, [splitServices(component, plannedServices)], [group === "coprocessor" ? "coprocessor" : group]);
 };
 

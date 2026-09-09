@@ -8,7 +8,7 @@ use crate::{
         job_id::JobId,
     },
     host::redact_alloy_error,
-    orchestrator::Orchestrator,
+    orchestrator::{DispatchGate, Orchestrator},
     readiness::{
         checker::{ReadinessCheckError, ReadinessChecker},
         throttler::{ReadinessWorker, UserDecryptReadinessTask},
@@ -30,6 +30,7 @@ impl UserDecryptReadinessProcessor {
         throttler_worker: ReadinessWorker<UserDecryptReadinessTask>,
         readiness_checker: Arc<ReadinessChecker>,
         orchestrator: Arc<Orchestrator>,
+        gate: DispatchGate,
         shutdown: CancellationToken,
     ) -> anyhow::Result<()> {
         let task_name = "user_decrypt_readiness_processor";
@@ -42,7 +43,7 @@ impl UserDecryptReadinessProcessor {
             // Run the consumer loop; exits once `shutdown` fires, which also cancels the
             // checks already running.
             throttler_worker
-                .run_consumer(shutdown, move |task: UserDecryptReadinessTask| {
+                .run_consumer(gate, shutdown, move |task: UserDecryptReadinessTask| {
                     // Clone dependencies for the individual task execution
                     let checker = readiness_checker.clone();
                     Self::process_single_task(checker, task, dispatcher.clone())
@@ -88,14 +89,13 @@ impl UserDecryptReadinessProcessor {
             return;
         }
 
-        // 2. GATEWAY CIPHERTEXT CHECK
-        // All three attestation types use the same
-        // `isUserDecryptionReady_1((bytes32,address)[], bytes)` overload:
-        // the gateway only verifies that ciphertext material exists for
-        // each handle, so we just need a `HandleContractPair` projection.
-        // For `Eip712UnifiedV1` we drop `owner_address` from each
-        // `HandleEntry` — that field only feeds the gateway's per-handle
-        // ACL on the decryption call itself.
+        // 2. CIPHERTEXT READINESS CHECK
+        // All three request kinds collapse to the same check: under the on-chain Gateway check
+        // and the off-chain Coprocessor attestation check alike, the gateway/consensus verdict
+        // only depends on whether ciphertext material exists for each handle, so a
+        // `HandleContractPair` projection is enough. For `Eip712UnifiedV1` we drop
+        // `owner_address` from each `HandleEntry` — that field only feeds the gateway's
+        // per-handle ACL on the decryption call itself.
         let (pairs, extra_data): (Vec<HandleContractPair>, _) = match &task.request {
             UserDecryptRequest::LegacyDirect {
                 ct_handle_contract_pairs,
@@ -170,6 +170,40 @@ impl UserDecryptReadinessProcessor {
                     &task.request,
                     task.job_id,
                     EventProcessingError::ContractCallFailed(redact_alloy_error(&e)),
+                )
+                .await;
+            }
+
+            Err(
+                e @ (ReadinessCheckError::NoAttestationConsensus { .. }
+                | ReadinessCheckError::RegistryError { .. }),
+            ) => {
+                // Operator log: a digest value may legitimately appear here. What a caller sees —
+                // the stored reason and the HTTP response — is decided solely by the `From` impl
+                // below.
+                error!(job_id = %task.job_id, error = ?e, "No Coprocessor attestation consensus");
+
+                Self::dispatch_failure(
+                    &dispatcher,
+                    &task.request,
+                    task.job_id,
+                    EventProcessingError::from(e),
+                )
+                .await;
+            }
+
+            Err(e @ ReadinessCheckError::AttestationsNotReady { .. }) => {
+                error!(
+                    job_id = %task.job_id,
+                    error = ?e,
+                    "Ciphertext attestation readiness check timed out"
+                );
+
+                Self::dispatch_timeout(
+                    &dispatcher,
+                    &task.request,
+                    task.job_id,
+                    EventProcessingError::from(e),
                 )
                 .await;
             }
