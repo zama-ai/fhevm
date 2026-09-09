@@ -226,7 +226,7 @@ jobs:
       # tsc follows the `@sdk-src`/`@demo-dapp` path aliases into the SDK and dapp sources, so
       # both of their own dependency graphs must exist for their types to resolve.
       - name: Install the SDK's own dependency graph (tsc resolves SDK sources)
-        run: npm ci --workspace=@fhevm/sdk-dev --workspace=@fhevm/sdk --include-workspace-root=false
+        run: npm ci --prefix sdk/js-sdk
 
       - name: Install the demo-dapp's frozen dependency graph (tsc resolves the vault module)
         working-directory: solana/demo-dapp

@@ -188,7 +188,7 @@ jobs:
       # this position broke `bun run demo up` on `Cannot find module '@solana/kit'`. The lifecycle's
       # consumer graphs live in their own directories and are not touched by this root install.
       - name: Install the SDK's own dependency graph (SDK sources resolve their deps here)
-        run: npm ci --workspace=@fhevm/sdk-dev --workspace=@fhevm/sdk --include-workspace-root=false
+        run: npm ci --prefix sdk/js-sdk
 
       - name: Verify @fhevm/sdk runtime deps and demo consumer build
         # Lifecycle bring-up builds the SDK, then links each consumer graph to it. Assert the

@@ -85,6 +85,7 @@ jobs:
               - coprocessor/fhevm-engine/host-listener/idl/zama_host.json
               - test-suite/fhevm/src/solana/internal/generated/**
             test-suite-fhevm:
+              - solana/deploy/**
               - .github/workflows/solana-tests.yml
               - test-suite/fhevm/**
               # The job's `tsc` resolves through the `@sdk-src/*` and `@demo-dapp/*` path aliases
@@ -167,10 +168,10 @@ jobs:
       # Same recipe as clean-e2e.sh: the dapp reaches the SDK through a symlink into its source
       # tree (its postinstall swaps bun's `file:` snapshot for one), so the ESM and declaration
       # trees must exist before the dapp's checks run, and the SDK's own dependency graph must be
-      # installed at the repository root.
+      # installed in sdk/js-sdk.
       - name: Build the SDK the dapp consumes
         run: |
-          npm ci --workspace=@fhevm/sdk-dev --workspace=@fhevm/sdk --include-workspace-root=false
+          npm ci --prefix sdk/js-sdk
           ( cd sdk/js-sdk && npm run clean && npm run build:esm && npm run build:types )
 
       # The dapp does not hand-write the program clients under src/vault/internal/generated: the
@@ -223,7 +224,7 @@ jobs:
       # tsc follows the `@sdk-src`/`@demo-dapp` path aliases into the SDK and dapp sources, so
       # both of their own dependency graphs must exist for their types to resolve.
       - name: Install the SDK's own dependency graph (tsc resolves SDK sources)
-        run: npm ci --workspace=@fhevm/sdk-dev --workspace=@fhevm/sdk --include-workspace-root=false
+        run: npm ci --prefix sdk/js-sdk
 
       - name: Install the demo-dapp's frozen dependency graph (tsc resolves the vault module)
         working-directory: solana/demo-dapp

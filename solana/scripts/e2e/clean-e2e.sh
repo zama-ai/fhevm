@@ -255,7 +255,7 @@ fi
 # (the root graph its runtime dependencies resolve from), then generate the ESM and declaration
 # trees the symlink serves. Rebuilds are visible to consumers immediately — nothing re-copies a
 # snapshot.
-( cd "$ROOT" && npm ci --workspace=@fhevm/sdk-dev --workspace=@fhevm/sdk --include-workspace-root=false )
+( cd "$ROOT" && npm ci --prefix sdk/js-sdk )
 ( cd "$ROOT/sdk/js-sdk" && npm run clean && npm run build:esm && npm run build:types )
 ( cd "$ROOT/solana/deploy" && bun install --frozen-lockfile )
 ( cd "$FHEVM" && bun install --frozen-lockfile )
@@ -333,7 +333,7 @@ trap - EXIT
 # `npm ci` inside host-contracts and reifies the workspace root to that graph
 # alone — wiping the SDK install above. Restore it before Vite / e2e / seed
 # resolve `@fhevm/sdk` through the symlink.
-( cd "$ROOT" && npm ci --workspace=@fhevm/sdk-dev --workspace=@fhevm/sdk --include-workspace-root=false )
+( cd "$ROOT" && npm ci --prefix sdk/js-sdk )
 ( cd "$FHEVM" && node --input-type=module -e "await import('@fhevm/sdk/solana')" )
 ( cd "$FHEVM" && bun -e "await import('@fhevm/sdk/solana')" )
 # NOTE: relayer + kms-connector run the worktree code (via --override). SOLANA_E2E_LOCK_PINS can
