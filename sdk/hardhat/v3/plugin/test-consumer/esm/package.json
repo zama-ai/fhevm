@@ -12,7 +12,7 @@
   },
   "devDependencies": {
     "@fhevm/hardhat-plugin-v3": "file:../../pkg",
-    "@fhevm/sdk": "^0.13.3",
+    "@fhevm/sdk": "^0.13.4",
     "hardhat": "^3.0.0",
     "viem": "2.55.19"
   }

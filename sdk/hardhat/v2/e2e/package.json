@@ -34,7 +34,7 @@
   "devDependencies": {
     "@fhevm/hardhat-plugin": "file:../plugin/pkg",
     "@fhevm/host-contracts-cleartext": "file:../../../host-contracts-cleartext/v13/pkg",
-    "@fhevm/sdk": "^0.13.3",
+    "@fhevm/sdk": "^0.13.4",
     "@nomicfoundation/hardhat-chai-matchers": "^2.1.2",
     "@nomicfoundation/hardhat-ethers": "^3.1.3",
     "@typechain/ethers-v6": "^0.5.1",

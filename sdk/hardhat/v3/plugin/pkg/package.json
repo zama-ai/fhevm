@@ -33,7 +33,7 @@
     "@fhevm/host-contracts-cleartext": "file:../../../../host-contracts-cleartext/v13/pkg"
   },
   "peerDependencies": {
-    "@fhevm/sdk": "^0.13.3",
+    "@fhevm/sdk": "^0.13.4",
     "hardhat": "^3.0.0",
     "viem": "^2.55.19"
   }
