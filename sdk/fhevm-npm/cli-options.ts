@@ -8,6 +8,7 @@ import { type Verbosity, increaseVerbosity } from './base/verbosity.ts';
 export const commandNames = [
   'check-names',
   'check-dependencies',
+  'check-pinned-dependencies',
   'check-package-json',
   'check-package-json-paths',
   'check-workspaces',
@@ -195,6 +196,12 @@ export function parseCliOptions(argv: readonly string[]): CliOptions {
     .description('Check source and npm-script dependencies, workspace specs, and dependency-version rules.')
     .action(() => {
       selected = 'check-dependencies';
+    });
+  program
+    .command('check-pinned-dependencies')
+    .description('Check that every package repeats the manifest-pinned spec for a shared external dependency.')
+    .action(() => {
+      selected = 'check-pinned-dependencies';
     });
   program
     .command('check-package-json')

@@ -38,6 +38,17 @@
           "minItems": 1,
           "uniqueItems": true,
           "items": { "type": "string", "minLength": 1 }
+        },
+        "pinned": {
+          "type": "object",
+          "description": "Package name to the one dependency spec every package must repeat verbatim wherever it declares that package. For dependencies the workspace does not own, which versions.json cannot key.",
+          "minProperties": 1,
+          "propertyNames": { "minLength": 1 },
+          "additionalProperties": {
+            "type": "string",
+            "description": "An exact, caret or tilde version.",
+            "pattern": "^[~^]?(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(-[0-9A-Za-z.-]+)?(\\+[0-9A-Za-z.-]+)?$"
+          }
         }
       }
     },

@@ -16,6 +16,7 @@ import { checkNames } from './commands/check-names.ts';
 import { checkOwnership } from './commands/check-ownership.ts';
 import { checkPackageJsonPaths } from './commands/check-package-json-paths.ts';
 import { checkPackageJson } from './commands/check-package-json.ts';
+import { checkPinnedDependencies } from './commands/check-pinned-dependencies.ts';
 import { checkCleartextConfig } from './commands/check-cleartext-config.ts';
 import { checkCommitScope } from './commands/check-commit-scope.ts';
 import { checkScripts } from './commands/check-scripts.ts';
@@ -47,6 +48,7 @@ import { loadNpmManifest } from './manifest.ts';
 const commands: Readonly<Record<CommandName, CheckCommand>> = {
   'check-names': checkNames,
   'check-dependencies': checkDependencies,
+  'check-pinned-dependencies': checkPinnedDependencies,
   'check-package-json': checkPackageJson,
   'check-package-json-paths': checkPackageJsonPaths,
   'check-workspaces': checkWorkspaces,

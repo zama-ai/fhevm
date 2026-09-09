@@ -339,6 +339,30 @@ package, never siblings or children. An exception naming no declared dependency 
 "devDependencies": { "legacy-linter": "^1.0.0" }
 ```
 
+**3.3.4 A pinned external dependency is declared with the same spec everywhere.** `npm-manifest.json` maps a package
+name to one spec in `dependencies.pinned`; every inventoried package that declares that name, in any dependency
+section, repeats that spec verbatim. This exists for a dependency the workspace consumes but does not build:
+`versions.json` is keyed by manifest package key, so it cannot name a payload outside the inventory, and a root pin in
+`sdk/package.json` reaches only the private kinds that rule 4.2.1 covers. Without a single declared spec, two
+installation roots silently resolve different copies of the same package. The comparison is textual, not semantic —
+`0.13.3` and `^0.13.3` install the same version today but diverge on the next patch release, so the pin fixes the
+range operator too. A pin no inventoried package declares is stale and fails validation.
+
+```jsonc
+// ✅ One spec named once, repeated by every consumer whatever its kind or dependency section.
+{
+  "dependencies": { "pinned": { "@fhevm/sdk": "^0.13.3" } }
+}
+"devDependencies":  { "@fhevm/sdk": "^0.13.3" }  // hardhat/v3/plugin
+"peerDependencies": { "@fhevm/sdk": "^0.13.3" }  // hardhat/v3/plugin/pkg
+
+// ❌ The same version, a different range operator. Diverges the moment 0.13.4 ships.
+"devDependencies": { "@fhevm/sdk": "0.13.3" }
+
+// ❌ A stale patch level no other package uses.
+"devDependencies": { "@fhevm/sdk": "^0.13.2" }
+```
+
 ### 3.4 Depending across generations
 
 Some package families exist in several **generations** side by side: `host-contracts-cleartext/v12` and

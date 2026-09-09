@@ -7,6 +7,7 @@ TypeScript configuration and tests, and imports no code from the surrounding SDK
 npm install
 node ./fhevm-npm.ts check-names
 node ./fhevm-npm.ts check-dependencies
+node ./fhevm-npm.ts check-pinned-dependencies
 node ./fhevm-npm.ts check-package-json
 node ./fhevm-npm.ts check-package-json-paths
 node ./fhevm-npm.ts check-workspaces

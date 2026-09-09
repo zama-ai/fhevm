@@ -6,6 +6,7 @@ const PREFIXED_PATH = /^\.(?:\/(?!\.{1,2}(?:\/|$))[A-Za-z0-9._-]+)+$/;
 const UNPREFIXED_PATH = /^(?!\.{1,2}(?:\/|$))[A-Za-z0-9._-]+(?:\/(?!\.{1,2}(?:\/|$))[A-Za-z0-9._-]+)*$/;
 const FILE_NAME = /^(?!\.{1,2}$)[A-Za-z0-9._-]+$/;
 const HTTPS_URL = /^https:\/\/[^\s]+$/;
+const DEPENDENCY_PIN = /^[~^]?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
 
 export const packageKinds = [
   'published',
@@ -65,6 +66,15 @@ const inventorySchema = z
 const dependencyPolicySchema = z
   .object({
     forbidden: z.array(z.string().min(1)).min(1).superRefine(uniqueStrings),
+    // A dependency the workspace does not own, whose spec every package must repeat verbatim. `versions.json`
+    // cannot express this: it keys published payloads inside the inventory, and these names are external to it.
+    pinned: z
+      .record(
+        z.string().min(1),
+        z.string().regex(DEPENDENCY_PIN, 'must be an exact, caret, or tilde version such as ^1.2.3'),
+      )
+      .refine((value) => Object.keys(value).length > 0, 'must pin at least one package')
+      .optional(),
   })
   .strict();
 
