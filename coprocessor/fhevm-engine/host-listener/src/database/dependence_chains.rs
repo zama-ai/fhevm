@@ -1804,7 +1804,7 @@ mod multi_listener_tests {
         .expect("negative scan");
         assert_eq!(negative, 0, "a negative gate is unacquirable forever");
 
-        // 6. A third process derives the same seal set from durable state.
+        // 6. A third process derives the same seal set from persistent state.
         //    Seals are per-process, so the listeners disagree in memory; the
         //    periodic rebuild is what makes them converge, and it must not
         //    depend on which listener happened to ingest what.
@@ -1826,7 +1826,7 @@ mod multi_listener_tests {
             sealed.len(),
             derived.len(),
             "a freshly started listener must derive exactly the seals the \
-             durable state implies, whichever process wrote it"
+             persistent state implies, whichever process wrote it"
         );
     }
 }

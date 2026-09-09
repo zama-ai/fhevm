@@ -391,7 +391,7 @@ impl Database {
         restored
     }
 
-    /// Rebuild the producer seal from durable state.
+    /// Rebuild the producer seal from persistent state.
     ///
     /// `sealed_chains` is process-local, so a restart starts with none. That
     /// is not the rare event the LRU-eviction case is: catchup replays
@@ -400,13 +400,13 @@ impl Database {
     /// seal, because `update_dependence_chain` is the only writer and ingest
     /// skips it when every computation insert is a duplicate. A parent that
     /// was sealed would resume absorbing continuations while its already
-    /// gated child, whose `dependency_count` is durable, waits behind all of
+    /// gated child, whose `dependency_count` is persistent, waits behind all of
     /// them. That is the exact condition sealing exists to prevent, and it
     /// would recur on every deploy.
     ///
     /// Nothing new is persisted to fix it, because the seal is not
     /// independent state: it means "some child is still gated on me", and
-    /// both halves are already durable — the child sits in the parent's
+    /// both halves are already persistent — the child sits in the parent's
     /// `dependents`, and it carries `dependency_count > 0`. Deriving rather
     /// than storing also means the seal cannot drift from the gate it serves.
     /// A child that discharges stops sealing its parent, and a retired parent
