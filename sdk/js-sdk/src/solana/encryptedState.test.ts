@@ -126,12 +126,7 @@ describe('the account address', () => {
     };
     const [expected] = await getProgramDerivedAddress({
       programAddress: base58.encode(HOST_PROGRAM) as Address,
-      seeds: [
-        SOLANA_ENCRYPTED_STATE_SEED,
-        seeds.program,
-        seeds.authority,
-        seeds.scope,
-      ],
+      seeds: [SOLANA_ENCRYPTED_STATE_SEED, seeds.program, seeds.authority, seeds.scope],
     });
     expect(await solanaEncryptedStateAddress(HOST_PROGRAM, seeds)).toBe(expected);
     expect(new TextDecoder().decode(SOLANA_ENCRYPTED_STATE_SEED)).toBe('encrypted-state');

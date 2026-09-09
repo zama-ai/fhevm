@@ -56,10 +56,7 @@ export const SOLANA_PUBLIC_DECRYPT_EXTRA_DATA_VERSION = 0x04;
  * @param contextId - The 32-byte KMS context id.
  * @param encryptedState - The 32-byte address of the account the handle lives in.
  */
-export function buildSolanaPublicDecryptExtraData(
-  contextId: Uint8Array,
-  encryptedState: Uint8Array,
-): Uint8Array {
+export function buildSolanaPublicDecryptExtraData(contextId: Uint8Array, encryptedState: Uint8Array): Uint8Array {
   assertExtraDataFieldLen('contextId', contextId, 32);
   assertExtraDataFieldLen('encryptedState', encryptedState, 32);
   return concatBytes(new Uint8Array([SOLANA_PUBLIC_DECRYPT_EXTRA_DATA_VERSION]), contextId, encryptedState);

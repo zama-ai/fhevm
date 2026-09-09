@@ -55,7 +55,7 @@ export interface SolanaEncryptedState {
   readonly program: Address;
   readonly authority: Address;
   readonly scope: Uint8Array;
-  readonly slots: readonly { readonly key: Uint8Array; readonly handle: Uint8Array }[];
+  readonly slots: ReadonlyArray<{ readonly key: Uint8Array; readonly handle: Uint8Array }>;
   readonly leafCount: bigint;
   readonly peaks: readonly Uint8Array[];
   readonly bump: number;
@@ -65,7 +65,16 @@ const encryptedStateBodyDecoder = getStructDecoder([
   ['program', fixDecoderSize(getBytesDecoder(), 32)],
   ['authority', fixDecoderSize(getBytesDecoder(), 32)],
   ['scope', fixDecoderSize(getBytesDecoder(), 32)],
-  ['slots', getArrayDecoder(getStructDecoder([['key', fixDecoderSize(getBytesDecoder(), 32)], ['handle', fixDecoderSize(getBytesDecoder(), 32)]]), { size: getU32Decoder() })],
+  [
+    'slots',
+    getArrayDecoder(
+      getStructDecoder([
+        ['key', fixDecoderSize(getBytesDecoder(), 32)],
+        ['handle', fixDecoderSize(getBytesDecoder(), 32)],
+      ]),
+      { size: getU32Decoder() },
+    ),
+  ],
   ['leafCount', getU64Decoder()],
   ['peaks', getArrayDecoder(fixDecoderSize(getBytesDecoder(), 32), { size: getU32Decoder() })],
   ['bump', getU8Decoder()],
@@ -97,7 +106,7 @@ export function decodeSolanaEncryptedState(data: Uint8Array, accountName: string
     trailingCapacity % VECTOR_ELEMENT_SIZE !== 0 ||
     decoded.peaks.length !== popcount(decoded.leafCount) ||
     decoded.slots.length > 32 ||
-    new Set(decoded.slots.map(slot => Array.from(slot.key).join(','))).size !== decoded.slots.length
+    new Set(decoded.slots.map((slot) => Array.from(slot.key).join(','))).size !== decoded.slots.length
   ) {
     throw new Error(
       `EncryptedState account ${accountName}: decoded ${decoded.peaks.length} MMR peaks for leaf count ` +
@@ -111,7 +120,7 @@ export function decodeSolanaEncryptedState(data: Uint8Array, accountName: string
     program: addressDecoder.decode(decoded.program),
     authority: addressDecoder.decode(decoded.authority),
     scope: new Uint8Array(decoded.scope),
-    slots: decoded.slots.map(slot => ({ key: new Uint8Array(slot.key), handle: new Uint8Array(slot.handle) })),
+    slots: decoded.slots.map((slot) => ({ key: new Uint8Array(slot.key), handle: new Uint8Array(slot.handle) })),
     leafCount: decoded.leafCount,
     peaks: decoded.peaks.map((peak) => new Uint8Array(peak)),
     bump: decoded.bump,
@@ -167,7 +176,9 @@ function popcount(value: bigint): number {
 
 /** Returns the handle currently bound to a named slot in this snapshot. */
 export function encryptedStateHandle(state: SolanaEncryptedState, key: Uint8Array): Uint8Array {
-  const slot = state.slots.find(slot => slot.key.length === key.length && slot.key.every((byte, index) => byte === key[index]));
+  const slot = state.slots.find(
+    (entry) => entry.key.length === key.length && entry.key.every((byte, index) => byte === key[index]),
+  );
   if (!slot) throw new Error('encrypted state does not contain the requested slot');
   return slot.handle;
 }
