@@ -181,28 +181,28 @@ export function parseCliOptions(argv: readonly string[]): CliOptions {
   // instead of the top level carrying nineteen check-* siblings.
   const check = program
     .command('check')
-    .description('Validate the workspace against npm-manifest.json and FHEVM_NPM_RULES.md. Read-only.');
+    .description('Check the workspace against the project rules. Only reads files, never changes them.');
   check
     .command('names')
-    .description('Check package names, privacy, and the required -dev suffix.')
+    .description('Check every package name, its -dev suffix and its private flag.')
     .action(() => {
       selected = 'names';
     });
   check
     .command('dependencies')
-    .description('Check source and npm-script dependencies, workspace specs, and dependency-version rules.')
+    .description('Check that each package declares the dependencies it actually uses.')
     .action(() => {
       selected = 'dependencies';
     });
   check
     .command('pinned-dependencies')
-    .description('Check that every package repeats the manifest-pinned spec for a shared external dependency.')
+    .description('Check that shared dependencies all use the one version pinned in the manifest.')
     .action(() => {
       selected = 'pinned-dependencies';
     });
   check
     .command('package-json')
-    .description('Check package.json hygiene.')
+    .description('Check package.json required fields, ordering and formatting.')
     .option(
       '--sort',
       "sort top-level entries and each package.json 'scripts' field; 'workspaces' order is left alone",
@@ -214,7 +214,7 @@ export function parseCliOptions(argv: readonly string[]): CliOptions {
     });
   check
     .command('package-json-paths')
-    .description('Check that local paths exposed by package.json exist; packages must be built first.')
+    .description('Check that paths written in package.json really exist. Build the packages first.')
     .addHelpText(
       'after',
       `
@@ -227,25 +227,25 @@ Prerequisite:
     });
   check
     .command('workspaces')
-    .description('Check workspace membership and published-name uniqueness.')
+    .description('Check the workspace member list, and that no two packages claim the same name.')
     .action(() => {
       selected = 'workspaces';
     });
   check
     .command('generations')
-    .description('Check that every dependency on a generation family targets V(N); only V(N) may depend on V(N-1).')
+    .description('Check that packages depend on the current generation, not an older one.')
     .action(() => {
       selected = 'generations';
     });
   check
     .command('ownership')
-    .description('Check dev-owner and published-payload relationships.')
+    .description('Check that each published package has exactly one dev package owning it.')
     .action(() => {
       selected = 'ownership';
     });
   check
     .command('scripts')
-    .description('Check conventional package-owned validation scripts.')
+    .description('Check that every package defines the standard scripts it is expected to have.')
     .addHelpText(
       'after',
       `
@@ -279,83 +279,74 @@ Checked scripts:
     });
   check
     .command('lockfiles')
-    .description('Check workspace and isolated-consumer lockfile placement.')
+    .description('Check that each package-lock.json sits where it belongs, and nowhere else.')
     .action(() => {
       selected = 'lockfiles';
     });
   check
     .command('foundry')
-    .description('Check the installed forge version against the central manifest pin.')
+    .description('Check the installed forge version against the one pinned in the manifest.')
     .action(() => {
       selected = 'foundry';
     });
   check
     .command('lint-policy')
-    .description('Check that Forge is the only Solidity linter outside declared mirror-only packages.')
+    .description('Check that Forge is the only Solidity linter in use.')
     .action(() => {
       selected = 'lint-policy';
     });
   check
     .command('json-schemas')
-    .description('Validate committed JSON configuration files against the schemas in fhevm-npm/schemas.')
+    .description('Check every committed JSON config file against its schema.')
     .action(() => {
       selected = 'json-schemas';
     });
   check
     .command('manifest-coverage')
-    .description('Check filesystem discovery, manifest completeness, and path containment.')
+    .description('Check that the manifest lists every package on disk, and nothing that is not.')
     .action(() => {
       selected = 'manifest-coverage';
     });
   check
     .command('published-files')
-    .description('Check that every file in an npm-distributed payload is published or excluded by "files".')
+    .description('Check that a published package ships exactly the files it is meant to.')
     .action(() => {
       selected = 'published-files';
     });
   check
     .command('mirror <package>')
-    .description("Compare one package's tracked mirror files with a fresh upstream clone.")
+    .description("Compare one package's mirrored files against a fresh clone of the upstream repo.")
     .action((packageSelector: string) => {
       mirrorPackageSelector = packageSelector;
     });
   check
     .command('vendored-origin [package]')
-    .description(
-      'Check that each local vendored folder matches its declared origin (git commit), for one ' +
-        'package or for every package that declares vendored content when omitted.',
-    )
+    .description('Check that copied-in folders still match the commit they were taken from.')
     .action((packageSelector: string | undefined) => {
       vendoredPackageSelector = packageSelector;
       checkAllVendored = packageSelector === undefined;
     });
   check
     .command('tsconfig-paths')
-    .description('Check that literal paths named by owned tsconfigs exist.')
+    .description('Check that paths written in tsconfig files really exist.')
     .action(() => {
       selected = 'tsconfig-paths';
     });
   check
     .command('commit-scope')
-    .description(
-      'Check that every pending git change (staged, unstaged, untracked) is inside the sdk workspace — ' +
-        'nothing outside it may be touched by a commit from here.',
-    )
+    .description('Check that nothing outside the sdk folder is about to be committed.')
     .action(() => {
       selected = 'commit-scope';
     });
   check
     .command('cleartext-config')
-    .description(
-      'Check that every generated face of sdk/cleartext-config.json matches it (read-only twin of ' +
-        'generate-cleartext-config --check).',
-    )
+    .description('Check that the files built from cleartext-config.json are up to date.')
     .action(() => {
       selected = 'cleartext-config';
     });
   check
     .command('tsc-mode')
-    .description("Check that no 'tsc -p' or bare 'tsc' script invocation targets a solution-style tsconfig.")
+    .description('Check that no script runs tsc against a tsconfig that only lists references.')
     .addHelpText(
       'after',
       `
@@ -371,31 +362,24 @@ Why:
   // Rendering a committed file from a config it reads: `--check` on each compares instead of writing.
   const generate = program
     .command('generate')
-    .description('Render a committed file from the configuration it is derived from.');
+    .description('Rebuild a committed file from the config file it is derived from.');
   generate
     .command('exports <manifest>')
-    .description("Render a package's export manifest into its index and consumer export tests.")
+    .description("Write a package's index and export tests from its export manifest.")
     .option('--check', 'compare the outputs against the manifest instead of writing them', false)
     .action((manifest: string, options: { readonly check: boolean }) => {
       generateExports = { exportManifestFile: resolve(manifest), check: options.check };
     });
   generate
     .command('cleartext-config')
-    .description(
-      'Render sdk/cleartext-config.json into every file generated from it: the TypeScript face in ' +
-        "common-vendored/src (copied to each generation's pkg/ts by sync-vendored), and each " +
-        "generation's FhevmCleartextConfig.sol and scripts/cleartext-config.sh.",
-    )
+    .description('Write every file that is built from cleartext-config.json.')
     .option('--check', 'compare the outputs against the JSON instead of writing them', false)
     .action((options: { readonly check: boolean }) => {
       generateCleartextConfig = { check: options.check };
     });
   generate
     .command('chain-constants')
-    .description(
-      'Render sdk/fhevm-chains.config.json into its TypeScript face, common-vendored/src/fhevm-chains.ts: every ' +
-        'deployed host-contract and gateway address by network group (sync-vendored copies it to the packages that carry one).',
-    )
+    .description('Write the TypeScript chain address list from fhevm-chains.config.json.')
     .option('--check', 'compare the face against the JSON instead of writing it', false)
     .action((options: { readonly check: boolean }) => {
       generateChainConstants = { check: options.check };
@@ -403,23 +387,17 @@ Why:
   // Distinct from `generate`: these copy from a source of truth, or fetch from the protocol registry.
   const sync = program
     .command('sync')
-    .description('Bring a tracked copy back in line with the source it is taken from.');
+    .description('Copy a tracked file back into line with the original it came from.');
   sync
     .command('vendored')
-    .description(
-      'Write every vendored destination from its source of truth: the shared TypeScript from ' +
-        'common-vendored/manifest.json, and the pinned Solidity plus its provenance from npm-manifest.json.',
-    )
+    .description('Copy every vendored file from the package that owns the original.')
     .option('--check', 'compare instead of writing, and fail on any difference', false)
     .action((options: { readonly check: boolean }) => {
       syncVendored = { check: options.check };
     });
   sync
     .command('fhevm-chains')
-    .description(
-      'Write fhevm-chains.config.json — every fhevm host-contract and gateway address, one section per ' +
-        "network group of fhevm-network-groups.config.json — from the protocol registry at a pinned commit (default: the file's recorded pin).",
-    )
+    .description('Fetch the latest chain addresses from the protocol registry.')
     .option('--latest', "pin to the registry's current HEAD", false)
     .option('--commit <sha>', 'pin to an explicit registry commit (full 40-hex sha)')
     .action((options: { readonly latest: boolean; readonly commit?: string }) => {
@@ -427,26 +405,20 @@ Why:
     });
   check
     .command('fhevm-chains-origin')
-    .description(
-      "Check that fhevm-chains.config.json is current with the head of the protocol registry's main " +
-        '(read-only; registry commits touching no fhevm address stay green).',
-    )
+    .description("Check that the chain addresses match the protocol registry's latest commit.")
     .action(() => {
       checkFhevmChainsOrigin = true;
     });
   program
     .command('install-forge-dependencies [package]')
-    .description('Install Soldeer dependencies for one package, or for all manifest packages when omitted.')
+    .description('Install Solidity dependencies for one package, or for all of them.')
     .action((packageSelector: string | undefined) => {
       forgeDependencyPackageSelector = packageSelector;
       installAllForgeDependencies = packageSelector === undefined;
     });
   program
     .command('clean-forge-dependencies [package]')
-    .description(
-      'Delete the Forge dependency directories `forge config --json` reports (libs minus node_modules), ' +
-        'after showing the list and asking for confirmation.',
-    )
+    .description('Delete installed Solidity dependency folders, after asking you to confirm.')
     .option('--dry-run', 'list what would go, delete nothing', false)
     .option('-f, --force', 'skip the confirmation prompt; required when stdin is not a terminal', false)
     .action((packageSelector: string | undefined, options: { readonly dryRun: boolean; readonly force: boolean }) => {
@@ -454,7 +426,7 @@ Why:
     });
   program
     .command('list-packages')
-    .description('List every manifest package relative path and its kind.')
+    .description('List every package the manifest knows about, with its kind.')
     .action(() => {
       listPackagesSelected = true;
     });
@@ -463,13 +435,10 @@ Why:
   // group as one word; completing its subcommands belongs to that plan's renderer work.
   const version = program
     .command('version')
-    .description('Read and reconcile sdk/versions.json, the authority for every published payload version.');
+    .description('Read or update versions.json, the one file holding every published version.');
   version
     .command('list')
-    .description(
-      'List every published payload: central version, package.json version, distribution channels (npm, mirror) ' +
-        'and mirror repository.',
-    )
+    .description('List every published package with its version and where it ships.')
     .option('--check-npmjs', 'ask registry.npmjs.org whether each npm-distributed version is published', false)
     .option('--json', 'print the entries as JSON instead of a table', false)
     .action((options: { readonly checkNpmjs: boolean; readonly json: boolean }) => {
@@ -477,19 +446,13 @@ Why:
     });
   version
     .command('check')
-    .description(
-      'Check that sdk/versions.json is valid and that every package.json version and lockfile member entry ' +
-        'equals its central version. Read-only.',
-    )
+    .description('Check that every package.json version matches versions.json.')
     .action(() => {
       versionCheckSelected = true;
     });
   version
     .command('apply')
-    .description(
-      'Reconcile every derived version (package.json, lockfile member entries) from sdk/versions.json. ' +
-        'Requires a clean worktree or exactly one unstaged change: sdk/versions.json.',
-    )
+    .description('Update every package.json and lockfile to match versions.json.')
     .option('--dry-run', 'print the central edit and the derived writes without changing any file', false)
     .option('--check-npmjs', 'refuse a changed npm-distributed version that registry.npmjs.org already has', false)
     .action((options: { readonly dryRun: boolean; readonly checkNpmjs: boolean }) => {
@@ -498,40 +461,30 @@ Why:
   // The publication group: what npmjs.com will see, and in which order payloads must get there.
   const publish = program
     .command('publish')
-    .description('Render, pack and check npm-distributed payloads as npmjs.com must see them. Never publishes.');
+    .description('Preview and test what npm would publish. Never actually publishes anything.');
   publish
     .command('order')
-    .description('Print the npm-distributed payloads in dependency order, one manifest key per line.')
+    .description('Print the order the packages have to be published in.')
     .action(() => {
       publishOrderSelected = true;
     });
   publish
     .command('render <payload>')
-    .description(
-      "Show a payload's package.json as npmjs.com will see it — each file: link rendered to its target's " +
-        'generation range — followed by the files npm would pack. Writes nothing.',
-    )
+    .description("Show a package's package.json exactly as npmjs.com would see it.")
     .option('--json', 'print the full rendered package.json instead of a diff', false)
     .action((payload: string, options: { readonly json: boolean }) => {
       publishRender = { payload, json: options.json };
     });
   publish
     .command('pack <payload>')
-    .description(
-      'Render the payload as `publish render` shows it, `npm pack` a staged copy into the manifest-declared ' +
-        'tarballs directory, and print the tarball path. The tree is untouched.',
-    )
+    .description('Build the tarball npm would publish, and print where it was saved.')
     .option('-o, --out-dir <dir>', 'override npm-manifest.json#tarballs.relPath')
     .action((payload: string, options: { readonly outDir?: string }) => {
       publishPack = { payload, outDir: options.outDir };
     });
   publish
     .command('check <payload>')
-    .description(
-      'Check the packed tarball: no file: spec survived rendering and its version is the central one. With ' +
-        '--check-npmjs, every rendered dependency range has a published version (retried) and the payload ' +
-        'itself is not published yet (never retried).',
-    )
+    .description('Build the tarball and check that it is safe to publish.')
     .option(
       '-o, --out-dir <dir>',
       'where `publish pack` put the tarball; defaults to npm-manifest.json#tarballs.relPath',
@@ -560,9 +513,7 @@ Why:
     );
   program
     .command('test-consumer [package]')
-    .description(
-      'Install the consumers registered in npm-manifest.json#consumerTests, selected by consumer, payload or owner.',
-    )
+    .description('Install a test project that uses a package the way a real user would.')
     .option('-l, --list', 'list every registered consumer with its payload, owner, format and lockfile', false)
     .option('-a, --all', 'run every registered consumer, serially, in source order', false)
     .option('-o, --output <path>', 'persistent installation directory')
@@ -594,9 +545,7 @@ Why:
     });
   program
     .command('test-consumer-regenerate-package-lock [package]')
-    .description(
-      'Regenerate and validate consumer package-lock.json files; defaults to every registered non-member consumer.',
-    )
+    .description('Rebuild the package-lock.json of the standalone test projects.')
     .action((packageSelector: string | undefined) => {
       regenerateConsumerPackageLocks = true;
       regenerateConsumerPackageLockSelector = packageSelector;
