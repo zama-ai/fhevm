@@ -43,8 +43,7 @@
 
 use zama_solana_acl::decode_encrypted_state;
 use zama_solana_acl::delegation::{
-    decode_user_decryption_delegation, UserDecryptionDelegationRecord,
-    WILDCARD_AUTHORITY,
+    decode_user_decryption_delegation, UserDecryptionDelegationRecord, WILDCARD_AUTHORITY,
 };
 
 /// One fetched account, exactly as the RPC returned it.
@@ -200,9 +199,7 @@ fn names_tuple(
     delegate: [u8; 32],
     authority: [u8; 32],
 ) -> bool {
-    record.delegator == delegator
-        && record.delegate == delegate
-        && record.authority == authority
+    record.delegator == delegator && record.delegate == delegate && record.authority == authority
 }
 
 /// One delegated entry as admission handed it over: the claimed identities, plus the handle
@@ -387,10 +384,7 @@ fn solana_delegation_row_addresses(
             program_id,
         )
     };
-    (
-        row(authority),
-        row(&WILDCARD_AUTHORITY),
-    )
+    (row(authority), row(&WILDCARD_AUTHORITY))
 }
 
 #[cfg(test)]
