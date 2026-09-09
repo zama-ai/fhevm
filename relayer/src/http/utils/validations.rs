@@ -611,9 +611,10 @@ mod tests {
 
     #[test]
     fn rejects_unsupported_version_byte() {
-        // 0x04 is unknown; must be rejected.
-        let extra_data = format!("0x04{CONTEXT_ID_HEX}{EPOCH_ID_HEX}");
-        assert!(validate_extra_data_field_decryption(&extra_data).is_err());
+        for version in ["03", "05", "ff"] {
+            let extra_data = format!("0x{version}{CONTEXT_ID_HEX}{EPOCH_ID_HEX}");
+            assert!(validate_extra_data_field_decryption(&extra_data).is_err());
+        }
     }
 
     #[test]
