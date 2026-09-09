@@ -45,6 +45,7 @@ export const parseUpInput = (args: Record<string, unknown>) => {
   const reset = asBool(args.reset);
   const allowSchemaMismatch = asBool(args["allow-schema-mismatch"] ?? args.allowSchemaMismatch);
   const build = asBool(args.build);
+  const e2ePublicRuntime = asBool(args["e2e-public-runtime"] ?? args.e2ePublicRuntime);
 
   if (target && !TARGETS.includes(target as VersionTarget)) {
     throw new PreflightError(`Unsupported target ${target}. Valid: ${TARGETS.join(", ")}`);
@@ -103,6 +104,7 @@ export const parseUpInput = (args: Record<string, unknown>) => {
     sha,
     overrides,
     build,
+    e2ePublicRuntime,
     scenarioPath,
     bcsTag,
     fromStep,

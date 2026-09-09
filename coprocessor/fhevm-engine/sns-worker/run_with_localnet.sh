@@ -26,7 +26,9 @@ export OTEL_SERVICE_NAME="${SERVICE_NAME}"
 # Feature selection
 # ------------------------------------------------------------------------------
 
-FEATURES=()
+# Always on: lets BUILD_STACK_VERSION from the environment override the
+# hard-coded stack version baked into the binary (see fhevm-engine-common).
+FEATURES=(fhevm-engine-common/stack-version-override)
 
 # Backward-compatible default behavior
 ##if [[ "${1:-}" != "default" ]]; then
@@ -83,6 +85,9 @@ echo "FEATURES: ${FEATURES[*]:-<none>}"
 # Execution
 # ------------------------------------------------------------------------------
 
+# One bucket per coprocessor holds both ct64 and ct128, under their `ct64/` and
+# `ct128/` key prefixes. The fleet runs as coprocessor 0, whose e2e bucket is
+# coproc-0 (see test-suite/fhevm/src/generate/env.ts:buildInstanceEnvs).
 cargo run --jobs 32 --release "${CARGO_FEATURES[@]}" -- \
     --pg-listen-channels "event_pbs_computations" "event_ciphertext_computed" \
     --pg-notify-channel "event_ciphertext128_computed" \
@@ -91,8 +96,7 @@ cargo run --jobs 32 --release "${CARGO_FEATURES[@]}" -- \
     --pg-pool-connections=10 \
     --cleanup-interval=7200s \
     --pg-auto-explain-with-min-duration=10ms \
-    --bucket-name-ct64="ct64" \
-    --bucket-name-ct128="ct128" \
+    --bucket-name="${BUCKET_NAME:-coproc-0}" \
     --schedule-policy="sequential" \
     --signer-type=private-key \
     --private-key="${TX_SENDER_PRIVATE_KEY}" \

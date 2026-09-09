@@ -1,29 +1,12 @@
 # RUST_IMAGE_VERSION is injected by CI from rust-toolchain.toml (see coprocessor-docker-build.yml)
 ARG RUST_IMAGE_VERSION
 
-# Stage 0: Build contracts
-FROM ghcr.io/zama-ai/fhevm/gci/nodejs:22.14.0-alpine3.21 AS contract_builder
-
-USER root
-
-WORKDIR /app
-
-# Copy root lockfile for workspace resolution
-COPY package.json package-lock.json ./
-
-COPY host-contracts ./host-contracts
-
-# Compiled host-contracts for listeners
-RUN cp host-contracts/.env.example host-contracts/.env && \
-    npm ci --workspace=host-contracts --include-workspace-root=false && \
-    cd host-contracts && \
-    HARDHAT_NETWORK=hardhat npm run deploy:emptyProxies && \
-    npx hardhat compile
-
 # Stage 1: Build Host Listener
 FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:${RUST_IMAGE_VERSION} AS builder
 
 ARG CARGO_PROFILE=release
+# Compiled stack version; unset => baseline (0.14.0), GCS build passes a newer one.
+ARG BUILD_STACK_VERSION
 ARG SCCACHE_BUCKET
 ARG SCCACHE_REGION=eu-west-3
 ARG SCCACHE_S3_PREFIX
@@ -55,9 +38,8 @@ WORKDIR /app
 COPY listener ./listener
 COPY coprocessor/fhevm-engine ./coprocessor/fhevm-engine
 COPY coprocessor/proto ./coprocessor/proto
-COPY host-contracts/contracts/ ./host-contracts/contracts/
-COPY --from=contract_builder /app/host-contracts/artifacts/contracts /app/host-contracts/artifacts/contracts
 COPY gateway-contracts/rust_bindings ./gateway-contracts/rust_bindings
+COPY host-contracts/rust_bindings ./host-contracts/rust_bindings
 COPY shared/ciphertext-attestation ./shared/ciphertext-attestation
 COPY .git/HEAD ./coprocessor/fhevm-engine/BUILD_ID
 
@@ -77,7 +59,8 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
       export AWS_SECRET_ACCESS_KEY="$(cat /run/secrets/sccache_aws_secret_access_key)"; \
     fi && \
     cargo fetch && \
-    SQLX_OFFLINE=true BUILD_ID=$(cat BUILD_ID) cargo build --profile=${CARGO_PROFILE} -p host-listener && \
+    FEATURES=""; if [ -n "${BUILD_STACK_VERSION}" ]; then FEATURES="--features fhevm-engine-common/stack-version-override"; export BUILD_STACK_VERSION="${BUILD_STACK_VERSION}"; fi && \
+    SQLX_OFFLINE=true BUILD_ID=$(cat BUILD_ID) cargo build --profile=${CARGO_PROFILE} -p host-listener ${FEATURES} && \
     if [ -n "${SCCACHE_BUCKET}" ] && command -v sccache >/dev/null 2>&1; then sccache --show-stats; fi && \
     cp target/${CARGO_PROFILE}/host_listener /tmp/host_listener && \
     cp target/${CARGO_PROFILE}/host_listener_poller /tmp/host_listener_poller && \

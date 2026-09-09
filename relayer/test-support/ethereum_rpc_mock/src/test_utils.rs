@@ -10,19 +10,8 @@ use alloy::{
     signers::local::PrivateKeySigner,
 };
 use rand::{rngs::StdRng, RngExt, SeedableRng};
-use std::net::TcpListener;
 
 use crate::{MockConfig, MockServer};
-
-/// Get a free port by binding to port 0
-///
-/// # For Testing Only
-/// This function is intended for test usage only.
-pub fn get_free_port() -> Result<u16, std::io::Error> {
-    let listener = TcpListener::bind("127.0.0.1:0")?;
-    let port = listener.local_addr()?.port();
-    Ok(port)
-}
 
 /// Generate n test addresses with fixed seed for reproducibility
 ///
@@ -67,14 +56,14 @@ where
     for (name, is_ws) in transports {
         println!("Running {} with {}", test_name, name);
 
-        let port = get_free_port()?;
         let config = MockConfig {
-            port,
+            port: 0,
             chain_id: 1337,
             ..MockConfig::new()
         };
         let server = MockServer::new(config);
         let handle = server.clone().start().await?;
+        let port = handle.port();
 
         // Wait a bit for server to start
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;

@@ -39,20 +39,38 @@ transportKeyPair.publicKey; // BytesHex — safe to send; embedded in the permit
 
 ### Step 2 — sign a decryption permit
 
-`signDecryptionPermit` builds and signs the EIP-712 permit in one step. The
-`signer` is passed here — it is the only place a client touches a wallet.
+Two permit flavors exist, differing in which protocol versions they work
+against — both build and sign the EIP-712 permit in one step, and both take
+identical parameters:
+
+- **`signLegacyDecryptionPermit`** — the V1 EIP-712 shape (protocol v13 and
+  below). Works against every deployment; use this unless you specifically
+  need V2.
+- **`signUnifiedDecryptionPermit`** — the V2 unified EIP-712 shape (protocol
+  v14 and above). Requires an SDK on protocol API v0.14.0+ **and** a chain
+  whose KMSVerifier/ProtocolConfig has upgraded to it — check first with
+  `canUseUnifiedDecryptionPermit`, a standalone action from
+  `@fhevm/sdk/actions/base`.
+
+The `signer` is passed here — it is the only place a client touches a wallet.
 
 ```ts
+import { canUseUnifiedDecryptionPermit } from '@fhevm/sdk/actions/base';
+
 const now = Math.floor(Date.now() / 1000);
 
-const signedPermit = await client.signDecryptionPermit({
+const params = {
   transportKeyPair,
   contractAddresses: ['0xYourContract…'],
   startTimestamp: now,
   durationSeconds: 7 * 24 * 60 * 60, // 7 days
   signerAddress: await signer.getAddress(),
   signer, // ethers Signer, or a viem Account / WalletClient
-});
+};
+
+const signedPermit = (await canUseUnifiedDecryptionPermit(client))
+  ? await client.signUnifiedDecryptionPermit(params)
+  : await client.signLegacyDecryptionPermit(params);
 ```
 
 | Parameter          | Type                | Notes                                                     |
@@ -67,6 +85,19 @@ const signedPermit = await client.signDecryptionPermit({
 
 {% hint style="warning" %}
 `durationSeconds` is a number of **seconds**, not days. For a one-week permit, pass `7 * 24 * 60 * 60`.
+{% endhint %}
+
+{% hint style="info" %}
+`signerAddress` doesn't have to be a plain EOA. If it's a smart-contract wallet
+(e.g. a Safe), the SDK verifies the resulting signature via ERC-1271
+(`isValidSignature`) instead of `ecrecover` before it's sent to the KMS — no
+extra configuration needed.
+{% endhint %}
+
+{% hint style="danger" %}
+`client.signDecryptionPermit` still exists but is `@deprecated` — it's an
+alias for `signLegacyDecryptionPermit`. New code should call
+`signLegacyDecryptionPermit` or `signUnifiedDecryptionPermit` explicitly.
 {% endhint %}
 
 The signed permit is reusable: sign once, then decrypt many values across the
@@ -180,10 +211,12 @@ Delegation lets one account decrypt values owned by **another** account — for
 example, a service decrypting on behalf of a user who authorized it on-chain.
 
 Sign the permit with the delegate's `signer`, and name the owner in
-`delegatorAddress`:
+`delegatorAddress`. Use `signLegacyDecryptionPermit` or
+`signUnifiedDecryptionPermit` exactly as above — delegation is the same
+`delegatorAddress` parameter on both:
 
 ```ts
-const signedPermit = await client.signDecryptionPermit({
+const signedPermit = await client.signLegacyDecryptionPermit({
   transportKeyPair,
   contractAddresses: ['0xYourContract…'],
   startTimestamp: now,
@@ -196,7 +229,7 @@ const signedPermit = await client.signDecryptionPermit({
 
 The resulting permit reports `isDelegated: true`. Decrypt with it exactly as
 above. The delegation itself must already be granted on-chain in the ACL;
-`signDecryptionPermit` only authorizes the request.
+signing the permit only authorizes the request.
 
 ## Public decryption
 
@@ -245,9 +278,9 @@ objects — useful for caching a decryption session across page reloads so the u
 doesn't re-sign on every visit.
 
 ```ts
-// Serialize (synchronous):
-const kp = client.serializeTransportKeyPair({ transportKeyPair });
-const permit = client.serializeSignedDecryptionPermit({ signedPermit });
+// Serialize (async — both resolve the client's protocol context first):
+const kp = await client.serializeTransportKeyPair({ transportKeyPair });
+const permit = await client.serializeSignedDecryptionPermit({ signedPermit });
 // persist `kp` and `permit` (e.g. in storage)
 
 // Restore later:

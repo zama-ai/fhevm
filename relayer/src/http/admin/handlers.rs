@@ -346,7 +346,7 @@ fn format_validation_error(param_name: &str, validation_msg: &str) -> String {
 ///
 /// # Request
 ///
-/// ```
+/// ```text
 /// GET /admin/config
 /// ```
 ///

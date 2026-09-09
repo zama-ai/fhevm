@@ -18,8 +18,14 @@ use crate::contracts::{
     AclContract, BridgeContract, KMSGeneration, ProtocolConfig, TfheContract,
 };
 use crate::database::dependence_chains::dependence_chains;
+use crate::database::synthetic_ops::{
+    synthetic_logs, synthetic_transaction_hash, SyntheticContext,
+    SYNTHETIC_BLOCK_OFFSET,
+};
 use crate::database::tfhe_event_propagate::{
-    acl_result_handles, tfhe_result_handle, Chain, ChainHash, Database, LogTfhe,
+    acl_result_handles, operand_boundary_mask_from_minted, tfhe_result_handles,
+    uniform_allowed_outputs, Chain, ChainHash, Database, Handle as EventHandle,
+    LogTfhe, TransactionHash,
 };
 use crate::kms_generation::insert_kms_generation_events_tx;
 use crate::kms_generation::metrics::KMS_EVENT_DECODE_FAIL_COUNTER;
@@ -41,6 +47,7 @@ pub struct IngestOptions {
     /// configured `--canonical-protocol-config-chain-id`. When false, the listener silently
     /// skips `ProtocolConfig.CoprocessorUpgradeProposed` events.
     pub is_protocol_config_listener: bool,
+    pub disable_synthetic_ops: bool,
 }
 
 /// Converts a block timestamp to a UTC `PrimitiveDateTime`.
@@ -57,6 +64,100 @@ fn block_date_time_utc(timestamp: u64) -> PrimitiveDateTime {
             OffsetDateTime::now_utc()
         });
     PrimitiveDateTime::new(offset.date(), offset.time())
+}
+
+/// Derive the executor's operand-origin bits before any row is written.
+///
+/// The executor's transient minted set is transaction-scoped and journaled by
+/// EVM reverts. Successful event logs are therefore the authoritative
+/// off-chain reconstruction: inspect an operation's inputs first, then add
+/// its result only when the event came from the executor itself. In
+/// particular, bridge fallback synthesis creates a `TrivialEncrypt`-shaped
+/// computation row but did not execute the executor, so it must not mint a
+/// later operand in the same transaction.
+/// Counts fail-closed rejections of operand-origin mask derivation. The
+/// rejected block is retried (and rejected again) on every pass, so a
+/// sustained nonzero rate on this counter means ingestion is STALLED on a
+/// block whose logs the RPC provider serves malformed (missing/duplicate
+/// log metadata) — page on it; the stall does not self-announce otherwise
+/// and never resolves without a healthy refetch or an operator fix.
+static OPERAND_MASK_DERIVATION_REJECTS_COUNTER: std::sync::LazyLock<
+    prometheus::IntCounter,
+> = std::sync::LazyLock::new(|| {
+    prometheus::register_int_counter!(
+        "coprocessor_host_listener_operand_mask_derivation_rejects_counter",
+        "Fail-closed rejections of operand-origin mask derivation (block ingest stalled on malformed provider logs)"
+    )
+    .unwrap()
+});
+
+fn refuse_mask_derivation(reason: &'static str) -> sqlx::Error {
+    OPERAND_MASK_DERIVATION_REJECTS_COUNTER.inc();
+    error!(target: "host_listener", reason, "refusing operand-origin mask derivation; block ingest will stall and retry");
+    sqlx::Error::Protocol(reason.into())
+}
+
+pub(crate) fn populate_operand_boundary_masks(
+    logs: &mut [LogTfhe],
+) -> Result<(), sqlx::Error> {
+    let mask_bearing =
+        |log: &LogTfhe| !tfhe_result_handles(&log.event).is_empty();
+    for log in logs.iter().filter(|log| mask_bearing(log)) {
+        if log.transaction_hash.is_none() {
+            return Err(refuse_mask_derivation(
+                "refusing computation event without transaction hash for operand-origin derivation",
+            ));
+        }
+        if log.log_index.is_none() {
+            return Err(refuse_mask_derivation(
+                "refusing computation event without log index for operand-origin derivation",
+            ));
+        }
+    }
+
+    // `log_index` is globally ordered within the block. A stable order is
+    // deterministic even if a malformed provider supplied duplicate indexes;
+    // reject those instead of allowing the minted-set reconstruction to
+    // depend on input delivery order.
+    logs.sort_by_key(|log| log.log_index.unwrap_or(u64::MAX));
+    let mut previous_index = None;
+    for log in logs.iter().filter(|log| mask_bearing(log)) {
+        let log_index =
+            log.log_index.expect("validated mask-bearing log index");
+        if previous_index == Some(log_index) {
+            return Err(refuse_mask_derivation(
+                "refusing duplicate computation log index for operand-origin derivation",
+            ));
+        }
+        previous_index = Some(log_index);
+    }
+
+    let mut minted_by_transaction: HashMap<
+        TransactionHash,
+        HashSet<EventHandle>,
+    > = HashMap::new();
+    for log in logs.iter_mut().filter(|log| mask_bearing(log)) {
+        let transaction_hash = log
+            .transaction_hash
+            .expect("validated mask-bearing transaction hash");
+        let minted = minted_by_transaction.entry(transaction_hash).or_default();
+        let mask = operand_boundary_mask_from_minted(&log.event, |handle| {
+            minted.contains(handle)
+        })
+        .map_err(|reason| {
+            OPERAND_MASK_DERIVATION_REJECTS_COUNTER.inc();
+            error!(target: "host_listener", %reason, "refusing operand-origin mask derivation; block ingest will stall and retry");
+            sqlx::Error::Protocol(reason)
+        })?;
+        log.operand_boundary_mask = Some(mask);
+
+        // This happens strictly after the mask above, exactly as the executor
+        // computes the preimage before calling `_markMinted`.
+        if log.is_executor_minted {
+            minted.extend(tfhe_result_handles(&log.event));
+        }
+    }
+    Ok(())
 }
 
 fn propagate_slow_lane_to_dependents(
@@ -259,7 +360,43 @@ pub async fn ingest_block_logs(
     let mut allow_event_count: i32 = 0;
     let mut fhe_event_count: i32 = 0;
 
-    for log in &block_logs.logs {
+    // GCS only: on one designated block of each chain's dry-run window, append a
+    // deterministic synthetic transaction so a quiet chain can still anchor consensus. The
+    // logs go through the normal decode below, so `fhe_event_count`, `is_allowed`, the
+    // dependence chain and `schedule_order` are all derived by the production path. Blue
+    // never injects, so `public` stays untouched. See `database::synthetic_ops`.
+    let synthetic = if db.gcs_mode() && !options.disable_synthetic_ops {
+        synthetic_logs_for_block(
+            &mut tx,
+            chain_id,
+            block_number,
+            block_hash,
+            *tfhe_contract_address,
+            *acl_contract_address,
+            // Past every real log index in this block. `logs` can be a filtered subset of
+            // the block's logs, so its length is not an upper bound on their indices.
+            block_logs
+                .logs
+                .iter()
+                .filter_map(|log| log.log_index)
+                .max()
+                .map_or(0, |max| max.saturating_add(1)),
+        )
+        .await?
+    } else {
+        vec![]
+    };
+    if !synthetic.is_empty() {
+        info!(
+            chain_id = chain_id.as_u64(),
+            block_number,
+            count = synthetic.len(),
+            gcs_mode = db.gcs_mode(),
+            "GCS: injecting synthetic consensus work into this block"
+        );
+    }
+
+    for log in block_logs.logs.iter().chain(synthetic.iter()) {
         let current_address = Some(log.inner.address);
         let is_acl_address = &current_address == acl_contract_address;
         if acl_contract_address.is_none() || is_acl_address {
@@ -288,11 +425,13 @@ pub async fn ingest_block_logs(
                     block_number,
                     block_hash,
                     block_timestamp,
-                    // updated in the next loop and dependence_chains
-                    is_allowed: false,
+                    // Filled in by the loop below.
+                    allowed_outputs: Default::default(),
                     dependence_chain: Default::default(),
                     tx_depth_size: 0,
                     log_index: log.log_index,
+                    operand_boundary_mask: None,
+                    is_executor_minted: true,
                 };
                 tfhe_event_log.push(log);
                 continue;
@@ -413,11 +552,8 @@ pub async fn ingest_block_logs(
                         block_hash,
                         block_timestamp,
 
-                        // This is a placeholder. The real value can't be known yet
-                        // because the is_allowed set is still being built from
-                        // the rest of the block's logs. It is recomputed for
-                        // every event in the loop right after this one.
-                        is_allowed: false,
+                        // Filled in by the loop below.
+                        allowed_outputs: Default::default(),
 
                         // Placeholders: dependence_chains() (called once the
                         // whole block is scanned) assigns the real dependence
@@ -426,6 +562,11 @@ pub async fn ingest_block_logs(
                         tx_depth_size: 0,
 
                         log_index: log.log_index,
+                        operand_boundary_mask: None,
+                        // This row is synthesized by the listener after a
+                        // bridge event; the executor never called
+                        // `_markMinted` for it.
+                        is_executor_minted: false,
                     });
                     at_least_one_insertion |= db
                         .insert_pbs_computations(
@@ -471,17 +612,23 @@ pub async fn ingest_block_logs(
         }
     }
     for tfhe_log in tfhe_event_log.iter_mut() {
-        tfhe_log.is_allowed =
-            if let Some(result_handle) = tfhe_result_handle(&tfhe_log.event) {
-                is_allowed.contains(&result_handle.to_vec())
-            } else {
-                false
-            };
+        tfhe_log.allowed_outputs = tfhe_result_handles(&tfhe_log.event)
+            .into_iter()
+            .filter(|h| is_allowed.contains(&h.to_vec()))
+            .collect();
     }
+
+    // Must happen before dependence grouping and database insertion. The
+    // boundary mask is consensus-critical execution metadata, so ordering or
+    // provenance gaps are fatal for this block instead of falling back to
+    // database-local inference.
+    populate_operand_boundary_masks(&mut tfhe_event_log)?;
 
     let chains = dependence_chains(
         &mut tfhe_event_log,
         &db.dependence_chain,
+        &db.consumed_boundaries,
+        &db.sealed_chains,
         options.dependence_by_connexity,
         options.dependence_cross_block,
     )
@@ -611,6 +758,136 @@ pub async fn ingest_block_logs(
     tx.commit().await
 }
 
+/// Synthetic logs for this block, or empty if it is not the designated one.
+///
+/// GCS-only, and only for the block at `start_block + SYNTHETIC_BLOCK_OFFSET` of *this*
+/// chain's window, while the proposal is still dry-running. Reads the window from
+/// `upgrade_state` inside the ingest transaction — one indexed read per block on the green
+/// listener only.
+///
+/// Everything the derivation consumes (`proposal_id`, chain id, block number) comes from
+/// on-chain data, so every operator produces byte-identical logs. See
+/// `database::synthetic_ops`.
+async fn synthetic_logs_for_block(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    chain_id: ChainId,
+    block_number: u64,
+    block_hash: BlockHash,
+    tfhe_contract_address: Option<Address>,
+    acl_contract_address: Option<Address>,
+    log_index_base: u64,
+) -> Result<Vec<Log>, sqlx::Error> {
+    let Ok(block_number_i64) = i64::try_from(block_number) else {
+        return Ok(vec![]);
+    };
+    let Ok(chain_id_i64) = i64::try_from(chain_id.as_u64()) else {
+        return Ok(vec![]);
+    };
+
+    let row: Option<(Vec<u8>, String, i64)> = sqlx::query_as(
+        "SELECT proposal_id, version, start_block
+           FROM upgrade_state
+          WHERE stack_role = 'GCS'
+            AND status = 'in_progress'
+            AND state IN ('UpgradeActivated', 'DryRunStarted')
+            AND host_chain_id = $1
+            AND proposal_id IS NOT NULL
+            AND version IS NOT NULL
+            AND start_block IS NOT NULL",
+    )
+    .bind(chain_id_i64)
+    .fetch_optional(tx.as_mut())
+    .await?;
+
+    let Some((proposal_id, target_version, start_block)) = row else {
+        return Ok(vec![]);
+    };
+    if block_number_i64 != start_block.saturating_add(SYNTHETIC_BLOCK_OFFSET) {
+        return Ok(vec![]);
+    }
+
+    let ctx = SyntheticContext {
+        proposal_id: &proposal_id,
+        target_version: &target_version,
+        chain_id: chain_id.as_u64(),
+        block_number: block_number_i64,
+        block_hash,
+    };
+
+    // Record the transaction hash so cutover can find this work and delete it before the merge.
+    // The hash is keccak over the whole context, and `block_hash` is not persisted anywhere the
+    // upgrade-controller can read unambiguously, so it cannot be recomputed there — the injector
+    // is the only component that knows it.
+    //
+    // APPENDED, never overwritten. Injection happens at `start_block + 1` with no wait for
+    // finality, so a reorg re-injects on the replacement block: different block hash, different
+    // transaction hash, a second set of synthetic rows. Overwriting would forget the first set
+    // and let it merge into `public` as live data.
+    //
+    // Same transaction as the log decoding that follows, so the marker and the work it points at
+    // commit together or not at all.
+    let synthetic_txn_hash = synthetic_transaction_hash(&ctx);
+    let recorded = sqlx::query(
+        "UPDATE upgrade_state u
+            SET synthetic_txn_hashes = CASE
+                    -- Offset-aligned membership test, not a `position()` substring search: a
+                    -- 32-byte needle could straddle two stored hashes, and a false positive
+                    -- there would skip the append and leak that fork's rows. Alignment makes
+                    -- the comparison exact, and keeps re-ingesting the same block idempotent.
+                    WHEN EXISTS (
+                        SELECT 1
+                          FROM generate_series(
+                                   1, octet_length(u.synthetic_txn_hashes), 32
+                               ) AS g(pos)
+                         WHERE substring(u.synthetic_txn_hashes FROM g.pos FOR 32) = $1
+                    )
+                    THEN u.synthetic_txn_hashes
+                    ELSE u.synthetic_txn_hashes || $1
+                END,
+                updated_at = NOW()
+          WHERE u.stack_role = 'GCS'
+            AND u.status = 'in_progress'
+            AND u.state IN ('UpgradeActivated', 'DryRunStarted')
+            AND u.host_chain_id = $2
+            -- Pin to the proposal the hash was derived from. Without it, a proposal activated
+            -- between the SELECT above and this UPDATE would be stamped with a hash computed
+            -- from the previous one, and cutover would then delete nothing.
+            AND u.proposal_id = $3",
+    )
+    .bind(synthetic_txn_hash.as_slice())
+    .bind(chain_id_i64)
+    .bind(&proposal_id)
+    .execute(tx.as_mut())
+    .await?
+    .rows_affected();
+
+    // No marker recorded means no injection. The row this UPDATE targets was read a few lines
+    // above, but statements run at READ COMMITTED, so a concurrent FSM write — a rollback to
+    // `PAUSED`, `transition_to_dry_run_started`, a replacement proposal — can move it in between
+    // and leave the predicate matching nothing.
+    //
+    // Returning no logs is what keeps the invariant exact: cutover deletes synthetic work by
+    // marker, so work injected without one would survive into `public` as live data. Skipping
+    // this block costs nothing, because the trigger is a floor rather than an exact match and
+    // the next tick re-evaluates.
+    if recorded == 0 {
+        warn!(
+            chain_id = chain_id.as_u64(),
+            block_number = block_number_i64,
+            synthetic_txn_hash = %alloy::primitives::hex::encode(synthetic_txn_hash),
+            "GCS: upgrade_state moved while injecting; skipping synthetic ops for this block"
+        );
+        return Ok(vec![]);
+    }
+
+    Ok(synthetic_logs(
+        &ctx,
+        tfhe_contract_address,
+        acl_contract_address,
+        log_index_base,
+    ))
+}
+
 /// Channel name the upgrade-controller LISTENs on for `CoprocessorUpgradeProposed` events.
 const UPGRADE_ACTIVATED_CHANNEL: &str = "event_upgrade_activated";
 
@@ -636,9 +913,11 @@ async fn handle_protocol_config_log(
                 };
                 notify_coprocessor_upgrade_proposed(tx, chain_id, proposed, proposal_block).await?;
             }
-            other => {
+            _ => {
+                // ProtocolConfigEvents has no Debug impl; topic0 identifies
+                // the unhandled variant.
                 warn!(
-                    ?other,
+                    topic0 = ?log.topic0(),
                     block_number = ?log.block_number,
                     tx_hash = ?log.transaction_hash,
                     log_index = ?log.log_index,
@@ -954,6 +1233,7 @@ pub async fn synthesize_finalized_fallback_grants(
         return Ok(());
     }
     let mut logs: Vec<LogTfhe> = Vec::with_capacity(rows.len());
+    let mut dst_handles: Vec<EventHandle> = Vec::with_capacity(rows.len());
     for (row_index, row) in rows.into_iter().enumerate() {
         let dst_handle: Vec<u8> = row.get("dst_handle");
         let plaintext: Vec<u8> = row.get("plaintext");
@@ -983,28 +1263,55 @@ pub async fn synthesize_finalized_fallback_grants(
             );
             continue;
         }
+        // The computation row needs a transaction id (NOT NULL, part of the
+        // primary key), but `fallback_granted_events.transaction_id` is
+        // nullable and None is a normal value here. A grant observed without
+        // one gets the deterministic zero sentinel: for a synthesized row
+        // the id is bookkeeping — the handle and its bytes are what
+        // consensus sees — and dropping the grant instead would trade a
+        // block wedge for a silent per-handle liveness hole.
+        let transaction_hash =
+            transaction_hash.or(Some(alloy::primitives::FixedBytes::ZERO));
         // `created_at` (the observation's ingest time) stands in for the
         // block timestamp, which host_chain_blocks_valid does not record. It
         // only feeds scheduling hints (schedule_order, chain last_updated_at),
         // never consensus-compared data.
-        logs.push(LogTfhe {
-            event: alloy::primitives::Log {
-                address: Address::ZERO,
-                data: TfheContract::TfheContractEvents::TrivialEncrypt(
-                    TfheContract::TrivialEncrypt {
-                        caller: Address::ZERO,
-                        pt: alloy::primitives::U256::from_be_slice(&plaintext),
-                        toType: handle_bytes[30],
-                        result: alloy::primitives::FixedBytes::from(
-                            handle_bytes,
-                        ),
-                    },
-                ),
+        let data = TfheContract::TfheContractEvents::TrivialEncrypt(
+            TfheContract::TrivialEncrypt {
+                caller: Address::ZERO,
+                pt: alloy::primitives::U256::from_be_slice(&plaintext),
+                toType: handle_bytes[30],
+                result: alloy::primitives::FixedBytes::from(handle_bytes),
             },
-            transaction_hash,
+        );
+        // Derived per event from its shape with an EMPTY minted set, NOT
+        // through the block-level derivation:
+        // `fallback_granted_events.transaction_id` is nullable and None is a
+        // normal value on this path (tolerated by the conflict check and the
+        // pbs insert below), while the block-level pass fail-closes on a
+        // missing transaction hash — one NULL row would wedge the
+        // finalization loop forever to compute a value that cannot depend on
+        // the missing input. The empty closure is correct by construction,
+        // not just for today's shape: the executor never ran
+        // (`is_executor_minted: false`), so nothing synthesized can be a
+        // transaction-local operand — the TrivialEncrypt has no encrypted
+        // operands and derives the all-zero mask, and if the synthesized
+        // shape ever gained one, every bit would correctly derive as
+        // boundary.
+        let operand_boundary_mask =
+            operand_boundary_mask_from_minted(&data, |_| false)
+                .map_err(sqlx::Error::Protocol)?;
+        let event = alloy::primitives::Log {
+            address: Address::ZERO,
+            data,
+        };
+        dst_handles.push(EventHandle::from(handle_bytes));
+        logs.push(LogTfhe {
             // Forced allowed, exactly like inline synthesis: governance
             // ensures the handle is in the ACL.
-            is_allowed: true,
+            allowed_outputs: uniform_allowed_outputs(&event, true),
+            event,
+            transaction_hash,
             block_number: block_number as u64,
             block_hash: *block_hash,
             block_timestamp: PrimitiveDateTime::new(
@@ -1016,6 +1323,12 @@ pub async fn synthesize_finalized_fallback_grants(
             // Deterministic (ORDER BY id = observation order); a real index
             // also keeps ensure_logs_order from warning on every pass.
             log_index: Some(row_index as u64),
+            operand_boundary_mask: Some(operand_boundary_mask),
+            // Synthesized by the listener from a finalized bridge grant; the
+            // executor never ran, so `_markMinted` never recorded this
+            // handle and it must not become a same-transaction minted
+            // operand for a later real executor operation.
+            is_executor_minted: false,
         });
     }
     if logs.is_empty() {
@@ -1024,11 +1337,16 @@ pub async fn synthesize_finalized_fallback_grants(
     let block_timestamp = logs[0].block_timestamp;
     // Dependency-free singletons: connexity/cross-block grouping options
     // cannot change the outcome, so neither flag is threaded through here.
-    let chains =
-        dependence_chains(&mut logs, &db.dependence_chain, false, false).await;
-    for log in &logs {
-        let dst_handle = tfhe_result_handle(&log.event)
-            .expect("synthetic TrivialEncrypt has a result handle");
+    let chains = dependence_chains(
+        &mut logs,
+        &db.dependence_chain,
+        &db.consumed_boundaries,
+        &db.sealed_chains,
+        false,
+        false,
+    )
+    .await;
+    for (log, dst_handle) in logs.iter().zip(&dst_handles) {
         db.insert_tfhe_event(tx, log).await?;
         db.insert_pbs_computations(
             tx,
@@ -1268,7 +1586,10 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
 
 #[cfg(test)]
 mod tests {
-    use alloy::primitives::FixedBytes;
+    use crate::contracts::TfheContract;
+    use crate::contracts::TfheContract::TfheContractEvents;
+    use crate::database::tfhe_event_propagate::ClearConst;
+    use alloy::primitives::{Address, FixedBytes};
 
     use super::*;
 
@@ -1283,12 +1604,158 @@ mod tests {
                 .iter()
                 .map(|dep| FixedBytes::<32>::from([*dep; 32]))
                 .collect(),
+            outer_boundary_handles: vec![],
             dependents: vec![],
             allowed_handle: vec![],
             size: 1,
             before_size: 0,
             new_chain: true,
         }
+    }
+
+    fn mask_log(
+        event: TfheContractEvents,
+        tx: TransactionHash,
+        log_index: Option<u64>,
+        is_executor_minted: bool,
+    ) -> LogTfhe {
+        let event = alloy::primitives::Log {
+            address: Address::ZERO,
+            data: event,
+        };
+        LogTfhe {
+            allowed_outputs: uniform_allowed_outputs(&event, true),
+            event,
+            transaction_hash: Some(tx),
+            block_number: 1,
+            block_hash: FixedBytes::ZERO,
+            block_timestamp: PrimitiveDateTime::MIN,
+            tx_depth_size: 0,
+            dependence_chain: tx,
+            log_index,
+            operand_boundary_mask: None,
+            is_executor_minted,
+        }
+    }
+
+    fn handle(byte: u8) -> EventHandle {
+        FixedBytes::from([byte; 32])
+    }
+
+    #[test]
+    fn derives_executor_compatible_masks_and_leaves_scalar_bits_clear() {
+        let tx = handle(0x11);
+        let local = handle(0x21);
+        let boundary = handle(0x22);
+        let scalar = handle(0x23);
+        let mut logs = vec![
+            mask_log(
+                TfheContractEvents::TrivialEncrypt(
+                    TfheContract::TrivialEncrypt {
+                        caller: Address::ZERO,
+                        pt: ClearConst::from(7_u8),
+                        toType: 5,
+                        result: local,
+                    },
+                ),
+                tx,
+                Some(1),
+                true,
+            ),
+            // `local` is executor-minted earlier in this transaction, while
+            // `boundary` is not: bit 0 stays clear and bit 1 is set.
+            mask_log(
+                TfheContractEvents::FheAdd(TfheContract::FheAdd {
+                    caller: Address::ZERO,
+                    lhs: local,
+                    rhs: boundary,
+                    scalarByte: FixedBytes::ZERO,
+                    result: handle(0x24),
+                }),
+                tx,
+                Some(2),
+                true,
+            ),
+            // A scalar RHS occupies dependency position 1 but must retain a
+            // zero boundary bit even though its bytes are not minted.
+            mask_log(
+                TfheContractEvents::FheAdd(TfheContract::FheAdd {
+                    caller: Address::ZERO,
+                    lhs: boundary,
+                    rhs: scalar,
+                    scalarByte: FixedBytes::from([1]),
+                    result: handle(0x25),
+                }),
+                tx,
+                Some(3),
+                true,
+            ),
+        ];
+
+        populate_operand_boundary_masks(&mut logs)
+            .expect("ordered logs derive masks");
+        assert_eq!(logs[0].operand_boundary_mask.unwrap()[31], 0);
+        assert_eq!(logs[1].operand_boundary_mask.unwrap()[31], 0b10);
+        assert_eq!(logs[2].operand_boundary_mask.unwrap()[31], 0b01);
+    }
+
+    #[test]
+    fn synthetic_bridge_trivial_encrypt_is_not_treated_as_executor_minted() {
+        let tx = handle(0x31);
+        let synthetic = handle(0x32);
+        let boundary = handle(0x33);
+        let mut logs = vec![
+            mask_log(
+                TfheContractEvents::TrivialEncrypt(
+                    TfheContract::TrivialEncrypt {
+                        caller: Address::ZERO,
+                        pt: ClearConst::from(7_u8),
+                        toType: 5,
+                        result: synthetic,
+                    },
+                ),
+                tx,
+                Some(1),
+                false,
+            ),
+            mask_log(
+                TfheContractEvents::FheAdd(TfheContract::FheAdd {
+                    caller: Address::ZERO,
+                    lhs: synthetic,
+                    rhs: boundary,
+                    scalarByte: FixedBytes::ZERO,
+                    result: handle(0x34),
+                }),
+                tx,
+                Some(2),
+                true,
+            ),
+        ];
+
+        populate_operand_boundary_masks(&mut logs)
+            .expect("ordered logs derive masks");
+        assert_eq!(
+            logs[1].operand_boundary_mask.unwrap()[31],
+            0b11,
+            "fallback synthesis was not marked in executor transient storage"
+        );
+    }
+
+    #[test]
+    fn rejects_missing_mask_provenance() {
+        let mut logs = vec![mask_log(
+            TfheContractEvents::TrivialEncrypt(TfheContract::TrivialEncrypt {
+                caller: Address::ZERO,
+                pt: ClearConst::from(7_u8),
+                toType: 5,
+                result: handle(0x41),
+            }),
+            handle(0x40),
+            None,
+            true,
+        )];
+
+        assert!(populate_operand_boundary_masks(&mut logs).is_err());
     }
 
     #[test]

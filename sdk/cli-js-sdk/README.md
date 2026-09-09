@@ -140,7 +140,8 @@ fhevm-sdk delegated-user-decrypt stored --delegator 0x... --type uint16 --type u
 | `-n, --network testnet-amoy` | FHETest `0xa66bCEd74D1Df0736d0eb8E52371b1b1AAA1F0F0` on Polygon Amoy with testnet relayer config.   |
 | `-n, --network devnet`      | FHETest `0xf56a7990E63a63eC75aD9Aa07De8cB6bF7baa805` on Ethereum Sepolia with devnet relayer config. |
 | `-n, --network devnet-amoy` | FHETest `0x7553CB9124f974Ee475E5cE45482F90d5B6076BC` on Polygon Amoy with devnet relayer config.     |
-| `-n, --network mainnet`     | FHeTest `0xf56a7990E63a63eC75aD9Aa07De8cB6bF7baa805`on Ethereum Mainnet with mainnet relayer config. |
+| `-n, --network mainnet`     | FHETest `0xba4d707745689eD409d4Afac8722224f5FD78C63` on Ethereum Mainnet with mainnet relayer config. |
+| `-n, --network polygon`     | FHETest `0xFb10eda9e9b4f3f7dd928B6F32fBB94E2a20451d` on Polygon PoS with mainnet relayer config.     |
 | `--rpc-url <url>`           | Host chain RPC override. Otherwise uses the matching env var, then a public fallback.                |
 | `--relayer-url <url>`       | Relayer base URL override. `localhost:3000` becomes `http://localhost:3000`.                         |
 | `--contract <address>`      | FHETest contract override. This is command-specific, not a global option.                            |
@@ -152,6 +153,7 @@ Supported FHETest value types are `bool`, `uint8`, `uint16`, `uint32`, `uint64`,
 | Variable                | Used for                                                                                                       |
 | ----------------------- | -------------------------------------------------------------------------------------------------------------- |
 | `MAINNET_RPC_URL`       | RPC for `mainnet`.                                                                                             |
+| `POLYGON_RPC_URL`       | RPC for `polygon`.                                                                                             |
 | `SEPOLIA_RPC_URL`       | RPC for `testnet` and `devnet`.                                                                                |
 | `POLYGON_AMOY_RPC_URL`  | RPC for `testnet-amoy` and `devnet-amoy`.                                                                     |
 | `ZAMA_FHEVM_API_KEY`    | Optional SDK relayer auth when the target environment requires an API key.                                     |

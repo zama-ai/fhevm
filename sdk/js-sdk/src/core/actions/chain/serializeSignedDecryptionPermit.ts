@@ -17,6 +17,7 @@ export type SerializeSignedDecryptionPermitReturnType = {
   readonly eip712: Eip712Like;
   readonly signature: string;
   readonly signerAddress: string;
+  readonly delegatorAddress?: string | undefined;
 };
 
 /**

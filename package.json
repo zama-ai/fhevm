@@ -8,9 +8,7 @@
     "host-contracts",
     "library-solidity",
     "library-solidity/codegen",
-    "test-suite/e2e",
-    "sdk/js-sdk",
-    "sdk/js-sdk/src"
+    "test-suite/e2e"
   ],
   "devDependencies": {
     "@trivago/prettier-plugin-sort-imports": "^5.2.2",

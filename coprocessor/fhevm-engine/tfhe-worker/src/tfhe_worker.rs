@@ -5,7 +5,9 @@ use fhevm_engine_common::database::{
     connect_pool_with_options_and_connect_options, resolve_database_url_from_option,
 };
 use fhevm_engine_common::db_keys::DbKeyCache;
-use fhevm_engine_common::gcs_activation::{run_gcs_activation_watcher, GCS_NOT_ACTIVATED};
+use fhevm_engine_common::gcs_activation::{
+    run_gcs_activation_watcher, GCS_GATE_RECHECK, GCS_NOT_ACTIVATED, WORK_AVAILABLE_CHANNEL,
+};
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::tfhe_ops::check_fhe_operand_types;
 use fhevm_engine_common::types::{FhevmError, Handle, SupportedFheCiphertexts};
@@ -13,13 +15,17 @@ use fhevm_engine_common::versioning::{GcsRollbackPolicy, WriteGuard};
 use fhevm_engine_common::{tfhe_ops::current_ciphertext_version, types::SupportedFheOperations};
 use itertools::Itertools;
 use lazy_static::lazy_static;
-use prometheus::{register_histogram, register_int_counter, Histogram, IntCounter};
+use prometheus::{
+    register_histogram, register_int_counter, register_int_gauge, Histogram, IntCounter, IntGauge,
+};
+#[cfg(feature = "gpu")]
+use scheduler::dfg::scheduler::GpuExecutionLimiter;
 use scheduler::dfg::types::{CompressedCiphertext, DFGTxInput, SchedulerError};
-use scheduler::dfg::{build_component_nodes, ComponentNode, DFComponentGraph, DFGOp};
+use scheduler::dfg::{build_component_nodes, ComponentNode, DFComponentGraph, DFGOp, DFGOutput};
 use scheduler::dfg::{scheduler::Scheduler, types::DFGTaskInput};
 use sqlx::types::Uuid;
-use sqlx::{postgres::PgListener, query, Postgres};
-use std::collections::HashMap;
+use sqlx::{postgres::PgListener, query, query_scalar, Postgres};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
@@ -28,6 +34,2036 @@ use tracing::{debug, error, info, warn, Instrument};
 
 const EVENT_CIPHERTEXT_COMPUTED: &str = "event_ciphertext_computed";
 
+#[cfg(feature = "gpu")]
+/// Every GPU memory reservation failure is retryable, without limit.
+///
+/// None of the three variants is a statement about the operands: TimedOut is
+/// pressure; UnknownDevice and AccountingOverflow are deployment and
+/// bookkeeping faults. Stamping any of them would make a
+/// computation permanently unexecutable — and, through the dead-producer
+/// drain, condemn everything downstream of it — for a condition the inputs
+/// did not cause and that a restart or a quieter device would clear.
+///
+/// These leave no stamp at all, so they also do not consume the panic retry
+/// budget: an operator can starve a device indefinitely without losing work.
+fn is_retryable_gpu_reservation_error(error: &FhevmError) -> bool {
+    matches!(error, FhevmError::GpuMemoryReservationError(_))
+}
+
+struct WorkItem {
+    output_handle: Vec<u8>,
+    dependencies: Vec<Vec<u8>>,
+    fhe_operation: i16,
+    is_scalar: bool,
+    is_allowed: bool,
+    /// Terminal error stamp. Errored rows are loaded (the transaction-id
+    /// expansion needs the full transaction) but — unless the stamp is
+    /// retryable, see [`stamp_is_retryable`] — never re-executed: their
+    /// bytes can never exist, and their transaction-local consumers drain
+    /// with them (see `prepare_transaction_ops`).
+    is_error: bool,
+    /// Set alongside `is_error`; consulted only to classify the stamp
+    /// (retryable panic vs deterministic error).
+    error_message: Option<String>,
+    transaction_id: Vec<u8>,
+    schedule_order: PrimitiveDateTime,
+    /// Authoritative, listener-derived executor `boundaryBits`. Nullable at
+    /// the schema level for rows written by a pre-mask listener; for those
+    /// legacy rows the worker falls back to the pre-mask inference (an
+    /// operand is transaction-local iff this transaction produced it).
+    operand_boundary_mask: Option<Vec<u8>>,
+    /// The chain this row is filed under. May differ from the locked chain
+    /// for rows retained from a fork sibling (`ON CONFLICT .. DO NOTHING`);
+    /// such rows are loaded as recompute-only producers, never as work.
+    dependence_chain_id: Option<Vec<u8>>,
+    /// `None` for a single-output op; the shared key of a multi-output group
+    /// otherwise. Rows sharing it are one operation.
+    group_id: Option<Vec<u8>>,
+    /// Position of this output within its group; 0 for a single-output op.
+    output_index: i16,
+    /// Outputs the operation declared, on every row; 1 for a singleton.
+    output_count: i16,
+}
+
+const OPERAND_BOUNDARY_MASK_BYTES: usize = 32;
+
+/// Share of the DCID lease a GPU memory reservation may spend waiting.
+///
+/// Below 1.0 so a worker that exhausts the wait still gets back to its loop
+/// and extends the lease before it expires, rather than losing it by the
+/// width of the timeout itself.
+pub(crate) const GPU_RESERVATION_LEASE_FRACTION: f32 = 0.8;
+
+/// Marker that makes a stamp RETRYABLE rather than terminal.
+///
+/// A terminal stamp is a permanent verdict: the work window never re-selects
+/// the row, its chain retires without it, and the dead-producer drain
+/// condemns everything downstream. That is only correct when the failure is a
+/// deterministic property of the operands. Two classes are not:
+///
+///   * `ExecutionPanic` — a panic caught around an FHE op, its output
+///     compression, or a boundary decompression. Can be device or allocation
+///     pressure rather than anything about the inputs.
+///   * `DecompressionError` — persisted bytes that would not expand. Corrupt
+///     bytes are deterministic and must eventually drain, but a transient
+///     device fault looks identical at this point, so the first failure must
+///     not be the last word.
+///
+/// Both are stamped visibly, re-selected by the work window, and healed by a
+/// later success. Repeated failures DEMOTE the row to the slow lane at
+/// `--computation-retry-demote-threshold` — they never promote it to
+/// terminal. A retryable stamp is a statement about the failure, not about
+/// the operands, so no amount of patience running out turns it into a
+/// verdict.
+///
+/// Substring matching is admittedly coarse, and it is load-bearing in every
+/// predicate that reads a stamp: the three work-window queries,
+/// `release_completed_locks`, the slow-lane sweep and retention guard in
+/// `dependence_chain.rs`, and both probes in [`query_dead_boundary_handles`].
+/// All of them bind this constant rather than spelling the marker out, so
+/// changing it here changes them together. A dedicated error-class column is
+/// the follow-up.
+pub(crate) const RETRYABLE_STAMP_MARKER: &str = "RETRYABLE";
+
+/// Row cap of the adaptive window's per-chain probe, as rows per transaction
+/// of the chain's share: a chain is walked oldest-first for at most
+/// `share × this` pending rows before its transactions are ranked.
+///
+/// The cap is what bounds the query -- without it a deep backlog chain is
+/// read in full on every cycle. It is NOT allowed to change the outcome: when
+/// the capped walk admits fewer than `share` distinct transactions while
+/// hitting the cap (a transaction wider than the cap at the head of the
+/// chain), the query falls back to ranking over every pending row of that
+/// one chain, so a younger transaction behind a wide, deferring one is still
+/// offered. The fallback costs one scan of that chain's pending rows and is
+/// paid only by chains in that shape.
+pub(crate) const ADAPTIVE_WINDOW_ROWS_PER_TRANSACTION: i64 = 64;
+
+fn stamp_is_retryable(error_message: Option<&str>) -> bool {
+    error_message.is_some_and(|m| m.contains(RETRYABLE_STAMP_MARKER))
+}
+
+/// The demotion bound for the work window, or `None` to disable it.
+///
+/// `None` DISABLES the bound; it is not "a very large threshold". Demotion is
+/// half a mechanism — the window stops selecting the row and
+/// `rearm_demoted_chains` is what gives it another pass — and that sweep never
+/// runs under `--disable-dcid-locking`: `do_cleanup` returns first, and it
+/// re-arms through the `status = 'processed' AND worker_id IS NULL` lifecycle
+/// that mode does not drive. So the bound must be absent there, not large.
+///
+/// A finite sentinel cannot express absence. `error_retry_count` saturates at
+/// [`i16::MAX`] in the stamping UPDATE, and the selectors ask for
+/// `error_retry_count < threshold`, so a threshold of `i16::MAX` becomes a
+/// demotion of its own once a row reaches the ceiling — in the one mode with
+/// nothing to undo it. The queries take a nullable bound instead.
+fn demote_threshold_for(disable_dcid_locking: bool, configured: i16) -> Option<i16> {
+    if disable_dcid_locking {
+        None
+    } else {
+        Some(configured)
+    }
+}
+
+fn dcid_transaction_share(
+    work_items_batch_size: i32,
+    acquired_dcid_count: usize,
+    adaptive_batch_execution: bool,
+) -> i32 {
+    if !adaptive_batch_execution || acquired_dcid_count <= 1 {
+        return work_items_batch_size;
+    }
+    let dcid_count = i32::try_from(acquired_dcid_count).unwrap_or(i32::MAX);
+    work_items_batch_size.saturating_add(dcid_count - 1) / dcid_count
+}
+
+fn operand_is_boundary(
+    mask: Option<&[u8]>,
+    operand_index: usize,
+) -> Result<bool, CoprocessorError> {
+    let mask = mask.ok_or_else(|| {
+        CoprocessorError::Other(
+            std::io::Error::other(
+                "refusing computation without authoritative operand boundary mask",
+            )
+            .into(),
+        )
+    })?;
+    if mask.len() != OPERAND_BOUNDARY_MASK_BYTES {
+        return Err(CoprocessorError::Other(
+            std::io::Error::other(format!(
+                "invalid operand boundary mask length {}; expected {OPERAND_BOUNDARY_MASK_BYTES}",
+                mask.len()
+            ))
+            .into(),
+        ));
+    }
+    if operand_index >= OPERAND_BOUNDARY_MASK_BYTES * 8 {
+        return Err(CoprocessorError::Other(
+            std::io::Error::other(format!(
+                "operand index {operand_index} exceeds executor boundary mask width"
+            ))
+            .into(),
+        ));
+    }
+    let byte_index = OPERAND_BOUNDARY_MASK_BYTES - 1 - operand_index / 8;
+    Ok(mask[byte_index] & (1 << (operand_index % 8)) != 0)
+}
+
+#[cfg(test)]
+mod operand_boundary_mask_tests {
+    use super::*;
+    use clap::Parser;
+    use sqlx::postgres::PgPoolOptions;
+    use test_harness::instance::{setup_test_db, ImportMode};
+
+    #[test]
+    fn boundary_mask_is_big_endian_and_null_is_rejected_by_the_low_level_check() {
+        // NOTE: only this low-level accessor rejects a missing mask; the
+        // worker itself never calls it with None — legacy NULL-mask rows
+        // take the derive-on-read fallback in prepare_transaction_ops
+        // (operand is transaction-local iff this transaction produced it).
+        let mut mask = [0_u8; OPERAND_BOUNDARY_MASK_BYTES];
+        mask[OPERAND_BOUNDARY_MASK_BYTES - 1] = 0b10;
+        assert!(!operand_is_boundary(Some(&mask), 0).expect("valid mask"));
+        assert!(operand_is_boundary(Some(&mask), 1).expect("valid mask"));
+        assert!(operand_is_boundary(None, 0).is_err());
+        assert!(operand_is_boundary(Some(&mask[..31]), 0).is_err());
+    }
+
+    /// 32-byte handle with the FheType byte (index 30) set to euint64 and a
+    /// distinguishing id in the last byte.
+    fn handle(id: u8) -> Vec<u8> {
+        let mut h = vec![0_u8; 32];
+        h[30] = 5; // FheUint64
+        h[31] = id;
+        h
+    }
+
+    fn mask_with_bits(bits: &[usize]) -> Vec<u8> {
+        let mut mask = vec![0_u8; OPERAND_BOUNDARY_MASK_BYTES];
+        for bit in bits {
+            mask[OPERAND_BOUNDARY_MASK_BYTES - 1 - bit / 8] |= 1 << (bit % 8);
+        }
+        mask
+    }
+
+    fn work_item(
+        output: Vec<u8>,
+        deps: Vec<Vec<u8>>,
+        mask: Option<Vec<u8>>,
+        dcid: Option<Vec<u8>>,
+        is_allowed: bool,
+    ) -> WorkItem {
+        WorkItem {
+            group_id: None,
+            output_index: 0,
+            output_count: 1,
+            output_handle: output,
+            dependencies: deps,
+            fhe_operation: SupportedFheOperations::FheAdd as i16,
+            is_scalar: false,
+            is_allowed,
+            is_error: false,
+            error_message: None,
+            transaction_id: vec![0xAA; 32],
+            schedule_order: PrimitiveDateTime::MIN,
+            operand_boundary_mask: mask,
+            dependence_chain_id: dcid,
+        }
+    }
+
+    fn input_kinds(op: &DFGOp) -> Vec<&'static str> {
+        op.inputs
+            .iter()
+            .map(|i| match i {
+                DFGTaskInput::LocalDependence(_) => "local",
+                DFGTaskInput::BoundaryDependence(_) => "boundary",
+                DFGTaskInput::Value(_) => "value",
+                DFGTaskInput::Compressed(..) => "compressed",
+            })
+            .collect()
+    }
+
+    #[test]
+    fn errored_local_producer_drains_consumer_and_is_not_reexecuted() {
+        let dcid = Some(vec![0xD1; 32]);
+        // Producer already stamped is_error in the database: it must never
+        // re-enter the ops (re-execution fails identically), and its
+        // transaction-local consumer can never obtain the obligated raw
+        // bytes, so it drains terminally instead of deferring forever.
+        let producer = WorkItem {
+            is_error: true,
+            ..work_item(
+                handle(1),
+                vec![],
+                Some(mask_with_bits(&[])),
+                dcid.clone(),
+                true,
+            )
+        };
+        // operand 0 = handle(1): transaction-local (bit clear);
+        // operand 1 = handle(9): boundary (bit set), sourced from DB.
+        let consumer = work_item(
+            handle(2),
+            vec![handle(1), handle(9)],
+            Some(mask_with_bits(&[1])),
+            dcid.clone(),
+            true,
+        );
+        let txwork = vec![producer, consumer];
+        let prepared =
+            prepare_transaction_ops(&txwork, dcid.map(|d| vec![d]).as_deref(), &HashSet::new())
+                .unwrap();
+        assert!(
+            prepared.ops.is_empty(),
+            "neither the errored producer nor its drained consumer may execute"
+        );
+        assert_eq!(prepared.invalid_rows.len(), 1);
+        assert_eq!(prepared.invalid_rows[0].0, handle(2));
+        assert!(prepared.invalid_rows[0].1.contains("terminally errored"));
+    }
+
+    #[test]
+    fn dead_boundary_input_drains_owned_consumer_at_op_granularity() {
+        let dcid = Some(vec![0xD1; 32]);
+        // consumer of a dead boundary handle drains terminally; an
+        // independent op of the same transaction keeps computing.
+        let consumer = work_item(
+            handle(3),
+            vec![handle(9), handle(8)],
+            Some(mask_with_bits(&[0, 1])),
+            dcid.clone(),
+            true,
+        );
+        let independent = work_item(
+            handle(4),
+            vec![handle(7), handle(8)],
+            Some(mask_with_bits(&[0, 1])),
+            dcid.clone(),
+            true,
+        );
+        let dead: HashSet<Vec<u8>> = [handle(9)].into_iter().collect();
+        let txwork = vec![consumer, independent];
+        let prepared = prepare_transaction_ops(&txwork, dcid.map(|d| vec![d]).as_deref(), &dead)
+            .expect("prepared");
+        assert_eq!(prepared.ops.len(), 1, "independent op still executes");
+        assert_eq!(prepared.ops[0].outputs[0].handle, handle(4));
+        assert_eq!(prepared.invalid_rows.len(), 1);
+        assert_eq!(prepared.invalid_rows[0].0, handle(3));
+        assert!(prepared.invalid_rows[0].1.contains("dead boundary input"));
+    }
+
+    #[test]
+    fn retryable_panic_stamp_is_reexecuted_not_drained() {
+        let dcid = Some(vec![0xD1; 32]);
+        // A panic-stamped producer is the one nondeterministic stamp: it
+        // re-executes (success would heal it) and must not drain its
+        // transaction-local consumer.
+        let producer = WorkItem {
+            is_error: true,
+            error_message: Some(
+                "RETRYABLE Coprocessor scheduler error: ExecutionPanic(\"oom\")".to_string(),
+            ),
+            ..work_item(
+                handle(1),
+                vec![handle(7), handle(8)],
+                Some(mask_with_bits(&[0, 1])),
+                dcid.clone(),
+                true,
+            )
+        };
+        let consumer = work_item(
+            handle(2),
+            vec![handle(1), handle(9)],
+            Some(mask_with_bits(&[1])),
+            dcid.clone(),
+            true,
+        );
+        let txwork = vec![producer, consumer];
+        let prepared =
+            prepare_transaction_ops(&txwork, dcid.map(|d| vec![d]).as_deref(), &HashSet::new())
+                .expect("prepared");
+        assert_eq!(
+            prepared.ops.len(),
+            2,
+            "producer retries, consumer schedules"
+        );
+        assert!(prepared.invalid_rows.is_empty());
+    }
+
+    #[test]
+    fn null_mask_derives_boundary_bits_from_transaction_membership() {
+        let dcid = Some(vec![0xD1; 32]);
+        // producer of handle(1) is in the transaction; handle(9) is not.
+        let txwork = vec![
+            work_item(
+                handle(1),
+                vec![handle(8), handle(9)],
+                None,
+                dcid.clone(),
+                true,
+            ),
+            work_item(
+                handle(2),
+                vec![handle(1), handle(9)],
+                None,
+                dcid.clone(),
+                true,
+            ),
+        ];
+        let prepared =
+            prepare_transaction_ops(&txwork, dcid.map(|d| vec![d]).as_deref(), &HashSet::new())
+                .expect("prepared");
+        assert_eq!(prepared.ops.len(), 2);
+        let consumer = prepared
+            .ops
+            .iter()
+            .find(|op| op.outputs[0].handle == handle(2))
+            .expect("consumer op");
+        // handle(1) is produced by this transaction -> local; handle(9) is
+        // not -> canonical persisted form.
+        assert_eq!(input_kinds(consumer), ["local", "boundary"]);
+    }
+
+    #[test]
+    fn invalid_content_is_terminal_not_deferred() {
+        let dcid = Some(vec![0xD1; 32]);
+        let txwork = vec![work_item(
+            handle(1),
+            vec![handle(8), handle(9)],
+            Some(mask_with_bits(&[0, 1])),
+            dcid.clone(),
+            true,
+        )];
+        let mut bad_op = work_item(
+            handle(2),
+            vec![],
+            Some(mask_with_bits(&[])),
+            dcid.clone(),
+            true,
+        );
+        bad_op.fhe_operation = 127; // unknown opcode
+        let mut txwork = txwork;
+        txwork.push(bad_op);
+        let prepared =
+            prepare_transaction_ops(&txwork, dcid.map(|d| vec![d]).as_deref(), &HashSet::new())
+                .expect("prepared");
+        // The valid row still schedules; the invalid one is reported for a
+        // terminal error, exactly like the executor's own validation.
+        assert_eq!(prepared.ops.len(), 1);
+        assert_eq!(prepared.invalid_rows.len(), 1);
+        assert_eq!(prepared.invalid_rows[0].0, handle(2));
+    }
+
+    #[test]
+    fn invalid_producer_drains_its_local_consumers() {
+        let dcid = Some(vec![0xD1; 32]);
+        let mut bad_producer = work_item(
+            handle(1),
+            vec![],
+            Some(mask_with_bits(&[])),
+            dcid.clone(),
+            true,
+        );
+        bad_producer.fhe_operation = 127; // unknown opcode
+        let txwork = vec![
+            bad_producer,
+            // bit-0 consumer of the invalid producer: can never obtain the
+            // obligated raw bytes, so it must drain with it.
+            work_item(
+                handle(2),
+                vec![handle(1), handle(9)],
+                Some(mask_with_bits(&[1])),
+                dcid.clone(),
+                true,
+            ),
+            // transitively blocked second-level consumer
+            work_item(
+                handle(3),
+                vec![handle(2), handle(9)],
+                Some(mask_with_bits(&[1])),
+                dcid.clone(),
+                true,
+            ),
+            // independent op: still schedulable
+            work_item(
+                handle(4),
+                vec![handle(8), handle(9)],
+                Some(mask_with_bits(&[0, 1])),
+                dcid.clone(),
+                true,
+            ),
+        ];
+        let prepared =
+            prepare_transaction_ops(&txwork, dcid.map(|d| vec![d]).as_deref(), &HashSet::new())
+                .expect("prepared");
+        assert_eq!(prepared.ops.len(), 1);
+        assert_eq!(prepared.ops[0].outputs[0].handle, handle(4));
+        let mut errored: Vec<Vec<u8>> = prepared
+            .invalid_rows
+            .iter()
+            .map(|(h, _)| h.clone())
+            .collect();
+        errored.sort();
+        let mut expected = [handle(1), handle(2), handle(3)];
+        expected.sort();
+        assert_eq!(errored, expected, "producer and both consumers drain");
+    }
+
+    #[test]
+    fn foreign_invalid_content_defers_instead_of_erroring() {
+        let ours = vec![0xD1; 32];
+        let theirs = vec![0xD2; 32];
+        let mut foreign_bad = work_item(
+            handle(1),
+            vec![],
+            Some(mask_with_bits(&[])),
+            Some(theirs),
+            true,
+        );
+        // Content judgments are binary-relative during rolling upgrades: a
+        // foreign row we cannot parse must never be stamped is_error.
+        foreign_bad.fhe_operation = 127;
+        let txwork = vec![
+            foreign_bad,
+            work_item(
+                handle(2),
+                vec![handle(1), handle(9)],
+                Some(mask_with_bits(&[1])),
+                Some(ours.clone()),
+                true,
+            ),
+        ];
+        assert!(prepare_transaction_ops(
+            &txwork,
+            Some(std::slice::from_ref(&ours)),
+            &HashSet::new()
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn malformed_mask_defers_the_transaction() {
+        let dcid = Some(vec![0xD1; 32]);
+        let txwork = vec![work_item(
+            handle(1),
+            vec![handle(8), handle(9)],
+            Some(vec![0_u8; 31]), // wrong length
+            dcid.clone(),
+            true,
+        )];
+        assert!(prepare_transaction_ops(
+            &txwork,
+            dcid.map(|d| vec![d]).as_deref(),
+            &HashSet::new()
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn foreign_local_producer_joins_as_recompute_only() {
+        let ours = vec![0xD1; 32];
+        let theirs = vec![0xD2; 32];
+        // handle(1): retained fork-sibling row (other chain), itself
+        // consuming two persisted operands. handle(2): our consumer, taking
+        // handle(1) as a transaction-local (bit 0) operand.
+        let txwork = vec![
+            work_item(
+                handle(1),
+                vec![handle(8), handle(9)],
+                Some(mask_with_bits(&[0, 1])),
+                Some(theirs),
+                true,
+            ),
+            work_item(
+                handle(2),
+                vec![handle(1), handle(9)],
+                Some(mask_with_bits(&[1])),
+                Some(ours.clone()),
+                true,
+            ),
+        ];
+        let prepared =
+            prepare_transaction_ops(&txwork, Some(std::slice::from_ref(&ours)), &HashSet::new())
+                .expect("prepared");
+        assert_eq!(prepared.ops.len(), 2);
+        let foreign = prepared
+            .ops
+            .iter()
+            .find(|op| op.outputs[0].handle == handle(1))
+            .expect("foreign producer joined the graph");
+        // Recompute-only: never eligible for results or persistence, even
+        // though its own row is allowed.
+        assert!(!foreign.outputs[0].is_allowed);
+        assert_eq!(input_kinds(foreign), ["boundary", "boundary"]);
+        let ours_op = prepared
+            .ops
+            .iter()
+            .find(|op| op.outputs[0].handle == handle(2))
+            .expect("owned consumer");
+        assert!(ours_op.outputs[0].is_allowed);
+        assert_eq!(input_kinds(ours_op), ["local", "boundary"]);
+        // Foreign rows never anchor the batch's schedule order.
+        assert_eq!(
+            prepared.earliest_owned_allowed,
+            Some(PrimitiveDateTime::MIN)
+        );
+    }
+
+    #[test]
+    fn unneeded_foreign_rows_stay_out_of_the_graph() {
+        let ours = vec![0xD1; 32];
+        let theirs = vec![0xD2; 32];
+        let txwork = vec![
+            // Fork-sibling row nothing owned depends on.
+            work_item(
+                handle(1),
+                vec![handle(8), handle(9)],
+                Some(mask_with_bits(&[0, 1])),
+                Some(theirs),
+                true,
+            ),
+            work_item(
+                handle(2),
+                vec![handle(8), handle(9)],
+                Some(mask_with_bits(&[0, 1])),
+                Some(ours.clone()),
+                true,
+            ),
+        ];
+        let prepared =
+            prepare_transaction_ops(&txwork, Some(std::slice::from_ref(&ours)), &HashSet::new())
+                .expect("prepared");
+        assert_eq!(prepared.ops.len(), 1);
+        assert_eq!(prepared.ops[0].outputs[0].handle, handle(2));
+    }
+
+    async fn seed_computation(
+        pool: &sqlx::PgPool,
+        output_handle: &[u8],
+        dependencies: Vec<Vec<u8>>,
+        mask: Vec<u8>,
+        dcid: Option<&[u8]>,
+        transaction_id: &[u8],
+        schedule_age_secs: i64,
+    ) {
+        sqlx::query(
+            r#"
+            INSERT INTO computations (
+                output_handle, dependencies, fhe_operation, is_scalar,
+                dependence_chain_id, transaction_id, is_allowed,
+                schedule_order, host_chain_id, operand_boundary_mask
+            ) VALUES ($1, $2, $3, false, $4, $5, true,
+                      NOW() - make_interval(secs => $6), 1, $7)
+            "#,
+        )
+        .bind(output_handle)
+        .bind(dependencies)
+        .bind(SupportedFheOperations::FheNot as i16)
+        .bind(dcid)
+        .bind(transaction_id)
+        .bind(schedule_age_secs as f64)
+        .bind(mask)
+        .execute(pool)
+        .await
+        .expect("seed computation");
+    }
+
+    fn test_args(batch_size: &str, db_url: &str) -> crate::daemon_cli::Args {
+        use clap::Parser;
+        let mut args = crate::daemon_cli::Args::parse_from([
+            "tfhe-worker",
+            "--work-items-batch-size",
+            batch_size,
+            // One chain per batch: these tests assert per-chain fairness,
+            // which multi-chain batching would fold into a single window.
+            "--dependence-chains-per-batch",
+            "1",
+        ]);
+        args.database_url = Some(db_url.to_owned().into());
+        args
+    }
+
+    /// Fairness regression: a chain whose whole window defers must not stay
+    /// at the front of oldest-first acquisition. query_for_work rotates it
+    /// to the FIFO back (status 'updated', fresh last_updated_at, no
+    /// worker_id), so the next acquisition reaches the younger chain, the
+    /// deferring rows stay unstamped, and the chain remains immediately
+    /// reachable by a listener re-arm or the escalation path.
+    #[tokio::test]
+    async fn deferring_chain_rotates_behind_younger_chains(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let db = setup_test_db(ImportMode::None).await?;
+        let pool = PgPoolOptions::new()
+            .max_connections(4)
+            .connect(db.db_url())
+            .await?;
+
+        let old_chain = vec![0x11_u8; 32];
+        let young_chain = vec![0x22_u8; 32];
+        for (chain, age_secs) in [(&old_chain, 120_f64), (&young_chain, 1_f64)] {
+            sqlx::query(
+                "INSERT INTO dependence_chain (dependence_chain_id, status, last_updated_at)
+                 VALUES ($1, 'updated', NOW() - make_interval(secs => $2))",
+            )
+            .bind(chain)
+            .bind(age_secs)
+            .execute(&pool)
+            .await?;
+        }
+        // Older chain: a bit-0 (transaction-local) consumer whose producer
+        // row does not exist — the dangling-local-producer state the code
+        // classifies as uninterpretable — so its whole window defers.
+        // Younger chain: a valid boundary consumer.
+        seed_computation(
+            &pool,
+            &handle(0x51),
+            vec![handle(0x50)],
+            mask_with_bits(&[]),
+            Some(&old_chain),
+            &[0xA1_u8; 32],
+            120,
+        )
+        .await;
+        seed_computation(
+            &pool,
+            &handle(0x61),
+            vec![handle(0x60)],
+            mask_with_bits(&[0]),
+            Some(&young_chain),
+            &[0xA2_u8; 32],
+            1,
+        )
+        .await;
+
+        let args = test_args("10", db.db_url());
+        let health_check = crate::health_check::HealthCheck::new(
+            db.db_url().to_owned().into(),
+            Duration::from_secs(300),
+        );
+        let mut locks = dependence_chain::LockMngr::new_with_conf(
+            Uuid::new_v4(),
+            pool.clone(),
+            30,
+            false,
+            None,
+            None,
+            None,
+            3,
+        );
+        let mut no_progress_cycles = 0;
+        let mut cooldown = DeferredTransactionCooldown::new();
+
+        let mut trx = pool.begin().await?;
+        let (nodes, _, more) = query_for_work(
+            &args,
+            &health_check,
+            &mut trx,
+            &mut locks,
+            &mut no_progress_cycles,
+            &mut cooldown,
+            false,
+        )
+        .await?;
+        trx.commit().await?;
+        assert!(more, "drained batch still reports work available");
+        assert!(nodes.is_empty(), "older chain's window fully defers");
+
+        // Rotated, not wedged or destroyed: the older chain is back to
+        // 'updated' with no owner and a fresh FIFO position, and its rows
+        // carry no terminal stamps.
+        let (status, owner_cleared): (String, bool) = sqlx::query_as(
+            "SELECT status, worker_id IS NULL FROM dependence_chain
+             WHERE dependence_chain_id = $1",
+        )
+        .bind(&old_chain)
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(status, "updated");
+        assert!(owner_cleared, "rotation releases ownership");
+        let is_error: bool =
+            sqlx::query_scalar("SELECT is_error FROM computations WHERE output_handle = $1")
+                .bind(handle(0x51))
+                .fetch_one(&pool)
+                .await?;
+        assert!(!is_error, "deferred rows are never terminally stamped");
+
+        // The very next acquisition reaches the younger chain.
+        let mut trx = pool.begin().await?;
+        let (nodes, _, _) = query_for_work(
+            &args,
+            &health_check,
+            &mut trx,
+            &mut locks,
+            &mut no_progress_cycles,
+            &mut cooldown,
+            false,
+        )
+        .await?;
+        trx.commit().await?;
+        assert!(
+            !nodes.is_empty(),
+            "younger chain schedules instead of starving behind the parked one"
+        );
+        let status: String = sqlx::query_scalar(
+            "SELECT status FROM dependence_chain WHERE dependence_chain_id = $1",
+        )
+        .bind(&young_chain)
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(status, "processing");
+        Ok(())
+    }
+
+    /// The adaptive window gives every held chain its transaction share,
+    /// whatever the chains' depths, and stays bounded per chain.
+    ///
+    /// Three chains, oldest first: `wide` (one 200-row transaction, then a
+    /// one-row one), `deep` (300 two-row transactions) and `shallow` (3
+    /// one-row transactions). With a 6-transaction window over 3 chains the
+    /// share is 2 and every chain contributes exactly 2 transactions, 6 in
+    /// total. Without per-chain bounding `deep`'s oldest rows would fill the
+    /// window; without the exact fallback `wide`'s 200-row head would hide
+    /// the one-row transaction behind it, since the probe cap is 128 rows.
+    #[tokio::test]
+    async fn adaptive_window_shares_the_batch_across_held_chains(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let db = setup_test_db(ImportMode::None).await?;
+        let pool = PgPoolOptions::new()
+            .max_connections(4)
+            .connect(db.db_url())
+            .await?;
+
+        fn tagged(tag: u8, index: u16) -> Vec<u8> {
+            let mut out = vec![tag; 32];
+            out[1..3].copy_from_slice(&index.to_be_bytes());
+            out
+        }
+        let wide_chain = tagged(0x31, 0);
+        let deep_chain = tagged(0x32, 0);
+        let shallow_chain = tagged(0x33, 0);
+        for (chain, age_secs) in [
+            (&wide_chain, 300_f64),
+            (&deep_chain, 200_f64),
+            (&shallow_chain, 100_f64),
+        ] {
+            sqlx::query(
+                "INSERT INTO dependence_chain (dependence_chain_id, status, last_updated_at)
+                 VALUES ($1, 'updated', NOW() - make_interval(secs => $2))",
+            )
+            .bind(chain)
+            .bind(age_secs)
+            .execute(&pool)
+            .await?;
+        }
+        // Every row is a valid boundary consumer of an absent producer, so
+        // the window admits it and execution would defer it -- the shape of
+        // a pending backlog, which is all this test is about.
+        let wide_tx = tagged(0xA1, 0);
+        for row in 0..200_u16 {
+            seed_computation(
+                &pool,
+                &tagged(0x41, row),
+                vec![tagged(0x40, row)],
+                mask_with_bits(&[0]),
+                Some(&wide_chain),
+                &wide_tx,
+                3000 - i64::from(row),
+            )
+            .await;
+        }
+        // Behind the 200-row transaction, a one-row one. 200 rows exceed the
+        // probe cap (share 2 × 64 = 128), so the fast path sees only the wide
+        // transaction; the exact fallback must still offer this one.
+        seed_computation(
+            &pool,
+            &tagged(0x41, 200),
+            vec![tagged(0x40, 200)],
+            mask_with_bits(&[0]),
+            Some(&wide_chain),
+            &tagged(0xA1, 1),
+            2790,
+        )
+        .await;
+        for tx in 0..300_u16 {
+            for row in 0..2_u16 {
+                seed_computation(
+                    &pool,
+                    &tagged(0x51, tx * 2 + row),
+                    vec![tagged(0x50, tx * 2 + row)],
+                    mask_with_bits(&[0]),
+                    Some(&deep_chain),
+                    &tagged(0xA2, tx),
+                    2000 - i64::from(tx * 2 + row),
+                )
+                .await;
+            }
+        }
+        for tx in 0..3_u16 {
+            seed_computation(
+                &pool,
+                &tagged(0x61, tx),
+                vec![tagged(0x60, tx)],
+                mask_with_bits(&[0]),
+                Some(&shallow_chain),
+                &tagged(0xA3, tx),
+                1000 - i64::from(tx),
+            )
+            .await;
+        }
+
+        use clap::Parser;
+        let mut args = crate::daemon_cli::Args::parse_from([
+            "tfhe-worker",
+            "--work-items-batch-size",
+            "6",
+            "--dependence-chains-per-batch",
+            "3",
+        ]);
+        args.database_url = Some(db.db_url().to_owned().into());
+        assert!(
+            args.dcid_adaptive_batch_execution,
+            "adaptive window is the default"
+        );
+        let health_check = crate::health_check::HealthCheck::new(
+            db.db_url().to_owned().into(),
+            Duration::from_secs(300),
+        );
+        let mut locks = dependence_chain::LockMngr::new_with_conf(
+            Uuid::new_v4(),
+            pool.clone(),
+            30,
+            false,
+            None,
+            None,
+            None,
+            3,
+        );
+        let mut no_progress_cycles = 0;
+        let mut cooldown = DeferredTransactionCooldown::new();
+
+        let mut trx = pool.begin().await?;
+        let (nodes, _, more) = query_for_work(
+            &args,
+            &health_check,
+            &mut trx,
+            &mut locks,
+            &mut no_progress_cycles,
+            &mut cooldown,
+            false,
+        )
+        .await?;
+        trx.commit().await?;
+        assert!(more, "the window found work");
+        assert_eq!(
+            locks.get_current_lock_ids().len(),
+            3,
+            "all three chains are held, or the share is not what this asserts"
+        );
+
+        let mut per_chain = std::collections::BTreeMap::<u8, Vec<Vec<u8>>>::new();
+        for node in &nodes {
+            per_chain
+                .entry(node.transaction_id[0])
+                .or_default()
+                .push(node.transaction_id.clone());
+        }
+        assert_eq!(
+            per_chain.get(&0xA1).map(Vec::len),
+            Some(2),
+            "the wide chain offers its share although its head transaction is \
+             wider than the probe cap: the exact fallback ranks past it"
+        );
+        assert_eq!(
+            per_chain.get(&0xA2).map(Vec::len),
+            Some(2),
+            "the deep chain is bounded to its share, not the whole window"
+        );
+        assert_eq!(
+            per_chain.get(&0xA3).map(Vec::len),
+            Some(2),
+            "the shallow chain gets its share despite being the youngest"
+        );
+        assert_eq!(nodes.len(), 6);
+        let mut wide: Vec<_> = per_chain[&0xA1].clone();
+        wide.sort();
+        assert_eq!(wide, vec![tagged(0xA1, 0), tagged(0xA1, 1)]);
+        // Within a chain the share goes to the OLDEST transactions.
+        let mut deep: Vec<_> = per_chain[&0xA2].clone();
+        deep.sort();
+        assert_eq!(deep, vec![tagged(0xA2, 0), tagged(0xA2, 1)]);
+        Ok(())
+    }
+
+    /// A FOREIGN producer's pre-result failure must land on the owned allowed
+    /// consumer it blocks, and must not touch the foreign row.
+    ///
+    /// Transaction T is split across two chains (the shape divergent listener
+    /// caches produce): producer P is filed under a chain another worker
+    /// holds, its consumer C under ours. P is loaded as a recompute-only input
+    /// for C; its boundary operand's stored ciphertext is garbage, so P fails
+    /// at decompression -- an error raised BEFORE any operation result. That
+    /// error used to be dropped for non-owned nodes, C came back as an
+    /// unresolved local dependence that upload leaves unstamped, and T
+    /// re-executed at poll cadence forever: the owning chain never runs C, so
+    /// nothing could ever record a verdict. Now the error is routed to C
+    /// through the pre-schedule snapshot, as a retryable stamp, and P's row
+    /// -- another chain's -- stays untouched.
+    #[tokio::test]
+    async fn foreign_producer_failure_lands_on_its_owned_consumer(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let db = setup_test_db(ImportMode::WithKeysNoSns).await?;
+        let pool = PgPoolOptions::new()
+            .max_connections(4)
+            .connect(db.db_url())
+            .await?;
+
+        let own_chain = vec![0x71_u8; 32];
+        let foreign_chain = vec![0x72_u8; 32];
+        sqlx::query(
+            "INSERT INTO dependence_chain (dependence_chain_id, status, last_updated_at)
+             VALUES ($1, 'updated', NOW() - INTERVAL '10 seconds')",
+        )
+        .bind(&own_chain)
+        .execute(&pool)
+        .await?;
+        // Held by someone else for the next hour: not acquirable, so every
+        // row filed under it is FOREIGN to this worker.
+        sqlx::query(
+            "INSERT INTO dependence_chain
+                 (dependence_chain_id, status, worker_id, lock_acquired_at, lock_expires_at,
+                  last_updated_at)
+             VALUES ($1, 'processing', $2, NOW(), NOW() + INTERVAL '1 hour',
+                     NOW() - INTERVAL '20 seconds')",
+        )
+        .bind(&foreign_chain)
+        .bind(Uuid::new_v4())
+        .execute(&pool)
+        .await?;
+
+        let boundary = handle(0x80);
+        let producer = handle(0x81);
+        let consumer = handle(0x82);
+        let transaction_id = [0xA7_u8; 32];
+        // The boundary operand exists but cannot be decompressed.
+        sqlx::query(
+            "INSERT INTO ciphertexts (handle, ciphertext, ciphertext_version, ciphertext_type)
+             VALUES ($1, $2, 0, 5)",
+        )
+        .bind(&boundary)
+        .bind(vec![0xDE_u8, 0xAD, 0xBE, 0xEF])
+        .execute(&pool)
+        .await?;
+        // P = FheNot(boundary): its operand crosses a transaction boundary,
+        // so bit 0 is SET.
+        seed_computation(
+            &pool,
+            &producer,
+            vec![boundary.clone()],
+            mask_with_bits(&[0]),
+            Some(&foreign_chain),
+            &transaction_id,
+            20,
+        )
+        .await;
+        // C = FheNot(P): P is minted in T, so bit 0 is CLEAR -- a raw forward.
+        seed_computation(
+            &pool,
+            &consumer,
+            vec![producer.clone()],
+            mask_with_bits(&[]),
+            Some(&own_chain),
+            &transaction_id,
+            19,
+        )
+        .await;
+
+        let args = test_args("10", db.db_url());
+        let health_check = crate::health_check::HealthCheck::new(
+            db.db_url().to_owned().into(),
+            Duration::from_secs(300),
+        );
+        let mut locks = dependence_chain::LockMngr::new_with_conf(
+            Uuid::new_v4(),
+            pool.clone(),
+            30,
+            false,
+            None,
+            None,
+            None,
+            3,
+        );
+        let mut no_progress_cycles = 0;
+        let mut cooldown = DeferredTransactionCooldown::new();
+
+        let mut trx = pool.begin().await?;
+        let (mut nodes, _, more) = query_for_work(
+            &args,
+            &health_check,
+            &mut trx,
+            &mut locks,
+            &mut no_progress_cycles,
+            &mut cooldown,
+            false,
+        )
+        .await?;
+        assert!(more && !nodes.is_empty(), "T is selected through our chain");
+        assert_eq!(
+            locks.get_current_lock_ids(),
+            vec![own_chain.clone()],
+            "only our chain is held; P is foreign"
+        );
+
+        let db_key_cache = DbKeyCache::new_from_env(args.key_cache_size)
+            .map_err(|e| CoprocessorError::Other(e.into()))?;
+        let mut tx_graph = build_transaction_graph_and_execute(
+            &mut nodes,
+            db_key_cache,
+            &health_check,
+            &mut trx,
+            &locks,
+            false,
+            Duration::from_secs(5),
+            1,
+        )
+        .await?;
+        let (progressed, _) =
+            upload_transaction_graph_results(&mut tx_graph, &mut trx, &mut locks).await?;
+        trx.commit().await?;
+        assert!(progressed, "a fresh verdict on the consumer is progress");
+
+        let (consumer_error, consumer_message): (bool, Option<String>) = sqlx::query_as(
+            "SELECT is_error, error_message FROM computations WHERE output_handle = $1",
+        )
+        .bind(&consumer)
+        .fetch_one(&pool)
+        .await?;
+        assert!(
+            consumer_error,
+            "the owned consumer carries the foreign producer's verdict"
+        );
+        let message = consumer_message.unwrap_or_default();
+        assert!(
+            message.contains(RETRYABLE_STAMP_MARKER) && message.contains("DecompressionError"),
+            "a decompression failure is a retryable verdict: {message}"
+        );
+        let producer_error: bool =
+            sqlx::query_scalar("SELECT is_error FROM computations WHERE output_handle = $1")
+                .bind(&producer)
+                .fetch_one(&pool)
+                .await?;
+        assert!(
+            !producer_error,
+            "the foreign row belongs to another chain and is never stamped from here"
+        );
+        Ok(())
+    }
+
+    /// A drain-only window (every row terminally stamped, nothing deferred)
+    /// must NOT rotate: the chain stays owned, the next cycle finds the
+    /// window empty and retires it through the normal no-work path.
+    #[tokio::test]
+    async fn drain_only_chain_retires_without_rotation() -> Result<(), Box<dyn std::error::Error>> {
+        let db = setup_test_db(ImportMode::None).await?;
+        let pool = PgPoolOptions::new()
+            .max_connections(4)
+            .connect(db.db_url())
+            .await?;
+
+        let chain = vec![0x33_u8; 32];
+        sqlx::query(
+            "INSERT INTO dependence_chain (dependence_chain_id, status) VALUES ($1, 'updated')",
+        )
+        .bind(&chain)
+        .execute(&pool)
+        .await?;
+        // Unknown opcode: deterministically invalid content, terminally
+        // stamped rather than deferred.
+        sqlx::query(
+            r#"
+            INSERT INTO computations (
+                output_handle, dependencies, fhe_operation, is_scalar,
+                dependence_chain_id, transaction_id, is_allowed,
+                host_chain_id, operand_boundary_mask
+            ) VALUES ($1, '{}', 127, false, $2, $3, true, 1, $4)
+            "#,
+        )
+        .bind(handle(0x91))
+        .bind(&chain)
+        .bind([0xC1_u8; 32])
+        .bind(vec![0_u8; 32])
+        .execute(&pool)
+        .await?;
+
+        let args = test_args("10", db.db_url());
+        let health_check = crate::health_check::HealthCheck::new(
+            db.db_url().to_owned().into(),
+            Duration::from_secs(300),
+        );
+        let mut locks = dependence_chain::LockMngr::new_with_conf(
+            Uuid::new_v4(),
+            pool.clone(),
+            30,
+            false,
+            None,
+            None,
+            None,
+            3,
+        );
+        let mut no_progress_cycles = 0;
+        let mut cooldown = DeferredTransactionCooldown::new();
+
+        let mut trx = pool.begin().await?;
+        let (nodes, _, more) = query_for_work(
+            &args,
+            &health_check,
+            &mut trx,
+            &mut locks,
+            &mut no_progress_cycles,
+            &mut cooldown,
+            false,
+        )
+        .await?;
+        trx.commit().await?;
+        assert!(more && nodes.is_empty(), "window drains terminally");
+        let is_error: bool =
+            sqlx::query_scalar("SELECT is_error FROM computations WHERE output_handle = $1")
+                .bind(handle(0x91))
+                .fetch_one(&pool)
+                .await?;
+        assert!(is_error, "invalid content is stamped, not deferred");
+        let status: String = sqlx::query_scalar(
+            "SELECT status FROM dependence_chain WHERE dependence_chain_id = $1",
+        )
+        .bind(&chain)
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(
+            status, "processing",
+            "drain-only keeps ownership for retirement"
+        );
+
+        // Next cycle: nothing pending -> the no-work path retires the chain.
+        let mut trx = pool.begin().await?;
+        let (nodes, _, more) = query_for_work(
+            &args,
+            &health_check,
+            &mut trx,
+            &mut locks,
+            &mut no_progress_cycles,
+            &mut cooldown,
+            false,
+        )
+        .await?;
+        trx.commit().await?;
+        assert!(nodes.is_empty() && !more, "empty window reports no work");
+        Ok(())
+    }
+
+    /// Fairness regression for the lockless fallback: the deferred
+    /// transaction enters the cooldown, so the next window slice reaches
+    /// the younger transaction instead of repeating the same batch forever.
+    #[tokio::test]
+    async fn cooldown_rotates_deferring_transactions_when_locking_disabled(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let db = setup_test_db(ImportMode::None).await?;
+        let pool = PgPoolOptions::new()
+            .max_connections(4)
+            .connect(db.db_url())
+            .await?;
+
+        // Older transaction: dangling bit-0 producer -> defers.
+        seed_computation(
+            &pool,
+            &handle(0x71),
+            vec![handle(0x70)],
+            mask_with_bits(&[]),
+            None,
+            &[0xB1_u8; 32],
+            120,
+        )
+        .await;
+        seed_computation(
+            &pool,
+            &handle(0x81),
+            vec![handle(0x80)],
+            mask_with_bits(&[0]),
+            None,
+            &[0xB2_u8; 32],
+            1,
+        )
+        .await;
+
+        // Window of one: without the cooldown the older, deferring
+        // transaction would occupy it on every poll.
+        let args = test_args("1", db.db_url());
+        let health_check = crate::health_check::HealthCheck::new(
+            db.db_url().to_owned().into(),
+            Duration::from_secs(300),
+        );
+        let mut locks = dependence_chain::LockMngr::new_with_conf(
+            Uuid::new_v4(),
+            pool.clone(),
+            30,
+            true, // locking disabled
+            None,
+            None,
+            None,
+            3,
+        );
+        let mut no_progress_cycles = 0;
+        let mut cooldown = DeferredTransactionCooldown::new();
+
+        let mut trx = pool.begin().await?;
+        let (nodes, _, _) = query_for_work(
+            &args,
+            &health_check,
+            &mut trx,
+            &mut locks,
+            &mut no_progress_cycles,
+            &mut cooldown,
+            false,
+        )
+        .await?;
+        trx.commit().await?;
+        assert!(nodes.is_empty(), "oldest transaction defers");
+
+        let mut trx = pool.begin().await?;
+        let (nodes, _, _) = query_for_work(
+            &args,
+            &health_check,
+            &mut trx,
+            &mut locks,
+            &mut no_progress_cycles,
+            &mut cooldown,
+            false,
+        )
+        .await?;
+        trx.commit().await?;
+        assert!(
+            !nodes.is_empty(),
+            "cooldown rotates the window to the younger transaction"
+        );
+        Ok(())
+    }
+
+    /// A scalar operand whose bytes equal the failed handle is not a dependency.
+    ///
+    /// `computations.dependencies` stores encrypted operand handles and plain
+    /// scalar values in one array, so a byte-equality search over it cannot tell
+    /// the two apart -- and the boundary mask cannot either, since only encrypted
+    /// positions are visited when it is derived, leaving a scalar position
+    /// indistinguishable from an operand minted in this transaction. An earlier
+    /// version of this propagation walked that column and condemned an
+    /// independent scalar operation permanently, for a producer it never
+    /// consumed.
+    ///
+    /// The dependent set now comes from the dataflow graph's typed edges, so the
+    /// scalar row is simply not in it. This pins that: the blocked consumer is
+    /// stamped and the scalar-alias row is left alone.
+    #[tokio::test]
+    async fn a_scalar_equal_to_the_failed_handle_is_not_condemned(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let db = setup_test_db(ImportMode::None).await?;
+        let pool = PgPoolOptions::new()
+            .max_connections(2)
+            .connect(db.db_url())
+            .await?;
+
+        let producer = handle(0x61);
+        let consumer = handle(0x62);
+        let scalar_user = handle(0x63);
+        let transaction_id = handle(0x64);
+
+        // The internal producer, as the listener stores it: not allowed, and
+        // therefore completed.
+        sqlx::query(
+            r#"
+            INSERT INTO computations (
+                output_handle, dependencies, fhe_operation, is_scalar,
+                transaction_id, is_allowed, is_completed, schedule_order,
+                host_chain_id, operand_boundary_mask
+            ) VALUES ($1, '{}', 0, false, $2, false, true, NOW(), 1, $3)
+            "#,
+        )
+        .bind(&producer)
+        .bind(&transaction_id)
+        .bind(vec![0_u8; OPERAND_BOUNDARY_MASK_BYTES])
+        .execute(&pool)
+        .await?;
+        // A real consumer, and an independent op whose SCALAR value happens to
+        // equal the producer's handle. Both list the same bytes in
+        // `dependencies`; only the first is a dependency.
+        for (out, is_scalar) in [(&consumer, false), (&scalar_user, true)] {
+            sqlx::query(
+                r#"
+                INSERT INTO computations (
+                    output_handle, dependencies, fhe_operation, is_scalar,
+                    transaction_id, is_allowed, is_completed, schedule_order,
+                    host_chain_id, operand_boundary_mask
+                ) VALUES ($1, $2, 0, $3, $4, true, false, NOW(), 1, $5)
+                "#,
+            )
+            .bind(out)
+            .bind(vec![producer.clone()])
+            .bind(is_scalar)
+            .bind(&transaction_id)
+            .bind(vec![0_u8; OPERAND_BOUNDARY_MASK_BYTES])
+            .execute(&pool)
+            .await?;
+        }
+
+        let mut locks = dependence_chain::LockMngr::new_with_conf(
+            Uuid::new_v4(),
+            pool.clone(),
+            30,
+            true,
+            None,
+            None,
+            None,
+            3,
+        );
+        let panic_error =
+            std::io::Error::other(format!("SchedulerError::{RETRYABLE_STAMP_MARKER}(sigsegv)"));
+
+        // What the graph reports: the consumer only. The scalar user has no edge
+        // from the producer, because a scalar is a value, not a dependence.
+        let blocked = vec![consumer.clone()];
+
+        let mut trx = pool.begin().await?;
+        set_computation_error(
+            &producer,
+            &transaction_id,
+            &panic_error,
+            true,
+            &blocked,
+            &mut HashSet::new(),
+            &mut trx,
+            &mut locks,
+        )
+        .await?;
+
+        async fn errored(
+            trx: &mut sqlx::Transaction<'_, Postgres>,
+            output_handle: &[u8],
+        ) -> Result<bool, sqlx::Error> {
+            sqlx::query_scalar::<_, bool>(
+                "SELECT is_error FROM computations WHERE output_handle = $1",
+            )
+            .bind(output_handle)
+            .fetch_one(trx.as_mut())
+            .await
+        }
+        assert!(
+            errored(&mut trx, &consumer).await?,
+            "the real consumer must carry the verdict"
+        );
+        assert!(
+            !errored(&mut trx, &scalar_user).await?,
+            "an independent scalar operation must never be condemned for a \
+             producer it does not consume"
+        );
+        trx.commit().await?;
+        Ok(())
+    }
+
+    /// An internal producer's verdict lands on the allowed consumer that its
+    /// failure actually blocks.
+    ///
+    /// The listener stores a non-allowed row with `is_completed = TRUE` -- its
+    /// output is never persisted, so there is nothing to complete -- and the
+    /// stamping UPDATE only touches pending rows. So the producer's own row
+    /// cannot carry a verdict, and relaxing that guard would not help: all three
+    /// demotion predicates require `is_completed = FALSE` too. Without
+    /// propagation nothing accrues an attempt count, the allowed consumer defers
+    /// as MissingInputs (which upload ignores by design), and the transaction
+    /// re-executes at poll cadence forever.
+    ///
+    /// This seeds the row shape the LISTENER produces, which is the whole point:
+    /// the demotion test alongside uses `is_completed = false`, a real state for
+    /// allowed work but not the one an internal producer is ever stored in, so it
+    /// could not have caught this.
+    #[tokio::test]
+    async fn internal_producer_verdict_lands_on_its_allowed_consumer(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let db = setup_test_db(ImportMode::None).await?;
+        let pool = PgPoolOptions::new()
+            .max_connections(2)
+            .connect(db.db_url())
+            .await?;
+
+        let producer = handle(0x51);
+        let consumer = handle(0x52);
+        let transaction_id = handle(0x53);
+        // The internal producer, exactly as the listener writes it.
+        sqlx::query(
+            r#"
+            INSERT INTO computations (
+                output_handle, dependencies, fhe_operation, is_scalar,
+                transaction_id, is_allowed, is_completed, schedule_order,
+                host_chain_id, operand_boundary_mask
+            ) VALUES ($1, '{}', 0, false, $2, false, true, NOW(), 1, $3)
+            "#,
+        )
+        .bind(&producer)
+        .bind(&transaction_id)
+        .bind(vec![0_u8; OPERAND_BOUNDARY_MASK_BYTES])
+        .execute(&pool)
+        .await?;
+        // Its allowed consumer: pending, and depending on the producer.
+        sqlx::query(
+            r#"
+            INSERT INTO computations (
+                output_handle, dependencies, fhe_operation, is_scalar,
+                transaction_id, is_allowed, is_completed, schedule_order,
+                host_chain_id, operand_boundary_mask
+            ) VALUES ($1, $2, 0, false, $3, true, false, NOW(), 1, $4)
+            "#,
+        )
+        .bind(&consumer)
+        .bind(vec![producer.clone()])
+        .bind(&transaction_id)
+        .bind(vec![0_u8; OPERAND_BOUNDARY_MASK_BYTES])
+        .execute(&pool)
+        .await?;
+
+        let mut locks = dependence_chain::LockMngr::new_with_conf(
+            Uuid::new_v4(),
+            pool.clone(),
+            30,
+            true, // locking disabled: this test is about the verdict, not leases
+            None,
+            None,
+            None,
+            3,
+        );
+        let panic_error =
+            std::io::Error::other(format!("SchedulerError::{RETRYABLE_STAMP_MARKER}(sigsegv)"));
+
+        async fn row_state(
+            trx: &mut sqlx::Transaction<'_, Postgres>,
+            output_handle: &[u8],
+        ) -> Result<(bool, i16, Option<String>), sqlx::Error> {
+            sqlx::query_as::<_, (bool, i16, Option<String>)>(
+                "SELECT is_error, error_retry_count, error_message FROM computations
+                 WHERE output_handle = $1",
+            )
+            .bind(output_handle)
+            .fetch_one(trx.as_mut())
+            .await
+        }
+
+        let mut trx = pool.begin().await?;
+        let first = set_computation_error(
+            &producer,
+            &transaction_id,
+            &panic_error,
+            true,
+            // What the graph reports for this shape: the producer's only consumer.
+            std::slice::from_ref(&consumer),
+            &mut HashSet::new(),
+            &mut trx,
+            &mut locks,
+        )
+        .await?;
+        assert!(
+            first,
+            "recording the verdict on the consumer is a state change"
+        );
+
+        let (producer_errored, _, _) = row_state(&mut trx, &producer).await?;
+        assert!(
+            !producer_errored,
+            "the producer's own row still cannot carry it -- that is the premise"
+        );
+        let (consumer_errored, count, message) = row_state(&mut trx, &consumer).await?;
+        assert!(
+            consumer_errored,
+            "the allowed consumer must carry the verdict"
+        );
+        assert_eq!(count, 0, "a fresh verdict starts at zero");
+        assert!(
+            message.unwrap_or_default().contains(RETRYABLE_STAMP_MARKER),
+            "the producer's class must travel with it, or the consumer is condemned \
+             for a transient fault"
+        );
+
+        // And it climbs, so demotion is reachable -- without reporting progress,
+        // which would suppress the parking that paces a repeating failure.
+        for attempt in 1..=3_i16 {
+            let repeated = set_computation_error(
+                &producer,
+                &transaction_id,
+                &panic_error,
+                true,
+                std::slice::from_ref(&consumer),
+                &mut HashSet::new(),
+                &mut trx,
+                &mut locks,
+            )
+            .await?;
+            assert!(!repeated, "attempt {attempt}: a repeat is not progress");
+            let (_, count, _) = row_state(&mut trx, &consumer).await?;
+            assert_eq!(count, attempt, "attempt {attempt}: the count must advance");
+        }
+        trx.commit().await?;
+        Ok(())
+    }
+
+    /// A recurring retryable stamp advances its attempt count without ever
+    /// reporting progress and without ever becoming a verdict.
+    ///
+    /// Both halves matter. Postgres reports a matched row for an
+    /// identical-value UPDATE, so if a repeat counted as progress a
+    /// perpetually panicking computation would reset `no_progress_cycles`
+    /// every cycle and suppress the parking that paces it. And the stamp text
+    /// must never be rewritten: exhausting the attempts DEMOTES the row — the
+    /// work window and the chain's completion test stop counting it — but the
+    /// row stays retryable, stays pending, and is re-armed by the slow sweep.
+    /// Nothing here may turn a transient failure into a condemned cone.
+    #[tokio::test]
+    async fn retryable_stamp_counts_up_without_progress_or_promotion(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let db = setup_test_db(ImportMode::None).await?;
+        let pool = PgPoolOptions::new()
+            .max_connections(2)
+            .connect(db.db_url())
+            .await?;
+
+        let output_handle = handle(1);
+        let transaction_id = handle(2);
+        seed_computation(
+            &pool,
+            &output_handle,
+            vec![],
+            vec![0_u8; OPERAND_BOUNDARY_MASK_BYTES],
+            None,
+            &transaction_id,
+            0,
+        )
+        .await;
+
+        let mut locks = dependence_chain::LockMngr::new_with_conf(
+            Uuid::new_v4(),
+            pool.clone(),
+            30,
+            true, // locking disabled: this test is about the stamp, not leases
+            None,
+            None,
+            None,
+            3,
+        );
+        let panic_error =
+            std::io::Error::other(format!("SchedulerError::{RETRYABLE_STAMP_MARKER}(sigsegv)"));
+        let threshold: i16 = 3;
+
+        let mut trx = pool.begin().await?;
+        let first = set_computation_error(
+            &output_handle,
+            &transaction_id,
+            &panic_error,
+            true,
+            &[],
+            &mut HashSet::new(),
+            &mut trx,
+            &mut locks,
+        )
+        .await?;
+        assert!(first, "a fresh stamp is a state change");
+
+        async fn retry_count(
+            trx: &mut sqlx::Transaction<'_, Postgres>,
+            output_handle: &[u8],
+        ) -> Result<i16, sqlx::Error> {
+            sqlx::query_scalar::<_, i16>(
+                "SELECT error_retry_count FROM computations WHERE output_handle = $1",
+            )
+            .bind(output_handle)
+            .fetch_one(trx.as_mut())
+            .await
+        }
+        assert_eq!(
+            retry_count(&mut trx, &output_handle).await?,
+            0,
+            "a fresh stamp starts at zero"
+        );
+
+        // Well past the threshold: the count keeps climbing, the caller is
+        // told nothing happened, and the stamp text never changes.
+        for attempt in 1..=(threshold + 2) {
+            let repeated = set_computation_error(
+                &output_handle,
+                &transaction_id,
+                &panic_error,
+                true,
+                &[],
+                &mut HashSet::new(),
+                &mut trx,
+                &mut locks,
+            )
+            .await?;
+            assert!(
+                !repeated,
+                "attempt {attempt}: a recurring panic must never report progress"
+            );
+            assert_eq!(
+                retry_count(&mut trx, &output_handle).await?,
+                attempt,
+                "attempt {attempt}: the count advances by exactly one"
+            );
+            let message: Option<String> = sqlx::query_scalar(
+                "SELECT error_message FROM computations WHERE output_handle = $1",
+            )
+            .bind(&output_handle)
+            .fetch_one(trx.as_mut())
+            .await?;
+            assert!(
+                message.unwrap().contains(RETRYABLE_STAMP_MARKER),
+                "attempt {attempt}: a demoted row is still retryable — nothing \
+                 promotes it, so the dead-producer predicate must not see it \
+                 as a dead producer"
+            );
+        }
+
+        trx.rollback().await?;
+        Ok(())
+    }
+
+    /// A genuinely terminal verdict — e.g. the producer drained as dead —
+    /// supersedes a retryable stamp immediately, without waiting out the
+    /// budget. Otherwise a row that became provably unsatisfiable would keep
+    /// its chain out of 'processed' for the whole cap.
+    #[tokio::test]
+    async fn terminal_stamp_supersedes_a_retryable_one_mid_budget(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let db = setup_test_db(ImportMode::None).await?;
+        let pool = PgPoolOptions::new()
+            .max_connections(2)
+            .connect(db.db_url())
+            .await?;
+
+        let output_handle = handle(3);
+        let transaction_id = handle(4);
+        seed_computation(
+            &pool,
+            &output_handle,
+            vec![],
+            vec![0_u8; OPERAND_BOUNDARY_MASK_BYTES],
+            None,
+            &transaction_id,
+            0,
+        )
+        .await;
+
+        let mut locks = dependence_chain::LockMngr::new_with_conf(
+            Uuid::new_v4(),
+            pool.clone(),
+            30,
+            true,
+            None,
+            None,
+            None,
+            3,
+        );
+        let panic_error =
+            std::io::Error::other(format!("SchedulerError::{RETRYABLE_STAMP_MARKER}(sigsegv)"));
+        let dead_input = std::io::Error::other("dead boundary input: producer terminally errored");
+
+        let mut trx = pool.begin().await?;
+        assert!(
+            set_computation_error(
+                &output_handle,
+                &transaction_id,
+                &panic_error,
+                true,
+                &[],
+                &mut HashSet::new(),
+                &mut trx,
+                &mut locks
+            )
+            .await?
+        );
+        assert!(
+            set_computation_error(
+                &output_handle,
+                &transaction_id,
+                &dead_input,
+                false,
+                &[],
+                &mut HashSet::new(),
+                &mut trx,
+                &mut locks
+            )
+            .await?,
+            "a terminal verdict lands immediately and is a state change"
+        );
+
+        let message: Option<String> =
+            sqlx::query_scalar("SELECT error_message FROM computations WHERE output_handle = $1")
+                .bind(&output_handle)
+                .fetch_one(trx.as_mut())
+                .await?;
+        assert_eq!(
+            message.as_deref(),
+            Some("dead boundary input: producer terminally errored")
+        );
+
+        trx.rollback().await?;
+        Ok(())
+    }
+
+    /// Lockless mode must have NO demotion bound, not a large one. The
+    /// counter saturates at `i16::MAX`, so a sentinel of `i16::MAX` would
+    /// re-create the very exclusion the bypass exists to remove — after
+    /// 32_768 failures, in the one mode with no sweep to re-arm the row.
+    #[test]
+    fn demote_threshold_is_absent_rather_than_saturated_without_locking() {
+        assert_eq!(demote_threshold_for(false, 3), Some(3));
+        assert_eq!(demote_threshold_for(true, 3), None);
+        assert_ne!(
+            demote_threshold_for(true, 3),
+            Some(i16::MAX),
+            "a saturating counter makes i16::MAX a real bound, not an absent one"
+        );
+    }
+
+    /// The share is `ceil(work_items_batch_size / acquired_dcids)` when
+    /// adaptive batching is on, and the whole window when it is off. The
+    /// `false` arm is what `--dcid-adaptive-batch-execution=false` selects,
+    /// NOT a default: the flag ships enabled, paired with
+    /// `--dcid-batch-execution`.
+    #[test]
+    fn adaptive_dcid_transaction_share_is_bounded_when_enabled() {
+        assert_eq!(dcid_transaction_share(100, 20, true), 5);
+        assert_eq!(dcid_transaction_share(100, 3, true), 34);
+        assert_eq!(dcid_transaction_share(100, 1, true), 100);
+        assert_eq!(dcid_transaction_share(100, 20, false), 100);
+    }
+
+    #[tokio::test]
+    async fn acquired_dcid_excludes_stale_same_transaction_producer_for_boundary_operand(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let db = setup_test_db(ImportMode::None).await?;
+        let pool = PgPoolOptions::new()
+            .max_connections(4)
+            .connect(db.db_url())
+            .await?;
+
+        let canonical_dcid = vec![0x11_u8; 32];
+        let stale_dcid = vec![0x22_u8; 32];
+        let transaction_id = vec![0x33_u8; 32];
+        let stale_producer = vec![0x44_u8; 32];
+        let canonical_consumer = vec![0x55_u8; 32];
+
+        // Only the canonical component is acquired. The stale row models a
+        // fork-exposed database retaining the same transaction under a
+        // sibling DCID. The consumer's listener-authored bit says the input
+        // is a boundary, so it must be sourced from canonical ciphertext
+        // storage rather than forwarded from this stale producer.
+        sqlx::query(
+            "INSERT INTO dependence_chain (dependence_chain_id, status) VALUES ($1, 'updated')",
+        )
+        .bind(&canonical_dcid)
+        .execute(&pool)
+        .await?;
+        sqlx::query(
+            r#"
+            INSERT INTO computations (
+                output_handle, dependencies, fhe_operation, is_scalar,
+                dependence_chain_id, transaction_id, is_allowed,
+                is_completed, is_error, host_chain_id, operand_boundary_mask
+            ) VALUES ($1, $2, $3, false, $4, $5, $6, false, false, 1, $7)
+            "#,
+        )
+        .bind(&stale_producer)
+        .bind(Vec::<Vec<u8>>::new())
+        .bind(SupportedFheOperations::FheTrivialEncrypt as i16)
+        .bind(&stale_dcid)
+        .bind(&transaction_id)
+        .bind(true)
+        .bind(vec![0_u8; OPERAND_BOUNDARY_MASK_BYTES])
+        .execute(&pool)
+        .await?;
+        let mut boundary_mask = vec![0_u8; OPERAND_BOUNDARY_MASK_BYTES];
+        boundary_mask[OPERAND_BOUNDARY_MASK_BYTES - 1] = 1;
+        sqlx::query(
+            r#"
+            INSERT INTO computations (
+                output_handle, dependencies, fhe_operation, is_scalar,
+                dependence_chain_id, transaction_id, is_allowed,
+                is_completed, is_error, host_chain_id, operand_boundary_mask
+            ) VALUES ($1, $2, $3, false, $4, $5, true, false, false, 1, $6)
+            "#,
+        )
+        .bind(&canonical_consumer)
+        .bind(vec![stale_producer.clone()])
+        .bind(SupportedFheOperations::FheNot as i16)
+        .bind(&canonical_dcid)
+        .bind(&transaction_id)
+        .bind(boundary_mask)
+        .execute(&pool)
+        .await?;
+
+        let mut args = crate::daemon_cli::Args::parse_from([
+            "tfhe-worker",
+            "--work-items-batch-size",
+            "1",
+            "--dependence-chains-per-batch",
+            "1",
+        ]);
+        args.database_url = Some(db.db_url.clone());
+        let health_check = crate::health_check::HealthCheck::new(
+            db.db_url.clone(),
+            std::time::Duration::from_secs(300),
+        );
+        let mut locks = dependence_chain::LockMngr::new_with_conf(
+            Uuid::new_v4(),
+            pool.clone(),
+            30,
+            false,
+            None,
+            None,
+            None,
+            3,
+        );
+        let mut no_progress_cycles = 0;
+        let mut cooldown = DeferredTransactionCooldown::new();
+        let mut transaction = pool.begin().await?;
+        let (nodes, _, found_work) = query_for_work(
+            &args,
+            &health_check,
+            &mut transaction,
+            &mut locks,
+            &mut no_progress_cycles,
+            &mut cooldown,
+            false,
+        )
+        .await?;
+
+        assert!(found_work);
+        assert_eq!(nodes.len(), 1, "only the acquired DCID may enter the graph");
+        assert_eq!(nodes[0].results, vec![canonical_consumer]);
+        assert!(
+            nodes[0].inputs.contains_key(&stale_producer),
+            "the boundary operand must be fetched canonically even though a stale same-transaction producer exists"
+        );
+
+        transaction.rollback().await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn adaptive_batch_shares_the_work_window_across_acquired_dcids(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let db = setup_test_db(ImportMode::None).await?;
+        let pool = PgPoolOptions::new()
+            .max_connections(4)
+            .connect(db.db_url())
+            .await?;
+        let first_dcid = vec![0x61_u8; 32];
+        let second_dcid = vec![0x62_u8; 32];
+        for dcid in [&first_dcid, &second_dcid] {
+            sqlx::query(
+                "INSERT INTO dependence_chain (dependence_chain_id, status) VALUES ($1, 'updated')",
+            )
+            .bind(dcid)
+            .execute(&pool)
+            .await?;
+        }
+
+        let mut expected_outputs = Vec::new();
+        for (dcid_index, dcid) in [&first_dcid, &second_dcid].into_iter().enumerate() {
+            for transaction_index in 0..2 {
+                let output_handle = vec![0x70 + dcid_index as u8, transaction_index as u8];
+                let transaction_id = vec![0x80 + dcid_index as u8, transaction_index as u8];
+                if transaction_index == 0 {
+                    expected_outputs.push(output_handle.clone());
+                }
+                sqlx::query(
+                    r#"
+                    INSERT INTO computations (
+                        output_handle, dependencies, fhe_operation, is_scalar,
+                        dependence_chain_id, transaction_id, is_allowed,
+                        is_completed, is_error, host_chain_id, operand_boundary_mask
+                    ) VALUES ($1, $2, $3, false, $4, $5, true, false, false, 1, $6)
+                    "#,
+                )
+                .bind(output_handle)
+                .bind(vec![vec![1], vec![0]])
+                .bind(SupportedFheOperations::FheTrivialEncrypt as i16)
+                .bind(dcid)
+                .bind(transaction_id)
+                .bind(vec![0_u8; OPERAND_BOUNDARY_MASK_BYTES])
+                .execute(&pool)
+                .await?;
+            }
+        }
+
+        let mut args = crate::daemon_cli::Args::parse_from([
+            "tfhe-worker",
+            "--work-items-batch-size",
+            "2",
+            "--dependence-chains-per-batch",
+            "2",
+            "--dcid-adaptive-batch-execution",
+        ]);
+        args.database_url = Some(db.db_url.clone());
+        let health_check = crate::health_check::HealthCheck::new(
+            db.db_url.clone(),
+            std::time::Duration::from_secs(300),
+        );
+        let mut locks = dependence_chain::LockMngr::new_with_conf(
+            Uuid::new_v4(),
+            pool.clone(),
+            30,
+            false,
+            None,
+            None,
+            None,
+            3,
+        );
+        assert_eq!(
+            locks
+                .acquire_next_locks(2)
+                .await?
+                .into_iter()
+                .filter_map(|(id, _)| id)
+                .count(),
+            2,
+            "both test DCIDs are acquired"
+        );
+        let mut no_progress_cycles = 0;
+        let mut cooldown = DeferredTransactionCooldown::new();
+        let mut transaction = pool.begin().await?;
+        let (nodes, _, found_work) = query_for_work(
+            &args,
+            &health_check,
+            &mut transaction,
+            &mut locks,
+            &mut no_progress_cycles,
+            &mut cooldown,
+            false,
+        )
+        .await?;
+
+        assert!(found_work);
+        assert_eq!(nodes.len(), 2, "one transaction selected from each DCID");
+        let actual_outputs = nodes
+            .into_iter()
+            .flat_map(|node| node.results)
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(
+            actual_outputs,
+            expected_outputs.into_iter().collect(),
+            "the first transaction from both acquired chains is selected"
+        );
+
+        transaction.rollback().await?;
+        Ok(())
+    }
+}
+
 lazy_static! {
     pub static ref TIMING: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 }
@@ -35,9 +2071,50 @@ lazy_static! {
 lazy_static! {
     static ref WORKER_ERRORS_COUNTER: IntCounter =
         register_int_counter!("coprocessor_worker_errors", "worker errors encountered").unwrap();
+    static ref DEFERRED_TRANSACTIONS_COUNTER: IntCounter = register_int_counter!(
+        "coprocessor_worker_deferred_transactions",
+        "transactions left pending because their work rows could not be interpreted"
+    )
+    .unwrap();
+    /// Companion GAUGE to the counter above, and the one that identifies a
+    /// wedge. The counter advances once per deferral per poll, so a single
+    /// permanently uninterpretable transaction and a burst of transient ones
+    /// are indistinguishable in it — both just climb. This is set every cycle,
+    /// zero included, so a value pinned at 1 for hours reads as one stuck
+    /// transaction while a spike that returns to zero reads as a burst.
+    static ref DEFERRED_TRANSACTIONS_GAUGE: IntGauge = register_int_gauge!(
+        "coprocessor_worker_deferred_transactions_current",
+        "transactions deferred in the most recent work window of this worker"
+    )
+    .unwrap();
     static ref WORK_ITEMS_POLL_COUNTER: IntCounter = register_int_counter!(
         "coprocessor_work_items_polls",
         "times work items are polled from database"
+    )
+    .unwrap();
+    /// A DCID lease that lapsed BEFORE this worker started executing its
+    /// batch. Leases are only renewed between cycles, so a cycle whose
+    /// execution outlives `--dcid-ttl-sec` becomes stealable while it runs.
+    /// Losing one is not a correctness fault -- materialization is
+    /// deterministic, which is why the code continues rather than aborting --
+    /// but it means another replica is redundantly executing the same chains,
+    /// doubling GPU and database load exactly when work is already slow.
+    ///
+    /// These two counters exist to answer whether that happens in practice,
+    /// before paying for an in-flight renewal task. A rate near zero says the
+    /// TTL comfortably covers real batches; a non-trivial rate says it does
+    /// not, and sizes the fix.
+    static ref DCID_LEASE_LOST_BEFORE_EXECUTION_COUNTER: IntCounter = register_int_counter!(
+        "coprocessor_worker_dcid_lease_lost_before_execution",
+        "DCID leases lost before batch execution started; the batch may be redundant with another replica"
+    )
+    .unwrap();
+    /// As above, but detected after execution finished: the lease lapsed at
+    /// some point during `schedule()`. Splitting the two says whether batches
+    /// are outliving the TTL, or merely arriving after it already lapsed.
+    static ref DCID_LEASE_LOST_DURING_EXECUTION_COUNTER: IntCounter = register_int_counter!(
+        "coprocessor_worker_dcid_lease_lost_during_execution",
+        "DCID leases lost while a batch was executing; results are deterministic but the work may be duplicated"
     )
     .unwrap();
     static ref WORK_ITEMS_NOTIFICATIONS_COUNTER: IntCounter = register_int_counter!(
@@ -68,9 +2145,48 @@ lazy_static! {
     .unwrap();
 }
 
+/// In-process readiness signal. The benchmark harness starts a real worker
+/// and needs a deterministic "installed and serving" edge so process startup
+/// falls outside the measured interval. It exists only under `bench`: a
+/// production build carries no readiness parameter, no channel and no extra
+/// public entry point.
+#[cfg(feature = "bench")]
+pub type ReadinessSignal = tokio::sync::oneshot::Sender<Result<(), String>>;
+
+/// Readiness plumbing threaded through the startup path. Zero-sized without
+/// `bench`, so the production build pays nothing for it.
+#[cfg(feature = "bench")]
+pub type Readiness = Option<ReadinessSignal>;
+#[cfg(not(feature = "bench"))]
+pub type Readiness = ();
+
+#[cfg(feature = "bench")]
+pub const NO_READINESS: Readiness = None;
+#[cfg(not(feature = "bench"))]
+pub const NO_READINESS: Readiness = ();
+
 pub async fn run_tfhe_worker(
     args: crate::daemon_cli::Args,
     health_check: crate::health_check::HealthCheck,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    run_tfhe_worker_inner(args, health_check, NO_READINESS).await
+}
+
+/// Benchmark-harness entry point: identical to [`run_tfhe_worker`] but
+/// signals once the worker is installed and serving.
+#[cfg(feature = "bench")]
+pub async fn run_tfhe_worker_with_readiness(
+    args: crate::daemon_cli::Args,
+    health_check: crate::health_check::HealthCheck,
+    readiness: Option<ReadinessSignal>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    run_tfhe_worker_inner(args, health_check, readiness).await
+}
+
+async fn run_tfhe_worker_inner(
+    args: crate::daemon_cli::Args,
+    health_check: crate::health_check::HealthCheck,
+    mut readiness: Readiness,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Determine worker ID to use for the lifetime of this process
     // In case of a failure in tfhe_worker_cycle, the same id must be reused to quickly unlock any held locks
@@ -122,6 +2238,7 @@ pub async fn run_tfhe_worker(
             gcs_mode,
             start_block_state.clone(),
             health_check.clone(),
+            &mut readiness,
         )
         .await
         {
@@ -143,6 +2260,7 @@ async fn tfhe_worker_cycle(
     gcs_mode: bool,
     start_block_state: Arc<AtomicI64>,
     health_check: crate::health_check::HealthCheck,
+    readiness: &mut Readiness,
 ) -> Result<(), CoprocessorError> {
     let db_url = resolve_database_url_from_option(args.database_url.clone())
         .map_err(|e| CoprocessorError::Other(e.into()))?;
@@ -150,6 +2268,14 @@ async fn tfhe_worker_cycle(
     // `search_path = gcs,public` so unqualified writes land in `gcs.*` and
     // shared read-only tables (keys, crs, host_chains, upgrade_state, …)
     // still resolve from `public` via fallback.
+    if gcs_mode {
+        fhevm_engine_common::versioning::wait_for_gcs_schema(
+            db_url.as_str(),
+            fhevm_engine_common::versioning::GCS_SCHEMA_WAIT,
+        )
+        .await
+        .map_err(|e| CoprocessorError::Other(e.into()))?;
+    }
     let (pool, _pool_refresh_handle) = connect_pool_with_options_and_connect_options(
         &db_url,
         sqlx::postgres::PgPoolOptions::new().max_connections(args.pg_pool_max_connections),
@@ -158,10 +2284,10 @@ async fn tfhe_worker_cycle(
     )
     .await?;
 
-    let db_key_cache =
-        DbKeyCache::new(args.key_cache_size).map_err(|e| CoprocessorError::Other(e.into()))?;
+    let db_key_cache = DbKeyCache::new_from_env(args.key_cache_size)
+        .map_err(|e| CoprocessorError::Other(e.into()))?;
     let mut listener = PgListener::connect_with(&pool).await?;
-    listener.listen("work_available").await?;
+    listener.listen(WORK_AVAILABLE_CHANNEL).await?;
 
     let mut dcid_mngr = dependence_chain::LockMngr::new_with_conf(
         worker_id,
@@ -171,7 +2297,82 @@ async fn tfhe_worker_cycle(
         Some(args.dcid_timeslice_sec),
         Some(args.dcid_cleanup_interval_sec),
         Some(args.processed_dcid_ttl_sec),
+        args.computation_retry_demote_threshold,
     );
+
+    // A lease has to outlive the gap between the renewals that keep it, and
+    // renewals happen once per worker cycle. A worker holding chains across
+    // an idle poll therefore loses them by waiting alone, before execution
+    // time is even considered. This cannot check execution duration — that is
+    // not knowable at startup, and is what the lease-loss counters measure —
+    // but the idle case is a pure function of configuration, so say so.
+    if u64::from(args.dcid_ttl_sec).saturating_mul(1000) <= args.worker_polling_interval_ms {
+        warn!(
+            target: "tfhe_worker",
+            dcid_ttl_sec = args.dcid_ttl_sec,
+            worker_polling_interval_ms = args.worker_polling_interval_ms,
+            "--dcid-ttl-sec does not cover one polling interval: a worker \
+             holding chains will lose its lease while waiting for the next \
+             cycle, before any execution time is counted. Raise \
+             --dcid-ttl-sec above --worker-polling-interval-ms."
+        );
+    }
+
+    // The adaptive work window gives each acquired chain
+    // ceil(--work-items-batch-size / acquired chains) transactions, and it
+    // switches itself OFF for a cycle that acquires more chains than the
+    // window admits. An inverted pair therefore removes the fairness
+    // mitigation for the head-of-line blocking that batching creates --
+    // silently, only under enough load to fill the batch, and only on the
+    // cycles where it matters. Say so once at startup rather than leaving it
+    // to be inferred from throughput.
+    if args.dcid_batch_execution
+        && args.dcid_adaptive_batch_execution
+        && args.dependence_chains_per_batch > args.work_items_batch_size
+    {
+        warn!(
+            target: "tfhe_worker",
+            work_items_batch_size = args.work_items_batch_size,
+            dependence_chains_per_batch = args.dependence_chains_per_batch,
+            "--dependence-chains-per-batch exceeds --work-items-batch-size: the adaptive \
+             work window will disable itself on any cycle that acquires more chains than \
+             the window admits, leaving batching without its fairness mitigation. Raise \
+             --work-items-batch-size above --dependence-chains-per-batch."
+        );
+    }
+
+    // Bound the reservation wait by the lease it runs under. The wait is a
+    // blocking loop inside batch execution, and the DCID lease is only renewed
+    // BETWEEN worker cycles — so a wait longer than the lease guarantees the
+    // lease lapses mid-batch, another worker steals the chain and redundantly
+    // recomputes it. Failing the reservation early is strictly better: it
+    // leaves no stamp (a reservation error is not a verdict on the operands)
+    // and the batch retries with the lease still held.
+    //
+    // The fraction leaves room to return to the loop and extend before expiry
+    // rather than racing it.
+    let gpu_reservation_timeout = {
+        let configured = std::time::Duration::from_millis(args.gpu_memory_reservation_timeout_ms);
+        if args.disable_dcid_locking {
+            // No lease to outlive.
+            configured
+        } else {
+            let lease_bound = std::time::Duration::from_secs(u64::from(args.dcid_ttl_sec))
+                .mul_f32(GPU_RESERVATION_LEASE_FRACTION);
+            if configured > lease_bound {
+                warn!(
+                    target: "tfhe_worker",
+                    configured_ms = args.gpu_memory_reservation_timeout_ms,
+                    effective_ms = lease_bound.as_millis() as u64,
+                    dcid_ttl_sec = args.dcid_ttl_sec,
+                    "capping GPU memory reservation timeout to stay inside the DCID lease"
+                );
+                lease_bound
+            } else {
+                configured
+            }
+        }
+    };
 
     // Release all owned locks on startup to avoid stale locks
     dcid_mngr.release_all_owned_locks().await?;
@@ -184,8 +2385,19 @@ async fn tfhe_worker_cycle(
             .await
             .map_err(|e| CoprocessorError::Other(e.into()))?;
     }
+    // The listener, DCID-acquisition state, and benchmark key cache are
+    // installed. This is an in-process readiness point, not merely an
+    // observation of an arbitrary database session.
+    #[cfg(feature = "bench")]
+    if let Some(readiness) = readiness.take() {
+        let _ = readiness.send(Ok(()));
+    }
+    #[cfg(not(feature = "bench"))]
+    let _ = readiness;
     let mut immediately_poll_more_work = false;
     let mut no_progress_cycles = 0;
+    let mut deferred_cooldown = DeferredTransactionCooldown::new();
+    let mut consecutive_batch_failures: u32 = 0;
     loop {
         // GCS gating: skip the iteration entirely until the activation
         // watcher has populated `start_block` in `upgrade_state` for
@@ -195,11 +2407,8 @@ async fn tfhe_worker_cycle(
         // start_block value inside the cycle. In BCS mode this branch is a
         // no-op.
         if gcs_mode && start_block_state.load(Ordering::SeqCst) == GCS_NOT_ACTIVATED {
-            debug!(target: "tfhe_worker", "GCS not yet activated; sleeping before re-check");
-            tokio::time::sleep(tokio::time::Duration::from_millis(
-                args.worker_polling_interval_ms,
-            ))
-            .await;
+            info!(target: "tfhe_worker", "GCS not yet activated; sleeping before re-check");
+            tokio::time::sleep(GCS_GATE_RECHECK).await;
             continue;
         }
 
@@ -224,6 +2433,18 @@ async fn tfhe_worker_cycle(
                 },
             };
         }
+
+        // The idle-time sweep runs on the LOOP's cadence, not only when the
+        // work window comes back empty. `do_cleanup` is already throttled
+        // internally to `--dcid-cleanup-interval-sec` (1 h), so calling it
+        // every iteration costs one elapsed-time check; what it buys is an
+        // eventual-service guarantee. Reached only from the no-work branch it
+        // could be skipped indefinitely under sustained traffic, and the
+        // sweep is what re-arms demoted chains — whose consumers DEFER rather
+        // than drain, because the dead-producer predicate reads a retryable
+        // stamp as not-dead. A demoted row therefore parks its whole
+        // downstream cone until this runs.
+        dcid_mngr.do_cleanup().await?;
 
         #[cfg(feature = "bench")]
         let now = std::time::SystemTime::now();
@@ -251,6 +2472,15 @@ async fn tfhe_worker_cycle(
             WriteGuard::Proceed(trx) => trx,
             WriteGuard::Stop => {
                 info!(target: "tfhe_worker", "Cutover completed — BCS worker exiting cycle");
+                // Hand back what this worker holds instead of leaving up to
+                // `--dependence-chains-per-batch` chains to be reclaimed by
+                // work-stealing after `--dcid-ttl-sec`. The startup release
+                // cannot cover this: it filters on `worker_id`, which is a
+                // fresh UUID per process unless `--worker-id` is configured.
+                if let Err(error) = dcid_mngr.release_all_owned_locks().await {
+                    warn!(target: "tfhe_worker", { error = %error },
+                        "could not release owned locks on exit; they expire with the lock TTL");
+                }
                 return Ok(());
             }
             WriteGuard::Skip => {
@@ -267,16 +2497,48 @@ async fn tfhe_worker_cycle(
             &mut trx,
             &mut dcid_mngr,
             &mut no_progress_cycles,
+            &mut deferred_cooldown,
+            gcs_mode,
         )
         .instrument(loop_span.clone())
         .await?;
         if has_more_work {
+            if transactions.is_empty() {
+                // Rows were loaded but nothing was schedulable: every
+                // transaction deferred (uninterpretable rows) or drained
+                // (terminal stamps written above). Persist the stamps —
+                // the no-work branch below would drop them with the
+                // transaction. query_for_work already rotated a deferring
+                // chain to the FIFO back (or cooled the transactions, in
+                // lockless mode), and the pace falls back to the normal
+                // poll/notify cadence: an unconditional immediate re-poll
+                // would hot-loop when everything reachable defers (more
+                // wedged chains than fit one lock TTL, or a lockless
+                // backlog past the cooldown cap). New real work still
+                // wakes the worker instantly via work_available. The
+                // global no-progress counter is deliberately untouched: it
+                // gates the acquire_early_lock escalation, which must not
+                // be reachable through wedged chains alone.
+                trx.commit().await?;
+                immediately_poll_more_work = false;
+                continue;
+            }
             // We've fetched work, so we'll poll again without waiting
             // for a notification after this cycle.
             immediately_poll_more_work = true;
         } else {
-            dcid_mngr.release_current_lock(true, None).await?;
-            dcid_mngr.do_cleanup().await?;
+            // There is no selected work for this batch. Commit the read
+            // transaction before releasing individual terminal DCIDs: a
+            // release must never become visible ahead of its computation
+            // state on another connection.
+            trx.commit().await?;
+            // Whether this worker held anything going into the release
+            // decides whether a refill can find anything new. With nothing
+            // held, `query_for_work` has just run the acquisition itself and
+            // come back empty; running it a second time here made every idle
+            // poll cost two acquisition queries per worker.
+            let held_before_release = !dcid_mngr.get_current_lock_ids().is_empty();
+            dcid_mngr.release_completed_locks().await?;
             no_progress_cycles = 0;
 
             // Lock another dependence chain if available and
@@ -287,10 +2549,24 @@ async fn tfhe_worker_cycle(
                 dependence_chain_id = tracing::field::Empty
             );
 
-            let (dependence_chain_id, _) = dcid_mngr
-                .acquire_next_lock()
-                .instrument(dcid_span.clone())
-                .await?;
+            let refill_limit = if !held_before_release {
+                0
+            } else if args.dcid_batch_execution {
+                (args.dependence_chains_per_batch - dcid_mngr.get_current_lock_ids().len() as i32)
+                    .max(0)
+            } else {
+                1
+            };
+            let dependence_chain_id = if refill_limit > 0 {
+                dcid_mngr
+                    .acquire_next_locks(refill_limit)
+                    .instrument(dcid_span.clone())
+                    .await?
+                    .into_iter()
+                    .find_map(|(id, _)| id)
+            } else {
+                None
+            };
             immediately_poll_more_work = dependence_chain_id.is_some();
 
             dcid_span.record(
@@ -310,29 +2586,160 @@ async fn tfhe_worker_cycle(
             .await?
             .is_none()
         {
-            // best-effort attempt to extend the lock and prevent other replicas from trying to lock the same DCID.
-            // Worst-case scenario, it returns None if the lock has expired.
-            // However, the worker has already secured exclusive access to the txn computations in the Computations table.
+            // This is a best-effort lease. A competing worker may have
+            // acquired an expired DCID before this extension; continuing is
+            // safe because result materialization is deterministic, although
+            // it can redundantly execute the batch.
             if dcid_mngr.enabled() {
-                warn!(target: "tfhe_worker", "Lost dcid lock while processing transactions, but continuing since computations are locked");
+                DCID_LEASE_LOST_BEFORE_EXECUTION_COUNTER.inc();
+                warn!(target: "tfhe_worker", "Lost dcid lock before processing transactions; continuing with potentially redundant work");
             }
         }
 
-        let mut tx_graph = build_transaction_graph_and_execute(
+        // Rotation state for a failed batch: `build_transaction_graph_and_execute`
+        // drains `transactions`, so collect the transaction ids first — they
+        // key the lockless quarantine and identify the failing batch in the
+        // rotation alert.
+        let batch_transaction_ids: Vec<Vec<u8>> = transactions
+            .iter()
+            .map(|t| t.transaction_id.clone())
+            .collect();
+        let mut tx_graph = match build_transaction_graph_and_execute(
             &mut transactions,
             db_key_cache.clone(),
             &health_check,
             &mut trx,
             &dcid_mngr,
             gcs_mode,
+            gpu_reservation_timeout,
+            args.gpu_streams_per_device,
         )
         .instrument(loop_span.clone())
-        .await?;
-        let has_progressed =
+        .await
+        {
+            Ok(tx_graph) => {
+                consecutive_batch_failures = 0;
+                tx_graph
+            }
+            Err(cycle_error)
+                if !cycle_error.is_fatal_connection()
+                    && matches!(
+                        cycle_error,
+                        CoprocessorError::SchedulerError(_)
+                            | CoprocessorError::FhevmError(_)
+                            | CoprocessorError::Other(_)
+                    )
+                    && consecutive_batch_failures < 2 =>
+            {
+                consecutive_batch_failures += 1;
+                let dependence_chain_ids: Vec<String> = dcid_mngr
+                    .get_current_lock_ids()
+                    .iter()
+                    .map(hex::encode)
+                    .collect();
+                // A chain-specific batch-execution failure (a panic inside an
+                // FHE op, a scheduler error) must not abort the cycle loop:
+                // the restart path re-runs release_all_owned_locks, which puts
+                // the held chains back at the FIFO FRONT with their original
+                // last_updated_at, so a deterministic failure would be
+                // re-acquired and re-failed forever, starving every younger
+                // chain. Rotate the held set to the BACK instead — the same
+                // fairness move as a deferral — and move on: a deterministic
+                // failure rotates at poll cadence with this alert as the
+                // signal. GLOBAL failures deliberately still propagate to the
+                // run loop's log-and-retry (DbError: transient, retrying the
+                // same chains at the front is correct and rotation would
+                // scramble FIFO order fleet-wide; MissingKeys: rotating every
+                // chain until keys arrive would silently destroy the backlog's
+                // block ordering while health stays green), and consecutive
+                // failures across different batches escalate the same way —
+                // execution-class errors can also be global (a lost GPU device
+                // panics outside the per-op catch_unwind and surfaces as
+                // Other). Fatal connection errors exit for a k8s restart. The
+                // write transaction may be poisoned by the failure, so it is
+                // dropped (rolled back) and the rotation goes through the
+                // manager's own pool connection.
+                WORKER_ERRORS_COUNTER.inc();
+                error!(target: "tfhe_worker",
+                    { error = %cycle_error,
+                      dependence_chain_ids = ?dependence_chain_ids,
+                      transaction_ids = ?batch_transaction_ids
+                          .iter()
+                          .map(hex::encode)
+                          .collect::<Vec<_>>() },
+                    "batch execution failed; rotating dependence chains to the back of the FIFO");
+                drop(trx);
+                let now = {
+                    let offset = time::OffsetDateTime::now_utc();
+                    PrimitiveDateTime::new(offset.date(), offset.time())
+                };
+                // Best-effort: propagating a failed rotation would restart
+                // the cycle loop, whose release_all_owned_locks returns the
+                // chains to the FIFO FRONT — re-entering the starvation path
+                // this arm exists to prevent, precisely when batch failure
+                // and DB pressure correlate. On failure, PARK the in-memory
+                // locks: without this the next cycle would extend the leases
+                // and re-execute the same failing batch at the front;
+                // parked, the leases lapse at their TTL and the chains become
+                // stealable.
+                if let Err(release_error) = dcid_mngr.release_current_lock(false, Some(now)).await {
+                    error!(target: "tfhe_worker", { error = %release_error },
+                        "failed to rotate chains after batch failure; parking so the leases lapse at their TTL");
+                    dcid_mngr.park_current_lock();
+                }
+                // Lockless fallback: no chain to rotate; quarantine the
+                // batch's transactions so the oldest-first window moves on.
+                if !dcid_mngr.enabled() {
+                    for transaction_id in &batch_transaction_ids {
+                        deferred_cooldown.quarantine(transaction_id);
+                    }
+                }
+                // Keep the backoff the cycle-restart path used to provide:
+                // retryable DB errors (deadlocks, pool timeouts) surface
+                // here too, and with a backlog of work_available
+                // notifications pending the select below would return
+                // immediately — hammering a Postgres whose distress caused
+                // the failure.
+                tokio::time::sleep(tokio::time::Duration::from_millis(5000)).await;
+                immediately_poll_more_work = false;
+                continue;
+            }
+            Err(cycle_error) => return Err(cycle_error),
+        };
+        // A component can outlive the normal lease TTL. Renew once more
+        // immediately before persistence to minimize the window in which a
+        // second worker can steal and repeat completed FHE work. We do not
+        // cancel after a lost lease: duplicate deterministic work is safer
+        // and substantially simpler than interrupting an in-flight batch.
+        if dcid_mngr
+            .extend_or_release_current_lock(false)
+            .await?
+            .is_none()
+            && dcid_mngr.enabled()
+        {
+            DCID_LEASE_LOST_DURING_EXECUTION_COUNTER.inc();
+            warn!(target: "tfhe_worker", "Lost dcid lock during transaction execution; persisting deterministic results may be redundant");
+        }
+        let (has_progressed, cooldown_transactions) =
             upload_transaction_graph_results(&mut tx_graph, &mut trx, &mut dcid_mngr)
                 .instrument(loop_span.clone())
                 .await?;
-        if has_progressed {
+        if !dcid_mngr.enabled() {
+            // Pace retryable failures in the lockless fallback: without this
+            // the oldest-first window re-selects a still-failing transaction
+            // at poll cadence. With locking the no-progress parking below
+            // paces the same case at the lock TTL.
+            for transaction_id in &cooldown_transactions {
+                deferred_cooldown.quarantine(transaction_id);
+            }
+        }
+        trx.commit().await?;
+
+        // Releasing after commit makes terminal work visible before another
+        // worker can acquire a dependent DCID. Keep unfinished DCIDs leased;
+        // query_for_work will refill the freed slots on the next iteration.
+        let released_completed_locks = dcid_mngr.release_completed_locks().await?;
+        if has_progressed || released_completed_locks > 0 {
             no_progress_cycles = 0;
         } else {
             no_progress_cycles += 1;
@@ -344,7 +2751,6 @@ async fn tfhe_worker_cycle(
                 dcid_mngr.park_current_lock();
             }
         }
-        trx.commit().await?;
         drop(loop_span);
         #[cfg(feature = "bench")]
         {
@@ -386,20 +2792,20 @@ async fn query_ciphertexts<'a>(
     let mut ciphertext_map: HashMap<Vec<u8>, (i16, Vec<u8>)> =
         HashMap::with_capacity(cts_to_query.len());
 
-    let rows: Vec<(Vec<u8>, Vec<u8>, i16)> = sqlx::query_as(
+    let rows = sqlx::query!(
         "SELECT handle, ciphertext, ciphertext_type
          FROM ciphertexts
          WHERE handle = ANY($1::BYTEA[])",
+        cts_to_query,
     )
-    .bind(cts_to_query)
     .fetch_all(trx.as_mut())
     .await
     .map_err(|err| {
         error!(target: "tfhe_worker", { error = %err }, "error while querying ciphertexts");
         err
     })?;
-    for (handle, ciphertext, ciphertext_type) in rows {
-        let _ = ciphertext_map.insert(handle, (ciphertext_type, ciphertext));
+    for row in rows {
+        let _ = ciphertext_map.insert(row.handle, (row.ciphertext_type, row.ciphertext));
     }
 
     if gcs_mode {
@@ -507,6 +2913,120 @@ async fn query_ciphertexts<'a>(
     Ok(ciphertext_map)
 }
 
+/// Boundary dependency handles whose bytes can never exist: every producer
+/// row is terminally errored. Consumers of these must drain terminally
+/// instead of deferring as missing inputs forever. Handles produced by a
+/// live (non-errored) row in this window are excluded — the batch may still
+/// deliver them, and if the producer errors instead its stamps are seen by
+/// the next cycle's check (an all-errored producer contributes no ops, so
+/// its handle leaves the window).
+///
+/// The definition of a terminally DEAD handle is spelled out identically
+/// (alias `c`) in the schema-local query and in the GCS pre-cutover fallback
+/// query below, so that both stay compile-time checked; keep the two copies
+/// identical. Dead iff at least one producer row carries a TERMINAL error
+/// stamp (a retryable panic stamp — see [`RETRYABLE_STAMP_MARKER`] — is not
+/// terminal) and NO row could still deliver bytes: a completed row already
+/// has published bytes (including legacy completed-and-stamped contradiction
+/// rows, which the heal never touches), a live allowed row may still produce
+/// them, and a non-allowed row never persists so it cannot satisfy a
+/// consumer either. Deadness always requires an actual error: merely-absent
+/// producers keep deferring.
+async fn query_dead_boundary_handles<'a>(
+    trx: &mut sqlx::Transaction<'a, Postgres>,
+    the_work: &[WorkItem],
+    gcs_mode: bool,
+) -> Result<HashSet<Vec<u8>>, CoprocessorError> {
+    let produced_live: HashSet<&[u8]> = the_work
+        .iter()
+        .filter(|w| !w.is_error)
+        .map(|w| w.output_handle.as_slice())
+        .collect();
+    let mut candidates: Vec<Vec<u8>> = the_work
+        .iter()
+        .flat_map(|w| w.dependencies.iter())
+        .filter(|dh| !produced_live.contains(dh.as_slice()))
+        .cloned()
+        .collect();
+    candidates.sort();
+    candidates.dedup();
+    if candidates.is_empty() {
+        return Ok(HashSet::new());
+    }
+    let mut dead: HashSet<Vec<u8>> = HashSet::new();
+    let mut seen: HashSet<Vec<u8>> = HashSet::new();
+    // Dead-producer predicate: see the function docs; identical in both
+    // queries of this function.
+    for row in sqlx::query!(
+        "SELECT c.output_handle,
+                (bool_or(c.is_error AND NOT c.is_completed
+                        AND (c.error_message IS NULL OR c.error_message NOT LIKE '%' || $2 || '%'))
+                 AND bool_and(NOT c.is_allowed OR (c.is_error AND NOT c.is_completed
+                        AND (c.error_message IS NULL OR c.error_message NOT LIKE '%' || $2 || '%')))) AS dead
+         FROM computations c
+         WHERE c.output_handle = ANY($1::BYTEA[])
+         GROUP BY c.output_handle",
+        &candidates,
+        RETRYABLE_STAMP_MARKER,
+    )
+    .fetch_all(trx.as_mut())
+    .await?
+    {
+        seen.insert(row.output_handle.clone());
+        if row.dead.unwrap_or(false) {
+            dead.insert(row.output_handle);
+        }
+    }
+    // GCS mode: `computations` resolves to gcs.computations, created empty
+    // at cutover — a producer that errored terminally in BCS before the
+    // snapshot leaves rows only in public.computations. Mirror
+    // query_ciphertexts' qualified fallback for handles the GCS schema has
+    // never seen, bounded to pre-start blocks so a post-start BCS judgment
+    // is never imported (a NULL start_block fails the bound: fail-safe,
+    // nothing is judged dead).
+    if gcs_mode {
+        let unseen: Vec<Vec<u8>> = candidates
+            .into_iter()
+            .filter(|h| !seen.contains(h))
+            .collect();
+        if !unseen.is_empty() {
+            // The pre-start bound also excludes legacy rows with NULL
+            // block_number / host_chain_id (pre-2026-03 schema, never
+            // backfilled): those producers are never judged dead, so their
+            // consumers defer — fail-safe, at worst the pre-existing
+            // deferral behavior for ancient history.
+            for row in sqlx::query!(
+                "SELECT c.output_handle,
+                        (bool_or(c.is_error AND NOT c.is_completed
+                        AND (c.error_message IS NULL OR c.error_message NOT LIKE '%' || $2 || '%'))
+                 AND bool_and(NOT c.is_allowed OR (c.is_error AND NOT c.is_completed
+                        AND (c.error_message IS NULL OR c.error_message NOT LIKE '%' || $2 || '%')))) AS dead
+                 FROM public.computations c
+                 JOIN public.upgrade_state us
+                   ON us.stack_role = 'GCS' AND us.host_chain_id = c.host_chain_id
+                 WHERE c.output_handle = ANY($1::BYTEA[])
+                   AND c.block_number < us.start_block
+                 GROUP BY c.output_handle",
+                &unseen,
+                RETRYABLE_STAMP_MARKER,
+            )
+            .fetch_all(trx.as_mut())
+            .await?
+            {
+                if row.dead.unwrap_or(false) {
+                    dead.insert(row.output_handle);
+                }
+            }
+        }
+    }
+    if !dead.is_empty() {
+        warn!(target: "tfhe_worker",
+            { dead = ?dead.iter().map(hex::encode).collect::<Vec<_>>() },
+            "boundary inputs can never be produced (every producer row errored); draining their consumers");
+    }
+    Ok(dead)
+}
+
 #[tracing::instrument(skip_all)]
 async fn query_for_work<'a>(
     args: &crate::daemon_cli::Args,
@@ -514,24 +3034,81 @@ async fn query_for_work<'a>(
     trx: &mut sqlx::Transaction<'a, Postgres>,
     deps_chain_mngr: &mut dependence_chain::LockMngr,
     no_progress_cycles: &mut u32,
+    deferred_cooldown: &mut DeferredTransactionCooldown,
+    gcs_mode: bool,
 ) -> Result<(Vec<ComponentNode>, PrimitiveDateTime, bool), CoprocessorError> {
+    // Demotion is only half a mechanism: the row stops being selected here,
+    // and `rearm_demoted_chains` is what gives it another pass. That sweep
+    // runs from `do_cleanup`, which returns immediately when locking is
+    // disabled, and it re-arms through the chain lifecycle (`status =
+    // 'processed' AND worker_id IS NULL`) that lockless mode does not drive.
+    // So with `--disable-dcid-locking` there is nothing to reset the count,
+    // and a bounded pause would become a permanent one: a transient failure
+    // that spent its attempts would never be selected again, even after the
+    // fault cleared. The documented fallback mode must not be able to lose
+    // work, so demotion does not apply there.
+    let demote_threshold = demote_threshold_for(
+        args.disable_dcid_locking,
+        args.computation_retry_demote_threshold,
+    );
     let s_dcid = tracing::info_span!(
         "query_dependence_chain",
         dependence_chain_id = tracing::field::Empty
     );
     // Lock dependence chain
-    let (dependence_chain_id, locking_reason) = async {
+    let (dependence_chain_ids, locking_reasons) = async {
         let result = match deps_chain_mngr.extend_or_release_current_lock(true).await? {
             // If there is a current lock, we extend it and use its dependence_chain_id
-            Some((id, reason)) => (Some(id), reason),
+            Some((_id, reason)) => {
+                let mut ids = deps_chain_mngr.get_current_lock_ids();
+                let mut reasons = vec![reason];
+                // A held set must not starve newly-ready chains: without this,
+                // chains becoming ready while a long batch is in flight wait
+                // for the ENTIRE current set to drain before their first
+                // acquisition, serializing independent work behind it.
+                if args.dcid_batch_execution {
+                    let headroom = args.dependence_chains_per_batch - ids.len() as i32;
+                    if headroom > 0 {
+                        for (id, joined_reason) in deps_chain_mngr
+                            .acquire_next_locks(headroom)
+                            .await?
+                            .into_iter()
+                        {
+                            if let Some(id) = id {
+                                ids.push(id);
+                                reasons.push(joined_reason);
+                            }
+                        }
+                    }
+                }
+                (ids, reasons)
+            }
             None => {
+                // Saturating: both operands are operator-supplied u32, and the
+                // product is only ever compared, so wrapping here would turn a
+                // large configured threshold into a small one.
                 if *no_progress_cycles
-                    < args.dcid_ignore_dependency_count_threshold * args.dcid_max_no_progress_cycles
+                    < args
+                        .dcid_ignore_dependency_count_threshold
+                        .saturating_mul(args.dcid_max_no_progress_cycles)
                 {
-                    deps_chain_mngr.acquire_next_lock().await?
+                    if args.dcid_batch_execution {
+                        deps_chain_mngr
+                            .acquire_next_locks(args.dependence_chains_per_batch)
+                            .await?
+                            .into_iter()
+                            .filter_map(|(id, reason)| id.map(|id| (id, reason)))
+                            .unzip()
+                    } else {
+                        let (id, reason) = deps_chain_mngr.acquire_next_lock().await?;
+                        id.map(|id| (vec![id], vec![reason]))
+                            .unwrap_or_else(|| (vec![], vec![]))
+                    }
                 } else {
                     *no_progress_cycles = 0;
-                    deps_chain_mngr.acquire_early_lock().await?
+                    let (id, reason) = deps_chain_mngr.acquire_early_lock().await?;
+                    id.map(|id| (vec![id], vec![reason]))
+                        .unwrap_or_else(|| (vec![], vec![]))
                 }
             }
         };
@@ -539,7 +3116,25 @@ async fn query_for_work<'a>(
     }
     .instrument(s_dcid.clone())
     .await?;
-    if deps_chain_mngr.enabled() && dependence_chain_id.is_none() {
+    let (dependence_chain_ids, locking_reasons) =
+        if deps_chain_mngr.enabled() && dependence_chain_ids.is_empty() {
+            // Nothing matches the normal predicates. Before declaring no
+            // work, try the repair path for chains whose dependency gate is
+            // stale (every producer processed or gone, count never
+            // decremented — lost decrements, reorg-orphaned producers):
+            // those match neither normal predicate, and the no-progress
+            // escalation is only reachable through some OTHER acquired
+            // chain stalling — in an otherwise idle pipeline a stranded
+            // chain would sit unprocessed forever.
+            let (id, reason) = deps_chain_mngr
+                .acquire_stale_gated_lock(args.dcid_stale_gate_age_secs)
+                .await?;
+            id.map(|id| (vec![id], vec![reason]))
+                .unwrap_or_else(|| (vec![], vec![]))
+        } else {
+            (dependence_chain_ids, locking_reasons)
+        };
+    if deps_chain_mngr.enabled() && dependence_chain_ids.is_empty() {
         // No dependence chain to lock, so no work to do
         health_check.update_db_access();
         health_check.update_activity();
@@ -549,30 +3144,293 @@ async fn query_for_work<'a>(
     s_dcid.record(
         "dependence_chain_id",
         tracing::field::display(
-            dependence_chain_id
-                .as_ref()
+            dependence_chain_ids
+                .first()
                 .map(hex::encode)
                 .unwrap_or_else(|| "none".to_string()),
         ),
     );
+    let quarantine_deferred = !deps_chain_mngr.enabled();
+    let cooled_transactions: Vec<Vec<u8>> = if quarantine_deferred {
+        deferred_cooldown.active()
+    } else {
+        vec![]
+    };
     let s_work = tracing::info_span!("query_work_items", count = tracing::field::Empty);
     let transaction_batch_size = args.work_items_batch_size;
     let started_at = SystemTime::now();
     // Schema isolation: BCS connects with `search_path = public`, GCS with
     // `search_path = gcs,public`. Unqualified `computations` therefore
     // resolves to the stack's own schema. No table-name swaps needed in code.
-    let the_work = query!(
-        "
--- Acquire all computations from a transaction set
+    // With locking disabled, retain the historical all-ready-DCID query. A
+    // batch-enabled worker instead binds all of its fenced DCIDs.
+    let dcid_filter = deps_chain_mngr
+        .enabled()
+        .then(|| dependence_chain_ids.clone());
+    let adaptive_batch_execution = args.dcid_adaptive_batch_execution
+        && dependence_chain_ids.len() > 1
+        && dependence_chain_ids.len() <= transaction_batch_size as usize;
+    // Keep the normal path byte-for-byte query-compatible. Opt-in adaptive
+    // batching bounds each acquired DCID to an equal transaction share, then
+    // fills the existing global work window in schedule order. This ensures a
+    // large chain cannot keep every smaller ready chain out of the next graph.
+    // Every locked variant is bounded PER CHAIN. A held set is walked as
+    // `unnest($1) CROSS JOIN LATERAL (...)`, and each lateral is one
+    // index-ordered scan of `idx_computations_pending_dcid_schedule`
+    // (dependence_chain_id, schedule_order) that stops after its LIMIT. The
+    // previous shape filtered `dependence_chain_id = ANY($1)` over the union of
+    // the held chains' pending rows and sorted that union before the LIMIT, so
+    // a batch holding deep backlogs read, anti-joined and sorted every pending
+    // row of every held chain on every cycle -- measured at 4.2 s per cycle
+    // (adaptive) and 313 ms (normal) for 20 chains × 5k pending rows, against
+    // 15 ms and 7 ms for the lateral shapes below on the same data.
+    //
+    // The result sets are unchanged for the normal window: the global oldest
+    // LIMIT rows are contained in the union of each chain's oldest LIMIT rows.
+    // The lockless fallback keeps the historical global query.
+    let the_work = if adaptive_batch_execution {
+        let share =
+            dcid_transaction_share(transaction_batch_size, dependence_chain_ids.len(), true);
+        sqlx::query_as!(
+            WorkItem,
+            "
 SELECT
   c.output_handle,
   c.dependencies,
   c.fhe_operation,
   c.is_scalar,
   c.is_allowed,
-  c.dependence_chain_id,
+  c.is_error,
+  c.error_message,
   c.transaction_id,
-  c.schedule_order
+  c.schedule_order,
+  c.operand_boundary_mask,
+  c.dependence_chain_id,
+  c.group_id,
+  c.output_index,
+  c.output_count
+FROM computations c
+WHERE c.transaction_id IN (
+    SELECT deduped.transaction_id
+    FROM (
+      -- Collapse to one row per transaction before the LIMIT: a transaction
+      -- whose rows a fork-exposed database retained under a second chain is
+      -- ranked once per chain and would otherwise spend the window's LIMIT on
+      -- duplicates of itself. Ordering keeps the earliest of its ranks, the
+      -- same anchor the non-adaptive query uses.
+      SELECT
+        ranked.transaction_id,
+        MIN(ranked.first_order) AS schedule_order
+      FROM unnest($1::bytea[]) AS d(dependence_chain_id)
+      -- Stage 1: probe the chain's oldest pending rows under the row cap
+      -- (share × ADAPTIVE_WINDOW_ROWS_PER_TRANSACTION): how many rows the
+      -- cap admitted and how many distinct transactions they span.
+      CROSS JOIN LATERAL (
+        SELECT
+          count(*) AS scanned,
+          count(DISTINCT capped.transaction_id) AS transactions
+        FROM (
+          SELECT transaction_id
+          FROM computations
+          WHERE dependence_chain_id = d.dependence_chain_id
+              AND is_completed = FALSE
+              AND is_allowed = TRUE
+              AND (is_error = FALSE
+                   OR (error_message LIKE '%' || $4 || '%'
+                       AND ($5::smallint IS NULL OR error_retry_count < $5)))
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM computations demoted
+                  WHERE demoted.transaction_id = computations.transaction_id
+                    AND demoted.is_completed = FALSE
+                    AND demoted.is_error = TRUE
+                    AND demoted.error_message LIKE '%' || $4 || '%'
+                    AND $5::smallint IS NOT NULL
+                    AND demoted.error_retry_count >= $5
+              )
+          ORDER BY schedule_order ASC
+          LIMIT $6
+        ) AS capped
+      ) AS probe
+      -- Stage 2: the chain's first `share` transactions by earliest row.
+      -- Rows of a transaction share one schedule_order (block time + depth),
+      -- so the walk sees transactions as contiguous blocks and the first row
+      -- seen for a transaction is its earliest. Exactly one branch runs; the
+      -- gating conditions reference only `probe`, so Postgres evaluates them
+      -- once per chain and skips the other branch's scan entirely.
+      CROSS JOIN LATERAL (
+        (
+          -- Fast path: the cap admitted at least `share` distinct
+          -- transactions, or the whole chain fits under it. Bounded by the
+          -- cap, whatever the chain's backlog.
+          SELECT capped.transaction_id, MIN(capped.schedule_order) AS first_order
+          FROM (
+            SELECT transaction_id, schedule_order
+            FROM computations
+            WHERE dependence_chain_id = d.dependence_chain_id
+              AND is_completed = FALSE
+              AND is_allowed = TRUE
+              AND (is_error = FALSE
+                   OR (error_message LIKE '%' || $4 || '%'
+                       AND ($5::smallint IS NULL OR error_retry_count < $5)))
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM computations demoted
+                  WHERE demoted.transaction_id = computations.transaction_id
+                    AND demoted.is_completed = FALSE
+                    AND demoted.is_error = TRUE
+                    AND demoted.error_message LIKE '%' || $4 || '%'
+                    AND $5::smallint IS NOT NULL
+                    AND demoted.error_retry_count >= $5
+              )
+            ORDER BY schedule_order ASC
+            LIMIT $6
+          ) AS capped
+          WHERE probe.transactions >= $2 OR probe.scanned < $6
+          GROUP BY capped.transaction_id
+          ORDER BY first_order ASC, capped.transaction_id ASC
+          LIMIT $2
+        )
+        UNION ALL
+        (
+          -- Exact path: the cap filled up before `share` distinct
+          -- transactions were seen -- one transaction wider than the cap
+          -- sits at the head of the chain. Rank over every pending row of
+          -- THIS chain instead, so a younger transaction behind it is still
+          -- offered; the cost is one scan of this chain's pending rows, paid
+          -- only by a chain in that shape. Without this a wide transaction
+          -- that keeps deferring hid every younger one behind it for as long
+          -- as it deferred.
+          SELECT transaction_id, MIN(schedule_order) AS first_order
+          FROM computations
+          WHERE dependence_chain_id = d.dependence_chain_id
+            AND probe.transactions < $2 AND probe.scanned >= $6
+              AND is_completed = FALSE
+              AND is_allowed = TRUE
+              AND (is_error = FALSE
+                   OR (error_message LIKE '%' || $4 || '%'
+                       AND ($5::smallint IS NULL OR error_retry_count < $5)))
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM computations demoted
+                  WHERE demoted.transaction_id = computations.transaction_id
+                    AND demoted.is_completed = FALSE
+                    AND demoted.is_error = TRUE
+                    AND demoted.error_message LIKE '%' || $4 || '%'
+                    AND $5::smallint IS NOT NULL
+                    AND demoted.error_retry_count >= $5
+              )
+          GROUP BY transaction_id
+          ORDER BY first_order ASC, transaction_id ASC
+          LIMIT $2
+        )
+      ) AS ranked
+      GROUP BY ranked.transaction_id
+    ) AS deduped
+    ORDER BY deduped.schedule_order ASC, deduped.transaction_id ASC
+    LIMIT $3
+)
+  -- Like the other windows: load ALL rows of the selected transactions,
+  -- fork-retained siblings included; ownership is re-applied in code, which
+  -- turns rows of other chains into recompute-only producers excluded from
+  -- results, persistence and completion.
+            ",
+            dcid_filter.as_deref(),
+            share as i64,
+            transaction_batch_size as i64,
+            RETRYABLE_STAMP_MARKER,
+            demote_threshold,
+            i64::from(share).saturating_mul(ADAPTIVE_WINDOW_ROWS_PER_TRANSACTION),
+        )
+        .fetch_all(trx.as_mut())
+        .instrument(s_work.clone())
+        .await
+    } else if let Some(dcids) = dcid_filter.as_deref() {
+        sqlx::query_as!(
+            WorkItem,
+            "
+SELECT
+  c.output_handle,
+  c.dependencies,
+  c.fhe_operation,
+  c.is_scalar,
+  c.is_allowed,
+  c.is_error,
+  c.error_message,
+  c.transaction_id,
+  c.schedule_order,
+  c.operand_boundary_mask,
+  c.dependence_chain_id,
+  c.group_id,
+  c.output_index,
+  c.output_count
+FROM computations c
+WHERE c.transaction_id IN (
+    SELECT DISTINCT oldest.transaction_id
+    FROM (
+      SELECT l.transaction_id, l.schedule_order
+      FROM unnest($1::bytea[]) AS d(dependence_chain_id)
+      CROSS JOIN LATERAL (
+        SELECT transaction_id, schedule_order
+        FROM computations
+        WHERE dependence_chain_id = d.dependence_chain_id
+          AND is_completed = FALSE
+          AND is_allowed = TRUE
+          -- Same demotion bound as the adaptive query above.
+          AND (is_error = FALSE
+               OR (error_message LIKE '%' || $3 || '%'
+                   AND ($4::smallint IS NULL OR error_retry_count < $4)))
+          -- Transaction-scoped, exactly as in the adaptive query above.
+          AND NOT EXISTS (
+              SELECT 1
+              FROM computations demoted
+              WHERE demoted.transaction_id = computations.transaction_id
+                AND demoted.is_completed = FALSE
+                AND demoted.is_error = TRUE
+                AND demoted.error_message LIKE '%' || $3 || '%'
+                AND $4::smallint IS NOT NULL
+                AND demoted.error_retry_count >= $4
+          )
+        ORDER BY schedule_order ASC
+        LIMIT $2
+      ) AS l
+      ORDER BY l.schedule_order ASC
+      LIMIT $2
+    ) AS oldest
+)
+  -- The transaction-id expansion deliberately loads ALL rows of a selected
+  -- transaction, including rows a fork-exposed DB retained under another
+  -- chain; ownership is re-applied in code (see the adaptive query above).
+            ",
+            dcids,
+            transaction_batch_size as i64,
+            RETRYABLE_STAMP_MARKER,
+            demote_threshold,
+        )
+        .fetch_all(trx.as_mut())
+        .instrument(s_work.clone())
+        .await
+    } else {
+        // Lockless fallback (`--disable-dcid-locking`): the historical global
+        // oldest-first window over every pending transaction.
+        sqlx::query_as!(
+            WorkItem,
+            "
+SELECT
+  c.output_handle,
+  c.dependencies,
+  c.fhe_operation,
+  c.is_scalar,
+  c.is_allowed,
+  c.is_error,
+  c.error_message,
+  c.transaction_id,
+  c.schedule_order,
+  c.operand_boundary_mask,
+  c.dependence_chain_id,
+  c.group_id,
+  c.output_index,
+  c.output_count
 FROM computations c
 WHERE c.transaction_id IN (
     SELECT DISTINCT
@@ -581,20 +3439,48 @@ WHERE c.transaction_id IN (
       SELECT transaction_id
       FROM computations
       WHERE is_completed = FALSE
-        AND is_error = FALSE
+        -- Same demotion bound as the adaptive query above.
+        AND (is_error = FALSE
+             OR (error_message LIKE '%' || $3 || '%'
+                 AND ($4::smallint IS NULL OR error_retry_count < $4)))
+        -- Transaction-scoped, exactly as in the adaptive query above.
+        AND NOT EXISTS (
+            SELECT 1
+            FROM computations demoted
+            WHERE demoted.transaction_id = computations.transaction_id
+              AND demoted.is_completed = FALSE
+              AND demoted.is_error = TRUE
+              AND demoted.error_message LIKE '%' || $3 || '%'
+              AND $4::smallint IS NOT NULL
+              AND demoted.error_retry_count >= $4
+        )
         AND is_allowed = TRUE
-        AND ($1::bytea IS NULL OR dependence_chain_id = $1)
+        -- Lockless fallback fairness: transactions this worker deferred
+        -- stay out of the window for a cooldown, or they would occupy the
+        -- oldest-first window forever and starve younger work.
+        AND NOT (transaction_id = ANY($2::bytea[]))
       ORDER BY schedule_order ASC
-      LIMIT $2
+      LIMIT $1
     ) as c_schedule_order
   )
+  -- The transaction-id expansion deliberately loads ALL rows of a selected
+  -- transaction, including rows a fork-exposed DB retained under another
+  -- chain (`ON CONFLICT .. DO NOTHING` keeps the sibling's row when a handle
+  -- collides across replacement blocks). Ownership is re-applied in code:
+  -- rows of another chain are recompute-only producers for this chain's
+  -- consumers — a boundary bit 0 obligates raw in-transaction bytes, which
+  -- must be recomputed, never read back through the persisted round-trip —
+  -- and are excluded from results, persistence and completion.
         ",
-        dependence_chain_id,
-        transaction_batch_size as i32,
-    )
-    .fetch_all(trx.as_mut())
-    .instrument(s_work.clone())
-    .await
+            transaction_batch_size as i64,
+            &cooled_transactions,
+            RETRYABLE_STAMP_MARKER,
+            demote_threshold,
+        )
+        .fetch_all(trx.as_mut())
+        .instrument(s_work.clone())
+        .await
+    }
     .map_err(|err| {
         error!(target: "tfhe_worker", { error = %err }, "error while querying work items");
         err
@@ -604,18 +3490,20 @@ WHERE c.transaction_id IN (
     s_work.record("count", the_work.len());
     health_check.update_db_access();
     if the_work.is_empty() {
-        if let Some(dependence_chain_id) = &dependence_chain_id {
-            info!(target: "tfhe_worker", dcid = %hex::encode(dependence_chain_id), locking = ?locking_reason, "No work items found to process");
+        if !dependence_chain_ids.is_empty() {
+            info!(target: "tfhe_worker", dcid_count = dependence_chain_ids.len(), locking_count = locking_reasons.len(), "No work items found to process");
         }
         health_check.update_activity();
         return Ok((vec![], PrimitiveDateTime::MAX, false));
     }
     WORK_ITEMS_FOUND_COUNTER.inc_by(the_work.len() as u64);
-    info!(target: "tfhe_worker", { count = the_work.len(), dcid = ?dependence_chain_id.as_ref().map(hex::encode),
-				    locking = ?locking_reason }, "Processing work items");
+    info!(target: "tfhe_worker", count = the_work.len(), dcid_count = dependence_chain_ids.len(), locking_count = locking_reasons.len(), "Processing work items");
+    let dead_boundary = query_dead_boundary_handles(trx, &the_work, gcs_mode).await?;
     let s_prep = tracing::info_span!("prepare_dataflow_graphs", work_items = the_work.len());
-    let (transactions, earliest_schedule_order) = async {
-        let mut earliest_schedule_order = the_work.first().unwrap().schedule_order;
+    let (transactions, earliest_schedule_order, any_deferred) = async {
+        let mut earliest_schedule_order = PrimitiveDateTime::MAX;
+        let mut any_deferred = false;
+        let mut deferred_this_cycle: i64 = 0;
         // Partition work directly by transaction
         let work_by_transaction: HashMap<Handle, Vec<_>> = the_work
             .into_iter()
@@ -624,65 +3512,520 @@ WHERE c.transaction_id IN (
         let mut transactions: Vec<ComponentNode> = vec![];
         for (transaction_id, txwork) in work_by_transaction.iter() {
             let transaction_id: &Vec<u8> = transaction_id;
-            let mut ops = vec![];
-            for w in txwork {
-                let fhe_op: SupportedFheOperations = match w.fhe_operation.try_into() {
-                    Ok(op) => op,
-                    Err(e) => {
-                        error!(target: "tfhe_worker", { output_handle = ?w.output_handle, transaction_id = ?hex::encode(transaction_id), error = %e, }, "invalid FHE operation ");
-                        set_computation_error(
-                            &w.output_handle,
-                            transaction_id,
-                            &e,
-                            trx,
-                            deps_chain_mngr,
-                        )
-                        .await?;
+            let prepared =
+                match prepare_transaction_ops(txwork, dcid_filter.as_deref(), &dead_boundary) {
+                    Ok(prepared) => prepared,
+                    Err(reason) => {
+                        defer_transaction(transaction_id, &reason);
+                        deferred_this_cycle += 1;
+                        any_deferred = true;
+                        if quarantine_deferred {
+                            deferred_cooldown.quarantine(transaction_id);
+                        }
                         continue;
                     }
                 };
-                let mut inputs: Vec<DFGTaskInput> = Vec::with_capacity(w.dependencies.len());
-                let mut this_comp_inputs: Vec<Vec<u8>> = Vec::with_capacity(w.dependencies.len());
-                let mut is_scalar_op_vec: Vec<bool> = Vec::with_capacity(w.dependencies.len());
-                for (idx, dh) in w.dependencies.iter().enumerate() {
-                    let is_operand_scalar =
-                        fhe_op.is_operand_scalar(w.is_scalar, idx, w.dependencies.len());
-                    is_scalar_op_vec.push(is_operand_scalar);
-                    this_comp_inputs.push(dh.clone());
-                    if is_operand_scalar {
-                        inputs.push(DFGTaskInput::Value(SupportedFheCiphertexts::Scalar(
-                            dh.clone(),
-                        )));
-                    } else {
-                        inputs.push(DFGTaskInput::Dependence(dh.clone()));
-                    }
-                }
-                check_fhe_operand_types(w.fhe_operation.into(), &this_comp_inputs, &is_scalar_op_vec)?;
-                ops.push(DFGOp {
-                    output_handle: w.output_handle.clone(),
-                    fhe_op,
-                    inputs,
-                    is_allowed: w.is_allowed,
-                });
-                if w.schedule_order < earliest_schedule_order && w.is_allowed {
-                    // Only account for allowed to avoid case of reorg
-                    // where trivial encrypts will be in collision in
-                    // the same transaction and old ones are re-used
-                    earliest_schedule_order = w.schedule_order;
-                }
+            for (output_handle, error_message) in &prepared.invalid_rows {
+                let error = std::io::Error::other(error_message.clone());
+                let _ = set_computation_error(
+                    output_handle,
+                    transaction_id,
+                    &error,
+                    // Validation verdicts are deterministic properties of the
+                    // row: an unknown opcode or a bad operand type fails
+                    // identically forever.
+                    false,
+                    // These rows are pending, so the direct stamp lands; there is
+                    // nothing to fall back to.
+                    &[],
+                    &mut HashSet::new(),
+                    trx,
+                    deps_chain_mngr,
+                )
+                .await?;
             }
-            let (mut components, _) = build_component_nodes(ops, transaction_id)
-                .map_err(|e| CoprocessorError::Other(e.into()))?;
+            if prepared.ops.is_empty() {
+                continue;
+            }
+            let (mut components, _) = match build_component_nodes(prepared.ops, transaction_id) {
+                Ok(components) => components,
+                Err(e) => {
+                    // A dangling local dependence or otherwise malformed
+                    // transaction-local graph means this binary cannot
+                    // interpret the rows, not that the computation failed:
+                    // defer instead of destroying the rows, and let the
+                    // alert below surface the wedge. Unrelated transactions
+                    // continue.
+                    defer_transaction(transaction_id, &format!("invalid transaction graph: {e}"));
+                    deferred_this_cycle += 1;
+                    any_deferred = true;
+                    if quarantine_deferred {
+                        deferred_cooldown.quarantine(transaction_id);
+                    }
+                    continue;
+                }
+            };
+            if let Some(order) = prepared.earliest_owned_allowed {
+                earliest_schedule_order = earliest_schedule_order.min(order);
+            }
             transactions.append(&mut components);
         }
-        Ok::<_, CoprocessorError>((transactions, earliest_schedule_order))
+        // Set unconditionally, so the gauge falls back to zero on a clean
+        // cycle rather than latching the last non-zero window.
+        DEFERRED_TRANSACTIONS_GAUGE.set(deferred_this_cycle);
+        Ok::<_, CoprocessorError>((transactions, earliest_schedule_order, any_deferred))
     }
     .instrument(s_prep)
     .await?;
+    if transactions.is_empty() && any_deferred {
+        // Deferrals in a non-empty window: rotate the chain to the BACK of
+        // the acquisition FIFO (status 'updated', last_updated_at now), so
+        // oldest-first acquisition moves on to younger chains instead of
+        // re-acquiring this one after every poll — a single worker would
+        // otherwise starve every younger chain behind one uninterpretable
+        // one. Rotation rather than a kept-'processing' park: it stays
+        // reachable by the escalation path and by a listener re-arm
+        // immediately (a parked row's worker_id would block both until the
+        // lock TTL). No-op with locking disabled, where the transaction
+        // cooldown above rotates the window instead.
+        //
+        // Drain-only windows (every row terminally stamped, nothing
+        // deferred) deliberately do NOT rotate: the next cycle finds the
+        // window empty and retires the chain through the normal
+        // no-work path.
+        let now = {
+            let offset = time::OffsetDateTime::now_utc();
+            PrimitiveDateTime::new(offset.date(), offset.time())
+        };
+        deps_chain_mngr
+            .release_current_lock(false, Some(now))
+            .await?;
+    }
+    // `true` even when `transactions` is empty (everything deferred or
+    // drained as invalid): the caller's no-work branch marks the chain
+    // processed — which would silently retire a chain that still has
+    // pending rows — and drops the transaction WITHOUT committing, rolling
+    // back any terminal error stamps written above. The caller
+    // distinguishes the empty case itself: it commits the stamps and moves
+    // straight on to the next chain (or the next window slice, in
+    // lockless mode).
     Ok((transactions, earliest_schedule_order, true))
 }
 
+/// Ops of one transaction, ready for `build_component_nodes`.
+struct PreparedTransaction {
+    ops: Vec<DFGOp>,
+    /// Earliest `schedule_order` among the owned, allowed rows; `None` when
+    /// the transaction contributes no schedulable work of its own.
+    earliest_owned_allowed: Option<PrimitiveDateTime>,
+    /// OWNED rows whose content is deterministically invalid (unknown
+    /// opcode, operand-type mismatch) — plus their owned transaction-local
+    /// consumers, transitively, which are equally uncomputable (their
+    /// obligated raw producer can never exist). The executor validates
+    /// content before minting, so these cannot come from ordered ingestion
+    /// of a healthy chain, and retrying can never succeed: they are marked
+    /// terminally errored, DRAINING the chain, unlike interpretation-layer
+    /// states, which defer. Content judgments are binary-relative during a
+    /// rolling upgrade (an old binary may reject an opcode a new one
+    /// understands), so rows of another chain are never judged here: a
+    /// foreign row with uninterpretable content defers the transaction
+    /// instead.
+    invalid_rows: Vec<(Vec<u8>, String)>,
+}
+
+/// Fail-closed deferral: the transaction's rows are left pending untouched,
+/// so the chain retries (and re-alerts) on a later cycle. Deferral is
+/// reserved for rows this binary cannot interpret; failures of the
+/// computation itself still set `is_error` through `set_computation_error`.
+fn defer_transaction(transaction_id: &[u8], reason: &str) {
+    DEFERRED_TRANSACTIONS_COUNTER.inc();
+    error!(
+        target: "tfhe_worker",
+        transaction_id = %hex::encode(transaction_id),
+        reason,
+        "deferring transaction with uninterpretable work rows"
+    );
+}
+
+/// How long a deferred transaction stays out of the work window when DCID
+/// locking is disabled. With locking enabled the owning chain is parked
+/// until its lock TTL instead, which quarantines at the right granularity,
+/// so this only paces the lockless fallback mode.
+const DEFERRED_TRANSACTION_COOLDOWN: Duration = Duration::from_secs(60);
+/// Upper bound on remembered transactions: expired entries are pruned on
+/// every use, and past the cap the soonest-expiring entries are dropped
+/// first, so a pathological backlog cannot grow the map without bound.
+const DEFERRED_TRANSACTION_COOLDOWN_CAP: usize = 4096;
+
+/// In-memory quarantine for transactions this worker could not interpret,
+/// used only with DCID locking disabled: the work window selects the oldest
+/// pending transactions, so without a cooldown the same deferring
+/// transactions would fill every window and starve younger work forever.
+/// In-memory on purpose — deferral is interpretation-relative to this
+/// binary, so the state must not outlive the process.
+pub(crate) struct DeferredTransactionCooldown {
+    until: HashMap<Vec<u8>, std::time::Instant>,
+}
+
+impl DeferredTransactionCooldown {
+    pub(crate) fn new() -> Self {
+        Self {
+            until: HashMap::new(),
+        }
+    }
+
+    fn prune(&mut self) {
+        let now = std::time::Instant::now();
+        self.until.retain(|_, until| *until > now);
+        if self.until.len() > DEFERRED_TRANSACTION_COOLDOWN_CAP {
+            let mut deadlines: Vec<std::time::Instant> = self.until.values().copied().collect();
+            deadlines.sort_unstable();
+            // Keep entries at or above the boundary deadline: ties keep the
+            // map slightly over cap rather than re-admitting still-hot
+            // transactions to the window early.
+            let cutoff = deadlines[self.until.len() - DEFERRED_TRANSACTION_COOLDOWN_CAP];
+            self.until.retain(|_, until| *until >= cutoff);
+        }
+    }
+
+    fn quarantine(&mut self, transaction_id: &[u8]) {
+        self.prune();
+        self.until.insert(
+            transaction_id.to_vec(),
+            std::time::Instant::now() + DEFERRED_TRANSACTION_COOLDOWN,
+        );
+    }
+
+    fn active(&mut self) -> Vec<Vec<u8>> {
+        self.prune();
+        self.until.keys().cloned().collect()
+    }
+}
+
+/// Builds the dataflow ops for one transaction's loaded rows.
+///
+/// Rows filed under the locked chain are the schedulable work. Rows of the
+/// same transaction retained under another chain (fork siblings kept by
+/// `ON CONFLICT .. DO NOTHING`) join the graph only when an owned consumer
+/// reaches them through a transaction-local (boundary bit 0) dependence:
+/// bit 0 obligates the consumer to the raw in-transaction bytes, so the
+/// producer is recomputed here — byte-identical by construction, since a
+/// colliding handle proves identical sourcing — instead of read back
+/// through the bit-inexact persisted round-trip. Such foreign rows are
+/// forced `is_allowed = false` so they can never reach results,
+/// persistence or completion, which stay owned by their own chain.
+///
+/// `Err(reason)` defers the whole transaction (see `defer_transaction`):
+/// partially scheduling a transaction would leave consumers of the skipped
+/// rows dangling.
+fn prepare_transaction_ops(
+    txwork: &[WorkItem],
+    locked_dependence_chain_ids: Option<&[Vec<u8>]>,
+    dead_boundary: &HashSet<Vec<u8>>,
+) -> Result<PreparedTransaction, String> {
+    // Handles produced by ANY row of this transaction, either fork spelling.
+    let produced: HashSet<&[u8]> = txwork.iter().map(|w| w.output_handle.as_slice()).collect();
+    let rows_by_handle: HashMap<&[u8], &WorkItem> = txwork
+        .iter()
+        .map(|w| (w.output_handle.as_slice(), w))
+        .collect();
+    // A multi-output op is N rows sharing `group_id`, ordered by
+    // `output_index`; a singleton is its own group. Rows are indexed by group
+    // so the walk below emits one op per group rather than one per row.
+    let group_key = |w: &WorkItem| -> Vec<u8> {
+        w.group_id
+            .clone()
+            .unwrap_or_else(|| w.output_handle.clone())
+    };
+    let mut rows_by_group: HashMap<Vec<u8>, Vec<&WorkItem>> = HashMap::new();
+    for w in txwork.iter() {
+        rows_by_group.entry(group_key(w)).or_default().push(w);
+    }
+    for rows in rows_by_group.values_mut() {
+        rows.sort_by_key(|w| w.output_index);
+    }
+    let row_is_owned = |w: &WorkItem| match locked_dependence_chain_ids {
+        None => true,
+        Some(fenced) => w
+            .dependence_chain_id
+            .as_ref()
+            .is_some_and(|dcid| fenced.contains(dcid)),
+    };
+    // The executor's boundary bit for one operand. Legacy rows (written by a
+    // pre-mask listener) carry no mask; for those, fall back to the pre-mask
+    // inference this worker used before masks existed: an operand this
+    // transaction produced is transaction-local, anything else is consumed
+    // in its canonical persisted form.
+    let operand_boundary = |w: &WorkItem, idx: usize, dh: &[u8]| -> Result<bool, String> {
+        match w.operand_boundary_mask.as_deref() {
+            Some(mask) => operand_is_boundary(Some(mask), idx).map_err(|e| e.to_string()),
+            None => Ok(!produced.contains(dh)),
+        }
+    };
+
+    let mut included: HashSet<&[u8]> = HashSet::new();
+    let mut queue: VecDeque<&WorkItem> = VecDeque::new();
+    // Terminally errored rows are never (re-)executed: re-execution fails
+    // identically (errors are deterministic), and re-stamping them would be
+    // redundant. They still participate below as dead producers so their
+    // transaction-local consumers drain with them. Retryable (panic) stamps
+    // are the exception: they re-execute, and success heals them.
+    let stamp_is_terminal =
+        |w: &WorkItem| w.is_error && !stamp_is_retryable(w.error_message.as_deref());
+    for w in txwork
+        .iter()
+        .filter(|w| row_is_owned(w) && !stamp_is_terminal(w))
+    {
+        if included.insert(w.output_handle.as_slice()) {
+            queue.push_back(w);
+        }
+    }
+
+    // A group shares one op, so a group-level rejection must stamp every row.
+    let group_error = |rows: &[&WorkItem], msg: String| -> Vec<(Vec<u8>, String)> {
+        rows.iter()
+            .map(|r| (r.output_handle.clone(), msg.clone()))
+            .collect()
+    };
+    let mut ops: Vec<DFGOp> = vec![];
+    let mut earliest_owned_allowed: Option<PrimitiveDateTime> = None;
+    let mut invalid_rows: Vec<(Vec<u8>, String)> = vec![];
+    let mut dead_input_rows: Vec<Vec<u8>> = vec![];
+    let mut emitted_groups: HashSet<Vec<u8>> = HashSet::new();
+    while let Some(w) = queue.pop_front() {
+        // One op per group: whichever member the walk reaches first builds it,
+        // and the op-level fields are read from the row carrying output_index 0.
+        let this_group = group_key(w);
+        if !emitted_groups.insert(this_group.clone()) {
+            continue;
+        }
+        let group_rows: &[&WorkItem] = rows_by_group
+            .get(&this_group)
+            .map(|v| v.as_slice())
+            .unwrap_or(std::slice::from_ref(&w));
+        // Op-level fields are identical across the group; results bind to
+        // handles by position, so a group not starting at index 0 is
+        // malformed and cannot be bound safely.
+        let w = group_rows[0];
+        if w.output_index != 0 {
+            invalid_rows.extend(group_error(
+                group_rows,
+                "multi-output group does not start at output_index 0".to_string(),
+            ));
+            continue;
+        }
+        // Only the first row's index is checked above, so a group missing any
+        // later row would otherwise run before the scheduler rejected it.
+        if i64::try_from(group_rows.len()).unwrap_or(i64::MAX) != i64::from(w.output_count) {
+            invalid_rows.extend(group_error(
+                group_rows,
+                format!(
+                    "multi-output group has {} of {} declared outputs",
+                    group_rows.len(),
+                    w.output_count
+                ),
+            ));
+            continue;
+        }
+        let owned = row_is_owned(w);
+        let fhe_op: SupportedFheOperations = match w.fhe_operation.try_into() {
+            Ok(op) => op,
+            Err(e) => {
+                if !owned {
+                    return Err(format!(
+                        "foreign row 0x{} carries uninterpretable content: invalid FHE operation: {e}",
+                        hex::encode(&w.output_handle)
+                    ));
+                }
+                invalid_rows.extend(group_error(
+                    group_rows,
+                    format!("invalid FHE operation: {e}"),
+                ));
+                continue;
+            }
+        };
+        let mut inputs: Vec<DFGTaskInput> = Vec::with_capacity(w.dependencies.len());
+        let mut this_comp_inputs: Vec<Vec<u8>> = Vec::with_capacity(w.dependencies.len());
+        let mut is_scalar_op_vec: Vec<bool> = Vec::with_capacity(w.dependencies.len());
+        let mut dead_input: Option<&Vec<u8>> = None;
+        for (idx, dh) in w.dependencies.iter().enumerate() {
+            let is_operand_scalar =
+                fhe_op.is_operand_scalar(w.is_scalar, idx, w.dependencies.len());
+            is_scalar_op_vec.push(is_operand_scalar);
+            this_comp_inputs.push(dh.clone());
+            if is_operand_scalar {
+                inputs.push(DFGTaskInput::Value(SupportedFheCiphertexts::Scalar(
+                    dh.clone(),
+                )));
+            } else if operand_boundary(w, idx, dh)? {
+                if dead_boundary.contains(dh) {
+                    dead_input = Some(dh);
+                }
+                inputs.push(DFGTaskInput::BoundaryDependence(dh.clone()));
+            } else {
+                inputs.push(DFGTaskInput::LocalDependence(dh.clone()));
+                if !included.contains(dh.as_slice()) {
+                    if let Some(producer) = rows_by_handle.get(dh.as_slice()) {
+                        // A terminally errored producer stays out of the
+                        // graph; the uncomputability propagation below
+                        // drains this consumer instead.
+                        if !stamp_is_terminal(producer) {
+                            included.insert(producer.output_handle.as_slice());
+                            queue.push_back(producer);
+                        }
+                    }
+                    // No row at all for a transaction-local producer: leave
+                    // the dependence dangling so build_component_nodes
+                    // defers this transaction. Ingestion writes a producer
+                    // row for every bit-0 operand atomically with the
+                    // consumer's, so this indicates deleted or corrupted
+                    // state, never a schedulable one.
+                }
+            }
+        }
+        if let Some(dh) = dead_input {
+            // The obligated canonical bytes for this operand can never
+            // exist: every producer row is terminally errored, and errors
+            // are deterministic, so retrying can never succeed. Owned
+            // consumers drain terminally at op granularity — independent
+            // ops of the same transaction keep computing. Foreign rows are
+            // dropped without a stamp: the verdict is database-derived, so
+            // their own chain reaches the same conclusion.
+            // Whole group is dead; sole path in for a foreign group.
+            dead_input_rows.extend(group_rows.iter().map(|r| r.output_handle.clone()));
+            if owned {
+                invalid_rows.extend(group_error(
+                    group_rows,
+                    format!(
+                        "dead boundary input 0x{}: every producer row is terminally errored",
+                        hex::encode(dh)
+                    ),
+                ));
+            }
+            continue;
+        }
+        if let Err(e) =
+            check_fhe_operand_types(w.fhe_operation.into(), &this_comp_inputs, &is_scalar_op_vec)
+        {
+            if !owned {
+                return Err(format!(
+                    "foreign row 0x{} carries uninterpretable content: invalid FHE operands: {e}",
+                    hex::encode(&w.output_handle)
+                ));
+            }
+            invalid_rows.extend(group_error(
+                group_rows,
+                format!("invalid FHE operands: {e}"),
+            ));
+            continue;
+        }
+        // Outputs of one operation can differ in permission, so each carries
+        // its own. Foreign rows are recompute-only producers whatever their own
+        // row says: results, persistence and completion belong to the chain
+        // that owns them, so an unowned group keeps nothing.
+        ops.push(DFGOp {
+            outputs: group_rows
+                .iter()
+                .map(|r| DFGOutput {
+                    handle: r.output_handle.clone(),
+                    // Foreign rows are recompute-only producers, whatever
+                    // their own row says: results, persistence and
+                    // completion belong to the chain that owns them.
+                    is_allowed: owned && r.is_allowed,
+                })
+                .collect(),
+            fhe_op,
+            inputs,
+            // Kept separate from the per-output flag, because the two answer
+            // different questions. That one decides whether the output is
+            // persisted; this one decides whether a failure of this node has a
+            // row of OURS to stamp. An internal producer under our lease is
+            // owned without being allowed, and its errors have to survive.
+            is_owned: owned,
+        });
+        // Permission is per output; row 0 alone drops sibling-only grants.
+        if owned && group_rows.iter().any(|r| r.is_allowed) {
+            // Only account for owned allowed rows to avoid the reorg case
+            // where colliding trivial encrypts of a fork sibling would
+            // drag the batch's schedule anchor backwards.
+            earliest_owned_allowed = Some(match earliest_owned_allowed {
+                Some(current) => current.min(w.schedule_order),
+                None => w.schedule_order,
+            });
+        }
+    }
+    // Uncomputability propagates through transaction-local dependences: a
+    // consumer whose bit-0 producer is terminally errored can never obtain
+    // the obligated raw bytes, so it drains with the producer instead of
+    // deferring forever behind a dangling dependence. Owned consumers are
+    // errored; foreign ones are dropped from the graph without judgment
+    // (their own chain owns their fate).
+    let mut uncomputable: HashSet<Vec<u8>> = invalid_rows
+        .iter()
+        .map(|(handle, _)| handle.clone())
+        .collect();
+    // Rows already stamped `is_error` in the database are equally dead
+    // producers: the obligated raw bytes can never exist. Foreign errored
+    // rows seed the propagation too — the judgment is about the handle, not
+    // the row — while stamping below stays confined to owned consumers.
+    uncomputable.extend(
+        txwork
+            .iter()
+            .filter(|w| stamp_is_terminal(w))
+            .map(|w| w.output_handle.clone()),
+    );
+    // Ops dropped for a dead boundary input (owned AND foreign): their own
+    // outputs are equally unobtainable, so their transaction-local
+    // consumers drain with them.
+    uncomputable.extend(dead_input_rows);
+    loop {
+        let mut progressed = false;
+        let mut index = 0;
+        while index < ops.len() {
+            let blocked = ops[index].inputs.iter().any(|input| match input {
+                DFGTaskInput::LocalDependence(dh) => uncomputable.contains(dh),
+                // Boundary operands are deliberately not consulted here:
+                // dead boundary inputs are judged against the database
+                // (query_dead_boundary_handles) and drained before this
+                // loop, not through the transaction-local propagation.
+                DFGTaskInput::BoundaryDependence(_)
+                | DFGTaskInput::Value(_)
+                | DFGTaskInput::Compressed(..) => false,
+            });
+            if blocked {
+                let op = ops.remove(index);
+                // Ownership derived from the row itself, so no parallel
+                // bookkeeping can drift out of alignment with `ops`.
+                let owned = rows_by_handle
+                    .get(op.outputs[0].handle.as_slice())
+                    .is_some_and(|row| row_is_owned(row));
+                uncomputable.extend(op.outputs.iter().map(|o| o.handle.clone()));
+                if owned {
+                    for handle in op.outputs.into_iter().map(|o| o.handle) {
+                        invalid_rows.push((
+                            handle,
+                            "transaction-local producer is terminally errored".to_string(),
+                        ));
+                    }
+                }
+                progressed = true;
+            } else {
+                index += 1;
+            }
+        }
+        if !progressed {
+            break;
+        }
+    }
+    Ok(PreparedTransaction {
+        ops,
+        earliest_owned_allowed,
+        invalid_rows,
+    })
+}
+
 #[tracing::instrument(name = "build_and_execute", skip_all)]
+#[allow(clippy::too_many_arguments)]
 async fn build_transaction_graph_and_execute<'a>(
     txs: &mut Vec<ComponentNode>,
     db_key_cache: DbKeyCache,
@@ -690,11 +4033,14 @@ async fn build_transaction_graph_and_execute<'a>(
     trx: &mut sqlx::Transaction<'a, Postgres>,
     dcid_mngr: &dependence_chain::LockMngr,
     gcs_mode: bool,
+    gpu_reservation_timeout: std::time::Duration,
+    gpu_streams_per_device: usize,
 ) -> Result<DFComponentGraph, CoprocessorError> {
     let mut tx_graph = DFComponentGraph::default();
     if txs.is_empty() {
         return Ok(tx_graph);
     }
+    let _in_flight_work = health_check.begin_work();
     if let Err(e) = tx_graph.build(txs) {
         // If we had an error while building the graph, we don't
         // execute anything and return to allow any set results
@@ -708,9 +4054,25 @@ async fn build_transaction_graph_and_execute<'a>(
     if cts_to_query.len() != fetched_handles.len() {
         if let Some(dcid_lock) = dcid_mngr.get_current_lock() {
             warn!(target: "tfhe_worker", { missing_inputs = ?(cts_to_query.len() - fetched_handles.len()), dcid = %hex::encode(dcid_lock.dependence_chain_id) },
-	      "some inputs are missing to execute the dependence chain");
+	  "some inputs are missing to execute the dependence chain");
         }
     }
+    // Boundary ciphertexts enter the graph in their CANONICAL COMPRESSED
+    // form, on every build. RFC-020's boundary consumption rule requires the
+    // base value to be `Decompress(cmp(h))`; keeping the compressed form here
+    // and decompressing in the executor means the graph never carries a
+    // transaction-level raw value, which is what makes the consensus tripwire
+    // in `check_ready_inputs` a live assertion in BOTH build configurations
+    // rather than something GPU has to opt out of.
+    //
+    // The redundancy this used to imply — the same boundary handle
+    // decompressed once per consuming op — is removed in the executor by a
+    // per-partition memo, which RFC-020 explicitly permits ("the worker may
+    // cache the canonical decompressed form ct(h) for the duration of the
+    // transaction batch"). Memoizing there rather than materializing here
+    // also keeps each decompression on the device that will consume it,
+    // instead of pinning every boundary value to device 0 and cloning it out
+    // to whichever device the partition actually runs on.
     for (handle, (ct_type, mut ct)) in ciphertext_map.into_iter() {
         tx_graph
             .add_input(
@@ -754,6 +4116,42 @@ async fn build_transaction_graph_and_execute<'a>(
             }
         };
 
+        // Bound concurrent GPU partitions to the configured stream capacity.
+        // The limiter is process-wide and sized once from the visible device
+        // count; the blocking tasks release their permits themselves.
+        //
+        // A single OnceLock rather than a map keyed by (device count, streams
+        // per device): both are constant for the life of the process — the
+        // device count comes from the loaded key set and the stream count from
+        // a CLI flag — so a map could only ever hold one entry, while making
+        // it *structurally* possible to admit two limiters over one GPU.
+        #[cfg(feature = "gpu")]
+        let gpu_execution_limiter = {
+            static LIMITER: std::sync::OnceLock<GpuExecutionLimiter> = std::sync::OnceLock::new();
+            match LIMITER.get() {
+                Some(limiter) => limiter.clone(),
+                None => {
+                    let limiter =
+                        GpuExecutionLimiter::new(keys.gpu_sks.len(), gpu_streams_per_device)
+                            .map_err(|e| CoprocessorError::Other(e.into()))?;
+                    // A racing initializer wins; take whichever is installed so
+                    // every partition shares one limiter.
+                    LIMITER.get_or_init(|| limiter).clone()
+                }
+            }
+        };
+        #[cfg(not(feature = "gpu"))]
+        let _ = gpu_streams_per_device;
+
+        // Index, per owned internal producer, the allowed rows its failure
+        // blocks -- NOW, while every transaction's inner graph is still in
+        // its node. The scheduler moves those graphs out at dispatch and
+        // never restores them, so the same walk after `schedule()` finds an
+        // empty graph and returns nothing; `upload_transaction_graph_results`
+        // then has nowhere to record an internal producer's verdict and the
+        // transaction re-executes at poll cadence forever.
+        tx_graph.snapshot_blocked_dependents();
+
         // Schedule computations in parallel as dependences allow
         tfhe::set_server_key(keys.sks.clone());
         let mut sched = Scheduler::new(
@@ -763,7 +4161,10 @@ async fn build_transaction_graph_and_execute<'a>(
             keys.pks.clone(),
             #[cfg(feature = "gpu")]
             keys.gpu_sks.clone(),
+            #[cfg(feature = "gpu")]
+            gpu_execution_limiter,
             health_check.activity_heartbeat.clone(),
+            gpu_reservation_timeout,
         );
         sched
             .schedule()
@@ -777,11 +4178,21 @@ async fn build_transaction_graph_and_execute<'a>(
 }
 
 #[tracing::instrument(name = "upload_results", skip_all)]
+/// Returns (progress, cooldown_transactions): the latter are transactions that
+/// failed this cycle in a way that leaves the row PENDING and pace-able — a
+/// retryable ExecutionPanic, or a GPU memory reservation timeout. The lockless
+/// caller quarantines them so the oldest-first window cannot re-select a
+/// still-failing transaction at poll cadence (DCID locking paces the same case
+/// via no-progress parking).
+///
+/// The two belong on one list because they share the property that matters
+/// here: neither writes a verdict the window can filter on, so the cooldown is
+/// the only thing that can rotate selection past them.
 async fn upload_transaction_graph_results<'a>(
     tx_graph: &mut DFComponentGraph,
     trx: &mut sqlx::Transaction<'a, Postgres>,
     deps_mngr: &mut dependence_chain::LockMngr,
-) -> Result<bool, CoprocessorError> {
+) -> Result<(bool, Vec<Vec<u8>>), CoprocessorError> {
     // Schema isolation: the connection's `search_path` already routes
     // unqualified writes to the stack's own schema (`public` for BCS,
     // `gcs` for GCS post-activation). The two-step ciphertext read in
@@ -790,6 +4201,7 @@ async fn upload_transaction_graph_results<'a>(
     // Get computation results
     let graph_results = tx_graph.get_results();
     let mut handles_to_update = vec![];
+    let mut cooldown_transactions: Vec<Vec<u8>> = vec![];
     let mut res = false;
 
     // Traverse computations that have been scheduled and
@@ -798,14 +4210,43 @@ async fn upload_transaction_graph_results<'a>(
     for result in graph_results.into_iter() {
         match result.compressed_ct {
             Ok(cct) => {
+                let [handle] = result.handles.as_slice() else {
+                    error!(target: "tfhe_worker", { handles = ?result.handles },
+                        "a computed ciphertext must belong to exactly one handle");
+                    continue;
+                };
                 cts_to_insert.push((
-                    result.handle.clone(),
+                    handle.clone(),
                     (cct.ct_bytes, (current_ciphertext_version(), cct.ct_type)),
                 ));
-                handles_to_update.push((result.handle.clone(), result.transaction_id.clone()));
+                handles_to_update.push((handle.clone(), result.transaction_id.clone()));
                 WORK_ITEMS_PROCESSED_COUNTER.inc();
             }
             Err(mut err) => {
+                let output_handles: Vec<String> = result.handles.iter().map(hex::encode).collect();
+                #[cfg(feature = "gpu")]
+                if matches!(
+                    err.downcast_ref::<FhevmError>(),
+                    Some(error) if is_retryable_gpu_reservation_error(error)
+                ) {
+                    warn!(
+                        target: "tfhe_worker",
+                        error = %err,
+                        output_handles = ?output_handles,
+                        "transient GPU memory reservation failure; leaving computation pending for retry"
+                    );
+                    // Deliberately unstamped -- a reservation failure is not a
+                    // verdict on the operands -- but it must still PACE. In the
+                    // lockless fallback the window is oldest-first and nothing
+                    // else holds this transaction back: unstamped and
+                    // un-cooled, it wins selection again on the next poll and
+                    // keeps every younger transaction out for as long as the
+                    // device stays tight. The cooldown is the only mechanism
+                    // that rotates the window there, so these ids ride the same
+                    // list the panics do.
+                    cooldown_transactions.push(result.transaction_id.clone());
+                    continue;
+                }
                 let cerr: Box<dyn std::error::Error + Send + Sync> =
                     if let Some(fhevm_error) = err.downcast_mut::<FhevmError>() {
                         let mut swap_val = FhevmError::BadInputs;
@@ -832,7 +4273,7 @@ async fn upload_transaction_graph_results<'a>(
                     ) {
                         warn!(target: "tfhe_worker",
                                           { error = cerr,
-                        output_handle = format!("0x{}", hex::encode(&result.handle)) },
+                        output_handles = ?output_handles },
                                         "scheduler encountered an error while processing work item"
                                     );
                         continue;
@@ -845,15 +4286,69 @@ async fn upload_transaction_graph_results<'a>(
                         // inputs weren't available when we tried scheduling these operations.
                         continue;
                     }
+                    if matches!(
+                        err,
+                        CoprocessorError::SchedulerError(SchedulerError::ReRandomisationError)
+                    ) {
+                        // A property of the KEY, not of the operands: the
+                        // server key carries no re-randomization material.
+                        // Every computation under that key fails identically,
+                        // so stamping this would condemn the whole backlog —
+                        // and everything downstream of it, through the
+                        // dead-producer drain — for a provisioning fault that
+                        // a key fix clears. `require_re_randomization_support`
+                        // already refuses the cycle before execution; this is
+                        // the belt to that pair of braces.
+                        warn!(target: "tfhe_worker",
+                            { error = cerr, output_handles = ?output_handles },
+                            "key lacks re-randomization material; leaving computation pending for retry");
+                        continue;
+                    }
                 }
-                set_computation_error(
-                    &result.handle,
-                    &result.transaction_id,
-                    &*cerr,
-                    trx,
-                    deps_mngr,
-                )
-                .await?;
+                if let Some(CoprocessorError::SchedulerError(SchedulerError::ExecutionPanic(_))) =
+                    cerr.downcast_ref::<CoprocessorError>()
+                {
+                    cooldown_transactions.push(result.transaction_id.clone());
+                }
+                // A terminal stamp IS progress: a dead-chain drain larger
+                // than one batch would otherwise count as no-progress
+                // cycles and park the chain mid-drain.
+                let retryable = !is_terminal_verdict(cerr.downcast_ref::<CoprocessorError>());
+                // From the typed graph, for the case where the handle's own row
+                // cannot carry the verdict (an internal producer is stored
+                // completed). Answered from the snapshot taken before
+                // `schedule()`: the inner graphs are gone by now.
+                // A consumer shared by several siblings is propagated to once
+                // per pass, or its retry count advances once per sibling.
+                let mut propagated: HashSet<Vec<u8>> = HashSet::new();
+                for handle in &result.handles {
+                    let blocked = tx_graph.allowed_dependents(&result.transaction_id, handle);
+                    if tx_graph.is_foreign_producer(&result.transaction_id, handle) {
+                        // A foreign row belongs to another chain: never stamp it
+                        // from here. What this failure blocks is OUR owned allowed
+                        // consumers, which have nowhere else to receive a verdict
+                        // -- the owning chain never executes them.
+                        res |= propagate_error_to_dependents(
+                            &mark_as_propagated(&mut propagated, &blocked),
+                            &result.transaction_id,
+                            &stamp_text(&*cerr, retryable),
+                            trx,
+                        )
+                        .await?;
+                        continue;
+                    }
+                    res |= set_computation_error(
+                        handle,
+                        &result.transaction_id,
+                        &*cerr,
+                        retryable,
+                        &blocked,
+                        &mut propagated,
+                        trx,
+                        deps_mngr,
+                    )
+                    .await?;
+                }
             }
         }
     }
@@ -897,8 +4392,16 @@ async fn upload_transaction_graph_results<'a>(
             let (handles_vec, txn_ids_vec): (Vec<_>, Vec<_>) = handles_to_update.into_iter().unzip();
             let comp_updated = query!(
                 "
+            -- Bytes are the ground truth of success: a row whose ciphertext
+            -- was just inserted is completed, and any error stamp on it was a
+            -- nondeterministic-failure artifact (e.g. another worker's
+            -- transient panic on the same stolen batch) — heal it, or the
+            -- row would stay a terminally errored, never-completed
+            -- contradiction next to published bytes. Rows drained for dead
+            -- inputs never execute, so no bytes ever arrive to heal them.
             UPDATE computations
-            SET is_completed = true, completed_at = CURRENT_TIMESTAMP
+            SET is_completed = true, completed_at = CURRENT_TIMESTAMP,
+                is_error = false, error_message = NULL, error_retry_count = 0
             WHERE is_completed = false
             AND (output_handle, transaction_id) IN (
                 SELECT * FROM unnest($1::BYTEA[], $2::BYTEA[])
@@ -918,36 +4421,433 @@ async fn upload_transaction_graph_results<'a>(
         .await?;
         res |= comp_updated > 0;
     }
-    Ok(res)
+    cooldown_transactions.sort();
+    cooldown_transactions.dedup();
+    Ok((res, cooldown_transactions))
+}
+
+#[cfg(all(test, feature = "gpu"))]
+mod gpu_reservation_error_tests {
+    use super::*;
+    use fhevm_engine_common::gpu_memory::GpuMemoryReservationError;
+
+    #[test]
+    fn reservation_failures_are_retryable() {
+        for reservation_error in [GpuMemoryReservationError::TimedOut {
+            gpu_idx: 0,
+            amount: 1,
+            waited_ms: 10,
+        }] {
+            assert!(is_retryable_gpu_reservation_error(
+                &FhevmError::GpuMemoryReservationError(reservation_error)
+            ));
+        }
+    }
+
+    #[test]
+    /// Deployment and bookkeeping faults are retryable too. Neither says
+    /// anything about the operands, so neither may strand a computation — or,
+    /// through the dead-producer drain, everything downstream of it.
+    fn invariant_failures_are_retryable_too() {
+        for reservation_error in [
+            GpuMemoryReservationError::UnknownDevice { gpu_idx: 7 },
+            GpuMemoryReservationError::AccountingOverflow { gpu_idx: 0 },
+        ] {
+            assert!(is_retryable_gpu_reservation_error(
+                &FhevmError::GpuMemoryReservationError(reservation_error)
+            ));
+        }
+    }
+}
+
+/// Is this failure a permanent verdict on the computation?
+///
+/// TERMINAL IFF THE VERDICT IS A PURE FUNCTION OF IMMUTABLE ON-CHAIN DATA —
+/// the opcode, the operand types, the shape of the graph. A terminal stamp is
+/// never re-selected, its chain retires without it, and the dead-producer
+/// drain condemns everything downstream, so it is only correct when re-running
+/// the identical inputs could not possibly produce a different answer.
+///
+/// Everything else is retryable and, if it keeps failing, demoted to the slow
+/// lane rather than condemned. Note the polarity: the default arm is
+/// RETRYABLE, so a variant added to either enum later fails towards the
+/// reversible outcome instead of silently condemning cones. That is the
+/// opposite of the catch-all this function replaced, under which any
+/// unmatched `FhevmError` was terminal.
+fn is_terminal_verdict(error: Option<&CoprocessorError>) -> bool {
+    match error {
+        Some(CoprocessorError::SchedulerError(scheduler_error)) => match scheduler_error {
+            // NOT a verdict. The on-chain dependence graph is acyclic, so a
+            // detected cycle is never a fact about the operands: the
+            // cross-transaction kind is a BATCH-COMPOSITION artifact (a
+            // same-block alias whose original minter is absent from this
+            // batch -- `resolve_dependences` defers those members itself and
+            // no longer reports this variant), and any other kind is an
+            // internal inconsistency that re-execution may not reproduce.
+            // Classifying it terminal condemned, on one coprocessor,
+            // transactions every other coprocessor computed -- a consensus
+            // divergence seen in production.
+            SchedulerError::CyclicDependence => false,
+            // MissingLocalProducer is NOT a verdict on the operands. The
+            // scenario that produces it — a listener/worker skew where one
+            // binary's operand-mask derivation disagrees with the other's
+            // reading of it — makes the outcome binary-dependent rather than a
+            // function of on-chain data, which is exactly what the rule
+            // excludes. Unreachable from here in any case: its only raise path
+            // defers the transaction before stamping. Classified with the
+            // reversible arm so the code and R8's design table agree.
+            SchedulerError::MissingLocalProducer => false,
+            // A panic — around the op, a boundary decompression or the output
+            // compression — can be device or allocation pressure. Persisted
+            // bytes that would not expand can be corruption, but a transient
+            // device fault is indistinguishable at this point.
+            SchedulerError::ExecutionPanic(_) | SchedulerError::DecompressionError => false,
+            // Scheduling state rather than verdicts; these never reach the
+            // stamping path at all (handled above), and if one ever did,
+            // treating it as retryable is the safe direction.
+            SchedulerError::MissingInputs
+            | SchedulerError::DataflowGraphError
+            | SchedulerError::ReRandomisationError
+            | SchedulerError::SchedulerError => false,
+            // Declared output count or type disagrees with what the op produced:
+            // a function of the opcode and the on-chain handles.
+            SchedulerError::MultiOutputFailure(_) => true,
+        },
+        Some(CoprocessorError::FhevmError(fhevm_error)) => match fhevm_error {
+            // Type-check, opcode and scalar-shape rules. Every one is decided
+            // from the operand types and the operation id, both of which come
+            // from the chain.
+            //
+            // The list must cover the verdicts raised at EXECUTION time, not
+            // only the ones `check_fhe_operand_types` catches before the graph
+            // is built: `UnsupportedFheTypes` is the engine's most common type
+            // verdict and every one of its raise sites is a match on the
+            // operation id and the operand type names. Leaving it to the
+            // retryable default arm did more than retry it until demotion —
+            // the dead-producer predicate reads the stamp, so the errored
+            // producer never counted as dead and its cross-transaction
+            // consumers deferred as missing-inputs forever.
+            FhevmError::UnknownFheOperation(_)
+            | FhevmError::UnknownFheType(_)
+            | FhevmError::CannotCompressScalar
+            | FhevmError::CiphertextCompressionRequiresEmptyCarries
+            | FhevmError::CiphertextExpansionUnsupportedCiphertextKind(_)
+            | FhevmError::FheOperationOnlyOneOperandCanBeScalar { .. }
+            | FhevmError::FheOperationDoesntSupportScalar { .. }
+            | FhevmError::FheOperationOnlySecondOperandCanBeScalar { .. }
+            | FhevmError::FheOperationDoesntHaveUniformTypesAsInput { .. }
+            | FhevmError::FheOperationScalarDivisionByZero { .. }
+            | FhevmError::FheOperationDoesntSupportEbytesAsInput { .. }
+            | FhevmError::UnexpectedOperandCountForFheOperation { .. }
+            | FhevmError::OperationDoesntSupportBooleanInputs { .. }
+            | FhevmError::FheIfThenElseUnexpectedOperandTypes { .. }
+            | FhevmError::FheIfThenElseMismatchingSecondAndThirdOperatorTypes { .. }
+            | FhevmError::UnexpectedCastOperandTypes { .. }
+            | FhevmError::UnexpectedCastOperandSizeForScalarOperand { .. }
+            | FhevmError::UnknownCastType { .. }
+            | FhevmError::AllInputsForTrivialEncryptionMustBeScalar { .. }
+            | FhevmError::UnexpectedTrivialEncryptionOperandSizeForScalarOperand { .. }
+            | FhevmError::UnexpectedRandOperandSizeForOutputType { .. }
+            | FhevmError::RandOperationUpperBoundCannotBeZero { .. }
+            | FhevmError::RandOperationInputsMustAllBeScalar { .. }
+            | FhevmError::UnsupportedFheTypes { .. } => true,
+            // NOT terminal, and this is the correction that motivated turning
+            // the list into a rule: a `tfhe::Error` out of expansion or
+            // compression can be a device fault that surfaced as `Err` rather
+            // than as a panic. The identical fault arriving as a panic is
+            // retried, so classifying this one as a verdict was inconsistent.
+            // `DeserializationError` carries the same corrupt-versus-transient
+            // ambiguity that made `DecompressionError` retryable.
+            FhevmError::CiphertextExpansionError(_)
+            | FhevmError::CiphertextCompressionError(_)
+            | FhevmError::DeserializationError(_) => false,
+            // Everything else — including any variant added later.
+            _ => false,
+        },
+        // A non-Coprocessor error reaching the stamp is unclassifiable, which
+        // is not the same as deterministic.
+        _ => false,
+    }
+}
+
+#[cfg(test)]
+mod terminal_verdict_tests {
+    use super::*;
+
+    /// The type verdicts raised at EXECUTION time, not just the ones the
+    /// pre-execution check catches. `UnsupportedFheTypes` is the one the
+    /// engine raises most, and classifying it as retryable is not a private
+    /// matter of pacing: the dead-producer predicate reads the stamp, so a
+    /// retryable producer is never dead and its cross-transaction consumers
+    /// defer as missing-inputs forever.
+    #[test]
+    fn execution_time_type_verdicts_are_terminal() {
+        for error in [
+            FhevmError::UnsupportedFheTypes {
+                fhe_operation: "FheSub".to_string(),
+                input_types: vec!["FheUint32", "FheUint64"],
+            },
+            FhevmError::UnknownCastType {
+                fhe_operation: "FheCast".to_string(),
+                type_to_cast_to: 123,
+            },
+            FhevmError::RandOperationUpperBoundCannotBeZero {
+                fhe_operation: 27,
+                fhe_operation_name: "FheRandBounded".to_string(),
+                upper_bound_value: "0".to_string(),
+            },
+        ] {
+            let message = error.to_string();
+            assert!(
+                is_terminal_verdict(Some(&CoprocessorError::FhevmError(error))),
+                "expected a terminal verdict for {message}"
+            );
+        }
+    }
+
+    /// The polarity of the default arm, unchanged: a failure that says
+    /// nothing about the operands stays reversible.
+    #[test]
+    fn transient_failures_stay_retryable() {
+        assert!(!is_terminal_verdict(Some(&CoprocessorError::FhevmError(
+            FhevmError::DeserializationError(Box::new(std::io::Error::other("truncated")))
+        ))));
+        assert!(!is_terminal_verdict(Some(
+            &CoprocessorError::SchedulerError(SchedulerError::ExecutionPanic(
+                "device pressure".to_string()
+            ))
+        )));
+        // A dependence cycle is never on-chain state: the cross-transaction
+        // kind depends on which transactions share a batch, so it must never
+        // condemn (it did, in production).
+        assert!(!is_terminal_verdict(Some(
+            &CoprocessorError::SchedulerError(SchedulerError::CyclicDependence)
+        )));
+    }
 }
 
 #[tracing::instrument(skip_all)]
+/// Records a verdict on the allowed rows a failed producer blocks.
+///
+/// Used when the handle's own row cannot carry it -- an internal producer is
+/// stored `is_completed = TRUE`, which the stamping UPDATE deliberately skips.
+///
+/// `dependents` comes from the dataflow graph, not from a search over
+/// `computations.dependencies`. That column holds encrypted operand handles and
+/// plain scalar values in one array, so byte-equality over it condemns an
+/// independent scalar operation whose value happens to equal the failed handle;
+/// the boundary mask cannot separate the two either, since only encrypted
+/// positions are visited when it is derived. The graph's edges are typed, so
+/// only real consumers appear here.
+async fn propagate_error_to_dependents<'a>(
+    dependents: &[Vec<u8>],
+    transaction_id: &[u8],
+    err_string: &str,
+    trx: &mut sqlx::Transaction<'a, Postgres>,
+) -> Result<bool, CoprocessorError> {
+    if dependents.is_empty() {
+        return Ok(false);
+    }
+    let rows = query!(
+        "
+        UPDATE computations AS c
+        SET is_error = true,
+            error_message = $3,
+            error_retry_count = CASE
+                WHEN NOT old.is_error THEN 0
+                ELSE LEAST(old.error_retry_count + 1, 32767)::smallint
+            END
+        FROM computations AS old
+        WHERE old.output_handle = c.output_handle
+          AND old.transaction_id = c.transaction_id
+          AND c.output_handle = ANY($1)
+          AND c.transaction_id = $2
+          -- Only rows the work window selects and the demotion predicate reads.
+          AND c.is_allowed = TRUE
+          AND c.is_completed = false
+          -- Same one-way rule as the direct stamp: a terminal verdict is never
+          -- overwritten, and a repeat of the same retryable one only counts.
+          AND (c.is_error = false OR c.error_message LIKE '%' || $4 || '%')
+        RETURNING (
+            NOT old.is_error
+            OR $3 NOT LIKE '%' || $4 || '%'
+        ) AS \"state_changed!\"
+        ",
+        dependents,
+        transaction_id,
+        err_string,
+        RETRYABLE_STAMP_MARKER,
+    )
+    .fetch_all(trx.as_mut())
+    .await?;
+    // Progress means a state TRANSITION, exactly as the direct stamp defines it:
+    // a fresh verdict, or a terminal one superseding a retryable. A repeat of the
+    // same retryable failure only advances the counter, and reporting it as
+    // progress would reset `no_progress_cycles` every cycle and suppress the
+    // parking that paces a perpetually failing producer.
+    let transitioned = rows.iter().any(|row| row.state_changed);
+    if !rows.is_empty() {
+        warn!(
+            target: "tfhe_worker",
+            transaction_id = %format!("0x{}", hex::encode(transaction_id)),
+            dependents = rows.len(),
+            "producer row cannot carry a verdict; recorded it on its allowed dependents"
+        );
+    }
+    Ok(transitioned)
+}
+
+/// The text a verdict is stamped with. The retryable marker is applied HERE
+/// rather than being baked into any error's Display, so the retryable class is
+/// a property of the stamping decision and lives in exactly one place.
+fn stamp_text(cerr: &(dyn std::error::Error + Send + Sync), retryable: bool) -> String {
+    if retryable {
+        format!("{RETRYABLE_STAMP_MARKER} {cerr}")
+    } else {
+        cerr.to_string()
+    }
+}
+
+/// Marks `dependents` as propagated to; returns the ones that were not yet.
+fn mark_as_propagated(propagated: &mut HashSet<Vec<u8>>, dependents: &[Vec<u8>]) -> Vec<Vec<u8>> {
+    dependents
+        .iter()
+        .filter(|d| propagated.insert((*d).clone()))
+        .cloned()
+        .collect()
+}
+
+#[allow(clippy::too_many_arguments)]
 async fn set_computation_error<'a>(
     output_handle: &[u8],
     transaction_id: &[u8],
     cerr: &(dyn std::error::Error + Send + Sync),
+    retryable: bool,
+    // Allowed handles this failure blocks, from the dataflow graph. Consulted
+    // only when the handle's own row cannot carry the verdict.
+    dependents: &[Vec<u8>],
+    propagated: &mut HashSet<Vec<u8>>,
     trx: &mut sqlx::Transaction<'a, Postgres>,
     deps_mngr: &mut dependence_chain::LockMngr,
-) -> Result<(), CoprocessorError> {
-    WORKER_ERRORS_COUNTER.inc();
-    let err_string = cerr.to_string();
-    error!(target: "tfhe_worker", error = %err_string, output_handle = %format!("0x{}", hex::encode(output_handle)), "error while processing work item");
-    telemetry::set_current_span_error(&err_string);
+) -> Result<bool, CoprocessorError> {
+    let err_string = stamp_text(cerr, retryable);
 
-    let _ = query!(
+    // A completed row's ciphertext exists — a cascaded error (a poisoned
+    // transaction stamps EVERY op of the node, mirroring set_uncomputable's
+    // transaction granularity) must never flip it, or the false error would
+    // cascade to its consumers next cycle. An already-errored row keeps its
+    // original message: the root cause, not the cascade.
+    //
+    // The one exception is a RETRYABLE stamp, which is not a verdict but a
+    // "try again" marker. A TERMINAL stamp supersedes it immediately — a row
+    // that first panicked and later became provably unsatisfiable (its
+    // producer drained as dead) must be able to reach a terminal state, or
+    // the work window re-selects it forever and its chain never completes.
+    // The direction is one-way: a terminal stamp is never re-selected, so it
+    // can never be overwritten in turn.
+    //
+    // A repeated retryable stamp only advances `error_retry_count`. At
+    // `--computation-retry-demote-threshold` the work window and the chain's
+    // completion test both stop counting the row, which DEMOTES it to the
+    // slow lane — it is never rewritten into a terminal verdict. Nothing
+    // here can turn a transient failure into a condemnation, which is why
+    // the resource-pressure exemption this function used to carry could be
+    // deleted rather than maintained: there is no longer a promotion for
+    // memory pressure to be exempted from.
+    //
+    // The pre-image is read through a self-join because the progress signal
+    // must be a state TRANSITION, not "a row was touched": Postgres reports a
+    // matched row for an identical-value UPDATE, so returning rows_affected
+    // would make a perpetually panicking computation reset
+    // `no_progress_cycles` every cycle and suppress the parking that paces it.
+    // A retry that only advances the counter is deliberately NOT progress.
+    let stamped = query!(
         "
-        UPDATE computations
-        SET is_error = true, error_message = $1
-        WHERE output_handle = $2
-        AND transaction_id = $3
+        UPDATE computations AS c
+        SET is_error = true,
+            -- Unconditional now that nothing rewrites the stamp: a fresh
+            -- error, a terminal stamp superseding a retryable one, and a
+            -- repeat of the same retryable failure all write the same text.
+            error_message = $1,
+            error_retry_count = CASE
+                WHEN NOT old.is_error THEN 0
+                -- Saturating: the count only has to reach the demote
+                -- threshold, and a chain retried for months must not wrap
+                -- back under it.
+                ELSE LEAST(old.error_retry_count + 1, 32767)::smallint
+            END
+        FROM computations AS old
+        WHERE old.output_handle = c.output_handle
+          AND old.transaction_id = c.transaction_id
+          AND c.output_handle = $2
+          AND c.transaction_id = $3
+          AND c.is_completed = false
+          AND (c.is_error = false OR c.error_message LIKE '%' || $4 || '%')
+        RETURNING (
+            NOT old.is_error
+            OR $1 NOT LIKE '%' || $4 || '%'
+        ) AS \"state_changed!\"
         ",
         err_string,
         output_handle,
-        transaction_id
+        transaction_id,
+        RETRYABLE_STAMP_MARKER,
     )
-    .execute(trx.as_mut())
-    .await?;
-
-    deps_mngr.set_processing_error(Some(err_string)).await?;
-    Ok(())
+    .fetch_optional(trx.as_mut())
+    .await?
+    .map(|row| row.state_changed);
+    // `None` means the UPDATE matched nothing, and for an INTERNAL producer that
+    // is the normal outcome rather than an anomaly: the listener stores a
+    // non-allowed row with `is_completed = TRUE` -- its output is never
+    // persisted, so there is nothing to complete -- and the UPDATE above only
+    // touches pending rows.
+    //
+    // Leaving it there would make the verdict unrecordable. Nothing accrues
+    // `error_retry_count`, so the row never demotes; its allowed consumer comes
+    // back as MissingInputs, which the upload path ignores by design; and the
+    // transaction re-executes at poll cadence forever. Relaxing the guard would
+    // not help either, because all three demotion predicates require
+    // `is_completed = FALSE` as well.
+    //
+    // So the verdict is recorded where it CAN live: on the allowed, still-pending
+    // rows of this transaction that depend on the handle, transitively. Those are
+    // the rows the work window selects and the demotion predicate reads, and they
+    // are genuinely unsatisfiable -- their producer cannot be computed. The class
+    // travels with it, so a retryable producer failure gives its consumers a
+    // retryable stamp that accrues and demotes, and a terminal one condemns them
+    // as the dead-producer drain already would for a stampable producer.
+    let stamped = match stamped {
+        Some(state_changed) => state_changed,
+        None => {
+            propagate_error_to_dependents(
+                &mark_as_propagated(propagated, dependents),
+                transaction_id,
+                &err_string,
+                trx,
+            )
+            .await?
+        }
+    };
+    // the chain's root-cause error_message for those would inflate error
+    // metrics and bury the first, most informative message.
+    if stamped {
+        WORKER_ERRORS_COUNTER.inc();
+        error!(target: "tfhe_worker", error = %err_string, output_handle = %format!("0x{}", hex::encode(output_handle)), "error while processing work item");
+        telemetry::set_current_span_error(&err_string);
+        // Scoped to the chain that owns this computation: the stamp is a fact
+        // about one row, and with batching the worker may hold ~20 chains.
+        let owner: Option<Vec<u8>> = query_scalar!(
+            "SELECT dependence_chain_id FROM computations \
+             WHERE output_handle = $1 AND transaction_id = $2",
+            output_handle,
+            transaction_id,
+        )
+        .fetch_optional(trx.as_mut())
+        .await?
+        .flatten();
+        deps_mngr
+            .set_processing_error(Some(err_string), owner.as_deref())
+            .await?;
+    }
+    Ok(stamped)
 }

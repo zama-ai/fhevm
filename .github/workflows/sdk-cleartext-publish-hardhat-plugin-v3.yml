@@ -1,0 +1,28 @@
+name: sdk-cleartext-publish-hardhat-plugin-v3
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Build and check without publishing'
+        required: false
+        default: true
+        type: boolean
+
+# No permissions at the workflow level — the calling job declares only what it needs.
+permissions: {}
+
+jobs:
+  publish:
+    # A reusable workflow cannot elevate the caller's GITHUB_TOKEN: whatever sdk-cleartext-publish-package.yml
+    # asks for is capped by what is granted HERE, so these two must be granted on this job or the
+    # called workflow runs with none and fails at checkout.
+    permissions:
+      contents: 'read' # Required to checkout repository code
+      id-token: 'write' # Required for OIDC / npm provenance attestation
+    uses: ./.github/workflows/sdk-cleartext-publish-package.yml
+    with:
+      build_target: 'compile-hh-v3-plugin' # build the hardhat plugin v3
+      dry_run: ${{ inputs.dry_run }}
+    secrets:
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}

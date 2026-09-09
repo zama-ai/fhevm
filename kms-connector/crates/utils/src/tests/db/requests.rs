@@ -6,7 +6,7 @@ use crate::{
     },
     types::{
         DEFAULT_EPOCH_ID, ProtocolEventKind, TESTING_KMS_CONTEXT,
-        db::{EventType, OperationStatus, ParamsTypeDb},
+        db::{EventType, OperationStatus, ParamsTypeDb, RequestSource},
         extra_data::EXTRA_DATA_V2_VERSION,
     },
 };
@@ -134,9 +134,9 @@ pub async fn insert_rand_public_decryption_request(
     sqlx::query!(
         "INSERT INTO public_decryption_requests(
             decryption_id, ct_handles, extra_data, tx_hash, created_at, otlp_context,
-            already_sent, status
+            already_sent, status, source
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT DO NOTHING",
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT DO NOTHING",
         decryption_id.as_le_slice(),
         &ct_handles_db,
         extra_data.clone(),
@@ -145,6 +145,7 @@ pub async fn insert_rand_public_decryption_request(
         bc2wrap::serialize(&PropagationContext::empty())?,
         options.already_sent,
         status as OperationStatus,
+        options.source as RequestSource,
     )
     .execute(db)
     .await?;
@@ -172,9 +173,9 @@ pub async fn insert_rand_user_decryption_request(
     sqlx::query!(
         "INSERT INTO user_decryption_requests(
             decryption_id, ct_handles, user_address, public_key, extra_data, tx_hash,
-            created_at, otlp_context, already_sent, status
+            created_at, otlp_context, already_sent, status, source
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) ON CONFLICT DO NOTHING",
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) ON CONFLICT DO NOTHING",
         decryption_id.as_le_slice(),
         &ct_handles_db,
         user_address.as_slice(),
@@ -185,6 +186,7 @@ pub async fn insert_rand_user_decryption_request(
         bc2wrap::serialize(&PropagationContext::empty())?,
         options.already_sent,
         status as OperationStatus,
+        options.source as RequestSource,
     )
     .execute(db)
     .await?;
@@ -246,9 +248,9 @@ pub async fn insert_rand_user_decryption_request_v2(
             decryption_id, ct_handles, user_address, public_key, extra_data, tx_hash,
             created_at, otlp_context, already_sent, status, handle_owner_addresses,
             handle_contract_addresses, allowed_contracts, start_timestamp, duration_seconds,
-            signature
+            signature, source
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
         ON CONFLICT DO NOTHING",
         decryption_id.as_le_slice(),
         &ct_handles_db,
@@ -266,6 +268,7 @@ pub async fn insert_rand_user_decryption_request_v2(
         start_timestamp,
         duration_seconds,
         &signature,
+        options.source as RequestSource,
     )
     .execute(db)
     .await?;
@@ -298,11 +301,12 @@ pub async fn insert_rand_prep_keygen_request(
 
     sqlx::query!(
         "INSERT INTO prep_keygen_requests(
-            prep_keygen_id, params_type, extra_data, otlp_context, created_at, already_sent, status
+            prep_keygen_id, params_type, existing_key_id, extra_data, otlp_context, created_at, already_sent, status
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7)",
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
         prep_keygen_request_id.as_le_slice(),
         params_type as ParamsTypeDb,
+        U256::ZERO.as_le_slice(),
         extra_data.to_vec() as Vec<u8>,
         bc2wrap::serialize(&PropagationContext::empty())?,
         Utc::now(),
@@ -315,6 +319,7 @@ pub async fn insert_rand_prep_keygen_request(
     Ok(PrepKeygenRequest {
         prepKeygenId: prep_keygen_request_id,
         paramsType: params_type as u8,
+        existingKeyId: U256::ZERO,
         extraData: extra_data.into(),
     })
 }
@@ -330,11 +335,12 @@ pub async fn insert_rand_keygen_request(
 
     sqlx::query!(
         "INSERT INTO keygen_requests(
-            prep_keygen_id, key_id, extra_data, created_at, otlp_context, already_sent, status
+            prep_keygen_id, key_id, existing_key_id, extra_data, created_at, otlp_context, already_sent, status
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING",
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT DO NOTHING",
         prep_key_id.as_le_slice(),
         key_id.as_le_slice(),
+        U256::ZERO.as_le_slice(),
         extra_data.to_vec() as Vec<u8>,
         Utc::now(),
         bc2wrap::serialize(&PropagationContext::empty())?,
@@ -347,6 +353,7 @@ pub async fn insert_rand_keygen_request(
     Ok(KeygenRequest {
         prepKeygenId: prep_key_id,
         keyId: key_id,
+        existingKeyId: U256::ZERO,
         extraData: extra_data.into(),
     })
 }
@@ -700,6 +707,7 @@ pub struct InsertRequestOptions {
     pub ct_handles: Option<Vec<B256>>,
     pub context_id: Option<U256>,
     pub epoch_id: Option<U256>,
+    pub source: RequestSource,
 }
 
 impl InsertRequestOptions {
@@ -724,6 +732,11 @@ impl InsertRequestOptions {
 
     pub fn with_tx_hash(mut self, tx_hash: FixedBytes<32>) -> Self {
         self.tx_hash = Some(tx_hash);
+        self
+    }
+
+    pub fn with_source(mut self, source: RequestSource) -> Self {
+        self.source = source;
         self
     }
 

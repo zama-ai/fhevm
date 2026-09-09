@@ -2,7 +2,7 @@ use thiserror::Error;
 use tracing::info;
 
 use crate::store::SqlError;
-use crate::store::models::Filter;
+use crate::store::models::{Filter, FilterType};
 use crate::store::repositories::Repositories;
 
 #[derive(Error, Debug)]
@@ -37,14 +37,20 @@ impl Filters {
         from: Option<&str>,
         to: Option<&str>,
         log_address: Option<&str>,
+        filter_type: FilterType,
     ) -> Result<Option<Filter>, FilterError> {
         info!(
             chain_id = self.chain_id,
-            consumer_id, from, to, log_address, "Adding filter"
+            consumer_id,
+            from,
+            to,
+            log_address,
+            filter_type = ?filter_type,
+            "Adding filter"
         );
         self.repositories
             .filters
-            .add_filter(consumer_id, from, to, log_address)
+            .add_filter(consumer_id, from, to, log_address, filter_type)
             .await
             .map_err(|source| FilterError::DatabaseError { source })
     }
@@ -56,14 +62,20 @@ impl Filters {
         from: Option<&str>,
         to: Option<&str>,
         log_address: Option<&str>,
+        filter_type: FilterType,
     ) -> Result<Option<Filter>, FilterError> {
         info!(
             chain_id = self.chain_id,
-            consumer_id, from, to, log_address, "Removing filter"
+            consumer_id,
+            from,
+            to,
+            log_address,
+            filter_type = ?filter_type,
+            "Removing filter"
         );
         self.repositories
             .filters
-            .remove_filter(consumer_id, from, to, log_address)
+            .remove_filter(consumer_id, from, to, log_address, filter_type)
             .await
             .map_err(|source| FilterError::DatabaseError { source })
     }

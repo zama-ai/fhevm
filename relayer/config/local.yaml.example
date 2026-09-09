@@ -19,8 +19,12 @@ protocol_config:
     max_attempts: 3
     retry_interval_ms: 200
 
-# /v2/keyurl host-chain poller settings.
+# /v2/keyurl source. Required; either "chain" (poll the host chain) or "config"
+# (serve the static values below). See config/local.testnet.yaml.example for the
+# "config" form, needed against protocol deployments without
+# ProtocolConfig.getCurrentKmsContextAndEpoch.
 keyurl:
+  source: chain
   # KMSGeneration contract address on the host chain (source for /v2/keyurl).
   kms_generation_address: "0x1234567890123456789012345678901234567890"
   # /v2/keyurl poll interval in ms; the poller reads at the finalized block.
@@ -56,17 +60,21 @@ gateway:
     recycle_interval_mins: 30
     # Polling interval in milliseconds (for polling type listeners)
     poll_interval_ms: 2000
-    # TTL for event deduplication cache in seconds (1-10)
+    # Widest block span a single eth_getLogs may ask for. Chunks the catch-up after
+    # downtime so the listener never asks for a range the provider rejects.
+    max_blocks_per_query: 1000
+    # How long the event registry remembers an event, in seconds (1-10). It bounds both how
+    # long the same log seen by two listener instances counts as one event, and how long an
+    # entry survives while its handlers run; the window restarts when they finish.
     dedup_ttl_seconds: 5
-    # Maximum capacity for deduplication cache
+    # Maximum number of events the registry tracks at once.
     #
     # Sizing formula: events_per_second * num_listeners * dedup_ttl_seconds * 1.2 (safety buffer)
     #
     # Recommended values (with 3 listeners, 5s TTL, 1.2x buffer):
-    #   100 events/sec → 1,800
-    #   300 events/sec → 5,400
-    #   1000 events/sec → 18,000
-    #   5000 events/sec → 90,000
+    #   100 events/sec -> 1,800
+    #   1000 events/sec -> 18,000
+    #   5000 events/sec -> 90,000
     #
     # Current setting: 100,000 (suitable for ~5500 events/sec)
     dedup_max_capacity: 100000
@@ -113,9 +121,27 @@ gateway:
         max_attempts: 3
         retry_interval_ms: 1000
     gw_ciphertext_check:
+      # Off-chain Coprocessor attestation consensus (RFC 023). The alternative is the on-chain
+      # Gateway check, via source: gateway_chain, which takes only `retry`:
+      #   source: gateway_chain
+      #   retry:
+      #     max_attempts: 75
+      #     retry_interval_ms: 3000
+      source: coprocessor_attestations
       retry:
         max_attempts: 75
         retry_interval_ms: 3000
+      # Per-bucket S3 attestation HEAD request timeout.
+      head_timeout_ms: 5000
+      # Overall budget for one request's readiness check: all handles, all retries.
+      request_timeout_ms: 240000
+      # Coprocessor registry snapshot refresh interval.
+      registry_refresh_ms: 60000
+      # Handles probed concurrently within one attempt; also the per-bucket HEAD ceiling.
+      max_concurrent_handles: 8
+      # GatewayConfig: Coprocessor registry (signers, S3 buckets, majority
+      # threshold) for this check.
+      gateway_config_address: "0x576Ea67208b146E63C5255d0f90104E25e3e04c7"
     public_decrypt:
       max_concurrency: 250
       capacity: 11000
@@ -244,3 +270,38 @@ storage:
     # timeout checks begin, preventing false positives.
     # VALIDATION: Must be less than 10% of minimum timeout duration AND minimum expiry duration.
     cron_startup_delay_after_recovery: "30s"
+
+shutdown:
+  # Time this pod keeps serving after it stops reporting Ready, so the load balancer takes it
+  # out of rotation first. Added to every shutdown.
+  lb_propagation_wait: "5s"
+  # Bound on the last shutdown step, releasing the dispatcher lock: the unlock and the
+  # connection close share this budget.
+  lock_release_timeout: "3s"
+
+dispatcher_lock:
+  # Interval between a standby's attempts to take the lock, and so the failover delay after
+  # the holder releases or dies.
+  standby_poll_interval: "2s"
+  # Interval between the holder's checks that its lock connection is alive.
+  holder_heartbeat_interval: "5s"
+  # Bound on each query the lock runs on its own connection: try-lock, epoch mint, heartbeat,
+  # unlock.
+  query_timeout: "3s"
+  # Failed heartbeats in a row before the holder exits and a standby takes over. At a 5s
+  # heartbeat this rides out about 100s, past an RDS Multi-AZ failover. A standby's failed
+  # try-locks are counted and logged, never an exit.
+  exit_after_consecutive_failures: 20
+  # Bound on opening the lock's connection at startup.
+  connect_timeout: "5s"
+  # Postgres-side timeout that frees the lock when a holder's node dies without closing its
+  # socket. Must exceed both intervals above. Needs Postgres 14+.
+  idle_session_timeout: "60s"
+  # Overrides the schema-derived lock key. Keep null, so every pod against one database
+  # resolves the same key.
+  key_override: null
+
+  sweep:
+    # Interval between the holder's scans for requests nobody is driving, and so the delay
+    # before such a request is picked up.
+    interval: "500ms"

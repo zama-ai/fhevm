@@ -16,7 +16,7 @@ use alloy::{
 };
 use ethereum_rpc_mock::{
     fhevm::{Decryption, FhevmMockWrapper, InputVerification, UserDecryptKind},
-    test_utils::{create_test_wallet, get_free_port},
+    test_utils::create_test_wallet,
     MockConfig, MockServer,
 };
 use futures::StreamExt;
@@ -27,6 +27,8 @@ const DECRYPTION_CONTRACT: alloy::primitives::Address =
     address!("B8Ae44365c45A7C5256b14F607CaE23BC040c354");
 const INPUT_PROOF_CONTRACT: alloy::primitives::Address =
     address!("e61cff9c581c7c91aef682c2c10e8632864339ab");
+const GATEWAY_CONFIG_CONTRACT: alloy::primitives::Address =
+    address!("576Ea67208b146E63C5255d0f90104E25e3e04c7");
 const USER_ADDRESS: alloy::primitives::Address =
     address!("742d35Cc6639C3532e776b2c2B2C19b4d8ed8Faa");
 
@@ -131,23 +133,28 @@ async fn create_public_decrypt_transaction(
 
 #[tokio::test]
 async fn test_input_proof_response() {
-    let port = get_free_port().unwrap();
     let server = MockServer::new(MockConfig {
-        port,
+        port: 0,
         chain_id: 1337,
         ..MockConfig::new()
     });
     let proof_data = Bytes::from([1, 2, 3, 4]);
 
-    FhevmMockWrapper::new(server.clone(), DECRYPTION_CONTRACT, INPUT_PROOF_CONTRACT)
-        .on_input_proof_success(
-            USER_ADDRESS,
-            proof_data.clone(),
-            1,
-            ethereum_rpc_mock::SubscriptionTarget::All,
-        );
+    FhevmMockWrapper::new(
+        server.clone(),
+        DECRYPTION_CONTRACT,
+        INPUT_PROOF_CONTRACT,
+        GATEWAY_CONFIG_CONTRACT,
+    )
+    .on_input_proof_success(
+        USER_ADDRESS,
+        proof_data.clone(),
+        1,
+        ethereum_rpc_mock::SubscriptionTarget::All,
+    );
 
     let handle = server.clone().start().await.unwrap();
+    let port = handle.port();
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
     let provider = ProviderBuilder::new()
@@ -221,18 +228,23 @@ async fn test_input_proof_response() {
 
 #[tokio::test]
 async fn test_input_proof_reject() {
-    let port = get_free_port().unwrap();
     let server = MockServer::new(MockConfig {
-        port,
+        port: 0,
         chain_id: 1337,
         ..MockConfig::new()
     });
     let proof_data = Bytes::from([1, 2, 3, 4]);
 
-    FhevmMockWrapper::new(server.clone(), DECRYPTION_CONTRACT, INPUT_PROOF_CONTRACT)
-        .on_input_proof_error(USER_ADDRESS, proof_data.clone(), 1);
+    FhevmMockWrapper::new(
+        server.clone(),
+        DECRYPTION_CONTRACT,
+        INPUT_PROOF_CONTRACT,
+        GATEWAY_CONFIG_CONTRACT,
+    )
+    .on_input_proof_error(USER_ADDRESS, proof_data.clone(), 1);
 
     let handle = server.clone().start().await.unwrap();
+    let port = handle.port();
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
     let provider = ProviderBuilder::new()
@@ -278,18 +290,23 @@ async fn test_input_proof_reject() {
 
 #[tokio::test]
 async fn test_input_proof_revert() {
-    let port = get_free_port().unwrap();
     let server = MockServer::new(MockConfig {
-        port,
+        port: 0,
         chain_id: 1337,
         ..MockConfig::new()
     });
 
     let expected_error = "Invalid proof format";
-    FhevmMockWrapper::new(server.clone(), DECRYPTION_CONTRACT, INPUT_PROOF_CONTRACT)
-        .on_input_proof_revert(expected_error);
+    FhevmMockWrapper::new(
+        server.clone(),
+        DECRYPTION_CONTRACT,
+        INPUT_PROOF_CONTRACT,
+        GATEWAY_CONFIG_CONTRACT,
+    )
+    .on_input_proof_revert(expected_error);
 
     let handle = server.clone().start().await.unwrap();
+    let port = handle.port();
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
     let provider = ProviderBuilder::new()
@@ -331,19 +348,24 @@ async fn test_input_proof_revert() {
 
 #[tokio::test]
 async fn test_user_decrypt_error() {
-    let port = get_free_port().unwrap();
     let server = MockServer::new(MockConfig {
-        port,
+        port: 0,
         chain_id: 1337,
         ..MockConfig::new()
     });
 
     let handle = B256::from([0x42; 32]);
 
-    FhevmMockWrapper::new(server.clone(), DECRYPTION_CONTRACT, INPUT_PROOF_CONTRACT)
-        .on_user_decrypt_error(UserDecryptKind::Direct, vec![handle], USER_ADDRESS);
+    FhevmMockWrapper::new(
+        server.clone(),
+        DECRYPTION_CONTRACT,
+        INPUT_PROOF_CONTRACT,
+        GATEWAY_CONFIG_CONTRACT,
+    )
+    .on_user_decrypt_error(UserDecryptKind::Direct, vec![handle], USER_ADDRESS);
 
     let server_handle = server.clone().start().await.unwrap();
+    let port = server_handle.port();
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
     let provider = ProviderBuilder::new()
@@ -382,18 +404,23 @@ async fn test_user_decrypt_error() {
 
 #[tokio::test]
 async fn test_user_decrypt_revert() {
-    let port = get_free_port().unwrap();
     let server = MockServer::new(MockConfig {
-        port,
+        port: 0,
         chain_id: 1337,
         ..MockConfig::new()
     });
 
     let expected_error = "Insufficient permissions";
-    FhevmMockWrapper::new(server.clone(), DECRYPTION_CONTRACT, INPUT_PROOF_CONTRACT)
-        .on_user_decrypt_revert(UserDecryptKind::Direct, expected_error);
+    FhevmMockWrapper::new(
+        server.clone(),
+        DECRYPTION_CONTRACT,
+        INPUT_PROOF_CONTRACT,
+        GATEWAY_CONFIG_CONTRACT,
+    )
+    .on_user_decrypt_revert(UserDecryptKind::Direct, expected_error);
 
     let handle = server.clone().start().await.unwrap();
+    let port = handle.port();
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
     let provider = ProviderBuilder::new()
@@ -435,9 +462,8 @@ async fn test_user_decrypt_revert() {
 
 #[tokio::test]
 async fn test_public_decrypt_response() {
-    let port = get_free_port().unwrap();
     let server = MockServer::new(MockConfig {
-        port,
+        port: 0,
         chain_id: 1337,
         ..MockConfig::new()
     });
@@ -446,14 +472,20 @@ async fn test_public_decrypt_response() {
     let handle2 = B256::from([0x43; 32]);
     let values = vec![42u64, 100u64];
 
-    FhevmMockWrapper::new(server.clone(), DECRYPTION_CONTRACT, INPUT_PROOF_CONTRACT)
-        .on_public_decrypt_success(
-            vec![handle1, handle2],
-            values,
-            ethereum_rpc_mock::SubscriptionTarget::All,
-        );
+    FhevmMockWrapper::new(
+        server.clone(),
+        DECRYPTION_CONTRACT,
+        INPUT_PROOF_CONTRACT,
+        GATEWAY_CONFIG_CONTRACT,
+    )
+    .on_public_decrypt_success(
+        vec![handle1, handle2],
+        values,
+        ethereum_rpc_mock::SubscriptionTarget::All,
+    );
 
     let server_handle = server.clone().start().await.unwrap();
+    let port = server_handle.port();
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
     let provider = ProviderBuilder::new()
@@ -527,9 +559,8 @@ async fn test_public_decrypt_response() {
 
 #[tokio::test]
 async fn test_public_decrypt_error() {
-    let port = get_free_port().unwrap();
     let server = MockServer::new(MockConfig {
-        port,
+        port: 0,
         chain_id: 1337,
         ..MockConfig::new()
     });
@@ -537,10 +568,16 @@ async fn test_public_decrypt_error() {
     let handle1 = B256::from([0x42; 32]);
     let handle2 = B256::from([0x43; 32]);
 
-    FhevmMockWrapper::new(server.clone(), DECRYPTION_CONTRACT, INPUT_PROOF_CONTRACT)
-        .on_public_decrypt_error(vec![handle1, handle2]);
+    FhevmMockWrapper::new(
+        server.clone(),
+        DECRYPTION_CONTRACT,
+        INPUT_PROOF_CONTRACT,
+        GATEWAY_CONFIG_CONTRACT,
+    )
+    .on_public_decrypt_error(vec![handle1, handle2]);
 
     let server_handle = server.clone().start().await.unwrap();
+    let port = server_handle.port();
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
     let provider = ProviderBuilder::new()
@@ -586,18 +623,23 @@ async fn test_public_decrypt_error() {
 
 #[tokio::test]
 async fn test_public_decrypt_revert() {
-    let port = get_free_port().unwrap();
     let server = MockServer::new(MockConfig {
-        port,
+        port: 0,
         chain_id: 1337,
         ..MockConfig::new()
     });
 
     let expected_error = "Decryption not allowed";
-    FhevmMockWrapper::new(server.clone(), DECRYPTION_CONTRACT, INPUT_PROOF_CONTRACT)
-        .on_public_decrypt_revert(expected_error);
+    FhevmMockWrapper::new(
+        server.clone(),
+        DECRYPTION_CONTRACT,
+        INPUT_PROOF_CONTRACT,
+        GATEWAY_CONFIG_CONTRACT,
+    )
+    .on_public_decrypt_revert(expected_error);
 
     let handle = server.clone().start().await.unwrap();
+    let port = handle.port();
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
     let provider = ProviderBuilder::new()

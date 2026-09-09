@@ -12,6 +12,34 @@ npx hardhat node
 npx hardhat ignition deploy ./ignition/modules/Lock.ts
 ```
 
+## Switching the `@fhevm/sdk` source
+
+`test-suite/e2e` doesn't declare `@fhevm/sdk` in `package.json` — it's
+installed in place by `scripts/install-sdk.sh`, either from a local build or
+from the npm registry, without touching `package.json`/`package-lock.json`.
+
+By default (and in the Docker build), it's built and packed from your local
+`sdk/js-sdk` source:
+
+```shell
+cd test-suite/e2e
+npm run sdk:local
+```
+
+Set `SDK_BUILD_PROFILE=dev` before `npm run sdk:local` for a faster,
+unminified build while iterating. Re-run it after every change to
+`sdk/js-sdk` source — the install is a one-off pack, not a live link.
+
+To install a specific published version from the registry instead, pass it
+explicitly — there's no default to fall back to:
+
+```shell
+npm run sdk:registry -- 0.13.2
+```
+
+Both commands wrap `scripts/install-sdk.sh` (`local`/`registry` modes) — see
+its header comment for details.
+
 ## Unified user-decryption suites
 
 E2E coverage for ERC-1271 smart-account signature verification and the unified
@@ -39,6 +67,20 @@ Run via the fhevm-cli profiles `erc1271-user-decryption`,
 `unified-user-decryption`, and `decryption-signature-invalidation` (all part of
 `standard`) — see `test-suite/fhevm/README.md` — or directly with
 `npx hardhat test --grep "<describe title>" --network staging`.
+
+## Operator edge-case suite
+
+Limit-case coverage for the arithmetic, shift, rotate and cast operators:
+overshift, div/rem boundaries and the `DivisionByZero()` revert, over/underflow
+wrapping, and narrowing-cast truncation.
+
+Expected values live in `test/fhevmOperations/shiftSemantics.ts`. Shift
+semantics change in tfhe-rs >= 1.7.0, so flip `OVERSHIFT_RETURNS_ZERO` there in
+the same change as the engine version bump.
+
+```shell
+./fhevm-cli test operators --grep "edge cases" --verbose
+```
 
 ## Smoke runner (inputFlow)
 

@@ -18,7 +18,7 @@ name: preview-env-destroy
 #     the label that keeps the env alive is gone. Removing only -tests while
 #     preview-env-e2e stays does NOT tear down (the env is still wanted).
 #   - workflow_dispatch: manual teardown for envs created by a manual
-#     pr-preview-deploy run (namespace fhevm-ci-<actor>-<suffix|run_id>), which
+#     pr-preview-deploy run (namespace fhevm-ci-<actor>-<run-id digest>), which
 #     has no PR event to key off. Pass the exact namespace from the deploy run's
 #     summary.
 ##############################################################################
@@ -29,7 +29,7 @@ on:
   workflow_dispatch:
     inputs:
       namespace:
-        description: "Exact namespace to destroy (copy from the manual deploy run's summary, e.g. fhevm-ci-<actor>-<suffix|run_id>). Must start with fhevm-ci-."
+        description: "Exact namespace to destroy (copy from the manual deploy run's summary, e.g. fhevm-ci-<actor>-<run-id digest>). Must start with fhevm-ci-."
         required: true
         type: string
 
@@ -79,10 +79,10 @@ jobs:
         # target a namespace that was never created (leaking the real one). The PR
         # author is identical across all those events, so teardown always hits the
         # namespace deploy created. k8s namespaces are RFC-1123 labels, so lowercase
-        # + strip exactly like resolve-tags.cjs's sanitizeNs (uppercase logins like
-        # `Simon-Eudeline` and bot logins like `dependabot[bot]` would otherwise be
-        # invalid). The untrusted login is read via env, never interpolated inline
-        # into the script, to avoid injection.
+        # + strip exactly like resolve-tags.cjs's sanitizeNs and the author segment
+        # is truncated to the same NAMESPACE_MAX budget resolve-tags.cjs uses. The
+        # untrusted login is read via env, never interpolated inline into the
+        # script, to avoid injection.
         # workflow_dispatch: no PR to derive from - take the operator's pasted
         # namespace verbatim (the destroy step guards the fhevm-ci- prefix).
         env:
@@ -94,10 +94,16 @@ jobs:
           if [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
             ns="${DISPATCH_NAMESPACE}"
           else
-            ns=$(printf 'fhevm-ci-%s-%s' "${PR_AUTHOR}" "${PR_NUMBER}" \
+            # Same NAMESPACE_MAX as resolve-tags.cjs: the author segment is
+            # truncated (never the PR number) so the two derivations agree.
+            namespace_max=28
+            author=$(printf '%s' "${PR_AUTHOR}" \
               | tr '[:upper:]' '[:lower:]' \
               | tr -c 'a-z0-9-' '-' \
               | sed -E 's/-+/-/g; s/^-+|-+$//g')
+            budget=$((namespace_max - 9 - 1 - ${#PR_NUMBER})) # 9 for "fhevm-ci-", 1 for "-"
+            author=$(printf '%s' "${author:0:budget}" | sed -E 's/-+$//')
+            ns="fhevm-ci-${author}-${PR_NUMBER}"
           fi
           echo "NAMESPACE=${ns}" >> "$GITHUB_ENV"
 

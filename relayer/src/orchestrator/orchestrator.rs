@@ -7,8 +7,10 @@ use crate::orchestrator::TokioEventDispatcher;
 use anyhow::Error;
 use std::collections::HashMap;
 use std::future::Future;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
-use tokio_util::sync::CancellationToken;
+use std::time::Duration;
+use tokio_util::task::TaskTracker;
 use tracing::{error, instrument};
 use uuid::Uuid;
 
@@ -16,15 +18,34 @@ pub struct Orchestrator {
     event_dispatcher: Arc<TokioEventDispatcher>,
     health_checker: Arc<RwLock<HealthChecker>>,
     task_manager: TaskManager,
+    /// Per-event dispatch, its follow-up, readiness checks and transaction sends. Unbounded
+    /// in number and resumable from Postgres and the chain cursor, so shutdown abandons it.
+    detached_tasks: TaskTracker,
+    /// Sticky: shutdown must stop the pod looking healthy while its dependencies still pass.
+    shutting_down: AtomicBool,
 }
 
 impl Orchestrator {
-    pub fn new(event_dispatcher: Arc<TokioEventDispatcher>) -> Arc<Self> {
+    pub fn new(
+        event_dispatcher: Arc<TokioEventDispatcher>,
+        detached_tasks: TaskTracker,
+    ) -> Arc<Self> {
         Arc::new(Self {
             event_dispatcher,
             health_checker: Arc::new(RwLock::new(HealthChecker::new())),
             task_manager: TaskManager::new(),
+            detached_tasks,
+            shutting_down: AtomicBool::new(false),
         })
+    }
+
+    /// First step of shutdown, taken while the HTTP server keeps serving.
+    pub fn mark_not_ready(&self) {
+        self.shutting_down.store(true, Ordering::Release);
+    }
+
+    pub fn is_shutting_down(&self) -> bool {
+        self.shutting_down.load(Ordering::Acquire)
     }
 
     pub fn new_internal_request_id(&self) -> Uuid {
@@ -77,17 +98,45 @@ impl Orchestrator {
             .await
     }
 
-    /// Wait for shutdown signal and gracefully shutdown all tasks
-    pub async fn run_until_shutdown(
-        &self,
-        shutdown_token: CancellationToken,
-    ) -> anyhow::Result<()> {
-        self.task_manager.run_until_shutdown(shutdown_token).await
+    // The three below are called in this order, once each; `startup` is the only caller.
+
+    pub async fn begin_task_drain(&self) {
+        self.task_manager.begin_shutdown().await;
+    }
+
+    /// Whatever drives the named tasks must already be cancelled.
+    pub async fn drain_named_tasks(&self, budget: Duration) {
+        self.task_manager.drain_tasks(budget).await;
+    }
+
+    pub async fn finish_task_drain(&self) {
+        self.task_manager.finish_drain().await;
+    }
+
+    /// Reported, never drained.
+    pub fn abandoned_detached_tasks(&self) -> usize {
+        self.detached_tasks.len()
     }
 
     #[instrument(skip_all, fields(event_type=%(event.event_name()), job_id=?event.job_id()))]
     pub async fn dispatch_event(&self, event: RelayerEvent) -> Result<(), Error> {
         self.event_dispatcher.dispatch_event(event).await
+    }
+
+    /// Dispatch and wait for every subscribed handler to finish (see
+    /// `TokioEventDispatcher::dispatch_event_and_wait`).
+    pub async fn dispatch_event_and_wait(&self, event: RelayerEvent) -> Result<(), Error> {
+        self.event_dispatcher.dispatch_event_and_wait(event).await
+    }
+
+    /// Spawn a detached task into the same tracker a dispatch handler goes into, for work that
+    /// must outlive the call that started it - `handled_events`' dispatch-then-complete
+    /// follow-up being the case this exists for.
+    pub fn spawn_detached<F>(&self, future: F)
+    where
+        F: Future<Output = ()> + Send + 'static,
+    {
+        self.detached_tasks.spawn(future);
     }
 
     pub fn register_handler(&self, event_ids: &[u8], handler: Arc<dyn EventHandler<RelayerEvent>>) {
@@ -117,8 +166,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_orchestrator() {
-        let pubsub = Arc::new(TokioEventDispatcher::new());
-        let orchestrator = Orchestrator::new(pubsub.clone());
+        let detached_tasks = tokio_util::task::TaskTracker::new();
+        let pubsub = Arc::new(TokioEventDispatcher::new(detached_tasks.clone()));
+        let orchestrator = Orchestrator::new(pubsub.clone(), detached_tasks);
 
         let _id = orchestrator.new_internal_request_id();
 

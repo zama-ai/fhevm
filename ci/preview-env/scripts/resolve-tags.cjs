@@ -2,8 +2,8 @@
 // namespace, and write the deployment-plan job summary. Invoked from the
 // resolve-tags github-script step:
 //   await require('./ci/preview-env/scripts/resolve-tags.cjs')({ core, context, github })
-// Env: NEEDS, EVENT_NAME, INPUTS, ACTOR, MAX_IMAGE_COMMIT_COUNT, GHCR_USER,
-// GHCR_READ_TOKEN.
+// Env: NEEDS, EVENT_NAME, INPUTS (parsed overrides_json from check-labels),
+// ACTOR, MAX_IMAGE_COMMIT_COUNT, GHCR_USER, GHCR_READ_TOKEN.
 //
 // Per image: built this run -> this run's short SHA; else a non-empty
 // <component>_version dispatch input; else the short SHA of the newest ancestor
@@ -136,10 +136,24 @@ module.exports = async ({ core, context, github }) => {
   // PR head SHA on pull_request; picked branch tip on dispatch.
   const shortSha = isDispatch ? short(context.sha) : short(context.payload.pull_request.head.sha);
 
-  // Empty dispatch input = "resolve it"; pull_request runs never override.
-  const override = (name) => (isDispatch ? String(inputs[name] ?? '').trim() : '');
+  // Non-empty <component>_version from check-labels overrides_json. Empty on
+  // pull_request (parse-overrides never fills image pins on PR). Empty on
+  // dispatch means "resolve from the base commit".
+  const override = (name) => String(inputs[name] ?? '').trim();
 
   const registry = registryClient({ core, user: process.env.GHCR_USER, token: process.env.GHCR_READ_TOKEN });
+
+  // GCS workers compiled with BUILD_STACK_VERSION publish as <sha>-gcs<ver>
+  // (see coprocessor-docker-build.yml image_tag). db-migration stays on <sha>.
+  const gcsImageTag = String(needs['build-coprocessor']?.outputs?.image_tag || '').trim();
+  const gcsBuiltKeys = new Set([
+    'coprocessor_gw_listener',
+    'coprocessor_host_listener',
+    'coprocessor_sns_worker',
+    'coprocessor_tfhe_worker',
+    'coprocessor_tx_sender',
+    'coprocessor_zkproof_worker',
+  ]);
 
   // 'success' -> freshly built+pushed; ''/undefined/'skipped' -> not built this
   // run. Anything else is FATAL: a failed build must not fall back to an older
@@ -182,7 +196,8 @@ module.exports = async ({ core, context, github }) => {
   for (const image of IMAGES) {
     const value = override(`${image.component}_version`);
     if (wasBuilt(image)) {
-      decisions.set(image.key, { tag: shortSha, source: 'built', detail: `built this run (${shortSha})` });
+      const tag = gcsImageTag && gcsBuiltKeys.has(image.key) ? gcsImageTag : shortSha;
+      decisions.set(image.key, { tag, source: 'built', detail: `built this run (${tag})` });
     } else if (value) {
       decisions.set(image.key, { tag: value, source: 'dispatch-override', detail: 'explicit dispatch input' });
     }
@@ -249,24 +264,29 @@ module.exports = async ({ core, context, github }) => {
       .replace(/[^a-z0-9-]/g, '-')
       .replace(/-+/g, '-')
       .replace(/^-+|-+$/g, '');
-  const namespace = isDispatch
-    ? sanitizeNs(`fhevm-ci-${process.env.ACTOR}-${inputs.namespace_suffix || context.runId}`)
-    : sanitizeNs(`fhevm-ci-${context.payload.pull_request.user.login}-${context.payload.pull_request.number}`);
 
-  // AWS limits namespace length to 63 chars. If longer, the enclave nodegroup
-  // silently times out after 20 minutes, so fail fast here with margin.
-  // Format: kms-party-<namespace> + two 6-char Crossplane suffixes
-  const NAMESPACE_MAX = 40;
-  if (namespace.length > NAMESPACE_MAX) {
-    throw new Error(
-      `namespace '${namespace}' is ${namespace.length} chars, max is ${NAMESPACE_MAX}: the derived EKS ` +
-        `nodegroup name (kms-party-<namespace> plus two Crossplane suffixes) would exceed AWS's 63-char ` +
-        `limit and the KMS deploy would time out with no readable error. ` +
-        (isDispatch
-          ? `Pass a shorter namespace_suffix.`
-          : `The PR author's login is too long; deploy via workflow_dispatch with a short namespace_suffix instead.`),
-    );
-  }
+  // AWS limits namespace length. If too long, the enclave nodegroup
+  // silently times out after 20 minutes, so fail fast here
+  const NAMESPACE_MAX = 28;
+
+  // fhevm-ci-<actor>-<suffix>, truncating the ACTOR segment (never the suffix,
+  // which carries the uniqueness) so the result always fits NAMESPACE_MAX.
+  const deriveNamespace = (actor, suffix) => {
+    const suffixNs = sanitizeNs(suffix);
+    const budget = NAMESPACE_MAX - 'fhevm-ci-'.length - 1 - suffixNs.length;
+    const actorNs = sanitizeNs(actor);
+    const actorFit = actorNs.slice(0, Math.max(budget, 1)).replace(/-+$/, '');
+    if (actorFit !== actorNs) {
+      core.warning(`actor '${actorNs}' truncated to '${actorFit}' to keep the namespace under ${NAMESPACE_MAX} chars`);
+    }
+    return `fhevm-ci-${actorFit}-${suffixNs}`;
+  };
+
+  // Dispatch suffix: this run's id in base36 (~7 chars) - unique per run,
+  // deterministic, and short enough to leave the actor a usable budget.
+  const namespace = isDispatch
+    ? deriveNamespace(process.env.ACTOR, Number(context.runId).toString(36))
+    : deriveNamespace(context.payload.pull_request.user.login, context.payload.pull_request.number);
 
   // Summary first, so a failed resolution still shows exactly what it resolved
   // and what it couldn't.
@@ -277,8 +297,9 @@ module.exports = async ({ core, context, github }) => {
         : `fhevm e2e preview - deployment plan (PR #${context.payload.pull_request.number}, ${shortSha})`,
     )
     .addRaw(
-      `Base commit: ${baseWhy} \`${short(baseSha)}\`. Images built this run are tagged \`${shortSha}\`; ` +
-        `the rest resolve from the base commit (table below). Helm charts install from this run's ` +
+      `Base commit: ${baseWhy} \`${short(baseSha)}\`. Images built this run are tagged \`${shortSha}\`` +
+        (gcsImageTag ? `; GCS coprocessor workers use \`${gcsImageTag}\`` : '') +
+        `; the rest resolve from the base commit (table below). Helm charts install from this run's ` +
         `checkout unless overridden (see preview-env-deploy.yml).\n\n`,
     )
     .addHeading('Images', 3)
@@ -298,7 +319,7 @@ module.exports = async ({ core, context, github }) => {
         unresolved.map((i) => `  - ${i.label} (${decisions.get(i.key).detail})`).join('\n') +
         `\nThere are deliberately no fallback pins. Fix the dispatch override tag if one is listed ` +
         `above; otherwise the registry likely pruned these tags - raise MAX_IMAGE_COMMIT_COUNT, ` +
-        `rebase onto a newer base commit, or pass an explicit version via workflow_dispatch.`,
+        `rebase onto a newer base commit, or pass an explicit version in the overrides input.`,
     );
   }
 

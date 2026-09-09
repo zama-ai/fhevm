@@ -6,11 +6,13 @@ mod errors;
 mod event_helpers;
 mod health_check;
 mod inputs;
+mod materialization;
 mod migrations;
 mod operators_from_events;
 mod random;
 mod revert_coprocessor_db_state;
 mod scheduling_bench;
+mod shared_db;
 mod test_cases;
 mod utils;
 

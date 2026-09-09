@@ -48,6 +48,8 @@ ci/preview-env/
 │   └── values-gateway-add-host-chains-polygon-e2e.yaml # contracts overlay, register Polygon (80002) (deploy_polygon)
 ├── coprocessor/
 │   ├── values-coprocessor-e2e.yaml        # coprocessor overlay (one release per party: coprocessor-<i>)
+│   ├── values-coprocessor-bcs-e2e.yaml    # RFC-021 BCS overlay (pinned 0.14.0, extraSelectorLabels)
+│   ├── values-coprocessor-gcs-e2e.yaml    # RFC-021 GCS overlay (0.15.0 + upgrade-controller / consensus-detector)
 │   ├── values-coprocessor-polygon-e2e.yaml # additive multichain overlay: adds the Polygon chains[] consumer (deploy_polygon)
 │   ├── values-coprocessor-poller-e2e.yaml # coprocessor overlay, poller-only release: S3 key/CRS download -> keys/crs tables (coprocessor-poller-<i>)
 │   ├── values-coprocessor-poller-polygon-e2e.yaml # additive multichain overlay: adds the Polygon poller (deploy_polygon)
@@ -60,13 +62,19 @@ ci/preview-env/
 │   ├── values-kms-connector-e2e.yaml       # kms-connector overlay
 │   ├── values-kms-connector-polygon-e2e.yaml # additive overlay: adds the Polygon host chain to hostChains (deploy_polygon)
 │   └── values-postgres-connector-e2e.yaml  # `common` chart overlay: in-cluster Postgres, dedicated to kms-connector
+├── observability/
+│   ├── values-prometheus-e2e.yaml # `common` chart overlay (raw objects): in-namespace Prometheus, endpoints-SD scraping
+│   ├── values-jaeger-e2e.yaml     # `common` chart overlay: Jaeger all-in-one, OTLP trace collector
+│   └── values-grafana-e2e.yaml    # `common` chart overlay: Grafana UI over both
 ├── relayer/
 │   ├── values-relayer-e2e.yaml          # `common` chart overlay, relayer server
 │   ├── values-relayer-migrate-e2e.yaml  # `common` chart overlay, relayer DB migration Job
 │   └── values-postgres-relayer-e2e.yaml # `common` chart overlay: in-cluster Postgres, dedicated to relayer + relayer-migrate
-└── test-suite/
-    ├── values-test-suite-e2e.yaml       # `common` chart overlay, e2e test-suite Job
-    └── values-test-suite-workflow-polygon-e2e.yaml # Argo Workflow overlay, Polygon e2e run (deploy_polygon + automated_tests)
+├── test-suite/
+│   ├── values-test-suite-e2e.yaml       # `common` chart overlay, e2e test-suite Job
+│   └── values-test-suite-workflow-polygon-e2e.yaml # Argo Workflow overlay, Polygon e2e run (deploy_polygon + automated_tests)
+├── preview-env                          # gh CLI: launch / watch / destroy (does not helm-install)
+└── scripts/                             # deploy-time helpers called from preview-env-deploy.yml
 ```
 
 Every file here is a **values overlay for a chart**. `anvil-node`/`contracts`/`coprocessor`/
@@ -87,6 +95,30 @@ bitnamilegacy` archive, breaking fresh installs of that chart (see values-postgr
 e2e.yaml's header for the full story). This also sidesteps Crossplane/RDS entirely for these
 three throwaway databases. `kms-core` (KMS itself) is never deployed from this repo at all — the
 CI path reuses `zama-ai/kms`'s own deploy pipeline as-is (see `preview-env-deploy.yml`).
+
+### Dedicated KMS version pins
+
+Preview-env **never builds** kms-core. It sparse-checkouts `zama-ai/kms` at
+`kms_repo_ref`, pulls `core-service-enclave:<kms_core_version>` for PCR
+attestation, and runs kms's `deploy.sh --tag … --num-parties "${NB_KMS_CORE}"`.
+
+| Input | Override key | Meaning |
+| --- | --- | --- |
+| Party count | `nb_kms_core` (`4` \| `13`) | Topology only — not in `overrides`. |
+| Enclave image | `kms_core_version` | GHCR tag → `KMS_CORE_TAG`. |
+| Deploy scripts + chart | `kms_repo_ref` | Git SHA/ref on `zama-ai/kms`. |
+
+Defaults live in [`scripts/parse-overrides.cjs`](./scripts/parse-overrides.cjs)
+(`kms_core_version`, `kms_repo_ref`). **PR labels always use those defaults.**
+Override only via dispatch `overrides` / CLI `--set`, or by bumping
+`ALWAYS_DEFAULTS` for everyone. Keep the two keys aligned to the same kms
+release.
+
+**kms-connector** (`kms_connector_version`, `kms_connector_chart_version`) is
+fhevm-owned and follows the normal image/chart resolve rules — separate from
+kms-core.
+
+Usage: [`101-preview-env.md`](./101-preview-env.md#option-b--manual-run-workflow_dispatch).
 
 Note this path's own images (contracts/kms-connector/relayer/test-suite) are addressed via
 `hub.zama.org/ghcr/zama-ai/fhevm/...` (the Harbor pull-through-cache mirror of `ghcr.io`), not
@@ -114,7 +146,8 @@ export const activeNetworkName = () => network.name;
 export const isLiveNetwork = () => LIVE_NETWORKS.has(activeNetworkName());
 ```
 
-This preview runs the host chain as **`staging`** (chainId `12345`), which is **not**
+This preview's **default** (PR labels + dispatch without `use_blockchain_dev`)
+runs the host chain as **`staging`** (chainId `12345` Anvil), which is **not**
 in that set, so `isLiveNetwork()` is `false` and the suite takes its **local /
 deterministic** path. That matters because the check is on the *name only*, not on
 what the underlying node can actually do — our host chain is anvil (fully
@@ -147,6 +180,60 @@ Caveats if you ever do want the live path against anvil:
   against the node's `eth_chainId`. So it is not a rename: the host anvil would have
   to run with `--chain-id 1337`, which cascades into re-wiring the host chain id
   (`12345` → `1337`) across the coprocessor / gateway / host values.
+
+## Observability (opt-in: `observability` dispatch input)
+
+`preview-env-deploy.yml` takes an `observability` input (default `false`,
+dispatch-only for now) that deploys a self-contained, namespaced observability
+stack alongside the env — three more `common`-chart releases (`prometheus`,
+`jaeger`, `grafana`, all official public images), torn down with the namespace
+like everything else:
+
+- **Prometheus** scrapes every Service in the namespace exposing a named
+  `metrics` or `monitoring` port via Kubernetes endpoints service discovery.
+  No static target list, no ServiceMonitors (no dependency on cluster-wide
+  prometheus-operator CRDs), and the per-party fan-out
+  (`nb_coprocessor`/`nb_kms_core`) is followed automatically. Metric history
+  sits on a 10Gi PVC (7d retention) so a pod reschedule mid-bench doesn't wipe
+  it. Its manifests ship as raw `additionalResources` objects (the
+  endpoints-SD ServiceAccount/Role/RoleBinding wiring needs that — see
+  `observability/values-prometheus-e2e.yaml`'s header).
+- **Jaeger all-in-one** (v2, in-memory) is the OTLP collector.
+- **Grafana** (anonymous admin — throwaway namespace, Tailscale-only) is the
+  UI over both, with Prometheus + Jaeger datasources provisioned. No
+  dashboards are provisioned yet; UI-created ones die with the pod, so export
+  what you want to keep.
+
+Access is `kubectl port-forward` from the dev laptop (Tailscale up, namespace
+admin via `coprocessor-dev-access`/`kms-dev-access`) — see
+[`101-preview-env.md`](./101-preview-env.md#observe-your-environment).
+
+## `use_blockchain_dev`: shared Geth + Nitro
+
+`preview-env-deploy.yml` accepts `use_blockchain_dev=true` on **workflow_dispatch**,
+and the `preview-env-blue-green` PR label forces the same path (plain e2e labels
+stay on Anvil). That skips `anvil-host` / `anvil-gateway` and points the stack at
+the shared `blockchain-dev` namespace:
+
+| Chain | Node | In-cluster RPC | Chain ID |
+|-------|------|----------------|----------|
+| Host | Geth `--dev` | `http://ethereum-rpc-node.blockchain-dev:8545` (WS on the same port) | 1337 |
+| Gateway | Nitro `dev` | HTTP `:8547`, WS `:8548` | 412346 |
+
+The preview still deploys **its own** host + gateway contracts. Wallets are **not**
+the Anvil junk mnemonic: a unique mnemonic is generated, the same HD index map
+(`#0` gateway deployer, `#3` relayer, `#9` host/ACL owner, `#10+` KMS/coprocessor
+tx-senders) is derived, and every address is funded from the in-cluster PoW
+faucets (`host-faucet-…` / `gateway-faucet-…`). The mnemonic is stored as secret
+`preview-wallets-mnemonic` in the preview namespace.
+
+Because Geth has no `evm_*` cheats and `--slots-in-an-epoch`, automated tests use
+Hardhat network **`zwsDev`** (live path: HCU deterministic blocks skip). The
+coprocessor poller seeds at the **current host head**, not block 0 — the Geth
+dev chain already has millions of blocks (kms-enclave-dev history).
+
+Incompatible with `deploy_polygon` (no Amoy node in `blockchain-dev`). Destroying
+the Kubernetes namespace does not delete the on-chain contracts.
 
 ## Multi-coprocessor (`nb_coprocessor`) and shared Redis
 
@@ -212,7 +299,27 @@ self-contained `hostListener`. Per party `i`:
 
 > Resource caveat: each coprocessor party's `tfhe`/`sns` workers request substantial
 > CPU/memory on the `coprocessor` nodepool, so `nb_coprocessor` > 1 multiplies the
-> cluster capacity needed. Default stays `1`.
+> cluster capacity needed. Default stays `1`. Blue-green doubles the worker fleets
+> again (BCS + GCS per party).
+
+## N-party consensus vs RFC-021 blue-green
+
+These are different models. `nb_coprocessor > 1` is N-party unless you opt into blue-green.
+
+| Model | Meaning | How to enable |
+| --- | --- | --- |
+| **N-party consensus** | N on-chain identities (wallet, S3, Postgres). Gateway `NUM_COPROCESSORS=N`. | `nb_coprocessor` in `{1,2,3,5}` |
+| **Blue-green (RFC-021)** | **Two fleets of the same identity**: BCS (live `v0.14.0-7`) + GCS (HEAD compiled as `0.15.0`), shared DB/S3/wallet. Cutover is `ProtocolConfig.proposeCoprocessorUpgrade` then off-chain unanimity of all N operators. | PR label `preview-env-blue-green` (deploys, forces N=2) or dispatch `enable_blue_green=true` |
+
+Blue-green does **not** register 2N gateway slots. Per party the preview keeps one listener, one Redis, one poller; BCS and GCS `hostListenerConsumer`s share that broker. GCS also runs `upgrade-controller` and `consensus-detector`. Incompatible with `deploy_polygon` and with `nb_coprocessor=1`.
+
+With `automated_tests` (or the `preview-env-e2e-tests` label) the cutover is
+driven by in-window e2e traffic: propose **after** the relayer is ready, hold
+`consensus-detector` at 0 so unanimity cannot fire mid-suite, run the e2e DAG
+while GCS is in `DryRunStarted` (CI asserts `"gcs-<version>".computations > 0`
+on every party), scale the detector back up, wait for
+`versioning=v0.15`, then run the same DAG again on green. A deploy without
+auto-tests still proposes and waits for `DryRunStarted` only.
 
 ## Multichain: second Polygon host chain (`deploy_polygon`)
 
@@ -264,8 +371,10 @@ deployed. Every Polygon step in the workflow is gated on `deploy_polygon == 'tru
   rather than scaling only the workers behind shared listeners. Revisit against how
   devnet/testnet actually scale this (shared vs per-party listeners) if that topology is
   preferred.
-- Add support for changing the dedicated KMS's instance type (currently whatever
-  `zama-ai/kms`'s own `ci/scripts/deploy.sh` defaults to).
+- ~~Add support for changing the dedicated KMS's instance type~~ — version/repo
+  override via `kms_core_version` + `kms_repo_ref` in `overrides` (see
+  "Dedicated KMS version pins" above). Enclave **instance type** is still
+  whatever kms `deploy.sh` picks for `aws-ci`.
 - Add support for changing the coprocessor's tfhe-worker instance type (e.g. GPU vs CPU nodepool
   selection).
 - ~~Add multichain support~~ — done, see "Multichain: second Polygon host chain

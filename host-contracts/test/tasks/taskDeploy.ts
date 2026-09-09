@@ -154,7 +154,7 @@ describe('task:assertNoPendingKeyManagementRequest', function () {
   });
 
   it('rejects when keygen is pending', async function () {
-    await kmsGeneration.keygen(0);
+    await kmsGeneration.keygen(0, 0);
 
     await expect(run('task:assertNoPendingKeyManagementRequest', { address: kmsGenerationAddress })).to.be.rejectedWith(
       `Keygen pending on ${kmsGenerationAddress}: keyCounter=${KEY_COUNTER_BASE + 1n} has not completed (isRequestDone=false). Complete or abort before proposing a new key management request.`,
@@ -170,7 +170,7 @@ describe('task:assertNoPendingKeyManagementRequest', function () {
   });
 
   it('passes again after aborting the pending key request', async function () {
-    await kmsGeneration.keygen(0);
+    await kmsGeneration.keygen(0, 0);
     await kmsGeneration.abortKeygen(PREP_KEYGEN_COUNTER_BASE + 1n);
 
     await run('task:assertNoPendingKeyManagementRequest', { address: kmsGenerationAddress });

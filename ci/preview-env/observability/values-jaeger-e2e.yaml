@@ -1,0 +1,54 @@
+# In-namespace Jaeger all-in-one (v2, in-memory storage) for the fhevm e2e
+# preview namespace (opt-in via the `observability` dispatch input, see
+# preview-env-deploy.yml). It is the OTLP trace collector.
+#
+# In-memory storage: traces vanish on pod restart and compete with the memory
+# limit below. Fine for a throwaway preview; bump the limit if a long stress
+# session evicts traces too aggressively.
+fullnameOverride: jaeger
+
+deployment:
+  enabled: true
+
+image:
+  # Same image + version as test-suite/fhevm/docker-compose/tracing-docker-compose.yml.
+  repository: cr.jaegertracing.io/jaegertracing/jaeger
+  tag: "2.8.0"
+  pullPolicy: IfNotPresent
+
+service:
+  enabled: true
+  # Port names deliberately NOT metrics/monitoring, so prometheus's endpoints
+  # SD (values-prometheus-e2e.yaml) doesn't try to scrape them.
+  ports:
+    - {name: otlp-grpc, port: 4317}
+    - {name: otlp-http, port: 4318}
+    - {name: ui, port: 16686}
+
+# The query UI answers on / once the collector pipeline is up.
+readinessProbe:
+  httpGet: {path: /, port: 16686}
+  initialDelaySeconds: 5
+  periodSeconds: 5
+livenessProbe:
+  httpGet: {path: /, port: 16686}
+  initialDelaySeconds: 10
+  periodSeconds: 10
+
+resources:
+  requests:
+    cpu: "250m"
+    memory: "512Mi"
+  limits:
+    cpu: "1"
+    memory: "2Gi"
+
+# Pins onto the zws-pool Karpenter node pool - see
+# ../coprocessor-infra/values-postgres-coprocessor-e2e.yaml's matching note.
+nodeSelector:
+  karpenter.sh/nodepool: zws-pool
+tolerations:
+  - key: "karpenter.sh/nodepool"
+    operator: "Equal"
+    value: "zws-pool"
+    effect: "NoSchedule"

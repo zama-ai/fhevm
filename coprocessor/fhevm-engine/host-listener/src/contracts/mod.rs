@@ -1,52 +1,25 @@
-use alloy::sol;
+//! Host-contract ABIs used by the listener.
+//!
+//! These names (`AclContract`, `TfheContract`, `BridgeContract`) are the
+//! historical aliases from `sol!(AclContract, "ACL.json")`. The ABI now
+//! comes from `fhevm_host_bindings`; this module only preserves the old
+//! paths so call sites do not rename `AclContractEvents` → `ACLEvents`.
+#![allow(non_snake_case)]
 
-// contracts are compiled in build.rs/build_contract() using hardhat
-// json are generated in build.rs/build_contract() using hardhat
-sol!(
-    #[sol(rpc)]
-    #[derive(Debug, serde::Serialize, serde::Deserialize)]
-    AclContract,
-    "./../../../host-contracts/artifacts/contracts/ACL.sol/ACL.json"
-);
+pub use fhevm_host_bindings::kms_generation::KMSGeneration;
+pub use fhevm_host_bindings::protocol_config::ProtocolConfig;
 
-sol!(
-    #[sol(rpc)]
-    #[derive(Debug, serde::Serialize, serde::Deserialize)]
-    TfheContract,
-    "./../../../host-contracts/artifacts/contracts/FHEVMExecutor.sol/FHEVMExecutor.json"
-);
-
-// Each ABI re-declares `IKMSGeneration`; scope them into submodules to avoid
-// the name colliding in this module.
-pub mod kms_generation {
-    use alloy::sol;
-    sol!(
-        #[sol(rpc)]
-        #[derive(Debug, serde::Serialize, serde::Deserialize)]
-        KMSGeneration,
-        "./../../../host-contracts/artifacts/contracts/KMSGeneration.sol/KMSGeneration.json"
-    );
+pub mod AclContract {
+    pub use fhevm_host_bindings::acl::ACL::ACLEvents as AclContractEvents;
+    pub use fhevm_host_bindings::acl::ACL::*;
 }
-pub use kms_generation::KMSGeneration;
 
-pub mod protocol_config {
-    use alloy::sol;
-    sol!(
-        #[sol(rpc)]
-        #[derive(Debug, serde::Serialize, serde::Deserialize)]
-        ProtocolConfig,
-        "./../../../host-contracts/artifacts/contracts/ProtocolConfig.sol/ProtocolConfig.json"
-    );
+pub mod TfheContract {
+    pub use fhevm_host_bindings::fhevm_executor::FHEVMExecutor::FHEVMExecutorEvents as TfheContractEvents;
+    pub use fhevm_host_bindings::fhevm_executor::FHEVMExecutor::*;
 }
-pub use protocol_config::ProtocolConfig;
 
-pub mod bridge_contract {
-    use alloy::sol;
-    sol!(
-        #[sol(rpc)]
-        #[derive(Debug, serde::Serialize, serde::Deserialize)]
-        BridgeContract,
-        "./../../../host-contracts/artifacts/contracts/bridge/BridgeEvents.sol/BridgeEvents.json"
-    );
+pub mod BridgeContract {
+    pub use fhevm_host_bindings::bridge_events::BridgeEvents::BridgeEventsEvents as BridgeContractEvents;
+    pub use fhevm_host_bindings::bridge_events::BridgeEvents::*;
 }
-pub use bridge_contract::BridgeContract;
