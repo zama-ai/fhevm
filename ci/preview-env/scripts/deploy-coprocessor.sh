@@ -2,7 +2,7 @@
 # Install BCS (and optional GCS) coprocessor releases.
 # Env: NAMESPACE, NB_COPROCESSOR, BLUE_GREEN, DEPLOY_POLYGON, OBSERVABILITY,
 # AUTOMATED_TESTS, COPROCESSOR_CHART, TAGS_JSON, BCS_IMAGE_TAG, OTLP_ENDPOINT,
-# COPROC_WALLETS_JSON.
+# COPROC_WALLETS_JSON, GCS_STACK_VERSION (pod label for the GCS fleet; optional).
 set -euo pipefail
 
 polygon_args=()
@@ -47,6 +47,9 @@ party_common() {
 image_tags() {
   local tag="$1"
   bcs_images=(
+    # The pinned release creates the database, so the seeded versions are the
+    # ones its binaries run. The GCS release migrates on top of it.
+    --set-string "dbMigration.image.tag=${tag}"
     --set-string "gwListener.image.tag=${tag}"
     --set-string "hostListenerShared.image.tag=${tag}"
     --set-string "hostListenerPollerShared.image.tag=${tag}"
@@ -69,6 +72,7 @@ for i in $(seq 1 "${NB_COPROCESSOR}"); do
     image_tags "${BCS_IMAGE_TAG}"
   else
     bcs_images=(
+      --set-string "dbMigration.image.tag=$(jq -r .coprocessor_db_migration <<<"${TAGS_JSON}")"
       --set-string "gwListener.image.tag=$(jq -r .coprocessor_gw_listener <<<"${TAGS_JSON}")"
       --set-string "hostListenerShared.image.tag=$(jq -r .coprocessor_host_listener <<<"${TAGS_JSON}")"
       --set-string "hostListenerPollerShared.image.tag=$(jq -r .coprocessor_host_listener <<<"${TAGS_JSON}")"
@@ -91,7 +95,6 @@ for i in $(seq 1 "${NB_COPROCESSOR}"); do
     "${bcs_overlay[@]}" \
     "${fleet_json[@]}" \
     --set-string "fullnameOverride=coprocessor-${i}" \
-    --set-string "dbMigration.image.tag=$(jq -r .coprocessor_db_migration <<<"${TAGS_JSON}")" \
     "${common_args[@]}" \
     "${bcs_images[@]}"
 done
@@ -116,6 +119,12 @@ if [[ "${BLUE_GREEN}" == "true" ]]; then
     privkey=$(jq -r --argjson party "${i}" '.[] | select(.party == $party) | .privateKey' <<<"${COPROC_WALLETS_JSON}")
     party_common "${i}" "${privkey}" "-gcs"
     gcs_images=(
+      # HEAD migrator on the database the BCS release created. Runs as a Helm
+      # hook so it finishes before the fleet starts: a service that reads
+      # versioning before the consensus column exists treats it as unseeded
+      # and would come up blue.
+      --set-string "dbMigration.image.tag=$(jq -r .coprocessor_db_migration <<<"${TAGS_JSON}")"
+      --set-json 'dbMigration.annotations={"helm.sh/hook":"pre-install,pre-upgrade","helm.sh/hook-delete-policy":"before-hook-creation"}'
       --set-string "gwListener.image.tag=$(jq -r .coprocessor_gw_listener <<<"${TAGS_JSON}")"
       --set-string "hostListenerShared.image.tag=$(jq -r .coprocessor_host_listener <<<"${TAGS_JSON}")"
       --set-string "hostListenerPollerShared.image.tag=$(jq -r .coprocessor_host_listener <<<"${TAGS_JSON}")"
@@ -128,6 +137,12 @@ if [[ "${BLUE_GREEN}" == "true" ]]; then
       --set-string "upgradeController.image.tag=$(jq -r .coprocessor_tfhe_worker <<<"${TAGS_JSON}")"
       --set-string "consensusDetector.image.tag=$(jq -r .coprocessor_tfhe_worker <<<"${TAGS_JSON}")"
     )
+    # The label follows the compiled release when the workflow passes it; the
+    # overlay's value is the fallback for a manual run.
+    gcs_version_args=()
+    if [[ -n "${GCS_STACK_VERSION:-}" ]]; then
+      gcs_version_args=(--set-string "commonConfig.stackVersion=${GCS_STACK_VERSION}")
+    fi
     helm upgrade --install "coprocessor-${i}-gcs" "${COPROCESSOR_CHART}" \
       -n "${NAMESPACE}" -f ci/preview-env/coprocessor/values-coprocessor-e2e.yaml \
       -f ci/preview-env/coprocessor/values-coprocessor-gcs-e2e.yaml \
@@ -137,7 +152,8 @@ if [[ "${BLUE_GREEN}" == "true" ]]; then
       --set-string "consensusDetector.serviceAccountName=coprocessor-${i}" \
       --set "snsWorker.config.s3BucketName.valueFrom.configMapKeyRef.name=coprocessor-${i}" \
       "${common_args[@]}" \
-      "${gcs_images[@]}"
+      "${gcs_images[@]}" \
+      ${gcs_version_args[@]+"${gcs_version_args[@]}"}
   done
   if [[ "${AUTOMATED_TESTS}" == "true" ]]; then
     for i in $(seq 1 "${NB_COPROCESSOR}"); do
