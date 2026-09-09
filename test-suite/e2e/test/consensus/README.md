@@ -34,8 +34,16 @@ GATEWAY_RPC_URL=... \
 GATEWAY_CONFIG_ADDRESS=... \
 CIPHERTEXT_COMMITS_ADDRESS=... \
 DATABASE_URL_0=... DATABASE_URL_1=... DATABASE_URL_2=... \
-npx hardhat test test/consensus/materializationConsensus.ts --network localCoprocessor
+RPC_URL=... \
+npx hardhat test test/consensus/materializationConsensus.ts --network staging
 ```
+
+`--network staging` is not incidental: it reads `RPC_URL`, whereas
+`localCoprocessor` is hardcoded to `localhost:8746` for running Hardhat on the
+host against a forwarded port. Inside the test container that fails with HH108
+before any test body runs, which is why the runner
+(`test-suite/fhevm/scripts/run-materialization-consensus.sh`) uses `staging`
+too.
 
 The gate also runs an **aliased-handle** scenario (`AliasFixture.sol`).
 Under the minted-in-transaction handle discriminant (the executor folds a

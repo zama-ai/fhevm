@@ -1,6 +1,9 @@
 /**
  * Runs named e2e test profiles, standard/heavy CI suites, and topology-specific test flows.
  */
+import { existsSync } from "node:fs";
+import path from "node:path";
+
 import { compatPolicyForState, supportsCoprocessorDbStateRevert } from "../compat/compat";
 import { type DecryptionRunner, runKmsGenerationProfile } from "./kms-generation";
 import { runKmsGenerationAbortProfile } from "./kms-generation-abort";
@@ -27,6 +30,7 @@ import {
   HEAVY_TEST_PROFILES,
   LIGHT_TEST_PROFILES,
   POSTGRES_HOST,
+  RUNTIME_DIR,
   ROLLOUT_STANDARD_TEST_PROFILES,
   STANDARD_SHARD_COMPUTE_TEST_PROFILES,
   STANDARD_SHARD_DECRYPTION_TEST_PROFILES,
@@ -693,9 +697,53 @@ export const waitForKeyBootstrap = async (
 };
 
 /** Stops or starts each named container and ignores already-stopped/missing cases. */
+/**
+ * True while GPU host units are serving the operators' work queues.
+ *
+ * `gpu-consensus-workers.sh` writes this file when it takes over and clears it
+ * on stop, and the shell side of the harness keys the same decision off it.
+ */
+const gpuSessionActive = () =>
+  existsSync(path.join(RUNTIME_DIR, "gpu-consensus-workers", "node-config.env"));
+
+/** The worker roles a GPU session takes over; their containers stay stopped. */
+const GPU_OWNED_ROLES = ["tfhe-worker", "zkproof-worker", "sns-worker"] as const;
+
+const servedByGpuUnit = (container: string) =>
+  gpuSessionActive() && GPU_OWNED_ROLES.some((role) => container.endsWith(`-${role}`));
+
+/**
+ * Starts or stops containers, leaving alone any whose queue a GPU host unit owns.
+ *
+ * Without the exemption this is how a fleet ends up split across squash
+ * backends. `coprocessor-db-state-revert` stops the coprocessor containers,
+ * reverts one operator's database and starts them again in a `finally`. Under a
+ * GPU session those containers were stopped by the swap, so starting them brings
+ * CPU workers up *alongside* the CUDA units; both then claim rows from the same
+ * queue with FOR UPDATE SKIP LOCKED and the operators disagree on the SNS
+ * digest. Measured four times: divergence appears within 30s of the containers
+ * returning and never before it (Consensus Defect Log, G-7; the same mechanism
+ * as B-1).
+ *
+ * Stopping is exempted too, not just starting: a stop would succeed on an
+ * already-stopped container and then the paired start would undo it.
+ */
 const setContainersRunning = async (containers: string[], action: "start" | "stop") => {
+  const skipped: string[] = [];
   for (const container of containers) {
+    if (servedByGpuUnit(container)) {
+      skipped.push(container);
+      continue;
+    }
     await run(["docker", action, container], { allowFailure: true });
+  }
+  if (skipped.length > 0) {
+    console.log(
+      // Namespaced, because every other `[test] <word>` line in this file names
+      // a profile -- log scrapers keyed on that shape read a bare `left` as one.
+      `[test] gpu-session: left ${skipped.length} worker container(s) alone: a GPU session owns those queues, ` +
+        `and ${action}ing them would serve one queue twice (${skipped.join(", ")})`,
+    );
   }
 };
 

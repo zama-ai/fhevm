@@ -1,0 +1,60 @@
+version: 1
+kind: coprocessor-consensus
+name: Three Of Three, Heterogeneous Scheduling
+description: >-
+  Three independent coprocessors requiring unanimous consensus, each deliberately
+  scheduling its work differently. RFC 020 makes result bytes a function of on-chain data
+  alone, so the fleet must still agree byte for byte. Every consensus run before this one
+  compared identical binaries under identical configuration, which tests only "same code,
+  same config, same bytes" - the weakest reading of that claim. Here the software, backend
+  and hardware class stay identical and the scheduling surface varies: window size and its
+  unit, partition shape, whether the window is shared across chains, and whether
+  independent chains are batched at all. Run it with
+  scripts/run-materialization-consensus.sh --heterogeneous, which refuses to proceed
+  unless the operators really did come up scheduling differently.
+topology:
+  count: 3
+  threshold: 3
+instances:
+  # Operator 0 - the worker's own defaults, stated explicitly so this file
+  # describes the whole fleet rather than two thirds of it. Adaptive batching
+  # on, so the window counts (chain, transaction) groups.
+  #
+  # 100/20 and not 10/20: the pair must not invert. The adaptive window gives
+  # each acquired chain ceil(work-items-batch-size / acquired-chains)
+  # transactions and turns itself off once more chains are acquired than the
+  # window admits, so an operator with a window below its chain count measures
+  # non-adaptive scheduling while this file claims it is the adaptive baseline.
+  # An earlier version of this scenario said "the shipped default" and wrote
+  # 10/20, which is neither the binary default (100/20) nor adaptive under load.
+  - index: 0
+    args:
+      tfhe-worker:
+        - --work-items-batch-size=100
+        - --dependence-chains-per-batch=20
+
+  # Operator 1 - the serial extreme. One chain per batch and a window of one
+  # forces the largest number of independent scheduling decisions, which is the
+  # shape most likely to expose an execution-order dependence if one exists.
+  # Adaptive sharing is off, which also changes the window's unit: it counts
+  # computation rows here, not transaction groups.
+  - index: 1
+    args:
+      tfhe-worker:
+        - --work-items-batch-size=1
+        - --dependence-chains-per-batch=1
+    env:
+      FHEVM_DCID_ADAPTIVE_BATCH_EXECUTION: "false"
+
+  # Operator 2 - the opposite extreme, and the one that exercises PR-04's
+  # batching least: independent chains are not batched into one schedule at all,
+  # so this operator executes a single dependence chain at a time against a wide
+  # window. If batch execution were to influence result bytes, operator 2 is
+  # where the fleet would split.
+  - index: 2
+    args:
+      tfhe-worker:
+        - --work-items-batch-size=200
+        - --dependence-chains-per-batch=64
+    env:
+      FHEVM_DCID_BATCH_EXECUTION: "false"

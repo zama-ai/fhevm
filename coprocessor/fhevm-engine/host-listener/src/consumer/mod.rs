@@ -16,7 +16,7 @@ use fhevm_engine_common::drift_revert::SignalStatus as DriftStatus;
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::healthz_server::HttpServer as HealthHttpServer;
 use fhevm_engine_common::utils::{DatabaseURL, HeartBeat};
-use fhevm_engine_common::versioning::{run_stack_version_listener, StackMode};
+use fhevm_engine_common::versioning::StackMode;
 use primitives::event::BlockFlow;
 
 use crate::cmd::block_history::BlockSummary;
@@ -25,7 +25,9 @@ use crate::consumer::metrics::{
     inc_db_errors, observe_legacy_insert_delay_seconds,
 };
 use crate::database::ingest::{ingest_block_logs, BlockLogs, IngestOptions};
-use crate::database::tfhe_event_propagate::Database;
+use crate::database::tfhe_event_propagate::{
+    spawn_stack_version_listener, Database,
+};
 use crate::health_check::HealthCheck;
 
 use consumer::{
@@ -384,18 +386,11 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
     // this (blue) stack is retired and `stack_mode` flips to paused; the
     // consume handler then drops incoming blocks without writing to the DB.
     let stack_mode = StackMode::new(config.gcs_mode);
-    {
-        let pool = db.pool().await;
-        let stack_mode = stack_mode.clone();
-        let cancel = client.cancel_token.clone();
-        tokio::spawn(async move {
-            if let Err(err) =
-                run_stack_version_listener(pool, stack_mode, cancel).await
-            {
-                error!(error = %err, "stack-version listener exited with error");
-            }
-        });
-    }
+    spawn_stack_version_listener(
+        db.clone(),
+        stack_mode.clone(),
+        client.cancel_token.clone(),
+    );
 
     let last_known_drift = Arc::new(RwLock::new(STARTING_DRIFT));
     let chain_id_str = config.chain_id.to_string();
