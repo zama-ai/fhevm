@@ -23,9 +23,14 @@ let validator: ReturnType<typeof Bun.spawn> | undefined;
 let gateway: ReturnType<typeof Bun.serve> | undefined;
 let env: Record<string, string>;
 
-const deploy = (action = 'deploy', overrides: Record<string, string> = {}) => {
+const deploy = (action = 'deploy', overrides: Record<string, string> = {}, target = 'host') => {
   const variables = { ...env, ...overrides };
   const image = process.env.SOLANA_DEPLOY_TEST_IMAGE;
+  if (image && process.platform === 'darwin') {
+    for (const name of ['SOLANA_RPC_URL', 'GATEWAY_RPC_URL', 'SOLANA_DEPLOY_DATABASE_URL', 'DATABASE_URL']) {
+      if (variables[name]) variables[name] = variables[name]!.replace(/127\.0\.0\.1|localhost/g, 'host.docker.internal');
+    }
+  }
   return run(
     image
       ? [
@@ -41,10 +46,10 @@ const deploy = (action = 'deploy', overrides: Record<string, string> = {}) => {
           `${solana}/scripts/e2e/test-keypairs:${solana}/scripts/e2e/test-keypairs:ro`,
           ...Object.keys(variables).flatMap((name) => ['-e', name]),
           image,
-          'host',
+          target,
           action,
         ]
-      : ['bun', 'run', '../../solana/deploy/src/cli.ts', 'host', action],
+      : ['bun', 'run', '../../solana/deploy/src/cli.ts', target, action],
     {
       cwd: path.join(REPO_ROOT, 'test-suite/fhevm'),
       env: variables,
@@ -73,10 +78,8 @@ beforeAll(async () => {
   }
   await runStreaming(['bash', 'scripts/build-programs.sh', 'localnet', 'zama_host'], {
     cwd: solana,
-    env: { CARGO_PROFILE_RELEASE_OPT_LEVEL: '2' },
+    env: { CARGO_PROFILE_RELEASE_OPT_LEVEL: '2', SBF_OUT_PATH: path.join(directory, 'B') },
   });
-  await cp(path.join(solana, 'target/deploy/zama_host.so'), path.join(directory, 'B/zama_host.so'));
-  await cp(path.join(directory, 'A/zama_host.so'), path.join(solana, 'target/deploy/zama_host.so'));
   expect(await readFile(path.join(directory, 'A/zama_host.so'))).not.toEqual(
     await readFile(path.join(directory, 'B/zama_host.so')),
   );
@@ -87,6 +90,8 @@ beforeAll(async () => {
       '--quiet',
       '--faucet-port',
       '19900',
+      '--gossip-port',
+      '19901',
     ],
     {
       stdout: Bun.file(path.join(directory, 'validator.log')),
@@ -99,7 +104,10 @@ beforeAll(async () => {
       break;
     } catch {
       if (i === 90 || validator.exitCode !== null)
-        throw new Error(`validator failed; inspect ${directory}/validator.log`);
+        throw new Error(
+          `validator failed: ${await Bun.file(path.join(directory, 'ledger/validator.log'))
+            .text().catch(() => 'no validator log')}`,
+        );
       await Bun.sleep(1000);
     }
   }
@@ -199,4 +207,34 @@ test('a competing deployer fails before it can change on-chain state', async () 
     expect(blocked.stderr).toContain('another deployment is running');
   });
   expect((await deploy('deploy', { SOLANA_ARTIFACTS_DIR: path.join(directory, 'B') })).code).toBe(0);
+}, 60_000);
+
+test('coprocessor register connects to PostgreSQL and preserves registration on retry', async () => {
+  const sql = (input: string) => run(
+    ['docker', 'exec', '-i', container, 'psql', '-U', 'postgres', '-At', '-v', 'ON_ERROR_STOP=1'],
+    { input },
+  );
+  await sql(`
+    CREATE TABLE host_chains (chain_id bigint PRIMARY KEY, name text, acl_contract_address text NOT NULL);
+    CREATE TABLE keys (
+      sequence_number bigserial PRIMARY KEY, key_id_gw bytea, key_id bytea, pks_key bytea,
+      sks_key bytea, cks_key bytea, sns_pk bytea, compressed_xof_keyset bytea,
+      chain_id bigint, block_hash bytea, UNIQUE (chain_id, key_id)
+    );
+  `);
+  const variables = { DATABASE_URL: databaseUrl, SOLANA_KEY_SOURCE_CHAIN_ID: '12345' };
+  const missingKeys = await deploy('register', variables, 'coprocessor');
+  expect(missingKeys.code).not.toBe(0);
+  expect((await sql('SELECT count(*) FROM host_chains')).stdout.trim()).toBe('0');
+  await sql("INSERT INTO keys (chain_id,key_id,key_id_gw,pks_key) VALUES (12345,'\\x01','\\x02','\\x03')");
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const result = await deploy('register', variables, 'coprocessor');
+    expect(result.code, result.stderr).toBe(0);
+  }
+  expect((await sql('SELECT acl_contract_address FROM host_chains')).stdout.trim()).toBe(programIdsFor('localnet').zamaHost);
+  expect((await sql('SELECT count(*) FROM keys WHERE chain_id <> 12345')).stdout.trim()).toBe('1');
+  expect((await sql("SELECT encode(pks_key,'hex') FROM keys WHERE chain_id <> 12345")).stdout.trim()).toBe('03');
+  await sql("UPDATE host_chains SET acl_contract_address = 'different-program'");
+  expect((await deploy('register', variables, 'coprocessor')).code).not.toBe(0);
+  expect((await sql('SELECT acl_contract_address FROM host_chains')).stdout.trim()).toBe('different-program');
 }, 60_000);

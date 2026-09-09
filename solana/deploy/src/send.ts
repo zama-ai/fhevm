@@ -1,6 +1,5 @@
-// HTTP-only send/confirm for the zama-host deployer. Preview-env Solana RPC is a single URL
-// (Helius / public **devnet**); there is no Yellowstone and no guarantee of a WS endpoint, so this
-// must not use `sendAndConfirmTransactionFactory` (that factory requires rpcSubscriptions).
+// The deployer only needs HTTP RPC; Yellowstone is configured separately for the listener.
+// Poll confirmation so deployment does not also require a WebSocket subscription endpoint.
 import {
   type Instruction,
   type Rpc,

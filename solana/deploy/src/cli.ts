@@ -71,8 +71,7 @@ const main = async () => {
 
   const [target, action] = process.argv.slice(2);
   if (target === 'coprocessor' && action === 'register') {
-    const result = spawnSync('psql', ['-X', '--set', 'ON_ERROR_STOP=1'], {
-      env: { ...process.env, PGDATABASE: requiredEnv('DATABASE_URL') },
+    const result = spawnSync('psql', ['-X', '-d', requiredEnv('DATABASE_URL'), '--set', 'ON_ERROR_STOP=1'], {
       input: registerSolanaCoprocessorSql(programIds.zamaHost, requiredEnv('SOLANA_KEY_SOURCE_CHAIN_ID')),
       encoding: 'utf8',
     });

@@ -51,6 +51,8 @@ WORKDIR /src/solana/deploy
 COPY solana/deploy/package.json solana/deploy/bun.lock ./
 RUN bun install --frozen-lockfile --production
 COPY test-suite/fhevm/src/solana/internal/generated /src/test-suite/fhevm/src/solana/internal/generated
+COPY solana/demo-dapp/src/vault/internal/generated/demoVault/programAddress.ts /src/solana/demo-dapp/src/vault/internal/generated/demoVault/programAddress.ts
+COPY solana/demo-dapp/src/vault/internal/generated/confidentialBatcher/programAddress.ts /src/solana/demo-dapp/src/vault/internal/generated/confidentialBatcher/programAddress.ts
 COPY solana/deploy/src ./src
 COPY solana/deploy/profiles/preview-env/program-ids.json /src/solana/deploy/profiles/preview-env/program-ids.json
 # Bundle to one file so the runtime image does not need bun or a node_modules tree.

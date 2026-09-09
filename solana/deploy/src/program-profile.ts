@@ -1,6 +1,8 @@
 import type { Address } from '@solana/kit';
 
 import preview from '../profiles/preview-env/program-ids.json';
+import { DEMO_VAULT_PROGRAM_ADDRESS } from '../../demo-dapp/src/vault/internal/generated/demoVault/programAddress';
+import { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from '../../demo-dapp/src/vault/internal/generated/confidentialBatcher/programAddress';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '../../../test-suite/fhevm/src/solana/internal/generated/confidentialToken/programAddress.js';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '../../../test-suite/fhevm/src/solana/internal/generated/zamaHost/programAddress.js';
 
@@ -35,8 +37,8 @@ export const programIdsFor = (profile: SolanaProgramProfile): SolanaProgramIds =
   return {
     zamaHost: ZAMA_HOST_PROGRAM_ADDRESS,
     confidentialToken: CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
-    demoVault: '6JJTCTipqMjhq5djroouMgi1XZ1Rtc3RMp483F8Bz8b9' as Address,
-    confidentialBatcher: 'Cr1Tyzov2Jq9AYVn5zLSLQdyd8CkZJLemHYkj6qDqFmG' as Address,
+    demoVault: DEMO_VAULT_PROGRAM_ADDRESS,
+    confidentialBatcher: CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS,
   };
 };
 

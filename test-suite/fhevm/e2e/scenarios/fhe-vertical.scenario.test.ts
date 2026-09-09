@@ -121,12 +121,12 @@ test(
       await cp(path.join(artifactsDir, 'zama_host.so'), path.join(directory, 'zama_host.so'));
       await runStreaming(['bash', 'scripts/build-programs.sh', 'localnet', 'zama_host'], {
         cwd: path.join(REPO_ROOT, 'solana'),
-        env: { CARGO_PROFILE_RELEASE_OPT_LEVEL: '2' },
+        env: { CARGO_PROFILE_RELEASE_OPT_LEVEL: '2', SBF_OUT_PATH: path.join(directory, 'upgrade') },
       });
-      expect(await readFile(path.join(artifactsDir, 'zama_host.so'))).not.toEqual(
+      expect(await readFile(path.join(directory, 'upgrade/zama_host.so'))).not.toEqual(
         await readFile(path.join(directory, 'zama_host.so')),
       );
-      await rollout(artifactsDir, true);
+      await rollout(path.join(directory, 'upgrade'), true);
       upgraded = true;
       await restartDemoSolanaListener();
       const encryptedValue = original.value.encryptedValue;
@@ -149,9 +149,6 @@ test(
         if (passed) throw error;
         console.error('Restoring the original host after a failed upgrade test also failed:', error);
       } finally {
-        // Keep the normal build output even when an assertion or on-chain restoration fails.
-        if (await Bun.file(path.join(directory, 'zama_host.so')).exists())
-          await cp(path.join(directory, 'zama_host.so'), path.join(artifactsDir, 'zama_host.so'));
         await rm(directory, { recursive: true, force: true });
       }
     }

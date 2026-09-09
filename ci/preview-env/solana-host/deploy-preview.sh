@@ -116,7 +116,7 @@ for i in $(seq 1 "$NB_COPROCESSOR"); do
     if (( current > initial )); then progressed=true; break; fi
     sleep 5
   done
-  [[ "$progressed" == true ]] || { echo "::error::Solana listener $i is ready but its sealed-block checkpoint is not advancing"; exit 1; }
+  [[ "$progressed" == true ]] || { echo "::error::Solana listener $i is ready but its sealed-block checkpoint is not advancing; check Yellowstone endpoint, credentials, connectivity and provider block delivery"; exit 1; }
 done
 if [[ "$SOLANA_DEMOS" == true ]]; then
   helm upgrade --install solana-demos "$CONTRACTS_CHART" -n "$NAMESPACE" \

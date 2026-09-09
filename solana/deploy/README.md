@@ -133,6 +133,11 @@ existing history. Program-key removal is excluded from that digest. Credential r
 and topology changes need a separately reviewed maintenance procedure; they are not
 silently handled as application upgrades in this experiment.
 
+The `coprocessor register` command belongs to this deployer image, not the top-level
+`fhevm-cli`. The local test harness calls the same registration SQL during bring-up;
+the preview executes it in a Helm Job for each coprocessor before starting its listener.
+It records the Solana host and associates the canonical host key material in PostgreSQL.
+
 ### Stop, resume and reset
 
 Keep one active experiment per shared set of public-devnet program IDs. Do not submit
@@ -174,3 +179,20 @@ The different executable uses another optimization level, without adding a test 
 to the program. Full e2e additionally checks old-value decryption and new computation after
 host upgrade and listener restart. This local evidence does not prove public-provider
 replay or cluster connectivity; repeat that acceptance in the provisioned preview.
+
+
+### Operational limits
+
+The preview workflow rejects Solana with blue-green enabled. This does not guard manually
+configured Helm deployments: keep exactly one Solana listener per coprocessor database.
+
+An existing host's KMS context cannot be reinitialized with a different signer set.
+A mismatch is terminal for this bootstrap command. Restore the original configuration,
+or start a fresh experiment with new on-chain identities and matching off-chain state.
+Destroying only the namespace leaves the old Solana configuration intact.
+
+Agave 4.1.2 automatically extends program accounts when an upgrade needs more space;
+the deployer must hold enough SOL for the additional rent. Interrupted uploads can leave
+funded buffer accounts. Inspect the Solana CLI failure output and buffer accounts owned
+by the deployer before retrying; this wrapper does not automatically resume or reclaim
+those buffers. Do not bulk-close buffers belonging to concurrent or recoverable uploads.
