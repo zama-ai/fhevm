@@ -3,9 +3,17 @@ source ./../.env-test
 
 echo $DATABASE_URL
 
-# stack-version-override lets BUILD_STACK_VERSION from the environment override
-# the hard-coded stack version baked into the binary (see fhevm-engine-common).
-cargo run --release --features fhevm-engine-common/stack-version-override -- \
+# Version overrides for a fleet that joins a running stack: consensus decides the
+# role, and the release has to move too or the cutover is refused. Each is off
+# unless its variable is set.
+VERSION_OVERRIDE=""
+if [[ -n "${BUILD_STACK_VERSION:-}" ]]; then
+  VERSION_OVERRIDE="--features fhevm-engine-common/stack-version-override"
+fi
+if [[ -n "${BUILD_CONSENSUS_VERSION:-}" ]]; then
+  VERSION_OVERRIDE="$VERSION_OVERRIDE --features fhevm-engine-common/consensus-version-override"
+fi
+cargo run --release $VERSION_OVERRIDE -- \
 --gateway-url=${GATEWAY_WS_URL} \
 --private-key=${TX_SENDER_PRIVATE_KEY} \
 --ciphertext-commits-address=${CIPHERTEXT_COMMITS_ADDRESS} \
