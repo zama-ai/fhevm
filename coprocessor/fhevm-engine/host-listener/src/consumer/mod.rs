@@ -327,6 +327,7 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         crate::protocol_config::resolve_protocol_config_listener(
             config.canonical_protocol_config_chain_id,
             chain_id.as_u64(),
+            config.protocol_config_address,
         )?;
 
     let blockchain_tick = HeartBeat::new();
