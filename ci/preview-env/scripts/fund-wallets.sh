@@ -50,7 +50,7 @@ PY
 
 fund_targets="host,gateway"
 if [[ "${CHAIN_MODE}" == "testnets" ]]; then
-  # HOST_HTTP/POLYGON_HTTP were read from the synced `rpc` Secret by deploy-rpc-secret.sh.
+  # HOST_HTTP/POLYGON_HTTP were read from Secret `rpc` by deploy-rpc-secret.sh.
   : "${HOST_HTTP:?}"
   : "${POLYGON_HTTP:?}"
   : "${HOST_CHAIN_ID:?}"

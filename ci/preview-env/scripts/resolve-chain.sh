@@ -63,12 +63,13 @@ case "${CHAIN_MODE}" in
     ;;
 
   testnets)
-    # RPC URLs + treasury key come from AWS Secrets Manager via ExternalSecret (deploy-rpc-secret.sh -> Secret `rpc`);
-    # in-cluster consumers use secretKeyRef, runner-side steps get HOST_HTTP/POLYGON_HTTP/FUNDER_PRIVATE_KEY from that step.
+    # RPC URLs + treasury key come from AWS via sync-secrets (deploy-rpc-secret.sh -> Secrets `rpc` + `funder`);
+    # in-cluster consumers secretKeyRef `rpc`; runner-side treasury reads `funder`.
     {
       echo "CHAIN_MODE=testnets"
       echo "EXTERNAL_CHAINS=true"
       echo "RPC_SECRET_NAME=rpc"
+      echo "FUNDER_SECRET_NAME=funder"
       # Amoy is the second host chain: deploy_polygon-gated steps run, minus the Anvil node (EXTERNAL_CHAINS gate).
       echo "DEPLOY_POLYGON=true"
       echo "GATEWAY_HTTP=${NITRO_HTTP}"

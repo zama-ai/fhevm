@@ -10,9 +10,9 @@ name: preview-env-deploy
 #   - anvil (default): per-namespace anvil host + gateway (+ anvil Polygon with deploy_polygon).
 #   - blockchain-dev: shared zws-dev Geth 1337 + Nitro 412346, wallets from the PoW faucets;
 #     the preview-env-blue-green label takes this path (Anvil's 80-block window closes during the dry-run e2e).
-#   - testnets: public Sepolia 11155111 + Amoy 80002, Nitro gateway. RPC URLs and the treasury key come
-#     from AWS Secrets Manager via an ExternalSecret (no GitHub secrets). Implies deploy_polygon; slow
-#     (12s blocks), real testnet gas.
+#   - testnets: public Sepolia 11155111 + Amoy 80002, Nitro gateway. RPC URLs (Secret rpc) and the
+#     treasury key (Secret funder) come from AWS Secrets Manager via the gitops sync-secrets chart
+#     (no GitHub secrets). Implies deploy_polygon; slow (12s blocks), real testnet gas.
 # Both external modes leave this preview's own contracts on the shared chains after teardown.
 #
 # Three PR labels control deployment (see check-labels below):
@@ -94,7 +94,7 @@ on:
           - "false"
           - "true"
       chain_mode:
-        description: "Which chains to deploy against. anvil: per-namespace Anvil (default). blockchain-dev: shared zws-dev Geth (host 1337) + Nitro (gateway 412346), wallets funded from the in-cluster faucets; the preview-env-blue-green PR label forces this. testnets: public Sepolia (11155111) + Polygon Amoy (80002) host chains with the blockchain-dev Nitro as gateway; RPC URLs and the treasury key are pulled from AWS Secrets Manager via ExternalSecret (zws-dev/external-eth-rpcs, external-polygon-rpcs, fhevm-preview-funder); implies deploy_polygon; slow and costs real testnet gas. Both external modes leave this preview's contracts on the shared chains after teardown."
+        description: "Which chains to deploy against. anvil: per-namespace Anvil (default). blockchain-dev: shared zws-dev Geth (host 1337) + Nitro (gateway 412346), wallets funded from the in-cluster faucets; the preview-env-blue-green PR label forces this. testnets: public Sepolia (11155111) + Polygon Amoy (80002) host chains with the blockchain-dev Nitro as gateway; RPC URLs (Secret rpc) and the treasury key (Secret funder) are pulled from AWS Secrets Manager via the gitops sync-secrets chart (zws-dev/external-eth-rpcs, external-polygon-rpcs, fhevm-preview-funder); implies deploy_polygon; slow and costs real testnet gas. Both external modes leave this preview's contracts on the shared chains after teardown."
         required: true
         type: choice
         default: "anvil"
@@ -150,6 +150,9 @@ env:
   RELAYER_SDK_VERSION: ""
   COMMON_CHART: oci://hub.zama.org/ghcr/zama-zws/helm-charts/common
   COMMON_CHART_VERSION: "0.3.3"
+  # Same chart + pin gitops uses on zws-dev for ExternalSecret CRs (testnets only).
+  SYNC_SECRETS_CHART: oci://hub.zama.org/ghcr/zama-zws/helm-charts/sync-secrets
+  SYNC_SECRETS_CHART_VERSION: "0.2.3"
   #=====KMS==================================================================
   KMS_REPO_REF: "35edfa2f0656ee266e3299a004a83ac7d4fe2418"
   KMS_CORE_TAG: "d27c3b5"
@@ -567,7 +570,7 @@ jobs:
           fi
           kubectl create namespace "${NAMESPACE}"
 
-      - name: Provision testnets secrets (ExternalSecret from AWS Secrets Manager)
+      - name: Provision testnets secrets (sync-secrets → rpc + funder)
         if: env.CHAIN_MODE == 'testnets'
         run: bash ci/preview-env/scripts/deploy-rpc-secret.sh
 
