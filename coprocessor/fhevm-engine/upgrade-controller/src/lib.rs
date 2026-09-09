@@ -62,7 +62,12 @@ pub use fhevm_engine_common::versioning::EVENT_STACK_VERSION_UPGRADED;
 /// Number of host-chain blocks below `start_block` whose computations must
 /// also be fully settled before GCS can leave `UpgradeActivated`. Hard-coded
 /// for now; expected to become configurable.
-const READINESS_CONFIRMATIONS: i64 = 100;
+// Set equal to the host-listener's `BLOCKS_VALID_RETENTION` (10_000). The readiness
+// window `[start_block - READINESS_CONFIRMATIONS, start_block]` then spans the full
+// retained block history; its low end sits at the prune horizon, so the oldest
+// confirmation blocks may already have been pruned and pass the check vacuously.
+// Keep the two constants in lockstep: if `BLOCKS_VALID_RETENTION` changes, change this.
+const READINESS_CONFIRMATIONS: i64 = 10_000;
 const NO_READINESS_ATTEMPT: i64 = -2;
 
 /// Retry budget and backoff for [`execute_cutover`]. Cutover is the step that promotes
@@ -530,12 +535,18 @@ async fn prune_gcs_computations_before_start(
 /// Also requires the BCS host-listener to have reached at least `start_block`
 /// (via `MAX(block_number)` in `host_chain_blocks_valid`) — otherwise the
 /// predicate would be vacuously true for un-ingested blocks above the watermark.
+///
+/// Additionally requires `start_block` itself to be `finalized` (a
+/// `host_chain_blocks_valid` row at that height with `block_status = 'finalized'`),
+/// so the dry-run window is anchored on a settled block, not one that could still
+/// be reorged out.
 async fn check_dry_run_ready(
     pool: &Pool<Postgres>,
     chain_id: i64,
     start_block: i64,
 ) -> Result<bool, sqlx::Error> {
     let from_block = start_block.saturating_sub(READINESS_CONFIRMATIONS);
+    let started = std::time::Instant::now();
     let (ready,): (bool,) = sqlx::query_as(
         r#"
         SELECT
@@ -543,6 +554,12 @@ async fn check_dry_run_ready(
             (SELECT MAX(block_number) FROM public.host_chain_blocks_valid WHERE chain_id = $1),
             -1
           ) >= $3
+          AND EXISTS (
+              SELECT 1 FROM public.host_chain_blocks_valid
+              WHERE chain_id = $1
+                AND block_number = $3
+                AND block_status = 'finalized'
+          )
           AND NOT EXISTS (
               SELECT 1 FROM public.host_chain_blocks_valid hcbv
               WHERE hcbv.chain_id = $1
@@ -562,6 +579,14 @@ async fn check_dry_run_ready(
     .bind(start_block)
     .fetch_one(pool)
     .await?;
+    info!(
+        chain_id,
+        from_block,
+        start_block,
+        ready,
+        elapsed_ms = started.elapsed().as_millis() as u64,
+        "check_dry_run_ready evaluated"
+    );
     Ok(ready)
 }
 
