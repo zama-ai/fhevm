@@ -12,7 +12,7 @@ name: preview-env-destroy
 # namespace is - see coprocessor-infra/values-postgres-coprocessor-e2e.yaml.
 #
 # Triggers (the pull_request ones mirror preview-env-deploy.yml's labels:
-# preview-env-e2e / preview-env-e2e-tests):
+# preview-env-e2e / preview-env-e2e-tests / preview-env-blue-green):
 #   - closed:    PR merged/closed -> always attempt teardown (no-op if none).
 #   - unlabeled: a preview label was removed AND no preview label remains, i.e.
 #     the label that keeps the env alive is gone. Removing only -tests while
@@ -52,16 +52,16 @@ jobs:
     # On `closed` we attempt teardown unconditionally (can't cheaply check
     # label history; the namespace step no-ops if nothing exists). On
     # `unlabeled` we only tear down when a preview label was removed AND none
-    # remains: both preview labels share the 'preview-env-e2e' prefix, so
-    # `contains(label.name, 'preview-env-e2e')` matches the removed one and
-    # `!contains(toJSON(labels.*.name), 'preview-env-e2e')` confirms no preview
-    # label is left (removing -tests while -e2e stays keeps the env).
+    # remains: every preview label shares the 'preview-env-' prefix, so
+    # `contains(label.name, 'preview-env-')` matches the removed one and
+    # `!contains(toJSON(labels.*.name), 'preview-env-')` confirms no preview
+    # label is left (removing one while another stays keeps the env).
     if: >-
       github.event_name == 'workflow_dispatch' ||
       github.event.action == 'closed' ||
       (github.event.action == 'unlabeled' &&
-      contains(github.event.label.name, 'preview-env-e2e') &&
-      !contains(toJSON(github.event.pull_request.labels.*.name), 'preview-env-e2e'))
+      contains(github.event.label.name, 'preview-env-') &&
+      !contains(toJSON(github.event.pull_request.labels.*.name), 'preview-env-'))
     runs-on: ubuntu-latest
     timeout-minutes: 30
     # The comment step needs to write to the PR; the workflow-level
