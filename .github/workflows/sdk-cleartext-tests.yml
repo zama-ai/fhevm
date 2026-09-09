@@ -92,22 +92,16 @@ jobs:
       # -----------------------------------------------------------------------
       # 4. Foundry
       #    Needed by the install (forge soldeer), the compiles and the tests.
-      #    `version: stable` matches every other workflow in this repo
-      #    (host-contracts-hardhat-forge-tests.yml, library-solidity-tests.yml,
-      #    …). It is NOT a substitute for pinning: `forge --version`'s reported
-      #    string is the git ref the binary was built from ("<X.Y.Z>-stable"
-      #    for the stable channel, "<X.Y.Z>-v1.5.1" for a tag checkout — there
-      #    is no ref that reproduces "-stable" except the stable channel
-      #    itself). check-foundry, inside `make ci`, compares that string
-      #    against npm-manifest.json#foundry.version and fails the day
-      #    upstream promotes a new stable release, which is exactly the
-      #    drift this pin exists to catch — the fix then is to bump the
-      #    manifest, not this workflow.
+      #    `forge --version` reports the ref it was built from, so a tag says
+      #    "1.5.1-v1.5.1" and the stable channel says "1.5.1-stable".
+      #    check-foundry compares that whole string against
+      #    npm-manifest.json#foundry.version, so both must use the tag — and
+      #    both must be bumped together. Locally: foundryup --install v1.5.1
       # -----------------------------------------------------------------------
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@82dee4ba654bd2146511f85f0d013af94670c4de # v1.4.0
         with:
-          version: stable
+          version: v1.5.1
 
       # -----------------------------------------------------------------------
       # 5. Upgrade npm
