@@ -126,6 +126,18 @@ pub struct StoredValue<T> {
 }
 
 impl<T: FheTyped> StoredValue<T> {
+    pub(crate) fn from_handle_operand(handle: [u8; 32], operand: Operand) -> Result<Self> {
+        let fhe_type = handle_fhe_type(handle);
+        validate_supported_fhe_type(fhe_type)?;
+        if fhe_type != T::FHE_TYPE.byte() {
+            return Err(FheExecutionBuildError::UnsupportedFheType);
+        }
+        Ok(Self {
+            operand,
+            marker: PhantomData,
+        })
+    }
+
     /// Builds a persistent operand from a stable `EncryptedValue` account. `handle` must be that
     /// account's current handle; the host re-verifies this on-chain.
     pub fn persistent(handle: [u8; 32], key: EncryptedValueId) -> Result<Self> {

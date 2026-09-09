@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT leaf_count, peaks, history_complete\n        FROM solana_encrypted_states\n        WHERE encrypted_state = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "leaf_count",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "peaks",
+        "type_info": "ByteaArray"
+      },
+      {
+        "ordinal": 2,
+        "name": "history_complete",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "6434fbf707bdf930481972a416809acc013607a642b1b246ae7491bb3685994f"
+}

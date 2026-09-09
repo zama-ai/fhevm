@@ -21,7 +21,7 @@ import {
   solanaDelegationWarnings,
   solanaUserDecryptionDelegationAddress,
 } from './userDecryptionDelegation.js';
-import type { SolanaRpc } from '../encryptedValueAccount.js';
+import type { SolanaRpc } from '../encryptedState.js';
 import { findHostConfigPda } from '../internal/generated/zamaHost/pdas/index.js';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '../internal/generated/zamaHost/programAddress.js';
 
@@ -59,14 +59,14 @@ describe('solanaUserDecryptionDelegationAddress', () => {
     const derived = await solanaUserDecryptionDelegationAddress({
       delegator,
       delegate,
-      encryptedValueAccountAuthority: authority,
+      encryptedStateAuthority: authority,
     });
     expect(derived).toBe(RECORD_ADDRESS);
   });
 
   it('derives under the configured program id, not the canonical one, when overridden', async () => {
     const derived = await solanaUserDecryptionDelegationAddress(
-      { delegator, delegate, encryptedValueAccountAuthority: authority },
+      { delegator, delegate, encryptedStateAuthority: authority },
       { programAddress: OTHER_PROGRAM },
     );
     expect(derived).not.toBe(RECORD_ADDRESS);
@@ -79,7 +79,7 @@ describe('buildDelegateForUserDecryptionInstruction', () => {
       payer,
       delegator,
       delegate,
-      encryptedValueAccountAuthority: authority,
+      encryptedStateAuthority: authority,
       expirationSlot: 500n,
     });
 
@@ -111,7 +111,7 @@ describe('buildDelegateForUserDecryptionInstruction', () => {
       payer: delegatorSigner,
       delegator: delegatorSigner,
       delegate,
-      encryptedValueAccountAuthority: authority,
+      encryptedStateAuthority: authority,
       expirationSlot: 500n,
     });
     const [payerMeta, delegatorMeta] = instruction.accounts as readonly SignerMeta[];
@@ -125,7 +125,7 @@ describe('buildDelegateForUserDecryptionInstruction', () => {
       payer: payerSigner,
       delegator,
       delegate,
-      encryptedValueAccountAuthority: authority,
+      encryptedStateAuthority: authority,
       expirationSlot: 500n,
     });
     const [payerMeta, delegatorMeta] = instruction.accounts as readonly SignerMeta[];
@@ -143,13 +143,13 @@ describe('buildDelegateForUserDecryptionInstruction', () => {
       payer,
       delegator,
       delegate,
-      encryptedValueAccountAuthority: authority,
+      encryptedStateAuthority: authority,
       expirationSlot: 500n,
       programAddress: OTHER_PROGRAM,
     });
     const [hostConfig] = await findHostConfigPda({ programAddress: OTHER_PROGRAM });
     const record = await solanaUserDecryptionDelegationAddress(
-      { delegator, delegate, encryptedValueAccountAuthority: authority },
+      { delegator, delegate, encryptedStateAuthority: authority },
       { programAddress: OTHER_PROGRAM },
     );
     expect(instruction.programAddress).toBe(OTHER_PROGRAM);
@@ -163,7 +163,7 @@ describe('buildRevokeDelegationForUserDecryptionInstruction', () => {
     buildRevokeDelegationForUserDecryptionInstruction({
       delegator,
       delegate,
-      encryptedValueAccountAuthority: authority,
+      encryptedStateAuthority: authority,
     });
 
   it('builds the exact bytes the host program decodes', async () => {
@@ -187,7 +187,7 @@ describe('buildRevokeDelegationForUserDecryptionInstruction', () => {
     const instruction = await buildRevokeDelegationForUserDecryptionInstruction({
       delegator: delegatorSigner,
       delegate,
-      encryptedValueAccountAuthority: authority,
+      encryptedStateAuthority: authority,
     });
     const meta = instruction.accounts?.[0] as { address: Address; signer?: TransactionSigner } | undefined;
     expect(meta?.signer).toBe(delegatorSigner);
@@ -197,12 +197,12 @@ describe('buildRevokeDelegationForUserDecryptionInstruction', () => {
     const instruction = await buildRevokeDelegationForUserDecryptionInstruction({
       delegator,
       delegate,
-      encryptedValueAccountAuthority: authority,
+      encryptedStateAuthority: authority,
       programAddress: OTHER_PROGRAM,
     });
     const [hostConfig] = await findHostConfigPda({ programAddress: OTHER_PROGRAM });
     const record = await solanaUserDecryptionDelegationAddress(
-      { delegator, delegate, encryptedValueAccountAuthority: authority },
+      { delegator, delegate, encryptedStateAuthority: authority },
       { programAddress: OTHER_PROGRAM },
     );
     expect(instruction.programAddress).toBe(OTHER_PROGRAM);
@@ -218,7 +218,7 @@ describe('solanaDelegationWarnings', () => {
 
   it('flags a wildcard-authority grant', () => {
     const warnings = solanaDelegationWarnings({
-      encryptedValueAccountAuthority: SOLANA_WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY,
+      encryptedStateAuthority: SOLANA_WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY,
     });
     expect(warnings).toHaveLength(1);
     expect(warnings[0]!.code).toBe('WildcardAuthority');
@@ -226,7 +226,7 @@ describe('solanaDelegationWarnings', () => {
   });
 
   it('is silent for an authority-scoped grant', () => {
-    expect(solanaDelegationWarnings({ encryptedValueAccountAuthority: authority })).toEqual([]);
+    expect(solanaDelegationWarnings({ encryptedStateAuthority: authority })).toEqual([]);
   });
 });
 
@@ -258,7 +258,7 @@ describe('decodeSolanaUserDecryptionDelegation', () => {
     const record = decodeSolanaUserDecryptionDelegation(bytesFromHex(RECORD_BYTES_HEX), 'the fixture record');
     expect(record.delegator).toBe(delegator);
     expect(record.delegate).toBe(delegate);
-    expect(record.encryptedValueAccountAuthority).toBe(authority);
+    expect(record.encryptedStateAuthority).toBe(authority);
     expect(record.expirationSlot).toBe(500n);
     expect(record.delegationCounter).toBe(7n);
     expect(record.lastUpdateSlot).toBe(400n);
@@ -299,7 +299,7 @@ describe('isSolanaUserDecryptionDelegationLiveAt', () => {
 });
 
 describe('fetchSolanaUserDecryptionDelegation', () => {
-  const tuple = { delegator, delegate, encryptedValueAccountAuthority: authority };
+  const tuple = { delegator, delegate, encryptedStateAuthority: authority };
 
   function rpcWith(accounts: Readonly<Record<string, string | { data: string; owner: string }>>): SolanaRpc {
     return {
@@ -366,7 +366,7 @@ describe('fetchSolanaUserDecryptionDelegation', () => {
     );
     expect(rows.exact).toBeNull();
     expect(rows.wildcard?.delegationCounter).toBe(7n);
-    expect(rows.wildcard?.encryptedValueAccountAuthority).toBe(SOLANA_WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY);
+    expect(rows.wildcard?.encryptedStateAuthority).toBe(SOLANA_WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY);
   });
 
   // The Connector's rule, mirrored: the address is not taken as proof of what the record says.
@@ -375,7 +375,7 @@ describe('fetchSolanaUserDecryptionDelegation', () => {
   it('throws on a record naming a tuple other than the one its address derives from', async () => {
     const wildcardAddress = await solanaUserDecryptionDelegationAddress({
       ...tuple,
-      encryptedValueAccountAuthority: SOLANA_WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY,
+      encryptedStateAuthority: SOLANA_WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY,
     });
     // The exact-tuple record (authority 0x33) sitting at the wildcard address.
     await expect(

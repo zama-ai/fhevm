@@ -28,6 +28,7 @@ pub(super) fn preflight_execution<'info>(
         app: None,
         touched_apps: Vec::new(),
         persistent_outputs_written: Vec::with_capacity(MAX_FHE_EXECUTION_STEPS),
+        slots_written: Vec::with_capacity(MAX_FHE_EXECUTION_STEPS),
     };
     for (index, step) in args.steps.iter().enumerate() {
         preflight_step(step, index, &mut preflight)?;
@@ -77,6 +78,7 @@ struct Preflight<'t, 'a, 'info> {
     /// before the current step's output is recorded, so read-then-update in one
     /// step remains valid.
     persistent_outputs_written: Vec<Pubkey>,
+    slots_written: Vec<(u8, [u8; 32])>,
 }
 
 impl Preflight<'_, '_, '_> {
@@ -90,6 +92,19 @@ impl Preflight<'_, '_, '_> {
             .ok_or_else(|| error!(ZamaHostError::FheExecuteDictionaryIndexOutOfBounds))?;
         self.dictionary_used[index as usize] = true;
         Ok(entry)
+    }
+
+    fn admit_state(&mut self, index: u8) -> Result<()> {
+        self.table.mark(index.into())?;
+        let state = self.table.state(index.into())?;
+        let authority = state.authority;
+        let app = AppScope {
+            program: state.program,
+            scope: state.scope,
+        };
+        self.table
+            .mark_signer(authority, self.encrypted_value_account_authority)?;
+        self.fold_app(authority, app)
     }
 
     fn mark_output_authority(&mut self, authority_index: Option<u8>) -> Result<()> {
@@ -205,6 +220,28 @@ fn preflight_encrypted_operand(
     preflight: &mut Preflight<'_, '_, '_>,
 ) -> Result<()> {
     match operand {
+        FheExecuteOperand::StateSlot {
+            handle_index,
+            state_index,
+            key_index,
+        } => {
+            preflight.mark_dictionary(*handle_index)?;
+            let key = preflight.mark_dictionary(*key_index)?;
+            require!(
+                !preflight.slots_written.contains(&(*state_index, key)),
+                ZamaHostError::FheExecutePersistentOperandWrittenEarlier
+            );
+            preflight.admit_state(*state_index)?;
+        }
+        FheExecuteOperand::TransientResult {
+            handle_index,
+            scratch_index,
+            consumer_state_index,
+        } => {
+            preflight.mark_dictionary(*handle_index)?;
+            preflight.table.mark((*scratch_index).into())?;
+            preflight.admit_state(*consumer_state_index)?;
+        }
         FheExecuteOperand::StoredValue {
             handle_index,
             encrypted_value_index,
@@ -251,6 +288,39 @@ fn preflight_output(
     preflight: &mut Preflight<'_, '_, '_>,
 ) -> Result<()> {
     match output {
+        FheExecuteOutput::State {
+            state_index,
+            slot,
+            allow_indexes,
+            grants,
+            ..
+        } => {
+            preflight.admit_state(*state_index)?;
+            if let Some(slot) = slot {
+                let key = preflight.mark_dictionary(slot.key_index)?;
+                require!(
+                    !preflight.slots_written.contains(&(*state_index, key)),
+                    ZamaHostError::InvalidFheExecuteAccount
+                );
+                preflight.slots_written.push((*state_index, key));
+                if let Some(previous) = slot.previous_handle_index {
+                    preflight.mark_dictionary(previous)?;
+                }
+            }
+            for index in allow_indexes {
+                preflight.mark_dictionary(*index)?;
+            }
+            require!(
+                grants.len() <= MAX_TRANSIENT_GRANTS,
+                ZamaHostError::TransientCapacityExceeded
+            );
+            for grant in grants {
+                preflight.table.mark(grant.scratch_index.into())?;
+                preflight.admit_state(grant.initiating_state_index)?;
+                preflight.table.mark(grant.consumer_state_index.into())?;
+                preflight.table.state(grant.consumer_state_index.into())?;
+            }
+        }
         FheExecuteOutput::Transient => {}
         FheExecuteOutput::StoredValue {
             output_encrypted_value_index,
@@ -378,6 +448,7 @@ mod tests {
             app: None,
             touched_apps: Vec::new(),
             persistent_outputs_written: Vec::new(),
+            slots_written: Vec::new(),
         };
         for (index, step) in args.steps.iter().enumerate() {
             preflight_step(step, index, &mut preflight)?;
@@ -645,6 +716,7 @@ mod tests {
             app: None,
             touched_apps: Vec::new(),
             persistent_outputs_written: Vec::new(),
+            slots_written: Vec::new(),
         };
         for (index, step) in args.steps.iter().enumerate() {
             preflight_step(step, index, &mut preflight).unwrap();

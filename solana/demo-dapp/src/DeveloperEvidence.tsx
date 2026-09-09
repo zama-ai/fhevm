@@ -257,9 +257,9 @@ export function DeveloperEvidence({ controller }: { readonly controller: DemoCon
                 </a>
               </div>
               <div>
-                <dt>Encrypted-value account</dt>
+                <dt>Encrypted state</dt>
                 <dd>
-                  <CopyValue label="encrypted-value account" value={shares.encryptedValue} />
+                  <CopyValue label="encrypted state" value={shares.encryptedState} />
                 </dd>
               </div>
             </>

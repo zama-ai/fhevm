@@ -184,6 +184,25 @@ fn validate_lowered_encrypted_operand(
     used_dictionary: &mut [bool],
 ) -> Result<()> {
     match operand {
+        FheExecuteOperand::StateSlot {
+            handle_index,
+            state_index,
+            key_index,
+        } => {
+            mark_lowered_account(used_accounts, *state_index)?;
+            mark_lowered_dictionary_entry(used_dictionary, *handle_index)?;
+            mark_lowered_dictionary_entry(used_dictionary, *key_index)?;
+        }
+        FheExecuteOperand::TransientResult {
+            handle_index,
+            scratch_index,
+            consumer_state_index,
+        } => {
+            mark_lowered_account(used_accounts, *scratch_index)?;
+            mark_lowered_account(used_accounts, *consumer_state_index)?;
+            mark_lowered_dictionary_entry(used_dictionary, *handle_index)?;
+        }
+
         FheExecuteOperand::StoredValue {
             handle_index,
             encrypted_value_index,
@@ -212,6 +231,33 @@ fn validate_lowered_output(
     used_dictionary: &mut [bool],
 ) -> Result<()> {
     match output {
+        FheExecuteOutput::State {
+            state_index,
+            slot,
+            allow_indexes,
+            grants,
+            ..
+        } => {
+            mark_lowered_account(used_accounts, *state_index)?;
+            if let Some(slot) = slot {
+                mark_lowered_dictionary_entry(used_dictionary, slot.key_index)?;
+                if let Some(index) = slot.previous_handle_index {
+                    mark_lowered_dictionary_entry(used_dictionary, index)?;
+                }
+            }
+            for index in allow_indexes {
+                mark_lowered_dictionary_entry(used_dictionary, *index)?;
+            }
+            for grant in grants {
+                for index in [
+                    grant.scratch_index,
+                    grant.initiating_state_index,
+                    grant.consumer_state_index,
+                ] {
+                    mark_lowered_account(used_accounts, index)?;
+                }
+            }
+        }
         FheExecuteOutput::Transient => {}
         FheExecuteOutput::StoredValue {
             output_encrypted_value_index,
@@ -304,7 +350,9 @@ where
                         return Err(FheExecutionBuildError::DivisionByZero);
                     }
                 }
-                OperandKind::Persistent(_)
+                OperandKind::StateSlot { .. }
+                | OperandKind::Granted { .. }
+                | OperandKind::Persistent(_)
                 | OperandKind::Transient { .. }
                 | OperandKind::VerifiedInput { .. } => {
                     return Err(FheExecutionBuildError::DivisorMustBeScalar)
@@ -423,6 +471,9 @@ where
 {
     match &operand.0 {
         OperandKind::Persistent(persistent) => Ok(Some(handle_fhe_type(persistent.handle))),
+        OperandKind::StateSlot { handle, .. } | OperandKind::Granted { handle, .. } => {
+            Ok(Some(handle_fhe_type(*handle)))
+        }
         OperandKind::Transient { producer_index } => {
             if *producer_index as usize >= produced_count {
                 return Err(FheExecutionBuildError::InvalidTransientReference);

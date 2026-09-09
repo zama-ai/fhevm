@@ -115,7 +115,7 @@ const entriesOf = (record: (typeof fixture.accepted)[number]): readonly SolanaUs
   record.handles.map((entry) => ({
     handle: hexToBytes(entry.handle ?? '0x'),
     allowedKey: hexToBytes(entry.allowedKey ?? '0x'),
-    encryptedValueAccount: hexToBytes(entry.encryptedValueAccount ?? '0x'),
+    encryptedState: hexToBytes(entry.encryptedState ?? '0x'),
   }));
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -148,7 +148,7 @@ const entryFor = (
 ): SolanaUserDecryptHandleEntry => ({
   handle,
   allowedKey: hexToBytes(`0x${canonRecord.permit.user_pubkey}`),
-  encryptedValueAccount: new Uint8Array(32).fill(0xea),
+  encryptedState: new Uint8Array(32).fill(0xea),
   ...overrides,
 });
 
@@ -230,12 +230,12 @@ describe('the entry list', () => {
     const body = buildSolanaUserDecryptRequest({
       signedPermit: signedPermit(),
       entries: [
-        entryFor(handle, { encryptedValueAccount: firstAccount }),
-        entryFor(handle, { encryptedValueAccount: secondAccount }),
+        entryFor(handle, { encryptedState: firstAccount }),
+        entryFor(handle, { encryptedState: secondAccount }),
       ],
     });
 
-    expect(body.attestedPayload.handles.map((entry) => entry.encryptedValueAccount)).toEqual([
+    expect(body.attestedPayload.handles.map((entry) => entry.encryptedState)).toEqual([
       bytesToHex(firstAccount),
       bytesToHex(secondAccount),
     ]);
@@ -258,10 +258,10 @@ describe('the entry list', () => {
       failureOf(() =>
         buildSolanaUserDecryptRequest({
           signedPermit: permit,
-          entries: [entryFor(handle, { encryptedValueAccount: new Uint8Array(33) })],
+          entries: [entryFor(handle, { encryptedState: new Uint8Array(33) })],
         }),
       ),
-    ).toEqual({ reason: 'entry-field-width', index: 0, field: 'encryptedValueAccount' });
+    ).toEqual({ reason: 'entry-field-width', index: 0, field: 'encryptedState' });
   });
 });
 

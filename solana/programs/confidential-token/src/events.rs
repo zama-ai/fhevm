@@ -102,12 +102,8 @@ pub struct HandleDisclosedEvent {
     pub handle: [u8; 32],
     /// ZamaHost `EncryptedValue` encrypted value account the handle belongs to.
     pub encrypted_value: Pubkey,
-    /// Token state field whose canonical authority and label were validated.
-    pub kind: DisclosedValueKind,
-    /// Encrypted value account authority bound to `kind`.
-    pub encrypted_value_account_authority: Pubkey,
-    /// Encrypted value label bound to `kind`.
-    pub encrypted_value_label: [u8; 32],
+    /// Controller of the state containing the historical public leaf.
+    pub authority: Pubkey,
     /// KMS-certified cleartext amount (low 64 bits of the certified `uint256`).
     pub cleartext_amount: u64,
 }
@@ -117,8 +113,6 @@ pub struct HandleDisclosedEvent {
 pub enum DisclosedValueKind {
     /// Confidential token-account balance.
     Balance,
-    /// Amount produced by a confidential transfer.
-    TransferredAmount,
     /// Amount produced by a confidential burn.
     BurnedAmount,
     /// Mint encrypted total supply.

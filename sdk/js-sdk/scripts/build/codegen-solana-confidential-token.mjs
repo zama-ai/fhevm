@@ -82,7 +82,7 @@ const targets = [
       // disclose_secp `proof` argument (the flat leaf_index/siblings pair was folded into this
       // Anchor-native struct by #3252/#3248 — keeping it lets the regenerated builder resolve);
       // transferReceipt is confidentialTransfer's optional receipt argument.
-      definedTypes: new Set(['coprocessorInputAttestation', 'disclosedValueKind', 'mmrInclusionProof', 'transferReceipt']),
+      definedTypes: new Set(['coprocessorInputAttestation', 'disclosedValueKind', 'mmrInclusionProof', 'transferInput']),
       // The PDAs the kept builders default (wrapUsdc → vaultAuthority/totalSupplyAuthority,
       // initializeTokenAccount → tokenAccount).
       pdas: new Set(['vaultAuthority', 'totalSupplyAuthority', 'tokenAccount']),
@@ -111,6 +111,7 @@ const targets = [
       // SDK's hand-written wrappers in src/solana/actions.
       instructions: new Set([
         'verifyPublicDecrypt',
+        'closeScratch',
         'delegateForUserDecryption',
         'revokeDelegationForUserDecryption',
         'revokePermits',

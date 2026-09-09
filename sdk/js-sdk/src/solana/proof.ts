@@ -102,15 +102,15 @@ export function mmrNode(left: Uint8Array, right: Uint8Array): Uint8Array {
  * `key` on `handle`.
  */
 export function historicalAccessLeafCommitment(
-  encryptedValueAccount: Uint8Array,
+  encryptedState: Uint8Array,
   leafIndex: bigint,
   handle: Uint8Array,
   key: Uint8Array,
 ): Uint8Array {
-  assertLen(encryptedValueAccount, 32, 'encryptedValueAccount');
+  assertLen(encryptedState, 32, 'encryptedState');
   assertLen(handle, 32, 'handle');
   assertLen(key, 32, 'key');
-  return keccak256Parts(HISTORICAL_ACCESS_LEAF_PREFIX, encryptedValueAccount, u64BE(leafIndex), handle, key);
+  return keccak256Parts(HISTORICAL_ACCESS_LEAF_PREFIX, encryptedState, u64BE(leafIndex), handle, key);
 }
 
 /**
@@ -118,13 +118,13 @@ export function historicalAccessLeafCommitment(
  * `PublicDecryptLeaf { encrypted_value_account, leaf_index, handle }`.
  */
 export function publicDecryptLeafCommitment(
-  encryptedValueAccount: Uint8Array,
+  encryptedState: Uint8Array,
   leafIndex: bigint,
   handle: Uint8Array,
 ): Uint8Array {
-  assertLen(encryptedValueAccount, 32, 'encryptedValueAccount');
+  assertLen(encryptedState, 32, 'encryptedState');
   assertLen(handle, 32, 'handle');
-  return keccak256Parts(PUBLIC_DECRYPT_LEAF_PREFIX, encryptedValueAccount, u64BE(leafIndex), handle);
+  return keccak256Parts(PUBLIC_DECRYPT_LEAF_PREFIX, encryptedState, u64BE(leafIndex), handle);
 }
 
 /** An MMR inclusion proof: sibling hashes from the leaf up to its mountain's peak. */
@@ -166,20 +166,20 @@ export type SolanaReconstructedEncryptedValueAccount = {
  * proof built from this: a missed or reordered event yields a different leaf list whose peaks
  * diverge, and a proof built from it would be rejected at verify time.
  *
- * @param encryptedValueAccount - The 32-byte account address the leaves bind.
+ * @param encryptedState - The 32-byte account address the leaves bind.
  * @param events - The account's history, oldest first.
  */
 export function reconstructSolanaEncryptedValueAccount(
-  encryptedValueAccount: Uint8Array,
+  encryptedState: Uint8Array,
   events: readonly SolanaEncryptedValueAccountEvent[],
 ): SolanaReconstructedEncryptedValueAccount {
   const leaves = events.map((event, index) => {
     const leafIndex = BigInt(index);
     switch (event.kind) {
       case 'allowed':
-        return historicalAccessLeafCommitment(encryptedValueAccount, leafIndex, event.handle, event.key);
+        return historicalAccessLeafCommitment(encryptedState, leafIndex, event.handle, event.key);
       case 'markedPublic':
-        return publicDecryptLeafCommitment(encryptedValueAccount, leafIndex, event.handle);
+        return publicDecryptLeafCommitment(encryptedState, leafIndex, event.handle);
     }
   });
   return { leaves, leafCount: BigInt(leaves.length), peaks: mmrPeaksFromLeaves(leaves) };
@@ -359,25 +359,25 @@ function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
 
 /** Matches `zama_solana_acl::authorize_historical`: one allow of `key` on `handle` is proven. */
 export function verifyHistoricalAccessProof(
-  encryptedValueAccount: Uint8Array,
+  encryptedState: Uint8Array,
   peaks: readonly Uint8Array[],
   leafCount: bigint,
   handle: Uint8Array,
   key: Uint8Array,
   proof: MmrProof,
 ): boolean {
-  const commitment = historicalAccessLeafCommitment(encryptedValueAccount, proof.leafIndex, handle, key);
+  const commitment = historicalAccessLeafCommitment(encryptedState, proof.leafIndex, handle, key);
   return mmrVerify(peaks, leafCount, commitment, proof);
 }
 
 /** Matches `zama_solana_acl::authorize_public`: `handle` was made public, at exactly this leaf. */
 export function verifyPublicDecryptProof(
-  encryptedValueAccount: Uint8Array,
+  encryptedState: Uint8Array,
   peaks: readonly Uint8Array[],
   leafCount: bigint,
   handle: Uint8Array,
   proof: MmrProof,
 ): boolean {
-  const commitment = publicDecryptLeafCommitment(encryptedValueAccount, proof.leafIndex, handle);
+  const commitment = publicDecryptLeafCommitment(encryptedState, proof.leafIndex, handle);
   return mmrVerify(peaks, leafCount, commitment, proof);
 }

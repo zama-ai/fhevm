@@ -16,8 +16,8 @@ mod solana_support;
 
 use kms_worker::core::solana_acl::HandleBytes;
 use solana_support::{
-    APP_PROGRAM, EncryptedValueAccountFixture, FHE_TYPE_UINT64, PermitBuilder, RequestBuilder,
-    SCOPE, Wallet, handle,
+    APP_PROGRAM, EncryptedStateFixture, FHE_TYPE_UINT64, PermitBuilder, RequestBuilder, SCOPE,
+    Wallet, handle,
 };
 use zama_solana_request::{
     SOLANA_REQUEST_VERSION, SolanaRequestDecodeError, SolanaUserDecryptRequestWire,
@@ -32,8 +32,8 @@ fn reference_wire() -> SolanaUserDecryptRequestWire {
     let own = handle(10, FHE_TYPE_UINT64);
     let delegated = handle(11, FHE_TYPE_UINT64);
 
-    let own_account = EncryptedValueAccountFixture::allowing(own, wallet.pubkey());
-    let delegated_account = EncryptedValueAccountFixture::allowing(delegated, delegator.pubkey());
+    let own_account = EncryptedStateFixture::allowing(own, wallet.pubkey());
+    let delegated_account = EncryptedStateFixture::allowing(delegated, delegator.pubkey());
 
     RequestBuilder::new(&wallet)
         .permit(PermitBuilder::new(wallet.pubkey()).scope(&[(APP_PROGRAM, SCOPE)]))
@@ -130,8 +130,8 @@ fn every_wire_field_reaches_the_canonical_bytes() {
     variants.push(("entry.allowed_key", wire));
 
     let mut wire = base.clone();
-    wire.handles[1].encrypted_value_account[0] ^= 1;
-    variants.push(("entry.encrypted_value_account", wire));
+    wire.handles[1].encrypted_state[0] ^= 1;
+    variants.push(("entry.encrypted_state", wire));
 
     for (field, variant) in variants {
         let bytes = encode_solana_request(&variant).expect("every variant serializes");
@@ -166,6 +166,16 @@ fn a_request_of_an_unknown_version_is_rejected() {
     assert_eq!(
         decode_solana_request(&[]),
         Err(SolanaRequestDecodeError::UnknownVersion { version: None })
+    );
+
+    let mut obsolete =
+        encode_solana_request(&reference_wire()).expect("the reference wire serializes");
+    obsolete[0] = 0x02;
+    assert_eq!(
+        decode_solana_request(&obsolete),
+        Err(SolanaRequestDecodeError::UnknownVersion {
+            version: Some(0x02)
+        })
     );
 }
 

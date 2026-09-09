@@ -107,9 +107,6 @@
           "writable": true
         },
         {
-          "name": "batch_burned_amount_value"
-        },
-        {
           "name": "pending_burn",
           "writable": true
         },
@@ -267,14 +264,15 @@
           }
         },
         {
-          "name": "pending_join_value"
+          "name": "join_state",
+          "writable": true
         },
         {
-          "name": "claim_amount_value",
-          "docs": [
-            "the transfer amount."
-          ],
+          "name": "scratch",
           "writable": true
+        },
+        {
+          "name": "instructions"
         },
         {
           "name": "payout_confidential_mint",
@@ -312,13 +310,6 @@
         },
         {
           "name": "user_payout_balance_value",
-          "writable": true
-        },
-        {
-          "name": "batch_payout_transferred_value",
-          "docs": [
-            "the token CPI."
-          ],
           "writable": true
         },
         {
@@ -456,13 +447,6 @@
         },
         {
           "name": "total_supply_value",
-          "writable": true
-        },
-        {
-          "name": "batch_burned_amount_value",
-          "docs": [
-            "decryptable; created by the token CPI (first and only burn per batch)."
-          ],
           "writable": true
         },
         {
@@ -737,18 +721,15 @@
           "writable": true
         },
         {
-          "name": "user_transferred_value",
-          "docs": [
-            "token CPI."
-          ],
+          "name": "join_state",
           "writable": true
         },
         {
-          "name": "pending_join_value",
-          "docs": [
-            "first join, accumulated on repeat joins. Pinned to its canonical address below."
-          ],
+          "name": "scratch",
           "writable": true
+        },
+        {
+          "name": "instructions"
         },
         {
           "name": "zama_event_authority"
@@ -1228,14 +1209,7 @@
           "writable": true
         },
         {
-          "name": "batch_transferred_value",
-          "docs": [
-            "a transfer FROM the batch account); replaced by the token CPI."
-          ],
-          "writable": true
-        },
-        {
-          "name": "pending_join_value",
+          "name": "join_state",
           "docs": [
             "amount, then reset to an encrypted zero by the batcher execution."
           ],
@@ -2382,13 +2356,6 @@
               "Decimal precision inherited from the underlying mint."
             ],
             "type": "u8"
-          },
-          {
-            "name": "total_supply_encrypted_value",
-            "docs": [
-              "`EncryptedValue` encrypted value account PDA holding the current total-supply handle."
-            ],
-            "type": "pubkey"
           }
         ]
       }
@@ -2511,13 +2478,6 @@
             "name": "user",
             "docs": [
               "Joining user."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "joined_encrypted_value",
-            "docs": [
-              "`EncryptedValue` encrypted value account holding the user's accumulated joined amount."
             ],
             "type": "pubkey"
           },
@@ -2655,11 +2615,23 @@
             "type": "pubkey"
           },
           {
-            "name": "claim_encrypted_value",
+            "name": "claim_state",
             "docs": [
               "`EncryptedValue` encrypted value account holding the claimed payout amount."
             ],
             "type": "pubkey"
+          },
+          {
+            "name": "claim_handle",
+            "docs": [
+              "Calculated entitlement, distinct from the token transfer event's paid handle."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
           }
         ]
       }

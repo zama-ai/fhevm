@@ -37,12 +37,8 @@ import {
 import { getAccountMetaFactory, type ResolvedInstructionAccount } from '@solana/program-client-core';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '../programAddress.js';
 import {
-  getDisclosedValueKindDecoder,
-  getDisclosedValueKindEncoder,
   getMmrInclusionProofDecoder,
   getMmrInclusionProofEncoder,
-  type DisclosedValueKind,
-  type DisclosedValueKindArgs,
   type MmrInclusionProof,
   type MmrInclusionProofArgs,
 } from '../types/index.js';
@@ -82,7 +78,6 @@ export type DiscloseSecpInstruction<
 
 export type DiscloseSecpInstructionData = {
   discriminator: ReadonlyUint8Array;
-  kind: DisclosedValueKind;
   handle: ReadonlyUint8Array;
   cleartext: ReadonlyUint8Array;
   signatures: Array<ReadonlyUint8Array>;
@@ -91,7 +86,6 @@ export type DiscloseSecpInstructionData = {
 };
 
 export type DiscloseSecpInstructionDataArgs = {
-  kind: DisclosedValueKindArgs;
   handle: ReadonlyUint8Array;
   cleartext: ReadonlyUint8Array;
   signatures: Array<ReadonlyUint8Array>;
@@ -103,7 +97,6 @@ export function getDiscloseSecpInstructionDataEncoder(): Encoder<DiscloseSecpIns
   return transformEncoder(
     getStructEncoder([
       ['discriminator', fixEncoderSize(getBytesEncoder(), 8)],
-      ['kind', getDisclosedValueKindEncoder()],
       ['handle', fixEncoderSize(getBytesEncoder(), 32)],
       ['cleartext', fixEncoderSize(getBytesEncoder(), 32)],
       ['signatures', getArrayEncoder(fixEncoderSize(getBytesEncoder(), 65))],
@@ -117,7 +110,6 @@ export function getDiscloseSecpInstructionDataEncoder(): Encoder<DiscloseSecpIns
 export function getDiscloseSecpInstructionDataDecoder(): Decoder<DiscloseSecpInstructionData> {
   return getStructDecoder([
     ['discriminator', fixDecoderSize(getBytesDecoder(), 8)],
-    ['kind', getDisclosedValueKindDecoder()],
     ['handle', fixDecoderSize(getBytesDecoder(), 32)],
     ['cleartext', fixDecoderSize(getBytesDecoder(), 32)],
     ['signatures', getArrayDecoder(fixDecoderSize(getBytesDecoder(), 65))],
@@ -163,7 +155,6 @@ export type DiscloseSecpInput<
   zamaProgram?: Address<TAccountZamaProgram>;
   eventAuthority: Address<TAccountEventAuthority>;
   program: Address<TAccountProgram>;
-  kind: DiscloseSecpInstructionDataArgs['kind'];
   handle: DiscloseSecpInstructionDataArgs['handle'];
   cleartext: DiscloseSecpInstructionDataArgs['cleartext'];
   signatures: DiscloseSecpInstructionDataArgs['signatures'];

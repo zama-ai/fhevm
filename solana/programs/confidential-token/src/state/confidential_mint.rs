@@ -15,11 +15,10 @@ pub struct ConfidentialMint {
     pub underlying_mint: Pubkey,
     /// Decimal precision inherited from the underlying mint.
     pub decimals: u8,
-    /// `EncryptedValue` encrypted value account PDA holding the current total-supply handle.
-    pub total_supply_encrypted_value: Pubkey,
+
 }
 
 impl ConfidentialMint {
     /// Serialized size of the account body, excluding Anchor discriminator.
-    pub const SPACE: usize = 32 + 32 + 1 + 32;
+    pub const SPACE: usize = 32 + 32 + 1;
 }

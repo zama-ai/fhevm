@@ -23,15 +23,11 @@ pub struct ConfidentialBurn<'info> {
     #[account(seeds = [b"total-supply", mint.key().as_ref()], bump)]
     pub total_supply_authority: UncheckedAccount<'info>,
     /// Stable balance encrypted value account; read for the current handle and replaced by this execution.
-    #[account(mut, address = token_account.balance_encrypted_value)]
-    pub balance_value: Box<Account<'info, zama_host::EncryptedValue>>,
+    #[account(mut, address = encrypted_state_address(mint.key(), token_account.key()).0)]
+    pub balance_value: Box<Account<'info, zama_host::EncryptedState>>,
     /// Stable total-supply encrypted value account; read for the current handle and replaced by this execution.
-    #[account(mut, address = mint.total_supply_encrypted_value)]
-    pub total_supply_value: Box<Account<'info, zama_host::EncryptedValue>>,
-    /// CHECK: stable `burned_amount` encrypted value account for `token_account`; created on the
-    /// account's first burn and replaced after the prior pending burn is settled.
-    #[account(mut, address = encrypted_value_address(mint.key(), token_account.key(), encrypted_burned_amount_label()).0)]
-    pub burned_amount_value: UncheckedAccount<'info>,
+    #[account(mut, address = encrypted_state_address(mint.key(), total_supply_authority_address(mint.key()).0).0)]
+    pub total_supply_value: Box<Account<'info, zama_host::EncryptedState>>,
     /// CHECK: single pending-burn PDA for this token account, created after `fhe_execute`.
     /// A burn is rejected before execution while this account is already initialized.
     #[account(mut)]
@@ -68,7 +64,6 @@ impl<'info> ConfidentialBurn<'info> {
             total_supply_authority: &self.total_supply_authority,
             balance_value: self.balance_value.to_account_info(),
             total_supply_value: self.total_supply_value.to_account_info(),
-            burned_amount_value: self.burned_amount_value.to_account_info(),
             pending_burn: self.pending_burn.to_account_info(),
             zama_event_authority: &self.zama_event_authority,
             zama_program: &self.zama_program,
@@ -162,15 +157,11 @@ pub struct ConfidentialBurnFromValue<'info> {
     #[account(seeds = [b"total-supply", mint.key().as_ref()], bump)]
     pub total_supply_authority: UncheckedAccount<'info>,
     /// Stable balance encrypted value account; read for the current handle and replaced by this execution.
-    #[account(mut, address = token_account.balance_encrypted_value)]
-    pub balance_value: Box<Account<'info, zama_host::EncryptedValue>>,
+    #[account(mut, address = encrypted_state_address(mint.key(), token_account.key()).0)]
+    pub balance_value: Box<Account<'info, zama_host::EncryptedState>>,
     /// Stable total-supply encrypted value account; read for the current handle and replaced by this execution.
-    #[account(mut, address = mint.total_supply_encrypted_value)]
-    pub total_supply_value: Box<Account<'info, zama_host::EncryptedValue>>,
-    /// CHECK: stable `burned_amount` encrypted value account for `token_account`, created publicly
-    /// decryptable exactly as in [`ConfidentialBurn`].
-    #[account(mut, address = encrypted_value_address(mint.key(), token_account.key(), encrypted_burned_amount_label()).0)]
-    pub burned_amount_value: UncheckedAccount<'info>,
+    #[account(mut, address = encrypted_state_address(mint.key(), total_supply_authority_address(mint.key()).0).0)]
+    pub total_supply_value: Box<Account<'info, zama_host::EncryptedState>>,
     /// CHECK: single pending-burn PDA for this token account, created after `fhe_execute`.
     /// A burn is rejected before execution while this account is already initialized.
     #[account(mut)]
@@ -180,7 +171,7 @@ pub struct ConfidentialBurnFromValue<'info> {
     /// `(program, authority, scope, label)` fields, so an encrypted value account from any app may
     /// be passed here when that app's value authority is the signing `owner` (a program PDA
     /// authorizing through `invoke_signed`), or when it is one of the burner's own token values.
-    pub amount_value: Box<Account<'info, zama_host::EncryptedValue>>,
+    pub amount_value: Box<Account<'info, zama_host::EncryptedState>>,
     /// CHECK: Anchor event CPI authority for the Zama host program.
     pub zama_event_authority: UncheckedAccount<'info>,
     /// ZamaHost program used for FHE operations.
@@ -213,7 +204,6 @@ impl<'info> ConfidentialBurnFromValue<'info> {
             total_supply_authority: &self.total_supply_authority,
             balance_value: self.balance_value.to_account_info(),
             total_supply_value: self.total_supply_value.to_account_info(),
-            burned_amount_value: self.burned_amount_value.to_account_info(),
             pending_burn: self.pending_burn.to_account_info(),
             zama_event_authority: &self.zama_event_authority,
             zama_program: &self.zama_program,
@@ -240,10 +230,12 @@ impl<'info> ConfidentialBurnFromValue<'info> {
 /// attestation path, so `redeem_burned_amount` consumes it unchanged.
 pub fn confidential_burn_from_value<'info>(
     ctx: Context<'info, ConfidentialBurnFromValue<'info>>,
+    key: [u8; 32],
 ) -> Result<()> {
     let amount_value = &ctx.accounts.amount_value;
     assert_amount_value_spendable(
         amount_value,
+        key,
         ctx.accounts.owner.key(),
         ctx.accounts.token_account.key(),
     )?;
@@ -251,6 +243,7 @@ pub fn confidential_burn_from_value<'info>(
     let outcome = execute_burn(
         ctx.accounts.as_burn_accounts(ctx.remaining_accounts),
         BurnAmountSource::ExistingValue {
+            key,
             amount_value: amount_value_info,
         },
     )?;
@@ -298,7 +291,7 @@ enum BurnAmountSource<'info> {
     /// account that does) and euint64 type check run in the instruction handler before this
     /// reaches the execution builder; the host re-checks the handle is current and that the
     /// value's authority signed, in-execution.
-    ExistingValue { amount_value: AccountInfo<'info> },
+    ExistingValue { amount_value: AccountInfo<'info>, key: [u8; 32] },
 }
 
 /// Fixed ZamaHost CPI accounts and burn operands shared by the attested and existing-value arms.
@@ -316,8 +309,6 @@ struct BurnAccounts<'a, 'info> {
     balance_value: AccountInfo<'info>,
     /// Stable total-supply encrypted value account: read for the current handle, then replaced in place.
     total_supply_value: AccountInfo<'info>,
-    /// Stable burned-amount encrypted value account: replaced to this burn's created-public delta.
-    burned_amount_value: AccountInfo<'info>,
     /// Single pending-burn PDA opened after the burned handle is known.
     pending_burn: AccountInfo<'info>,
     zama_event_authority: &'a UncheckedAccount<'info>,
@@ -355,10 +346,10 @@ fn execute_burn<'info>(
     let token_account = accounts.token_account;
     let owner = token_account.owner;
     let token_account_key = token_account.key();
-    let balance_value = fhe::read_encrypted_value(&accounts.balance_value)?;
-    let total_supply_value = fhe::read_encrypted_value(&accounts.total_supply_value)?;
-    let old_balance_handle = balance_value.current_handle;
-    let old_total_supply_handle = total_supply_value.current_handle;
+    let balance_value = fhe::read_state(&accounts.balance_value)?;
+    let total_supply_value = fhe::read_state(&accounts.total_supply_value)?;
+    let old_balance_handle = fhe::state_handle(&balance_value, encrypted_balance_label())?;
+    let old_total_supply_handle = fhe::state_handle(&total_supply_value, encrypted_total_supply_label())?;
 
     require_keys_eq!(
         owner,
@@ -395,7 +386,7 @@ fn execute_burn<'info>(
         mint_key,
         total_supply_authority_address(mint_key).1,
     )?;
-    let balance_output = fhe::PersistentOutput::new(
+    let balance_output = fhe::SlotOutput::new(
         accounts.balance_value.clone(),
         balance_encrypted_value_id(mint_key, token_account_key),
         &token_authority,
@@ -404,21 +395,21 @@ fn execute_burn<'info>(
     // ERC-7984 `unwrap` parity (`makePubliclyDecryptable(unwrapAmount)`): the burned delta is created
     // publicly decryptable inside this execution. The sequential pending-burn invariant prevents a
     // later burn from replacing it before redeem or cancel.
-    let burned_output = fhe::PersistentOutput::new_public(
-        accounts.burned_amount_value.clone(),
+    let burned_output = fhe::SlotOutput::new_public(
+        accounts.balance_value.clone(),
         token_value_id(mint_key, token_account_key, encrypted_burned_amount_label()),
         &token_authority,
         [owner],
     )?;
-    let total_supply_output = fhe::PersistentOutput::new(
+    let total_supply_output = fhe::SlotOutput::new(
         accounts.total_supply_value.clone(),
         total_supply_encrypted_value_id(mint_key),
         &total_supply_authority,
         [],
     )?;
 
-    let balance = fhe::uint64_operand(&balance_value)?;
-    let total_supply = fhe::uint64_operand(&total_supply_value)?;
+    let balance = fhe::uint64_operand(&balance_value, encrypted_balance_label())?;
+    let total_supply = fhe::uint64_operand(&total_supply_value, encrypted_total_supply_label())?;
     // Existing value: the amount is an on-chain encrypted value account's current handle, read as
     // a persistent operand named by the value's own canonical fields, so its PDA equals the passed
     // account; the host re-checks handle-is-current and the authority's signature. Read here
@@ -426,13 +417,14 @@ fn execute_burn<'info>(
     // the account is this program's error to report, not the builder's.
     let stored_amount = match &amount_source {
         BurnAmountSource::Attested(_) => None,
-        BurnAmountSource::ExistingValue { amount_value } => {
-            Some(fhe::read_encrypted_value(amount_value)?)
-        }
+        BurnAmountSource::ExistingValue { amount_value, .. } => Some(fhe::read_state(amount_value)?),
     };
     let stored_operand = stored_amount
         .as_ref()
-        .map(fhe::uint64_operand)
+        .map(|state| {
+            let BurnAmountSource::ExistingValue { key, .. } = &amount_source else { unreachable!() };
+            fhe::uint64_operand(state, *key)
+        })
         .transpose()?;
     let execution = zama_fhe::FheExecution::build(
         zama_fhe::ExecutionEncryptedValueAccountAuthority::new(token_account_key),
@@ -473,11 +465,10 @@ fn execute_burn<'info>(
     // requires, and its authority's signature when the signing owner controls it directly.
     let mut dynamic_accounts = vec![
         balance_output.account_info(),
-        burned_output.account_info(),
         total_supply_output.account_info(),
     ];
     let mut value_authorities = vec![token_authority, total_supply_authority];
-    if let (BurnAmountSource::ExistingValue { amount_value }, Some(stored)) =
+    if let (BurnAmountSource::ExistingValue { amount_value, .. }, Some(stored)) =
         (&amount_source, &stored_amount)
     {
         // The amount encrypted value account can legitimately alias one of the output accounts
@@ -491,7 +482,7 @@ fn execute_burn<'info>(
         {
             dynamic_accounts.push(amount_value.clone());
         }
-        if stored.encrypted_value_account_authority == accounts.burn_authority.key() {
+        if stored.authority == accounts.burn_authority.key() {
             value_authorities.push(fhe::ValueAuthority::external(
                 accounts.burn_authority.to_account_info(),
             ));
@@ -532,7 +523,6 @@ fn execute_burn<'info>(
         owner,
         token_account_key,
         burned_handle,
-        accounts.burned_amount_value.key(),
     )?;
 
     Ok(BurnOutcome {
@@ -540,7 +530,7 @@ fn execute_burn<'info>(
         owner,
         token_account: token_account_key,
         burned_handle,
-        burned_encrypted_value: accounts.burned_amount_value.key(),
+        burned_encrypted_value: accounts.balance_value.key(),
         old_balance_handle,
         new_balance_handle: balance_output.handle()?,
         balance_encrypted_value: accounts.balance_value.key(),
@@ -590,7 +580,6 @@ fn open_pending_burn<'info>(
     owner: Pubkey,
     token_account: Pubkey,
     burned_handle: [u8; 32],
-    burned_encrypted_value: Pubkey,
 ) -> Result<()> {
     let (_, bump) = pending_burn_address(mint, token_account);
     assert_pending_burn_available(pending_burn_ai, mint, token_account)?;
@@ -627,7 +616,6 @@ fn open_pending_burn<'info>(
         owner,
         token_account,
         burned_handle,
-        burned_encrypted_value,
         bump,
     };
     let mut data = pending_burn_ai.try_borrow_mut_data()?;

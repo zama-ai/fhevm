@@ -1,6 +1,6 @@
 import { createSolanaRpc, type Address, type Instruction, type Signature, type TransactionSigner } from '@solana/kit';
 import {
-  buildClaimInstruction,
+  buildClaimInstructions as buildVaultClaimInstructions,
   buildInitializeTokenAccountInstruction,
   deriveJoinRecordAddress,
   getBatchByIndex,
@@ -79,7 +79,7 @@ const buildClaimInstructions = async (
     );
   }
   instructions.push(
-    await buildClaimInstruction({
+    ...await buildVaultClaimInstructions({
       payer: session.keeper,
       user,
       batcher: roots.batcher,

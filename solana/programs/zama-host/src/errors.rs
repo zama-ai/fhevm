@@ -293,4 +293,12 @@ pub enum ZamaHostError {
     /// sentinel across every HCU knob, and a `0` limit would reject every execution.
     #[msg("0 is not a valid HCU limit; use u64::MAX for unlimited")]
     HcuLimitZeroReserved,
+    #[msg("invalid transient workspace account")]
+    TransientAccountInvalid,
+    #[msg("matching final top-level scratch close is required")]
+    TransientCloseMissing,
+    #[msg("transient workspace grant capacity exceeded")]
+    TransientCapacityExceeded,
+    #[msg("encrypted state slot capacity exceeded")]
+    EncryptedStateCapacityExceeded,
 }

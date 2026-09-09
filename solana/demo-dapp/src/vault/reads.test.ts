@@ -24,7 +24,6 @@ describe('getJoinRecord', () => {
     const data = getJoinRecordEncoder().encode({
       batch: addr(4),
       user: addr(100),
-      joinedEncryptedValue: addr(5),
       claimed: true,
       bump: 253,
     });
@@ -33,7 +32,7 @@ describe('getJoinRecord', () => {
     const record = await getJoinRecord({} as never, addr(9), { commitment: 'confirmed' });
     expect(record.batch).toBe(addr(4));
     expect(record.user).toBe(addr(100));
-    expect(record.joinedEncryptedValue).toBe(addr(5));
+    expect('joinedEncryptedValue' in record).toBe(false);
     expect(record.claimed).toBe(true);
     // The commitment rides through to the underlying account fetch — the demo reads a fresh claim
     // at 'confirmed' because finalization lags it by ~31 slots.

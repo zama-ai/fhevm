@@ -16,6 +16,9 @@ use crate::constants::{COMPUTATION_DOMAIN_SEPARATOR, COMPUTED_HANDLE_MARKER};
 use crate::errors::ZamaHostError;
 
 pub mod deny_scope_record;
+pub mod encrypted_state;
+pub mod transient;
+pub use transient::*;
 pub mod encrypted_value;
 pub mod hcu_block_meter;
 pub mod hcu_trusted_app_record;
@@ -27,6 +30,7 @@ mod type_gate;
 pub mod user_decryption_delegation;
 
 pub use deny_scope_record::*;
+pub use encrypted_state::*;
 pub use encrypted_value::*;
 pub use hcu_block_meter::*;
 pub use hcu_trusted_app_record::*;
@@ -353,6 +357,17 @@ pub enum FheExecuteOperand {
         // is unchanged.
         attestation: Box<CoprocessorInputAttestation>,
     },
+
+    StateSlot {
+        handle_index: u8,
+        state_index: u8,
+        key_index: u8,
+    },
+    TransientResult {
+        handle_index: u8,
+        scratch_index: u8,
+        consumer_state_index: u8,
+    },
 }
 
 /// One seed of the authority PDA a create proves, so the host can check the authority belongs
@@ -369,6 +384,19 @@ pub enum PdaSeed {
         /// The seed bytes, at most 32.
         bytes: Vec<u8>,
     },
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
+pub struct SlotWrite {
+    pub key_index: u8,
+    pub previous_handle_index: Option<u8>,
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
+pub struct ResultGrant {
+    pub scratch_index: u8,
+    pub initiating_state_index: u8,
+    pub consumer_state_index: u8,
 }
 
 /// Output policy for a composed fhe_execute operation.
@@ -413,6 +441,16 @@ pub enum FheExecuteOutput {
         /// (byte-identical to `make_handle_public`). Carried in instruction data so indexers
         /// reconstruct that leaf without reading the account (DD-036).
         make_public: bool,
+    },
+
+    State {
+        state_index: u8,
+        /// History position before this output, so indexers can detect missing writes.
+        previous_leaf_count: u64,
+        slot: Option<SlotWrite>,
+        allow_indexes: Vec<u8>,
+        make_public: bool,
+        grants: Vec<ResultGrant>,
     },
 }
 

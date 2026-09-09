@@ -36,8 +36,6 @@ pub struct CancelDispatch<'info> {
     /// CHECK: mint total-supply encrypted value account; restored by the token CPI.
     #[account(mut)]
     pub total_supply_value: UncheckedAccount<'info>,
-    /// CHECK: batch burned-amount encrypted value account; validated and read by the token CPI.
-    pub batch_burned_amount_value: UncheckedAccount<'info>,
     /// CHECK: pending-burn PDA for the batch token account; closed by the token CPI.
     #[account(mut)]
     pub pending_burn: UncheckedAccount<'info>,
@@ -108,8 +106,7 @@ pub fn cancel_dispatch<'info>(
                 total_supply_authority: ctx.accounts.total_supply_authority.to_account_info(),
                 balance_value: ctx.accounts.batch_balance_value.to_account_info(),
                 total_supply_value: ctx.accounts.total_supply_value.to_account_info(),
-                burned_amount_value: ctx.accounts.batch_burned_amount_value.to_account_info(),
-                pending_burn: ctx.accounts.pending_burn.to_account_info(),
+                    pending_burn: ctx.accounts.pending_burn.to_account_info(),
                 host_config: ctx.accounts.host_config.to_account_info(),
                 zama_event_authority: ctx.accounts.zama_event_authority.to_account_info(),
                 zama_program: ctx.accounts.zama_program.to_account_info(),

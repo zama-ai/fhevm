@@ -1,6 +1,6 @@
-//! The RFC 035 leaf record of Solana encrypted value accounts.
+//! The RFC 035 leaf record of Solana encrypted state accounts.
 //!
-//! Every write the host performs on an encrypted value account seals leaves: one
+//! Every state output the host accepts may seal leaves: one
 //! historical-access leaf per allowed key on the handle it installs, then one
 //! public-decrypt leaf when the handle is made public. The listener recomputes
 //! those leaves from the confirmed instruction stream and keeps them next to the
@@ -21,16 +21,11 @@ use zama_solana_acl::{
 
 use crate::database::tfhe_event_propagate::Transaction;
 
-/// A `fhe_execute` persistent output, with its account resolved.
+/// A `fhe_execute` state output, with its account resolved.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct EncryptedValueWrite {
-    pub encrypted_value_account: [u8; 32],
-    pub program: [u8; 32],
-    pub encrypted_value_account_authority: [u8; 32],
-    pub scope: [u8; 32],
-    pub label: [u8; 32],
-    /// The handle being replaced: `None` on create.
-    pub previous_handle: Option<[u8; 32]>,
+pub struct EncryptedStateWrite {
+    pub encrypted_state: [u8; 32],
+    pub previous_leaf_count: u64,
     pub handle: [u8; 32],
     pub allowed_keys: Vec<[u8; 32]>,
     pub make_public: bool,
@@ -39,11 +34,7 @@ pub struct EncryptedValueWrite {
 /// One host instruction that seals leaves, in on-chain order.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum LeafSource {
-    Write(EncryptedValueWrite),
-    MakeHandlePublic {
-        encrypted_value_account: [u8; 32],
-        handle: [u8; 32],
-    },
+    State(EncryptedStateWrite),
 }
 
 /// The leaf sources of one confirmed transaction.
@@ -53,19 +44,13 @@ pub struct TransactionLeafSources {
     pub sources: Vec<LeafSource>,
 }
 
-/// The persisted state of one encrypted value account.
+/// The persisted proof-history cursor of one encrypted state account.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct EncryptedValueState {
-    pub program: [u8; 32],
-    pub encrypted_value_account_authority: [u8; 32],
-    pub scope: [u8; 32],
-    pub label: [u8; 32],
-    pub current_handle: [u8; 32],
+pub struct EncryptedStateHistory {
     pub leaf_count: u64,
     pub peaks: Vec<[u8; 32]>,
-    /// False when the account was first seen through an update, so its earlier
-    /// leaves were sealed before this record started: no leaf of it is stored,
-    /// and no proof can be served for it.
+    /// False when the first observed output declared a nonzero prior count. The
+    /// numeric cursor advances, but no leaf or proof can be served.
     pub history_complete: bool,
 }
 
@@ -88,7 +73,7 @@ impl LeafKind {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StagedLeaf {
-    pub encrypted_value_account: [u8; 32],
+    pub encrypted_state: [u8; 32],
     pub leaf_index: u64,
     pub commitment: [u8; 32],
     pub kind: LeafKind,
@@ -101,7 +86,7 @@ pub struct StagedLeaf {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct BlockLeafReduction {
     /// Every account the block touched, with its state after the block.
-    pub accounts: BTreeMap<[u8; 32], EncryptedValueState>,
+    pub states: BTreeMap<[u8; 32], EncryptedStateHistory>,
     pub leaves: Vec<StagedLeaf>,
 }
 
@@ -109,58 +94,38 @@ pub struct BlockLeafReduction {
 /// diverged from chain state, and continuing would seal wrong leaves.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum LeafReduceError {
-    #[error("create on encrypted value account {} already recorded", bs58::encode(encrypted_value_account).into_string())]
-    CreateOnRecordedAccount { encrypted_value_account: [u8; 32] },
-    #[error("encrypted value account {} replaced handle {} but the record holds {}", bs58::encode(encrypted_value_account).into_string(), hex::encode(previous_handle), hex::encode(recorded_handle))]
-    PreviousHandleMismatch {
-        encrypted_value_account: [u8; 32],
-        previous_handle: [u8; 32],
-        recorded_handle: [u8; 32],
+    #[error("encrypted state {} declared previous leaf count {declared}, record holds {recorded}", bs58::encode(encrypted_state).into_string())]
+    PreviousLeafCountMismatch {
+        encrypted_state: [u8; 32],
+        declared: u64,
+        recorded: u64,
     },
-    #[error("encrypted value account {} made handle {} public but the record holds {}", bs58::encode(encrypted_value_account).into_string(), hex::encode(handle), hex::encode(recorded_handle))]
-    PublicHandleMismatch {
-        encrypted_value_account: [u8; 32],
-        handle: [u8; 32],
-        recorded_handle: [u8; 32],
-    },
-    #[error("MMR append failed on encrypted value account {}: {error:?}", bs58::encode(encrypted_value_account).into_string())]
+    #[error("leaf count overflow on encrypted state {}", bs58::encode(encrypted_state).into_string())]
+    LeafCountOverflow { encrypted_state: [u8; 32] },
+    #[error("MMR append failed on encrypted state {}: {error:?}", bs58::encode(encrypted_state).into_string())]
     Mmr {
-        encrypted_value_account: [u8; 32],
+        encrypted_state: [u8; 32],
         error: AclError,
     },
 }
 
 /// Reduces one block's leaf sources over the accounts' prior states.
 ///
-/// `existing` holds the recorded state of every account the block touches. An
-/// account first seen through an update or a `make_handle_public` is recorded
-/// with `history_complete = false`: its handle is tracked, no leaf is stored.
+/// `existing` holds the recorded cursor of every state the block touches. A
+/// state first seen above leaf zero is tracked with `history_complete = false`:
+/// its cursor advances, but no leaf or proof is stored.
 pub fn reduce_block_leaves(
     transactions: &[TransactionLeafSources],
-    existing: BTreeMap<[u8; 32], EncryptedValueState>,
+    existing: BTreeMap<[u8; 32], EncryptedStateHistory>,
 ) -> Result<BlockLeafReduction, LeafReduceError> {
     let mut reduction = BlockLeafReduction {
-        accounts: existing,
+        states: existing,
         leaves: Vec::new(),
     };
     for transaction in transactions {
         for source in &transaction.sources {
-            match source {
-                LeafSource::Write(write) => apply_write(
-                    &mut reduction,
-                    write,
-                    transaction.transaction_index,
-                )?,
-                LeafSource::MakeHandlePublic {
-                    encrypted_value_account,
-                    handle,
-                } => apply_make_public(
-                    &mut reduction,
-                    *encrypted_value_account,
-                    *handle,
-                    transaction.transaction_index,
-                )?,
-            }
+            let LeafSource::State(write) = source;
+            apply_write(&mut reduction, write, transaction.transaction_index)?;
         }
     }
     Ok(reduction)
@@ -168,46 +133,41 @@ pub fn reduce_block_leaves(
 
 fn apply_write(
     reduction: &mut BlockLeafReduction,
-    write: &EncryptedValueWrite,
+    write: &EncryptedStateWrite,
     transaction_index: u64,
 ) -> Result<(), LeafReduceError> {
-    let account = write.encrypted_value_account;
-    let state =
-        match (reduction.accounts.get_mut(&account), write.previous_handle) {
-            (Some(_), None) => {
-                return Err(LeafReduceError::CreateOnRecordedAccount {
-                    encrypted_value_account: account,
-                })
-            }
-            (Some(state), Some(previous_handle)) => {
-                if state.history_complete
-                    && state.current_handle != previous_handle
-                {
-                    return Err(LeafReduceError::PreviousHandleMismatch {
-                        encrypted_value_account: account,
-                        previous_handle,
-                        recorded_handle: state.current_handle,
-                    });
-                }
-                state.current_handle = write.handle;
-                state
-            }
-            (None, previous_handle) => reduction
-                .accounts
-                .entry(account)
-                .or_insert(EncryptedValueState {
-                    program: write.program,
-                    encrypted_value_account_authority: write
-                        .encrypted_value_account_authority,
-                    scope: write.scope,
-                    label: write.label,
-                    current_handle: write.handle,
-                    leaf_count: 0,
-                    peaks: Vec::new(),
-                    history_complete: previous_handle.is_none(),
-                }),
-        };
+    let account = write.encrypted_state;
+    let state = reduction.states.entry(account).or_insert_with(|| {
+        EncryptedStateHistory {
+            leaf_count: write.previous_leaf_count,
+            peaks: Vec::new(),
+            history_complete: write.previous_leaf_count == 0,
+        }
+    });
+    if state.leaf_count != write.previous_leaf_count {
+        return Err(LeafReduceError::PreviousLeafCountMismatch {
+            encrypted_state: account,
+            declared: write.previous_leaf_count,
+            recorded: state.leaf_count,
+        });
+    }
+    if state.history_complete
+        && state.peaks.len() != state.leaf_count.count_ones() as usize
+    {
+        return Err(LeafReduceError::Mmr {
+            encrypted_state: account,
+            error: AclError::MmrInconsistent,
+        });
+    }
     if !state.history_complete {
+        let appended = u64::try_from(write.allowed_keys.len())
+            .ok()
+            .and_then(|count| count.checked_add(u64::from(write.make_public)))
+            .and_then(|count| state.leaf_count.checked_add(count))
+            .ok_or(LeafReduceError::LeafCountOverflow {
+                encrypted_state: account,
+            })?;
+        state.leaf_count = appended;
         return Ok(());
     }
     for key in &write.allowed_keys {
@@ -235,40 +195,8 @@ fn apply_write(
     Ok(())
 }
 
-fn apply_make_public(
-    reduction: &mut BlockLeafReduction,
-    account: [u8; 32],
-    handle: [u8; 32],
-    transaction_index: u64,
-) -> Result<(), LeafReduceError> {
-    // An account this record never saw created has an incomplete history; there
-    // is nothing to store for it, and the host already checked the handle.
-    let Some(state) = reduction.accounts.get_mut(&account) else {
-        return Ok(());
-    };
-    if !state.history_complete {
-        return Ok(());
-    }
-    if state.current_handle != handle {
-        return Err(LeafReduceError::PublicHandleMismatch {
-            encrypted_value_account: account,
-            handle,
-            recorded_handle: state.current_handle,
-        });
-    }
-    append_leaf(
-        state,
-        &mut reduction.leaves,
-        account,
-        LeafKind::PublicDecrypt,
-        handle,
-        None,
-        transaction_index,
-    )
-}
-
 fn append_leaf(
-    state: &mut EncryptedValueState,
+    state: &mut EncryptedStateHistory,
     leaves: &mut Vec<StagedLeaf>,
     account: [u8; 32],
     kind: LeafKind,
@@ -285,12 +213,12 @@ fn append_leaf(
     };
     mmr_append(&mut state.peaks, &mut state.leaf_count, commitment).map_err(
         |error| LeafReduceError::Mmr {
-            encrypted_value_account: account,
+            encrypted_state: account,
             error,
         },
     )?;
     leaves.push(StagedLeaf {
-        encrypted_value_account: account,
+        encrypted_state: account,
         leaf_index,
         commitment,
         kind,
@@ -315,12 +243,23 @@ fn bytes32_vec(items: &[Vec<u8>]) -> Result<Vec<[u8; 32]>, SqlxError> {
     items.iter().map(|item| bytes32(item)).collect()
 }
 
+fn sql_i64(value: u64, field: &str) -> Result<i64, SqlxError> {
+    i64::try_from(value).map_err(|_| {
+        SqlxError::Protocol(format!("{field} exceeds PostgreSQL BIGINT"))
+    })
+}
+
+fn sql_u64(value: i64, field: &str) -> Result<u64, SqlxError> {
+    u64::try_from(value)
+        .map_err(|_| SqlxError::Decode(format!("{field} is negative").into()))
+}
+
 /// Locks and loads the recorded state of `accounts`; accounts without a row are
 /// absent from the result.
-pub async fn load_encrypted_value_states(
+pub async fn load_encrypted_state_histories(
     tx: &mut Transaction<'_>,
     accounts: &[[u8; 32]],
-) -> Result<BTreeMap<[u8; 32], EncryptedValueState>, SqlxError> {
+) -> Result<BTreeMap<[u8; 32], EncryptedStateHistory>, SqlxError> {
     if accounts.is_empty() {
         return Ok(BTreeMap::new());
     }
@@ -328,29 +267,21 @@ pub async fn load_encrypted_value_states(
         accounts.iter().map(|account| account.to_vec()).collect();
     let rows = sqlx::query!(
         r#"
-        SELECT encrypted_value_account, program, encrypted_value_account_authority,
-               scope, label, current_handle, leaf_count, peaks, history_complete
-        FROM solana_encrypted_value_accounts
-        WHERE encrypted_value_account = ANY($1)
+        SELECT encrypted_state, leaf_count, peaks, history_complete
+        FROM solana_encrypted_states
+        WHERE encrypted_state = ANY($1)
         FOR UPDATE
         "#,
-        &keys
+        &keys,
     )
     .fetch_all(tx.as_mut())
     .await?;
     rows.into_iter()
         .map(|row| {
             Ok((
-                bytes32(&row.encrypted_value_account)?,
-                EncryptedValueState {
-                    program: bytes32(&row.program)?,
-                    encrypted_value_account_authority: bytes32(
-                        &row.encrypted_value_account_authority,
-                    )?,
-                    scope: bytes32(&row.scope)?,
-                    label: bytes32(&row.label)?,
-                    current_handle: bytes32(&row.current_handle)?,
-                    leaf_count: row.leaf_count as u64,
+                bytes32(&row.encrypted_state)?,
+                EncryptedStateHistory {
+                    leaf_count: sql_u64(row.leaf_count, "leaf_count")?,
                     peaks: bytes32_vec(&row.peaks)?,
                     history_complete: row.history_complete,
                 },
@@ -359,57 +290,56 @@ pub async fn load_encrypted_value_states(
         .collect()
 }
 
-/// Persists a block's reduction: account states upserted, leaves appended.
+/// Persists a block's reduction: state cursors upserted, leaves appended.
 pub async fn store_block_leaves(
     tx: &mut Transaction<'_>,
     slot: u64,
     reduction: &BlockLeafReduction,
 ) -> Result<(), SqlxError> {
-    for (account, state) in &reduction.accounts {
+    for (account, state) in &reduction.states {
+        let leaf_count = sql_i64(state.leaf_count, "leaf_count")?;
+        let last_slot = sql_i64(slot, "last_slot")?;
         let peaks: Vec<Vec<u8>> =
             state.peaks.iter().map(|peak| peak.to_vec()).collect();
         sqlx::query!(
             r#"
-            INSERT INTO solana_encrypted_value_accounts
-                (encrypted_value_account, program, encrypted_value_account_authority,
-                 scope, label, current_handle, leaf_count, peaks, history_complete, last_slot)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-            ON CONFLICT (encrypted_value_account) DO UPDATE SET
-                current_handle = EXCLUDED.current_handle,
+            INSERT INTO solana_encrypted_states
+                (encrypted_state, leaf_count, peaks, history_complete, last_slot)
+            VALUES ($1, $2, $3, $4, $5)
+            ON CONFLICT (encrypted_state) DO UPDATE SET
                 leaf_count = EXCLUDED.leaf_count,
                 peaks = EXCLUDED.peaks,
                 last_slot = EXCLUDED.last_slot
             "#,
             &account[..],
-            &state.program[..],
-            &state.encrypted_value_account_authority[..],
-            &state.scope[..],
-            &state.label[..],
-            &state.current_handle[..],
-            state.leaf_count as i64,
+            leaf_count,
             &peaks,
             state.history_complete,
-            slot as i64,
+            last_slot,
         )
         .execute(tx.as_mut())
         .await?;
     }
     for leaf in &reduction.leaves {
+        let leaf_index = sql_i64(leaf.leaf_index, "leaf_index")?;
+        let block_slot = sql_i64(slot, "block_slot")?;
+        let transaction_index =
+            sql_i64(leaf.transaction_index, "transaction_index")?;
         sqlx::query!(
             r#"
-            INSERT INTO solana_encrypted_value_leaves
-                (encrypted_value_account, leaf_index, commitment, leaf_kind, handle,
+            INSERT INTO solana_encrypted_state_leaves
+                (encrypted_state, leaf_index, commitment, leaf_kind, handle,
                  allowed_key, block_slot, transaction_index)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             "#,
-            &leaf.encrypted_value_account[..],
-            leaf.leaf_index as i64,
+            &leaf.encrypted_state[..],
+            leaf_index,
             &leaf.commitment[..],
             leaf.kind as i16,
             &leaf.handle[..],
             leaf.key.as_ref().map(|key| key.to_vec()),
-            slot as i64,
-            leaf.transaction_index as i64,
+            block_slot,
+            transaction_index,
         )
         .execute(tx.as_mut())
         .await?;
@@ -438,7 +368,7 @@ pub async fn store_checkpoint(
             block_hash = EXCLUDED.block_hash,
             updated_at = NOW()
         "#,
-        checkpoint.slot as i64,
+        sql_i64(checkpoint.slot, "checkpoint slot")?,
         &checkpoint.block_hash[..],
     )
     .execute(tx.as_mut())
@@ -456,19 +386,19 @@ pub async fn load_checkpoint(
     .await?;
     row.map(|row| {
         Ok(StoredCheckpoint {
-            slot: row.slot as u64,
+            slot: sql_u64(row.slot, "checkpoint slot")?,
             block_hash: bytes32(&row.block_hash)?,
         })
     })
     .transpose()
 }
 
-/// One account's recorded leaves as a proof reader needs them: the state row and
+/// One state's recorded leaves as a proof reader needs them: the cursor row and
 /// the ordered leaves below its `leaf_count`. Leaves committed after the state
 /// row was read are cut off by that bound, so the two always agree.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RecordedLeaves {
-    pub state: EncryptedValueState,
+    pub state: EncryptedStateHistory,
     pub leaves: Vec<StagedLeaf>,
 }
 
@@ -478,39 +408,32 @@ pub async fn load_recorded_leaves(
 ) -> Result<Option<RecordedLeaves>, SqlxError> {
     let Some(row) = sqlx::query!(
         r#"
-        SELECT program, encrypted_value_account_authority, scope, label,
-               current_handle, leaf_count, peaks, history_complete
-        FROM solana_encrypted_value_accounts
-        WHERE encrypted_value_account = $1
+        SELECT leaf_count, peaks, history_complete
+        FROM solana_encrypted_states
+        WHERE encrypted_state = $1
         "#,
-        &account[..]
+        &account[..],
     )
     .fetch_optional(pool)
     .await?
     else {
         return Ok(None);
     };
-    let state = EncryptedValueState {
-        program: bytes32(&row.program)?,
-        encrypted_value_account_authority: bytes32(
-            &row.encrypted_value_account_authority,
-        )?,
-        scope: bytes32(&row.scope)?,
-        label: bytes32(&row.label)?,
-        current_handle: bytes32(&row.current_handle)?,
-        leaf_count: row.leaf_count as u64,
+    let state = EncryptedStateHistory {
+        leaf_count: sql_u64(row.leaf_count, "leaf_count")?,
         peaks: bytes32_vec(&row.peaks)?,
         history_complete: row.history_complete,
     };
+    let leaf_count = sql_i64(state.leaf_count, "leaf_count")?;
     let rows = sqlx::query!(
         r#"
         SELECT leaf_index, commitment, leaf_kind, handle, allowed_key, transaction_index
-        FROM solana_encrypted_value_leaves
-        WHERE encrypted_value_account = $1 AND leaf_index < $2
+        FROM solana_encrypted_state_leaves
+        WHERE encrypted_state = $1 AND leaf_index < $2
         ORDER BY leaf_index
         "#,
         &account[..],
-        row.leaf_count,
+        leaf_count,
     )
     .fetch_all(pool)
     .await?;
@@ -518,8 +441,8 @@ pub async fn load_recorded_leaves(
         .into_iter()
         .map(|row| {
             Ok(StagedLeaf {
-                encrypted_value_account: account,
-                leaf_index: row.leaf_index as u64,
+                encrypted_state: account,
+                leaf_index: sql_u64(row.leaf_index, "leaf_index")?,
                 commitment: bytes32(&row.commitment)?,
                 kind: LeafKind::from_i16(row.leaf_kind).ok_or_else(|| {
                     SqlxError::Decode(
@@ -528,7 +451,10 @@ pub async fn load_recorded_leaves(
                 })?,
                 handle: bytes32(&row.handle)?,
                 key: row.allowed_key.as_deref().map(bytes32).transpose()?,
-                transaction_index: row.transaction_index as u64,
+                transaction_index: sql_u64(
+                    row.transaction_index,
+                    "transaction_index",
+                )?,
             })
         })
         .collect::<Result<Vec<_>, SqlxError>>()?;
@@ -536,387 +462,140 @@ pub async fn load_recorded_leaves(
 }
 
 #[cfg(test)]
-#[path = "../../../../../solana/test-fixtures/leaves/leaf_vectors.rs"]
-mod leaf_vectors;
-
-#[cfg(test)]
 mod tests {
     use super::*;
-    use zama_solana_acl::{
-        mmr_peaks_from_leaves, reconstruct, EncryptedValueAccountEvent,
-    };
 
-    const ACCOUNT: [u8; 32] = [0xAC; 32];
-    const PROGRAM: [u8; 32] = [0x01; 32];
-    const AUTHORITY: [u8; 32] = [0x02; 32];
-    const SCOPE: [u8; 32] = [0x03; 32];
-    const LABEL: [u8; 32] = [0x04; 32];
+    const STATE: [u8; 32] = [0xAC; 32];
+    const OWNER: [u8; 32] = [0xA1; 32];
 
     fn write(
-        previous_handle: Option<[u8; 32]>,
+        previous_leaf_count: u64,
         handle: [u8; 32],
         allowed_keys: Vec<[u8; 32]>,
         make_public: bool,
     ) -> LeafSource {
-        LeafSource::Write(EncryptedValueWrite {
-            encrypted_value_account: ACCOUNT,
-            program: PROGRAM,
-            encrypted_value_account_authority: AUTHORITY,
-            scope: SCOPE,
-            label: LABEL,
-            previous_handle,
+        LeafSource::State(EncryptedStateWrite {
+            encrypted_state: STATE,
+            previous_leaf_count,
             handle,
             allowed_keys,
             make_public,
         })
     }
 
-    fn transaction(
-        index: u64,
-        sources: Vec<LeafSource>,
-    ) -> TransactionLeafSources {
+    fn transaction(sources: Vec<LeafSource>) -> TransactionLeafSources {
         TransactionLeafSources {
-            transaction_index: index,
+            transaction_index: 3,
             sources,
         }
     }
 
-    fn events_of(leaves: &[StagedLeaf]) -> Vec<EncryptedValueAccountEvent> {
-        leaves
-            .iter()
-            .map(|leaf| match leaf.key {
-                Some(key) => EncryptedValueAccountEvent::Allowed {
-                    handle: leaf.handle,
-                    key,
-                },
-                None => EncryptedValueAccountEvent::MarkedPublic {
-                    handle: leaf.handle,
-                },
-            })
-            .collect()
-    }
-
     #[test]
-    fn create_then_update_seal_leaves_in_host_order() {
+    fn appends_allows_then_public_and_advances_across_outputs() {
         let reduction = reduce_block_leaves(
-            &[
-                transaction(
-                    0,
-                    vec![write(
-                        None,
-                        [0x10; 32],
-                        vec![[0xA1; 32], [0xA2; 32]],
-                        false,
-                    )],
-                ),
-                transaction(
-                    3,
-                    vec![
-                        write(
-                            Some([0x10; 32]),
-                            [0x11; 32],
-                            vec![[0xA1; 32]],
-                            true,
-                        ),
-                        LeafSource::MakeHandlePublic {
-                            encrypted_value_account: ACCOUNT,
-                            handle: [0x11; 32],
-                        },
-                    ],
-                ),
-            ],
+            &[transaction(vec![
+                write(0, [1; 32], vec![OWNER], false),
+                write(1, [2; 32], vec![[0xB2; 32]], true),
+            ])],
             BTreeMap::new(),
         )
-        .expect("reduce");
-
-        let state = &reduction.accounts[&ACCOUNT];
-        assert!(state.history_complete);
-        assert_eq!(state.current_handle, [0x11; 32]);
-        assert_eq!(state.leaf_count, 5);
-        assert_eq!(
-            reduction
-                .leaves
-                .iter()
-                .map(|leaf| (
-                    leaf.leaf_index,
-                    leaf.kind,
-                    leaf.handle,
-                    leaf.key,
-                    leaf.transaction_index
-                ))
-                .collect::<Vec<_>>(),
-            vec![
-                (
-                    0,
-                    LeafKind::HistoricalAccess,
-                    [0x10; 32],
-                    Some([0xA1; 32]),
-                    0
-                ),
-                (
-                    1,
-                    LeafKind::HistoricalAccess,
-                    [0x10; 32],
-                    Some([0xA2; 32]),
-                    0
-                ),
-                (
-                    2,
-                    LeafKind::HistoricalAccess,
-                    [0x11; 32],
-                    Some([0xA1; 32]),
-                    3
-                ),
-                (3, LeafKind::PublicDecrypt, [0x11; 32], None, 3),
-                (4, LeafKind::PublicDecrypt, [0x11; 32], None, 3),
-            ]
-        );
-        // Byte-identical to the shared crate's reconstruction from events.
-        let expected = reconstruct(ACCOUNT, &events_of(&reduction.leaves));
-        assert_eq!(
-            reduction
-                .leaves
-                .iter()
-                .map(|leaf| leaf.commitment)
-                .collect::<Vec<_>>(),
-            expected.leaves
-        );
-        assert_eq!(state.peaks, expected.peaks);
+        .unwrap();
+        let history = &reduction.states[&STATE];
+        assert!(history.history_complete);
+        assert_eq!(history.leaf_count, 3);
+        assert_eq!(history.peaks.len(), 2);
+        assert_eq!(reduction.leaves.len(), 3);
+        assert_eq!(reduction.leaves[0].key, Some(OWNER));
+        assert_eq!(reduction.leaves[1].key, Some([0xB2; 32]));
+        assert_eq!(reduction.leaves[2].kind, LeafKind::PublicDecrypt);
+        assert_eq!(reduction.leaves[2].handle, [2; 32]);
     }
 
     #[test]
-    fn prior_state_continues_the_mmr_across_blocks() {
+    fn first_seen_mid_history_stays_incomplete_but_tracks_continuity() {
         let first = reduce_block_leaves(
-            &[transaction(
-                0,
-                vec![write(None, [0x10; 32], vec![[0xA1; 32]], false)],
-            )],
+            &[transaction(vec![write(7, [1; 32], vec![OWNER], true)])],
             BTreeMap::new(),
         )
-        .expect("first block");
+        .unwrap();
+        let history = &first.states[&STATE];
+        assert!(!history.history_complete);
+        assert_eq!(history.leaf_count, 9);
+        assert!(history.peaks.is_empty());
+        assert!(first.leaves.is_empty());
+
         let second = reduce_block_leaves(
-            &[transaction(
-                1,
-                vec![write(
-                    Some([0x10; 32]),
-                    [0x11; 32],
-                    vec![[0xA1; 32]],
-                    true,
-                )],
-            )],
-            first.accounts.clone(),
+            &[transaction(vec![write(9, [2; 32], vec![OWNER], false)])],
+            first.states,
         )
-        .expect("second block");
-        assert_eq!(second.leaves.first().map(|leaf| leaf.leaf_index), Some(1));
-        let all = first
-            .leaves
-            .iter()
-            .chain(&second.leaves)
-            .map(|leaf| leaf.commitment)
-            .collect::<Vec<_>>();
-        assert_eq!(
-            second.accounts[&ACCOUNT].peaks,
-            mmr_peaks_from_leaves(&all)
-        );
-        assert_eq!(second.accounts[&ACCOUNT].leaf_count, 3);
+        .unwrap();
+        assert_eq!(second.states[&STATE].leaf_count, 10);
+        assert!(!second.states[&STATE].history_complete);
+        assert!(second.leaves.is_empty());
     }
 
     #[test]
-    fn update_of_an_unseen_account_is_tracked_without_leaves() {
+    fn rejects_count_gap_for_complete_and_incomplete_histories() {
+        for history in [
+            EncryptedStateHistory {
+                leaf_count: 4,
+                peaks: vec![[1; 32]],
+                history_complete: true,
+            },
+            EncryptedStateHistory {
+                leaf_count: 4,
+                peaks: vec![],
+                history_complete: false,
+            },
+        ] {
+            let error = reduce_block_leaves(
+                &[transaction(vec![write(3, [2; 32], vec![], false)])],
+                BTreeMap::from([(STATE, history)]),
+            )
+            .unwrap_err();
+            assert_eq!(
+                error,
+                LeafReduceError::PreviousLeafCountMismatch {
+                    encrypted_state: STATE,
+                    declared: 3,
+                    recorded: 4,
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn zero_leaf_output_still_checks_continuity() {
         let reduction = reduce_block_leaves(
-            &[transaction(
-                0,
-                vec![
-                    write(Some([0x10; 32]), [0x11; 32], vec![[0xA1; 32]], true),
-                    LeafSource::MakeHandlePublic {
-                        encrypted_value_account: ACCOUNT,
-                        handle: [0x11; 32],
-                    },
-                ],
-            )],
+            &[transaction(vec![write(0, [1; 32], vec![], false)])],
             BTreeMap::new(),
         )
-        .expect("reduce");
-        let state = &reduction.accounts[&ACCOUNT];
-        assert!(!state.history_complete);
-        assert_eq!(state.current_handle, [0x11; 32]);
-        assert_eq!(state.leaf_count, 0);
+        .unwrap();
+        assert_eq!(reduction.states[&STATE].leaf_count, 0);
+        assert!(reduction.states[&STATE].history_complete);
         assert!(reduction.leaves.is_empty());
     }
 
     #[test]
-    fn make_public_on_an_unseen_account_records_nothing() {
-        let reduction = reduce_block_leaves(
-            &[transaction(
-                0,
-                vec![LeafSource::MakeHandlePublic {
-                    encrypted_value_account: ACCOUNT,
-                    handle: [0x11; 32],
-                }],
-            )],
-            BTreeMap::new(),
+    fn zero_leaf_output_rejects_malformed_complete_history() {
+        let error = reduce_block_leaves(
+            &[transaction(vec![write(0, [1; 32], vec![], false)])],
+            BTreeMap::from([(
+                STATE,
+                EncryptedStateHistory {
+                    leaf_count: 0,
+                    peaks: vec![[1; 32]],
+                    history_complete: true,
+                },
+            )]),
         )
-        .expect("reduce");
-        assert_eq!(reduction, BlockLeafReduction::default());
-    }
-
-    #[test]
-    fn divergence_from_chain_fails_closed() {
-        let created = reduce_block_leaves(
-            &[transaction(0, vec![write(None, [0x10; 32], vec![], false)])],
-            BTreeMap::new(),
-        )
-        .expect("create");
-
-        let stale_update = reduce_block_leaves(
-            &[transaction(
-                0,
-                vec![write(Some([0x99; 32]), [0x11; 32], vec![], false)],
-            )],
-            created.accounts.clone(),
-        );
+        .unwrap_err();
         assert_eq!(
-            stale_update,
-            Err(LeafReduceError::PreviousHandleMismatch {
-                encrypted_value_account: ACCOUNT,
-                previous_handle: [0x99; 32],
-                recorded_handle: [0x10; 32],
-            })
-        );
-
-        let wrong_public = reduce_block_leaves(
-            &[transaction(
-                0,
-                vec![LeafSource::MakeHandlePublic {
-                    encrypted_value_account: ACCOUNT,
-                    handle: [0x99; 32],
-                }],
-            )],
-            created.accounts.clone(),
-        );
-        assert_eq!(
-            wrong_public,
-            Err(LeafReduceError::PublicHandleMismatch {
-                encrypted_value_account: ACCOUNT,
-                handle: [0x99; 32],
-                recorded_handle: [0x10; 32],
-            })
-        );
-
-        let recreate = reduce_block_leaves(
-            &[transaction(0, vec![write(None, [0x12; 32], vec![], false)])],
-            created.accounts,
-        );
-        assert_eq!(
-            recreate,
-            Err(LeafReduceError::CreateOnRecordedAccount {
-                encrypted_value_account: ACCOUNT,
-            })
-        );
-    }
-
-    fn hex32(value: &str) -> [u8; 32] {
-        hex::decode(value)
-            .expect("hex")
-            .try_into()
-            .expect("32 bytes")
-    }
-
-    /// The normative vectors are event lists; this folds them back into the host
-    /// writes that would have sealed them and checks the reduce rule reproduces
-    /// every leaf, the peaks and the leaf count byte for byte.
-    #[test]
-    fn replays_the_normative_leaf_vectors() {
-        let file: leaf_vectors::LeafVectorFile = serde_json::from_str(
-            &std::fs::read_to_string(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/../../../solana/test-fixtures/leaves/leaves_v1.json"
-            ))
-            .expect("read vectors"),
-        )
-        .expect("parse vectors");
-        assert_eq!(file.schema, leaf_vectors::LEAF_VECTOR_SCHEMA);
-
-        for vector in &file.vectors {
-            let account = hex32(&vector.encrypted_value_account);
-            let mut sources: Vec<LeafSource> = Vec::new();
-            let mut current: Option<[u8; 32]> = None;
-            for event in &vector.events {
-                match event {
-                    leaf_vectors::LeafEvent::Allowed { handle, key } => {
-                        let handle = hex32(handle);
-                        let key = hex32(key);
-                        match sources.last_mut() {
-                            Some(LeafSource::Write(write))
-                                if write.handle == handle
-                                    && !write.make_public =>
-                            {
-                                write.allowed_keys.push(key)
-                            }
-                            _ => {
-                                sources.push(LeafSource::Write(
-                                    EncryptedValueWrite {
-                                        encrypted_value_account: account,
-                                        program: PROGRAM,
-                                        encrypted_value_account_authority:
-                                            AUTHORITY,
-                                        scope: SCOPE,
-                                        label: LABEL,
-                                        previous_handle: current,
-                                        handle,
-                                        allowed_keys: vec![key],
-                                        make_public: false,
-                                    },
-                                ));
-                                current = Some(handle);
-                            }
-                        }
-                    }
-                    leaf_vectors::LeafEvent::MarkedPublic { handle } => {
-                        let handle = hex32(handle);
-                        match sources.last_mut() {
-                            Some(LeafSource::Write(write))
-                                if write.handle == handle
-                                    && !write.make_public =>
-                            {
-                                write.make_public = true
-                            }
-                            _ => sources.push(LeafSource::MakeHandlePublic {
-                                encrypted_value_account: account,
-                                handle,
-                            }),
-                        }
-                    }
-                }
+            error,
+            LeafReduceError::Mmr {
+                encrypted_state: STATE,
+                error: AclError::MmrInconsistent,
             }
-            let reduction = reduce_block_leaves(
-                &[transaction(0, sources)],
-                BTreeMap::new(),
-            )
-            .unwrap_or_else(|error| panic!("{}: {error}", vector.id));
-            let state = &reduction.accounts[&account];
-            assert_eq!(
-                reduction
-                    .leaves
-                    .iter()
-                    .map(|leaf| hex::encode(leaf.commitment))
-                    .collect::<Vec<_>>(),
-                vector.leaves,
-                "{}: leaves",
-                vector.id
-            );
-            assert_eq!(
-                state.leaf_count.to_string(),
-                vector.leaf_count,
-                "{}: leaf_count",
-                vector.id
-            );
-            assert_eq!(
-                state.peaks.iter().map(hex::encode).collect::<Vec<_>>(),
-                vector.peaks,
-                "{}: peaks",
-                vector.id
-            );
-        }
+        );
     }
 }

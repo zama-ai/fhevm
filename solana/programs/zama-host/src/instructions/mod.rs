@@ -5,6 +5,10 @@
 //! re-exported from this module.
 
 mod common;
+mod transient;
+pub use transient::*;
+pub mod create_encrypted_state;
+pub use create_encrypted_state::*;
 pub mod define_kms_context;
 pub mod delegate_for_user_decryption;
 pub mod destroy_kms_context;

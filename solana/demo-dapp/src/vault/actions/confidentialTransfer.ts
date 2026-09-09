@@ -36,7 +36,7 @@ import {
   CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
   ZAMA_HOST_PROGRAM_ADDRESS,
 } from '../internal/generated/confidentialToken/programAddress.js';
-import { associatedTokenAddress, transferredAmountValueAddress } from '../internal/tokenValueAccount.js';
+import { associatedTokenAddress } from '../internal/tokenValueAccount.js';
 
 const EVENT_AUTHORITY_SEED = new TextEncoder().encode('__event_authority');
 
@@ -130,7 +130,6 @@ export async function confidentialTransfer(
     toAccount: parameters.toAccount,
     fromBalanceValue: parameters.fromBalanceValue,
     toBalanceValue: parameters.toBalanceValue,
-    transferredAmountValue: await transferredAmountValueAddress(mint, parameters.fromAccount),
     zamaEventAuthority,
     zamaProgram: zamaHostProgramAddress,
     hostConfig: parameters.hostConfig,
@@ -149,7 +148,6 @@ export async function confidentialTransfer(
       signatures,
     },
     // A plain transfer leaves no transferred-amount receipt for a recipient program.
-    receipt: null,
   });
   const instruction =
     parameters.denyRecords !== undefined && parameters.denyRecords.length > 0

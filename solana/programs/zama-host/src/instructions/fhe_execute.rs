@@ -28,6 +28,7 @@ mod block_cap;
 mod event_transport;
 mod hcu;
 mod preflight;
+mod state_output;
 mod walk;
 
 use account_table::ExecutionAccountTable;
@@ -140,11 +141,26 @@ pub fn fhe_execute<'info>(
     // leaves partial writes behind only until the runtime reverts the transaction, which discards
     // every account write — so no validate-only pre-pass is needed for atomicity. The event CPI
     // stays last so no event describes state that did not commit.
-    let created_public_outputs =
+    let (created_public_outputs, produced) =
         execute_steps(&mut account_table, &ctx, &args, app, &handle_context)?;
+    account_table.flush_states(
+        &ctx.accounts.payer.to_account_info(),
+        &ctx.accounts.system_program.to_account_info(),
+    )?;
     emit_execution_random_seeds(&ctx, random_seeds)?;
     emit_public_outputs_produced(&ctx, created_public_outputs)?;
+    return_execution_handles(&produced);
     Ok(())
+}
+
+#[inline(never)]
+fn return_execution_handles(produced: &[ProducedValue]) {
+    // 32 handles exactly fill Solana's 1024-byte return-data limit; no length prefix.
+    let mut bytes = [0u8; MAX_FHE_EXECUTION_STEPS * 32];
+    for (chunk, value) in bytes.chunks_exact_mut(32).zip(produced) {
+        chunk.copy_from_slice(&value.handle);
+    }
+    anchor_lang::solana_program::program::set_return_data(&bytes[..produced.len() * 32]);
 }
 
 /// Takes the host's rand nonce for this execution and advances it, when the execution has a rand
@@ -203,7 +219,7 @@ fn execute_steps<'a, 'info>(
     args: &FheExecuteArgs,
     app: Option<AppScope>,
     handle_context: &ExecutionHandleContext,
-) -> Result<Vec<ProducedPublicOutput>> {
+) -> Result<(Vec<ProducedPublicOutput>, Vec<ProducedValue>)> {
     let mut execution = ExecutionState {
         table,
         dictionary: &args.dictionary,
@@ -214,7 +230,7 @@ fn execute_steps<'a, 'info>(
         host_config: ctx.accounts.host_config.as_ref(),
     };
     walk_steps(&mut execution, ctx, args, handle_context)?;
-    Ok(execution.created_public_outputs)
+    Ok((execution.created_public_outputs, execution.produced))
 }
 
 /// The single walk's state: resolves operands through the shared account table
@@ -307,6 +323,31 @@ fn accept_execution_output<'info>(
     );
 
     let created_public_output = match output {
+        FheExecuteOutput::State {
+            state_index,
+            previous_leaf_count,
+            slot,
+            allow_indexes,
+            make_public,
+            grants,
+        } => {
+            let state = state_output::accept_state_output(
+                table,
+                dictionary,
+                *state_index,
+                *previous_leaf_count,
+                slot,
+                allow_indexes,
+                *make_public,
+                grants,
+                result,
+            )?;
+            make_public.then_some(ProducedPublicOutput {
+                step_index: op_index,
+                encrypted_value: state,
+                output_handle: result,
+            })
+        }
         FheExecuteOutput::Transient => None,
         FheExecuteOutput::StoredValue {
             output_encrypted_value_index,

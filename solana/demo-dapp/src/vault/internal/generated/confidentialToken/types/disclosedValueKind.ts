@@ -18,7 +18,6 @@ import {
 /** Token state field disclosed by [`HandleDisclosedEvent`]. */
 export enum DisclosedValueKind {
   Balance,
-  TransferredAmount,
   BurnedAmount,
   TotalSupply,
 }

@@ -52,8 +52,15 @@ pub fn initialize_mint<'info>(ctx: Context<'info, InitializeMint<'info>>) -> Res
         mint_key,
         ctx.bumps.total_supply_authority,
     )?;
+    authority.create_state(
+        mint_key,
+        ctx.accounts.total_supply_encrypted_value.to_account_info(),
+        ctx.accounts.authority.to_account_info(),
+        ctx.accounts.host_config.to_account_info(),
+        ctx.accounts.system_program.to_account_info(),
+    )?;
     let total_supply_encrypted_value = ctx.accounts.total_supply_encrypted_value.key();
-    let total_supply_output = fhe::PersistentOutput::new(
+    let total_supply_output = fhe::SlotOutput::new(
         ctx.accounts.total_supply_encrypted_value.to_account_info(),
         total_supply_encrypted_value_id(mint_key),
         &authority,
@@ -103,7 +110,6 @@ pub fn initialize_mint<'info>(ctx: Context<'info, InitializeMint<'info>>) -> Res
     mint.authority = ctx.accounts.authority.key();
     mint.underlying_mint = ctx.accounts.underlying_mint.key();
     mint.decimals = ctx.accounts.underlying_mint.decimals;
-    mint.total_supply_encrypted_value = total_supply_encrypted_value;
     emit_cpi!(TotalSupplyHandleUpdatedEvent {
         version: APP_EVENT_VERSION,
         mint: mint_key,

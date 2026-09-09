@@ -59,8 +59,8 @@ export type SolanaVerifyPublicDecryptAccounts = {
   readonly hostConfig?: Address | undefined;
   /** KMS context PDA for the id the certificate commits to (any live, non-destroyed context). */
   readonly kmsContext: Address;
-  /** The `EncryptedValue` encrypted value account the inclusion proof is checked against. */
-  readonly encryptedValue: Address;
+  /** The encrypted state account the inclusion proof is checked against. */
+  readonly encryptedState: Address;
 };
 
 /**
@@ -80,7 +80,7 @@ export async function buildVerifyPublicDecryptInstruction(
   return getVerifyPublicDecryptInstructionAsync({
     ...(accounts.hostConfig !== undefined ? { hostConfig: accounts.hostConfig } : {}),
     kmsContext: accounts.kmsContext,
-    encryptedValue: accounts.encryptedValue,
+    encryptedState: accounts.encryptedState,
     handle: args.handle,
     cleartext: args.cleartext,
     signatures: [...args.signatures],

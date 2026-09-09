@@ -36,7 +36,7 @@ pub use instructions::{
     AllowBalanceViewers, AllowTotalSupplyViewers, CancelPendingBurn, ConfidentialBurn,
     ConfidentialBurnFromValue, ConfidentialTransfer, ConfidentialTransferFromValue, DiscloseSecp,
     InitializeMint, InitializeTokenAccount, MakeTokenAccountHandlePublic,
-    MakeTotalSupplyHandlePublic, RedeemBurnedAmount, TransferReceipt, WrapUsdc,
+    MakeTotalSupplyHandlePublic, RedeemBurnedAmount, TransferInput, WrapUsdc,
 };
 /// Re-export account layouts and helper functions used by clients and tests.
 pub use state::*;
@@ -120,8 +120,9 @@ pub mod confidential_token {
     /// `confidential_burn`, so `redeem_burned_amount` consumes it unchanged.
     pub fn confidential_burn_from_value<'info>(
         ctx: Context<'info, ConfidentialBurnFromValue<'info>>,
+        key: [u8; 32],
     ) -> Result<()> {
-        instructions::confidential_burn_from_value(ctx)
+        instructions::confidential_burn_from_value(ctx, key)
     }
 
     /// Transfers an encrypted amount by updating the sender and recipient balance handles. A
@@ -130,9 +131,8 @@ pub mod confidential_token {
     pub fn confidential_transfer<'info>(
         ctx: Context<'info, ConfidentialTransfer<'info>>,
         amount_attestation: zama_host::CoprocessorInputAttestation,
-        receipt: Option<TransferReceipt>,
     ) -> Result<()> {
-        instructions::confidential_transfer(ctx, amount_attestation, receipt)
+        instructions::confidential_transfer(ctx, amount_attestation)
     }
 
     /// Transfers an encrypted amount taken from an existing on-chain `EncryptedValue` (a computed or
@@ -141,8 +141,9 @@ pub mod confidential_token {
     /// control the amount value (the token spend gate); the amount is spent read-only.
     pub fn confidential_transfer_from_value<'info>(
         ctx: Context<'info, ConfidentialTransferFromValue<'info>>,
+        amount_source: TransferInput,
     ) -> Result<()> {
-        instructions::confidential_transfer_from_value(ctx)
+        instructions::confidential_transfer_from_value(ctx, amount_source)
     }
 
     /// Consumes a KMS public-decrypt certificate through the stateless host verifier and emits a
@@ -150,14 +151,13 @@ pub mod confidential_token {
     /// (idempotent by design — no on-chain replay marker).
     pub fn disclose_secp(
         ctx: Context<DiscloseSecp>,
-        kind: DisclosedValueKind,
         handle: [u8; 32],
         cleartext: [u8; 32],
         signatures: Vec<[u8; 65]>,
         extra_data: Vec<u8>,
         proof: zama_host::instructions::MmrInclusionProof,
     ) -> Result<()> {
-        instructions::disclose_secp(ctx, kind, handle, cleartext, signatures, extra_data, proof)
+        instructions::disclose_secp(ctx, handle, cleartext, signatures, extra_data, proof)
     }
 
     /// Redeems a KMS-certified burned amount from the SPL vault through the stateless host verifier.

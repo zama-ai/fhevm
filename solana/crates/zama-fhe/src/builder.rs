@@ -73,7 +73,7 @@ pub struct FheExecutionBuilder<'id> {
     /// Persistent accounts this execution has already written. A later persistent-shaped reference
     /// to one of them is rejected with `PersistentOperandWrittenEarlier`: the app must feed the
     /// earlier step's transient value instead, which is the only spelling the host accepts.
-    pub(crate) persistent_producers: TalliedVec<anchor_lang::prelude::Pubkey>,
+    pub(crate) persistent_producers: TalliedVec<(u8, Option<u8>)>,
     pub(crate) remaining_accounts: TalliedVec<ExecutionAccountMeta>,
     /// Interned 32-byte constant dictionary the lowered steps reference by `u8` index (operand
     /// handles, scalars, programs, authorities, scopes, labels, seeds, allowed keys, previous
@@ -113,6 +113,13 @@ pub(crate) struct StepLowering<'b> {
 
 impl StepLowering<'_> {
     pub(crate) fn operand(&mut self, operand: Operand) -> Result<FheExecuteOperand> {
+        match operand.0 {
+            OperandKind::StateSlot { state, .. } => self.fold_app(state.authority, state.app)?,
+            OperandKind::Granted { consumer, .. } => {
+                self.fold_app(consumer.authority, consumer.app)?
+            }
+            _ => {}
+        }
         if let OperandKind::Persistent(persistent) = operand.0 {
             self.fold_app(persistent.encrypted_value_account_authority, persistent.app)?;
         }
@@ -154,6 +161,12 @@ impl StepLowering<'_> {
     }
 
     pub(crate) fn output(&mut self, output: Output) -> Result<FheExecuteOutput> {
+        if let OutputKind::State(state) = &output.0 {
+            self.fold_app(state.state.authority, state.state.app)?;
+            for (initiating, _) in &state.grants {
+                self.fold_app(initiating.authority, initiating.app)?;
+            }
+        }
         if let OutputKind::Persistent(persistent) = &output.0 {
             self.fold_app(
                 persistent.encrypted_value_account_authority(),
@@ -236,7 +249,8 @@ impl<'id> FheExecutionBuilder<'id> {
             app: *app,
         };
         match lower(&mut lowering) {
-            Ok(step) => {
+            Ok(mut step) => {
+                advance_state_history(&mut step, steps)?;
                 let output = crate::execution::fhe_execute_step_output(&step);
                 let creates_account = matches!(
                     output,
@@ -254,7 +268,10 @@ impl<'id> FheExecutionBuilder<'id> {
                 );
                 let makes_public = matches!(
                     output,
-                    FheExecuteOutput::StoredValue {
+                    FheExecuteOutput::State {
+                        make_public: true,
+                        ..
+                    } | FheExecuteOutput::StoredValue {
                         make_public: true,
                         ..
                     }
@@ -406,4 +423,47 @@ impl<'id> FheExecutionBuilder<'id> {
             cost,
         })
     }
+}
+
+fn advance_state_history(step: &mut FheExecuteStep, previous: &[FheExecuteStep]) -> Result<()> {
+    let output = match step {
+        FheExecuteStep::Binary { output, .. }
+        | FheExecuteStep::Ternary { output, .. }
+        | FheExecuteStep::TrivialEncrypt { output, .. }
+        | FheExecuteStep::Rand { output, .. }
+        | FheExecuteStep::Unary { output, .. }
+        | FheExecuteStep::RandBounded { output, .. }
+        | FheExecuteStep::Sum { output, .. }
+        | FheExecuteStep::IsIn { output, .. }
+        | FheExecuteStep::MulDiv { output, .. } => output,
+    };
+    if let FheExecuteOutput::State {
+        state_index,
+        previous_leaf_count,
+        ..
+    } = output
+    {
+        let mut expected = *previous_leaf_count;
+        for earlier in previous {
+            if let FheExecuteOutput::State {
+                state_index: index,
+                previous_leaf_count: count,
+                allow_indexes,
+                make_public,
+                ..
+            } = crate::execution::fhe_execute_step_output(earlier)
+            {
+                if index == state_index {
+                    if *count != expected {
+                        return Err(FheExecutionBuildError::StateHistoryMismatch);
+                    }
+                    expected = expected
+                        .checked_add(allow_indexes.len() as u64 + u64::from(*make_public))
+                        .ok_or(FheExecutionBuildError::StateHistoryMismatch)?;
+                }
+            }
+        }
+        *previous_leaf_count = expected;
+    }
+    Ok(())
 }

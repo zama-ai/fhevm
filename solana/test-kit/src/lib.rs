@@ -2,7 +2,7 @@
 //!
 //! The kit holds only what is program-agnostic or `zama-host`-generic: the Mollusk environment,
 //! Anchor instruction/account plumbing, the host's fixture accounts (`HostConfig`, `KmsContext`,
-//! `EncryptedValue`, deny records), the coprocessor/KMS signature minting, the cleartext oracle
+//! `EncryptedState`, deny records), the coprocessor/KMS signature minting, the cleartext oracle
 //! that replays `fhe_execute` CPIs, and the rolling cost snapshots. Program-specific fixtures
 //! (a token's mints, a batcher's batches) stay with their suites.
 //!
@@ -304,6 +304,18 @@ pub fn read_encrypted_value(context: &Ctx, address: Pubkey) -> host::EncryptedVa
     read_account(context, address)
 }
 
+/// Reads the canonical `EncryptedState` at `address` from the context store.
+pub fn read_encrypted_state(context: &Ctx, address: Pubkey) -> host::EncryptedState {
+    read_account(context, address)
+}
+
+/// Reads one required slot handle from a canonical encrypted state.
+pub fn read_state_handle(context: &Ctx, address: Pubkey, key: [u8; 32]) -> [u8; 32] {
+    read_encrypted_state(context, address)
+        .get(&key)
+        .expect("encrypted state slot should exist")
+}
+
 /// Reads the `EncryptedValue` at `address` out of a stateless instruction result.
 pub fn read_encrypted_value_from_result(
     result: &mollusk_svm::result::InstructionResult,
@@ -563,6 +575,50 @@ pub fn encrypted_value_account(value: &host::EncryptedValue) -> Account {
     Account {
         lamports: 10_000_000_000,
         data: serialized_account(value.clone()),
+        owner: host::id(),
+        executable: false,
+        rent_epoch: 0,
+    }
+}
+
+/// Builds a canonical encrypted state with the supplied initial slots and no
+/// ACL history.
+pub fn new_encrypted_state(
+    app: host::AppScope,
+    authority: Pubkey,
+    slots: impl IntoIterator<Item = ([u8; 32], [u8; 32])>,
+) -> (Pubkey, host::EncryptedState) {
+    let (address, bump) = host::encrypted_state_address(app.program, authority, app.scope);
+    let state = host::EncryptedState {
+        program: app.program,
+        authority,
+        scope: app.scope,
+        slots: slots
+            .into_iter()
+            .map(|(key, handle)| host::EncryptedSlot { key, handle })
+            .collect(),
+        leaf_count: 0,
+        peaks: Vec::new(),
+        bump,
+    };
+    (address, state)
+}
+
+/// Builds a canonical encrypted state containing one initial slot.
+pub fn new_encrypted_state_with_slot(
+    app: host::AppScope,
+    authority: Pubkey,
+    key: [u8; 32],
+    handle: [u8; 32],
+) -> (Pubkey, host::EncryptedState) {
+    new_encrypted_state(app, authority, [(key, handle)])
+}
+
+/// Wraps an `EncryptedState` into an account entry for direct fixture seeding.
+pub fn encrypted_state_account(state: &host::EncryptedState) -> Account {
+    Account {
+        lamports: 10_000_000_000,
+        data: serialized_account(state.clone()),
         owner: host::id(),
         executable: false,
         rent_epoch: 0,

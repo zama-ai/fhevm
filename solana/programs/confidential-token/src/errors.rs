@@ -162,8 +162,7 @@ pub enum ConfidentialTokenError {
     /// Freeze checks bind the owner's associated token account for the wrapped mint.
     #[msg("underlying associated token account does not match")]
     UnderlyingAssociatedAccountMismatch,
-    /// A transfer receipt needs its descriptor, encrypted value account and signing authority
-    /// together.
-    #[msg("transfer receipt descriptor and accounts must be passed together")]
-    TransferReceiptMismatch,
+    /// Result grants require a state, its signing authority, and scratch; self-transfers cannot grant a result.
+    #[msg("invalid result grant accounts or self-transfer result request")]
+    ResultGrantMismatch,
 }

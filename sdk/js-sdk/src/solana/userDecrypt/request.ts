@@ -51,14 +51,14 @@ export interface SolanaUserDecryptHandleEntry {
    */
   readonly allowedKey: Uint8Array;
   /** The 32-byte address of the `EncryptedValue` account the handle lives in. */
-  readonly encryptedValueAccount: Uint8Array;
+  readonly encryptedState: Uint8Array;
 }
 
 /** One handle entry, as it travels. */
 export interface SolanaUserDecryptHandleJson {
   readonly handle: string;
   readonly allowedKey: string;
-  readonly encryptedValueAccount: string;
+  readonly encryptedState: string;
 }
 
 /** The attested payload: the eight signed permit fields, plus the unsigned handle entries. */
@@ -98,7 +98,7 @@ export type SolanaUserDecryptRequestFailure =
   | {
       readonly reason: 'entry-field-width';
       readonly index: number;
-      readonly field: 'allowedKey' | 'encryptedValueAccount';
+      readonly field: 'allowedKey' | 'encryptedState';
     };
 
 /** A request that was refused before it reached the network. */
@@ -174,8 +174,8 @@ export function admitSolanaUserDecryptRequest(admission: {
     if (entry.allowedKey.length !== 32) {
       throw new SolanaUserDecryptRequestError({ reason: 'entry-field-width', index, field: 'allowedKey' });
     }
-    if (entry.encryptedValueAccount.length !== 32) {
-      throw new SolanaUserDecryptRequestError({ reason: 'entry-field-width', index, field: 'encryptedValueAccount' });
+    if (entry.encryptedState.length !== 32) {
+      throw new SolanaUserDecryptRequestError({ reason: 'entry-field-width', index, field: 'encryptedState' });
     }
   }
 }
@@ -217,7 +217,7 @@ export function buildSolanaUserDecryptRequest(request: {
       handles: entries.map((entry) => ({
         handle: bytesToHex(entry.handle),
         allowedKey: bytesToHex(entry.allowedKey),
-        encryptedValueAccount: bytesToHex(entry.encryptedValueAccount),
+        encryptedState: bytesToHex(entry.encryptedState),
       })),
     },
     signature: bytesToHex(signedPermit.signature),

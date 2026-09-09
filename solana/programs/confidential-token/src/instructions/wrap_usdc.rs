@@ -38,11 +38,11 @@ pub struct WrapUsdc<'info> {
     #[account(seeds = [b"total-supply", mint.key().as_ref()], bump)]
     pub total_supply_authority: UncheckedAccount<'info>,
     /// Stable balance encrypted value account; read for the current handle and replaced by this execution.
-    #[account(mut, address = token_account.balance_encrypted_value)]
-    pub balance_value: Box<Account<'info, zama_host::EncryptedValue>>,
+    #[account(mut, address = encrypted_state_address(mint.key(), token_account.key()).0)]
+    pub balance_value: Box<Account<'info, zama_host::EncryptedState>>,
     /// Stable total-supply encrypted value account; read for the current handle and replaced by this execution.
-    #[account(mut, address = mint.total_supply_encrypted_value)]
-    pub total_supply_value: Box<Account<'info, zama_host::EncryptedValue>>,
+    #[account(mut, address = encrypted_state_address(mint.key(), total_supply_authority_address(mint.key()).0).0)]
+    pub total_supply_value: Box<Account<'info, zama_host::EncryptedState>>,
     /// CHECK: Anchor event CPI authority for the Zama host program.
     pub zama_event_authority: UncheckedAccount<'info>,
     /// ZamaHost program used for FHE operations.
@@ -78,9 +78,9 @@ pub fn wrap_usdc<'info>(ctx: Context<'info, WrapUsdc<'info>>, amount: u64) -> Re
     )?;
     let mint_key = ctx.accounts.mint.key();
     let decimals = ctx.accounts.mint.decimals;
-    let old_total_supply_handle = ctx.accounts.total_supply_value.current_handle;
+    let old_total_supply_handle = fhe::state_handle(&ctx.accounts.total_supply_value, encrypted_total_supply_label())?;
     let token_account = ctx.accounts.token_account.as_ref();
-    let old_balance_handle = ctx.accounts.balance_value.current_handle;
+    let old_balance_handle = fhe::state_handle(&ctx.accounts.balance_value, encrypted_balance_label())?;
 
     require_keys_eq!(
         token_account.owner,
@@ -110,13 +110,13 @@ pub fn wrap_usdc<'info>(ctx: Context<'info, WrapUsdc<'info>>, amount: u64) -> Re
         mint_key,
         ctx.bumps.total_supply_authority,
     )?;
-    let balance_output = fhe::PersistentOutput::new(
+    let balance_output = fhe::SlotOutput::new(
         ctx.accounts.balance_value.to_account_info(),
         balance_encrypted_value_id(mint_key, token_account.key()),
         &balance_authority,
         [token_account.owner],
     )?;
-    let total_supply_output = fhe::PersistentOutput::new(
+    let total_supply_output = fhe::SlotOutput::new(
         ctx.accounts.total_supply_value.to_account_info(),
         total_supply_encrypted_value_id(mint_key),
         &total_supply_authority_signer,
@@ -137,8 +137,8 @@ pub fn wrap_usdc<'info>(ctx: Context<'info, WrapUsdc<'info>>, amount: u64) -> Re
         decimals,
     )?;
 
-    let balance = fhe::uint64_operand(&ctx.accounts.balance_value)?;
-    let total_supply = fhe::uint64_operand(&ctx.accounts.total_supply_value)?;
+    let balance = fhe::uint64_operand(&ctx.accounts.balance_value, encrypted_balance_label())?;
+    let total_supply = fhe::uint64_operand(&ctx.accounts.total_supply_value, encrypted_total_supply_label())?;
     let execution = zama_fhe::FheExecution::build(
         zama_fhe::ExecutionEncryptedValueAccountAuthority::new(token_account.key()),
         |builder| {

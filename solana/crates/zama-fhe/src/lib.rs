@@ -37,9 +37,11 @@ mod heap_tally;
 mod lower;
 mod operand;
 mod ops;
+mod state;
 #[cfg(test)]
 mod tests;
 mod types;
+pub use state::{State, StateId, StateOutput};
 mod validate;
 
 pub use accounts::{
@@ -60,7 +62,7 @@ pub use cost::{
 };
 #[cfg(feature = "cpi")]
 pub use cpi::ExecutionCpiAccounts;
-pub use execution::FheExecution;
+pub use execution::{FheExecution, ReturningFheExecution};
 pub use types::{
     BinaryRhs, Bool, BoolHandle, Encrypted, FheType, FheTyped, FheUint, Scalar, StoredValue, Uint,
     Uint64Handle,
@@ -72,6 +74,10 @@ pub type Result<T> = std::result::Result<T, FheExecutionBuildError>;
 /// Builder failures that can be detected before invoking the host program.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FheExecutionBuildError {
+    MissingStateSlot,
+    ResultNotProduced,
+    StateHistoryMismatch,
+    TooManyResultGrants,
     /// More accounts were referenced than fit in the host's `u8` wire indices.
     TooManyRemainingAccounts,
     /// The execution's interned constant dictionary outgrew the host's `u8` wire indices.

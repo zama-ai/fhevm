@@ -63,11 +63,11 @@ impl KmsPairValidator for RecordingValidator {
 }
 
 /// A request, a world that authorizes it, and this deployment.
-fn scenario() -> (Wallet, EncryptedValueAccountFixture, [u8; 32]) {
+fn scenario() -> (Wallet, EncryptedStateFixture, [u8; 32]) {
     let wallet = Wallet::new(1);
     let live = handle(0x10, FHE_TYPE_UINT64);
-    let encrypted_value_account = EncryptedValueAccountFixture::allowing(live, wallet.pubkey());
-    (wallet, encrypted_value_account, live)
+    let encrypted_state = EncryptedStateFixture::allowing(live, wallet.pubkey());
+    (wallet, encrypted_state, live)
 }
 
 fn context<'a>(
@@ -85,13 +85,13 @@ async fn authorize_with<V: KmsPairValidator>(
     validator: &V,
     permit: PermitBuilder,
 ) -> (Result<(), AuthorizationFailure>, usize) {
-    let (wallet, encrypted_value_account, live) = scenario();
+    let (wallet, encrypted_state, live) = scenario();
     let request = RequestBuilder::new(&wallet)
         .permit(permit)
-        .direct(&encrypted_value_account, live)
+        .direct(&encrypted_state, live)
         .typed();
     let world = World::running_at_slot(100)
-        .with_encrypted_value_account(&encrypted_value_account)
+        .with_encrypted_state(&encrypted_state)
         .with_watermark(wallet.pubkey(), 0);
     let proofs = ScriptedProofReader::constant(world.record());
     let reader = ScriptedReader::constant(world);

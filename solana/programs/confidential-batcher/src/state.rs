@@ -108,8 +108,6 @@ pub struct JoinRecord {
     pub batch: Pubkey,
     /// Joining user.
     pub user: Pubkey,
-    /// `EncryptedValue` encrypted value account holding the user's accumulated joined amount.
-    pub joined_encrypted_value: Pubkey,
     /// Whether the user's payout was claimed.
     pub claimed: bool,
     /// PDA bump for `(batch, user)`.
@@ -118,7 +116,7 @@ pub struct JoinRecord {
 
 impl JoinRecord {
     /// Serialized size of the account body, excluding the Anchor discriminator.
-    pub const SPACE: usize = 32 + 32 + 32 + 1 + 1;
+    pub const SPACE: usize = 32 + 32 + 1 + 1;
 }
 
 /// Returns the batch PDA for a batcher and index.
@@ -322,4 +320,12 @@ mod tests {
             encrypted_claim_amount_label(alice)
         );
     }
+}
+
+pub fn join_state_id(batch: Pubkey, record: Pubkey) -> zama_fhe::StateId {
+    zama_fhe::StateId::new(crate::ID, record, batch.to_bytes())
+}
+
+pub fn joined_amount_key() -> [u8; 32] {
+    *b"joined_amount___________________"
 }

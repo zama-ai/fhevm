@@ -70,10 +70,10 @@ describe('verifyPublicDecryptArgsFromClaim', () => {
 describe('buildVerifyPublicDecryptInstruction', () => {
   it('maps a claim onto the raw host verify_public_decrypt instruction', async () => {
     const kmsContext = addr(2);
-    const encryptedValue = addr(3);
+    const encryptedState = addr(3);
     const hostConfig = addr(4);
     const instruction = await buildVerifyPublicDecryptInstruction(
-      { hostConfig, kmsContext, encryptedValue },
+      { hostConfig, kmsContext, encryptedState },
       claim(),
       inclusionProof,
     );
@@ -82,7 +82,7 @@ describe('buildVerifyPublicDecryptInstruction', () => {
     expect(instruction.accounts?.map((a: { readonly address: Address }) => a.address)).toEqual([
       hostConfig,
       kmsContext,
-      encryptedValue,
+      encryptedState,
     ]);
 
     const decoded = getVerifyPublicDecryptInstructionDataDecoder().decode(instruction.data!);

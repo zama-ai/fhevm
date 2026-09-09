@@ -51,7 +51,7 @@ static ALLOCATOR: CountingAllocator = CountingAllocator;
 /// keystone: a shape silently dropping out (a structural regression grew the tally) or joining
 /// (the budget widened) both fail until the change that moved the frontier updates this
 /// number and the documented tables with it.
-pub(crate) const ADMITTED_FRONTIER_SHAPES: usize = 57;
+pub(crate) const ADMITTED_FRONTIER_SHAPES: usize = 61;
 
 /// A boxed shape constructor, so the frontier can hold shapes of different closure types.
 pub(crate) type ShapeBuilder =

@@ -13,8 +13,10 @@
 
 import { getAddressEncoder, type Address } from "@solana/kit";
 
-import { fetchSolanaEncryptedValueState, type SolanaEncryptedValueState } from "@sdk-src/solana/encryptedValueAccount.js";
-import { buildPublicLeafProof, type MmrProof, type SolanaEncryptedValueAccountEvent } from "@sdk-src/solana/proof.js";
+import { fetchSolanaEncryptedState, encryptedStateHandle, type SolanaEncryptedState } from "@sdk-src/solana/encryptedState.js";
+import type { MmrProof } from "@sdk-src/solana/proof.js";
+import { publicProof } from "@demo-dapp/vault/internal/publicProof.js";
+import { SOLANA_LEAF_PROOF_PORT, SOLANA_LEAF_PROOF_API_KEY } from "../generate/solana";
 
 import { runSolanaCurrentUserDecrypt } from "./current-user-decrypt";
 import { ZAMA_HOST_PROGRAM_ADDRESS } from "./internal/generated/zamaHost/programAddress.js";
@@ -52,12 +54,12 @@ export type FheVerticalConfig = {
 export const readEncryptedValueState = (
   context: SolanaProvisioningContext,
   encryptedValue: Address,
-): Promise<SolanaEncryptedValueState> =>
-  fetchSolanaEncryptedValueState(context.rpc, encryptedValue, { commitment: "confirmed" }, ZAMA_HOST_PROGRAM_ADDRESS);
+): Promise<SolanaEncryptedState> =>
+  fetchSolanaEncryptedState(context.rpc, encryptedValue, { commitment: "confirmed" }, ZAMA_HOST_PROGRAM_ADDRESS);
 
 /** The current handle bytes of an encrypted value at `confirmed`. */
-export const currentHandle = async (context: SolanaProvisioningContext, encryptedValue: Address): Promise<Uint8Array> =>
-  (await readEncryptedValueState(context, encryptedValue)).currentHandle;
+export const currentHandle = async (context: SolanaProvisioningContext, encryptedValue: Address, key: Uint8Array): Promise<Uint8Array> =>
+  encryptedStateHandle(await readEncryptedValueState(context, encryptedValue), key);
 
 /** A certified public decrypt: the interpreted cleartext plus the raw KMS certificate. */
 export type PublicDecryptOutcome = {
@@ -80,7 +82,7 @@ export const certifiedPublicDecrypt = async (
     PD_CONTRACTS_CHAIN_ID: config.chainId.toString(),
     PD_HANDLE: hex(params.handle),
     PD_CONTEXT_ID: config.publicDecryptContextId,
-    PD_ENCRYPTED_VALUE_ACCOUNT: addressHex(params.encryptedValue),
+    PD_ENCRYPTED_STATE: addressHex(params.encryptedValue),
   });
   return { cleartext: certificateCleartext(certificate), certificate };
 };
@@ -105,7 +107,7 @@ export const userDecryptExpect = (
     UD_RELAYER_URL: config.relayerUrl,
     UD_CONTRACTS_CHAIN_ID: config.chainId.toString(),
     UD_HANDLE: hex(params.handle),
-    UD_ENCRYPTED_VALUE_ACCOUNT: addressHex(params.encryptedValue),
+    UD_ENCRYPTED_STATE: addressHex(params.encryptedValue),
     UD_SECRET_KEY: params.secretKey,
     UD_CONTEXT_ID: `0x${BigInt(config.userDecryptContextId).toString(16).padStart(64, "0")}`,
     UD_EPOCH_ID: config.kmsEpochId,
@@ -119,11 +121,11 @@ export const userDecryptExpect = (
   });
 
 
-/** The SDK's {@link buildPublicLeafProof} against the live account. */
+/** Fetches the public leaf proof and checks it against the live shared state history. */
 export const livePublicLeafProof = async (
   context: SolanaProvisioningContext,
-  encryptedValue: Address,
-  history: readonly SolanaEncryptedValueAccountEvent[],
-  publicLeafIndex: bigint,
-): Promise<MmrProof> =>
-  buildPublicLeafProof(addressBytes(encryptedValue), await readEncryptedValueState(context, encryptedValue), history, publicLeafIndex);
+  encryptedState: Address,
+  handle: Uint8Array,
+): Promise<MmrProof> => publicProof(context.rpc, {
+  url: `http://127.0.0.1:${SOLANA_LEAF_PROOF_PORT}`, apiKey: SOLANA_LEAF_PROOF_API_KEY,
+}, encryptedState, handle);

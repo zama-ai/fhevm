@@ -16,12 +16,12 @@ export * from './permit/index.js';
 export * from './userDecrypt/index.js';
 
 export {
-  SOLANA_ENCRYPTED_VALUE_SEED,
-  decodeSolanaEncryptedValueState,
-  fetchSolanaEncryptedValueState,
-  solanaEncryptedValueAccountAddress,
-} from './encryptedValueAccount.js';
-export type { SolanaEncryptedValueSeeds, SolanaEncryptedValueState, SolanaRpc } from './encryptedValueAccount.js';
+  SOLANA_ENCRYPTED_STATE_SEED,
+  decodeSolanaEncryptedState,
+  fetchSolanaEncryptedState,
+  solanaEncryptedStateAddress,
+} from './encryptedState.js';
+export type { SolanaEncryptedStateSeeds, SolanaEncryptedState, SolanaRpc } from './encryptedState.js';
 export { createFhevmPublicDecryptClient } from './clients/createFhevmPublicDecryptClient.js';
 export type { FhevmSolanaPublicDecryptClient } from './clients/createFhevmPublicDecryptClient.js';
 export { createFhevmEncryptClient } from './clients/createFhevmEncryptClient.js';

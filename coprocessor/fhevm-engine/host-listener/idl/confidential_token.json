@@ -339,12 +339,6 @@
           "writable": true
         },
         {
-          "name": "burned_amount_value",
-          "docs": [
-            "Shared `burned_amount` encrypted value account; read as a persistent operand (left unchanged)."
-          ]
-        },
-        {
           "name": "pending_burn",
           "docs": [
             "Pending-burn account; closed on successful cancellation."
@@ -517,13 +511,6 @@
           "writable": true
         },
         {
-          "name": "burned_amount_value",
-          "docs": [
-            "account's first burn and replaced after the prior pending burn is settled."
-          ],
-          "writable": true
-        },
-        {
           "name": "pending_burn",
           "docs": [
             "A burn is rejected before execution while this account is already initialized."
@@ -690,13 +677,6 @@
           "writable": true
         },
         {
-          "name": "burned_amount_value",
-          "docs": [
-            "decryptable exactly as in [`ConfidentialBurn`]."
-          ],
-          "writable": true
-        },
-        {
           "name": "pending_burn",
           "docs": [
             "A burn is rejected before execution while this account is already initialized."
@@ -760,7 +740,17 @@
           "name": "program"
         }
       ],
-      "args": []
+      "args": [
+        {
+          "name": "key",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
     },
     {
       "name": "confidential_transfer",
@@ -837,13 +827,6 @@
           "writable": true
         },
         {
-          "name": "transferred_amount_value",
-          "docs": [
-            "the sender's first transfer, replaced thereafter."
-          ],
-          "writable": true
-        },
-        {
           "name": "zama_event_authority"
         },
         {
@@ -883,18 +866,16 @@
           "optional": true
         },
         {
-          "name": "receipt_value",
-          "docs": [
-            "first write, accumulated thereafter. The host checks its canonical address."
-          ],
+          "name": "result_state",
+          "optional": true
+        },
+        {
+          "name": "result_scratch",
           "writable": true,
           "optional": true
         },
         {
-          "name": "receipt_authority",
-          "docs": [
-            "The recipient program's PDA controlling the receipt, signing through `invoke_signed`."
-          ],
+          "name": "result_authority",
           "signer": true,
           "optional": true
         },
@@ -911,16 +892,6 @@
           "type": {
             "defined": {
               "name": "CoprocessorInputAttestation"
-            }
-          }
-        },
-        {
-          "name": "receipt",
-          "type": {
-            "option": {
-              "defined": {
-                "name": "TransferReceipt"
-              }
             }
           }
         }
@@ -1002,21 +973,17 @@
           "writable": true
         },
         {
-          "name": "transferred_amount_value",
-          "docs": [
-            "the sender's first transfer, replaced thereafter."
-          ],
-          "writable": true
+          "name": "amount_state",
+          "optional": true
         },
         {
-          "name": "amount_value",
-          "docs": [
-            "The existing encrypted amount to spend: a computed `euint64` handle. Read-only persistent",
-            "operand — never replaced, never consumed. Its address is the canonical PDA of its own",
-            "`(program, authority, scope, label)` fields, so an encrypted value account from any app may",
-            "be passed here when that app's value authority is the signing `owner` (a program PDA",
-            "authorizing through `invoke_signed`), or when it is one of the sender's own token values."
-          ]
+          "name": "amount_authority",
+          "signer": true,
+          "optional": true
+        },
+        {
+          "name": "amount_scratch",
+          "optional": true
         },
         {
           "name": "zama_event_authority"
@@ -1064,7 +1031,16 @@
           "name": "program"
         }
       ],
-      "args": []
+      "args": [
+        {
+          "name": "amount_source",
+          "type": {
+            "defined": {
+              "name": "TransferInput"
+            }
+          }
+        }
+      ]
     },
     {
       "name": "disclose_secp",
@@ -1132,14 +1108,6 @@
         }
       ],
       "args": [
-        {
-          "name": "kind",
-          "type": {
-            "defined": {
-              "name": "DisclosedValueKind"
-            }
-          }
-        },
         {
           "name": "handle",
           "type": {
@@ -2409,7 +2377,7 @@
     },
     {
       "code": 6049,
-      "name": "TransferReceiptMismatch",
+      "name": "ResultGrantMismatch",
       "msg": "transfer receipt descriptor and accounts must be passed together"
     }
   ],
@@ -2702,13 +2670,6 @@
               "Decimal precision inherited from the underlying mint."
             ],
             "type": "u8"
-          },
-          {
-            "name": "total_supply_encrypted_value",
-            "docs": [
-              "`EncryptedValue` encrypted value account PDA holding the current total-supply handle."
-            ],
-            "type": "pubkey"
           }
         ]
       }
@@ -2736,13 +2697,6 @@
             "name": "mint",
             "docs": [
               "Confidential mint this account belongs to."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "balance_encrypted_value",
-            "docs": [
-              "`EncryptedValue` encrypted value account PDA holding the current balance handle."
             ],
             "type": "pubkey"
           },
@@ -2937,9 +2891,6 @@
             "name": "Balance"
           },
           {
-            "name": "TransferredAmount"
-          },
-          {
             "name": "BurnedAmount"
           },
           {
@@ -2949,42 +2900,46 @@
       }
     },
     {
-      "name": "EncryptedValue",
-      "docs": [
-        "Canonical state for one encrypted value.",
-        "",
-        "PDA: `[ENCRYPTED_VALUE_SEED, program, encrypted_value_account_authority, scope, label]`.",
-        "The account name must stay exactly `EncryptedValue` — Anchor derives the discriminator from",
-        "the type name, and it must match `zama_solana_acl::encrypted_value_discriminator()`."
-      ],
+      "name": "EncryptedSlot",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "key",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "handle",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "EncryptedState",
       "type": {
         "kind": "struct",
         "fields": [
           {
             "name": "program",
-            "docs": [
-              "The application program this value belongs to. Proven on create: the authority must be a",
-              "PDA of this program (the create carries the seeds), so no other program can sign for it."
-            ],
             "type": "pubkey"
           },
           {
-            "name": "encrypted_value_account_authority",
-            "docs": [
-              "The account that controls this encrypted value: a PDA of `program` that must sign to create",
-              "it, read it into a computation, or update its handle. Enforced by address rather than by",
-              "comparing this field — the signer must equal the authority declared in the execution and",
-              "the account written must be the PDA rederived from the declared four seeds, which is what",
-              "ties the signer to the stored value. For a token balance this is the token account itself."
-            ],
+            "name": "authority",
             "type": "pubkey"
           },
           {
             "name": "scope",
-            "docs": [
-              "Program-declared scope within `program` (the mint for the token program).",
-              "`(program, scope)` is the application identity for HCU metering and the deny list."
-            ],
             "type": {
               "array": [
                 "u8",
@@ -2993,41 +2948,21 @@
             }
           },
           {
-            "name": "label",
-            "docs": [
-              "Which of the authority's values this is."
-            ],
+            "name": "slots",
             "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "current_handle",
-            "docs": [
-              "Current encrypted value identifier (the live handle)."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
+              "vec": {
+                "defined": {
+                  "name": "EncryptedSlot"
+                }
+              }
             }
           },
           {
             "name": "leaf_count",
-            "docs": [
-              "Number of MMR leaves appended; `0` means no history."
-            ],
             "type": "u64"
           },
           {
             "name": "peaks",
-            "docs": [
-              "MMR peaks, oldest mountain first (`popcount(leaf_count)` entries)."
-            ],
             "type": {
               "vec": {
                 "array": [
@@ -3039,9 +2974,6 @@
           },
           {
             "name": "bump",
-            "docs": [
-              "PDA bump."
-            ],
             "type": "u8"
           }
         ]
@@ -3095,34 +3027,11 @@
             "type": "pubkey"
           },
           {
-            "name": "kind",
+            "name": "authority",
             "docs": [
-              "Token state field whose canonical authority and label were validated."
-            ],
-            "type": {
-              "defined": {
-                "name": "DisclosedValueKind"
-              }
-            }
-          },
-          {
-            "name": "encrypted_value_account_authority",
-            "docs": [
-              "Encrypted value account authority bound to `kind`."
+              "Controller of the state containing the historical public leaf."
             ],
             "type": "pubkey"
-          },
-          {
-            "name": "encrypted_value_label",
-            "docs": [
-              "Encrypted value label bound to `kind`."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
           },
           {
             "name": "cleartext_amount",
@@ -3475,13 +3384,6 @@
             }
           },
           {
-            "name": "burned_encrypted_value",
-            "docs": [
-              "Shared `burned_amount` EncryptedValue account for this token account."
-            ],
-            "type": "pubkey"
-          },
-          {
             "name": "bump",
             "docs": [
               "PDA bump for `(mint, token_account)`."
@@ -3654,68 +3556,40 @@
       }
     },
     {
-      "name": "TransferReceipt",
+      "name": "TransferInput",
       "docs": [
-        "How a program receiving a transfer learns the amount it received: the transfer's execution",
-        "also writes `receipt = receipt + transferred` (first time `transferred + 0`) into a value of",
-        "that program, controlled by the PDA it signs the CPI with. A value's authority is the only",
-        "key that may compute on it, so the recipient cannot read `transferred_amount` itself; the",
-        "token program writes the sum into the recipient's own value instead, in the same execution",
-        "that computes it. EVM analog: `FHE.allow(transferred, recipient)` followed by the recipient's",
-        "own `add`."
+        "A durable slot or an exact transient grant addressed to the sender token state."
       ],
       "type": {
-        "kind": "struct",
-        "fields": [
+        "kind": "enum",
+        "variants": [
           {
-            "name": "program",
-            "docs": [
-              "The recipient program."
-            ],
-            "type": "pubkey"
+            "name": "Slot",
+            "fields": [
+              {
+                "name": "key",
+                "type": {
+                  "array": [
+                    "u8",
+                    32
+                  ]
+                }
+              }
+            ]
           },
           {
-            "name": "scope",
-            "docs": [
-              "The recipient program's scope for the value."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "label",
-            "docs": [
-              "The value's label under `(program, receipt_authority, scope)`."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "authority_seeds",
-            "docs": [
-              "Seeds (bump last) deriving `receipt_authority` under `program`; proven by the host on",
-              "the first write."
-            ],
-            "type": {
-              "vec": "bytes"
-            }
-          },
-          {
-            "name": "allows",
-            "docs": [
-              "Keys allowed to decrypt the receipt's new handle."
-            ],
-            "type": {
-              "vec": "pubkey"
-            }
+            "name": "Grant",
+            "fields": [
+              {
+                "name": "handle",
+                "type": {
+                  "array": [
+                    "u8",
+                    32
+                  ]
+                }
+              }
+            ]
           }
         ]
       }

@@ -43,10 +43,6 @@ pub struct Dispatch<'info> {
     /// CHECK: mint's stable total-supply encrypted value account; replaced by the token CPI.
     #[account(mut)]
     pub total_supply_value: UncheckedAccount<'info>,
-    /// CHECK: batch account's burned-amount encrypted value account, created publicly
-    /// decryptable; created by the token CPI (first and only burn per batch).
-    #[account(mut)]
-    pub batch_burned_amount_value: UncheckedAccount<'info>,
     /// CHECK: pending-burn PDA for the batch token account; created by the token CPI.
     #[account(mut)]
     pub pending_burn: UncheckedAccount<'info>,
@@ -112,7 +108,6 @@ pub fn dispatch(ctx: Context<Dispatch>) -> Result<()> {
             total_supply_authority: ctx.accounts.total_supply_authority.to_account_info(),
             balance_value: ctx.accounts.batch_balance_value.to_account_info(),
             total_supply_value: ctx.accounts.total_supply_value.to_account_info(),
-            burned_amount_value: ctx.accounts.batch_burned_amount_value.to_account_info(),
             pending_burn: ctx.accounts.pending_burn.to_account_info(),
             // Whole-balance burn: the balance encrypted value account is also the amount.
             amount_value: ctx.accounts.batch_balance_value.to_account_info(),
@@ -129,10 +124,10 @@ pub fn dispatch(ctx: Context<Dispatch>) -> Result<()> {
             program: ctx.accounts.confidential_token_program.to_account_info(),
         },
         &[&authority_seeds],
-    ))?;
+    ), ct::encrypted_balance_label())?;
 
     let burned_total_handle =
-        fhe::read_encrypted_value(&ctx.accounts.batch_burned_amount_value)?.current_handle;
+        fhe::read_state(&ctx.accounts.batch_balance_value)?.get(&ct::encrypted_burned_amount_label()).ok_or(BatcherError::EncryptedValueInvalid)?;
     let batch = &mut ctx.accounts.batch;
     batch.status = BatchStatus::Dispatched;
     batch.burned_total_handle = burned_total_handle;

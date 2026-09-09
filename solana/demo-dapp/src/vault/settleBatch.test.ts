@@ -6,12 +6,15 @@ vi.mock('@solana/kit', async (importOriginal) => ({
   sendAndConfirmTransactionFactory: () => sendAndConfirm,
 }));
 
+const publicProof = vi.hoisted(() => vi.fn());
+vi.mock('./internal/publicProof.js', () => ({ publicProof }));
+
 const certificate = vi.hoisted(() => vi.fn());
 vi.mock('@sdk-src/solana/actions/publicDecryptCertificate.js', () => ({ publicDecryptCertificate: certificate }));
 
 const getCurrentBatch = vi.hoisted(() => vi.fn());
-const getEncryptedValueState = vi.hoisted(() => vi.fn());
-vi.mock('./reads.js', () => ({ getCurrentBatch, getEncryptedValueState }));
+const getEncryptedState = vi.hoisted(() => vi.fn());
+vi.mock('./reads.js', () => ({ getCurrentBatch, getEncryptedState }));
 
 import {
   address,
@@ -23,8 +26,7 @@ import {
 } from '@solana/kit';
 import { base58 } from '@scure/base';
 
-import { mmrVerify, publicDecryptLeafCommitment, reconstructSolanaEncryptedValueAccount } from '@sdk-src/solana/proof.js';
-import { buildBurnedAmountPublicProof, burnedAmountLeafHistory, settleBatch, type SolanaVaultSettleOptions } from './settleBatch.js';
+import { settleBatch, type SolanaVaultSettleOptions } from './settleBatch.js';
 import {
   deriveBatchAddresses,
   deriveSettleAccounts,
@@ -78,18 +80,6 @@ function claim(cleartext: string) {
   };
 }
 
-/** The live account state the batcher's one burn leaves behind, for the fixture batch. */
-async function liveBurnedAccount(burnedHandle: Uint8Array = BURNED_HANDLE, extraLeaves = 0) {
-  const addresses = await deriveBatchAddresses(roots(), 0n);
-  const history = burnedAmountLeafHistory(burnedHandle, addresses.batchAuthority);
-  const events = [
-    ...history.events,
-    ...Array.from({ length: extraLeaves }, () => ({ kind: 'markedPublic' as const, handle: burnedHandle })),
-  ];
-  const rebuilt = reconstructSolanaEncryptedValueAccount(base58.decode(addresses.batchBurnedAmountValue), events);
-  return { addresses, state: { currentHandle: burnedHandle, leafCount: rebuilt.leafCount, peaks: rebuilt.peaks } };
-}
-
 async function options(overrides: { burnedHandle?: Uint8Array; extraLeaves?: number } = {}): Promise<{
   chain: FhevmSolanaChain;
   keeper: Awaited<ReturnType<typeof generateKeyPairSigner>>;
@@ -97,10 +87,11 @@ async function options(overrides: { burnedHandle?: Uint8Array; extraLeaves?: num
 }> {
   const keeper = await generateKeyPairSigner();
   const burnedHandle = overrides.burnedHandle ?? BURNED_HANDLE;
-  const { addresses, state } = await liveBurnedAccount(burnedHandle, overrides.extraLeaves ?? 0);
+  const addresses = await deriveBatchAddresses(roots(), 0n);
 
   getCurrentBatch.mockResolvedValue({ index: 0n, addresses, state: { burnedTotalHandle: burnedHandle } });
-  getEncryptedValueState.mockResolvedValue(state);
+  if (overrides.extraLeaves) publicProof.mockRejectedValue(new Error('public proof does not match on-chain state'));
+  else publicProof.mockResolvedValue({ leafIndex: 3n, siblings: [new Uint8Array(32), new Uint8Array(32)] });
 
   const opts: SolanaVaultSettleOptions = {
     rpc: {
@@ -111,6 +102,7 @@ async function options(overrides: { burnedHandle?: Uint8Array; extraLeaves?: num
     } as unknown as SolanaVaultSettleOptions['rpc'],
     rpcSubscriptions: {} as SolanaVaultSettleOptions['rpcSubscriptions'],
     runtime: {} as never,
+    proofService: { url: "http://proof-service", apiKey: "test" },
     roots: roots(),
     contextId: new Uint8Array(32),
     lookupTableAddress: addr(200),
@@ -119,39 +111,13 @@ async function options(overrides: { burnedHandle?: Uint8Array; extraLeaves?: num
   return { chain: { id: 9223372036854788153n, fhevm: { relayerUrl: 'http://relayer:3000' } }, keeper, opts };
 }
 
-describe('the burned amount leaf history', () => {
-  it('is one allow for the batch authority then the public leaf, and its proof verifies against the peaks', async () => {
-    const { addresses, state } = await liveBurnedAccount();
-    const proof = buildBurnedAmountPublicProof(
-      addresses.batchBurnedAmountValue,
-      state,
-      BURNED_HANDLE,
-      addresses.batchAuthority,
-    );
-    expect(proof.leafIndex).toBe(1n);
-    expect(state.leafCount).toBe(2n);
-    const commitment = publicDecryptLeafCommitment(
-      base58.decode(addresses.batchBurnedAmountValue),
-      proof.leafIndex,
-      BURNED_HANDLE,
-    );
-    expect(mmrVerify(state.peaks, state.leafCount, commitment, proof)).toBe(true);
-  });
-
-  it('refuses a live account whose leaves are not the ones the batcher writes', async () => {
-    const { addresses, state } = await liveBurnedAccount(BURNED_HANDLE, 1);
-    expect(() =>
-      buildBurnedAmountPublicProof(addresses.batchBurnedAmountValue, state, BURNED_HANDLE, addresses.batchAuthority),
-    ).toThrow('do not match');
-  });
-});
-
 describe('settleBatch', () => {
   beforeEach(() => {
     sendAndConfirm.mockReset().mockResolvedValue(undefined);
     certificate.mockReset();
     getCurrentBatch.mockReset();
-    getEncryptedValueState.mockReset();
+    getEncryptedState.mockReset();
+    publicProof.mockReset();
   });
   afterEach(() => vi.unstubAllGlobals());
 
@@ -168,7 +134,7 @@ describe('settleBatch', () => {
     expect(certificate.mock.calls[0]![1]).toEqual({
       handle: `0x${hex(BURNED_HANDLE)}`,
       contextId: opts.contextId,
-      encryptedValueAccount: base58.decode(batchAddresses.batchBurnedAmountValue),
+      encryptedState: base58.decode(batchAddresses.batchBurnedAmountValue),
       options: undefined,
     });
 
@@ -220,8 +186,8 @@ describe('settleBatch', () => {
     const compiledInstructions = (compiled as unknown as { instructions: { data?: Uint8Array }[] }).instructions;
     const data = getSettleInstructionDataDecoder().decode(compiledInstructions[1]!.data!);
     expect(data.cleartextTotal).toBe(800n);
-    expect(data.leafIndex).toBe(1n);
-    expect(data.siblings).toHaveLength(1);
+    expect(data.leafIndex).toBe(3n);
+    expect(data.siblings).toHaveLength(2);
   });
 
   it('rejects a batch that has not been dispatched (zero burned handle) before any phase', async () => {
@@ -240,11 +206,12 @@ describe('settleBatch', () => {
     expect(sendAndConfirm).not.toHaveBeenCalled();
   });
 
-  it('rejects a live burned account that disagrees with the batcher history before the certificate phase', async () => {
+  it('fetches the proof after the certificate and rejects invalid evidence before sending', async () => {
     certificate.mockResolvedValue(claim(cleartextHex(800n)));
     const { chain, keeper, opts } = await options({ extraLeaves: 1 });
-    await expect(settleBatch(chain, keeper, opts)).rejects.toThrow('do not match');
-    expect(certificate).not.toHaveBeenCalled();
+    await expect(settleBatch(chain, keeper, opts)).rejects.toThrow('does not match');
+    expect(certificate).toHaveBeenCalledTimes(1);
+    expect(publicProof.mock.invocationCallOrder[0]).toBeGreaterThan(certificate.mock.invocationCallOrder[0]!);
     expect(opts.rpc.getLatestBlockhash).not.toHaveBeenCalled();
     expect(sendAndConfirm).not.toHaveBeenCalled();
   });

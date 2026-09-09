@@ -116,6 +116,43 @@ pub fn make_handle_public(
     Ok(())
 }
 
+/// Publicly seals an exact current slot handle in a shared state history.
+#[derive(Accounts)]
+pub struct MakeStateHandlePublic<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    pub authority: Signer<'info>,
+    #[account(mut)]
+    pub encrypted_state: Account<'info, EncryptedState>,
+    #[account(seeds = [HOST_CONFIG_SEED], bump = host_config.bump)]
+    pub host_config: Account<'info, HostConfig>,
+    /// CHECK: the canonical application deny witness is checked by the handler.
+    pub deny_scope_record: Option<UncheckedAccount<'info>>,
+    pub system_program: Program<'info, System>,
+}
+
+pub fn make_state_handle_public(
+    ctx: Context<MakeStateHandlePublic>,
+    key: [u8; 32],
+    handle: [u8; 32],
+    previous_leaf_count: u64,
+) -> Result<()> {
+    assert_not_paused(&ctx.accounts.host_config)?;
+    assert_no_remaining_accounts(ctx.remaining_accounts)?;
+    let state = &mut ctx.accounts.encrypted_state;
+    require_keys_eq!(state.key(), state.canonical_address().0, ZamaHostError::EncryptedValuePublicHandleMismatch);
+    require_keys_eq!(ctx.accounts.authority.key(), state.authority, ZamaHostError::EncryptedValueAccountAuthorityMismatch);
+    require!(state.get(&key) == Some(handle), ZamaHostError::EncryptedValuePublicHandleMismatch);
+    require!(state.leaf_count == previous_leaf_count, ZamaHostError::EncryptedValueMmrInconsistent);
+    check_scope_not_denied(&ctx.accounts.host_config, AppScope { program: state.program, scope: state.scope }, ctx.accounts.deny_scope_record.as_ref())?;
+    let commitment = zama_solana_acl::public_decrypt_leaf_commitment(state.key().to_bytes(), state.leaf_count, handle);
+    let state_data: &mut EncryptedState = state;
+    zama_solana_acl::mmr_append(&mut state_data.peaks, &mut state_data.leaf_count, commitment).map_err(map_mmr_append_error)?;
+    let space = zama_solana_acl::EncryptedState::account_size(state.slots.len(), state.peaks.len());
+    grow_account_if_needed(&ctx.accounts.payer.to_account_info(), &state.to_account_info(), &ctx.accounts.system_program.to_account_info(), space)?;
+    Ok(())
+}
+
 fn map_mmr_append_error(error: zama_solana_acl::AclError) -> anchor_lang::error::Error {
     match error {
         zama_solana_acl::AclError::MmrPeakCapacityExceeded => {

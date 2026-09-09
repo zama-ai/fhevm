@@ -30,6 +30,16 @@ pub(crate) struct Operand(pub(crate) OperandKind);
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum OperandKind {
     Persistent(PersistentOperand),
+    StateSlot {
+        state: crate::StateId,
+        key: [u8; 32],
+        handle: [u8; 32],
+    },
+    Granted {
+        consumer: crate::StateId,
+        scratch: Pubkey,
+        handle: [u8; 32],
+    },
     Transient {
         producer_index: u8,
     },

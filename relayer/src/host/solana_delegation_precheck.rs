@@ -17,13 +17,13 @@
 //!   grant ever existed) to a doomed gateway transaction, and a caller inside the window
 //!   succeeds by resubmitting;
 //! * every ambiguity of *data* passes: a live row, an unreadable or misshapen account, an
-//!   unresolvable encrypted value account. A false pass costs one doomed gateway transaction (what the
+//!   unresolvable encrypted state. A false pass costs one doomed gateway transaction (what the
 //!   connector-side check is for); a false refusal would block an authorized user, so a
 //!   fetched world this check cannot judge always passes;
 //! * a *transport* failure is not ambiguity: an RPC that cannot be read at all, retries
 //!   exhausted, refuses the request (`HostAclError::CallFailed`) — the same policy as the EVM
 //!   pre-check, so the client-visible contract does not fork by host chain. A node that is
-//!   merely *behind* is not that failure: the row read requires the encrypted-value read's slot
+//!   merely *behind* is not that failure: the row read requires the encrypted-state read's slot
 //!   (`minContextSlot`) and is re-checked against it on arrival, and a node that never catches
 //!   up passes rather than refusing. The two reads are therefore never two views of the chain
 //!   in the wrong order — the ordering the connector gets from its own `deciding_after` gate.
@@ -41,7 +41,7 @@
 //! of fetched rows back to their entries ([`judge_planned_entries`]). The transport in
 //! `acl_checker` only carries bytes between these functions.
 
-use zama_solana_acl::decode_on_chain_account;
+use zama_solana_acl::decode_encrypted_state;
 use zama_solana_acl::delegation::{
     decode_user_decryption_delegation, UserDecryptionDelegationRecord,
     WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY,
@@ -69,16 +69,16 @@ pub(crate) enum EntryVerdict {
 pub(crate) struct EntryVerdictInputs<'a> {
     /// The deployment's host program id.
     pub program_id: [u8; 32],
-    /// The address of the encrypted value account the entry names.
-    pub encrypted_value_account_key: [u8; 32],
+    /// The address of the encrypted state the entry names.
+    pub encrypted_state_key: [u8; 32],
     /// The entry's allowed key — the delegator whose access is asked for.
     pub delegator: [u8; 32],
     /// The permit's signer — the delegate.
     pub delegate: [u8; 32],
-    /// The encrypted value account at that address, if it exists.
-    pub encrypted_value_account: Option<&'a RawAccount>,
+    /// The encrypted state at that address, if it exists.
+    pub encrypted_state: Option<&'a RawAccount>,
     /// The authority-specific delegation row, if it exists (fetched second, once the
-    /// authority is known from the encrypted value account).
+    /// authority is known from the encrypted state).
     pub exact_row: Option<&'a RawAccount>,
     /// The delegator's wildcard row, if it exists.
     pub wildcard_row: Option<&'a RawAccount>,
@@ -88,10 +88,10 @@ pub(crate) struct EntryVerdictInputs<'a> {
 
 /// Decides one delegated entry. Pure: every ambiguity is [`EntryVerdict::Indeterminate`].
 pub(crate) fn entry_verdict(inputs: &EntryVerdictInputs) -> EntryVerdict {
-    let Some(authority) = resolve_encrypted_value_account_authority(
+    let Some(authority) = resolve_encrypted_state_authority(
         inputs.program_id,
-        inputs.encrypted_value_account_key,
-        inputs.encrypted_value_account,
+        inputs.encrypted_state_key,
+        inputs.encrypted_state,
     ) else {
         return EntryVerdict::Indeterminate;
     };
@@ -129,28 +129,28 @@ pub(crate) fn entry_verdict(inputs: &EntryVerdictInputs) -> EntryVerdict {
     }
 }
 
-/// The authority the entry's encrypted value account names, when the account resolves cleanly:
+/// The authority the entry's encrypted state names, when the account resolves cleanly:
 /// present, host-owned, decodable, deriving the address it was read from, and not the wildcard
-/// sentinel. `None` is "this advisory check cannot judge the encrypted value account" — never a
+/// sentinel. `None` is "this advisory check cannot judge the encrypted state" — never a
 /// refusal.
-pub(crate) fn resolve_encrypted_value_account_authority(
+pub(crate) fn resolve_encrypted_state_authority(
     program_id: [u8; 32],
-    encrypted_value_account_key: [u8; 32],
-    encrypted_value_account: Option<&RawAccount>,
+    encrypted_state_key: [u8; 32],
+    encrypted_state: Option<&RawAccount>,
 ) -> Option<[u8; 32]> {
-    let account = encrypted_value_account?;
+    let account = encrypted_state?;
     if account.owner != program_id {
         return None;
     }
-    let value = decode_on_chain_account(&account.data).ok()?;
-    if encrypted_value_account_address(&value, program_id) != Some(encrypted_value_account_key) {
+    let state = decode_encrypted_state(&account.data).ok()?;
+    if encrypted_state_address(&state, program_id) != Some(encrypted_state_key) {
         return None;
     }
     // The sentinel-authority case is the connector's own guard; this check stands aside.
-    if value.encrypted_value_account_authority == WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY {
+    if state.authority == WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY {
         return None;
     }
-    Some(value.encrypted_value_account_authority)
+    Some(state.authority)
 }
 
 /// What one delegation row contributes to the verdict.
@@ -211,21 +211,21 @@ pub(crate) struct DelegatedEntry {
     pub handle_hex: String,
     /// The entry's allowed key, which on a delegated entry is the delegator.
     pub delegator: [u8; 32],
-    pub encrypted_value_account: [u8; 32],
+    pub encrypted_state: [u8; 32],
 }
 
-/// An entry whose encrypted-value-account read resolved to a judgeable account. It
+/// An entry whose encrypted-state read resolved to a judgeable account. It
 /// carries that account with it — no index into someone else's array — so a later
 /// filter cannot silently
 /// re-pair entries with accounts.
 pub(crate) struct PlannedEntry {
     pub handle_hex: String,
     pub delegator: [u8; 32],
-    pub encrypted_value_account_key: [u8; 32],
-    pub encrypted_value_account: RawAccount,
+    pub encrypted_state_key: [u8; 32],
+    pub encrypted_state: RawAccount,
 }
 
-/// What the encrypted-value-account read planned for the row read: `entries[i]`'s rows sit at
+/// What the encrypted-state read planned for the row read: `entries[i]`'s rows sit at
 /// `addresses[2i]` (authority-specific) and `addresses[2i + 1]` (wildcard) — built by the one
 /// loop of [`plan_row_reads`], consumed by the `chunks_exact(2)` of [`judge_planned_entries`].
 pub(crate) struct RowReadPlan {
@@ -244,47 +244,44 @@ pub(crate) struct EntryRefusal {
 /// rather than misattribute accounts to entries.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum PairingDefect {
-    EncryptedValueAccounts { entries: usize, accounts: usize },
+    EncryptedStates { entries: usize, accounts: usize },
     RowAccounts { entries: usize, accounts: usize },
 }
 
-/// The addresses of the encrypted-value-account read, one per entry in order: the entry names
+/// The addresses of the encrypted-state read, one per entry in order: the entry names
 /// the account by address, and the account's own fields are checked against it once read.
-pub(crate) fn encrypted_value_read_addresses(entries: &[DelegatedEntry]) -> Vec<[u8; 32]> {
-    entries
-        .iter()
-        .map(|entry| entry.encrypted_value_account)
-        .collect()
+pub(crate) fn encrypted_state_read_addresses(entries: &[DelegatedEntry]) -> Vec<[u8; 32]> {
+    entries.iter().map(|entry| entry.encrypted_state).collect()
 }
 
-/// Plans the row read from the encrypted-value-account read's result. Entries this check cannot
-/// judge from their encrypted value account drop out here (indeterminate — the connector
+/// Plans the row read from the encrypted-state read's result. Entries this check cannot
+/// judge from their encrypted state drop out here (indeterminate — the connector
 /// decides); each surviving entry
 /// contributes its two row addresses in the interleaving [`RowReadPlan`] documents.
 pub(crate) fn plan_row_reads(
     program_id: [u8; 32],
     delegate: [u8; 32],
     entries: Vec<DelegatedEntry>,
-    encrypted_value_accounts: Vec<Option<RawAccount>>,
+    encrypted_states: Vec<Option<RawAccount>>,
 ) -> Result<RowReadPlan, PairingDefect> {
-    if encrypted_value_accounts.len() != entries.len() {
-        return Err(PairingDefect::EncryptedValueAccounts {
+    if encrypted_states.len() != entries.len() {
+        return Err(PairingDefect::EncryptedStates {
             entries: entries.len(),
-            accounts: encrypted_value_accounts.len(),
+            accounts: encrypted_states.len(),
         });
     }
     let mut plan = RowReadPlan {
         entries: Vec::new(),
         addresses: Vec::new(),
     };
-    for (entry, encrypted_value_account) in entries.into_iter().zip(encrypted_value_accounts) {
-        let Some(encrypted_value_account) = encrypted_value_account else {
+    for (entry, encrypted_state) in entries.into_iter().zip(encrypted_states) {
+        let Some(encrypted_state) = encrypted_state else {
             continue;
         };
-        let Some(authority) = resolve_encrypted_value_account_authority(
+        let Some(authority) = resolve_encrypted_state_authority(
             program_id,
-            entry.encrypted_value_account,
-            Some(&encrypted_value_account),
+            entry.encrypted_state,
+            Some(&encrypted_state),
         ) else {
             continue;
         };
@@ -295,8 +292,8 @@ pub(crate) fn plan_row_reads(
         plan.entries.push(PlannedEntry {
             handle_hex: entry.handle_hex,
             delegator: entry.delegator,
-            encrypted_value_account_key: entry.encrypted_value_account,
-            encrypted_value_account,
+            encrypted_state_key: entry.encrypted_state,
+            encrypted_state,
         });
     }
     Ok(plan)
@@ -324,10 +321,10 @@ pub(crate) fn judge_planned_entries(
         .filter_map(|(entry, rows)| {
             let verdict = entry_verdict(&EntryVerdictInputs {
                 program_id,
-                encrypted_value_account_key: entry.encrypted_value_account_key,
+                encrypted_state_key: entry.encrypted_state_key,
                 delegator: entry.delegator,
                 delegate,
-                encrypted_value_account: Some(&entry.encrypted_value_account),
+                encrypted_state: Some(&entry.encrypted_state),
                 exact_row: rows[0].as_ref(),
                 wildcard_row: rows[1].as_ref(),
                 slot,
@@ -352,15 +349,15 @@ fn solana_pda(seeds: &[&[u8]], program_id: [u8; 32]) -> [u8; 32] {
     address.to_bytes()
 }
 
-/// The address an encrypted value account's own fields derive, with its stored bump: the
+/// The address an encrypted state's own fields derive, with its stored bump: the
 /// connector's rule for "this account is the one the entry names", run here on the same fields.
 /// `None` when the stored bump does not give a valid PDA.
-fn encrypted_value_account_address(
-    value: &zama_solana_acl::EncryptedValue,
+fn encrypted_state_address(
+    state: &zama_solana_acl::EncryptedState,
     program_id: [u8; 32],
 ) -> Option<[u8; 32]> {
-    let bump = [value.bump];
-    let mut seeds: Vec<&[u8]> = value.seeds().to_vec();
+    let bump = [state.bump];
+    let mut seeds: Vec<&[u8]> = state.seeds().to_vec();
     seeds.push(&bump);
     solana_pubkey::Pubkey::create_program_address(
         &seeds,
@@ -376,7 +373,7 @@ fn encrypted_value_account_address(
 fn solana_delegation_row_addresses(
     delegator: &[u8; 32],
     delegate: &[u8; 32],
-    encrypted_value_account_authority: &[u8; 32],
+    authority: &[u8; 32],
     program_id: [u8; 32],
 ) -> ([u8; 32], [u8; 32]) {
     let row = |authority: &[u8; 32]| {
@@ -391,7 +388,7 @@ fn solana_delegation_row_addresses(
         )
     };
     (
-        row(encrypted_value_account_authority),
+        row(authority),
         row(&WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY),
     )
 }
@@ -402,7 +399,7 @@ mod tests {
     use zama_solana_acl::delegation::{
         UserDecryptionDelegationRecord, USER_DECRYPTION_DELEGATION_DISCRIMINATOR,
     };
-    use zama_solana_acl::{encrypted_value_discriminator, encrypted_value_seeds, EncryptedValue};
+    use zama_solana_acl::{encrypted_state_discriminator, EncryptedState};
 
     const PROGRAM_ID: [u8; 32] = [7; 32];
     const APP_PROGRAM: [u8; 32] = [1; 32];
@@ -412,24 +409,28 @@ mod tests {
     const AUTHORITY: [u8; 32] = [0x33; 32];
     const SLOT: u64 = 500;
 
-    /// An encrypted value account of `authority` under `label`, at the address its fields derive.
-    fn encrypted_value_account_for(authority: [u8; 32], label: [u8; 32]) -> (RawAccount, [u8; 32]) {
+    /// An encrypted state of `authority` at the address its fields derive.
+    fn encrypted_state_for(authority: [u8; 32]) -> (RawAccount, [u8; 32]) {
         let (address, bump) = solana_pubkey::Pubkey::find_program_address(
-            &encrypted_value_seeds(&APP_PROGRAM, &authority, &SCOPE, &label),
+            &[
+                zama_solana_acl::ENCRYPTED_STATE_SEED,
+                &APP_PROGRAM,
+                &authority,
+                &SCOPE,
+            ],
             &solana_pubkey::Pubkey::new_from_array(PROGRAM_ID),
         );
-        let value = EncryptedValue {
+        let state = EncryptedState {
             program: APP_PROGRAM,
-            encrypted_value_account_authority: authority,
+            authority,
             scope: SCOPE,
-            label,
-            current_handle: [3; 32],
+            slots: vec![],
             leaf_count: 0,
             peaks: vec![],
             bump,
         };
-        let mut data = encrypted_value_discriminator().to_vec();
-        borsh::BorshSerialize::serialize(&value, &mut data).expect("serializes");
+        let mut data = encrypted_state_discriminator().to_vec();
+        borsh::BorshSerialize::serialize(&state, &mut data).expect("serializes");
         (
             RawAccount {
                 owner: PROGRAM_ID,
@@ -439,12 +440,12 @@ mod tests {
         )
     }
 
-    fn encrypted_value_account() -> RawAccount {
-        encrypted_value_account_for(AUTHORITY, [2; 32]).0
+    fn encrypted_state() -> RawAccount {
+        encrypted_state_for(AUTHORITY).0
     }
 
-    fn fixture_encrypted_value_account_key() -> [u8; 32] {
-        encrypted_value_account_for(AUTHORITY, [2; 32]).1
+    fn fixture_encrypted_state_key() -> [u8; 32] {
+        encrypted_state_for(AUTHORITY).1
     }
 
     fn row(record: &UserDecryptionDelegationRecord) -> RawAccount {
@@ -484,16 +485,16 @@ mod tests {
     }
 
     fn verdict(
-        encrypted_value_account: Option<&RawAccount>,
+        encrypted_state: Option<&RawAccount>,
         exact_row: Option<&RawAccount>,
         wildcard_row: Option<&RawAccount>,
     ) -> EntryVerdict {
         entry_verdict(&EntryVerdictInputs {
             program_id: PROGRAM_ID,
-            encrypted_value_account_key: fixture_encrypted_value_account_key(),
+            encrypted_state_key: fixture_encrypted_state_key(),
             delegator: DELEGATOR,
             delegate: DELEGATE,
-            encrypted_value_account,
+            encrypted_state,
             exact_row,
             wildcard_row,
             slot: SLOT,
@@ -502,7 +503,7 @@ mod tests {
 
     #[test]
     fn a_live_authority_specific_row_allows() {
-        let value = encrypted_value_account();
+        let value = encrypted_state();
         let exact = row(&live_exact());
         assert_eq!(
             verdict(Some(&value), Some(&exact), None),
@@ -512,7 +513,7 @@ mod tests {
 
     #[test]
     fn a_live_wildcard_row_allows_when_the_exact_row_is_dead() {
-        let value = encrypted_value_account();
+        let value = encrypted_state();
         let mut revoked = live_exact();
         revoked.revoked = true;
         let exact = row(&revoked);
@@ -525,7 +526,7 @@ mod tests {
 
     #[test]
     fn the_expiration_slot_itself_is_still_live() {
-        let value = encrypted_value_account();
+        let value = encrypted_state();
         let mut boundary = live_exact();
         boundary.expiration_slot = SLOT;
         let exact = row(&boundary);
@@ -537,7 +538,7 @@ mod tests {
 
     #[test]
     fn a_revoked_exact_row_with_no_wildcard_refuses() {
-        let value = encrypted_value_account();
+        let value = encrypted_state();
         let mut revoked = live_exact();
         revoked.revoked = true;
         let exact = row(&revoked);
@@ -549,7 +550,7 @@ mod tests {
 
     #[test]
     fn an_expired_exact_row_beside_a_revoked_wildcard_refuses() {
-        let value = encrypted_value_account();
+        let value = encrypted_state();
         let mut expired = live_exact();
         expired.expiration_slot = SLOT - 1;
         let mut revoked_wildcard = live_wildcard();
@@ -564,7 +565,7 @@ mod tests {
 
     #[test]
     fn no_row_at_all_refuses() {
-        let value = encrypted_value_account();
+        let value = encrypted_state();
         assert!(matches!(
             verdict(Some(&value), None, None),
             EntryVerdict::NotAllowed { .. }
@@ -572,13 +573,13 @@ mod tests {
     }
 
     #[test]
-    fn an_absent_encrypted_value_account_is_indeterminate() {
+    fn an_absent_encrypted_state_is_indeterminate() {
         assert_eq!(verdict(None, None, None), EntryVerdict::Indeterminate);
     }
 
     #[test]
-    fn a_foreign_owned_encrypted_value_account_is_indeterminate() {
-        let mut value = encrypted_value_account();
+    fn a_foreign_owned_encrypted_state_is_indeterminate() {
+        let mut value = encrypted_state();
         value.owner = [9; 32];
         assert_eq!(
             verdict(Some(&value), None, None),
@@ -587,14 +588,14 @@ mod tests {
     }
 
     #[test]
-    fn an_encrypted_value_account_at_another_address_is_indeterminate() {
-        let value = encrypted_value_account();
+    fn an_encrypted_state_at_another_address_is_indeterminate() {
+        let value = encrypted_state();
         let verdict = entry_verdict(&EntryVerdictInputs {
             program_id: PROGRAM_ID,
-            encrypted_value_account_key: [0xaa; 32],
+            encrypted_state_key: [0xaa; 32],
             delegator: DELEGATOR,
             delegate: DELEGATE,
-            encrypted_value_account: Some(&value),
+            encrypted_state: Some(&value),
             exact_row: None,
             wildcard_row: None,
             slot: SLOT,
@@ -604,7 +605,7 @@ mod tests {
 
     #[test]
     fn an_unreadable_row_never_refuses() {
-        let value = encrypted_value_account();
+        let value = encrypted_state();
         let garbage = RawAccount {
             owner: PROGRAM_ID,
             data: vec![0xde, 0xad],
@@ -617,7 +618,7 @@ mod tests {
 
     #[test]
     fn a_row_naming_another_tuple_never_refuses() {
-        let value = encrypted_value_account();
+        let value = encrypted_state();
         let mut stranger = live_exact();
         stranger.delegate = [0x99; 32];
         stranger.revoked = true;
@@ -630,11 +631,11 @@ mod tests {
 
     // ---- the plan and the pairing ----
 
-    fn entry(handle: &str, encrypted_value_account: [u8; 32]) -> DelegatedEntry {
+    fn entry(handle: &str, encrypted_state: [u8; 32]) -> DelegatedEntry {
         DelegatedEntry {
             handle_hex: handle.to_string(),
             delegator: DELEGATOR,
-            encrypted_value_account,
+            encrypted_state,
         }
     }
 
@@ -643,8 +644,8 @@ mod tests {
     /// tuples, derived from their own authorities.
     #[test]
     fn the_plan_drops_unjudgeable_entries_without_shifting_the_pairing() {
-        let (value_a, id_a) = encrypted_value_account_for([0x41; 32], [0xa1; 32]);
-        let (value_c, id_c) = encrypted_value_account_for([0x43; 32], [0xa3; 32]);
+        let (value_a, id_a) = encrypted_state_for([0x41; 32]);
+        let (value_c, id_c) = encrypted_state_for([0x43; 32]);
 
         let plan = plan_row_reads(
             PROGRAM_ID,
@@ -679,18 +680,18 @@ mod tests {
     /// A refusal lands on the entry whose rows are dead, wherever it sits in the batch.
     #[test]
     fn a_refusal_is_attributed_to_the_entry_the_rows_belong_to() {
-        let value = encrypted_value_account();
+        let value = encrypted_state();
         let doomed = PlannedEntry {
             handle_hex: "0xdead".to_string(),
             delegator: DELEGATOR,
-            encrypted_value_account_key: fixture_encrypted_value_account_key(),
-            encrypted_value_account: value.clone(),
+            encrypted_state_key: fixture_encrypted_state_key(),
+            encrypted_state: value.clone(),
         };
         let granted = PlannedEntry {
             handle_hex: "0xa11e".to_string(),
             delegator: DELEGATOR,
-            encrypted_value_account_key: fixture_encrypted_value_account_key(),
-            encrypted_value_account: value,
+            encrypted_state_key: fixture_encrypted_state_key(),
+            encrypted_state: value,
         };
         let live_row = row(&live_exact());
 
@@ -707,18 +708,18 @@ mod tests {
         assert_eq!(refusals[0].handle_hex, "0xdead");
 
         // Mirrored order: the refusal follows the entry, not the position.
-        let value = encrypted_value_account();
+        let value = encrypted_state();
         let granted = PlannedEntry {
             handle_hex: "0xa11e".to_string(),
             delegator: DELEGATOR,
-            encrypted_value_account_key: fixture_encrypted_value_account_key(),
-            encrypted_value_account: value.clone(),
+            encrypted_state_key: fixture_encrypted_state_key(),
+            encrypted_state: value.clone(),
         };
         let doomed = PlannedEntry {
             handle_hex: "0xdead".to_string(),
             delegator: DELEGATOR,
-            encrypted_value_account_key: fixture_encrypted_value_account_key(),
-            encrypted_value_account: value,
+            encrypted_state_key: fixture_encrypted_state_key(),
+            encrypted_state: value,
         };
         let refusals = judge_planned_entries(
             PROGRAM_ID,
@@ -743,8 +744,8 @@ mod tests {
         let planned = PlannedEntry {
             handle_hex: "0xdead".to_string(),
             delegator: DELEGATOR,
-            encrypted_value_account_key: fixture_encrypted_value_account_key(),
-            encrypted_value_account: encrypted_value_account(),
+            encrypted_state_key: fixture_encrypted_state_key(),
+            encrypted_state: encrypted_state(),
         };
 
         let refusals = judge_planned_entries(
@@ -763,14 +764,14 @@ mod tests {
     }
 
     /// A row count that does not match the plan is a defect, never a misattribution — and a
-    /// encrypted-value-account count that does not match the entries likewise.
+    /// encrypted-state count that does not match the entries likewise.
     #[test]
     fn mismatched_account_counts_are_defects_not_verdicts() {
         let planned = PlannedEntry {
             handle_hex: "0xdead".to_string(),
             delegator: DELEGATOR,
-            encrypted_value_account_key: fixture_encrypted_value_account_key(),
-            encrypted_value_account: encrypted_value_account(),
+            encrypted_state_key: fixture_encrypted_state_key(),
+            encrypted_state: encrypted_state(),
         };
         assert_eq!(
             judge_planned_entries(PROGRAM_ID, DELEGATE, &[planned], &[None], SLOT).err(),
@@ -780,10 +781,10 @@ mod tests {
             })
         );
 
-        let (_, id) = encrypted_value_account_for([0x41; 32], [0xa1; 32]);
+        let (_, id) = encrypted_state_for([0x41; 32]);
         assert_eq!(
             plan_row_reads(PROGRAM_ID, DELEGATE, vec![entry("0xaa", id)], vec![]).err(),
-            Some(PairingDefect::EncryptedValueAccounts {
+            Some(PairingDefect::EncryptedStates {
                 entries: 1,
                 accounts: 0
             })

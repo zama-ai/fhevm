@@ -100,6 +100,34 @@ impl FheExecution {
         builder.finish()
     }
 
+    pub fn build_returning<T: crate::FheTyped, F>(
+        authority: ExecutionEncryptedValueAccountAuthority,
+        build: F,
+    ) -> Result<ReturningFheExecution<T>>
+    where
+        F: for<'id> FnOnce(&mut FheExecutionBuilder<'id>) -> Result<crate::Encrypted<'id, T>>,
+    {
+        let mut builder = FheExecutionBuilder::new(authority);
+        let selected = build(&mut builder)?;
+        let crate::operand::OperandKind::Transient { producer_index } = selected.operand().0 else {
+            return Err(crate::FheExecutionBuildError::ResultNotProduced);
+        };
+        let mut execution = builder.finish()?;
+        execution.cost.invoke_heap_bytes += execution.args.steps.len() * 32;
+        if execution.cost.build_heap_bytes
+            + execution.cost.packet_bytes
+            + execution.cost.invoke_heap_bytes
+            > crate::BUILD_HEAP_BUDGET_BYTES
+        {
+            return Err(crate::FheExecutionBuildError::ExceedsBuildHeapBudget);
+        }
+        Ok(ReturningFheExecution {
+            execution,
+            producer_index,
+            marker: std::marker::PhantomData,
+        })
+    }
+
     pub fn encrypted_value_account_authority(&self) -> ExecutionEncryptedValueAccountAuthority {
         self.encrypted_value_account_authority
     }
@@ -287,5 +315,90 @@ mod tests {
             fhe_execute_instruction_data(&args),
             zama_host::instruction::FheExecute { args }.data(),
         );
+    }
+}
+
+/// An execution paired with the produced value its caller wants returned.
+pub struct ReturningFheExecution<T> {
+    execution: FheExecution,
+    producer_index: u8,
+    marker: std::marker::PhantomData<T>,
+}
+
+impl<T> ReturningFheExecution<T> {
+    pub fn execution(&self) -> &FheExecution {
+        &self.execution
+    }
+
+    #[cfg(feature = "cpi")]
+    pub fn invoke<'info>(
+        self,
+        accounts: ExecutionCpiAccounts<'info>,
+        resolved: &ResolvedExecutionAccounts<'info>,
+        signer_seeds: &[&[&[u8]]],
+    ) -> anchor_lang::prelude::Result<[u8; 32]> {
+        let count = self.execution.args.steps.len();
+        self.execution.invoke(accounts, resolved, signer_seeds)?;
+        let data = anchor_lang::solana_program::program::get_return_data();
+        select_returned_handle(data, count, self.producer_index).ok_or_else(|| {
+            anchor_lang::solana_program::program_error::ProgramError::InvalidInstructionData.into()
+        })
+    }
+}
+
+#[cfg(any(feature = "cpi", test))]
+fn select_returned_handle(
+    data: Option<(Pubkey, Vec<u8>)>,
+    count: usize,
+    index: u8,
+) -> Option<[u8; 32]> {
+    let (program, data) = data?;
+    if program != zama_host::ID || data.len() != count.checked_mul(32)? {
+        return None;
+    }
+    let start = usize::from(index).checked_mul(32)?;
+    data.get(start..start.checked_add(32)?)?.try_into().ok()
+}
+
+#[cfg(test)]
+mod returning_tests {
+    use super::*;
+    use crate::Output;
+
+    #[test]
+    fn selected_result_stays_paired_with_its_execution_and_checks_return_data() {
+        let execution = FheExecution::build_returning(
+            ExecutionEncryptedValueAccountAuthority::new(Pubkey::new_unique()),
+            |fhe| {
+                fhe.trivial_encrypt_u64(1, Output::transient())?;
+                let selected = fhe.trivial_encrypt_u64(2, Output::transient())?;
+                fhe.trivial_encrypt_u64(3, Output::transient())?;
+                Ok(selected)
+            },
+        )
+        .unwrap();
+        assert_eq!(execution.producer_index, 1);
+        let data = [[1; 32], [2; 32], [3; 32]].concat();
+        assert_eq!(
+            select_returned_handle(
+                Some((zama_host::ID, data.clone())),
+                3,
+                execution.producer_index
+            ),
+            Some([2; 32])
+        );
+        assert_eq!(
+            select_returned_handle(Some((Pubkey::new_unique(), data.clone())), 3, 1),
+            None
+        );
+        assert_eq!(
+            select_returned_handle(Some((zama_host::ID, data.clone())), 2, 1),
+            None
+        );
+        assert_eq!(
+            select_returned_handle(Some((zama_host::ID, data)), 3, 3),
+            None
+        );
+        assert_eq!(select_returned_handle(None, 3, 1), None);
     }
 }

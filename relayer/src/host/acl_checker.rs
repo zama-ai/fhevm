@@ -8,7 +8,7 @@ use crate::{
         error_redact::{redact_alloy_error, redact_error},
         handle_chain_id::{extract_chain_id_from_handle, extract_chain_id_from_u256},
         solana_delegation_precheck::{
-            encrypted_value_read_addresses, judge_planned_entries, plan_row_reads, DelegatedEntry,
+            encrypted_state_read_addresses, judge_planned_entries, plan_row_reads, DelegatedEntry,
             RawAccount,
         },
     },
@@ -98,7 +98,7 @@ pub struct HostAclChecker {
     /// Direct entries and public decrypts are not pre-checked here — their authorization
     /// is an allow leaf sealed on the write, and this checker has no cheaper reading of it
     /// than the connector's own. Delegated user-decrypt entries ARE: the v3 request names
-    /// the allowed key and the encrypted value account, which is everything the advisory
+    /// the allowed key and the encrypted state, which is everything the advisory
     /// negative-only pre-check (`check_solana_delegated_user_decrypt`) needs to read the
     /// delegation rows.
     solana_chains: HashMap<u64, SolanaHostChain>,
@@ -560,8 +560,8 @@ impl HostAclChecker {
     /// Advisory, negative-only pre-check of a Solana delegated user-decrypt request.
     ///
     /// The rule lives in [`super::solana_delegation_precheck`]; this method is the transport:
-    /// two batched `getMultipleAccounts` reads at `confirmed` — the encrypted value accounts
-    /// first (to learn each entry's encrypted value account authority), then the delegation
+    /// two batched `getMultipleAccounts` reads at `confirmed` — the encrypted states
+    /// first (to learn each entry's encrypted state authority), then the delegation
     /// rows, with the row read's own slot deciding liveness. That row read is ordered after the
     /// first: it requires the first read's slot as `minContextSlot` and is compared against it
     /// on arrival, so no verdict is reached on a view older than the plan was built from. A node
@@ -607,12 +607,12 @@ impl HostAclChecker {
             .iter()
             .filter_map(|entry| {
                 let allowed_key = <[u8; 32]>::try_from(entry.allowed_key.as_slice()).ok()?;
-                let encrypted_value_account =
-                    <[u8; 32]>::try_from(entry.encrypted_value_account.as_slice()).ok()?;
+                let encrypted_state =
+                    <[u8; 32]>::try_from(entry.encrypted_state.as_slice()).ok()?;
                 (allowed_key != user_pubkey).then(|| DelegatedEntry {
                     handle_hex: format!("0x{}", hex::encode(&entry.handle)),
                     delegator: allowed_key,
-                    encrypted_value_account,
+                    encrypted_state,
                 })
             })
             .collect();
@@ -620,14 +620,14 @@ impl HostAclChecker {
             return Ok(());
         }
 
-        // Round 1: the encrypted value accounts the entries name, to learn each entry's
+        // Round 1: the encrypted states the entries name, to learn each entry's
         // authority. Its slot is
         // the floor the row read must be served at or after — otherwise a load-balanced RPC can
         // answer round 2 from a replica behind round 1, and a grant confirmed between the two
         // reads as absent.
-        let encrypted_value_addresses = encrypted_value_read_addresses(&delegated);
-        let (discovery_slot, encrypted_value_accounts) = match self
-            .solana_accounts_with_retry(job_id, chain, chain_id, &encrypted_value_addresses, None)
+        let encrypted_state_addresses = encrypted_state_read_addresses(&delegated);
+        let (discovery_slot, encrypted_states) = match self
+            .solana_accounts_with_retry(job_id, chain, chain_id, &encrypted_state_addresses, None)
             .await?
         {
             SolanaRead::Observed { slot, accounts } => (slot, accounts),
@@ -636,14 +636,10 @@ impl HostAclChecker {
             SolanaRead::NodeBehindRequiredSlot => return Ok(()),
         };
 
-        // Entries whose encrypted value account this check cannot judge drop out of the plan
+        // Entries whose encrypted state this check cannot judge drop out of the plan
         // (indeterminate).
-        let plan = match plan_row_reads(
-            chain.program_id,
-            user_pubkey,
-            delegated,
-            encrypted_value_accounts,
-        ) {
+        let plan = match plan_row_reads(chain.program_id, user_pubkey, delegated, encrypted_states)
+        {
             Ok(plan) => plan,
             Err(defect) => {
                 warn!(

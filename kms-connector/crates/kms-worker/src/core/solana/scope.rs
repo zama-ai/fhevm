@@ -1,7 +1,7 @@
 //! The signed application scope.
 //!
 //! A non-empty signed list narrows a permit to those `(program, scope)` pairs, and the test is
-//! per handle: the pair of *every* entry's encrypted value account must be in the set. Checking
+//! per handle: the pair of *every* entry's encrypted state must be in the set. Checking
 //! only the first entry would let a narrowly scoped permit decrypt foreign handles mixed into the
 //! batch.
 //!
@@ -11,7 +11,7 @@
 //! currently holds. What it never touches is the allow leaf and the delegation themselves, which
 //! are unconditional.
 //!
-//! The pair being tested comes from the validated encrypted value account. A request has no field
+//! The pair being tested comes from the validated encrypted state. A request has no field
 //! for it, and this rule has no parameter through which one could arrive:
 //!
 //! ```compile_fail
@@ -25,17 +25,17 @@
 //!     check_scope;
 //! ```
 
-use super::encrypted_value_account::ResolvedEncryptedValueAccount;
+use super::encrypted_state::ResolvedEncryptedState;
 use crate::core::solana_acl::SolanaPubkeyBytes;
 use zama_solana_permit::{AllowedScopes, Identity};
 
 /// Tests one entry's `(program, scope)` against the signed scope list.
 pub fn check_scope(
     signed_scopes: &AllowedScopes,
-    encrypted_value_account: &ResolvedEncryptedValueAccount,
+    encrypted_state: &ResolvedEncryptedState,
 ) -> Result<(), ScopeFailure> {
-    let program = encrypted_value_account.program();
-    let scope = encrypted_value_account.scope();
+    let program = encrypted_state.program();
+    let scope = encrypted_state.scope();
     // `admits` is permissive on the empty list, for parity with the EVM path.
     if signed_scopes.admits(&Identity::new(program), &Identity::new(scope)) {
         Ok(())
@@ -47,10 +47,10 @@ pub fn check_scope(
 /// Why an entry fell outside the signed scope.
 #[derive(Clone, PartialEq, Eq, Debug, thiserror::Error)]
 pub enum ScopeFailure {
-    /// The encrypted value account's `(program, scope)` is not in the signed set.
+    /// The encrypted state's `(program, scope)` is not in the signed set.
     #[error("application ({program:?}, {scope:?}) is outside the signed scope")]
     ScopeNotAllowed {
-        /// The application program the encrypted value account belongs to.
+        /// The application program the encrypted state belongs to.
         program: SolanaPubkeyBytes,
         /// The program-declared scope within it.
         scope: SolanaPubkeyBytes,

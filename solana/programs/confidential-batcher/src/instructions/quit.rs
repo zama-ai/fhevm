@@ -56,14 +56,10 @@ pub struct Quit<'info> {
     /// CHECK: user's stable balance encrypted value account; replaced by the token CPI.
     #[account(mut)]
     pub user_balance_value: UncheckedAccount<'info>,
-    /// CHECK: batch account's stable transferred-amount encrypted value account (the refund is
-    /// a transfer FROM the batch account); replaced by the token CPI.
-    #[account(mut)]
-    pub batch_transferred_value: UncheckedAccount<'info>,
     /// CHECK: the user's joined encrypted value account; spent read-only as the refund
     /// amount, then reset to an encrypted zero by the batcher execution.
     #[account(mut)]
-    pub pending_join_value: UncheckedAccount<'info>,
+    pub join_state: UncheckedAccount<'info>,
     /// CHECK: ZamaHost event-CPI authority; validated by the host program.
     pub zama_event_authority: UncheckedAccount<'info>,
     /// ZamaHost program (FHE compute + ACL).
@@ -93,8 +89,8 @@ pub fn quit<'info>(ctx: Context<'info, Quit<'info>>) -> Result<()> {
         BatcherError::ConfidentialMintMismatch
     );
     require_keys_eq!(
-        ctx.accounts.pending_join_value.key(),
-        ctx.accounts.join_record.joined_encrypted_value,
+        ctx.accounts.join_state.key(),
+        join_state_id(ctx.accounts.batch.key(), ctx.accounts.join_record.key()).address(),
         BatcherError::DerivedAccountMismatch
     );
     let mint_key = ctx.accounts.join_confidential_mint.key();
@@ -122,6 +118,8 @@ pub fn quit<'info>(ctx: Context<'info, Quit<'info>>) -> Result<()> {
     // signature.
     let authority = BatchAuthoritySeeds::new(batch_key, ctx.accounts.batch.authority_bump);
     let authority_seeds = authority.seeds();
+    let bump = [ctx.accounts.join_record.bump];
+    let record_seeds: &[&[u8]] = &[JOIN_RECORD_SEED, batch_key.as_ref(), user.as_ref(), &bump];
     ct::cpi::confidential_transfer_from_value(CpiContext::new_with_signer(
         ctx.accounts.confidential_token_program.key(),
         ct::cpi::accounts::ConfidentialTransferFromValue {
@@ -135,8 +133,9 @@ pub fn quit<'info>(ctx: Context<'info, Quit<'info>>) -> Result<()> {
             to_account: ctx.accounts.user_token_account.to_account_info(),
             from_balance_value: ctx.accounts.batch_balance_value.to_account_info(),
             to_balance_value: ctx.accounts.user_balance_value.to_account_info(),
-            transferred_amount_value: ctx.accounts.batch_transferred_value.to_account_info(),
-            amount_value: ctx.accounts.pending_join_value.to_account_info(),
+            amount_state: Some(ctx.accounts.join_state.to_account_info()),
+            amount_authority: Some(ctx.accounts.join_record.to_account_info()),
+            amount_scratch: None,
             zama_event_authority: ctx.accounts.zama_event_authority.to_account_info(),
             zama_program: ctx.accounts.zama_program.to_account_info(),
             host_config: ctx.accounts.host_config.to_account_info(),
@@ -149,39 +148,25 @@ pub fn quit<'info>(ctx: Context<'info, Quit<'info>>) -> Result<()> {
                 .to_account_info(),
             program: ctx.accounts.confidential_token_program.to_account_info(),
         },
-        &[&authority_seeds],
-    ))?;
+        &[&authority_seeds, record_seeds],
+    ), ct::TransferInput::Slot { key: joined_amount_key() })?;
 
-    // Phase 2: reset the joined encrypted value account to an encrypted zero (update in
-    // place), so a later re-join of the same batch accumulates from zero.
-    let reset_binding = fhe::PersistentBinding::bind(
-        ctx.accounts.pending_join_value.to_account_info(),
-        batcher_encrypted_value_id(
-            batch_key,
-            batch_authority,
-            encrypted_pending_join_label(user),
-        ),
-        &authority_seeds,
-        [user],
-    )?;
-    fhe::execute_as_batch_authority(
-        fhe::BatchAuthorityExecute {
-            batch: batch_key,
-            authority_bump: ctx.accounts.batch.authority_bump,
-            batch_authority: ctx.accounts.batch_authority.to_account_info(),
-            payer: ctx.accounts.payer.to_account_info(),
-            host_config: ctx.accounts.host_config.to_account_info(),
-            zama_event_authority: ctx.accounts.zama_event_authority.to_account_info(),
-            zama_program: ctx.accounts.zama_program.to_account_info(),
-            system_program: ctx.accounts.system_program.to_account_info(),
-            remaining_accounts: ctx.remaining_accounts,
-        },
-        vec![reset_binding.account_info()],
-        |builder| {
-            builder.trivial_encrypt_u64(0, reset_binding.output())?;
-            Ok(())
-        },
-    )?;
+    let account = fhe::read_state(&ctx.accounts.join_state)?;
+    let output = zama_fhe::Output::state(zama_fhe::State::new(&account).set(joined_amount_key()).allow(user));
+    let execution = zama_fhe::FheExecution::build_returning(
+        zama_fhe::ExecutionEncryptedValueAccountAuthority::new(ctx.accounts.join_record.key()),
+        |builder| builder.trivial_encrypt_u64(0, output),
+    ).map_err(fhe::invalid_execution)?;
+    fhe::JoinExecute {
+        batch: batch_key, user, bump: ctx.accounts.join_record.bump,
+        record: ctx.accounts.join_record.to_account_info(),
+        payer: ctx.accounts.payer.to_account_info(),
+        host_config: ctx.accounts.host_config.to_account_info(),
+        event_authority: ctx.accounts.zama_event_authority.to_account_info(),
+        program: ctx.accounts.zama_program.to_account_info(),
+        system_program: ctx.accounts.system_program.to_account_info(),
+        deny_records: ctx.remaining_accounts,
+    }.invoke(execution, vec![ctx.accounts.join_state.to_account_info()])?;
 
     emit!(QuitBatch {
         version: APP_EVENT_VERSION,

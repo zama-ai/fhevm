@@ -132,5 +132,7 @@ pub struct PayoutClaimed {
     /// User the payout was transferred to.
     pub user: Pubkey,
     /// `EncryptedValue` encrypted value account holding the claimed payout amount.
-    pub claim_encrypted_value: Pubkey,
+    pub claim_state: Pubkey,
+    /// Calculated entitlement, distinct from the token transfer event's paid handle.
+    pub claim_handle: [u8; 32],
 }

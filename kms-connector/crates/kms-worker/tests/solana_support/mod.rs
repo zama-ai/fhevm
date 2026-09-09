@@ -23,8 +23,8 @@ use kms_worker::core::solana::{
     proof::{HostProofReader, LeafKind, LeafProofOutcome, LeafQuery, ProofReadError},
     request::{SolanaHandleEntryWire, SolanaUserDecryptRequest, SolanaUserDecryptRequestWire},
     snapshot::{
-        HostSnapshot, HostStateReader, SYSTEM_PROGRAM_ID, SnapshotAccount, SnapshotError,
-        SnapshotKeys,
+        HostSnapshot, HostStateReader, SnapshotAccount, SnapshotError, SnapshotKeys,
+        SYSTEM_PROGRAM_ID,
     },
 };
 use kms_worker::core::solana_acl::SolanaPubkeyBytes;
@@ -34,13 +34,13 @@ use solana_pubkey::Pubkey;
 use std::collections::BTreeMap;
 use std::sync::Mutex;
 use zama_solana_acl::{
-    EncryptedValue, HOST_CONFIG_SEED, HostConfigRecord, MmrProof, encode_host_config,
-    encrypted_value_discriminator, encrypted_value_seeds, historical_access_leaf_commitment,
-    mmr_append, mmr_build_proof, public_decrypt_leaf_commitment,
+    encode_host_config, encrypted_state_discriminator, historical_access_leaf_commitment,
+    mmr_append, mmr_build_proof, public_decrypt_leaf_commitment, EncryptedSlot, EncryptedState,
+    HostConfigRecord, MmrProof, HOST_CONFIG_SEED,
 };
 use zama_solana_permit::{
-    Identity, KmsRouting, PermitFields, PermitWireFields, Signature, TRANSPORT_KEY_LEN,
-    build_envelope,
+    build_envelope, Identity, KmsRouting, PermitFields, PermitWireFields, Signature,
+    TRANSPORT_KEY_LEN,
 };
 
 /// The host deployment every fixture is built against.
@@ -53,13 +53,13 @@ pub const GENESIS_HASH: [u8; 32] = [9; 32];
 /// chain id must.
 pub const CHAIN_ID: u64 = SOLANA_CHAIN_TYPE_BIT | 0x0123_4567_89ab_cdef;
 
-/// The application program of the default encrypted value account.
+/// The application program of the default encrypted state.
 pub const APP_PROGRAM: SolanaPubkeyBytes = [1; 32];
-/// The encrypted value account authority of the default encrypted value account.
+/// The encrypted state authority of the default encrypted state.
 pub const AUTHORITY: SolanaPubkeyBytes = [2; 32];
-/// The program-declared scope of the default encrypted value account.
+/// The program-declared scope of the default encrypted state.
 pub const SCOPE: SolanaPubkeyBytes = [3; 32];
-/// The label of the default encrypted value account.
+/// The label of the default encrypted state.
 pub const LABEL: [u8; 32] = *b"balance_________________________";
 
 /// FHE type byte of a boolean handle — the narrowest type, two bits.
@@ -296,24 +296,20 @@ impl<'a> RequestBuilder<'a> {
     }
 
     /// Adds a direct entry: the signer's own allow leaf on the handle authorizes it.
-    pub fn direct(
-        self,
-        encrypted_value_account: &EncryptedValueAccountFixture,
-        handle: [u8; 32],
-    ) -> Self {
+    pub fn direct(self, encrypted_state: &EncryptedStateFixture, handle: [u8; 32]) -> Self {
         let signer = self.wallet.pubkey();
-        self.entry(handle, signer, encrypted_value_account.account_key)
+        self.entry(handle, signer, encrypted_state.account_key)
     }
 
     /// Adds a delegated entry: `delegator`'s allow leaf on the handle authorizes it, through a
     /// delegation to the signer.
     pub fn delegated(
         self,
-        encrypted_value_account: &EncryptedValueAccountFixture,
+        encrypted_state: &EncryptedStateFixture,
         handle: [u8; 32],
         delegator: SolanaPubkeyBytes,
     ) -> Self {
-        self.entry(handle, delegator, encrypted_value_account.account_key)
+        self.entry(handle, delegator, encrypted_state.account_key)
     }
 
     /// Adds an entry verbatim, for the malformed and substitution cases.
@@ -321,12 +317,12 @@ impl<'a> RequestBuilder<'a> {
         mut self,
         handle: [u8; 32],
         allowed_key: SolanaPubkeyBytes,
-        encrypted_value_account: SolanaPubkeyBytes,
+        encrypted_state: SolanaPubkeyBytes,
     ) -> Self {
         self.entries.push(SolanaHandleEntryWire {
             handle: handle.to_vec(),
             allowed_key: allowed_key.to_vec(),
-            encrypted_value_account: encrypted_value_account.to_vec(),
+            encrypted_state: encrypted_state.to_vec(),
         });
         self
     }
@@ -360,44 +356,46 @@ pub struct SealedLeaf {
     pub commitment: [u8; 32],
 }
 
-/// An encrypted value account as the host program would hold it, with the leaves the
+/// An encrypted state as the host program would hold it, with the leaves the
 /// coprocessors' record would hold for it.
 #[derive(Clone, Debug)]
-pub struct EncryptedValueAccountFixture {
-    /// The encrypted value account state.
-    pub encrypted_value: EncryptedValue,
+pub struct EncryptedStateFixture {
+    /// The encrypted state state.
+    pub encrypted_state: EncryptedState,
     /// Its canonical address.
     pub account_key: SolanaPubkeyBytes,
     /// Every leaf sealed so far, in leaf order, so proofs can be rebuilt.
     pub leaves: Vec<SealedLeaf>,
 }
 
-impl EncryptedValueAccountFixture {
-    /// An encrypted value account of the fixture application holding `current_handle`, with no
+impl EncryptedStateFixture {
+    /// An encrypted state of the fixture application holding `current_handle`, with no
     /// leaf sealed yet.
     pub fn new(current_handle: [u8; 32]) -> Self {
         Self::in_application(APP_PROGRAM, AUTHORITY, SCOPE, LABEL, current_handle)
     }
 
-    /// An encrypted value account of an arbitrary application, authority, scope and label.
+    /// An encrypted state of an arbitrary application, authority, scope and label.
     pub fn in_application(
         program: SolanaPubkeyBytes,
-        encrypted_value_account_authority: SolanaPubkeyBytes,
+        authority: SolanaPubkeyBytes,
         scope: SolanaPubkeyBytes,
         label: [u8; 32],
         current_handle: [u8; 32],
     ) -> Self {
         let (account_key, bump) = Pubkey::find_program_address(
-            &encrypted_value_seeds(&program, &encrypted_value_account_authority, &scope, &label),
+            &[b"encrypted-state", &program, &authority, &scope],
             &Pubkey::new_from_array(PROGRAM_ID),
         );
         Self {
-            encrypted_value: EncryptedValue {
+            encrypted_state: EncryptedState {
                 program,
-                encrypted_value_account_authority,
+                authority,
                 scope,
-                label,
-                current_handle,
+                slots: vec![EncryptedSlot {
+                    key: label,
+                    handle: current_handle,
+                }],
                 leaf_count: 0,
                 peaks: Vec::new(),
                 bump,
@@ -417,19 +415,24 @@ impl EncryptedValueAccountFixture {
 
     /// The current handle.
     pub fn current_handle(&self) -> [u8; 32] {
-        self.encrypted_value.current_handle
+        self.encrypted_state.slots[0].handle
     }
 
     /// Seals an allow leaf naming `key` on the current handle — what the host program does when
     /// the application allows a key.
     pub fn allow(&mut self, key: SolanaPubkeyBytes) {
-        let handle = self.encrypted_value.current_handle;
-        let leaf_index = self.encrypted_value.leaf_count;
+        let handle = self.current_handle();
+        self.allow_handle(handle, key);
+    }
+
+    /// Seals an allow leaf for an exact handle. The handle need not still occupy a slot.
+    pub fn allow_handle(&mut self, handle: [u8; 32], key: SolanaPubkeyBytes) {
+        let leaf_index = self.encrypted_state.leaf_count;
         let commitment =
             historical_access_leaf_commitment(self.account_key, leaf_index, handle, key);
         self.append(
             LeafQuery {
-                encrypted_value_account: self.account_key,
+                encrypted_state: self.account_key,
                 handle,
                 kind: LeafKind::Allowed { key },
             },
@@ -437,14 +440,21 @@ impl EncryptedValueAccountFixture {
         );
     }
 
+    /// Adds another current slot to this state.
+    pub fn insert_slot(&mut self, key: [u8; 32], handle: [u8; 32]) {
+        self.encrypted_state
+            .slots
+            .push(EncryptedSlot { key, handle });
+    }
+
     /// Seals a public-decrypt leaf for the current handle.
     pub fn mark_public(&mut self) {
-        let handle = self.encrypted_value.current_handle;
-        let leaf_index = self.encrypted_value.leaf_count;
+        let handle = self.current_handle();
+        let leaf_index = self.encrypted_state.leaf_count;
         let commitment = public_decrypt_leaf_commitment(self.account_key, leaf_index, handle);
         self.append(
             LeafQuery {
-                encrypted_value_account: self.account_key,
+                encrypted_state: self.account_key,
                 handle,
                 kind: LeafKind::Public,
             },
@@ -455,14 +465,14 @@ impl EncryptedValueAccountFixture {
     /// Replaces the current handle, as a write does. Seals nothing: the leaves already sealed
     /// keep naming the handle they were sealed for.
     pub fn update(&mut self, new_handle: [u8; 32]) {
-        self.encrypted_value.current_handle = new_handle;
+        self.encrypted_state.slots[0].handle = new_handle;
     }
 
     /// Appends a commitment, keeping the leaf list in step with the MMR.
     pub fn append(&mut self, query: LeafQuery, commitment: [u8; 32]) {
         mmr_append(
-            &mut self.encrypted_value.peaks,
-            &mut self.encrypted_value.leaf_count,
+            &mut self.encrypted_state.peaks,
+            &mut self.encrypted_state.leaf_count,
             commitment,
         )
         .expect("the fixture MMR accepts an append");
@@ -482,7 +492,7 @@ impl EncryptedValueAccountFixture {
     /// What the coprocessors' record answers for `query` when it has sealed exactly this
     /// account's leaves.
     pub fn outcome(&self, query: &LeafQuery) -> LeafProofOutcome {
-        let leaf_count = self.encrypted_value.leaf_count;
+        let leaf_count = self.encrypted_state.leaf_count;
         match self.leaves.iter().position(|leaf| leaf.query == *query) {
             Some(index) => {
                 let proof = self.proof(index as u64);
@@ -499,7 +509,7 @@ impl EncryptedValueAccountFixture {
     /// The allow query for `key` on `handle` under this account.
     pub fn allowed_query(&self, handle: [u8; 32], key: SolanaPubkeyBytes) -> LeafQuery {
         LeafQuery {
-            encrypted_value_account: self.account_key,
+            encrypted_state: self.account_key,
             handle,
             kind: LeafKind::Allowed { key },
         }
@@ -508,7 +518,7 @@ impl EncryptedValueAccountFixture {
     /// The public query for `handle` under this account.
     pub fn public_query(&self, handle: [u8; 32]) -> LeafQuery {
         LeafQuery {
-            encrypted_value_account: self.account_key,
+            encrypted_state: self.account_key,
             handle,
             kind: LeafKind::Public,
         }
@@ -516,9 +526,9 @@ impl EncryptedValueAccountFixture {
 
     /// The account as the host program would write it: discriminator then body.
     pub fn account(&self) -> SnapshotAccount {
-        let mut data = encrypted_value_discriminator().to_vec();
+        let mut data = encrypted_state_discriminator().to_vec();
         data.extend_from_slice(
-            &borsh::to_vec(&self.encrypted_value).expect("the encrypted value account serializes"),
+            &borsh::to_vec(&self.encrypted_state).expect("the encrypted state serializes"),
         );
         SnapshotAccount {
             owner: PROGRAM_ID,
@@ -667,9 +677,9 @@ pub struct World {
     /// The slot a read of this world reports as its observation point.
     pub slot: u64,
     accounts: BTreeMap<SolanaPubkeyBytes, SnapshotAccount>,
-    /// The encrypted value accounts placed whole, so the leaf record that agrees with this world
+    /// The encrypted states placed whole, so the leaf record that agrees with this world
     /// can be derived from it.
-    sealed: BTreeMap<SolanaPubkeyBytes, EncryptedValueAccountFixture>,
+    sealed: BTreeMap<SolanaPubkeyBytes, EncryptedStateFixture>,
 }
 
 impl World {
@@ -694,23 +704,16 @@ impl World {
         self
     }
 
-    /// Places an encrypted value account in the world.
-    pub fn with_encrypted_value_account(
-        mut self,
-        encrypted_value_account: &EncryptedValueAccountFixture,
-    ) -> Self {
-        self.accounts.insert(
-            encrypted_value_account.account_key,
-            encrypted_value_account.account(),
-        );
-        self.sealed.insert(
-            encrypted_value_account.account_key,
-            encrypted_value_account.clone(),
-        );
+    /// Places an encrypted state in the world.
+    pub fn with_encrypted_state(mut self, encrypted_state: &EncryptedStateFixture) -> Self {
+        self.accounts
+            .insert(encrypted_state.account_key, encrypted_state.account());
+        self.sealed
+            .insert(encrypted_state.account_key, encrypted_state.clone());
         self
     }
 
-    /// The leaf record that has sealed exactly what this world's encrypted value accounts hold:
+    /// The leaf record that has sealed exactly what this world's encrypted states hold:
     /// the record a coprocessor in step with this observation would serve.
     pub fn record(&self) -> ProofRecord {
         self.sealed
@@ -852,7 +855,7 @@ impl HostStateReader for ScriptedReader {
 enum RecordedAccount {
     /// The record has sealed exactly this account's leaves — possibly an older state of the
     /// account than the chain shows, which is how a record behind the chain is expressed.
-    Sealed(Box<EncryptedValueAccountFixture>),
+    Sealed(Box<EncryptedStateFixture>),
     /// The record's history for the account has a gap.
     Incomplete,
 }
@@ -870,17 +873,17 @@ pub struct ProofRecord {
 
 impl ProofRecord {
     /// A record that has sealed the leaves of the given accounts, as they stand.
-    pub fn of(accounts: &[&EncryptedValueAccountFixture]) -> Self {
+    pub fn of(accounts: &[&EncryptedStateFixture]) -> Self {
         accounts
             .iter()
             .fold(Self::default(), |record, account| record.with(account))
     }
 
     /// Adds an account's leaves to the record.
-    pub fn with(mut self, encrypted_value_account: &EncryptedValueAccountFixture) -> Self {
+    pub fn with(mut self, encrypted_state: &EncryptedStateFixture) -> Self {
         self.accounts.insert(
-            encrypted_value_account.account_key,
-            RecordedAccount::Sealed(Box::new(encrypted_value_account.clone())),
+            encrypted_state.account_key,
+            RecordedAccount::Sealed(Box::new(encrypted_state.clone())),
         );
         self
     }
@@ -912,7 +915,7 @@ impl ProofRecord {
         if let Some(outcome) = self.answers.get(query) {
             return outcome.clone();
         }
-        match self.accounts.get(&query.encrypted_value_account) {
+        match self.accounts.get(&query.encrypted_state) {
             Some(RecordedAccount::Sealed(account)) => account.outcome(query),
             Some(RecordedAccount::Incomplete) => LeafProofOutcome::HistoryIncomplete,
             None => LeafProofOutcome::UnknownAccount,
@@ -946,7 +949,7 @@ impl ScriptedProofReader {
     }
 
     /// A reader over a record that has sealed exactly these accounts' leaves.
-    pub fn serving(accounts: &[&EncryptedValueAccountFixture]) -> Self {
+    pub fn serving(accounts: &[&EncryptedStateFixture]) -> Self {
         Self::constant(ProofRecord::of(accounts))
     }
 

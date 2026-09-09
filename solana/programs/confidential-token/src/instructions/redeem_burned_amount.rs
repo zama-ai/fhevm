@@ -55,7 +55,7 @@ pub struct RedeemBurnedAmount<'info> {
     /// Burned amount `EncryptedValue` account whose handle is redeemed. Bound to the mint/token
     /// account by `assert_burned_amount_value_account`; its canonical PDA, layout, host ownership,
     /// and the exact-handle MMR inclusion proof are validated by the `verify_public_decrypt` CPI.
-    pub burned_amount_value: Box<Account<'info, zama_host::EncryptedValue>>,
+    pub burned_amount_value: Box<Account<'info, zama_host::EncryptedState>>,
     /// Pending-burn account opened at burn time; closed on successful redemption.
     #[account(
         mut,
@@ -150,14 +150,9 @@ pub fn redeem_burned_amount(
         pending.burned_handle == burned_handle,
         ConfidentialTokenError::PendingBurnMismatch
     );
-    require_keys_eq!(
-        pending.burned_encrypted_value,
-        ctx.accounts.burned_amount_value.key(),
-        ConfidentialTokenError::PendingBurnMismatch
-    );
 
     require!(
-        ctx.accounts.burned_amount_value.current_handle == burned_handle,
+        fhe::state_handle(&ctx.accounts.burned_amount_value, encrypted_burned_amount_label())? == burned_handle,
         ConfidentialTokenError::PendingBurnHandleNotCurrent
     );
     // The sequential pending-burn invariant makes the burned handle current until redeem or cancel.

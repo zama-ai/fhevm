@@ -132,7 +132,7 @@ pub fn extract_kms_context_id(extra_data: &[u8], current_context_id: [u8; 32]) -
             }
             extra_data[1..33].try_into().ok()
         }
-        Some(3) => {
+        Some(4) => {
             if extra_data.len() != 65 {
                 return None;
             }

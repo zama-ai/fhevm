@@ -41,21 +41,21 @@ fn distinct_handle(index: u16, fhe_type: u8) -> [u8; 32] {
     bytes
 }
 
-/// A request naming the given handles, each against its own encrypted value account.
+/// A request naming the given handles, each against its own encrypted state.
 fn request_naming(wallet: &Wallet, handles: &[[u8; 32]]) -> SolanaUserDecryptRequestWire {
     let mut builder = RequestBuilder::new(wallet);
     for (index, handle) in handles.iter().enumerate() {
         let mut label = LABEL;
         label[0..2].copy_from_slice(&(index as u16).to_be_bytes());
-        let mut encrypted_value_account = EncryptedValueAccountFixture::in_application(
+        let mut encrypted_state = EncryptedStateFixture::in_application(
             APP_PROGRAM,
             AUTHORITY,
             SCOPE,
             label,
             *handle,
         );
-        encrypted_value_account.allow(wallet.pubkey());
-        builder = builder.direct(&encrypted_value_account, *handle);
+        encrypted_state.allow(wallet.pubkey());
+        builder = builder.direct(&encrypted_state, *handle);
     }
     builder.wire()
 }
@@ -170,10 +170,10 @@ fn an_empty_handle_list_is_rejected() {
 fn a_duplicate_handle_is_legal() {
     let wallet = Wallet::new(1);
     let repeated = handle(0x20, FHE_TYPE_UINT64);
-    let encrypted_value_account = EncryptedValueAccountFixture::allowing(repeated, wallet.pubkey());
+    let encrypted_state = EncryptedStateFixture::allowing(repeated, wallet.pubkey());
     let wire = RequestBuilder::new(&wallet)
-        .direct(&encrypted_value_account, repeated)
-        .direct(&encrypted_value_account, repeated)
+        .direct(&encrypted_state, repeated)
+        .direct(&encrypted_state, repeated)
         .wire();
 
     let request = SolanaUserDecryptRequest::decode(&wire).expect("duplicates are legal");
@@ -191,13 +191,13 @@ fn a_duplicate_handle_is_legal() {
 async fn both_occurrences_of_a_duplicate_handle_are_authorized() {
     let wallet = Wallet::new(1);
     let repeated = handle(0x21, FHE_TYPE_UINT64);
-    let encrypted_value_account = EncryptedValueAccountFixture::allowing(repeated, wallet.pubkey());
+    let encrypted_state = EncryptedStateFixture::allowing(repeated, wallet.pubkey());
     let request = RequestBuilder::new(&wallet)
-        .direct(&encrypted_value_account, repeated)
-        .direct(&encrypted_value_account, repeated)
+        .direct(&encrypted_state, repeated)
+        .direct(&encrypted_state, repeated)
         .typed();
     let world = World::running_at_slot(100)
-        .with_encrypted_value_account(&encrypted_value_account)
+        .with_encrypted_state(&encrypted_state)
         .with_watermark(wallet.pubkey(), 0);
     let proofs = ScriptedProofReader::constant(world.record());
     let reader = ScriptedReader::constant(world);

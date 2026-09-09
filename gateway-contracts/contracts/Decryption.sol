@@ -151,6 +151,11 @@ contract Decryption is
     uint256 internal constant MAX_DECRYPTION_REQUEST_BITS = 2048;
 
     /**
+     * @notice The exact length of Solana public-decrypt extraData: version, context ID, and EncryptedState address.
+     */
+    uint256 internal constant SOLANA_PUBLIC_DECRYPT_EXTRA_DATA_LENGTH = 65;
+
+    /**
      * @notice The maximum number of handle entries in a Solana user decryption request.
      * @dev The KMS Connector authorizes a Solana request against a single atomic
      * `getMultipleAccounts` snapshot, and a standard Solana RPC node serves at most 100 accounts
@@ -1100,27 +1105,29 @@ contract Decryption is
             return GATEWAY_CONFIG.getCurrentKmsContextId();
         }
 
-        // Versions 1 (EVM), 2 (EVM reserved/epoch), and 3 (Solana RFC-021) share a
-        // `version ‖ contextId(32 BE)` prefix, so the contextId is read from bytes 1..33 for all
-        // three. The Solana blob carries a trailing identity/nonce/allowed-domains tail (consumed
-        // by the KMS connector from the emitted event), which the gateway does not need to extract
-        // the context.
-        if (version == 1 || version == 2 || version == 3) {
+        // Versions 1 (EVM), 2 (EVM reserved/epoch), and 4 (Solana EncryptedState) share the
+        // `version ‖ contextId(32 BE)` prefix. V1 and v2 retain their extensible trailing data;
+        // v4 has one exact layout so malformed requests fail before fee collection rather than at
+        // the KMS Connector.
+        if (version == 4) {
+            if (extraData.length != SOLANA_PUBLIC_DECRYPT_EXTRA_DATA_LENGTH) {
+                revert InvalidExtraDataLength(extraData.length, SOLANA_PUBLIC_DECRYPT_EXTRA_DATA_LENGTH);
+            }
+        } else if (version == 1 || version == 2) {
             if (extraData.length < 33) {
                 revert InvalidExtraDataLength(extraData.length, 33);
             }
-
-            contextId = uint256(bytes32(extraData[1:33]));
-            // Reject the all-zeros payload: contextId 0 is reserved for the pre-pinning
-            // legacy fallback and must not be reachable from caller-supplied extraData.
-            if (contextId == 0) {
-                revert InvalidNullContextId();
-            }
-            return contextId;
+        } else {
+            revert UnsupportedExtraDataVersion(version);
         }
 
-        // Unsupported version
-        revert UnsupportedExtraDataVersion(version);
+        contextId = uint256(bytes32(extraData[1:33]));
+        // Reject the all-zeros payload: contextId 0 is reserved for the pre-pinning
+        // legacy fallback and must not be reachable from caller-supplied extraData.
+        if (contextId == 0) {
+            revert InvalidNullContextId();
+        }
+        return contextId;
     }
 
     /**

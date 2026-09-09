@@ -44,7 +44,7 @@ use solana_sdk::{
 };
 use tfhe::prelude::FheTryEncrypt;
 use time::{OffsetDateTime, PrimitiveDateTime};
-use zama_host::{EncryptedValue, HostConfig};
+use zama_host::{EncryptedState, HostConfig};
 
 use crate::tests::{
     event_helpers::{decrypt_handles, setup_event_harness, wait_until_computed, EventHarness},
@@ -205,10 +205,16 @@ async fn run_transfer(
     let transfer = transfer_ix(fixture, outputs, amount_handle);
     let (meta, account_keys, signature) =
         send_with_meta(&mut fixture.svm, &fixture.alice, transfer);
+    assert_eq!(meta.return_data.program_id, fixture.token_program_id);
     let outcome = TransferOutcome {
         alice_handle: current_handle(&fixture.svm, outputs.alice),
         bob_handle: current_handle(&fixture.svm, outputs.bob),
-        transferred_handle: current_handle(&fixture.svm, outputs.transferred),
+        transferred_handle: meta
+            .return_data
+            .data
+            .as_slice()
+            .try_into()
+            .expect("32-byte transferred handle"),
         events: reconstruct_transfer_events(fixture, &meta, &account_keys),
     };
 
@@ -301,7 +307,6 @@ struct TokenFixture {
 struct TransferOutputAccounts {
     alice: Pubkey,
     bob: Pubkey,
-    transferred: Pubkey,
 }
 
 fn seed_host_config(svm: &mut LiteSVM, program_id: Pubkey, admin: Pubkey) -> Pubkey {
@@ -382,8 +387,9 @@ fn token_fixture() -> TokenFixture {
     let host_config = seed_host_config(&mut svm, host_program_id, alice.pubkey());
     create_spl_mint(&mut svm, &alice, &underlying_mint, 6);
     let total_supply_authority = token::total_supply_authority_address(mint.pubkey()).0;
-    let total_supply_encrypted_value =
-        token::total_supply_encrypted_value_id(mint.pubkey()).address();
+    let total_supply_encrypted_value = token::total_supply_encrypted_value_id(mint.pubkey())
+        .0
+        .address();
 
     send_with_signers(
         &mut svm,
@@ -414,10 +420,12 @@ fn token_fixture() -> TokenFixture {
 
     let alice_token = token_account_address(token_program_id, mint.pubkey(), alice.pubkey());
     let bob_token = token_account_address(token_program_id, mint.pubkey(), bob.pubkey());
-    let alice_current_compute_acl =
-        token::balance_encrypted_value_id(mint.pubkey(), alice_token).address();
-    let bob_current_compute_acl =
-        token::balance_encrypted_value_id(mint.pubkey(), bob_token).address();
+    let alice_current_compute_acl = token::balance_encrypted_value_id(mint.pubkey(), alice_token)
+        .0
+        .address();
+    let bob_current_compute_acl = token::balance_encrypted_value_id(mint.pubkey(), bob_token)
+        .0
+        .address();
 
     initialize_token_account(
         &mut svm,
@@ -445,12 +453,8 @@ fn token_fixture() -> TokenFixture {
             balance_encrypted_value: bob_current_compute_acl,
         },
     );
-    let alice_initial = read_encrypted_value(&svm, alice_current_compute_acl)
-        .expect("expected Alice initial ACL")
-        .current_handle;
-    let bob_initial = read_encrypted_value(&svm, bob_current_compute_acl)
-        .expect("expected Bob initial ACL")
-        .current_handle;
+    let alice_initial = current_handle(&svm, alice_current_compute_acl);
+    let bob_initial = current_handle(&svm, bob_current_compute_acl);
 
     let alice_ata = get_associated_token_address_with_program_id(
         &alice.pubkey(),
@@ -525,20 +529,11 @@ fn initialize_token_account(
     );
 }
 
-/// Confidential-token `EncryptedValue` encrypted value accounts are addressed by stable app-level
-/// keys (mint, token account, label) rather than a per-transfer nonce sequence
-/// under RFC-024, so the same balance/transferred-amount accounts are reused
-/// across every transfer.
+// Balance slots remain in the token account's State across transfers.
 fn transfer_output_accounts(fixture: &TokenFixture) -> TransferOutputAccounts {
     TransferOutputAccounts {
         alice: fixture.alice_current_compute_acl,
         bob: fixture.bob_current_compute_acl,
-        transferred: token::encrypted_value_address(
-            fixture.mint.pubkey(),
-            fixture.alice_token,
-            token::encrypted_transferred_amount_label(),
-        )
-        .0,
     }
 }
 
@@ -564,13 +559,13 @@ fn transfer_ix(
             to_account: fixture.bob_token,
             from_balance_value: output.alice,
             to_balance_value: output.bob,
-            transferred_amount_value: output.transferred,
             zama_event_authority: event_authority(fixture.host_program_id),
             zama_program: fixture.host_program_id,
             host_config: fixture.host_config,
             system_program: system_program::ID,
-            receipt_value: None,
-            receipt_authority: None,
+            result_state: None,
+            result_scratch: None,
+            result_authority: None,
             event_authority: event_authority(fixture.token_program_id),
             program: fixture.token_program_id,
         }
@@ -583,7 +578,6 @@ fn transfer_ix(
                 fixture.alice.pubkey(),
                 fixture.token_program_id,
             ),
-            receipt: None,
         }
         .data(),
     }
@@ -738,16 +732,13 @@ async fn seed_real_ciphertexts(
 
     Ok(())
 }
-fn read_encrypted_value(svm: &LiteSVM, address: Pubkey) -> Option<EncryptedValue> {
-    let raw_account = svm.get_account(&address)?;
-    let mut data = raw_account.data.as_slice();
-    EncryptedValue::try_deserialize(&mut data).ok()
-}
-
 fn current_handle(svm: &LiteSVM, address: Pubkey) -> [u8; 32] {
-    read_encrypted_value(svm, address)
-        .expect("expected EncryptedValue account")
-        .current_handle
+    let account = svm.get_account(&address).expect("expected token State");
+    let state = EncryptedState::try_deserialize(&mut account.data.as_slice())
+        .expect("valid EncryptedState");
+    state
+        .get(&token::encrypted_balance_label())
+        .expect("balance slot")
 }
 
 fn serialized_account<T: AccountSerialize>(account: T) -> Vec<u8> {

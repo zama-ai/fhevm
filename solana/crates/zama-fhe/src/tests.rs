@@ -1642,7 +1642,7 @@ fn step_tables_rollback_undoes_promotions_and_appends() {
     dictionary.try_push(&mut budget, handle(1)).unwrap();
     let mut persistent_producers = crate::heap_tally::TalliedVec::new();
     persistent_producers
-        .try_push(&mut budget, Pubkey::new_unique())
+        .try_push(&mut budget, (0, None))
         .unwrap();
     let accounts_before = remaining_accounts.clone();
     let dictionary_before = dictionary.clone();

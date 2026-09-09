@@ -1,3 +1,4 @@
+import { encryptedStateHandle } from '@sdk-src/solana/encryptedState.js';
 // provision — typed on-chain provisioning and balance probing for the live Solana token scenarios.
 //
 // This module replaces the Rust `poc-live-client` setup seams the two-holder transfer arc used to
@@ -326,7 +327,7 @@ export type BalanceState = {
   mint: string;
   owner: string;
   tokenAccount: string;
-  encryptedValueAccount: string;
+  encryptedState: string;
   currentHandle: string;
   chainId: string;
 };
@@ -338,7 +339,7 @@ export type BalanceState = {
  * - the confidential token account PDA exists and is owned by the confidential-token program (its
  *   `(mint, owner)` identity is pinned by the PDA derivation itself, so the body is not re-decoded);
  * - the balance `EncryptedValue` account decodes cleanly (MMR invariant — enforced inside
- *   `getEncryptedValueState`) and its body is the canonical balance identity: the token program,
+ *   `getEncryptedState`) and its body is the canonical balance identity: the token program,
  *   the token account as authority, the mint as scope, and the balance label;
  * - the current handle is a version-0 euint64 handle (all-zero rejected: type 0 is not euint64);
  * - the handle's embedded chain id matches the on-chain `HostConfig.chain_id`, read through
@@ -364,17 +365,16 @@ export const readTokenBalanceState = async (
     throw new Error(`confidential token account for (${mint}, ${owner}) is missing or not program-owned`);
   }
 
-  const state = await vault.getEncryptedValueState(context.rpc, encryptedValueAddress, { commitment: "confirmed" });
+  const state = await vault.getEncryptedState(context.rpc, encryptedValueAddress, { commitment: "confirmed" });
   if (
     state.program !== vault.CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS ||
-    state.encryptedValueAccountAuthority !== tokenAccount ||
-    !bytesEqual(state.scope, encodeAddress(mint)) ||
-    !bytesEqual(state.label, BALANCE_LABEL)
+    state.authority !== tokenAccount ||
+    !bytesEqual(state.scope, encodeAddress(mint))
   ) {
     throw new Error("balance encrypted value body does not match its canonical derivation");
   }
 
-  const currentHandle = `0x${Buffer.from(state.currentHandle).toString("hex")}` as Bytes32Hex;
+  const currentHandle = `0x${Buffer.from(encryptedStateHandle(state, BALANCE_LABEL)).toString("hex")}` as Bytes32Hex;
   const handle = bytes32HexToHandle(currentHandle); // throws on a bad handle version or FHE type id
   if (handle.fheTypeId !== EUINT64_FHE_TYPE_ID) {
     throw new Error(`balance handle is not a euint64 handle (FHE type id ${handle.fheTypeId})`);
@@ -390,7 +390,7 @@ export const readTokenBalanceState = async (
     mint,
     owner,
     tokenAccount,
-    encryptedValueAccount: encryptedValueAddress,
+    encryptedState: encryptedValueAddress,
     currentHandle,
     chainId: chainId.toString(),
   };

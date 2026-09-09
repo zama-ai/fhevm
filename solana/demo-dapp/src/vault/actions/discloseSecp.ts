@@ -5,7 +5,6 @@ import type { MmrProof } from '@sdk-src/solana/proof.js';
 import { verifyPublicDecryptArgsFromClaim } from '@sdk-src/solana/actions/verifyPublicDecrypt.js';
 import { getDiscloseSecpInstruction } from '../internal/generated/confidentialToken/instructions/discloseSecp.js';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '../internal/generated/confidentialToken/programAddress.js';
-import type { DisclosedValueKindArgs } from '../internal/generated/confidentialToken/types/disclosedValueKind.js';
 
 const EVENT_AUTHORITY_SEED = new TextEncoder().encode('__event_authority');
 
@@ -15,9 +14,7 @@ export type SolanaDiscloseSecpAccounts = {
   readonly mint: Address;
   /** Confidential token account for account-scoped state; omit only for total supply. */
   readonly tokenAccount?: Address | undefined;
-  /** Exact token state field the event will identify. */
-  readonly kind: DisclosedValueKindArgs;
-  /** The `EncryptedValue` encrypted value account the disclosed handle belongs to. */
+  /** The encrypted state whose history authorizes the disclosed handle. */
   readonly encryptedValue: Address;
   /** KMS context PDA for the host's current context id. */
   readonly kmsContext: Address;
@@ -58,7 +55,6 @@ export async function buildDiscloseSecpInstruction(
     hostConfig: accounts.hostConfig,
     eventAuthority: await tokenEventAuthority(),
     program: CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
-    kind: accounts.kind,
     handle: args.handle,
     cleartext: args.cleartext,
     signatures: [...args.signatures],

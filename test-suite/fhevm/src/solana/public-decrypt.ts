@@ -11,7 +11,7 @@ type Environment = Readonly<Record<string, string | undefined>>;
 type PublicDecryptRequest = {
   handle: string;
   contextId: Uint8Array;
-  encryptedValueAccount: Uint8Array;
+  encryptedState: Uint8Array;
 };
 /**
  * The KMS public-decrypt certificate the SDK action returns — the glossary term is "certificate"
@@ -58,7 +58,7 @@ const bytes32Hex = (environment: Environment, name: string): string => {
 // `_types`, while the full vertical exercises this public package entry at runtime.
 const runPublicSdkPublicDecrypt: PublicDecryptSdkCall = async (input) => {
   const solanaModule = '@fhevm/sdk/solana';
-  const solana = await import(solanaModule);
+  const solana = await import(solanaModule) as typeof import("@sdk-src/solana/index.js");
   const chain = solana.defineFhevmSolanaChain({ id: input.chainId, fhevm: { relayerUrl: input.relayerUrl } });
   solana.setFhevmRuntimeConfig({ auth: { type: 'ApiKeyHeader', value: input.apiKey } });
   return solana.createFhevmPublicDecryptClient({ chain }).publicDecryptCertificate(input.request);
@@ -72,7 +72,7 @@ export const runSolanaPublicDecrypt = async (
   const request: PublicDecryptRequest = {
     handle: bytes32Hex(environment, 'PD_HANDLE'),
     contextId: bytes32(environment, 'PD_CONTEXT_ID'),
-    encryptedValueAccount: bytes32(environment, 'PD_ENCRYPTED_VALUE_ACCOUNT'),
+    encryptedState: bytes32(environment, 'PD_ENCRYPTED_STATE'),
   };
   const call = dependencies.publicDecryptCertificate ?? runPublicSdkPublicDecrypt;
   const certificate = await call({

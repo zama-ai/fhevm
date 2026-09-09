@@ -120,6 +120,11 @@ describe('Decryption', function () {
     return hre.ethers.solidityPacked(['uint8', 'uint256', 'uint256'], [2, contextId, epochId]);
   }
 
+  // Build the Solana public-decrypt payload: version 4, contextId, EncryptedState address.
+  function extraDataV4(contextId: bigint, encryptedState: string): string {
+    return hre.ethers.solidityPacked(['uint8', 'uint256', 'bytes32'], [4, contextId, encryptedState]);
+  }
+
   // Full event signatures. Solidity event overloading makes bare-name lookups ambiguous in
   // ethers/hardhat, so every `PublicDecryptionRequest`/`UserDecryptionRequest` assertion must
   // address the event by its full signature. The legacy `SnsCiphertextMaterial[]` variants and the
@@ -695,6 +700,52 @@ describe('Decryption', function () {
           v2ExtraData,
         );
       expect(await decryption.isDecryptionDone(decryptionId)).to.be.true;
+    });
+
+    it('Should admit Solana public decrypt extraData v4 carrying an EncryptedState address', async function () {
+      const currentContextId = await gatewayConfig.getCurrentKmsContextId();
+      const encryptedState = createBytes32s(1)[0];
+      const v4ExtraData = extraDataV4(currentContextId, encryptedState);
+
+      const requestTx = await decryption.connect(tokenFundedTxSender).publicDecryptionRequest(ctHandles, v4ExtraData);
+      await expect(requestTx)
+        .to.emit(decryption, PUBLIC_DECRYPTION_REQUEST_LEGACY_SIG)
+        .withArgs(decryptionId, toValues(snsCiphertextMaterials), v4ExtraData);
+      await expect(requestTx)
+        .to.emit(decryption, PUBLIC_DECRYPTION_REQUEST_HANDLES_SIG)
+        .withArgs(decryptionId, ctHandles, v4ExtraData);
+    });
+
+    it('Should reject short Solana public decrypt extraData v4', async function () {
+      const currentContextId = await gatewayConfig.getCurrentKmsContextId();
+      const shortV4ExtraData = hre.ethers.solidityPacked(['uint8', 'uint256'], [4, currentContextId]);
+
+      await expect(decryption.connect(tokenFundedTxSender).publicDecryptionRequest(ctHandles, shortV4ExtraData))
+        .to.be.revertedWithCustomError(decryption, 'InvalidExtraDataLength')
+        .withArgs(33, 65);
+    });
+
+    it('Should reject trailing bytes in Solana public decrypt extraData v4', async function () {
+      const currentContextId = await gatewayConfig.getCurrentKmsContextId();
+      const v4ExtraData = extraDataV4(currentContextId, createBytes32s(1)[0]);
+      const longV4ExtraData = hre.ethers.concat([v4ExtraData, '0x00']);
+
+      await expect(decryption.connect(tokenFundedTxSender).publicDecryptionRequest(ctHandles, longV4ExtraData))
+        .to.be.revertedWithCustomError(decryption, 'InvalidExtraDataLength')
+        .withArgs(66, 65);
+    });
+
+    it('Should reject the removed Solana public decrypt extraData v3', async function () {
+      const currentContextId = await gatewayConfig.getCurrentKmsContextId();
+      const encryptedValueAccount = createBytes32s(1)[0];
+      const v3ExtraData = hre.ethers.solidityPacked(
+        ['uint8', 'uint256', 'bytes32'],
+        [3, currentContextId, encryptedValueAccount],
+      );
+
+      await expect(decryption.connect(tokenFundedTxSender).publicDecryptionRequest(ctHandles, v3ExtraData))
+        .to.be.revertedWithCustomError(decryption, 'UnsupportedExtraDataVersion')
+        .withArgs(3);
     });
 
     it('Should get all valid KMS transaction senders from public decryption consensus', async function () {

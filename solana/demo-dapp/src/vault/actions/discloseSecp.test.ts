@@ -7,7 +7,6 @@ import type { SolanaPublicDecryptCertificateClaim } from '@sdk-src/solana/action
 import { buildDiscloseSecpInstruction } from './discloseSecp.js';
 import { getDiscloseSecpInstructionDataDecoder } from '../internal/generated/confidentialToken/instructions/discloseSecp.js';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '../internal/generated/confidentialToken/programAddress.js';
-import { DisclosedValueKind } from '../internal/generated/confidentialToken/types/disclosedValueKind.js';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '@sdk-src/solana/internal/generated/zamaHost/programAddress.js';
 
 function addr(fill: number): Address {
@@ -46,7 +45,7 @@ describe('buildDiscloseSecpInstruction', () => {
     const kmsContext = addr(7);
     const hostConfig = addr(9);
     const instruction = await buildDiscloseSecpInstruction(
-      { mint, tokenAccount, kind: DisclosedValueKind.BurnedAmount, encryptedValue, kmsContext, hostConfig },
+      { mint, tokenAccount, encryptedValue, kmsContext, hostConfig },
       claim(),
       inclusionProof,
     );
@@ -64,7 +63,7 @@ describe('buildDiscloseSecpInstruction', () => {
     expect(addresses[7]).toBe(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS);
 
     const decoded = getDiscloseSecpInstructionDataDecoder().decode(instruction.data!);
-    expect(decoded.kind).toBe(DisclosedValueKind.BurnedAmount);
+    expect('kind' in decoded).toBe(false);
     expect(Array.from(decoded.handle)).toEqual(Array.from(handleBytes));
     expect(Array.from(decoded.cleartext)).toEqual(Array.from(cleartextBytes));
     expect(decoded.signatures.map((s) => Array.from(s))).toEqual([Array.from(signatureBytes)]);

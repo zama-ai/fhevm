@@ -23,13 +23,11 @@ pub struct PendingBurn {
     pub token_account: Pubkey,
     /// Burned amount handle produced by the burn execution (stored for redeem matching).
     pub burned_handle: [u8; 32],
-    /// Shared `burned_amount` EncryptedValue account for this token account.
-    pub burned_encrypted_value: Pubkey,
     /// PDA bump for `(mint, token_account)`.
     pub bump: u8,
 }
 
 impl PendingBurn {
     /// Serialized size of the account body, excluding Anchor discriminator.
-    pub const SPACE: usize = 32 + 32 + 32 + 32 + 32 + 1;
+    pub const SPACE: usize = 32 + 32 + 32 + 32 + 1;
 }

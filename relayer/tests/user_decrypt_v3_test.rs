@@ -189,7 +189,7 @@ mod helpers {
                     "handle": random_handle(),
                     // The allowed key of a direct entry is the requester itself.
                     "allowedKey": format!("0x{}", hex::encode(user_pubkey)),
-                    "encryptedValueAccount": random_0x_hex(32),
+                    "encryptedState": random_0x_hex(32),
                 }],
             },
             "signature": format!("0x{}", hex::encode(signature)),
@@ -201,7 +201,7 @@ mod helpers {
 // Happy-path accept tests (POST → 202)
 // ---------------------------------------------------------------------------
 
-/// v3 accepts a single direct-access handle (`ownerAddress == userAddress`).
+/// v3 accepts a single direct-access handle (`allowedKey == userPubkey`).
 #[tokio::test]
 async fn v3_accepts_direct_handle() {
     let setup = TestSetup::new().await.expect("Failed to create test setup");
@@ -490,7 +490,7 @@ async fn v3_rejects_empty_handles() {
 }
 
 #[tokio::test]
-async fn v3_rejects_handle_entry_missing_owner_address() {
+async fn v3_rejects_handle_entry_missing_encrypted_state() {
     let setup = TestSetup::new().await.expect("Failed to create test setup");
     let url = helpers::v3_user_decrypt_post_url(&setup);
 
@@ -498,14 +498,14 @@ async fn v3_rejects_handle_entry_missing_owner_address() {
         &url,
         helpers::create_v3_envelope(),
         |p: &mut serde_json::Value| {
-            // Strip ownerAddress from the first handle entry.
+            // Strip encryptedState from the first handle entry.
             let entry = p["attestedPayload"]["handles"][0].as_object_mut().unwrap();
-            entry.remove("ownerAddress");
+            entry.remove("encryptedState");
         },
         // Missing required field surfaces as a serde deserialization error,
         // which the parsing layer maps to the `missing_fields` label with
-        // the missing field name (`ownerAddress`).
-        expect_v2_missing_field("ownerAddress"),
+        // the missing field name (`encryptedState`).
+        expect_v2_missing_field("encryptedState"),
     )
     .await;
 

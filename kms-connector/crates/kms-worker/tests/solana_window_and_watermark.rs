@@ -245,12 +245,12 @@ fn an_invalidation_record_naming_another_user_is_rejected() {
 fn an_account_that_is_not_an_invalidation_record_is_rejected() {
     let user = Wallet::new(1).pubkey();
     let (key, _) = permit_invalidation_address(PROGRAM_ID, user);
-    let encrypted_value_account =
-        EncryptedValueAccountFixture::allowing(handle(0x10, FHE_TYPE_UINT64), user);
-    let world = World::running_at_slot(1).with_account(key, encrypted_value_account.account());
+    let encrypted_state =
+        EncryptedStateFixture::allowing(handle(0x10, FHE_TYPE_UINT64), user);
+    let world = World::running_at_slot(1).with_account(key, encrypted_state.account());
 
     let failure =
-        watermark_in(&world, user).expect_err("encrypted value account bytes are not a watermark");
+        watermark_in(&world, user).expect_err("encrypted state bytes are not a watermark");
 
     assert!(matches!(
         failure,
@@ -339,14 +339,14 @@ async fn the_watermark_is_keyed_by_the_signer_not_the_handle_owner() {
     let signer = Wallet::new(1);
     let delegator = Wallet::new(2);
     let live = handle(0x20, FHE_TYPE_UINT64);
-    let encrypted_value_account = EncryptedValueAccountFixture::allowing(live, delegator.pubkey());
+    let encrypted_state = EncryptedStateFixture::allowing(live, delegator.pubkey());
     let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), 100);
     let request = RequestBuilder::new(&signer)
-        .delegated(&encrypted_value_account, live, delegator.pubkey())
+        .delegated(&encrypted_state, live, delegator.pubkey())
         .typed();
     // The delegator revoked everything they ever signed; the delegate revoked nothing.
     let world = World::running_at_slot(100)
-        .with_encrypted_value_account(&encrypted_value_account)
+        .with_encrypted_state(&encrypted_state)
         .with_watermark(signer.pubkey(), 0)
         .with_watermark(delegator.pubkey(), DEFAULT_START + DEFAULT_DURATION)
         .with_delegation(&delegation);
@@ -371,13 +371,13 @@ async fn a_revocation_by_the_signer_stops_a_delegated_request() {
     let signer = Wallet::new(1);
     let delegator = Wallet::new(2);
     let live = handle(0x21, FHE_TYPE_UINT64);
-    let encrypted_value_account = EncryptedValueAccountFixture::allowing(live, delegator.pubkey());
+    let encrypted_state = EncryptedStateFixture::allowing(live, delegator.pubkey());
     let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), 100);
     let request = RequestBuilder::new(&signer)
-        .delegated(&encrypted_value_account, live, delegator.pubkey())
+        .delegated(&encrypted_state, live, delegator.pubkey())
         .typed();
     let world = World::running_at_slot(100)
-        .with_encrypted_value_account(&encrypted_value_account)
+        .with_encrypted_state(&encrypted_state)
         .with_watermark(signer.pubkey(), DEFAULT_START + 1)
         .with_delegation(&delegation);
     let proofs = ScriptedProofReader::constant(world.record());
@@ -408,13 +408,13 @@ async fn a_revocation_by_the_signer_stops_a_delegated_request() {
 async fn a_prefunded_invalidation_address_does_not_deny_service() {
     let wallet = Wallet::new(1);
     let live = handle(0x23, FHE_TYPE_UINT64);
-    let encrypted_value_account = EncryptedValueAccountFixture::allowing(live, wallet.pubkey());
+    let encrypted_state = EncryptedStateFixture::allowing(live, wallet.pubkey());
     let request = RequestBuilder::new(&wallet)
-        .direct(&encrypted_value_account, live)
+        .direct(&encrypted_state, live)
         .typed();
     let (key, _) = permit_invalidation_address(PROGRAM_ID, wallet.pubkey());
     let world = World::running_at_slot(100)
-        .with_encrypted_value_account(&encrypted_value_account)
+        .with_encrypted_state(&encrypted_state)
         .with_account(key, prefunded_account());
     let proofs = ScriptedProofReader::constant(world.record());
     let reader = ScriptedReader::constant(world);
@@ -438,12 +438,12 @@ async fn a_prefunded_invalidation_address_does_not_deny_service() {
 async fn a_permit_that_expired_before_processing_is_refused() {
     let wallet = Wallet::new(1);
     let live = handle(0x22, FHE_TYPE_UINT64);
-    let encrypted_value_account = EncryptedValueAccountFixture::allowing(live, wallet.pubkey());
+    let encrypted_state = EncryptedStateFixture::allowing(live, wallet.pubkey());
     let request = RequestBuilder::new(&wallet)
-        .direct(&encrypted_value_account, live)
+        .direct(&encrypted_state, live)
         .typed();
     let world = World::running_at_slot(100)
-        .with_encrypted_value_account(&encrypted_value_account)
+        .with_encrypted_state(&encrypted_state)
         .with_watermark(wallet.pubkey(), 0);
     let proofs = ScriptedProofReader::constant(world.record());
     let reader = ScriptedReader::constant(world);

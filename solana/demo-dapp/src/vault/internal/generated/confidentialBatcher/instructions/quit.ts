@@ -63,8 +63,7 @@ export type QuitInstruction<
   TAccountUserTokenAccount extends string | AccountMeta<string> = string,
   TAccountBatchBalanceValue extends string | AccountMeta<string> = string,
   TAccountUserBalanceValue extends string | AccountMeta<string> = string,
-  TAccountBatchTransferredValue extends string | AccountMeta<string> = string,
-  TAccountPendingJoinValue extends string | AccountMeta<string> = string,
+  TAccountJoinState extends string | AccountMeta<string> = string,
   TAccountZamaEventAuthority extends string | AccountMeta<string> = string,
   TAccountZamaProgram extends string | AccountMeta<string> = '6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu',
   TAccountHostConfig extends string | AccountMeta<string> = string,
@@ -100,10 +99,7 @@ export type QuitInstruction<
       TAccountUserTokenAccount extends string ? WritableAccount<TAccountUserTokenAccount> : TAccountUserTokenAccount,
       TAccountBatchBalanceValue extends string ? WritableAccount<TAccountBatchBalanceValue> : TAccountBatchBalanceValue,
       TAccountUserBalanceValue extends string ? WritableAccount<TAccountUserBalanceValue> : TAccountUserBalanceValue,
-      TAccountBatchTransferredValue extends string
-        ? WritableAccount<TAccountBatchTransferredValue>
-        : TAccountBatchTransferredValue,
-      TAccountPendingJoinValue extends string ? WritableAccount<TAccountPendingJoinValue> : TAccountPendingJoinValue,
+      TAccountJoinState extends string ? WritableAccount<TAccountJoinState> : TAccountJoinState,
       TAccountZamaEventAuthority extends string
         ? ReadonlyAccount<TAccountZamaEventAuthority>
         : TAccountZamaEventAuthority,
@@ -154,8 +150,7 @@ export type QuitAsyncInput<
   TAccountUserTokenAccount extends string = string,
   TAccountBatchBalanceValue extends string = string,
   TAccountUserBalanceValue extends string = string,
-  TAccountBatchTransferredValue extends string = string,
-  TAccountPendingJoinValue extends string = string,
+  TAccountJoinState extends string = string,
   TAccountZamaEventAuthority extends string = string,
   TAccountZamaProgram extends string = string,
   TAccountHostConfig extends string = string,
@@ -186,10 +181,8 @@ export type QuitAsyncInput<
   userTokenAccount: Address<TAccountUserTokenAccount>;
   batchBalanceValue: Address<TAccountBatchBalanceValue>;
   userBalanceValue: Address<TAccountUserBalanceValue>;
-  /** a transfer FROM the batch account); replaced by the token CPI. */
-  batchTransferredValue: Address<TAccountBatchTransferredValue>;
   /** amount, then reset to an encrypted zero by the batcher execution. */
-  pendingJoinValue: Address<TAccountPendingJoinValue>;
+  joinState: Address<TAccountJoinState>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
   /** ZamaHost program (FHE compute + ACL). */
   zamaProgram?: Address<TAccountZamaProgram>;
@@ -216,8 +209,7 @@ export async function getQuitInstructionAsync<
   TAccountUserTokenAccount extends string,
   TAccountBatchBalanceValue extends string,
   TAccountUserBalanceValue extends string,
-  TAccountBatchTransferredValue extends string,
-  TAccountPendingJoinValue extends string,
+  TAccountJoinState extends string,
   TAccountZamaEventAuthority extends string,
   TAccountZamaProgram extends string,
   TAccountHostConfig extends string,
@@ -241,8 +233,7 @@ export async function getQuitInstructionAsync<
     TAccountUserTokenAccount,
     TAccountBatchBalanceValue,
     TAccountUserBalanceValue,
-    TAccountBatchTransferredValue,
-    TAccountPendingJoinValue,
+    TAccountJoinState,
     TAccountZamaEventAuthority,
     TAccountZamaProgram,
     TAccountHostConfig,
@@ -268,8 +259,7 @@ export async function getQuitInstructionAsync<
     TAccountUserTokenAccount,
     TAccountBatchBalanceValue,
     TAccountUserBalanceValue,
-    TAccountBatchTransferredValue,
-    TAccountPendingJoinValue,
+    TAccountJoinState,
     TAccountZamaEventAuthority,
     TAccountZamaProgram,
     TAccountHostConfig,
@@ -318,14 +308,7 @@ export async function getQuitInstructionAsync<
       value: input.userBalanceValue ?? null,
       isWritable: true,
     },
-    batchTransferredValue: {
-      value: input.batchTransferredValue ?? null,
-      isWritable: true,
-    },
-    pendingJoinValue: {
-      value: input.pendingJoinValue ?? null,
-      isWritable: true,
-    },
+    joinState: { value: input.joinState ?? null, isWritable: true },
     zamaEventAuthority: {
       value: input.zamaEventAuthority ?? null,
       isWritable: false,
@@ -385,8 +368,7 @@ export async function getQuitInstructionAsync<
       getAccountMeta('userTokenAccount', accounts.userTokenAccount),
       getAccountMeta('batchBalanceValue', accounts.batchBalanceValue),
       getAccountMeta('userBalanceValue', accounts.userBalanceValue),
-      getAccountMeta('batchTransferredValue', accounts.batchTransferredValue),
-      getAccountMeta('pendingJoinValue', accounts.pendingJoinValue),
+      getAccountMeta('joinState', accounts.joinState),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
       getAccountMeta('zamaProgram', accounts.zamaProgram),
       getAccountMeta('hostConfig', accounts.hostConfig),
@@ -412,8 +394,7 @@ export async function getQuitInstructionAsync<
     TAccountUserTokenAccount,
     TAccountBatchBalanceValue,
     TAccountUserBalanceValue,
-    TAccountBatchTransferredValue,
-    TAccountPendingJoinValue,
+    TAccountJoinState,
     TAccountZamaEventAuthority,
     TAccountZamaProgram,
     TAccountHostConfig,
@@ -438,8 +419,7 @@ export type QuitInput<
   TAccountUserTokenAccount extends string = string,
   TAccountBatchBalanceValue extends string = string,
   TAccountUserBalanceValue extends string = string,
-  TAccountBatchTransferredValue extends string = string,
-  TAccountPendingJoinValue extends string = string,
+  TAccountJoinState extends string = string,
   TAccountZamaEventAuthority extends string = string,
   TAccountZamaProgram extends string = string,
   TAccountHostConfig extends string = string,
@@ -470,10 +450,8 @@ export type QuitInput<
   userTokenAccount: Address<TAccountUserTokenAccount>;
   batchBalanceValue: Address<TAccountBatchBalanceValue>;
   userBalanceValue: Address<TAccountUserBalanceValue>;
-  /** a transfer FROM the batch account); replaced by the token CPI. */
-  batchTransferredValue: Address<TAccountBatchTransferredValue>;
   /** amount, then reset to an encrypted zero by the batcher execution. */
-  pendingJoinValue: Address<TAccountPendingJoinValue>;
+  joinState: Address<TAccountJoinState>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
   /** ZamaHost program (FHE compute + ACL). */
   zamaProgram?: Address<TAccountZamaProgram>;
@@ -500,8 +478,7 @@ export function getQuitInstruction<
   TAccountUserTokenAccount extends string,
   TAccountBatchBalanceValue extends string,
   TAccountUserBalanceValue extends string,
-  TAccountBatchTransferredValue extends string,
-  TAccountPendingJoinValue extends string,
+  TAccountJoinState extends string,
   TAccountZamaEventAuthority extends string,
   TAccountZamaProgram extends string,
   TAccountHostConfig extends string,
@@ -525,8 +502,7 @@ export function getQuitInstruction<
     TAccountUserTokenAccount,
     TAccountBatchBalanceValue,
     TAccountUserBalanceValue,
-    TAccountBatchTransferredValue,
-    TAccountPendingJoinValue,
+    TAccountJoinState,
     TAccountZamaEventAuthority,
     TAccountZamaProgram,
     TAccountHostConfig,
@@ -551,8 +527,7 @@ export function getQuitInstruction<
   TAccountUserTokenAccount,
   TAccountBatchBalanceValue,
   TAccountUserBalanceValue,
-  TAccountBatchTransferredValue,
-  TAccountPendingJoinValue,
+  TAccountJoinState,
   TAccountZamaEventAuthority,
   TAccountZamaProgram,
   TAccountHostConfig,
@@ -600,14 +575,7 @@ export function getQuitInstruction<
       value: input.userBalanceValue ?? null,
       isWritable: true,
     },
-    batchTransferredValue: {
-      value: input.batchTransferredValue ?? null,
-      isWritable: true,
-    },
-    pendingJoinValue: {
-      value: input.pendingJoinValue ?? null,
-      isWritable: true,
-    },
+    joinState: { value: input.joinState ?? null, isWritable: true },
     zamaEventAuthority: {
       value: input.zamaEventAuthority ?? null,
       isWritable: false,
@@ -656,8 +624,7 @@ export function getQuitInstruction<
       getAccountMeta('userTokenAccount', accounts.userTokenAccount),
       getAccountMeta('batchBalanceValue', accounts.batchBalanceValue),
       getAccountMeta('userBalanceValue', accounts.userBalanceValue),
-      getAccountMeta('batchTransferredValue', accounts.batchTransferredValue),
-      getAccountMeta('pendingJoinValue', accounts.pendingJoinValue),
+      getAccountMeta('joinState', accounts.joinState),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
       getAccountMeta('zamaProgram', accounts.zamaProgram),
       getAccountMeta('hostConfig', accounts.hostConfig),
@@ -683,8 +650,7 @@ export function getQuitInstruction<
     TAccountUserTokenAccount,
     TAccountBatchBalanceValue,
     TAccountUserBalanceValue,
-    TAccountBatchTransferredValue,
-    TAccountPendingJoinValue,
+    TAccountJoinState,
     TAccountZamaEventAuthority,
     TAccountZamaProgram,
     TAccountHostConfig,
@@ -723,19 +689,17 @@ export type ParsedQuitInstruction<
     userTokenAccount: TAccountMetas[11];
     batchBalanceValue: TAccountMetas[12];
     userBalanceValue: TAccountMetas[13];
-    /** a transfer FROM the batch account); replaced by the token CPI. */
-    batchTransferredValue: TAccountMetas[14];
     /** amount, then reset to an encrypted zero by the batcher execution. */
-    pendingJoinValue: TAccountMetas[15];
-    zamaEventAuthority: TAccountMetas[16];
+    joinState: TAccountMetas[14];
+    zamaEventAuthority: TAccountMetas[15];
     /** ZamaHost program (FHE compute + ACL). */
-    zamaProgram: TAccountMetas[17];
-    hostConfig: TAccountMetas[18];
-    confidentialTokenEventAuthority: TAccountMetas[19];
+    zamaProgram: TAccountMetas[16];
+    hostConfig: TAccountMetas[17];
+    confidentialTokenEventAuthority: TAccountMetas[18];
     /** confidential-token program composed via CPI. */
-    confidentialTokenProgram: TAccountMetas[20];
+    confidentialTokenProgram: TAccountMetas[19];
     /** System program used for account creation. */
-    systemProgram: TAccountMetas[21];
+    systemProgram: TAccountMetas[20];
   };
   data: QuitInstructionData;
 };
@@ -743,10 +707,10 @@ export type ParsedQuitInstruction<
 export function parseQuitInstruction<TProgram extends string, TAccountMetas extends readonly AccountMeta[]>(
   instruction: Instruction<TProgram> & InstructionWithAccounts<TAccountMetas> & InstructionWithData<ReadonlyUint8Array>,
 ): ParsedQuitInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 22) {
+  if (instruction.accounts.length < 21) {
     throw new SolanaError(SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS, {
       actualAccountMetas: instruction.accounts.length,
-      expectedAccountMetas: 22,
+      expectedAccountMetas: 21,
     });
   }
   let accountIndex = 0;
@@ -772,8 +736,7 @@ export function parseQuitInstruction<TProgram extends string, TAccountMetas exte
       userTokenAccount: getNextAccount(),
       batchBalanceValue: getNextAccount(),
       userBalanceValue: getNextAccount(),
-      batchTransferredValue: getNextAccount(),
-      pendingJoinValue: getNextAccount(),
+      joinState: getNextAccount(),
       zamaEventAuthority: getNextAccount(),
       zamaProgram: getNextAccount(),
       hostConfig: getNextAccount(),

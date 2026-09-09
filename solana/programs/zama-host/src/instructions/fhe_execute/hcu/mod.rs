@@ -295,7 +295,9 @@ fn operand_depth(operand: &FheExecuteOperand, step_depths: &[u64]) -> u64 {
             .get(*producer_index as usize)
             .copied()
             .unwrap_or(0),
-        FheExecuteOperand::StoredValue { .. } => 0,
+        FheExecuteOperand::StoredValue { .. }
+        | FheExecuteOperand::StateSlot { .. }
+        | FheExecuteOperand::TransientResult { .. } => 0,
         FheExecuteOperand::VerifiedInput { .. } => 0,
         FheExecuteOperand::Scalar { .. } => 0,
     }
@@ -311,7 +313,9 @@ fn operand_pricing_type(
             .get(*producer_index as usize)
             .copied()
             .ok_or_else(|| error!(ZamaHostError::FheExecuteEarlierStepMissing)),
-        FheExecuteOperand::StoredValue { handle_index, .. } => {
+        FheExecuteOperand::StoredValue { handle_index, .. }
+        | FheExecuteOperand::StateSlot { handle_index, .. }
+        | FheExecuteOperand::TransientResult { handle_index, .. } => {
             let handle = dictionary
                 .get(*handle_index as usize)
                 .ok_or_else(|| error!(ZamaHostError::FheExecuteDictionaryIndexOutOfBounds))?;

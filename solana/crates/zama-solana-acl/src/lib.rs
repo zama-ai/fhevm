@@ -23,6 +23,12 @@ use sha2::{Digest as _, Sha256};
 #[cfg(not(target_os = "solana"))]
 use sha3::Keccak256;
 
+pub mod encrypted_state;
+pub use encrypted_state::{
+    decode_encrypted_state, encrypted_state_discriminator, EncryptedSlot, EncryptedState,
+    ENCRYPTED_STATE_SEED, MAX_STATE_SLOTS,
+};
+
 pub mod delegation;
 pub use delegation::{
     decode_user_decryption_delegation, UserDecryptionDelegationRecord, DELEGATION_SEED,
@@ -224,7 +230,34 @@ pub fn authorize_historical(
 ) -> Result<(), AclError> {
     let commitment =
         historical_access_leaf_commitment(encrypted_value_account, proof.leaf_index, handle, key);
-    verify_leaf(value, commitment, proof, AclError::HistoricalProofInvalid)
+    verify_leaf(
+        &value.peaks,
+        value.leaf_count,
+        commitment,
+        proof,
+        AclError::HistoricalProofInvalid,
+    )
+}
+
+/// User decrypt under an encrypted state: a valid historical-access proof for the exact handle
+/// and key. The handle may be absent from the state's current slots; the retained MMR is the
+/// authority for historical decryption.
+pub fn authorize_state_historical(
+    encrypted_state: [u8; 32],
+    state: &EncryptedState,
+    handle: [u8; 32],
+    key: [u8; 32],
+    proof: &MmrProof,
+) -> Result<(), AclError> {
+    let commitment =
+        historical_access_leaf_commitment(encrypted_state, proof.leaf_index, handle, key);
+    verify_leaf(
+        &state.peaks,
+        state.leaf_count,
+        commitment,
+        proof,
+        AclError::HistoricalProofInvalid,
+    )
 }
 
 /// Exact public decrypt: a valid public-decrypt MMR proof for the exact handle.
@@ -238,7 +271,26 @@ pub fn authorize_public(
     let commitment =
         public_decrypt_leaf_commitment(encrypted_value_account, proof.leaf_index, handle);
     verify_leaf(
-        value,
+        &value.peaks,
+        value.leaf_count,
+        commitment,
+        proof,
+        AclError::PublicDecryptProofInvalid,
+    )
+}
+
+/// Exact public decrypt under an encrypted state. Current slot contents do not participate:
+/// public access is bound to the exact historical handle by the proven leaf.
+pub fn authorize_state_public(
+    encrypted_state: [u8; 32],
+    state: &EncryptedState,
+    handle: [u8; 32],
+    proof: &MmrProof,
+) -> Result<(), AclError> {
+    let commitment = public_decrypt_leaf_commitment(encrypted_state, proof.leaf_index, handle);
+    verify_leaf(
+        &state.peaks,
+        state.leaf_count,
         commitment,
         proof,
         AclError::PublicDecryptProofInvalid,
@@ -246,12 +298,13 @@ pub fn authorize_public(
 }
 
 fn verify_leaf(
-    value: &EncryptedValue,
+    peaks: &[[u8; 32]],
+    leaf_count: u64,
     commitment: [u8; 32],
     proof: &MmrProof,
     invalid: AclError,
 ) -> Result<(), AclError> {
-    if mmr_verify(&value.peaks, value.leaf_count, commitment, proof) {
+    if mmr_verify(peaks, leaf_count, commitment, proof) {
         Ok(())
     } else {
         Err(invalid)
@@ -362,6 +415,52 @@ mod tests {
             authorize_public(l.account, &l.value, h(11), &proof),
             Err(AclError::PublicDecryptProofInvalid)
         );
+    }
+
+    #[test]
+    fn state_history_authorizes_exact_handles_without_a_current_slot_match() {
+        let account = h(0xac);
+        let old_handle = h(10);
+        let current_handle = h(11);
+        let key = h(1);
+        let leaves = vec![
+            historical_access_leaf_commitment(account, 0, old_handle, key),
+            public_decrypt_leaf_commitment(account, 1, old_handle),
+        ];
+        let state = EncryptedState {
+            slots: vec![EncryptedSlot {
+                key: h(20),
+                handle: current_handle,
+            }],
+            leaf_count: leaves.len() as u64,
+            peaks: mmr_peaks_from_leaves(&leaves),
+            ..Default::default()
+        };
+
+        assert!(authorize_state_historical(
+            account,
+            &state,
+            old_handle,
+            key,
+            &mmr_build_proof(&leaves, 0).unwrap()
+        )
+        .is_ok());
+        assert!(authorize_state_public(
+            account,
+            &state,
+            old_handle,
+            &mmr_build_proof(&leaves, 1).unwrap()
+        )
+        .is_ok());
+        assert_eq!(state.get(&h(20)), Some(current_handle));
+        assert!(authorize_state_historical(
+            account,
+            &state,
+            current_handle,
+            key,
+            &mmr_build_proof(&leaves, 0).unwrap()
+        )
+        .is_err());
     }
 
     #[test]

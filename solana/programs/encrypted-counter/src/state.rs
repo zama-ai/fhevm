@@ -1,18 +1,18 @@
-//! Counter state account and PDA/label derivations.
+//! Counter state and address derivations.
 //!
 //! Public API surface: off-chain callers deriving the counter PDAs — `runtime-tests`'
 //! `counter_mollusk` fixtures.
 
 use anchor_lang::prelude::*;
-use zama_fhe::{AppScope, EncryptedValueId, EncryptedValueLabel};
+use zama_fhe::{AppScope, StateId};
 
 /// Seed of the per-owner counter state PDA.
 pub const COUNTER_SEED: &[u8] = b"counter";
 /// Seed of the counter's execution-signing authority PDA.
 pub const COUNTER_AUTHORITY_SEED: &[u8] = b"counter-authority";
 
-/// Fixed encrypted value label for the count.
-pub fn encrypted_count_label() -> [u8; 32] {
+/// Dictionary key for the encrypted count.
+pub fn count_key() -> [u8; 32] {
     *b"count___________________________"
 }
 
@@ -33,12 +33,12 @@ pub fn counter_app(counter: Pubkey) -> AppScope {
     }
 }
 
-/// The counter's encrypted value: the counter's application, authority its PDA.
-pub fn count_encrypted_value_id(counter: Pubkey) -> EncryptedValueId {
-    EncryptedValueId::new(
-        counter_app(counter),
+/// The host dictionary controlled by the counter's authority PDA.
+pub fn counter_state_id(counter: Pubkey) -> StateId {
+    StateId::new(
+        crate::id(),
         counter_authority_address(counter).0,
-        EncryptedValueLabel::new(encrypted_count_label()),
+        counter.to_bytes(),
     )
 }
 

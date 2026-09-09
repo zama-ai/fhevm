@@ -23,7 +23,7 @@ const balance = (owner: string, handleByte: string): BalanceState => ({
   mint: scenario.mint,
   owner,
   tokenAccount: owner === alice.owner ? "5".repeat(32) : "6".repeat(32),
-  encryptedValueAccount: owner === alice.owner ? "7".repeat(32) : "8".repeat(32),
+  encryptedState: owner === alice.owner ? "7".repeat(32) : "8".repeat(32),
   currentHandle: hex32(handleByte),
   chainId: "9223372036854788153",
 });

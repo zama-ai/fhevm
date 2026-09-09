@@ -46,7 +46,6 @@ import {
   wrapUnderlying,
 } from "../../src/solana/provision";
 import {
-  burnedAmountLeafHistory,
   confidentialBurn,
   confidentialBurnTarget,
   discloseBurnedAmount,
@@ -136,7 +135,7 @@ describe("solana confidential-token consume vertical", () => {
       });
 
       const target = await confidentialBurnTarget(mint, wallet.signer.address);
-      const burnedHandle = await currentHandle(context, target.burnedAmountValue);
+      const burnedHandle = await currentHandle(context, target.burnedAmountValue, new TextEncoder().encode("burned_amount___________________"));
       await stack.waitForSnsCommit(hex(burnedHandle));
 
       // Seal through the token wrapper (it signs the Host CPI as the encrypted value account
@@ -148,8 +147,7 @@ describe("solana confidential-token consume vertical", () => {
       const inclusionProof = await livePublicLeafProof(
         context,
         target.burnedAmountValue,
-        [...burnedAmountLeafHistory(burnedHandle, wallet.signer.address), { kind: "markedPublic", handle: burnedHandle }],
-        1n,
+        burnedHandle,
       );
 
       const { cleartext, certificate } = await certifiedPublicDecrypt(config, {

@@ -1,8 +1,8 @@
 //! Delegation freshness.
 //!
 //! A delegated entry needs a live delegation record `delegator → signer`. Two records can carry
-//! one: the row for the encrypted value account's own authority, and the delegator's wildcard row —
-//! the same derivation with the reserved sentinel in place of an encrypted value account
+//! one: the row for the encrypted state's own authority, and the delegator's wildcard row —
+//! the same derivation with the reserved sentinel in place of an encrypted state
 //! authority, which is how a delegator grants across every authority of theirs at once.
 //! Either row being live authorizes the entry, which is the rule the EVM ACL applies to its own
 //! wildcard delegation.
@@ -27,15 +27,15 @@
 //! still exists in the on-chain layout — decoding walks past it — but no check reads it and no
 //! signature commits to it.
 //!
-//! The authority comes from the validated encrypted value account. That is
+//! The authority comes from the validated encrypted state. That is
 //! what makes the delegated branch safe against an attacker naming an authority they do hold a
 //! delegation for: they cannot name it at all.
 
 use super::snapshot::{HostSnapshot, SnapshotError};
 use crate::core::solana_acl::{SolanaPubkeyBytes, decode_user_decryption_delegation_witness};
 
-/// The sentinel a wildcard row carries in place of an encrypted value account authority.
-/// Reserved by the host program, which is why no real encrypted value account authority can
+/// The sentinel a wildcard row carries in place of an encrypted state authority.
+/// Reserved by the host program, which is why no real encrypted state authority can
 /// collide with it.
 pub use crate::core::solana_acl::WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY;
 
@@ -79,7 +79,7 @@ pub fn wildcard_delegation_address(
 /// wildcard one, and only this module sees which row it read.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum AuthorizedRow {
-    /// The row for the encrypted value account's own authority.
+    /// The row for the encrypted state's own authority.
     Exact,
     /// The delegator's wildcard row.
     Wildcard,
@@ -160,7 +160,7 @@ fn check_row(
 
     let Some(account) = snapshot.account(&account_key)? else {
         // Includes the case of a delegation granted for another app: that record lives at another
-        // address, and the address derived from this encrypted value account's app is simply empty.
+        // address, and the address derived from this encrypted state's app is simply empty.
         return Ok(RowOutcome::NotLive(DelegationFailure::Absent {
             account_key,
         }));
@@ -299,7 +299,7 @@ pub enum DelegationFailure {
     /// send a delegator to fix a row that was not the one standing in the way.
     #[error("no live delegation: authority-specific row: {exact}; wildcard row: {wildcard}")]
     NoLiveGrant {
-        /// Why the row for the encrypted value account's authority did not authorize.
+        /// Why the row for the encrypted state's authority did not authorize.
         exact: Box<DelegationFailure>,
         /// Why the delegator's wildcard row did not authorize.
         wildcard: Box<DelegationFailure>,

@@ -120,6 +120,36 @@ impl ExecutionState<'_, '_, '_> {
         operand: &FheExecuteOperand,
     ) -> Result<ResolvedOperand> {
         match operand {
+            FheExecuteOperand::StateSlot {
+                handle_index,
+                state_index,
+                key_index,
+            } => {
+                let handle = self.dictionary_bytes(*handle_index)?;
+                let key = self.dictionary_bytes(*key_index)?;
+                assert_handle_for_chain(handle, self.chain_id)?;
+                require!(
+                    self.table.state((*state_index).into())?.get(&key) == Some(handle),
+                    ZamaHostError::PreviousStateMismatch
+                );
+                Ok(ResolvedOperand::encrypted(handle))
+            }
+            FheExecuteOperand::TransientResult {
+                handle_index,
+                scratch_index,
+                consumer_state_index,
+            } => {
+                let handle = self.dictionary_bytes(*handle_index)?;
+                assert_handle_for_chain(handle, self.chain_id)?;
+                let consumer = self.table.account((*consumer_state_index).into())?.key();
+                require!(
+                    self.table
+                        .scratch((*scratch_index).into())?
+                        .allows(handle, consumer),
+                    ZamaHostError::TransientAccountInvalid
+                );
+                Ok(ResolvedOperand::encrypted(handle))
+            }
             FheExecuteOperand::StoredValue {
                 handle_index,
                 encrypted_value_index,

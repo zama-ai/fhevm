@@ -3,7 +3,6 @@ import type { Address, Instruction, TransactionSigner } from '@solana/kit';
 import { getDispatchInstructionAsync } from './internal/generated/confidentialBatcher/instructions/dispatch.js';
 
 import {
-  burnedAmountValueAddress,
   findBatchAuthorityPda,
   pendingBurnAddress,
   tokenAccountAddress,
@@ -67,7 +66,6 @@ export async function buildDispatchBatchInstruction(parameters: SolanaVaultDispa
     batchJoinTokenAccount,
     batchBalanceValue: await balanceValueAddress(joinConfidentialMint, batchJoinTokenAccount),
     totalSupplyValue: await totalSupplyValueAddress(joinConfidentialMint, totalSupplyAuthority),
-    batchBurnedAmountValue: await burnedAmountValueAddress(joinConfidentialMint, batchJoinTokenAccount),
     pendingBurn: await pendingBurnAddress(joinConfidentialMint, batchJoinTokenAccount),
     zamaEventAuthority: await zamaEventAuthorityAddress(),
     hostConfig: parameters.hostConfig,

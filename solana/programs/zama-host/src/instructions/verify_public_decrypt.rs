@@ -45,7 +45,7 @@
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::program::set_return_data;
 
-use super::common::{assert_no_remaining_accounts, read_canonical_encrypted_value};
+use super::common::assert_no_remaining_accounts;
 use crate::{eip712, errors::ZamaHostError, state::*};
 
 /// Anchor-native mirror of `zama_solana_acl::MmrProof` for use as an instruction argument. The
@@ -97,7 +97,7 @@ pub struct VerifyPublicDecrypt<'info> {
     pub kms_context: Account<'info, KmsContext>,
     /// The encrypted value account whose peaks the inclusion proof is checked against.
     /// CHECK: layout, ownership, and canonical PDA are validated in the handler via `read_canonical_encrypted_value`.
-    pub encrypted_value: UncheckedAccount<'info>,
+    pub encrypted_state: UncheckedAccount<'info>,
 }
 
 /// Verifies a KMS public-decrypt certificate against the context the cert names (any live context)
@@ -163,11 +163,15 @@ pub fn verify_public_decrypt(
 
     // Exact-handle public-decrypt proof against the encrypted value account's current peaks (no roll-forward): a
     // handle sealed public stays provable after later updates move the peaks.
-    let info = ctx.accounts.encrypted_value.to_account_info();
-    let value = read_canonical_encrypted_value(&info)?;
-    zama_solana_acl::authorize_public(
+    let info = ctx.accounts.encrypted_state.to_account_info();
+    require_keys_eq!(*info.owner, crate::ID, ZamaHostError::PublicDecryptProofInvalid);
+    let state = zama_solana_acl::decode_encrypted_state(&info.try_borrow_data()?)
+        .map_err(|_| error!(ZamaHostError::PublicDecryptProofInvalid))?;
+    let (expected, bump) = encrypted_state_address(Pubkey::new_from_array(state.program), Pubkey::new_from_array(state.authority), state.scope);
+    require!(info.key() == expected && state.bump == bump, ZamaHostError::PublicDecryptProofInvalid);
+    zama_solana_acl::authorize_state_public(
         info.key().to_bytes(),
-        &value.to_shared(),
+        &state,
         handle,
         &proof.into(),
     )

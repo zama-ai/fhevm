@@ -1805,8 +1805,8 @@ mod tests {
         use ring::signature::{Ed25519KeyPair, KeyPair};
         use solana_pubkey::Pubkey;
         use zama_solana_acl::{
-            encrypted_value_discriminator, encrypted_value_seeds,
-            historical_access_leaf_commitment, mmr_leaf_node, EncryptedValue, HostConfigRecord,
+            encrypted_state_discriminator, historical_access_leaf_commitment, mmr_leaf_node,
+            EncryptedSlot, EncryptedState, HostConfigRecord, ENCRYPTED_STATE_SEED,
         };
         use zama_solana_permit::{
             build_envelope, Identity, KmsRouting, PermitFields, PermitWireFields, TRANSPORT_KEY_LEN,
@@ -1870,21 +1870,20 @@ mod tests {
             .as_ref()
             .to_vec();
 
-        // The encrypted value account that authorizes the victim's direct entry: owned by the
+        // The encrypted state that authorizes the victim's direct entry: owned by the
         // program, at the address its own fields derive, with one allow leaf sealed for the victim
         // on this handle.
         let (account_key, bump) = Pubkey::find_program_address(
-            &encrypted_value_seeds(&APP_PROGRAM, &AUTHORITY, &SCOPE, &LABEL),
+            &[ENCRYPTED_STATE_SEED, &APP_PROGRAM, &AUTHORITY, &SCOPE],
             &Pubkey::new_from_array(PROGRAM_ID),
         );
         let account_key = account_key.to_bytes();
         let leaf = historical_access_leaf_commitment(account_key, 0, handle, victim_pubkey);
-        let encrypted_value = EncryptedValue {
+        let encrypted_state = EncryptedState {
             program: APP_PROGRAM,
-            encrypted_value_account_authority: AUTHORITY,
+            authority: AUTHORITY,
             scope: SCOPE,
-            label: LABEL,
-            current_handle: handle,
+            slots: vec![EncryptedSlot { key: LABEL, handle }],
             leaf_count: 1,
             peaks: vec![mmr_leaf_node(&leaf)],
             bump,
@@ -1895,12 +1894,12 @@ mod tests {
             handles: vec![SolanaHandleEntryWire {
                 handle: handle.to_vec(),
                 allowed_key: victim_pubkey.to_vec(),
-                encrypted_value_account: account_key.to_vec(),
+                encrypted_state: account_key.to_vec(),
             }],
         };
-        let mut account_data = encrypted_value_discriminator().to_vec();
+        let mut account_data = encrypted_state_discriminator().to_vec();
         account_data.extend_from_slice(
-            &borsh::to_vec(&encrypted_value).expect("the encrypted value account serializes"),
+            &borsh::to_vec(&encrypted_state).expect("the encrypted state serializes"),
         );
 
         // A mock Solana RPC serving the one authorizing read: the deployment's config singleton
@@ -1955,7 +1954,7 @@ mod tests {
         // of the account, whose proof is the empty sibling path.
         // Mocktail compares bytes; converting through Value would reorder the typed fields.
         let proof_request_body = serde_json::to_string(&leaf_proof_request_body(&[LeafQuery {
-            encrypted_value_account: account_key,
+            encrypted_state: account_key,
             handle,
             kind: LeafKind::Allowed { key: victim_pubkey },
         }]))
@@ -2152,7 +2151,7 @@ mod tests {
                 assert!(error
                     .source
                     .to_string()
-                    .contains("requires the version-3 extraData"));
+                    .contains("requires the version-4 extraData"));
             }
             other => panic!("expected Solana public-decrypt rejection, got {other:?}"),
         }

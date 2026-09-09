@@ -3,8 +3,8 @@
 //! Authorization itself lives in [`super::solana`]; this module holds what several of its rules
 //! and the public-decrypt path share — the pubkey and handle aliases, the delegation witness
 //! decoder, and the PDA derivations of the two singleton-shaped records the pipeline reads (the
-//! host config and a delegation row). The encrypted value account's address is derived from its
-//! own fields in [`super::solana::encrypted_value_account`].
+//! host config and a delegation row). The encrypted state's address is derived from its
+//! own fields in [`super::solana::encrypted_state`].
 
 use sha2::{Digest, Sha256};
 use solana_pubkey::Pubkey;

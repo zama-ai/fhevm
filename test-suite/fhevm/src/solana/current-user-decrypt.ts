@@ -1,3 +1,5 @@
+import type { Bytes32Hex } from "@sdk-src/core/types/primitives.js";
+import type { SolanaDecryptTrust } from "@sdk-src/solana/index.js";
 import { PreflightError } from "../errors";
 
 export const SOLANA_CURRENT_USER_DECRYPT_PROFILE = "solana-current-user-decrypt";
@@ -9,20 +11,14 @@ type Environment = Readonly<Record<string, string | undefined>>;
 type CurrentUserDecryptSdkInput = {
   chainId: bigint;
   relayerUrl: string;
-  verifyingProgramId: string;
+  verifyingProgramId: Bytes32Hex;
   apiKey: string;
   secretKey: Uint8Array;
-  trust: {
-    kmsSigners: readonly { partyId: number; address: string }[];
-    kmsContextId: string;
-    kmsEpochId: string;
-    fheParameter: string;
-    gatewayEip712Domain: { name: string; version: string; chainId: bigint; verifyingContract: string };
-  };
+  trust: SolanaDecryptTrust;
   request: {
     handle: Uint8Array;
     /** The `EncryptedValue` account the handle lives in; the Connector reads it and proves the leaf. */
-    encryptedValueAccount: Uint8Array;
+    encryptedState: Uint8Array;
     durationSeconds: bigint;
     /** The delegator's pubkey on a delegated entry; absent on a direct one. */
     allowedKey?: Uint8Array | undefined;
@@ -30,7 +26,7 @@ type CurrentUserDecryptSdkInput = {
 };
 type CurrentUserDecryptSdkCall = (
   input: CurrentUserDecryptSdkInput,
-) => Promise<readonly { value: bigint | number | boolean | string }[]>;
+) => Promise<readonly { value: unknown }[]>;
 
 export type CurrentUserDecryptDependencies = {
   userDecrypt?: CurrentUserDecryptSdkCall;
@@ -60,25 +56,25 @@ const bytes32 = (environment: Environment, name: string): Uint8Array => {
   return value;
 };
 
-const bytes32Hex = (value: string, name: string): string => {
+const bytes32Hex = (value: string, name: string): Bytes32Hex => {
   if (!/^0x[0-9a-f]{64}$/i.test(value)) {
     throw new PreflightError(`${name} must be a 0x-prefixed 32-byte hex value`);
   }
-  return value;
+  return value as Bytes32Hex;
 };
 
-const evmAddress = (value: string, name: string): string => {
+const evmAddress = (value: string, name: string): `0x${string}` => {
   if (!/^0x[0-9a-f]{40}$/i.test(value)) {
     throw new PreflightError(`${name} must be a 0x-prefixed 20-byte hex address`);
   }
-  return value;
+  return value as `0x${string}`;
 };
 
 // The source-file SDK dependency exports types from generated `_types`, which is absent in clean
 // CLI checkouts. Keep this structural seam narrow; the real vertical checks the public SDK call.
 const runPublicSdkUserDecrypt: CurrentUserDecryptSdkCall = async (input) => {
   const solanaModule = "@fhevm/sdk/solana";
-  const solana = await import(solanaModule);
+  const solana = await import(solanaModule) as typeof import("@sdk-src/solana/index.js");
   const chain = solana.defineFhevmSolanaChain({
     id: input.chainId,
     fhevm: { relayerUrl: input.relayerUrl, verifyingProgramId: input.verifyingProgramId },
@@ -93,7 +89,7 @@ const runPublicSdkUserDecrypt: CurrentUserDecryptSdkCall = async (input) => {
     entries: [
       {
         handle: input.request.handle,
-        encryptedValueAccount: input.request.encryptedValueAccount,
+        encryptedState: input.request.encryptedState,
         ...(input.request.allowedKey !== undefined ? { allowedKey: input.request.allowedKey } : {}),
       },
     ],
@@ -146,7 +142,7 @@ export const runSolanaCurrentUserDecrypt = async (
     },
     request: {
       handle: bytes(handle, "UD_HANDLE"),
-      encryptedValueAccount: bytes32(environment, "UD_ENCRYPTED_VALUE_ACCOUNT"),
+      encryptedState: bytes32(environment, "UD_ENCRYPTED_STATE"),
       durationSeconds: BigInt(environment.UD_DURATION_SECONDS ?? "3600"),
       // Optional: the delegated form. The signer stays UD_SECRET_KEY (the delegate); the allowed
       // key names whose allow on the handle is asked under.
@@ -159,7 +155,11 @@ export const runSolanaCurrentUserDecrypt = async (
     throw new Error(`user-decrypt returned ${clearValues.length} clear values; expected exactly 1`);
   }
 
-  const value = BigInt(clearValues[0].value);
+  const decrypted = clearValues[0]!.value;
+  if (typeof decrypted !== "bigint" && typeof decrypted !== "number" && typeof decrypted !== "boolean" && typeof decrypted !== "string") {
+    throw new Error("user-decrypt returned a non-scalar cleartext");
+  }
+  const value = BigInt(decrypted);
   if (value !== expected) {
     throw new Error(`user-decrypt cleartext ${value} != expected ${expected}`);
   }

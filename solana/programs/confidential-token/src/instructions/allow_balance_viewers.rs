@@ -28,8 +28,8 @@ pub struct AllowBalanceViewers<'info> {
     )]
     pub token_account: Box<Account<'info, ConfidentialTokenAccount>>,
     /// Stable balance encrypted value account; read for the current handle and replaced.
-    #[account(mut, address = token_account.balance_encrypted_value)]
-    pub balance_value: Box<Account<'info, zama_host::EncryptedValue>>,
+    #[account(mut, address = encrypted_state_address(mint.key(), token_account.key()).0)]
+    pub balance_value: Box<Account<'info, zama_host::EncryptedState>>,
     pub host_config: Box<Account<'info, zama_host::HostConfig>>,
     /// CHECK: Anchor event CPI authority for the Zama host program.
     pub zama_event_authority: UncheckedAccount<'info>,
@@ -83,7 +83,7 @@ pub fn allow_balance_viewers<'info>(
         token_account.key(),
         encrypted_balance_label(),
     )?;
-    let old_balance_handle = balance_value.current_handle;
+    let old_balance_handle = fhe::state_handle(&balance_value, encrypted_balance_label())?;
     let new_balance_handle = rewrite_allowing(
         fhe::ExecuteContext {
             payer: &ctx.accounts.payer,
@@ -136,18 +136,17 @@ pub fn make_token_account_handle_public<'info>(
     let token_account = ctx.accounts.token_account.key();
     let label = match kind {
         DisclosedValueKind::Balance => encrypted_balance_label(),
-        DisclosedValueKind::TransferredAmount => encrypted_transferred_amount_label(),
         DisclosedValueKind::BurnedAmount => encrypted_burned_amount_label(),
         DisclosedValueKind::TotalSupply => {
             return err!(ConfidentialTokenError::DisclosedValueBindingMismatch);
         }
     };
-    let value = fhe::read_encrypted_value(&ctx.accounts.encrypted_value.to_account_info())?;
+    let value = fhe::read_state(&ctx.accounts.encrypted_value.to_account_info())?;
     assert_token_value(&value, mint, token_account, label)
         .map_err(|_| error!(ConfidentialTokenError::DisclosedValueBindingMismatch))?;
     require_keys_eq!(
         ctx.accounts.encrypted_value.key(),
-        encrypted_value_address(mint, token_account, label).0,
+        encrypted_state_address(mint, token_account).0,
         ConfidentialTokenError::DisclosedValueBindingMismatch
     );
     let deny_scope_record =
@@ -161,19 +160,21 @@ pub fn make_token_account_handle_public<'info>(
         owner.as_ref(),
         bump.as_ref(),
     ];
-    cpi::make_handle_public(
+    cpi::make_state_handle_public(
         CpiContext::new_with_signer(
             ctx.accounts.zama_program.key(),
-            cpi::accounts::MakeEncryptedValueHandlePublic {
+            cpi::accounts::MakeStateHandlePublic {
                 payer: ctx.accounts.payer.to_account_info(),
                 authority: ctx.accounts.token_account.to_account_info(),
-                encrypted_value: ctx.accounts.encrypted_value.to_account_info(),
+                encrypted_state: ctx.accounts.encrypted_value.to_account_info(),
                 host_config: ctx.accounts.host_config.to_account_info(),
                 deny_scope_record,
                 system_program: ctx.accounts.system_program.to_account_info(),
             },
             &[seeds],
         ),
+        label,
         handle,
+        value.leaf_count,
     )
 }

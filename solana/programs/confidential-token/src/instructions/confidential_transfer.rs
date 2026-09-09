@@ -27,17 +27,12 @@ pub struct ConfidentialTransfer<'info> {
     // A self-transfer is a supported no-op, so from_account and to_account may be equal.
     #[account(mut, dup)]
     pub to_account: Box<Account<'info, ConfidentialTokenAccount>>,
-    /// Sender's stable balance `EncryptedValue` encrypted value account; read for the current
-    /// handle and replaced in place by this execution's CPI.
-    #[account(mut, address = from_account.balance_encrypted_value)]
-    pub from_balance_value: Box<Account<'info, zama_host::EncryptedValue>>,
-    /// Recipient's stable balance `EncryptedValue` encrypted value account.
-    #[account(mut, dup, address = to_account.balance_encrypted_value)]
-    pub to_balance_value: Box<Account<'info, zama_host::EncryptedValue>>,
-    /// CHECK: stable `transferred_amount` encrypted value account for `from_account`; created on
-    /// the sender's first transfer, replaced thereafter.
-    #[account(mut, address = encrypted_value_address(mint.key(), from_account.key(), encrypted_transferred_amount_label()).0)]
-    pub transferred_amount_value: UncheckedAccount<'info>,
+    /// Sender state: the host reads and updates its balance slot.
+    #[account(mut, address = encrypted_state_address(mint.key(), from_account.key()).0)]
+    pub from_balance_value: Box<Account<'info, zama_host::EncryptedState>>,
+    /// Recipient state: the host reads and updates its balance slot.
+    #[account(mut, dup, address = encrypted_state_address(mint.key(), to_account.key()).0)]
+    pub to_balance_value: Box<Account<'info, zama_host::EncryptedState>>,
     /// CHECK: Anchor event CPI authority for the Zama host program.
     pub zama_event_authority: UncheckedAccount<'info>,
     /// ZamaHost program used for FHE operations.
@@ -54,12 +49,12 @@ pub struct ConfidentialTransfer<'info> {
     /// CHECK: forwarded verbatim into the ZamaHost `fhe_execute` CPI, which validates it. The HCU
     /// trust witness — present + valid bypasses the cap; absent means untrusted (metered).
     pub hcu_trusted_app_record: Option<UncheckedAccount<'info>>,
-    /// CHECK: the recipient program's receipt value (see [`TransferReceipt`]); created on its
-    /// first write, accumulated thereafter. The host checks its canonical address.
+    /// CHECK: canonical consumer state, authenticated by its authority and the host.
+    pub result_state: Option<UncheckedAccount<'info>>,
+    /// CHECK: host-owned scratch belonging to result_state.
     #[account(mut)]
-    pub receipt_value: Option<UncheckedAccount<'info>>,
-    /// The recipient program's PDA controlling the receipt, signing through `invoke_signed`.
-    pub receipt_authority: Option<Signer<'info>>,
+    pub result_scratch: Option<UncheckedAccount<'info>>,
+    pub result_authority: Option<Signer<'info>>,
 }
 
 impl<'info> ConfidentialTransfer<'info> {
@@ -75,7 +70,6 @@ impl<'info> ConfidentialTransfer<'info> {
             to_account: &self.to_account,
             from_balance_value: self.from_balance_value.to_account_info(),
             to_balance_value: self.to_balance_value.to_account_info(),
-            transferred_amount_value: self.transferred_amount_value.to_account_info(),
             zama_event_authority: &self.zama_event_authority,
             zama_program: &self.zama_program,
             host_config: &self.host_config,
@@ -92,17 +86,16 @@ impl<'info> ConfidentialTransfer<'info> {
             underlying_mint: self.underlying_mint.to_account_info(),
             from_ata: self.from_ata.to_account_info(),
             to_ata: self.to_ata.to_account_info(),
-            receipt: None,
+            result_grant: None,
         }
     }
 }
 
-/// Transfers an encrypted amount by updating the sender and recipient balance handles, and
-/// writes the recipient program's receipt when one is asked for.
+/// Updates both balances and returns the transferred handle, optionally granting its use
+/// to the caller through scratch.
 pub fn confidential_transfer<'info>(
     ctx: Context<'info, ConfidentialTransfer<'info>>,
     amount_attestation: zama_host::CoprocessorInputAttestation,
-    receipt: Option<TransferReceipt>,
 ) -> Result<()> {
     require_keys_eq!(
         ctx.accounts.from_account.owner,
@@ -110,21 +103,20 @@ pub fn confidential_transfer<'info>(
         ConfidentialTokenError::OwnerMismatch
     );
     let mut accounts = ctx.accounts.as_transfer_accounts(ctx.remaining_accounts);
-    accounts.receipt = ReceiptAccounts::bind(
-        receipt,
-        ctx.accounts.receipt_value.as_ref(),
-        ctx.accounts.receipt_authority.as_ref(),
+    accounts.result_grant = ResultGrantAccounts::bind(
+        ctx.accounts.result_state.as_ref(),
+        ctx.accounts.result_scratch.as_ref(),
+        ctx.accounts.result_authority.as_ref(),
     )?;
     let outcome = execute_transfer(accounts, TransferAmountSource::Attested(amount_attestation))?;
     if let Some(outcome) = outcome {
         emit_transfer_events(&ctx, &outcome)?;
+        anchor_lang::solana_program::program::set_return_data(&outcome.transferred_handle);
     }
     Ok(())
 }
 
-/// The three lifecycle events of a transfer. Kept out of the handler's stack frame: with the receipt
-/// arguments the handler sits at the SBF 4 KiB stack limit, and the event CPIs each stage an
-/// instruction on the stack.
+/// Keep event CPI instruction allocations outside the handler's bounded SBF stack frame.
 #[inline(never)]
 fn emit_transfer_events<'info>(
     ctx: &Context<'info, ConfidentialTransfer<'info>>,
@@ -167,13 +159,8 @@ fn emit_transfer_events<'info>(
     Ok(())
 }
 
-/// Accounts for a confidential transfer that spends an existing on-chain `EncryptedValue` as the
-/// amount, instead of a freshly attested client-side encryption.
-///
-/// Identical to [`ConfidentialTransfer`] except the 190-byte attestation argument is gone and one
-/// account is added: `amount_value`, the encrypted amount to spend. It is read-only — the persistent
-/// operand the execution reads — and is never replaced or consumed; only the two balance encrypted value accounts
-/// change through the same `ge -> sub -> select` debit and `add` credit.
+/// Accounts for a transfer whose amount comes from a state slot or scratch grant.
+/// The host verifies the input permission; the token verifies the sender can spend the balance.
 #[derive(Accounts)]
 #[event_cpi]
 pub struct ConfidentialTransferFromValue<'info> {
@@ -198,23 +185,17 @@ pub struct ConfidentialTransferFromValue<'info> {
     // A self-transfer is a supported no-op, so from_account and to_account may be equal.
     #[account(mut, dup)]
     pub to_account: Box<Account<'info, ConfidentialTokenAccount>>,
-    /// Sender's stable balance `EncryptedValue` encrypted value account; read for the current
-    /// handle and replaced in place by this execution's CPI.
-    #[account(mut, address = from_account.balance_encrypted_value)]
-    pub from_balance_value: Box<Account<'info, zama_host::EncryptedValue>>,
-    /// Recipient's stable balance `EncryptedValue` encrypted value account.
-    #[account(mut, dup, address = to_account.balance_encrypted_value)]
-    pub to_balance_value: Box<Account<'info, zama_host::EncryptedValue>>,
-    /// CHECK: stable `transferred_amount` encrypted value account for `from_account`; created on
-    /// the sender's first transfer, replaced thereafter.
-    #[account(mut, address = encrypted_value_address(mint.key(), from_account.key(), encrypted_transferred_amount_label()).0)]
-    pub transferred_amount_value: UncheckedAccount<'info>,
-    /// The existing encrypted amount to spend: a computed `euint64` handle. Read-only persistent
-    /// operand — never replaced, never consumed. Its address is the canonical PDA of its own
-    /// `(program, authority, scope, label)` fields, so an encrypted value account from any app may
-    /// be passed here when that app's value authority is the signing `owner` (a program PDA
-    /// authorizing through `invoke_signed`), or when it is one of the sender's own token values.
-    pub amount_value: Box<Account<'info, zama_host::EncryptedValue>>,
+    /// Sender state: the host reads and updates its balance slot.
+    #[account(mut, address = encrypted_state_address(mint.key(), from_account.key()).0)]
+    pub from_balance_value: Box<Account<'info, zama_host::EncryptedState>>,
+    /// Recipient state: the host reads and updates its balance slot.
+    #[account(mut, dup, address = encrypted_state_address(mint.key(), to_account.key()).0)]
+    pub to_balance_value: Box<Account<'info, zama_host::EncryptedState>>,
+    /// CHECK: state containing a durable amount, when amount_source is Slot.
+    pub amount_state: Option<UncheckedAccount<'info>>,
+    pub amount_authority: Option<Signer<'info>>,
+    /// CHECK: host validates an exact handle grant to the sender token state.
+    pub amount_scratch: Option<UncheckedAccount<'info>>,
     /// CHECK: Anchor event CPI authority for the Zama host program.
     pub zama_event_authority: UncheckedAccount<'info>,
     /// ZamaHost program used for FHE operations.
@@ -246,7 +227,6 @@ impl<'info> ConfidentialTransferFromValue<'info> {
             to_account: &self.to_account,
             from_balance_value: self.from_balance_value.to_account_info(),
             to_balance_value: self.to_balance_value.to_account_info(),
-            transferred_amount_value: self.transferred_amount_value.to_account_info(),
             zama_event_authority: &self.zama_event_authority,
             zama_program: &self.zama_program,
             host_config: &self.host_config,
@@ -263,34 +243,40 @@ impl<'info> ConfidentialTransferFromValue<'info> {
             underlying_mint: self.underlying_mint.to_account_info(),
             from_ata: self.from_ata.to_account_info(),
             to_ata: self.to_ata.to_account_info(),
-            receipt: None,
+            result_grant: None,
         }
     }
 }
 
-/// Transfers an encrypted amount taken from an existing on-chain `EncryptedValue`, updating the
-/// sender and recipient balance handles. The amount value is spent read-only.
+/// Transfers an amount from a state slot or scratch grant and returns the transferred handle.
 pub fn confidential_transfer_from_value<'info>(
     ctx: Context<'info, ConfidentialTransferFromValue<'info>>,
+    amount_source: TransferInput,
 ) -> Result<()> {
     require_keys_eq!(
         ctx.accounts.from_account.owner,
         ctx.accounts.owner.key(),
         ConfidentialTokenError::OwnerMismatch
     );
-    let amount_value = &ctx.accounts.amount_value;
-    assert_amount_value_spendable(
-        amount_value,
-        ctx.accounts.owner.key(),
-        ctx.accounts.from_account.key(),
-    )?;
-    let amount_value_info = amount_value.to_account_info();
-    let outcome = execute_transfer(
-        ctx.accounts.as_transfer_accounts(ctx.remaining_accounts),
-        TransferAmountSource::ExistingValue {
-            amount_value: amount_value_info,
-        },
-    )?;
+    let source = match amount_source {
+        TransferInput::Slot { key } => {
+            require!(ctx.accounts.amount_scratch.is_none(), ConfidentialTokenError::AmountAclMismatch);
+            let info = ctx.accounts.amount_state.as_ref()
+                .ok_or_else(|| error!(ConfidentialTokenError::AmountAclMismatch))?.to_account_info();
+            let state = fhe::read_state(&info)?;
+            let authority = ctx.accounts.amount_authority.as_ref().map(|a| a.to_account_info());
+            let spender = authority.as_ref().map(|a| a.key()).unwrap_or(ctx.accounts.owner.key());
+            assert_amount_value_spendable(&state, key, spender, ctx.accounts.from_account.key())?;
+            TransferAmountSource::StateSlot { amount_value: info, authority, key }
+        }
+        TransferInput::Grant { handle } => {
+            require!(ctx.accounts.amount_state.is_none() && ctx.accounts.amount_authority.is_none(), ConfidentialTokenError::AmountAclMismatch);
+            let scratch = ctx.accounts.amount_scratch.as_ref()
+                .ok_or_else(|| error!(ConfidentialTokenError::AmountAclMismatch))?.to_account_info();
+            TransferAmountSource::Grant { scratch, handle }
+        }
+    };
+    let outcome = execute_transfer(ctx.accounts.as_transfer_accounts(ctx.remaining_accounts), source)?;
     if let Some(outcome) = outcome {
         emit_cpi!(ConfidentialTransferEvent {
             version: APP_EVENT_VERSION,
@@ -324,6 +310,14 @@ pub fn confidential_transfer_from_value<'info>(
             new_encrypted_value: outcome.to_encrypted_value,
             reason: BalanceHandleUpdateReason::TransferCredit,
         });
+        anchor_lang::solana_program::program::set_return_data(&outcome.transferred_handle);
     }
     Ok(())
+}
+
+/// A durable slot or an exact transient grant addressed to the sender token state.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone)]
+pub enum TransferInput {
+    Slot { key: [u8; 32] },
+    Grant { handle: [u8; 32] },
 }

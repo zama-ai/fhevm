@@ -45,7 +45,7 @@ pub(crate) fn verify_public_decrypt(request: VerifyPublicDecrypt<'_, '_>) -> Res
             cpi::accounts::VerifyPublicDecrypt {
                 host_config: request.host_config.to_account_info(),
                 kms_context: request.kms_context,
-                encrypted_value: request.encrypted_value,
+                encrypted_state: request.encrypted_value,
             },
         ),
         expected_handle,

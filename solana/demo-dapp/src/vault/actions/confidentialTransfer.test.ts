@@ -251,8 +251,8 @@ describe('confidentialTransfer attestation binding', () => {
     // The HCU pair sits after the system program: owner, payer, mint, underlying mint, two freeze
     // ATAs, two token accounts, two balance values, transferred value, zama event authority, zama
     // program, host config, system program — then the meter and the trust witness.
-    expect(message.instructions[1]!.accounts?.[15]).toEqual({ address: key(8), role: AccountRole.WRITABLE });
-    expect(message.instructions[1]!.accounts?.[16]).toEqual({ address: key(9), role: AccountRole.READONLY });
+    expect(message.instructions[1]!.accounts?.[14]).toEqual({ address: key(8), role: AccountRole.WRITABLE });
+    expect(message.instructions[1]!.accounts?.[15]).toEqual({ address: key(9), role: AccountRole.READONLY });
   });
 
   it('rejects deny records on the program self-transfer no-op path', async () => {

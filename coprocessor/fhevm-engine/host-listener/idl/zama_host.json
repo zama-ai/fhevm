@@ -11,6 +11,91 @@
   ],
   "instructions": [
     {
+      "name": "close_scratch",
+      "discriminator": [
+        29,
+        191,
+        137,
+        78,
+        203,
+        150,
+        199,
+        39
+      ],
+      "accounts": [
+        {
+          "name": "instructions",
+          "address": "Sysvar1nstructions1111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "create_encrypted_state",
+      "discriminator": [
+        129,
+        248,
+        83,
+        252,
+        187,
+        184,
+        173,
+        144
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "encrypted_state",
+          "writable": true
+        },
+        {
+          "name": "host_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  115,
+                  116,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "CreateEncryptedStateArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "define_kms_context",
       "docs": [
         "Defines a new KMS context (mirror of `ProtocolConfig.defineNewKmsContext`)."
@@ -570,10 +655,6 @@
     },
     {
       "name": "make_handle_public",
-      "docs": [
-        "Seals the value's current handle as publicly decryptable. Every other allow happens",
-        "inline on the `fhe_execute` write that produces the handle."
-      ],
       "discriminator": [
         66,
         199,
@@ -648,6 +729,133 @@
           }
         }
       ]
+    },
+    {
+      "name": "make_state_handle_public",
+      "docs": [
+        "Seals the value's current handle as publicly decryptable. Every other allow happens",
+        "inline on the `fhe_execute` write that produces the handle."
+      ],
+      "discriminator": [
+        62,
+        63,
+        177,
+        193,
+        7,
+        10,
+        49,
+        65
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "encrypted_state",
+          "writable": true
+        },
+        {
+          "name": "host_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  115,
+                  116,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "deny_scope_record",
+          "optional": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "key",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "handle",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "previous_leaf_count",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "open_scratch",
+      "discriminator": [
+        194,
+        244,
+        203,
+        123,
+        137,
+        109,
+        255,
+        238
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "encrypted_state"
+        },
+        {
+          "name": "scratch",
+          "writable": true
+        },
+        {
+          "name": "instructions",
+          "address": "Sysvar1nstructions1111111111111111111111111"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
     },
     {
       "name": "revoke_delegation_for_user_decryption",
@@ -1532,7 +1740,7 @@
           ]
         },
         {
-          "name": "encrypted_value",
+          "name": "encrypted_state",
           "docs": [
             "The encrypted value account whose peaks the inclusion proof is checked against."
           ]
@@ -1584,6 +1792,19 @@
     }
   ],
   "accounts": [
+    {
+      "name": "EncryptedState",
+      "discriminator": [
+        40,
+        50,
+        14,
+        85,
+        213,
+        243,
+        124,
+        173
+      ]
+    },
     {
       "name": "HostConfig",
       "discriminator": [
@@ -2125,6 +2346,26 @@
       "code": 6078,
       "name": "HcuLimitZeroReserved",
       "msg": "0 is not a valid HCU limit; use u64::MAX for unlimited"
+    },
+    {
+      "code": 6079,
+      "name": "TransientAccountInvalid",
+      "msg": "invalid transient workspace account"
+    },
+    {
+      "code": 6080,
+      "name": "TransientCloseMissing",
+      "msg": "matching final top-level scratch close is required"
+    },
+    {
+      "code": 6081,
+      "name": "TransientCapacityExceeded",
+      "msg": "transient workspace grant capacity exceeded"
+    },
+    {
+      "code": 6082,
+      "name": "EncryptedStateCapacityExceeded",
+      "msg": "encrypted state slot capacity exceeded"
     }
   ],
   "types": [
@@ -2226,6 +2467,33 @@
       }
     },
     {
+      "name": "CreateEncryptedStateArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "program",
+            "type": "pubkey"
+          },
+          {
+            "name": "scope",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "authority_seeds",
+            "type": {
+              "vec": "bytes"
+            }
+          }
+        ]
+      }
+    },
+    {
       "name": "DenyScopeUpdatedEvent",
       "docs": [
         "Emitted when an application deny-list record is updated."
@@ -2279,6 +2547,86 @@
               "Slot in which this update was applied."
             ],
             "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "EncryptedSlot",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "key",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "handle",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "EncryptedState",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "program",
+            "type": "pubkey"
+          },
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "scope",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "slots",
+            "type": {
+              "vec": {
+                "defined": {
+                  "name": "EncryptedSlot"
+                }
+              }
+            }
+          },
+          {
+            "name": "leaf_count",
+            "type": "u64"
+          },
+          {
+            "name": "peaks",
+            "type": {
+              "vec": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            }
+          },
+          {
+            "name": "bump",
+            "type": "u8"
           }
         ]
       }
@@ -2480,6 +2828,40 @@
                 }
               }
             ]
+          },
+          {
+            "name": "StateSlot",
+            "fields": [
+              {
+                "name": "handle_index",
+                "type": "u8"
+              },
+              {
+                "name": "state_index",
+                "type": "u8"
+              },
+              {
+                "name": "key_index",
+                "type": "u8"
+              }
+            ]
+          },
+          {
+            "name": "TransientResult",
+            "fields": [
+              {
+                "name": "handle_index",
+                "type": "u8"
+              },
+              {
+                "name": "scratch_index",
+                "type": "u8"
+              },
+              {
+                "name": "consumer_state_index",
+                "type": "u8"
+              }
+            ]
           }
         ]
       }
@@ -2591,6 +2973,50 @@
                   "reconstruct that leaf without reading the account (DD-036)."
                 ],
                 "type": "bool"
+              }
+            ]
+          },
+          {
+            "name": "State",
+            "fields": [
+              {
+                "name": "state_index",
+                "type": "u8"
+              },
+              {
+                "name": "previous_leaf_count",
+                "docs": [
+                  "History position before this output, so indexers can detect missing writes."
+                ],
+                "type": "u64"
+              },
+              {
+                "name": "slot",
+                "type": {
+                  "option": {
+                    "defined": {
+                      "name": "SlotWrite"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "allow_indexes",
+                "type": "bytes"
+              },
+              {
+                "name": "make_public",
+                "type": "bool"
+              },
+              {
+                "name": "grants",
+                "type": {
+                  "vec": {
+                    "defined": {
+                      "name": "ResultGrant"
+                    }
+                  }
+                }
               }
             ]
           }
@@ -3835,6 +4261,44 @@
               "PDA bump for `PDA(\"rand-nonce\")`."
             ],
             "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ResultGrant",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "scratch_index",
+            "type": "u8"
+          },
+          {
+            "name": "initiating_state_index",
+            "type": "u8"
+          },
+          {
+            "name": "consumer_state_index",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "SlotWrite",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "key_index",
+            "type": "u8"
+          },
+          {
+            "name": "previous_handle_index",
+            "type": {
+              "option": "u8"
+            }
           }
         ]
       }

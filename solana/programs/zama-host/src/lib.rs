@@ -58,6 +58,21 @@ declare_id!("6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu");
 pub mod zama_host {
     use super::*;
 
+    pub fn open_scratch(ctx: Context<OpenScratch>) -> Result<()> {
+        instructions::open_scratch(ctx)
+    }
+
+    pub fn close_scratch(ctx: Context<CloseScratch>) -> Result<()> {
+        instructions::close_scratch(ctx)
+    }
+
+    pub fn create_encrypted_state(
+        ctx: Context<CreateEncryptedState>,
+        args: CreateEncryptedStateArgs,
+    ) -> Result<()> {
+        instructions::create_encrypted_state(ctx, args)
+    }
+
     pub fn initialize_host_config(
         ctx: Context<InitializeHostConfig>,
         args: InitializeHostConfigArgs,
@@ -193,6 +208,15 @@ pub mod zama_host {
 
     /// Seals the value's current handle as publicly decryptable. Every other allow happens
     /// inline on the `fhe_execute` write that produces the handle.
+    pub fn make_state_handle_public(
+        ctx: Context<MakeStateHandlePublic>,
+        key: [u8; 32],
+        handle: [u8; 32],
+        previous_leaf_count: u64,
+    ) -> Result<()> {
+        instructions::make_state_handle_public(ctx, key, handle, previous_leaf_count)
+    }
+
     pub fn make_handle_public(
         ctx: Context<MakeEncryptedValueHandlePublic>,
         handle: [u8; 32],

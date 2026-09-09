@@ -309,9 +309,14 @@ pub struct Output(pub(crate) OutputKind);
 pub(crate) enum OutputKind {
     Transient,
     Persistent(PersistentOutput),
+    State(crate::StateOutput),
 }
 
 impl Output {
+    pub fn state(output: crate::StateOutput) -> Self {
+        Self(OutputKind::State(output))
+    }
+
     pub fn transient() -> Self {
         Self(OutputKind::Transient)
     }

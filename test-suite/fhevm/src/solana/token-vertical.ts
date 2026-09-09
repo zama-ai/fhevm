@@ -9,7 +9,7 @@
 
 import { getAddressEncoder, getProgramDerivedAddress, type Address, type TransactionSigner } from "@solana/kit";
 
-import type { MmrProof, SolanaEncryptedValueAccountEvent } from "@sdk-src/solana/proof.js";
+import type { MmrProof } from "@sdk-src/solana/proof.js";
 
 import { associatedTokenAddress, SPL_TOKEN_PROGRAM_ADDRESS } from "./spl";
 import {
@@ -65,19 +65,6 @@ export const confidentialBurnTarget = async (mint: Address, owner: Address): Pro
 };
 
 /**
- * The leaves `confidential_burn` seals on the burned amount, in order: one allow of the owner on the
- * burned handle, then the public leaf. Byte-identical to what the host appends for the token's
- * `PersistentOutput::new_public(..., [owner])`.
- */
-export const burnedAmountLeafHistory = (
-  burnedHandle: Uint8Array,
-  owner: Address,
-): readonly SolanaEncryptedValueAccountEvent[] => [
-  { kind: "allowed", handle: burnedHandle, key: new Uint8Array(getAddressEncoder().encode(owner)) },
-  { kind: "markedPublic", handle: burnedHandle },
-];
-
-/**
  * Burns an attested external amount from `owner`'s confidential balance (`confidential_burn`).
  * The attestation binds (user = owner, contract = the confidential-token program) — the token
  * requires exactly that contract identity for transfer/burn amounts. Five FHE steps in one
@@ -108,7 +95,6 @@ export const confidentialBurn = async (
     tokenAccount: target.tokenAccount,
     balanceValue: await vault.balanceValueAddress(params.mint, target.tokenAccount),
     totalSupplyValue: await vault.totalSupplyValueAddress(params.mint, totalSupplyAuthority),
-    burnedAmountValue: target.burnedAmountValue,
     pendingBurn: target.pendingBurn,
     zamaEventAuthority: await eventAuthority(ZAMA_HOST_PROGRAM_ADDRESS),
     hostConfig: await hostConfigAddress(),
@@ -215,7 +201,6 @@ export const discloseBurnedAmount = async (
     {
       mint: params.mint,
       tokenAccount: target.tokenAccount,
-      kind: vault.DisclosedValueKind.BurnedAmount,
       encryptedValue: target.burnedAmountValue,
       kmsContext: await kmsContextAddress(),
       hostConfig: await hostConfigAddress(),

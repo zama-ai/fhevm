@@ -16,14 +16,13 @@ export { buildQuitInstruction, type SolanaVaultQuitParameters } from './quit.js'
 export { buildDispatchBatchInstruction, type SolanaVaultDispatchParameters } from './dispatchBatch.js';
 export { buildCancelDispatchInstruction, type SolanaVaultCancelDispatchParameters } from './cancelDispatch.js';
 export { settleBatch, type SolanaVaultSettleOptions } from './settleBatch.js';
-export { buildClaimInstruction, type SolanaVaultClaimParameters } from './claim.js';
+export { buildClaimInstructions, type SolanaVaultClaimParameters } from './claim.js';
 export {
   buildHarvestInstruction,
   getVaultMetrics,
   type SolanaVaultHarvestParameters,
   type SolanaVaultMetrics,
 } from './harvest.js';
-export { decryptPosition } from './decryptPosition.js';
 export { openBatch, type SolanaVaultOpenBatchParameters, type SolanaVaultOpenBatchResult } from './openBatch.js';
 
 // One-time provisioning builders the demo seeder drives (fhevm-internal#1760). Kept on the vault
@@ -79,7 +78,7 @@ export {
   getBatcher,
   getBatchByIndex,
   getCurrentBatch,
-  getEncryptedValueState,
+  getEncryptedState,
   getJoinRecord,
   type BatcherState,
   type BatchState,
@@ -92,8 +91,7 @@ export {
   tokenAccountAddress,
   pendingBurnAddress,
   burnedAmountValueAddress,
-  pendingJoinValueAddress,
-  claimAmountValueAddress,
+  joinStateAddress,
 } from './internal/batcherPdas.js';
 export { balanceValueAddress, totalSupplyValueAddress, TOKEN_PROGRAM_ADDRESS } from './internal/tokenValueAccount.js';
 export {

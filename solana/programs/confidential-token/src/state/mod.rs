@@ -20,7 +20,7 @@ pub use crate::constants::*;
 
 use anchor_lang::prelude::*;
 use anchor_spl::associated_token::get_associated_token_address_with_program_id;
-use zama_fhe::{AppScope, EncryptedValueId, EncryptedValueLabel};
+use zama_fhe::{AppScope, StateId};
 
 /// The application one confidential mint is to the host: this program, scoped to the mint. HCU
 /// metering, the deny list and every encrypted value's address key on it.
@@ -71,17 +71,15 @@ pub fn pending_burn_address(mint: Pubkey, token_account: Pubkey) -> (Pubkey, u8)
 }
 
 /// The id of a token value: the mint's application, the controlling PDA, and the field label.
-pub fn token_value_id(mint: Pubkey, authority: Pubkey, label: [u8; 32]) -> EncryptedValueId {
-    EncryptedValueId::new(token_app(mint), authority, EncryptedValueLabel::new(label))
+pub fn token_value_id(mint: Pubkey, authority: Pubkey, key: [u8; 32]) -> (StateId, [u8; 32]) {
+    (StateId::new(crate::ID, authority, mint.to_bytes()), key)
 }
 
-/// The id of a token account's balance, controlled by the token account PDA.
-pub fn balance_encrypted_value_id(mint: Pubkey, token_account: Pubkey) -> EncryptedValueId {
+pub fn balance_encrypted_value_id(mint: Pubkey, token_account: Pubkey) -> (StateId, [u8; 32]) {
     token_value_id(mint, token_account, encrypted_balance_label())
 }
 
-/// The id of a mint's encrypted total supply, controlled by the `total-supply` PDA.
-pub fn total_supply_encrypted_value_id(mint: Pubkey) -> EncryptedValueId {
+pub fn total_supply_encrypted_value_id(mint: Pubkey) -> (StateId, [u8; 32]) {
     token_value_id(
         mint,
         total_supply_authority_address(mint).0,
@@ -89,10 +87,8 @@ pub fn total_supply_encrypted_value_id(mint: Pubkey) -> EncryptedValueId {
     )
 }
 
-/// Returns the canonical `EncryptedValue` PDA for a token value, delegating key derivation to
-/// ZamaHost so app and host agree exactly.
-pub fn encrypted_value_address(mint: Pubkey, authority: Pubkey, label: [u8; 32]) -> (Pubkey, u8) {
-    token_value_id(mint, authority, label).address_with_bump()
+pub fn encrypted_state_address(mint: Pubkey, authority: Pubkey) -> (Pubkey, u8) {
+    zama_host::encrypted_state_address(crate::ID, authority, mint.to_bytes())
 }
 
 /// Fixed encrypted value label for confidential balances.

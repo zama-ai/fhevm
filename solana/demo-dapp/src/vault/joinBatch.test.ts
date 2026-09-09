@@ -17,6 +17,7 @@ import {
   generateKeyPairSigner,
   getBase64Encoder,
   getCompiledTransactionMessageDecoder,
+  getProgramDerivedAddress,
   getTransactionDecoder,
   type Address,
   type TransactionPartialSigner,
@@ -25,8 +26,14 @@ import {
 import { base58 } from '@scure/base';
 
 import { joinBatch, type SolanaVaultJoinParameters } from './joinBatch.js';
+import { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from './internal/generated/confidentialBatcher/programAddress.js';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from './internal/generated/confidentialToken/programAddress.js';
 import { getJoinInstructionDataDecoder } from './internal/generated/confidentialBatcher/instructions/join.js';
+import {
+  CLOSE_SCRATCH_DISCRIMINATOR,
+  getCloseScratchInstructionDataDecoder,
+} from '@sdk-src/solana/internal/generated/zamaHost/instructions/closeScratch.js';
+import { ZAMA_HOST_PROGRAM_ADDRESS } from '@sdk-src/solana/internal/generated/zamaHost/programAddress.js';
 import { TOKEN_PROGRAM_ADDRESS } from './internal/tokenValueAccount.js';
 
 const CHAIN_ID = (1n << 63n) | 12345n;
@@ -39,6 +46,10 @@ function key(fill: number): Address {
 function signer(a: Address): TransactionSigner {
   return { address: a, signTransactions: async () => [] } as unknown as TransactionSigner;
 }
+
+const utf8 = (value: string): Uint8Array => new TextEncoder().encode(value);
+const pda = async (programAddress: Address, seeds: Uint8Array[]): Promise<Address> =>
+  (await getProgramDerivedAddress({ programAddress, seeds }))[0];
 
 function proof(
   owner: Address,
@@ -141,7 +152,33 @@ describe('joinBatch (attested arm)', () => {
     const transaction = getTransactionDecoder().decode(getBase64Encoder().encode(wire));
     const compiled = getCompiledTransactionMessageDecoder().decode(transaction.messageBytes);
     const message = decompileTransactionMessage(compiled);
-    // [0] = SetComputeUnitLimit, [1] = join.
+    // The host validates this transaction shape from the instructions sysvar: close_scratch must
+    // be final and must name the exact scratch opened by join plus its recorded payer refund.
+    expect(message.instructions).toHaveLength(3);
+    const close = message.instructions[2]!;
+    const joinRecord = await pda(CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS, [
+      utf8('join-record'),
+      base58.decode(params.batch),
+      base58.decode(params.user.address),
+    ]);
+    const joinState = await pda(ZAMA_HOST_PROGRAM_ADDRESS, [
+      utf8('encrypted-state'),
+      base58.decode(CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS),
+      base58.decode(joinRecord),
+      base58.decode(params.batch),
+    ]);
+    const scratch = await pda(ZAMA_HOST_PROGRAM_ADDRESS, [utf8('transient'), base58.decode(joinState)]);
+    expect(close.programAddress).toBe(ZAMA_HOST_PROGRAM_ADDRESS);
+    expect(Array.from(close.accounts ?? [], (account) => account.address)).toEqual([
+      address('Sysvar1nstructions1111111111111111111111111'),
+      scratch,
+      params.payer.address,
+    ]);
+    expect(Array.from(getCloseScratchInstructionDataDecoder().decode(close.data!).discriminator)).toEqual(
+      Array.from(CLOSE_SCRATCH_DISCRIMINATOR),
+    );
+
+    // [0] = SetComputeUnitLimit, [1] = join, [2] = close_scratch.
     const data = getJoinInstructionDataDecoder().decode(message.instructions[1]!.data!);
     expect(data.handleIndex).toBe(0);
     expect(data.contractChainId).toBe(CHAIN_ID);
