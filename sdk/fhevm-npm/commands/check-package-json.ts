@@ -9,7 +9,7 @@ export const checkPackageJson: CheckCommand = (context) => {
     packages = loadPackages(context.workspaceRoot, context.manifest);
   }
   return {
-    command: 'check-package-json',
+    command: 'check package-json',
     checkedPackageKeys: packages.map((pkg) => (pkg.key === '.' ? './package.json' : `${pkg.key}/package.json`)),
     checkedItemLabel: 'package.json file(s)',
     violations: validatePackageJson(packages, context.manifest.packageJson),

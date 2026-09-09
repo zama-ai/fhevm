@@ -81,7 +81,7 @@ export const checkJsonSchemas: CheckCommand = (context) => {
   }
 
   return {
-    command: 'check-json-schemas',
+    command: 'check json-schemas',
     checkedPackageKeys: [
       ...validators.keys().map((path) => displayPath(context.workspaceRoot, path)),
       ...targets.map((path) => displayPath(context.workspaceRoot, path)),

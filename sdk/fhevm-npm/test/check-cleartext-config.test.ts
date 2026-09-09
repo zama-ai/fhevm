@@ -38,7 +38,7 @@ test('reports missing faces, then a clean report once generated, then the one dr
   const workspace = makeWorkspace();
   try {
     const missing = checkCleartextConfig({ workspaceRoot: workspace, manifest: UNUSED_MANIFEST });
-    assert.equal(missing.command, 'check-cleartext-config');
+    assert.equal(missing.command, 'check cleartext-config');
     assert.equal(missing.checkedPackageKeys.length, 3);
     assert.deepEqual(
       missing.violations.map((violation) => violation.rule),

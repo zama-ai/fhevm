@@ -48,7 +48,7 @@ export const checkGenerations: CheckCommand = (context) => {
     ),
   ];
   return {
-    command: 'check-generations',
+    command: 'check generations',
     checkedPackageKeys: packages.map((pkg) => pkg.key),
     checkedItemLabel: 'package(s)',
     verboseSuccesses:

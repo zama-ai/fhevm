@@ -4,7 +4,7 @@ import type { CheckCommand } from '../base/command.ts';
 export const checkFoundry: CheckCommand = (context) => {
   const inspection = inspectFoundry(context.workspaceRoot, context.manifest);
   return {
-    command: 'check-foundry',
+    command: 'check foundry',
     checkedPackageKeys: ['.'],
     checkedItemLabel: 'Foundry installation(s)',
     verboseSuccesses:

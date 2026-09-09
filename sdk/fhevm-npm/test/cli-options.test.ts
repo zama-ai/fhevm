@@ -4,13 +4,13 @@ import test from 'node:test';
 import { parseCliOptions } from '../cli-options.ts';
 
 test('global verbosity counts -v through -vvvv and caps additional flags', () => {
-  assert.equal(parseCliOptions(['check-names']).verbosity, 0);
-  assert.equal(parseCliOptions(['check-names', '-v']).verbosity, 1);
-  assert.equal(parseCliOptions(['-vv', 'check-names']).verbosity, 2);
-  assert.equal(parseCliOptions(['check-names', '-vvv']).verbosity, 3);
-  assert.equal(parseCliOptions(['-vvvv', 'check-names']).verbosity, 4);
-  assert.equal(parseCliOptions(['-vvvvv', 'check-names']).verbosity, 4);
-  assert.equal(parseCliOptions(['check-names', '--verbose', '--verbose']).verbosity, 2);
+  assert.equal(parseCliOptions(['check', 'names']).verbosity, 0);
+  assert.equal(parseCliOptions(['check', 'names', '-v']).verbosity, 1);
+  assert.equal(parseCliOptions(['-vv', 'check', 'names']).verbosity, 2);
+  assert.equal(parseCliOptions(['check', 'names', '-vvv']).verbosity, 3);
+  assert.equal(parseCliOptions(['-vvvv', 'check', 'names']).verbosity, 4);
+  assert.equal(parseCliOptions(['-vvvvv', 'check', 'names']).verbosity, 4);
+  assert.equal(parseCliOptions(['check', 'names', '--verbose', '--verbose']).verbosity, 2);
 });
 
 test("'version list' is the first grouped command and keeps list-versions' flags", () => {

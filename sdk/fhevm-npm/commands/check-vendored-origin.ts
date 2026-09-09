@@ -16,7 +16,7 @@ export function checkVendoredOrigin(context: CommandContext, packageSelector?: s
   );
 
   return {
-    command: 'check-vendored-origin',
+    command: 'check vendored-origin',
     checkedPackageKeys: results.map((result) => result.packageKey),
     checkedItemLabel: 'package(s)',
     verboseSuccesses: results.flatMap((result) => result.successes),

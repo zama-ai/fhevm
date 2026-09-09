@@ -55,7 +55,7 @@ manifest-generation  = $(patsubst ./%,%,$(shell node -p "require('./npm-manifest
 DIR_CLEARTEXT_V_PREV := $(call manifest-generation,previous)
 DIR_CLEARTEXT_V_CUR  := $(call manifest-generation,current)
 ifneq ($(words $(DIR_CLEARTEXT_V_PREV) $(DIR_CLEARTEXT_V_CUR)),2)
-$(error cannot read npm-manifest.json#generations.host-contracts-cleartext (previous/current); run ./fhevm-npm-cli check-generations)
+$(error cannot read npm-manifest.json#generations.host-contracts-cleartext (previous/current); run ./fhevm-npm-cli check generations)
 endif
 DIR_HH_V2            := hardhat/v2
 DIR_HH_V3            := hardhat/v3
@@ -490,23 +490,23 @@ check-npm-cli: check-npm-cli-post-build # Internal: run every fhevm-npm check in
 # eslint configs, and neither is package metadata. A stamp whose inputs are incomplete SKIPS a check that
 # should have run. Re-running a cheap check costs seconds; missing one costs a broken release.
 check-npm-cli-pre-build: # Internal: run fhevm-npm checks that do not require generated output
-	$(call run-fhevm-npm,check-json-schemas)
-	$(call run-fhevm-npm,check-manifest-coverage)
+	$(call run-fhevm-npm,check json-schemas)
+	$(call run-fhevm-npm,check manifest-coverage)
 	$(call run-fhevm-npm,version check)
-	$(call run-fhevm-npm,check-names)
-	$(call run-fhevm-npm,check-workspaces)
-	$(call run-fhevm-npm,check-ownership)
-	$(call run-fhevm-npm,check-package-json)
-	$(call run-fhevm-npm,check-published-files)
-	$(call run-fhevm-npm,check-dependencies)
-	$(call run-fhevm-npm,check-pinned-dependencies)
-	$(call run-fhevm-npm,check-generations)
-	$(call run-fhevm-npm,check-scripts)
-	$(call run-fhevm-npm,check-tsc-mode)
-	$(call run-fhevm-npm,check-lockfiles)
-	$(call run-fhevm-npm,check-foundry)
-	$(call run-fhevm-npm,check-lint-policy)
-	$(call run-fhevm-npm,check-cleartext-config)
+	$(call run-fhevm-npm,check names)
+	$(call run-fhevm-npm,check workspaces)
+	$(call run-fhevm-npm,check ownership)
+	$(call run-fhevm-npm,check package-json)
+	$(call run-fhevm-npm,check published-files)
+	$(call run-fhevm-npm,check dependencies)
+	$(call run-fhevm-npm,check pinned-dependencies)
+	$(call run-fhevm-npm,check generations)
+	$(call run-fhevm-npm,check scripts)
+	$(call run-fhevm-npm,check tsc-mode)
+	$(call run-fhevm-npm,check lockfiles)
+	$(call run-fhevm-npm,check foundry)
+	$(call run-fhevm-npm,check lint-policy)
+	$(call run-fhevm-npm,check cleartext-config)
 	$(call run-fhevm-npm,sync-vendored --check)
 
 # Not wired into `check-pre` or `ci`: the mirror spec is not implemented yet. Running it today reports 7
@@ -524,8 +524,8 @@ check-mirror: ## Verify the hardhat template still mirrors upstream byte-for-byt
 # `compile` makes them pass on whatever the last build happened to leave and fail on a clean tree; that
 # is how the v3 cluster went unbuilt here while its `_types/index.d.ts` was being checked.
 check-npm-cli-post-build: compile # Internal: check generated paths
-	$(call run-fhevm-npm,check-package-json-paths)
-	$(call run-fhevm-npm,check-tsconfig-paths)
+	$(call run-fhevm-npm,check package-json-paths)
+	$(call run-fhevm-npm,check tsconfig-paths)
 
 ########################################################################################################
 # Post-build checks
@@ -768,17 +768,17 @@ sync-common-vendored: ## Write every vendored destination from its source of tru
 # Read-only: re-renders every face of sdk/cleartext-config.json in memory and fails if a committed one
 # differs. The direct guard for the faces nothing else reads back — scripts/cleartext-config.sh above all.
 check-cleartext-config: ## Does every generated cleartext-config face match sdk/cleartext-config.json
-	$(call run-fhevm-npm,check-cleartext-config)
+	$(call run-fhevm-npm,check cleartext-config)
 
 check-vendored-origin: ## Does each local vendored folder match its declared origin (git commit)
-	$(call run-fhevm-npm,check-vendored-origin)
+	$(call run-fhevm-npm,check vendored-origin)
 
 # The full vendored audit, read-only: copies current (would the copier write anything?) AND
 # legitimate (does each vendored folder match its declared origin?). Green on both is the only state
 # meaning every copy is current and accounted for. The cheaper compare runs first, to fail fast.
 check-vendored: ## Audit vendored content: copies current AND matching their declared origins
 	$(call run-fhevm-npm,sync-vendored --check)
-	$(call run-fhevm-npm,check-vendored-origin)
+	$(call run-fhevm-npm,check vendored-origin)
 
 # Both need the network and an authenticated `gh` (the protocol registry is private), so neither is in
 # `check-pre` or `ci` — run them when touching chain addresses, or from a CI job that holds a token.
@@ -786,4 +786,4 @@ sync-fhevm-chains: ## Write fhevm-chains.config.json from the protocol registry'
 	$(call run-fhevm-npm,sync-fhevm-chains --latest)
 
 check-fhevm-chains: ## Is fhevm-chains.config.json current with the protocol registry's main head
-	$(call run-fhevm-npm,check-fhevm-chains-origin)
+	$(call run-fhevm-npm,check fhevm-chains-origin)

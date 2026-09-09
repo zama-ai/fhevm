@@ -11,7 +11,7 @@ export const checkCleartextConfig: CheckCommand = (context) => {
   const faceKey = (path: string): string => `./${relative(context.workspaceRoot, path)}`;
 
   return {
-    command: 'check-cleartext-config',
+    command: 'check cleartext-config',
     checkedPackageKeys: statuses.map((output) => faceKey(output.path)),
     checkedItemLabel: 'generated face(s)',
     violations: statuses

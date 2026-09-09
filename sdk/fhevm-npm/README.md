@@ -5,26 +5,26 @@ TypeScript configuration and tests, and imports no code from the surrounding SDK
 
 ```sh
 npm install
-node ./fhevm-npm.ts check-names
-node ./fhevm-npm.ts check-dependencies
-node ./fhevm-npm.ts check-pinned-dependencies
-node ./fhevm-npm.ts check-package-json
-node ./fhevm-npm.ts check-package-json-paths
-node ./fhevm-npm.ts check-workspaces
-node ./fhevm-npm.ts check-ownership
-node ./fhevm-npm.ts check-scripts
-node ./fhevm-npm.ts check-lockfiles
-node ./fhevm-npm.ts check-foundry
-node ./fhevm-npm.ts check-json-schemas
-node ./fhevm-npm.ts check-manifest-coverage
-node ./fhevm-npm.ts check-published-files
-node ./fhevm-npm.ts check-tsconfig-paths
-node ./fhevm-npm.ts check-tsc-mode
-node ./fhevm-npm.ts check-commit-scope
-node ./fhevm-npm.ts check-cleartext-config
-node ./fhevm-npm.ts check-generations
+node ./fhevm-npm.ts check names
+node ./fhevm-npm.ts check dependencies
+node ./fhevm-npm.ts check pinned-dependencies
+node ./fhevm-npm.ts check package-json
+node ./fhevm-npm.ts check package-json-paths
+node ./fhevm-npm.ts check workspaces
+node ./fhevm-npm.ts check ownership
+node ./fhevm-npm.ts check scripts
+node ./fhevm-npm.ts check lockfiles
+node ./fhevm-npm.ts check foundry
+node ./fhevm-npm.ts check json-schemas
+node ./fhevm-npm.ts check manifest-coverage
+node ./fhevm-npm.ts check published-files
+node ./fhevm-npm.ts check tsconfig-paths
+node ./fhevm-npm.ts check tsc-mode
+node ./fhevm-npm.ts check commit-scope
+node ./fhevm-npm.ts check cleartext-config
+node ./fhevm-npm.ts check generations
 node ./fhevm-npm.ts sync-fhevm-chains --latest
-node ./fhevm-npm.ts check-fhevm-chains-origin
+node ./fhevm-npm.ts check fhevm-chains-origin
 node ./fhevm-npm.ts generate-chain-constants
 node ./fhevm-npm.ts generate-chain-constants --check
 node ./fhevm-npm.ts version check

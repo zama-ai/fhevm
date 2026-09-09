@@ -4,7 +4,7 @@ import type { CheckCommand } from '../base/command.ts';
 export const checkCommitScope: CheckCommand = (context) => {
   const inspection = inspectCommitScope(context.workspaceRoot);
   return {
-    command: 'check-commit-scope',
+    command: 'check commit-scope',
     checkedPackageKeys: inspection.checkedFileKeys,
     checkedItemLabel: 'changed file(s)',
     violations: inspection.violations,

@@ -50,7 +50,7 @@ export function patchHardhatTemplateV2Manifest(
   manifest.dependencies = sortKeys(dependencies);
   manifest.devDependencies = sortKeys(devDependencies);
   const scripts = dependencyMap(manifest, 'scripts');
-  scripts['check:mirror'] = 'node ../../../fhevm-npm/fhevm-npm.ts check-mirror ./hardhat/v2/fhevm-hardhat-template';
+  scripts['check:mirror'] = 'node ../../../fhevm-npm/fhevm-npm.ts check mirror ./hardhat/v2/fhevm-hardhat-template';
   manifest.scripts = sortKeys(scripts);
   return manifest;
 }

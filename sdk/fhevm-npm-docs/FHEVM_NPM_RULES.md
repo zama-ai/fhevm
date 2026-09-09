@@ -58,7 +58,7 @@ describe runtime compatibility.
 **1.2.1 Every private development package named `…-dev` sets `"version": "0.0.0"`.** This applies to manifest kinds
 `dev`, `shared-helper`, and `internal-consumer`. Nothing resolves these packages by a published release range — a
 workspace member links them by name — so any other number is a claim nobody verifies and everybody has to keep in
-step with a release that does not exist. `fhevm-npm check-names` enforces this fixed version together with the private
+step with a release that does not exist. `fhevm-npm check names` enforces this fixed version together with the private
 development naming boundary.
 
 ## 2. Topology
@@ -626,7 +626,7 @@ directory-local metadata; installable behavior belongs in a real package.
 
 **5.1.1 Private development packages are named `…-dev` and set `"private": true`.** The field is what npm enforces;
 the suffix is what makes a leak visible at the import site, and machine-checkable without packing anything. Their
-fixed `"version": "0.0.0"` is specified by 1.2.1; `fhevm-npm check-names` checks all three properties.
+fixed `"version": "0.0.0"` is specified by 1.2.1; `fhevm-npm check names` checks all three properties.
 
 **5.1.2 Nothing under `pkg/` imports a `…-dev` package.** That import ships a specifier no consumer can resolve. This
 is the one guarantee a tarball install used to hold alone, and 5.1.1 is what makes it a grep.
@@ -1237,6 +1237,6 @@ ownership metadata to the kinds that can carry it.
 requires the conventional scripts selected by each entry's capabilities. These checks run only after 7.1.3 proves the
 inventory complete.
 
-> **Implemented.** `fhevm-npm check-manifest-coverage` performs repository-aware discovery, excludes its own autonomous package
+> **Implemented.** `fhevm-npm check manifest-coverage` performs repository-aware discovery, excludes its own autonomous package
 > tree and the paths listed by `inventory.exclude`, adds explicit standalone roots, compares the result with the
 > manifest and checks realpath containment.

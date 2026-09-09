@@ -160,7 +160,7 @@ export async function renderChainsConfig(
       'Every fhevm host-contract and gateway address, one section per NETWORK GROUP (a gateway',
       'deployment and the host chains it serves), rendered from the registry file each group names in',
       'fhevm-network-groups.config.json. `source.commit` records the registry revision of the',
-      'last sync; `fhevm-npm check-fhevm-chains-origin` always checks against the CURRENT head of the',
+      'last sync; `fhevm-npm check fhevm-chains-origin` always checks against the CURRENT head of the',
       "registry's main and fails when the addresses here have fallen behind it — `fhevm-npm",
       'sync-fhevm-chains --latest` catches up. Host chains are discovered from the registry',
       '([PREFIX_]ACL_HOST), so a new host chain appears on the next sync.',

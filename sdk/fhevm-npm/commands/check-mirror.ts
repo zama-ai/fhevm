@@ -5,7 +5,7 @@ import type { CommandReport } from '../base/diagnostics.ts';
 export function checkMirror(context: CommandContext, packageSelector: string): CommandReport {
   const result = validateMirror(context.workspaceRoot, context.manifest, packageSelector);
   return {
-    command: 'check-mirror',
+    command: 'check mirror',
     checkedPackageKeys: [result.packageKey],
     checkedItemLabel: 'mirror(s)',
     verboseSuccesses:

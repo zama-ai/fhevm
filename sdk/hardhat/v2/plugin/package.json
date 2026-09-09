@@ -11,7 +11,7 @@
     "build": "npm run fmt:check && npm run lint && npm run compile",
     "check": "npm run check:publint && npm run check:vendored-origin",
     "check:publint": "publint --strict ./pkg && attw --pack ./pkg",
-    "check:vendored-origin": "node ../../../fhevm-npm/fhevm-npm.ts check-vendored-origin ./hardhat/v2/plugin",
+    "check:vendored-origin": "node ../../../fhevm-npm/fhevm-npm.ts check vendored-origin ./hardhat/v2/plugin",
     "clean": "rm -rf pkg/_cjs pkg/_types *.tsbuildinfo internal/*.tsbuildinfo test/*.tsbuildinfo pkg/*.tsbuildinfo",
     "compile": "npm run compile:cjs && npm run compile:types",
     "compile:cjs": "tsc --project ./tsconfig.build.cjs.json && printf '{\"type\":\"commonjs\"}' > ./pkg/_cjs/package.json",

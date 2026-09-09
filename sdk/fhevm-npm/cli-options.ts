@@ -5,25 +5,25 @@ import { defaultWorkspaceRoot } from './base/paths.ts';
 import { type Verbosity, increaseVerbosity } from './base/verbosity.ts';
 
 export const commandNames = [
-  'check-names',
-  'check-dependencies',
-  'check-pinned-dependencies',
-  'check-package-json',
-  'check-package-json-paths',
-  'check-workspaces',
-  'check-ownership',
-  'check-scripts',
-  'check-lockfiles',
-  'check-manifest-coverage',
-  'check-published-files',
-  'check-foundry',
-  'check-json-schemas',
-  'check-lint-policy',
-  'check-tsconfig-paths',
-  'check-tsc-mode',
-  'check-commit-scope',
-  'check-cleartext-config',
-  'check-generations',
+  'names',
+  'dependencies',
+  'pinned-dependencies',
+  'package-json',
+  'package-json-paths',
+  'workspaces',
+  'ownership',
+  'scripts',
+  'lockfiles',
+  'manifest-coverage',
+  'published-files',
+  'foundry',
+  'json-schemas',
+  'lint-policy',
+  'tsconfig-paths',
+  'tsc-mode',
+  'commit-scope',
+  'cleartext-config',
+  'generations',
 ] as const;
 export type CommandName = (typeof commandNames)[number];
 
@@ -177,26 +177,31 @@ export function parseCliOptions(argv: readonly string[]): CliOptions {
         readonly ci: boolean;
       }
     | undefined;
-  program
-    .command('check-names')
+  // The validation group: every read-only policy check, one level down so `fhevm-npm check` lists them
+  // instead of the top level carrying nineteen check-* siblings.
+  const check = program
+    .command('check')
+    .description('Validate the workspace against npm-manifest.json and FHEVM_NPM_RULES.md. Read-only.');
+  check
+    .command('names')
     .description('Check package names, privacy, and the required -dev suffix.')
     .action(() => {
-      selected = 'check-names';
+      selected = 'names';
     });
-  program
-    .command('check-dependencies')
+  check
+    .command('dependencies')
     .description('Check source and npm-script dependencies, workspace specs, and dependency-version rules.')
     .action(() => {
-      selected = 'check-dependencies';
+      selected = 'dependencies';
     });
-  program
-    .command('check-pinned-dependencies')
+  check
+    .command('pinned-dependencies')
     .description('Check that every package repeats the manifest-pinned spec for a shared external dependency.')
     .action(() => {
-      selected = 'check-pinned-dependencies';
+      selected = 'pinned-dependencies';
     });
-  program
-    .command('check-package-json')
+  check
+    .command('package-json')
     .description('Check package.json hygiene.')
     .option(
       '--sort',
@@ -204,11 +209,11 @@ export function parseCliOptions(argv: readonly string[]): CliOptions {
       false,
     )
     .action((options: { readonly sort: boolean }) => {
-      selected = 'check-package-json';
+      selected = 'package-json';
       sortPackageJson = options.sort;
     });
-  program
-    .command('check-package-json-paths')
+  check
+    .command('package-json-paths')
     .description('Check that local paths exposed by package.json exist; packages must be built first.')
     .addHelpText(
       'after',
@@ -218,28 +223,28 @@ Prerequisite:
 `,
     )
     .action(() => {
-      selected = 'check-package-json-paths';
+      selected = 'package-json-paths';
     });
-  program
-    .command('check-workspaces')
+  check
+    .command('workspaces')
     .description('Check workspace membership and published-name uniqueness.')
     .action(() => {
-      selected = 'check-workspaces';
+      selected = 'workspaces';
     });
-  program
-    .command('check-generations')
+  check
+    .command('generations')
     .description('Check that every dependency on a generation family targets V(N); only V(N) may depend on V(N-1).')
     .action(() => {
-      selected = 'check-generations';
+      selected = 'generations';
     });
-  program
-    .command('check-ownership')
+  check
+    .command('ownership')
     .description('Check dev-owner and published-payload relationships.')
     .action(() => {
-      selected = 'check-ownership';
+      selected = 'ownership';
     });
-  program
-    .command('check-scripts')
+  check
+    .command('scripts')
     .description('Check conventional package-owned validation scripts.')
     .addHelpText(
       'after',
@@ -270,52 +275,52 @@ Checked scripts:
 `,
     )
     .action(() => {
-      selected = 'check-scripts';
+      selected = 'scripts';
     });
-  program
-    .command('check-lockfiles')
+  check
+    .command('lockfiles')
     .description('Check workspace and isolated-consumer lockfile placement.')
     .action(() => {
-      selected = 'check-lockfiles';
+      selected = 'lockfiles';
     });
-  program
-    .command('check-foundry')
+  check
+    .command('foundry')
     .description('Check the installed forge version against the central manifest pin.')
     .action(() => {
-      selected = 'check-foundry';
+      selected = 'foundry';
     });
-  program
-    .command('check-lint-policy')
+  check
+    .command('lint-policy')
     .description('Check that Forge is the only Solidity linter outside declared mirror-only packages.')
     .action(() => {
-      selected = 'check-lint-policy';
+      selected = 'lint-policy';
     });
-  program
-    .command('check-json-schemas')
+  check
+    .command('json-schemas')
     .description('Validate committed JSON configuration files against the schemas in fhevm-npm/schemas.')
     .action(() => {
-      selected = 'check-json-schemas';
+      selected = 'json-schemas';
     });
-  program
-    .command('check-manifest-coverage')
+  check
+    .command('manifest-coverage')
     .description('Check filesystem discovery, manifest completeness, and path containment.')
     .action(() => {
-      selected = 'check-manifest-coverage';
+      selected = 'manifest-coverage';
     });
-  program
-    .command('check-published-files')
+  check
+    .command('published-files')
     .description('Check that every file in an npm-distributed payload is published or excluded by "files".')
     .action(() => {
-      selected = 'check-published-files';
+      selected = 'published-files';
     });
-  program
-    .command('check-mirror <package>')
+  check
+    .command('mirror <package>')
     .description("Compare one package's tracked mirror files with a fresh upstream clone.")
     .action((packageSelector: string) => {
       mirrorPackageSelector = packageSelector;
     });
-  program
-    .command('check-vendored-origin [package]')
+  check
+    .command('vendored-origin [package]')
     .description(
       'Check that each local vendored folder matches its declared origin (git commit), for one ' +
         'package or for every package that declares vendored content when omitted.',
@@ -324,32 +329,32 @@ Checked scripts:
       vendoredPackageSelector = packageSelector;
       checkAllVendored = packageSelector === undefined;
     });
-  program
-    .command('check-tsconfig-paths')
+  check
+    .command('tsconfig-paths')
     .description('Check that literal paths named by owned tsconfigs exist.')
     .action(() => {
-      selected = 'check-tsconfig-paths';
+      selected = 'tsconfig-paths';
     });
-  program
-    .command('check-commit-scope')
+  check
+    .command('commit-scope')
     .description(
       'Check that every pending git change (staged, unstaged, untracked) is inside the sdk workspace — ' +
         'nothing outside it may be touched by a commit from here.',
     )
     .action(() => {
-      selected = 'check-commit-scope';
+      selected = 'commit-scope';
     });
-  program
-    .command('check-cleartext-config')
+  check
+    .command('cleartext-config')
     .description(
       'Check that every generated face of sdk/cleartext-config.json matches it (read-only twin of ' +
         'generate-cleartext-config --check).',
     )
     .action(() => {
-      selected = 'check-cleartext-config';
+      selected = 'cleartext-config';
     });
-  program
-    .command('check-tsc-mode')
+  check
+    .command('tsc-mode')
     .description("Check that no 'tsc -p' or bare 'tsc' script invocation targets a solution-style tsconfig.")
     .addHelpText(
       'after',
@@ -361,7 +366,7 @@ Why:
 `,
     )
     .action(() => {
-      selected = 'check-tsc-mode';
+      selected = 'tsc-mode';
     });
   program
     .command('generate-exports <manifest>')
@@ -412,8 +417,8 @@ Why:
     .action((options: { readonly latest: boolean; readonly commit?: string }) => {
       syncFhevmChains = { commit: options.commit, latest: options.latest };
     });
-  program
-    .command('check-fhevm-chains-origin')
+  check
+    .command('fhevm-chains-origin')
     .description(
       "Check that fhevm-chains.config.json is current with the head of the protocol registry's main " +
         '(read-only; registry commits touching no fhevm address stay green).',

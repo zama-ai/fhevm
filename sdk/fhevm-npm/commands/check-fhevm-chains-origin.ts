@@ -20,7 +20,7 @@ export async function checkFhevmChainsOrigin(options: {
 }): Promise<CommandReport> {
   const path = chainsConfigPath(options.workspaceRoot);
   const violation = (message: string): CommandReport => ({
-    command: 'check-fhevm-chains-origin',
+    command: 'check fhevm-chains-origin',
     checkedPackageKeys: [`./${CHAINS_CONFIG_FILE}`],
     checkedItemLabel: 'chains config file(s)',
     violations: [{ rule: 'fhevm-chains-origin', packageKey: `./${CHAINS_CONFIG_FILE}`, message }],
@@ -43,7 +43,7 @@ export async function checkFhevmChainsOrigin(options: {
     );
   }
   return {
-    command: 'check-fhevm-chains-origin',
+    command: 'check fhevm-chains-origin',
     checkedPackageKeys: [`./${CHAINS_CONFIG_FILE}`],
     checkedItemLabel: 'chains config file(s)',
     violations: [],

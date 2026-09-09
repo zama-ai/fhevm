@@ -4,7 +4,7 @@ import type { CheckCommand } from '../base/command.ts';
 export const checkTsconfigPaths: CheckCommand = (context) => {
   const inspection = inspectTsconfigPaths(context.workspaceRoot, context.manifest);
   return {
-    command: 'check-tsconfig-paths',
+    command: 'check tsconfig-paths',
     checkedPackageKeys: inspection.checkedConfigKeys,
     checkedItemLabel: 'tsconfig(s)',
     verboseSuccesses: inspection.successfulClaims,

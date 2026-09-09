@@ -5,7 +5,7 @@ import { loadPackages } from '../base/npm.ts';
 export const checkLockfiles: CheckCommand = (context) => {
   const packages = loadPackages(context.workspaceRoot, context.manifest);
   return {
-    command: 'check-lockfiles',
+    command: 'check lockfiles',
     checkedPackageKeys: packages.map((pkg) => pkg.key),
     violations: validateLockfiles(packages),
   };
