@@ -128,7 +128,7 @@ export const bigIntToBytes256 = (value: bigint) => {
 };
 
 export const userDecryptSingleHandle = async (
-  handle: string,
+  handle: string | Uint8Array,
   contractAddress: string,
   instance: any,
   signer: Signer,
