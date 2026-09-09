@@ -85,17 +85,33 @@ scDeploy:
     # kill the keygen ceremony. Matches ../../../charts/contracts/values-kmsgen.yaml, which
     # models keygen/crsgen as two fully separate jobs for the same reason. So: wait here for
     # ActivateKey before moving on to crsgen at all.
+    # queryFilter(event, 0, 'latest') is fine on a fresh Anvil but fatal on a public
+    # testnet: Sepolia is ~11.6M blocks deep and hosted RPCs cap eth_getLogs at a
+    # 10,000-block range (QuickNode answers 413 / -32614). ActivateKey is emitted
+    # AFTER task:triggerKeygen above, so scan forward from just below the current head
+    # in 1000-block windows instead - same span the relayer's own listener uses
+    # (max_blocks_per_query in ../relayer/values-relayer-e2e.yaml). LOOKBACK covers the
+    # ceremony landing between the trigger tx and this poll starting; the cursor then only
+    # ever re-scans newly mined blocks, so the poll stays cheap on both Anvil and Sepolia.
     - |
       echo "Waiting for KMS keygen ceremony to reach on-chain consensus..."
       node -e "
       const { ethers } = require('ethers');
       const ABI = ['event ActivateKey(uint256 keyId, uint256 existingKeyId, string[] kmsNodeStorageUrls, tuple(uint8 keyType, bytes digest)[] keyDigests)'];
-      async function waitForEvent(contract, eventName, timeoutMs) {
+      const WINDOW = Number(process.env.LOG_QUERY_WINDOW || 1000);
+      const LOOKBACK = Number(process.env.LOG_QUERY_LOOKBACK || 5000);
+      async function waitForEvent(provider, contract, eventName, timeoutMs) {
         const deadline = Date.now() + timeoutMs;
+        let cursor = Math.max(0, (await provider.getBlockNumber()) - LOOKBACK);
         while (Date.now() < deadline) {
-          const events = await contract.queryFilter(eventName, 0, 'latest');
-          if (events.length > 0) return events[events.length - 1];
-          console.log('  still waiting for ' + eventName + '...');
+          const latest = await provider.getBlockNumber();
+          while (cursor <= latest) {
+            const to = Math.min(cursor + WINDOW - 1, latest);
+            const events = await contract.queryFilter(eventName, cursor, to);
+            if (events.length > 0) return events[events.length - 1];
+            cursor = to + 1;
+          }
+          console.log('  still waiting for ' + eventName + ' (scanned to block ' + latest + ')...');
           await new Promise((r) => setTimeout(r, 10000));
         }
         throw new Error('Timed out waiting for ' + eventName);
@@ -103,7 +119,7 @@ scDeploy:
       (async () => {
         const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
         const contract = new ethers.Contract(process.env.KMS_GENERATION_CONTRACT_ADDRESS, ABI, provider);
-        const keyEvent = await waitForEvent(contract, 'ActivateKey', 15 * 60 * 1000);
+        const keyEvent = await waitForEvent(provider, contract, 'ActivateKey', 15 * 60 * 1000);
         // KMS_ACTIVE_KEY_ID must be the 64-hex-char zero-padded form (NOT decimal) - the
         // KMS nodes publish key/CRS blobs to S3 under their raw uint256 request ID
         // rendered as hex with no 0x prefix (confirmed by listing the actual bucket:
@@ -141,12 +157,20 @@ scDeploy:
       node -e "
       const { ethers } = require('ethers');
       const ABI = ['event ActivateCrs(uint256 crsId, string[] kmsNodeStorageUrls, bytes crsDigest)'];
-      async function waitForEvent(contract, eventName, timeoutMs) {
+      const WINDOW = Number(process.env.LOG_QUERY_WINDOW || 1000);
+      const LOOKBACK = Number(process.env.LOG_QUERY_LOOKBACK || 5000);
+      async function waitForEvent(provider, contract, eventName, timeoutMs) {
         const deadline = Date.now() + timeoutMs;
+        let cursor = Math.max(0, (await provider.getBlockNumber()) - LOOKBACK);
         while (Date.now() < deadline) {
-          const events = await contract.queryFilter(eventName, 0, 'latest');
-          if (events.length > 0) return events[events.length - 1];
-          console.log('  still waiting for ' + eventName + '...');
+          const latest = await provider.getBlockNumber();
+          while (cursor <= latest) {
+            const to = Math.min(cursor + WINDOW - 1, latest);
+            const events = await contract.queryFilter(eventName, cursor, to);
+            if (events.length > 0) return events[events.length - 1];
+            cursor = to + 1;
+          }
+          console.log('  still waiting for ' + eventName + ' (scanned to block ' + latest + ')...');
           await new Promise((r) => setTimeout(r, 10000));
         }
         throw new Error('Timed out waiting for ' + eventName);
@@ -154,7 +178,7 @@ scDeploy:
       (async () => {
         const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
         const contract = new ethers.Contract(process.env.KMS_GENERATION_CONTRACT_ADDRESS, ABI, provider);
-        const crsEvent = await waitForEvent(contract, 'ActivateCrs', 15 * 60 * 1000);
+        const crsEvent = await waitForEvent(provider, contract, 'ActivateCrs', 15 * 60 * 1000);
         // See the matching comment on keyId above - same hex-padded (not decimal) S3
         // object-key requirement applies here.
         const crsId = crsEvent.args.crsId.toString(16).padStart(64, '0');
