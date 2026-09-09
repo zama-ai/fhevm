@@ -58,10 +58,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-permissions:
-  contents: "read"
-  id-token: "write"
-  packages: "read"
+# Nothing here signs or federates, so no job gets an OIDC token; each job
+# declares the read scopes it needs and nothing else.
+permissions: {}
 
 jobs:
   consensus:
@@ -82,6 +81,9 @@ jobs:
             scenario: three-of-three
           - leg: crash-retry
             scenario: three-of-three
+    permissions:
+      contents: "read" # Required to checkout repository code.
+      packages: "read" # Required by the CLI's `gh` bundle resolution and to pull published images from GHCR.
     env:
       GH_TOKEN: ${{ github.token }}
       # Build repo-owned images from the branch by default; only an explicit
@@ -96,7 +98,7 @@ jobs:
       - name: Skip legs not selected
         if: ${{ inputs.leg != 'all' && inputs.leg != matrix.leg }}
         run: |
-          echo "leg ${{ matrix.leg }} not selected; nothing to do"
+          echo "leg ${LEG} not selected; nothing to do"
           echo "SKIP_LEG=1" >> "$GITHUB_ENV"
 
       - name: Checkout code
@@ -277,8 +279,9 @@ jobs:
   heterogeneous-setup-instance:
     name: consensus/heterogeneous/setup-instance
     runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
-    permissions:
-      contents: "read"
+    # No checkout and no API call on the workflow token: the provisioning
+    # action authenticates with its own SLAB_ACTION_TOKEN.
+    permissions: {}
     outputs:
       runner-name: ${{ steps.start-remote-instance.outputs.label }}
     steps:
@@ -301,8 +304,8 @@ jobs:
     runs-on: ${{ needs.heterogeneous-setup-instance.outputs.runner-name }}
     timeout-minutes: 180
     permissions:
-      contents: "read"
-      packages: "read"
+      contents: "read" # Required to checkout repository code.
+      packages: "read" # Required by the CLI's `gh` bundle resolution and to pull published images from GHCR.
     env:
       GH_TOKEN: ${{ github.token }}
       SCENARIO: three-of-three-heterogeneous-scheduling
@@ -408,8 +411,8 @@ jobs:
     if: ${{ always() && needs.heterogeneous-setup-instance.result == 'success' }}
     needs: [heterogeneous-setup-instance, heterogeneous]
     runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
-    permissions:
-      contents: "read"
+    # As for setup-instance: the teardown action carries its own token.
+    permissions: {}
     steps:
       - name: Stop remote instance
         if: env.SECRETS_AVAILABLE == 'true'
