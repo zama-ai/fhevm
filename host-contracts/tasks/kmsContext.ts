@@ -25,7 +25,7 @@ export async function getProtocolConfigInterface(hre: HardhatRuntimeEnvironment)
 
 // Resolves the ProtocolConfig proxy address from env (or the addresses directory when
 // `useInternalProxyAddress` is set), returning undefined when none is configured.
-function resolveProtocolConfigAddress(useInternalProxyAddress: boolean): string | undefined {
+export function resolveProtocolConfigAddress(useInternalProxyAddress: boolean): string | undefined {
   if (useInternalProxyAddress) {
     loadHostAddresses();
   }

@@ -42,7 +42,7 @@ export const ENVIRONMENTS: Record<string, EnvironmentDef> = {
         chainId: 11155111,
         label: 'sepolia',
         fallbackBlockTimeSeconds: 12,
-        rpcUrlEnv: 'SEPOLIA_ETH_RPC_URL',
+        rpcUrlEnv: 'SEPOLIA_RPC_URL',
         defaultRpcUrl: PUBLIC_SEPOLIA_RPC,
       },
       {
@@ -62,7 +62,7 @@ export const ENVIRONMENTS: Record<string, EnvironmentDef> = {
         chainId: 11155111,
         label: 'sepolia',
         fallbackBlockTimeSeconds: 12,
-        rpcUrlEnv: 'SEPOLIA_ETH_RPC_URL',
+        rpcUrlEnv: 'SEPOLIA_RPC_URL',
         defaultRpcUrl: PUBLIC_SEPOLIA_RPC,
       },
       {
@@ -83,7 +83,7 @@ export const ENVIRONMENTS: Record<string, EnvironmentDef> = {
   // No defaults — production RPCs are private; env vars required.
   mainnet: {
     chains: [
-      { chainId: 1, label: 'ethereum', fallbackBlockTimeSeconds: 12, rpcUrlEnv: 'MAINNET_ETH_RPC_URL' },
+      { chainId: 1, label: 'ethereum', fallbackBlockTimeSeconds: 12, rpcUrlEnv: 'ETHEREUM_MAINNET_RPC_URL' },
       { chainId: 137, label: 'polygon', fallbackBlockTimeSeconds: 2, rpcUrlEnv: 'POLYGON_MAINNET_RPC_URL' },
     ],
     gateway: { label: 'gateway-mainnet', fallbackBlockTimeSeconds: 2, rpcUrlEnv: 'GATEWAY_MAINNET_RPC_URL' },

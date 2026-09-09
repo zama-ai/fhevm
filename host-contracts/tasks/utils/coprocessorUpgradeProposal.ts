@@ -335,7 +335,8 @@ export function printCoprocessorUpgradeProposal(proposal: CoprocessorUpgradeProp
   console.log('');
   console.log('## Aragon proposal action');
   console.log(
-    `  target   : ${target ?? '<unresolved — set PROTOCOL_CONFIG_CONTRACT_ADDRESS or pass --use-internal-proxy-address>'}`,
+    '  target:',
+    target ?? '<unresolved — set PROTOCOL_CONFIG_CONTRACT_ADDRESS or pass --use-internal-proxy-address>',
   );
-  console.log(`  calldata : ${proposal.calldata}`);
+  console.log('  calldata:', proposal.calldata);
 }
