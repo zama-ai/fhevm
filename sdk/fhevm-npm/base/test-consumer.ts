@@ -184,7 +184,7 @@ export function prepareTestConsumer(options: PrepareTestConsumerOptions): void {
     const startedAt = Date.now();
     let succeeded = false;
     try {
-      printConsumerStartBanner(target, destination, testFileLabel, install, serialIndex, planned.length);
+      printConsumerStartBanner(target, destination, testFileLabel, install, serialIndex, planned.length, options.run);
       prepareDestination(destination, options.force, managed);
       copyFixture(target.source.directory, destination);
       writeFileSync(
@@ -249,6 +249,7 @@ export function prepareTestConsumer(options: PrepareTestConsumerOptions): void {
           planned.length,
           succeeded && cleanupSucceeded,
           Date.now() - startedAt,
+          options.run,
         );
       }
     }
@@ -262,9 +263,17 @@ function printConsumerStartBanner(
   install: ConsumerInstallMode,
   serialIndex: number,
   serialTotal: number,
+  run: boolean,
 ): void {
   const separator = '================================================================================';
   const testName = consumerName(target);
+  // Nothing is executed without --run, so the run banner's ceremony would announce a test session that
+  // never happens. An install says so in one line.
+  if (!run) {
+    const position = serialTotal > 1 ? `[${String(serialIndex)}/${String(serialTotal)}] ` : '';
+    console.log(`\n📦 ${position}Installing consumer test ${testName}...`);
+    return;
+  }
   const dependencies = target.linkedDependencies
     .map((dependency) => {
       const origin = dependency.direct ? 'direct' : `transitive via ${dependency.declaredBy.packageJson.name}`;
@@ -274,9 +283,9 @@ function printConsumerStartBanner(
   console.log(`
 🟦${separator}
 🚦 FHEVM TEST CONSUMER START — SERIAL RUN ${String(serialIndex)}/${String(serialTotal)} — ${target.moduleKind.toUpperCase()}
-🧪 TEST: ${testName}
+🧪 PACKAGE NAME: ${testName}
+📋 PACKAGE SOURCE: ${target.source.key}
 📂 RUNNING IN: ${destination}
-📋 CONSUMER SOURCE: ${target.source.directory}
 🔗 LINKED DEPENDENCIES:
 ${dependencies === '' ? '  - none' : dependencies}
 ${testFile === undefined ? '' : `🎯 TEST FILE: ${testFile}\n`}🔒 INSTALL MODE: ${install.mode === 'committed' ? 'COMMITTED LOCK (npm ci)' : `FRESH LOCK (npm install; ${install.reason})`}
@@ -291,15 +300,23 @@ function printConsumerEndBanner(
   serialTotal: number,
   succeeded: boolean,
   elapsedMilliseconds: number,
+  run: boolean,
 ): void {
   const separator = '================================================================================';
   const color = succeeded ? '🟩' : '🟥';
-  const result = succeeded ? '✅ PASSED' : '❌ FAILED';
   const testName = consumerName(target);
+  // The install path already reports the directory and the command to run by hand, and a PASSED verdict
+  // here would describe a test suite that never ran.
+  if (!run) {
+    if (!succeeded) console.log(`❌ Failed to install consumer test ${testName}`);
+    return;
+  }
+  const result = succeeded ? '✅ PASSED' : '❌ FAILED';
   console.log(`
 ${color}${separator}
 🏁 FHEVM TEST CONSUMER END — SERIAL RUN ${String(serialIndex)}/${String(serialTotal)} — ${target.moduleKind.toUpperCase()} — ${result}
-🧪 TEST: ${testName}
+🧪 PACKAGE NAME: ${testName}
+📋 PACKAGE SOURCE: ${target.source.key}
 📂 RAN IN: ${destination}
 ⏱️ ELAPSED: ${(elapsedMilliseconds / 1000).toFixed(1)}s
 ${color}${separator}
