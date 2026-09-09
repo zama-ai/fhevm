@@ -6,10 +6,11 @@ use fhevm_relayer::{
     config::settings::Settings,
     core::{errors::EventProcessingError, job_id::JobId},
     gateway::arbitrum::transaction::{
-        helper::{GatewayTransactionEngine, TransactionType},
+        helper::{GatewayTransactionEngine, ReceiptRecordOutcome, TransactionType},
         TransactionHelper, TxClaimOutcome, TxLifecycleHooks, TxResult,
     },
     metrics,
+    orchestrator::DispatchGate,
 };
 use prometheus::Registry;
 use std::sync::Arc;
@@ -33,7 +34,7 @@ impl TxLifecycleHooks for RecordingHook {
         &self,
         _job_id: &JobId,
         _receipt: &TxResult,
-    ) -> Result<(), EventProcessingError> {
+    ) -> Result<ReceiptRecordOutcome, EventProcessingError> {
         panic!("a rejected transaction must not produce a receipt")
     }
 
@@ -78,6 +79,7 @@ async fn transaction_rpc_nul_is_sanitized_before_failure_hook() {
     let engine = GatewayTransactionEngine::new(
         settings.gateway.blockchain_rpc.clone(),
         settings.gateway.tx_engine.clone(),
+        DispatchGate::open_for_tests(1),
     )
     .await
     .expect("build transaction engine");
