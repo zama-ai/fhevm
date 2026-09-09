@@ -802,11 +802,6 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     }
 
     /// @inheritdoc IProtocolConfig
-    function getMaxKmsSigners() external pure virtual returns (uint256) {
-        return MAX_KMS_SIGNERS;
-    }
-
-    /// @inheritdoc IProtocolConfig
     function getVersion() external pure virtual returns (string memory) {
         return
             string(

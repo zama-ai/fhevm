@@ -223,11 +223,6 @@ describe('GatewayConfig', function () {
       expect(await gatewayConfig.getVersion()).to.equal('GatewayConfig v0.8.0');
     });
 
-    it('Should expose the maximum KMS signer-set size', async function () {
-      // Driven by the one-byte signature-count field of the decryption proof format.
-      expect(await gatewayConfig.getMaxKmsSigners()).to.equal(255);
-    });
-
     it('Should clear a set priority coprocessor slot during the upgrade', async function () {
       const gatewayConfigPhase1 = await deployGatewayConfigPhase1Proxy();
       const proxyAddress = await gatewayConfigPhase1.getAddress();

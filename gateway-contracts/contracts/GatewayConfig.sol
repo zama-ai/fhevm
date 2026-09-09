@@ -847,13 +847,6 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /**
-     * @notice See {IGatewayConfig-getMaxKmsSigners}.
-     */
-    function getMaxKmsSigners() external pure virtual returns (uint256) {
-        return MAX_KMS_SIGNERS;
-    }
-
-    /**
      * @notice See {IGatewayConfig-getVersion}.
      */
     function getVersion() external pure virtual returns (string memory) {
