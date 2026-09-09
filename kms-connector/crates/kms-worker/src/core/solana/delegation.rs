@@ -47,10 +47,7 @@ pub fn delegation_address(
     authority: SolanaPubkeyBytes,
 ) -> (SolanaPubkeyBytes, u8) {
     crate::core::solana_acl::user_decryption_delegation_address(
-        program_id,
-        delegator,
-        delegate,
-        authority,
+        program_id, delegator, delegate, authority,
     )
 }
 
@@ -64,12 +61,7 @@ pub fn wildcard_delegation_address(
     delegator: SolanaPubkeyBytes,
     delegate: SolanaPubkeyBytes,
 ) -> (SolanaPubkeyBytes, u8) {
-    delegation_address(
-        program_id,
-        delegator,
-        delegate,
-        WILDCARD_AUTHORITY,
-    )
+    delegation_address(program_id, delegator, delegate, WILDCARD_AUTHORITY)
 }
 
 /// Which row carried a delegated authorization.
@@ -98,13 +90,7 @@ pub fn check_delegation(
     delegate: SolanaPubkeyBytes,
     authority: SolanaPubkeyBytes,
 ) -> Result<AuthorizedRow, DelegationFailure> {
-    let exact = match check_row(
-        snapshot,
-        program_id,
-        delegator,
-        delegate,
-        authority,
-    )? {
+    let exact = match check_row(snapshot, program_id, delegator, delegate, authority)? {
         RowOutcome::Live => return Ok(AuthorizedRow::Exact),
         RowOutcome::NotLive(reason) => reason,
     };
@@ -151,12 +137,8 @@ fn check_row(
     delegate: SolanaPubkeyBytes,
     authority: SolanaPubkeyBytes,
 ) -> Result<RowOutcome, SnapshotError> {
-    let (account_key, canonical_bump) = delegation_address(
-        program_id,
-        delegator,
-        delegate,
-        authority,
-    );
+    let (account_key, canonical_bump) =
+        delegation_address(program_id, delegator, delegate, authority);
 
     let Some(account) = snapshot.account(&account_key)? else {
         // Includes the case of a delegation granted for another app: that record lives at another
@@ -188,9 +170,7 @@ fn check_row(
     let record = &witness.record;
 
     // The address is not taken as proof of what the record says.
-    if record.delegator != delegator
-        || record.delegate != delegate
-        || record.authority != authority
+    if record.delegator != delegator || record.delegate != delegate || record.authority != authority
     {
         return Ok(RowOutcome::NotLive(DelegationFailure::TupleMismatch {
             account_key,

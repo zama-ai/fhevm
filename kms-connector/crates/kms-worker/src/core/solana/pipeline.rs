@@ -142,10 +142,7 @@ impl std::fmt::Debug for DelegatedEntryAudit {
             )
             .field(
                 "authority",
-                &format_args!(
-                    "{}",
-                    alloy::hex::encode(self.authority)
-                ),
+                &format_args!("{}", alloy::hex::encode(self.authority)),
             )
             .field(
                 "handle",
@@ -327,14 +324,9 @@ where
 
     let mut audit = Vec::with_capacity(delegated.len());
     for (index, delegator, authority, handle) in delegated {
-        let authorizing_row = check_delegation(
-            &observation,
-            program_id,
-            delegator,
-            signer,
-            authority,
-        )
-        .map_err(|source| AuthorizationFailure::Delegation { index, source })?;
+        let authorizing_row =
+            check_delegation(&observation, program_id, delegator, signer, authority)
+                .map_err(|source| AuthorizationFailure::Delegation { index, source })?;
         audit.push(DelegatedEntryAudit {
             index,
             delegator,

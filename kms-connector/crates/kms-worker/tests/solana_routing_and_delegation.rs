@@ -927,14 +927,8 @@ fn a_live_authority_specific_row_is_named_as_the_exact_row() {
         .read(&SnapshotKeys::new([exact_key, wildcard_key]))
         .expect("both row addresses are in the planned key set");
 
-    let row = check_delegation(
-        &snapshot,
-        PROGRAM_ID,
-        delegator,
-        delegate,
-        exact.authority,
-    )
-    .expect("a live authority-specific row authorizes");
+    let row = check_delegation(&snapshot, PROGRAM_ID, delegator, delegate, exact.authority)
+        .expect("a live authority-specific row authorizes");
 
     assert_eq!(row, AuthorizedRow::Exact);
 }
@@ -954,14 +948,8 @@ fn a_live_wildcard_row_is_named_as_the_wildcard_row() {
         .read(&SnapshotKeys::new([exact_key, wildcard_key]))
         .expect("both row addresses are in the planned key set");
 
-    let row = check_delegation(
-        &snapshot,
-        PROGRAM_ID,
-        delegator,
-        delegate,
-        exact.authority,
-    )
-    .expect("a live wildcard row authorizes an authority with no row of its own");
+    let row = check_delegation(&snapshot, PROGRAM_ID, delegator, delegate, exact.authority)
+        .expect("a live wildcard row authorizes an authority with no row of its own");
 
     assert_eq!(row, AuthorizedRow::Wildcard);
 }
@@ -983,14 +971,8 @@ fn with_both_rows_live_the_authority_specific_row_is_the_one_named() {
         .read(&SnapshotKeys::new([exact_key, wildcard_key]))
         .expect("both row addresses are in the planned key set");
 
-    let row = check_delegation(
-        &snapshot,
-        PROGRAM_ID,
-        delegator,
-        delegate,
-        exact.authority,
-    )
-    .expect("two live rows authorize");
+    let row = check_delegation(&snapshot, PROGRAM_ID, delegator, delegate, exact.authority)
+        .expect("two live rows authorize");
 
     assert_eq!(row, AuthorizedRow::Exact);
 }
@@ -1013,13 +995,8 @@ async fn a_sentinel_authority_in_the_encrypted_state_rejects_a_delegated_entry()
     let signer = Wallet::new(1);
     let delegator = Wallet::new(2);
     let live = handle(0x36, FHE_TYPE_UINT64);
-    let mut encrypted_state = EncryptedStateFixture::in_application(
-        APP_PROGRAM,
-        WILDCARD_AUTHORITY,
-        SCOPE,
-        LABEL,
-        live,
-    );
+    let mut encrypted_state =
+        EncryptedStateFixture::in_application(APP_PROGRAM, WILDCARD_AUTHORITY, SCOPE, LABEL, live);
     encrypted_state.allow(delegator.pubkey());
     let wildcard =
         DelegationFixture::live_wildcard(delegator.pubkey(), signer.pubkey(), OBSERVED_SLOT);
@@ -1056,13 +1033,8 @@ async fn a_sentinel_authority_in_the_encrypted_state_rejects_a_delegated_entry()
 async fn a_sentinel_authority_in_the_encrypted_state_rejects_a_direct_entry_too() {
     let signer = Wallet::new(1);
     let live = handle(0x37, FHE_TYPE_UINT64);
-    let mut encrypted_state = EncryptedStateFixture::in_application(
-        APP_PROGRAM,
-        WILDCARD_AUTHORITY,
-        SCOPE,
-        LABEL,
-        live,
-    );
+    let mut encrypted_state =
+        EncryptedStateFixture::in_application(APP_PROGRAM, WILDCARD_AUTHORITY, SCOPE, LABEL, live);
     encrypted_state.allow(signer.pubkey());
     let request = RequestBuilder::new(&signer)
         .direct(&encrypted_state, live)
