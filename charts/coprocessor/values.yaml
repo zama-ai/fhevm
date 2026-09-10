@@ -215,10 +215,10 @@ polygonContractConfigMap:
 # Sets up the database schema and initial data
 dbMigration:
   enabled: true
-  # Whether this release may create an empty database. Off by default: an empty
-  # database must be set up by the release that is live, and a green (new
-  # release) fleet finds it later. Set true only for the first install of an
-  # operator; keep it false for a green release.
+  # Whether this release may create the database (the database itself and its
+  # first setup). Off by default: the database must be created by the release
+  # that is live, and a green (new release) fleet finds it later. Set true only
+  # for the first install of an operator; keep it false for a green release.
   allowBootstrap: false
 
   # Optional Helm hook annotations for Infra-owned deployment ordering.

@@ -230,8 +230,15 @@ precreate_pending_dcid_index() {
 
 log "-------------- Start database initialization --------------"
 
-log "Creating database..."
-sqlx database create 2>&1 | log_stream || { log "Failed to create database."; exit 1; }
+# Only a release allowed to bootstrap may create the database itself. Otherwise
+# the database must already exist: a green release never creates one.
+if [ "${ALLOW_DB_BOOTSTRAP:-false}" = "true" ]; then
+  log "Creating database..."
+  sqlx database create 2>&1 | log_stream || { log "Failed to create database."; exit 1; }
+else
+  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -Atc "SELECT 1" >/dev/null 2>&1 \
+    || { log "ERROR: database does not exist or is unreachable, and this release must not create one (ALLOW_DB_BOOTSTRAP is not true)."; exit 1; }
+fi
 
 # The wave1 squash (#2848) shipped an in-place edit of the already-applied
 # migration 20260616120000_bridge_tables.sql; this tree restores the original
@@ -286,8 +293,8 @@ initialize_versions_for_deployment() {
   bootstrap_versioning || { log "ERROR: failed to set initial versions"; exit 1; }
 }
 
-# A new database is created only when this release is told to. An empty database
-# must be set up by the release that is live; a newer release finds it later.
+# An empty database is set up only when this release is told to. It must be set
+# up by the release that is live; a newer release finds it later.
 require_bootstrap_allowed() {
   if [ "$DEPLOYMENT_MODE" != "bootstrap" ]; then
     return 0
