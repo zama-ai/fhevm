@@ -44,6 +44,14 @@ contract TypeSafetyAdapter {
         return euint32.unwrap(FHE.add(euint32.wrap(a), euint32.wrap(b)));
     }
 
+    function andBool(bytes32 a, bytes32 b) external returns (bytes32) {
+        return ebool.unwrap(FHE.and(ebool.wrap(a), ebool.wrap(b)));
+    }
+
+    function eqAddresses(bytes32 a, bytes32 b) external returns (bytes32) {
+        return ebool.unwrap(FHE.eq(eaddress.wrap(a), eaddress.wrap(b)));
+    }
+
     function addScalar32(bytes32 a, uint32 b) external returns (bytes32) {
         return euint32.unwrap(FHE.add(euint32.wrap(a), b));
     }
@@ -64,6 +72,14 @@ contract TypeSafetyAdapter {
         return euint32.unwrap(FHE.add(euint16.wrap(a), euint32.wrap(b)));
     }
 
+    function mixedAddReverse(bytes32 a, bytes32 b) external returns (bytes32) {
+        return euint32.unwrap(FHE.add(euint32.wrap(a), euint16.wrap(b)));
+    }
+
+    function shift8(bytes32 a, bytes32 b) external returns (bytes32) {
+        return euint8.unwrap(FHE.shl(euint8.wrap(a), euint8.wrap(b)));
+    }
+
     function shift32(bytes32 a, bytes32 b) external returns (bytes32) {
         return euint32.unwrap(FHE.shl(euint32.wrap(a), euint8.wrap(b)));
     }
@@ -82,6 +98,10 @@ contract TypeSafetyAdapter {
 
     function select32(bytes32 condition, bytes32 a, bytes32 b) external returns (bytes32) {
         return euint32.unwrap(FHE.select(ebool.wrap(condition), euint32.wrap(a), euint32.wrap(b)));
+    }
+
+    function selectBool(bytes32 condition, bytes32 a, bytes32 b) external returns (bytes32) {
+        return ebool.unwrap(FHE.select(ebool.wrap(condition), ebool.wrap(a), ebool.wrap(b)));
     }
 
     function allow32(bytes32 a) external returns (bytes32) {
@@ -196,11 +216,11 @@ contract FHETypeSafetyTest is HostContractsDeployerTestUtils {
         adapter.add32(wrong, wrong);
         vm.expectRevert(FHEVMExecutor.InvalidType.selector);
         adapter.add32(wrong, right);
-        vm.expectRevert(FHEVMExecutor.InvalidType.selector);
+        vm.expectRevert(FHEVMExecutor.IncompatibleTypes.selector);
         adapter.add32(right, wrong);
         vm.expectRevert(FHEVMExecutor.InvalidType.selector);
         adapter.addScalar32(wrong, 1);
-        vm.expectRevert(FHEVMExecutor.InvalidType.selector);
+        vm.expectRevert(FHEVMExecutor.IncompatibleTypes.selector);
         adapter.subScalar32(1, wrong);
     }
 
@@ -214,7 +234,7 @@ contract FHETypeSafetyTest is HostContractsDeployerTestUtils {
         adapter.mixedAdd(u8, u32);
         vm.expectRevert(FHEVMExecutor.InvalidType.selector);
         adapter.shift32(u32, u16);
-        vm.expectRevert(FHEVMExecutor.InvalidType.selector);
+        vm.expectRevert(FHEVMExecutor.IncompatibleTypes.selector);
         adapter.shift32(u16, u8);
         vm.expectRevert(FHEVMExecutor.InvalidType.selector);
         adapter.toBool(u16);
@@ -230,12 +250,116 @@ contract FHETypeSafetyTest is HostContractsDeployerTestUtils {
         adapter.not32(wrong);
         vm.expectRevert(FHEVMExecutor.InvalidType.selector);
         adapter.allow32(wrong);
-        vm.expectRevert(FHEVMExecutor.InvalidType.selector);
+        vm.expectRevert(FHEVMExecutor.UnsupportedType.selector);
         adapter.select32(wrong, right, right);
         vm.expectRevert(FHEVMExecutor.InvalidType.selector);
         adapter.select32(condition, wrong, wrong);
-        vm.expectRevert(FHEVMExecutor.InvalidType.selector);
+        vm.expectRevert(FHEVMExecutor.IncompatibleTypes.selector);
         adapter.select32(condition, right, wrong);
+    }
+
+    function _assertCallType(bytes memory data, bool shouldSucceed, FheType expectedType) internal {
+        (bool success, bytes memory result) = address(adapter).call(data);
+        assertEq(success, shouldSucceed);
+        if (success) executor.checkHandleType(abi.decode(result, (bytes32)), expectedType);
+    }
+
+    function test_BinaryOperationsEnforceBothDeclaredTypesForEveryTypePair() public {
+        FheType[8] memory types = _types();
+        bytes32[8] memory handles;
+        for (uint256 i; i < types.length; ++i) handles[i] = adapter.mint(types[i], 1);
+
+        for (uint256 i; i < types.length; ++i) {
+            for (uint256 j; j < types.length; ++j) {
+                bytes32 a = handles[i];
+                bytes32 b = handles[j];
+                _assertCallType(
+                    abi.encodeCall(adapter.andBool, (a, b)),
+                    types[i] == FheType.Bool && types[j] == FheType.Bool,
+                    FheType.Bool
+                );
+                _assertCallType(
+                    abi.encodeCall(adapter.eqAddresses, (a, b)),
+                    types[i] == FheType.Uint160 && types[j] == FheType.Uint160,
+                    FheType.Bool
+                );
+                _assertCallType(
+                    abi.encodeCall(adapter.add32, (a, b)),
+                    types[i] == FheType.Uint32 && types[j] == FheType.Uint32,
+                    FheType.Uint32
+                );
+                _assertCallType(
+                    abi.encodeCall(adapter.mixedAdd, (a, b)),
+                    types[i] == FheType.Uint16 && types[j] == FheType.Uint32,
+                    FheType.Uint32
+                );
+                _assertCallType(
+                    abi.encodeCall(adapter.mixedAddReverse, (a, b)),
+                    types[i] == FheType.Uint32 && types[j] == FheType.Uint16,
+                    FheType.Uint32
+                );
+                _assertCallType(
+                    abi.encodeCall(adapter.shift8, (a, b)),
+                    types[i] == FheType.Uint8 && types[j] == FheType.Uint8,
+                    FheType.Uint8
+                );
+                _assertCallType(
+                    abi.encodeCall(adapter.shift32, (a, b)),
+                    types[i] == FheType.Uint32 && types[j] == FheType.Uint8,
+                    FheType.Uint32
+                );
+            }
+        }
+    }
+
+    function test_SelectAndScalarLeftEnforceDeclaredTypes() public {
+        FheType[8] memory types = _types();
+        bytes32 boolean = adapter.mint(FheType.Bool, 1);
+        bytes32 u32 = adapter.mint(FheType.Uint32, 1);
+        for (uint256 i; i < types.length; ++i) {
+            bytes32 value = adapter.mint(types[i], 1);
+            bool isBool = types[i] == FheType.Bool;
+            bool isUint32 = types[i] == FheType.Uint32;
+            _assertCallType(abi.encodeCall(adapter.subScalar32, (1, value)), isUint32, FheType.Uint32);
+            _assertCallType(abi.encodeCall(adapter.select32, (value, u32, u32)), isBool, FheType.Uint32);
+            _assertCallType(abi.encodeCall(adapter.select32, (boolean, value, value)), isUint32, FheType.Uint32);
+            _assertCallType(abi.encodeCall(adapter.select32, (boolean, value, u32)), isUint32, FheType.Uint32);
+            _assertCallType(abi.encodeCall(adapter.select32, (boolean, u32, value)), isUint32, FheType.Uint32);
+            _assertCallType(abi.encodeCall(adapter.selectBool, (value, boolean, boolean)), isBool, FheType.Bool);
+            _assertCallType(abi.encodeCall(adapter.selectBool, (boolean, value, value)), isBool, FheType.Bool);
+            _assertCallType(abi.encodeCall(adapter.selectBool, (boolean, value, boolean)), isBool, FheType.Bool);
+            _assertCallType(abi.encodeCall(adapter.selectBool, (boolean, boolean, value)), isBool, FheType.Bool);
+        }
+    }
+
+    function test_EachOperandCanBeUninitialized() public {
+        bytes32 boolean = adapter.mint(FheType.Bool, 1);
+        bytes32 u8 = adapter.mint(FheType.Uint8, 1);
+        bytes32 u16 = adapter.mint(FheType.Uint16, 1);
+        bytes32 u32 = adapter.mint(FheType.Uint32, 1);
+        bytes32 account = adapter.mint(FheType.Uint160, 1);
+        executor.checkHandleType(adapter.andBool(0, boolean), FheType.Bool);
+        executor.checkHandleType(adapter.andBool(boolean, 0), FheType.Bool);
+        executor.checkHandleType(adapter.eqAddresses(0, account), FheType.Bool);
+        executor.checkHandleType(adapter.eqAddresses(account, 0), FheType.Bool);
+        executor.checkHandleType(adapter.add32(0, u32), FheType.Uint32);
+        executor.checkHandleType(adapter.add32(u32, 0), FheType.Uint32);
+        executor.checkHandleType(adapter.mixedAdd(0, u32), FheType.Uint32);
+        executor.checkHandleType(adapter.mixedAdd(u16, 0), FheType.Uint32);
+        executor.checkHandleType(adapter.mixedAddReverse(0, u16), FheType.Uint32);
+        executor.checkHandleType(adapter.mixedAddReverse(u32, 0), FheType.Uint32);
+        executor.checkHandleType(adapter.shift8(0, u8), FheType.Uint8);
+        executor.checkHandleType(adapter.shift8(u8, 0), FheType.Uint8);
+        executor.checkHandleType(adapter.shift32(0, u8), FheType.Uint32);
+        executor.checkHandleType(adapter.shift32(u32, 0), FheType.Uint32);
+        executor.checkHandleType(adapter.addScalar32(0, 1), FheType.Uint32);
+        executor.checkHandleType(adapter.subScalar32(1, 0), FheType.Uint32);
+        executor.checkHandleType(adapter.select32(0, u32, u32), FheType.Uint32);
+        executor.checkHandleType(adapter.select32(boolean, 0, u32), FheType.Uint32);
+        executor.checkHandleType(adapter.select32(boolean, u32, 0), FheType.Uint32);
+        executor.checkHandleType(adapter.selectBool(0, boolean, boolean), FheType.Bool);
+        executor.checkHandleType(adapter.selectBool(boolean, 0, boolean), FheType.Bool);
+        executor.checkHandleType(adapter.selectBool(boolean, boolean, 0), FheType.Bool);
     }
 
     function test_CollectionsUseExistingExpectedTypeChecks() public {

@@ -188,7 +188,8 @@ function handleSolidityTFHEEncryptedOperatorForTwoEncryptedTypes(
   }
 
   if (lhsFheType.type.startsWith('Uint') && rhsFheType.type.startsWith('Uint')) {
-    // Widening casts validate and initialize their source; avoid checking it twice.
+    // A widening cast validates its source and fixes the result type. Otherwise validate the left operand.
+    // The executor requires the other operand to match that type, so it only needs initialization here.
     // Determine the maximum number of bits between lhsBits and rhsBits
     const outputBits = Math.max(lhsFheType.bitLength, rhsFheType.bitLength);
     const castLeftToRight = lhsFheType.bitLength < rhsFheType.bitLength;
@@ -215,8 +216,14 @@ function handleSolidityTFHEEncryptedOperatorForTwoEncryptedTypes(
     function ${
       operator.name
     }(e${lhsFheType.type.toLowerCase()} a, e${rhsFheType.type.toLowerCase()} b) internal returns (${returnType}) {
-        ${castLeftToRight ? '' : assignValidatedFheValue('a', lhsFheType.type)}
-        ${castRightToLeft ? '' : assignValidatedFheValue('b', rhsFheType.type)}
+        ${
+          castLeftToRight
+            ? ''
+            : castRightToLeft
+              ? initializeFheValue('a', lhsFheType.type)
+              : assignValidatedFheValue('a', lhsFheType.type)
+        }
+        ${castRightToLeft ? '' : initializeFheValue('b', rhsFheType.type)}
         return ${returnType}.wrap(${implExpression});
     }
 `);
@@ -227,7 +234,7 @@ function handleSolidityTFHEEncryptedOperatorForTwoEncryptedTypes(
     */
     function ${operator.name}(ebool a, ebool b) internal returns (ebool) {
         ${assignValidatedFheValue('a', 'Bool')}
-        ${assignValidatedFheValue('b', 'Bool')}
+        ${initializeFheValue('b', 'Bool')}
         return ebool.wrap(Impl.${operator.name}(ebool.unwrap(a), ebool.unwrap(b), false));
     }
 `);
@@ -238,7 +245,7 @@ function handleSolidityTFHEEncryptedOperatorForTwoEncryptedTypes(
       */
       function ${operator.name}(eaddress a, eaddress b) internal returns (ebool) {
           ${assignValidatedFheValue('a', 'Address')}
-          ${assignValidatedFheValue('b', 'Address')}
+          ${initializeFheValue('b', 'Address')}
           return ebool.wrap(Impl.${operator.name}(eaddress.unwrap(a), eaddress.unwrap(b), false));
       }
   `);
@@ -313,6 +320,7 @@ function generateSolidityTFHEScalarOperator(fheType: AdjustedFheType, operator: 
   if (operator.leftScalarEncrypt) {
     // workaround until tfhe-rs left scalar support:
     // do the trivial encryption and preserve order of operations
+    // This also fixes the expected type, which the executor requires the right operand to match.
     scalarFlag = ', false';
     maybeEncryptLeft = `e${fheType.type.toLowerCase()} aEnc = asE${fheType.type.toLowerCase()}(a);`;
     implExpressionB = `Impl.${leftOpName}(e${fheType.type.toLowerCase()}.unwrap(aEnc), e${fheType.type.toLowerCase()}.unwrap(b)${scalarFlag})`;
@@ -354,7 +362,7 @@ function generateSolidityTFHEScalarOperator(fheType: AdjustedFheType, operator: 
       operator.name
     }(${clearMatchingType.toLowerCase()} a, e${fheType.type.toLowerCase()} b) internal returns (${returnType}) {
         ${maybeEncryptLeft}
-        ${assignValidatedFheValue('b', fheType.type)}
+        ${operator.leftScalarEncrypt ? initializeFheValue('b', fheType.type) : assignValidatedFheValue('b', fheType.type)}
         return ${returnType}.wrap(${implExpressionB});
     }
         `);
@@ -400,6 +408,9 @@ function handleSolidityTFHEShiftOperator(fheType: AdjustedFheType, operator: Ope
     const rhsBits = 8;
     const castRightToLeft = lhsBits > rhsBits;
 
+    // Validate the shift amount inside its widening cast, or the left operand when both are Uint8.
+    // The executor's type equality check validates the remaining operand.
+
     let scalarFlag = ', false';
 
     const leftExpr = 'a';
@@ -413,8 +424,8 @@ function handleSolidityTFHEShiftOperator(fheType: AdjustedFheType, operator: Ope
      * @dev Evaluates ${operator.name}(euint${lhsBits} a, euint${rhsBits} b) and returns the result.
      */
     function ${operator.name}(euint${lhsBits} a, euint${rhsBits} b) internal returns (e${fheType.type.toLowerCase()}) {
-        ${assignValidatedFheValue('a', fheType.type)}
-        ${castRightToLeft ? '' : assignValidatedFheValue('b', 'Uint8')}
+        ${castRightToLeft ? initializeFheValue('a', fheType.type) : assignValidatedFheValue('a', fheType.type)}
+        ${castRightToLeft ? '' : initializeFheValue('b', 'Uint8')}
         return e${fheType.type.toLowerCase()}.wrap(${implExpression});
     }
 `);
@@ -447,19 +458,29 @@ function assignValidatedFheValue(varname: string, type: string) {
   return `${varname} = _getValidatedFheValue(${varname});`;
 }
 
+// Use only when the executor can enforce the expected type from another operand or the operation itself.
+function initializeFheValue(varname: string, type: string) {
+  if (type !== 'Bool' && !type.startsWith('Uint') && type !== 'Address') {
+    throw new Error(`Unsupported type ${type}`);
+  }
+  const zero = type === 'Bool' ? 'false' : type === 'Address' ? 'address(0)' : '0';
+  return `if (!isInitialized(${varname})) { ${varname} = asE${type.toLowerCase()}(${zero}); }`;
+}
+
 function handleSolidityTFHESelect(fheType: AdjustedFheType): string {
   let res = '';
 
   if (fheType.supportedOperators.includes('select')) {
+    // The executor requires a Bool control and matching branches; validate one branch's expected type.
     res += `
     /**
     * @dev If 'control's value is 'true', the result has the same value as 'ifTrue'.
     *      If 'control's value is 'false', the result has the same value as 'ifFalse'.
     */
     function select(ebool control, e${fheType.type.toLowerCase()} a, e${fheType.type.toLowerCase()} b) internal returns (e${fheType.type.toLowerCase()}) {
-        ${assignValidatedFheValue('control', 'Bool')}
+        ${initializeFheValue('control', 'Bool')}
         ${assignValidatedFheValue('a', fheType.type)}
-        ${assignValidatedFheValue('b', fheType.type)}
+        ${initializeFheValue('b', fheType.type)}
         return e${fheType.type.toLowerCase()}.wrap(Impl.select(ebool.unwrap(control), e${fheType.type.toLowerCase()}.unwrap(a), e${fheType.type.toLowerCase()}.unwrap(b)));
     }
     `;
