@@ -659,7 +659,7 @@ fn open_batch_ix(
     anchor_ix(
         batcher::id(),
         batcher::accounts::OpenBatch {
-            scratch: host::transient_address(fixture.payer).0,
+            transient_store: host::transient_store_address(fixture.payer).0,
             instructions: Instructions::id(),
             payer: fixture.payer,
             batcher: fixture.batcher,
@@ -722,7 +722,7 @@ fn join_ix(
             user_balance_state: user_join.balance_state,
             batch_balance_state: keys.join_balance_state,
             join_state: keys.pending_join_value(user.user),
-            scratch: host::transient_address(user.user).0,
+            transient_store: host::transient_store_address(user.user).0,
             instructions: Instructions::id(),
             zama_event_authority: event_authority(host::id()),
             zama_program: host::id(),
@@ -740,7 +740,7 @@ fn quit_ix(fixture: &BatcherFixture, keys: &BatchKeys, user: &UserKeys) -> Instr
     anchor_ix(
         batcher::id(),
         batcher::accounts::Quit {
-            scratch: host::transient_address(user.user).0,
+            transient_store: host::transient_store_address(user.user).0,
             instructions: Instructions::id(),
             user: user.user,
             payer: user.user,
@@ -775,7 +775,7 @@ fn dispatch_ix(fixture: &BatcherFixture, keys: &BatchKeys) -> Instruction {
     anchor_ix(
         batcher::id(),
         batcher::accounts::Dispatch {
-            scratch: host::transient_address(fixture.payer).0,
+            transient_store: host::transient_store_address(fixture.payer).0,
             instructions: Instructions::id(),
             payer: fixture.payer,
             batcher: fixture.batcher,
@@ -807,7 +807,7 @@ fn cancel_dispatch_ix(fixture: &BatcherFixture, keys: &BatchKeys) -> Instruction
     anchor_ix(
         batcher::id(),
         batcher::accounts::CancelDispatch {
-            scratch: host::transient_address(fixture.payer).0,
+            transient_store: host::transient_store_address(fixture.payer).0,
             instructions: Instructions::id(),
             payer: fixture.payer,
             batcher: fixture.batcher,
@@ -844,7 +844,7 @@ fn settle_ix(
     anchor_ix(
         batcher::id(),
         batcher::accounts::Settle {
-            scratch: host::transient_address(fixture.payer).0,
+            transient_store: host::transient_store_address(fixture.payer).0,
             instructions: Instructions::id(),
             payer: fixture.payer,
             batcher: fixture.batcher,
@@ -902,7 +902,7 @@ fn claim_ix(fixture: &BatcherFixture, keys: &BatchKeys, user: &UserKeys) -> Inst
             batch_authority: keys.batch_authority,
             join_record: keys.join_record(user.user),
             join_state: keys.pending_join_value(user.user),
-            scratch: host::transient_address(fixture.payer).0,
+            transient_store: host::transient_store_address(fixture.payer).0,
             instructions: Instructions::id(),
             payout_confidential_mint: fixture.payout_mint().mint,
             payout_underlying_mint: fixture.payout_mint().underlying_mint,
@@ -1527,12 +1527,12 @@ fn mollusk_cancel_dispatch_restores_burn_and_allows_refunds() {
     let mut unauthorized_cancel = cancel_dispatch_ix(&fixture, &keys);
     unauthorized_cancel.accounts.push(readonly(deny_record));
     unauthorized_cancel.accounts[0].pubkey = stranger;
-    let scratch = unauthorized_cancel
+    let transient_store = unauthorized_cancel
         .accounts
         .iter_mut()
-        .find(|meta| meta.pubkey == host::transient_address(fixture.payer).0)
+        .find(|meta| meta.pubkey == host::transient_store_address(fixture.payer).0)
         .unwrap();
-    scratch.pubkey = host::transient_address(stranger).0;
+    transient_store.pubkey = host::transient_store_address(stranger).0;
     check_batcher_instruction(
         &context,
         &unauthorized_cancel,

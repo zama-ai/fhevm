@@ -62,7 +62,7 @@ export type SolanaVaultJoinParameters = {
   readonly inputIndex: number;
   /** Joining user; the transfer authority over their confidential balance. */
   readonly user: TransactionSigner;
-  /** Pays JoinRecord/state growth and refundable scratch rent. */
+  /** Pays JoinRecord/state growth and refundable transientStore rent. */
   readonly payer: TransactionSigner;
   readonly batcher: Address;
   readonly batch: Address;

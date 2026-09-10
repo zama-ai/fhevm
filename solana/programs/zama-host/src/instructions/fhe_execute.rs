@@ -72,15 +72,15 @@ pub struct FheExecute<'info> {
     /// Required exactly then, and refused otherwise so no execution write-locks it for nothing.
     #[account(mut, seeds = [RAND_NONCE_SEED], bump = rand_nonce.bump)]
     pub rand_nonce: Option<Account<'info, RandNonce>>,
-    /// Shared by every execution until the transaction's final CloseScratch.
+    /// Shared by every execution until the transaction's final CloseTransientStore.
     #[account(mut)]
-    pub scratch: AccountLoader<'info, TransientState>,
+    pub transient_store: AccountLoader<'info, TransientStore>,
     /// CHECK: authentic runtime transaction instructions, used to require final closure.
     #[account(address = solana_instructions_sysvar::ID)]
     pub instructions: UncheckedAccount<'info>,
 }
 
-/// Runs one ordered FHE execution, recording results in transaction scratch.
+/// Runs one ordered FHE execution, recording results in transaction transient store.
 pub fn fhe_execute<'info>(
     mut ctx: Context<'info, FheExecute<'info>>,
     args: FheExecuteArgs,
@@ -101,20 +101,20 @@ pub fn fhe_execute<'info>(
     );
     let rand_nonce = consume_rand_nonce(&mut ctx, &args)?;
     require!(
-        ctx.accounts.scratch.to_account_info().data_len() == TransientState::SPACE,
+        ctx.accounts.transient_store.to_account_info().data_len() == TransientStore::SPACE,
         ZamaHostError::TransientAccountInvalid
     );
-    let mut scratch = ctx.accounts.scratch.load_mut()?;
-    scratch.validate(ctx.accounts.scratch.key())?;
+    let mut transient_store = ctx.accounts.transient_store.load_mut()?;
+    transient_store.validate(ctx.accounts.transient_store.key())?;
     super::transient::assert_final_close(
-        ctx.accounts.scratch.key(),
-        scratch.payer,
+        ctx.accounts.transient_store.key(),
+        transient_store.payer,
         &ctx.accounts.instructions,
     )?;
-    let call_start = scratch.len();
+    let call_start = transient_store.len();
     // The account table owns every remaining-accounts invariant for the execution:
     // duplicate rejection (at construction), the used-account bitmap (marked in
-    // preflight), canonical State validation, and cached State/scratch writes.
+    // preflight), canonical State validation, and cached State/transient store writes.
     let mut account_table = ExecutionAccountTable::new(ctx.remaining_accounts)?;
     // Preflight also settles the execution's application identity: the one `(program, scope)`
     // every State the default authority controls belongs to. Metering and rand seeds key on it;
@@ -128,7 +128,7 @@ pub fn fhe_execute<'info>(
         check_scope_not_denied_info(host_config, touched, deny_record)?;
     }
 
-    let starting_hcu = scratch.total_hcu;
+    let starting_hcu = transient_store.total_hcu;
 
     let clock = Clock::get()?;
     let previous_bank_hash = previous_bank_hash(clock.slot)?;
@@ -147,15 +147,15 @@ pub fn fhe_execute<'info>(
     // stays last so no event describes state that did not commit.
     let created_public_outputs = execute_steps(
         &mut account_table,
-        &mut scratch,
+        &mut transient_store,
         call_start,
         &args,
         app,
         &handle_context,
         &ctx.accounts.host_config,
     )?;
-    let execution_hcu = scratch.total_hcu - starting_hcu;
-    drop(scratch);
+    let execution_hcu = transient_store.total_hcu - starting_hcu;
+    drop(transient_store);
     block_cap::charge(&ctx, app, execution_hcu, clock.slot)?;
     account_table.flush_states(
         &ctx.accounts.payer.to_account_info(),
@@ -165,7 +165,7 @@ pub fn fhe_execute<'info>(
     emit_public_outputs_produced(&ctx, created_public_outputs)?;
     // Event CPIs may replace return data; restore the selected handles afterwards.
     return_execution_handles(
-        &*ctx.accounts.scratch.load()?,
+        &*ctx.accounts.transient_store.load()?,
         call_start,
         &args.returned_results,
     );
@@ -192,14 +192,14 @@ fn validate_result_refs(args: &FheExecuteArgs) -> Result<()> {
 
 #[inline(never)]
 fn return_execution_handles(
-    scratch: &TransientState,
+    transient_store: &TransientStore,
     call_start: usize,
     selected: &[crate::ExecutionResultRef],
 ) {
     let mut bytes = [0u8; crate::MAX_RETURNED_HANDLES * 32];
     for (chunk, result) in bytes.chunks_exact_mut(32).zip(selected) {
         chunk.copy_from_slice(
-            &scratch
+            &transient_store
                 .result(call_start + usize::from(result.step_index))
                 .expect("validated execution result")
                 .handle,
@@ -261,7 +261,7 @@ fn collect_execution_random_seeds(
 #[inline(never)]
 fn execute_steps<'a, 'info>(
     table: &mut ExecutionAccountTable<'a, 'info>,
-    scratch: &mut TransientState,
+    transient_store: &mut TransientStore,
     call_start: usize,
     args: &FheExecuteArgs,
     app: AppScope,
@@ -271,7 +271,7 @@ fn execute_steps<'a, 'info>(
     let producer_state = table.account(args.execution_state_index.into())?.key();
     let mut execution = ExecutionState {
         table,
-        scratch,
+        transient_store,
         call_start,
         producer_state,
         dictionary: &args.dictionary,
@@ -283,14 +283,14 @@ fn execute_steps<'a, 'info>(
     let mut public_outputs = Vec::new();
     for effect in &args.effects {
         let handle = execution
-            .scratch
+            .transient_store
             .result(call_start + usize::from(effect.result.step_index))
             .ok_or(ZamaHostError::InvalidReturnSelection)?
             .handle;
         let state = state_output::accept_state_output(
             execution.table,
             &args.dictionary,
-            execution.scratch,
+            execution.transient_store,
             effect.state_index,
             effect.previous_leaf_count,
             &effect.slot,
@@ -319,7 +319,7 @@ struct ExecutionState<'t, 'a, 'info> {
     table: &'t mut ExecutionAccountTable<'a, 'info>,
     /// The execution's interned constant dictionary ([`FheExecuteArgs::dictionary`]).
     dictionary: &'t [[u8; 32]],
-    scratch: &'t mut TransientState,
+    transient_store: &'t mut TransientStore,
     call_start: usize,
     producer_state: Pubkey,
     /// The application every persistent value of the execution belongs to; `None` when the
@@ -354,7 +354,7 @@ impl<'info> ExecutionState<'_, '_, 'info> {
         cost: u64,
         operands: &[ResolvedOperand],
     ) -> Result<()> {
-        let total = hcu::accumulate_total(self.scratch.total_hcu, cost)?;
+        let total = hcu::accumulate_total(self.transient_store.total_hcu, cost)?;
         hcu::enforce_le(
             total,
             self.host_config.max_hcu_per_tx,
@@ -371,8 +371,9 @@ impl<'info> ExecutionState<'_, '_, 'info> {
             self.host_config.max_hcu_depth_per_tx,
             ZamaHostError::HcuTransactionDepthLimitExceeded,
         )?;
-        self.scratch.record(result, self.producer_state, depth)?;
-        self.scratch.total_hcu = total;
+        self.transient_store
+            .record(result, self.producer_state, depth)?;
+        self.transient_store.total_hcu = total;
         Ok(())
     }
 }
@@ -405,7 +406,7 @@ impl ResolvedOperand {
 
 impl ExecutionState<'_, '_, '_> {
     fn encrypted_operand(&self, handle: [u8; 32]) -> ResolvedOperand {
-        let depth = self.scratch.origin_depth(handle);
+        let depth = self.transient_store.origin_depth(handle);
         ResolvedOperand {
             handle,
             scalar: false,

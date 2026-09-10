@@ -417,7 +417,7 @@ pub(crate) struct ExecuteContext<'a, 'info> {
     pub payer: &'a Signer<'info>,
     /// Anchor event CPI authority for ZamaHost.
     pub event_authority: &'a UncheckedAccount<'info>,
-    pub scratch: &'a UncheckedAccount<'info>,
+    pub transient_store: &'a UncheckedAccount<'info>,
     pub instructions: &'a UncheckedAccount<'info>,
     /// ZamaHost program account.
     pub zama_program: &'a Program<'info, ZamaHost>,
@@ -499,7 +499,7 @@ fn invoke_with_authorities<'info, R>(
             hcu_trusted_app_record: context.hcu_trusted_app_record,
             rand_nonce: None,
             event_authority: context.event_authority.to_account_info(),
-            scratch: context.scratch.to_account_info(),
+            transient_store: context.transient_store.to_account_info(),
             instructions: context.instructions.to_account_info(),
             program: context.zama_program.to_account_info(),
         },

@@ -1,8 +1,8 @@
 //! Stateful per-application, per-slot HCU block cap for [`super::fhe_execute`].
 //!
-//! The walk charges transaction HCU and dependency depth in the shared scratch. [`charge`]
+//! The walk charges transaction HCU and dependency depth in the shared transient store. [`charge`]
 //! then adds only this call's HCU to its application's block meter, before account effects
-//! are flushed. A rejected cap rolls back the whole transaction, including the scratch.
+//! are flushed. A rejected cap rolls back the whole transaction, including the transient store.
 //!
 //! Cap sentinels: `u64::MAX` = unrestricted (touch nothing), `0` = ban untrusted
 //! applications (trusted still bypass), otherwise the metering band.

@@ -35,16 +35,18 @@ import {
 import { getAccountMetaFactory, type ResolvedInstructionAccount } from '@solana/program-client-core';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '../programAddress.js';
 
-export const OPEN_SCRATCH_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([194, 244, 203, 123, 137, 109, 255, 238]);
+export const OPEN_TRANSIENT_STORE_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([
+  54, 100, 76, 213, 84, 233, 196, 94,
+]);
 
-export function getOpenScratchDiscriminatorBytes(): ReadonlyUint8Array {
-  return fixEncoderSize(getBytesEncoder(), 8).encode(OPEN_SCRATCH_DISCRIMINATOR);
+export function getOpenTransientStoreDiscriminatorBytes(): ReadonlyUint8Array {
+  return fixEncoderSize(getBytesEncoder(), 8).encode(OPEN_TRANSIENT_STORE_DISCRIMINATOR);
 }
 
-export type OpenScratchInstruction<
+export type OpenTransientStoreInstruction<
   TProgram extends string = typeof ZAMA_HOST_PROGRAM_ADDRESS,
   TAccountPayer extends string | AccountMeta<string> = string,
-  TAccountScratch extends string | AccountMeta<string> = string,
+  TAccountTransientStore extends string | AccountMeta<string> = string,
   TAccountInstructions extends string | AccountMeta<string> = 'Sysvar1nstructions1111111111111111111111111',
   TAccountSystemProgram extends string | AccountMeta<string> = '11111111111111111111111111111111',
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
@@ -55,60 +57,62 @@ export type OpenScratchInstruction<
       TAccountPayer extends string
         ? WritableSignerAccount<TAccountPayer> & AccountSignerMeta<TAccountPayer>
         : TAccountPayer,
-      TAccountScratch extends string ? WritableAccount<TAccountScratch> : TAccountScratch,
+      TAccountTransientStore extends string ? WritableAccount<TAccountTransientStore> : TAccountTransientStore,
       TAccountInstructions extends string ? ReadonlyAccount<TAccountInstructions> : TAccountInstructions,
       TAccountSystemProgram extends string ? ReadonlyAccount<TAccountSystemProgram> : TAccountSystemProgram,
       ...TRemainingAccounts,
     ]
   >;
 
-export type OpenScratchInstructionData = { discriminator: ReadonlyUint8Array };
+export type OpenTransientStoreInstructionData = {
+  discriminator: ReadonlyUint8Array;
+};
 
-export type OpenScratchInstructionDataArgs = {};
+export type OpenTransientStoreInstructionDataArgs = {};
 
-export function getOpenScratchInstructionDataEncoder(): FixedSizeEncoder<OpenScratchInstructionDataArgs> {
+export function getOpenTransientStoreInstructionDataEncoder(): FixedSizeEncoder<OpenTransientStoreInstructionDataArgs> {
   return transformEncoder(getStructEncoder([['discriminator', fixEncoderSize(getBytesEncoder(), 8)]]), (value) => ({
     ...value,
-    discriminator: OPEN_SCRATCH_DISCRIMINATOR,
+    discriminator: OPEN_TRANSIENT_STORE_DISCRIMINATOR,
   }));
 }
 
-export function getOpenScratchInstructionDataDecoder(): FixedSizeDecoder<OpenScratchInstructionData> {
+export function getOpenTransientStoreInstructionDataDecoder(): FixedSizeDecoder<OpenTransientStoreInstructionData> {
   return getStructDecoder([['discriminator', fixDecoderSize(getBytesDecoder(), 8)]]);
 }
 
-export function getOpenScratchInstructionDataCodec(): FixedSizeCodec<
-  OpenScratchInstructionDataArgs,
-  OpenScratchInstructionData
+export function getOpenTransientStoreInstructionDataCodec(): FixedSizeCodec<
+  OpenTransientStoreInstructionDataArgs,
+  OpenTransientStoreInstructionData
 > {
-  return combineCodec(getOpenScratchInstructionDataEncoder(), getOpenScratchInstructionDataDecoder());
+  return combineCodec(getOpenTransientStoreInstructionDataEncoder(), getOpenTransientStoreInstructionDataDecoder());
 }
 
-export type OpenScratchInput<
+export type OpenTransientStoreInput<
   TAccountPayer extends string = string,
-  TAccountScratch extends string = string,
+  TAccountTransientStore extends string = string,
   TAccountInstructions extends string = string,
   TAccountSystemProgram extends string = string,
 > = {
   payer: TransactionSigner<TAccountPayer>;
-  scratch: Address<TAccountScratch>;
+  transientStore: Address<TAccountTransientStore>;
   instructions?: Address<TAccountInstructions>;
   systemProgram?: Address<TAccountSystemProgram>;
 };
 
-export function getOpenScratchInstruction<
+export function getOpenTransientStoreInstruction<
   TAccountPayer extends string,
-  TAccountScratch extends string,
+  TAccountTransientStore extends string,
   TAccountInstructions extends string,
   TAccountSystemProgram extends string,
   TProgramAddress extends Address = typeof ZAMA_HOST_PROGRAM_ADDRESS,
 >(
-  input: OpenScratchInput<TAccountPayer, TAccountScratch, TAccountInstructions, TAccountSystemProgram>,
+  input: OpenTransientStoreInput<TAccountPayer, TAccountTransientStore, TAccountInstructions, TAccountSystemProgram>,
   config?: { programAddress?: TProgramAddress },
-): OpenScratchInstruction<
+): OpenTransientStoreInstruction<
   TProgramAddress,
   TAccountPayer,
-  TAccountScratch,
+  TAccountTransientStore,
   TAccountInstructions,
   TAccountSystemProgram
 > {
@@ -118,7 +122,7 @@ export function getOpenScratchInstruction<
   // Original accounts.
   const originalAccounts = {
     payer: { value: input.payer ?? null, isWritable: true },
-    scratch: { value: input.scratch ?? null, isWritable: true },
+    transientStore: { value: input.transientStore ?? null, isWritable: true },
     instructions: { value: input.instructions ?? null, isWritable: false },
     systemProgram: { value: input.systemProgram ?? null, isWritable: false },
   };
@@ -137,38 +141,41 @@ export function getOpenScratchInstruction<
   return Object.freeze({
     accounts: [
       getAccountMeta('payer', accounts.payer),
-      getAccountMeta('scratch', accounts.scratch),
+      getAccountMeta('transientStore', accounts.transientStore),
       getAccountMeta('instructions', accounts.instructions),
       getAccountMeta('systemProgram', accounts.systemProgram),
     ],
-    data: getOpenScratchInstructionDataEncoder().encode({}),
+    data: getOpenTransientStoreInstructionDataEncoder().encode({}),
     programAddress,
-  } as OpenScratchInstruction<
+  } as OpenTransientStoreInstruction<
     TProgramAddress,
     TAccountPayer,
-    TAccountScratch,
+    TAccountTransientStore,
     TAccountInstructions,
     TAccountSystemProgram
   >);
 }
 
-export type ParsedOpenScratchInstruction<
+export type ParsedOpenTransientStoreInstruction<
   TProgram extends string = typeof ZAMA_HOST_PROGRAM_ADDRESS,
   TAccountMetas extends readonly AccountMeta[] = readonly AccountMeta[],
 > = {
   programAddress: Address<TProgram>;
   accounts: {
     payer: TAccountMetas[0];
-    scratch: TAccountMetas[1];
+    transientStore: TAccountMetas[1];
     instructions: TAccountMetas[2];
     systemProgram: TAccountMetas[3];
   };
-  data: OpenScratchInstructionData;
+  data: OpenTransientStoreInstructionData;
 };
 
-export function parseOpenScratchInstruction<TProgram extends string, TAccountMetas extends readonly AccountMeta[]>(
+export function parseOpenTransientStoreInstruction<
+  TProgram extends string,
+  TAccountMetas extends readonly AccountMeta[],
+>(
   instruction: Instruction<TProgram> & InstructionWithAccounts<TAccountMetas> & InstructionWithData<ReadonlyUint8Array>,
-): ParsedOpenScratchInstruction<TProgram, TAccountMetas> {
+): ParsedOpenTransientStoreInstruction<TProgram, TAccountMetas> {
   if (instruction.accounts.length < 4) {
     throw new SolanaError(SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS, {
       actualAccountMetas: instruction.accounts.length,
@@ -185,10 +192,10 @@ export function parseOpenScratchInstruction<TProgram extends string, TAccountMet
     programAddress: instruction.programAddress,
     accounts: {
       payer: getNextAccount(),
-      scratch: getNextAccount(),
+      transientStore: getNextAccount(),
       instructions: getNextAccount(),
       systemProgram: getNextAccount(),
     },
-    data: getOpenScratchInstructionDataDecoder().decode(instruction.data),
+    data: getOpenTransientStoreInstructionDataDecoder().decode(instruction.data),
   };
 }

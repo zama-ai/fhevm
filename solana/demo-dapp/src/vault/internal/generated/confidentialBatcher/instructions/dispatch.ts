@@ -61,7 +61,7 @@ export type DispatchInstruction<
   TAccountTotalSupplyState extends string | AccountMeta<string> = string,
   TAccountPendingBurn extends string | AccountMeta<string> = string,
   TAccountZamaEventAuthority extends string | AccountMeta<string> = string,
-  TAccountScratch extends string | AccountMeta<string> = string,
+  TAccountTransientStore extends string | AccountMeta<string> = string,
   TAccountInstructions extends string | AccountMeta<string> = string,
   TAccountZamaProgram extends string | AccountMeta<string> = '6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu',
   TAccountHostConfig extends string | AccountMeta<string> = string,
@@ -98,7 +98,7 @@ export type DispatchInstruction<
       TAccountZamaEventAuthority extends string
         ? ReadonlyAccount<TAccountZamaEventAuthority>
         : TAccountZamaEventAuthority,
-      TAccountScratch extends string ? WritableAccount<TAccountScratch> : TAccountScratch,
+      TAccountTransientStore extends string ? WritableAccount<TAccountTransientStore> : TAccountTransientStore,
       TAccountInstructions extends string ? ReadonlyAccount<TAccountInstructions> : TAccountInstructions,
       TAccountZamaProgram extends string ? ReadonlyAccount<TAccountZamaProgram> : TAccountZamaProgram,
       TAccountHostConfig extends string ? ReadonlyAccount<TAccountHostConfig> : TAccountHostConfig,
@@ -149,7 +149,7 @@ export type DispatchAsyncInput<
   TAccountTotalSupplyState extends string = string,
   TAccountPendingBurn extends string = string,
   TAccountZamaEventAuthority extends string = string,
-  TAccountScratch extends string = string,
+  TAccountTransientStore extends string = string,
   TAccountInstructions extends string = string,
   TAccountZamaProgram extends string = string,
   TAccountHostConfig extends string = string,
@@ -176,7 +176,7 @@ export type DispatchAsyncInput<
   totalSupplyState: Address<TAccountTotalSupplyState>;
   pendingBurn: Address<TAccountPendingBurn>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
-  scratch: Address<TAccountScratch>;
+  transientStore: Address<TAccountTransientStore>;
   instructions: Address<TAccountInstructions>;
   /** ZamaHost program (FHE compute + ACL). */
   zamaProgram?: Address<TAccountZamaProgram>;
@@ -202,7 +202,7 @@ export async function getDispatchInstructionAsync<
   TAccountTotalSupplyState extends string,
   TAccountPendingBurn extends string,
   TAccountZamaEventAuthority extends string,
-  TAccountScratch extends string,
+  TAccountTransientStore extends string,
   TAccountInstructions extends string,
   TAccountZamaProgram extends string,
   TAccountHostConfig extends string,
@@ -225,7 +225,7 @@ export async function getDispatchInstructionAsync<
     TAccountTotalSupplyState,
     TAccountPendingBurn,
     TAccountZamaEventAuthority,
-    TAccountScratch,
+    TAccountTransientStore,
     TAccountInstructions,
     TAccountZamaProgram,
     TAccountHostConfig,
@@ -250,7 +250,7 @@ export async function getDispatchInstructionAsync<
     TAccountTotalSupplyState,
     TAccountPendingBurn,
     TAccountZamaEventAuthority,
-    TAccountScratch,
+    TAccountTransientStore,
     TAccountInstructions,
     TAccountZamaProgram,
     TAccountHostConfig,
@@ -301,7 +301,7 @@ export async function getDispatchInstructionAsync<
       value: input.zamaEventAuthority ?? null,
       isWritable: false,
     },
-    scratch: { value: input.scratch ?? null, isWritable: true },
+    transientStore: { value: input.transientStore ?? null, isWritable: true },
     instructions: { value: input.instructions ?? null, isWritable: false },
     zamaProgram: { value: input.zamaProgram ?? null, isWritable: false },
     hostConfig: { value: input.hostConfig ?? null, isWritable: false },
@@ -351,7 +351,7 @@ export async function getDispatchInstructionAsync<
       getAccountMeta('totalSupplyState', accounts.totalSupplyState),
       getAccountMeta('pendingBurn', accounts.pendingBurn),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
-      getAccountMeta('scratch', accounts.scratch),
+      getAccountMeta('transientStore', accounts.transientStore),
       getAccountMeta('instructions', accounts.instructions),
       getAccountMeta('zamaProgram', accounts.zamaProgram),
       getAccountMeta('hostConfig', accounts.hostConfig),
@@ -376,7 +376,7 @@ export async function getDispatchInstructionAsync<
     TAccountTotalSupplyState,
     TAccountPendingBurn,
     TAccountZamaEventAuthority,
-    TAccountScratch,
+    TAccountTransientStore,
     TAccountInstructions,
     TAccountZamaProgram,
     TAccountHostConfig,
@@ -400,7 +400,7 @@ export type DispatchInput<
   TAccountTotalSupplyState extends string = string,
   TAccountPendingBurn extends string = string,
   TAccountZamaEventAuthority extends string = string,
-  TAccountScratch extends string = string,
+  TAccountTransientStore extends string = string,
   TAccountInstructions extends string = string,
   TAccountZamaProgram extends string = string,
   TAccountHostConfig extends string = string,
@@ -427,7 +427,7 @@ export type DispatchInput<
   totalSupplyState: Address<TAccountTotalSupplyState>;
   pendingBurn: Address<TAccountPendingBurn>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
-  scratch: Address<TAccountScratch>;
+  transientStore: Address<TAccountTransientStore>;
   instructions: Address<TAccountInstructions>;
   /** ZamaHost program (FHE compute + ACL). */
   zamaProgram?: Address<TAccountZamaProgram>;
@@ -453,7 +453,7 @@ export function getDispatchInstruction<
   TAccountTotalSupplyState extends string,
   TAccountPendingBurn extends string,
   TAccountZamaEventAuthority extends string,
-  TAccountScratch extends string,
+  TAccountTransientStore extends string,
   TAccountInstructions extends string,
   TAccountZamaProgram extends string,
   TAccountHostConfig extends string,
@@ -476,7 +476,7 @@ export function getDispatchInstruction<
     TAccountTotalSupplyState,
     TAccountPendingBurn,
     TAccountZamaEventAuthority,
-    TAccountScratch,
+    TAccountTransientStore,
     TAccountInstructions,
     TAccountZamaProgram,
     TAccountHostConfig,
@@ -500,7 +500,7 @@ export function getDispatchInstruction<
   TAccountTotalSupplyState,
   TAccountPendingBurn,
   TAccountZamaEventAuthority,
-  TAccountScratch,
+  TAccountTransientStore,
   TAccountInstructions,
   TAccountZamaProgram,
   TAccountHostConfig,
@@ -550,7 +550,7 @@ export function getDispatchInstruction<
       value: input.zamaEventAuthority ?? null,
       isWritable: false,
     },
-    scratch: { value: input.scratch ?? null, isWritable: true },
+    transientStore: { value: input.transientStore ?? null, isWritable: true },
     instructions: { value: input.instructions ?? null, isWritable: false },
     zamaProgram: { value: input.zamaProgram ?? null, isWritable: false },
     hostConfig: { value: input.hostConfig ?? null, isWritable: false },
@@ -595,7 +595,7 @@ export function getDispatchInstruction<
       getAccountMeta('totalSupplyState', accounts.totalSupplyState),
       getAccountMeta('pendingBurn', accounts.pendingBurn),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
-      getAccountMeta('scratch', accounts.scratch),
+      getAccountMeta('transientStore', accounts.transientStore),
       getAccountMeta('instructions', accounts.instructions),
       getAccountMeta('zamaProgram', accounts.zamaProgram),
       getAccountMeta('hostConfig', accounts.hostConfig),
@@ -620,7 +620,7 @@ export function getDispatchInstruction<
     TAccountTotalSupplyState,
     TAccountPendingBurn,
     TAccountZamaEventAuthority,
-    TAccountScratch,
+    TAccountTransientStore,
     TAccountInstructions,
     TAccountZamaProgram,
     TAccountHostConfig,
@@ -655,7 +655,7 @@ export type ParsedDispatchInstruction<
     totalSupplyState: TAccountMetas[10];
     pendingBurn: TAccountMetas[11];
     zamaEventAuthority: TAccountMetas[12];
-    scratch: TAccountMetas[13];
+    transientStore: TAccountMetas[13];
     instructions: TAccountMetas[14];
     /** ZamaHost program (FHE compute + ACL). */
     zamaProgram: TAccountMetas[15];
@@ -700,7 +700,7 @@ export function parseDispatchInstruction<TProgram extends string, TAccountMetas 
       totalSupplyState: getNextAccount(),
       pendingBurn: getNextAccount(),
       zamaEventAuthority: getNextAccount(),
-      scratch: getNextAccount(),
+      transientStore: getNextAccount(),
       instructions: getNextAccount(),
       zamaProgram: getNextAccount(),
       hostConfig: getNextAccount(),

@@ -6,7 +6,7 @@
 //! quote these function names as the source they must match. Exports here are that contract, so a
 //! label with no on-chain use is not automatically dead — but one with no use anywhere is: the
 //! `transfer_success` and `debit_candidate` labels were deleted once DD-019 stopped creating the
-//! scratch PDAs they named.
+//! transient store PDAs they named.
 
 pub mod confidential_mint;
 pub mod confidential_token_account;

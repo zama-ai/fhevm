@@ -18,7 +18,7 @@ struct Fixture {
     payer: Pubkey,
     authority: Pubkey,
     state: Pubkey,
-    scratch: Pubkey,
+    transient_store: Pubkey,
     accounts: Vec<(Pubkey, Account)>,
 }
 
@@ -29,14 +29,14 @@ impl Fixture {
         let (authority, _) = Pubkey::find_program_address(&[b"authority"], &program);
         let scope = [3; 32];
         let (state, bump) = host::encrypted_state_address(program, authority, scope);
-        let (scratch, _) = host::transient_address(payer);
-        let mut scratch_account = empty_system_account();
-        scratch_account.lamports = prefund;
+        let (transient_store, _) = host::transient_store_address(payer);
+        let mut transient_store_account = empty_system_account();
+        transient_store_account.lamports = prefund;
         Self {
             payer,
             authority,
             state,
-            scratch,
+            transient_store,
             accounts: vec![
                 (payer, funded_system_account()),
                 (authority, empty_system_account()),
@@ -57,7 +57,7 @@ impl Fixture {
                         ..Account::default()
                     },
                 ),
-                (scratch, scratch_account),
+                (transient_store, transient_store_account),
                 (
                     anchor_lang::prelude::system_program::ID,
                     system_program_account(),
@@ -69,23 +69,23 @@ impl Fixture {
     fn open(&self) -> Instruction {
         anchor_ix(
             host::ID,
-            host::accounts::OpenScratch {
+            host::accounts::OpenTransientStore {
                 payer: self.payer,
-                scratch: self.scratch,
+                transient_store: self.transient_store,
                 instructions: Instructions::id(),
                 system_program: anchor_lang::prelude::system_program::ID,
             },
-            host::instruction::OpenScratch {},
+            host::instruction::OpenTransientStore {},
         )
     }
 
     fn close(&self) -> Instruction {
         Instruction {
             program_id: host::ID,
-            data: host::instruction::CloseScratch {}.data(),
+            data: host::instruction::CloseTransientStore {}.data(),
             accounts: vec![
                 AccountMeta::new_readonly(Instructions::id(), false),
-                AccountMeta::new(self.scratch, false),
+                AccountMeta::new(self.transient_store, false),
                 AccountMeta::new(self.payer, false),
             ],
         }
@@ -93,7 +93,7 @@ impl Fixture {
 }
 
 #[test]
-fn scratch_is_created_and_closed_atomically_including_prefunded_addresses() {
+fn transient_store_is_created_and_closed_atomically_including_prefunded_addresses() {
     for donation in [0, 1_000_000] {
         let fixture = Fixture::new(donation);
         let result = host_svm().process_transaction_instructions(
@@ -109,8 +109,8 @@ fn scratch_is_created_and_closed_atomically_including_prefunded_addresses() {
                 .unwrap()
                 .1
         };
-        assert_eq!(account(fixture.scratch).lamports, 0);
-        assert!(account(fixture.scratch).data.is_empty());
+        assert_eq!(account(fixture.transient_store).lamports, 0);
+        assert!(account(fixture.transient_store).data.is_empty());
         let initial_payer = fixture
             .accounts
             .iter()
@@ -155,7 +155,7 @@ fn missing_close_and_unsigned_open_leave_all_accounts_unchanged() {
 }
 
 #[test]
-fn scratch_cannot_close_before_the_final_instruction() {
+fn transient_store_cannot_close_before_the_final_instruction() {
     let fixture = Fixture::new(0);
     let result = host_svm().process_transaction_instructions(
         &[fixture.open(), fixture.close(), fixture.close()],
@@ -172,19 +172,19 @@ fn scratch_cannot_close_before_the_final_instruction() {
 }
 
 #[test]
-fn nested_scratch_close_rolls_back_the_whole_transaction() {
+fn nested_transient_store_close_rolls_back_the_whole_transaction() {
     let fixture = Fixture::new(0);
     let mut svm = host_svm();
     svm.add_program(&delegator_vault::ID, "delegator_vault");
     let nested_close = anchor_ix(
         delegator_vault::ID,
-        delegator_vault::accounts::CloseScratchViaCpi {
-            scratch: fixture.scratch,
+        delegator_vault::accounts::CloseTransientStoreViaCpi {
+            transient_store: fixture.transient_store,
             refund: fixture.payer,
             instructions: Instructions::id(),
             zama_host: host::ID,
         },
-        delegator_vault::instruction::CloseScratchViaCpi {},
+        delegator_vault::instruction::CloseTransientStoreViaCpi {},
     );
     // The valid final close lets open succeed; the intervening CPI must still be rejected.
     let result = svm.process_transaction_instructions(
@@ -250,7 +250,7 @@ fn refund_substitution_and_duplicate_close_are_rejected() {
 }
 
 #[test]
-fn one_transaction_cannot_open_two_scratch_accounts() {
+fn one_transaction_cannot_open_two_transient_store_accounts() {
     let first = Fixture::new(0);
     let second = Fixture::new(0);
     let mut accounts = first.accounts.clone();
@@ -340,7 +340,7 @@ fn two_slots_share_history_and_stale_slot_writes_roll_back() {
             hcu_block_meter: None,
             hcu_trusted_app_record: None,
             rand_nonce: None,
-            scratch: fixture.scratch,
+            transient_store: fixture.transient_store,
             instructions: Instructions::id(),
             event_authority,
             program: host::ID,
@@ -545,14 +545,14 @@ fn maximum_result_grants_fit_one_execution_and_leave_no_account() {
         &accounts,
     );
     assert!(result.raw_result.is_ok(), "{:?}", result.raw_result);
-    let scratch = &result
+    let transient_store = &result
         .resulting_accounts
         .iter()
-        .find(|(key, _)| *key == fixture.scratch)
+        .find(|(key, _)| *key == fixture.transient_store)
         .unwrap()
         .1;
-    assert!(scratch.data.is_empty());
-    assert_eq!(scratch.lamports, 0);
+    assert!(transient_store.data.is_empty());
+    assert_eq!(transient_store.lamports, 0);
     let state = &result
         .resulting_accounts
         .iter()
@@ -625,7 +625,7 @@ fn execute(
             hcu_block_meter: None,
             hcu_trusted_app_record: None,
             rand_nonce: None,
-            scratch: fixture.scratch,
+            transient_store: fixture.transient_store,
             instructions: Instructions::id(),
             event_authority: zama_solana_test_kit::event_authority(host::ID),
             program: host::ID,
@@ -641,7 +641,7 @@ enum GrantConsumptionCase {
     Valid,
     UngrantedHandle,
     WrongConsumer,
-    WrongScratch,
+    WrongTransientStore,
     UnsignedConsumer,
     NoGrant,
     TotalLimit,
@@ -817,9 +817,9 @@ fn grant_then_consume(case: GrantConsumptionCase) -> TransactionResult {
             accounts.push((meter, empty_system_account()));
         }
     }
-    if matches!(case, GrantConsumptionCase::WrongScratch) {
-        consume.accounts[7].pubkey = consumer.scratch;
-        accounts.push((consumer.scratch, empty_system_account()));
+    if matches!(case, GrantConsumptionCase::WrongTransientStore) {
+        consume.accounts[7].pubkey = consumer.transient_store;
+        accounts.push((consumer.transient_store, empty_system_account()));
     }
     if matches!(case, GrantConsumptionCase::UnsignedConsumer) {
         consume.accounts[1].is_signer = false;
@@ -854,9 +854,9 @@ fn transient_result_rejects_missing_grants_and_wrong_handle_or_consumer() {
 }
 
 #[test]
-fn execution_cannot_substitute_an_unopened_scratch_account() {
+fn execution_cannot_substitute_an_unopened_transient_store_account() {
     assert_eq!(
-        grant_then_consume(GrantConsumptionCase::WrongScratch).program_result,
+        grant_then_consume(GrantConsumptionCase::WrongTransientStore).program_result,
         TransactionProgramResult::Failure(
             2,
             ProgramError::Custom(anchor_lang::error::ErrorCode::AccountOwnedByWrongProgram as u32)
@@ -970,7 +970,7 @@ fn result_journal_capacity_is_shared_across_calls_and_fails_atomically() {
                 result.compute_units_consumed
             );
             assert!(result
-                .get_account(&fixture.scratch)
+                .get_account(&fixture.transient_store)
                 .unwrap()
                 .data
                 .is_empty());
@@ -1243,18 +1243,18 @@ fn oracle_recovers_unstored_random_results_from_their_own_cpi_seed_event() {
 
 /// Cross-pinned by sdk/js-sdk/src/solana/fheTransaction.test.ts.
 #[test]
-fn sdk_scratch_fixture_matches_host_address_and_lifecycle_bytes() {
+fn sdk_transient_store_fixture_matches_host_address_and_lifecycle_bytes() {
     let payer = Pubkey::new_from_array([0x44; 32]);
     assert_eq!(
-        host::transient_address(payer).0.to_string(),
+        host::transient_store_address(payer).0.to_string(),
         "7HVhfpvm7TiBwHw8vFNeEqkMCDTU2cWpruEweWsRziAW"
     );
     assert_eq!(
-        host::instruction::OpenScratch {}.data(),
-        [194, 244, 203, 123, 137, 109, 255, 238]
+        host::instruction::OpenTransientStore {}.data(),
+        [54, 100, 76, 213, 84, 233, 196, 94]
     );
     assert_eq!(
-        host::instruction::CloseScratch {}.data(),
-        [29, 191, 137, 78, 203, 150, 199, 39]
+        host::instruction::CloseTransientStore {}.data(),
+        [107, 197, 28, 166, 51, 173, 83, 189]
     );
 }

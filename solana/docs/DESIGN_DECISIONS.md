@@ -5,7 +5,7 @@ Last synced: 2026-09-10.
 This document is the stable rationale index for the Solana FHEVM PoC: why the current design exists.
 Older entries keep the rationale as it stood when they were adopted. For the current account, permission, disclosure
 model read DD-049; it supersedes DD-032/033/036/039/045/047/048 on those points. DD-050 defines
-transaction composition, scratch, operand origins and HCU on top of that State model. DD-046 keeps the
+transaction composition, transient store, operand origins and HCU on top of that State model. DD-046 keeps the
 allocator decision, restated against the current resource limits. For the EVM mapping see
 [`EVM_PARITY.md`](./EVM_PARITY.md); for forward requirements see [`FUTURE_DESIGN.md`](./FUTURE_DESIGN.md).
 
@@ -2380,8 +2380,8 @@ requires its signature. Slot keys are not PDA seeds. Each batch participant's Jo
 is the authority of its contribution State, scoped to the batch.
 
 `State` outputs independently choose a slot write, exact-handle private/public permission
-leaves, and scratch grants. Scratch grants authorize an exact produced handle for a consumer
-State whose authority must sign use. Scratch opens and closes in one transaction, with a
+leaves, and transient store grants. Transient grants authorize an exact produced handle for a consumer
+State whose authority must sign use. The transient store opens and closes in one transaction, with a
 mandatory final top-level close and the recorded rent refund destination. It is not a decryption
 permission or a restriction on what authorized computations can subsequently reveal.
 
@@ -2402,12 +2402,12 @@ The existing input-attestation, threshold-KMS, program-upgrade and confirmed-RPC
 assumptions still apply. Resource limits remain shape-dependent; see runtime cost snapshots.
 
 
-## DD-050 — Shared transaction execution context
+## DD-050 — Transient storage shared across the transaction
 
 **Status:** implemented for fhevm-internal#2003, building on DD-049.
 
-Scratch is now payer-derived and opened once at the top level, before any app calls. Every FHE invocation validates
-that same scratch against the exact final top-level close. Payer identity controls funding/refund only. The bounded
+`TransientStore` is payer-derived and opened once at the top level, before any app calls. Every FHE invocation validates
+that same transient store against the exact final top-level close. Payer identity controls funding/refund only. The bounded
 zero-copy account holds 112 produced occurrences, 32 explicit grants and transaction HCU total; every occurrence
 records its producing State and depth. No resizing, initiating-State credential or client session nonce is needed.
 
@@ -2421,7 +2421,7 @@ enters operand-bearing handle preimages; bit 0 marks input position 0. The liste
 transaction. HCU total and depth use the same journal, while each application's block meter receives only that call's
 cost. Return data remains immediate CPI transport, independent of permissions and result storage.
 
-This removes per-call scratch opening, token result-scratch/result-authority account bundles, duplicate host metering
+This removes per-call transient store opening, token result-scratch/result-authority account bundles, duplicate host metering
 and redundant add-zero balance copies. All affected PoC clients must migrate together; no compatibility path is kept
 for the retired wire layout. Resource snapshots include lifecycle CU overhead and separate whole-transaction packet
 checks. The branch retains current slot/publication and PendingBurn semantics; historical re-sharing is still #2007.

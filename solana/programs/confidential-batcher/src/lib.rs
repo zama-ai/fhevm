@@ -91,7 +91,7 @@ pub mod confidential_batcher {
     /// Joins the pending batch with the batcher's join token: one user-signed
     /// transaction that CPIs the coprocessor-attested confidential transfer
     /// into the batch's token account. The token returns the transferred handle and grants
-    /// the JoinRecord State access through scratch. The batcher adds it to the user's
+    /// the JoinRecord State access through transient store. The batcher adds it to the user's
     /// contribution slot (decryptable by the user). Repeated joins accumulate.
     pub fn join<'info>(
         ctx: Context<'info, Join<'info>>,

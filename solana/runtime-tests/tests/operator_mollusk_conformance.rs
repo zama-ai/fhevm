@@ -476,7 +476,7 @@ impl ExecutionFlow {
                 hcu_block_meter: None,
                 hcu_trusted_app_record: None,
                 rand_nonce: self.rand_nonce,
-                scratch: host::transient_address(self.payer).0,
+                transient_store: host::transient_store_address(self.payer).0,
                 instructions: solana_sdk::sysvar::instructions::ID,
                 event_authority: event_authority(host::id()),
                 program: host::id(),

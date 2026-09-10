@@ -28,7 +28,7 @@ import {
  * created at `open_batch` with every settle account derivable then — including `pending_burn`, which
  * is derived from the join mint and batch join token account. The fee payer stays static in the v0 message (Solana always
  * keeps it static) and is therefore NOT passed here as a table address; program
- * IDs, the instructions sysvar and transaction scratch remain static.
+ * IDs, the instructions sysvar and transaction transient store remain static.
  *
  * `compressTransactionMessageUsingAddressLookupTables` moves exactly the accounts present in
  * `lookupTableAddresses` into the table's lookups and leaves everything else static. The size

@@ -3,7 +3,7 @@ use super::*;
 pub(super) fn accept_state_output(
     table: &mut ExecutionAccountTable<'_, '_>,
     dictionary: &[[u8; 32]],
-    scratch: &mut TransientState,
+    transient_store: &mut TransientStore,
     state_index: u8,
     previous_leaf_count: u64,
     slot: &Option<SlotWrite>,
@@ -51,7 +51,7 @@ pub(super) fn accept_state_output(
     }
     for grant in grants {
         let consumer = table.account(grant.consumer_state_index.into())?.key();
-        scratch.allow(result, consumer)?;
+        transient_store.allow(result, consumer)?;
     }
     Ok(state_key)
 }

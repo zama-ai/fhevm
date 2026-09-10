@@ -28,9 +28,9 @@ pub struct AllowTotalSupplyViewers<'info> {
     pub host_config: Box<Account<'info, zama_host::HostConfig>>,
     /// CHECK: Anchor event CPI authority for the Zama host program.
     pub zama_event_authority: UncheckedAccount<'info>,
-    /// CHECK: shared transaction scratch, validated by ZamaHost.
+    /// CHECK: shared transaction transient store, validated by ZamaHost.
     #[account(mut)]
-    pub scratch: UncheckedAccount<'info>,
+    pub transient_store: UncheckedAccount<'info>,
     /// CHECK: runtime Instructions sysvar, validated by ZamaHost.
     pub instructions: UncheckedAccount<'info>,
     pub zama_program: Program<'info, ZamaHost>,
@@ -84,7 +84,7 @@ pub fn allow_total_supply_viewers<'info>(
         fhe::ExecuteContext {
             payer: &ctx.accounts.payer,
             event_authority: &ctx.accounts.zama_event_authority,
-            scratch: &ctx.accounts.scratch,
+            transient_store: &ctx.accounts.transient_store,
             instructions: &ctx.accounts.instructions,
             zama_program: &ctx.accounts.zama_program,
             host_config: &ctx.accounts.host_config,

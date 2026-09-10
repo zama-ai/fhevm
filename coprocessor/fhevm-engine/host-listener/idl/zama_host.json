@@ -11,16 +11,16 @@
   ],
   "instructions": [
     {
-      "name": "close_scratch",
+      "name": "close_transient_store",
       "discriminator": [
-        29,
-        191,
-        137,
-        78,
-        203,
-        150,
-        199,
-        39
+        107,
+        197,
+        28,
+        166,
+        51,
+        173,
+        83,
+        189
       ],
       "accounts": [
         {
@@ -28,7 +28,7 @@
           "address": "Sysvar1nstructions1111111111111111111111111"
         },
         {
-          "name": "scratch",
+          "name": "transient_store",
           "writable": true
         },
         {
@@ -528,9 +528,9 @@
           }
         },
         {
-          "name": "scratch",
+          "name": "transient_store",
           "docs": [
-            "Shared by every execution until the transaction's final CloseScratch."
+            "Shared by every execution until the transaction's final CloseTransientStore."
           ],
           "writable": true
         },
@@ -758,16 +758,16 @@
       ]
     },
     {
-      "name": "open_scratch",
+      "name": "open_transient_store",
       "discriminator": [
-        194,
-        244,
-        203,
-        123,
-        137,
-        109,
-        255,
-        238
+        54,
+        100,
+        76,
+        213,
+        84,
+        233,
+        196,
+        94
       ],
       "accounts": [
         {
@@ -776,7 +776,7 @@
           "signer": true
         },
         {
-          "name": "scratch",
+          "name": "transient_store",
           "writable": true
         },
         {
@@ -1778,16 +1778,16 @@
       ]
     },
     {
-      "name": "TransientState",
+      "name": "TransientStore",
       "discriminator": [
-        50,
-        231,
-        101,
-        112,
-        209,
-        120,
-        5,
-        8
+        16,
+        64,
+        144,
+        188,
+        232,
+        184,
+        78,
+        123
       ]
     },
     {
@@ -2281,7 +2281,7 @@
     {
       "code": 6076,
       "name": "TransientCloseMissing",
-      "msg": "matching final top-level scratch close is required"
+      "msg": "matching final top-level transient_store close is required"
     },
     {
       "code": 6077,
@@ -4081,9 +4081,9 @@
       }
     },
     {
-      "name": "TransientState",
+      "name": "TransientStore",
       "docs": [
-        "Host-owned transaction context. Borrowed in place so nested executions do",
+        "Host-owned transient storage shared by all FHE calls in one transaction. Borrowed in place so nested executions do",
         "not deserialize the growing result history onto Solana's bump heap."
       ],
       "serialization": "bytemuck",

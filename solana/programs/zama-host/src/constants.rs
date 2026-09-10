@@ -36,7 +36,7 @@ pub use zama_solana_acl::WILDCARD_AUTHORITY as WILDCARD_AUTHORITY_BYTES;
 
 /// Maximum number of FHE operations accepted by one composed execution.
 ///
-/// The runtime boundary suite measures whole transactions, including scratch
+/// The runtime boundary suite measures whole transactions, including transient store
 /// open/close, under the fixed 32 KiB heap and 1,232-byte packet limit. Dependent
 /// chains reach this cap; wide permissions and State histories can hit a lower
 /// limit. See `runtime-tests/cost-snapshots/fhe_execute_boundary.json` for each

@@ -329,7 +329,7 @@ pub enum FheExecuteOperand {
     /// `remaining_accounts` whose current handle matches the interned one. Admission is the
     /// signature of the value's authority, found among the execution's signers.
 
-    /// Compact reference to an earlier result, authorized by the execution State in scratch.
+    /// Compact reference to an earlier result, authorized by the execution State in transient store.
     EarlierStep {
         /// Producer operation index.
         producer_index: u8,

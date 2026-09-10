@@ -2012,9 +2012,10 @@ fn mollusk_fhe_execute_wrong_event_authority_fails_without_output() {
 fn mollusk_transaction_later_failure_rolls_back_created_public_output() {
     let mut execution = created_public_batch(1, &[0]);
     let payer = execution.instruction.accounts[0].pubkey;
-    execution
-        .accounts
-        .push((host::transient_address(payer).0, empty_system_account()));
+    execution.accounts.push((
+        host::transient_store_address(payer).0,
+        empty_system_account(),
+    ));
     let transaction = mollusk().process_transaction_instructions(
         &zama_solana_test_kit::transaction::fhe_transaction(
             payer,
@@ -3180,7 +3181,7 @@ impl FheExecutionFixture {
             host::id(),
             host::accounts::FheExecute {
                 payer: self.payer,
-                scratch: host::transient_address(self.payer).0,
+                transient_store: host::transient_store_address(self.payer).0,
                 instructions: solana_sdk::sysvar::instructions::ID,
                 authority: self.app.key(),
                 host_config: self.host_config,
@@ -3395,7 +3396,7 @@ impl FheExecutionFixture {
             host::id(),
             host::accounts::FheExecute {
                 payer,
-                scratch: host::transient_address(payer).0,
+                transient_store: host::transient_store_address(payer).0,
                 instructions: solana_sdk::sysvar::instructions::ID,
                 authority: authority.key(),
                 host_config: self.host_config,
@@ -3995,7 +3996,7 @@ fn mollusk_fhe_execute_same_application_accumulates_across_payers_and_authoritie
             meta.pubkey = payer1;
         }
     }
-    ix1.accounts[7].pubkey = host::transient_address(payer1).0;
+    ix1.accounts[7].pubkey = host::transient_store_address(payer1).0;
     check_host_context(&fixture.context, &ix1, &[Check::success()]);
     assert_eq!(
         read_hcu_block_meter(&fixture.context, meter_pda)
@@ -5090,7 +5091,7 @@ fn cost_snapshot_fhe_execute_max_steps() {
 fn mollusk_fhe_execute_max_op_transaction_fits_packet() {
     // MAX_FHE_EXECUTION_STEPS is derived from measured budgets (fhevm-internal#1853 W8). This is the
     // byte-budget half: the whole signed transaction for the max-op execution — envelope included —
-    // must fit one 1,232-byte packet including the scratch lifecycle. Richer account/operand
+    // must fit one 1,232-byte packet including the transient store lifecycle. Richer account/operand
     // shapes have separate capacity probes.
     let fixture = snapshot_fixture();
     // The Solana transaction packet limit (solana-packet's PACKET_DATA_SIZE: 1280-byte

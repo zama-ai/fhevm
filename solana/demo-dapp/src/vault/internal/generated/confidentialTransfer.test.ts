@@ -69,7 +69,7 @@ describe('generated confidentialTransfer instruction', () => {
       [aliasedBalance, AccountRole.WRITABLE],
       [aliasedBalance, AccountRole.WRITABLE],
       [zamaEvent, AccountRole.READONLY],
-      [fhe.accounts.scratch, AccountRole.WRITABLE],
+      [fhe.accounts.transientStore, AccountRole.WRITABLE],
       [fhe.accounts.instructions, AccountRole.READONLY],
       ['6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu', AccountRole.READONLY],
       [hostConfig, AccountRole.READONLY],

@@ -56,9 +56,9 @@ pub struct Join<'info> {
     /// CHECK: canonical host state controlled by this JoinRecord.
     #[account(mut)]
     pub join_state: UncheckedAccount<'info>,
-    /// CHECK: host validates the shared transaction scratch.
+    /// CHECK: host validates the shared transaction transient store.
     #[account(mut)]
-    pub scratch: UncheckedAccount<'info>,
+    pub transient_store: UncheckedAccount<'info>,
     /// CHECK: host validates the real Instructions sysvar and final close.
     pub instructions: UncheckedAccount<'info>,
     /// CHECK: ZamaHost event-CPI authority; validated by the host program.
@@ -76,7 +76,7 @@ pub struct Join<'info> {
 }
 
 /// Transfers into the batch account, then adds the token's returned result to the
-/// JoinRecord contribution slot using the scratch grant.
+/// JoinRecord contribution slot using the transient store grant.
 pub fn join<'info>(
     ctx: Context<'info, Join<'info>>,
     amount_attestation: zama_host::CoprocessorInputAttestation,
@@ -157,7 +157,7 @@ pub fn join<'info>(
         payer: ctx.accounts.payer.to_account_info(),
         host_config: ctx.accounts.host_config.to_account_info(),
         event_authority: ctx.accounts.zama_event_authority.to_account_info(),
-        scratch: ctx.accounts.scratch.to_account_info(),
+        transient_store: ctx.accounts.transient_store.to_account_info(),
         instructions: ctx.accounts.instructions.to_account_info(),
         program: ctx.accounts.zama_program.to_account_info(),
         system_program: ctx.accounts.system_program.to_account_info(),
@@ -205,7 +205,7 @@ fn transfer_to_batch<'info>(
                 from_state: ctx.accounts.user_balance_state.to_account_info(),
                 to_state: ctx.accounts.batch_balance_state.to_account_info(),
                 zama_event_authority: ctx.accounts.zama_event_authority.to_account_info(),
-                scratch: ctx.accounts.scratch.to_account_info(),
+                transient_store: ctx.accounts.transient_store.to_account_info(),
                 instructions: ctx.accounts.instructions.to_account_info(),
                 zama_program: ctx.accounts.zama_program.to_account_info(),
                 host_config: ctx.accounts.host_config.to_account_info(),

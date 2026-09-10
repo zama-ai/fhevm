@@ -17,7 +17,7 @@ import {
  */
 export type SolanaVaultClaimParameters = {
   readonly fhe: SolanaFheTransactionAccounts;
-  /** Pays State growth. The supplied FHE transaction may have a different scratch sponsor. */
+  /** Pays State growth. The supplied FHE transaction may have a different transientStore sponsor. */
   readonly payer: TransactionSigner;
   /** The user being claimed for (pins the join record). Not a signer. */
   readonly user: Address;

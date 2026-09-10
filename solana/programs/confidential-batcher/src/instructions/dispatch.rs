@@ -48,9 +48,9 @@ pub struct Dispatch<'info> {
     pub pending_burn: UncheckedAccount<'info>,
     /// CHECK: ZamaHost event-CPI authority; validated by the host program.
     pub zama_event_authority: UncheckedAccount<'info>,
-    /// CHECK: shared transaction scratch, validated by ZamaHost.
+    /// CHECK: shared transaction transient store, validated by ZamaHost.
     #[account(mut)]
-    pub scratch: UncheckedAccount<'info>,
+    pub transient_store: UncheckedAccount<'info>,
     /// CHECK: runtime Instructions sysvar, validated by ZamaHost.
     pub instructions: UncheckedAccount<'info>,
     /// ZamaHost program (FHE compute + ACL).
@@ -118,7 +118,7 @@ pub fn dispatch(ctx: Context<Dispatch>) -> Result<()> {
                 // Whole-balance burn: the balance encrypted State is also the amount.
                 amount_state: ctx.accounts.batch_balance_state.to_account_info(),
                 zama_event_authority: ctx.accounts.zama_event_authority.to_account_info(),
-                scratch: ctx.accounts.scratch.to_account_info(),
+                transient_store: ctx.accounts.transient_store.to_account_info(),
                 instructions: ctx.accounts.instructions.to_account_info(),
                 zama_program: ctx.accounts.zama_program.to_account_info(),
                 host_config: ctx.accounts.host_config.to_account_info(),

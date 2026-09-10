@@ -56,9 +56,9 @@ this handle" — an MMR-proven allow or public-decrypt leaf.
 
 ## Composed FHE execution
 
-A client opens one payer-derived scratch account, submits application instructions, then closes scratch as the
-final top-level instruction. Applications forward the same scratch and Instructions sysvar through every host CPI.
-Scratch records all produced handles, their producing State, cumulative HCU depth, and explicit cross-State grants.
+A client calls `open_transient_store`, submits application instructions, then calls `close_transient_store` as the
+final top-level instruction. The SDK transaction wrapper inserts both lifecycle instructions. Applications forward the same transient store and Instructions sysvar through every host CPI.
+`TransientStore` records all produced handles, their producing State, cumulative HCU depth, and explicit cross-State grants.
 Its payer funds rent and receives the refund; the payer acquires no handle permission.
 
 `fhe_execute` takes an explicit canonical producing `EncryptedState` and that State authority's signature. It runs
@@ -74,7 +74,7 @@ let execution = FheExecution::build(state.id(), |fhe| {
 ```
 
 A current-call `EarlierStep` names one produced occurrence. A later call by the same State can use the handle from
-scratch without another grant. A different State must receive an explicit `StateOutput::allow_transient` grant and
+transient store without another grant. A different State must receive an explicit `StateOutput::allow_transient` grant and
 its authority must sign consumption. A slot operand requires its authority's signature and the expected current
 handle. Other participating signatures do not implicitly share every intermediate result.
 

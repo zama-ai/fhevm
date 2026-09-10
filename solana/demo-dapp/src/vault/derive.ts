@@ -96,7 +96,7 @@ export async function deriveJoinRecordAddress(batch: Address, user: Address): Pr
 /**
  * The complete account set for one `settle`, derived from the roots and a batch's addresses. This is
  * the settle instruction's non-fixed, batch-scoped accounts and event authorities.
- * The payer and transaction scratch are resolved when the transaction is assembled. `pendingBurn`
+ * The payer and transaction transient store are resolved when the transaction is assembled. `pendingBurn`
  * is derived from the join mint and batch join token account, so it is known at `open_batch`.
  */
 export interface SolanaVaultSettleAccounts {
@@ -132,7 +132,7 @@ export interface SolanaVaultSettleAccounts {
 
 /**
  * The ordered address set the settle Address Lookup Table holds — every settle account derivable at
- * `open_batch`. The payer, scratch, sysvar and fixed program IDs stay static. The demo seeder creates
+ * `open_batch`. The payer, transient store, sysvar and fixed program IDs stay static. The demo seeder creates
  * the on-chain ALT from this exact ordered list and `settleBatch` compresses against the same list, so
  * the two agree by construction — the v0 message's table indices line up with the on-chain entries.
  */

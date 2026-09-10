@@ -820,8 +820,8 @@ fn cost_snapshot_solana_ceilings() {
                 64,
                 false,
                 "every top-level instruction and CPI shares this transaction limit; budget \
-                 State and scratch creation, rent top-ups, lazy meter creation, host events, \
-                 final scratch close and the app's other CPIs",
+                 State and transient store creation, rent top-ups, lazy meter creation, host events, \
+                 final transient store close and the app's other CPIs",
             ),
         ),
         (

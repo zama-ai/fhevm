@@ -55,7 +55,7 @@ export type ClaimInstruction<
   TAccountBatchAuthority extends string | AccountMeta<string> = string,
   TAccountJoinRecord extends string | AccountMeta<string> = string,
   TAccountJoinState extends string | AccountMeta<string> = string,
-  TAccountScratch extends string | AccountMeta<string> = string,
+  TAccountTransientStore extends string | AccountMeta<string> = string,
   TAccountInstructions extends string | AccountMeta<string> = string,
   TAccountPayoutConfidentialMint extends string | AccountMeta<string> = string,
   TAccountPayoutUnderlyingMint extends string | AccountMeta<string> = string,
@@ -85,7 +85,7 @@ export type ClaimInstruction<
       TAccountBatchAuthority extends string ? ReadonlyAccount<TAccountBatchAuthority> : TAccountBatchAuthority,
       TAccountJoinRecord extends string ? WritableAccount<TAccountJoinRecord> : TAccountJoinRecord,
       TAccountJoinState extends string ? WritableAccount<TAccountJoinState> : TAccountJoinState,
-      TAccountScratch extends string ? WritableAccount<TAccountScratch> : TAccountScratch,
+      TAccountTransientStore extends string ? WritableAccount<TAccountTransientStore> : TAccountTransientStore,
       TAccountInstructions extends string ? ReadonlyAccount<TAccountInstructions> : TAccountInstructions,
       TAccountPayoutConfidentialMint extends string
         ? ReadonlyAccount<TAccountPayoutConfidentialMint>
@@ -152,7 +152,7 @@ export type ClaimAsyncInput<
   TAccountBatchAuthority extends string = string,
   TAccountJoinRecord extends string = string,
   TAccountJoinState extends string = string,
-  TAccountScratch extends string = string,
+  TAccountTransientStore extends string = string,
   TAccountInstructions extends string = string,
   TAccountPayoutConfidentialMint extends string = string,
   TAccountPayoutUnderlyingMint extends string = string,
@@ -182,7 +182,7 @@ export type ClaimAsyncInput<
   /** The user's join record; marked claimed here. */
   joinRecord?: Address<TAccountJoinRecord>;
   joinState: Address<TAccountJoinState>;
-  scratch: Address<TAccountScratch>;
+  transientStore: Address<TAccountTransientStore>;
   instructions: Address<TAccountInstructions>;
   /** Confidential mint claims pay out in. */
   payoutConfidentialMint: Address<TAccountPayoutConfidentialMint>;
@@ -217,7 +217,7 @@ export async function getClaimInstructionAsync<
   TAccountBatchAuthority extends string,
   TAccountJoinRecord extends string,
   TAccountJoinState extends string,
-  TAccountScratch extends string,
+  TAccountTransientStore extends string,
   TAccountInstructions extends string,
   TAccountPayoutConfidentialMint extends string,
   TAccountPayoutUnderlyingMint extends string,
@@ -243,7 +243,7 @@ export async function getClaimInstructionAsync<
     TAccountBatchAuthority,
     TAccountJoinRecord,
     TAccountJoinState,
-    TAccountScratch,
+    TAccountTransientStore,
     TAccountInstructions,
     TAccountPayoutConfidentialMint,
     TAccountPayoutUnderlyingMint,
@@ -271,7 +271,7 @@ export async function getClaimInstructionAsync<
     TAccountBatchAuthority,
     TAccountJoinRecord,
     TAccountJoinState,
-    TAccountScratch,
+    TAccountTransientStore,
     TAccountInstructions,
     TAccountPayoutConfidentialMint,
     TAccountPayoutUnderlyingMint,
@@ -301,7 +301,7 @@ export async function getClaimInstructionAsync<
     batchAuthority: { value: input.batchAuthority ?? null, isWritable: false },
     joinRecord: { value: input.joinRecord ?? null, isWritable: true },
     joinState: { value: input.joinState ?? null, isWritable: true },
-    scratch: { value: input.scratch ?? null, isWritable: true },
+    transientStore: { value: input.transientStore ?? null, isWritable: true },
     instructions: { value: input.instructions ?? null, isWritable: false },
     payoutConfidentialMint: {
       value: input.payoutConfidentialMint ?? null,
@@ -384,7 +384,7 @@ export async function getClaimInstructionAsync<
       getAccountMeta('batchAuthority', accounts.batchAuthority),
       getAccountMeta('joinRecord', accounts.joinRecord),
       getAccountMeta('joinState', accounts.joinState),
-      getAccountMeta('scratch', accounts.scratch),
+      getAccountMeta('transientStore', accounts.transientStore),
       getAccountMeta('instructions', accounts.instructions),
       getAccountMeta('payoutConfidentialMint', accounts.payoutConfidentialMint),
       getAccountMeta('payoutUnderlyingMint', accounts.payoutUnderlyingMint),
@@ -412,7 +412,7 @@ export async function getClaimInstructionAsync<
     TAccountBatchAuthority,
     TAccountJoinRecord,
     TAccountJoinState,
-    TAccountScratch,
+    TAccountTransientStore,
     TAccountInstructions,
     TAccountPayoutConfidentialMint,
     TAccountPayoutUnderlyingMint,
@@ -439,7 +439,7 @@ export type ClaimInput<
   TAccountBatchAuthority extends string = string,
   TAccountJoinRecord extends string = string,
   TAccountJoinState extends string = string,
-  TAccountScratch extends string = string,
+  TAccountTransientStore extends string = string,
   TAccountInstructions extends string = string,
   TAccountPayoutConfidentialMint extends string = string,
   TAccountPayoutUnderlyingMint extends string = string,
@@ -469,7 +469,7 @@ export type ClaimInput<
   /** The user's join record; marked claimed here. */
   joinRecord: Address<TAccountJoinRecord>;
   joinState: Address<TAccountJoinState>;
-  scratch: Address<TAccountScratch>;
+  transientStore: Address<TAccountTransientStore>;
   instructions: Address<TAccountInstructions>;
   /** Confidential mint claims pay out in. */
   payoutConfidentialMint: Address<TAccountPayoutConfidentialMint>;
@@ -504,7 +504,7 @@ export function getClaimInstruction<
   TAccountBatchAuthority extends string,
   TAccountJoinRecord extends string,
   TAccountJoinState extends string,
-  TAccountScratch extends string,
+  TAccountTransientStore extends string,
   TAccountInstructions extends string,
   TAccountPayoutConfidentialMint extends string,
   TAccountPayoutUnderlyingMint extends string,
@@ -530,7 +530,7 @@ export function getClaimInstruction<
     TAccountBatchAuthority,
     TAccountJoinRecord,
     TAccountJoinState,
-    TAccountScratch,
+    TAccountTransientStore,
     TAccountInstructions,
     TAccountPayoutConfidentialMint,
     TAccountPayoutUnderlyingMint,
@@ -557,7 +557,7 @@ export function getClaimInstruction<
   TAccountBatchAuthority,
   TAccountJoinRecord,
   TAccountJoinState,
-  TAccountScratch,
+  TAccountTransientStore,
   TAccountInstructions,
   TAccountPayoutConfidentialMint,
   TAccountPayoutUnderlyingMint,
@@ -586,7 +586,7 @@ export function getClaimInstruction<
     batchAuthority: { value: input.batchAuthority ?? null, isWritable: false },
     joinRecord: { value: input.joinRecord ?? null, isWritable: true },
     joinState: { value: input.joinState ?? null, isWritable: true },
-    scratch: { value: input.scratch ?? null, isWritable: true },
+    transientStore: { value: input.transientStore ?? null, isWritable: true },
     instructions: { value: input.instructions ?? null, isWritable: false },
     payoutConfidentialMint: {
       value: input.payoutConfidentialMint ?? null,
@@ -658,7 +658,7 @@ export function getClaimInstruction<
       getAccountMeta('batchAuthority', accounts.batchAuthority),
       getAccountMeta('joinRecord', accounts.joinRecord),
       getAccountMeta('joinState', accounts.joinState),
-      getAccountMeta('scratch', accounts.scratch),
+      getAccountMeta('transientStore', accounts.transientStore),
       getAccountMeta('instructions', accounts.instructions),
       getAccountMeta('payoutConfidentialMint', accounts.payoutConfidentialMint),
       getAccountMeta('payoutUnderlyingMint', accounts.payoutUnderlyingMint),
@@ -686,7 +686,7 @@ export function getClaimInstruction<
     TAccountBatchAuthority,
     TAccountJoinRecord,
     TAccountJoinState,
-    TAccountScratch,
+    TAccountTransientStore,
     TAccountInstructions,
     TAccountPayoutConfidentialMint,
     TAccountPayoutUnderlyingMint,
@@ -724,7 +724,7 @@ export type ParsedClaimInstruction<
     /** The user's join record; marked claimed here. */
     joinRecord: TAccountMetas[5];
     joinState: TAccountMetas[6];
-    scratch: TAccountMetas[7];
+    transientStore: TAccountMetas[7];
     instructions: TAccountMetas[8];
     /** Confidential mint claims pay out in. */
     payoutConfidentialMint: TAccountMetas[9];
@@ -778,7 +778,7 @@ export function parseClaimInstruction<TProgram extends string, TAccountMetas ext
       batchAuthority: getNextAccount(),
       joinRecord: getNextAccount(),
       joinState: getNextAccount(),
-      scratch: getNextAccount(),
+      transientStore: getNextAccount(),
       instructions: getNextAccount(),
       payoutConfidentialMint: getNextAccount(),
       payoutUnderlyingMint: getNextAccount(),

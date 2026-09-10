@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { address, generateKeyPairSigner, getCompiledTransactionMessageDecoder, decompileTransactionMessage, type Blockhash } from '@solana/kit';
-import { OPEN_SCRATCH_DISCRIMINATOR } from '@sdk-src/solana/internal/generated/zamaHost/instructions/openScratch.js';
-import { CLOSE_SCRATCH_DISCRIMINATOR } from '@sdk-src/solana/internal/generated/zamaHost/instructions/closeScratch.js';
+import { OPEN_TRANSIENT_STORE_DISCRIMINATOR } from '@sdk-src/solana/internal/generated/zamaHost/instructions/openTransientStore.js';
+import { CLOSE_TRANSIENT_STORE_DISCRIMINATOR } from '@sdk-src/solana/internal/generated/zamaHost/instructions/closeTransientStore.js';
 
 const mocks = vi.hoisted(() => ({
   buildInputProof: vi.fn(),
@@ -154,14 +154,14 @@ describe('public USDC deposit', () => {
     const message = decompileTransactionMessage(getCompiledTransactionMessageDecoder().decode(sent.messageBytes));
     // The first instruction sets the CU budget. All FHE work shares one exact lifecycle.
     const body = message.instructions.slice(1);
-    expect([...body[0]!.data!]).toEqual([...OPEN_SCRATCH_DISCRIMINATOR]);
+    expect([...body[0]!.data!]).toEqual([...OPEN_TRANSIENT_STORE_DISCRIMINATOR]);
     expect(body.slice(1, -1).map(ix => [...ix.data!])).toEqual(initialize ? [[1], [2]] : [[2]]);
-    expect([...body.at(-1)!.data!]).toEqual([...CLOSE_SCRATCH_DISCRIMINATOR]);
+    expect([...body.at(-1)!.data!]).toEqual([...CLOSE_TRANSIENT_STORE_DISCRIMINATOR]);
     const initContext = mocks.buildInitialize.mock.calls[0]![1].fhe;
     const wrapContext = mocks.buildWrap.mock.calls[0]![0].fhe;
     expect(initContext).toEqual(wrapContext);
-    expect(body[0]!.accounts?.[1]?.address).toBe(wrapContext.scratch);
-    expect(body.at(-1)!.accounts?.[1]?.address).toBe(wrapContext.scratch);
+    expect(body[0]!.accounts?.[1]?.address).toBe(wrapContext.transientStore);
+    expect(body.at(-1)!.accounts?.[1]?.address).toBe(wrapContext.transientStore);
     expect(mocks.joinBatch).toHaveBeenCalledOnce();
   });
 });

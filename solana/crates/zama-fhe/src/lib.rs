@@ -19,7 +19,7 @@
 //! [`State::get`] reads a typed handle from a slot. [`State::set`] describes a slot write,
 //! and [`State::result`] describes permissions on a result without storing it in a slot.
 //! [`StateOutput::allow`] appends decrypt permission to the State history;
-//! [`StateOutput::allow_transient`] shares computation rights through transaction scratch.
+//! [`StateOutput::allow_transient`] shares computation rights through transaction transient store.
 //! Intermediate [`Encrypted`] values can be consumed by later steps in the same execution.
 
 #![allow(unexpected_cfgs)]

@@ -34,16 +34,16 @@ pub fn vault_address(executor: Pubkey) -> (Pubkey, u8) {
 pub mod delegator_vault {
     use super::*;
 
-    /// Exercises the host's rejection of nested scratch closure. Test-only; deployed nowhere.
-    pub fn close_scratch_via_cpi<'info>(
-        ctx: Context<'info, CloseScratchViaCpi<'info>>,
+    /// Exercises the host's rejection of nested transient store closure. Test-only; deployed nowhere.
+    pub fn close_transient_store_via_cpi<'info>(
+        ctx: Context<'info, CloseTransientStoreViaCpi<'info>>,
     ) -> Result<()> {
-        zama_host::cpi::close_scratch(
+        zama_host::cpi::close_transient_store(
             CpiContext::new(
                 ctx.accounts.zama_host.key(),
-                zama_host::cpi::accounts::CloseScratch {
+                zama_host::cpi::accounts::CloseTransientStore {
                     instructions: ctx.accounts.instructions.to_account_info(),
-                    scratch: ctx.accounts.scratch.to_account_info(),
+                    transient_store: ctx.accounts.transient_store.to_account_info(),
                     refund: ctx.accounts.refund.to_account_info(),
                 },
             )
@@ -52,7 +52,7 @@ pub mod delegator_vault {
     }
 
     /// Checks return data immediately after CPI, before the transaction's final
-    /// scratch close overwrites the runtime return channel.
+    /// transient store close overwrites the runtime return channel.
     pub fn check_cpi_return<'info>(
         ctx: Context<'info, CheckCpiReturn<'info>>,
         instruction_data: Vec<u8>,
@@ -169,10 +169,10 @@ pub struct VaultDelegation<'info> {
 
 /// Accounts forwarded to the host in the nested-close negative test.
 #[derive(Accounts)]
-pub struct CloseScratchViaCpi<'info> {
-    /// CHECK: test forwards the scratch to ZamaHost.
+pub struct CloseTransientStoreViaCpi<'info> {
+    /// CHECK: test forwards the transient store to ZamaHost.
     #[account(mut)]
-    pub scratch: UncheckedAccount<'info>,
+    pub transient_store: UncheckedAccount<'info>,
     /// CHECK: ZamaHost checks the recorded refund destination.
     #[account(mut)]
     pub refund: UncheckedAccount<'info>,

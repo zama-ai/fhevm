@@ -98,7 +98,7 @@
           "name": "zama_event_authority"
         },
         {
-          "name": "scratch",
+          "name": "transient_store",
           "writable": true
         },
         {
@@ -225,7 +225,7 @@
           "name": "zama_event_authority"
         },
         {
-          "name": "scratch",
+          "name": "transient_store",
           "writable": true
         },
         {
@@ -398,7 +398,7 @@
           "name": "zama_event_authority"
         },
         {
-          "name": "scratch",
+          "name": "transient_store",
           "writable": true
         },
         {
@@ -542,7 +542,7 @@
           "name": "zama_event_authority"
         },
         {
-          "name": "scratch",
+          "name": "transient_store",
           "writable": true
         },
         {
@@ -725,7 +725,7 @@
           "name": "zama_event_authority"
         },
         {
-          "name": "scratch",
+          "name": "transient_store",
           "writable": true
         },
         {
@@ -864,7 +864,7 @@
           "name": "zama_event_authority"
         },
         {
-          "name": "scratch",
+          "name": "transient_store",
           "writable": true
         },
         {
@@ -1015,7 +1015,7 @@
           "name": "zama_event_authority"
         },
         {
-          "name": "scratch",
+          "name": "transient_store",
           "writable": true
         },
         {
@@ -1265,7 +1265,7 @@
           "name": "zama_event_authority"
         },
         {
-          "name": "scratch",
+          "name": "transient_store",
           "writable": true
         },
         {
@@ -1396,7 +1396,7 @@
           "name": "zama_event_authority"
         },
         {
-          "name": "scratch",
+          "name": "transient_store",
           "writable": true
         },
         {
@@ -1986,7 +1986,7 @@
           "name": "zama_event_authority"
         },
         {
-          "name": "scratch",
+          "name": "transient_store",
           "writable": true
         },
         {

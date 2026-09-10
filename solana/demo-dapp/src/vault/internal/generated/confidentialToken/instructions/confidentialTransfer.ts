@@ -63,7 +63,7 @@ export type ConfidentialTransferInstruction<
   TAccountFromState extends string | AccountMeta<string> = string,
   TAccountToState extends string | AccountMeta<string> = string,
   TAccountZamaEventAuthority extends string | AccountMeta<string> = string,
-  TAccountScratch extends string | AccountMeta<string> = string,
+  TAccountTransientStore extends string | AccountMeta<string> = string,
   TAccountInstructions extends string | AccountMeta<string> = string,
   TAccountZamaProgram extends string | AccountMeta<string> = '6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu',
   TAccountHostConfig extends string | AccountMeta<string> = string,
@@ -95,7 +95,7 @@ export type ConfidentialTransferInstruction<
       TAccountZamaEventAuthority extends string
         ? ReadonlyAccount<TAccountZamaEventAuthority>
         : TAccountZamaEventAuthority,
-      TAccountScratch extends string ? WritableAccount<TAccountScratch> : TAccountScratch,
+      TAccountTransientStore extends string ? WritableAccount<TAccountTransientStore> : TAccountTransientStore,
       TAccountInstructions extends string ? ReadonlyAccount<TAccountInstructions> : TAccountInstructions,
       TAccountZamaProgram extends string ? ReadonlyAccount<TAccountZamaProgram> : TAccountZamaProgram,
       TAccountHostConfig extends string ? ReadonlyAccount<TAccountHostConfig> : TAccountHostConfig,
@@ -159,7 +159,7 @@ export type ConfidentialTransferInput<
   TAccountFromState extends string = string,
   TAccountToState extends string = string,
   TAccountZamaEventAuthority extends string = string,
-  TAccountScratch extends string = string,
+  TAccountTransientStore extends string = string,
   TAccountInstructions extends string = string,
   TAccountZamaProgram extends string = string,
   TAccountHostConfig extends string = string,
@@ -187,7 +187,7 @@ export type ConfidentialTransferInput<
   /** Recipient state: the host reads and updates its balance slot. */
   toState: Address<TAccountToState>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
-  scratch: Address<TAccountScratch>;
+  transientStore: Address<TAccountTransientStore>;
   instructions: Address<TAccountInstructions>;
   /** ZamaHost program used for FHE operations. */
   zamaProgram?: Address<TAccountZamaProgram>;
@@ -220,7 +220,7 @@ export function getConfidentialTransferInstruction<
   TAccountFromState extends string,
   TAccountToState extends string,
   TAccountZamaEventAuthority extends string,
-  TAccountScratch extends string,
+  TAccountTransientStore extends string,
   TAccountInstructions extends string,
   TAccountZamaProgram extends string,
   TAccountHostConfig extends string,
@@ -244,7 +244,7 @@ export function getConfidentialTransferInstruction<
     TAccountFromState,
     TAccountToState,
     TAccountZamaEventAuthority,
-    TAccountScratch,
+    TAccountTransientStore,
     TAccountInstructions,
     TAccountZamaProgram,
     TAccountHostConfig,
@@ -269,7 +269,7 @@ export function getConfidentialTransferInstruction<
   TAccountFromState,
   TAccountToState,
   TAccountZamaEventAuthority,
-  TAccountScratch,
+  TAccountTransientStore,
   TAccountInstructions,
   TAccountZamaProgram,
   TAccountHostConfig,
@@ -299,7 +299,7 @@ export function getConfidentialTransferInstruction<
       value: input.zamaEventAuthority ?? null,
       isWritable: false,
     },
-    scratch: { value: input.scratch ?? null, isWritable: true },
+    transientStore: { value: input.transientStore ?? null, isWritable: true },
     instructions: { value: input.instructions ?? null, isWritable: false },
     zamaProgram: { value: input.zamaProgram ?? null, isWritable: false },
     hostConfig: { value: input.hostConfig ?? null, isWritable: false },
@@ -341,7 +341,7 @@ export function getConfidentialTransferInstruction<
       getAccountMeta('fromState', accounts.fromState),
       getAccountMeta('toState', accounts.toState),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
-      getAccountMeta('scratch', accounts.scratch),
+      getAccountMeta('transientStore', accounts.transientStore),
       getAccountMeta('instructions', accounts.instructions),
       getAccountMeta('zamaProgram', accounts.zamaProgram),
       getAccountMeta('hostConfig', accounts.hostConfig),
@@ -367,7 +367,7 @@ export function getConfidentialTransferInstruction<
     TAccountFromState,
     TAccountToState,
     TAccountZamaEventAuthority,
-    TAccountScratch,
+    TAccountTransientStore,
     TAccountInstructions,
     TAccountZamaProgram,
     TAccountHostConfig,
@@ -403,7 +403,7 @@ export type ParsedConfidentialTransferInstruction<
     /** Recipient state: the host reads and updates its balance slot. */
     toState: TAccountMetas[9];
     zamaEventAuthority: TAccountMetas[10];
-    scratch: TAccountMetas[11];
+    transientStore: TAccountMetas[11];
     instructions: TAccountMetas[12];
     /** ZamaHost program used for FHE operations. */
     zamaProgram: TAccountMetas[13];
@@ -461,7 +461,7 @@ export function parseConfidentialTransferInstruction<
       fromState: getNextAccount(),
       toState: getNextAccount(),
       zamaEventAuthority: getNextAccount(),
-      scratch: getNextAccount(),
+      transientStore: getNextAccount(),
       instructions: getNextAccount(),
       zamaProgram: getNextAccount(),
       hostConfig: getNextAccount(),

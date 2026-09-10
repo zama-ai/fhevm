@@ -52,10 +52,10 @@ pub struct Claim<'info> {
     /// CHECK: canonical state controlled by JoinRecord.
     #[account(mut)]
     pub join_state: UncheckedAccount<'info>,
-    /// CHECK: host validates the shared transaction scratch.
+    /// CHECK: host validates the shared transaction transient store.
     #[account(mut)]
-    pub scratch: UncheckedAccount<'info>,
-    /// CHECK: host validates final scratch close using the Instructions sysvar.
+    pub transient_store: UncheckedAccount<'info>,
+    /// CHECK: host validates final transient store close using the Instructions sysvar.
     pub instructions: UncheckedAccount<'info>,
     /// Confidential mint claims pay out in.
     pub payout_confidential_mint: Box<Account<'info, ct::ConfidentialMint>>,
@@ -159,7 +159,7 @@ pub fn claim<'info>(ctx: Context<'info, Claim<'info>>) -> Result<()> {
         payer: ctx.accounts.payer.to_account_info(),
         host_config: ctx.accounts.host_config.to_account_info(),
         event_authority: ctx.accounts.zama_event_authority.to_account_info(),
-        scratch: ctx.accounts.scratch.to_account_info(),
+        transient_store: ctx.accounts.transient_store.to_account_info(),
         instructions: ctx.accounts.instructions.to_account_info(),
         program: ctx.accounts.zama_program.to_account_info(),
         system_program: ctx.accounts.system_program.to_account_info(),
@@ -192,7 +192,7 @@ pub fn claim<'info>(ctx: Context<'info, Claim<'info>>) -> Result<()> {
                 amount_authority: None,
 
                 zama_event_authority: ctx.accounts.zama_event_authority.to_account_info(),
-                scratch: ctx.accounts.scratch.to_account_info(),
+                transient_store: ctx.accounts.transient_store.to_account_info(),
                 instructions: ctx.accounts.instructions.to_account_info(),
                 zama_program: ctx.accounts.zama_program.to_account_info(),
                 host_config: ctx.accounts.host_config.to_account_info(),

@@ -1485,8 +1485,7 @@ mod fhe_execute_acl_tests {
     }
 
     #[test]
-    fn state_slot_origin_is_shared_across_host_calls_and_reset_between_transactions(
-    ) {
+    fn state_slot_preimage_depends_on_prior_calls_in_the_reconstruction() {
         use crate::solana_adapter::SolanaHostRecord;
         use zama_host::{
             ExecutionResultRef, FheBinaryOpCode, FheExecuteEffect,

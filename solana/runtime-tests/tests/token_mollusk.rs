@@ -478,7 +478,7 @@ fn initialize_mint_ix(
     anchor_ix(
         token::id(),
         token::accounts::InitializeMint {
-            scratch: host::transient_address(authority).0,
+            transient_store: host::transient_store_address(authority).0,
             instructions: solana_sdk::sysvar::instructions::ID,
             authority,
             mint,
@@ -513,7 +513,7 @@ fn initialize_token_account_ix(
     anchor_ix(
         token::id(),
         token::accounts::InitializeTokenAccount {
-            scratch: host::transient_address(payer).0,
+            transient_store: host::transient_store_address(payer).0,
             instructions: solana_sdk::sysvar::instructions::ID,
             payer,
             owner,
@@ -559,7 +559,7 @@ fn confidential_self_transfer_with_result_grant_ix(
     anchor_ix(
         token::id(),
         token::accounts::ConfidentialTransfer {
-            scratch: host::transient_address(fixture.owner).0,
+            transient_store: host::transient_store_address(fixture.owner).0,
             instructions: solana_sdk::sysvar::instructions::ID,
             owner: fixture.owner,
             payer: fixture.owner,
@@ -629,7 +629,7 @@ fn confidential_transfer_ix_with_block_cap_accounts(
     let mut ix = anchor_ix(
         token::id(),
         token::accounts::ConfidentialTransfer {
-            scratch: host::transient_address(fixture.owner).0,
+            transient_store: host::transient_store_address(fixture.owner).0,
             instructions: solana_sdk::sysvar::instructions::ID,
             owner: fixture.owner,
             payer: fixture.owner,
@@ -679,7 +679,7 @@ fn confidential_transfer_from_value_ix(
     anchor_ix(
         token::id(),
         token::accounts::ConfidentialTransferFromValue {
-            scratch: host::transient_address(signer_owner).0,
+            transient_store: host::transient_store_address(signer_owner).0,
             instructions: solana_sdk::sysvar::instructions::ID,
             owner: signer_owner,
             payer: signer_owner,
@@ -745,7 +745,7 @@ fn allow_balance_viewers_ix(
     anchor_ix(
         token::id(),
         token::accounts::AllowBalanceViewers {
-            scratch: host::transient_address(owner).0,
+            transient_store: host::transient_store_address(owner).0,
             instructions: solana_sdk::sysvar::instructions::ID,
             payer: owner,
             owner,
@@ -773,7 +773,7 @@ fn allow_total_supply_viewers_ix(
     anchor_ix(
         token::id(),
         token::accounts::AllowTotalSupplyViewers {
-            scratch: host::transient_address(authority).0,
+            transient_store: host::transient_store_address(authority).0,
             instructions: solana_sdk::sysvar::instructions::ID,
             payer: authority,
             authority,
@@ -2745,7 +2745,7 @@ fn confidential_burn_ix(
     anchor_ix(
         token::id(),
         token::accounts::ConfidentialBurn {
-            scratch: host::transient_address(fixture.owner).0,
+            transient_store: host::transient_store_address(fixture.owner).0,
             instructions: solana_sdk::sysvar::instructions::ID,
             owner: fixture.owner,
             mint: fixture.mint,
@@ -2785,7 +2785,7 @@ fn confidential_burn_from_value_ix(
     anchor_ix(
         token::id(),
         token::accounts::ConfidentialBurnFromValue {
-            scratch: host::transient_address(payer).0,
+            transient_store: host::transient_store_address(payer).0,
             instructions: solana_sdk::sysvar::instructions::ID,
             owner,
             payer,
@@ -2962,7 +2962,7 @@ fn cancel_pending_burn_ix(
     let mut ix = anchor_ix(
         token::id(),
         token::accounts::CancelPendingBurn {
-            scratch: host::transient_address(fixture.owner).0,
+            transient_store: host::transient_store_address(fixture.owner).0,
             instructions: solana_sdk::sysvar::instructions::ID,
             owner: fixture.owner,
             mint: fixture.mint,
@@ -4067,7 +4067,7 @@ impl<'a> WrapUsdcParams<'a> {
         anchor_ix(
             token::id(),
             token::accounts::WrapUsdc {
-                scratch: host::transient_address(self.owner).0,
+                transient_store: host::transient_store_address(self.owner).0,
                 instructions: solana_sdk::sysvar::instructions::ID,
                 owner: self.owner,
                 mint: fixture.mint,

@@ -85,7 +85,7 @@ impl FheExecutionCost {
     }
 
     /// Includes a possible rent transfer per State output and lazy meter creation.
-    /// App-level State/scratch creation, final close and other CPIs must be added by the caller.
+    /// App-level State/transient store creation, final close and other CPIs must be added by the caller.
     pub fn instruction_trace_worst_case(&self) -> usize {
         self.instruction_trace_floor() + self.state_outputs + CPIS_PER_SQUAT_CREATE
     }

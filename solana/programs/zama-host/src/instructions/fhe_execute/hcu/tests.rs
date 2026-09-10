@@ -652,13 +652,13 @@ fn cross_execution_total_is_metered_in_one_journal() {
     let one = meter_execution(&execution, &walk_dictionary(), u64::MAX, u64::MAX)
         .unwrap()
         .total;
-    let mut scratch = Box::new(<crate::TransientState as bytemuck::Zeroable>::zeroed());
+    let mut transient_store = Box::new(<crate::TransientStore as bytemuck::Zeroable>::zeroed());
     run_walk(
         &execution,
         &walk_dictionary(),
         one + one / 2,
         u64::MAX,
-        &mut scratch,
+        &mut transient_store,
     )
     .unwrap();
     assert_eq!(
@@ -667,7 +667,7 @@ fn cross_execution_total_is_metered_in_one_journal() {
             &walk_dictionary(),
             one + one / 2,
             u64::MAX,
-            &mut scratch
+            &mut transient_store
         )
         .unwrap_err(),
         error!(ZamaHostError::HcuTransactionLimitExceeded)
@@ -722,8 +722,8 @@ fn meter_execution(
     total: u64,
     depth: u64,
 ) -> Result<Metered> {
-    let mut scratch = Box::new(<crate::TransientState as bytemuck::Zeroable>::zeroed());
-    run_walk(steps, dictionary, total, depth, &mut scratch)
+    let mut transient_store = Box::new(<crate::TransientStore as bytemuck::Zeroable>::zeroed());
+    run_walk(steps, dictionary, total, depth, &mut transient_store)
 }
 
 // Directly exercises the same walk used by fhe_execute. Signature admission and
@@ -733,7 +733,7 @@ fn run_walk(
     dictionary: &[[u8; 32]],
     total: u64,
     depth: u64,
-    scratch: &mut crate::TransientState,
+    transient_store: &mut crate::TransientStore,
 ) -> Result<Metered> {
     use crate::{AppScope, EncryptedSlot, EncryptedState, FheExecuteArgs, HostConfig};
     let app = AppScope {
@@ -806,12 +806,20 @@ fn run_walk(
         effects: vec![],
         returned_results: vec![],
     };
-    let start = scratch.len();
-    super::super::execute_steps(&mut table, scratch, start, &args, app, &context, &config)?;
+    let start = transient_store.len();
+    super::super::execute_steps(
+        &mut table,
+        transient_store,
+        start,
+        &args,
+        app,
+        &context,
+        &config,
+    )?;
     Ok(Metered {
-        total: scratch.total_hcu,
-        step_depths: (start..scratch.len())
-            .map(|i| scratch.result(i).unwrap().depth)
+        total: transient_store.total_hcu,
+        step_depths: (start..transient_store.len())
+            .map(|i| transient_store.result(i).unwrap().depth)
             .collect(),
     })
 }

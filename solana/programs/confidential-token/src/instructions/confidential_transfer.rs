@@ -35,9 +35,9 @@ pub struct ConfidentialTransfer<'info> {
     pub to_state: Box<Account<'info, zama_host::EncryptedState>>,
     /// CHECK: Anchor event CPI authority for the Zama host program.
     pub zama_event_authority: UncheckedAccount<'info>,
-    /// CHECK: shared transaction scratch, validated by ZamaHost.
+    /// CHECK: shared transaction transient store, validated by ZamaHost.
     #[account(mut)]
-    pub scratch: UncheckedAccount<'info>,
+    pub transient_store: UncheckedAccount<'info>,
     /// CHECK: runtime Instructions sysvar, validated by ZamaHost.
     pub instructions: UncheckedAccount<'info>,
     /// ZamaHost program used for FHE operations.
@@ -72,7 +72,7 @@ impl<'info> ConfidentialTransfer<'info> {
             from_state: self.from_state.to_account_info(),
             to_state: self.to_state.to_account_info(),
             zama_event_authority: &self.zama_event_authority,
-            scratch: &self.scratch,
+            transient_store: &self.transient_store,
             instructions: &self.instructions,
             zama_program: &self.zama_program,
             host_config: &self.host_config,
@@ -95,7 +95,7 @@ impl<'info> ConfidentialTransfer<'info> {
 }
 
 /// Updates both balances and returns the transferred handle, optionally granting its use
-/// to the caller through scratch.
+/// to the caller through transient store.
 pub fn confidential_transfer<'info>(
     ctx: Context<'info, ConfidentialTransfer<'info>>,
     amount_attestation: zama_host::CoprocessorInputAttestation,
@@ -158,7 +158,7 @@ fn emit_transfer_events<'info>(
     Ok(())
 }
 
-/// Accounts for a transfer whose amount comes from a state slot or scratch grant.
+/// Accounts for a transfer whose amount comes from a state slot or transient store grant.
 /// The host verifies the input permission; the token verifies the sender can spend the balance.
 #[derive(Accounts)]
 #[event_cpi]
@@ -195,9 +195,9 @@ pub struct ConfidentialTransferFromValue<'info> {
     pub amount_authority: Option<Signer<'info>>,
     /// CHECK: Anchor event CPI authority for the Zama host program.
     pub zama_event_authority: UncheckedAccount<'info>,
-    /// CHECK: shared transaction scratch, validated by ZamaHost.
+    /// CHECK: shared transaction transient store, validated by ZamaHost.
     #[account(mut)]
-    pub scratch: UncheckedAccount<'info>,
+    pub transient_store: UncheckedAccount<'info>,
     /// CHECK: runtime Instructions sysvar, validated by ZamaHost.
     pub instructions: UncheckedAccount<'info>,
     /// ZamaHost program used for FHE operations.
@@ -230,7 +230,7 @@ impl<'info> ConfidentialTransferFromValue<'info> {
             from_state: self.from_state.to_account_info(),
             to_state: self.to_state.to_account_info(),
             zama_event_authority: &self.zama_event_authority,
-            scratch: &self.scratch,
+            transient_store: &self.transient_store,
             instructions: &self.instructions,
             zama_program: &self.zama_program,
             host_config: &self.host_config,
@@ -252,7 +252,7 @@ impl<'info> ConfidentialTransferFromValue<'info> {
     }
 }
 
-/// Transfers an amount from a state slot or scratch grant and returns the transferred handle.
+/// Transfers an amount from a state slot or transient store grant and returns the transferred handle.
 pub fn confidential_transfer_from_value<'info>(
     ctx: Context<'info, ConfidentialTransferFromValue<'info>>,
     amount_source: TransferInput,

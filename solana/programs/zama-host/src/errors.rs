@@ -280,7 +280,7 @@ pub enum ZamaHostError {
     HcuLimitZeroReserved,
     #[msg("invalid transient workspace account")]
     TransientAccountInvalid,
-    #[msg("matching final top-level scratch close is required")]
+    #[msg("matching final top-level transient_store close is required")]
     TransientCloseMissing,
     #[msg("transient workspace grant capacity exceeded")]
     TransientCapacityExceeded,

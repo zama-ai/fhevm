@@ -92,7 +92,7 @@
       "fixture_len": 44,
       "name": "allow_balance_viewers",
       "program": "confidential_token",
-      "schema_hash": "cc36169d4efb2692dc51df227fa89edf9c9e227204025bd92f54809dc09ac0e5"
+      "schema_hash": "35291f225fafaba96640a0ff152a4da365deae9a84a1abe5356b465acc5d5130"
     },
     {
       "category": "instruction_args",
@@ -100,7 +100,7 @@
       "fixture_len": 44,
       "name": "allow_total_supply_viewers",
       "program": "confidential_token",
-      "schema_hash": "6f05c63a039a31986ffcf8e555f2f698a8da506d488457c18fdaa72442ff6b87"
+      "schema_hash": "9df0652f570e5769329abff949eb1f0f14a3cfa10d077a3ba06f9a6d5962ba1a"
     },
     {
       "category": "instruction_args",
@@ -108,7 +108,7 @@
       "fixture_len": 8,
       "name": "cancel_pending_burn",
       "program": "confidential_token",
-      "schema_hash": "cecf57f8b19a0b5da696a5d0082df97afc55e458265bcd3cadb5063dfa40d8b0"
+      "schema_hash": "984a8654eef0cf313a3ebf242bcddc89aadc446d5b66e83c129c78d80896c47f"
     },
     {
       "category": "instruction_args",
@@ -116,7 +116,7 @@
       "fixture_len": 225,
       "name": "confidential_burn",
       "program": "confidential_token",
-      "schema_hash": "a92a5d15ebfb4d6c862e7ac811aa1e02107fe36edc2b2510687a464e533d1570"
+      "schema_hash": "38852f37aa7b467c51ac7cb13a34f0709f6c54e1332ce6a8985a184f71ffa0dd"
     },
     {
       "category": "instruction_args",
@@ -124,7 +124,7 @@
       "fixture_len": 40,
       "name": "confidential_burn_from_value",
       "program": "confidential_token",
-      "schema_hash": "d8ddd4ef0e5ed7c102f305d133eedb7fba952601c429118c21fb2d2a87f53563"
+      "schema_hash": "d7322db0c3322bd2b28ce68618b58af1cbf7bd9f5c1eb186ca78e5a6e982fa43"
     },
     {
       "category": "instruction_args",
@@ -132,7 +132,7 @@
       "fixture_len": 225,
       "name": "confidential_transfer",
       "program": "confidential_token",
-      "schema_hash": "dc41b2a0b7ef1708ebe2c8222bb7a4461e214ff78f1600446377bd413c30c01f"
+      "schema_hash": "74be73f829a5aa7b97152cae4f332351eb123e8e3eca3780cd96102afe6d654e"
     },
     {
       "category": "instruction_args",
@@ -140,7 +140,7 @@
       "fixture_len": 41,
       "name": "confidential_transfer_from_value",
       "program": "confidential_token",
-      "schema_hash": "bb74cdbbcdd8a2b735042bb59d2e4284ce6e5ede202a2074c515893e55b19746"
+      "schema_hash": "a4b9aa246e93cc506f102c8cf6219eefd0e299c3519e74c64ad22bba183a6c71"
     },
     {
       "category": "instruction_args",
@@ -156,7 +156,7 @@
       "fixture_len": 8,
       "name": "initialize_mint",
       "program": "confidential_token",
-      "schema_hash": "82e2881cafafacf80152263069393b353e300df45d975a7bc0b40118e6671e19"
+      "schema_hash": "e2bf39899e09708745096889d2847b6a8b2f6da8f09117d5cb12e5c083593ffe"
     },
     {
       "category": "instruction_args",
@@ -164,7 +164,7 @@
       "fixture_len": 8,
       "name": "initialize_token_account",
       "program": "confidential_token",
-      "schema_hash": "25432674bcd4a4511232b368da365288a81381c2332e8399542f124ee5cafe7c"
+      "schema_hash": "79a3f3adb7c5bac5b19b0deb74b1137dbd387baf8c09cc982d864e3a9082d398"
     },
     {
       "category": "instruction_args",
@@ -196,7 +196,7 @@
       "fixture_len": 16,
       "name": "wrap_usdc",
       "program": "confidential_token",
-      "schema_hash": "c067afd8e23a5a2c0ea8a283276b26c5088d2506c7a9a6ce60cb035e29c7b698"
+      "schema_hash": "7f7bf29e5961d055b234dd52659b3543193195f5ccc1e042ac4f77e5efa60167"
     },
     {
       "category": "account",
@@ -288,11 +288,11 @@
     },
     {
       "category": "instruction_args",
-      "fixture_hex": "1dbf894ecb96c727",
+      "fixture_hex": "6bc51ca633ad53bd",
       "fixture_len": 8,
-      "name": "close_scratch",
+      "name": "close_transient_store",
       "program": "zama_host",
-      "schema_hash": "11425df0354ed1912b6b6696792022fd9d8a3fe22250838b63c00a00366ab3d3"
+      "schema_hash": "dacfbd8b5cf6dca2b31d0ed526e77df342658e1e00909fb4e30e08d2df0c6144"
     },
     {
       "category": "instruction_args",
@@ -332,7 +332,7 @@
       "fixture_len": 95,
       "name": "fhe_execute",
       "program": "zama_host",
-      "schema_hash": "8b167c5470e4945b8cd10e9782986e6ca86caec2904ebad9ee1c358a04cdf37b"
+      "schema_hash": "310394812ff052070121be43bfc83ec48a7a6cea0c58dcf9d2868371652438d5"
     },
     {
       "category": "instruction_args",
@@ -352,11 +352,11 @@
     },
     {
       "category": "instruction_args",
-      "fixture_hex": "c2f4cb7b896dffee",
+      "fixture_hex": "36644cd554e9c45e",
       "fixture_len": 8,
-      "name": "open_scratch",
+      "name": "open_transient_store",
       "program": "zama_host",
-      "schema_hash": "a59e1094e4a07ca7f5f1799757fc3d8400656519fbd7562fdc3a24c229767061"
+      "schema_hash": "c59f685946c6fc593ffd7317442c0add72b2f8b94c2fcb4e6a4bbaa8bac6d6c1"
     },
     {
       "category": "instruction_args",

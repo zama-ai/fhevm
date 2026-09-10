@@ -12,9 +12,9 @@ import { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from './internal/generated/confi
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from './internal/generated/confidentialToken/programAddress.js';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '@sdk-src/solana/internal/generated/zamaHost/programAddress.js';
 import {
-  CLOSE_SCRATCH_DISCRIMINATOR,
-  getCloseScratchInstructionDataDecoder,
-} from '@sdk-src/solana/internal/generated/zamaHost/instructions/closeScratch.js';
+  CLOSE_TRANSIENT_STORE_DISCRIMINATOR,
+  getCloseTransientStoreInstructionDataDecoder,
+} from '@sdk-src/solana/internal/generated/zamaHost/instructions/closeTransientStore.js';
 
 function addr(fill: number): Address {
   return address(base58.encode(new Uint8Array(32).fill(fill)));
@@ -96,7 +96,7 @@ describe('buildClaimInstruction', () => {
       base58.decode(user),
     ]);
     const state = await batcherValuePda(batch, record);
-    const scratch = await pda(ZAMA_HOST_PROGRAM_ADDRESS, [utf8('transient'), base58.decode(payer.address)]);
+    const transientStore = await pda(ZAMA_HOST_PROGRAM_ADDRESS, [utf8('transient'), base58.decode(payer.address)]);
     const expected: Address[] = [
       payer.address,
       user,
@@ -105,7 +105,7 @@ describe('buildClaimInstruction', () => {
       batchAuthority,
       await pda(CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS, [utf8('join-record'), base58.decode(batch), base58.decode(user)]),
       state,
-      scratch,
+      transientStore,
       address('Sysvar1nstructions1111111111111111111111111'),
       payoutConfidentialMint,
       payoutUnderlyingMint,
@@ -128,11 +128,11 @@ describe('buildClaimInstruction', () => {
     expect(close!.programAddress).toBe(ZAMA_HOST_PROGRAM_ADDRESS);
     expect(close!.accounts!.map((a) => a.address)).toEqual([
       address('Sysvar1nstructions1111111111111111111111111'),
-      scratch,
+      transientStore,
       payer.address,
     ]);
-    expect(Array.from(getCloseScratchInstructionDataDecoder().decode(close!.data!).discriminator)).toEqual(
-      Array.from(CLOSE_SCRATCH_DISCRIMINATOR),
+    expect(Array.from(getCloseTransientStoreInstructionDataDecoder().decode(close!.data!).discriminator)).toEqual(
+      Array.from(CLOSE_TRANSIENT_STORE_DISCRIMINATOR),
     );
     // user carries no signer role (0x02/0x03 are the signer roles).
     expect(instruction.accounts![1]!.role & 0b10).toBe(0);

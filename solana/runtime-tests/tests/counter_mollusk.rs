@@ -39,7 +39,7 @@ fn counter_initializes_to_zero_and_adds_increments() {
             counter::id(),
             counter::accounts::Initialize {
                 owner,
-                scratch: host::transient_address(owner).0,
+                transient_store: host::transient_store_address(owner).0,
                 instructions: solana_sdk::sysvar::instructions::ID,
                 counter,
                 counter_authority,
@@ -57,7 +57,7 @@ fn counter_initializes_to_zero_and_adds_increments() {
             counter::id(),
             counter::accounts::Increment {
                 owner,
-                scratch: host::transient_address(owner).0,
+                transient_store: host::transient_store_address(owner).0,
                 instructions: solana_sdk::sysvar::instructions::ID,
                 counter,
                 counter_authority,

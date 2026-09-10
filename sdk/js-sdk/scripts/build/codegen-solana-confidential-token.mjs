@@ -109,8 +109,8 @@ const targets = [
       // SDK's hand-written wrappers in src/solana/actions.
       instructions: new Set([
         'verifyPublicDecrypt',
-        'openScratch',
-        'closeScratch',
+        'openTransientStore',
+        'closeTransientStore',
         'delegateForUserDecryption',
         'revokeDelegationForUserDecryption',
         'revokePermits',

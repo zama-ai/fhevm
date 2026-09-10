@@ -193,7 +193,7 @@ pub fn fhe_execute_ix_with_extras(
             hcu_block_meter: None,
             hcu_trusted_app_record: None,
             rand_nonce: extras.rand_nonce,
-            scratch: host::transient_address(payer).0,
+            transient_store: host::transient_store_address(payer).0,
             instructions: solana_sdk::sysvar::instructions::ID,
             event_authority: event_authority(host::id()),
             program: host::id(),
@@ -305,7 +305,7 @@ pub fn persistent_creates_batch(
     }
 }
 
-/// Host behavior tests also exercise admin/ACL instructions which need no scratch.
+/// Host behavior tests also exercise admin/ACL instructions which need no transient store.
 /// FHE packets use the same real transaction envelope as the consumer suites.
 pub fn check_host_instruction(
     svm: &mollusk_svm::Mollusk,

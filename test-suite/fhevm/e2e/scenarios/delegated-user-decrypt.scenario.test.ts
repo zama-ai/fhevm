@@ -253,7 +253,7 @@ describe("solana delegated user-decrypt", () => {
       const delegate = await generateSolanaKeypair();
       const delegateSecretKey = hex(delegate.bytes.subarray(0, 32));
 
-      // These proposals name member[0] as scratch sponsor, so its signature is required at execution.
+      // These proposals name member[0] as transient store sponsor, so its signature is required at execution.
       // The vault still authenticates its own State by CPI.
       const fhe = await createSolanaFheTransaction({ payer: createNoopSigner(members[0]!.publicKey.toBase58() as Address) });
       const [open, close] = fhe.wrap([]).map(toWeb3Instruction);

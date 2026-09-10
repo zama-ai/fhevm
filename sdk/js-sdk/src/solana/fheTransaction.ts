@@ -7,18 +7,18 @@ import {
 } from '@solana/kit';
 
 import {
-  CLOSE_SCRATCH_DISCRIMINATOR,
-  getCloseScratchInstruction,
-} from './internal/generated/zamaHost/instructions/closeScratch.js';
+  CLOSE_TRANSIENT_STORE_DISCRIMINATOR,
+  getCloseTransientStoreInstruction,
+} from './internal/generated/zamaHost/instructions/closeTransientStore.js';
 import {
-  OPEN_SCRATCH_DISCRIMINATOR,
-  getOpenScratchInstruction,
-} from './internal/generated/zamaHost/instructions/openScratch.js';
+  OPEN_TRANSIENT_STORE_DISCRIMINATOR,
+  getOpenTransientStoreInstruction,
+} from './internal/generated/zamaHost/instructions/openTransientStore.js';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from './internal/generated/zamaHost/programAddress.js';
 
 /** Forward these accounts through every FHE instruction and CPI in the transaction. */
 export type SolanaFheTransactionAccounts = {
-  readonly scratch: Address;
+  readonly transientStore: Address;
   readonly instructions: Address;
 };
 
@@ -37,16 +37,19 @@ export async function createSolanaFheTransaction(parameters: {
   readonly payer: TransactionSigner;
 }): Promise<SolanaFheTransaction> {
   const programAddress = ZAMA_HOST_PROGRAM_ADDRESS;
-  const [scratch] = await getProgramDerivedAddress({
+  const [transientStore] = await getProgramDerivedAddress({
     programAddress,
     seeds: [new TextEncoder().encode('transient'), getAddressEncoder().encode(parameters.payer.address)],
   });
   const accounts = {
-    scratch,
+    transientStore,
     instructions: 'Sysvar1nstructions1111111111111111111111111' as Address,
   };
-  const open = getOpenScratchInstruction({ payer: parameters.payer, ...accounts }, { programAddress });
-  const close = getCloseScratchInstruction({ ...accounts, refund: parameters.payer.address }, { programAddress });
+  const open = getOpenTransientStoreInstruction({ payer: parameters.payer, ...accounts }, { programAddress });
+  const close = getCloseTransientStoreInstruction(
+    { ...accounts, refund: parameters.payer.address },
+    { programAddress },
+  );
   return {
     accounts,
     wrap(body) {
@@ -54,12 +57,12 @@ export async function createSolanaFheTransaction(parameters: {
         body.some(
           (ix) =>
             ix.programAddress === programAddress &&
-            [OPEN_SCRATCH_DISCRIMINATOR, CLOSE_SCRATCH_DISCRIMINATOR].some((tag) =>
+            [OPEN_TRANSIENT_STORE_DISCRIMINATOR, CLOSE_TRANSIENT_STORE_DISCRIMINATOR].some((tag) =>
               tag.every((byte, index) => ix.data?.[index] === byte),
             ),
         )
       ) {
-        throw new Error('The FHE transaction body must not open or close scratch');
+        throw new Error('The FHE transaction body must not open or close the transient store');
       }
       return [open, ...body, close];
     },

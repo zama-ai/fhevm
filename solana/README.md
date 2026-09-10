@@ -62,11 +62,11 @@ trusted for authorization.
   handles; permission leaves authorize exact handles even after slot replacement.
   Creating State proves the authority belongs to the app program.
 - **Explicit output permissions.** Fresh results may write a slot, append decrypt
-  permissions, or grant a consuming State access through transaction-local scratch.
+  permissions, or grant a consuming State access through the transient store.
   These choices are independent. Adding permissions to history-only handles later
   is deferred to fhevm-internal#2007.
 - **Return data is transport.** `returned_results` selects at most 32 handles, in
-  order; empty selection returns none. It grants no permission. Scratch carries
+  order; empty selection returns none. It grants no permission. The transient store carries
   all result occurrences, implicit producer-State permission and explicit consumer grants.
   One signed top-level open and exact final close delimit the shared transaction context.
 - **The 1,232-byte packet is a design input.** Execution wire data interns
@@ -195,8 +195,8 @@ An app program drives compute by CPI into `zama-host`, using
 - To receive confidential funds, expose your own instruction that CPIs
   `confidential_transfer` with the user signer and the app’s PDA signatures. In `confidential-batcher::join`,
   the token returns the transferred handle and grants the JoinRecord State access
-  through the transaction's shared scratch; the batcher adds it to the contribution slot.
-  The client opens scratch before application calls and closes it last, refunding its rent. There is no
+  through the transaction's shared transient store; the batcher adds it to the contribution slot.
+  The client opens the transient store before application calls and closes it last, refunding its rent. There is no
   receiver-callback path — that EVM workaround is unnecessary on Solana.
 
 The transaction owner creates the context once, forwards its accounts to all app
@@ -213,10 +213,10 @@ const instructions = fhe.wrap([initialize, join]);
 ```
 
 `buildInitialize` and `buildJoin` stand for the app's instruction builders. Every
-CPI forwards the same scratch and instructions sysvar; each State authority still
-signs independently. The scratch payer conveys no compute or decrypt permission.
-For a stored multisig proposal, declare that scratch payer up front and supply
-its signature on the outer execution transaction. Scratch rent is refunded to
+CPI forwards the same transient store and instructions sysvar; each State authority still
+signs independently. The transient store payer conveys no compute or decrypt permission.
+For a stored multisig proposal, declare that transient store payer up front and supply
+its signature on the outer execution transaction. Transient store rent is refunded to
 that payer by the final close. Its fixed capacity is 112 result occurrences and
 32 explicit grants; packet and compute limits may bind earlier.
 

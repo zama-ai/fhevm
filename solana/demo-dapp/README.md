@@ -145,14 +145,14 @@ sequenceDiagram
     Token->>Host: Update balances and grant transferred handle to JoinRecord state
     Token-->>Batch: Return transferred handle
     Batch->>Host: Add granted handle to joined amount
-    Wallet->>Host: Final instruction closes scratch and refunds rent
+    Wallet->>Host: Final instruction closes transient store and refunds rent
     Host-->>Listener: Emit confirmed records
     Listener-->>Compute: Rebuild confirmed encrypted state
 ```
 
 The host owns an encrypted state dictionary for each token account and each user’s JoinRecord.
 Named slots retain balances and contributions; one MMR per state records decrypt permissions.
-A transaction-local scratch account passes the transferred handle between programs and closes
+A transaction-local transient store account passes the transferred handle between programs and closes
 at the end of the transaction. No transferred-amount or claim-amount account is stored.
 The ciphertext data stays with the coprocessor.
 

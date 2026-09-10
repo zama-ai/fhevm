@@ -74,7 +74,7 @@ export type JoinInstruction<
   TAccountUserBalanceState extends string | AccountMeta<string> = string,
   TAccountBatchBalanceState extends string | AccountMeta<string> = string,
   TAccountJoinState extends string | AccountMeta<string> = string,
-  TAccountScratch extends string | AccountMeta<string> = string,
+  TAccountTransientStore extends string | AccountMeta<string> = string,
   TAccountInstructions extends string | AccountMeta<string> = string,
   TAccountZamaEventAuthority extends string | AccountMeta<string> = string,
   TAccountZamaProgram extends string | AccountMeta<string> = '6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu',
@@ -112,7 +112,7 @@ export type JoinInstruction<
       TAccountUserBalanceState extends string ? WritableAccount<TAccountUserBalanceState> : TAccountUserBalanceState,
       TAccountBatchBalanceState extends string ? WritableAccount<TAccountBatchBalanceState> : TAccountBatchBalanceState,
       TAccountJoinState extends string ? WritableAccount<TAccountJoinState> : TAccountJoinState,
-      TAccountScratch extends string ? WritableAccount<TAccountScratch> : TAccountScratch,
+      TAccountTransientStore extends string ? WritableAccount<TAccountTransientStore> : TAccountTransientStore,
       TAccountInstructions extends string ? ReadonlyAccount<TAccountInstructions> : TAccountInstructions,
       TAccountZamaEventAuthority extends string
         ? ReadonlyAccount<TAccountZamaEventAuthority>
@@ -220,7 +220,7 @@ export type JoinAsyncInput<
   TAccountUserBalanceState extends string = string,
   TAccountBatchBalanceState extends string = string,
   TAccountJoinState extends string = string,
-  TAccountScratch extends string = string,
+  TAccountTransientStore extends string = string,
   TAccountInstructions extends string = string,
   TAccountZamaEventAuthority extends string = string,
   TAccountZamaProgram extends string = string,
@@ -256,7 +256,7 @@ export type JoinAsyncInput<
   userBalanceState: Address<TAccountUserBalanceState>;
   batchBalanceState: Address<TAccountBatchBalanceState>;
   joinState: Address<TAccountJoinState>;
-  scratch: Address<TAccountScratch>;
+  transientStore: Address<TAccountTransientStore>;
   instructions: Address<TAccountInstructions>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
   /** ZamaHost program (FHE compute + ACL). */
@@ -293,7 +293,7 @@ export async function getJoinInstructionAsync<
   TAccountUserBalanceState extends string,
   TAccountBatchBalanceState extends string,
   TAccountJoinState extends string,
-  TAccountScratch extends string,
+  TAccountTransientStore extends string,
   TAccountInstructions extends string,
   TAccountZamaEventAuthority extends string,
   TAccountZamaProgram extends string,
@@ -319,7 +319,7 @@ export async function getJoinInstructionAsync<
     TAccountUserBalanceState,
     TAccountBatchBalanceState,
     TAccountJoinState,
-    TAccountScratch,
+    TAccountTransientStore,
     TAccountInstructions,
     TAccountZamaEventAuthority,
     TAccountZamaProgram,
@@ -347,7 +347,7 @@ export async function getJoinInstructionAsync<
     TAccountUserBalanceState,
     TAccountBatchBalanceState,
     TAccountJoinState,
-    TAccountScratch,
+    TAccountTransientStore,
     TAccountInstructions,
     TAccountZamaEventAuthority,
     TAccountZamaProgram,
@@ -398,7 +398,7 @@ export async function getJoinInstructionAsync<
       isWritable: true,
     },
     joinState: { value: input.joinState ?? null, isWritable: true },
-    scratch: { value: input.scratch ?? null, isWritable: true },
+    transientStore: { value: input.transientStore ?? null, isWritable: true },
     instructions: { value: input.instructions ?? null, isWritable: false },
     zamaEventAuthority: {
       value: input.zamaEventAuthority ?? null,
@@ -463,7 +463,7 @@ export async function getJoinInstructionAsync<
       getAccountMeta('userBalanceState', accounts.userBalanceState),
       getAccountMeta('batchBalanceState', accounts.batchBalanceState),
       getAccountMeta('joinState', accounts.joinState),
-      getAccountMeta('scratch', accounts.scratch),
+      getAccountMeta('transientStore', accounts.transientStore),
       getAccountMeta('instructions', accounts.instructions),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
       getAccountMeta('zamaProgram', accounts.zamaProgram),
@@ -491,7 +491,7 @@ export async function getJoinInstructionAsync<
     TAccountUserBalanceState,
     TAccountBatchBalanceState,
     TAccountJoinState,
-    TAccountScratch,
+    TAccountTransientStore,
     TAccountInstructions,
     TAccountZamaEventAuthority,
     TAccountZamaProgram,
@@ -518,7 +518,7 @@ export type JoinInput<
   TAccountUserBalanceState extends string = string,
   TAccountBatchBalanceState extends string = string,
   TAccountJoinState extends string = string,
-  TAccountScratch extends string = string,
+  TAccountTransientStore extends string = string,
   TAccountInstructions extends string = string,
   TAccountZamaEventAuthority extends string = string,
   TAccountZamaProgram extends string = string,
@@ -554,7 +554,7 @@ export type JoinInput<
   userBalanceState: Address<TAccountUserBalanceState>;
   batchBalanceState: Address<TAccountBatchBalanceState>;
   joinState: Address<TAccountJoinState>;
-  scratch: Address<TAccountScratch>;
+  transientStore: Address<TAccountTransientStore>;
   instructions: Address<TAccountInstructions>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
   /** ZamaHost program (FHE compute + ACL). */
@@ -591,7 +591,7 @@ export function getJoinInstruction<
   TAccountUserBalanceState extends string,
   TAccountBatchBalanceState extends string,
   TAccountJoinState extends string,
-  TAccountScratch extends string,
+  TAccountTransientStore extends string,
   TAccountInstructions extends string,
   TAccountZamaEventAuthority extends string,
   TAccountZamaProgram extends string,
@@ -617,7 +617,7 @@ export function getJoinInstruction<
     TAccountUserBalanceState,
     TAccountBatchBalanceState,
     TAccountJoinState,
-    TAccountScratch,
+    TAccountTransientStore,
     TAccountInstructions,
     TAccountZamaEventAuthority,
     TAccountZamaProgram,
@@ -644,7 +644,7 @@ export function getJoinInstruction<
   TAccountUserBalanceState,
   TAccountBatchBalanceState,
   TAccountJoinState,
-  TAccountScratch,
+  TAccountTransientStore,
   TAccountInstructions,
   TAccountZamaEventAuthority,
   TAccountZamaProgram,
@@ -694,7 +694,7 @@ export function getJoinInstruction<
       isWritable: true,
     },
     joinState: { value: input.joinState ?? null, isWritable: true },
-    scratch: { value: input.scratch ?? null, isWritable: true },
+    transientStore: { value: input.transientStore ?? null, isWritable: true },
     instructions: { value: input.instructions ?? null, isWritable: false },
     zamaEventAuthority: {
       value: input.zamaEventAuthority ?? null,
@@ -748,7 +748,7 @@ export function getJoinInstruction<
       getAccountMeta('userBalanceState', accounts.userBalanceState),
       getAccountMeta('batchBalanceState', accounts.batchBalanceState),
       getAccountMeta('joinState', accounts.joinState),
-      getAccountMeta('scratch', accounts.scratch),
+      getAccountMeta('transientStore', accounts.transientStore),
       getAccountMeta('instructions', accounts.instructions),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
       getAccountMeta('zamaProgram', accounts.zamaProgram),
@@ -776,7 +776,7 @@ export function getJoinInstruction<
     TAccountUserBalanceState,
     TAccountBatchBalanceState,
     TAccountJoinState,
-    TAccountScratch,
+    TAccountTransientStore,
     TAccountInstructions,
     TAccountZamaEventAuthority,
     TAccountZamaProgram,
@@ -820,7 +820,7 @@ export type ParsedJoinInstruction<
     userBalanceState: TAccountMetas[12];
     batchBalanceState: TAccountMetas[13];
     joinState: TAccountMetas[14];
-    scratch: TAccountMetas[15];
+    transientStore: TAccountMetas[15];
     instructions: TAccountMetas[16];
     zamaEventAuthority: TAccountMetas[17];
     /** ZamaHost program (FHE compute + ACL). */
@@ -868,7 +868,7 @@ export function parseJoinInstruction<TProgram extends string, TAccountMetas exte
       userBalanceState: getNextAccount(),
       batchBalanceState: getNextAccount(),
       joinState: getNextAccount(),
-      scratch: getNextAccount(),
+      transientStore: getNextAccount(),
       instructions: getNextAccount(),
       zamaEventAuthority: getNextAccount(),
       zamaProgram: getNextAccount(),

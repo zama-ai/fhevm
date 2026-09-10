@@ -34,9 +34,9 @@ pub struct ConfidentialBurn<'info> {
     pub pending_burn: UncheckedAccount<'info>,
     /// CHECK: Anchor event CPI authority for the Zama host program.
     pub zama_event_authority: UncheckedAccount<'info>,
-    /// CHECK: shared transaction scratch, validated by ZamaHost.
+    /// CHECK: shared transaction transient store, validated by ZamaHost.
     #[account(mut)]
-    pub scratch: UncheckedAccount<'info>,
+    pub transient_store: UncheckedAccount<'info>,
     /// CHECK: runtime Instructions sysvar, validated by ZamaHost.
     pub instructions: UncheckedAccount<'info>,
     /// ZamaHost program used for FHE operations.
@@ -71,7 +71,7 @@ impl<'info> ConfidentialBurn<'info> {
             total_supply_state: self.total_supply_state.to_account_info(),
             pending_burn: self.pending_burn.to_account_info(),
             zama_event_authority: &self.zama_event_authority,
-            scratch: &self.scratch,
+            transient_store: &self.transient_store,
             instructions: &self.instructions,
             zama_program: &self.zama_program,
             host_config: &self.host_config,
@@ -181,9 +181,9 @@ pub struct ConfidentialBurnFromValue<'info> {
     pub amount_state: Box<Account<'info, zama_host::EncryptedState>>,
     /// CHECK: Anchor event CPI authority for the Zama host program.
     pub zama_event_authority: UncheckedAccount<'info>,
-    /// CHECK: shared transaction scratch, validated by ZamaHost.
+    /// CHECK: shared transaction transient store, validated by ZamaHost.
     #[account(mut)]
-    pub scratch: UncheckedAccount<'info>,
+    pub transient_store: UncheckedAccount<'info>,
     /// CHECK: runtime Instructions sysvar, validated by ZamaHost.
     pub instructions: UncheckedAccount<'info>,
     /// ZamaHost program used for FHE operations.
@@ -218,7 +218,7 @@ impl<'info> ConfidentialBurnFromValue<'info> {
             total_supply_state: self.total_supply_state.to_account_info(),
             pending_burn: self.pending_burn.to_account_info(),
             zama_event_authority: &self.zama_event_authority,
-            scratch: &self.scratch,
+            transient_store: &self.transient_store,
             instructions: &self.instructions,
             zama_program: &self.zama_program,
             host_config: &self.host_config,
@@ -329,7 +329,7 @@ struct BurnAccounts<'a, 'info> {
     /// Single pending-burn PDA opened after the burned handle is known.
     pending_burn: AccountInfo<'info>,
     zama_event_authority: &'a UncheckedAccount<'info>,
-    scratch: &'a UncheckedAccount<'info>,
+    transient_store: &'a UncheckedAccount<'info>,
     instructions: &'a UncheckedAccount<'info>,
     zama_program: &'a Program<'info, ZamaHost>,
     host_config: &'a Account<'info, zama_host::HostConfig>,
@@ -508,7 +508,7 @@ fn execute_burn<'info>(
         context: fhe::ExecuteContext {
             payer: accounts.payer,
             event_authority: accounts.zama_event_authority,
-            scratch: accounts.scratch,
+            transient_store: accounts.transient_store,
             instructions: accounts.instructions,
             zama_program: accounts.zama_program,
             host_config: accounts.host_config,

@@ -30,7 +30,7 @@ entry that moves between them keeps its number.
 Scope note: this register covers the Solana feature branch: `zama-host`, the `zama-fhe` SDK, the host-listener
 reconstruction path and its leaf record, the KMS connector's Solana pipeline, and the reference confidential-token and
 confidential-batcher applications. Vocabulary follows GLOSSARY.md: execution, dictionary, State, slot, allow, result
-grant, scratch, application.
+grant, transient store, application.
 
 ---
 
@@ -114,7 +114,7 @@ Every produced result, including unstored intermediates, is usable by that State
 Another State needs an explicit exact-handle grant and its authority's signature at consumption. Merely returning
 bytes, sharing the payer or appearing as an additional signer grants no permission.
 
-Every FHE call requires the same host-owned scratch PDA `["transient", payer]`. A signed top-level open creates it;
+Every FHE call requires the same host-owned transient store PDA `["transient", payer]`. A signed top-level open creates it;
 the exact final top-level close refunds its recorded payer. Open and every FHE call validate that final close;
 a second context, reopening or early/nested closure fails. The payer is a rent role, independent of State authority.
 A failed transaction rolls back all writes. Decrypt permission remains a separate exact-handle MMR leaf.
@@ -124,7 +124,7 @@ second-context rejection, capacity rollback and final-close tests.
 
 **64. [ANTI]** A grant limits who may compute with a handle inside one transaction. It does not limit what that
 computation may reveal: the consumer's output can be written to a slot, allowed to any key or made public, and those
-leaves outlive the scratch account. A producer that grants a result trusts the consumer's program with the information
+leaves outlive the transient store account. A producer that grants a result trusts the consumer's program with the information
 in it.
 
 **53. [ANTI]** `make_state_handle_public` is not idempotent. Sealing a handle that is already sealed appends a second
@@ -283,7 +283,7 @@ setters, pause included.
 **37. [HOLDS]** HCU enforcement ships disabled (unrestricted defaults) and is opt-in per knob. `u64::MAX` means
 unlimited; `0` is rejected for per-tx limits and means ban untrusted applications only for the block cap. When both
 compared limits are finite and the block cap is nonzero, setters enforce `block cap ≥ max per tx ≥ max depth`.
-Total and critical-path depth accumulate across all calls in the shared transaction scratch, including calls from
+Total and critical-path depth accumulate across all calls in the shared the transaction’s transient store, including calls from
 different applications. Each application block meter is charged only the cost of its own execution. Repeated handle
 occurrences retain the maximum depth for that handle; changing its operand witness cannot reset its depth.
 
@@ -480,7 +480,7 @@ membership cannot diverge (`solana/demo-dapp/src/vault`).
 State creation is a separate instruction. Execution can grow existing States and top up rent; there is no per-result
 account-creation cap. `FheExecution::cost` reports packet bytes, tallied heap, and instruction-trace bounds. The
 worst-case trace includes a possible rent transfer per State output and lazy meter creation. The caller must add
-State/scratch creation, final scratch close and all other app CPIs when budgeting the transaction.
+State/transient store creation, final transient store close and all other app CPIs when budgeting the transaction.
 
 Counting-allocator tests in `solana/crates/zama-fhe/src/heap_budget/` compare requested build/packet and invoke-table
 bytes with their tallies across the current shape frontier. `the_tally_never_crosses_the_budget_even_transiently` also
@@ -500,9 +500,9 @@ than split into a second source of truth (#55–#60).
 is derived, each encrypted operand gets boundary bit 1 only if its handle was not produced earlier in this transaction.
 Scalars get bit 0. The big-endian 256-bit mask enters the handle preimage; input position 0 uses the least-significant
 bit. The listener reconstructs the same ordered transaction membership. An earlier transaction in the same block is
-still a boundary; `EarlierStep`, slot reload and scratch grant witnesses cannot choose a different origin.
+still a boundary; `EarlierStep`, slot reload and transient store grant witnesses cannot choose a different origin.
 
-**66. [HOLDS]** Scratch has fixed storage for 112 result occurrences and 32 explicit grants (10,168 bytes including
+**66. [HOLDS]** TransientStore has fixed storage for 112 result occurrences and 32 explicit grants (10,168 bytes including
 discriminator). Repeated handles count as occurrences to preserve step/output references. Each execution admits at most
 32 steps and 32 effects; return selection admits 32 handles, including repeated selections. Capacity overflow fails
 atomically. SBF capacity is not packet capacity: application CPIs can construct payloads larger than the outer 1,232-byte

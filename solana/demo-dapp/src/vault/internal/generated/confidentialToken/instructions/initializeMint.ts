@@ -55,7 +55,7 @@ export type InitializeMintInstruction<
   TAccountTotalSupplyAuthority extends string | AccountMeta<string> = string,
   TAccountTotalSupplyEncryptedState extends string | AccountMeta<string> = string,
   TAccountZamaEventAuthority extends string | AccountMeta<string> = string,
-  TAccountScratch extends string | AccountMeta<string> = string,
+  TAccountTransientStore extends string | AccountMeta<string> = string,
   TAccountInstructions extends string | AccountMeta<string> = string,
   TAccountZamaProgram extends string | AccountMeta<string> = '6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu',
   TAccountHostConfig extends string | AccountMeta<string> = string,
@@ -86,7 +86,7 @@ export type InitializeMintInstruction<
       TAccountZamaEventAuthority extends string
         ? ReadonlyAccount<TAccountZamaEventAuthority>
         : TAccountZamaEventAuthority,
-      TAccountScratch extends string ? WritableAccount<TAccountScratch> : TAccountScratch,
+      TAccountTransientStore extends string ? WritableAccount<TAccountTransientStore> : TAccountTransientStore,
       TAccountInstructions extends string ? ReadonlyAccount<TAccountInstructions> : TAccountInstructions,
       TAccountZamaProgram extends string ? ReadonlyAccount<TAccountZamaProgram> : TAccountZamaProgram,
       TAccountHostConfig extends string ? ReadonlyAccount<TAccountHostConfig> : TAccountHostConfig,
@@ -133,7 +133,7 @@ export type InitializeMintAsyncInput<
   TAccountTotalSupplyAuthority extends string = string,
   TAccountTotalSupplyEncryptedState extends string = string,
   TAccountZamaEventAuthority extends string = string,
-  TAccountScratch extends string = string,
+  TAccountTransientStore extends string = string,
   TAccountInstructions extends string = string,
   TAccountZamaProgram extends string = string,
   TAccountHostConfig extends string = string,
@@ -154,7 +154,7 @@ export type InitializeMintAsyncInput<
   totalSupplyAuthority?: Address<TAccountTotalSupplyAuthority>;
   totalSupplyEncryptedState: Address<TAccountTotalSupplyEncryptedState>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
-  scratch: Address<TAccountScratch>;
+  transientStore: Address<TAccountTransientStore>;
   instructions: Address<TAccountInstructions>;
   /** ZamaHost program used to create the initial total-supply handle. */
   zamaProgram?: Address<TAccountZamaProgram>;
@@ -184,7 +184,7 @@ export async function getInitializeMintInstructionAsync<
   TAccountTotalSupplyAuthority extends string,
   TAccountTotalSupplyEncryptedState extends string,
   TAccountZamaEventAuthority extends string,
-  TAccountScratch extends string,
+  TAccountTransientStore extends string,
   TAccountInstructions extends string,
   TAccountZamaProgram extends string,
   TAccountHostConfig extends string,
@@ -203,7 +203,7 @@ export async function getInitializeMintInstructionAsync<
     TAccountTotalSupplyAuthority,
     TAccountTotalSupplyEncryptedState,
     TAccountZamaEventAuthority,
-    TAccountScratch,
+    TAccountTransientStore,
     TAccountInstructions,
     TAccountZamaProgram,
     TAccountHostConfig,
@@ -224,7 +224,7 @@ export async function getInitializeMintInstructionAsync<
     TAccountTotalSupplyAuthority,
     TAccountTotalSupplyEncryptedState,
     TAccountZamaEventAuthority,
-    TAccountScratch,
+    TAccountTransientStore,
     TAccountInstructions,
     TAccountZamaProgram,
     TAccountHostConfig,
@@ -256,7 +256,7 @@ export async function getInitializeMintInstructionAsync<
       value: input.zamaEventAuthority ?? null,
       isWritable: false,
     },
-    scratch: { value: input.scratch ?? null, isWritable: true },
+    transientStore: { value: input.transientStore ?? null, isWritable: true },
     instructions: { value: input.instructions ?? null, isWritable: false },
     zamaProgram: { value: input.zamaProgram ?? null, isWritable: false },
     hostConfig: { value: input.hostConfig ?? null, isWritable: false },
@@ -299,7 +299,7 @@ export async function getInitializeMintInstructionAsync<
       getAccountMeta('totalSupplyAuthority', accounts.totalSupplyAuthority),
       getAccountMeta('totalSupplyEncryptedState', accounts.totalSupplyEncryptedState),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
-      getAccountMeta('scratch', accounts.scratch),
+      getAccountMeta('transientStore', accounts.transientStore),
       getAccountMeta('instructions', accounts.instructions),
       getAccountMeta('zamaProgram', accounts.zamaProgram),
       getAccountMeta('hostConfig', accounts.hostConfig),
@@ -320,7 +320,7 @@ export async function getInitializeMintInstructionAsync<
     TAccountTotalSupplyAuthority,
     TAccountTotalSupplyEncryptedState,
     TAccountZamaEventAuthority,
-    TAccountScratch,
+    TAccountTransientStore,
     TAccountInstructions,
     TAccountZamaProgram,
     TAccountHostConfig,
@@ -340,7 +340,7 @@ export type InitializeMintInput<
   TAccountTotalSupplyAuthority extends string = string,
   TAccountTotalSupplyEncryptedState extends string = string,
   TAccountZamaEventAuthority extends string = string,
-  TAccountScratch extends string = string,
+  TAccountTransientStore extends string = string,
   TAccountInstructions extends string = string,
   TAccountZamaProgram extends string = string,
   TAccountHostConfig extends string = string,
@@ -361,7 +361,7 @@ export type InitializeMintInput<
   totalSupplyAuthority: Address<TAccountTotalSupplyAuthority>;
   totalSupplyEncryptedState: Address<TAccountTotalSupplyEncryptedState>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
-  scratch: Address<TAccountScratch>;
+  transientStore: Address<TAccountTransientStore>;
   instructions: Address<TAccountInstructions>;
   /** ZamaHost program used to create the initial total-supply handle. */
   zamaProgram?: Address<TAccountZamaProgram>;
@@ -391,7 +391,7 @@ export function getInitializeMintInstruction<
   TAccountTotalSupplyAuthority extends string,
   TAccountTotalSupplyEncryptedState extends string,
   TAccountZamaEventAuthority extends string,
-  TAccountScratch extends string,
+  TAccountTransientStore extends string,
   TAccountInstructions extends string,
   TAccountZamaProgram extends string,
   TAccountHostConfig extends string,
@@ -410,7 +410,7 @@ export function getInitializeMintInstruction<
     TAccountTotalSupplyAuthority,
     TAccountTotalSupplyEncryptedState,
     TAccountZamaEventAuthority,
-    TAccountScratch,
+    TAccountTransientStore,
     TAccountInstructions,
     TAccountZamaProgram,
     TAccountHostConfig,
@@ -430,7 +430,7 @@ export function getInitializeMintInstruction<
   TAccountTotalSupplyAuthority,
   TAccountTotalSupplyEncryptedState,
   TAccountZamaEventAuthority,
-  TAccountScratch,
+  TAccountTransientStore,
   TAccountInstructions,
   TAccountZamaProgram,
   TAccountHostConfig,
@@ -461,7 +461,7 @@ export function getInitializeMintInstruction<
       value: input.zamaEventAuthority ?? null,
       isWritable: false,
     },
-    scratch: { value: input.scratch ?? null, isWritable: true },
+    transientStore: { value: input.transientStore ?? null, isWritable: true },
     instructions: { value: input.instructions ?? null, isWritable: false },
     zamaProgram: { value: input.zamaProgram ?? null, isWritable: false },
     hostConfig: { value: input.hostConfig ?? null, isWritable: false },
@@ -499,7 +499,7 @@ export function getInitializeMintInstruction<
       getAccountMeta('totalSupplyAuthority', accounts.totalSupplyAuthority),
       getAccountMeta('totalSupplyEncryptedState', accounts.totalSupplyEncryptedState),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
-      getAccountMeta('scratch', accounts.scratch),
+      getAccountMeta('transientStore', accounts.transientStore),
       getAccountMeta('instructions', accounts.instructions),
       getAccountMeta('zamaProgram', accounts.zamaProgram),
       getAccountMeta('hostConfig', accounts.hostConfig),
@@ -520,7 +520,7 @@ export function getInitializeMintInstruction<
     TAccountTotalSupplyAuthority,
     TAccountTotalSupplyEncryptedState,
     TAccountZamaEventAuthority,
-    TAccountScratch,
+    TAccountTransientStore,
     TAccountInstructions,
     TAccountZamaProgram,
     TAccountHostConfig,
@@ -549,7 +549,7 @@ export type ParsedInitializeMintInstruction<
     totalSupplyAuthority: TAccountMetas[4];
     totalSupplyEncryptedState: TAccountMetas[5];
     zamaEventAuthority: TAccountMetas[6];
-    scratch: TAccountMetas[7];
+    transientStore: TAccountMetas[7];
     instructions: TAccountMetas[8];
     /** ZamaHost program used to create the initial total-supply handle. */
     zamaProgram: TAccountMetas[9];
@@ -602,7 +602,7 @@ export function parseInitializeMintInstruction<TProgram extends string, TAccount
       totalSupplyAuthority: getNextAccount(),
       totalSupplyEncryptedState: getNextAccount(),
       zamaEventAuthority: getNextAccount(),
-      scratch: getNextAccount(),
+      transientStore: getNextAccount(),
       instructions: getNextAccount(),
       zamaProgram: getNextAccount(),
       hostConfig: getNextAccount(),

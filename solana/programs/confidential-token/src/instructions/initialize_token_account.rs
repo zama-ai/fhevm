@@ -28,9 +28,9 @@ pub struct InitializeTokenAccount<'info> {
     pub balance_encrypted_state: UncheckedAccount<'info>,
     /// CHECK: Anchor event CPI authority for the Zama host program.
     pub zama_event_authority: UncheckedAccount<'info>,
-    /// CHECK: shared transaction scratch, validated by ZamaHost.
+    /// CHECK: shared transaction transient store, validated by ZamaHost.
     #[account(mut)]
-    pub scratch: UncheckedAccount<'info>,
+    pub transient_store: UncheckedAccount<'info>,
     /// CHECK: runtime Instructions sysvar, validated by ZamaHost.
     pub instructions: UncheckedAccount<'info>,
     /// ZamaHost program used to create the initial balance handle.
@@ -95,7 +95,7 @@ pub fn initialize_token_account<'info>(
         context: fhe::ExecuteContext {
             payer: &ctx.accounts.payer,
             event_authority: &ctx.accounts.zama_event_authority,
-            scratch: &ctx.accounts.scratch,
+            transient_store: &ctx.accounts.transient_store,
             instructions: &ctx.accounts.instructions,
             zama_program: &ctx.accounts.zama_program,
             host_config: &ctx.accounts.host_config,

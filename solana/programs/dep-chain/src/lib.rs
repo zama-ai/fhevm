@@ -110,7 +110,7 @@ pub mod dep_chain {
                 hcu_trusted_app_record: None,
                 rand_nonce: None,
                 event_authority: ctx.accounts.zama_event_authority.to_account_info(),
-                scratch: ctx.accounts.scratch.to_account_info(),
+                transient_store: ctx.accounts.transient_store.to_account_info(),
                 instructions: ctx.accounts.instructions.to_account_info(),
                 program: ctx.accounts.zama_program.to_account_info(),
             },
@@ -164,7 +164,7 @@ pub mod dep_chain {
                 hcu_trusted_app_record: None,
                 rand_nonce: None,
                 event_authority: ctx.accounts.zama_event_authority.to_account_info(),
-                scratch: ctx.accounts.scratch.to_account_info(),
+                transient_store: ctx.accounts.transient_store.to_account_info(),
                 instructions: ctx.accounts.instructions.to_account_info(),
                 program: ctx.accounts.zama_program.to_account_info(),
             },
@@ -208,9 +208,9 @@ pub struct Initialize<'info> {
     pub host_config: UncheckedAccount<'info>,
     /// CHECK: ZamaHost event-CPI authority; validated by the host program.
     pub zama_event_authority: UncheckedAccount<'info>,
-    /// CHECK: shared transaction scratch, validated by ZamaHost.
+    /// CHECK: shared transaction transient store, validated by ZamaHost.
     #[account(mut)]
-    pub scratch: UncheckedAccount<'info>,
+    pub transient_store: UncheckedAccount<'info>,
     /// CHECK: runtime Instructions sysvar, validated by ZamaHost.
     pub instructions: UncheckedAccount<'info>,
     pub zama_program: Program<'info, ZamaHost>,
@@ -234,9 +234,9 @@ pub struct Extend<'info> {
     pub host_config: UncheckedAccount<'info>,
     /// CHECK: ZamaHost event-CPI authority; validated by the host program.
     pub zama_event_authority: UncheckedAccount<'info>,
-    /// CHECK: shared transaction scratch, validated by ZamaHost.
+    /// CHECK: shared transaction transient store, validated by ZamaHost.
     #[account(mut)]
-    pub scratch: UncheckedAccount<'info>,
+    pub transient_store: UncheckedAccount<'info>,
     /// CHECK: runtime Instructions sysvar, validated by ZamaHost.
     pub instructions: UncheckedAccount<'info>,
     pub zama_program: Program<'info, ZamaHost>,

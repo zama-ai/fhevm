@@ -1,5 +1,5 @@
 //! Canonical HCU costs, shared by all executions. Transaction totals and input
-//! depths live in the scratch journal and are charged by the production walk.
+//! depths live in the transient store journal and are charged by the production walk.
 //!
 //! **Fail-closed:** every op variant is enumerated explicitly (no `_ =>` arm over the op enums), so a
 //! newly added op fails to compile until a cost decision is made; any `(op, fhe_type, scalar)`

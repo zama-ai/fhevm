@@ -58,12 +58,14 @@ declare_id!("6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu");
 pub mod zama_host {
     use super::*;
 
-    pub fn open_scratch<'info>(ctx: Context<'info, OpenScratch<'info>>) -> Result<()> {
-        instructions::open_scratch(ctx)
+    pub fn open_transient_store<'info>(
+        ctx: Context<'info, OpenTransientStore<'info>>,
+    ) -> Result<()> {
+        instructions::open_transient_store(ctx)
     }
 
-    pub fn close_scratch(ctx: Context<CloseScratch>) -> Result<()> {
-        instructions::close_scratch(ctx)
+    pub fn close_transient_store(ctx: Context<CloseTransientStore>) -> Result<()> {
+        instructions::close_transient_store(ctx)
     }
 
     pub fn create_encrypted_state(

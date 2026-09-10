@@ -235,7 +235,7 @@ pub fn assert_ceilings_snapshot(snapshot: &str, ceilings: &BTreeMap<String, Ceil
     assert_snapshot_matches(&path, "ceilings block", failures);
 }
 
-/// Measured cost of one instruction profile. FHE fixtures run in a real scratch
+/// Measured cost of one instruction profile. FHE fixtures run in a real transient store
 /// transaction: compute units include open/body/close, while data bytes and CPIs
 /// describe the body instruction. Packet-fit tests separately serialize the full envelope.
 ///

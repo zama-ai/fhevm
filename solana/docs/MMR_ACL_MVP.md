@@ -16,7 +16,7 @@ Historical private decryption remains valid after a slot changes. Current-slot p
 
 ## Composition and returns
 
-The transaction sponsor opens canonical scratch at `["transient", payer]` before any FHE call. Every call shares it. Results are implicitly usable by their producing State; a producer can explicitly grant a result to another State, whose authority signs when consuming it. The journal also tracks transaction operand origin and HCU depth. Grants expire through the exact final top-level close, refunding the recorded payer. Missing or invalid finalization rolls back the transaction. Grants authorize compute, not KMS decrypt, although authorized compute can produce persistently decryptable results.
+The transaction sponsor opens canonical transient store at `["transient", payer]` before any FHE call. Every call shares it. Results are implicitly usable by their producing State; a producer can explicitly grant a result to another State, whose authority signs when consuming it. The journal also tracks transaction operand origin and HCU depth. Grants expire through the exact final top-level close, refunding the recorded payer. Missing or invalid finalization rolls back the transaction. Grants authorize compute, not KMS decrypt, although authorized compute can produce persistently decryptable results.
 
 The token returns the transferred result; the batcher adds it to its own contribution. There is no TransferReceipt or permanent transferred-result register. Burn retains a result slot and PendingBurn because redeem/cancel spans transactions.
 
@@ -30,4 +30,4 @@ An incomplete local history refuses proofs. Advancing its cursor does not repair
 
 ## Resources and verification
 
-The 32-step maximum is not a promise that every shape fits the default heap or packet budget. Use the measured runtime boundary and cost snapshots; #1872 records the accepted approach. Scratch rent is reclaimed but CPI/compute costs remain. See TESTING.md for unit/runtime/live layers and INVARIANTS.md for the security register.
+The 32-step maximum is not a promise that every shape fits the default heap or packet budget. Use the measured runtime boundary and cost snapshots; #1872 records the accepted approach. TransientStore rent is reclaimed but CPI/compute costs remain. See TESTING.md for unit/runtime/live layers and INVARIANTS.md for the security register.

@@ -35,6 +35,8 @@ import {
 } from './derive.js';
 import type { FhevmSolanaChain } from '@sdk-src/core/types/fhevmSolanaChain.js';
 import { getSettleInstructionDataDecoder } from './internal/generated/confidentialBatcher/instructions/settle.js';
+import { CLOSE_TRANSIENT_STORE_DISCRIMINATOR } from '@sdk-src/solana/internal/generated/zamaHost/instructions/closeTransientStore.js';
+import { ZAMA_HOST_PROGRAM_ADDRESS } from '@sdk-src/solana/internal/generated/zamaHost/programAddress.js';
 
 function addr(fill: number): Address {
   return address(base58.encode(new Uint8Array(32).fill(fill)));
@@ -144,7 +146,7 @@ describe('settleBatch', () => {
 
     const transaction = getTransactionDecoder().decode(getBase64Encoder().encode(wire));
     const compiled = getCompiledTransactionMessageDecoder().decode(transaction.messageBytes);
-    expect(compiled.version).toBe(0);
+    if (compiled.version !== 0) throw new Error('Expected an ALT-aware v0 transaction');
 
     // The v0 message references the batch's lookup table, and every derivable settle account moved
     // into it.
@@ -172,7 +174,7 @@ describe('settleBatch', () => {
     expect(staticAccounts[0]).toBe(keeper.address); // fee payer is always static account 0
     expect(staticAccounts).not.toContain(accounts.pendingBurn);
     expect(provisioned).toContain(accounts.pendingBurn);
-    // The static set is closed at 10: the fee payer, scratch, instructions sysvar,
+    // The static set is closed at 10: the fee payer, transient store, instructions sysvar,
     // compute-budget program and fixed program IDs. Pinning the count makes
     // growth a deliberate edit with a fresh look at the 1232-byte budget.
     expect(staticAccounts).toHaveLength(10);
@@ -183,7 +185,10 @@ describe('settleBatch', () => {
     // The certified 32-byte cleartext was decoded to the u64 settle argument, and the locally built
     // proof of the second leaf rode along. instructions[0] is the prepended SetComputeUnitLimit; the
     // open is instructions[1] and settle is instructions[2].
-    const compiledInstructions = (compiled as unknown as { instructions: { data?: Uint8Array }[] }).instructions;
+    const compiledInstructions = compiled.instructions;
+    expect(compiledInstructions).toHaveLength(4);
+    expect(compiledInstructions.at(-1)!.data).toEqual(CLOSE_TRANSIENT_STORE_DISCRIMINATOR);
+    expect(staticAccounts[compiledInstructions.at(-1)!.programAddressIndex]).toBe(ZAMA_HOST_PROGRAM_ADDRESS);
     const data = getSettleInstructionDataDecoder().decode(compiledInstructions[2]!.data!);
     expect(data.cleartextTotal).toBe(800n);
     expect(data.leafIndex).toBe(3n);

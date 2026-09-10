@@ -157,6 +157,26 @@ async fn confidential_transfer_reconstructs_computes_and_decrypts(
             if event.result == transfer.transferred_handle && event.rhs == select_result
     ));
     assert_eq!(select_result, transfer.alice_handle);
+    // Both inputs predate this transaction even though the balance was produced
+    // by the preceding transaction in this same block.
+    let boundary_mask = host::operand_boundary_mask([true, true])?;
+    let comparison_handle = host::computed_eval_handle(
+        host::FheBinaryOpCode::Ge,
+        diverged.alice_handle,
+        amount_handle,
+        false,
+        0,
+        boundary_mask,
+        &host::HandleDerivationContext {
+            chain_id: host::SOLANA_POC_CHAIN_ID,
+            previous_bank_hash: PREVIOUS_BANK_HASH,
+            unix_timestamp: FIXTURE_UNIX_TIMESTAMP,
+        },
+    );
+    assert!(matches!(
+        &events[0],
+        SolanaHostRecord::FheBinaryOp(event) if event.result == comparison_handle
+    ));
     assert!(matches!(
         &events[4],
         SolanaHostRecord::FheBinaryOp(event)
@@ -183,6 +203,17 @@ async fn confidential_transfer_reconstructs_computes_and_decrypts(
     .await?;
     db_tx.commit().await?;
     assert_eq!(stats.tfhe_events, 10);
+    let (stored_mask, stored_transaction): (Vec<u8>, Vec<u8>) = sqlx::query_as(
+        "SELECT operand_boundary_mask, transaction_id FROM computations WHERE output_handle = $1",
+    )
+    .bind(comparison_handle.to_vec())
+    .fetch_one(&harness.pool)
+    .await?;
+    assert_eq!(stored_mask, boundary_mask);
+    assert_eq!(
+        stored_transaction,
+        solana_transaction_id(transfer.signature.as_ref()).to_vec()
+    );
     wait_until_computed(&harness.app).await?;
 
     let decrypted = decrypt_handles(
@@ -217,7 +248,7 @@ fn run_transfer(
     let transfer = transfer_ix(fixture, outputs, amount_handle);
     let (meta, account_keys, signature) =
         send_with_meta(&mut fixture.svm, &fixture.alice, transfer);
-    // The final scratch close clears transaction return data. Read the app event here;
+    // The final transient store close clears transaction return data. Read the app event here;
     // runtime-tests separately checks the token's immediate CPI return channel.
     let transferred_handle = meta
         .inner_instructions
@@ -403,7 +434,7 @@ fn token_fixture() -> TokenFixture {
         Instruction {
             program_id: token_program_id,
             accounts: token::accounts::InitializeMint {
-                scratch: host::transient_address(alice.pubkey()).0,
+                transient_store: host::transient_store_address(alice.pubkey()).0,
                 instructions: solana_sdk::sysvar::instructions::ID,
                 authority: alice.pubkey(),
                 mint: mint.pubkey(),
@@ -513,7 +544,7 @@ fn initialize_token_account(
         Instruction {
             program_id: init.token_program_id,
             accounts: token::accounts::InitializeTokenAccount {
-                scratch: host::transient_address(payer.pubkey()).0,
+                transient_store: host::transient_store_address(payer.pubkey()).0,
                 instructions: solana_sdk::sysvar::instructions::ID,
                 payer: payer.pubkey(),
                 owner,
@@ -551,7 +582,7 @@ fn transfer_ix(
     Instruction {
         program_id: fixture.token_program_id,
         accounts: token::accounts::ConfidentialTransfer {
-            scratch: host::transient_address(fixture.alice.pubkey()).0,
+            transient_store: host::transient_store_address(fixture.alice.pubkey()).0,
             instructions: solana_sdk::sysvar::instructions::ID,
             // Block-cap optional accounts threaded through the transfer CPI; the default
             // unrestricted cap means None/None here.
@@ -806,29 +837,29 @@ fn set_compute_unit_limit_ix(units: u32) -> Instruction {
 }
 
 fn fhe_instructions(payer: Pubkey, ix: Instruction) -> [Instruction; 3] {
-    let scratch = host::transient_address(payer).0;
+    let transient_store = host::transient_store_address(payer).0;
     [
         Instruction {
             program_id: host::ID,
-            accounts: host::accounts::OpenScratch {
+            accounts: host::accounts::OpenTransientStore {
                 payer,
-                scratch,
+                transient_store,
                 instructions: solana_sdk::sysvar::instructions::ID,
                 system_program: system_program::ID,
             }
             .to_account_metas(None),
-            data: host::instruction::OpenScratch {}.data(),
+            data: host::instruction::OpenTransientStore {}.data(),
         },
         ix,
         Instruction {
             program_id: host::ID,
-            accounts: host::accounts::CloseScratch {
-                scratch,
+            accounts: host::accounts::CloseTransientStore {
+                transient_store,
                 refund: payer,
                 instructions: solana_sdk::sysvar::instructions::ID,
             }
             .to_account_metas(None),
-            data: host::instruction::CloseScratch {}.data(),
+            data: host::instruction::CloseTransientStore {}.data(),
         },
     ]
 }

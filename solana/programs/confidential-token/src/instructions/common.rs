@@ -26,7 +26,7 @@ pub(crate) struct TransferAccounts<'a, 'info> {
     /// Recipient state: read and update its balance slot.
     pub(crate) to_state: AccountInfo<'info>,
     pub(crate) zama_event_authority: &'a UncheckedAccount<'info>,
-    pub(crate) scratch: &'a UncheckedAccount<'info>,
+    pub(crate) transient_store: &'a UncheckedAccount<'info>,
     pub(crate) instructions: &'a UncheckedAccount<'info>,
     pub(crate) zama_program: &'a Program<'info, ZamaHost>,
     pub(crate) host_config: &'a Account<'info, zama_host::HostConfig>,
@@ -45,7 +45,7 @@ pub(crate) struct TransferAccounts<'a, 'info> {
     pub(crate) from_ata: AccountInfo<'info>,
     /// ATA of `to_account.owner` on `underlying_mint`. May alias `from_ata` on self-transfer.
     pub(crate) to_ata: AccountInfo<'info>,
-    /// Optional scratch grant allowing the caller to compute with the returned transfer result.
+    /// Optional transient store grant allowing the caller to compute with the returned transfer result.
     pub(crate) result_grant: Option<ResultGrantAccounts<'info>>,
 }
 
@@ -208,7 +208,7 @@ fn build_transfer_execution(
             Some(fhe::uint64_operand(state, *key)?)
         }
         (TransferAmountSource::Grant { handle }, _) => {
-            // The host checks the handle grant to the sender State in the shared scratch.
+            // The host checks the handle grant to the sender State in the shared transient store.
             Some(
                 zama_fhe::State::new(from_account)
                     .granted(*handle)
@@ -315,7 +315,7 @@ fn compute_transfer_handles<'info>(
         context: fhe::ExecuteContext {
             payer: accounts.payer,
             event_authority: accounts.zama_event_authority,
-            scratch: accounts.scratch,
+            transient_store: accounts.transient_store,
             instructions: accounts.instructions,
             zama_program: accounts.zama_program,
             host_config: accounts.host_config,

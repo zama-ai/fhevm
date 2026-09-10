@@ -148,7 +148,7 @@ impl ExecutionState<'_, '_, '_> {
                 assert_handle_for_chain(handle, self.chain_id)?;
                 let consumer = self.table.account((*consumer_state_index).into())?.key();
                 let depth = self
-                    .scratch
+                    .transient_store
                     .authorized_depth(handle, consumer)
                     .ok_or(ZamaHostError::TransientAccountInvalid)?;
                 Ok(ResolvedOperand {
@@ -161,7 +161,7 @@ impl ExecutionState<'_, '_, '_> {
 
             FheExecuteOperand::EarlierStep { producer_index } => {
                 let result = self
-                    .scratch
+                    .transient_store
                     .result(self.call_start + usize::from(*producer_index))
                     .ok_or(ZamaHostError::FheExecuteEarlierStepMissing)?;
                 Ok(self.encrypted_operand(result.handle))

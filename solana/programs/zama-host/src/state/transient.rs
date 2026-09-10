@@ -20,10 +20,10 @@ pub struct TransientResult {
     pub depth: u64,
 }
 
-/// Host-owned transaction context. Borrowed in place so nested executions do
+/// Host-owned transient storage shared by all FHE calls in one transaction. Borrowed in place so nested executions do
 /// not deserialize the growing result history onto Solana's bump heap.
 #[account(zero_copy)]
-pub struct TransientState {
+pub struct TransientStore {
     pub payer: Pubkey,
     pub total_hcu: u64,
     result_count: u16,
@@ -34,11 +34,11 @@ pub struct TransientState {
     grants: [TransientGrant; MAX_TRANSIENT_GRANTS],
 }
 
-impl TransientState {
+impl TransientStore {
     pub const SPACE: usize = 8 + std::mem::size_of::<Self>();
 
     pub fn validate(&self, address: Pubkey) -> Result<()> {
-        let (expected, bump) = transient_address(self.payer);
+        let (expected, bump) = transient_store_address(self.payer);
         require_keys_eq!(address, expected, ZamaHostError::TransientAccountInvalid);
         require!(self.bump == bump, ZamaHostError::TransientAccountInvalid);
         require!(
@@ -122,8 +122,8 @@ impl TransientState {
     }
 }
 
-pub fn transient_address(payer: Pubkey) -> (Pubkey, u8) {
+pub fn transient_store_address(payer: Pubkey) -> (Pubkey, u8) {
     Pubkey::find_program_address(&[TRANSIENT_SEED, payer.as_ref()], &crate::ID)
 }
 
-const _: () = assert!(TransientState::SPACE <= 10_240);
+const _: () = assert!(TransientStore::SPACE <= 10_240);

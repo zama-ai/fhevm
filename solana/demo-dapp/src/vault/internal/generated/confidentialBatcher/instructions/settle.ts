@@ -83,7 +83,7 @@ export type SettleInstruction<
   TAccountBatchPayoutBalanceState extends string | AccountMeta<string> = string,
   TAccountPayoutTotalSupplyState extends string | AccountMeta<string> = string,
   TAccountZamaEventAuthority extends string | AccountMeta<string> = string,
-  TAccountScratch extends string | AccountMeta<string> = string,
+  TAccountTransientStore extends string | AccountMeta<string> = string,
   TAccountInstructions extends string | AccountMeta<string> = string,
   TAccountZamaProgram extends string | AccountMeta<string> = '6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu',
   TAccountConfidentialTokenEventAuthority extends string | AccountMeta<string> = string,
@@ -159,7 +159,7 @@ export type SettleInstruction<
       TAccountZamaEventAuthority extends string
         ? ReadonlyAccount<TAccountZamaEventAuthority>
         : TAccountZamaEventAuthority,
-      TAccountScratch extends string ? WritableAccount<TAccountScratch> : TAccountScratch,
+      TAccountTransientStore extends string ? WritableAccount<TAccountTransientStore> : TAccountTransientStore,
       TAccountInstructions extends string ? ReadonlyAccount<TAccountInstructions> : TAccountInstructions,
       TAccountZamaProgram extends string ? ReadonlyAccount<TAccountZamaProgram> : TAccountZamaProgram,
       TAccountConfidentialTokenEventAuthority extends string
@@ -257,7 +257,7 @@ export type SettleAsyncInput<
   TAccountBatchPayoutBalanceState extends string = string,
   TAccountPayoutTotalSupplyState extends string = string,
   TAccountZamaEventAuthority extends string = string,
-  TAccountScratch extends string = string,
+  TAccountTransientStore extends string = string,
   TAccountInstructions extends string = string,
   TAccountZamaProgram extends string = string,
   TAccountConfidentialTokenEventAuthority extends string = string,
@@ -319,7 +319,7 @@ export type SettleAsyncInput<
   batchPayoutBalanceState: Address<TAccountBatchPayoutBalanceState>;
   payoutTotalSupplyState: Address<TAccountPayoutTotalSupplyState>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
-  scratch: Address<TAccountScratch>;
+  transientStore: Address<TAccountTransientStore>;
   instructions: Address<TAccountInstructions>;
   /** ZamaHost program (FHE compute + ACL). */
   zamaProgram?: Address<TAccountZamaProgram>;
@@ -368,7 +368,7 @@ export async function getSettleInstructionAsync<
   TAccountBatchPayoutBalanceState extends string,
   TAccountPayoutTotalSupplyState extends string,
   TAccountZamaEventAuthority extends string,
-  TAccountScratch extends string,
+  TAccountTransientStore extends string,
   TAccountInstructions extends string,
   TAccountZamaProgram extends string,
   TAccountConfidentialTokenEventAuthority extends string,
@@ -406,7 +406,7 @@ export async function getSettleInstructionAsync<
     TAccountBatchPayoutBalanceState,
     TAccountPayoutTotalSupplyState,
     TAccountZamaEventAuthority,
-    TAccountScratch,
+    TAccountTransientStore,
     TAccountInstructions,
     TAccountZamaProgram,
     TAccountConfidentialTokenEventAuthority,
@@ -446,7 +446,7 @@ export async function getSettleInstructionAsync<
     TAccountBatchPayoutBalanceState,
     TAccountPayoutTotalSupplyState,
     TAccountZamaEventAuthority,
-    TAccountScratch,
+    TAccountTransientStore,
     TAccountInstructions,
     TAccountZamaProgram,
     TAccountConfidentialTokenEventAuthority,
@@ -542,7 +542,7 @@ export async function getSettleInstructionAsync<
       value: input.zamaEventAuthority ?? null,
       isWritable: false,
     },
-    scratch: { value: input.scratch ?? null, isWritable: true },
+    transientStore: { value: input.transientStore ?? null, isWritable: true },
     instructions: { value: input.instructions ?? null, isWritable: false },
     zamaProgram: { value: input.zamaProgram ?? null, isWritable: false },
     confidentialTokenEventAuthority: {
@@ -631,7 +631,7 @@ export async function getSettleInstructionAsync<
       getAccountMeta('batchPayoutBalanceState', accounts.batchPayoutBalanceState),
       getAccountMeta('payoutTotalSupplyState', accounts.payoutTotalSupplyState),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
-      getAccountMeta('scratch', accounts.scratch),
+      getAccountMeta('transientStore', accounts.transientStore),
       getAccountMeta('instructions', accounts.instructions),
       getAccountMeta('zamaProgram', accounts.zamaProgram),
       getAccountMeta('confidentialTokenEventAuthority', accounts.confidentialTokenEventAuthority),
@@ -671,7 +671,7 @@ export async function getSettleInstructionAsync<
     TAccountBatchPayoutBalanceState,
     TAccountPayoutTotalSupplyState,
     TAccountZamaEventAuthority,
-    TAccountScratch,
+    TAccountTransientStore,
     TAccountInstructions,
     TAccountZamaProgram,
     TAccountConfidentialTokenEventAuthority,
@@ -710,7 +710,7 @@ export type SettleInput<
   TAccountBatchPayoutBalanceState extends string = string,
   TAccountPayoutTotalSupplyState extends string = string,
   TAccountZamaEventAuthority extends string = string,
-  TAccountScratch extends string = string,
+  TAccountTransientStore extends string = string,
   TAccountInstructions extends string = string,
   TAccountZamaProgram extends string = string,
   TAccountConfidentialTokenEventAuthority extends string = string,
@@ -772,7 +772,7 @@ export type SettleInput<
   batchPayoutBalanceState: Address<TAccountBatchPayoutBalanceState>;
   payoutTotalSupplyState: Address<TAccountPayoutTotalSupplyState>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
-  scratch: Address<TAccountScratch>;
+  transientStore: Address<TAccountTransientStore>;
   instructions: Address<TAccountInstructions>;
   /** ZamaHost program (FHE compute + ACL). */
   zamaProgram?: Address<TAccountZamaProgram>;
@@ -821,7 +821,7 @@ export function getSettleInstruction<
   TAccountBatchPayoutBalanceState extends string,
   TAccountPayoutTotalSupplyState extends string,
   TAccountZamaEventAuthority extends string,
-  TAccountScratch extends string,
+  TAccountTransientStore extends string,
   TAccountInstructions extends string,
   TAccountZamaProgram extends string,
   TAccountConfidentialTokenEventAuthority extends string,
@@ -859,7 +859,7 @@ export function getSettleInstruction<
     TAccountBatchPayoutBalanceState,
     TAccountPayoutTotalSupplyState,
     TAccountZamaEventAuthority,
-    TAccountScratch,
+    TAccountTransientStore,
     TAccountInstructions,
     TAccountZamaProgram,
     TAccountConfidentialTokenEventAuthority,
@@ -898,7 +898,7 @@ export function getSettleInstruction<
   TAccountBatchPayoutBalanceState,
   TAccountPayoutTotalSupplyState,
   TAccountZamaEventAuthority,
-  TAccountScratch,
+  TAccountTransientStore,
   TAccountInstructions,
   TAccountZamaProgram,
   TAccountConfidentialTokenEventAuthority,
@@ -993,7 +993,7 @@ export function getSettleInstruction<
       value: input.zamaEventAuthority ?? null,
       isWritable: false,
     },
-    scratch: { value: input.scratch ?? null, isWritable: true },
+    transientStore: { value: input.transientStore ?? null, isWritable: true },
     instructions: { value: input.instructions ?? null, isWritable: false },
     zamaProgram: { value: input.zamaProgram ?? null, isWritable: false },
     confidentialTokenEventAuthority: {
@@ -1067,7 +1067,7 @@ export function getSettleInstruction<
       getAccountMeta('batchPayoutBalanceState', accounts.batchPayoutBalanceState),
       getAccountMeta('payoutTotalSupplyState', accounts.payoutTotalSupplyState),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
-      getAccountMeta('scratch', accounts.scratch),
+      getAccountMeta('transientStore', accounts.transientStore),
       getAccountMeta('instructions', accounts.instructions),
       getAccountMeta('zamaProgram', accounts.zamaProgram),
       getAccountMeta('confidentialTokenEventAuthority', accounts.confidentialTokenEventAuthority),
@@ -1107,7 +1107,7 @@ export function getSettleInstruction<
     TAccountBatchPayoutBalanceState,
     TAccountPayoutTotalSupplyState,
     TAccountZamaEventAuthority,
-    TAccountScratch,
+    TAccountTransientStore,
     TAccountInstructions,
     TAccountZamaProgram,
     TAccountConfidentialTokenEventAuthority,
@@ -1177,7 +1177,7 @@ export type ParsedSettleInstruction<
     batchPayoutBalanceState: TAccountMetas[24];
     payoutTotalSupplyState: TAccountMetas[25];
     zamaEventAuthority: TAccountMetas[26];
-    scratch: TAccountMetas[27];
+    transientStore: TAccountMetas[27];
     instructions: TAccountMetas[28];
     /** ZamaHost program (FHE compute + ACL). */
     zamaProgram: TAccountMetas[29];
@@ -1239,7 +1239,7 @@ export function parseSettleInstruction<TProgram extends string, TAccountMetas ex
       batchPayoutBalanceState: getNextAccount(),
       payoutTotalSupplyState: getNextAccount(),
       zamaEventAuthority: getNextAccount(),
-      scratch: getNextAccount(),
+      transientStore: getNextAccount(),
       instructions: getNextAccount(),
       zamaProgram: getNextAccount(),
       confidentialTokenEventAuthority: getNextAccount(),

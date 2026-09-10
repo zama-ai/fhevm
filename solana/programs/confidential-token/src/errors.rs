@@ -162,7 +162,7 @@ pub enum ConfidentialTokenError {
     /// Freeze checks bind the owner's associated token account for the wrapped mint.
     #[msg("underlying associated token account does not match")]
     UnderlyingAssociatedAccountMismatch,
-    /// Result grants require a state, its signing authority, and scratch; self-transfers cannot grant a result.
+    /// Result grants require a state, its signing authority, and transient store; self-transfers cannot grant a result.
     #[msg("invalid result grant accounts or self-transfer result request")]
     ResultGrantMismatch,
 }

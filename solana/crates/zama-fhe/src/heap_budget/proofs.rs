@@ -341,7 +341,7 @@ fn the_invoke_model_matches_a_counting_allocator_for_every_admitted_shape() {
             hcu_block_meter: Some(fixed_infos[4].clone()),
             hcu_trusted_app_record: Some(fixed_infos[5].clone()),
             rand_nonce: Some(fixed_infos[6].clone()),
-            scratch: fixed_infos[7].clone(),
+            transient_store: fixed_infos[7].clone(),
             instructions: fixed_infos[8].clone(),
             event_authority: fixed_infos[9].clone(),
             program: fixed_infos[10].clone(),
