@@ -20,6 +20,8 @@ use crate::database::tfhe_event_propagate::Database;
 use consumer::BlockPayload;
 pub mod catchup;
 mod drift_recovery;
+#[cfg(test)]
+mod finalization_tests;
 mod ingestion;
 mod runner;
 pub use runner::run_consumer;
@@ -35,7 +37,7 @@ pub struct ConsumerConfig {
     pub url: String,
     pub acl_address: Address,
     pub tfhe_address: Address,
-    pub kms_generation_address: Option<Address>,
+    pub kms_generation_address: Address,
     pub protocol_config_address: Option<Address>,
     pub confidential_bridge_address: Option<Address>,
     pub database_url: DatabaseURL,

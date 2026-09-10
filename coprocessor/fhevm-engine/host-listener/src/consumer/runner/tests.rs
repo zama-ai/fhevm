@@ -60,7 +60,7 @@ async fn exercise_restart(manual: bool, real_cleanup: bool) {
         url: broker_url,
         acl_address: Address::ZERO,
         tfhe_address: Address::repeat_byte(1),
-        kms_generation_address: None,
+        kms_generation_address: Address::repeat_byte(2),
         protocol_config_address: None,
         confidential_bridge_address: None,
         database_url: instance.db_url.clone(),
@@ -119,7 +119,7 @@ async fn exercise_restart(manual: bool, real_cleanup: bool) {
         },
     )));
     let catchup = broker
-        .consumer(&Topic::namespaced(&namespace, routing::CATCHUP))
+        .consumer(&Topic::namespaced(&namespace, routing::FINAL_CATCHUP))
         .group("drift-test-catchup")
         .with_cancellation(control_stop.clone())
         .build()
@@ -168,8 +168,8 @@ async fn exercise_restart(manual: bool, real_cleanup: bool) {
         assert_eq!((request.block_start, request.block_end), (900, 999));
         publisher
             .publish(
-                &routing::consumer_catchup_event_routing(first.clone()),
-                &block(950, BlockFlow::Catchup),
+                &routing::consumer_final_catchup_event_routing(first.clone()),
+                &block(950, BlockFlow::FinalCatchup),
             )
             .await
             .unwrap();
@@ -233,8 +233,22 @@ async fn exercise_restart(manual: bool, real_cleanup: bool) {
         .unwrap();
     publisher
         .publish(
-            &routing::consumer_catchup_event_routing(first),
-            &block(7778, BlockFlow::Catchup),
+            &routing::consumer_final_catchup_event_routing(first.clone()),
+            &block(7778, BlockFlow::FinalCatchup),
+        )
+        .await
+        .unwrap();
+    publisher
+        .publish(
+            &routing::consumer_final_event_routing(first.clone()),
+            &block(7779, BlockFlow::Final),
+        )
+        .await
+        .unwrap();
+    publisher
+        .publish(
+            &routing::consumer_final_catchup_event_routing(first),
+            &block(7780, BlockFlow::FinalCatchup),
         )
         .await
         .unwrap();
@@ -250,8 +264,8 @@ async fn exercise_restart(manual: bool, real_cleanup: bool) {
     assert_eq!((request.block_start, request.block_end), (800, 1099));
     publisher
         .publish(
-            &routing::consumer_catchup_event_routing(second),
-            &block(850, BlockFlow::Catchup),
+            &routing::consumer_final_catchup_event_routing(second),
+            &block(850, BlockFlow::FinalCatchup),
         )
         .await
         .unwrap();
@@ -261,17 +275,17 @@ async fn exercise_restart(manual: bool, real_cleanup: bool) {
         for number in [1000, 950, 950] {
             publisher
                 .publish(
-                    &routing::consumer_catchup_event_routing(
+                    &routing::consumer_final_catchup_event_routing(
                         request.consumer_id.clone(),
                     ),
-                    &block(number, BlockFlow::Catchup),
+                    &block(number, BlockFlow::FinalCatchup),
                 )
                 .await
                 .unwrap();
         }
         wait_for_events(&pool, &[850, 950, 1000, 1100]).await;
     }
-    let old: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM host_chain_blocks_valid WHERE block_number IN (7777, 7778)").fetch_one(&pool).await.unwrap();
+    let old: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM host_chain_blocks_valid WHERE block_number IN (7777, 7778, 7779, 7780)").fetch_one(&pool).await.unwrap();
     assert_eq!(old, 0);
     stop.cancel();
     run.await.unwrap().unwrap();

@@ -84,7 +84,7 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
     });
     let mut contracts = vec![config.acl_address, config.tfhe_address];
     contracts.extend(config.protocol_config_address);
-    contracts.extend(config.kms_generation_address);
+    contracts.push(config.kms_generation_address);
     contracts.extend(config.confidential_bridge_address);
     let options = IngestOptions {
         dependence_by_connexity: config.dependence_by_connexity,
@@ -97,6 +97,15 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
             )?,
         disable_synthetic_ops: config.disable_synthetic_ops,
     };
+    if options.is_protocol_config_listener
+        && config.protocol_config_address.is_none()
+    {
+        warn!(
+            chain_id = %chain_id,
+            "ProtocolConfig listener has no --protocol-config-address; \
+             ProtocolConfig.CoprocessorUpgradeProposed events will not be decoded"
+        );
+    }
     let runner = Runner {
         config,
         db,
@@ -210,6 +219,16 @@ impl Runner {
             cancel: client.cancel_token.clone(),
             in_flight_handlers: RwLock::new(()),
         });
+        let kms = ingestor.clone();
+        let cancel = client.cancel_token.clone();
+        tasks.spawn(async move {
+            kms.process_kms(
+                crate::kms_generation::aws_s3::AwsS3Client {},
+                cancel,
+            )
+            .await;
+            Ok(())
+        });
         let handler_ingestor = ingestor.clone();
         let handle = move |payload: BlockPayload,
                            _cancel: CancellationToken| {
@@ -219,13 +238,21 @@ impl Runner {
         let run = async {
             client.ensure_consumer().await?;
             client.ensure_catchup_consumer().await?;
-            client.register_contracts(&self.contracts).await?;
+            client.ensure_final_consumer().await?;
+            client.ensure_final_catchup_consumer().await?;
+            client
+                .register_contracts_with_finality(&self.contracts)
+                .await?;
             let live = client.consume(handle.clone());
-            let catchup = client.consume_catchup(handle);
+            let final_blocks = client.consume_final(handle.clone());
+            let final_catchup = client.consume_final_catchup(handle);
+            tasks.spawn(async move {
+                final_blocks.await.map_err(anyhow::Error::from)
+            });
+            tasks.spawn(async move {
+                final_catchup.await.map_err(anyhow::Error::from)
+            });
             tasks.spawn(async move { live.await.map_err(anyhow::Error::from) });
-            tasks.spawn(
-                async move { catchup.await.map_err(anyhow::Error::from) },
-            );
             let stats_db = db.clone();
             let chain = self.config.chain_id.clone();
             let cancel = client.cancel_token.clone();
@@ -250,7 +277,7 @@ impl Runner {
                     );
                     // Atomic WATCH plus a live block from this subscription proves
                     // filters are active. No readiness retry is needed after UNWATCH.
-                    client.request_catchup(start, end).await?;
+                    client.request_final_catchup(start, end).await?;
                 }
                 Ok::<_, anyhow::Error>(())
             };
@@ -282,7 +309,10 @@ impl Runner {
         }
         // Old queues remain isolated; synchronous producer/queue retirement is
         // a separate core API. UNWATCH stops future fanout after it is processed.
-        match tokio::time::timeout(POLL_QUERY_TIMEOUT, client.unregister_contracts(&self.contracts)).await {
+        match tokio::time::timeout(POLL_QUERY_TIMEOUT, async {
+            client.unregister_contracts(&self.contracts).await?;
+            client.unregister_final_contracts(&self.contracts).await
+        }).await {
             Ok(Ok(())) => {},
             other => warn!(?other, consumer_id = client.consumer_id(), "Could not deregister old subscription; broker resources need cleanup"),
         }

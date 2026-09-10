@@ -59,7 +59,7 @@ async fn exercise_catchup(bounded: bool) {
         url: broker_url,
         acl_address: Address::ZERO,
         tfhe_address: Address::repeat_byte(1),
-        kms_generation_address: None,
+        kms_generation_address: Address::repeat_byte(2),
         protocol_config_address: None,
         confidential_bridge_address: None,
         database_url: instance.db_url.clone(),
@@ -94,8 +94,21 @@ async fn exercise_catchup(bounded: bool) {
         move |command: WatchCommand| {
             let tx = watch_tx.clone();
             async move {
-                tx.send(command.into_filters()[0].consumer_id.clone())
-                    .unwrap();
+                let filters = command.into_filters();
+                assert_eq!(
+                    filters.len(),
+                    6,
+                    "live and final contract sets must register atomically"
+                );
+                assert_eq!(
+                    filters
+                        .iter()
+                        .filter(|f| f.filter_type
+                            == Some(primitives::event::FilterType::Final))
+                        .count(),
+                    3
+                );
+                tx.send(filters[0].consumer_id.clone()).unwrap();
                 Ok(())
             }
         },
@@ -116,6 +129,23 @@ async fn exercise_catchup(bounded: bool) {
             }
         },
     )));
+    let (final_tx, mut final_rx) = mpsc::unbounded_channel();
+    let final_control = broker
+        .consumer(&Topic::namespaced(&namespace, routing::FINAL_CATCHUP))
+        .group("catchup-test-final-catchup")
+        .with_cancellation(control_stop.clone())
+        .build()
+        .unwrap();
+    final_control.ensure_topology().await.unwrap();
+    controls.spawn(final_control.run(AsyncHandlerPayloadClassified::new(
+        move |command: CatchupPayload| {
+            let tx = final_tx.clone();
+            async move {
+                tx.send(command).unwrap();
+                Ok(())
+            }
+        },
+    )));
     let run = tokio::spawn(run_consumer(config));
     let publisher = broker.publisher("").await.unwrap();
     let block = |number, flow| event_block(chain_id.as_u64(), number, flow);
@@ -127,16 +157,17 @@ async fn exercise_catchup(bounded: bool) {
         )
         .await
         .unwrap();
-    let request = catchup_rx.recv().await.unwrap();
+    let request = final_rx.recv().await.unwrap();
     assert_eq!(
         (request.block_start, request.block_end),
         (900, if bounded { 950 } else { 999 })
     );
+    assert_eq!(request.consumer_id, first);
     // Live advances before historical delivery finishes.
     publisher
         .publish(
-            &routing::consumer_catchup_event_routing(first.clone()),
-            &block(900, BlockFlow::Catchup),
+            &routing::consumer_final_catchup_event_routing(first.clone()),
+            &block(900, BlockFlow::FinalCatchup),
         )
         .await
         .unwrap();
@@ -153,8 +184,8 @@ async fn exercise_catchup(bounded: bool) {
     for number in [end, 925, 900] {
         publisher
             .publish(
-                &routing::consumer_catchup_event_routing(first.clone()),
-                &block(number, BlockFlow::Catchup),
+                &routing::consumer_final_catchup_event_routing(first.clone()),
+                &block(number, BlockFlow::FinalCatchup),
             )
             .await
             .unwrap();
@@ -172,6 +203,36 @@ async fn exercise_catchup(bounded: bool) {
         .await
         .unwrap();
     wait_for_events(&pool, &[900, 925, end, 1000, 1001, 1002]).await;
+    assert!(
+        catchup_rx.try_recv().is_err(),
+        "only finalized catchup is requested"
+    );
+    // Final delivery repairs an event missed by live ingestion and catchup.
+    publisher
+        .publish(
+            &routing::consumer_final_event_routing(first.clone()),
+            &block(910, BlockFlow::Final),
+        )
+        .await
+        .unwrap();
+    for _ in 0..2 {
+        publisher
+            .publish(
+                &routing::consumer_final_catchup_event_routing(first.clone()),
+                &block(900, BlockFlow::FinalCatchup),
+            )
+            .await
+            .unwrap();
+    }
+    wait_for_events(&pool, &[900, 910, 925, end, 1000, 1001, 1002]).await;
+    tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        loop {
+            let finals: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM host_chain_blocks_valid WHERE chain_id = $1 AND block_number IN (900, 910, 925, $2) AND block_status = 'finalized'")
+                .bind(chain_id.as_i64()).bind(end as i64).fetch_one(&pool).await.unwrap();
+            if finals == 4 { break; }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+    }).await.unwrap();
     // Only live delivery contributes timing rows. Historical replay (including
     // finalized replay when subscribed) must not pollute live timing statistics.
     let timed_blocks: Vec<i64> = sqlx::query_scalar(

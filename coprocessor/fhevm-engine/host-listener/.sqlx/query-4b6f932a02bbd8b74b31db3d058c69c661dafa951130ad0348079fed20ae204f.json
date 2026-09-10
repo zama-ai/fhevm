@@ -1,0 +1,65 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT e.chain_id, e.block_hash, e.block_number, e.transaction_hash AS \"transaction_hash?\",\n               e.key_id, e.existing_key_id AS \"existing_key_id!\", e.key_digest_server AS \"key_digest!\",\n               e.storage_urls\n        FROM kms_key_activation_events AS e\n        INNER JOIN host_chain_blocks_valid AS b\n          ON e.chain_id = b.chain_id AND e.block_hash = b.block_hash\n        WHERE e.status = 'pending'\n          AND b.block_status = 'finalized'\n          AND ($1::bigint IS NULL OR e.block_number <= $1)\n          AND ($2::bigint IS NULL OR e.chain_id = $2)\n          AND e.key_digest_server IS NOT NULL\n          AND e.existing_key_id IS NOT NULL\n          AND e.key_content_compressed_xof_keyset IS NULL\n        FOR UPDATE OF e SKIP LOCKED\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "chain_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "block_hash",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 2,
+        "name": "block_number",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "transaction_hash?",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 4,
+        "name": "key_id",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 5,
+        "name": "existing_key_id!",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 6,
+        "name": "key_digest!",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 7,
+        "name": "storage_urls",
+        "type_info": "TextArray"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "4b6f932a02bbd8b74b31db3d058c69c661dafa951130ad0348079fed20ae204f"
+}

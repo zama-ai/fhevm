@@ -31,12 +31,8 @@ struct Args {
     #[arg(long, help = "TFHE contract address to monitor")]
     tfhe_contract_address: Address,
 
-    #[arg(
-        long,
-        default_value = "",
-        help = "Optional KMS generation contract address to monitor"
-    )]
-    kms_generation_address: String,
+    #[arg(long, help = "KMS generation contract address to monitor")]
+    kms_generation_address: Address,
 
     #[command(flatten)]
     protocol_config: host_listener::protocol_config::ProtocolConfigArgs,
@@ -115,7 +111,7 @@ struct Args {
     #[arg(
         long,
         allow_hyphen_values = true,
-        help = "Replay from this block, inclusive; negative values are offsets from the first observed live block"
+        help = "Replay finalized blocks only, starting from this block, inclusive; negative values are offsets from the first observed live block"
     )]
     pub catchup_from_block: Option<i64>,
 
@@ -123,7 +119,7 @@ struct Args {
         long,
         allow_hyphen_values = true,
         requires = "catchup_from_block",
-        help = "Last replay block, inclusive; defaults to -1 (one block before the first observed live block); negative values are offsets from that block. Live processing continues"
+        help = "Last requested replay block, inclusive; only finalized blocks are replayed; defaults to -1 (one block before the first observed live block); negative values are offsets from that block. Live processing continues"
     )]
     pub catchup_up_to_block: Option<i64>,
 
@@ -199,10 +195,7 @@ async fn main() -> anyhow::Result<()> {
         url: args.url,
         acl_address: args.acl_contract_address,
         tfhe_address: args.tfhe_contract_address,
-        kms_generation_address: parse_optional_address(
-            &args.kms_generation_address,
-            "KMS generation contract",
-        )?,
+        kms_generation_address: args.kms_generation_address,
         protocol_config_address,
         confidential_bridge_address: parse_optional_address(
             &args.confidential_bridge_address,

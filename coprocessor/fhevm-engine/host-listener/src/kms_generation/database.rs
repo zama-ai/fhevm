@@ -9,7 +9,9 @@ use fhevm_engine_common::db_keys::write_large_object_in_chunks_tx;
 
 use crate::contracts::KMSGeneration;
 use crate::kms_generation::sks_key::PreparedServerKey;
-use crate::kms_generation::{key_id_to_database_bytes, KeyType};
+use crate::kms_generation::{
+    key_id_to_database_bytes, ActivationScope, KeyType,
+};
 
 const CHUNK_SIZE: usize = 128 * 1024 * 1024; // 128MB
 
@@ -193,6 +195,7 @@ pub(crate) async fn count_crs_activation_remaining_pending(
 
 pub(crate) async fn cancel_orphaned_key_activations(
     tx: &mut Transaction<'_, Postgres>,
+    chain_id: Option<i64>,
 ) -> anyhow::Result<u64> {
     let query = sqlx::query!(
         "
@@ -200,11 +203,13 @@ pub(crate) async fn cancel_orphaned_key_activations(
         SET status = 'cancelled'
         FROM host_chain_blocks_valid AS b
         WHERE
+            ($1::bigint IS NULL OR e.chain_id = $1) AND
             e.status IN ('pending', 'ready')
             AND e.chain_id = b.chain_id
             AND e.block_hash = b.block_hash
             AND b.block_status = 'orphaned'
-        "
+        ",
+        chain_id
     )
     .execute(tx.deref_mut())
     .await?;
@@ -216,28 +221,31 @@ pub(crate) async fn cancel_orphaned_key_activations(
 
 pub(crate) async fn apply_ready_compressed_key_materials(
     tx: &mut Transaction<'_, Postgres>,
-    rpc_finalized_block: Option<i64>,
+    scope: impl Into<ActivationScope>,
 ) -> anyhow::Result<Vec<PendingCompressedKeyMaterial>> {
-    let Some(rpc_finalized_block) = rpc_finalized_block else {
+    let scope = scope.into();
+    if !scope.compressed_enabled() {
         return Ok(Vec::new());
-    };
-    let rows = sqlx::query_as::<_, PendingCompressedKeyMaterial>(
+    }
+    let rows = sqlx::query_as!(PendingCompressedKeyMaterial,
         r#"
-        SELECT e.chain_id, e.block_hash, e.block_number, e.transaction_hash,
-               e.key_id, e.existing_key_id, e.key_digest_server AS key_digest,
+        SELECT e.chain_id, e.block_hash, e.block_number, e.transaction_hash AS "transaction_hash?",
+               e.key_id, e.existing_key_id AS "existing_key_id!", e.key_digest_server AS "key_digest!",
                e.storage_urls
         FROM kms_key_activation_events AS e
         INNER JOIN host_chain_blocks_valid AS b
           ON e.chain_id = b.chain_id AND e.block_hash = b.block_hash
         WHERE e.status = 'ready'
           AND b.block_status = 'finalized'
-          AND e.block_number <= $1
+          AND ($1::bigint IS NULL OR e.block_number <= $1)
+          AND ($2::bigint IS NULL OR e.chain_id = $2)
           AND e.existing_key_id IS NOT NULL
           AND e.key_content_compressed_xof_keyset IS NOT NULL
         FOR UPDATE OF e SKIP LOCKED
         "#,
+        scope.rpc_height(),
+        scope.chain_id(),
     )
-    .bind(rpc_finalized_block)
     .fetch_all(tx.deref_mut())
     .await?;
 
@@ -282,6 +290,7 @@ pub(crate) async fn apply_ready_compressed_key_materials(
 
 pub(crate) async fn cancel_orphaned_crs_activations(
     tx: &mut Transaction<'_, Postgres>,
+    chain_id: Option<i64>,
 ) -> anyhow::Result<u64> {
     let query = sqlx::query!(
         "
@@ -289,11 +298,13 @@ pub(crate) async fn cancel_orphaned_crs_activations(
         SET status = 'cancelled'
         FROM host_chain_blocks_valid AS b
         WHERE
+            ($1::bigint IS NULL OR e.chain_id = $1) AND
             e.status IN ('pending', 'ready')
             AND e.chain_id = b.chain_id
             AND e.block_hash = b.block_hash
             AND b.block_status = 'orphaned'
-        "
+        ",
+        chain_id
     )
     .execute(tx.deref_mut())
     .await?;
@@ -305,6 +316,7 @@ pub(crate) async fn cancel_orphaned_crs_activations(
 
 pub(crate) async fn activate_ready_key_activations(
     tx: &mut Transaction<'_, Postgres>,
+    chain_id: Option<i64>,
 ) -> anyhow::Result<u64> {
     let to_activate = sqlx::query!(
         r#"
@@ -314,12 +326,14 @@ pub(crate) async fn activate_ready_key_activations(
             ON e.chain_id = b.chain_id
             AND e.block_hash = b.block_hash
         WHERE
+            ($1::bigint IS NULL OR e.chain_id = $1) AND
             e.status = 'ready'
             AND b.block_status = 'finalized'
             AND e.key_content_public IS NOT NULL
             AND e.key_content_sks_key IS NOT NULL
         FOR UPDATE OF e SKIP LOCKED
-        "#
+        "#,
+        chain_id
     )
     .fetch_all(tx.deref_mut())
     .await?;
@@ -420,6 +434,7 @@ pub(crate) async fn activate_ready_key_activations(
 
 pub(crate) async fn activate_ready_crs_activations(
     tx: &mut Transaction<'_, Postgres>,
+    chain_id: Option<i64>,
 ) -> anyhow::Result<u64> {
     let to_activate = sqlx::query!(
         r#"
@@ -429,11 +444,13 @@ pub(crate) async fn activate_ready_crs_activations(
             ON e.chain_id = b.chain_id
             AND e.block_hash = b.block_hash
         WHERE
+            ($1::bigint IS NULL OR e.chain_id = $1) AND
             e.status = 'ready'
             AND b.block_status = 'finalized'
             AND e.crs_content IS NOT NULL
         FOR UPDATE OF e SKIP LOCKED
-        "#
+        "#,
+        chain_id
     )
     .fetch_all(tx.deref_mut())
     .await?;
@@ -508,6 +525,7 @@ pub(crate) async fn activate_ready_crs_activations(
 
 pub(crate) async fn all_pending_key_activations_to_download(
     tx: &mut Transaction<'_, Postgres>,
+    chain_id: Option<i64>,
 ) -> anyhow::Result<Vec<PendingKeyActivation>> {
     let rows = sqlx::query!(
         r#"
@@ -522,6 +540,7 @@ pub(crate) async fn all_pending_key_activations_to_download(
             storage_urls
         FROM kms_key_activation_events
         WHERE
+            ($1::bigint IS NULL OR chain_id = $1) AND
             status = 'pending'
             AND existing_key_id IS NULL
             AND (
@@ -529,7 +548,8 @@ pub(crate) async fn all_pending_key_activations_to_download(
                 OR key_content_public IS NULL AND key_digest_public IS NOT NULL
             )
         FOR UPDATE SKIP LOCKED
-        "#
+        "#,
+        chain_id
     )
     .fetch_all(tx.deref_mut())
     .await?;
@@ -562,35 +582,39 @@ pub(crate) async fn all_pending_key_activations_to_download(
 
 pub(crate) async fn all_pending_compressed_key_materials_to_download(
     tx: &mut Transaction<'_, Postgres>,
-    rpc_finalized_block: Option<i64>,
+    scope: impl Into<ActivationScope>,
 ) -> anyhow::Result<Vec<PendingCompressedKeyMaterial>> {
-    let Some(rpc_finalized_block) = rpc_finalized_block else {
+    let scope = scope.into();
+    if !scope.compressed_enabled() {
         return Ok(Vec::new());
-    };
-    Ok(sqlx::query_as::<_, PendingCompressedKeyMaterial>(
+    }
+    Ok(sqlx::query_as!(PendingCompressedKeyMaterial,
         r#"
-        SELECT e.chain_id, e.block_hash, e.block_number, e.transaction_hash,
-               e.key_id, e.existing_key_id, e.key_digest_server AS key_digest,
+        SELECT e.chain_id, e.block_hash, e.block_number, e.transaction_hash AS "transaction_hash?",
+               e.key_id, e.existing_key_id AS "existing_key_id!", e.key_digest_server AS "key_digest!",
                e.storage_urls
         FROM kms_key_activation_events AS e
         INNER JOIN host_chain_blocks_valid AS b
           ON e.chain_id = b.chain_id AND e.block_hash = b.block_hash
         WHERE e.status = 'pending'
           AND b.block_status = 'finalized'
-          AND e.block_number <= $1
+          AND ($1::bigint IS NULL OR e.block_number <= $1)
+          AND ($2::bigint IS NULL OR e.chain_id = $2)
           AND e.key_digest_server IS NOT NULL
           AND e.existing_key_id IS NOT NULL
           AND e.key_content_compressed_xof_keyset IS NULL
         FOR UPDATE OF e SKIP LOCKED
         "#,
+        scope.rpc_height(),
+        scope.chain_id(),
     )
-    .bind(rpc_finalized_block)
     .fetch_all(tx.deref_mut())
     .await?)
 }
 
 pub(crate) async fn all_pending_crs_activations_to_download(
     tx: &mut Transaction<'_, Postgres>,
+    chain_id: Option<i64>,
 ) -> anyhow::Result<Vec<PendingCrsActivation>> {
     let rows = sqlx::query!(
         r#"
@@ -602,10 +626,12 @@ pub(crate) async fn all_pending_crs_activations_to_download(
             storage_urls
         FROM kms_crs_activation_events
         WHERE
+            ($1::bigint IS NULL OR chain_id = $1) AND
             status = 'pending'
             AND crs_content IS NULL
         FOR UPDATE SKIP LOCKED
-        "#
+        "#,
+        chain_id
     )
     .fetch_all(tx.deref_mut())
     .await?;
@@ -976,12 +1002,21 @@ mod tests {
         .await?;
         tx.commit().await?;
         let mut tx = pool.begin().await?;
-        let ordinary = all_pending_key_activations_to_download(&mut tx).await?;
+        let ordinary =
+            all_pending_key_activations_to_download(&mut tx, None).await?;
         assert!(ordinary.is_empty());
         let migration =
             all_pending_compressed_key_materials_to_download(&mut tx, Some(10))
                 .await?;
         assert!(migration.is_empty());
+        let consumer_scope =
+            ActivationScope::Consumer(ChainId::try_from(chain_id as u64)?);
+        assert!(all_pending_compressed_key_materials_to_download(
+            &mut tx,
+            consumer_scope
+        )
+        .await?
+        .is_empty());
         tx.rollback().await?;
         sqlx::query(
             "UPDATE host_chain_blocks_valid SET block_status = 'finalized'
@@ -1003,6 +1038,29 @@ mod tests {
             tx.rollback().await?;
         }
 
+        // Consumer finality needs no RPC height and may only select its own chain.
+        let consumer_scope =
+            ActivationScope::Consumer(ChainId::try_from(chain_id as u64)?);
+        let other_scope =
+            ActivationScope::Consumer(ChainId::try_from(chain_id as u64 + 1)?);
+        let mut tx = pool.begin().await?;
+        assert!(all_pending_compressed_key_materials_to_download(
+            &mut tx,
+            other_scope
+        )
+        .await?
+        .is_empty());
+        assert_eq!(
+            all_pending_compressed_key_materials_to_download(
+                &mut tx,
+                consumer_scope
+            )
+            .await?
+            .len(),
+            1
+        );
+        tx.rollback().await?;
+
         let mut tx = pool.begin().await?;
         let migration =
             all_pending_compressed_key_materials_to_download(&mut tx, Some(10))
@@ -1013,6 +1071,18 @@ mod tests {
         set_ready_compressed_key_material(&mut tx, &migration[0], &compressed)
             .await?;
         tx.commit().await?;
+
+        let mut tx = pool.begin().await?;
+        assert!(apply_ready_compressed_key_materials(&mut tx, other_scope)
+            .await?
+            .is_empty());
+        assert_eq!(
+            apply_ready_compressed_key_materials(&mut tx, consumer_scope)
+                .await?
+                .len(),
+            1
+        );
+        tx.rollback().await?;
 
         for rpc_finalized_block in [None, Some(9)] {
             let mut tx = pool.begin().await?;
